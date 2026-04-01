@@ -1,0 +1,8 @@
+{
+  "user": {
+    "username": "baba",
+    "name": "Baba",
+    "bio_cooked": "<p>Compose user</p>",
+    "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png"
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "topics": [
+    {
+      "id": 202,
+      "title": "Compose search result",
+      "slug": "compose-search-result",
+      "posts_count": 5,
+      "reply_count": 4,
+      "views": 88,
+      "last_posted_at": "2026-03-31T08:30:00.000Z",
+      "category_id": 2,
+      "posters": [
+        {
+          "description": "Original Poster",
+          "user": {
+            "username": "searcher"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "searcher",
+      "name": "Searcher"
+    }
+  ]
+}
