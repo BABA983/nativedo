@@ -59,7 +59,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.baba983.nativedo.NativeDoApplication
-import io.github.baba983.nativedo.core.storage.InMemoryRecentSearchStore
+import io.github.baba983.nativedo.core.storage.RecentSearchStore
 import io.github.baba983.nativedo.feature.home.data.HomeRepository
 import io.github.baba983.nativedo.feature.home.domain.LoadHomeFeedUseCase
 import io.github.baba983.nativedo.feature.search.ui.SearchScreen
@@ -94,7 +94,7 @@ fun HomeRoute(
             )
         },
     )
-    val recentSearchStore = remember { InMemoryRecentSearchStore() }
+    val recentSearchStore = remember { RecentSearchStore() }
     val searchViewModel = rememberSearchViewModel(
         appContainer = appContainer,
         recentSearchStore = recentSearchStore,

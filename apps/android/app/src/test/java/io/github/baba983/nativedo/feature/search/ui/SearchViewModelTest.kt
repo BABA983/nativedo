@@ -8,8 +8,6 @@ import io.github.baba983.nativedo.core.storage.RecentSearchStore
 import io.github.baba983.nativedo.feature.search.domain.SearchTopicsUseCase
 import io.github.baba983.nativedo.test.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Rule
@@ -35,7 +33,7 @@ class SearchViewModelTest {
                     users = listOf(SearchUser(username = "baba", displayName = "Baba")),
                 ),
             ),
-            recentSearchStore = InMemoryRecentSearchStore(),
+            recentSearchStore = RecentSearchStore(),
         )
 
         viewModel.onQuerySubmitted("compose")
@@ -50,14 +48,4 @@ private class FakeSearchTopicsUseCase(
     private val result: SearchResult,
 ) : SearchTopicsUseCase() {
     override suspend fun invoke(query: String): Result<SearchResult> = Result.success(result)
-}
-
-private class InMemoryRecentSearchStore : RecentSearchStore {
-    private val flow = MutableStateFlow(emptyList<String>())
-
-    override val recentQueries: Flow<List<String>> = flow
-
-    override suspend fun record(query: String) {
-        flow.value = listOf(query) + flow.value.filterNot { it == query }
-    }
 }

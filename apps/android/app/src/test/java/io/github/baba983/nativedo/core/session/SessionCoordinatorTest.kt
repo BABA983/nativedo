@@ -15,9 +15,22 @@ import org.junit.Test
 class SessionCoordinatorTest {
     @Test
     fun restoreSession_emitsAuthenticatedWhenCookiesAndBootstrapUserExist() = runTest {
+        val cookieStore = CookieStore().apply {
+            save(
+                "https://linux.do".toHttpUrl(),
+                listOf(
+                    Cookie.Builder()
+                        .name("_forum_session")
+                        .value("session")
+                        .domain("linux.do")
+                        .path("/")
+                        .build(),
+                ),
+            )
+        }
         val coordinator = SessionCoordinator(
-            cookieStore = InMemoryCookieStore(hasSession = true),
-            sessionStore = InMemorySessionStore(),
+            cookieStore = cookieStore,
+            sessionStore = SessionStore(),
             apiClient = FakeSessionApiClient(currentUsername = "baba"),
             csrfTokenProvider = FakeCsrfTokenProvider(token = "csrf-token"),
         )
@@ -37,49 +50,6 @@ class SessionCoordinatorTest {
                 ),
             )
         }
-    }
-}
-
-private class InMemoryCookieStore(
-    hasSession: Boolean,
-) : CookieStore {
-    private var cookies: List<Cookie> = if (hasSession) {
-        listOf(
-            Cookie.Builder()
-                .name("_forum_session")
-                .value("session")
-                .domain("linux.do")
-                .path("/")
-                .build(),
-        )
-    } else {
-        emptyList()
-    }
-
-    override fun hasSessionCookies(): Boolean = cookies.isNotEmpty()
-
-    override fun load(url: okhttp3.HttpUrl): List<Cookie> = cookies
-
-    override fun save(url: okhttp3.HttpUrl, cookies: List<Cookie>) {
-        this.cookies = cookies
-    }
-
-    override fun clear() {
-        cookies = emptyList()
-    }
-}
-
-private class InMemorySessionStore : SessionStore {
-    private var username: String? = null
-
-    override fun save(username: String) {
-        this.username = username
-    }
-
-    override fun username(): String? = username
-
-    override fun clear() {
-        username = null
     }
 }
 

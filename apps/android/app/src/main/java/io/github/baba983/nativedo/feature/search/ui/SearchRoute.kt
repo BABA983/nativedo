@@ -49,7 +49,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.baba983.nativedo.NativeDoApplication
 import io.github.baba983.nativedo.core.di.AppContainer
 import io.github.baba983.nativedo.core.model.SearchUser
-import io.github.baba983.nativedo.core.storage.InMemoryRecentSearchStore
 import io.github.baba983.nativedo.core.storage.RecentSearchStore
 import io.github.baba983.nativedo.feature.home.ui.TopicListItem
 import io.github.baba983.nativedo.feature.search.data.SearchRepository
@@ -69,7 +68,7 @@ fun SearchRoute(
     val appContainer = remember(context) {
         (context.applicationContext as NativeDoApplication).appContainer
     }
-    val recentSearchStore = remember { InMemoryRecentSearchStore() }
+    val recentSearchStore = remember { RecentSearchStore() }
     val viewModel = rememberSearchViewModel(
         appContainer = appContainer,
         recentSearchStore = recentSearchStore,
