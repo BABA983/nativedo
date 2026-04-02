@@ -10,15 +10,20 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.baba983.nativedo.core.model.TopicSummary
+import io.github.baba983.nativedo.core.storage.CookieStore
+import io.github.baba983.nativedo.core.ui.UserAvatar
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 
 @Composable
 fun TopicListItem(
     topic: TopicSummary,
+    cookieStore: CookieStore,
+    baseUrl: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     showDivider: Boolean = true,
@@ -35,7 +40,14 @@ fun TopicListItem(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 14.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.Top,
         ) {
+            UserAvatar(
+                label = topic.authorUsername,
+                avatarTemplate = topic.authorAvatarTemplate,
+                cookieStore = cookieStore,
+                baseUrl = baseUrl,
+            )
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(6.dp),

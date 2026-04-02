@@ -33,6 +33,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -46,13 +47,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import io.github.baba983.nativedo.NativeDoApplication
 import io.github.baba983.nativedo.R
+import io.github.baba983.nativedo.core.session.AppSessionState
 import io.github.baba983.nativedo.navigation.NativeDoNavHost
 import io.github.baba983.nativedo.navigation.RootDestination
 import io.github.baba983.nativedo.ui.theme.NativeDoChromeShape
@@ -64,10 +69,19 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NativeDoApp(sessionState: ShellSessionState = ShellSessionState.Anonymous) {
+fun NativeDoApp() {
+    val context = LocalContext.current
+    val appContainer = remember(context) {
+        (context.applicationContext as NativeDoApplication).appContainer
+    }
+    val sessionState by appContainer.sessionCoordinator.sessionState.collectAsStateWithLifecycle()
     var themeMode by rememberSaveable { mutableStateOf(ThemeMode.System) }
     var homeHeaderSearchVisible by rememberSaveable { mutableStateOf(false) }
     var homeSearchRequestToken by rememberSaveable { mutableIntStateOf(0) }
+
+    LaunchedEffect(appContainer) {
+        appContainer.sessionCoordinator.restoreSession()
+    }
 
     NativeDoTheme(themeMode = themeMode) {
         val navController = rememberNavController()
@@ -400,19 +414,15 @@ private fun themeModeLabel(themeMode: ThemeMode): String = when (themeMode) {
     ThemeMode.Dark -> stringResource(R.string.theme_mode_dark)
 }
 
-sealed interface ShellSessionState {
-    data object Anonymous : ShellSessionState
-
-    data class Authenticated(val username: String) : ShellSessionState
-}
-
 data class NativeDoChromeState(
     val title: String = "",
 ) {
     companion object {
-        fun from(sessionState: ShellSessionState): NativeDoChromeState = when (sessionState) {
-            ShellSessionState.Anonymous -> NativeDoChromeState()
-            is ShellSessionState.Authenticated -> NativeDoChromeState(title = sessionState.username)
+        fun from(sessionState: AppSessionState): NativeDoChromeState = when (sessionState) {
+            AppSessionState.Anonymous,
+            AppSessionState.Authenticating,
+            AppSessionState.Expired -> NativeDoChromeState()
+            is AppSessionState.Authenticated -> NativeDoChromeState(title = sessionState.username)
         }
     }
 }

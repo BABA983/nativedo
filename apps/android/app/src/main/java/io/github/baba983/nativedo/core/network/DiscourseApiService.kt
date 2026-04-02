@@ -8,11 +8,17 @@ import io.github.baba983.nativedo.core.model.TopicSummary
 import io.github.baba983.nativedo.core.model.UserProfile
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import okhttp3.ResponseBody
 import retrofit2.http.GET
+import retrofit2.http.Headers
 import retrofit2.http.Path
 import retrofit2.http.Query
 
 interface DiscourseApiService {
+    @Headers("Accept: text/html")
+    @GET("/")
+    suspend fun bootstrap(): ResponseBody
+
     @GET("latest.json")
     suspend fun latest(@Query("page") page: Int): TopicListResponseDto
 
@@ -69,6 +75,8 @@ data class PosterDto(
 @Serializable
 data class PosterUserDto(
     val username: String = "",
+    @SerialName("avatar_template")
+    val avatarTemplate: String = "",
 )
 
 @Serializable
@@ -88,6 +96,8 @@ data class PostStreamDto(
 data class PostDto(
     val id: Long,
     val username: String,
+    @SerialName("avatar_template")
+    val avatarTemplate: String = "",
     @SerialName("cooked")
     val cookedHtml: String,
 )
@@ -103,6 +113,8 @@ data class SearchUserDto(
     val username: String,
     @SerialName("name")
     val displayName: String = "",
+    @SerialName("avatar_template")
+    val avatarTemplate: String = "",
 )
 
 @Serializable
@@ -131,6 +143,7 @@ internal fun TopicDto.toModel(): TopicSummary = TopicSummary(
     id = id,
     title = title,
     authorUsername = posters.firstOrNull()?.user?.username.orEmpty(),
+    authorAvatarTemplate = posters.firstOrNull()?.user?.avatarTemplate.orEmpty(),
     slug = slug,
     replyCount = replyCount,
     viewCount = views,
@@ -147,6 +160,7 @@ internal fun TopicResponseDto.toModel(): TopicDetail = TopicDetail(
 internal fun PostDto.toModel(): Post = Post(
     id = id,
     authorUsername = username,
+    authorAvatarTemplate = avatarTemplate,
     cookedHtml = cookedHtml,
     imageUrls = Regex("<img[^>]+src=\\\"([^\\\"]+)\\\"")
         .findAll(cookedHtml)
@@ -162,6 +176,7 @@ internal fun SearchResponseDto.toModel(): SearchResult = SearchResult(
 internal fun SearchUserDto.toModel(): SearchUser = SearchUser(
     username = username,
     displayName = displayName,
+    avatarTemplate = avatarTemplate,
 )
 
 internal fun UserProfileResponseDto.toModel(): UserProfile = UserProfile(

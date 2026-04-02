@@ -51,14 +51,112 @@ class SessionCoordinatorTest {
             )
         }
     }
+
+    @Test
+    fun restoreSession_syncsPersistentCookiesBeforeCheckingSession() = runTest {
+        val cookieStore = CookieStore()
+        val bridge = FakeCookieSyncBridge(
+            cookieStore = cookieStore,
+            cookies = listOf(
+                Cookie.Builder()
+                    .name("_t")
+                    .value("auth")
+                    .domain("linux.do")
+                    .path("/")
+                    .build(),
+            ),
+        )
+        val coordinator = SessionCoordinator(
+            cookieStore = cookieStore,
+            sessionStore = SessionStore(),
+            apiClient = FakeSessionApiClient(currentUsername = "baba"),
+            csrfTokenProvider = FakeCsrfTokenProvider(token = "csrf-token"),
+            cookieSyncBridge = bridge,
+        )
+
+        coordinator.restoreSession()
+
+        assertThat(bridge.syncFromWebViewCalls).isEqualTo(1)
+        assertThat(coordinator.sessionState.value).isEqualTo(
+            AppSessionState.Authenticated(
+                username = "baba",
+                csrfToken = "csrf-token",
+            ),
+        )
+    }
+
+    @Test
+    fun restoreSession_preservesCookiesWhenBootstrapLookupFails() = runTest {
+        val cookieStore = CookieStore()
+        val bridge = FakeCookieSyncBridge(
+            cookieStore = cookieStore,
+            cookies = listOf(
+                Cookie.Builder()
+                    .name("_t")
+                    .value("auth")
+                    .domain("linux.do")
+                    .path("/")
+                    .build(),
+            ),
+        )
+        val coordinator = SessionCoordinator(
+            cookieStore = cookieStore,
+            sessionStore = SessionStore(),
+            apiClient = FakeSessionApiClient(currentUsername = null),
+            csrfTokenProvider = FakeCsrfTokenProvider(token = "csrf-token"),
+            cookieSyncBridge = bridge,
+        )
+
+        coordinator.restoreSession()
+
+        assertThat(bridge.clearCalls).isEqualTo(0)
+        assertThat(cookieStore.hasSessionCookies()).isTrue()
+        assertThat(coordinator.sessionState.value).isEqualTo(AppSessionState.Expired)
+    }
+
+    @Test
+    fun restoreSession_usesBootstrapCsrfWhenCsrfRefreshFails() = runTest {
+        val cookieStore = CookieStore().apply {
+            save(
+                "https://linux.do".toHttpUrl(),
+                listOf(
+                    Cookie.Builder()
+                        .name("_t")
+                        .value("auth")
+                        .domain("linux.do")
+                        .path("/")
+                        .build(),
+                ),
+            )
+        }
+        val coordinator = SessionCoordinator(
+            cookieStore = cookieStore,
+            sessionStore = SessionStore(),
+            apiClient = FakeSessionApiClient(
+                currentUsername = "baba",
+                csrfToken = "bootstrap-csrf",
+            ),
+            csrfTokenProvider = ThrowingCsrfTokenProvider(),
+        )
+
+        coordinator.restoreSession()
+
+        assertThat(coordinator.sessionState.value).isEqualTo(
+            AppSessionState.Authenticated(
+                username = "baba",
+                csrfToken = "bootstrap-csrf",
+            ),
+        )
+    }
 }
 
 private class FakeSessionApiClient(
-    private val currentUsername: String,
+    private val currentUsername: String?,
+    private val csrfToken: String = "",
 ) : SessionBootstrapClient {
     override suspend fun fetchBootstrap(): ParsedBootstrap = ParsedBootstrap(
         currentUsername = currentUsername,
-        csrfToken = "",
+        csrfToken = csrfToken,
     )
 }
 
@@ -66,4 +164,31 @@ private class FakeCsrfTokenProvider(
     private val token: String,
 ) : CsrfTokenProvider() {
     override suspend fun get(forceRefresh: Boolean): String = token
+}
+
+private class ThrowingCsrfTokenProvider : CsrfTokenProvider() {
+    override suspend fun get(forceRefresh: Boolean): String {
+        throw IllegalStateException("csrf refresh failed")
+    }
+}
+
+private class FakeCookieSyncBridge(
+    private val cookieStore: CookieStore,
+    private val cookies: List<Cookie>,
+) : CookieSyncBridge(baseUrl = "https://linux.do/", cookieStore = cookieStore) {
+    var syncFromWebViewCalls: Int = 0
+        private set
+    var clearCalls: Int = 0
+        private set
+
+    override fun syncFromWebView(): Boolean {
+        sync(url = "https://linux.do/", cookies = cookies)
+        syncFromWebViewCalls += 1
+        return true
+    }
+
+    override fun clear() {
+        clearCalls += 1
+        cookieStore.clear()
+    }
 }

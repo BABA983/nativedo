@@ -60,6 +60,12 @@ fun NativeDoNavHost(
                             onLoginClick = {
                                 navController.navigate("login")
                             },
+                            onTopicClick = { topicId ->
+                                navController.navigate("topic/$topicId")
+                            },
+                            onUserClick = { username ->
+                                navController.navigate("user/$username")
+                            },
                         )
                     }
 
@@ -79,13 +85,27 @@ fun NativeDoNavHost(
         }
         composable("topic/{topicId}") { entry ->
             val topicId = entry.arguments?.getString("topicId")!!.toLong()
-            TopicRoute(topicId = topicId)
+            TopicRoute(
+                topicId = topicId,
+                onTopicClick = { linkedTopicId ->
+                    navController.navigate("topic/$linkedTopicId")
+                },
+                onUserClick = { username ->
+                    navController.navigate("user/$username")
+                },
+            )
         }
         composable("user/{username}") { entry ->
             ProfileRoute(
                 viewer = ProfileViewer.Other(
                     entry.arguments!!.getString("username")!!,
                 ),
+                onTopicClick = { topicId ->
+                    navController.navigate("topic/$topicId")
+                },
+                onUserClick = { username ->
+                    navController.navigate("user/$username")
+                },
             )
         }
         composable("login") {

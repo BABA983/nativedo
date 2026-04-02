@@ -17,11 +17,13 @@ class SessionCoordinator(
     private val sessionStore: SessionStore,
     private val apiClient: SessionBootstrapClient,
     private val csrfTokenProvider: CsrfTokenProvider,
+    private val cookieSyncBridge: CookieSyncBridge? = null,
 ) {
     private val _sessionState = MutableStateFlow<AppSessionState>(AppSessionState.Anonymous)
     val sessionState: StateFlow<AppSessionState> = _sessionState.asStateFlow()
 
     suspend fun restoreSession() {
+        cookieSyncBridge?.syncFromWebView()
         if (!cookieStore.hasSessionCookies()) {
             _sessionState.value = AppSessionState.Anonymous
             return
@@ -31,20 +33,25 @@ class SessionCoordinator(
         runCatching {
             val bootstrap = apiClient.fetchBootstrap()
             val username = requireNotNull(bootstrap.currentUsername)
-            val csrf = csrfTokenProvider.get(forceRefresh = true)
+            val csrf = runCatching {
+                csrfTokenProvider.get(forceRefresh = true)
+            }.getOrElse { error ->
+                bootstrap.csrfToken
+                    .takeIf { it.isNotBlank() }
+                    ?: throw error
+            }
             sessionStore.save(username)
             AppSessionState.Authenticated(username, csrf)
         }.onSuccess {
             _sessionState.value = it
         }.onFailure {
-            cookieStore.clear()
             sessionStore.clear()
-            _sessionState.value = AppSessionState.Anonymous
+            _sessionState.value = AppSessionState.Expired
         }
     }
 
     suspend fun onLogout() {
-        cookieStore.clear()
+        cookieSyncBridge?.clear() ?: cookieStore.clear()
         sessionStore.clear()
         _sessionState.value = AppSessionState.Anonymous
     }

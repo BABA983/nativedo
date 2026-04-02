@@ -32,10 +32,28 @@ class ProfileViewModelTest {
 
         assertThat(viewModel.uiState.value.profile?.username).isEqualTo("baba")
     }
+
+    @Test
+    fun loadProfile_failureWithoutMessage_setsFallbackErrorMessage() = runTest {
+        val viewModel = ProfileViewModel(
+            loadProfile = FailingLoadProfileUseCase(RuntimeException()),
+            viewer = ProfileViewer.Other("baba"),
+        )
+
+        runCurrent()
+
+        assertThat(viewModel.uiState.value.errorMessage).isEqualTo("Failed to load profile")
+    }
 }
 
 private class FakeLoadProfileUseCase(
     private val profile: UserProfile,
 ) : LoadProfileUseCase() {
     override suspend fun invoke(username: String): Result<UserProfile> = Result.success(profile)
+}
+
+private class FailingLoadProfileUseCase(
+    private val error: Throwable,
+) : LoadProfileUseCase() {
+    override suspend fun invoke(username: String): Result<UserProfile> = Result.failure(error)
 }

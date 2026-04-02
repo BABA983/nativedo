@@ -4,10 +4,16 @@ import io.github.baba983.nativedo.core.model.SearchResult
 import io.github.baba983.nativedo.core.model.TopicDetail
 import io.github.baba983.nativedo.core.model.TopicSummary
 import io.github.baba983.nativedo.core.model.UserProfile
+import io.github.baba983.nativedo.core.session.SessionBootstrapClient
 
 class DiscourseApiClient(
     private val service: DiscourseApiService,
-) {
+) : SessionBootstrapClient {
+    override suspend fun fetchBootstrap(): ParsedBootstrap =
+        service.bootstrap().use { responseBody ->
+            BootstrapHtmlParser.parse(responseBody.string())
+        }
+
     suspend fun fetchLatest(page: Int): List<TopicSummary> =
         service.latest(page).topicList.topics.map { it.toModel() }
 

@@ -15,10 +15,14 @@ object BootstrapHtmlParser {
             append(document.selectFirst("#data-preloaded")?.html().orEmpty())
             append(document.selectFirst("body")?.attr("data-preloaded").orEmpty())
         }
-        val currentUsername = Regex("\"username\":\"([^\"]+)\"")
-            .find(preloaded)
-            ?.groupValues
-            ?.getOrNull(1)
+        val currentUsername = document
+            .selectFirst("meta[name=current-username]")
+            ?.attr("content")
+            ?.takeIf { it.isNotBlank() }
+            ?: Regex("\"username\":\"([^\"]+)\"")
+                .find(preloaded)
+                ?.groupValues
+                ?.getOrNull(1)
 
         return ParsedBootstrap(
             currentUsername = currentUsername,

@@ -167,6 +167,8 @@ fun HomeRoute(
         if (searchMode) {
             SearchScreen(
                 uiState = searchUiState,
+                cookieStore = appContainer.cookieStore,
+                baseUrl = appContainer.baseUrl,
                 onQueryChanged = searchViewModel::onQueryChanged,
                 onQuerySubmitted = searchViewModel::onQuerySubmitted,
                 onTopicClick = onTopicClick,
@@ -180,6 +182,8 @@ fun HomeRoute(
                 uiState = uiState,
                 listState = listState,
                 forceShowSearchField = forceShowSearchField,
+                cookieStore = appContainer.cookieStore,
+                baseUrl = appContainer.baseUrl,
                 onTopicClick = onTopicClick,
                 onFeedSelected = viewModel::onFeedSelected,
                 onRefresh = viewModel::onRefresh,
@@ -200,6 +204,8 @@ private fun HomeFeedContent(
     uiState: HomeUiState,
     listState: LazyListState,
     forceShowSearchField: Boolean,
+    cookieStore: io.github.baba983.nativedo.core.storage.CookieStore,
+    baseUrl: String,
     onTopicClick: (Long) -> Unit,
     onFeedSelected: (HomeFeedTab) -> Unit,
     onRefresh: () -> Unit,
@@ -305,6 +311,8 @@ private fun HomeFeedContent(
                     ) { index, topic ->
                         TopicListItem(
                             topic = topic,
+                            cookieStore = cookieStore,
+                            baseUrl = baseUrl,
                             onClick = { onTopicClick(topic.id) },
                             modifier = Modifier.fillMaxWidth(),
                             showDivider = index != uiState.items.lastIndex,

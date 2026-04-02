@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -27,6 +28,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.baba983.nativedo.NativeDoApplication
 import io.github.baba983.nativedo.core.ui.HtmlPostBodyView
+import io.github.baba983.nativedo.core.ui.UserAvatar
 import io.github.baba983.nativedo.feature.topic.data.TopicRepository
 import io.github.baba983.nativedo.feature.topic.domain.LoadTopicUseCase
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
@@ -34,6 +36,8 @@ import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 @Composable
 fun TopicRoute(
     topicId: Long,
+    onTopicClick: (Long) -> Unit = {},
+    onUserClick: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -117,13 +121,29 @@ fun TopicRoute(
                             .padding(horizontal = 16.dp, vertical = 14.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        Text(
-                            text = "@${post.authorUsername}",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            UserAvatar(
+                                label = post.authorUsername,
+                                avatarTemplate = post.authorAvatarTemplate,
+                                cookieStore = appContainer.cookieStore,
+                                baseUrl = appContainer.baseUrl,
+                                size = 32.dp,
+                            )
+                            Text(
+                                text = "@${post.authorUsername}",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
                         HtmlPostBodyView(
                             html = post.cookedHtml,
+                            cookieStore = appContainer.cookieStore,
+                            baseUrl = appContainer.baseUrl,
+                            onTopicClick = onTopicClick,
+                            onUserClick = onUserClick,
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }

@@ -36,6 +36,7 @@
 - 不把分页能力扩展到搜索、profile 等其他页面
 - 不把 topic 默认改成 `print=true` 全量下载模式
 - 不重做导航、主题或列表样式，只在必要位置增加加载与刷新状态展示
+- 不在当前实现中直接接入 MessageBus 实时连接；本次只定义其实时扩展边界
 
 ---
 
@@ -205,11 +206,58 @@ topic 页面仍然使用单个 `LazyColumn`。
 
 顶部“`N posts`”文案改为优先展示服务端总数；如果暂时拿不到总数，再退回已加载数量。这样能减少用户误以为“当前已全部加载”的误导。
 
+### 7. Phase 2 实时提示扩展
+
+Discourse Web 端本身支持基于 MessageBus 的实时更新提示，因此 Android 设计不应把首页和 topic 永久限定为“只能手动刷新”。但实时能力不应和本轮分页实现绑定交付，而应作为第二阶段增强接入。
+
+二期目标：
+
+- 首页在前台活跃时收到“有新话题 / 有更新话题”的轻量提示
+- topic 在前台活跃时收到“有新回复”的轻量提示
+- 提示默认不直接改写当前可见列表，避免阅读过程跳动
+
+二期非目标：
+
+- 不做类似 IM 的全自动插入与强制滚动
+- 不做后台常驻长连接或推送替代
+- 不把实时能力扩展到搜索、profile 等页面
+
+首页建议策略：
+
+- 在 `HomeViewModel` 之上增加独立的实时订阅层，例如 `HomeFeedLiveUpdateCoordinator`
+- 只在页面处于前台、当前 tab 为可见状态时订阅
+- 收到新话题或更新话题事件后，不立刻插入 `items`
+- 改为更新一个轻量状态，例如 `pendingNewItemsCount` 或 `hasPendingFeedUpdate`
+- UI 在顶部显示一个 banner / chip，例如“有 5 条新话题，点击刷新”
+- 用户点击后走现有 `refreshCurrentTab()`，由第一页同步结果统一刷新列表
+
+topic 建议策略：
+
+- 在 `TopicViewModel` 之上增加独立的 topic 实时订阅层
+- 只订阅当前打开的 `topicId`
+- 收到新回复事件后，如果用户当前停留在底部附近，可以直接触发一次轻量同步
+- 如果用户正在阅读历史楼层，则只更新 `pendingNewRepliesCount`
+- UI 显示“有 3 条新回复”提示，点击后再刷新或跳转到底部
+
+生命周期约束：
+
+- 订阅只在前台 `STARTED` 或等价可见状态下持有
+- 页面不可见时停止订阅，回到前台后重新连接
+- 断线后允许退避重连，但失败不影响手动刷新与分页能力
+
+状态边界：
+
+- 实时提示状态与分页状态分离，不复用 `isRefreshing` 或 `isLoadingMore`
+- `refresh()` 仍然是统一的数据同步入口
+- 实时层只负责“发现有更新”和“触发同步”，不直接改写底层分页规则
+
+这样设计的原因是：Discourse 虽然有实时能力，但论坛阅读不像 IM 对强实时依赖那么高。对首页和 topic 来说，“提示用户有更新并允许显式同步”比“后台直接改写列表”更稳，也更接近 Discourse Web 端的体验。
+
 ---
 
-## 实施边界
+## 一期实施边界
 
-本轮改动限定在以下范围：
+本轮一期改动限定在以下范围：
 
 - `apps/android/app/src/main/java/io/github/baba983/nativedo/core/model/*`
 - `apps/android/app/src/main/java/io/github/baba983/nativedo/core/network/*`
@@ -227,6 +275,12 @@ topic 页面仍然使用单个 `LazyColumn`。
 
 不触碰根配置、依赖升级、模块拆分和其他 feature 的列表页。
 
+二期实时扩展若启动实施，预计会额外触碰：
+
+- `core/network` 中的 MessageBus 或长轮询客户端
+- `feature/home` / `feature/topic` 的实时协调层
+- `contracts/discourse/*` 中的实时订阅契约补充
+
 ---
 
 ## 验证方式
@@ -243,4 +297,4 @@ topic 页面仍然使用单个 `LazyColumn`。
 
 ## 结论
 
-本次改动应当把首页和 topic 都补到“可连续阅读”的基本可用状态，但实现策略不应一刀切：首页用标准页码分页，topic 用 Discourse 原生的 stream 增量补拉。这样既能解决首屏限制，也不会把当前项目拖进过度设计。
+本次设计应先把首页和 topic 补到“可连续阅读”的基本可用状态：首页用标准页码分页，topic 用 Discourse 原生的 stream 增量补拉。实时能力不被否定，而是放到第二阶段，用 MessageBus 风格的“有更新提示 + 显式同步”接入，避免当前任务复杂度失控。

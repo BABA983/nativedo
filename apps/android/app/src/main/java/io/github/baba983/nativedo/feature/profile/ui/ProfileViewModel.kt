@@ -46,7 +46,7 @@ class ProfileViewModel(
                             _uiState.value = ProfileUiState(
                                 viewer = currentViewer,
                                 isLoading = false,
-                                errorMessage = error.message,
+                                errorMessage = error.message ?: "Failed to load profile",
                             )
                         },
                     )

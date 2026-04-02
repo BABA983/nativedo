@@ -1,6 +1,5 @@
 package io.github.baba983.nativedo.feature.profile.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,7 +8,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -17,44 +15,68 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.baba983.nativedo.NativeDoApplication
+import io.github.baba983.nativedo.core.session.AppSessionState
 import io.github.baba983.nativedo.core.ui.HtmlPostBodyView
+import io.github.baba983.nativedo.core.ui.UserAvatar
 import io.github.baba983.nativedo.feature.profile.data.ProfileRepository
 import io.github.baba983.nativedo.feature.profile.domain.LoadProfileUseCase
-import io.github.baba983.nativedo.ui.theme.NativeDoPillShape
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
+import kotlinx.coroutines.launch
 
 @Composable
 fun ProfileRoute(
     viewer: ProfileViewer,
     onLoginClick: () -> Unit = {},
-    onLogoutClick: () -> Unit = {},
+    onTopicClick: (Long) -> Unit = {},
+    onUserClick: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val appContainer = remember(context) {
         (context.applicationContext as NativeDoApplication).appContainer
     }
+    val coroutineScope = rememberCoroutineScope()
+    val sessionState by appContainer.sessionCoordinator.sessionState.collectAsStateWithLifecycle()
+    var restoreAttempted by remember(viewer) { mutableStateOf(false) }
+    val resolvedViewer = resolveProfileViewer(
+        viewer = viewer,
+        sessionState = sessionState,
+    )
+    val showAuthLoading = shouldShowProfileAuthLoading(
+        viewer = viewer,
+        sessionState = sessionState,
+    )
+
+    LaunchedEffect(viewer, sessionState, restoreAttempted) {
+        if (shouldRequestProfileSessionRestore(viewer, sessionState, restoreAttempted)) {
+            restoreAttempted = true
+            appContainer.sessionCoordinator.restoreSession()
+        }
+    }
+
     val viewModel: ProfileViewModel = viewModel(
-        key = "profile-$viewer",
-        factory = remember(appContainer, viewer) {
+        key = "profile-$resolvedViewer",
+        factory = remember(appContainer, resolvedViewer) {
             ProfileViewModelFactory(
                 loadProfile = LoadProfileUseCase(
                     repository = ProfileRepository(appContainer.discourseApiClient),
                 ),
-                viewer = viewer,
+                viewer = resolvedViewer,
             )
         },
     )
@@ -62,6 +84,14 @@ fun ProfileRoute(
     val errorMessage = uiState.errorMessage
 
     when {
+        showAuthLoading -> {
+            ProfileFeedbackCard(
+                modifier = modifier.fillMaxSize(),
+            ) {
+                CircularProgressIndicator()
+            }
+        }
+
         uiState.isLoading -> {
             ProfileFeedbackCard(
                 modifier = modifier.fillMaxSize(),
@@ -83,7 +113,7 @@ fun ProfileRoute(
             }
         }
 
-        uiState.profile == null -> {
+        uiState.profile == null && resolvedViewer == ProfileViewer.Self -> {
             ProfileFeedbackCard(
                 modifier = modifier.fillMaxSize(),
             ) {
@@ -92,10 +122,26 @@ fun ProfileRoute(
                         text = "Login required",
                         style = MaterialTheme.typography.bodyMedium,
                     )
-                    if (viewer == ProfileViewer.Self) {
+                    if (resolvedViewer == ProfileViewer.Self) {
                         TextButton(onClick = onLoginClick) {
                             Text(text = "Login")
                         }
+                    }
+                }
+            }
+        }
+
+        uiState.profile == null -> {
+            ProfileFeedbackCard(
+                modifier = modifier.fillMaxSize(),
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = "Failed to load profile",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    TextButton(onClick = viewModel::refresh) {
+                        Text(text = "Retry")
                     }
                 }
             }
@@ -117,8 +163,12 @@ fun ProfileRoute(
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        ProfileInitialBadge(
+                        UserAvatar(
                             label = profile.displayName.ifBlank { profile.username },
+                            avatarTemplate = profile.avatarUrl,
+                            cookieStore = appContainer.cookieStore,
+                            baseUrl = appContainer.baseUrl,
+                            size = 56.dp,
                         )
                         Column(
                             modifier = Modifier.weight(1f),
@@ -135,7 +185,13 @@ fun ProfileRoute(
                             )
                         }
                         if (viewer == ProfileViewer.Self) {
-                            TextButton(onClick = onLogoutClick) {
+                            TextButton(
+                                onClick = {
+                                    coroutineScope.launch {
+                                        appContainer.sessionCoordinator.onLogout()
+                                    }
+                                },
+                            ) {
                                 Text(text = "Logout")
                             }
                         }
@@ -168,6 +224,10 @@ fun ProfileRoute(
                         } else {
                             HtmlPostBodyView(
                                 html = profile.bio,
+                                cookieStore = appContainer.cookieStore,
+                                baseUrl = appContainer.baseUrl,
+                                onTopicClick = onTopicClick,
+                                onUserClick = onUserClick,
                                 modifier = Modifier.fillMaxWidth(),
                             )
                         }
@@ -178,24 +238,32 @@ fun ProfileRoute(
     }
 }
 
-@Composable
-private fun ProfileInitialBadge(label: String) {
-    val colors = NativeDoThemeExtras.colors
-
-    Box(
-        modifier = Modifier
-            .size(56.dp)
-            .clip(NativeDoPillShape)
-            .background(colors.accentMuted),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = label.first().uppercase(),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary,
-        )
+internal fun resolveProfileViewer(
+    viewer: ProfileViewer,
+    sessionState: AppSessionState,
+): ProfileViewer {
+    return when {
+        viewer != ProfileViewer.Self -> viewer
+        sessionState is AppSessionState.Authenticated -> ProfileViewer.Other(sessionState.username)
+        else -> ProfileViewer.Self
     }
+}
+
+internal fun shouldShowProfileAuthLoading(
+    viewer: ProfileViewer,
+    sessionState: AppSessionState,
+): Boolean {
+    return viewer == ProfileViewer.Self && sessionState is AppSessionState.Authenticating
+}
+
+internal fun shouldRequestProfileSessionRestore(
+    viewer: ProfileViewer,
+    sessionState: AppSessionState,
+    restoreAttempted: Boolean,
+): Boolean {
+    return viewer == ProfileViewer.Self &&
+        !restoreAttempted &&
+        (sessionState == AppSessionState.Anonymous || sessionState == AppSessionState.Expired)
 }
 
 @Composable

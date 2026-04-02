@@ -49,7 +49,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.baba983.nativedo.NativeDoApplication
 import io.github.baba983.nativedo.core.di.AppContainer
 import io.github.baba983.nativedo.core.model.SearchUser
+import io.github.baba983.nativedo.core.storage.CookieStore
 import io.github.baba983.nativedo.core.storage.RecentSearchStore
+import io.github.baba983.nativedo.core.ui.UserAvatar
 import io.github.baba983.nativedo.feature.home.ui.TopicListItem
 import io.github.baba983.nativedo.feature.search.data.SearchRepository
 import io.github.baba983.nativedo.feature.search.domain.SearchTopicsUseCase
@@ -78,6 +80,8 @@ fun SearchRoute(
 
     SearchScreen(
         uiState = uiState,
+        cookieStore = appContainer.cookieStore,
+        baseUrl = appContainer.baseUrl,
         onQueryChanged = viewModel::onQueryChanged,
         onQuerySubmitted = viewModel::onQuerySubmitted,
         onTopicClick = onTopicClick,
@@ -110,6 +114,8 @@ internal fun rememberSearchViewModel(
 @Composable
 internal fun SearchScreen(
     uiState: SearchUiState,
+    cookieStore: CookieStore,
+    baseUrl: String,
     onQueryChanged: (String) -> Unit,
     onQuerySubmitted: (String) -> Unit,
     onTopicClick: (Long) -> Unit,
@@ -279,6 +285,8 @@ internal fun SearchScreen(
             ) { index, topic ->
                 TopicListItem(
                     topic = topic,
+                    cookieStore = cookieStore,
+                    baseUrl = baseUrl,
                     onClick = { onTopicClick(topic.id) },
                     modifier = Modifier.fillMaxWidth(),
                     showDivider = index != uiState.topics.lastIndex || uiState.users.isNotEmpty(),
@@ -290,6 +298,8 @@ internal fun SearchScreen(
             ) { index, user ->
                 SearchUserListItem(
                     user = user,
+                    cookieStore = cookieStore,
+                    baseUrl = baseUrl,
                     onClick = { onUserClick(user.username) },
                     modifier = Modifier.fillMaxWidth(),
                     showDivider = index != uiState.users.lastIndex,
@@ -302,6 +312,8 @@ internal fun SearchScreen(
 @Composable
 private fun SearchUserListItem(
     user: SearchUser,
+    cookieStore: CookieStore,
+    baseUrl: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     showDivider: Boolean = true,
@@ -313,21 +325,33 @@ private fun SearchUserListItem(
             .fillMaxWidth()
             .clickable(onClick = onClick),
     ) {
-        Column(
+        Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = "@${user.username}",
-                style = MaterialTheme.typography.titleMedium,
-                color = colors.textPrimary,
+            UserAvatar(
+                label = user.displayName.ifBlank { user.username },
+                avatarTemplate = user.avatarTemplate,
+                cookieStore = cookieStore,
+                baseUrl = baseUrl,
             )
-            if (user.displayName.isNotBlank()) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
                 Text(
-                    text = user.displayName,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textSecondary,
+                    text = "@${user.username}",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = colors.textPrimary,
                 )
+                if (user.displayName.isNotBlank()) {
+                    Text(
+                        text = user.displayName,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textSecondary,
+                    )
+                }
             }
         }
 
