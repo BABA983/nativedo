@@ -1,4 +1,11 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+
+val debugBuildTimestamp = LocalDateTime.now().format(
+    DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"),
+)
+val debugVersionNameSuffix = "-debug-$debugBuildTimestamp"
 
 plugins {
     alias(libs.plugins.android.application)
@@ -20,6 +27,12 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        debug {
+            versionNameSuffix = debugVersionNameSuffix
+        }
     }
 
     buildFeatures {
