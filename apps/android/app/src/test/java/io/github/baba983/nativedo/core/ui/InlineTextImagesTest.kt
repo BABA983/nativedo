@@ -1,31 +1,47 @@
 package io.github.baba983.nativedo.core.ui
 
-import android.text.Spanned
-import android.text.style.ImageSpan
+import android.graphics.Paint
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 
 class InlineTextImagesTest {
     @Test
-    fun applyInlineImagePlaceholders_usesBaselineAlignmentForInlineIcons() {
-        val applied = applyInlineImagePlaceholders(
-            text = "Before inline_image_0 after",
-            inlineImages = listOf(
-                InlineImageSpec(
-                    token = "inline_image_0",
-                    rawUrl = "https://github.com/favicon.ico",
-                    contentDescription = "GitHub",
-                    kind = InlineImageKind.SiteIcon,
-                ),
-            ),
-            baseUrl = "https://linux.do/",
-            textSizePx = 16f,
+    fun calculateInlineImageTranslationY_emojiMovesUpMoreThanSiteIcon() {
+        val emojiTranslationY = calculateInlineImageTranslationY(
+            top = 4,
+            bottom = 28,
+            drawableHeight = 16,
+            kind = InlineImageKind.Emoji,
+        )
+        val siteIconTranslationY = calculateInlineImageTranslationY(
+            top = 4,
+            bottom = 28,
+            drawableHeight = 16,
+            kind = InlineImageKind.SiteIcon,
         )
 
-        val imageSpan = (applied.text as Spanned)
-            .getSpans(0, applied.text.length, ImageSpan::class.java)
-            .single()
+        assertThat(emojiTranslationY).isWithin(0.001f).of(6.08f)
+        assertThat(siteIconTranslationY).isWithin(0.001f).of(7.36f)
+        assertThat(emojiTranslationY).isLessThan(siteIconTranslationY)
+    }
 
-        assertThat(imageSpan.verticalAlignment).isEqualTo(ImageSpan.ALIGN_BASELINE)
+    @Test
+    fun calculateInlineImageSizePx_usesFontMetricsAndKindSpecificScale() {
+        val fontMetrics = Paint.FontMetricsInt().apply {
+            ascent = -12
+            descent = 4
+        }
+
+        val emojiSize = calculateInlineImageSizePx(
+            fontMetrics = fontMetrics,
+            kind = InlineImageKind.Emoji,
+        )
+        val siteIconSize = calculateInlineImageSizePx(
+            fontMetrics = fontMetrics,
+            kind = InlineImageKind.SiteIcon,
+        )
+
+        assertThat(emojiSize).isEqualTo(16)
+        assertThat(siteIconSize).isEqualTo(15)
     }
 }

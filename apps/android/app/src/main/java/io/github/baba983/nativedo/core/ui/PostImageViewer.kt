@@ -35,11 +35,7 @@ internal data class PostImageViewerState(
 internal fun collectGalleryImages(blocks: List<PostBodyBlock>): List<PostBodyImage> {
     return buildList {
         blocks.forEach { block ->
-            when (block) {
-                is PostBodyBlock.HtmlBlock -> Unit
-                is PostBodyBlock.ImageBlock -> add(block.image)
-                is PostBodyBlock.ImageGridBlock -> addAll(block.images)
-            }
+            addBlockImages(block)
         }
     }
 }
@@ -138,6 +134,23 @@ internal fun PostImageViewerDialog(
 }
 
 private fun PostBodyImage.galleryKey(): String = originalUrl ?: rawUrl
+
+private fun MutableList<PostBodyImage>.addBlockImages(block: PostBodyBlock) {
+    when (block) {
+        is PostBodyBlock.HtmlBlock -> Unit
+        is PostBodyBlock.RichTextBlock -> Unit
+        is PostBodyBlock.ImageBlock -> add(block.image)
+        is PostBodyBlock.ImageGridBlock -> addAll(block.images)
+        is PostBodyBlock.DetailsBlock -> block.children.forEach(::addBlockImages)
+        is PostBodyBlock.QuoteBlock -> block.children.forEach(::addBlockImages)
+        is PostBodyBlock.CodeBlock -> Unit
+        is PostBodyBlock.ListBlock -> {
+            block.items.forEach { item ->
+                item.children.forEach(::addBlockImages)
+            }
+        }
+    }
+}
 
 private fun PostBodyImage.asViewerImage(): PostBodyImage = copy(
     rawUrl = originalUrl ?: rawUrl,

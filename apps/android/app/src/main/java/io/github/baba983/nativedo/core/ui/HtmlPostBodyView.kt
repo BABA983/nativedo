@@ -40,38 +40,9 @@ import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrl
-import org.jsoup.Jsoup
-import org.jsoup.nodes.Element
-import org.jsoup.nodes.Node
-import org.jsoup.nodes.TextNode
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
-
-private const val defaultGridColumns = 2
-private val standaloneImageContainers = setOf("p", "div", "figure")
-
-sealed interface PostBodyBlock {
-    data class HtmlBlock(
-        val html: String,
-    ) : PostBodyBlock
-
-    data class ImageBlock(
-        val image: PostBodyImage,
-    ) : PostBodyBlock
-
-    data class ImageGridBlock(
-        val images: List<PostBodyImage>,
-        val columns: Int,
-    ) : PostBodyBlock
-}
-
-data class PostBodyImage(
-    val rawUrl: String,
-    val originalUrl: String? = null,
-    val width: Int? = null,
-    val height: Int? = null,
-)
 
 @Composable
 fun HtmlPostBodyView(
@@ -91,55 +62,23 @@ fun HtmlPostBodyView(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         blocks.forEach { block ->
-            when (block) {
-                is PostBodyBlock.HtmlBlock -> {
-                    HtmlTextBlock(
-                        html = block.html,
-                        cookieStore = cookieStore,
-                        baseUrl = baseUrl,
-                        onTopicClick = onTopicClick,
-                        onUserClick = onUserClick,
-                        modifier = Modifier.fillMaxWidth(),
+            RenderPostBodyBlock(
+                block = block,
+                cookieStore = cookieStore,
+                baseUrl = baseUrl,
+                onTopicClick = onTopicClick,
+                onUserClick = onUserClick,
+                onImageClick = { clickedImage ->
+                    viewerState = PostImageViewerState(
+                        images = galleryImages,
+                        initialIndex = findGalleryStartIndex(
+                            galleryImages = galleryImages,
+                            clickedImage = clickedImage,
+                        ),
                     )
-                }
-
-                is PostBodyBlock.ImageBlock -> {
-                    PostImageView(
-                        image = block.image,
-                        cookieStore = cookieStore,
-                        baseUrl = baseUrl,
-                        onClick = {
-                            viewerState = PostImageViewerState(
-                                images = galleryImages,
-                                initialIndex = findGalleryStartIndex(
-                                    galleryImages = galleryImages,
-                                    clickedImage = block.image,
-                                ),
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-
-                is PostBodyBlock.ImageGridBlock -> {
-                    PostImageGrid(
-                        images = block.images,
-                        columns = block.columns,
-                        cookieStore = cookieStore,
-                        baseUrl = baseUrl,
-                        onImageClick = { clickedImage ->
-                            viewerState = PostImageViewerState(
-                                images = galleryImages,
-                                initialIndex = findGalleryStartIndex(
-                                    galleryImages = galleryImages,
-                                    clickedImage = clickedImage,
-                                ),
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 
@@ -156,7 +95,7 @@ fun HtmlPostBodyView(
 }
 
 @Composable
-private fun HtmlTextBlock(
+internal fun HtmlTextBlock(
     html: String,
     cookieStore: CookieStore,
     baseUrl: String,
@@ -181,6 +120,13 @@ private fun HtmlTextBlock(
         update = { textView ->
             (textView.tag as? InlineImageRenderHandle)?.cancel()
 
+            textView.setTextColor(colors.textPrimary.toArgb())
+            textView.setLinkTextColor(linkColor)
+            textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, bodyStyle.fontSize.value)
+            if (bodyStyle.lineHeight.value > 0f && bodyStyle.fontSize.value > 0f) {
+                textView.setLineSpacing(0f, bodyStyle.lineHeight.value / bodyStyle.fontSize.value)
+            }
+
             val inlineContent = prepareInlineContent(html)
             val appliedInlineImages = applyInlineImagePlaceholders(
                 text = buildPostBodyText(
@@ -194,12 +140,6 @@ private fun HtmlTextBlock(
                 textSizePx = textView.textSize,
             )
             textView.text = appliedInlineImages.text
-            textView.setTextColor(colors.textPrimary.toArgb())
-            textView.setLinkTextColor(linkColor)
-            textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, bodyStyle.fontSize.value)
-            if (bodyStyle.lineHeight.value > 0f && bodyStyle.fontSize.value > 0f) {
-                textView.setLineSpacing(0f, bodyStyle.lineHeight.value / bodyStyle.fontSize.value)
-            }
 
             val handle = InlineImageRenderHandle()
             textView.tag = handle
@@ -219,7 +159,7 @@ private fun HtmlTextBlock(
     )
 }
 
-private class InlineImageRenderHandle {
+internal class InlineImageRenderHandle {
     val jobs: MutableList<Job> = mutableListOf()
 
     fun cancel() {
@@ -312,7 +252,7 @@ fun PostImageView(
 }
 
 @Composable
-private fun PostImageGrid(
+internal fun PostImageGrid(
     images: List<PostBodyImage>,
     columns: Int,
     cookieStore: CookieStore,
@@ -356,73 +296,6 @@ private fun PostImageGrid(
     }
 }
 
-internal fun parsePostBodyBlocks(html: String): List<PostBodyBlock> {
-    val body = Jsoup.parseBodyFragment(html).body()
-    val blocks = mutableListOf<PostBodyBlock>()
-    val htmlBuffer = mutableListOf<Node>()
-
-    fun flushHtmlBuffer() {
-        if (htmlBuffer.isEmpty()) {
-            return
-        }
-        val fragment = htmlBuffer.joinToString(separator = "") { node ->
-            node.outerHtml()
-        }.trim()
-        htmlBuffer.clear()
-        if (fragment.isNotBlank()) {
-            blocks += PostBodyBlock.HtmlBlock(fragment)
-        }
-    }
-
-    body.childNodes().forEach { node ->
-        when {
-            node is TextNode && node.isBlank -> {
-                if (htmlBuffer.isNotEmpty()) {
-                    htmlBuffer += node.clone()
-                }
-            }
-
-            node is Element && node.isDiscourseImageGrid() -> {
-                flushHtmlBuffer()
-                val images = extractGridImages(node)
-                if (images.isNotEmpty()) {
-                    blocks += PostBodyBlock.ImageGridBlock(
-                        images = images,
-                        columns = node.attr("data-columns").toIntOrNull() ?: defaultGridColumns,
-                    )
-                }
-            }
-
-            node is Element -> {
-                val image = node.extractStandaloneImage()
-                if (image != null) {
-                    flushHtmlBuffer()
-                    blocks += PostBodyBlock.ImageBlock(image)
-                } else {
-                    htmlBuffer += node.clone()
-                }
-            }
-
-            else -> {
-                htmlBuffer += node.clone()
-            }
-        }
-    }
-
-    flushHtmlBuffer()
-    return blocks
-}
-
-internal fun extractGridImages(element: Element): List<PostBodyImage> {
-    return element.children().mapNotNull { child ->
-        when {
-            child.tagName() == "a" && child.hasClass("lightbox") -> child.extractLightboxImage()
-            child.tagName() == "img" -> child.toPostBodyImage()
-            else -> child.extractStandaloneImage()
-        }
-    }
-}
-
 internal fun calculatePostImageSize(
     availableWidth: Dp,
     aspectRatio: Float,
@@ -450,48 +323,3 @@ internal fun resolvePostImageUrl(
     baseUrl: String,
     rawUrl: String,
 ): String = baseUrl.toHttpUrl().resolve(rawUrl)?.toString() ?: rawUrl
-
-private val TextNode.isBlank: Boolean
-    get() = text().isBlank()
-
-private fun Element.isDiscourseImageGrid(): Boolean {
-    return tagName() == "div" && hasClass("d-image-grid")
-}
-
-private fun Element.extractStandaloneImage(): PostBodyImage? {
-    return when {
-        tagName() == "img" && !hasInlineTextImageClass() -> toPostBodyImage()
-        tagName() == "a" && hasClass("lightbox") -> extractLightboxImage()
-        tagName() in standaloneImageContainers && ownText().isBlank() && childrenSize() == 1 -> {
-            child(0).extractStandaloneImage()
-        }
-
-        else -> null
-    }
-}
-
-private fun Element.extractLightboxImage(): PostBodyImage? {
-    val imageElement = children().firstOrNull { child ->
-        child.tagName() == "img"
-    } ?: return null
-
-    return imageElement.toPostBodyImage(
-        originalUrl = attr("href").ifBlank { null },
-    )
-}
-
-private fun Element.toPostBodyImage(
-    originalUrl: String? = null,
-): PostBodyImage? {
-    val rawUrl = attr("src").ifBlank { return null }
-    return PostBodyImage(
-        rawUrl = rawUrl,
-        originalUrl = originalUrl,
-        width = attr("width").toIntOrNull(),
-        height = attr("height").toIntOrNull(),
-    )
-}
-
-private fun Element.hasInlineTextImageClass(): Boolean {
-    return hasClass("emoji") || hasClass("site-icon")
-}

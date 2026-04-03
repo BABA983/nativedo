@@ -6,11 +6,17 @@ import android.graphics.ColorFilter
 import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.drawable.Drawable
+import android.text.Spannable
 import android.text.SpannableStringBuilder
-import android.text.Spanned
 import android.text.style.ImageSpan
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
+
+private const val emojiInlineImageScale = 1.0f
+private const val siteIconInlineImageScale = 0.92f
+private const val emojiInlineImageUpwardBiasRatio = 0.12f
+private const val siteIconInlineImageUpwardBiasRatio = 0.04f
 
 internal data class AppliedInlineImages(
     val text: CharSequence,
@@ -30,13 +36,16 @@ internal fun applyInlineImagePlaceholders(
 ): AppliedInlineImages {
     val builder = SpannableStringBuilder(text)
     val pendingImages = mutableListOf<PendingInlineImage>()
+    val searchableText = text.toString()
+    var replacedCharacterCount = 0
 
     inlineImages.forEach { image ->
-        val start = builder.toString().indexOf(image.token)
-        if (start == -1) {
+        val originalStart = searchableText.indexOf(image.token)
+        if (originalStart == -1) {
             return@forEach
         }
 
+        val start = originalStart - replacedCharacterCount
         val end = start + image.token.length
         val drawable = DeferredInlineImageDrawable(
             widthPx = image.displayWidthPx(textSizePx),
@@ -44,10 +53,13 @@ internal fun applyInlineImagePlaceholders(
         )
         builder.replace(start, end, "\uFFFC")
         builder.setSpan(
-            ImageSpan(drawable, ImageSpan.ALIGN_BOTTOM),
+            CenteredInlineImageSpan(
+                drawable = drawable,
+                kind = image.kind,
+            ),
             start,
             start + 1,
-            Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
         )
         pendingImages += PendingInlineImage(
             resolvedUrl = resolvePostImageUrl(
@@ -56,12 +68,91 @@ internal fun applyInlineImagePlaceholders(
             ),
             drawable = drawable,
         )
+        replacedCharacterCount += image.token.length - 1
     }
 
     return AppliedInlineImages(
         text = builder,
         pendingImages = pendingImages,
     )
+}
+
+internal fun calculateInlineImageTranslationY(
+    top: Int,
+    bottom: Int,
+    drawableHeight: Int,
+    kind: InlineImageKind,
+): Float {
+    val upwardBiasRatio = when (kind) {
+        InlineImageKind.Emoji -> emojiInlineImageUpwardBiasRatio
+        InlineImageKind.SiteIcon -> siteIconInlineImageUpwardBiasRatio
+    }
+    return top + ((bottom - top - drawableHeight) / 2f) - (drawableHeight * upwardBiasRatio)
+}
+
+internal fun calculateInlineImageSizePx(
+    fontMetrics: Paint.FontMetricsInt,
+    kind: InlineImageKind,
+): Int {
+    val fontHeight = max(1, abs(fontMetrics.ascent) + abs(fontMetrics.descent))
+    val scale = when (kind) {
+        InlineImageKind.Emoji -> emojiInlineImageScale
+        InlineImageKind.SiteIcon -> siteIconInlineImageScale
+    }
+    return max(1, (fontHeight * scale).roundToInt())
+}
+
+internal class CenteredInlineImageSpan(
+    drawable: Drawable,
+    private val kind: InlineImageKind,
+) : ImageSpan(drawable, ALIGN_BASELINE) {
+    override fun getSize(
+        paint: Paint,
+        text: CharSequence,
+        start: Int,
+        end: Int,
+        fm: Paint.FontMetricsInt?,
+    ): Int {
+        val paintMetrics = paint.fontMetricsInt
+        val targetSizePx = calculateInlineImageSizePx(
+            fontMetrics = paintMetrics,
+            kind = kind,
+        )
+        drawable.setBounds(0, 0, targetSizePx, targetSizePx)
+        if (fm != null) {
+            fm.ascent = paintMetrics.ascent
+            fm.descent = paintMetrics.descent
+            fm.top = paintMetrics.top
+            fm.bottom = paintMetrics.bottom
+        }
+        return targetSizePx
+    }
+
+    override fun draw(
+        canvas: Canvas,
+        text: CharSequence,
+        start: Int,
+        end: Int,
+        x: Float,
+        top: Int,
+        y: Int,
+        bottom: Int,
+        paint: Paint,
+    ) {
+        val drawable = drawable
+        canvas.save()
+        canvas.translate(
+            x,
+            calculateInlineImageTranslationY(
+                top = top,
+                bottom = bottom,
+                drawableHeight = drawable.bounds.height(),
+                kind = kind,
+            ),
+        )
+        drawable.draw(canvas)
+        canvas.restore()
+    }
 }
 
 @Suppress("OVERRIDE_DEPRECATION")
