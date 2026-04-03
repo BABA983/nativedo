@@ -41,6 +41,24 @@ class DiscourseApiClientTest {
     }
 
     @Test
+    fun fetchLatestPage_mapsMoreTopicsUrl() = runTest {
+        val payload = checkNotNull(
+            javaClass.classLoader?.getResource("discourse/latest-topics.json"),
+        ).readText()
+        server.enqueue(
+            MockResponse()
+                .setBody(payload)
+                .setHeader("Content-Type", "application/json"),
+        )
+
+        val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
+        val page = client.fetchLatestPage(page = 0)
+
+        assertThat(page.topics).hasSize(1)
+        assertThat(page.moreTopicsUrl).isEqualTo("/latest.json?page=1")
+    }
+
+    @Test
     fun latestTopics_sendsBrowserLikeXhrHeaders() = runTest {
         val payload = checkNotNull(
             javaClass.classLoader?.getResource("discourse/latest-topics.json"),
@@ -87,6 +105,30 @@ class DiscourseApiClientTest {
     }
 
     @Test
+    fun fetchCurrentUsername_readsSessionCurrentPayload() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setBody(
+                    """
+                    {
+                      "current_user": {
+                        "id": 1,
+                        "username": "baba",
+                        "name": "Baba"
+                      }
+                    }
+                    """.trimIndent(),
+                )
+                .setHeader("Content-Type", "application/json"),
+        )
+
+        val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
+        val username = client.fetchCurrentUsername()
+
+        assertThat(username).isEqualTo("baba")
+    }
+
+    @Test
     fun latestTopics_mapsPosterAvatarTemplate() = runTest {
         server.enqueue(
             MockResponse()
@@ -123,6 +165,101 @@ class DiscourseApiClientTest {
     }
 
     @Test
+    fun latestTopics_mapsPosterFromTopicListUsersAndImageUrl() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setBody(
+                    """
+                    {
+                      "users": [
+                        {
+                          "id": 7,
+                          "username": "baba",
+                          "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png"
+                        }
+                      ],
+                      "topic_list": {
+                        "topics": [
+                          {
+                            "id": 101,
+                            "title": "Welcome",
+                            "image_url": "https://linux.do/uploads/default/original/1X/topic-cover.png",
+                            "posters": [
+                              {
+                                "user_id": 7
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                    """.trimIndent(),
+                )
+                .setHeader("Content-Type", "application/json"),
+        )
+
+        val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
+        val topic = client.fetchLatest(page = 0).single()
+
+        assertThat(topic.authorUsername).isEqualTo("baba")
+        assertThat(topic.authorAvatarTemplate)
+            .isEqualTo("/user_avatar/linux.do/baba/{size}/1.png")
+        assertThat(topic.imageUrl)
+            .isEqualTo("https://linux.do/uploads/default/original/1X/topic-cover.png")
+    }
+
+    @Test
+    fun latestTopics_prefersOriginalPosterWhenMultiplePostersExist() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setBody(
+                    """
+                    {
+                      "users": [
+                        {
+                          "id": 7,
+                          "username": "baba",
+                          "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png"
+                        },
+                        {
+                          "id": 8,
+                          "username": "alice",
+                          "avatar_template": "/user_avatar/linux.do/alice/{size}/1.png"
+                        }
+                      ],
+                      "topic_list": {
+                        "topics": [
+                          {
+                            "id": 101,
+                            "title": "Welcome",
+                            "posters": [
+                              {
+                                "description": "Most Recent Poster",
+                                "user_id": 8
+                              },
+                              {
+                                "description": "Original Poster",
+                                "user_id": 7
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                    """.trimIndent(),
+                )
+                .setHeader("Content-Type", "application/json"),
+        )
+
+        val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
+        val topic = client.fetchLatest(page = 0).single()
+
+        assertThat(topic.authorUsername).isEqualTo("baba")
+        assertThat(topic.authorAvatarTemplate)
+            .isEqualTo("/user_avatar/linux.do/baba/{size}/1.png")
+    }
+
+    @Test
     fun fetchTopic_mapsPostAvatarTemplate() = runTest {
         server.enqueue(
             MockResponse()
@@ -155,6 +292,46 @@ class DiscourseApiClientTest {
     }
 
     @Test
+    fun fetchTopic_mapsTotalPostsAndStreamIds() = runTest {
+        val payload = checkNotNull(
+            javaClass.classLoader?.getResource("discourse/topic-detail.json"),
+        ).readText()
+        server.enqueue(
+            MockResponse()
+                .setBody(payload)
+                .setHeader("Content-Type", "application/json"),
+        )
+
+        val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
+        val topic = client.fetchTopic(topicId = 101)
+
+        assertThat(topic.totalPosts).isEqualTo(3)
+        assertThat(topic.streamPostIds).containsExactly(1001L, 1002L, 1003L).inOrder()
+    }
+
+    @Test
+    fun fetchTopicPosts_mapsChunkPosts() = runTest {
+        val payload = checkNotNull(
+            javaClass.classLoader?.getResource("discourse/topic-posts.json"),
+        ).readText()
+        server.enqueue(
+            MockResponse()
+                .setBody(payload)
+                .setHeader("Content-Type", "application/json"),
+        )
+
+        val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
+        val posts = client.fetchTopicPosts(topicId = 101, postIds = listOf(1002L, 1003L))
+
+        assertThat(posts).hasSize(2)
+        assertThat(posts.map { it.id }).containsExactly(1002L, 1003L).inOrder()
+        assertThat(posts.map { it.authorAvatarTemplate }).containsExactly(
+            "/user_avatar/linux.do/alice/{size}/1.png",
+            "/user_avatar/linux.do/charlie/{size}/1.png",
+        ).inOrder()
+    }
+
+    @Test
     fun search_mapsUserAvatarTemplate() = runTest {
         server.enqueue(
             MockResponse()
@@ -180,5 +357,87 @@ class DiscourseApiClientTest {
 
         assertThat(result.users.single().avatarTemplate)
             .isEqualTo("/user_avatar/linux.do/searcher/{size}/1.png")
+    }
+
+    @Test
+    fun search_mapsTopicPosterFromUsers() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setBody(
+                    """
+                    {
+                      "topics": [
+                        {
+                          "id": 101,
+                          "title": "Compose",
+                          "posters": [
+                            {
+                              "user_id": 9
+                            }
+                          ]
+                        }
+                      ],
+                      "users": [
+                        {
+                          "id": 9,
+                          "username": "searcher",
+                          "name": "Searcher",
+                          "avatar_template": "/user_avatar/linux.do/searcher/{size}/1.png"
+                        }
+                      ]
+                    }
+                    """.trimIndent(),
+                )
+                .setHeader("Content-Type", "application/json"),
+        )
+
+        val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
+        val result = client.search(query = "compose")
+
+        assertThat(result.topics.single().authorUsername).isEqualTo("searcher")
+        assertThat(result.topics.single().authorAvatarTemplate)
+            .isEqualTo("/user_avatar/linux.do/searcher/{size}/1.png")
+    }
+
+    @Test
+    fun latestTopics_mapsPosterFromRootUsers() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setBody(
+                    """
+                    {
+                      "users": [
+                        {
+                          "id": 7,
+                          "username": "baba",
+                          "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png"
+                        }
+                      ],
+                      "topic_list": {
+                        "topics": [
+                          {
+                            "id": 101,
+                            "title": "Welcome",
+                            "posters": [
+                              {
+                                "description": "Original Poster",
+                                "user_id": 7
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                    """.trimIndent(),
+                )
+                .setHeader("Content-Type", "application/json"),
+        )
+
+        val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
+        val topic = client.fetchLatest(page = 0).single()
+
+        assertThat(topic.authorUsername).isEqualTo("baba")
+        assertThat(topic.authorAvatarTemplate)
+            .isEqualTo("/user_avatar/linux.do/baba/{size}/1.png")
     }
 }

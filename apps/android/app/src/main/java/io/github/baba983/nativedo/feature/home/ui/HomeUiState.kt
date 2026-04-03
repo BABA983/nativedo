@@ -13,7 +13,11 @@ data class HomeUiState(
     val items: List<TopicSummary> = emptyList(),
     val isLoading: Boolean = true,
     val isRefreshing: Boolean = false,
+    val isLoadingMore: Boolean = false,
+    val hasMore: Boolean = false,
+    val nextPage: Int? = null,
     val errorMessage: String? = null,
+    val loadMoreErrorMessage: String? = null,
 ) {
     val isEmpty: Boolean
         get() = !isLoading && items.isEmpty() && errorMessage == null

@@ -1,10 +1,30 @@
 package io.github.baba983.nativedo.core.ui
 
 import com.google.common.truth.Truth.assertThat
+import io.github.baba983.nativedo.core.storage.CookieStore
 import java.util.Base64
+import kotlinx.coroutines.test.runTest
+import okhttp3.Cookie
+import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import org.junit.After
+import org.junit.Before
 import org.junit.Test
 
 class DiscourseImageLoaderTest {
+    private lateinit var server: MockWebServer
+
+    @Before
+    fun setUp() {
+        server = MockWebServer().apply { start() }
+    }
+
+    @After
+    fun tearDown() {
+        server.shutdown()
+    }
+
     @Test
     fun extractLargestPngPayloadFromIco_returnsLargestPngEntry() {
         val smallPng = Base64.getDecoder().decode(
@@ -33,6 +53,47 @@ class DiscourseImageLoaderTest {
         val extracted = extractLargestPngPayloadFromIco(pngBytes)
 
         assertThat(extracted).isNull()
+    }
+
+    @Test
+    fun fetchDiscourseBitmap_sendsBrowserLikeImageHeadersAndCookies() = runTest {
+        val pngBytes = Base64.getDecoder().decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFAAH/e+m+7wAAAABJRU5ErkJggg==",
+        )
+        val baseUrl = server.url("/").toString()
+        val cookieStore = CookieStore().apply {
+            save(
+                baseUrl.toHttpUrl(),
+                listOf(
+                    Cookie.Builder()
+                        .name("_t")
+                        .value("auth")
+                        .domain(server.hostName)
+                        .path("/")
+                        .build(),
+                ),
+            )
+        }
+        server.enqueue(
+            MockResponse()
+                .setBody(okio.Buffer().write(pngBytes))
+                .setHeader("Content-Type", "image/png"),
+        )
+
+        fetchDiscourseBitmap(
+            resolvedUrl = server.url("/emoji.png").toString(),
+            cookieStore = cookieStore,
+            baseUrl = baseUrl,
+        )
+
+        val request = checkNotNull(server.takeRequest())
+        assertThat(request.getHeader("Accept"))
+            .isEqualTo("image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+        assertThat(request.getHeader("Accept-Language"))
+            .isEqualTo("zh-CN,zh;q=0.9,en;q=0.8")
+        assertThat(request.getHeader("Referer")).isEqualTo(baseUrl)
+        assertThat(request.getHeader("User-Agent")).contains("Mozilla/5.0")
+        assertThat(request.getHeader("Cookie")).isEqualTo("_t=auth")
     }
 }
 

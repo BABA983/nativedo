@@ -285,7 +285,6 @@ internal fun SearchScreen(
             ) { index, topic ->
                 TopicListItem(
                     topic = topic,
-                    cookieStore = cookieStore,
                     baseUrl = baseUrl,
                     onClick = { onTopicClick(topic.id) },
                     modifier = Modifier.fillMaxWidth(),
@@ -333,7 +332,6 @@ private fun SearchUserListItem(
             UserAvatar(
                 label = user.displayName.ifBlank { user.username },
                 avatarTemplate = user.avatarTemplate,
-                cookieStore = cookieStore,
                 baseUrl = baseUrl,
             )
             Column(

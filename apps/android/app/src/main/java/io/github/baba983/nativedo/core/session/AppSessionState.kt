@@ -8,6 +8,7 @@ sealed interface AppSessionState {
     data class Authenticated(
         val username: String,
         val csrfToken: String,
+        val avatarTemplate: String = "",
     ) : AppSessionState
 
     data object Expired : AppSessionState

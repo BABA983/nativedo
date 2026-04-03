@@ -28,15 +28,17 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -64,11 +66,13 @@ import io.github.baba983.nativedo.feature.home.data.HomeRepository
 import io.github.baba983.nativedo.feature.home.domain.LoadHomeFeedUseCase
 import io.github.baba983.nativedo.feature.search.ui.SearchScreen
 import io.github.baba983.nativedo.feature.search.ui.rememberSearchViewModel
+import io.github.baba983.nativedo.ui.NativeDoPullToRefreshIndicator
 import io.github.baba983.nativedo.ui.theme.NativeDoChromeShape
 import io.github.baba983.nativedo.ui.theme.NativeDoPillShape
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 
 private const val HOME_HEADER_SEARCH_THRESHOLD = 0.98f
+private const val HOME_LOAD_MORE_THRESHOLD = 5
 private val HOME_SEARCH_FIELD_HEIGHT = 48.dp
 private val HOME_SEARCH_CONTAINER_HEIGHT = 64.dp
 private val HOME_TABS_CONTAINER_HEIGHT = 52.dp
@@ -78,6 +82,7 @@ fun HomeRoute(
     onTopicClick: (Long) -> Unit,
     onUserClick: (String) -> Unit,
     headerSearchRequestToken: Int = 0,
+    refreshRequestToken: Int = 0,
     onHeaderSearchVisibilityChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -107,6 +112,7 @@ fun HomeRoute(
     var searchOpenedFromHeader by rememberSaveable { mutableStateOf(false) }
     var forceShowSearchField by rememberSaveable { mutableStateOf(false) }
     var handledHeaderSearchRequestToken by rememberSaveable { mutableIntStateOf(0) }
+    var handledRefreshRequestToken by rememberSaveable { mutableIntStateOf(0) }
 
     fun closeSearch() {
         forceShowSearchField = searchOpenedFromHeader
@@ -123,6 +129,21 @@ fun HomeRoute(
             handledHeaderSearchRequestToken = headerSearchRequestToken
             searchOpenedFromHeader = true
             isSearchMode = true
+        }
+    }
+
+    LaunchedEffect(refreshRequestToken) {
+        if (refreshRequestToken > handledRefreshRequestToken) {
+            handledRefreshRequestToken = refreshRequestToken
+            if (
+                shouldScrollHomeFeedToTopOnRefreshRequest(
+                    firstVisibleItemIndex = listState.firstVisibleItemIndex,
+                    firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
+                )
+            ) {
+                listState.scrollToItem(0)
+            }
+            viewModel.onRefresh()
         }
     }
 
@@ -187,6 +208,7 @@ fun HomeRoute(
                 onTopicClick = onTopicClick,
                 onFeedSelected = viewModel::onFeedSelected,
                 onRefresh = viewModel::onRefresh,
+                onLoadMore = viewModel::loadNextPage,
                 onSearchClick = {
                     searchOpenedFromHeader = false
                     forceShowSearchField = false
@@ -199,6 +221,7 @@ fun HomeRoute(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HomeFeedContent(
     uiState: HomeUiState,
@@ -209,10 +232,12 @@ private fun HomeFeedContent(
     onTopicClick: (Long) -> Unit,
     onFeedSelected: (HomeFeedTab) -> Unit,
     onRefresh: () -> Unit,
+    onLoadMore: () -> Unit,
     onSearchClick: () -> Unit,
     onHeaderSearchVisibilityChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val pullToRefreshState = rememberPullToRefreshState()
     val colors = NativeDoThemeExtras.colors
     val errorMessage = uiState.errorMessage
     val density = LocalDensity.current
@@ -247,129 +272,175 @@ private fun HomeFeedContent(
         onHeaderSearchVisibilityChanged(showHeaderSearch)
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(
-                top = HOME_SEARCH_CONTAINER_HEIGHT + HOME_TABS_CONTAINER_HEIGHT,
-                bottom = 12.dp,
-            ),
-        ) {
-            if (uiState.isRefreshing) {
-                item(key = "refresh-indicator") {
-                    LinearProgressIndicator(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 20.dp, vertical = 6.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = colors.accentMuted,
-                    )
-                }
-            }
+    val shouldLoadMore by remember(
+        listState,
+        uiState.items.size,
+        uiState.hasMore,
+        uiState.isLoadingMore,
+        uiState.loadMoreErrorMessage,
+    ) {
+        derivedStateOf {
+            shouldLoadMoreHomeFeed(
+                lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1,
+                totalItemsCount = uiState.items.size,
+                hasMore = uiState.hasMore,
+                isLoadingMore = uiState.isLoadingMore,
+            ) && uiState.loadMoreErrorMessage == null
+        }
+    }
 
-            when {
-                uiState.isLoading -> {
-                    item(key = "loading") {
-                        HomeFeedbackCard {
-                            CircularProgressIndicator()
+    LaunchedEffect(shouldLoadMore) {
+        if (shouldLoadMore) {
+            onLoadMore()
+        }
+    }
+
+    PullToRefreshBox(
+        isRefreshing = uiState.isRefreshing,
+        onRefresh = onRefresh,
+        state = pullToRefreshState,
+        modifier = modifier.fillMaxSize(),
+        indicator = {
+            NativeDoPullToRefreshIndicator(
+                state = pullToRefreshState,
+                isRefreshing = uiState.isRefreshing,
+                modifier = Modifier.align(Alignment.TopCenter),
+            )
+        },
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(
+                    top = HOME_SEARCH_CONTAINER_HEIGHT + HOME_TABS_CONTAINER_HEIGHT,
+                    bottom = 12.dp,
+                ),
+            ) {
+                when {
+                    uiState.isLoading -> {
+                        item(key = "loading") {
+                            HomeFeedbackCard {
+                                CircularProgressIndicator()
+                            }
                         }
                     }
-                }
 
-                errorMessage != null && uiState.items.isEmpty() -> {
-                    item(key = "error") {
-                        HomeFeedbackCard {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    errorMessage != null && uiState.items.isEmpty() -> {
+                        item(key = "error") {
+                            HomeFeedbackCard {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = errorMessage,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                    )
+                                    TextButton(onClick = onRefresh) {
+                                        Text(text = "Retry")
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    uiState.isEmpty -> {
+                        item(key = "empty") {
+                            HomeFeedbackCard {
                                 Text(
-                                    text = errorMessage,
+                                    text = "No topics yet",
                                     style = MaterialTheme.typography.bodyMedium,
                                 )
-                                TextButton(onClick = onRefresh) {
-                                    Text(text = "Retry")
+                            }
+                        }
+                    }
+
+                    else -> {
+                        itemsIndexed(
+                            items = uiState.items,
+                            key = { _, topic -> topic.id },
+                        ) { index, topic ->
+                            TopicListItem(
+                                topic = topic,
+                                baseUrl = baseUrl,
+                                onClick = { onTopicClick(topic.id) },
+                                modifier = Modifier.fillMaxWidth(),
+                                showDivider = index != uiState.items.lastIndex,
+                            )
+                        }
+
+                        if (uiState.isLoadingMore) {
+                            item(key = "loading-more") {
+                                HomeFeedbackCard {
+                                    CircularProgressIndicator()
+                                }
+                            }
+                        } else if (uiState.loadMoreErrorMessage != null) {
+                            item(key = "load-more-error") {
+                                HomeFeedbackCard {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(
+                                            text = uiState.loadMoreErrorMessage,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                        )
+                                        TextButton(onClick = onLoadMore) {
+                                            Text(text = "Retry")
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
+            }
 
-                uiState.isEmpty -> {
-                    item(key = "empty") {
-                        HomeFeedbackCard {
-                            Text(
-                                text = "No topics yet",
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        }
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .height(HOME_TABS_CONTAINER_HEIGHT)
+                    .graphicsLayer {
+                        translationY = searchFieldTravelPx * (1f - searchCollapseProgress)
                     }
-                }
-
-                else -> {
-                    itemsIndexed(
-                        items = uiState.items,
-                        key = { _, topic -> topic.id },
-                    ) { index, topic ->
-                        TopicListItem(
-                            topic = topic,
-                            cookieStore = cookieStore,
-                            baseUrl = baseUrl,
-                            onClick = { onTopicClick(topic.id) },
-                            modifier = Modifier.fillMaxWidth(),
-                            showDivider = index != uiState.items.lastIndex,
+                    .background(stickyChromeColor),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    HomeFeedTab.entries.forEach { tab ->
+                        FilterChip(
+                            selected = uiState.selectedTab == tab,
+                            onClick = { onFeedSelected(tab) },
+                            label = { Text(text = tab.label()) },
+                            shape = NativeDoPillShape,
+                            border = null,
+                            colors = FilterChipDefaults.filterChipColors(
+                                containerColor = colors.backgroundElevated.copy(alpha = 0.82f),
+                                labelColor = colors.textSecondary,
+                                selectedContainerColor = colors.accentMuted,
+                                selectedLabelColor = colors.textPrimary,
+                            ),
                         )
                     }
                 }
+                HorizontalDivider(
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.34f),
+                )
             }
-        }
 
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .height(HOME_TABS_CONTAINER_HEIGHT)
-                .graphicsLayer {
-                    translationY = searchFieldTravelPx * (1f - searchCollapseProgress)
-                }
-                .background(stickyChromeColor),
-        ) {
-            Row(
+            HomeSearchEntry(
+                onClick = onSearchClick,
+                collapseProgress = searchCollapseProgress,
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                HomeFeedTab.entries.forEach { tab ->
-                    FilterChip(
-                        selected = uiState.selectedTab == tab,
-                        onClick = { onFeedSelected(tab) },
-                        label = { Text(text = tab.label()) },
-                        shape = NativeDoPillShape,
-                        border = null,
-                        colors = FilterChipDefaults.filterChipColors(
-                            containerColor = colors.backgroundElevated.copy(alpha = 0.82f),
-                            labelColor = colors.textSecondary,
-                            selectedContainerColor = colors.accentMuted,
-                            selectedLabelColor = colors.textPrimary,
-                        ),
-                    )
-                }
-            }
-            HorizontalDivider(
-                modifier = Modifier.align(Alignment.BottomCenter),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.34f),
+                    .align(Alignment.TopCenter)
+                    .graphicsLayer {
+                        translationY = -searchFieldTravelPx * searchCollapseProgress
+                    },
             )
         }
-
-        HomeSearchEntry(
-            onClick = onSearchClick,
-            collapseProgress = searchCollapseProgress,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .graphicsLayer {
-                    translationY = -searchFieldTravelPx * searchCollapseProgress
-                },
-        )
     }
 }
 
@@ -471,6 +542,23 @@ internal fun shouldShowHomeHeaderSearch(
     collapseProgress: Float,
     forceShowSearchField: Boolean,
 ): Boolean = !forceShowSearchField && collapseProgress >= HOME_HEADER_SEARCH_THRESHOLD
+
+internal fun shouldLoadMoreHomeFeed(
+    lastVisibleIndex: Int,
+    totalItemsCount: Int,
+    hasMore: Boolean,
+    isLoadingMore: Boolean,
+): Boolean {
+    if (!hasMore || isLoadingMore || totalItemsCount == 0 || lastVisibleIndex < 0) {
+        return false
+    }
+    return lastVisibleIndex >= totalItemsCount - HOME_LOAD_MORE_THRESHOLD
+}
+
+internal fun shouldScrollHomeFeedToTopOnRefreshRequest(
+    firstVisibleItemIndex: Int,
+    firstVisibleItemScrollOffset: Int,
+): Boolean = firstVisibleItemIndex > 0 || firstVisibleItemScrollOffset > 0
 
 private class HomeViewModelFactory(
     private val loadHomeFeed: LoadHomeFeedUseCase,

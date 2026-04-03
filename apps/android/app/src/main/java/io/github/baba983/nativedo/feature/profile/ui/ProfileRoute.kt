@@ -41,6 +41,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun ProfileRoute(
     viewer: ProfileViewer,
+    sessionRestoreTrigger: Int = 0,
     onLoginClick: () -> Unit = {},
     onTopicClick: (Long) -> Unit = {},
     onUserClick: (String) -> Unit = {},
@@ -52,7 +53,9 @@ fun ProfileRoute(
     }
     val coroutineScope = rememberCoroutineScope()
     val sessionState by appContainer.sessionCoordinator.sessionState.collectAsStateWithLifecycle()
-    var restoreAttempted by remember(viewer) { mutableStateOf(false) }
+    var restoreAttempted by remember(profileSessionRestoreKey(viewer, sessionRestoreTrigger)) {
+        mutableStateOf(false)
+    }
     val resolvedViewer = resolveProfileViewer(
         viewer = viewer,
         sessionState = sessionState,
@@ -166,7 +169,6 @@ fun ProfileRoute(
                         UserAvatar(
                             label = profile.displayName.ifBlank { profile.username },
                             avatarTemplate = profile.avatarUrl,
-                            cookieStore = appContainer.cookieStore,
                             baseUrl = appContainer.baseUrl,
                             size = 56.dp,
                         )
@@ -248,6 +250,11 @@ internal fun resolveProfileViewer(
         else -> ProfileViewer.Self
     }
 }
+
+internal fun profileSessionRestoreKey(
+    viewer: ProfileViewer,
+    sessionRestoreTrigger: Int,
+): Pair<ProfileViewer, Int> = viewer to sessionRestoreTrigger
 
 internal fun shouldShowProfileAuthLoading(
     viewer: ProfileViewer,

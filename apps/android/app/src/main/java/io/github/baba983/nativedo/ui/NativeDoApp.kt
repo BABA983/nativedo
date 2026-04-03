@@ -3,8 +3,10 @@ package io.github.baba983.nativedo.ui
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -58,6 +60,7 @@ import androidx.navigation.compose.rememberNavController
 import io.github.baba983.nativedo.NativeDoApplication
 import io.github.baba983.nativedo.R
 import io.github.baba983.nativedo.core.session.AppSessionState
+import io.github.baba983.nativedo.core.ui.UserAvatar
 import io.github.baba983.nativedo.navigation.NativeDoNavHost
 import io.github.baba983.nativedo.navigation.RootDestination
 import io.github.baba983.nativedo.ui.theme.NativeDoChromeShape
@@ -78,6 +81,7 @@ fun NativeDoApp() {
     var themeMode by rememberSaveable { mutableStateOf(ThemeMode.System) }
     var homeHeaderSearchVisible by rememberSaveable { mutableStateOf(false) }
     var homeSearchRequestToken by rememberSaveable { mutableIntStateOf(0) }
+    var homeRefreshRequestToken by rememberSaveable { mutableIntStateOf(0) }
 
     LaunchedEffect(appContainer) {
         appContainer.sessionCoordinator.restoreSession()
@@ -88,6 +92,10 @@ fun NativeDoApp() {
         val currentEntry = navController.currentBackStackEntryAsState().value
         val currentRoute = currentEntry?.destination?.route
         val chromeState = remember(sessionState) { NativeDoChromeState.from(sessionState) }
+        val profileAvatarLabel = (sessionState as? AppSessionState.Authenticated)?.username
+        val profileAvatarTemplate = (sessionState as? AppSessionState.Authenticated)
+            ?.avatarTemplate
+            ?.takeIf { it.isNotBlank() }
         val rootPagerState = rememberPagerState(
             initialPage = RootDestination.bottomTabs.indexOf(RootDestination.start),
         ) { RootDestination.bottomTabs.size }
@@ -120,6 +128,7 @@ fun NativeDoApp() {
                             activeRoute == RootDestination.Home.route &&
                             homeHeaderSearchVisible,
                         themeMode = themeMode,
+                        onHomeRefreshClick = { homeRefreshRequestToken += 1 },
                         onHomeSearchClick = { homeSearchRequestToken += 1 },
                         onThemeModeClick = { themeMode = themeMode.next() },
                         onBackClick = { navController.popBackStack() },
@@ -131,6 +140,7 @@ fun NativeDoApp() {
                     contentPadding = paddingValues,
                     rootPagerState = rootPagerState,
                     homeSearchRequestToken = homeSearchRequestToken,
+                    homeRefreshRequestToken = homeRefreshRequestToken,
                     onHomeHeaderSearchVisibilityChanged = { homeHeaderSearchVisible = it },
                 )
             }
@@ -140,8 +150,12 @@ fun NativeDoApp() {
                     modifier = Modifier.align(Alignment.BottomCenter),
                 )
                 NativeDoBottomBar(
+                    baseUrl = appContainer.baseUrl,
                     currentRoute = activeRoute,
                     modifier = Modifier.align(Alignment.BottomCenter),
+                    profileAvatarLabel = profileAvatarLabel,
+                    profileAvatarTemplate = profileAvatarTemplate,
+                    onHomeRefreshRequest = { homeRefreshRequestToken += 1 },
                     onNavigate = { route ->
                         val page = RootDestination.bottomTabs.indexOfFirst { it.route == route }
                         if (page != -1 && page != rootPagerState.currentPage) {
@@ -164,11 +178,17 @@ private fun NativeDoTopBar(
     reserveHomeSearchSlot: Boolean,
     showHomeSearchAction: Boolean,
     themeMode: ThemeMode,
+    onHomeRefreshClick: () -> Unit,
     onHomeSearchClick: () -> Unit,
     onThemeModeClick: () -> Unit,
     onBackClick: () -> Unit,
 ) {
     val colors = NativeDoThemeExtras.colors
+    val titleInteractionSource = remember { MutableInteractionSource() }
+    val titleRefreshEnabled = shouldRequestHomeRefreshFromTitleTap(
+        currentRoute = currentRoute,
+        showBack = showBack,
+    )
 
     Column(
         modifier = Modifier
@@ -198,7 +218,15 @@ private fun NativeDoTopBar(
                     .padding(
                         start = if (showBack) 4.dp else 0.dp,
                         end = 12.dp,
-                    ),
+                    )
+                    .clip(NativeDoPillShape)
+                    .clickable(
+                        enabled = titleRefreshEnabled,
+                        interactionSource = titleInteractionSource,
+                        indication = null,
+                        onClick = onHomeRefreshClick,
+                    )
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
                 style = MaterialTheme.typography.titleLarge,
                 color = colors.textPrimary,
                 maxLines = 1,
@@ -253,8 +281,12 @@ private fun NativeDoTopBar(
 
 @Composable
 private fun NativeDoBottomBar(
+    baseUrl: String,
     currentRoute: String?,
     modifier: Modifier = Modifier,
+    profileAvatarLabel: String?,
+    profileAvatarTemplate: String?,
+    onHomeRefreshRequest: () -> Unit,
     onNavigate: (String) -> Unit,
 ) {
     Column(
@@ -278,9 +310,18 @@ private fun NativeDoBottomBar(
             ) {
                 RootDestination.bottomTabs.forEach { destination ->
                     NativeDoBottomTab(
+                        baseUrl = baseUrl,
                         modifier = Modifier.widthIn(min = 68.dp),
                         destination = destination,
+                        profileAvatarLabel = profileAvatarLabel,
+                        profileAvatarTemplate = profileAvatarTemplate,
                         selected = currentRoute == destination.route,
+                        onDoubleClick = if (
+                            shouldRequestHomeRefreshFromBottomTabDoubleTap(
+                                destination = destination,
+                                currentRoute = currentRoute,
+                            )
+                        ) onHomeRefreshRequest else null,
                         onClick = { onNavigate(destination.route) },
                     )
                 }
@@ -289,11 +330,16 @@ private fun NativeDoBottomBar(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun NativeDoBottomTab(
+    baseUrl: String,
     modifier: Modifier = Modifier,
     destination: RootDestination,
+    profileAvatarLabel: String?,
+    profileAvatarTemplate: String?,
     selected: Boolean,
+    onDoubleClick: (() -> Unit)?,
     onClick: () -> Unit,
 ) {
     val colors = NativeDoThemeExtras.colors
@@ -324,9 +370,10 @@ private fun NativeDoBottomTab(
             .widthIn(min = 68.dp)
             .height(48.dp)
             .clip(NativeDoPillShape)
-            .clickable(
+            .combinedClickable(
                 interactionSource = interactionSource,
                 indication = null,
+                onDoubleClick = onDoubleClick,
                 onClick = onClick,
             )
             .padding(horizontal = 2.dp),
@@ -348,15 +395,27 @@ private fun NativeDoBottomTab(
                 .fillMaxHeight()
                 .padding(horizontal = 4.dp),
         ) {
-            Icon(
-                imageVector = destination.icon,
-                contentDescription = null,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 4.dp)
-                    .size(24.dp),
-                tint = iconColor,
-            )
+            if (shouldRenderProfileAvatarTab(destination, profileAvatarLabel, profileAvatarTemplate)) {
+                UserAvatar(
+                    label = requireNotNull(profileAvatarLabel),
+                    avatarTemplate = requireNotNull(profileAvatarTemplate),
+                    baseUrl = baseUrl,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 4.dp),
+                    size = 24.dp,
+                )
+            } else {
+                Icon(
+                    imageVector = destination.icon,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 4.dp)
+                        .size(24.dp),
+                    tint = iconColor,
+                )
+            }
             Text(
                 text = stringResource(destination.labelRes),
                 modifier = Modifier
@@ -369,6 +428,26 @@ private fun NativeDoBottomTab(
             )
         }
     }
+}
+
+internal fun shouldRequestHomeRefreshFromTitleTap(
+    currentRoute: String?,
+    showBack: Boolean,
+): Boolean = !showBack && currentRoute == RootDestination.Home.route
+
+internal fun shouldRequestHomeRefreshFromBottomTabDoubleTap(
+    destination: RootDestination,
+    currentRoute: String?,
+): Boolean = destination == RootDestination.Home && currentRoute == RootDestination.Home.route
+
+internal fun shouldRenderProfileAvatarTab(
+    destination: RootDestination,
+    profileAvatarLabel: String?,
+    profileAvatarTemplate: String?,
+): Boolean {
+    return destination == RootDestination.Profile &&
+        !profileAvatarLabel.isNullOrBlank() &&
+        !profileAvatarTemplate.isNullOrBlank()
 }
 
 @Composable

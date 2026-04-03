@@ -1,7 +1,11 @@
 package io.github.baba983.nativedo.core.di
 
+import android.content.Context
+import coil3.ImageLoader
+import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import io.github.baba983.nativedo.core.network.DiscourseApiClient
 import io.github.baba983.nativedo.core.network.DiscourseApiService
+import io.github.baba983.nativedo.core.network.ImageRequestHeadersInterceptor
 import io.github.baba983.nativedo.core.network.NetworkJson
 import io.github.baba983.nativedo.core.network.PersistentCookieJar
 import io.github.baba983.nativedo.core.network.RequestHeadersInterceptor
@@ -32,6 +36,11 @@ class AppContainer(
         .addInterceptor(RequestHeadersInterceptor(baseUrl = baseUrl))
         .build()
 
+    private val imageOkHttpClient: OkHttpClient = OkHttpClient.Builder()
+        .cookieJar(PersistentCookieJar(cookieStore))
+        .addInterceptor(ImageRequestHeadersInterceptor(baseUrl = baseUrl))
+        .build()
+
     private val retrofit: Retrofit = Retrofit.Builder()
         .baseUrl(baseUrl)
         .client(okHttpClient)
@@ -49,4 +58,18 @@ class AppContainer(
         csrfTokenProvider = csrfTokenProvider,
         cookieSyncBridge = cookieSyncBridge,
     )
+
+    fun newImageLoader(context: Context): ImageLoader {
+        return ImageLoader.Builder(context)
+            .components {
+                add(
+                    OkHttpNetworkFetcherFactory(
+                        callFactory = {
+                            imageOkHttpClient
+                        },
+                    ),
+                )
+            }
+            .build()
+    }
 }

@@ -15,14 +15,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.baba983.nativedo.core.model.TopicSummary
-import io.github.baba983.nativedo.core.storage.CookieStore
 import io.github.baba983.nativedo.core.ui.UserAvatar
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 
 @Composable
 fun TopicListItem(
     topic: TopicSummary,
-    cookieStore: CookieStore,
     baseUrl: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -45,7 +43,6 @@ fun TopicListItem(
             UserAvatar(
                 label = topic.authorUsername,
                 avatarTemplate = topic.authorAvatarTemplate,
-                cookieStore = cookieStore,
                 baseUrl = baseUrl,
             )
             Column(

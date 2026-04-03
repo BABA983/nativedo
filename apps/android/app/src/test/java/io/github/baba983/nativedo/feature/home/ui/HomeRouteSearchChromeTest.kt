@@ -46,4 +46,48 @@ class HomeRouteSearchChromeTest {
             ),
         ).isTrue()
     }
+
+    @Test
+    fun loadMore_requestedWhenLastVisibleItemIsInsideThreshold() {
+        assertThat(
+            shouldLoadMoreHomeFeed(
+                lastVisibleIndex = 17,
+                totalItemsCount = 20,
+                hasMore = true,
+                isLoadingMore = false,
+            ),
+        ).isTrue()
+    }
+
+    @Test
+    fun loadMore_notRequestedWhenNoMorePagesRemain() {
+        assertThat(
+            shouldLoadMoreHomeFeed(
+                lastVisibleIndex = 17,
+                totalItemsCount = 20,
+                hasMore = false,
+                isLoadingMore = false,
+            ),
+        ).isFalse()
+    }
+
+    @Test
+    fun refreshRequest_scrollsToTopWhenFirstItemIsOffscreen() {
+        assertThat(
+            shouldScrollHomeFeedToTopOnRefreshRequest(
+                firstVisibleItemIndex = 2,
+                firstVisibleItemScrollOffset = 0,
+            ),
+        ).isTrue()
+    }
+
+    @Test
+    fun refreshRequest_doesNotScrollWhenAlreadyAtTop() {
+        assertThat(
+            shouldScrollHomeFeedToTopOnRefreshRequest(
+                firstVisibleItemIndex = 0,
+                firstVisibleItemScrollOffset = 0,
+            ),
+        ).isFalse()
+    }
 }

@@ -1,5 +1,6 @@
 package io.github.baba983.nativedo.core.session
 
+import io.github.baba983.nativedo.core.model.UserProfile
 import io.github.baba983.nativedo.core.network.CsrfTokenProvider
 import io.github.baba983.nativedo.core.network.ParsedBootstrap
 import io.github.baba983.nativedo.core.storage.CookieStore
@@ -10,6 +11,10 @@ import kotlinx.coroutines.flow.asStateFlow
 
 interface SessionBootstrapClient {
     suspend fun fetchBootstrap(): ParsedBootstrap
+
+    suspend fun fetchCurrentUsername(): String? = null
+
+    suspend fun fetchProfile(username: String): UserProfile? = null
 }
 
 class SessionCoordinator(
@@ -30,18 +35,35 @@ class SessionCoordinator(
         }
         _sessionState.value = AppSessionState.Authenticating
 
+        var cachedBootstrap: ParsedBootstrap? = null
+        suspend fun bootstrap(): ParsedBootstrap {
+            return cachedBootstrap ?: apiClient.fetchBootstrap().also { cachedBootstrap = it }
+        }
+
         runCatching {
-            val bootstrap = apiClient.fetchBootstrap()
-            val username = requireNotNull(bootstrap.currentUsername)
+            val username = runCatching {
+                apiClient.fetchCurrentUsername()
+            }.getOrNull()
+                ?.takeIf { it.isNotBlank() }
+                ?: requireNotNull(bootstrap().currentUsername)
+            val avatarTemplate = runCatching {
+                apiClient.fetchProfile(username)
+            }.getOrNull()
+                ?.avatarUrl
+                .orEmpty()
             val csrf = runCatching {
                 csrfTokenProvider.get(forceRefresh = true)
             }.getOrElse { error ->
-                bootstrap.csrfToken
+                bootstrap().csrfToken
                     .takeIf { it.isNotBlank() }
                     ?: throw error
             }
             sessionStore.save(username)
-            AppSessionState.Authenticated(username, csrf)
+            AppSessionState.Authenticated(
+                username = username,
+                csrfToken = csrf,
+                avatarTemplate = avatarTemplate,
+            )
         }.onSuccess {
             _sessionState.value = it
         }.onFailure {

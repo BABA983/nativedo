@@ -8,6 +8,11 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import io.github.baba983.nativedo.feature.auth.ui.LoginWebViewRoute
@@ -26,8 +31,11 @@ fun NativeDoNavHost(
     contentPadding: PaddingValues,
     rootPagerState: PagerState,
     homeSearchRequestToken: Int,
+    homeRefreshRequestToken: Int,
     onHomeHeaderSearchVisibilityChanged: (Boolean) -> Unit,
 ) {
+    var profileSessionRestoreTrigger by rememberSaveable { mutableIntStateOf(0) }
+
     NavHost(
         navController = navController,
         startDestination = RootDestination.rootContainerRoute,
@@ -50,6 +58,7 @@ fun NativeDoNavHost(
                                 navController.navigate("user/$username")
                             },
                             headerSearchRequestToken = homeSearchRequestToken,
+                            refreshRequestToken = homeRefreshRequestToken,
                             onHeaderSearchVisibilityChanged = onHomeHeaderSearchVisibilityChanged,
                         )
                     }
@@ -57,6 +66,7 @@ fun NativeDoNavHost(
                     RootDestination.Profile -> {
                         ProfileRoute(
                             viewer = ProfileViewer.Self,
+                            sessionRestoreTrigger = profileSessionRestoreTrigger,
                             onLoginClick = {
                                 navController.navigate("login")
                             },
@@ -109,6 +119,11 @@ fun NativeDoNavHost(
             )
         }
         composable("login") {
+            DisposableEffect(Unit) {
+                onDispose {
+                    profileSessionRestoreTrigger += 1
+                }
+            }
             LoginWebViewRoute(
                 onLoginFinished = {
                     navController.popBackStack()

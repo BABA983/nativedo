@@ -4,6 +4,7 @@ import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.SearchResult
 import io.github.baba983.nativedo.core.model.SearchUser
 import io.github.baba983.nativedo.core.model.TopicDetail
+import io.github.baba983.nativedo.core.model.TopicListPage
 import io.github.baba983.nativedo.core.model.TopicSummary
 import io.github.baba983.nativedo.core.model.UserProfile
 import kotlinx.serialization.SerialName
@@ -31,11 +32,20 @@ interface DiscourseApiService {
     @GET("t/{id}.json")
     suspend fun topic(@Path("id") id: Long): TopicResponseDto
 
+    @GET("t/{id}/posts.json")
+    suspend fun topicPosts(
+        @Path("id") id: Long,
+        @Query("post_ids[]") postIds: List<Long>,
+    ): TopicPostsResponseDto
+
     @GET("search.json")
     suspend fun search(@Query("q") query: String): SearchResponseDto
 
     @GET("u/{username}.json")
     suspend fun profile(@Path("username") username: String): UserProfileResponseDto
+
+    @GET("session/current.json")
+    suspend fun currentSession(): CurrentSessionResponseDto
 
     @GET("session/csrf")
     suspend fun csrf(): CsrfResponseDto
@@ -43,12 +53,15 @@ interface DiscourseApiService {
 
 @Serializable
 data class TopicListResponseDto(
+    val users: List<TopicListUserDto> = emptyList(),
     @SerialName("topic_list")
     val topicList: TopicListDto,
 )
 
 @Serializable
 data class TopicListDto(
+    @SerialName("more_topics_url")
+    val moreTopicsUrl: String? = null,
     val topics: List<TopicDto>,
 )
 
@@ -56,6 +69,8 @@ data class TopicListDto(
 data class TopicDto(
     val id: Long,
     val title: String,
+    @SerialName("image_url")
+    val imageUrl: String? = null,
     val slug: String = "",
     @SerialName("reply_count")
     val replyCount: Int = 0,
@@ -69,6 +84,9 @@ data class TopicDto(
 
 @Serializable
 data class PosterDto(
+    val description: String = "",
+    @SerialName("user_id")
+    val userId: Long? = null,
     val user: PosterUserDto? = null,
 )
 
@@ -80,15 +98,37 @@ data class PosterUserDto(
 )
 
 @Serializable
+data class TopicListUserDto(
+    val id: Long,
+    val username: String = "",
+    @SerialName("avatar_template")
+    val avatarTemplate: String = "",
+)
+
+@Serializable
 data class TopicResponseDto(
     val id: Long,
     val title: String,
+    @SerialName("posts_count")
+    val postsCount: Int = 0,
     @SerialName("post_stream")
     val postStream: PostStreamDto,
 )
 
 @Serializable
 data class PostStreamDto(
+    val stream: List<Long> = emptyList(),
+    val posts: List<PostDto>,
+)
+
+@Serializable
+data class TopicPostsResponseDto(
+    @SerialName("post_stream")
+    val postStream: TopicPostsStreamDto,
+)
+
+@Serializable
+data class TopicPostsStreamDto(
     val posts: List<PostDto>,
 )
 
@@ -110,6 +150,7 @@ data class SearchResponseDto(
 
 @Serializable
 data class SearchUserDto(
+    val id: Long? = null,
     val username: String,
     @SerialName("name")
     val displayName: String = "",
@@ -120,6 +161,17 @@ data class SearchUserDto(
 @Serializable
 data class UserProfileResponseDto(
     val user: UserDto,
+)
+
+@Serializable
+data class CurrentSessionResponseDto(
+    @SerialName("current_user")
+    val currentUser: CurrentSessionUserDto? = null,
+)
+
+@Serializable
+data class CurrentSessionUserDto(
+    val username: String = "",
 )
 
 @Serializable
@@ -139,23 +191,29 @@ data class CsrfResponseDto(
     val csrf: String,
 )
 
-internal fun TopicDto.toModel(): TopicSummary = TopicSummary(
-    id = id,
-    title = title,
-    authorUsername = posters.firstOrNull()?.user?.username.orEmpty(),
-    authorAvatarTemplate = posters.firstOrNull()?.user?.avatarTemplate.orEmpty(),
-    slug = slug,
-    replyCount = replyCount,
-    viewCount = views,
-    lastPostedAt = lastPostedAt,
-    categoryId = categoryId,
+internal fun TopicDto.toModel(): TopicSummary = toTopicSummary(usersById = emptyMap())
+
+internal fun TopicListResponseDto.toModel(): TopicListPage = TopicListPage(
+    topics = topicList.topics.map { topic ->
+        topic.toTopicSummary(
+            usersById = users.associateBy(TopicListUserDto::id),
+        )
+    },
+    moreTopicsUrl = topicList.moreTopicsUrl,
 )
 
-internal fun TopicResponseDto.toModel(): TopicDetail = TopicDetail(
-    id = id,
-    title = title,
-    posts = postStream.posts.map { it.toModel() },
-)
+internal fun TopicResponseDto.toModel(): TopicDetail {
+    val streamPostIds = postStream.stream.ifEmpty { postStream.posts.map { it.id } }
+    return TopicDetail(
+        id = id,
+        title = title,
+        posts = postStream.posts.map { it.toModel() },
+        totalPosts = postsCount.takeIf { it > 0 } ?: streamPostIds.size,
+        streamPostIds = streamPostIds,
+    )
+}
+
+internal fun TopicPostsResponseDto.toModel(): List<Post> = postStream.posts.map { it.toModel() }
 
 internal fun PostDto.toModel(): Post = Post(
     id = id,
@@ -169,7 +227,13 @@ internal fun PostDto.toModel(): Post = Post(
 )
 
 internal fun SearchResponseDto.toModel(): SearchResult = SearchResult(
-    topics = topics.map { it.toModel() },
+    topics = topics.map { topic ->
+        topic.toTopicSummary(
+            usersById = users
+                .mapNotNull { user -> user.id?.let { id -> id to user.toTopicListUser() } }
+                .toMap(),
+        )
+    },
     users = users.map { it.toModel() },
 )
 
@@ -184,4 +248,56 @@ internal fun UserProfileResponseDto.toModel(): UserProfile = UserProfile(
     displayName = user.displayName,
     bio = user.bio,
     avatarUrl = user.avatarTemplate,
+)
+
+private fun TopicDto.toTopicSummary(
+    usersById: Map<Long, TopicListUserDto>,
+): TopicSummary {
+    val posterUser = posters.primaryPosterOrNull()?.let { poster ->
+        poster.user?.let { user ->
+            posterUser(username = user.username, avatarTemplate = user.avatarTemplate)
+        } ?: poster.userId
+            ?.let(usersById::get)
+            ?.let { user ->
+                posterUser(username = user.username, avatarTemplate = user.avatarTemplate)
+            }
+    }
+
+    return TopicSummary(
+        id = id,
+        title = title,
+        authorUsername = posterUser?.username.orEmpty(),
+        authorAvatarTemplate = posterUser?.avatarTemplate.orEmpty(),
+        imageUrl = imageUrl,
+        slug = slug,
+        replyCount = replyCount,
+        viewCount = views,
+        lastPostedAt = lastPostedAt,
+        categoryId = categoryId,
+    )
+}
+
+private data class PosterUser(
+    val username: String,
+    val avatarTemplate: String,
+)
+
+private fun SearchUserDto.toTopicListUser(): TopicListUserDto = TopicListUserDto(
+    id = id ?: 0L,
+    username = username,
+    avatarTemplate = avatarTemplate,
+)
+
+private fun List<PosterDto>.primaryPosterOrNull(): PosterDto? {
+    return firstOrNull { poster ->
+        poster.description.contains("original poster", ignoreCase = true)
+    } ?: firstOrNull()
+}
+
+private fun posterUser(
+    username: String,
+    avatarTemplate: String,
+): PosterUser = PosterUser(
+    username = username,
+    avatarTemplate = avatarTemplate,
 )

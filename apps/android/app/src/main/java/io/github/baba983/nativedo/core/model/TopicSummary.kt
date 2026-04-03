@@ -5,6 +5,7 @@ data class TopicSummary(
     val title: String,
     val authorUsername: String,
     val authorAvatarTemplate: String = "",
+    val imageUrl: String? = null,
     val slug: String = "",
     val replyCount: Int = 0,
     val viewCount: Int = 0,

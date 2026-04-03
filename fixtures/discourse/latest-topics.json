@@ -1,9 +1,18 @@
 {
+  "users": [
+    {
+      "id": 7,
+      "username": "baba",
+      "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png"
+    }
+  ],
   "topic_list": {
+    "more_topics_url": "/latest.json?page=1",
     "topics": [
       {
         "id": 101,
         "title": "Welcome to NativeDo Android",
+        "image_url": "https://linux.do/uploads/default/original/1X/topic-cover.png",
         "slug": "welcome-to-nativedo-android",
         "posts_count": 12,
         "reply_count": 11,
@@ -13,9 +22,7 @@
         "posters": [
           {
             "description": "Original Poster",
-            "user": {
-              "username": "baba"
-            }
+            "user_id": 7
           }
         ]
       }

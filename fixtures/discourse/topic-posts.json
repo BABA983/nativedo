@@ -1,0 +1,18 @@
+{
+  "post_stream": {
+    "posts": [
+      {
+        "id": 1002,
+        "username": "alice",
+        "avatar_template": "/user_avatar/linux.do/alice/{size}/1.png",
+        "cooked": "<p>Second reply</p>"
+      },
+      {
+        "id": 1003,
+        "username": "charlie",
+        "avatar_template": "/user_avatar/linux.do/charlie/{size}/1.png",
+        "cooked": "<p>Third reply</p>"
+      }
+    ]
+  }
+}

@@ -3,6 +3,7 @@ package io.github.baba983.nativedo.feature.home.ui
 import app.cash.turbine.test
 import com.google.common.truth.Truth.assertThat
 import io.github.baba983.nativedo.core.model.TopicSummary
+import io.github.baba983.nativedo.feature.home.data.HomeFeedPage
 import io.github.baba983.nativedo.feature.home.domain.LoadHomeFeedUseCase
 import io.github.baba983.nativedo.test.MainDispatcherRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -20,11 +21,17 @@ class HomeViewModelTest {
     fun loadLatest_emitsItems() = runTest {
         val viewModel = HomeViewModel(
             loadHomeFeed = FakeLoadHomeFeedUseCase(
-                latest = listOf(
-                    TopicSummary(
-                        id = 1,
-                        title = "Linux.do topic",
-                        authorUsername = "baba",
+                pages = mapOf(
+                    HomeFeedRequest(HomeFeedTab.Latest, 0) to HomeFeedPage(
+                        items = listOf(
+                            TopicSummary(
+                                id = 1,
+                                title = "Linux.do topic",
+                                authorUsername = "baba",
+                            ),
+                        ),
+                        nextPage = null,
+                        hasMore = false,
                     ),
                 ),
             ),
@@ -39,28 +46,115 @@ class HomeViewModelTest {
 
     @Test
     fun switchFeed_reloadsRequestedTab() = runTest {
-        val useCase = FakeLoadHomeFeedUseCase()
+        val useCase = FakeLoadHomeFeedUseCase(
+            pages = mapOf(
+                HomeFeedRequest(HomeFeedTab.Latest, 0) to HomeFeedPage(
+                    items = emptyList(),
+                    nextPage = null,
+                    hasMore = false,
+                ),
+                HomeFeedRequest(HomeFeedTab.Top, 0) to HomeFeedPage(
+                    items = emptyList(),
+                    nextPage = null,
+                    hasMore = false,
+                ),
+            ),
+        )
         val viewModel = HomeViewModel(loadHomeFeed = useCase)
 
         viewModel.onFeedSelected(HomeFeedTab.Top)
         runCurrent()
 
-        assertThat(useCase.requestedTabs.last()).isEqualTo(HomeFeedTab.Top)
+        assertThat(useCase.requests.last()).isEqualTo(HomeFeedRequest(HomeFeedTab.Top, 0))
+    }
+
+    @Test
+    fun refresh_replacesItemsAndResetsNextPage() = runTest {
+        val useCase = FakeLoadHomeFeedUseCase(
+            pages = mapOf(
+                HomeFeedRequest(HomeFeedTab.Latest, 0) to HomeFeedPage(
+                    items = listOf(
+                        TopicSummary(id = 1, title = "First page", authorUsername = "baba"),
+                    ),
+                    nextPage = 1,
+                    hasMore = true,
+                ),
+                HomeFeedRequest(HomeFeedTab.Latest, 1) to HomeFeedPage(
+                    items = listOf(
+                        TopicSummary(id = 2, title = "Second page", authorUsername = "alice"),
+                    ),
+                    nextPage = null,
+                    hasMore = false,
+                ),
+            ),
+        )
+        val viewModel = HomeViewModel(loadHomeFeed = useCase)
+
+        runCurrent()
+        viewModel.loadNextPage()
+        runCurrent()
+        viewModel.onRefresh()
+        runCurrent()
+
+        assertThat(viewModel.uiState.value.items.map { it.id }).containsExactly(1L)
+        assertThat(viewModel.uiState.value.nextPage).isEqualTo(1)
+        assertThat(viewModel.uiState.value.hasMore).isTrue()
+    }
+
+    @Test
+    fun loadNextPage_appendsUniqueItemsAndStopsAtEnd() = runTest {
+        val useCase = FakeLoadHomeFeedUseCase(
+            pages = mapOf(
+                HomeFeedRequest(HomeFeedTab.Latest, 0) to HomeFeedPage(
+                    items = listOf(
+                        TopicSummary(id = 1, title = "Page 0", authorUsername = "baba"),
+                    ),
+                    nextPage = 1,
+                    hasMore = true,
+                ),
+                HomeFeedRequest(HomeFeedTab.Latest, 1) to HomeFeedPage(
+                    items = listOf(
+                        TopicSummary(id = 1, title = "Page 0 duplicate", authorUsername = "baba"),
+                        TopicSummary(id = 2, title = "Page 1", authorUsername = "alice"),
+                    ),
+                    nextPage = null,
+                    hasMore = false,
+                ),
+            ),
+        )
+        val viewModel = HomeViewModel(loadHomeFeed = useCase)
+
+        runCurrent()
+        viewModel.loadNextPage()
+        runCurrent()
+        viewModel.loadNextPage()
+        runCurrent()
+
+        assertThat(viewModel.uiState.value.items.map { it.id }).containsExactly(1L, 2L).inOrder()
+        assertThat(viewModel.uiState.value.hasMore).isFalse()
+        assertThat(useCase.requests).containsExactly(
+            HomeFeedRequest(HomeFeedTab.Latest, 0),
+            HomeFeedRequest(HomeFeedTab.Latest, 1),
+        ).inOrder()
     }
 }
 
-private class FakeLoadHomeFeedUseCase(
-    private val latest: List<TopicSummary> = emptyList(),
-) : LoadHomeFeedUseCase() {
-    val requestedTabs = mutableListOf<HomeFeedTab>()
+private data class HomeFeedRequest(
+    val tab: HomeFeedTab,
+    val page: Int,
+)
 
-    override suspend fun invoke(tab: HomeFeedTab): Result<List<TopicSummary>> {
-        requestedTabs += tab
+private class FakeLoadHomeFeedUseCase(
+    private val pages: Map<HomeFeedRequest, HomeFeedPage> = emptyMap(),
+) : LoadHomeFeedUseCase() {
+    val requests = mutableListOf<HomeFeedRequest>()
+
+    override suspend fun invoke(tab: HomeFeedTab, page: Int): Result<HomeFeedPage> {
+        val request = HomeFeedRequest(tab, page)
+        requests += request
         return Result.success(
-            when (tab) {
-                HomeFeedTab.Latest -> latest
-                HomeFeedTab.New -> emptyList()
-                HomeFeedTab.Top -> emptyList()
+            checkNotNull(pages[request]) {
+                "Missing fake page for $request"
             },
         )
     }

@@ -1,11 +1,14 @@
 {
   "id": 101,
   "title": "Welcome to NativeDo Android",
+  "posts_count": 3,
   "post_stream": {
+    "stream": [1001, 1002, 1003],
     "posts": [
       {
         "id": 1001,
         "username": "baba",
+        "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png",
         "cooked": "<p>Hello from Android.</p><img src=\"https://linux.do/uploads/default/original/1X/demo.png\" />"
       }
     ]

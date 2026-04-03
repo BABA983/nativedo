@@ -6,6 +6,20 @@ import org.junit.Test
 
 class ProfileRouteStateTest {
     @Test
+    fun profileSessionRestoreKey_changesWhenLoginReturnTriggerChanges() {
+        val initialKey = profileSessionRestoreKey(
+            viewer = ProfileViewer.Self,
+            sessionRestoreTrigger = 0,
+        )
+        val retriedKey = profileSessionRestoreKey(
+            viewer = ProfileViewer.Self,
+            sessionRestoreTrigger = 1,
+        )
+
+        assertThat(retriedKey).isNotEqualTo(initialKey)
+    }
+
+    @Test
     fun resolveProfileViewer_selfWithAuthenticatedSession_usesAuthenticatedUsername() {
         val resolvedViewer = resolveProfileViewer(
             viewer = ProfileViewer.Self,

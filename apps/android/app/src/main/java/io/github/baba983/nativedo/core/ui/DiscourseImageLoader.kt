@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import io.github.baba983.nativedo.core.network.addImageRequestHeaders
 import io.github.baba983.nativedo.core.storage.CookieStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -57,13 +58,9 @@ internal suspend fun fetchDiscourseBitmap(
                 }
             val request = Request.Builder()
                 .url(imageUrl)
-                .header("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
-                .header("Referer", baseUrl)
-                .header(
-                    "User-Agent",
-                    "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
-                        "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
-                )
+                .apply {
+                    addImageRequestHeaders(baseUrl = baseUrl)
+                }
                 .apply {
                     if (!cookieHeader.isNullOrBlank()) {
                         header("Cookie", cookieHeader)

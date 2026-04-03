@@ -9,15 +9,21 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -31,8 +37,12 @@ import io.github.baba983.nativedo.core.ui.HtmlPostBodyView
 import io.github.baba983.nativedo.core.ui.UserAvatar
 import io.github.baba983.nativedo.feature.topic.data.TopicRepository
 import io.github.baba983.nativedo.feature.topic.domain.LoadTopicUseCase
+import io.github.baba983.nativedo.ui.NativeDoPullToRefreshIndicator
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 
+private const val TOPIC_LOAD_MORE_THRESHOLD = 5
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TopicRoute(
     topicId: Long,
@@ -57,6 +67,26 @@ fun TopicRoute(
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val colors = NativeDoThemeExtras.colors
+    val listState = rememberLazyListState()
+    val pullToRefreshState = rememberPullToRefreshState()
+
+    val shouldLoadMore by remember(listState, uiState.hasMore, uiState.isLoadingMore) {
+        derivedStateOf {
+            val lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: return@derivedStateOf false
+            shouldLoadMoreTopicPosts(
+                lastVisibleIndex = lastVisibleIndex,
+                totalItemsCount = listState.layoutInfo.totalItemsCount,
+                hasMore = uiState.hasMore,
+                isLoadingMore = uiState.isLoadingMore,
+            )
+        }
+    }
+
+    LaunchedEffect(shouldLoadMore) {
+        if (shouldLoadMore) {
+            viewModel.loadMore()
+        }
+    }
 
     when {
         uiState.isLoading -> {
@@ -80,9 +110,22 @@ fun TopicRoute(
             }
         }
 
-        else -> {
+        else -> PullToRefreshBox(
+            isRefreshing = uiState.isRefreshing,
+            onRefresh = viewModel::refresh,
+            state = pullToRefreshState,
+            modifier = modifier.fillMaxSize(),
+            indicator = {
+                NativeDoPullToRefreshIndicator(
+                    state = pullToRefreshState,
+                    isRefreshing = uiState.isRefreshing,
+                    modifier = Modifier.align(Alignment.TopCenter),
+                )
+            },
+        ) {
             LazyColumn(
-                modifier = modifier.fillMaxSize(),
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(bottom = 28.dp),
             ) {
                 item {
@@ -98,7 +141,10 @@ fun TopicRoute(
                             color = colors.textPrimary,
                         )
                         Text(
-                            text = "${uiState.posts.size} posts",
+                            text = topicPostCountLabel(
+                                totalPosts = uiState.totalPosts,
+                                loadedPosts = uiState.posts.size,
+                            ),
                             style = MaterialTheme.typography.bodySmall,
                             color = colors.textSecondary,
                         )
@@ -128,7 +174,6 @@ fun TopicRoute(
                             UserAvatar(
                                 label = post.authorUsername,
                                 avatarTemplate = post.authorAvatarTemplate,
-                                cookieStore = appContainer.cookieStore,
                                 baseUrl = appContainer.baseUrl,
                                 size = 32.dp,
                             )
@@ -155,9 +200,44 @@ fun TopicRoute(
                         )
                     }
                 }
+
+                if (uiState.isLoadingMore) {
+                    item(key = "load-more") {
+                        TopicFeedbackCard { CircularProgressIndicator() }
+                    }
+                }
+
+                if (uiState.loadMoreErrorMessage != null) {
+                    item(key = "load-more-error") {
+                        TopicFeedbackCard {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(text = uiState.loadMoreErrorMessage.orEmpty())
+                                TextButton(onClick = viewModel::loadMore) {
+                                    Text(text = "Retry")
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
+}
+
+internal fun shouldLoadMoreTopicPosts(
+    lastVisibleIndex: Int,
+    totalItemsCount: Int,
+    hasMore: Boolean,
+    isLoadingMore: Boolean,
+    threshold: Int = TOPIC_LOAD_MORE_THRESHOLD,
+): Boolean {
+    if (!hasMore || isLoadingMore || totalItemsCount == 0) return false
+    return lastVisibleIndex >= totalItemsCount - threshold
+}
+
+internal fun topicPostCountLabel(totalPosts: Int, loadedPosts: Int): String {
+    val count = if (totalPosts > 0) totalPosts else loadedPosts
+    return "$count posts"
 }
 
 @Composable
