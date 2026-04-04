@@ -6,6 +6,7 @@ import io.github.baba983.nativedo.core.model.TopicSummary
 import io.github.baba983.nativedo.feature.home.data.HomeFeedPage
 import io.github.baba983.nativedo.feature.home.domain.LoadHomeFeedUseCase
 import io.github.baba983.nativedo.test.MainDispatcherRule
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -137,11 +138,69 @@ class HomeViewModelTest {
             HomeFeedRequest(HomeFeedTab.Latest, 1),
         ).inOrder()
     }
+
+    @Test
+    fun refresh_ignoresStaleResponseWhenAuthVersionChanges() = runTest {
+        var authVersion = 0L
+        val firstPage = CompletableDeferred<Result<HomeFeedPage>>()
+        val secondPage = CompletableDeferred<Result<HomeFeedPage>>()
+        val useCase = ControlledLoadHomeFeedUseCase(
+            deferredPages = mapOf(
+                VersionedHomeFeedRequest(HomeFeedTab.Latest, 0, 0L) to firstPage,
+                VersionedHomeFeedRequest(HomeFeedTab.Latest, 0, 1L) to secondPage,
+            ),
+            currentSessionVersion = { authVersion },
+        )
+        val viewModel = HomeViewModel(
+            loadHomeFeed = useCase,
+            currentSessionVersion = { authVersion },
+        )
+
+        runCurrent()
+
+        authVersion = 1L
+        viewModel.onRefresh()
+        runCurrent()
+
+        secondPage.complete(
+            Result.success(
+                HomeFeedPage(
+                    items = listOf(
+                        TopicSummary(id = 2, title = "Authenticated", authorUsername = "baba"),
+                    ),
+                    nextPage = null,
+                    hasMore = false,
+                ),
+            ),
+        )
+        runCurrent()
+
+        firstPage.complete(
+            Result.success(
+                HomeFeedPage(
+                    items = listOf(
+                        TopicSummary(id = 1, title = "Anonymous", authorUsername = "guest"),
+                    ),
+                    nextPage = null,
+                    hasMore = false,
+                ),
+            ),
+        )
+        runCurrent()
+
+        assertThat(viewModel.uiState.value.items.map { it.id }).containsExactly(2L)
+    }
 }
 
 private data class HomeFeedRequest(
     val tab: HomeFeedTab,
     val page: Int,
+)
+
+private data class VersionedHomeFeedRequest(
+    val tab: HomeFeedTab,
+    val page: Int,
+    val authVersion: Long,
 )
 
 private class FakeLoadHomeFeedUseCase(
@@ -157,5 +216,20 @@ private class FakeLoadHomeFeedUseCase(
                 "Missing fake page for $request"
             },
         )
+    }
+}
+
+private class ControlledLoadHomeFeedUseCase(
+    private val deferredPages: Map<VersionedHomeFeedRequest, CompletableDeferred<Result<HomeFeedPage>>>,
+    private val currentSessionVersion: () -> Long,
+) : LoadHomeFeedUseCase() {
+    override suspend fun invoke(tab: HomeFeedTab, page: Int): Result<HomeFeedPage> {
+        return deferredPages.getValue(
+            VersionedHomeFeedRequest(
+                tab = tab,
+                page = page,
+                authVersion = currentSessionVersion(),
+            ),
+        ).await()
     }
 }

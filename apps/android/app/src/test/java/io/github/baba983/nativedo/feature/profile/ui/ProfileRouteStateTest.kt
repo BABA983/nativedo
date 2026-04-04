@@ -2,30 +2,23 @@ package io.github.baba983.nativedo.feature.profile.ui
 
 import com.google.common.truth.Truth.assertThat
 import io.github.baba983.nativedo.core.session.AppSessionState
+import io.github.baba983.nativedo.core.session.SessionFreshness
+import io.github.baba983.nativedo.core.session.SessionSnapshot
 import org.junit.Test
 
 class ProfileRouteStateTest {
     @Test
-    fun profileSessionRestoreKey_changesWhenLoginReturnTriggerChanges() {
-        val initialKey = profileSessionRestoreKey(
-            viewer = ProfileViewer.Self,
-            sessionRestoreTrigger = 0,
-        )
-        val retriedKey = profileSessionRestoreKey(
-            viewer = ProfileViewer.Self,
-            sessionRestoreTrigger = 1,
-        )
-
-        assertThat(retriedKey).isNotEqualTo(initialKey)
-    }
-
-    @Test
-    fun resolveProfileViewer_selfWithAuthenticatedSession_usesAuthenticatedUsername() {
+    fun resolveProfileViewer_selfWithVerifiedSession_usesSnapshotUsername() {
         val resolvedViewer = resolveProfileViewer(
             viewer = ProfileViewer.Self,
             sessionState = AppSessionState.Authenticated(
-                username = "baba",
-                csrfToken = "csrf-token",
+                snapshot = SessionSnapshot(
+                    username = "baba",
+                    displayName = "Baba",
+                    avatarTemplate = "",
+                    lastValidatedAt = 1L,
+                ),
+                freshness = SessionFreshness.Verified,
             ),
         )
 
@@ -33,34 +26,86 @@ class ProfileRouteStateTest {
     }
 
     @Test
-    fun shouldShowProfileAuthLoading_selfDuringAuthentication_returnsTrue() {
+    fun shouldShowProfileAuthLoading_selfDuringUnknown_returnsTrue() {
         val shouldShow = shouldShowProfileAuthLoading(
             viewer = ProfileViewer.Self,
-            sessionState = AppSessionState.Authenticating,
+            sessionState = AppSessionState.Unknown,
         )
 
         assertThat(shouldShow).isTrue()
     }
 
     @Test
-    fun shouldRequestProfileSessionRestore_selfAnonymousWithoutAttempt_returnsTrue() {
-        val shouldRequest = shouldRequestProfileSessionRestore(
+    fun shouldShowProfileAuthLoading_selfDuringRestoring_returnsTrue() {
+        val shouldShow = shouldShowProfileAuthLoading(
             viewer = ProfileViewer.Self,
-            sessionState = AppSessionState.Anonymous,
-            restoreAttempted = false,
+            sessionState = AppSessionState.Restoring(
+                snapshot = SessionSnapshot(
+                    username = "baba",
+                    displayName = "Baba",
+                    avatarTemplate = "",
+                    lastValidatedAt = 1L,
+                ),
+            ),
         )
 
-        assertThat(shouldRequest).isTrue()
+        assertThat(shouldShow).isTrue()
     }
 
     @Test
-    fun shouldRequestProfileSessionRestore_selfExpiredAfterAttempt_returnsFalse() {
-        val shouldRequest = shouldRequestProfileSessionRestore(
-            viewer = ProfileViewer.Self,
-            sessionState = AppSessionState.Expired,
-            restoreAttempted = true,
+    fun shouldShowProfileAuthLoading_otherViewerDuringRestoring_returnsFalse() {
+        val shouldShow = shouldShowProfileAuthLoading(
+            viewer = ProfileViewer.Other("baba"),
+            sessionState = AppSessionState.Restoring(
+                snapshot = SessionSnapshot(
+                    username = "baba",
+                    displayName = "Baba",
+                    avatarTemplate = "",
+                    lastValidatedAt = 1L,
+                ),
+            ),
         )
 
-        assertThat(shouldRequest).isFalse()
+        assertThat(shouldShow).isFalse()
+    }
+
+    @Test
+    fun shouldRefreshProfileForHandledAuthVersion_otherViewerWithNewAuthenticatedVersion_returnsTrue() {
+        val shouldRefresh = shouldRefreshProfileForHandledAuthVersion(
+            viewer = ProfileViewer.Other("baba"),
+            sessionState = AppSessionState.Authenticated(
+                snapshot = SessionSnapshot(
+                    username = "baba",
+                    displayName = "Baba",
+                    avatarTemplate = "",
+                    lastValidatedAt = 1L,
+                ),
+                freshness = SessionFreshness.Verified,
+            ),
+            handledAuthVersion = 1L,
+            currentAuthVersion = 2L,
+        )
+
+        assertThat(shouldRefresh).isTrue()
+    }
+
+    @Test
+    fun shouldRefreshProfileForHandledAuthVersion_selfViewer_returnsFalse() {
+        val shouldRefresh = shouldRefreshProfileForHandledAuthVersion(
+            viewer = ProfileViewer.Self,
+            sessionState = AppSessionState.Authenticated(
+                snapshot = SessionSnapshot(
+                    username = "baba",
+                    displayName = "Baba",
+                    avatarTemplate = "",
+                    lastValidatedAt = 1L,
+                ),
+                freshness = SessionFreshness.Verified,
+            ),
+            handledAuthVersion = 1L,
+            currentAuthVersion = 2L,
+        )
+
+        assertThat(shouldRefresh).isFalse()
     }
 }

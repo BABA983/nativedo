@@ -4,8 +4,10 @@ import app.cash.turbine.test
 import com.google.common.truth.Truth.assertThat
 import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.TopicDetail
+import io.github.baba983.nativedo.core.network.SessionRecoveryRequiredException
 import io.github.baba983.nativedo.feature.topic.domain.LoadTopicUseCase
 import io.github.baba983.nativedo.test.MainDispatcherRule
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -135,6 +137,117 @@ class TopicViewModelTest {
         assertThat(viewModel.uiState.value.hasMore).isFalse()
         assertThat(useCase.chunkRequests).containsExactly(listOf(2L, 3L))
     }
+
+    @Test
+    fun loadTopic_sessionRecoveryError_setsAuthRecoveryRequired() = runTest {
+        val viewModel = TopicViewModel(
+            loadTopic = FailingLoadTopicUseCase(SessionRecoveryRequiredException()),
+            topicId = 42,
+        )
+
+        runCurrent()
+
+        assertThat(viewModel.uiState.value.isAuthRecoveryRequired).isTrue()
+        assertThat(viewModel.uiState.value.errorMessage).isNull()
+    }
+
+    @Test
+    fun onAuthRecoveryHandled_clearsAuthRecoveryRequired() = runTest {
+        val viewModel = TopicViewModel(
+            loadTopic = FailingLoadTopicUseCase(SessionRecoveryRequiredException()),
+            topicId = 42,
+        )
+
+        runCurrent()
+        viewModel.onAuthRecoveryHandled()
+
+        assertThat(viewModel.uiState.value.isAuthRecoveryRequired).isFalse()
+    }
+
+    @Test
+    fun refresh_ignoresTopicResultWhenSessionVersionChanges() = runTest {
+        var sessionVersion = 1L
+        val useCase = DelayedLoadTopicUseCase()
+        val viewModel = TopicViewModel(
+            loadTopic = useCase,
+            topicId = 42,
+            currentSessionVersion = { sessionVersion },
+        )
+
+        runCurrent()
+        sessionVersion = 2L
+        useCase.completeInitial(
+            TopicDetail(
+                id = 42L,
+                title = "Compose on linux.do",
+                posts = listOf(
+                    Post(
+                        id = 1L,
+                        authorUsername = "baba",
+                        cookedHtml = "<p>Hello</p>",
+                        imageUrls = emptyList(),
+                    ),
+                ),
+                totalPosts = 1,
+                streamPostIds = listOf(1L),
+            ),
+        )
+        runCurrent()
+
+        assertThat(viewModel.uiState.value.posts).isEmpty()
+        assertThat(viewModel.uiState.value.isLoading).isFalse()
+        assertThat(viewModel.uiState.value.isRefreshing).isFalse()
+        assertThat(viewModel.uiState.value.errorMessage).isNull()
+    }
+
+    @Test
+    fun loadMore_ignoresPostsWhenSessionVersionChanges() = runTest {
+        var sessionVersion = 1L
+        val useCase = DelayedLoadTopicUseCase()
+        val viewModel = TopicViewModel(
+            loadTopic = useCase,
+            topicId = 42,
+            currentSessionVersion = { sessionVersion },
+        )
+
+        runCurrent()
+        useCase.completeInitial(
+            TopicDetail(
+                id = 42L,
+                title = "Compose on linux.do",
+                posts = listOf(
+                    Post(
+                        id = 1L,
+                        authorUsername = "baba",
+                        cookedHtml = "<p>Hello</p>",
+                        imageUrls = emptyList(),
+                    ),
+                ),
+                totalPosts = 2,
+                streamPostIds = listOf(1L, 2L),
+            ),
+        )
+        runCurrent()
+
+        viewModel.loadMore()
+        runCurrent()
+        sessionVersion = 2L
+        useCase.completeChunk(
+            listOf(
+                Post(
+                    id = 2L,
+                    authorUsername = "alice",
+                    cookedHtml = "<p>Second</p>",
+                    imageUrls = emptyList(),
+                ),
+            ),
+        )
+        runCurrent()
+
+        assertThat(viewModel.uiState.value.posts.map { it.id }).containsExactly(1L)
+        assertThat(viewModel.uiState.value.isLoadingMore).isFalse()
+        assertThat(viewModel.uiState.value.loadMoreErrorMessage).isNull()
+    }
 }
 
 private class FakeLoadTopicUseCase(
@@ -154,5 +267,28 @@ private class FakeLoadTopicUseCase(
                 "Missing fake chunk for $postIds"
             },
         )
+    }
+}
+
+private class FailingLoadTopicUseCase(
+    private val error: Throwable,
+) : LoadTopicUseCase() {
+    override suspend fun invoke(topicId: Long): Result<TopicDetail> = Result.failure(error)
+}
+
+private class DelayedLoadTopicUseCase : LoadTopicUseCase() {
+    private val initialResult = CompletableDeferred<Result<TopicDetail>>()
+    private val chunkResult = CompletableDeferred<Result<List<Post>>>()
+
+    override suspend fun invoke(topicId: Long): Result<TopicDetail> = initialResult.await()
+
+    override suspend fun loadPosts(topicId: Long, postIds: List<Long>): Result<List<Post>> = chunkResult.await()
+
+    fun completeInitial(detail: TopicDetail) {
+        initialResult.complete(Result.success(detail))
+    }
+
+    fun completeChunk(posts: List<Post>) {
+        chunkResult.complete(Result.success(posts))
     }
 }

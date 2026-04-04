@@ -1,6 +1,8 @@
 package io.github.baba983.nativedo.core.session
 
 import android.webkit.CookieManager
+import io.github.baba983.nativedo.core.log.NativeDoLogTag
+import io.github.baba983.nativedo.core.log.debugLog
 import io.github.baba983.nativedo.core.storage.CookieStore
 import okhttp3.Cookie
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -19,21 +21,49 @@ open class CookieSyncBridge(
         CookieManager.getInstance().flush()
     },
 ) {
+    private val authenticatedCookieNames = setOf("_t")
+
     fun sync(url: String, cookies: List<Cookie>) {
         cookieStore.save(url.toHttpUrl(), cookies)
     }
 
-    open fun syncFromWebView(): Boolean {
+    open fun hasAuthenticatedCookiesInWebView(url: String = baseUrl): Boolean {
         val cookies = parseCookieHeader(
-            url = baseUrl.toHttpUrl(),
-            cookieHeader = readCookieHeader(baseUrl),
+            url = url.toHttpUrl(),
+            cookieHeader = readCookieHeader(url),
+        )
+        val hasAuthenticatedCookies = cookies.any { cookie ->
+            cookie.name in authenticatedCookieNames
+        }
+        debugLog(
+            TAG,
+            "hasAuthenticatedCookiesInWebView names=${cookies.map { cookie -> cookie.name }.distinct()} result=$hasAuthenticatedCookies",
+        )
+        return hasAuthenticatedCookies
+    }
+
+    open fun syncFromWebView(url: String = baseUrl): Boolean {
+        val cookieHeader = readCookieHeader(url)
+        debugLog(
+            TAG,
+            "syncFromWebView url=$url cookies=${cookieHeader.cookieNamesSummary()}",
+        )
+        val cookies = parseCookieHeader(
+            url = url.toHttpUrl(),
+            cookieHeader = cookieHeader,
         )
         if (cookies.isEmpty()) {
+            debugLog(TAG, "syncFromWebView skipped: no cookies available")
             return false
         }
-        sync(url = baseUrl, cookies = cookies)
+        sync(url = url, cookies = cookies)
         flushCookies()
-        return cookieStore.hasSessionCookies()
+        val hasAuthenticatedCookies = cookieStore.hasAuthenticatedCookies()
+        debugLog(
+            TAG,
+            "syncFromWebView synced=${cookies.map { cookie -> cookie.name }.distinct()} hasAuthenticatedCookies=$hasAuthenticatedCookies",
+        )
+        return hasAuthenticatedCookies
     }
 
     open fun clear() {
@@ -62,4 +92,21 @@ open class CookieSyncBridge(
                     }
                     .build()
             }
+
+    private fun String?.cookieNamesSummary(): String {
+        return this
+            .orEmpty()
+            .split(';')
+            .mapNotNull { segment ->
+                segment.substringBefore('=').trim().takeIf { name -> name.isNotBlank() }
+            }
+            .distinct()
+            .takeIf { names -> names.isNotEmpty() }
+            ?.joinToString(prefix = "[", postfix = "]")
+            ?: "[]"
+    }
+
+    private companion object {
+        val TAG: NativeDoLogTag = NativeDoLogTag.Session
+    }
 }

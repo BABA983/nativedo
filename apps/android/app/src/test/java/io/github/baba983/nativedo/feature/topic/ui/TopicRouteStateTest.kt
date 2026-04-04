@@ -1,0 +1,39 @@
+package io.github.baba983.nativedo.feature.topic.ui
+
+import com.google.common.truth.Truth.assertThat
+import io.github.baba983.nativedo.core.session.AppSessionState
+import io.github.baba983.nativedo.core.session.SessionFreshness
+import io.github.baba983.nativedo.core.session.SessionSnapshot
+import org.junit.Test
+
+class TopicRouteStateTest {
+    @Test
+    fun shouldRefreshTopicForHandledAuthVersion_authenticatedWithNewVersion_returnsTrue() {
+        val shouldRefresh = shouldRefreshTopicForHandledAuthVersion(
+            sessionState = AppSessionState.Authenticated(
+                snapshot = SessionSnapshot(
+                    username = "baba",
+                    displayName = "Baba",
+                    avatarTemplate = "",
+                    lastValidatedAt = 1L,
+                ),
+                freshness = SessionFreshness.Verified,
+            ),
+            handledAuthVersion = 1L,
+            currentAuthVersion = 2L,
+        )
+
+        assertThat(shouldRefresh).isTrue()
+    }
+
+    @Test
+    fun shouldRefreshTopicForHandledAuthVersion_anonymous_returnsFalse() {
+        val shouldRefresh = shouldRefreshTopicForHandledAuthVersion(
+            sessionState = AppSessionState.Anonymous,
+            handledAuthVersion = 1L,
+            currentAuthVersion = 2L,
+        )
+
+        assertThat(shouldRefresh).isFalse()
+    }
+}

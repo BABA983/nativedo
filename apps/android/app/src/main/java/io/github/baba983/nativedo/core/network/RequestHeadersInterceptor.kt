@@ -6,6 +6,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 
 class RequestHeadersInterceptor(
     baseUrl: String = "https://linux.do/",
+    private val userAgent: String = FALLBACK_USER_AGENT,
 ) : Interceptor {
     private val siteUrl = baseUrl.toHttpUrl()
     private val siteOrigin = buildString {
@@ -35,7 +36,7 @@ class RequestHeadersInterceptor(
                 header("Accept-Language", ACCEPT_LANGUAGE_HEADER)
             }
             if (originalRequest.header("User-Agent") == null) {
-                header("User-Agent", DEFAULT_USER_AGENT)
+                header("User-Agent", userAgent)
             }
             if (!isHtmlRequest && originalRequest.header("X-Requested-With") == null) {
                 header("X-Requested-With", XHR_HEADER_VALUE)
@@ -56,8 +57,5 @@ class RequestHeadersInterceptor(
         private const val JSON_ACCEPT_HEADER = "application/json;q=0.9, text/plain;q=0.8, */*;q=0.5"
         private const val ACCEPT_LANGUAGE_HEADER = "zh-CN,zh;q=0.9,en;q=0.8"
         private const val XHR_HEADER_VALUE = "XMLHttpRequest"
-        private const val DEFAULT_USER_AGENT =
-            "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
-                "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
     }
 }

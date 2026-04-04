@@ -2,6 +2,10 @@ package io.github.baba983.nativedo.core.network
 
 import com.google.common.truth.Truth.assertThat
 import io.github.baba983.nativedo.core.di.AppContainer
+import io.github.baba983.nativedo.core.di.SessionInvalidationGate
+import io.github.baba983.nativedo.core.session.AppSessionState
+import io.github.baba983.nativedo.core.session.SessionExpiredReason
+import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -87,6 +91,28 @@ class DiscourseApiClientTest {
     }
 
     @Test
+    fun latestTopics_usesConfiguredUserAgent() = runTest {
+        val payload = checkNotNull(
+            javaClass.classLoader?.getResource("discourse/latest-topics.json"),
+        ).readText()
+        server.enqueue(
+            MockResponse()
+                .setBody(payload)
+                .setHeader("Content-Type", "application/json"),
+        )
+
+        val client = AppContainer(
+            baseUrl = server.url("/").toString(),
+            userAgent = "NativeDo-Test-UA/1.0",
+        ).discourseApiClient
+
+        client.fetchLatest(page = 0)
+
+        val request = checkNotNull(server.takeRequest())
+        assertThat(request.getHeader("User-Agent")).isEqualTo("NativeDo-Test-UA/1.0")
+    }
+
+    @Test
     fun fetchBootstrap_parsesCurrentUserAndCsrfTokenFromHtml() = runTest {
         val payload = checkNotNull(
             javaClass.classLoader?.getResource("discourse/home-bootstrap.html"),
@@ -126,6 +152,131 @@ class DiscourseApiClientTest {
         val username = client.fetchCurrentUsername()
 
         assertThat(username).isEqualTo("baba")
+    }
+
+    @Test
+    fun fetchTopic_wrapsCloudflare403AsSessionRecoveryRequired() = runTest {
+        var invalidatedReason: SessionExpiredReason? = null
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(403)
+                .setHeader("Server", "cloudflare")
+                .setHeader("Content-Type", "text/html; charset=utf-8")
+                .setBody("<html><body><h1>Just a moment...</h1></body></html>"),
+        )
+
+        val client = AppContainer(
+            baseUrl = server.url("/").toString(),
+            onSessionInvalidatedForTest = { invalidatedReason = it },
+        ).discourseApiClient
+
+        val result = runCatching {
+            client.fetchTopic(topicId = 42)
+        }
+
+        assertThat(result.exceptionOrNull())
+            .isInstanceOf(SessionRecoveryRequiredException::class.java)
+        assertThat(invalidatedReason).isNull()
+    }
+
+    @Test
+    fun fetchTopic_discourseLoggedOutHeader_invokesSessionInvalidatedCallback() = runTest {
+        var invalidatedReason: SessionExpiredReason? = null
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(403)
+                .setHeader("discourse-logged-out", "true")
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"errors":["You are not permitted"],"error_type":"not_logged_in"}"""),
+        )
+
+        val client = AppContainer(
+            baseUrl = server.url("/").toString(),
+            onSessionInvalidatedForTest = { invalidatedReason = it },
+        ).discourseApiClient
+
+        val result = runCatching {
+            client.fetchTopic(topicId = 42)
+        }
+
+        assertThat(result.exceptionOrNull())
+            .isInstanceOf(SessionRecoveryRequiredException::class.java)
+        assertThat(invalidatedReason).isEqualTo(SessionExpiredReason.ServerLoggedOut)
+    }
+
+    @Test
+    fun fetchTopic_notLoggedInPayload_invokesSessionInvalidatedCallback() = runTest {
+        var invalidatedReason: SessionExpiredReason? = null
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(403)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"errors":["You are not permitted"],"error_type":"not_logged_in"}"""),
+        )
+
+        val client = AppContainer(
+            baseUrl = server.url("/").toString(),
+            onSessionInvalidatedForTest = { invalidatedReason = it },
+        ).discourseApiClient
+
+        val result = runCatching {
+            client.fetchTopic(topicId = 42)
+        }
+
+        assertThat(result.exceptionOrNull())
+            .isInstanceOf(SessionRecoveryRequiredException::class.java)
+        assertThat(invalidatedReason).isEqualTo(SessionExpiredReason.ServerLoggedOut)
+    }
+
+    @Test
+    fun fetchTopic_plain403DoesNotInvokeSessionInvalidatedCallback() = runTest {
+        var invalidatedReason: SessionExpiredReason? = null
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(403)
+                .setHeader("Content-Type", "application/json")
+                .setBody("""{"errors":["Forbidden"],"error_type":"rate_limit"}"""),
+        )
+
+        val client = AppContainer(
+            baseUrl = server.url("/").toString(),
+            onSessionInvalidatedForTest = { invalidatedReason = it },
+        ).discourseApiClient
+
+        val result = runCatching {
+            client.fetchTopic(topicId = 42)
+        }
+
+        assertThat(result.exceptionOrNull()).isInstanceOf(retrofit2.HttpException::class.java)
+        assertThat(invalidatedReason).isNull()
+    }
+
+    @Test
+    fun sessionInvalidationGate_coalescesConcurrentDuplicateInvalidations() = runTest {
+        var state: AppSessionState = AppSessionState.Unknown
+        var invalidationCalls = 0
+        val gate = SessionInvalidationGate(
+            currentSessionState = { state },
+            markExpired = { reason ->
+                invalidationCalls += 1
+                state = AppSessionState.Expired(reason = reason)
+            },
+        )
+
+        val first = backgroundScope.async {
+            gate.invalidate(SessionExpiredReason.ServerLoggedOut)
+        }
+        val second = backgroundScope.async {
+            gate.invalidate(SessionExpiredReason.ServerLoggedOut)
+        }
+
+        first.await()
+        second.await()
+
+        assertThat(invalidationCalls).isEqualTo(1)
+        assertThat(state).isEqualTo(
+            AppSessionState.Expired(reason = SessionExpiredReason.ServerLoggedOut),
+        )
     }
 
     @Test

@@ -36,6 +36,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -60,7 +61,13 @@ import androidx.navigation.compose.rememberNavController
 import io.github.baba983.nativedo.NativeDoApplication
 import io.github.baba983.nativedo.R
 import io.github.baba983.nativedo.core.session.AppSessionState
+import io.github.baba983.nativedo.core.session.SessionSnapshot
+import io.github.baba983.nativedo.core.ui.BulletinHost
+import io.github.baba983.nativedo.core.ui.BulletinHostState
+import io.github.baba983.nativedo.core.ui.LocalBulletinHostState
 import io.github.baba983.nativedo.core.ui.UserAvatar
+import io.github.baba983.nativedo.feature.auth.ui.AuthRestoreGate
+import io.github.baba983.nativedo.feature.auth.ui.shouldShowAuthRestoreGate
 import io.github.baba983.nativedo.navigation.NativeDoNavHost
 import io.github.baba983.nativedo.navigation.RootDestination
 import io.github.baba983.nativedo.ui.theme.NativeDoChromeShape
@@ -83,17 +90,22 @@ fun NativeDoApp() {
     var homeSearchRequestToken by rememberSaveable { mutableIntStateOf(0) }
     var homeRefreshRequestToken by rememberSaveable { mutableIntStateOf(0) }
 
-    LaunchedEffect(appContainer) {
-        appContainer.sessionCoordinator.restoreSession()
+    LaunchedEffect(appContainer.sessionCoordinator) {
+        appContainer.sessionCoordinator.start()
     }
 
     NativeDoTheme(themeMode = themeMode) {
         val navController = rememberNavController()
+        val bulletinHostState = remember { BulletinHostState() }
         val currentEntry = navController.currentBackStackEntryAsState().value
         val currentRoute = currentEntry?.destination?.route
-        val chromeState = remember(sessionState) { NativeDoChromeState.from(sessionState) }
-        val profileAvatarLabel = (sessionState as? AppSessionState.Authenticated)?.username
-        val profileAvatarTemplate = (sessionState as? AppSessionState.Authenticated)
+        val cachedSessionSnapshot = appContainer.sessionStore.snapshot()
+        val chromeState = remember(sessionState, cachedSessionSnapshot) {
+            NativeDoChromeState.from(sessionState, cachedSessionSnapshot)
+        }
+        val sessionSnapshot = sessionSnapshotForChrome(sessionState, cachedSessionSnapshot)
+        val profileAvatarLabel = sessionSnapshot?.username
+        val profileAvatarTemplate = sessionSnapshot
             ?.avatarTemplate
             ?.takeIf { it.isNotBlank() }
         val rootPagerState = rememberPagerState(
@@ -111,60 +123,74 @@ fun NativeDoApp() {
         }
         val isRootRoute = currentRoute == null || currentRoute == RootDestination.rootContainerRoute
 
-        Box(modifier = Modifier.fillMaxSize()) {
-            NativeDoBackground(modifier = Modifier.fillMaxSize())
+        CompositionLocalProvider(LocalBulletinHostState provides bulletinHostState) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                NativeDoBackground(modifier = Modifier.fillMaxSize())
 
-            Scaffold(
-                containerColor = Color.Transparent,
-                contentColor = MaterialTheme.colorScheme.onBackground,
-                contentWindowInsets = WindowInsets(0, 0, 0, 0),
-                topBar = {
-                    NativeDoTopBar(
-                        currentRoute = activeRoute,
-                        chromeState = chromeState,
-                        showBack = !isRootRoute,
-                        reserveHomeSearchSlot = isRootRoute && activeRoute == RootDestination.Home.route,
-                        showHomeSearchAction = isRootRoute &&
-                            activeRoute == RootDestination.Home.route &&
-                            homeHeaderSearchVisible,
-                        themeMode = themeMode,
-                        onHomeRefreshClick = { homeRefreshRequestToken += 1 },
-                        onHomeSearchClick = { homeSearchRequestToken += 1 },
-                        onThemeModeClick = { themeMode = themeMode.next() },
-                        onBackClick = { navController.popBackStack() },
-                    )
-                },
-            ) { paddingValues ->
-                NativeDoNavHost(
-                    navController = navController,
-                    contentPadding = paddingValues,
-                    rootPagerState = rootPagerState,
-                    homeSearchRequestToken = homeSearchRequestToken,
-                    homeRefreshRequestToken = homeRefreshRequestToken,
-                    onHomeHeaderSearchVisibilityChanged = { homeHeaderSearchVisible = it },
-                )
-            }
-
-            if (isRootRoute) {
-                NativeDoBottomBarFade(
-                    modifier = Modifier.align(Alignment.BottomCenter),
-                )
-                NativeDoBottomBar(
-                    baseUrl = appContainer.baseUrl,
-                    currentRoute = activeRoute,
-                    modifier = Modifier.align(Alignment.BottomCenter),
-                    profileAvatarLabel = profileAvatarLabel,
-                    profileAvatarTemplate = profileAvatarTemplate,
-                    onHomeRefreshRequest = { homeRefreshRequestToken += 1 },
-                    onNavigate = { route ->
-                        val page = RootDestination.bottomTabs.indexOfFirst { it.route == route }
-                        if (page != -1 && page != rootPagerState.currentPage) {
-                            coroutineScope.launch {
-                                rootPagerState.animateScrollToPage(page)
-                            }
-                        }
+                Scaffold(
+                    containerColor = Color.Transparent,
+                    contentColor = MaterialTheme.colorScheme.onBackground,
+                    contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                    topBar = {
+                        NativeDoTopBar(
+                            currentRoute = activeRoute,
+                            chromeState = chromeState,
+                            showBack = !isRootRoute,
+                            reserveHomeSearchSlot = isRootRoute && activeRoute == RootDestination.Home.route,
+                            showHomeSearchAction = isRootRoute &&
+                                activeRoute == RootDestination.Home.route &&
+                                homeHeaderSearchVisible,
+                            themeMode = themeMode,
+                            onHomeRefreshClick = { homeRefreshRequestToken += 1 },
+                            onHomeSearchClick = { homeSearchRequestToken += 1 },
+                            onThemeModeClick = { themeMode = themeMode.next() },
+                            onBackClick = { navController.popBackStack() },
+                        )
                     },
+                ) { paddingValues ->
+                    NativeDoNavHost(
+                        navController = navController,
+                        contentPadding = paddingValues,
+                        rootPagerState = rootPagerState,
+                        homeSearchRequestToken = homeSearchRequestToken,
+                        homeRefreshRequestToken = homeRefreshRequestToken,
+                        onHomeHeaderSearchVisibilityChanged = { homeHeaderSearchVisible = it },
+                    )
+                }
+
+                if (isRootRoute) {
+                    NativeDoBottomBarFade(
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                    )
+                    NativeDoBottomBar(
+                        baseUrl = appContainer.baseUrl,
+                        currentRoute = activeRoute,
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                        profileAvatarLabel = profileAvatarLabel,
+                        profileAvatarTemplate = profileAvatarTemplate,
+                        onHomeRefreshRequest = { homeRefreshRequestToken += 1 },
+                        onNavigate = { route ->
+                            val page = RootDestination.bottomTabs.indexOfFirst { it.route == route }
+                            if (page != -1 && page != rootPagerState.currentPage) {
+                                coroutineScope.launch {
+                                    rootPagerState.animateScrollToPage(page)
+                                }
+                            }
+                        },
+                    )
+                }
+
+                BulletinHost(
+                    hostState = bulletinHostState,
+                    modifier = Modifier.align(Alignment.TopCenter),
                 )
+
+                if (shouldShowAuthRestoreGate(sessionState)) {
+                    AuthRestoreGate(
+                        snapshot = sessionSnapshot,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
         }
     }
@@ -212,7 +238,7 @@ private fun NativeDoTopBar(
             }
 
             Text(
-                text = routeTitle(currentRoute = currentRoute, chromeState = chromeState),
+                text = routeTitle(currentRoute = currentRoute),
                 modifier = Modifier
                     .weight(1f)
                     .padding(
@@ -476,10 +502,9 @@ private fun NativeDoBottomBarFade(
 @Composable
 private fun routeTitle(
     currentRoute: String?,
-    chromeState: NativeDoChromeState,
 ): String = when (currentRoute) {
     RootDestination.Search.route -> stringResource(R.string.tab_search)
-    RootDestination.Profile.route -> chromeState.title.ifBlank { stringResource(R.string.tab_profile) }
+    RootDestination.Profile.route -> stringResource(R.string.tab_profile)
     "topic/{topicId}" -> stringResource(R.string.screen_topic)
     "user/{username}" -> stringResource(R.string.tab_profile)
     "login" -> stringResource(R.string.screen_sign_in)
@@ -497,11 +522,27 @@ data class NativeDoChromeState(
     val title: String = "",
 ) {
     companion object {
-        fun from(sessionState: AppSessionState): NativeDoChromeState = when (sessionState) {
-            AppSessionState.Anonymous,
-            AppSessionState.Authenticating,
-            AppSessionState.Expired -> NativeDoChromeState()
-            is AppSessionState.Authenticated -> NativeDoChromeState(title = sessionState.username)
+        fun from(
+            sessionState: AppSessionState,
+            cachedSnapshot: SessionSnapshot? = null,
+        ): NativeDoChromeState {
+            val snapshot = sessionSnapshotForChrome(sessionState, cachedSnapshot)
+            return if (snapshot == null) {
+                NativeDoChromeState()
+            } else {
+                NativeDoChromeState(title = snapshot.chromeTitle)
+            }
         }
     }
+}
+
+internal fun sessionSnapshotForChrome(
+    sessionState: AppSessionState,
+    cachedSnapshot: SessionSnapshot? = null,
+): SessionSnapshot? = when (sessionState) {
+    AppSessionState.Anonymous -> null
+    AppSessionState.Unknown -> cachedSnapshot
+    is AppSessionState.Restoring -> sessionState.snapshot
+    is AppSessionState.Authenticated -> sessionState.snapshot
+    is AppSessionState.Expired -> sessionState.snapshot
 }

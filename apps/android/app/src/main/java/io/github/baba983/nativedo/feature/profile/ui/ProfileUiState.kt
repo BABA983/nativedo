@@ -15,4 +15,5 @@ data class ProfileUiState(
     val recentTopics: List<TopicSummary> = emptyList(),
     val isLoading: Boolean = true,
     val errorMessage: String? = null,
+    val isAuthRecoveryRequired: Boolean = false,
 )

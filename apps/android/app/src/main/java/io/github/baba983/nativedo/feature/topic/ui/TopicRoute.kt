@@ -21,9 +21,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -33,8 +37,14 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.baba983.nativedo.NativeDoApplication
+import io.github.baba983.nativedo.core.session.AppSessionState
+import io.github.baba983.nativedo.core.session.SessionEvent
 import io.github.baba983.nativedo.core.ui.HtmlPostBodyView
+import io.github.baba983.nativedo.core.ui.LocalBulletinHostState
+import io.github.baba983.nativedo.core.ui.RequestErrorCard
 import io.github.baba983.nativedo.core.ui.UserAvatar
+import io.github.baba983.nativedo.core.ui.requestErrorBulletin
+import io.github.baba983.nativedo.core.ui.requestErrorPresentation
 import io.github.baba983.nativedo.feature.topic.data.TopicRepository
 import io.github.baba983.nativedo.feature.topic.domain.LoadTopicUseCase
 import io.github.baba983.nativedo.ui.NativeDoPullToRefreshIndicator
@@ -48,12 +58,17 @@ fun TopicRoute(
     topicId: Long,
     onTopicClick: (Long) -> Unit = {},
     onUserClick: (String) -> Unit = {},
+    onSessionRecoveryRequired: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val appContainer = remember(context) {
         (context.applicationContext as NativeDoApplication).appContainer
     }
+    val bulletinHostState = LocalBulletinHostState.current
+    val sessionState by appContainer.sessionCoordinator.sessionState.collectAsStateWithLifecycle()
+    val authVersion by appContainer.sessionCoordinator.authVersion.collectAsStateWithLifecycle()
+    var handledAuthVersion by rememberSaveable { mutableStateOf(UNSET_AUTH_VERSION) }
     val viewModel: TopicViewModel = viewModel(
         key = "topic-$topicId",
         factory = remember(appContainer, topicId) {
@@ -62,13 +77,44 @@ fun TopicRoute(
                     repository = TopicRepository(appContainer.discourseApiClient),
                 ),
                 topicId = topicId,
+                currentSessionVersion = { appContainer.sessionCoordinator.authVersion.value },
             )
         },
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val colors = NativeDoThemeExtras.colors
+    val initialLoadErrorPresentation = uiState.errorMessage?.let {
+        requestErrorPresentation(
+            rawMessage = it,
+            genericTitle = "Couldn't load topic",
+            genericDescription = "Please try again in a moment.",
+        )
+    }
+    val loadMoreErrorPresentation = uiState.loadMoreErrorMessage?.let {
+        requestErrorPresentation(
+            rawMessage = it,
+            genericTitle = "Couldn't load more posts",
+            genericDescription = "Please try again in a moment.",
+        )
+    }
+    var shownRefreshError by rememberSaveable(topicId) { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
     val pullToRefreshState = rememberPullToRefreshState()
+    val currentSessionState by rememberUpdatedState(sessionState)
+    val currentAuthVersion by rememberUpdatedState(authVersion)
+    val refreshTopicIfNeeded: () -> Unit = {
+        val latestAuthVersion = currentAuthVersion
+        if (
+            shouldRefreshTopicForHandledAuthVersion(
+                sessionState = currentSessionState,
+                handledAuthVersion = handledAuthVersion,
+                currentAuthVersion = latestAuthVersion,
+            )
+        ) {
+            handledAuthVersion = latestAuthVersion
+            viewModel.refresh()
+        }
+    }
 
     val shouldLoadMore by remember(listState, uiState.hasMore, uiState.isLoadingMore) {
         derivedStateOf {
@@ -88,6 +134,45 @@ fun TopicRoute(
         }
     }
 
+    LaunchedEffect(uiState.isAuthRecoveryRequired) {
+        if (uiState.isAuthRecoveryRequired) {
+            onSessionRecoveryRequired()
+            viewModel.onAuthRecoveryHandled()
+        }
+    }
+
+    LaunchedEffect(authVersion, sessionState) {
+        if (handledAuthVersion == UNSET_AUTH_VERSION) {
+            handledAuthVersion = authVersion
+        } else {
+            refreshTopicIfNeeded()
+        }
+    }
+
+    LaunchedEffect(appContainer.sessionCoordinator) {
+        appContainer.sessionCoordinator.events.collect { event ->
+            if (event is SessionEvent.LoginCompleted || event is SessionEvent.SessionVerified) {
+                refreshTopicIfNeeded()
+            }
+        }
+    }
+
+    LaunchedEffect(uiState.errorMessage, uiState.posts.size) {
+        when {
+            uiState.errorMessage.isNullOrBlank() -> shownRefreshError = null
+            uiState.posts.isNotEmpty() && uiState.errorMessage != shownRefreshError -> {
+                shownRefreshError = uiState.errorMessage
+                bulletinHostState?.show(
+                    requestErrorBulletin(
+                        rawMessage = uiState.errorMessage,
+                        genericTitle = "Couldn't refresh topic",
+                        genericDescription = "Please try again in a moment.",
+                    ),
+                )
+            }
+        }
+    }
+
     when {
         uiState.isLoading -> {
             TopicFeedbackCard(
@@ -101,12 +186,11 @@ fun TopicRoute(
             TopicFeedbackCard(
                 modifier = modifier.fillMaxSize(),
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(text = uiState.errorMessage.orEmpty(), style = MaterialTheme.typography.bodyMedium)
-                    TextButton(onClick = viewModel::refresh) {
-                        Text(text = "Retry")
-                    }
-                }
+                RequestErrorCard(
+                    presentation = requireNotNull(initialLoadErrorPresentation),
+                    onRetry = viewModel::refresh,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
 
@@ -210,12 +294,12 @@ fun TopicRoute(
                 if (uiState.loadMoreErrorMessage != null) {
                     item(key = "load-more-error") {
                         TopicFeedbackCard {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(text = uiState.loadMoreErrorMessage.orEmpty())
-                                TextButton(onClick = viewModel::loadMore) {
-                                    Text(text = "Retry")
-                                }
-                            }
+                            RequestErrorCard(
+                                presentation = requireNotNull(loadMoreErrorPresentation),
+                                onRetry = viewModel::loadMore,
+                                modifier = Modifier.fillMaxWidth(),
+                                compact = true,
+                            )
                         }
                     }
                 }
@@ -240,6 +324,15 @@ internal fun topicPostCountLabel(totalPosts: Int, loadedPosts: Int): String {
     return "$count posts"
 }
 
+internal fun shouldRefreshTopicForHandledAuthVersion(
+    sessionState: AppSessionState,
+    handledAuthVersion: Long,
+    currentAuthVersion: Long,
+): Boolean {
+    return sessionState is AppSessionState.Authenticated &&
+        currentAuthVersion > handledAuthVersion
+}
+
 @Composable
 private fun TopicFeedbackCard(
     modifier: Modifier = Modifier,
@@ -256,12 +349,16 @@ private fun TopicFeedbackCard(
 private class TopicViewModelFactory(
     private val loadTopic: LoadTopicUseCase,
     private val topicId: Long,
+    private val currentSessionVersion: () -> Long,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         return TopicViewModel(
             loadTopic = loadTopic,
             topicId = topicId,
+            currentSessionVersion = currentSessionVersion,
         ) as T
     }
 }
+
+private const val UNSET_AUTH_VERSION = Long.MIN_VALUE

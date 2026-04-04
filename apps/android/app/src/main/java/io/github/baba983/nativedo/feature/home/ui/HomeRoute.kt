@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
@@ -47,6 +48,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -61,6 +63,12 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.baba983.nativedo.NativeDoApplication
+import io.github.baba983.nativedo.core.ui.LocalBulletinHostState
+import io.github.baba983.nativedo.core.ui.RequestErrorCard
+import io.github.baba983.nativedo.core.ui.requestErrorBulletin
+import io.github.baba983.nativedo.core.ui.requestErrorPresentation
+import io.github.baba983.nativedo.core.session.AppSessionState
+import io.github.baba983.nativedo.core.session.SessionEvent
 import io.github.baba983.nativedo.core.storage.RecentSearchStore
 import io.github.baba983.nativedo.feature.home.data.HomeRepository
 import io.github.baba983.nativedo.feature.home.domain.LoadHomeFeedUseCase
@@ -90,12 +98,16 @@ fun HomeRoute(
     val appContainer = remember(context) {
         (context.applicationContext as NativeDoApplication).appContainer
     }
+    val sessionState by appContainer.sessionCoordinator.sessionState.collectAsStateWithLifecycle()
+    val authVersion by appContainer.sessionCoordinator.authVersion.collectAsStateWithLifecycle()
+    var handledAuthVersion by rememberSaveable { mutableStateOf(UNSET_HOME_AUTH_VERSION) }
     val viewModel: HomeViewModel = viewModel(
         factory = remember(appContainer) {
             HomeViewModelFactory(
                 loadHomeFeed = LoadHomeFeedUseCase(
                     repository = HomeRepository(appContainer.discourseApiClient),
                 ),
+                currentSessionVersion = { appContainer.sessionCoordinator.authVersion.value },
             )
         },
     )
@@ -113,6 +125,8 @@ fun HomeRoute(
     var forceShowSearchField by rememberSaveable { mutableStateOf(false) }
     var handledHeaderSearchRequestToken by rememberSaveable { mutableIntStateOf(0) }
     var handledRefreshRequestToken by rememberSaveable { mutableIntStateOf(0) }
+    val currentSessionState by rememberUpdatedState(sessionState)
+    val currentAuthVersion by rememberUpdatedState(authVersion)
 
     fun closeSearch() {
         forceShowSearchField = searchOpenedFromHeader
@@ -144,6 +158,41 @@ fun HomeRoute(
                 listState.scrollToItem(0)
             }
             viewModel.onRefresh()
+        }
+    }
+
+    val refreshHomeIfNeeded: () -> Unit = {
+        val latestAuthVersion = currentAuthVersion
+        if (
+            shouldRefreshHomeForHandledAuthVersion(
+                sessionState = currentSessionState,
+                handledAuthVersion = handledAuthVersion,
+                currentAuthVersion = latestAuthVersion,
+            )
+        ) {
+            handledAuthVersion = latestAuthVersion
+            viewModel.onRefresh()
+        }
+    }
+
+    LaunchedEffect(authVersion, sessionState) {
+        if (handledAuthVersion == UNSET_HOME_AUTH_VERSION) {
+            handledAuthVersion = authVersion
+        } else {
+            refreshHomeIfNeeded()
+        }
+    }
+
+    LaunchedEffect(appContainer.sessionCoordinator) {
+        appContainer.sessionCoordinator.events.collect { event ->
+            if (
+                event is SessionEvent.LoginCompleted ||
+                event is SessionEvent.SessionVerified ||
+                event is SessionEvent.LogoutCompleted ||
+                event is SessionEvent.SessionExpired
+            ) {
+                refreshHomeIfNeeded()
+            }
         }
     }
 
@@ -238,8 +287,23 @@ private fun HomeFeedContent(
     modifier: Modifier = Modifier,
 ) {
     val pullToRefreshState = rememberPullToRefreshState()
+    val bulletinHostState = LocalBulletinHostState.current
     val colors = NativeDoThemeExtras.colors
     val errorMessage = uiState.errorMessage
+    val initialLoadErrorPresentation = errorMessage?.let {
+        requestErrorPresentation(
+            rawMessage = it,
+            genericTitle = "Couldn't load topics",
+            genericDescription = "Pull to refresh or try again.",
+        )
+    }
+    val loadMoreErrorPresentation = uiState.loadMoreErrorMessage?.let {
+        requestErrorPresentation(
+            rawMessage = it,
+            genericTitle = "Couldn't load more topics",
+            genericDescription = "Please try again in a moment.",
+        )
+    }
     val density = LocalDensity.current
     val searchFieldTravelPx = remember(density) {
         with(density) { HOME_SEARCH_CONTAINER_HEIGHT.roundToPx() }
@@ -262,6 +326,7 @@ private fun HomeFeedContent(
             )
         }
     }
+    var shownRefreshError by rememberSaveable(uiState.selectedTab) { mutableStateOf<String?>(null) }
     val stickyChromeColor = lerp(
         start = colors.backgroundBase,
         stop = colors.backgroundElevated,
@@ -270,6 +335,22 @@ private fun HomeFeedContent(
 
     LaunchedEffect(showHeaderSearch, onHeaderSearchVisibilityChanged) {
         onHeaderSearchVisibilityChanged(showHeaderSearch)
+    }
+
+    LaunchedEffect(errorMessage, uiState.items.size) {
+        when {
+            errorMessage.isNullOrBlank() -> shownRefreshError = null
+            uiState.items.isNotEmpty() && errorMessage != shownRefreshError -> {
+                shownRefreshError = errorMessage
+                bulletinHostState?.show(
+                    requestErrorBulletin(
+                        rawMessage = errorMessage,
+                        genericTitle = "Couldn't refresh topics",
+                        genericDescription = "Please try again in a moment.",
+                    ),
+                )
+            }
+        }
     }
 
     val shouldLoadMore by remember(
@@ -319,25 +400,26 @@ private fun HomeFeedContent(
             ) {
                 when {
                     uiState.isLoading -> {
-                        item(key = "loading") {
-                            HomeFeedbackCard {
-                                CircularProgressIndicator()
-                            }
+                        items(
+                            count = HOME_SKELETON_ITEM_COUNT,
+                            key = { index -> "loading-$index" },
+                        ) { index ->
+                            HomeTopicSkeletonItem(
+                                index = index,
+                                modifier = Modifier.fillMaxWidth(),
+                                showDivider = index != HOME_SKELETON_ITEM_COUNT - 1,
+                            )
                         }
                     }
 
                     errorMessage != null && uiState.items.isEmpty() -> {
                         item(key = "error") {
                             HomeFeedbackCard {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(
-                                        text = errorMessage,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                    )
-                                    TextButton(onClick = onRefresh) {
-                                        Text(text = "Retry")
-                                    }
-                                }
+                                RequestErrorCard(
+                                    presentation = requireNotNull(initialLoadErrorPresentation),
+                                    onRetry = onRefresh,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
                             }
                         }
                     }
@@ -376,15 +458,12 @@ private fun HomeFeedContent(
                         } else if (uiState.loadMoreErrorMessage != null) {
                             item(key = "load-more-error") {
                                 HomeFeedbackCard {
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Text(
-                                            text = uiState.loadMoreErrorMessage,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                        )
-                                        TextButton(onClick = onLoadMore) {
-                                            Text(text = "Retry")
-                                        }
-                                    }
+                                    RequestErrorCard(
+                                        presentation = requireNotNull(loadMoreErrorPresentation),
+                                        onRetry = onLoadMore,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        compact = true,
+                                    )
                                 }
                             }
                         }
@@ -562,12 +641,29 @@ internal fun shouldScrollHomeFeedToTopOnRefreshRequest(
 
 private class HomeViewModelFactory(
     private val loadHomeFeed: LoadHomeFeedUseCase,
+    private val currentSessionVersion: () -> Long,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        return HomeViewModel(loadHomeFeed = loadHomeFeed) as T
+        return HomeViewModel(
+            loadHomeFeed = loadHomeFeed,
+            currentSessionVersion = currentSessionVersion,
+        ) as T
     }
 }
+
+internal fun shouldRefreshHomeForHandledAuthVersion(
+    sessionState: AppSessionState,
+    handledAuthVersion: Long,
+    currentAuthVersion: Long,
+): Boolean {
+    if (currentAuthVersion <= handledAuthVersion) {
+        return false
+    }
+    return sessionState != AppSessionState.Unknown && sessionState !is AppSessionState.Restoring
+}
+
+private const val UNSET_HOME_AUTH_VERSION = Long.MIN_VALUE
 
 private fun HomeFeedTab.label(): String = when (this) {
     HomeFeedTab.Latest -> "Latest"

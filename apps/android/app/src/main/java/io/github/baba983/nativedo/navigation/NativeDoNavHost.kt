@@ -8,13 +8,13 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import io.github.baba983.nativedo.NativeDoApplication
+import io.github.baba983.nativedo.core.session.SessionEvent
 import io.github.baba983.nativedo.feature.auth.ui.LoginWebViewRoute
 import io.github.baba983.nativedo.feature.home.ui.HomeRoute
 import io.github.baba983.nativedo.feature.profile.ui.ProfileRoute
@@ -34,7 +34,23 @@ fun NativeDoNavHost(
     homeRefreshRequestToken: Int,
     onHomeHeaderSearchVisibilityChanged: (Boolean) -> Unit,
 ) {
-    var profileSessionRestoreTrigger by rememberSaveable { mutableIntStateOf(0) }
+    val context = LocalContext.current
+    val appContainer = remember(context) {
+        (context.applicationContext as NativeDoApplication).appContainer
+    }
+    val openLogin: () -> Unit = {
+        if (navController.currentDestination?.route != "login") {
+            navController.navigate("login")
+        }
+    }
+
+    LaunchedEffect(appContainer.sessionCoordinator) {
+        appContainer.sessionCoordinator.events.collect { event ->
+            if (event is SessionEvent.SessionExpired) {
+                openLogin()
+            }
+        }
+    }
 
     NavHost(
         navController = navController,
@@ -66,10 +82,8 @@ fun NativeDoNavHost(
                     RootDestination.Profile -> {
                         ProfileRoute(
                             viewer = ProfileViewer.Self,
-                            sessionRestoreTrigger = profileSessionRestoreTrigger,
-                            onLoginClick = {
-                                navController.navigate("login")
-                            },
+                            onLoginClick = openLogin,
+                            onSessionRecoveryRequired = openLogin,
                             onTopicClick = { topicId ->
                                 navController.navigate("topic/$topicId")
                             },
@@ -97,6 +111,7 @@ fun NativeDoNavHost(
             val topicId = entry.arguments?.getString("topicId")!!.toLong()
             TopicRoute(
                 topicId = topicId,
+                onSessionRecoveryRequired = openLogin,
                 onTopicClick = { linkedTopicId ->
                     navController.navigate("topic/$linkedTopicId")
                 },
@@ -110,6 +125,7 @@ fun NativeDoNavHost(
                 viewer = ProfileViewer.Other(
                     entry.arguments!!.getString("username")!!,
                 ),
+                onSessionRecoveryRequired = openLogin,
                 onTopicClick = { topicId ->
                     navController.navigate("topic/$topicId")
                 },
@@ -119,11 +135,6 @@ fun NativeDoNavHost(
             )
         }
         composable("login") {
-            DisposableEffect(Unit) {
-                onDispose {
-                    profileSessionRestoreTrigger += 1
-                }
-            }
             LoginWebViewRoute(
                 onLoginFinished = {
                     navController.popBackStack()

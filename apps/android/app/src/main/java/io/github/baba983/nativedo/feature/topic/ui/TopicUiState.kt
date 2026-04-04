@@ -12,6 +12,7 @@ data class TopicUiState(
     val hasMore: Boolean = false,
     val errorMessage: String? = null,
     val loadMoreErrorMessage: String? = null,
+    val isAuthRecoveryRequired: Boolean = false,
 ) {
     val canRetry: Boolean
         get() = errorMessage != null && posts.isEmpty()

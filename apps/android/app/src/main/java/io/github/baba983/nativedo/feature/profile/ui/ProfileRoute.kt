@@ -20,6 +20,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,8 +33,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.baba983.nativedo.NativeDoApplication
 import io.github.baba983.nativedo.core.session.AppSessionState
+import io.github.baba983.nativedo.core.session.SessionEvent
 import io.github.baba983.nativedo.core.ui.HtmlPostBodyView
+import io.github.baba983.nativedo.core.ui.RequestErrorCard
 import io.github.baba983.nativedo.core.ui.UserAvatar
+import io.github.baba983.nativedo.core.ui.requestErrorPresentation
 import io.github.baba983.nativedo.feature.profile.data.ProfileRepository
 import io.github.baba983.nativedo.feature.profile.domain.LoadProfileUseCase
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
@@ -41,8 +46,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun ProfileRoute(
     viewer: ProfileViewer,
-    sessionRestoreTrigger: Int = 0,
     onLoginClick: () -> Unit = {},
+    onSessionRecoveryRequired: () -> Unit = {},
     onTopicClick: (Long) -> Unit = {},
     onUserClick: (String) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -53,9 +58,8 @@ fun ProfileRoute(
     }
     val coroutineScope = rememberCoroutineScope()
     val sessionState by appContainer.sessionCoordinator.sessionState.collectAsStateWithLifecycle()
-    var restoreAttempted by remember(profileSessionRestoreKey(viewer, sessionRestoreTrigger)) {
-        mutableStateOf(false)
-    }
+    val authVersion by appContainer.sessionCoordinator.authVersion.collectAsStateWithLifecycle()
+    var handledAuthVersion by rememberSaveable { mutableStateOf(UNSET_AUTH_VERSION) }
     val resolvedViewer = resolveProfileViewer(
         viewer = viewer,
         sessionState = sessionState,
@@ -65,13 +69,6 @@ fun ProfileRoute(
         sessionState = sessionState,
     )
 
-    LaunchedEffect(viewer, sessionState, restoreAttempted) {
-        if (shouldRequestProfileSessionRestore(viewer, sessionState, restoreAttempted)) {
-            restoreAttempted = true
-            appContainer.sessionCoordinator.restoreSession()
-        }
-    }
-
     val viewModel: ProfileViewModel = viewModel(
         key = "profile-$resolvedViewer",
         factory = remember(appContainer, resolvedViewer) {
@@ -80,11 +77,58 @@ fun ProfileRoute(
                     repository = ProfileRepository(appContainer.discourseApiClient),
                 ),
                 viewer = resolvedViewer,
+                currentSessionVersion = { appContainer.sessionCoordinator.authVersion.value },
             )
         },
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val errorMessage = uiState.errorMessage
+    val errorPresentation = requestErrorPresentation(
+        rawMessage = errorMessage,
+        genericTitle = "Couldn't load profile",
+        genericDescription = "Please try again in a moment.",
+    )
+    val currentSessionState by rememberUpdatedState(sessionState)
+    val currentAuthVersion by rememberUpdatedState(authVersion)
+    val refreshProfileIfNeeded: () -> Unit = {
+        val latestAuthVersion = currentAuthVersion
+        if (
+            shouldRefreshProfileForHandledAuthVersion(
+                viewer = viewer,
+                sessionState = currentSessionState,
+                handledAuthVersion = handledAuthVersion,
+                currentAuthVersion = latestAuthVersion,
+            )
+        ) {
+            handledAuthVersion = latestAuthVersion
+            viewModel.refresh()
+        }
+    }
+
+    LaunchedEffect(uiState.isAuthRecoveryRequired) {
+        if (uiState.isAuthRecoveryRequired) {
+            onSessionRecoveryRequired()
+            viewModel.onAuthRecoveryHandled()
+        }
+    }
+
+    LaunchedEffect(authVersion, sessionState, viewer) {
+        if (handledAuthVersion == UNSET_AUTH_VERSION) {
+            handledAuthVersion = authVersion
+        } else {
+            refreshProfileIfNeeded()
+        }
+    }
+
+    LaunchedEffect(appContainer.sessionCoordinator, viewer) {
+        appContainer.sessionCoordinator.events.collect { event ->
+            if (
+                (event is SessionEvent.LoginCompleted || event is SessionEvent.SessionVerified)
+            ) {
+                refreshProfileIfNeeded()
+            }
+        }
+    }
 
     when {
         showAuthLoading -> {
@@ -107,12 +151,11 @@ fun ProfileRoute(
             ProfileFeedbackCard(
                 modifier = modifier.fillMaxSize(),
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(text = errorMessage, style = MaterialTheme.typography.bodyMedium)
-                    TextButton(onClick = viewModel::refresh) {
-                        Text(text = "Retry")
-                    }
-                }
+                RequestErrorCard(
+                    presentation = errorPresentation,
+                    onRetry = viewModel::refresh,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
 
@@ -138,15 +181,11 @@ fun ProfileRoute(
             ProfileFeedbackCard(
                 modifier = modifier.fillMaxSize(),
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "Failed to load profile",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    TextButton(onClick = viewModel::refresh) {
-                        Text(text = "Retry")
-                    }
-                }
+                RequestErrorCard(
+                    presentation = errorPresentation,
+                    onRetry = viewModel::refresh,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
 
@@ -251,26 +290,23 @@ internal fun resolveProfileViewer(
     }
 }
 
-internal fun profileSessionRestoreKey(
-    viewer: ProfileViewer,
-    sessionRestoreTrigger: Int,
-): Pair<ProfileViewer, Int> = viewer to sessionRestoreTrigger
-
 internal fun shouldShowProfileAuthLoading(
     viewer: ProfileViewer,
     sessionState: AppSessionState,
 ): Boolean {
-    return viewer == ProfileViewer.Self && sessionState is AppSessionState.Authenticating
+    return viewer == ProfileViewer.Self &&
+        (sessionState == AppSessionState.Unknown || sessionState is AppSessionState.Restoring)
 }
 
-internal fun shouldRequestProfileSessionRestore(
+internal fun shouldRefreshProfileForHandledAuthVersion(
     viewer: ProfileViewer,
     sessionState: AppSessionState,
-    restoreAttempted: Boolean,
+    handledAuthVersion: Long,
+    currentAuthVersion: Long,
 ): Boolean {
-    return viewer == ProfileViewer.Self &&
-        !restoreAttempted &&
-        (sessionState == AppSessionState.Anonymous || sessionState == AppSessionState.Expired)
+    return viewer != ProfileViewer.Self &&
+        sessionState is AppSessionState.Authenticated &&
+        currentAuthVersion > handledAuthVersion
 }
 
 @Composable
@@ -289,12 +325,16 @@ private fun ProfileFeedbackCard(
 private class ProfileViewModelFactory(
     private val loadProfile: LoadProfileUseCase,
     private val viewer: ProfileViewer,
+    private val currentSessionVersion: () -> Long,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         return ProfileViewModel(
             loadProfile = loadProfile,
             viewer = viewer,
+            currentSessionVersion = currentSessionVersion,
         ) as T
     }
 }
+
+private const val UNSET_AUTH_VERSION = Long.MIN_VALUE

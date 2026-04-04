@@ -6,14 +6,21 @@ import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import io.github.baba983.nativedo.core.network.DiscourseApiClient
 import io.github.baba983.nativedo.core.network.DiscourseApiService
 import io.github.baba983.nativedo.core.network.ImageRequestHeadersInterceptor
+import io.github.baba983.nativedo.core.network.NetworkDebugLoggingInterceptor
 import io.github.baba983.nativedo.core.network.NetworkJson
 import io.github.baba983.nativedo.core.network.PersistentCookieJar
 import io.github.baba983.nativedo.core.network.RequestHeadersInterceptor
-import io.github.baba983.nativedo.core.network.CsrfTokenProvider
+import io.github.baba983.nativedo.core.network.resolveNativeDoUserAgent
+import io.github.baba983.nativedo.core.session.AppSessionState
 import io.github.baba983.nativedo.core.session.CookieSyncBridge
 import io.github.baba983.nativedo.core.session.SessionCoordinator
+import io.github.baba983.nativedo.core.session.SessionExpiredReason
 import io.github.baba983.nativedo.core.storage.CookieStore
+import io.github.baba983.nativedo.core.storage.SharedPreferencesCookieStorePersistence
+import io.github.baba983.nativedo.core.storage.SharedPreferencesSessionStorePersistence
 import io.github.baba983.nativedo.core.storage.SessionStore
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -21,11 +28,26 @@ import retrofit2.Retrofit
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 
 class AppContainer(
+    context: Context? = null,
     val baseUrl: String = "https://linux.do/",
+    userAgent: String? = null,
+    private val onSessionInvalidatedForTest: (suspend (SessionExpiredReason) -> Unit)? = null,
 ) {
     private val json: Json = NetworkJson.instance
-    val cookieStore: CookieStore = CookieStore()
-    val sessionStore: SessionStore = SessionStore()
+    private val appContext = context?.applicationContext
+    val userAgent: String = userAgent ?: resolveNativeDoUserAgent(appContext)
+    private val cookiePreferences = appContext?.getSharedPreferences(COOKIE_STORE_PREFS, Context.MODE_PRIVATE)
+    private val sessionPreferences = appContext?.getSharedPreferences(SESSION_STORE_PREFS, Context.MODE_PRIVATE)
+    val cookieStore: CookieStore = cookiePreferences
+        ?.let { preferences ->
+            CookieStore(persistence = SharedPreferencesCookieStorePersistence(preferences))
+        }
+        ?: CookieStore()
+    val sessionStore: SessionStore = sessionPreferences
+        ?.let { preferences ->
+            SessionStore(persistence = SharedPreferencesSessionStorePersistence(preferences))
+        }
+        ?: SessionStore()
     val cookieSyncBridge: CookieSyncBridge = CookieSyncBridge(
         baseUrl = baseUrl,
         cookieStore = cookieStore,
@@ -33,7 +55,8 @@ class AppContainer(
 
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .cookieJar(PersistentCookieJar(cookieStore))
-        .addInterceptor(RequestHeadersInterceptor(baseUrl = baseUrl))
+        .addInterceptor(RequestHeadersInterceptor(baseUrl = baseUrl, userAgent = this.userAgent))
+        .addNetworkInterceptor(NetworkDebugLoggingInterceptor())
         .build()
 
     private val imageOkHttpClient: OkHttpClient = OkHttpClient.Builder()
@@ -48,14 +71,26 @@ class AppContainer(
         .build()
 
     private val apiService: DiscourseApiService = retrofit.create(DiscourseApiService::class.java)
+    private val sessionInvalidationGate = SessionInvalidationGate(
+        currentSessionState = { sessionCoordinator.sessionState.value },
+        markExpired = { reason -> sessionCoordinator.markExpired(reason) },
+    )
 
-    val discourseApiClient: DiscourseApiClient = DiscourseApiClient(apiService)
-    val csrfTokenProvider: CsrfTokenProvider = CsrfTokenProvider(discourseApiClient)
+    val discourseApiClient: DiscourseApiClient = DiscourseApiClient(
+        service = apiService,
+        onSessionInvalidated = { reason ->
+            val testCallback = onSessionInvalidatedForTest
+            if (testCallback != null) {
+                testCallback(reason)
+            } else {
+                sessionInvalidationGate.invalidate(reason)
+            }
+        },
+    )
     val sessionCoordinator: SessionCoordinator = SessionCoordinator(
         cookieStore = cookieStore,
         sessionStore = sessionStore,
         apiClient = discourseApiClient,
-        csrfTokenProvider = csrfTokenProvider,
         cookieSyncBridge = cookieSyncBridge,
     )
 
@@ -71,5 +106,27 @@ class AppContainer(
                 )
             }
             .build()
+    }
+
+    private companion object {
+        const val COOKIE_STORE_PREFS: String = "nativedo.cookie_store"
+        const val SESSION_STORE_PREFS: String = "nativedo.session_store"
+    }
+}
+
+internal class SessionInvalidationGate(
+    private val currentSessionState: () -> AppSessionState,
+    private val markExpired: suspend (SessionExpiredReason) -> Unit,
+) {
+    private val mutex = Mutex()
+
+    suspend fun invalidate(reason: SessionExpiredReason) {
+        mutex.withLock {
+            val state = currentSessionState()
+            if (state is AppSessionState.Expired && state.reason == reason) {
+                return
+            }
+            markExpired(reason)
+        }
     }
 }

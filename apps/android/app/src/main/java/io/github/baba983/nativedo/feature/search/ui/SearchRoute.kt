@@ -51,7 +51,9 @@ import io.github.baba983.nativedo.core.di.AppContainer
 import io.github.baba983.nativedo.core.model.SearchUser
 import io.github.baba983.nativedo.core.storage.CookieStore
 import io.github.baba983.nativedo.core.storage.RecentSearchStore
+import io.github.baba983.nativedo.core.ui.RequestErrorCard
 import io.github.baba983.nativedo.core.ui.UserAvatar
+import io.github.baba983.nativedo.core.ui.requestErrorPresentation
 import io.github.baba983.nativedo.feature.home.ui.TopicListItem
 import io.github.baba983.nativedo.feature.search.data.SearchRepository
 import io.github.baba983.nativedo.feature.search.domain.SearchTopicsUseCase
@@ -125,6 +127,13 @@ internal fun SearchScreen(
     autoFocus: Boolean = false,
 ) {
     val colors = NativeDoThemeExtras.colors
+    val errorPresentation = uiState.errorMessage?.let {
+        requestErrorPresentation(
+            rawMessage = it,
+            genericTitle = "Couldn't search Linux.do",
+            genericDescription = "Please try again in a moment.",
+        )
+    }
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
     val stickyBackgroundColor = lerp(
@@ -246,12 +255,16 @@ internal fun SearchScreen(
             )
         }
 
-        uiState.errorMessage?.let { error ->
-            Text(
-                text = error,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
+        uiState.errorMessage?.let {
+            RequestErrorCard(
+                presentation = requireNotNull(errorPresentation),
+                onRetry = {
+                    if (uiState.query.isNotBlank()) {
+                        onQuerySubmitted(uiState.query)
+                    }
+                },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                compact = true,
             )
         }
 
