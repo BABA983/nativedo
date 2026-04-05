@@ -1,9 +1,38 @@
 package io.github.baba983.nativedo.core.ui
 
+import androidx.compose.ui.unit.IntRect
 import com.google.common.truth.Truth.assertThat
 import org.junit.Test
 
 class HtmlPostBodyViewTest {
+    @Test
+    fun calculatePostImageViewerLaunchSource_translatesClippedBoundsIntoScreenSpace() {
+        val launchSource = calculatePostImageViewerLaunchSource(
+            imageBoundsOnScreen = IntRect(left = 24, top = 220, right = 324, bottom = 620),
+            visibleBoundsOnScreen = IntRect(left = 24, top = 276, right = 324, bottom = 516),
+            cornerRadiusPx = 18f,
+        )
+
+        assertThat(launchSource).isEqualTo(
+            PostImageViewerLaunchSource(
+                boundsOnScreen = IntRect(left = 24, top = 276, right = 324, bottom = 516),
+                fullBoundsOnScreen = IntRect(left = 24, top = 220, right = 324, bottom = 620),
+                cornerRadiusPx = 18f,
+            ),
+        )
+    }
+
+    @Test
+    fun calculatePostImageViewerLaunchSource_returnsNullWhenClippedBoundsCollapse() {
+        assertThat(
+            calculatePostImageViewerLaunchSource(
+                imageBoundsOnScreen = IntRect(left = 24, top = 220, right = 324, bottom = 620),
+                visibleBoundsOnScreen = IntRect(left = 24, top = 276, right = 24, bottom = 516),
+                cornerRadiusPx = 18f,
+            ),
+        ).isNull()
+    }
+
     @Test
     fun parsePostBodyBlocks_extractsLightboxImageBetweenHtmlBlocks() {
         val html = """
@@ -299,6 +328,146 @@ class HtmlPostBodyViewTest {
     }
 
     @Test
+    fun parsePostBodyBlocks_mapsDiscourseQuoteAsideToDiscourseQuoteBlock() {
+        val html = """
+            <aside class="quote no-group" data-username="bigcat2333" data-display-name="大猫">
+              <div class="title" data-can-navigate-to-post="/t/topic/1888983">
+                <img alt="" width="24" height="24" src="https://cdn.linux.do/user_avatar/linux.do/bigcat2333/48/970018_2.png" class="avatar">
+                大猫:
+                <a href="/t/topic/1888983">引用的帖子</a>
+                <div class="quote-controls">
+                  <a href="/t/topic/1888983" class="btn no-text btn-flat back">返回</a>
+                </div>
+              </div>
+              <blockquote id="quote-id-1888983-1-0">
+                <div class="post__contents-cooked-quote">
+                  <p dir="auto">引用内容</p>
+                </div>
+              </blockquote>
+            </aside>
+        """.trimIndent()
+
+        val blocks = parsePostBodyBlocks(html)
+
+        assertThat(blocks).containsExactly(
+            PostBodyBlock.DiscourseQuoteBlock(
+                authorDisplayName = "大猫",
+                authorUsername = "bigcat2333",
+                avatarUrl = "https://cdn.linux.do/user_avatar/linux.do/bigcat2333/48/970018_2.png",
+                titleInlines = listOf(
+                    PostInline.Link(
+                        children = listOf(PostInline.Text("引用的帖子")),
+                        rawUrl = "/t/topic/1888983",
+                    ),
+                ),
+                children = listOf(
+                    PostBodyBlock.RichTextBlock(
+                        style = RichTextBlockStyle.Paragraph,
+                        inlines = listOf(PostInline.Text("引用内容")),
+                    ),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun parsePostBodyBlocks_mapsOneboxAsideToOneboxBlock() {
+        val html = """
+            <aside class="onebox allowlistedgeneric" data-onebox-src="https://firebase.studio" dir="auto">
+              <header class="source">
+                <img src="https://cdn3.linux.do/original/4X/a/6/8/a68a61b53e6d7f89a9307027d713418f7c1ddf91.png" class="site-icon" alt="" width="32" height="32">
+                <a href="https://firebase.studio" target="_blank" rel="noopener nofollow ugc" class="normal-external-link-icon">firebase.studio</a>
+              </header>
+              <article class="onebox-body">
+                <div class="aspect-image" style="--aspect-ratio:690/362;"><img src="https://cdn3.linux.do/optimized/4X/f/0/9/f09a44211edd39a45aeca1ac9ca2207d57c93b6d_2_690x362.jpeg" class="thumbnail" alt="" width="690" height="362"></div>
+                <h3><a href="https://firebase.studio" target="_blank" rel="noopener nofollow ugc" class="normal-external-link-icon">Firebase Studio</a></h3>
+                <p>Firebase Studio is an entirely web-based workspace for full-stack application development, complete with the latest generative AI from Gemini, and full-fidelity app previews, powered by cloud emulators.</p>
+              </article>
+            </aside>
+        """.trimIndent()
+
+        val blocks = parsePostBodyBlocks(html)
+
+        assertThat(blocks).containsExactly(
+            PostBodyBlock.OneboxBlock(
+                sourceLabel = "firebase.studio",
+                sourceUrl = "https://firebase.studio",
+                sourceIconUrl = "https://cdn3.linux.do/original/4X/a/6/8/a68a61b53e6d7f89a9307027d713418f7c1ddf91.png",
+                title = "Firebase Studio",
+                targetUrl = "https://firebase.studio",
+                description = "Firebase Studio is an entirely web-based workspace for full-stack application development, complete with the latest generative AI from Gemini, and full-fidelity app previews, powered by cloud emulators.",
+                image = PostBodyImage(
+                    rawUrl = "https://cdn3.linux.do/optimized/4X/f/0/9/f09a44211edd39a45aeca1ac9ca2207d57c93b6d_2_690x362.jpeg",
+                    width = 690,
+                    height = 362,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun parsePostBodyBlocks_mapsLightboxWithMetaToLightboxBlock() {
+        val html = """
+            <a class="lightbox" href="https://cdn3.linux.do/original/4X/2/3/2/2328032b9df484b357faea793f31a24be265f3c0.png" data-download-href="/uploads/short-url/510r89dit4ivW8enSX0MpxM2Qog.png?dl=1" title="image">
+              <img src="https://cdn3.linux.do/optimized/4X/2/3/2/2328032b9df484b357faea793f31a24be265f3c0_2_618x500.png" alt="image" width="618" height="500">
+              <div class="meta">
+                <span class="filename">image</span>
+                <span class="informations">670×542 31.3 KB</span>
+              </div>
+            </a>
+        """.trimIndent()
+
+        val blocks = parsePostBodyBlocks(html)
+
+        assertThat(blocks).containsExactly(
+            PostBodyBlock.LightboxBlock(
+                image = PostBodyImage(
+                    rawUrl = "https://cdn3.linux.do/optimized/4X/2/3/2/2328032b9df484b357faea793f31a24be265f3c0_2_618x500.png",
+                    originalUrl = "https://cdn3.linux.do/original/4X/2/3/2/2328032b9df484b357faea793f31a24be265f3c0.png",
+                    width = 618,
+                    height = 500,
+                ),
+                filename = "image",
+                information = "670×542 31.3 KB",
+            ),
+        )
+    }
+
+    @Test
+    fun parsePostBodyBlocks_mapsStrongWrappedLightboxWrapperToLightboxBlock() {
+        val html = """
+            <strong dir="auto">
+              <div class="lightbox-wrapper">
+                <a class="lightbox" href="https://cdn3.linux.do/original/4X/6/c/5/6c5132c477309e7152318f1feedfe00657f3fcbf.png" data-download-href="/uploads/short-url/fsdx4kPsCrt9cmifzxCEyRIdut9.png?dl=1" title="image">
+                  <img src="https://cdn3.linux.do/original/4X/6/c/5/6c5132c477309e7152318f1feedfe00657f3fcbf.png" alt="image" width="690" height="476">
+                  <div class="meta">
+                    <svg class="fa d-icon d-icon-far-image svg-icon" aria-hidden="true"></svg>
+                    <span class="filename">image</span>
+                    <span class="informations">720×497 30.9 KB</span>
+                    <svg class="fa d-icon d-icon-discourse-expand svg-icon" aria-hidden="true"></svg>
+                  </div>
+                </a>
+              </div>
+            </strong>
+        """.trimIndent()
+
+        val blocks = parsePostBodyBlocks(html)
+
+        assertThat(blocks).containsExactly(
+            PostBodyBlock.LightboxBlock(
+                image = PostBodyImage(
+                    rawUrl = "https://cdn3.linux.do/original/4X/6/c/5/6c5132c477309e7152318f1feedfe00657f3fcbf.png",
+                    originalUrl = "https://cdn3.linux.do/original/4X/6/c/5/6c5132c477309e7152318f1feedfe00657f3fcbf.png",
+                    width = 690,
+                    height = 476,
+                ),
+                filename = "image",
+                information = "720×497 30.9 KB",
+            ),
+        )
+    }
+
+    @Test
     fun parsePostBodyBlocks_mapsPreCodeToCodeBlock() {
         val html = """
             <pre><code class="language-kotlin">val answer = 42</code></pre>
@@ -412,6 +581,14 @@ class HtmlPostBodyViewTest {
                     originalUrl = "/uploads/default/original/1X/single.png",
                 ),
             ),
+            PostBodyBlock.LightboxBlock(
+                image = PostBodyImage(
+                    rawUrl = "/uploads/default/optimized/1X/lightbox-thumb.png",
+                    originalUrl = "/uploads/default/original/1X/lightbox.png",
+                ),
+                filename = "lightbox",
+                information = "800×600",
+            ),
             PostBodyBlock.ImageGridBlock(
                 images = listOf(
                     PostBodyImage(rawUrl = "/uploads/default/original/1X/grid-1.png"),
@@ -427,6 +604,10 @@ class HtmlPostBodyViewTest {
             PostBodyImage(
                 rawUrl = "/uploads/default/optimized/1X/single-thumb.png",
                 originalUrl = "/uploads/default/original/1X/single.png",
+            ),
+            PostBodyImage(
+                rawUrl = "/uploads/default/optimized/1X/lightbox-thumb.png",
+                originalUrl = "/uploads/default/original/1X/lightbox.png",
             ),
             PostBodyImage(rawUrl = "/uploads/default/original/1X/grid-1.png"),
             PostBodyImage(rawUrl = "/uploads/default/original/1X/grid-2.png"),
@@ -479,6 +660,31 @@ class HtmlPostBodyViewTest {
             PostBodyImage(rawUrl = "/uploads/default/original/1X/grid-1.png"),
             PostBodyImage(rawUrl = "/uploads/default/original/1X/grid-2.png"),
         ).inOrder()
+    }
+
+    @Test
+    fun collectGalleryImages_recursesIntoDiscourseQuoteBlock() {
+        val galleryImages = collectGalleryImages(
+            listOf(
+                PostBodyBlock.DiscourseQuoteBlock(
+                    authorDisplayName = "大猫",
+                    authorUsername = "bigcat2333",
+                    avatarUrl = null,
+                    titleInlines = emptyList(),
+                    children = listOf(
+                        PostBodyBlock.ImageBlock(
+                            PostBodyImage(
+                                rawUrl = "/uploads/default/original/1X/quote-image.png",
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        assertThat(galleryImages).containsExactly(
+            PostBodyImage(rawUrl = "/uploads/default/original/1X/quote-image.png"),
+        )
     }
 
     @Test

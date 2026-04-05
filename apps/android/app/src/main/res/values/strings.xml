@@ -10,4 +10,11 @@
     <string name="theme_mode_toggle">Switch theme mode</string>
     <string name="screen_topic">Topic</string>
     <string name="screen_sign_in">Sign In</string>
+    <string name="post_image_viewer_close">Close image viewer</string>
+    <string name="post_image_viewer_more_actions">More image actions</string>
+    <string name="post_image_viewer_action_share">Share</string>
+    <string name="post_image_viewer_action_open_in_browser">Open in browser</string>
+    <string name="post_image_viewer_action_save_image">Save image</string>
+    <string name="post_image_viewer_download_started">Image download started</string>
+    <string name="post_image_viewer_action_failed">Unable to complete image action</string>
 </resources>

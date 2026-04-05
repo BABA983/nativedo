@@ -48,6 +48,7 @@ internal fun buildPostBodyText(
             builder = builder,
             span = span,
             onClick = onClick,
+            emphasize = destination is PostBodyInternalDestination.User,
         )
     }
 
@@ -100,6 +101,7 @@ private fun replaceUrlSpan(
     builder: SpannableStringBuilder,
     span: URLSpan,
     onClick: () -> Unit,
+    emphasize: Boolean,
 ) {
     val start = builder.getSpanStart(span)
     val end = builder.getSpanEnd(span)
@@ -113,7 +115,10 @@ private fun replaceUrlSpan(
 
             override fun updateDrawState(ds: TextPaint) {
                 super.updateDrawState(ds)
-                ds.isUnderlineText = true
+                ds.isUnderlineText = false
+                if (emphasize) {
+                    ds.typeface = android.graphics.Typeface.create(ds.typeface, android.graphics.Typeface.BOLD)
+                }
             }
         },
         start,

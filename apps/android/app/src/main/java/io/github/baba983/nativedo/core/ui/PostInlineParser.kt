@@ -65,6 +65,12 @@ private fun Element.toPostInlines(
                 children = parseInlineNodes(childNodes(), preserveRawText = preserveRawText),
             ),
         )
+        tagName() in setOf("del", "s", "strike") -> listOf(
+            PostInline.Styled(
+                style = InlineStyle.Strike,
+                children = parseInlineNodes(childNodes(), preserveRawText = preserveRawText),
+            ),
+        )
         tagName() == "code" -> listOf(
             PostInline.Styled(
                 style = InlineStyle.Code,

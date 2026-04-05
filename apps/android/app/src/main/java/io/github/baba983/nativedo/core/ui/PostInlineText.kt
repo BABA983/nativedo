@@ -6,9 +6,11 @@ import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.TextPaint
 import android.text.method.LinkMovementMethod
+import android.text.style.BackgroundColorSpan
 import android.text.style.ClickableSpan
 import android.text.style.RelativeSizeSpan
 import android.text.style.StyleSpan
+import android.text.style.StrikethroughSpan
 import android.text.style.TypefaceSpan
 import android.text.style.URLSpan
 import android.util.TypedValue
@@ -18,6 +20,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.viewinterop.AndroidView
@@ -32,6 +35,7 @@ internal fun buildPostInlineText(
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
     textSizePx: Float,
+    inlineCodeBackgroundColor: Int = DEFAULT_INLINE_CODE_BACKGROUND_COLOR,
 ): AppliedInlineImages {
     val builder = SpannableStringBuilder()
     val inlineImages = mutableListOf<InlineImageSpec>()
@@ -42,6 +46,7 @@ internal fun buildPostInlineText(
         onTopicClick = onTopicClick,
         onUserClick = onUserClick,
         inlineImages = inlineImages,
+        inlineCodeBackgroundColor = inlineCodeBackgroundColor,
     )
     return applyInlineImagePlaceholders(
         text = builder,
@@ -61,9 +66,34 @@ internal fun PostInlineTextBlock(
     onUserClick: ((String) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
+    PostInlineText(
+        inlines = inlines,
+        textStyle = style.toTypographyStyle(),
+        cookieStore = cookieStore,
+        baseUrl = baseUrl,
+        onTopicClick = onTopicClick,
+        onUserClick = onUserClick,
+        modifier = modifier,
+    )
+}
+
+@Composable
+internal fun PostInlineText(
+    inlines: List<PostInline>,
+    textStyle: TextStyle,
+    cookieStore: CookieStore,
+    baseUrl: String,
+    onTopicClick: ((Long) -> Unit)?,
+    onUserClick: ((String) -> Unit)?,
+    modifier: Modifier = Modifier,
+    textColor: Color? = null,
+    linkColor: Color? = null,
+    onClick: (() -> Unit)? = null,
+) {
     val colors = NativeDoThemeExtras.colors
-    val textStyle = style.toTypographyStyle()
-    val linkColor = MaterialTheme.colorScheme.primary.toArgb()
+    val resolvedTextColor = (textColor ?: colors.textPrimary).toArgb()
+    val resolvedLinkColor = (linkColor ?: MaterialTheme.colorScheme.primary).toArgb()
+    val inlineCodeBackgroundColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f).toArgb()
     val coroutineScope = rememberCoroutineScope()
 
     AndroidView(
@@ -73,13 +103,17 @@ internal fun PostInlineTextBlock(
                 movementMethod = LinkMovementMethod.getInstance()
                 setBackgroundColor(TRANSPARENT)
                 setTextIsSelectable(false)
+                includeFontPadding = false
             }
         },
         update = { textView ->
             (textView.tag as? InlineImageRenderHandle)?.cancel()
 
-            textView.setTextColor(colors.textPrimary.toArgb())
-            textView.setLinkTextColor(linkColor)
+            textView.setTextColor(resolvedTextColor)
+            textView.setLinkTextColor(resolvedLinkColor)
+            textView.setOnClickListener(onClick?.let { callback ->
+                View.OnClickListener { callback() }
+            })
             textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, textStyle.fontSize.value)
             if (textStyle.lineHeight.value > 0f && textStyle.fontSize.value > 0f) {
                 textView.setLineSpacing(0f, textStyle.lineHeight.value / textStyle.fontSize.value)
@@ -91,6 +125,7 @@ internal fun PostInlineTextBlock(
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
                 textSizePx = textView.textSize,
+                inlineCodeBackgroundColor = inlineCodeBackgroundColor,
             )
             textView.text = appliedInlineImages.text
 
@@ -119,6 +154,7 @@ private fun appendPostInlines(
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
     inlineImages: MutableList<InlineImageSpec>,
+    inlineCodeBackgroundColor: Int,
 ) {
     inlines.forEach { inline ->
         when (inline) {
@@ -136,22 +172,9 @@ private fun appendPostInlines(
                 inlineImages = inlineImages,
             )
 
-            is PostInline.Styled -> builder.appendSpan(inline.toSpan()) {
-                appendPostInlines(
-                    builder = builder,
-                    inlines = inline.children,
-                    baseUrl = baseUrl,
-                    onTopicClick = onTopicClick,
-                    onUserClick = onUserClick,
-                    inlineImages = inlineImages,
-                )
-            }
-
-            is PostInline.Link -> builder.appendSpan(
-                inline.toLinkSpan(
-                    baseUrl = baseUrl,
-                    onTopicClick = onTopicClick,
-                    onUserClick = onUserClick,
+            is PostInline.Styled -> builder.appendSpans(
+                spans = inline.toSpans(
+                    inlineCodeBackgroundColor = inlineCodeBackgroundColor,
                 ),
             ) {
                 appendPostInlines(
@@ -161,7 +184,43 @@ private fun appendPostInlines(
                     onTopicClick = onTopicClick,
                     onUserClick = onUserClick,
                     inlineImages = inlineImages,
+                    inlineCodeBackgroundColor = inlineCodeBackgroundColor,
                 )
+            }
+
+            is PostInline.Link -> {
+                val isMentionLink = inline.isMentionLink(baseUrl)
+                builder.appendSpan(
+                    inline.toLinkSpan(
+                        baseUrl = baseUrl,
+                        onTopicClick = onTopicClick,
+                        onUserClick = onUserClick,
+                    ),
+                ) {
+                    if (isMentionLink) {
+                        builder.appendSpans(listOf(StyleSpan(Typeface.BOLD))) {
+                            appendPostInlines(
+                                builder = builder,
+                                inlines = inline.children,
+                                baseUrl = baseUrl,
+                                onTopicClick = onTopicClick,
+                                onUserClick = onUserClick,
+                                inlineImages = inlineImages,
+                                inlineCodeBackgroundColor = inlineCodeBackgroundColor,
+                            )
+                        }
+                    } else {
+                        appendPostInlines(
+                            builder = builder,
+                            inlines = inline.children,
+                            baseUrl = baseUrl,
+                            onTopicClick = onTopicClick,
+                            onUserClick = onUserClick,
+                            inlineImages = inlineImages,
+                            inlineCodeBackgroundColor = inlineCodeBackgroundColor,
+                        )
+                    }
+                }
             }
         }
     }
@@ -176,6 +235,20 @@ private fun SpannableStringBuilder.appendSpan(
     val end = length
     if (end > start) {
         setSpan(span, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    }
+}
+
+private fun SpannableStringBuilder.appendSpans(
+    spans: List<Any>,
+    block: () -> Unit,
+) {
+    val start = length
+    block()
+    val end = length
+    if (end > start) {
+        spans.forEach { span ->
+            setSpan(span, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
     }
 }
 
@@ -199,12 +272,18 @@ private fun SpannableStringBuilder.appendInlineImage(
     )
 }
 
-private fun PostInline.Styled.toSpan(): Any {
+private fun PostInline.Styled.toSpans(
+    inlineCodeBackgroundColor: Int,
+): List<Any> {
     return when (style) {
-        InlineStyle.Bold -> StyleSpan(Typeface.BOLD)
-        InlineStyle.Italic -> StyleSpan(Typeface.ITALIC)
-        InlineStyle.Code -> TypefaceSpan("monospace")
-        InlineStyle.LargeText -> RelativeSizeSpan(1.8f)
+        InlineStyle.Bold -> listOf(StyleSpan(Typeface.BOLD))
+        InlineStyle.Italic -> listOf(StyleSpan(Typeface.ITALIC))
+        InlineStyle.Strike -> listOf(StrikethroughSpan())
+        InlineStyle.Code -> listOf(
+            TypefaceSpan("monospace"),
+            BackgroundColorSpan(inlineCodeBackgroundColor),
+        )
+        InlineStyle.LargeText -> listOf(RelativeSizeSpan(1.8f))
     }
 }
 
@@ -217,12 +296,18 @@ private fun PostInline.Link.toLinkSpan(
         baseUrl = baseUrl,
         rawUrl = rawUrl,
     )
+    val emphasize = destination is PostBodyInternalDestination.User
     return when (destination) {
         is PostBodyInternalDestination.Topic -> {
             if (onTopicClick == null) {
-                URLSpan(resolveUrl(baseUrl, rawUrl))
+                PostInlineUrlSpan(
+                    url = resolveUrl(baseUrl, rawUrl),
+                    emphasize = emphasize,
+                )
             } else {
-                PostInlineClickSpan {
+                PostInlineClickSpan(
+                    emphasize = emphasize,
+                ) {
                     onTopicClick(destination.topicId)
                 }
             }
@@ -230,15 +315,23 @@ private fun PostInline.Link.toLinkSpan(
 
         is PostBodyInternalDestination.User -> {
             if (onUserClick == null) {
-                URLSpan(resolveUrl(baseUrl, rawUrl))
+                PostInlineUrlSpan(
+                    url = resolveUrl(baseUrl, rawUrl),
+                    emphasize = emphasize,
+                )
             } else {
-                PostInlineClickSpan {
+                PostInlineClickSpan(
+                    emphasize = emphasize,
+                ) {
                     onUserClick(destination.username)
                 }
             }
         }
 
-        null -> URLSpan(resolveUrl(baseUrl, rawUrl))
+        null -> PostInlineUrlSpan(
+            url = resolveUrl(baseUrl, rawUrl),
+            emphasize = false,
+        )
     }
 }
 
@@ -250,7 +343,15 @@ private fun resolveUrl(
     return baseHttpUrl.resolve(rawUrl)?.toString() ?: rawUrl
 }
 
+private fun PostInline.Link.isMentionLink(baseUrl: String): Boolean {
+    return parseInternalLinkDestination(
+        baseUrl = baseUrl,
+        rawUrl = rawUrl,
+    ) is PostBodyInternalDestination.User
+}
+
 private class PostInlineClickSpan(
+    private val emphasize: Boolean = false,
     private val onClick: () -> Unit,
 ) : ClickableSpan() {
     override fun onClick(widget: View) {
@@ -259,7 +360,25 @@ private class PostInlineClickSpan(
 
     override fun updateDrawState(ds: TextPaint) {
         super.updateDrawState(ds)
-        ds.isUnderlineText = true
+        ds.isUnderlineText = false
+        if (emphasize) {
+            ds.typeface = Typeface.create(ds.typeface, Typeface.BOLD)
+            ds.isFakeBoldText = true
+        }
+    }
+}
+
+private class PostInlineUrlSpan(
+    url: String,
+    private val emphasize: Boolean,
+) : URLSpan(url) {
+    override fun updateDrawState(ds: TextPaint) {
+        super.updateDrawState(ds)
+        ds.isUnderlineText = false
+        if (emphasize) {
+            ds.typeface = Typeface.create(ds.typeface, Typeface.BOLD)
+            ds.isFakeBoldText = true
+        }
     }
 }
 
@@ -272,3 +391,5 @@ private fun RichTextBlockStyle.toTypographyStyle(): TextStyle {
         RichTextBlockStyle.Heading3 -> MaterialTheme.typography.titleLarge
     }
 }
+
+private const val DEFAULT_INLINE_CODE_BACKGROUND_COLOR = 0x14000000

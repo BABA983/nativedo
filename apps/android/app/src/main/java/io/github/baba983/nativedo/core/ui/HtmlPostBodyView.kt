@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,9 +31,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionOnScreen
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.CircularProgressIndicator
@@ -42,7 +48,28 @@ import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.dp
+import java.util.IdentityHashMap
+import kotlin.math.roundToInt
+
+internal fun calculatePostImageViewerLaunchSource(
+    imageBoundsOnScreen: IntRect,
+    visibleBoundsOnScreen: IntRect,
+    cornerRadiusPx: Float = 0f,
+): PostImageViewerLaunchSource? {
+    if (visibleBoundsOnScreen.width <= 0 || visibleBoundsOnScreen.height <= 0) {
+        return null
+    }
+
+    return PostImageViewerLaunchSource(
+        boundsOnScreen = visibleBoundsOnScreen,
+        fullBoundsOnScreen = imageBoundsOnScreen,
+        cornerRadiusPx = cornerRadiusPx,
+    )
+}
+
+private val postImageThumbnailCornerRadius = 18.dp
 
 @Composable
 fun HtmlPostBodyView(
@@ -55,30 +82,55 @@ fun HtmlPostBodyView(
 ) {
     val blocks = remember(html) { parsePostBodyBlocks(html) }
     val galleryImages = remember(blocks) { collectGalleryImages(blocks) }
+    val galleryImageIndexLookup = remember(galleryImages) {
+        buildPostImageViewerImageIndexLookup(galleryImages)
+    }
+    val galleryImageSourceLookup = remember(galleryImages) {
+        IdentityHashMap<PostBodyImage, PostImageViewerLaunchSource>(galleryImages.size)
+    }
+    var hiddenViewerImage by remember(galleryImages) { mutableStateOf<PostBodyImage?>(null) }
     var viewerState by remember(galleryImages) { mutableStateOf<PostImageViewerState?>(null) }
 
     Column(
         modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        blocks.forEach { block ->
+        blocks.forEachIndexed { index, block ->
             RenderPostBodyBlock(
                 block = block,
                 cookieStore = cookieStore,
                 baseUrl = baseUrl,
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
-                onImageClick = { clickedImage ->
+                hiddenImage = hiddenViewerImage,
+                onImageSourceChanged = { image, launchSource ->
+                    if (launchSource == null) {
+                        galleryImageSourceLookup.remove(image)
+                    } else {
+                        galleryImageSourceLookup[image] = launchSource
+                    }
+                },
+                onImageClick = { clickedImage, launchSource ->
                     viewerState = PostImageViewerState(
                         images = galleryImages,
-                        initialIndex = findGalleryStartIndex(
-                            galleryImages = galleryImages,
-                            clickedImage = clickedImage,
-                        ),
+                        initialIndex = galleryImageIndexLookup[clickedImage]
+                            ?: findGalleryStartIndex(
+                                galleryImages = galleryImages,
+                                clickedImage = clickedImage,
+                            ),
+                        launchSource = launchSource ?: galleryImageSourceLookup[clickedImage],
+                        imageLaunchSources = galleryImageSourceLookup,
                     )
                 },
                 modifier = Modifier.fillMaxWidth(),
             )
+
+            val spacing = postBodyBlockSpacingAfter(
+                current = block,
+                next = blocks.getOrNull(index + 1),
+            )
+            if (spacing > 0.dp) {
+                Spacer(modifier = Modifier.height(spacing))
+            }
         }
     }
 
@@ -88,7 +140,11 @@ fun HtmlPostBodyView(
                 state = state,
                 cookieStore = cookieStore,
                 baseUrl = baseUrl,
-                onDismiss = { viewerState = null },
+                onVisibleImageChanged = { hiddenViewerImage = it },
+                onDismiss = {
+                    hiddenViewerImage = null
+                    viewerState = null
+                },
             )
         }
     }
@@ -115,6 +171,7 @@ internal fun HtmlTextBlock(
                 movementMethod = LinkMovementMethod.getInstance()
                 setBackgroundColor(TRANSPARENT)
                 setTextIsSelectable(false)
+                includeFontPadding = false
             }
         },
         update = { textView ->
@@ -169,14 +226,18 @@ internal class InlineImageRenderHandle {
 }
 
 @Composable
-fun PostImageView(
+internal fun PostImageView(
     image: PostBodyImage,
     cookieStore: CookieStore,
     baseUrl: String,
     modifier: Modifier = Modifier,
     maxHeight: Dp = 320.dp,
     imageAlignment: Alignment = Alignment.CenterStart,
-    onClick: (() -> Unit)? = null,
+    clipRoundedCorners: Boolean = true,
+    isHidden: Boolean = false,
+    previewBitmap: android.graphics.Bitmap? = null,
+    onLaunchSourceChanged: ((PostImageViewerLaunchSource?) -> Unit)? = null,
+    onClick: ((PostImageViewerLaunchSource?) -> Unit)? = null,
 ) {
     val colors = NativeDoThemeExtras.colors
     val resolvedUrl = remember(baseUrl, image.rawUrl) {
@@ -189,6 +250,7 @@ fun PostImageView(
         resolvedUrl = resolvedUrl,
         cookieStore = cookieStore,
         baseUrl = baseUrl,
+        previewBitmap = previewBitmap,
     )
 
     val aspectRatio = remember(image.width, image.height, bitmap) {
@@ -202,6 +264,29 @@ fun PostImageView(
             }
 
             else -> 4f / 3f
+        }
+    }
+    val density = LocalDensity.current
+    val thumbnailCornerRadiusPx = remember(density, clipRoundedCorners) {
+        if (clipRoundedCorners) {
+            with(density) { postImageThumbnailCornerRadius.toPx() }
+        } else {
+            0f
+        }
+    }
+    var launchSource by remember(image) { mutableStateOf<PostImageViewerLaunchSource?>(null) }
+    LaunchedEffect(image, bitmap) {
+        bitmap?.let { currentBitmap ->
+            cachePostImageViewerPreviewBitmap(
+                image = image,
+                bitmap = currentBitmap,
+            )
+        }
+    }
+    DisposableEffect(image) {
+        onDispose {
+            launchSource = null
+            onLaunchSourceChanged?.invoke(null)
         }
     }
 
@@ -220,11 +305,56 @@ fun PostImageView(
         val imageModifier = Modifier
             .width(imageSize.width)
             .height(imageSize.height)
-            .clip(RoundedCornerShape(18.dp))
-            .background(colors.glassBackground)
+            .graphicsLayer {
+                alpha = if (isHidden) 0f else 1f
+            }
+            .onGloballyPositioned { coordinates ->
+                val imagePosition = coordinates.positionOnScreen()
+                val imageBoundsOnScreen = IntRect(
+                    left = imagePosition.x.roundToInt(),
+                    top = imagePosition.y.roundToInt(),
+                    right = (imagePosition.x + coordinates.size.width).roundToInt(),
+                    bottom = (imagePosition.y + coordinates.size.height).roundToInt(),
+                )
+                var rootCoordinates = coordinates
+                while (rootCoordinates.parentLayoutCoordinates != null) {
+                    rootCoordinates = rootCoordinates.parentLayoutCoordinates!!
+                }
+                val rootPosition = rootCoordinates.positionOnScreen()
+                val clippedBoundsInRoot = rootCoordinates.localBoundingBoxOf(
+                    sourceCoordinates = coordinates,
+                    clipBounds = true,
+                )
+                val visibleBoundsOnScreen = IntRect(
+                    left = (rootPosition.x + clippedBoundsInRoot.left).roundToInt(),
+                    top = (rootPosition.y + clippedBoundsInRoot.top).roundToInt(),
+                    right = (rootPosition.x + clippedBoundsInRoot.right).roundToInt(),
+                    bottom = (rootPosition.y + clippedBoundsInRoot.bottom).roundToInt(),
+                )
+                val nextLaunchSource = calculatePostImageViewerLaunchSource(
+                    imageBoundsOnScreen = imageBoundsOnScreen,
+                    visibleBoundsOnScreen = visibleBoundsOnScreen,
+                    cornerRadiusPx = thumbnailCornerRadiusPx,
+                )
+                if (launchSource != nextLaunchSource) {
+                    launchSource = nextLaunchSource
+                    onLaunchSourceChanged?.invoke(nextLaunchSource)
+                }
+            }
+            .then(
+                if (clipRoundedCorners) {
+                    Modifier
+                        .clip(RoundedCornerShape(postImageThumbnailCornerRadius))
+                        .background(colors.glassBackground)
+                } else {
+                    Modifier
+                },
+            )
             .let { baseModifier ->
                 if (onClick != null) {
-                    baseModifier.clickable(onClick = onClick)
+                    baseModifier.clickable {
+                        onClick(launchSource)
+                    }
                 } else {
                     baseModifier
                 }
@@ -257,7 +387,9 @@ internal fun PostImageGrid(
     columns: Int,
     cookieStore: CookieStore,
     baseUrl: String,
-    onImageClick: (PostBodyImage) -> Unit,
+    hiddenImage: PostBodyImage? = null,
+    onImageSourceChanged: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)? = null,
+    onImageClick: (PostBodyImage, PostImageViewerLaunchSource?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val clampedColumns = columns.coerceAtLeast(1)
@@ -278,7 +410,13 @@ internal fun PostImageGrid(
                         cookieStore = cookieStore,
                         baseUrl = baseUrl,
                         maxHeight = 220.dp,
-                        onClick = { onImageClick(image) },
+                        isHidden = shouldHidePostImageThumbnail(image, hiddenImage),
+                        onLaunchSourceChanged = onImageSourceChanged?.let { callback ->
+                            { launchSource -> callback(image, launchSource) }
+                        },
+                        onClick = { launchSource ->
+                            onImageClick(image, launchSource)
+                        },
                         modifier = Modifier
                             .weight(1f)
                             .widthIn(min = 0.dp),
@@ -323,3 +461,8 @@ internal fun resolvePostImageUrl(
     baseUrl: String,
     rawUrl: String,
 ): String = baseUrl.toHttpUrl().resolve(rawUrl)?.toString() ?: rawUrl
+
+internal fun shouldHidePostImageThumbnail(
+    image: PostBodyImage,
+    hiddenImage: PostBodyImage?,
+): Boolean = image === hiddenImage

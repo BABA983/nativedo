@@ -31,6 +31,7 @@ sealed interface PostInline {
 enum class InlineStyle {
     Bold,
     Italic,
+    Strike,
     Code,
     LargeText,
 }

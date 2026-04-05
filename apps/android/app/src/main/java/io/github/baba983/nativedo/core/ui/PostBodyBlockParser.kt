@@ -6,7 +6,6 @@ import org.jsoup.nodes.Node
 import org.jsoup.nodes.TextNode
 
 private const val defaultGridColumns = 2
-private val standaloneImageContainers = setOf("p", "div", "figure")
 private val richTextTags = setOf("p", "h1", "h2", "h3")
 
 internal fun parsePostBodyBlocks(html: String): List<PostBodyBlock> {
@@ -52,6 +51,21 @@ private fun parsePostBodyNodes(
                 }
             }
 
+            node is Element && node.isDiscourseQuoteAside() -> {
+                flushHtmlBuffer()
+                blocks += node.toDiscourseQuoteBlock()
+            }
+
+            node is Element && node.isOneboxAside() -> {
+                val oneboxBlock = node.toOneboxBlock()
+                if (oneboxBlock != null) {
+                    flushHtmlBuffer()
+                    blocks += oneboxBlock
+                } else {
+                    htmlBuffer += node.clone()
+                }
+            }
+
             node is Element && node.tagName() == "details" -> {
                 flushHtmlBuffer()
                 blocks += node.toDetailsBlock()
@@ -80,8 +94,12 @@ private fun parsePostBodyNodes(
             }
 
             node is Element -> {
+                val lightboxBlock = node.extractStandaloneLightboxBlock()
                 val image = node.extractStandaloneImage()
-                if (image != null) {
+                if (lightboxBlock != null) {
+                    flushHtmlBuffer()
+                    blocks += lightboxBlock
+                } else if (image != null) {
                     flushHtmlBuffer()
                     blocks += PostBodyBlock.ImageBlock(image)
                 } else if (node.tagName() in richTextTags) {
@@ -103,6 +121,29 @@ private fun parsePostBodyNodes(
 
     flushHtmlBuffer()
     return blocks
+}
+
+private fun Element.toDiscourseQuoteBlock(): PostBodyBlock.DiscourseQuoteBlock {
+    val titleElement = children().firstOrNull { child ->
+        child.tagName() == "div" && child.hasClass("title")
+    }
+    val blockquoteElement = children().firstOrNull { child ->
+        child.tagName() == "blockquote"
+    }
+    return PostBodyBlock.DiscourseQuoteBlock(
+        authorDisplayName = attr("data-display-name")
+            .ifBlank { attr("data-username") }
+            .ifBlank { "引用" },
+        authorUsername = attr("data-username").ifBlank { null },
+        avatarUrl = titleElement
+            ?.selectFirst("img.avatar")
+            ?.attr("src")
+            ?.ifBlank { null },
+        titleInlines = titleElement?.toDiscourseQuoteTitleInlines().orEmpty(),
+        children = blockquoteElement?.let { element ->
+            parsePostBodyNodes(element.discourseQuoteBodyNodes())
+        }.orEmpty(),
+    )
 }
 
 private fun Element.toDetailsBlock(): PostBodyBlock.DetailsBlock {
@@ -176,16 +217,85 @@ private fun Element.isDiscourseImageGrid(): Boolean {
     return tagName() == "div" && hasClass("d-image-grid")
 }
 
+private fun Element.isDiscourseQuoteAside(): Boolean {
+    return tagName() == "aside" && hasClass("quote")
+}
+
+private fun Element.isOneboxAside(): Boolean {
+    return tagName() == "aside" && hasClass("onebox")
+}
+
+private fun Element.toOneboxBlock(): PostBodyBlock.OneboxBlock? {
+    val sourceLink = selectFirst("header.source a[href]") ?: return null
+    val sourceUrl = sourceLink.attr("href").ifBlank { attr("data-onebox-src") }.ifBlank { return null }
+    val sourceLabel = sourceLink.text().ifBlank { sourceUrl }
+    val article = selectFirst("article.onebox-body")
+    val titleLink = article?.selectFirst("h3 a[href]")
+    val title = titleLink?.text()?.ifBlank { null } ?: sourceLabel
+    val targetUrl = titleLink?.attr("href")?.ifBlank { null } ?: sourceUrl
+    val description = article
+        ?.selectFirst("p")
+        ?.text()
+        ?.ifBlank { null }
+    val previewImage = article
+        ?.selectFirst(".aspect-image img, img.thumbnail, img")
+        ?.toPostBodyImage()
+
+    return PostBodyBlock.OneboxBlock(
+        sourceLabel = sourceLabel,
+        sourceUrl = sourceUrl,
+        sourceIconUrl = selectFirst("header.source img.site-icon")
+            ?.attr("src")
+            ?.ifBlank { null },
+        title = title,
+        targetUrl = targetUrl,
+        description = description,
+        image = previewImage,
+    )
+}
+
+private fun Element.toDiscourseQuoteTitleInlines(): List<PostInline> {
+    val normalizedTitle = clone().apply {
+        select("img.avatar, .quote-controls").remove()
+    }
+    val titleLink = normalizedTitle.selectFirst("a") ?: return emptyList()
+    return parseInlineHtml(titleLink.outerHtml())
+}
+
+private fun Element.discourseQuoteBodyNodes(): List<Node> {
+    val contentWrapper = children().firstOrNull { child ->
+        child.tagName() == "div" && child.hasClass("post__contents-cooked-quote")
+    }
+    return contentWrapper?.childNodes() ?: childNodes()
+}
+
 private fun Element.extractStandaloneImage(): PostBodyImage? {
     return when {
         tagName() == "img" && !hasInlineTextImageClass() -> toPostBodyImage()
         tagName() == "a" && hasClass("lightbox") -> extractLightboxImage()
-        tagName() in standaloneImageContainers && ownText().isBlank() && childrenSize() == 1 -> {
+        isStandaloneMediaWrapper() -> {
             child(0).extractStandaloneImage()
         }
 
         else -> null
     }
+}
+
+private fun Element.extractStandaloneLightboxBlock(): PostBodyBlock.LightboxBlock? {
+    return when {
+        tagName() == "a" && hasClass("lightbox") -> toLightboxBlock()
+        isStandaloneMediaWrapper() -> {
+            child(0).extractStandaloneLightboxBlock()
+        }
+
+        else -> null
+    }
+}
+
+private fun Element.isStandaloneMediaWrapper(): Boolean {
+    return ownText().isBlank() &&
+        childrenSize() == 1 &&
+        child(0).tagName() != "br"
 }
 
 private fun Element.extractLightboxImage(): PostBodyImage? {
@@ -195,6 +305,25 @@ private fun Element.extractLightboxImage(): PostBodyImage? {
 
     return imageElement.toPostBodyImage(
         originalUrl = attr("href").ifBlank { null },
+    )
+}
+
+private fun Element.toLightboxBlock(): PostBodyBlock.LightboxBlock? {
+    val metaElement = children().firstOrNull { child ->
+        child.tagName() == "div" && child.hasClass("meta")
+    } ?: return null
+    val image = extractLightboxImage() ?: return null
+
+    return PostBodyBlock.LightboxBlock(
+        image = image,
+        filename = metaElement
+            .selectFirst(".filename")
+            ?.text()
+            ?.ifBlank { attr("title").ifBlank { null } },
+        information = metaElement
+            .selectFirst(".informations")
+            ?.text()
+            ?.ifBlank { null },
     )
 }
 

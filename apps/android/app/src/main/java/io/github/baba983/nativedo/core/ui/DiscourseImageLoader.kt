@@ -16,29 +16,57 @@ import okhttp3.Request
 
 private val discourseImageClient = OkHttpClient()
 private val discourseBitmapCache = MemoryLruCache<Bitmap>(maxEntries = 128)
+private val postImageViewerPreviewCache = MemoryLruCache<Bitmap>(maxEntries = 24)
 
 @Composable
 internal fun rememberDiscourseBitmap(
     resolvedUrl: String,
     cookieStore: CookieStore,
     baseUrl: String,
+    previewBitmap: Bitmap? = null,
 ): State<Bitmap?> {
-    val cachedBitmap = remember(resolvedUrl) {
-        discourseBitmapCache.get(resolvedUrl)
+    val cachedBitmap = remember(resolvedUrl, previewBitmap) {
+        discourseBitmapCache.get(resolvedUrl) ?: previewBitmap
     }
-    return produceState<Bitmap?>(initialValue = cachedBitmap, resolvedUrl, cookieStore, baseUrl) {
+    return produceState<Bitmap?>(
+        initialValue = cachedBitmap,
+        resolvedUrl,
+        cookieStore,
+        baseUrl,
+        previewBitmap,
+    ) {
         if (resolvedUrl.isBlank()) {
             value = null
             return@produceState
         }
 
-        value = discourseBitmapCache.get(resolvedUrl) ?: fetchDiscourseBitmap(
+        discourseBitmapCache.get(resolvedUrl)?.let { cached ->
+            value = cached
+            return@produceState
+        }
+
+        if (previewBitmap != null) {
+            value = previewBitmap
+        }
+
+        value = fetchDiscourseBitmap(
             resolvedUrl = resolvedUrl,
             cookieStore = cookieStore,
             baseUrl = baseUrl,
         )
     }
 }
+
+internal fun cachePostImageViewerPreviewBitmap(
+    image: PostBodyImage,
+    bitmap: Bitmap,
+) {
+    postImageViewerPreviewCache.put(image.viewerCacheKey(), bitmap)
+}
+
+internal fun findPostImageViewerPreviewBitmap(
+    image: PostBodyImage,
+): Bitmap? = postImageViewerPreviewCache.get(image.viewerCacheKey())
 
 internal suspend fun fetchDiscourseBitmap(
     resolvedUrl: String,

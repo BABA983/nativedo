@@ -14,9 +14,25 @@ sealed interface PostBodyBlock {
         val image: PostBodyImage,
     ) : PostBodyBlock
 
+    data class LightboxBlock(
+        val image: PostBodyImage,
+        val filename: String?,
+        val information: String?,
+    ) : PostBodyBlock
+
     data class ImageGridBlock(
         val images: List<PostBodyImage>,
         val columns: Int,
+    ) : PostBodyBlock
+
+    data class OneboxBlock(
+        val sourceLabel: String,
+        val sourceUrl: String,
+        val sourceIconUrl: String?,
+        val title: String,
+        val targetUrl: String,
+        val description: String?,
+        val image: PostBodyImage?,
     ) : PostBodyBlock
 
     data class DetailsBlock(
@@ -26,6 +42,14 @@ sealed interface PostBodyBlock {
     ) : PostBodyBlock
 
     data class QuoteBlock(
+        val children: List<PostBodyBlock>,
+    ) : PostBodyBlock
+
+    data class DiscourseQuoteBlock(
+        val authorDisplayName: String,
+        val authorUsername: String?,
+        val avatarUrl: String?,
+        val titleInlines: List<PostInline>,
         val children: List<PostBodyBlock>,
     ) : PostBodyBlock
 

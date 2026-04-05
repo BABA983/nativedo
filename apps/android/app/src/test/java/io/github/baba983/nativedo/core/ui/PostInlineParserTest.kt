@@ -62,6 +62,26 @@ class PostInlineParserTest {
     }
 
     @Test
+    fun parseInlineHtml_mapsStrikeTagsToStrikeStyle() {
+        val inlines = parseInlineHtml(
+            """
+                <del>删除</del><s>划掉</s>
+            """.trimIndent(),
+        )
+
+        assertThat(inlines).containsExactly(
+            PostInline.Styled(
+                style = InlineStyle.Strike,
+                children = listOf(PostInline.Text("删除")),
+            ),
+            PostInline.Styled(
+                style = InlineStyle.Strike,
+                children = listOf(PostInline.Text("划掉")),
+            ),
+        ).inOrder()
+    }
+
+    @Test
     fun parseInlineHtml_preservesCodeDoubleSpaces() {
         val inlines = parseInlineHtml(
             """
