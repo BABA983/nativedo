@@ -18,7 +18,10 @@ class PostBodyBlockSpacingTest {
             postBodyBlockSpacingAfter(
                 current = paragraph("before"),
                 next = PostBodyBlock.DetailsBlock(
-                    summary = paragraph("summary"),
+                    summary = TextDocument(
+                        text = "summary",
+                        entities = emptyList(),
+                    ),
                     children = listOf(paragraph("child")),
                     expandedByDefault = false,
                 ),

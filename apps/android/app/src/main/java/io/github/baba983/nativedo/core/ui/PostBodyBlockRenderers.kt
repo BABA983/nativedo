@@ -150,6 +150,30 @@ internal fun RenderPostBodyBlock(
             )
         }
 
+        is PostBodyBlock.ParagraphBlock -> {
+            PostInlineText(
+                inlines = listOf(PostInline.Text(block.content.text)),
+                textStyle = postBodyParagraphTextStyle(MaterialTheme.typography.bodyLarge),
+                cookieStore = cookieStore,
+                baseUrl = baseUrl,
+                onTopicClick = onTopicClick,
+                onUserClick = onUserClick,
+                modifier = modifier,
+            )
+        }
+
+        is PostBodyBlock.HeadingBlock -> {
+            PostInlineText(
+                inlines = listOf(PostInline.Text(block.content.text)),
+                textStyle = block.level.toHeadingTextStyle(),
+                cookieStore = cookieStore,
+                baseUrl = baseUrl,
+                onTopicClick = onTopicClick,
+                onUserClick = onUserClick,
+                modifier = modifier,
+            )
+        }
+
         is PostBodyBlock.DetailsBlock -> {
             DetailsBlockView(
                 block = block,
@@ -430,7 +454,7 @@ internal fun DetailsBlockView(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             PostInlineText(
-                inlines = block.summary.inlines,
+                inlines = listOf(PostInline.Text(block.summary.text)),
                 textStyle = MaterialTheme.typography.labelLarge,
                 cookieStore = cookieStore,
                 baseUrl = baseUrl,
@@ -559,9 +583,11 @@ internal fun DiscourseQuoteBlockView(
                         }
                 }
 
-                if (block.titleInlines.isNotEmpty()) {
+                block.title
+                    ?.takeIf { title -> title.text.isNotBlank() }
+                    ?.let { title ->
                     PostInlineText(
-                        inlines = block.titleInlines,
+                        inlines = listOf(PostInline.Text(title.text)),
                         textStyle = MaterialTheme.typography.labelMedium,
                         cookieStore = cookieStore,
                         baseUrl = baseUrl,
@@ -829,11 +855,13 @@ internal fun postBodyBlockSpacingAfter(
 }
 
 private fun PostBodyBlock.isHeadingBlock(): Boolean {
-    return this is PostBodyBlock.RichTextBlock && style != RichTextBlockStyle.Paragraph
+    return this is PostBodyBlock.HeadingBlock ||
+        (this is PostBodyBlock.RichTextBlock && style != RichTextBlockStyle.Paragraph)
 }
 
 private fun PostBodyBlock.isParagraphBlock(): Boolean {
-    return this is PostBodyBlock.RichTextBlock && style == RichTextBlockStyle.Paragraph
+    return this is PostBodyBlock.ParagraphBlock ||
+        (this is PostBodyBlock.RichTextBlock && style == RichTextBlockStyle.Paragraph)
 }
 
 private fun PostBodyBlock.isMediaBlock(): Boolean {
@@ -857,5 +885,12 @@ private fun postBodyQuoteContainerColor() = lerp(
     stop = NativeDoThemeExtras.colors.accentMuted,
     fraction = 0.46f,
 ).copy(alpha = 0.98f)
+
+@Composable
+private fun Int.toHeadingTextStyle() = when (this) {
+    1 -> MaterialTheme.typography.headlineMedium
+    2 -> MaterialTheme.typography.headlineSmall
+    else -> MaterialTheme.typography.titleLarge
+}
 
 private val postBodyCodeBlockMaxHeight = 220.dp

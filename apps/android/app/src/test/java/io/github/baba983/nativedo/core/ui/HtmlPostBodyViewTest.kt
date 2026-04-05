@@ -47,9 +47,11 @@ class HtmlPostBodyViewTest {
 
         assertThat(blocks).hasSize(3)
         assertThat(blocks[0]).isEqualTo(
-            PostBodyBlock.RichTextBlock(
-                style = RichTextBlockStyle.Paragraph,
-                inlines = listOf(PostInline.Text("Hello")),
+            PostBodyBlock.ParagraphBlock(
+                content = TextDocument(
+                    text = "Hello",
+                    entities = emptyList(),
+                ),
             ),
         )
         assertThat((blocks[1] as PostBodyBlock.ImageBlock).image).isEqualTo(
@@ -61,9 +63,11 @@ class HtmlPostBodyViewTest {
             ),
         )
         assertThat(blocks[2]).isEqualTo(
-            PostBodyBlock.RichTextBlock(
-                style = RichTextBlockStyle.Paragraph,
-                inlines = listOf(PostInline.Text("World")),
+            PostBodyBlock.ParagraphBlock(
+                content = TextDocument(
+                    text = "World",
+                    entities = emptyList(),
+                ),
             ),
         )
     }
@@ -97,7 +101,7 @@ class HtmlPostBodyViewTest {
     }
 
     @Test
-    fun parsePostBodyBlocks_mapsEmojiImageToRichTextBlock() {
+    fun parsePostBodyBlocks_mapsEmojiImageToParagraphBlock() {
         val html = """
             <p><img class="emoji" src="/images/emoji/twemoji/face_savoring_food.png?v=15" title=":face_savoring_food:" alt=":face_savoring_food:" width="20" height="20" /></p>
         """.trimIndent()
@@ -106,12 +110,16 @@ class HtmlPostBodyViewTest {
 
         assertThat(blocks).hasSize(1)
         assertThat(blocks.single()).isEqualTo(
-            PostBodyBlock.RichTextBlock(
-                style = RichTextBlockStyle.Paragraph,
-                inlines = listOf(
-                    PostInline.Emoji(
-                        rawUrl = "/images/emoji/twemoji/face_savoring_food.png?v=15",
-                        fallback = ":face_savoring_food:",
+            PostBodyBlock.ParagraphBlock(
+                content = TextDocument(
+                    text = ":face_savoring_food:",
+                    entities = listOf(
+                        TextEntity.Emoji(
+                            start = 0,
+                            end = ":face_savoring_food:".length,
+                            rawUrl = "/images/emoji/twemoji/face_savoring_food.png?v=15",
+                            fallback = ":face_savoring_food:",
+                        ),
                     ),
                 ),
             ),
@@ -119,7 +127,7 @@ class HtmlPostBodyViewTest {
     }
 
     @Test
-    fun parsePostBodyBlocks_mapsSiteIconToRichTextBlock() {
+    fun parsePostBodyBlocks_mapsSiteIconToParagraphBlock() {
         val html = """
             <p><img class="site-icon" src="https://github.com/favicon.ico" width="16" height="16" />GitHub</p>
         """.trimIndent()
@@ -128,14 +136,17 @@ class HtmlPostBodyViewTest {
 
         assertThat(blocks).hasSize(1)
         assertThat(blocks.single()).isEqualTo(
-            PostBodyBlock.RichTextBlock(
-                style = RichTextBlockStyle.Paragraph,
-                inlines = listOf(
-                    PostInline.SiteIcon(
-                        rawUrl = "https://github.com/favicon.ico",
-                        fallback = "",
+            PostBodyBlock.ParagraphBlock(
+                content = TextDocument(
+                    text = "GitHub",
+                    entities = listOf(
+                        TextEntity.SiteIcon(
+                            start = 0,
+                            end = 0,
+                            rawUrl = "https://github.com/favicon.ico",
+                            fallback = "",
+                        ),
                     ),
-                    PostInline.Text("GitHub"),
                 ),
             ),
         )
@@ -157,13 +168,13 @@ class HtmlPostBodyViewTest {
         val blocks = parsePostBodyBlocks(html)
 
         assertThat(blocks).hasSize(3)
-        assertThat(blocks[0]).isInstanceOf(PostBodyBlock.RichTextBlock::class.java)
+        assertThat(blocks[0]).isInstanceOf(PostBodyBlock.ParagraphBlock::class.java)
         assertThat(blocks[1]).isInstanceOf(PostBodyBlock.ImageBlock::class.java)
         assertThat(blocks[2]).isInstanceOf(PostBodyBlock.ImageGridBlock::class.java)
     }
 
     @Test
-    fun parsePostBodyBlocks_mapsParagraphToRichTextBlock() {
+    fun parsePostBodyBlocks_mapsParagraphToTextDocumentBlock() {
         val html = """
             <p><strong>Hello</strong><br><span style="font-size:400%">World</span></p>
         """.trimIndent()
@@ -171,17 +182,11 @@ class HtmlPostBodyViewTest {
         val blocks = parsePostBodyBlocks(html)
 
         assertThat(blocks).containsExactly(
-            PostBodyBlock.RichTextBlock(
-                style = RichTextBlockStyle.Paragraph,
-                inlines = listOf(
-                    PostInline.Styled(
-                        style = InlineStyle.Bold,
-                        children = listOf(PostInline.Text("Hello")),
-                    ),
-                    PostInline.LineBreak,
-                    PostInline.Styled(
-                        style = InlineStyle.LargeText,
-                        children = listOf(PostInline.Text("World")),
+            PostBodyBlock.ParagraphBlock(
+                content = TextDocument(
+                    text = "Hello\nWorld",
+                    entities = listOf(
+                        TextEntity.Bold(start = 0, end = 5),
                     ),
                 ),
             ),
@@ -189,15 +194,20 @@ class HtmlPostBodyViewTest {
     }
 
     @Test
-    fun parsePostBodyBlocks_mapsHeadingToRichTextBlock() {
-        val block = parsePostBodyBlocks("<h2>标题</h2>").single() as PostBodyBlock.RichTextBlock
+    fun parsePostBodyBlocks_mapsHeadingToTextDocumentBlock() {
+        val block = parsePostBodyBlocks("<h2>标题</h2>").single() as PostBodyBlock.HeadingBlock
 
-        assertThat(block.style).isEqualTo(RichTextBlockStyle.Heading2)
-        assertThat(block.inlines).containsExactly(PostInline.Text("标题"))
+        assertThat(block.level).isEqualTo(2)
+        assertThat(block.content).isEqualTo(
+            TextDocument(
+                text = "标题",
+                entities = emptyList(),
+            ),
+        )
     }
 
     @Test
-    fun parsePostBodyBlocks_mapsDetailsSummaryToRichTextBlock() {
+    fun parsePostBodyBlocks_mapsDetailsSummaryToTextDocument() {
         val html = """
             <details open="">
               <summary><img class="emoji" src="/images/emoji/twemoji/distorted_face.png?v=15" title=":distorted_face:" alt=":distorted_face:">展开查看</summary>
@@ -208,14 +218,15 @@ class HtmlPostBodyViewTest {
         val details = parsePostBodyBlocks(html).single() as PostBodyBlock.DetailsBlock
 
         assertThat(details.summary).isEqualTo(
-            PostBodyBlock.RichTextBlock(
-                style = RichTextBlockStyle.Paragraph,
-                inlines = listOf(
-                    PostInline.Emoji(
+            TextDocument(
+                text = ":distorted_face:展开查看",
+                entities = listOf(
+                    TextEntity.Emoji(
+                        start = 0,
+                        end = ":distorted_face:".length,
                         rawUrl = "/images/emoji/twemoji/distorted_face.png?v=15",
                         fallback = ":distorted_face:",
                     ),
-                    PostInline.Text("展开查看"),
                 ),
             ),
         )
@@ -239,9 +250,9 @@ class HtmlPostBodyViewTest {
 
         assertThat(blocks).containsExactly(
             PostBodyBlock.DetailsBlock(
-                summary = PostBodyBlock.RichTextBlock(
-                    style = RichTextBlockStyle.Paragraph,
-                    inlines = listOf(PostInline.Text("给大家看一下")),
+                summary = TextDocument(
+                    text = "给大家看一下",
+                    entities = emptyList(),
                 ),
                 expandedByDefault = true,
                 children = listOf(
@@ -253,9 +264,11 @@ class HtmlPostBodyViewTest {
                             height = 500,
                         ),
                     ),
-                    PostBodyBlock.RichTextBlock(
-                        style = RichTextBlockStyle.Paragraph,
-                        inlines = listOf(PostInline.Text("愚人节快乐")),
+                    PostBodyBlock.ParagraphBlock(
+                        content = TextDocument(
+                            text = "愚人节快乐",
+                            entities = emptyList(),
+                        ),
                     ),
                 ),
             ),
@@ -272,18 +285,20 @@ class HtmlPostBodyViewTest {
         """.trimIndent()
 
         val details = parsePostBodyBlocks(html).single() as PostBodyBlock.DetailsBlock
-        val paragraph = details.children.single() as PostBodyBlock.RichTextBlock
+        val paragraph = details.children.single() as PostBodyBlock.ParagraphBlock
 
-        assertThat(details.summary.inlines).containsExactly(
-            PostInline.Text("给大家看一下我花钱购买的 CODEX ，和我品鉴它的真实感受"),
-        )
-        assertThat(paragraph.inlines).containsExactly(
-            PostInline.Styled(
-                style = InlineStyle.LargeText,
-                children = listOf(PostInline.Text("愚人节快乐！")),
+        assertThat(details.summary).isEqualTo(
+            TextDocument(
+                text = "给大家看一下我花钱购买的 CODEX ，和我品鉴它的真实感受",
+                entities = emptyList(),
             ),
-            PostInline.Text("（虽然有点晚了）"),
-        ).inOrder()
+        )
+        assertThat(paragraph.content).isEqualTo(
+            TextDocument(
+                text = "愚人节快乐！（虽然有点晚了）",
+                entities = emptyList(),
+            ),
+        )
     }
 
     @Test
@@ -315,13 +330,17 @@ class HtmlPostBodyViewTest {
         assertThat(blocks).containsExactly(
             PostBodyBlock.QuoteBlock(
                 children = listOf(
-                    PostBodyBlock.RichTextBlock(
-                        style = RichTextBlockStyle.Paragraph,
-                        inlines = listOf(PostInline.Text("引用内容")),
+                    PostBodyBlock.ParagraphBlock(
+                        content = TextDocument(
+                            text = "引用内容",
+                            entities = emptyList(),
+                        ),
                     ),
-                    PostBodyBlock.RichTextBlock(
-                        style = RichTextBlockStyle.Paragraph,
-                        inlines = listOf(PostInline.Text("第二行")),
+                    PostBodyBlock.ParagraphBlock(
+                        content = TextDocument(
+                            text = "第二行",
+                            entities = emptyList(),
+                        ),
                     ),
                 ),
             ),
@@ -355,16 +374,18 @@ class HtmlPostBodyViewTest {
                 authorDisplayName = "大猫",
                 authorUsername = "bigcat2333",
                 avatarUrl = "https://cdn.linux.do/user_avatar/linux.do/bigcat2333/48/970018_2.png",
-                titleInlines = listOf(
-                    PostInline.Link(
-                        children = listOf(PostInline.Text("引用的帖子")),
-                        rawUrl = "/t/topic/1888983",
+                title = TextDocument(
+                    text = "引用的帖子",
+                    entities = listOf(
+                        TextEntity.Link(start = 0, end = 5, rawUrl = "/t/topic/1888983"),
                     ),
                 ),
                 children = listOf(
-                    PostBodyBlock.RichTextBlock(
-                        style = RichTextBlockStyle.Paragraph,
-                        inlines = listOf(PostInline.Text("引用内容")),
+                    PostBodyBlock.ParagraphBlock(
+                        content = TextDocument(
+                            text = "引用内容",
+                            entities = emptyList(),
+                        ),
                     ),
                 ),
             ),
@@ -501,17 +522,21 @@ class HtmlPostBodyViewTest {
                 items = listOf(
                     ListItemBlock(
                         children = listOf(
-                            PostBodyBlock.RichTextBlock(
-                                style = RichTextBlockStyle.Paragraph,
-                                inlines = listOf(PostInline.Text("第一项")),
+                            PostBodyBlock.ParagraphBlock(
+                                content = TextDocument(
+                                    text = "第一项",
+                                    entities = emptyList(),
+                                ),
                             ),
                         ),
                     ),
                     ListItemBlock(
                         children = listOf(
-                            PostBodyBlock.RichTextBlock(
-                                style = RichTextBlockStyle.Paragraph,
-                                inlines = listOf(PostInline.Text("第二项")),
+                            PostBodyBlock.ParagraphBlock(
+                                content = TextDocument(
+                                    text = "第二项",
+                                    entities = emptyList(),
+                                ),
                             ),
                         ),
                     ),
@@ -553,9 +578,9 @@ class HtmlPostBodyViewTest {
         val list = quote.children.single() as PostBodyBlock.ListBlock
 
         assertThat(details.summary).isEqualTo(
-            PostBodyBlock.RichTextBlock(
-                style = RichTextBlockStyle.Paragraph,
-                inlines = listOf(PostInline.Text("展开查看")),
+            TextDocument(
+                text = "展开查看",
+                entities = emptyList(),
             ),
         )
         assertThat(list.ordered).isFalse()
@@ -619,9 +644,9 @@ class HtmlPostBodyViewTest {
     fun collectGalleryImages_recursesIntoNestedBlocks() {
         val blocks = listOf(
             PostBodyBlock.DetailsBlock(
-                summary = PostBodyBlock.RichTextBlock(
-                    style = RichTextBlockStyle.Paragraph,
-                    inlines = listOf(PostInline.Text("详情")),
+                summary = TextDocument(
+                    text = "详情",
+                    entities = emptyList(),
                 ),
                 expandedByDefault = true,
                 children = listOf(
@@ -671,7 +696,7 @@ class HtmlPostBodyViewTest {
                     authorDisplayName = "大猫",
                     authorUsername = "bigcat2333",
                     avatarUrl = null,
-                    titleInlines = emptyList(),
+                    title = null,
                     children = listOf(
                         PostBodyBlock.ImageBlock(
                             PostBodyImage(

@@ -16,6 +16,15 @@ sealed interface PostBodyBlock {
         val inlines: List<PostInline>,
     ) : PostBodyBlock
 
+    data class ParagraphBlock(
+        val content: TextDocument,
+    ) : PostBodyBlock
+
+    data class HeadingBlock(
+        val level: Int,
+        val content: TextDocument,
+    ) : PostBodyBlock
+
     data class ImageBlock(
         val image: PostBodyImage,
     ) : PostBodyBlock
@@ -42,7 +51,7 @@ sealed interface PostBodyBlock {
     ) : PostBodyBlock
 
     data class DetailsBlock(
-        val summary: RichTextBlock,
+        val summary: TextDocument,
         val children: List<PostBodyBlock>,
         val expandedByDefault: Boolean,
     ) : PostBodyBlock
@@ -55,7 +64,7 @@ sealed interface PostBodyBlock {
         val authorDisplayName: String,
         val authorUsername: String?,
         val avatarUrl: String?,
-        val titleInlines: List<PostInline>,
+        val title: TextDocument?,
         val children: List<PostBodyBlock>,
     ) : PostBodyBlock
 

@@ -6,7 +6,7 @@ import org.jsoup.nodes.Node
 import org.jsoup.nodes.TextNode
 
 private const val defaultGridColumns = 2
-private val richTextTags = setOf("p", "h1", "h2", "h3")
+private val headingTags = setOf("h1", "h2", "h3")
 
 internal fun parsePostBodyBlocks(html: String): List<PostBodyBlock> {
     val body = Jsoup.parseBodyFragment(html).body()
@@ -71,6 +71,21 @@ private fun parsePostBodyNodes(
                 blocks += node.toDetailsBlock()
             }
 
+            node is Element && node.tagName() == "p" -> {
+                flushHtmlBuffer()
+                blocks += PostBodyBlock.ParagraphBlock(
+                    content = buildTextDocumentFromHtml(node.html()),
+                )
+            }
+
+            node is Element && node.tagName() in headingTags -> {
+                flushHtmlBuffer()
+                blocks += PostBodyBlock.HeadingBlock(
+                    level = node.toHeadingLevel(),
+                    content = buildTextDocumentFromHtml(node.html()),
+                )
+            }
+
             node is Element && node.tagName() == "blockquote" -> {
                 flushHtmlBuffer()
                 blocks += PostBodyBlock.QuoteBlock(
@@ -102,12 +117,6 @@ private fun parsePostBodyNodes(
                 } else if (image != null) {
                     flushHtmlBuffer()
                     blocks += PostBodyBlock.ImageBlock(image)
-                } else if (node.tagName() in richTextTags) {
-                    flushHtmlBuffer()
-                    blocks += PostBodyBlock.RichTextBlock(
-                        style = node.toRichTextBlockStyle(),
-                        inlines = parseInlineHtml(node.html()),
-                    )
                 } else {
                     flushHtmlBuffer()
                     blocks += node.toUnknownBlock()
@@ -132,6 +141,15 @@ private fun Element.toUnknownBlock(): PostBodyBlock.UnknownBlock {
     )
 }
 
+private fun Element.toHeadingLevel(): Int {
+    return when (tagName()) {
+        "h1" -> 1
+        "h2" -> 2
+        "h3" -> 3
+        else -> error("Unsupported heading tag: ${tagName()}")
+    }
+}
+
 private fun Element.toDiscourseQuoteBlock(): PostBodyBlock.DiscourseQuoteBlock {
     val titleElement = children().firstOrNull { child ->
         child.tagName() == "div" && child.hasClass("title")
@@ -148,7 +166,9 @@ private fun Element.toDiscourseQuoteBlock(): PostBodyBlock.DiscourseQuoteBlock {
             ?.selectFirst("img.avatar")
             ?.attr("src")
             ?.ifBlank { null },
-        titleInlines = titleElement?.toDiscourseQuoteTitleInlines().orEmpty(),
+        title = titleElement
+            ?.toDiscourseQuoteTitleDocument()
+            ?.takeIf { document -> document.text.isNotBlank() },
         children = blockquoteElement?.let { element ->
             parsePostBodyNodes(element.discourseQuoteBodyNodes())
         }.orEmpty(),
@@ -163,22 +183,10 @@ private fun Element.toDetailsBlock(): PostBodyBlock.DetailsBlock {
         node is Element && node.tagName() == "summary"
     }
     return PostBodyBlock.DetailsBlock(
-        summary = PostBodyBlock.RichTextBlock(
-            style = RichTextBlockStyle.Paragraph,
-            inlines = parseInlineHtml(summaryElement?.html().orEmpty()),
-        ),
+        summary = buildTextDocumentFromHtml(summaryElement?.html().orEmpty()),
         children = parsePostBodyNodes(childNodes),
         expandedByDefault = hasAttr("open"),
     )
-}
-
-private fun Element.toRichTextBlockStyle(): RichTextBlockStyle {
-    return when (tagName()) {
-        "h1" -> RichTextBlockStyle.Heading1
-        "h2" -> RichTextBlockStyle.Heading2
-        "h3" -> RichTextBlockStyle.Heading3
-        else -> RichTextBlockStyle.Paragraph
-    }
 }
 
 private fun Element.toCodeBlock(): PostBodyBlock.CodeBlock? {
@@ -263,12 +271,15 @@ private fun Element.toOneboxBlock(): PostBodyBlock.OneboxBlock? {
     )
 }
 
-private fun Element.toDiscourseQuoteTitleInlines(): List<PostInline> {
+private fun Element.toDiscourseQuoteTitleDocument(): TextDocument {
     val normalizedTitle = clone().apply {
         select("img.avatar, .quote-controls").remove()
     }
-    val titleLink = normalizedTitle.selectFirst("a") ?: return emptyList()
-    return parseInlineHtml(titleLink.outerHtml())
+    val titleLink = normalizedTitle.selectFirst("a") ?: return TextDocument(
+        text = "",
+        entities = emptyList(),
+    )
+    return buildTextDocumentFromHtml(titleLink.outerHtml())
 }
 
 private fun Element.discourseQuoteBodyNodes(): List<Node> {
