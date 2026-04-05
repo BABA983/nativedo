@@ -287,17 +287,18 @@ class HtmlPostBodyViewTest {
     }
 
     @Test
-    fun parsePostBodyBlocks_keepsUnsupportedTableAsHtmlBlock() {
+    fun parsePostBodyBlocks_keepsUnsupportedTableAsUnknownBlock() {
         val html = """
             <table>
               <tr><td>单元格</td></tr>
             </table>
         """.trimIndent()
 
-        val block = parsePostBodyBlocks(html).single() as PostBodyBlock.HtmlBlock
+        val block = parsePostBodyBlocks(html).single() as PostBodyBlock.UnknownBlock
 
-        assertThat(block.html).contains("<table>")
-        assertThat(block.html).contains("<td>单元格</td>")
+        assertThat(block.tagName).isEqualTo("table")
+        assertThat(block.rawHtml).contains("<table>")
+        assertThat(block.rawHtml).contains("<td>单元格</td>")
     }
 
     @Test

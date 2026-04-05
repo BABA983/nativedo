@@ -75,6 +75,17 @@ internal fun RenderPostBodyBlock(
             )
         }
 
+        is PostBodyBlock.UnknownBlock -> {
+            HtmlTextBlock(
+                html = block.rawHtml,
+                cookieStore = cookieStore,
+                baseUrl = baseUrl,
+                onTopicClick = onTopicClick,
+                onUserClick = onUserClick,
+                modifier = modifier,
+            )
+        }
+
         is PostBodyBlock.ImageBlock -> {
             PostImageView(
                 image = block.image,

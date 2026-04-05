@@ -109,7 +109,8 @@ private fun parsePostBodyNodes(
                         inlines = parseInlineHtml(node.html()),
                     )
                 } else {
-                    htmlBuffer += node.clone()
+                    flushHtmlBuffer()
+                    blocks += node.toUnknownBlock()
                 }
             }
 
@@ -121,6 +122,14 @@ private fun parsePostBodyNodes(
 
     flushHtmlBuffer()
     return blocks
+}
+
+private fun Element.toUnknownBlock(): PostBodyBlock.UnknownBlock {
+    return PostBodyBlock.UnknownBlock(
+        rawHtml = outerHtml(),
+        tagName = tagName(),
+        classes = classNames(),
+    )
 }
 
 private fun Element.toDiscourseQuoteBlock(): PostBodyBlock.DiscourseQuoteBlock {

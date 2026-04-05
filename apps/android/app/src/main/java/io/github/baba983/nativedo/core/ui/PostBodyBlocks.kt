@@ -5,6 +5,12 @@ sealed interface PostBodyBlock {
         val html: String,
     ) : PostBodyBlock
 
+    data class UnknownBlock(
+        val rawHtml: String,
+        val tagName: String,
+        val classes: Set<String>,
+    ) : PostBodyBlock
+
     data class RichTextBlock(
         val style: RichTextBlockStyle,
         val inlines: List<PostInline>,

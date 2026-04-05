@@ -2426,6 +2426,7 @@ internal fun PostBodyImage.viewerCacheKey(): String = originalUrl ?: rawUrl
 private fun MutableList<PostBodyImage>.addBlockImages(block: PostBodyBlock) {
     when (block) {
         is PostBodyBlock.HtmlBlock -> Unit
+        is PostBodyBlock.UnknownBlock -> Unit
         is PostBodyBlock.RichTextBlock -> Unit
         is PostBodyBlock.ImageBlock -> add(block.image)
         is PostBodyBlock.LightboxBlock -> add(block.image)
