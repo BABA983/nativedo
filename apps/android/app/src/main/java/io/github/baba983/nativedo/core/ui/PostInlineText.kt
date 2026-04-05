@@ -92,8 +92,8 @@ internal fun PostInlineText(
 ) {
     val colors = NativeDoThemeExtras.colors
     val resolvedTextColor = (textColor ?: colors.textPrimary).toArgb()
-    val resolvedLinkColor = (linkColor ?: MaterialTheme.colorScheme.primary).toArgb()
-    val inlineCodeBackgroundColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f).toArgb()
+    val resolvedLinkColor = (linkColor ?: colors.accent).toArgb()
+    val inlineCodeBackgroundColor = colors.accentMuted.copy(alpha = 0.58f).toArgb()
     val coroutineScope = rememberCoroutineScope()
 
     AndroidView(

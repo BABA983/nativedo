@@ -285,21 +285,21 @@ internal fun OneboxBlockView(
 ) {
     val colors = NativeDoThemeExtras.colors
     val uriHandler = LocalUriHandler.current
-    val shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp)
 
     Column(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(colors.glassBackground)
+            .background(colors.backgroundElevated.copy(alpha = 0.82f))
             .border(
                 width = 1.dp,
-                color = colors.glassStroke,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f),
                 shape = shape,
             )
             .clickable { uriHandler.openUri(block.targetUrl) }
-            .padding(10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -376,7 +376,6 @@ internal fun DetailsBlockView(
     val colors = NativeDoThemeExtras.colors
     val headerInteractionSource = remember { MutableInteractionSource() }
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp)
-    val detailsBackground = colors.accentMuted.copy(alpha = 0.42f)
     var expanded by rememberSaveable(
         block.summary,
         block.children,
@@ -389,10 +388,15 @@ internal fun DetailsBlockView(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(detailsBackground)
+            .background(colors.backgroundElevated.copy(alpha = 0.74f))
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f),
+                shape = shape,
+            )
             .animateContentSize()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(
             modifier = Modifier
@@ -462,7 +466,6 @@ internal fun DiscourseQuoteBlockView(
     modifier: Modifier = Modifier,
 ) {
     val colors = NativeDoThemeExtras.colors
-    val quoteBackground = colors.accentMuted.copy(alpha = 0.52f)
     val accentColor = colors.accent
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp)
     val authorUsername = block.authorUsername?.takeIf { username ->
@@ -478,9 +481,9 @@ internal fun DiscourseQuoteBlockView(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(quoteBackground)
+            .background(colors.backgroundElevated.copy(alpha = 0.76f))
             .drawBehind {
-                val barWidth = 3.dp.toPx()
+                val barWidth = 2.5.dp.toPx()
                 val verticalInset = 8.dp.toPx()
                 drawRoundRect(
                     color = accentColor,
@@ -492,7 +495,7 @@ internal fun DiscourseQuoteBlockView(
                     cornerRadius = CornerRadius(barWidth / 2f, barWidth / 2f),
                 )
             }
-            .padding(start = 14.dp, top = 10.dp, end = 12.dp, bottom = 10.dp),
+            .padding(start = 12.dp, top = 10.dp, end = 12.dp, bottom = 10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(
@@ -549,7 +552,7 @@ internal fun DiscourseQuoteBlockView(
         if (block.children.isNotEmpty()) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 block.children.forEach { child ->
                     RenderPostBodyBlock(
@@ -583,16 +586,15 @@ internal fun QuoteBlockView(
 ) {
     val colors = NativeDoThemeExtras.colors
     val accentColor = colors.accent
-    val quoteBackground = colors.accentMuted.copy(alpha = 0.52f)
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp)
 
     Column(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(quoteBackground)
+            .background(colors.backgroundElevated.copy(alpha = 0.76f))
             .drawBehind {
-                val barWidth = 3.dp.toPx()
+                val barWidth = 2.5.dp.toPx()
                 val verticalInset = 8.dp.toPx()
                 drawRoundRect(
                     color = accentColor,
@@ -604,8 +606,8 @@ internal fun QuoteBlockView(
                     cornerRadius = CornerRadius(barWidth / 2f, barWidth / 2f),
                 )
             }
-            .padding(start = 14.dp, top = 10.dp, end = 12.dp, bottom = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+            .padding(start = 12.dp, top = 10.dp, end = 12.dp, bottom = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         block.children.forEach { child ->
             RenderPostBodyBlock(
@@ -636,14 +638,14 @@ internal fun CodeBlockView(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f))
             .border(
                 width = 1.dp,
-                color = colors.glassStroke,
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f),
                 shape = shape,
             )
             .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         block.languageHint?.takeIf { it.isNotBlank() }?.let { language ->
             Text(
@@ -734,7 +736,7 @@ internal fun postBodyBlockSpacingAfter(
         current.isHeadingBlock() && next.isParagraphBlock() -> 8.dp
         current.isMediaBlock() && next.isParagraphBlock() -> 10.dp
         current.isParagraphBlock() && next.isMediaBlock() -> 10.dp
-        current.isStructuredBlock() || next.isStructuredBlock() -> 12.dp
+        current.isStructuredBlock() || next.isStructuredBlock() -> 10.dp
         else -> 10.dp
     }
 }
