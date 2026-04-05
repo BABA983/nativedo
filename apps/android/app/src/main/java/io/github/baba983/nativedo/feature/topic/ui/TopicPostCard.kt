@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -19,7 +20,7 @@ import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.storage.CookieStore
 import io.github.baba983.nativedo.core.ui.HtmlPostBodyView
 import io.github.baba983.nativedo.core.ui.UserAvatar
-import io.github.baba983.nativedo.ui.theme.NativeDoCardShape
+import io.github.baba983.nativedo.ui.theme.NativeDoInnerCardShape
 import io.github.baba983.nativedo.ui.theme.NativeDoPillShape
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 
@@ -38,40 +39,41 @@ internal fun TopicPostCard(
     val containerColor = if (role == TopicPostRole.OriginalPoster) {
         colors.glassBackgroundStrong
     } else {
-        colors.backgroundElevated.copy(alpha = 0.88f)
+        colors.glassBackground
     }
     val borderColor = if (role == TopicPostRole.OriginalPoster) {
-        colors.glassStroke
+        colors.accent.copy(alpha = 0.16f)
     } else {
-        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.34f)
+        MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.26f)
     }
 
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = NativeDoCardShape,
+        shape = NativeDoInnerCardShape,
         color = containerColor,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
         border = BorderStroke(width = 1.dp, color = borderColor),
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 UserAvatar(
                     label = post.authorUsername,
                     avatarTemplate = post.authorAvatarTemplate,
                     baseUrl = baseUrl,
-                    size = 32.dp,
+                    size = 28.dp,
                 )
-                Column(
+                Row(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         text = "@${post.authorUsername}",
@@ -81,24 +83,25 @@ internal fun TopicPostCard(
                     if (role == TopicPostRole.OriginalPoster) {
                         Surface(
                             shape = NativeDoPillShape,
-                            color = colors.accentMuted,
+                            color = colors.accentMuted.copy(alpha = 0.9f),
                             tonalElevation = 0.dp,
                             shadowElevation = 0.dp,
                         ) {
                             Text(
                                 text = stringResource(R.string.topic_post_badge_original_poster),
-                                style = MaterialTheme.typography.labelSmall,
+                                style = MaterialTheme.typography.labelMedium,
                                 color = colors.accent,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
                             )
                         }
                     }
+                    Spacer(modifier = Modifier.weight(1f))
+                    Text(
+                        text = topicFloorLabel(postIndex),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = colors.textSecondary,
+                    )
                 }
-                Text(
-                    text = topicFloorLabel(postIndex),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = colors.textSecondary,
-                )
             }
 
             HtmlPostBodyView(

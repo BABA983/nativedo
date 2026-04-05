@@ -11,7 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import io.github.baba983.nativedo.ui.theme.NativeDoChromeShape
+import io.github.baba983.nativedo.ui.theme.NativeDoInnerCardShape
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 
 @Composable
@@ -25,27 +25,27 @@ internal fun TopicHeader(
 
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = NativeDoChromeShape,
-        color = colors.glassBackground,
+        shape = NativeDoInnerCardShape,
+        color = colors.backgroundElevated.copy(alpha = 0.9f),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
         border = BorderStroke(
             width = 1.dp,
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.34f),
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f),
         ),
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 18.dp, vertical = 18.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
                 text = title,
-                style = MaterialTheme.typography.headlineSmall,
+                style = MaterialTheme.typography.titleLarge,
                 color = colors.textPrimary,
             )
             Text(
                 text = topicPostCountLabel(totalPosts = totalPosts, loadedPosts = loadedPosts),
-                style = MaterialTheme.typography.bodySmall,
+                style = MaterialTheme.typography.labelMedium,
                 color = colors.textSecondary,
             )
         }
