@@ -8,13 +8,18 @@ class PostBodyBlockRenderersTest {
     @Test
     fun postBodyBlockSpacingAfter_keepsHeadingCloserToFollowingParagraph() {
         val spacing = postBodyBlockSpacingAfter(
-            current = PostBodyBlock.RichTextBlock(
-                style = RichTextBlockStyle.Heading2,
-                inlines = listOf(PostInline.Text("标题")),
+            current = PostBodyBlock.HeadingBlock(
+                level = 2,
+                content = TextDocument(
+                    text = "标题",
+                    entities = emptyList(),
+                ),
             ),
-            next = PostBodyBlock.RichTextBlock(
-                style = RichTextBlockStyle.Paragraph,
-                inlines = listOf(PostInline.Text("正文")),
+            next = PostBodyBlock.ParagraphBlock(
+                content = TextDocument(
+                    text = "正文",
+                    entities = emptyList(),
+                ),
             ),
         )
 
@@ -23,9 +28,11 @@ class PostBodyBlockRenderersTest {
 
     @Test
     fun postBodyBlockSpacingAfter_keepsImagesAndParagraphsCompactInsidePostCard() {
-        val paragraph = PostBodyBlock.RichTextBlock(
-            style = RichTextBlockStyle.Paragraph,
-            inlines = listOf(PostInline.Text("正文")),
+        val paragraph = PostBodyBlock.ParagraphBlock(
+            content = TextDocument(
+                text = "正文",
+                entities = emptyList(),
+            ),
         )
         val image = PostBodyBlock.ImageBlock(
             image = PostBodyImage(rawUrl = "/uploads/default/original/1X/demo.png"),

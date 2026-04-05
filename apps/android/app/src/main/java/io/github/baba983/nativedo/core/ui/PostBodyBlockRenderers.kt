@@ -151,8 +151,8 @@ internal fun RenderPostBodyBlock(
         }
 
         is PostBodyBlock.ParagraphBlock -> {
-            PostInlineText(
-                inlines = listOf(PostInline.Text(block.content.text)),
+            PostTextDocumentView(
+                document = block.content,
                 textStyle = postBodyParagraphTextStyle(MaterialTheme.typography.bodyLarge),
                 cookieStore = cookieStore,
                 baseUrl = baseUrl,
@@ -163,8 +163,8 @@ internal fun RenderPostBodyBlock(
         }
 
         is PostBodyBlock.HeadingBlock -> {
-            PostInlineText(
-                inlines = listOf(PostInline.Text(block.content.text)),
+            PostTextDocumentView(
+                document = block.content,
                 textStyle = block.level.toHeadingTextStyle(),
                 cookieStore = cookieStore,
                 baseUrl = baseUrl,
@@ -453,8 +453,8 @@ internal fun DetailsBlockView(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PostInlineText(
-                inlines = listOf(PostInline.Text(block.summary.text)),
+            PostTextDocumentView(
+                document = block.summary,
                 textStyle = MaterialTheme.typography.labelLarge,
                 cookieStore = cookieStore,
                 baseUrl = baseUrl,
@@ -586,8 +586,8 @@ internal fun DiscourseQuoteBlockView(
                 block.title
                     ?.takeIf { title -> title.text.isNotBlank() }
                     ?.let { title ->
-                    PostInlineText(
-                        inlines = listOf(PostInline.Text(title.text)),
+                    PostTextDocumentView(
+                        document = title,
                         textStyle = MaterialTheme.typography.labelMedium,
                         cookieStore = cookieStore,
                         baseUrl = baseUrl,

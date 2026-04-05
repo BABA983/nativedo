@@ -91,6 +91,37 @@ internal fun PostInlineText(
     linkColor: Color? = null,
     onClick: (() -> Unit)? = null,
 ) {
+    PostSpannableText(
+        textStyle = textStyle,
+        cookieStore = cookieStore,
+        baseUrl = baseUrl,
+        modifier = modifier,
+        textColor = textColor,
+        linkColor = linkColor,
+        onClick = onClick,
+    ) { textSizePx, inlineCodeBackgroundColor ->
+        buildPostInlineText(
+            inlines = inlines,
+            baseUrl = baseUrl,
+            onTopicClick = onTopicClick,
+            onUserClick = onUserClick,
+            textSizePx = textSizePx,
+            inlineCodeBackgroundColor = inlineCodeBackgroundColor,
+        )
+    }
+}
+
+@Composable
+internal fun PostSpannableText(
+    textStyle: TextStyle,
+    cookieStore: CookieStore,
+    baseUrl: String,
+    modifier: Modifier = Modifier,
+    textColor: Color? = null,
+    linkColor: Color? = null,
+    onClick: (() -> Unit)? = null,
+    buildAppliedInlineImages: (textSizePx: Float, inlineCodeBackgroundColor: Int) -> AppliedInlineImages,
+) {
     val colors = NativeDoThemeExtras.colors
     val resolvedTextColor = (textColor ?: colors.textPrimary).toArgb()
     val resolvedLinkColor = (linkColor ?: colors.accent).toArgb()
@@ -120,13 +151,9 @@ internal fun PostInlineText(
                 textView.setLineSpacing(0f, textStyle.lineHeight.value / textStyle.fontSize.value)
             }
 
-            val appliedInlineImages = buildPostInlineText(
-                inlines = inlines,
-                baseUrl = baseUrl,
-                onTopicClick = onTopicClick,
-                onUserClick = onUserClick,
-                textSizePx = textView.textSize,
-                inlineCodeBackgroundColor = inlineCodeBackgroundColor,
+            val appliedInlineImages = buildAppliedInlineImages(
+                textView.textSize,
+                inlineCodeBackgroundColor,
             )
             textView.text = appliedInlineImages.text
 
@@ -289,6 +316,20 @@ private fun PostInline.Styled.toSpans(
 }
 
 private fun PostInline.Link.toLinkSpan(
+    baseUrl: String,
+    onTopicClick: ((Long) -> Unit)?,
+    onUserClick: ((String) -> Unit)?,
+): Any {
+    return buildPostBodyLinkSpan(
+        rawUrl = rawUrl,
+        baseUrl = baseUrl,
+        onTopicClick = onTopicClick,
+        onUserClick = onUserClick,
+    )
+}
+
+internal fun buildPostBodyLinkSpan(
+    rawUrl: String,
     baseUrl: String,
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
