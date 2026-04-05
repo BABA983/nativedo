@@ -1,5 +1,10 @@
 package io.github.baba983.nativedo.feature.topic.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -31,8 +36,10 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.baba983.nativedo.NativeDoApplication
+import io.github.baba983.nativedo.R
 import io.github.baba983.nativedo.core.session.AppSessionState
 import io.github.baba983.nativedo.core.session.SessionEvent
+import io.github.baba983.nativedo.core.ui.BulletinMessage
 import io.github.baba983.nativedo.core.ui.LocalBulletinHostState
 import io.github.baba983.nativedo.core.ui.RequestErrorCard
 import io.github.baba983.nativedo.core.ui.requestErrorBulletin
@@ -42,11 +49,17 @@ import io.github.baba983.nativedo.feature.topic.domain.LoadTopicUseCase
 import io.github.baba983.nativedo.ui.NativeDoPullToRefreshIndicator
 
 private const val TOPIC_LOAD_MORE_THRESHOLD = 5
+private const val TOPIC_BOTTOM_SHELF_BUFFER_ITEMS = 2
 
 internal enum class TopicPostRole {
     OriginalPoster,
     Reply,
 }
+
+internal data class TopicScrollSnapshot(
+    val firstVisibleItemIndex: Int,
+    val firstVisibleItemScrollOffset: Int,
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -95,6 +108,8 @@ fun TopicRoute(
     var shownRefreshError by rememberSaveable(topicId) { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
     val pullToRefreshState = rememberPullToRefreshState()
+    var previousScrollSnapshot by remember { mutableStateOf<TopicScrollSnapshot?>(null) }
+    var bottomShelfArmed by rememberSaveable(topicId) { mutableStateOf(false) }
     val currentSessionState by rememberUpdatedState(sessionState)
     val currentAuthVersion by rememberUpdatedState(authVersion)
     val refreshTopicIfNeeded: () -> Unit = {
@@ -119,6 +134,15 @@ fun TopicRoute(
                 totalItemsCount = listState.layoutInfo.totalItemsCount,
                 hasMore = uiState.hasMore,
                 isLoadingMore = uiState.isLoadingMore,
+            )
+        }
+    }
+
+    val isAtBottom by remember(listState, uiState.posts.size, uiState.isLoadingMore, uiState.loadMoreErrorMessage) {
+        derivedStateOf {
+            isTopicListAtBottom(
+                lastVisibleIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0,
+                totalItemsCount = listState.layoutInfo.totalItemsCount,
             )
         }
     }
@@ -168,6 +192,36 @@ fun TopicRoute(
         }
     }
 
+    LaunchedEffect(
+        listState.firstVisibleItemIndex,
+        listState.firstVisibleItemScrollOffset,
+        listState.isScrollInProgress,
+        uiState.posts.size,
+        isAtBottom,
+    ) {
+        val currentScrollSnapshot = TopicScrollSnapshot(
+            firstVisibleItemIndex = listState.firstVisibleItemIndex,
+            firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
+        )
+        val isScrollingUp = isTopicScrollMovingUp(
+            previous = previousScrollSnapshot,
+            current = currentScrollSnapshot,
+        )
+
+        when {
+            isAtBottom -> bottomShelfArmed = false
+            shouldArmTopicBottomShelf(
+                hasPosts = uiState.posts.isNotEmpty(),
+                isAtBottom = isAtBottom,
+                isScrollingUp = listState.isScrollInProgress && isScrollingUp,
+            ) -> bottomShelfArmed = true
+        }
+
+        previousScrollSnapshot = currentScrollSnapshot
+    }
+
+    val showBottomShelf = uiState.posts.isNotEmpty() && bottomShelfArmed
+
     when {
         uiState.isLoading -> {
             TopicFeedbackCard(
@@ -202,51 +256,81 @@ fun TopicRoute(
                 )
             },
         ) {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 28.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                item(key = "topic-header") {
-                    TopicHeader(
-                        title = uiState.title,
-                        totalPosts = uiState.totalPosts,
-                        loadedPosts = uiState.posts.size,
-                    )
-                }
-                itemsIndexed(
-                    items = uiState.posts,
-                    key = { _, post -> post.id },
-                ) { index, post ->
-                    TopicPostCard(
-                        post = post,
-                        postIndex = index,
-                        role = topicPostRole(index),
-                        cookieStore = appContainer.cookieStore,
-                        baseUrl = appContainer.baseUrl,
-                        onTopicClick = onTopicClick,
-                        onUserClick = onUserClick,
-                    )
-                }
-
-                if (uiState.isLoadingMore) {
-                    item(key = "load-more") {
-                        TopicFeedbackCard { CircularProgressIndicator() }
+            Box(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 104.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    item(key = "topic-header") {
+                        TopicHeader(
+                            title = uiState.title,
+                            totalPosts = uiState.totalPosts,
+                            loadedPosts = uiState.posts.size,
+                        )
                     }
-                }
+                    itemsIndexed(
+                        items = uiState.posts,
+                        key = { _, post -> post.id },
+                    ) { index, post ->
+                        TopicPostCard(
+                            post = post,
+                            postIndex = index,
+                            role = topicPostRole(index),
+                            cookieStore = appContainer.cookieStore,
+                            baseUrl = appContainer.baseUrl,
+                            onTopicClick = onTopicClick,
+                            onUserClick = onUserClick,
+                        )
+                    }
 
-                if (uiState.loadMoreErrorMessage != null) {
-                    item(key = "load-more-error") {
-                        TopicFeedbackCard {
-                            RequestErrorCard(
-                                presentation = requireNotNull(loadMoreErrorPresentation),
-                                onRetry = viewModel::loadMore,
-                                modifier = Modifier.fillMaxWidth(),
-                                compact = true,
-                            )
+                    if (uiState.isLoadingMore) {
+                        item(key = "load-more") {
+                            TopicFeedbackCard { CircularProgressIndicator() }
                         }
                     }
+
+                    if (uiState.loadMoreErrorMessage != null) {
+                        item(key = "load-more-error") {
+                            TopicFeedbackCard {
+                                RequestErrorCard(
+                                    presentation = requireNotNull(loadMoreErrorPresentation),
+                                    onRetry = viewModel::loadMore,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    compact = true,
+                                )
+                            }
+                        }
+                    }
+                }
+
+                AnimatedVisibility(
+                    visible = showBottomShelf,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(horizontal = 16.dp, vertical = 16.dp),
+                    enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
+                    exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 2 }),
+                ) {
+                    BottomUtilityShelf(
+                        onReplyClick = {
+                            bulletinHostState?.show(
+                                BulletinMessage(
+                                    title = context.getString(R.string.topic_reader_reply_unavailable_title),
+                                    subtitle = context.getString(R.string.topic_reader_reply_unavailable_subtitle),
+                                ),
+                            )
+                        },
+                        onMoreClick = {
+                            bulletinHostState?.show(
+                                BulletinMessage(
+                                    title = context.getString(R.string.topic_reader_more_unavailable_title),
+                                    subtitle = context.getString(R.string.topic_reader_more_unavailable_subtitle),
+                                ),
+                            )
+                        },
+                    )
                 }
             }
         }
@@ -257,6 +341,35 @@ internal fun topicPostRole(index: Int): TopicPostRole =
     if (index == 0) TopicPostRole.OriginalPoster else TopicPostRole.Reply
 
 internal fun topicFloorLabel(index: Int): String = "${index + 1}F"
+
+internal fun isTopicListAtBottom(
+    lastVisibleIndex: Int,
+    totalItemsCount: Int,
+    bufferItems: Int = TOPIC_BOTTOM_SHELF_BUFFER_ITEMS,
+): Boolean {
+    if (totalItemsCount == 0) return true
+    val lastBottomIndex = (totalItemsCount - 1 - bufferItems).coerceAtLeast(0)
+    return lastVisibleIndex >= lastBottomIndex
+}
+
+internal fun isTopicScrollMovingUp(
+    previous: TopicScrollSnapshot?,
+    current: TopicScrollSnapshot,
+): Boolean {
+    if (previous == null) return false
+
+    return current.firstVisibleItemIndex < previous.firstVisibleItemIndex ||
+        (
+            current.firstVisibleItemIndex == previous.firstVisibleItemIndex &&
+                current.firstVisibleItemScrollOffset < previous.firstVisibleItemScrollOffset
+            )
+}
+
+internal fun shouldArmTopicBottomShelf(
+    hasPosts: Boolean,
+    isAtBottom: Boolean,
+    isScrollingUp: Boolean,
+): Boolean = hasPosts && !isAtBottom && isScrollingUp
 
 internal fun shouldLoadMoreTopicPosts(
     lastVisibleIndex: Int,

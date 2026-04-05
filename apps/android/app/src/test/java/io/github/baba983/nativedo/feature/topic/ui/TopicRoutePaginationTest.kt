@@ -18,6 +18,65 @@ class TopicRoutePaginationTest {
     }
 
     @Test
+    fun isTopicListAtBottom_treatsTheLastTwoItemsAsBottomZone() {
+        assertThat(isTopicListAtBottom(lastVisibleIndex = 9, totalItemsCount = 10)).isTrue()
+        assertThat(isTopicListAtBottom(lastVisibleIndex = 8, totalItemsCount = 10)).isTrue()
+        assertThat(isTopicListAtBottom(lastVisibleIndex = 6, totalItemsCount = 10)).isFalse()
+    }
+
+    @Test
+    fun isTopicScrollMovingUp_detectsReverseReading() {
+        assertThat(
+            isTopicScrollMovingUp(
+                previous = TopicScrollSnapshot(firstVisibleItemIndex = 6, firstVisibleItemScrollOffset = 48),
+                current = TopicScrollSnapshot(firstVisibleItemIndex = 6, firstVisibleItemScrollOffset = 12),
+            ),
+        ).isTrue()
+
+        assertThat(
+            isTopicScrollMovingUp(
+                previous = TopicScrollSnapshot(firstVisibleItemIndex = 6, firstVisibleItemScrollOffset = 48),
+                current = TopicScrollSnapshot(firstVisibleItemIndex = 7, firstVisibleItemScrollOffset = 0),
+            ),
+        ).isFalse()
+    }
+
+    @Test
+    fun shouldArmTopicBottomShelf_requiresPostsAndUpwardScrollAwayFromBottom() {
+        assertThat(
+            shouldArmTopicBottomShelf(
+                hasPosts = false,
+                isAtBottom = false,
+                isScrollingUp = true,
+            ),
+        ).isFalse()
+
+        assertThat(
+            shouldArmTopicBottomShelf(
+                hasPosts = true,
+                isAtBottom = true,
+                isScrollingUp = true,
+            ),
+        ).isFalse()
+
+        assertThat(
+            shouldArmTopicBottomShelf(
+                hasPosts = true,
+                isAtBottom = false,
+                isScrollingUp = false,
+            ),
+        ).isFalse()
+
+        assertThat(
+            shouldArmTopicBottomShelf(
+                hasPosts = true,
+                isAtBottom = false,
+                isScrollingUp = true,
+            ),
+        ).isTrue()
+    }
+
+    @Test
     fun loadMore_requestedWhenLastVisibleItemIsInsideThreshold() {
         assertThat(
             shouldLoadMoreTopicPosts(
