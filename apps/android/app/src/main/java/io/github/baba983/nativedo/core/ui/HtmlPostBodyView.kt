@@ -69,7 +69,7 @@ internal fun calculatePostImageViewerLaunchSource(
     )
 }
 
-internal val postBodyEmbeddedBlockCornerRadius = 12.dp
+internal val postBodyEmbeddedBlockCornerRadius = 10.dp
 internal val postBodyEmbeddedMediaCornerRadius = 14.dp
 private val postBodyImageGridSpacing = 4.dp
 private val postImageThumbnailCornerRadius = postBodyEmbeddedMediaCornerRadius

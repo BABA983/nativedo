@@ -41,8 +41,11 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -512,14 +515,6 @@ internal fun DiscourseQuoteBlockView(
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(postBodyEmbeddedBlockCornerRadius)
     val containerColor = postBodyQuoteContainerColor()
     val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)
-    val authorUsername = block.authorUsername?.takeIf { username ->
-        username.isNotBlank()
-    }
-    val authorClickModifier = if (authorUsername != null && onUserClick != null) {
-        Modifier.clickable { onUserClick(authorUsername) }
-    } else {
-        Modifier
-    }
 
     Column(
         modifier = modifier
@@ -547,58 +542,29 @@ internal fun DiscourseQuoteBlockView(
             .padding(start = 10.dp, top = 8.dp, end = 10.dp, bottom = 8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.Top,
-        ) {
-            UserAvatar(
-                label = block.authorDisplayName,
-                avatarTemplate = block.avatarUrl.orEmpty(),
-                baseUrl = baseUrl,
-                size = 22.dp,
-            )
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
-                Row(
-                    modifier = authorClickModifier,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = block.authorDisplayName,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = colors.textPrimary,
-                    )
-                    authorUsername
-                        ?.takeIf { username -> username != block.authorDisplayName }
-                        ?.let { username ->
-                            Text(
-                                text = "@$username",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = colors.textSecondary,
-                            )
-                        }
-                }
-
-                block.title
-                    ?.takeIf { title -> title.text.isNotBlank() }
-                    ?.let { title ->
-                    PostTextDocumentView(
-                        document = title,
-                        textStyle = MaterialTheme.typography.labelMedium,
-                        cookieStore = cookieStore,
-                        baseUrl = baseUrl,
-                        onTopicClick = onTopicClick,
-                        onUserClick = onUserClick,
-                        textColor = colors.accent,
-                        linkColor = colors.accent,
-                    )
-                }
+        block.title
+            ?.takeIf { title -> title.text.isNotBlank() }
+            ?.let { title ->
+                PostTextDocumentView(
+                    document = title,
+                    textStyle = MaterialTheme.typography.labelMedium,
+                    cookieStore = cookieStore,
+                    baseUrl = baseUrl,
+                    onTopicClick = onTopicClick,
+                    onUserClick = onUserClick,
+                    textColor = colors.accent,
+                    linkColor = colors.accent,
+                )
             }
-        }
+            ?: block.authorDisplayName
+                .takeIf(String::isNotBlank)
+                ?.let { author ->
+                    Text(
+                        text = author,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = colors.textSecondary,
+                    )
+                }
 
         if (block.children.isNotEmpty()) {
             Column(
@@ -689,8 +655,34 @@ internal fun CodeBlockView(
     modifier: Modifier = Modifier,
 ) {
     val colors = NativeDoThemeExtras.colors
+    val colorScheme = MaterialTheme.colorScheme
     val clipboardManager = LocalClipboardManager.current
     val bulletinHostState = LocalBulletinHostState.current
+    val highlighted = remember(block.code, block.languageHint) {
+        highlightCode(
+            code = block.code,
+            language = block.languageHint,
+        )
+    }
+    val highlightedText = remember(highlighted, colorScheme, colors.textPrimary) {
+        buildAnnotatedString {
+            highlighted.forEach { token ->
+                withStyle(
+                    SpanStyle(
+                        color = when (token.kind) {
+                            PostCodeTokenKind.Keyword -> colorScheme.primary
+                            PostCodeTokenKind.String -> colorScheme.tertiary
+                            PostCodeTokenKind.Comment -> colorScheme.outline
+                            PostCodeTokenKind.Number -> colorScheme.secondary
+                            PostCodeTokenKind.Plain -> colors.textPrimary
+                        },
+                    ),
+                ) {
+                    append(token.text)
+                }
+            }
+        }
+    }
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(postBodyEmbeddedBlockCornerRadius)
     val contentShape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
     val horizontalScrollState = rememberScrollState()
@@ -771,7 +763,7 @@ internal fun CodeBlockView(
                 modifier = Modifier.horizontalScroll(horizontalScrollState),
             ) {
                 Text(
-                    text = block.code,
+                    text = highlightedText,
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontFamily = FontFamily.Monospace,
                         fontSize = 13.sp,
