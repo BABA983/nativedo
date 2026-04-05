@@ -6,6 +6,18 @@ import org.junit.Test
 class TopicRoutePaginationTest {
 
     @Test
+    fun topicPostRole_marksFirstPostAsOriginalPoster() {
+        assertThat(topicPostRole(0)).isEqualTo(TopicPostRole.OriginalPoster)
+        assertThat(topicPostRole(3)).isEqualTo(TopicPostRole.Reply)
+    }
+
+    @Test
+    fun topicFloorLabel_usesForumStyleNumbers() {
+        assertThat(topicFloorLabel(0)).isEqualTo("1F")
+        assertThat(topicFloorLabel(11)).isEqualTo("12F")
+    }
+
+    @Test
     fun loadMore_requestedWhenLastVisibleItemIsInsideThreshold() {
         assertThat(
             shouldLoadMoreTopicPosts(

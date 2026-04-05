@@ -17,4 +17,5 @@
     <string name="post_image_viewer_action_save_image">Save image</string>
     <string name="post_image_viewer_download_started">Image download started</string>
     <string name="post_image_viewer_action_failed">Unable to complete image action</string>
+    <string name="topic_post_badge_original_poster">OP</string>
 </resources>

@@ -2,21 +2,15 @@ package io.github.baba983.nativedo.feature.topic.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -39,18 +33,20 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.baba983.nativedo.NativeDoApplication
 import io.github.baba983.nativedo.core.session.AppSessionState
 import io.github.baba983.nativedo.core.session.SessionEvent
-import io.github.baba983.nativedo.core.ui.HtmlPostBodyView
 import io.github.baba983.nativedo.core.ui.LocalBulletinHostState
 import io.github.baba983.nativedo.core.ui.RequestErrorCard
-import io.github.baba983.nativedo.core.ui.UserAvatar
 import io.github.baba983.nativedo.core.ui.requestErrorBulletin
 import io.github.baba983.nativedo.core.ui.requestErrorPresentation
 import io.github.baba983.nativedo.feature.topic.data.TopicRepository
 import io.github.baba983.nativedo.feature.topic.domain.LoadTopicUseCase
 import io.github.baba983.nativedo.ui.NativeDoPullToRefreshIndicator
-import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 
 private const val TOPIC_LOAD_MORE_THRESHOLD = 5
+
+internal enum class TopicPostRole {
+    OriginalPoster,
+    Reply,
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -82,7 +78,6 @@ fun TopicRoute(
         },
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val colors = NativeDoThemeExtras.colors
     val initialLoadErrorPresentation = uiState.errorMessage?.let {
         requestErrorPresentation(
             rawMessage = it,
@@ -210,79 +205,29 @@ fun TopicRoute(
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 28.dp),
+                contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                item {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Text(
-                            text = uiState.title,
-                            style = MaterialTheme.typography.headlineSmall,
-                            color = colors.textPrimary,
-                        )
-                        Text(
-                            text = topicPostCountLabel(
-                                totalPosts = uiState.totalPosts,
-                                loadedPosts = uiState.posts.size,
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = colors.textSecondary,
-                        )
-                    }
-
-                    if (uiState.posts.isNotEmpty()) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(start = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.75f),
-                        )
-                    }
+                item(key = "topic-header") {
+                    TopicHeader(
+                        title = uiState.title,
+                        totalPosts = uiState.totalPosts,
+                        loadedPosts = uiState.posts.size,
+                    )
                 }
                 itemsIndexed(
                     items = uiState.posts,
                     key = { _, post -> post.id },
                 ) { index, post ->
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            UserAvatar(
-                                label = post.authorUsername,
-                                avatarTemplate = post.authorAvatarTemplate,
-                                baseUrl = appContainer.baseUrl,
-                                size = 32.dp,
-                            )
-                            Text(
-                                text = "@${post.authorUsername}",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                        HtmlPostBodyView(
-                            html = post.cookedHtml,
-                            cookieStore = appContainer.cookieStore,
-                            baseUrl = appContainer.baseUrl,
-                            onTopicClick = onTopicClick,
-                            onUserClick = onUserClick,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-
-                    if (index != uiState.posts.lastIndex) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(start = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.75f),
-                        )
-                    }
+                    TopicPostCard(
+                        post = post,
+                        postIndex = index,
+                        role = topicPostRole(index),
+                        cookieStore = appContainer.cookieStore,
+                        baseUrl = appContainer.baseUrl,
+                        onTopicClick = onTopicClick,
+                        onUserClick = onUserClick,
+                    )
                 }
 
                 if (uiState.isLoadingMore) {
@@ -307,6 +252,11 @@ fun TopicRoute(
         }
     }
 }
+
+internal fun topicPostRole(index: Int): TopicPostRole =
+    if (index == 0) TopicPostRole.OriginalPoster else TopicPostRole.Reply
+
+internal fun topicFloorLabel(index: Int): String = "${index + 1}F"
 
 internal fun shouldLoadMoreTopicPosts(
     lastVisibleIndex: Int,
