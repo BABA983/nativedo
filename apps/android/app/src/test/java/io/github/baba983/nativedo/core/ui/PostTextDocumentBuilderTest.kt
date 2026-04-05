@@ -5,6 +5,14 @@ import org.junit.Test
 
 class PostTextDocumentBuilderTest {
     @Test
+    fun buildTextDocument_preservesNormalizedSpaceInsideTransparentWrapper() {
+        val document = buildTextDocumentFromHtml("foo<span> </span>bar")
+
+        assertThat(document.text).isEqualTo("foo bar")
+        assertThat(document.entities).isEmpty()
+    }
+
+    @Test
     fun buildTextDocument_flattensBoldInlineCodeMentionAndLink() {
         val document = buildTextDocumentFromHtml(
             """

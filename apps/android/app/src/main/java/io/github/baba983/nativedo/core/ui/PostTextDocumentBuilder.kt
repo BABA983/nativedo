@@ -27,18 +27,20 @@ private fun appendNodes(
     preserveRawText: Boolean,
 ) {
     nodes.forEachIndexed { index, node ->
+        val nextOutputKind = nextOutputKind(nodes, index + 1)
         when (node) {
             is TextNode -> appendTextNode(
                 node = node,
                 state = state,
                 preserveRawText = preserveRawText,
-                nextOutputKind = nextOutputKind(nodes, index + 1),
+                nextOutputKind = nextOutputKind,
             )
 
             is Element -> appendElement(
                 element = node,
                 state = state,
                 preserveRawText = preserveRawText,
+                nextOutputKind = nextOutputKind,
             )
 
             else -> Unit
@@ -81,6 +83,7 @@ private fun appendElement(
     element: Element,
     state: FlattenState,
     preserveRawText: Boolean,
+    nextOutputKind: OutputKind,
 ) {
     val start = state.text.length
 
@@ -145,6 +148,13 @@ private fun appendElement(
             }
         }
 
+        element.outputKind() == OutputKind.BlankSpace && !preserveRawText -> {
+            if (state.lastOutputKind == OutputKind.VisibleText && nextOutputKind == OutputKind.VisibleText) {
+                state.text.append(' ')
+                state.lastOutputKind = OutputKind.VisibleText
+            }
+        }
+
         else -> appendNodes(element.childNodes(), state, preserveRawText)
     }
 }
@@ -205,7 +215,7 @@ private fun Node.outputKind(): OutputKind {
     return when (this) {
         is TextNode -> {
             if (getWholeText().isBlank()) {
-                OutputKind.None
+                OutputKind.BlankSpace
             } else {
                 OutputKind.VisibleText
             }
@@ -240,6 +250,7 @@ private fun mergeOutputKinds(
         current == OutputKind.VisibleText || next == OutputKind.VisibleText -> OutputKind.VisibleText
         current == OutputKind.LineBreak || next == OutputKind.LineBreak -> OutputKind.LineBreak
         current == OutputKind.ZeroLengthEntity || next == OutputKind.ZeroLengthEntity -> OutputKind.ZeroLengthEntity
+        current == OutputKind.BlankSpace || next == OutputKind.BlankSpace -> OutputKind.BlankSpace
         else -> OutputKind.None
     }
 }
@@ -287,6 +298,7 @@ private class FlattenState {
 
 private enum class OutputKind {
     None,
+    BlankSpace,
     VisibleText,
     LineBreak,
     ZeroLengthEntity,
