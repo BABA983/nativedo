@@ -5,12 +5,14 @@
         "id": 1002,
         "username": "alice",
         "avatar_template": "/user_avatar/linux.do/alice/{size}/1.png",
+        "created_at": "2026-04-05T09:15:00.000Z",
         "cooked": "<p>Second reply</p>"
       },
       {
         "id": 1003,
         "username": "charlie",
         "avatar_template": "/user_avatar/linux.do/charlie/{size}/1.png",
+        "created_at": "2026-04-05T09:21:00.000Z",
         "cooked": "<p>Third reply</p>"
       }
     ]

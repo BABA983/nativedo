@@ -1,6 +1,7 @@
 package io.github.baba983.nativedo.feature.topic.ui
 
 import com.google.common.truth.Truth.assertThat
+import java.time.ZoneId
 import org.junit.Test
 
 class TopicRoutePaginationTest {
@@ -15,6 +16,28 @@ class TopicRoutePaginationTest {
     fun topicFloorLabel_usesForumStyleNumbers() {
         assertThat(topicFloorLabel(0)).isEqualTo("1F")
         assertThat(topicFloorLabel(11)).isEqualTo("12F")
+    }
+
+    @Test
+    fun topicPostMetaLabel_appendsCompactTimeWhenCreatedAtExists() {
+        assertThat(
+            topicPostMetaLabel(
+                index = 2,
+                createdAt = "2026-04-05T09:07:00.000Z",
+                zoneId = ZoneId.of("UTC"),
+            ),
+        ).isEqualTo("3F · 09:07")
+    }
+
+    @Test
+    fun topicPostMetaLabel_fallsBackToFloorWhenCreatedAtMissing() {
+        assertThat(
+            topicPostMetaLabel(
+                index = 2,
+                createdAt = "",
+                zoneId = ZoneId.of("UTC"),
+            ),
+        ).isEqualTo("3F")
     }
 
     @Test

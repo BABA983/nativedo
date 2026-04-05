@@ -138,6 +138,8 @@ data class PostDto(
     val username: String,
     @SerialName("avatar_template")
     val avatarTemplate: String = "",
+    @SerialName("created_at")
+    val createdAt: String = "",
     @SerialName("cooked")
     val cookedHtml: String,
 )
@@ -219,6 +221,7 @@ internal fun PostDto.toModel(): Post = Post(
     id = id,
     authorUsername = username,
     authorAvatarTemplate = avatarTemplate,
+    createdAt = createdAt,
     cookedHtml = cookedHtml,
     imageUrls = Regex("<img[^>]+src=\\\"([^\\\"]+)\\\"")
         .findAll(cookedHtml)

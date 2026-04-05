@@ -97,7 +97,10 @@ internal fun TopicPostCard(
                     }
                     Spacer(modifier = Modifier.weight(1f))
                     Text(
-                        text = topicFloorLabel(postIndex),
+                        text = topicPostMetaLabel(
+                            index = postIndex,
+                            createdAt = post.createdAt,
+                        ),
                         style = MaterialTheme.typography.labelMedium,
                         color = colors.textSecondary,
                     )

@@ -47,9 +47,13 @@ import io.github.baba983.nativedo.core.ui.requestErrorPresentation
 import io.github.baba983.nativedo.feature.topic.data.TopicRepository
 import io.github.baba983.nativedo.feature.topic.domain.LoadTopicUseCase
 import io.github.baba983.nativedo.ui.NativeDoPullToRefreshIndicator
+import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 private const val TOPIC_LOAD_MORE_THRESHOLD = 5
 private const val TOPIC_BOTTOM_SHELF_BUFFER_ITEMS = 2
+private val topicPostTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
 internal enum class TopicPostRole {
     OriginalPoster,
@@ -341,6 +345,29 @@ internal fun topicPostRole(index: Int): TopicPostRole =
     if (index == 0) TopicPostRole.OriginalPoster else TopicPostRole.Reply
 
 internal fun topicFloorLabel(index: Int): String = "${index + 1}F"
+
+internal fun topicPostMetaLabel(
+    index: Int,
+    createdAt: String,
+    zoneId: ZoneId = ZoneId.systemDefault(),
+): String {
+    val floorLabel = topicFloorLabel(index)
+    val timeLabel = createdAt
+        .takeIf { it.isNotBlank() }
+        ?.let { rawCreatedAt ->
+            runCatching {
+                OffsetDateTime.parse(rawCreatedAt)
+                    .atZoneSameInstant(zoneId)
+                    .format(topicPostTimeFormatter)
+            }.getOrNull()
+        }
+
+    return if (timeLabel == null) {
+        floorLabel
+    } else {
+        "$floorLabel · $timeLabel"
+    }
+}
 
 internal fun isTopicListAtBottom(
     lastVisibleIndex: Int,

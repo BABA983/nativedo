@@ -461,6 +461,23 @@ class DiscourseApiClientTest {
     }
 
     @Test
+    fun fetchTopic_mapsPostCreatedAt() = runTest {
+        val payload = checkNotNull(
+            javaClass.classLoader?.getResource("discourse/topic-detail.json"),
+        ).readText()
+        server.enqueue(
+            MockResponse()
+                .setBody(payload)
+                .setHeader("Content-Type", "application/json"),
+        )
+
+        val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
+        val topic = client.fetchTopic(topicId = 101)
+
+        assertThat(topic.posts.single().createdAt).isEqualTo("2026-04-05T09:07:00.000Z")
+    }
+
+    @Test
     fun fetchTopicPosts_mapsChunkPosts() = runTest {
         val payload = checkNotNull(
             javaClass.classLoader?.getResource("discourse/topic-posts.json"),
