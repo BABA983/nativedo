@@ -13,6 +13,20 @@ class PostTextDocumentBuilderTest {
     }
 
     @Test
+    fun buildTextDocument_preservesSpaceBetweenSiteIconAndTransparentWrapperText() {
+        val document = buildTextDocumentFromHtml(
+            """
+                <img class="site-icon" src="https://linux.do/favicon.ico" alt=""><span> </span>GitHub
+            """.trimIndent(),
+        )
+
+        assertThat(document.text).isEqualTo(" GitHub")
+        assertThat(document.entities).containsExactly(
+            TextEntity.SiteIcon(start = 0, end = 0, rawUrl = "https://linux.do/favicon.ico", fallback = ""),
+        )
+    }
+
+    @Test
     fun buildTextDocument_flattensBoldInlineCodeMentionAndLink() {
         val document = buildTextDocumentFromHtml(
             """
@@ -45,7 +59,17 @@ class PostTextDocumentBuilderTest {
         assertThat(document.entities).containsExactly(
             TextEntity.Emoji(start = 0, end = 7, rawUrl = "/emoji/smile.png", fallback = ":smile:"),
             TextEntity.SiteIcon(start = 7, end = 7, rawUrl = "https://linux.do/favicon.ico", fallback = ""),
-            TextEntity.InlineCode(start = 7, end = 21),
+            TextEntity.InlineCode(start = 7, end = 22),
         ).inOrder()
+    }
+
+    @Test
+    fun buildTextDocument_preservesTrailingInlineCodeSpaceInEntityRange() {
+        val document = buildTextDocumentFromHtml("<code>foo </code>")
+
+        assertThat(document.text).isEqualTo("foo ")
+        assertThat(document.entities).containsExactly(
+            TextEntity.InlineCode(start = 0, end = 4),
+        )
     }
 }

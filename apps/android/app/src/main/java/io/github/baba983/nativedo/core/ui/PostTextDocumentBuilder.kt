@@ -73,7 +73,7 @@ private fun appendTextNode(
         return
     }
 
-    if (state.lastOutputKind == OutputKind.VisibleText && nextOutputKind == OutputKind.VisibleText) {
+    if (shouldAppendNormalizedSpace(state.lastOutputKind, nextOutputKind)) {
         state.text.append(' ')
         state.lastOutputKind = OutputKind.VisibleText
     }
@@ -116,7 +116,7 @@ private fun appendElement(
 
         element.tagName() == "code" -> {
             appendNodes(element.childNodes(), state, preserveRawText = true)
-            val end = inlineCodeEntityEnd(start, state.text)
+            val end = state.text.length
             if (end > start) {
                 state.entities += TextEntity.InlineCode(start = start, end = end)
             }
@@ -149,7 +149,7 @@ private fun appendElement(
         }
 
         element.outputKind() == OutputKind.BlankSpace && !preserveRawText -> {
-            if (state.lastOutputKind == OutputKind.VisibleText && nextOutputKind == OutputKind.VisibleText) {
+            if (shouldAppendNormalizedSpace(state.lastOutputKind, nextOutputKind)) {
                 state.text.append(' ')
                 state.lastOutputKind = OutputKind.VisibleText
             }
@@ -176,7 +176,7 @@ private fun appendImage(
                 rawUrl = rawUrl,
                 fallback = fallback,
             )
-            state.lastOutputKind = if (fallback.isEmpty()) OutputKind.None else OutputKind.VisibleText
+            state.lastOutputKind = if (fallback.isEmpty()) OutputKind.None else OutputKind.ZeroLengthEntity
         }
 
         element.hasClass("site-icon") -> {
@@ -204,7 +204,7 @@ private fun nextOutputKind(
 ): OutputKind {
     for (index in startIndex until nodes.size) {
         val outputKind = nodes[index].outputKind()
-        if (outputKind != OutputKind.None) {
+        if (outputKind != OutputKind.None && outputKind != OutputKind.BlankSpace) {
             return outputKind
         }
     }
@@ -225,6 +225,8 @@ private fun Node.outputKind(): OutputKind {
             tagName() == "br" -> OutputKind.LineBreak
             tagName() == "img" && hasClass("site-icon") -> OutputKind.ZeroLengthEntity
             tagName() == "img" && inlineFallbackText().isNotEmpty() -> OutputKind.VisibleText
+            tagName() == "code" && leadingRawCodeText().firstOrNull()?.isWhitespace() == true -> OutputKind.BlankSpace
+            tagName() == "code" -> OutputKind.VisibleText
             isDecorativeInlineIcon() -> {
                 if (attr("aria-label").ifBlank { attr("title") }.isNotEmpty()) {
                     OutputKind.VisibleText
@@ -247,23 +249,27 @@ private fun mergeOutputKinds(
     next: OutputKind,
 ): OutputKind {
     return when {
-        current == OutputKind.VisibleText || next == OutputKind.VisibleText -> OutputKind.VisibleText
-        current == OutputKind.LineBreak || next == OutputKind.LineBreak -> OutputKind.LineBreak
-        current == OutputKind.ZeroLengthEntity || next == OutputKind.ZeroLengthEntity -> OutputKind.ZeroLengthEntity
-        current == OutputKind.BlankSpace || next == OutputKind.BlankSpace -> OutputKind.BlankSpace
-        else -> OutputKind.None
+        current == OutputKind.VisibleText -> current
+        current == OutputKind.LineBreak -> current
+        current == OutputKind.ZeroLengthEntity -> current
+        current == OutputKind.BlankSpace && next == OutputKind.None -> current
+        current == OutputKind.BlankSpace && next != OutputKind.None -> next
+        current == OutputKind.None -> next
+        else -> next
     }
 }
 
-private fun inlineCodeEntityEnd(
-    start: Int,
-    text: StringBuilder,
-): Int {
-    val rawEnd = text.length
-    if (rawEnd <= start) {
-        return rawEnd
+private fun shouldAppendNormalizedSpace(
+    previousKind: OutputKind,
+    nextKind: OutputKind,
+): Boolean {
+    if (previousKind == OutputKind.LineBreak || nextKind == OutputKind.LineBreak) {
+        return false
     }
-    return if (text.lastOrNull() == ' ') rawEnd - 1 else rawEnd
+
+    return (previousKind == OutputKind.VisibleText && nextKind == OutputKind.VisibleText) ||
+        (previousKind == OutputKind.VisibleText && nextKind == OutputKind.ZeroLengthEntity) ||
+        (previousKind == OutputKind.ZeroLengthEntity && nextKind == OutputKind.VisibleText)
 }
 
 private fun parseMentionUsername(rawUrl: String): String? {
@@ -288,6 +294,18 @@ private fun Element.inlineFallbackText(): String {
         hasClass("emoji") -> attr("title").ifBlank { attr("alt") }
         else -> attr("alt").ifBlank { attr("title") }
     }
+}
+
+private fun Element.leadingRawCodeText(): String {
+    return childNodes()
+        .firstNotNullOfOrNull { child ->
+            when (child) {
+                is TextNode -> child.getWholeText().takeIf { it.isNotEmpty() }
+                is Element -> child.leadingRawCodeText().takeIf { it.isNotEmpty() }
+                else -> null
+            }
+        }
+        .orEmpty()
 }
 
 private class FlattenState {
