@@ -478,6 +478,23 @@ class DiscourseApiClientTest {
     }
 
     @Test
+    fun fetchTopic_mapsPostDisplayName() = runTest {
+        val payload = checkNotNull(
+            javaClass.classLoader?.getResource("discourse/topic-detail.json"),
+        ).readText()
+        server.enqueue(
+            MockResponse()
+                .setBody(payload)
+                .setHeader("Content-Type", "application/json"),
+        )
+
+        val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
+        val topic = client.fetchTopic(topicId = 101)
+
+        assertThat(topic.posts.single().authorDisplayName).isEqualTo("Baba")
+    }
+
+    @Test
     fun fetchTopicPosts_mapsChunkPosts() = runTest {
         val payload = checkNotNull(
             javaClass.classLoader?.getResource("discourse/topic-posts.json"),

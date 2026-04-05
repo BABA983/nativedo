@@ -62,7 +62,7 @@ internal fun TopicPostCard(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment = Alignment.Top,
             ) {
                 UserAvatar(
                     label = post.authorUsername,
@@ -70,39 +70,52 @@ internal fun TopicPostCard(
                     baseUrl = baseUrl,
                     size = 28.dp,
                 )
-                Row(
+                Column(
                     modifier = Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
                 ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = topicPostDisplayName(
+                                displayName = post.authorDisplayName,
+                                username = post.authorUsername,
+                            ),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = colors.textPrimary,
+                        )
+                        if (role == TopicPostRole.OriginalPoster) {
+                            Surface(
+                                shape = NativeDoPillShape,
+                                color = colors.accentMuted.copy(alpha = 0.9f),
+                                tonalElevation = 0.dp,
+                                shadowElevation = 0.dp,
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.topic_post_badge_original_poster),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = colors.accent,
+                                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.weight(1f))
+                        Text(
+                            text = topicPostMetaLabel(
+                                index = postIndex,
+                                createdAt = post.createdAt,
+                            ),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = colors.textSecondary,
+                        )
+                    }
                     Text(
                         text = "@${post.authorUsername}",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = colors.textPrimary,
-                    )
-                    if (role == TopicPostRole.OriginalPoster) {
-                        Surface(
-                            shape = NativeDoPillShape,
-                            color = colors.accentMuted.copy(alpha = 0.9f),
-                            tonalElevation = 0.dp,
-                            shadowElevation = 0.dp,
-                        ) {
-                            Text(
-                                text = stringResource(R.string.topic_post_badge_original_poster),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = colors.accent,
-                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.weight(1f))
-                    Text(
-                        text = topicPostMetaLabel(
-                            index = postIndex,
-                            createdAt = post.createdAt,
-                        ),
                         style = MaterialTheme.typography.labelMedium,
-                        color = colors.textSecondary,
+                        color = colors.accent.copy(alpha = 0.88f),
                     )
                 }
             }

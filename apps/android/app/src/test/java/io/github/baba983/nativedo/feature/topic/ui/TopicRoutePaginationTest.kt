@@ -19,6 +19,26 @@ class TopicRoutePaginationTest {
     }
 
     @Test
+    fun topicPostDisplayName_prefersDisplayNameWhenPresent() {
+        assertThat(
+            topicPostDisplayName(
+                displayName = "Baba",
+                username = "baba983",
+            ),
+        ).isEqualTo("Baba")
+    }
+
+    @Test
+    fun topicPostDisplayName_fallsBackToUsernameWhenDisplayNameMissing() {
+        assertThat(
+            topicPostDisplayName(
+                displayName = "",
+                username = "baba983",
+            ),
+        ).isEqualTo("baba983")
+    }
+
+    @Test
     fun topicPostMetaLabel_appendsCompactTimeWhenCreatedAtExists() {
         assertThat(
             topicPostMetaLabel(

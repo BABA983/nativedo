@@ -136,6 +136,8 @@ data class TopicPostsStreamDto(
 data class PostDto(
     val id: Long,
     val username: String,
+    @SerialName("name")
+    val displayName: String = "",
     @SerialName("avatar_template")
     val avatarTemplate: String = "",
     @SerialName("created_at")
@@ -220,6 +222,7 @@ internal fun TopicPostsResponseDto.toModel(): List<Post> = postStream.posts.map 
 internal fun PostDto.toModel(): Post = Post(
     id = id,
     authorUsername = username,
+    authorDisplayName = displayName,
     authorAvatarTemplate = avatarTemplate,
     createdAt = createdAt,
     cookedHtml = cookedHtml,
