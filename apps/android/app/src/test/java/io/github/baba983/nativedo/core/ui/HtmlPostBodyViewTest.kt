@@ -2,6 +2,11 @@ package io.github.baba983.nativedo.core.ui
 
 import androidx.compose.ui.unit.IntRect
 import com.google.common.truth.Truth.assertThat
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Test
 
 class HtmlPostBodyViewTest {
@@ -70,6 +75,25 @@ class HtmlPostBodyViewTest {
                 ),
             ),
         )
+    }
+
+    @Test
+    fun parsePostBodyBlocks_mapsFixtureTopicDetailIntoVisibleBlocks() {
+        val cooked = loadFixtureCookedPosts("discourse/topic-detail.json").single()
+
+        assertThat(parsePostBodyBlocks(cooked)).containsExactly(
+            PostBodyBlock.ParagraphBlock(
+                content = TextDocument(
+                    text = "Hello from Android.",
+                    entities = emptyList(),
+                ),
+            ),
+            PostBodyBlock.ImageBlock(
+                image = PostBodyImage(
+                    rawUrl = "https://linux.do/uploads/default/original/1X/demo.png",
+                ),
+            ),
+        ).inOrder()
     }
 
     @Test
@@ -733,5 +757,24 @@ class HtmlPostBodyViewTest {
         )
 
         assertThat(startIndex).isEqualTo(2)
+    }
+
+    private fun loadFixtureCookedPosts(resourcePath: String): List<String> {
+        val payload = checkNotNull(
+            javaClass.classLoader?.getResource(resourcePath),
+        ).readText()
+
+        return Json.parseToJsonElement(payload)
+            .jsonObject["post_stream"]
+            ?.jsonObject
+            ?.get("posts")
+            ?.jsonArray
+            ?.mapNotNull { post ->
+                post.jsonObject["cooked"]
+                    ?.jsonPrimitive
+                    ?.contentOrNull
+                    ?.takeIf(String::isNotBlank)
+            }
+            .orEmpty()
     }
 }
