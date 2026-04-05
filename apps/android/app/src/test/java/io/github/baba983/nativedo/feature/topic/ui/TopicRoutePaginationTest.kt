@@ -39,6 +39,11 @@ class TopicRoutePaginationTest {
     }
 
     @Test
+    fun topicPostUsernameLabel_prefixesUsernameWithAtSign() {
+        assertThat(topicPostUsernameLabel("very_long_username")).isEqualTo("@very_long_username")
+    }
+
+    @Test
     fun topicPostMetaLabel_appendsCompactTimeWhenCreatedAtExists() {
         assertThat(
             topicPostMetaLabel(

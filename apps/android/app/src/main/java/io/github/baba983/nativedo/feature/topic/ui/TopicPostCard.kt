@@ -4,7 +4,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -14,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.baba983.nativedo.R
 import io.github.baba983.nativedo.core.model.Post
@@ -72,7 +72,7 @@ internal fun TopicPostCard(
                 )
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -84,8 +84,11 @@ internal fun TopicPostCard(
                                 displayName = post.authorDisplayName,
                                 username = post.authorUsername,
                             ),
+                            modifier = Modifier.weight(1f),
                             style = MaterialTheme.typography.labelLarge,
                             color = colors.textPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                         )
                         if (role == TopicPostRole.OriginalPoster) {
                             Surface(
@@ -102,7 +105,6 @@ internal fun TopicPostCard(
                                 )
                             }
                         }
-                        Spacer(modifier = Modifier.weight(1f))
                         Text(
                             text = topicPostMetaLabel(
                                 index = postIndex,
@@ -113,9 +115,12 @@ internal fun TopicPostCard(
                         )
                     }
                     Text(
-                        text = "@${post.authorUsername}",
+                        text = topicPostUsernameLabel(post.authorUsername),
+                        modifier = Modifier.fillMaxWidth(),
                         style = MaterialTheme.typography.labelMedium,
-                        color = colors.accent.copy(alpha = 0.88f),
+                        color = colors.textSecondary.copy(alpha = 0.96f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }

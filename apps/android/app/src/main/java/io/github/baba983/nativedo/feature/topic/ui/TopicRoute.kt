@@ -351,6 +351,8 @@ internal fun topicPostDisplayName(
     username: String,
 ): String = displayName.ifBlank { username }
 
+internal fun topicPostUsernameLabel(username: String): String = "@$username"
+
 internal fun topicPostMetaLabel(
     index: Int,
     createdAt: String,
