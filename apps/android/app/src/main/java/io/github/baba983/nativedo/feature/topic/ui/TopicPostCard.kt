@@ -62,7 +62,7 @@ internal fun TopicPostCard(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.Top,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 UserAvatar(
                     label = post.authorUsername,
