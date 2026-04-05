@@ -46,6 +46,37 @@ class TopicViewModelTest {
     }
 
     @Test
+    fun loadTopic_exposesTopicMetadataInUiState() = runTest {
+        val detail = TopicDetail(
+            id = 42,
+            title = "Compose on linux.do",
+            createdAt = "2026-04-01T02:30:00.000Z",
+            lastPostedAt = "2026-04-05T09:07:00.000Z",
+            viewCount = 1284,
+            tags = listOf("android", "compose"),
+            posts = listOf(
+                Post(
+                    id = 1,
+                    authorUsername = "baba",
+                    cookedHtml = "<p>Hello</p>",
+                    imageUrls = emptyList(),
+                ),
+            ),
+        )
+        val viewModel = TopicViewModel(
+            loadTopic = FakeLoadTopicUseCase(detail),
+            topicId = 42,
+        )
+
+        runCurrent()
+
+        assertThat(viewModel.uiState.value.createdAt).isEqualTo("2026-04-01T02:30:00.000Z")
+        assertThat(viewModel.uiState.value.lastPostedAt).isEqualTo("2026-04-05T09:07:00.000Z")
+        assertThat(viewModel.uiState.value.viewCount).isEqualTo(1284)
+        assertThat(viewModel.uiState.value.tags).containsExactly("android", "compose").inOrder()
+    }
+
+    @Test
     fun refresh_resetsLoadedPostsAndRemainingStream() = runTest {
         val useCase = FakeLoadTopicUseCase(
             initial = TopicDetail(

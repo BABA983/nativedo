@@ -69,7 +69,10 @@ internal fun calculatePostImageViewerLaunchSource(
     )
 }
 
-private val postImageThumbnailCornerRadius = 18.dp
+internal val postBodyEmbeddedBlockCornerRadius = 12.dp
+internal val postBodyEmbeddedMediaCornerRadius = 14.dp
+private val postBodyImageGridSpacing = 4.dp
+private val postImageThumbnailCornerRadius = postBodyEmbeddedMediaCornerRadius
 
 @Composable
 fun HtmlPostBodyView(
@@ -160,7 +163,7 @@ internal fun HtmlTextBlock(
     modifier: Modifier = Modifier,
 ) {
     val colors = NativeDoThemeExtras.colors
-    val bodyStyle = MaterialTheme.typography.bodyLarge
+    val bodyStyle = postBodyParagraphTextStyle(MaterialTheme.typography.bodyLarge)
     val linkColor = MaterialTheme.colorScheme.primary.toArgb()
     val coroutineScope = rememberCoroutineScope()
 
@@ -396,12 +399,12 @@ internal fun PostImageGrid(
 
     Column(
         modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(postBodyImageGridSpacing),
     ) {
         images.chunked(clampedColumns).forEach { rowImages ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(postBodyImageGridSpacing),
                 verticalAlignment = Alignment.Top,
             ) {
                 rowImages.forEach { image ->

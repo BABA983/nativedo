@@ -4,6 +4,10 @@ import io.github.baba983.nativedo.core.model.Post
 
 data class TopicUiState(
     val title: String = "",
+    val createdAt: String = "",
+    val lastPostedAt: String = "",
+    val viewCount: Int = 0,
+    val tags: List<String> = emptyList(),
     val totalPosts: Int = 0,
     val posts: List<Post> = emptyList(),
     val isLoading: Boolean = true,

@@ -22,7 +22,7 @@ class PostBodyBlockRenderersTest {
     }
 
     @Test
-    fun postBodyBlockSpacingAfter_givesImagesAndParagraphsBreathingRoom() {
+    fun postBodyBlockSpacingAfter_keepsImagesAndParagraphsCompactInsidePostCard() {
         val paragraph = PostBodyBlock.RichTextBlock(
             style = RichTextBlockStyle.Paragraph,
             inlines = listOf(PostInline.Text("正文")),
@@ -31,7 +31,7 @@ class PostBodyBlockRenderersTest {
             image = PostBodyImage(rawUrl = "/uploads/default/original/1X/demo.png"),
         )
 
-        assertThat(postBodyBlockSpacingAfter(paragraph, image) == 10.dp).isTrue()
-        assertThat(postBodyBlockSpacingAfter(image, paragraph) == 10.dp).isTrue()
+        assertThat(postBodyBlockSpacingAfter(paragraph, image) == 8.dp).isTrue()
+        assertThat(postBodyBlockSpacingAfter(image, paragraph) == 8.dp).isTrue()
     }
 }

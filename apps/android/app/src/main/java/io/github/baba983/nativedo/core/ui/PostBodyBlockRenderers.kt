@@ -14,10 +14,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,13 +36,18 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import io.github.baba983.nativedo.R
 import io.github.baba983.nativedo.core.storage.CookieStore
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 
@@ -208,7 +215,7 @@ internal fun LightboxBlockView(
     modifier: Modifier = Modifier,
 ) {
     val colors = NativeDoThemeExtras.colors
-    val shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp)
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(postBodyEmbeddedMediaCornerRadius)
     var launchSource by remember(block.image) { mutableStateOf<PostImageViewerLaunchSource?>(null) }
     val clickModifier = if (onImageClick != null) {
         Modifier.clickable { onImageClick(block.image, launchSource) }
@@ -227,8 +234,8 @@ internal fun LightboxBlockView(
                 shape = shape,
             )
             .then(clickModifier)
-            .padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         PostImageView(
             image = block.image,
@@ -285,7 +292,7 @@ internal fun OneboxBlockView(
 ) {
     val colors = NativeDoThemeExtras.colors
     val uriHandler = LocalUriHandler.current
-    val shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp)
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(postBodyEmbeddedBlockCornerRadius)
 
     Column(
         modifier = modifier
@@ -298,8 +305,8 @@ internal fun OneboxBlockView(
                 shape = shape,
             )
             .clickable { uriHandler.openUri(block.targetUrl) }
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -375,7 +382,7 @@ internal fun DetailsBlockView(
 ) {
     val colors = NativeDoThemeExtras.colors
     val headerInteractionSource = remember { MutableInteractionSource() }
-    val shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp)
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(postBodyEmbeddedBlockCornerRadius)
     var expanded by rememberSaveable(
         block.summary,
         block.children,
@@ -395,8 +402,8 @@ internal fun DetailsBlockView(
                 shape = shape,
             )
             .animateContentSize()
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(
             modifier = Modifier
@@ -433,7 +440,7 @@ internal fun DetailsBlockView(
         if (expanded && block.children.isNotEmpty()) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 block.children.forEach { child ->
                     RenderPostBodyBlock(
@@ -466,8 +473,10 @@ internal fun DiscourseQuoteBlockView(
     modifier: Modifier = Modifier,
 ) {
     val colors = NativeDoThemeExtras.colors
-    val accentColor = colors.accent
-    val shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp)
+    val accentColor = colors.accent.copy(alpha = 0.92f)
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(postBodyEmbeddedBlockCornerRadius)
+    val containerColor = postBodyQuoteContainerColor()
+    val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)
     val authorUsername = block.authorUsername?.takeIf { username ->
         username.isNotBlank()
     }
@@ -481,10 +490,15 @@ internal fun DiscourseQuoteBlockView(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(colors.backgroundElevated.copy(alpha = 0.76f))
+            .background(containerColor)
+            .border(
+                width = 1.dp,
+                color = borderColor,
+                shape = shape,
+            )
             .drawBehind {
                 val barWidth = 2.5.dp.toPx()
-                val verticalInset = 8.dp.toPx()
+                val verticalInset = 5.dp.toPx()
                 drawRoundRect(
                     color = accentColor,
                     topLeft = Offset(0f, verticalInset),
@@ -495,8 +509,8 @@ internal fun DiscourseQuoteBlockView(
                     cornerRadius = CornerRadius(barWidth / 2f, barWidth / 2f),
                 )
             }
-            .padding(start = 12.dp, top = 10.dp, end = 12.dp, bottom = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(start = 10.dp, top = 8.dp, end = 10.dp, bottom = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -552,7 +566,7 @@ internal fun DiscourseQuoteBlockView(
         if (block.children.isNotEmpty()) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 block.children.forEach { child ->
                     RenderPostBodyBlock(
@@ -585,17 +599,24 @@ internal fun QuoteBlockView(
     modifier: Modifier = Modifier,
 ) {
     val colors = NativeDoThemeExtras.colors
-    val accentColor = colors.accent
-    val shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp)
+    val accentColor = colors.accent.copy(alpha = 0.92f)
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(postBodyEmbeddedBlockCornerRadius)
+    val containerColor = postBodyQuoteContainerColor()
+    val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)
 
     Column(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(colors.backgroundElevated.copy(alpha = 0.76f))
+            .background(containerColor)
+            .border(
+                width = 1.dp,
+                color = borderColor,
+                shape = shape,
+            )
             .drawBehind {
                 val barWidth = 2.5.dp.toPx()
-                val verticalInset = 8.dp.toPx()
+                val verticalInset = 5.dp.toPx()
                 drawRoundRect(
                     color = accentColor,
                     topLeft = Offset(0f, verticalInset),
@@ -606,8 +627,8 @@ internal fun QuoteBlockView(
                     cornerRadius = CornerRadius(barWidth / 2f, barWidth / 2f),
                 )
             }
-            .padding(start = 12.dp, top = 10.dp, end = 12.dp, bottom = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(start = 10.dp, top = 8.dp, end = 10.dp, bottom = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         block.children.forEach { child ->
             RenderPostBodyBlock(
@@ -631,43 +652,98 @@ internal fun CodeBlockView(
     modifier: Modifier = Modifier,
 ) {
     val colors = NativeDoThemeExtras.colors
-    val shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp)
-    val scrollState = rememberScrollState()
+    val clipboardManager = LocalClipboardManager.current
+    val bulletinHostState = LocalBulletinHostState.current
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(postBodyEmbeddedBlockCornerRadius)
+    val contentShape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp)
+    val horizontalScrollState = rememberScrollState()
+    val verticalScrollState = rememberScrollState()
+    val copyChipShape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp)
+    val copyLabel = stringResource(R.string.post_code_block_copy)
+    val copiedTitle = stringResource(R.string.post_code_block_copied_title)
 
     Column(
         modifier = modifier
             .fillMaxWidth()
             .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f))
             .border(
                 width = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.22f),
                 shape = shape,
             )
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        block.languageHint?.takeIf { it.isNotBlank() }?.let { language ->
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            block.languageHint?.takeIf { it.isNotBlank() }?.let { language ->
+                Text(
+                    text = language,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+            } ?: Spacer(modifier = Modifier.weight(1f))
+
             Text(
-                text = language,
+                text = copyLabel,
                 style = MaterialTheme.typography.labelSmall,
-                color = colors.textSecondary,
+                color = colors.accent,
+                modifier = Modifier
+                    .clip(copyChipShape)
+                    .background(colors.backgroundBase.copy(alpha = 0.66f))
+                    .border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f),
+                        shape = copyChipShape,
+                    )
+                    .clickable {
+                        clipboardManager.setText(AnnotatedString(block.code))
+                        bulletinHostState?.show(
+                            BulletinMessage(
+                                title = copiedTitle,
+                                tone = BulletinTone.Success,
+                            ),
+                        )
+                    }
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
             )
         }
+
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .horizontalScroll(scrollState),
+                .clip(contentShape)
+                .background(colors.backgroundBase.copy(alpha = 0.26f))
+                .border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.18f),
+                    shape = contentShape,
+                )
+                .heightIn(max = postBodyCodeBlockMaxHeight)
+                .verticalScroll(verticalScrollState)
+                .padding(horizontal = 10.dp, vertical = 8.dp),
         ) {
-            Text(
-                text = block.code,
-                style = MaterialTheme.typography.bodySmall.copy(
-                    fontFamily = FontFamily.Monospace,
-                    lineHeight = 18.sp,
-                ),
-                color = colors.textPrimary,
-                softWrap = false,
-            )
+            Box(
+                modifier = Modifier.horizontalScroll(horizontalScrollState),
+            ) {
+                Text(
+                    text = block.code,
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.sp,
+                        lineHeight = 17.sp,
+                    ),
+                    color = colors.textPrimary,
+                    softWrap = false,
+                )
+            }
         }
     }
 }
@@ -734,10 +810,10 @@ internal fun postBodyBlockSpacingAfter(
 
     return when {
         current.isHeadingBlock() && next.isParagraphBlock() -> 8.dp
-        current.isMediaBlock() && next.isParagraphBlock() -> 10.dp
-        current.isParagraphBlock() && next.isMediaBlock() -> 10.dp
-        current.isStructuredBlock() || next.isStructuredBlock() -> 10.dp
-        else -> 10.dp
+        current.isMediaBlock() && next.isParagraphBlock() -> 8.dp
+        current.isParagraphBlock() && next.isMediaBlock() -> 8.dp
+        current.isStructuredBlock() || next.isStructuredBlock() -> 8.dp
+        else -> 8.dp
     }
 }
 
@@ -763,3 +839,12 @@ private fun PostBodyBlock.isStructuredBlock(): Boolean {
         this is PostBodyBlock.CodeBlock ||
         this is PostBodyBlock.ListBlock
 }
+
+@Composable
+private fun postBodyQuoteContainerColor() = lerp(
+    start = NativeDoThemeExtras.colors.backgroundElevated,
+    stop = NativeDoThemeExtras.colors.accentMuted,
+    fraction = 0.46f,
+).copy(alpha = 0.98f)
+
+private val postBodyCodeBlockMaxHeight = 220.dp

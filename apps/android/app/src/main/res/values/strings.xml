@@ -17,6 +17,8 @@
     <string name="post_image_viewer_action_save_image">Save image</string>
     <string name="post_image_viewer_download_started">Image download started</string>
     <string name="post_image_viewer_action_failed">Unable to complete image action</string>
+    <string name="post_code_block_copy">Copy</string>
+    <string name="post_code_block_copied_title">Code copied</string>
     <string name="topic_post_badge_original_poster">OP</string>
     <string name="topic_reader_action_reply">Reply</string>
     <string name="topic_reader_action_more">More</string>
@@ -24,4 +26,6 @@
     <string name="topic_reader_reply_unavailable_subtitle">This entry stays here so the later composer can attach without changing the page structure.</string>
     <string name="topic_reader_more_unavailable_title">More tools are coming later</string>
     <string name="topic_reader_more_unavailable_subtitle">Back to top, only OP, floor jump, and hot replies will hang from this entry in a later task.</string>
+    <string name="topic_reply_jump_unavailable_title">Couldn\'t open replied post</string>
+    <string name="topic_reply_jump_unavailable_subtitle">That target reply is not in the loaded range yet.</string>
 </resources>

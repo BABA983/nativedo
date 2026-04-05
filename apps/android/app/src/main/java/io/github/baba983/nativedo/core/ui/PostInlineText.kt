@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import io.github.baba983.nativedo.core.storage.CookieStore
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
@@ -93,7 +94,7 @@ internal fun PostInlineText(
     val colors = NativeDoThemeExtras.colors
     val resolvedTextColor = (textColor ?: colors.textPrimary).toArgb()
     val resolvedLinkColor = (linkColor ?: colors.accent).toArgb()
-    val inlineCodeBackgroundColor = colors.accentMuted.copy(alpha = 0.58f).toArgb()
+    val inlineCodeBackgroundColor = colors.accentMuted.copy(alpha = 0.38f).toArgb()
     val coroutineScope = rememberCoroutineScope()
 
     AndroidView(
@@ -385,11 +386,17 @@ private class PostInlineUrlSpan(
 @Composable
 private fun RichTextBlockStyle.toTypographyStyle(): TextStyle {
     return when (this) {
-        RichTextBlockStyle.Paragraph -> MaterialTheme.typography.bodyLarge
+        RichTextBlockStyle.Paragraph -> postBodyParagraphTextStyle(MaterialTheme.typography.bodyLarge)
         RichTextBlockStyle.Heading1 -> MaterialTheme.typography.headlineMedium
         RichTextBlockStyle.Heading2 -> MaterialTheme.typography.headlineSmall
         RichTextBlockStyle.Heading3 -> MaterialTheme.typography.titleLarge
     }
 }
+
+internal fun postBodyParagraphTextStyle(baseStyle: TextStyle): TextStyle =
+    baseStyle.copy(
+        fontSize = 15.sp,
+        lineHeight = 20.sp,
+    )
 
 private const val DEFAULT_INLINE_CODE_BACKGROUND_COLOR = 0x14000000

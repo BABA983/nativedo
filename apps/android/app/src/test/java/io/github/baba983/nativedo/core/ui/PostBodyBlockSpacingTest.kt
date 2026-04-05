@@ -12,7 +12,7 @@ class PostBodyBlockSpacingTest {
                 current = PostBodyBlock.QuoteBlock(children = listOf(paragraph("quoted"))),
                 next = paragraph("after"),
             ),
-        ).isEqualTo(10.dp)
+        ).isEqualTo(8.dp)
 
         assertThat(
             postBodyBlockSpacingAfter(
@@ -23,7 +23,7 @@ class PostBodyBlockSpacingTest {
                     expandedByDefault = false,
                 ),
             ),
-        ).isEqualTo(10.dp)
+        ).isEqualTo(8.dp)
     }
 
     private fun paragraph(text: String) = PostBodyBlock.RichTextBlock(

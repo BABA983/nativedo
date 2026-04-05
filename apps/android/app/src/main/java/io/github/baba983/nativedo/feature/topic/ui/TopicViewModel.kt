@@ -49,6 +49,10 @@ class TopicViewModel(
                     remainingPostIds = detail.streamPostIds.filterNot(loadedIds::contains)
                     _uiState.value = TopicUiState(
                         title = detail.title,
+                        createdAt = detail.createdAt,
+                        lastPostedAt = detail.lastPostedAt,
+                        viewCount = detail.viewCount,
+                        tags = detail.tags,
                         totalPosts = detail.totalPosts,
                         posts = detail.posts,
                         isLoading = false,

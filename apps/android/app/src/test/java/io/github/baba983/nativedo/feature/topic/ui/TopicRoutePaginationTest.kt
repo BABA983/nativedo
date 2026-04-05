@@ -1,6 +1,7 @@
 package io.github.baba983.nativedo.feature.topic.ui
 
 import com.google.common.truth.Truth.assertThat
+import io.github.baba983.nativedo.core.model.Post
 import java.time.ZoneId
 import org.junit.Test
 
@@ -16,6 +17,51 @@ class TopicRoutePaginationTest {
     fun topicFloorLabel_usesForumStyleNumbers() {
         assertThat(topicFloorLabel(0)).isEqualTo("1F")
         assertThat(topicFloorLabel(11)).isEqualTo("12F")
+    }
+
+    @Test
+    fun topicFloorLabelForPostNumber_usesAbsoluteFloorNumbers() {
+        assertThat(topicFloorLabelForPostNumber(12)).isEqualTo("12F")
+    }
+
+    @Test
+    fun topicReplyTargetsByPostNumber_offsetsIndexesForTopicHeader() {
+        val posts = listOf(
+            Post(
+                id = 1001,
+                postNumber = 1,
+                authorUsername = "baba",
+                authorAvatarTemplate = "/user_avatar/linux.do/baba/{size}/1.png",
+                cookedHtml = "<p>Hello</p>",
+                imageUrls = emptyList(),
+            ),
+            Post(
+                id = 1002,
+                postNumber = 2,
+                authorUsername = "alice",
+                authorAvatarTemplate = "/user_avatar/linux.do/alice/{size}/1.png",
+                cookedHtml = "<p>Reply</p>",
+                imageUrls = emptyList(),
+            ),
+        )
+
+        assertThat(topicReplyTargetsByPostNumber(posts))
+            .containsExactly(
+                1,
+                TopicReplyTarget(
+                    itemIndex = 1,
+                    postId = 1001,
+                    authorUsername = "baba",
+                    authorAvatarTemplate = "/user_avatar/linux.do/baba/{size}/1.png",
+                ),
+                2,
+                TopicReplyTarget(
+                    itemIndex = 2,
+                    postId = 1002,
+                    authorUsername = "alice",
+                    authorAvatarTemplate = "/user_avatar/linux.do/alice/{size}/1.png",
+                ),
+            )
     }
 
     @Test

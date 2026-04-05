@@ -461,6 +461,68 @@ class DiscourseApiClientTest {
     }
 
     @Test
+    fun fetchTopic_mapsTopicMetadata() = runTest {
+        val payload = checkNotNull(
+            javaClass.classLoader?.getResource("discourse/topic-detail.json"),
+        ).readText()
+        server.enqueue(
+            MockResponse()
+                .setBody(payload)
+                .setHeader("Content-Type", "application/json"),
+        )
+
+        val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
+        val topic = client.fetchTopic(topicId = 101)
+
+        assertThat(topic.createdAt).isEqualTo("2026-04-01T02:30:00.000Z")
+        assertThat(topic.lastPostedAt).isEqualTo("2026-04-05T09:07:00.000Z")
+        assertThat(topic.viewCount).isEqualTo(1284)
+        assertThat(topic.tags).containsExactly("android", "compose", "nativedo").inOrder()
+    }
+
+    @Test
+    fun fetchTopic_mapsObjectTagsToDisplayNames() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setBody(
+                    """
+                    {
+                      "id": 101,
+                      "title": "Welcome",
+                      "tags": [
+                        {
+                          "id": 1436,
+                          "name": "快问快答",
+                          "slug": "quick-question"
+                        },
+                        {
+                          "id": 1437,
+                          "name": "Android",
+                          "slug": "android"
+                        }
+                      ],
+                      "post_stream": {
+                        "posts": [
+                          {
+                            "id": 1001,
+                            "username": "baba",
+                            "cooked": "<p>Hello</p>"
+                          }
+                        ]
+                      }
+                    }
+                    """.trimIndent(),
+                )
+                .setHeader("Content-Type", "application/json"),
+        )
+
+        val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
+        val topic = client.fetchTopic(topicId = 101)
+
+        assertThat(topic.tags).containsExactly("快问快答", "Android").inOrder()
+    }
+
+    @Test
     fun fetchTopic_mapsPostCreatedAt() = runTest {
         val payload = checkNotNull(
             javaClass.classLoader?.getResource("discourse/topic-detail.json"),
@@ -495,6 +557,58 @@ class DiscourseApiClientTest {
     }
 
     @Test
+    fun fetchTopic_mapsReplyMetadata() = runTest {
+        val payload = checkNotNull(
+            javaClass.classLoader?.getResource("discourse/topic-detail.json"),
+        ).readText()
+        server.enqueue(
+            MockResponse()
+                .setBody(payload)
+                .setHeader("Content-Type", "application/json"),
+        )
+
+        val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
+        val topic = client.fetchTopic(topicId = 101)
+
+        assertThat(topic.posts.single().postNumber).isEqualTo(1)
+        assertThat(topic.posts.single().replyToPostNumber).isNull()
+    }
+
+    @Test
+    fun fetchTopic_allowsNullPostDisplayName() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setBody(
+                    """
+                    {
+                      "id": 101,
+                      "title": "Welcome",
+                      "post_stream": {
+                        "posts": [
+                          {
+                            "id": 1001,
+                            "post_number": 1,
+                            "username": "LifetimeKD01",
+                            "name": null,
+                            "avatar_template": "/user_avatar/linux.do/lifetimekd01/{size}/1.png",
+                            "cooked": "<p>Hello</p>"
+                          }
+                        ]
+                      }
+                    }
+                    """.trimIndent(),
+                )
+                .setHeader("Content-Type", "application/json"),
+        )
+
+        val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
+        val topic = client.fetchTopic(topicId = 101)
+
+        assertThat(topic.posts.single().authorUsername).isEqualTo("LifetimeKD01")
+        assertThat(topic.posts.single().authorDisplayName).isEmpty()
+    }
+
+    @Test
     fun fetchTopicPosts_mapsChunkPosts() = runTest {
         val payload = checkNotNull(
             javaClass.classLoader?.getResource("discourse/topic-posts.json"),
@@ -514,6 +628,8 @@ class DiscourseApiClientTest {
             "/user_avatar/linux.do/alice/{size}/1.png",
             "/user_avatar/linux.do/charlie/{size}/1.png",
         ).inOrder()
+        assertThat(posts.map { it.postNumber }).containsExactly(2, 3).inOrder()
+        assertThat(posts.map { it.replyToPostNumber }).containsExactly(1, 2).inOrder()
     }
 
     @Test

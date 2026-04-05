@@ -22,6 +22,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -37,6 +38,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.baba983.nativedo.NativeDoApplication
 import io.github.baba983.nativedo.R
+import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.session.AppSessionState
 import io.github.baba983.nativedo.core.session.SessionEvent
 import io.github.baba983.nativedo.core.ui.BulletinMessage
@@ -50,9 +52,12 @@ import io.github.baba983.nativedo.ui.NativeDoPullToRefreshIndicator
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private const val TOPIC_LOAD_MORE_THRESHOLD = 5
 private const val TOPIC_BOTTOM_SHELF_BUFFER_ITEMS = 2
+private const val TOPIC_STATIC_ITEMS_BEFORE_POSTS = 1
 private val topicPostTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 
 internal enum class TopicPostRole {
@@ -63,6 +68,18 @@ internal enum class TopicPostRole {
 internal data class TopicScrollSnapshot(
     val firstVisibleItemIndex: Int,
     val firstVisibleItemScrollOffset: Int,
+)
+
+internal data class TopicReplyTarget(
+    val itemIndex: Int,
+    val postId: Long,
+    val authorUsername: String,
+    val authorAvatarTemplate: String,
+)
+
+internal data class TopicJumpHighlight(
+    val postId: Long,
+    val nonce: Int,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -112,10 +129,16 @@ fun TopicRoute(
     var shownRefreshError by rememberSaveable(topicId) { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
     val pullToRefreshState = rememberPullToRefreshState()
+    val coroutineScope = rememberCoroutineScope()
     var previousScrollSnapshot by remember { mutableStateOf<TopicScrollSnapshot?>(null) }
     var bottomShelfArmed by rememberSaveable(topicId) { mutableStateOf(false) }
+    var jumpHighlightNonce by rememberSaveable(topicId) { mutableStateOf(0) }
+    var jumpHighlight by remember { mutableStateOf<TopicJumpHighlight?>(null) }
     val currentSessionState by rememberUpdatedState(sessionState)
     val currentAuthVersion by rememberUpdatedState(authVersion)
+    val replyTargetsByPostNumber = remember(uiState.posts) {
+        topicReplyTargetsByPostNumber(uiState.posts)
+    }
     val refreshTopicIfNeeded: () -> Unit = {
         val latestAuthVersion = currentAuthVersion
         if (
@@ -196,6 +219,14 @@ fun TopicRoute(
         }
     }
 
+    LaunchedEffect(jumpHighlight) {
+        val currentHighlight = jumpHighlight ?: return@LaunchedEffect
+        delay(600L)
+        if (jumpHighlight == currentHighlight) {
+            jumpHighlight = null
+        }
+    }
+
     LaunchedEffect(
         listState.firstVisibleItemIndex,
         listState.firstVisibleItemScrollOffset,
@@ -270,6 +301,10 @@ fun TopicRoute(
                     item(key = "topic-header") {
                         TopicHeader(
                             title = uiState.title,
+                            createdAt = uiState.createdAt,
+                            lastPostedAt = uiState.lastPostedAt,
+                            viewCount = uiState.viewCount,
+                            tags = uiState.tags,
                             totalPosts = uiState.totalPosts,
                             loadedPosts = uiState.posts.size,
                         )
@@ -278,6 +313,7 @@ fun TopicRoute(
                         items = uiState.posts,
                         key = { _, post -> post.id },
                     ) { index, post ->
+                        val replyTarget = post.replyToPostNumber?.let(replyTargetsByPostNumber::get)
                         TopicPostCard(
                             post = post,
                             postIndex = index,
@@ -286,6 +322,32 @@ fun TopicRoute(
                             baseUrl = appContainer.baseUrl,
                             onTopicClick = onTopicClick,
                             onUserClick = onUserClick,
+                            replyTargetFloorLabel = post.replyToPostNumber?.let(::topicFloorLabelForPostNumber),
+                            replyTargetAvatarLabel = replyTarget?.authorUsername.orEmpty(),
+                            replyTargetAvatarTemplate = replyTarget?.authorAvatarTemplate.orEmpty(),
+                            onReplyTargetClick = post.replyToPostNumber?.let { replyToPostNumber ->
+                                {
+                                    val target = replyTargetsByPostNumber[replyToPostNumber]
+                                    if (target == null) {
+                                        bulletinHostState?.show(
+                                            BulletinMessage(
+                                                title = context.getString(R.string.topic_reply_jump_unavailable_title),
+                                                subtitle = context.getString(R.string.topic_reply_jump_unavailable_subtitle),
+                                            ),
+                                        )
+                                    } else {
+                                        coroutineScope.launch {
+                                            listState.animateScrollToItem(target.itemIndex)
+                                            jumpHighlightNonce += 1
+                                            jumpHighlight = TopicJumpHighlight(
+                                                postId = target.postId,
+                                                nonce = jumpHighlightNonce,
+                                            )
+                                        }
+                                    }
+                                }
+                            },
+                            isJumpHighlighted = jumpHighlight?.postId == post.id,
                         )
                     }
 
@@ -346,12 +408,33 @@ internal fun topicPostRole(index: Int): TopicPostRole =
 
 internal fun topicFloorLabel(index: Int): String = "${index + 1}F"
 
+internal fun topicFloorLabelForPostNumber(postNumber: Int): String = "${postNumber}F"
+
 internal fun topicPostDisplayName(
     displayName: String,
     username: String,
 ): String = displayName.ifBlank { username }
 
 internal fun topicPostUsernameLabel(username: String): String = "@$username"
+
+internal fun topicReplyTargetsByPostNumber(
+    posts: List<Post>,
+    leadingItemsCount: Int = TOPIC_STATIC_ITEMS_BEFORE_POSTS,
+): Map<Int, TopicReplyTarget> = buildMap {
+    posts.forEachIndexed { index, post ->
+        post.postNumber?.let { postNumber ->
+            put(
+                postNumber,
+                TopicReplyTarget(
+                    itemIndex = index + leadingItemsCount,
+                    postId = post.id,
+                    authorUsername = post.authorUsername,
+                    authorAvatarTemplate = post.authorAvatarTemplate,
+                ),
+            )
+        }
+    }
+}
 
 internal fun topicPostMetaLabel(
     index: Int,
