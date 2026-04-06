@@ -1,6 +1,7 @@
 package io.github.baba983.nativedo.core.network
 
 import io.github.baba983.nativedo.core.model.SearchResult
+import io.github.baba983.nativedo.core.model.CategorySummary
 import io.github.baba983.nativedo.core.model.TopicDetail
 import io.github.baba983.nativedo.core.model.TopicListPage
 import io.github.baba983.nativedo.core.model.TopicSummary
@@ -65,6 +66,10 @@ class DiscourseApiClient(
 
     suspend fun search(query: String): SearchResult = runWithSessionRecovery {
         service.search(query).toModel()
+    }
+
+    suspend fun fetchCategories(): List<CategorySummary> = runWithSessionRecovery {
+        service.site().toModel()
     }
 
     suspend fun fetchCsrfToken(): String = runWithSessionRecovery {

@@ -49,6 +49,8 @@ import io.github.baba983.nativedo.core.ui.requestErrorPresentation
 import io.github.baba983.nativedo.feature.topic.data.TopicRepository
 import io.github.baba983.nativedo.feature.topic.domain.LoadTopicUseCase
 import io.github.baba983.nativedo.ui.NativeDoPullToRefreshIndicator
+import java.time.Duration
+import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -59,6 +61,7 @@ private const val TOPIC_LOAD_MORE_THRESHOLD = 5
 private const val TOPIC_BOTTOM_SHELF_BUFFER_ITEMS = 2
 private const val TOPIC_STATIC_ITEMS_BEFORE_POSTS = 1
 private val topicPostTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+private val topicPostDateTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("MM-dd HH:mm")
 
 internal enum class TopicPostRole {
     OriginalPoster,
@@ -417,6 +420,8 @@ internal fun topicPostDisplayName(
 
 internal fun topicPostUsernameLabel(username: String): String = "@$username"
 
+internal fun topicPostUsesAnimatedTitle(title: String): Boolean = title.trim() in setOf("种子用户", "破界者")
+
 internal fun topicReplyTargetsByPostNumber(
     posts: List<Post>,
     leadingItemsCount: Int = TOPIC_STATIC_ITEMS_BEFORE_POSTS,
@@ -439,24 +444,54 @@ internal fun topicReplyTargetsByPostNumber(
 internal fun topicPostMetaLabel(
     index: Int,
     createdAt: String,
+    now: Instant = Instant.now(),
     zoneId: ZoneId = ZoneId.systemDefault(),
 ): String {
     val floorLabel = topicFloorLabel(index)
-    val timeLabel = createdAt
-        .takeIf { it.isNotBlank() }
-        ?.let { rawCreatedAt ->
-            runCatching {
-                OffsetDateTime.parse(rawCreatedAt)
-                    .atZoneSameInstant(zoneId)
-                    .format(topicPostTimeFormatter)
-            }.getOrNull()
-        }
+    val timeLabel = topicPostTimeLabel(
+        rawValue = createdAt,
+        now = now,
+        zoneId = zoneId,
+    )
 
     return if (timeLabel == null) {
         floorLabel
     } else {
         "$floorLabel · $timeLabel"
     }
+}
+
+internal fun topicPostTimeLabel(
+    rawValue: String,
+    now: Instant = Instant.now(),
+    zoneId: ZoneId = ZoneId.systemDefault(),
+): String? {
+    if (rawValue.isBlank()) return null
+
+    val postedAt = runCatching { OffsetDateTime.parse(rawValue) }.getOrNull() ?: return null
+    val postedInstant = postedAt.toInstant()
+    val duration = Duration.between(postedInstant, now)
+    val postedLocalDateTime = postedAt.atZoneSameInstant(zoneId)
+    val nowLocalDate = now.atZone(zoneId).toLocalDate()
+
+    if (duration.isNegative) {
+        return postedLocalDateTime.format(topicPostDateTimeFormatter)
+    }
+
+    return when {
+        duration < Duration.ofMinutes(1) -> "just now"
+        duration < Duration.ofHours(1) -> "${duration.toMinutes()}m"
+        postedLocalDateTime.toLocalDate() == nowLocalDate -> postedLocalDateTime.format(topicPostTimeFormatter)
+        else -> postedLocalDateTime.format(topicPostDateTimeFormatter)
+    }
+}
+
+internal fun topicPostEditedMetaLabel(
+    editCount: Int,
+): String? {
+    return editCount
+        .takeIf { it > 0 }
+        ?.toString()
 }
 
 internal fun isTopicListAtBottom(

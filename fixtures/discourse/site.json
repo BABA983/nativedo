@@ -1,0 +1,42 @@
+{
+  "categories": [
+    {
+      "id": 2,
+      "name": "运营反馈",
+      "slug": "feedback",
+      "color": "808281",
+      "text_color": "000000"
+    },
+    {
+      "id": 4,
+      "name": "开发调优",
+      "slug": "develop",
+      "color": "32C3C3",
+      "text_color": "000000"
+    },
+    {
+      "id": 11,
+      "name": "搞七捻三",
+      "slug": "gossip",
+      "color": "3AB54A",
+      "text_color": "000000"
+    },
+    {
+      "id": 98,
+      "name": "国内吹水",
+      "slug": "domestic",
+      "color": "D12C25",
+      "text_color": "FFFFFF",
+      "subcategory_list": [
+        {
+          "id": 99,
+          "name": "一号水区",
+          "slug": "domestic-lv1",
+          "color": "0088CC",
+          "text_color": "FFFFFF",
+          "parent_category_id": 98
+        }
+      ]
+    }
+  ]
+}

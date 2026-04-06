@@ -7,7 +7,12 @@ data class Post(
     val authorUsername: String,
     val authorDisplayName: String = "",
     val authorAvatarTemplate: String = "",
+    val authorTitle: String = "",
+    val authorFlairName: String = "",
+    val authorFlairUrl: String = "",
     val createdAt: String = "",
+    val updatedAt: String = "",
+    val editCount: Int = 0,
     val cookedHtml: String,
     val imageUrls: List<String>,
 )

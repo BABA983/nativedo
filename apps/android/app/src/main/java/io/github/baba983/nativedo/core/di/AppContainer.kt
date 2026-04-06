@@ -15,6 +15,7 @@ import io.github.baba983.nativedo.core.session.AppSessionState
 import io.github.baba983.nativedo.core.session.CookieSyncBridge
 import io.github.baba983.nativedo.core.session.SessionCoordinator
 import io.github.baba983.nativedo.core.session.SessionExpiredReason
+import io.github.baba983.nativedo.core.storage.CategoryStore
 import io.github.baba983.nativedo.core.storage.CookieStore
 import io.github.baba983.nativedo.core.storage.SharedPreferencesCookieStorePersistence
 import io.github.baba983.nativedo.core.storage.SharedPreferencesSessionStorePersistence
@@ -86,6 +87,9 @@ class AppContainer(
                 sessionInvalidationGate.invalidate(reason)
             }
         },
+    )
+    val categoryStore: CategoryStore = CategoryStore(
+        client = discourseApiClient,
     )
     val sessionCoordinator: SessionCoordinator = SessionCoordinator(
         cookieStore = cookieStore,

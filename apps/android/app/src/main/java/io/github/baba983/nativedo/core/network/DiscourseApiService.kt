@@ -3,6 +3,7 @@ package io.github.baba983.nativedo.core.network
 import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.SearchResult
 import io.github.baba983.nativedo.core.model.SearchUser
+import io.github.baba983.nativedo.core.model.CategorySummary
 import io.github.baba983.nativedo.core.model.TopicDetail
 import io.github.baba983.nativedo.core.model.TopicListPage
 import io.github.baba983.nativedo.core.model.TopicSummary
@@ -53,6 +54,9 @@ interface DiscourseApiService {
     @GET("search.json")
     suspend fun search(@Query("q") query: String): SearchResponseDto
 
+    @GET("site.json")
+    suspend fun site(): SiteResponseDto
+
     @GET("u/{username}.json")
     suspend fun profile(@Path("username") username: String): UserProfileResponseDto
 
@@ -91,6 +95,11 @@ data class TopicDto(
     val lastPostedAt: String = "",
     @SerialName("category_id")
     val categoryId: Int? = null,
+    @SerialName("last_poster_username")
+    val lastPosterUsername: String = "",
+    val pinned: Boolean = false,
+    @Serializable(with = TopicTagListSerializer::class)
+    val tags: List<String> = emptyList(),
     val posters: List<PosterDto> = emptyList(),
 )
 
@@ -163,8 +172,17 @@ data class PostDto(
     val displayName: String? = null,
     @SerialName("avatar_template")
     val avatarTemplate: String = "",
+    @SerialName("user_title")
+    val userTitle: String? = null,
+    @SerialName("flair_name")
+    val flairName: String? = null,
+    @SerialName("flair_url")
+    val flairUrl: String? = null,
     @SerialName("created_at")
     val createdAt: String = "",
+    @SerialName("updated_at")
+    val updatedAt: String = "",
+    val version: Int = 1,
     @SerialName("cooked")
     val cookedHtml: String,
 )
@@ -173,6 +191,32 @@ data class PostDto(
 data class SearchResponseDto(
     val topics: List<TopicDto> = emptyList(),
     val users: List<SearchUserDto> = emptyList(),
+)
+
+@Serializable
+data class SiteResponseDto(
+    val categories: List<SiteCategoryDto> = emptyList(),
+    @SerialName("category_list")
+    val categoryList: SiteCategoryListDto? = null,
+)
+
+@Serializable
+data class SiteCategoryListDto(
+    val categories: List<SiteCategoryDto> = emptyList(),
+)
+
+@Serializable
+data class SiteCategoryDto(
+    val id: Int,
+    val name: String = "",
+    val slug: String = "",
+    val color: String = "",
+    @SerialName("text_color")
+    val textColor: String = "",
+    @SerialName("parent_category_id")
+    val parentCategoryId: Int? = null,
+    @SerialName("subcategory_list")
+    val subcategoryList: List<SiteCategoryDto> = emptyList(),
 )
 
 @Serializable
@@ -253,7 +297,12 @@ internal fun PostDto.toModel(): Post = Post(
     authorUsername = username,
     authorDisplayName = displayName.orEmpty(),
     authorAvatarTemplate = avatarTemplate,
+    authorTitle = userTitle.orEmpty(),
+    authorFlairName = flairName.orEmpty(),
+    authorFlairUrl = flairUrl.orEmpty(),
     createdAt = createdAt,
+    updatedAt = updatedAt,
+    editCount = (version - 1).coerceAtLeast(0),
     cookedHtml = cookedHtml,
     imageUrls = Regex("<img[^>]+src=\\\"([^\\\"]+)\\\"")
         .findAll(cookedHtml)
@@ -271,6 +320,12 @@ internal fun SearchResponseDto.toModel(): SearchResult = SearchResult(
     },
     users = users.map { it.toModel() },
 )
+
+internal fun SiteResponseDto.toModel(): List<CategorySummary> = (
+    categories.takeIf { it.isNotEmpty() } ?: categoryList?.categories.orEmpty()
+    ).flatMap { category ->
+    category.flattenedModels()
+}
 
 internal fun SearchUserDto.toModel(): SearchUser = SearchUser(
     username = username,
@@ -297,6 +352,15 @@ private fun TopicDto.toTopicSummary(
                 posterUser(username = user.username, avatarTemplate = user.avatarTemplate)
             }
     }
+    val recentPosterUser = posters.mostRecentPosterOrNull()?.let { poster ->
+        poster.user?.let { user ->
+            posterUser(username = user.username, avatarTemplate = user.avatarTemplate)
+        } ?: poster.userId
+            ?.let(usersById::get)
+            ?.let { user ->
+                posterUser(username = user.username, avatarTemplate = user.avatarTemplate)
+            }
+    }
 
     return TopicSummary(
         id = id,
@@ -309,6 +373,9 @@ private fun TopicDto.toTopicSummary(
         viewCount = views,
         lastPostedAt = lastPostedAt,
         categoryId = categoryId,
+        lastPosterUsername = lastPosterUsername.ifBlank { recentPosterUser?.username.orEmpty() },
+        isPinned = pinned,
+        tags = tags,
     )
 }
 
@@ -323,10 +390,34 @@ private fun SearchUserDto.toTopicListUser(): TopicListUserDto = TopicListUserDto
     avatarTemplate = avatarTemplate,
 )
 
+private fun SiteCategoryDto.flattenedModels(): List<CategorySummary> {
+    return buildList {
+        add(toModel())
+        subcategoryList.forEach { category ->
+            addAll(category.flattenedModels())
+        }
+    }
+}
+
+private fun SiteCategoryDto.toModel(): CategorySummary = CategorySummary(
+    id = id,
+    name = name,
+    slug = slug,
+    colorHex = color,
+    textColorHex = textColor,
+    parentCategoryId = parentCategoryId,
+)
+
 private fun List<PosterDto>.primaryPosterOrNull(): PosterDto? {
     return firstOrNull { poster ->
         poster.description.contains("original poster", ignoreCase = true)
     } ?: firstOrNull()
+}
+
+private fun List<PosterDto>.mostRecentPosterOrNull(): PosterDto? {
+    return firstOrNull { poster ->
+        poster.description.contains("most recent poster", ignoreCase = true)
+    }
 }
 
 private fun posterUser(

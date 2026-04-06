@@ -2,6 +2,7 @@ package io.github.baba983.nativedo.feature.topic.ui
 
 import com.google.common.truth.Truth.assertThat
 import io.github.baba983.nativedo.core.model.Post
+import java.time.Instant
 import java.time.ZoneId
 import org.junit.Test
 
@@ -90,14 +91,52 @@ class TopicRoutePaginationTest {
     }
 
     @Test
-    fun topicPostMetaLabel_appendsCompactTimeWhenCreatedAtExists() {
+    fun topicPostUsesAnimatedTitle_matchesSeedUserTitle() {
+        assertThat(topicPostUsesAnimatedTitle("种子用户")).isTrue()
+        assertThat(topicPostUsesAnimatedTitle(" 种子用户 ")).isTrue()
+        assertThat(topicPostUsesAnimatedTitle("破界者")).isTrue()
+    }
+
+    @Test
+    fun topicPostUsesAnimatedTitle_ignoresRegularTitles() {
+        assertThat(topicPostUsesAnimatedTitle("骐骥驰骋")).isFalse()
+        assertThat(topicPostUsesAnimatedTitle("")).isFalse()
+    }
+
+    @Test
+    fun topicPostMetaLabel_appendsRelativeTimeForRecentReplies() {
         assertThat(
             topicPostMetaLabel(
                 index = 2,
                 createdAt = "2026-04-05T09:07:00.000Z",
+                now = Instant.parse("2026-04-05T09:15:00.000Z"),
+                zoneId = ZoneId.of("UTC"),
+            ),
+        ).isEqualTo("3F · 8m")
+    }
+
+    @Test
+    fun topicPostMetaLabel_appendsClockTimeForOlderRepliesOnTheSameDay() {
+        assertThat(
+            topicPostMetaLabel(
+                index = 2,
+                createdAt = "2026-04-05T09:07:00.000Z",
+                now = Instant.parse("2026-04-05T12:15:00.000Z"),
                 zoneId = ZoneId.of("UTC"),
             ),
         ).isEqualTo("3F · 09:07")
+    }
+
+    @Test
+    fun topicPostMetaLabel_appendsDateTimeForOlderRepliesAcrossDays() {
+        assertThat(
+            topicPostMetaLabel(
+                index = 2,
+                createdAt = "2026-04-05T09:07:00.000Z",
+                now = Instant.parse("2026-04-06T12:15:00.000Z"),
+                zoneId = ZoneId.of("UTC"),
+            ),
+        ).isEqualTo("3F · 04-05 09:07")
     }
 
     @Test
@@ -106,9 +145,28 @@ class TopicRoutePaginationTest {
             topicPostMetaLabel(
                 index = 2,
                 createdAt = "",
+                now = Instant.parse("2026-04-05T12:15:00.000Z"),
                 zoneId = ZoneId.of("UTC"),
             ),
         ).isEqualTo("3F")
+    }
+
+    @Test
+    fun topicPostEditedMetaLabel_formatsCountAndEditTime() {
+        assertThat(
+            topicPostEditedMetaLabel(
+                editCount = 1,
+            ),
+        ).isEqualTo("1")
+    }
+
+    @Test
+    fun topicPostEditedMetaLabel_returnsNullWhenThereAreNoEdits() {
+        assertThat(
+            topicPostEditedMetaLabel(
+                editCount = 0,
+            ),
+        ).isNull()
     }
 
     @Test

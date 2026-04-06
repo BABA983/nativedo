@@ -100,6 +100,7 @@ fun HomeRoute(
     }
     val sessionState by appContainer.sessionCoordinator.sessionState.collectAsStateWithLifecycle()
     val authVersion by appContainer.sessionCoordinator.authVersion.collectAsStateWithLifecycle()
+    val categories by appContainer.categoryStore.categories.collectAsStateWithLifecycle()
     var handledAuthVersion by rememberSaveable { mutableStateOf(UNSET_HOME_AUTH_VERSION) }
     val viewModel: HomeViewModel = viewModel(
         factory = remember(appContainer) {
@@ -196,6 +197,10 @@ fun HomeRoute(
         }
     }
 
+    LaunchedEffect(appContainer.categoryStore) {
+        appContainer.categoryStore.loadIfNeeded()
+    }
+
     LaunchedEffect(forceShowSearchField, listState.isScrollInProgress) {
         if (forceShowSearchField && listState.isScrollInProgress) {
             forceShowSearchField = false
@@ -237,6 +242,7 @@ fun HomeRoute(
         if (searchMode) {
             SearchScreen(
                 uiState = searchUiState,
+                categories = categories,
                 cookieStore = appContainer.cookieStore,
                 baseUrl = appContainer.baseUrl,
                 onQueryChanged = searchViewModel::onQueryChanged,
@@ -250,6 +256,7 @@ fun HomeRoute(
         } else {
             HomeFeedContent(
                 uiState = uiState,
+                categories = categories,
                 listState = listState,
                 forceShowSearchField = forceShowSearchField,
                 cookieStore = appContainer.cookieStore,
@@ -274,6 +281,7 @@ fun HomeRoute(
 @Composable
 private fun HomeFeedContent(
     uiState: HomeUiState,
+    categories: Map<Int, io.github.baba983.nativedo.core.model.CategorySummary>,
     listState: LazyListState,
     forceShowSearchField: Boolean,
     cookieStore: io.github.baba983.nativedo.core.storage.CookieStore,
@@ -442,6 +450,7 @@ private fun HomeFeedContent(
                         ) { index, topic ->
                             TopicListItem(
                                 topic = topic,
+                                category = topic.categoryId?.let(categories::get),
                                 baseUrl = baseUrl,
                                 onClick = { onTopicClick(topic.id) },
                                 modifier = Modifier.fillMaxWidth(),

@@ -14,15 +14,25 @@
         "title": "Welcome to NativeDo Android",
         "image_url": "https://linux.do/uploads/default/original/1X/topic-cover.png",
         "slug": "welcome-to-nativedo-android",
+        "pinned": true,
         "posts_count": 12,
         "reply_count": 11,
         "views": 345,
         "last_posted_at": "2026-03-31T09:00:00.000Z",
+        "last_poster_username": "alice",
         "category_id": 6,
+        "tags": ["公告", "android"],
         "posters": [
           {
             "description": "Original Poster",
             "user_id": 7
+          },
+          {
+            "description": "Most Recent Poster",
+            "user": {
+              "username": "alice",
+              "avatar_template": "/user_avatar/linux.do/alice/{size}/2.png"
+            }
           }
         ]
       }

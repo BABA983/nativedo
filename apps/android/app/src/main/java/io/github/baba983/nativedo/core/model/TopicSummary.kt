@@ -11,4 +11,7 @@ data class TopicSummary(
     val viewCount: Int = 0,
     val lastPostedAt: String = "",
     val categoryId: Int? = null,
+    val lastPosterUsername: String = "",
+    val isPinned: Boolean = false,
+    val tags: List<String> = emptyList(),
 )

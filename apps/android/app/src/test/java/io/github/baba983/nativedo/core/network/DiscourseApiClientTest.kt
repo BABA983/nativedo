@@ -63,6 +63,26 @@ class DiscourseApiClientTest {
     }
 
     @Test
+    fun fetchCategories_mapsNestedCategoryMetadata() = runTest {
+        val payload = checkNotNull(
+            javaClass.classLoader?.getResource("discourse/site.json"),
+        ).readText()
+        server.enqueue(
+            MockResponse()
+                .setBody(payload)
+                .setHeader("Content-Type", "application/json"),
+        )
+
+        val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
+        val categories = client.fetchCategories()
+
+        assertThat(categories).hasSize(5)
+        assertThat(categories.first { it.id == 2 }.name).isEqualTo("运营反馈")
+        assertThat(categories.first { it.id == 99 }.parentCategoryId).isEqualTo(98)
+        assertThat(categories.first { it.id == 99 }.colorHex).isEqualTo("0088CC")
+    }
+
+    @Test
     fun latestTopics_sendsBrowserLikeXhrHeaders() = runTest {
         val payload = checkNotNull(
             javaClass.classLoader?.getResource("discourse/latest-topics.json"),
@@ -540,6 +560,24 @@ class DiscourseApiClientTest {
     }
 
     @Test
+    fun fetchTopic_mapsPostEditMetadata() = runTest {
+        val payload = checkNotNull(
+            javaClass.classLoader?.getResource("discourse/topic-detail.json"),
+        ).readText()
+        server.enqueue(
+            MockResponse()
+                .setBody(payload)
+                .setHeader("Content-Type", "application/json"),
+        )
+
+        val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
+        val topic = client.fetchTopic(topicId = 101)
+
+        assertThat(topic.posts.single().updatedAt).isEqualTo("2026-04-05T09:12:00.000Z")
+        assertThat(topic.posts.single().editCount).isEqualTo(1)
+    }
+
+    @Test
     fun fetchTopic_mapsPostDisplayName() = runTest {
         val payload = checkNotNull(
             javaClass.classLoader?.getResource("discourse/topic-detail.json"),
@@ -554,6 +592,42 @@ class DiscourseApiClientTest {
         val topic = client.fetchTopic(topicId = 101)
 
         assertThat(topic.posts.single().authorDisplayName).isEqualTo("Baba")
+    }
+
+    @Test
+    fun fetchTopic_mapsPostAuthorTitle() = runTest {
+        val payload = checkNotNull(
+            javaClass.classLoader?.getResource("discourse/topic-detail.json"),
+        ).readText()
+        server.enqueue(
+            MockResponse()
+                .setBody(payload)
+                .setHeader("Content-Type", "application/json"),
+        )
+
+        val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
+        val topic = client.fetchTopic(topicId = 101)
+
+        assertThat(topic.posts.single().authorTitle).isEqualTo("骐骥驰骋")
+    }
+
+    @Test
+    fun fetchTopic_mapsPostAuthorFlair() = runTest {
+        val payload = checkNotNull(
+            javaClass.classLoader?.getResource("discourse/topic-detail.json"),
+        ).readText()
+        server.enqueue(
+            MockResponse()
+                .setBody(payload)
+                .setHeader("Content-Type", "application/json"),
+        )
+
+        val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
+        val topic = client.fetchTopic(topicId = 101)
+
+        assertThat(topic.posts.single().authorFlairName).isEqualTo("Seedling")
+        assertThat(topic.posts.single().authorFlairUrl)
+            .isEqualTo("/images/flair/seedling.png")
     }
 
     @Test
@@ -630,6 +704,13 @@ class DiscourseApiClientTest {
         ).inOrder()
         assertThat(posts.map { it.postNumber }).containsExactly(2, 3).inOrder()
         assertThat(posts.map { it.replyToPostNumber }).containsExactly(1, 2).inOrder()
+        assertThat(posts.map { it.editCount }).containsExactly(1, 0).inOrder()
+        assertThat(posts.map { it.authorTitle }).containsExactly("种子用户", "").inOrder()
+        assertThat(posts.map { it.authorFlairName }).containsExactly("Seedling", "").inOrder()
+        assertThat(posts.map { it.authorFlairUrl }).containsExactly(
+            "/images/flair/seedling.png",
+            "",
+        ).inOrder()
     }
 
     @Test
@@ -740,5 +821,108 @@ class DiscourseApiClientTest {
         assertThat(topic.authorUsername).isEqualTo("baba")
         assertThat(topic.authorAvatarTemplate)
             .isEqualTo("/user_avatar/linux.do/baba/{size}/1.png")
+    }
+
+    @Test
+    fun latestTopics_mapsPinnedTagsAndLastPosterUsername() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setBody(
+                    """
+                    {
+                      "users": [
+                        {
+                          "id": 7,
+                          "username": "baba",
+                          "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png"
+                        },
+                        {
+                          "id": 8,
+                          "username": "alice",
+                          "avatar_template": "/user_avatar/linux.do/alice/{size}/1.png"
+                        }
+                      ],
+                      "topic_list": {
+                        "topics": [
+                          {
+                            "id": 101,
+                            "title": "Welcome",
+                            "pinned": true,
+                            "tags": ["公告", "Android"],
+                            "last_poster_username": "alice",
+                            "posters": [
+                              {
+                                "description": "Original Poster",
+                                "user_id": 7
+                              },
+                              {
+                                "description": "Most Recent Poster",
+                                "user_id": 8
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                    """.trimIndent(),
+                )
+                .setHeader("Content-Type", "application/json"),
+        )
+
+        val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
+        val topic = client.fetchLatest(page = 0).single()
+
+        assertThat(topic.isPinned).isTrue()
+        assertThat(topic.tags).containsExactly("公告", "Android").inOrder()
+        assertThat(topic.lastPosterUsername).isEqualTo("alice")
+    }
+
+    @Test
+    fun latestTopics_fallsBackToMostRecentPosterWhenLastPosterUsernameMissing() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setBody(
+                    """
+                    {
+                      "users": [
+                        {
+                          "id": 7,
+                          "username": "baba",
+                          "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png"
+                        },
+                        {
+                          "id": 8,
+                          "username": "alice",
+                          "avatar_template": "/user_avatar/linux.do/alice/{size}/1.png"
+                        }
+                      ],
+                      "topic_list": {
+                        "topics": [
+                          {
+                            "id": 101,
+                            "title": "Welcome",
+                            "posters": [
+                              {
+                                "description": "Original Poster",
+                                "user_id": 7
+                              },
+                              {
+                                "description": "Most Recent Poster",
+                                "user_id": 8
+                              }
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                    """.trimIndent(),
+                )
+                .setHeader("Content-Type", "application/json"),
+        )
+
+        val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
+        val topic = client.fetchLatest(page = 0).single()
+
+        assertThat(topic.lastPosterUsername).isEqualTo("alice")
     }
 }

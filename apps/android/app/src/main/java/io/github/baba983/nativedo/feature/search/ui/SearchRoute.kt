@@ -79,9 +79,15 @@ fun SearchRoute(
         key = "search-route",
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val categories by appContainer.categoryStore.categories.collectAsStateWithLifecycle()
+
+    LaunchedEffect(appContainer.categoryStore) {
+        appContainer.categoryStore.loadIfNeeded()
+    }
 
     SearchScreen(
         uiState = uiState,
+        categories = categories,
         cookieStore = appContainer.cookieStore,
         baseUrl = appContainer.baseUrl,
         onQueryChanged = viewModel::onQueryChanged,
@@ -116,6 +122,7 @@ internal fun rememberSearchViewModel(
 @Composable
 internal fun SearchScreen(
     uiState: SearchUiState,
+    categories: Map<Int, io.github.baba983.nativedo.core.model.CategorySummary>,
     cookieStore: CookieStore,
     baseUrl: String,
     onQueryChanged: (String) -> Unit,
@@ -298,6 +305,7 @@ internal fun SearchScreen(
             ) { index, topic ->
                 TopicListItem(
                     topic = topic,
+                    category = topic.categoryId?.let(categories::get),
                     baseUrl = baseUrl,
                     onClick = { onTopicClick(topic.id) },
                     modifier = Modifier.fillMaxWidth(),
