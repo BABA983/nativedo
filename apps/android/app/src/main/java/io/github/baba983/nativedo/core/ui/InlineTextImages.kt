@@ -13,7 +13,8 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-private const val emojiInlineImageScale = 1.0f
+private const val twemojiInlineImageScale = 0.90f
+private const val customEmojiInlineImageScale = 1.0f
 private const val siteIconInlineImageScale = 0.92f
 private const val emojiInlineImageUpwardBiasRatio = 0.04f
 private const val siteIconInlineImageUpwardBiasRatio = 0.04f
@@ -56,6 +57,7 @@ internal fun applyInlineImagePlaceholders(
             CenteredInlineImageSpan(
                 drawable = drawable,
                 kind = image.kind,
+                emojiScale = emojiInlineImageScaleForUrl(image.rawUrl),
             ),
             start,
             start + 1,
@@ -77,9 +79,19 @@ internal fun applyInlineImagePlaceholders(
     )
 }
 
+internal fun emojiInlineImageScaleForUrl(rawUrl: String): Float {
+    return if (rawUrl.contains("/images/emoji/twemoji/")) {
+        twemojiInlineImageScale
+    } else {
+        customEmojiInlineImageScale
+    }
+}
+
 internal fun calculateInlineImageTranslationY(
     top: Int,
     bottom: Int,
+    baseline: Int,
+    fontDescent: Int,
     drawableHeight: Int,
     kind: InlineImageKind,
 ): Float {
@@ -87,16 +99,21 @@ internal fun calculateInlineImageTranslationY(
         InlineImageKind.Emoji -> emojiInlineImageUpwardBiasRatio
         InlineImageKind.SiteIcon -> siteIconInlineImageUpwardBiasRatio
     }
-    return top + ((bottom - top - drawableHeight) / 2f) - (drawableHeight * upwardBiasRatio)
+    val translationY = when (kind) {
+        InlineImageKind.Emoji -> baseline + fontDescent - drawableHeight.toFloat()
+        InlineImageKind.SiteIcon -> top + ((bottom - top - drawableHeight) / 2f)
+    }
+    return translationY - (drawableHeight * upwardBiasRatio)
 }
 
 internal fun calculateInlineImageSizePx(
     fontMetrics: Paint.FontMetricsInt,
     kind: InlineImageKind,
+    emojiScale: Float = customEmojiInlineImageScale,
 ): Int {
     val fontHeight = max(1, abs(fontMetrics.ascent) + abs(fontMetrics.descent))
     val scale = when (kind) {
-        InlineImageKind.Emoji -> emojiInlineImageScale
+        InlineImageKind.Emoji -> emojiScale
         InlineImageKind.SiteIcon -> siteIconInlineImageScale
     }
     return max(1, (fontHeight * scale).roundToInt())
@@ -105,6 +122,7 @@ internal fun calculateInlineImageSizePx(
 internal class CenteredInlineImageSpan(
     drawable: Drawable,
     private val kind: InlineImageKind,
+    private val emojiScale: Float = customEmojiInlineImageScale,
 ) : ImageSpan(drawable, ALIGN_BASELINE) {
     override fun getSize(
         paint: Paint,
@@ -117,6 +135,7 @@ internal class CenteredInlineImageSpan(
         val targetSizePx = calculateInlineImageSizePx(
             fontMetrics = paintMetrics,
             kind = kind,
+            emojiScale = emojiScale,
         )
         drawable.setBounds(0, 0, targetSizePx, targetSizePx)
         if (fm != null) {
@@ -146,6 +165,8 @@ internal class CenteredInlineImageSpan(
             calculateInlineImageTranslationY(
                 top = top,
                 bottom = bottom,
+                baseline = y,
+                fontDescent = paint.fontMetricsInt.descent,
                 drawableHeight = drawable.bounds.height(),
                 kind = kind,
             ),

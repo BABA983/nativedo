@@ -190,6 +190,7 @@ private fun SpannableStringBuilder.replaceRangeWithInlineImage(
         CenteredInlineImageSpan(
             drawable = drawable,
             kind = kind,
+            emojiScale = emojiInlineImageScaleForUrl(rawUrl),
         ),
         start,
         start + 1,
