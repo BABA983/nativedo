@@ -7,6 +7,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -159,7 +160,6 @@ internal fun TopicPostCard(
                             }
                             if (replyTargetFloorLabel != null && onReplyTargetClick != null) {
                                 Surface(
-                                    onClick = onReplyTargetClick,
                                     shape = NativeDoPillShape,
                                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f),
                                     tonalElevation = 0.dp,
@@ -170,7 +170,9 @@ internal fun TopicPostCard(
                                     ),
                                 ) {
                                     Row(
-                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                                        modifier = Modifier
+                                            .clickable(onClick = onReplyTargetClick)
+                                            .padding(horizontal = 4.dp, vertical = 2.dp),
                                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
