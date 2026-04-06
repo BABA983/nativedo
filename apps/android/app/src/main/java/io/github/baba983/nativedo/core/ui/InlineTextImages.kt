@@ -15,7 +15,7 @@ import kotlin.math.roundToInt
 
 private const val emojiInlineImageScale = 1.0f
 private const val siteIconInlineImageScale = 0.92f
-private const val emojiInlineImageUpwardBiasRatio = 0.12f
+private const val emojiInlineImageUpwardBiasRatio = 0.04f
 private const val siteIconInlineImageUpwardBiasRatio = 0.04f
 
 internal data class AppliedInlineImages(

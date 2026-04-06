@@ -25,6 +25,8 @@ sealed interface PostBodyBlock {
         val content: TextDocument,
     ) : PostBodyBlock
 
+    data object HorizontalRuleBlock : PostBodyBlock
+
     data class ImageBlock(
         val image: PostBodyImage,
     ) : PostBodyBlock

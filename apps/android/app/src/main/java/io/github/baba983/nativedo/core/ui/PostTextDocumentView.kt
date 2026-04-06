@@ -3,10 +3,8 @@ package io.github.baba983.nativedo.core.ui
 import android.graphics.Typeface
 import android.text.SpannableStringBuilder
 import android.text.Spanned
-import android.text.style.BackgroundColorSpan
 import android.text.style.StrikethroughSpan
 import android.text.style.StyleSpan
-import android.text.style.TypefaceSpan
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -35,14 +33,13 @@ internal fun PostTextDocumentView(
         textColor = textColor,
         linkColor = linkColor,
         onClick = onClick,
-    ) { textSizePx, inlineCodeBackgroundColor ->
+    ) { textSizePx ->
         buildTextDocumentSpannable(
             document = document,
             baseUrl = baseUrl,
             onTopicClick = onTopicClick,
             onUserClick = onUserClick,
             textSizePx = textSizePx,
-            inlineCodeBackgroundColor = inlineCodeBackgroundColor,
         )
     }
 }
@@ -53,34 +50,38 @@ internal fun buildTextDocumentSpannable(
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
     textSizePx: Float,
-    inlineCodeBackgroundColor: Int,
 ): AppliedInlineImages {
     val builder = SpannableStringBuilder(document.text)
     val pendingImages = mutableListOf<PendingInlineImage>()
-
-    document.entities
+    val sortedEntities = document.entities
         .sortedWith(compareByDescending<TextEntity> { it.start }.thenByDescending { it.end })
-        .forEach { entity ->
-            when (entity) {
-                is TextEntity.Bold -> builder.setEntitySpan(
-                    span = StyleSpan(Typeface.BOLD),
-                    start = entity.start,
-                    end = entity.end,
-                )
 
-                is TextEntity.Italic -> builder.setEntitySpan(
-                    span = StyleSpan(Typeface.ITALIC),
-                    start = entity.start,
-                    end = entity.end,
-                )
+    sortedEntities.forEach { entity ->
+        when (entity) {
+            is TextEntity.Emoji,
+            is TextEntity.SiteIcon,
+            is TextEntity.Spoiler -> Unit
 
-                is TextEntity.Strike -> builder.setEntitySpan(
-                    span = StrikethroughSpan(),
-                    start = entity.start,
-                    end = entity.end,
-                )
+            is TextEntity.Bold -> builder.setEntitySpan(
+                span = StyleSpan(Typeface.BOLD),
+                start = entity.start,
+                end = entity.end,
+            )
 
-                is TextEntity.Link -> builder.setEntitySpan(
+            is TextEntity.Italic -> builder.setEntitySpan(
+                span = StyleSpan(Typeface.ITALIC),
+                start = entity.start,
+                end = entity.end,
+            )
+
+            is TextEntity.Strike -> builder.setEntitySpan(
+                span = StrikethroughSpan(),
+                start = entity.start,
+                end = entity.end,
+            )
+
+            is TextEntity.Link -> {
+                builder.setEntitySpan(
                     span = buildPostBodyLinkSpan(
                         rawUrl = entity.rawUrl,
                         baseUrl = baseUrl,
@@ -90,52 +91,65 @@ internal fun buildTextDocumentSpannable(
                     start = entity.start,
                     end = entity.end,
                 )
-
-                is TextEntity.Mention -> builder.setEntitySpan(
-                    span = buildPostBodyLinkSpan(
-                        rawUrl = "/u/${entity.username}",
-                        baseUrl = baseUrl,
-                        onTopicClick = onTopicClick,
-                        onUserClick = onUserClick,
-                    ),
-                    start = entity.start,
-                    end = entity.end,
-                )
-
-                is TextEntity.InlineCode -> {
+                if (entity.rawUrl.isHashtagLink()) {
                     builder.setEntitySpan(
-                        span = TypefaceSpan("monospace"),
-                        start = entity.start,
-                        end = entity.end,
-                    )
-                    builder.setEntitySpan(
-                        span = BackgroundColorSpan(inlineCodeBackgroundColor),
+                        span = HashtagChipSpan(),
                         start = entity.start,
                         end = entity.end,
                     )
                 }
+            }
+            is TextEntity.Mention -> builder.setEntitySpan(
+                span = buildPostBodyLinkSpan(
+                    rawUrl = "/u/${entity.username}",
+                    baseUrl = baseUrl,
+                    onTopicClick = onTopicClick,
+                    onUserClick = onUserClick,
+                ),
+                start = entity.start,
+                end = entity.end,
+            )
 
-                is TextEntity.Emoji -> pendingImages += builder.replaceRangeWithInlineImage(
+            is TextEntity.InlineCode -> {
+                builder.setEntitySpan(
+                    span = InlineCodeSpan(),
                     start = entity.start,
                     end = entity.end,
-                    rawUrl = entity.rawUrl,
-                    kind = InlineImageKind.Emoji,
-                    baseUrl = baseUrl,
-                    textSizePx = textSizePx,
                 )
-
-                is TextEntity.SiteIcon -> pendingImages += builder.replaceRangeWithInlineImage(
-                    start = entity.start,
-                    end = entity.end,
-                    rawUrl = entity.rawUrl,
-                    kind = InlineImageKind.SiteIcon,
-                    baseUrl = baseUrl,
-                    textSizePx = textSizePx,
-                )
-
-                is TextEntity.Spoiler -> Unit
             }
         }
+    }
+
+    sortedEntities.forEach { entity ->
+        when (entity) {
+            is TextEntity.Bold,
+            is TextEntity.Italic,
+            is TextEntity.Strike,
+            is TextEntity.Link,
+            is TextEntity.Mention,
+            is TextEntity.InlineCode -> Unit
+
+            is TextEntity.Emoji -> pendingImages += builder.replaceRangeWithInlineImage(
+                start = entity.start,
+                end = entity.end,
+                rawUrl = entity.rawUrl,
+                kind = InlineImageKind.Emoji,
+                baseUrl = baseUrl,
+                textSizePx = textSizePx,
+            )
+
+            is TextEntity.SiteIcon -> pendingImages += builder.replaceRangeWithInlineImage(
+                start = entity.start,
+                end = entity.end,
+                rawUrl = entity.rawUrl,
+                kind = InlineImageKind.SiteIcon,
+                baseUrl = baseUrl,
+                textSizePx = textSizePx,
+            )
+
+            is TextEntity.Spoiler -> Unit
+        }
+    }
 
     return AppliedInlineImages(
         text = builder,

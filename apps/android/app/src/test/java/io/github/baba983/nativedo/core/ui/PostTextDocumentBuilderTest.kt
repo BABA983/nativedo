@@ -46,6 +46,53 @@ class PostTextDocumentBuilderTest {
     }
 
     @Test
+    fun buildTextDocument_prefixesHashtagCookedLinks() {
+        val document = buildTextDocumentFromHtml(
+            """
+                <a class="hashtag-cooked" href="/tag/%E9%9B%86%E4%B8%AD%E5%B8%96" data-type="tag">
+                  <span class="hashtag-tag-icon"><svg class="fa d-icon d-icon-tag svg-icon"></svg></span>
+                  <span>集中帖</span>
+                </a>
+            """.trimIndent(),
+        )
+
+        assertThat(document.text).isEqualTo("#集中帖")
+        assertThat(document.entities).containsExactly(
+            TextEntity.Link(
+                start = 0,
+                end = 4,
+                rawUrl = "/tag/%E9%9B%86%E4%B8%AD%E5%B8%96",
+            ),
+        )
+    }
+
+    @Test
+    fun buildTextDocument_flattensMentionStatusEmojiWithoutInjectedSpacing() {
+        val document = buildTextDocumentFromHtml(
+            """
+                <a class="mention" href="/u/neo">@Neo<span class="user-status-message-wrapper">
+                  <span class="fk-d-tooltip__trigger user-status-message">
+                    <span class="fk-d-tooltip__trigger-container">
+                      <img src="https://cdn.linux.do/images/emoji/twemoji/lollipop.png?v=15" alt="lollipop" class="emoji">
+                    </span>
+                  </span>
+                </span></a>
+            """.trimIndent(),
+        )
+
+        assertThat(document.text).isEqualTo("@Neolollipop")
+        assertThat(document.entities).containsExactly(
+            TextEntity.Mention(start = 0, end = 12, username = "neo"),
+            TextEntity.Emoji(
+                start = 4,
+                end = 12,
+                rawUrl = "https://cdn.linux.do/images/emoji/twemoji/lollipop.png?v=15",
+                fallback = "lollipop",
+            ),
+        ).inOrder()
+    }
+
+    @Test
     fun buildTextDocument_preservesEmojiSiteIconAndRawInlineCodeWhitespace() {
         val document = buildTextDocumentFromHtml(
             """
@@ -70,6 +117,47 @@ class PostTextDocumentBuilderTest {
         assertThat(document.text).isEqualTo("foo ")
         assertThat(document.entities).containsExactly(
             TextEntity.InlineCode(start = 0, end = 4),
+        )
+    }
+
+    @Test
+    fun buildTextDocument_ignoresNormalImageFallbackTextButKeepsEmojiText() {
+        val document = buildTextDocumentFromHtml(
+            """
+                <img src="https://cdn3.linux.do/original/demo.png" alt="image">
+                <br>
+                <img class="emoji" src="/images/emoji/twemoji/grin.png?v=14" title=":grin:" alt=":grin:">支持一手
+            """.trimIndent(),
+        )
+
+        assertThat(document.text).isEqualTo("\n:grin:支持一手")
+        assertThat(document.entities).containsExactly(
+            TextEntity.Emoji(
+                start = 1,
+                end = 7,
+                rawUrl = "/images/emoji/twemoji/grin.png?v=14",
+                fallback = ":grin:",
+            ),
+        )
+    }
+
+    @Test
+    fun buildTextDocument_keepsFallbackTextForInlineLinkedImage() {
+        val document = buildTextDocumentFromHtml(
+            """
+                <a href="https://example.com/logo">
+                  <img src="https://cdn.example.com/logo.png" alt="logo">
+                </a>
+            """.trimIndent(),
+        )
+
+        assertThat(document.text).isEqualTo("logo")
+        assertThat(document.entities).containsExactly(
+            TextEntity.Link(
+                start = 0,
+                end = 4,
+                rawUrl = "https://example.com/logo",
+            ),
         )
     }
 }

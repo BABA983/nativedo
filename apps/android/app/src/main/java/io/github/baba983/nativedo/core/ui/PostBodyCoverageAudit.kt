@@ -50,6 +50,7 @@ internal fun collectPostBodyCoverage(blocks: List<PostBodyBlock>): PostBodyCover
             is PostBodyBlock.RichTextBlock,
             is PostBodyBlock.ParagraphBlock,
             is PostBodyBlock.HeadingBlock,
+            is PostBodyBlock.HorizontalRuleBlock,
             is PostBodyBlock.ImageBlock,
             is PostBodyBlock.LightboxBlock,
             is PostBodyBlock.ImageGridBlock,

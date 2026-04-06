@@ -44,6 +44,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
@@ -177,6 +178,10 @@ internal fun RenderPostBodyBlock(
             )
         }
 
+        is PostBodyBlock.HorizontalRuleBlock -> {
+            HorizontalRuleBlockView(modifier = modifier)
+        }
+
         is PostBodyBlock.DetailsBlock -> {
             DetailsBlockView(
                 block = block,
@@ -240,6 +245,22 @@ internal fun RenderPostBodyBlock(
             )
         }
     }
+}
+
+@Composable
+internal fun HorizontalRuleBlockView(
+    modifier: Modifier = Modifier,
+) {
+    val colors = NativeDoThemeExtras.colors
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 2.dp)
+            .height(1.dp)
+            .background(
+                color = colors.textSecondary.copy(alpha = 0.18f),
+            ),
+    )
 }
 
 @Composable
@@ -478,9 +499,8 @@ internal fun DetailsBlockView(
         if (expanded && block.children.isNotEmpty()) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                block.children.forEach { child ->
+                block.children.forEachIndexed { index, child ->
                     RenderPostBodyBlock(
                         block = child,
                         cookieStore = cookieStore,
@@ -492,6 +512,14 @@ internal fun DetailsBlockView(
                         onImageClick = onImageClick,
                         modifier = Modifier.fillMaxWidth(),
                     )
+
+                    val spacing = postBodyBlockSpacingAfter(
+                        current = child,
+                        next = block.children.getOrNull(index + 1),
+                    )
+                    if (spacing > 0.dp) {
+                        Spacer(modifier = Modifier.height(spacing))
+                    }
                 }
             }
         }
@@ -540,7 +568,6 @@ internal fun DiscourseQuoteBlockView(
                 )
             }
             .padding(start = 10.dp, top = 8.dp, end = 10.dp, bottom = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         block.title
             ?.takeIf { title -> title.text.isNotBlank() }
@@ -569,9 +596,8 @@ internal fun DiscourseQuoteBlockView(
         if (block.children.isNotEmpty()) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                block.children.forEach { child ->
+                block.children.forEachIndexed { index, child ->
                     RenderPostBodyBlock(
                         block = child,
                         cookieStore = cookieStore,
@@ -583,6 +609,14 @@ internal fun DiscourseQuoteBlockView(
                         onImageClick = onImageClick,
                         modifier = Modifier.fillMaxWidth(),
                     )
+
+                    val spacing = postBodyBlockSpacingAfter(
+                        current = child,
+                        next = block.children.getOrNull(index + 1),
+                    )
+                    if (spacing > 0.dp) {
+                        Spacer(modifier = Modifier.height(spacing))
+                    }
                 }
             }
         }
@@ -631,9 +665,8 @@ internal fun QuoteBlockView(
                 )
             }
             .padding(start = 10.dp, top = 8.dp, end = 10.dp, bottom = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        block.children.forEach { child ->
+        block.children.forEachIndexed { index, child ->
             RenderPostBodyBlock(
                 block = child,
                 cookieStore = cookieStore,
@@ -645,6 +678,14 @@ internal fun QuoteBlockView(
                 onImageClick = onImageClick,
                 modifier = Modifier.fillMaxWidth(),
             )
+
+            val spacing = postBodyBlockSpacingAfter(
+                current = child,
+                next = block.children.getOrNull(index + 1),
+            )
+            if (spacing > 0.dp) {
+                Spacer(modifier = Modifier.height(spacing))
+            }
         }
     }
 }
@@ -790,6 +831,11 @@ internal fun ListBlockView(
     modifier: Modifier = Modifier,
 ) {
     val colors = NativeDoThemeExtras.colors
+    val markerWidth = listMarkerWidth(
+        ordered = block.ordered,
+        itemCount = block.items.size,
+    )
+
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -804,13 +850,15 @@ internal fun ListBlockView(
                     text = if (block.ordered) "${index + 1}." else "•",
                     style = MaterialTheme.typography.bodyLarge,
                     color = colors.textSecondary,
-                    modifier = Modifier.width(18.dp),
+                    maxLines = 1,
+                    softWrap = false,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier.width(markerWidth),
                 )
                 Column(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    item.children.forEach { child ->
+                    item.children.forEachIndexed { childIndex, child ->
                         RenderPostBodyBlock(
                             block = child,
                             cookieStore = cookieStore,
@@ -822,10 +870,33 @@ internal fun ListBlockView(
                             onImageClick = onImageClick,
                             modifier = Modifier.fillMaxWidth(),
                         )
+
+                        val spacing = postBodyBlockSpacingAfter(
+                            current = child,
+                            next = item.children.getOrNull(childIndex + 1),
+                        )
+                        if (spacing > 0.dp) {
+                            Spacer(modifier = Modifier.height(spacing))
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+internal fun listMarkerWidth(
+    ordered: Boolean,
+    itemCount: Int,
+): Dp {
+    if (!ordered) {
+        return 18.dp
+    }
+
+    return when {
+        itemCount >= 100 -> 32.dp
+        itemCount >= 10 -> 26.dp
+        else -> 18.dp
     }
 }
 
@@ -838,11 +909,15 @@ internal fun postBodyBlockSpacingAfter(
     }
 
     return when {
-        current.isHeadingBlock() && next.isParagraphBlock() -> 8.dp
-        current.isMediaBlock() && next.isParagraphBlock() -> 8.dp
-        current.isParagraphBlock() && next.isMediaBlock() -> 8.dp
-        current.isStructuredBlock() || next.isStructuredBlock() -> 8.dp
-        else -> 8.dp
+        current.isParagraphBlock() && next.isParagraphBlock() -> 12.dp
+        current.isHeadingBlock() && next.isParagraphBlock() -> 12.dp
+        current.isParagraphBlock() && next.isHeadingBlock() -> 14.dp
+        current.isHeadingBlock() && next.isHeadingBlock() -> 14.dp
+        current.isMediaBlock() && next.isParagraphBlock() -> 10.dp
+        current.isParagraphBlock() && next.isMediaBlock() -> 10.dp
+        current is PostBodyBlock.HorizontalRuleBlock || next is PostBodyBlock.HorizontalRuleBlock -> 14.dp
+        current.isStructuredBlock() || next.isStructuredBlock() -> 10.dp
+        else -> 10.dp
     }
 }
 
@@ -864,6 +939,7 @@ private fun PostBodyBlock.isMediaBlock(): Boolean {
 
 private fun PostBodyBlock.isStructuredBlock(): Boolean {
     return this is PostBodyBlock.OneboxBlock ||
+        this is PostBodyBlock.HorizontalRuleBlock ||
         this is PostBodyBlock.DetailsBlock ||
         this is PostBodyBlock.QuoteBlock ||
         this is PostBodyBlock.DiscourseQuoteBlock ||

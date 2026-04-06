@@ -6,7 +6,7 @@ import org.junit.Test
 
 class PostBodyBlockRenderersTest {
     @Test
-    fun postBodyBlockSpacingAfter_keepsHeadingCloserToFollowingParagraph() {
+    fun postBodyBlockSpacingAfter_givesHeadingAndParagraphReaderBreathingRoom() {
         val spacing = postBodyBlockSpacingAfter(
             current = PostBodyBlock.HeadingBlock(
                 level = 2,
@@ -23,11 +23,11 @@ class PostBodyBlockRenderersTest {
             ),
         )
 
-        assertThat(spacing == 8.dp).isTrue()
+        assertThat(spacing == 12.dp).isTrue()
     }
 
     @Test
-    fun postBodyBlockSpacingAfter_keepsImagesAndParagraphsCompactInsidePostCard() {
+    fun postBodyBlockSpacingAfter_keepsImagesAndParagraphsCompactButSeparated() {
         val paragraph = PostBodyBlock.ParagraphBlock(
             content = TextDocument(
                 text = "正文",
@@ -38,7 +38,7 @@ class PostBodyBlockRenderersTest {
             image = PostBodyImage(rawUrl = "/uploads/default/original/1X/demo.png"),
         )
 
-        assertThat(postBodyBlockSpacingAfter(paragraph, image) == 8.dp).isTrue()
-        assertThat(postBodyBlockSpacingAfter(image, paragraph) == 8.dp).isTrue()
+        assertThat(postBodyBlockSpacingAfter(paragraph, image) == 10.dp).isTrue()
+        assertThat(postBodyBlockSpacingAfter(image, paragraph) == 10.dp).isTrue()
     }
 }

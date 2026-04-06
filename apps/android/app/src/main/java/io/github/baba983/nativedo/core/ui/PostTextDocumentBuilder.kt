@@ -7,10 +7,14 @@ import org.jsoup.nodes.TextNode
 
 internal fun buildTextDocumentFromHtml(html: String): TextDocument {
     val body = Jsoup.parseBodyFragment(html).body()
+    return buildTextDocumentFromNodes(body.childNodes())
+}
+
+internal fun buildTextDocumentFromNodes(nodes: List<Node>): TextDocument {
     val state = FlattenState()
 
     appendNodes(
-        nodes = body.childNodes(),
+        nodes = nodes,
         state = state,
         preserveRawText = false,
     )
@@ -65,7 +69,10 @@ private fun appendTextNode(
 
     val wholeText = node.getWholeText()
     if (!wholeText.isBlank()) {
-        val normalizedText = node.text()
+        val normalizedText = normalizeVisibleText(
+            text = node.text(),
+            previousKind = state.lastOutputKind,
+        )
         if (normalizedText.isNotEmpty()) {
             state.text.append(normalizedText)
             state.lastOutputKind = OutputKind.VisibleText
@@ -77,6 +84,26 @@ private fun appendTextNode(
         state.text.append(' ')
         state.lastOutputKind = OutputKind.VisibleText
     }
+}
+
+private fun normalizeVisibleText(
+    text: String,
+    previousKind: OutputKind,
+): String {
+    var normalized = text
+
+    if (previousKind == OutputKind.None || previousKind == OutputKind.LineBreak) {
+        normalized = normalized.trimStart()
+    }
+
+    if (
+        (previousKind == OutputKind.VisibleText || previousKind == OutputKind.ZeroLengthEntity) &&
+        normalized.firstOrNull { !it.isWhitespace() }?.isInlineLeadingPunctuation() == true
+    ) {
+        normalized = normalized.trimStart()
+    }
+
+    return normalized
 }
 
 private fun appendElement(
@@ -123,7 +150,21 @@ private fun appendElement(
         }
 
         element.tagName() == "a" -> {
-            appendNodes(element.childNodes(), state, preserveRawText)
+            if (element.shouldPrefixHashtagMarker()) {
+                state.text.append('#')
+                state.lastOutputKind = OutputKind.VisibleText
+            }
+            appendNodes(
+                nodes = if (element.hasClass("hashtag-cooked")) {
+                    element.childNodes().filterNot { child ->
+                        child is TextNode && child.getWholeText().isBlank()
+                    }
+                } else {
+                    element.childNodes()
+                },
+                state = state,
+                preserveRawText = preserveRawText,
+            )
             if (state.text.length > start) {
                 val username = parseMentionUsername(element.attr("href"))
                 state.entities += if (username != null) {
@@ -139,6 +180,16 @@ private fun appendElement(
             start = start,
             state = state,
         )
+
+        element.isTightInlineWrapper() -> {
+            appendNodes(
+                nodes = element.childNodes().filterNot { child ->
+                    child is TextNode && child.getWholeText().isBlank()
+                },
+                state = state,
+                preserveRawText = preserveRawText,
+            )
+        }
 
         element.isDecorativeInlineIcon() -> {
             val fallback = element.attr("aria-label").ifBlank { element.attr("title") }
@@ -190,7 +241,7 @@ private fun appendImage(
         }
 
         else -> {
-            if (fallback.isNotEmpty()) {
+            if (fallback.isNotEmpty() && element.isInlineLinkedImage()) {
                 state.text.append(fallback)
                 state.lastOutputKind = OutputKind.VisibleText
             }
@@ -224,7 +275,7 @@ private fun Node.outputKind(): OutputKind {
         is Element -> when {
             tagName() == "br" -> OutputKind.LineBreak
             tagName() == "img" && hasClass("site-icon") -> OutputKind.ZeroLengthEntity
-            tagName() == "img" && inlineFallbackText().isNotEmpty() -> OutputKind.VisibleText
+            tagName() == "img" && hasClass("emoji") && inlineFallbackText().isNotEmpty() -> OutputKind.VisibleText
             tagName() == "code" && leadingRawCodeText().firstOrNull()?.isWhitespace() == true -> OutputKind.BlankSpace
             tagName() == "code" -> OutputKind.VisibleText
             isDecorativeInlineIcon() -> {
@@ -279,6 +330,12 @@ private fun parseMentionUsername(rawUrl: String): String? {
         ?.getOrNull(1)
 }
 
+private fun Element.shouldPrefixHashtagMarker(): Boolean {
+    return hasClass("hashtag-cooked") &&
+        text().isNotBlank() &&
+        !text().trimStart().startsWith("#")
+}
+
 private fun Element.isDecorativeInlineIcon(): Boolean {
     return classNames().any { className ->
         className == "svg-icon" ||
@@ -286,6 +343,15 @@ private fun Element.isDecorativeInlineIcon(): Boolean {
             className.startsWith("d-icon-") ||
             className == "fa" ||
             className.startsWith("fa-")
+    }
+}
+
+private fun Element.isTightInlineWrapper(): Boolean {
+    return classNames().any { className ->
+        className == "user-status-message-wrapper" ||
+            className == "user-status-message" ||
+            className == "fk-d-tooltip__trigger" ||
+            className == "fk-d-tooltip__trigger-container"
     }
 }
 
@@ -306,6 +372,37 @@ private fun Element.leadingRawCodeText(): String {
             }
         }
         .orEmpty()
+}
+
+private fun Element.isInlineLinkedImage(): Boolean {
+    return parent()?.tagName() == "a"
+}
+
+private fun Char.isInlineLeadingPunctuation(): Boolean {
+    return this in setOf(
+        ':',
+        ';',
+        ',',
+        '.',
+        '!',
+        '?',
+        ')',
+        ']',
+        '}',
+        '：',
+        '；',
+        '，',
+        '。',
+        '！',
+        '？',
+        '、',
+        '）',
+        '】',
+        '》',
+        '」',
+        '』',
+        '〉',
+    )
 }
 
 private class FlattenState {

@@ -97,6 +97,70 @@ class HtmlPostBodyViewTest {
     }
 
     @Test
+    fun parsePostBodyBlocks_splitsParagraphWrappedImageIntoImageAndParagraphBlocks() {
+        val blocks = parsePostBodyBlocks(
+            """
+                <p dir="auto">
+                  <img src="https://cdn3.linux.do/original/4X/8/2/d/demo.png" alt="image" width="153" height="69">
+                  <br>
+                  <img src="/images/emoji/twemoji/grin.png?v=14" title=":grin:" class="emoji" alt=":grin:">
+                  支持一手
+                </p>
+            """.trimIndent(),
+        )
+
+        assertThat(blocks).containsExactly(
+            PostBodyBlock.ImageBlock(
+                image = PostBodyImage(
+                    rawUrl = "https://cdn3.linux.do/original/4X/8/2/d/demo.png",
+                    width = 153,
+                    height = 69,
+                ),
+            ),
+            PostBodyBlock.ParagraphBlock(
+                content = TextDocument(
+                    text = ":grin:支持一手",
+                    entities = listOf(
+                        TextEntity.Emoji(
+                            start = 0,
+                            end = 6,
+                            rawUrl = "/images/emoji/twemoji/grin.png?v=14",
+                            fallback = ":grin:",
+                        ),
+                    ),
+                ),
+            ),
+        ).inOrder()
+    }
+
+    @Test
+    fun parsePostBodyBlocks_splitsParagraphWrappedImageWithoutDroppingInlineSpaces() {
+        val blocks = parsePostBodyBlocks(
+            """
+                <p><strong>Hello</strong> world <img src="/uploads/default/original/1X/demo.png" width="120" height="90"></p>
+            """.trimIndent(),
+        )
+
+        assertThat(blocks).containsExactly(
+            PostBodyBlock.ParagraphBlock(
+                content = TextDocument(
+                    text = "Hello world",
+                    entities = listOf(
+                        TextEntity.Bold(start = 0, end = 5),
+                    ),
+                ),
+            ),
+            PostBodyBlock.ImageBlock(
+                image = PostBodyImage(
+                    rawUrl = "/uploads/default/original/1X/demo.png",
+                    width = 120,
+                    height = 90,
+                ),
+            ),
+        ).inOrder()
+    }
+
+    @Test
     fun parsePostBodyBlocks_extractsDiscourseImageGrid() {
         val html = """
             <div class="d-image-grid" data-columns="2">
@@ -581,6 +645,180 @@ class HtmlPostBodyViewTest {
         val blocks = parsePostBodyBlocks(html)
 
         assertThat((blocks.single() as PostBodyBlock.ListBlock).ordered).isTrue()
+    }
+
+    @Test
+    fun parsePostBodyBlocks_mapsHrToHorizontalRuleBlock() {
+        val blocks = parsePostBodyBlocks(
+            """
+                <p>上文</p>
+                <hr>
+                <p>下文</p>
+            """.trimIndent(),
+        )
+
+        assertThat(blocks).containsExactly(
+            PostBodyBlock.ParagraphBlock(
+                content = TextDocument(
+                    text = "上文",
+                    entities = emptyList(),
+                ),
+            ),
+            PostBodyBlock.HorizontalRuleBlock,
+            PostBodyBlock.ParagraphBlock(
+                content = TextDocument(
+                    text = "下文",
+                    entities = emptyList(),
+                ),
+            ),
+        ).inOrder()
+    }
+
+    @Test
+    fun parsePostBodyBlocks_mergesTopLevelInlineNoteAfterLightbox() {
+        val html = """
+            <div class="lightbox-wrapper" dir="auto">
+              <a class="lightbox" href="https://cdn3.linux.do/original/demo.png" title="image">
+                <img src="https://cdn3.linux.do/optimized/demo.png" alt="image" width="690" height="350">
+                <div class="meta">
+                  <span class="filename">image</span>
+                  <span class="informations">2756×1400 182 KB</span>
+                </div>
+              </a>
+            </div>
+            <br>
+            * <em dir="auto">数据图示来自 SimilarWeb，仅供参考。</em>
+        """.trimIndent()
+
+        val blocks = parsePostBodyBlocks(html)
+
+        assertThat(blocks).containsExactly(
+            PostBodyBlock.LightboxBlock(
+                image = PostBodyImage(
+                    rawUrl = "https://cdn3.linux.do/optimized/demo.png",
+                    originalUrl = "https://cdn3.linux.do/original/demo.png",
+                    width = 690,
+                    height = 350,
+                ),
+                filename = "image",
+                information = "2756×1400 182 KB",
+            ),
+            PostBodyBlock.ParagraphBlock(
+                content = TextDocument(
+                    text = "* 数据图示来自 SimilarWeb，仅供参考。",
+                    entities = listOf(
+                        TextEntity.Italic(
+                            start = 2,
+                            end = "* 数据图示来自 SimilarWeb，仅供参考。".length,
+                        ),
+                    ),
+                ),
+            ),
+        ).inOrder()
+    }
+
+    @Test
+    fun parsePostBodyBlocks_mergesInlineListItemContentIntoSingleParagraphBlock() {
+        val html = """
+            <ul>
+              <li><strong>资源有限</strong>：因为是公益项目，服务器资源并不宽裕。</li>
+            </ul>
+        """.trimIndent()
+
+        val blocks = parsePostBodyBlocks(html)
+
+        assertThat(blocks).containsExactly(
+            PostBodyBlock.ListBlock(
+                ordered = false,
+                items = listOf(
+                    ListItemBlock(
+                        children = listOf(
+                            PostBodyBlock.ParagraphBlock(
+                                content = TextDocument(
+                                    text = "资源有限：因为是公益项目，服务器资源并不宽裕。",
+                                    entities = listOf(
+                                        TextEntity.Bold(
+                                            start = 0,
+                                            end = "资源有限".length,
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun parsePostBodyBlocks_keepsListItemBrInsideParagraphBlock() {
+        val html = """
+            <ul>
+              <li><strong>反馈与建议</strong>：<br>有任何问题欢迎反馈。</li>
+            </ul>
+        """.trimIndent()
+
+        val blocks = parsePostBodyBlocks(html)
+
+        assertThat(blocks).containsExactly(
+            PostBodyBlock.ListBlock(
+                ordered = false,
+                items = listOf(
+                    ListItemBlock(
+                        children = listOf(
+                            PostBodyBlock.ParagraphBlock(
+                                content = TextDocument(
+                                    text = "反馈与建议：\n有任何问题欢迎反馈。",
+                                    entities = listOf(
+                                        TextEntity.Bold(
+                                            start = 0,
+                                            end = "反馈与建议".length,
+                                        ),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun parsePostBodyBlocks_keepsUnsupportedListItemTableAsUnknownBlock() {
+        val html = """
+            <ul>
+              <li><table><tr><td>不支持</td></tr></table></li>
+            </ul>
+        """.trimIndent()
+
+        val blocks = parsePostBodyBlocks(html)
+
+        assertThat(blocks).containsExactly(
+            PostBodyBlock.ListBlock(
+                ordered = false,
+                items = listOf(
+                    ListItemBlock(
+                        children = listOf(
+                            PostBodyBlock.UnknownBlock(
+                                rawHtml = """
+                                    <table>
+                                     <tbody>
+                                      <tr>
+                                       <td>不支持</td>
+                                      </tr>
+                                     </tbody>
+                                    </table>
+                                """.trimIndent(),
+                                tagName = "table",
+                                classes = emptySet(),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
     }
 
     @Test

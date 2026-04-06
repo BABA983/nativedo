@@ -3,6 +3,8 @@
     "posts": [
       {
         "id": 1002,
+        "post_number": 2,
+        "reply_to_post_number": 1,
         "username": "alice",
         "name": "Alice",
         "avatar_template": "/user_avatar/linux.do/alice/{size}/1.png",
@@ -11,6 +13,8 @@
       },
       {
         "id": 1003,
+        "post_number": 3,
+        "reply_to_post_number": 2,
         "username": "charlie",
         "name": "Charlie",
         "avatar_template": "/user_avatar/linux.do/charlie/{size}/1.png",

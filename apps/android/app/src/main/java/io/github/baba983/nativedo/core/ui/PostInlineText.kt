@@ -1,17 +1,18 @@
 package io.github.baba983.nativedo.core.ui
 
+import android.graphics.Canvas
 import android.graphics.Color.TRANSPARENT
+import android.graphics.Paint
 import android.graphics.Typeface
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.TextPaint
 import android.text.method.LinkMovementMethod
-import android.text.style.BackgroundColorSpan
 import android.text.style.ClickableSpan
+import android.text.style.ReplacementSpan
 import android.text.style.RelativeSizeSpan
 import android.text.style.StyleSpan
 import android.text.style.StrikethroughSpan
-import android.text.style.TypefaceSpan
 import android.text.style.URLSpan
 import android.util.TypedValue
 import android.view.View
@@ -29,6 +30,8 @@ import io.github.baba983.nativedo.core.storage.CookieStore
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import kotlin.math.ceil
+import kotlin.math.roundToInt
 
 internal fun buildPostInlineText(
     inlines: List<PostInline>,
@@ -36,7 +39,6 @@ internal fun buildPostInlineText(
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
     textSizePx: Float,
-    inlineCodeBackgroundColor: Int = DEFAULT_INLINE_CODE_BACKGROUND_COLOR,
 ): AppliedInlineImages {
     val builder = SpannableStringBuilder()
     val inlineImages = mutableListOf<InlineImageSpec>()
@@ -47,7 +49,6 @@ internal fun buildPostInlineText(
         onTopicClick = onTopicClick,
         onUserClick = onUserClick,
         inlineImages = inlineImages,
-        inlineCodeBackgroundColor = inlineCodeBackgroundColor,
     )
     return applyInlineImagePlaceholders(
         text = builder,
@@ -99,14 +100,13 @@ internal fun PostInlineText(
         textColor = textColor,
         linkColor = linkColor,
         onClick = onClick,
-    ) { textSizePx, inlineCodeBackgroundColor ->
+    ) { textSizePx ->
         buildPostInlineText(
             inlines = inlines,
             baseUrl = baseUrl,
             onTopicClick = onTopicClick,
             onUserClick = onUserClick,
             textSizePx = textSizePx,
-            inlineCodeBackgroundColor = inlineCodeBackgroundColor,
         )
     }
 }
@@ -120,12 +120,11 @@ internal fun PostSpannableText(
     textColor: Color? = null,
     linkColor: Color? = null,
     onClick: (() -> Unit)? = null,
-    buildAppliedInlineImages: (textSizePx: Float, inlineCodeBackgroundColor: Int) -> AppliedInlineImages,
+    buildAppliedInlineImages: (textSizePx: Float) -> AppliedInlineImages,
 ) {
     val colors = NativeDoThemeExtras.colors
     val resolvedTextColor = (textColor ?: colors.textPrimary).toArgb()
     val resolvedLinkColor = (linkColor ?: colors.accent).toArgb()
-    val inlineCodeBackgroundColor = colors.accentMuted.copy(alpha = 0.38f).toArgb()
     val coroutineScope = rememberCoroutineScope()
 
     AndroidView(
@@ -151,10 +150,7 @@ internal fun PostSpannableText(
                 textView.setLineSpacing(0f, textStyle.lineHeight.value / textStyle.fontSize.value)
             }
 
-            val appliedInlineImages = buildAppliedInlineImages(
-                textView.textSize,
-                inlineCodeBackgroundColor,
-            )
+            val appliedInlineImages = buildAppliedInlineImages(textView.textSize)
             textView.text = appliedInlineImages.text
 
             val handle = InlineImageRenderHandle()
@@ -182,7 +178,6 @@ private fun appendPostInlines(
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
     inlineImages: MutableList<InlineImageSpec>,
-    inlineCodeBackgroundColor: Int,
 ) {
     inlines.forEach { inline ->
         when (inline) {
@@ -201,9 +196,7 @@ private fun appendPostInlines(
             )
 
             is PostInline.Styled -> builder.appendSpans(
-                spans = inline.toSpans(
-                    inlineCodeBackgroundColor = inlineCodeBackgroundColor,
-                ),
+                spans = inline.toSpans(),
             ) {
                 appendPostInlines(
                     builder = builder,
@@ -212,14 +205,13 @@ private fun appendPostInlines(
                     onTopicClick = onTopicClick,
                     onUserClick = onUserClick,
                     inlineImages = inlineImages,
-                    inlineCodeBackgroundColor = inlineCodeBackgroundColor,
                 )
             }
 
             is PostInline.Link -> {
                 val isMentionLink = inline.isMentionLink(baseUrl)
-                builder.appendSpan(
-                    inline.toLinkSpan(
+                builder.appendSpans(
+                    spans = inline.toLinkSpans(
                         baseUrl = baseUrl,
                         onTopicClick = onTopicClick,
                         onUserClick = onUserClick,
@@ -234,7 +226,6 @@ private fun appendPostInlines(
                                 onTopicClick = onTopicClick,
                                 onUserClick = onUserClick,
                                 inlineImages = inlineImages,
-                                inlineCodeBackgroundColor = inlineCodeBackgroundColor,
                             )
                         }
                     } else {
@@ -245,24 +236,11 @@ private fun appendPostInlines(
                             onTopicClick = onTopicClick,
                             onUserClick = onUserClick,
                             inlineImages = inlineImages,
-                            inlineCodeBackgroundColor = inlineCodeBackgroundColor,
                         )
                     }
                 }
             }
         }
-    }
-}
-
-private fun SpannableStringBuilder.appendSpan(
-    span: Any,
-    block: () -> Unit,
-) {
-    val start = length
-    block()
-    val end = length
-    if (end > start) {
-        setSpan(span, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
 }
 
@@ -301,31 +279,34 @@ private fun SpannableStringBuilder.appendInlineImage(
 }
 
 private fun PostInline.Styled.toSpans(
-    inlineCodeBackgroundColor: Int,
 ): List<Any> {
     return when (style) {
         InlineStyle.Bold -> listOf(StyleSpan(Typeface.BOLD))
         InlineStyle.Italic -> listOf(StyleSpan(Typeface.ITALIC))
         InlineStyle.Strike -> listOf(StrikethroughSpan())
-        InlineStyle.Code -> listOf(
-            TypefaceSpan("monospace"),
-            BackgroundColorSpan(inlineCodeBackgroundColor),
-        )
+        InlineStyle.Code -> listOf(InlineCodeSpan())
         InlineStyle.LargeText -> listOf(RelativeSizeSpan(1.8f))
     }
 }
 
-private fun PostInline.Link.toLinkSpan(
+private fun PostInline.Link.toLinkSpans(
     baseUrl: String,
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
-): Any {
-    return buildPostBodyLinkSpan(
-        rawUrl = rawUrl,
-        baseUrl = baseUrl,
-        onTopicClick = onTopicClick,
-        onUserClick = onUserClick,
-    )
+): List<Any> {
+    return buildList {
+        add(
+            buildPostBodyLinkSpan(
+                rawUrl = rawUrl,
+                baseUrl = baseUrl,
+                onTopicClick = onTopicClick,
+                onUserClick = onUserClick,
+            ),
+        )
+        if (rawUrl.isHashtagLink()) {
+            add(HashtagChipSpan())
+        }
+    }
 }
 
 internal fun buildPostBodyLinkSpan(
@@ -402,11 +383,7 @@ private class PostInlineClickSpan(
 
     override fun updateDrawState(ds: TextPaint) {
         super.updateDrawState(ds)
-        ds.isUnderlineText = false
-        if (emphasize) {
-            ds.typeface = Typeface.create(ds.typeface, Typeface.BOLD)
-            ds.isFakeBoldText = true
-        }
+        ds.applyPostInlineLinkStyle(emphasize = emphasize)
     }
 }
 
@@ -416,13 +393,210 @@ private class PostInlineUrlSpan(
 ) : URLSpan(url) {
     override fun updateDrawState(ds: TextPaint) {
         super.updateDrawState(ds)
-        ds.isUnderlineText = false
-        if (emphasize) {
-            ds.typeface = Typeface.create(ds.typeface, Typeface.BOLD)
-            ds.isFakeBoldText = true
-        }
+        ds.applyPostInlineLinkStyle(emphasize = emphasize)
     }
 }
+
+private fun TextPaint.applyPostInlineLinkStyle(
+    emphasize: Boolean,
+) {
+    isUnderlineText = false
+    if (emphasize) {
+        typeface = Typeface.create(typeface, Typeface.BOLD)
+        isFakeBoldText = true
+    }
+}
+
+internal fun String.isHashtagLink(): Boolean {
+    return startsWith("/tag/") || contains("://") && contains("/tag/")
+}
+
+internal class InlineCodeSpan : ReplacementSpan() {
+    override fun getSize(
+        paint: Paint,
+        text: CharSequence,
+        start: Int,
+        end: Int,
+        fm: Paint.FontMetricsInt?,
+    ): Int {
+        if (fm != null) {
+            val metrics = paint.fontMetricsInt
+            fm.ascent = metrics.ascent
+            fm.descent = metrics.descent
+            fm.top = metrics.top
+            fm.bottom = metrics.bottom
+        }
+        val codePaint = paint.toInlineCodeTextPaint()
+        return ceil(
+            codePaint.measureText(text, start, end) +
+                inlineCodeHorizontalPadding(codePaint) * 2f +
+                inlineCodeOuterSpacing(paint) * 2f,
+        ).toInt()
+    }
+
+    override fun draw(
+        canvas: Canvas,
+        text: CharSequence,
+        start: Int,
+        end: Int,
+        x: Float,
+        top: Int,
+        y: Int,
+        bottom: Int,
+        paint: Paint,
+    ) {
+        val codePaint = paint.toInlineCodeTextPaint()
+        val outerSpacing = inlineCodeOuterSpacing(paint)
+        val horizontalPadding = inlineCodeHorizontalPadding(codePaint)
+        val verticalPadding = inlineCodeVerticalPadding(codePaint)
+        val contentWidth = codePaint.measureText(text, start, end)
+        val chipLeft = x + outerSpacing
+        val chipRight = chipLeft + contentWidth + horizontalPadding * 2f
+        val baseline = centeredBaseline(
+            containerPaint = paint,
+            contentPaint = codePaint,
+            baseline = y,
+        )
+        val rectTop = baseline + codePaint.fontMetrics.ascent - verticalPadding
+        val rectBottom = baseline + codePaint.fontMetrics.descent + verticalPadding
+        val radius = (rectBottom - rectTop) * 0.22f
+        val originalColor = codePaint.color
+        val originalStyle = codePaint.style
+
+        codePaint.style = Paint.Style.FILL
+        codePaint.color = originalColor.withAlpha(0.10f)
+        canvas.drawRoundRect(
+            chipLeft,
+            rectTop,
+            chipRight,
+            rectBottom,
+            radius,
+            radius,
+            codePaint,
+        )
+
+        codePaint.style = originalStyle
+        codePaint.color = originalColor
+        canvas.drawText(
+            text,
+            start,
+            end,
+            chipLeft + horizontalPadding,
+            baseline,
+            codePaint,
+        )
+    }
+}
+
+private fun TextPaint.applyInlineCodeStyle() {
+    typeface = Typeface.MONOSPACE
+    textSize *= INLINE_CODE_TEXT_SIZE_RATIO
+    isUnderlineText = false
+    flags = flags or Paint.SUBPIXEL_TEXT_FLAG
+}
+
+internal class HashtagChipSpan : ReplacementSpan() {
+    override fun getSize(
+        paint: Paint,
+        text: CharSequence,
+        start: Int,
+        end: Int,
+        fm: Paint.FontMetricsInt?,
+    ): Int {
+        val metrics = paint.fontMetricsInt
+        val verticalPadding = hashtagVerticalPadding(paint)
+        if (fm != null) {
+            fm.ascent = (metrics.ascent - verticalPadding).roundToInt()
+            fm.descent = (metrics.descent + verticalPadding).roundToInt()
+            fm.top = fm.ascent
+            fm.bottom = fm.descent
+        }
+        return ceil(
+            paint.measureText(text, start, end) +
+                hashtagHorizontalPadding(paint) * 2f +
+                hashtagOuterSpacing(paint) * 2f,
+        ).toInt()
+    }
+
+    override fun draw(
+        canvas: Canvas,
+        text: CharSequence,
+        start: Int,
+        end: Int,
+        x: Float,
+        top: Int,
+        y: Int,
+        bottom: Int,
+        paint: Paint,
+    ) {
+        val outerSpacing = hashtagOuterSpacing(paint)
+        val horizontalPadding = hashtagHorizontalPadding(paint)
+        val verticalPadding = hashtagVerticalPadding(paint)
+        val contentWidth = paint.measureText(text, start, end)
+        val chipLeft = x + outerSpacing
+        val chipRight = chipLeft + contentWidth + horizontalPadding * 2f
+        val rectTop = y + paint.fontMetrics.ascent - verticalPadding
+        val rectBottom = y + paint.fontMetrics.descent + verticalPadding
+        val radius = (rectBottom - rectTop) / 2f
+        val originalColor = paint.color
+        val originalStyle = paint.style
+
+        paint.style = Paint.Style.FILL
+        paint.color = originalColor.withAlpha(0.16f)
+        canvas.drawRoundRect(
+            chipLeft,
+            rectTop,
+            chipRight,
+            rectBottom,
+            radius,
+            radius,
+            paint,
+        )
+
+        paint.style = originalStyle
+        paint.color = originalColor
+        canvas.drawText(
+            text,
+            start,
+            end,
+            chipLeft + horizontalPadding,
+            y.toFloat(),
+            paint,
+        )
+    }
+}
+
+private fun Int.withAlpha(alpha: Float): Int {
+    val safeAlpha = (alpha.coerceIn(0f, 1f) * 255).toInt()
+    return (safeAlpha shl 24) or (this and 0x00FFFFFF)
+}
+
+private fun Paint.toInlineCodeTextPaint(): TextPaint = TextPaint(this).apply {
+    applyInlineCodeStyle()
+    color = this@toInlineCodeTextPaint.color
+}
+
+private fun centeredBaseline(
+    containerPaint: Paint,
+    contentPaint: Paint,
+    baseline: Int,
+): Float {
+    val containerCenter =
+        baseline + (containerPaint.fontMetrics.ascent + containerPaint.fontMetrics.descent) / 2f
+    return containerCenter - (contentPaint.fontMetrics.ascent + contentPaint.fontMetrics.descent) / 2f
+}
+
+private fun hashtagOuterSpacing(paint: Paint): Float = paint.textSize * 0.16f
+
+private fun hashtagHorizontalPadding(paint: Paint): Float = paint.textSize * 0.38f
+
+private fun hashtagVerticalPadding(paint: Paint): Float = paint.textSize * 0.10f
+
+private fun inlineCodeOuterSpacing(paint: Paint): Float = paint.textSize * 0.08f
+
+private fun inlineCodeHorizontalPadding(paint: Paint): Float = paint.textSize * 0.12f
+
+private fun inlineCodeVerticalPadding(paint: Paint): Float = paint.textSize * 0.035f
 
 @Composable
 private fun RichTextBlockStyle.toTypographyStyle(): TextStyle {
@@ -437,7 +611,7 @@ private fun RichTextBlockStyle.toTypographyStyle(): TextStyle {
 internal fun postBodyParagraphTextStyle(baseStyle: TextStyle): TextStyle =
     baseStyle.copy(
         fontSize = 15.sp,
-        lineHeight = 20.sp,
+        lineHeight = 19.sp,
     )
 
-private const val DEFAULT_INLINE_CODE_BACKGROUND_COLOR = 0x14000000
+private const val INLINE_CODE_TEXT_SIZE_RATIO = 0.94f

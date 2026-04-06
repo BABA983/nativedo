@@ -6,13 +6,13 @@ import org.junit.Test
 
 class PostBodyBlockSpacingTest {
     @Test
-    fun postBodyBlockSpacingAfter_keepsStructuredBlocksTightInsideReaderShell() {
+    fun postBodyBlockSpacingAfter_keepsStructuredBlocksMeasuredInsideReaderShell() {
         assertThat(
             postBodyBlockSpacingAfter(
                 current = PostBodyBlock.QuoteBlock(children = listOf(paragraph("quoted"))),
                 next = paragraph("after"),
             ),
-        ).isEqualTo(8.dp)
+        ).isEqualTo(10.dp)
 
         assertThat(
             postBodyBlockSpacingAfter(
@@ -26,7 +26,7 @@ class PostBodyBlockSpacingTest {
                     expandedByDefault = false,
                 ),
             ),
-        ).isEqualTo(8.dp)
+        ).isEqualTo(10.dp)
     }
 
     private fun paragraph(text: String) = PostBodyBlock.RichTextBlock(

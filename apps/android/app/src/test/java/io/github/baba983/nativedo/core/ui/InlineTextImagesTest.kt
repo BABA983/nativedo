@@ -6,7 +6,7 @@ import org.junit.Test
 
 class InlineTextImagesTest {
     @Test
-    fun calculateInlineImageTranslationY_emojiMovesUpMoreThanSiteIcon() {
+    fun calculateInlineImageTranslationY_emojiUsesReducedUpwardBias() {
         val emojiTranslationY = calculateInlineImageTranslationY(
             top = 4,
             bottom = 28,
@@ -20,9 +20,9 @@ class InlineTextImagesTest {
             kind = InlineImageKind.SiteIcon,
         )
 
-        assertThat(emojiTranslationY).isWithin(0.001f).of(6.08f)
+        assertThat(emojiTranslationY).isWithin(0.001f).of(7.36f)
         assertThat(siteIconTranslationY).isWithin(0.001f).of(7.36f)
-        assertThat(emojiTranslationY).isLessThan(siteIconTranslationY)
+        assertThat(emojiTranslationY).isEqualTo(siteIconTranslationY)
     }
 
     @Test

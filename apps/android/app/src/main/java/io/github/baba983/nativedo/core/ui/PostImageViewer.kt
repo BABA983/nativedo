@@ -2430,6 +2430,7 @@ private fun MutableList<PostBodyImage>.addBlockImages(block: PostBodyBlock) {
         is PostBodyBlock.RichTextBlock -> Unit
         is PostBodyBlock.ParagraphBlock -> Unit
         is PostBodyBlock.HeadingBlock -> Unit
+        is PostBodyBlock.HorizontalRuleBlock -> Unit
         is PostBodyBlock.ImageBlock -> add(block.image)
         is PostBodyBlock.LightboxBlock -> add(block.image)
         is PostBodyBlock.ImageGridBlock -> addAll(block.images)

@@ -17,31 +17,41 @@ private fun parsePostBodyNodes(
     nodes: List<Node>,
 ): List<PostBodyBlock> {
     val blocks = mutableListOf<PostBodyBlock>()
-    val htmlBuffer = mutableListOf<Node>()
+    val inlineBuffer = mutableListOf<Node>()
 
-    fun flushHtmlBuffer() {
-        if (htmlBuffer.isEmpty()) {
+    fun flushInlineBuffer() {
+        if (inlineBuffer.isEmpty()) {
             return
         }
-        val fragment = htmlBuffer.joinToString(separator = "") { node ->
-            node.outerHtml()
-        }.trim()
-        htmlBuffer.clear()
-        if (fragment.isNotBlank()) {
-            blocks += PostBodyBlock.HtmlBlock(fragment)
+        val nodesToRender = inlineBuffer.toList()
+        inlineBuffer.clear()
+        val document = buildTextDocumentFromNodes(nodesToRender)
+        if (document.text.isNotBlank() || document.entities.isNotEmpty()) {
+            blocks += PostBodyBlock.ParagraphBlock(content = document)
         }
     }
 
     nodes.forEach { node ->
         when {
             node is TextNode && node.isBlank -> {
-                if (htmlBuffer.isNotEmpty()) {
-                    htmlBuffer += node.clone()
+                if (inlineBuffer.isNotEmpty()) {
+                    inlineBuffer += node.clone()
                 }
             }
 
+            node is Element && node.tagName() == "br" -> {
+                if (inlineBuffer.isNotEmpty()) {
+                    inlineBuffer += node.clone()
+                }
+            }
+
+            node is Element && node.tagName() == "hr" -> {
+                flushInlineBuffer()
+                blocks += PostBodyBlock.HorizontalRuleBlock
+            }
+
             node is Element && node.isDiscourseImageGrid() -> {
-                flushHtmlBuffer()
+                flushInlineBuffer()
                 val images = extractGridImages(node)
                 if (images.isNotEmpty()) {
                     blocks += PostBodyBlock.ImageGridBlock(
@@ -52,59 +62,68 @@ private fun parsePostBodyNodes(
             }
 
             node is Element && node.isDiscourseQuoteAside() -> {
-                flushHtmlBuffer()
+                flushInlineBuffer()
                 blocks += node.toDiscourseQuoteBlock()
             }
 
             node is Element && node.isOneboxAside() -> {
                 val oneboxBlock = node.toOneboxBlock()
                 if (oneboxBlock != null) {
-                    flushHtmlBuffer()
+                    flushInlineBuffer()
                     blocks += oneboxBlock
                 } else {
-                    htmlBuffer += node.clone()
+                    flushInlineBuffer()
+                    blocks += node.toUnknownBlock()
                 }
             }
 
             node is Element && node.tagName() == "details" -> {
-                flushHtmlBuffer()
+                flushInlineBuffer()
                 blocks += node.toDetailsBlock()
             }
 
             node is Element && node.tagName() == "p" -> {
-                flushHtmlBuffer()
-                blocks += PostBodyBlock.ParagraphBlock(
-                    content = buildTextDocumentFromHtml(node.html()),
-                )
+                flushInlineBuffer()
+                blocks += if (node.containsStandaloneParagraphMedia()) {
+                    node.toParagraphBlocks()
+                } else {
+                    node.html()
+                        .let(::buildTextDocumentFromHtml)
+                        .toParagraphBlockList()
+                }
             }
 
             node is Element && node.tagName() in headingTags -> {
-                flushHtmlBuffer()
-                blocks += PostBodyBlock.HeadingBlock(
-                    level = node.toHeadingLevel(),
-                    content = buildTextDocumentFromHtml(node.html()),
-                )
+                flushInlineBuffer()
+                val content = buildTextDocumentFromHtml(node.html())
+                if (content.text.isNotBlank() || content.entities.isNotEmpty()) {
+                    blocks += PostBodyBlock.HeadingBlock(
+                        level = node.toHeadingLevel(),
+                        content = content,
+                    )
+                }
             }
 
             node is Element && node.tagName() == "blockquote" -> {
-                flushHtmlBuffer()
+                flushInlineBuffer()
                 blocks += PostBodyBlock.QuoteBlock(
                     children = parsePostBodyNodes(node.childNodes()),
                 )
             }
 
             node is Element && (node.tagName() == "ul" || node.tagName() == "ol") -> {
-                flushHtmlBuffer()
+                flushInlineBuffer()
                 blocks += node.toListBlock()
             }
 
             node is Element && node.tagName() == "pre" -> {
                 val codeBlock = node.toCodeBlock()
                 if (codeBlock != null) {
-                    flushHtmlBuffer()
+                    flushInlineBuffer()
                     blocks += codeBlock
                 } else {
-                    htmlBuffer += node.clone()
+                    flushInlineBuffer()
+                    blocks += node.toUnknownBlock()
                 }
             }
 
@@ -112,24 +131,26 @@ private fun parsePostBodyNodes(
                 val lightboxBlock = node.extractStandaloneLightboxBlock()
                 val image = node.extractStandaloneImage()
                 if (lightboxBlock != null) {
-                    flushHtmlBuffer()
+                    flushInlineBuffer()
                     blocks += lightboxBlock
                 } else if (image != null) {
-                    flushHtmlBuffer()
+                    flushInlineBuffer()
                     blocks += PostBodyBlock.ImageBlock(image)
+                } else if (node.isInlineRenderableElement()) {
+                    inlineBuffer += node.clone()
                 } else {
-                    flushHtmlBuffer()
+                    flushInlineBuffer()
                     blocks += node.toUnknownBlock()
                 }
             }
 
             else -> {
-                htmlBuffer += node.clone()
+                inlineBuffer += node.clone()
             }
         }
     }
 
-    flushHtmlBuffer()
+    flushInlineBuffer()
     return blocks
 }
 
@@ -175,6 +196,91 @@ private fun Element.toDiscourseQuoteBlock(): PostBodyBlock.DiscourseQuoteBlock {
     )
 }
 
+private fun Element.toParagraphBlocks(): List<PostBodyBlock> {
+    val blocks = mutableListOf<PostBodyBlock>()
+    val inlineBuffer = mutableListOf<Node>()
+
+    fun flushInlineBuffer() {
+        if (inlineBuffer.isEmpty()) {
+            return
+        }
+        val nodes = inlineBuffer
+            .toMutableList()
+            .also { bufferedNodes ->
+                while ((bufferedNodes.lastOrNull() as? TextNode)?.getWholeText()?.isBlank() == true) {
+                    bufferedNodes.removeAt(bufferedNodes.lastIndex)
+                }
+                val trailingText = bufferedNodes.lastOrNull() as? TextNode
+                if (trailingText != null) {
+                    val trimmed = trailingText.getWholeText().trimEnd()
+                    if (trimmed != trailingText.getWholeText()) {
+                        bufferedNodes.removeAt(bufferedNodes.lastIndex)
+                        if (trimmed.isNotEmpty()) {
+                            bufferedNodes += TextNode(trimmed)
+                        }
+                    }
+                }
+            }
+        inlineBuffer.clear()
+        val document = buildTextDocumentFromNodes(nodes)
+        if (document.text.isNotBlank() || document.entities.isNotEmpty()) {
+            blocks += PostBodyBlock.ParagraphBlock(content = document)
+        }
+    }
+
+    childNodes().forEach { child ->
+        val lightboxBlock = (child as? Element)?.extractStandaloneLightboxBlock()
+        val image = (child as? Element)?.extractStandaloneImage()
+        when {
+            child is TextNode && child.isBlank && inlineBuffer.isEmpty() -> Unit
+
+            child is Element && child.tagName() == "br" && inlineBuffer.isEmpty() -> Unit
+
+            lightboxBlock != null -> {
+                flushInlineBuffer()
+                blocks += lightboxBlock
+            }
+
+            image != null -> {
+                flushInlineBuffer()
+                blocks += PostBodyBlock.ImageBlock(image)
+            }
+
+            child is TextNode -> {
+                inlineBuffer += if (
+                    inlineBuffer.lastOrNull().isInlineImageNode() &&
+                    child.hasLeadingLineBreakIndentation()
+                ) {
+                    TextNode(child.getWholeText().trimStart())
+                } else {
+                    child.clone()
+                }
+            }
+
+            else -> inlineBuffer += child.clone()
+        }
+    }
+
+    flushInlineBuffer()
+    return blocks
+}
+
+private fun TextDocument.toParagraphBlockList(): List<PostBodyBlock> {
+    if (text.isBlank() && entities.isEmpty()) {
+        return emptyList()
+    }
+    return listOf(PostBodyBlock.ParagraphBlock(content = this))
+}
+
+private fun Element.containsStandaloneParagraphMedia(): Boolean {
+    return childNodes().any { child ->
+        child is Element && (
+            child.extractStandaloneLightboxBlock() != null ||
+                child.extractStandaloneImage() != null
+            )
+    }
+}
+
 private fun Element.toDetailsBlock(): PostBodyBlock.DetailsBlock {
     val summaryElement = children().firstOrNull { child ->
         child.tagName() == "summary"
@@ -211,10 +317,141 @@ private fun Element.toListBlock(): PostBodyBlock.ListBlock {
             .filter { child -> child.tagName() == "li" }
             .map { item ->
                 ListItemBlock(
-                    children = parsePostBodyNodes(item.childNodes()),
+                    children = item.toListItemBlocks(),
                 )
             },
     )
+}
+
+private fun Element.toListItemBlocks(): List<PostBodyBlock> {
+    val blocks = mutableListOf<PostBodyBlock>()
+    val inlineBuffer = mutableListOf<Node>()
+
+    fun flushInlineBuffer() {
+        if (inlineBuffer.isEmpty()) {
+            return
+        }
+        val fragment = inlineBuffer.joinToString(separator = "") { child ->
+            child.outerHtml()
+        }
+        inlineBuffer.clear()
+        val document = buildTextDocumentFromHtml(fragment)
+        if (document.text.isNotBlank() || document.entities.isNotEmpty()) {
+            blocks += PostBodyBlock.ParagraphBlock(content = document)
+        }
+    }
+
+    childNodes().forEach { child ->
+        val element = child as? Element
+        val lightboxBlock = element?.extractStandaloneLightboxBlock()
+        val image = element?.extractStandaloneImage()
+
+        when {
+            child is TextNode && child.isBlank && inlineBuffer.isEmpty() -> Unit
+
+            element != null && element.isDiscourseImageGrid() -> {
+                flushInlineBuffer()
+                val images = extractGridImages(element)
+                if (images.isNotEmpty()) {
+                    blocks += PostBodyBlock.ImageGridBlock(
+                        images = images,
+                        columns = element.attr("data-columns").toIntOrNull() ?: defaultGridColumns,
+                    )
+                }
+            }
+
+            element != null && element.isDiscourseQuoteAside() -> {
+                flushInlineBuffer()
+                blocks += element.toDiscourseQuoteBlock()
+            }
+
+            element != null && element.isOneboxAside() -> {
+                val oneboxBlock = element.toOneboxBlock()
+                if (oneboxBlock != null) {
+                    flushInlineBuffer()
+                    blocks += oneboxBlock
+                } else {
+                    flushInlineBuffer()
+                    blocks += element.toUnknownBlock()
+                }
+            }
+
+            element != null && element.tagName() == "details" -> {
+                flushInlineBuffer()
+                blocks += element.toDetailsBlock()
+            }
+
+            element != null && element.tagName() == "p" -> {
+                flushInlineBuffer()
+                blocks += if (element.containsStandaloneParagraphMedia()) {
+                    element.toParagraphBlocks()
+                } else {
+                    listOf(
+                        PostBodyBlock.ParagraphBlock(
+                            content = buildTextDocumentFromHtml(element.html()),
+                        ),
+                    )
+                }
+            }
+
+            element != null && element.tagName() in headingTags -> {
+                flushInlineBuffer()
+                blocks += PostBodyBlock.HeadingBlock(
+                    level = element.toHeadingLevel(),
+                    content = buildTextDocumentFromHtml(element.html()),
+                )
+            }
+
+            element != null && element.tagName() == "blockquote" -> {
+                flushInlineBuffer()
+                blocks += PostBodyBlock.QuoteBlock(
+                    children = parsePostBodyNodes(element.childNodes()),
+                )
+            }
+
+            element != null && (element.tagName() == "ul" || element.tagName() == "ol") -> {
+                flushInlineBuffer()
+                blocks += element.toListBlock()
+            }
+
+            element != null && element.tagName() == "pre" -> {
+                val codeBlock = element.toCodeBlock()
+                if (codeBlock != null) {
+                    flushInlineBuffer()
+                    blocks += codeBlock
+                } else {
+                    flushInlineBuffer()
+                    blocks += element.toUnknownBlock()
+                }
+            }
+
+            lightboxBlock != null -> {
+                flushInlineBuffer()
+                blocks += lightboxBlock
+            }
+
+            image != null -> {
+                flushInlineBuffer()
+                blocks += PostBodyBlock.ImageBlock(image)
+            }
+
+            child is TextNode && child.isBlank -> inlineBuffer += TextNode(" ")
+
+            element != null && element.tagName() == "br" && inlineBuffer.isEmpty() -> Unit
+
+            element != null && element.tagName() == "br" -> inlineBuffer += element.clone()
+
+            element != null && !element.isInlineRenderableElement() -> {
+                flushInlineBuffer()
+                blocks += element.toUnknownBlock()
+            }
+
+            else -> inlineBuffer += child.clone()
+        }
+    }
+
+    flushInlineBuffer()
+    return blocks
 }
 
 internal fun extractGridImages(element: Element): List<PostBodyImage> {
@@ -229,6 +466,57 @@ internal fun extractGridImages(element: Element): List<PostBodyImage> {
 
 private val TextNode.isBlank: Boolean
     get() = text().isBlank()
+
+private fun Node?.isInlineImageNode(): Boolean {
+    val element = this as? Element ?: return false
+    return element.tagName() == "img" && (
+        element.hasClass("emoji") ||
+            element.hasClass("site-icon")
+        )
+}
+
+private fun TextNode.hasLeadingLineBreakIndentation(): Boolean {
+    val rawText = getWholeText()
+    val firstVisibleIndex = rawText.indexOfFirst { character -> !character.isWhitespace() }
+    if (firstVisibleIndex <= 0) {
+        return false
+    }
+    return rawText
+        .substring(0, firstVisibleIndex)
+        .any { character -> character == '\n' || character == '\r' }
+}
+
+private fun Element.isInlineRenderableElement(): Boolean {
+    return tagName() in setOf(
+        "a",
+        "b",
+        "strong",
+        "i",
+        "em",
+        "span",
+        "code",
+        "img",
+        "del",
+        "s",
+        "strike",
+        "small",
+        "mark",
+        "u",
+        "sup",
+        "sub",
+        "kbd",
+    ) || isDecorativeInlineIcon()
+}
+
+private fun Element.isDecorativeInlineIcon(): Boolean {
+    return classNames().any { className ->
+        className == "svg-icon" ||
+            className == "d-icon" ||
+            className.startsWith("d-icon-") ||
+            className == "fa" ||
+            className.startsWith("fa-")
+    }
+}
 
 private fun Element.isDiscourseImageGrid(): Boolean {
     return tagName() == "div" && hasClass("d-image-grid")
