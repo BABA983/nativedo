@@ -7,6 +7,7 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.outlined.Edit
@@ -41,6 +43,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.baba983.nativedo.R
 import io.github.baba983.nativedo.core.model.Post
@@ -106,16 +109,23 @@ internal fun TopicPostCard(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            // Header layout: avatar + two-line text block.
+            // Line 1: [displayName ...  OP  reply  edit  time]  — meta pills share the first row
+            // Line 2: [@username · title]                       — full width, no meta competition
+            // Keep meta pills inside the first-line Row so the second line can use the entire width.
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onUserClick(post.authorUsername) },
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                UserAvatar(
-                    label = post.authorUsername,
+                TopicPostAvatarWithFlair(
+                    username = post.authorUsername,
                     avatarTemplate = post.authorAvatarTemplate,
+                    flairName = post.authorFlairName,
+                    flairUrl = post.authorFlairUrl,
                     baseUrl = baseUrl,
-                    size = 28.dp,
                 )
                 Column(
                     modifier = Modifier.weight(1f),
@@ -139,89 +149,81 @@ internal fun TopicPostCard(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            if (role == TopicPostRole.OriginalPoster) {
-                                Surface(
-                                    shape = NativeDoPillShape,
-                                    color = colors.accentMuted.copy(alpha = 0.9f),
-                                    tonalElevation = 0.dp,
-                                    shadowElevation = 0.dp,
+                        if (role == TopicPostRole.OriginalPoster) {
+                            Surface(
+                                shape = NativeDoPillShape,
+                                color = colors.accentMuted.copy(alpha = 0.9f),
+                                tonalElevation = 0.dp,
+                                shadowElevation = 0.dp,
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.topic_post_badge_original_poster),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = colors.accent,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                )
+                            }
+                        }
+                        if (replyTargetFloorLabel != null && onReplyTargetClick != null) {
+                            Surface(
+                                shape = NativeDoPillShape,
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f),
+                                tonalElevation = 0.dp,
+                                shadowElevation = 0.dp,
+                                border = BorderStroke(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.18f),
+                                ),
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .clickable(onClick = onReplyTargetClick)
+                                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Outlined.Reply,
+                                        contentDescription = null,
+                                        tint = colors.textSecondary,
+                                        modifier = Modifier.size(10.dp),
+                                    )
+                                    if (replyTargetAvatarLabel.isNotBlank() || replyTargetAvatarTemplate.isNotBlank()) {
+                                        UserAvatar(
+                                            label = replyTargetAvatarLabel,
+                                            avatarTemplate = replyTargetAvatarTemplate,
+                                            baseUrl = baseUrl,
+                                            size = 14.dp,
+                                        )
+                                    }
                                     Text(
-                                        text = stringResource(R.string.topic_post_badge_original_poster),
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = colors.accent,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        text = replyTargetFloorLabel,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = colors.textSecondary,
+                                        maxLines = 1,
                                     )
                                 }
                             }
-                            if (replyTargetFloorLabel != null && onReplyTargetClick != null) {
-                                Surface(
-                                    shape = NativeDoPillShape,
-                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f),
-                                    tonalElevation = 0.dp,
-                                    shadowElevation = 0.dp,
-                                    border = BorderStroke(
-                                        width = 1.dp,
-                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.18f),
-                                    ),
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .clickable(onClick = onReplyTargetClick)
-                                            .padding(horizontal = 4.dp, vertical = 2.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.AutoMirrored.Outlined.Reply,
-                                            contentDescription = null,
-                                            tint = colors.textSecondary,
-                                            modifier = Modifier.size(10.dp),
-                                        )
-                                        if (replyTargetAvatarLabel.isNotBlank() || replyTargetAvatarTemplate.isNotBlank()) {
-                                            UserAvatar(
-                                                label = replyTargetAvatarLabel,
-                                                avatarTemplate = replyTargetAvatarTemplate,
-                                                baseUrl = baseUrl,
-                                                size = 14.dp,
-                                            )
-                                        }
-                                        Text(
-                                            text = replyTargetFloorLabel,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = colors.textSecondary,
-                                            maxLines = 1,
-                                        )
-                                    }
-                                }
-                            }
-                            topicPostEditedMetaLabel(
-                                editCount = post.editCount,
-                            )?.let { editLabel ->
-                                TopicPostEditBadge(
-                                    label = editLabel,
-                                )
-                            }
-                            Text(
-                                text = topicPostMetaLabel(
-                                    index = postIndex,
-                                    createdAt = post.createdAt,
-                                ),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = colors.textSecondary,
+                        }
+                        topicPostEditedMetaLabel(
+                            editCount = post.editCount,
+                        )?.let { editLabel ->
+                            TopicPostEditBadge(
+                                label = editLabel,
                             )
                         }
+                        Text(
+                            text = topicPostMetaLabel(
+                                index = postIndex,
+                                createdAt = post.createdAt,
+                            ),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = colors.textSecondary,
+                        )
                     }
                     TopicPostSecondaryLine(
                         username = post.authorUsername,
                         title = post.authorTitle,
-                        flairName = post.authorFlairName,
-                        flairUrl = post.authorFlairUrl,
-                        baseUrl = baseUrl,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -240,12 +242,46 @@ internal fun TopicPostCard(
 }
 
 @Composable
-private fun TopicPostSecondaryLine(
+private fun TopicPostAvatarWithFlair(
     username: String,
-    title: String,
+    avatarTemplate: String,
     flairName: String,
     flairUrl: String,
     baseUrl: String,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier = modifier.size(28.dp)) {
+        UserAvatar(
+            label = username,
+            avatarTemplate = avatarTemplate,
+            baseUrl = baseUrl,
+            size = 28.dp,
+        )
+        if (flairUrl.isNotBlank()) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .background(
+                        color = NativeDoThemeExtras.colors.glassBackground,
+                        shape = CircleShape,
+                    )
+                    .padding(1.dp),
+            ) {
+                TopicPostFlairIcon(
+                    rawUrl = flairUrl,
+                    label = flairName,
+                    baseUrl = baseUrl,
+                    size = 11.dp,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TopicPostSecondaryLine(
+    username: String,
+    title: String,
     modifier: Modifier = Modifier,
 ) {
     val colors = NativeDoThemeExtras.colors
@@ -258,6 +294,11 @@ private fun TopicPostSecondaryLine(
     ) {
         Text(
             text = topicPostUsernameLabel(username),
+            modifier = if (normalizedTitle.isNotBlank()) {
+                Modifier.weight(weight = 1f, fill = false)
+            } else {
+                Modifier
+            },
             style = MaterialTheme.typography.labelSmall,
             color = colors.textSecondary.copy(alpha = 0.86f),
             maxLines = 1,
@@ -272,13 +313,6 @@ private fun TopicPostSecondaryLine(
             TopicPostTitleText(
                 title = normalizedTitle,
                 modifier = Modifier.weight(weight = 1f, fill = false),
-            )
-        }
-        if (flairUrl.isNotBlank()) {
-            TopicPostFlairIcon(
-                rawUrl = flairUrl,
-                label = flairName,
-                baseUrl = baseUrl,
             )
         }
     }
@@ -357,6 +391,7 @@ private fun TopicPostFlairIcon(
     rawUrl: String,
     label: String,
     baseUrl: String,
+    size: Dp = 12.dp,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -373,8 +408,7 @@ private fun TopicPostFlairIcon(
 
     Box(
         modifier = modifier
-            .size(12.dp)
-            .alpha(0.82f)
+            .size(size)
             .clip(NativeDoPillShape),
         contentAlignment = Alignment.Center,
     ) {
