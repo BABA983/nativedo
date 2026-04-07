@@ -58,6 +58,12 @@ sealed interface PostBodyBlock {
         val expandedByDefault: Boolean,
     ) : PostBodyBlock
 
+    data class CalloutBlock(
+        val spec: DiscourseCalloutSpec,
+        val title: TextDocument?,
+        val children: List<PostBodyBlock>,
+    ) : PostBodyBlock
+
     data class QuoteBlock(
         val children: List<PostBodyBlock>,
     ) : PostBodyBlock

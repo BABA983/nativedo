@@ -2436,6 +2436,7 @@ private fun MutableList<PostBodyImage>.addBlockImages(block: PostBodyBlock) {
         is PostBodyBlock.ImageGridBlock -> addAll(block.images)
         is PostBodyBlock.OneboxBlock -> Unit
         is PostBodyBlock.DetailsBlock -> block.children.forEach(::addBlockImages)
+        is PostBodyBlock.CalloutBlock -> block.children.forEach(::addBlockImages)
         is PostBodyBlock.QuoteBlock -> block.children.forEach(::addBlockImages)
         is PostBodyBlock.DiscourseQuoteBlock -> block.children.forEach(::addBlockImages)
         is PostBodyBlock.CodeBlock -> Unit

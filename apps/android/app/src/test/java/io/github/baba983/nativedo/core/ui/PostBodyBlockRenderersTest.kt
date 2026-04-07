@@ -6,6 +6,28 @@ import org.junit.Test
 
 class PostBodyBlockRenderersTest {
     @Test
+    fun resolveCalloutHeaderDocument_fallsBackToTypeWhenTitleMissing() {
+        val header = resolveCalloutHeaderDocument(
+            PostBodyBlock.CalloutBlock(
+                spec = DiscourseCalloutSpec(
+                    type = "warning",
+                    icon = "triangle-exclamation",
+                    color = "#ec7500",
+                ),
+                title = null,
+                children = emptyList(),
+            ),
+        )
+
+        assertThat(header).isEqualTo(
+            TextDocument(
+                text = "Warning",
+                entities = emptyList(),
+            ),
+        )
+    }
+
+    @Test
     fun postBodyBlockSpacingAfter_givesHeadingAndParagraphReaderBreathingRoom() {
         val spacing = postBodyBlockSpacingAfter(
             current = PostBodyBlock.HeadingBlock(

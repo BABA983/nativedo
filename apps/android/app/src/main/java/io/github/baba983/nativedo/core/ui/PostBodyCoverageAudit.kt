@@ -35,6 +35,11 @@ internal fun collectPostBodyCoverage(blocks: List<PostBodyBlock>): PostBodyCover
                 block.children.forEach(::visit)
             }
 
+            is PostBodyBlock.CalloutBlock -> {
+                nativeBlockCount += 1
+                block.children.forEach(::visit)
+            }
+
             is PostBodyBlock.QuoteBlock -> {
                 nativeBlockCount += 1
                 block.children.forEach(::visit)

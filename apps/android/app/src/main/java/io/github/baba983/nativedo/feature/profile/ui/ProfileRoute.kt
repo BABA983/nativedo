@@ -306,6 +306,7 @@ fun ProfileRoute(
                                 html = profile.bio,
                                 cookieStore = appContainer.cookieStore,
                                 baseUrl = appContainer.baseUrl,
+                                svgSpriteMarkup = svgSpriteMarkup,
                                 onTopicClick = onTopicClick,
                                 onUserClick = onUserClick,
                                 modifier = Modifier.fillMaxWidth(),

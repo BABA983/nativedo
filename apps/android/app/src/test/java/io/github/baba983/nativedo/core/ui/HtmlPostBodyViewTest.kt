@@ -436,6 +436,83 @@ class HtmlPostBodyViewTest {
     }
 
     @Test
+    fun parsePostBodyBlocks_mapsMarkdownCalloutBlockquoteToCalloutBlock() {
+        val html = """
+            <blockquote>
+              <p>[!NOTE] 用途</p>
+              <p>可以完美CC</p>
+            </blockquote>
+        """.trimIndent()
+
+        val blocks = parsePostBodyBlocks(html)
+
+        assertThat(blocks).containsExactly(
+            PostBodyBlock.CalloutBlock(
+                spec = DiscourseCalloutSpec(
+                    type = "note",
+                    icon = "far-pen-to-square",
+                    color = "#086ddd",
+                ),
+                title = TextDocument(
+                    text = "用途",
+                    entities = emptyList(),
+                ),
+                children = listOf(
+                    PostBodyBlock.ParagraphBlock(
+                        content = TextDocument(
+                            text = "可以完美CC",
+                            entities = emptyList(),
+                        ),
+                    ),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun parsePostBodyBlocks_mapsRenderedCalloutBlockquoteToCalloutBlock() {
+        val html = """
+            <blockquote data-callout-type="note" class="callout">
+              <div class="callout-title">
+                <span class="callout-icon">
+                  <svg class="fa d-icon d-icon-triangle-exclamation svg-icon">
+                    <use href="#triangle-exclamation"></use>
+                  </svg>
+                </span>
+                <span class="callout-title-inner">注意</span>
+              </div>
+              <div class="callout-content">
+                <p>有风险</p>
+              </div>
+            </blockquote>
+        """.trimIndent()
+
+        val blocks = parsePostBodyBlocks(html)
+
+        assertThat(blocks).containsExactly(
+            PostBodyBlock.CalloutBlock(
+                spec = DiscourseCalloutSpec(
+                    type = "note",
+                    icon = "triangle-exclamation",
+                    color = "#086ddd",
+                ),
+                title = TextDocument(
+                    text = "注意",
+                    entities = emptyList(),
+                ),
+                children = listOf(
+                    PostBodyBlock.ParagraphBlock(
+                        content = TextDocument(
+                            text = "有风险",
+                            entities = emptyList(),
+                        ),
+                    ),
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun parsePostBodyBlocks_mapsDiscourseQuoteAsideToDiscourseQuoteBlock() {
         val html = """
             <aside class="quote no-group" data-username="bigcat2333" data-display-name="大猫">

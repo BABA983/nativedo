@@ -240,6 +240,7 @@ internal fun TopicPostCard(
                 html = post.cookedHtml,
                 cookieStore = cookieStore,
                 baseUrl = baseUrl,
+                svgSpriteMarkup = svgSpriteMarkup,
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
                 modifier = Modifier.fillMaxWidth(),

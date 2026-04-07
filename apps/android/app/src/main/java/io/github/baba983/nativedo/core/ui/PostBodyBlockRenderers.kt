@@ -60,6 +60,7 @@ internal fun RenderPostBodyBlock(
     block: PostBodyBlock,
     cookieStore: CookieStore,
     baseUrl: String,
+    svgSpriteMarkup: String = "",
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
     hiddenImage: PostBodyImage? = null,
@@ -187,6 +188,22 @@ internal fun RenderPostBodyBlock(
                 block = block,
                 cookieStore = cookieStore,
                 baseUrl = baseUrl,
+                svgSpriteMarkup = svgSpriteMarkup,
+                onTopicClick = onTopicClick,
+                onUserClick = onUserClick,
+                hiddenImage = hiddenImage,
+                onImageSourceChanged = onImageSourceChanged,
+                onImageClick = onImageClick,
+                modifier = modifier,
+            )
+        }
+
+        is PostBodyBlock.CalloutBlock -> {
+            CalloutBlockView(
+                block = block,
+                cookieStore = cookieStore,
+                baseUrl = baseUrl,
+                svgSpriteMarkup = svgSpriteMarkup,
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
                 hiddenImage = hiddenImage,
@@ -201,6 +218,7 @@ internal fun RenderPostBodyBlock(
                 block = block,
                 cookieStore = cookieStore,
                 baseUrl = baseUrl,
+                svgSpriteMarkup = svgSpriteMarkup,
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
                 hiddenImage = hiddenImage,
@@ -215,6 +233,7 @@ internal fun RenderPostBodyBlock(
                 block = block,
                 cookieStore = cookieStore,
                 baseUrl = baseUrl,
+                svgSpriteMarkup = svgSpriteMarkup,
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
                 hiddenImage = hiddenImage,
@@ -236,6 +255,7 @@ internal fun RenderPostBodyBlock(
                 block = block,
                 cookieStore = cookieStore,
                 baseUrl = baseUrl,
+                svgSpriteMarkup = svgSpriteMarkup,
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
                 hiddenImage = hiddenImage,
@@ -432,6 +452,7 @@ internal fun DetailsBlockView(
     block: PostBodyBlock.DetailsBlock,
     cookieStore: CookieStore,
     baseUrl: String,
+    svgSpriteMarkup: String = "",
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
     hiddenImage: PostBodyImage? = null,
@@ -505,6 +526,7 @@ internal fun DetailsBlockView(
                         block = child,
                         cookieStore = cookieStore,
                         baseUrl = baseUrl,
+                        svgSpriteMarkup = svgSpriteMarkup,
                         onTopicClick = onTopicClick,
                         onUserClick = onUserClick,
                         hiddenImage = hiddenImage,
@@ -527,10 +549,126 @@ internal fun DetailsBlockView(
 }
 
 @Composable
+internal fun CalloutBlockView(
+    block: PostBodyBlock.CalloutBlock,
+    cookieStore: CookieStore,
+    baseUrl: String,
+    svgSpriteMarkup: String,
+    onTopicClick: ((Long) -> Unit)?,
+    onUserClick: ((String) -> Unit)?,
+    hiddenImage: PostBodyImage? = null,
+    onImageSourceChanged: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)?,
+    onImageClick: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    val colors = NativeDoThemeExtras.colors
+    val accentColor = discourseFlairColor(
+        rawHex = block.spec.color,
+        fallback = colors.accent,
+    )
+    val headerDocument = resolveCalloutHeaderDocument(block)
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(postBodyEmbeddedBlockCornerRadius)
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(accentColor.copy(alpha = 0.11f))
+            .border(
+                width = 1.dp,
+                color = accentColor.copy(alpha = 0.24f),
+                shape = shape,
+            )
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (headerDocument != null || block.spec.icon.isNotBlank()) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (block.spec.icon.isNotBlank()) {
+                    DiscourseSpriteIcon(
+                        spriteMarkup = svgSpriteMarkup,
+                        rawIcon = block.spec.icon,
+                        label = block.spec.type,
+                        rawTintColor = block.spec.color,
+                        size = 16.dp,
+                    )
+                }
+                headerDocument?.let { title ->
+                    PostTextDocumentView(
+                        document = title,
+                        textStyle = MaterialTheme.typography.labelLarge,
+                        cookieStore = cookieStore,
+                        baseUrl = baseUrl,
+                        onTopicClick = onTopicClick,
+                        onUserClick = onUserClick,
+                        textColor = accentColor,
+                        linkColor = accentColor,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+
+        block.children.forEachIndexed { index, child ->
+            RenderPostBodyBlock(
+                block = child,
+                cookieStore = cookieStore,
+                baseUrl = baseUrl,
+                svgSpriteMarkup = svgSpriteMarkup,
+                onTopicClick = onTopicClick,
+                onUserClick = onUserClick,
+                hiddenImage = hiddenImage,
+                onImageSourceChanged = onImageSourceChanged,
+                onImageClick = onImageClick,
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            val spacing = postBodyBlockSpacingAfter(
+                current = child,
+                next = block.children.getOrNull(index + 1),
+            )
+            if (spacing > 0.dp) {
+                Spacer(modifier = Modifier.height(spacing))
+            }
+        }
+    }
+}
+
+internal fun resolveCalloutHeaderDocument(
+    block: PostBodyBlock.CalloutBlock,
+): TextDocument? {
+    val title = block.title?.takeIf { document ->
+        document.text.isNotBlank() || document.entities.isNotEmpty()
+    }
+    if (title != null) {
+        return title
+    }
+    val fallbackLabel = block.spec.type
+        .trim()
+        .replaceFirstChar { character ->
+            if (character.isLowerCase()) {
+                character.titlecase()
+            } else {
+                character.toString()
+            }
+        }
+        .ifBlank { return null }
+    return TextDocument(
+        text = fallbackLabel,
+        entities = emptyList(),
+    )
+}
+
+@Composable
 internal fun DiscourseQuoteBlockView(
     block: PostBodyBlock.DiscourseQuoteBlock,
     cookieStore: CookieStore,
     baseUrl: String,
+    svgSpriteMarkup: String = "",
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
     hiddenImage: PostBodyImage? = null,
@@ -602,6 +740,7 @@ internal fun DiscourseQuoteBlockView(
                         block = child,
                         cookieStore = cookieStore,
                         baseUrl = baseUrl,
+                        svgSpriteMarkup = svgSpriteMarkup,
                         onTopicClick = onTopicClick,
                         onUserClick = onUserClick,
                         hiddenImage = hiddenImage,
@@ -628,6 +767,7 @@ internal fun QuoteBlockView(
     block: PostBodyBlock.QuoteBlock,
     cookieStore: CookieStore,
     baseUrl: String,
+    svgSpriteMarkup: String = "",
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
     hiddenImage: PostBodyImage? = null,
@@ -671,6 +811,7 @@ internal fun QuoteBlockView(
                 block = child,
                 cookieStore = cookieStore,
                 baseUrl = baseUrl,
+                svgSpriteMarkup = svgSpriteMarkup,
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
                 hiddenImage = hiddenImage,
@@ -823,6 +964,7 @@ internal fun ListBlockView(
     block: PostBodyBlock.ListBlock,
     cookieStore: CookieStore,
     baseUrl: String,
+    svgSpriteMarkup: String = "",
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
     hiddenImage: PostBodyImage? = null,
@@ -863,6 +1005,7 @@ internal fun ListBlockView(
                             block = child,
                             cookieStore = cookieStore,
                             baseUrl = baseUrl,
+                            svgSpriteMarkup = svgSpriteMarkup,
                             onTopicClick = onTopicClick,
                             onUserClick = onUserClick,
                             hiddenImage = hiddenImage,
@@ -941,6 +1084,7 @@ private fun PostBodyBlock.isStructuredBlock(): Boolean {
     return this is PostBodyBlock.OneboxBlock ||
         this is PostBodyBlock.HorizontalRuleBlock ||
         this is PostBodyBlock.DetailsBlock ||
+        this is PostBodyBlock.CalloutBlock ||
         this is PostBodyBlock.QuoteBlock ||
         this is PostBodyBlock.DiscourseQuoteBlock ||
         this is PostBodyBlock.CodeBlock ||

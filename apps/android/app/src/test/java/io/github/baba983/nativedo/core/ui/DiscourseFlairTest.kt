@@ -64,6 +64,24 @@ class DiscourseFlairTest {
     }
 
     @Test
+    fun buildDiscourseFlairSvgDocument_supportsFarPrefixedSymbolIds() {
+        val svgDocument = buildDiscourseFlairSvgDocument(
+            spriteMarkup = """
+                <svg>
+                  <symbol id="far-pen-to-square" viewBox="0 0 16 16">
+                    <path d="M0 0H16V16H0z"></path>
+                  </symbol>
+                </svg>
+            """.trimIndent(),
+            rawFlairUrl = "far-pen-to-square",
+            rawTintColor = "",
+        )
+
+        assertThat(svgDocument).contains("viewBox=\"0 0 16 16\"")
+        assertThat(svgDocument).contains("<path d=\"M0 0H16V16H0z\"></path>")
+    }
+
+    @Test
     fun buildDiscourseFlairSvgDocument_replacesCssVariablesWithTintColor() {
         val spriteMarkup = """
             <svg>

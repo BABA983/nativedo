@@ -179,6 +179,31 @@ private fun FlairSvg(
     )
 }
 
+@Composable
+internal fun DiscourseSpriteIcon(
+    spriteMarkup: String,
+    rawIcon: String,
+    label: String,
+    rawTintColor: String = "",
+    size: Dp,
+    modifier: Modifier = Modifier,
+) {
+    val svgDocument = remember(spriteMarkup, rawIcon, rawTintColor) {
+        cachedDiscourseFlairSvgDocument(
+            spriteMarkup = spriteMarkup,
+            rawFlairUrl = rawIcon,
+            rawTintColor = rawTintColor,
+        )
+    } ?: return
+
+    FlairSvg(
+        svgDocument = svgDocument,
+        label = label,
+        size = size,
+        modifier = modifier,
+    )
+}
+
 internal fun looksLikeFlairImageUrl(url: String): Boolean =
     url.startsWith("/") || url.startsWith("http://") || url.startsWith("https://")
 
@@ -204,17 +229,26 @@ internal fun buildDiscourseFlairSvgDocument(
     if (spriteMarkup.isBlank()) {
         return null
     }
-    val symbolId = normalizeFlairIconName(rawFlairUrl)
-    if (symbolId.isBlank()) {
+    val rawSymbolId = rawFlairUrl
+        .trim()
+        .substringAfterLast('#')
+        .substringBefore('?')
+        .substringAfterLast('/')
+        .substringAfterLast(' ')
+    val symbolIds = listOf(
+        rawSymbolId,
+        normalizeFlairIconName(rawFlairUrl),
+    ).filter { symbolId ->
+        symbolId.isNotBlank()
+    }.distinct()
+    if (symbolIds.isEmpty()) {
         return null
     }
 
     val document = Jsoup.parse("<root>$spriteMarkup</root>", "", Parser.xmlParser())
     val symbols = document.select("symbol")
     val symbolsById = symbols.associateBy { symbol -> symbol.attr("id") }
-    val targetSymbol = symbols.firstOrNull { symbol ->
-        symbol.attr("id") == symbolId
-    } ?: return null
+    val targetSymbol = symbolIds.firstNotNullOfOrNull(symbolsById::get) ?: return null
     val viewBox = targetSymbol.attr("viewBox").ifBlank { return null }
     val tintHex = normalizeFlairTintHex(rawTintColor)
     val expandedMarkup = expandSymbolContent(

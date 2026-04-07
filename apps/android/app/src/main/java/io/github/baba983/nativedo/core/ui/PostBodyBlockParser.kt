@@ -7,6 +7,7 @@ import org.jsoup.nodes.TextNode
 
 private const val defaultGridColumns = 2
 private val headingTags = setOf("h1", "h2", "h3")
+private val discourseCalloutMarkerRegex = Regex("""^\s*\[!([A-Za-z0-9_-]+)](?:[+-])?\s*""")
 
 internal fun parsePostBodyBlocks(html: String): List<PostBodyBlock> {
     val body = Jsoup.parseBodyFragment(html).body()
@@ -106,9 +107,7 @@ private fun parsePostBodyNodes(
 
             node is Element && node.tagName() == "blockquote" -> {
                 flushInlineBuffer()
-                blocks += PostBodyBlock.QuoteBlock(
-                    children = parsePostBodyNodes(node.childNodes()),
-                )
+                blocks += node.toQuoteLikeBlock()
             }
 
             node is Element && (node.tagName() == "ul" || node.tagName() == "ol") -> {
@@ -404,9 +403,7 @@ private fun Element.toListItemBlocks(): List<PostBodyBlock> {
 
             element != null && element.tagName() == "blockquote" -> {
                 flushInlineBuffer()
-                blocks += PostBodyBlock.QuoteBlock(
-                    children = parsePostBodyNodes(element.childNodes()),
-                )
+                blocks += element.toQuoteLikeBlock()
             }
 
             element != null && (element.tagName() == "ul" || element.tagName() == "ol") -> {
@@ -524,6 +521,67 @@ private fun Element.isDiscourseImageGrid(): Boolean {
 
 private fun Element.isDiscourseQuoteAside(): Boolean {
     return tagName() == "aside" && hasClass("quote")
+}
+
+private fun Element.toQuoteLikeBlock(): PostBodyBlock {
+    toRenderedCalloutBlockOrNull()?.let { return it }
+
+    val children = parsePostBodyNodes(childNodes())
+    val firstParagraph = children.firstOrNull() as? PostBodyBlock.ParagraphBlock
+    val parsedCallout = firstParagraph
+        ?.content
+        ?.toMarkdownCalloutLead()
+        ?: return PostBodyBlock.QuoteBlock(children = children)
+
+    return PostBodyBlock.CalloutBlock(
+        spec = parsedCallout.spec,
+        title = parsedCallout.title?.takeIf(TextDocument::hasVisibleContent),
+        children = buildList {
+            parsedCallout.bodyLead
+                ?.takeIf(TextDocument::hasVisibleContent)
+                ?.let { lead ->
+                    add(PostBodyBlock.ParagraphBlock(content = lead))
+                }
+            addAll(children.drop(1))
+        },
+    )
+}
+
+private fun Element.toRenderedCalloutBlockOrNull(): PostBodyBlock.CalloutBlock? {
+    val rawType = attr("data-callout-type")
+        .ifBlank {
+            if (hasClass("callout")) {
+                "note"
+            } else {
+                ""
+            }
+        }
+        .ifBlank { return null }
+    val titleElement = children().firstOrNull { child ->
+        child.tagName() == "div" && child.hasClass("callout-title")
+    }
+    val contentElement = children().firstOrNull { child ->
+        child.tagName() == "div" && child.hasClass("callout-content")
+    }
+
+    return PostBodyBlock.CalloutBlock(
+        spec = resolveDiscourseCalloutSpec(
+            rawType = rawType,
+            rawIcon = titleElement
+                ?.selectFirst(".callout-icon use")
+                ?.attr("href")
+                .orEmpty(),
+        ),
+        title = titleElement
+            ?.selectFirst(".callout-title-inner")
+            ?.let { element -> buildTextDocumentFromHtml(element.html()) }
+            ?.takeIf(TextDocument::hasVisibleContent),
+        children = parsePostBodyNodes(
+            contentElement?.childNodes() ?: childNodes().filterNot { node ->
+                node is Element && node.hasClass("callout-title")
+            },
+        ),
+    )
 }
 
 private fun Element.isOneboxAside(): Boolean {
@@ -649,4 +707,115 @@ private fun Element.toPostBodyImage(
 
 private fun Element.hasInlineTextImageClass(): Boolean {
     return hasClass("emoji") || hasClass("site-icon")
+}
+
+private data class MarkdownCalloutLead(
+    val spec: DiscourseCalloutSpec,
+    val title: TextDocument?,
+    val bodyLead: TextDocument?,
+)
+
+private fun TextDocument.toMarkdownCalloutLead(): MarkdownCalloutLead? {
+    val lineBreakStart = text.indexOfFirst { character ->
+        character == '\n' || character == '\r'
+    }
+    val lineBreakEnd = when {
+        lineBreakStart < 0 -> -1
+        text.getOrNull(lineBreakStart) == '\r' && text.getOrNull(lineBreakStart + 1) == '\n' -> {
+            lineBreakStart + 2
+        }
+
+        else -> lineBreakStart + 1
+    }
+    val firstLine = if (lineBreakStart >= 0) {
+        slice(0, lineBreakStart)
+    } else {
+        this
+    }
+    val markerMatch = discourseCalloutMarkerRegex.find(firstLine.text) ?: return null
+    val title = firstLine
+        .slice(markerMatch.range.last + 1, firstLine.text.length)
+        .trimWhitespace()
+        .takeIf(TextDocument::hasVisibleContent)
+    val bodyLead = if (lineBreakEnd >= 0) {
+        slice(lineBreakEnd, text.length)
+            .trimWhitespace()
+            .takeIf(TextDocument::hasVisibleContent)
+    } else {
+        null
+    }
+
+    return MarkdownCalloutLead(
+        spec = resolveDiscourseCalloutSpec(markerMatch.groupValues[1]),
+        title = title,
+        bodyLead = bodyLead,
+    )
+}
+
+private fun TextDocument.slice(
+    startIndex: Int,
+    endIndex: Int,
+): TextDocument {
+    val clampedStart = startIndex.coerceIn(0, text.length)
+    val clampedEnd = endIndex.coerceIn(clampedStart, text.length)
+    return TextDocument(
+        text = text.substring(clampedStart, clampedEnd),
+        entities = entities.mapNotNull { entity ->
+            entity.slice(
+                rangeStart = clampedStart,
+                rangeEnd = clampedEnd,
+            )
+        },
+    )
+}
+
+private fun TextDocument.trimWhitespace(): TextDocument {
+    val start = text.indexOfFirst { character -> !character.isWhitespace() }
+    if (start < 0) {
+        return TextDocument(text = "", entities = emptyList())
+    }
+    val end = text.indexOfLast { character -> !character.isWhitespace() } + 1
+    return slice(start, end)
+}
+
+private fun TextDocument.hasVisibleContent(): Boolean {
+    return text.isNotBlank() || entities.isNotEmpty()
+}
+
+private fun TextEntity.slice(
+    rangeStart: Int,
+    rangeEnd: Int,
+): TextEntity? {
+    val slicedStart = start.coerceIn(rangeStart, rangeEnd)
+    val slicedEnd = end.coerceIn(rangeStart, rangeEnd)
+    val relativeStart = slicedStart - rangeStart
+    val relativeEnd = slicedEnd - rangeStart
+
+    if (start == end) {
+        if (start < rangeStart || start > rangeEnd) {
+            return null
+        }
+        return copyWithRange(relativeStart, relativeStart)
+    }
+    if (slicedEnd <= slicedStart) {
+        return null
+    }
+    return copyWithRange(relativeStart, relativeEnd)
+}
+
+private fun TextEntity.copyWithRange(
+    start: Int,
+    end: Int,
+): TextEntity {
+    return when (this) {
+        is TextEntity.Bold -> copy(start = start, end = end)
+        is TextEntity.Italic -> copy(start = start, end = end)
+        is TextEntity.Strike -> copy(start = start, end = end)
+        is TextEntity.Link -> copy(start = start, end = end)
+        is TextEntity.Mention -> copy(start = start, end = end)
+        is TextEntity.InlineCode -> copy(start = start, end = end)
+        is TextEntity.Spoiler -> copy(start = start, end = end)
+        is TextEntity.Emoji -> copy(start = start, end = end)
+        is TextEntity.SiteIcon -> copy(start = start, end = end)
+    }
 }
