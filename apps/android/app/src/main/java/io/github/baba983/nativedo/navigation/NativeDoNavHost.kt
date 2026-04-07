@@ -33,6 +33,7 @@ fun NativeDoNavHost(
     homeSearchRequestToken: Int,
     homeRefreshRequestToken: Int,
     onHomeHeaderSearchVisibilityChanged: (Boolean) -> Unit,
+    onTopicHeaderTitleChanged: (String?) -> Unit,
 ) {
     val context = LocalContext.current
     val appContainer = remember(context) {
@@ -111,6 +112,7 @@ fun NativeDoNavHost(
             val topicId = entry.arguments?.getString("topicId")!!.toLong()
             TopicRoute(
                 topicId = topicId,
+                onHeaderTitleChanged = onTopicHeaderTitleChanged,
                 onSessionRecoveryRequired = openLogin,
                 onTopicClick = { linkedTopicId ->
                     navController.navigate("topic/$linkedTopicId")

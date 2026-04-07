@@ -6,6 +6,33 @@ import org.junit.Test
 
 class NativeDoAppStateTest {
     @Test
+    fun topicRouteTitleOverride_usesTopicOverrideOnTopicRoute() {
+        assertThat(
+            topicRouteTitleOverride(
+                currentRoute = "topic/{topicId}",
+                topicTitleOverride = "Compose on linux.do",
+            ),
+        ).isEqualTo("Compose on linux.do")
+    }
+
+    @Test
+    fun topicRouteTitleOverride_ignoresBlankTitleAndNonTopicRoutes() {
+        assertThat(
+            topicRouteTitleOverride(
+                currentRoute = "topic/{topicId}",
+                topicTitleOverride = "",
+            ),
+        ).isNull()
+
+        assertThat(
+            topicRouteTitleOverride(
+                currentRoute = RootDestination.Search.route,
+                topicTitleOverride = "Compose on linux.do",
+            ),
+        ).isNull()
+    }
+
+    @Test
     fun shouldRenderProfileAvatarTab_returnsTrueForLoggedInProfileTab() {
         assertThat(
             shouldRenderProfileAvatarTab(

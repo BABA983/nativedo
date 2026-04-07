@@ -89,6 +89,7 @@ fun NativeDoApp() {
     var homeHeaderSearchVisible by rememberSaveable { mutableStateOf(false) }
     var homeSearchRequestToken by rememberSaveable { mutableIntStateOf(0) }
     var homeRefreshRequestToken by rememberSaveable { mutableIntStateOf(0) }
+    var topicHeaderTitle by rememberSaveable { mutableStateOf<String?>(null) }
 
     LaunchedEffect(appContainer.sessionCoordinator) {
         appContainer.sessionCoordinator.start()
@@ -135,6 +136,7 @@ fun NativeDoApp() {
                         NativeDoTopBar(
                             currentRoute = activeRoute,
                             chromeState = chromeState,
+                            topicTitleOverride = topicHeaderTitle,
                             showBack = !isRootRoute,
                             reserveHomeSearchSlot = isRootRoute && activeRoute == RootDestination.Home.route,
                             showHomeSearchAction = isRootRoute &&
@@ -155,6 +157,7 @@ fun NativeDoApp() {
                         homeSearchRequestToken = homeSearchRequestToken,
                         homeRefreshRequestToken = homeRefreshRequestToken,
                         onHomeHeaderSearchVisibilityChanged = { homeHeaderSearchVisible = it },
+                        onTopicHeaderTitleChanged = { topicHeaderTitle = it },
                     )
                 }
 
@@ -200,6 +203,7 @@ fun NativeDoApp() {
 private fun NativeDoTopBar(
     currentRoute: String?,
     chromeState: NativeDoChromeState,
+    topicTitleOverride: String?,
     showBack: Boolean,
     reserveHomeSearchSlot: Boolean,
     showHomeSearchAction: Boolean,
@@ -238,7 +242,10 @@ private fun NativeDoTopBar(
             }
 
             Text(
-                text = routeTitle(currentRoute = currentRoute),
+                text = topBarTitle(
+                    currentRoute = currentRoute,
+                    topicTitleOverride = topicTitleOverride,
+                ),
                 modifier = Modifier
                     .weight(1f)
                     .padding(
@@ -500,15 +507,28 @@ private fun NativeDoBottomBarFade(
 }
 
 @Composable
-private fun routeTitle(
+private fun topBarTitle(
     currentRoute: String?,
+    topicTitleOverride: String?,
 ): String = when (currentRoute) {
+    "topic/{topicId}" -> topicRouteTitleOverride(
+        currentRoute = currentRoute,
+        topicTitleOverride = topicTitleOverride,
+    ) ?: stringResource(R.string.screen_topic)
     RootDestination.Search.route -> stringResource(R.string.tab_search)
     RootDestination.Profile.route -> stringResource(R.string.tab_profile)
-    "topic/{topicId}" -> stringResource(R.string.screen_topic)
     "user/{username}" -> stringResource(R.string.tab_profile)
     "login" -> stringResource(R.string.screen_sign_in)
     else -> stringResource(R.string.app_name)
+}
+
+internal fun topicRouteTitleOverride(
+    currentRoute: String?,
+    topicTitleOverride: String?,
+): String? {
+    return topicTitleOverride
+        ?.takeUnless(String::isBlank)
+        ?.takeIf { currentRoute == "topic/{topicId}" }
 }
 
 @Composable

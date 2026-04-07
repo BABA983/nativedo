@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -58,6 +59,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private const val TOPIC_LOAD_MORE_THRESHOLD = 5
+private const val TOPIC_HEADER_ITEM_INDEX = 0
 private const val TOPIC_BOTTOM_SHELF_BUFFER_ITEMS = 2
 private const val TOPIC_STATIC_ITEMS_BEFORE_POSTS = 1
 private val topicPostTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
@@ -91,6 +93,7 @@ fun TopicRoute(
     topicId: Long,
     onTopicClick: (Long) -> Unit = {},
     onUserClick: (String) -> Unit = {},
+    onHeaderTitleChanged: (String?) -> Unit = {},
     onSessionRecoveryRequired: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -168,6 +171,15 @@ fun TopicRoute(
         }
     }
 
+    val showCollapsedTopicTitle by remember(listState, uiState.title) {
+        derivedStateOf {
+            shouldShowCollapsedTopicTitle(
+                title = uiState.title,
+                visibleItemIndexes = listState.layoutInfo.visibleItemsInfo.map { it.index },
+            )
+        }
+    }
+
     val isAtBottom by remember(listState, uiState.posts.size, uiState.isLoadingMore, uiState.loadMoreErrorMessage) {
         derivedStateOf {
             isTopicListAtBottom(
@@ -227,6 +239,18 @@ fun TopicRoute(
         delay(600L)
         if (jumpHighlight == currentHighlight) {
             jumpHighlight = null
+        }
+    }
+
+    LaunchedEffect(showCollapsedTopicTitle, uiState.title) {
+        onHeaderTitleChanged(
+            uiState.title.takeIf { showCollapsedTopicTitle },
+        )
+    }
+
+    DisposableEffect(onHeaderTitleChanged) {
+        onDispose {
+            onHeaderTitleChanged(null)
         }
     }
 
@@ -421,6 +445,16 @@ internal fun topicPostDisplayName(
 internal fun topicPostUsernameLabel(username: String): String = "@$username"
 
 internal fun topicPostUsesAnimatedTitle(title: String): Boolean = title.trim() in setOf("种子用户", "破界者")
+
+internal fun shouldShowCollapsedTopicTitle(
+    title: String,
+    visibleItemIndexes: List<Int>,
+    headerItemIndex: Int = TOPIC_HEADER_ITEM_INDEX,
+): Boolean {
+    return title.isNotBlank() &&
+        visibleItemIndexes.isNotEmpty() &&
+        headerItemIndex !in visibleItemIndexes
+}
 
 internal fun topicReplyTargetsByPostNumber(
     posts: List<Post>,

@@ -8,6 +8,36 @@ import org.junit.Test
 
 class TopicRouteStateTest {
     @Test
+    fun shouldShowCollapsedTopicTitle_returnsFalseWhenHeaderIsVisible() {
+        assertThat(
+            shouldShowCollapsedTopicTitle(
+                title = "Compose on linux.do",
+                visibleItemIndexes = listOf(0, 1, 2),
+            ),
+        ).isFalse()
+    }
+
+    @Test
+    fun shouldShowCollapsedTopicTitle_returnsTrueWhenHeaderScrolledAway() {
+        assertThat(
+            shouldShowCollapsedTopicTitle(
+                title = "Compose on linux.do",
+                visibleItemIndexes = listOf(1, 2, 3),
+            ),
+        ).isTrue()
+    }
+
+    @Test
+    fun shouldShowCollapsedTopicTitle_returnsFalseBeforeListIsMeasured() {
+        assertThat(
+            shouldShowCollapsedTopicTitle(
+                title = "Compose on linux.do",
+                visibleItemIndexes = emptyList(),
+            ),
+        ).isFalse()
+    }
+
+    @Test
     fun shouldRefreshTopicForHandledAuthVersion_authenticatedWithNewVersion_returnsTrue() {
         val shouldRefresh = shouldRefreshTopicForHandledAuthVersion(
             sessionState = AppSessionState.Authenticated(
