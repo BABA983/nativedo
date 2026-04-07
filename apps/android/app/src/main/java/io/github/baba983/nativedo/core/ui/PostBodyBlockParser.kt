@@ -24,7 +24,7 @@ private fun parsePostBodyNodes(
         if (inlineBuffer.isEmpty()) {
             return
         }
-        val nodesToRender = inlineBuffer.toList()
+        val nodesToRender = inlineBuffer.toList().trimTrailingBlockNodes()
         inlineBuffer.clear()
         val document = buildTextDocumentFromNodes(nodesToRender)
         if (document.text.isNotBlank() || document.entities.isNotEmpty()) {
@@ -88,20 +88,27 @@ private fun parsePostBodyNodes(
                 blocks += if (node.containsStandaloneParagraphMedia()) {
                     node.toParagraphBlocks()
                 } else {
-                    node.html()
-                        .let(::buildTextDocumentFromHtml)
+                    buildTextDocumentFromNodes(node.childNodes().trimTrailingBlockNodes())
                         .toParagraphBlockList()
                 }
             }
 
             node is Element && node.tagName() in headingTags -> {
                 flushInlineBuffer()
-                val content = buildTextDocumentFromHtml(node.html())
-                if (content.text.isNotBlank() || content.entities.isNotEmpty()) {
-                    blocks += PostBodyBlock.HeadingBlock(
-                        level = node.toHeadingLevel(),
-                        content = content,
-                    )
+                blocks += if (node.containsStandaloneParagraphMedia()) {
+                    node.toHeadingBlocks()
+                } else {
+                    val content = buildTextDocumentFromNodes(node.childNodes().trimTrailingBlockNodes())
+                    if (content.text.isNotBlank() || content.entities.isNotEmpty()) {
+                        listOf(
+                            PostBodyBlock.HeadingBlock(
+                                level = node.toHeadingLevel(),
+                                content = content,
+                            ),
+                        )
+                    } else {
+                        emptyList()
+                    }
                 }
             }
 
@@ -203,27 +210,68 @@ private fun Element.toParagraphBlocks(): List<PostBodyBlock> {
         if (inlineBuffer.isEmpty()) {
             return
         }
-        val nodes = inlineBuffer
-            .toMutableList()
-            .also { bufferedNodes ->
-                while ((bufferedNodes.lastOrNull() as? TextNode)?.getWholeText()?.isBlank() == true) {
-                    bufferedNodes.removeAt(bufferedNodes.lastIndex)
-                }
-                val trailingText = bufferedNodes.lastOrNull() as? TextNode
-                if (trailingText != null) {
-                    val trimmed = trailingText.getWholeText().trimEnd()
-                    if (trimmed != trailingText.getWholeText()) {
-                        bufferedNodes.removeAt(bufferedNodes.lastIndex)
-                        if (trimmed.isNotEmpty()) {
-                            bufferedNodes += TextNode(trimmed)
-                        }
-                    }
-                }
-            }
+        val nodes = inlineBuffer.toList().trimTrailingBlockNodes()
         inlineBuffer.clear()
         val document = buildTextDocumentFromNodes(nodes)
         if (document.text.isNotBlank() || document.entities.isNotEmpty()) {
             blocks += PostBodyBlock.ParagraphBlock(content = document)
+        }
+    }
+
+    childNodes().forEach { child ->
+        val lightboxBlock = (child as? Element)?.extractStandaloneLightboxBlock()
+        val image = (child as? Element)?.extractStandaloneImage()
+        when {
+            child is TextNode && child.isBlank && inlineBuffer.isEmpty() -> Unit
+
+            child is Element && child.tagName() == "br" && inlineBuffer.isEmpty() -> Unit
+
+            lightboxBlock != null -> {
+                flushInlineBuffer()
+                blocks += lightboxBlock
+            }
+
+            image != null -> {
+                flushInlineBuffer()
+                blocks += PostBodyBlock.ImageBlock(image)
+            }
+
+            child is TextNode -> {
+                inlineBuffer += if (
+                    inlineBuffer.lastOrNull().isInlineImageNode() &&
+                    child.hasLeadingLineBreakIndentation()
+                ) {
+                    TextNode(child.getWholeText().trimStart())
+                } else {
+                    child.clone()
+                }
+            }
+
+            else -> inlineBuffer += child.clone()
+        }
+    }
+
+    flushInlineBuffer()
+    return blocks
+}
+
+private fun Element.toHeadingBlocks(): List<PostBodyBlock> {
+    val blocks = mutableListOf<PostBodyBlock>()
+    val inlineBuffer = mutableListOf<Node>()
+    val level = toHeadingLevel()
+
+    fun flushInlineBuffer() {
+        if (inlineBuffer.isEmpty()) {
+            return
+        }
+        val nodes = inlineBuffer.toList().trimTrailingBlockNodes()
+        inlineBuffer.clear()
+        val document = buildTextDocumentFromNodes(nodes)
+        if (document.text.isNotBlank() || document.entities.isNotEmpty()) {
+            blocks += PostBodyBlock.HeadingBlock(
+                level = level,
+                content = document,
+            )
         }
     }
 
@@ -280,6 +328,43 @@ private fun Element.containsStandaloneParagraphMedia(): Boolean {
     }
 }
 
+private fun List<Node>.trimTrailingBlockNodes(): List<Node> {
+    val trimmedNodes = toMutableList()
+    while (true) {
+        when (val lastNode = trimmedNodes.lastOrNull()) {
+            null -> return trimmedNodes
+
+            is Element -> {
+                if (lastNode.tagName() == "br" ||
+                    lastNode.text().isBlank() && !lastNode.hasAttr("src") && !lastNode.hasAttr("href")
+                ) {
+                    trimmedNodes.removeAt(trimmedNodes.lastIndex)
+                    continue
+                }
+                return trimmedNodes
+            }
+
+            is TextNode -> {
+                val trimmedText = lastNode.getWholeText().trimEnd()
+                when {
+                    trimmedText.isEmpty() -> {
+                        trimmedNodes.removeAt(trimmedNodes.lastIndex)
+                    }
+
+                    trimmedText != lastNode.getWholeText() -> {
+                        trimmedNodes[trimmedNodes.lastIndex] = TextNode(trimmedText)
+                        return trimmedNodes
+                    }
+
+                    else -> return trimmedNodes
+                }
+            }
+
+            else -> return trimmedNodes
+        }
+    }
+}
+
 private fun Element.toDetailsBlock(): PostBodyBlock.DetailsBlock {
     val summaryElement = children().firstOrNull { child ->
         child.tagName() == "summary"
@@ -330,9 +415,10 @@ private fun Element.toListItemBlocks(): List<PostBodyBlock> {
         if (inlineBuffer.isEmpty()) {
             return
         }
-        val fragment = inlineBuffer.joinToString(separator = "") { child ->
-            child.outerHtml()
-        }
+        val fragment = inlineBuffer
+            .toList()
+            .trimTrailingBlockNodes()
+            .joinToString(separator = "") { child -> child.outerHtml() }
         inlineBuffer.clear()
         val document = buildTextDocumentFromHtml(fragment)
         if (document.text.isNotBlank() || document.entities.isNotEmpty()) {
@@ -387,7 +473,9 @@ private fun Element.toListItemBlocks(): List<PostBodyBlock> {
                 } else {
                     listOf(
                         PostBodyBlock.ParagraphBlock(
-                            content = buildTextDocumentFromHtml(element.html()),
+                            content = buildTextDocumentFromNodes(
+                                element.childNodes().trimTrailingBlockNodes(),
+                            ),
                         ),
                     )
                 }
@@ -395,10 +483,18 @@ private fun Element.toListItemBlocks(): List<PostBodyBlock> {
 
             element != null && element.tagName() in headingTags -> {
                 flushInlineBuffer()
-                blocks += PostBodyBlock.HeadingBlock(
-                    level = element.toHeadingLevel(),
-                    content = buildTextDocumentFromHtml(element.html()),
-                )
+                blocks += if (element.containsStandaloneParagraphMedia()) {
+                    element.toHeadingBlocks()
+                } else {
+                    listOf(
+                        PostBodyBlock.HeadingBlock(
+                            level = element.toHeadingLevel(),
+                            content = buildTextDocumentFromNodes(
+                                element.childNodes().trimTrailingBlockNodes(),
+                            ),
+                        ),
+                    )
+                }
             }
 
             element != null && element.tagName() == "blockquote" -> {

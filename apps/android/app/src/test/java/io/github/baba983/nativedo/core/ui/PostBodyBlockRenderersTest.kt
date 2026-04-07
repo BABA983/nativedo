@@ -49,7 +49,7 @@ class PostBodyBlockRenderersTest {
     }
 
     @Test
-    fun postBodyBlockSpacingAfter_keepsImagesAndParagraphsCompactButSeparated() {
+    fun postBodyBlockSpacingAfter_keepsImagesAndParagraphsTighterThanParagraphPairs() {
         val paragraph = PostBodyBlock.ParagraphBlock(
             content = TextDocument(
                 text = "正文",
@@ -60,7 +60,7 @@ class PostBodyBlockRenderersTest {
             image = PostBodyImage(rawUrl = "/uploads/default/original/1X/demo.png"),
         )
 
-        assertThat(postBodyBlockSpacingAfter(paragraph, image) == 10.dp).isTrue()
-        assertThat(postBodyBlockSpacingAfter(image, paragraph) == 10.dp).isTrue()
+        assertThat(postBodyBlockSpacingAfter(paragraph, image) == 4.dp).isTrue()
+        assertThat(postBodyBlockSpacingAfter(image, paragraph) == 4.dp).isTrue()
     }
 }

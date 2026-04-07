@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionOnScreen
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.material3.MaterialTheme
@@ -46,6 +47,8 @@ import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntRect
@@ -244,19 +247,31 @@ internal fun PostImageView(
     onLaunchSourceChanged: ((PostImageViewerLaunchSource?) -> Unit)? = null,
     onClick: ((PostImageViewerLaunchSource?) -> Unit)? = null,
 ) {
+    val context = LocalContext.current
     val colors = NativeDoThemeExtras.colors
-    val resolvedUrl = remember(baseUrl, image.rawUrl) {
+    val requestRawUrl = remember(image) {
+        resolvePostImageRenderRawUrl(image)
+    }
+    val resolvedUrl = remember(baseUrl, requestRawUrl) {
         resolvePostImageUrl(
             baseUrl = baseUrl,
-            rawUrl = image.rawUrl,
+            rawUrl = requestRawUrl,
         )
     }
-    val bitmap by rememberDiscourseBitmap(
-        resolvedUrl = resolvedUrl,
-        cookieStore = cookieStore,
-        baseUrl = baseUrl,
-        previewBitmap = previewBitmap,
-    )
+    val shouldAnimate = remember(resolvedUrl) {
+        isAnimatedImageUrl(resolvedUrl)
+    }
+    val bitmap = if (shouldAnimate) {
+        previewBitmap
+    } else {
+        val loadedBitmap by rememberDiscourseBitmap(
+            resolvedUrl = resolvedUrl,
+            cookieStore = cookieStore,
+            baseUrl = baseUrl,
+            previewBitmap = previewBitmap,
+        )
+        loadedBitmap
+    }
 
     val aspectRatio = remember(image.width, image.height, bitmap) {
         when {
@@ -369,7 +384,16 @@ internal fun PostImageView(
             modifier = imageModifier,
             contentAlignment = Alignment.Center,
         ) {
-            if (bitmap == null) {
+            if (shouldAnimate) {
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(resolvedUrl)
+                        .build(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else if (bitmap == null) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(18.dp),
                     strokeWidth = 2.dp,

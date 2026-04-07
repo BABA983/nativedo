@@ -1056,8 +1056,8 @@ internal fun postBodyBlockSpacingAfter(
         current.isHeadingBlock() && next.isParagraphBlock() -> 12.dp
         current.isParagraphBlock() && next.isHeadingBlock() -> 14.dp
         current.isHeadingBlock() && next.isHeadingBlock() -> 14.dp
-        current.isMediaBlock() && next.isParagraphBlock() -> 10.dp
-        current.isParagraphBlock() && next.isMediaBlock() -> 10.dp
+        current.isMediaBlock() && next.isParagraphBlock() -> 4.dp
+        current.isParagraphBlock() && next.isMediaBlock() -> 4.dp
         current is PostBodyBlock.HorizontalRuleBlock || next is PostBodyBlock.HorizontalRuleBlock -> 14.dp
         current.isStructuredBlock() || next.isStructuredBlock() -> 10.dp
         else -> 10.dp

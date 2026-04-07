@@ -282,6 +282,43 @@ class HtmlPostBodyViewTest {
     }
 
     @Test
+    fun parsePostBodyBlocks_trimsTrailingBrBeforeFollowingLightbox() {
+        val html = """
+            <p dir="auto">用冰佬的公益  这是日志情况<br></p>
+            <div class="lightbox-wrapper" dir="auto">
+              <a class="lightbox" href="https://cdn3.linux.do/original/demo.png" title="image">
+                <img src="https://cdn3.linux.do/optimized/demo.png" alt="image" width="690" height="359">
+                <div class="meta">
+                  <span class="filename">image</span>
+                  <span class="informations">1464×762 65.9 KB</span>
+                </div>
+              </a>
+            </div>
+        """.trimIndent()
+
+        val blocks = parsePostBodyBlocks(html)
+
+        assertThat(blocks).containsExactly(
+            PostBodyBlock.ParagraphBlock(
+                content = TextDocument(
+                    text = "用冰佬的公益 这是日志情况",
+                    entities = emptyList(),
+                ),
+            ),
+            PostBodyBlock.LightboxBlock(
+                image = PostBodyImage(
+                    rawUrl = "https://cdn3.linux.do/optimized/demo.png",
+                    originalUrl = "https://cdn3.linux.do/original/demo.png",
+                    width = 690,
+                    height = 359,
+                ),
+                filename = "image",
+                information = "1464×762 65.9 KB",
+            ),
+        ).inOrder()
+    }
+
+    @Test
     fun parsePostBodyBlocks_mapsHeadingToTextDocumentBlock() {
         val block = parsePostBodyBlocks("<h2>标题</h2>").single() as PostBodyBlock.HeadingBlock
 
@@ -292,6 +329,46 @@ class HtmlPostBodyViewTest {
                 entities = emptyList(),
             ),
         )
+    }
+
+    @Test
+    fun parsePostBodyBlocks_splitsHeadingWrappedLightboxIntoHeadingAndLightboxBlocks() {
+        val html = """
+            <h2 dir="auto">
+              <a name="p-1" class="anchor" href="#p-1" aria-label="标题链接"></a>改前<br>
+              <div class="lightbox-wrapper">
+                <a class="lightbox" href="https://cdn3.linux.do/original/heading-demo.jpeg" title="image">
+                  <img src="https://cdn3.linux.do/optimized/heading-demo.jpeg" alt="image" width="690" height="163">
+                  <div class="meta">
+                    <span class="filename">image</span>
+                    <span class="informations">2936×696 184 KB</span>
+                  </div>
+                </a>
+              </div>
+            </h2>
+        """.trimIndent()
+
+        val blocks = parsePostBodyBlocks(html)
+
+        assertThat(blocks).containsExactly(
+            PostBodyBlock.HeadingBlock(
+                level = 2,
+                content = TextDocument(
+                    text = "改前",
+                    entities = emptyList(),
+                ),
+            ),
+            PostBodyBlock.LightboxBlock(
+                image = PostBodyImage(
+                    rawUrl = "https://cdn3.linux.do/optimized/heading-demo.jpeg",
+                    originalUrl = "https://cdn3.linux.do/original/heading-demo.jpeg",
+                    width = 690,
+                    height = 163,
+                ),
+                filename = "image",
+                information = "2936×696 184 KB",
+            ),
+        ).inOrder()
     }
 
     @Test

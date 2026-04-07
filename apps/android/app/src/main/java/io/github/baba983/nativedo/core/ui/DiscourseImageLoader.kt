@@ -18,6 +18,31 @@ private val discourseImageClient = OkHttpClient()
 private val discourseBitmapCache = MemoryLruCache<Bitmap>(maxEntries = 128)
 private val postImageViewerPreviewCache = MemoryLruCache<Bitmap>(maxEntries = 24)
 
+internal fun resolvePostImageRenderRawUrl(
+    image: PostBodyImage,
+): String {
+    val originalUrl = image.originalUrl
+    return if (
+        originalUrl != null &&
+        isAnimatedImageUrl(originalUrl) &&
+        !isAnimatedImageUrl(image.rawUrl)
+    ) {
+        originalUrl
+    } else {
+        image.rawUrl
+    }
+}
+
+internal fun isAnimatedImageUrl(
+    url: String,
+): Boolean {
+    val sanitizedUrl = url
+        .substringBefore('#')
+        .substringBefore('?')
+        .lowercase()
+    return sanitizedUrl.endsWith(".gif")
+}
+
 @Composable
 internal fun rememberDiscourseBitmap(
     resolvedUrl: String,

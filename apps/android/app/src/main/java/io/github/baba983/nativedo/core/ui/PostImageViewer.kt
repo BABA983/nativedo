@@ -103,6 +103,8 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
+import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
 import io.github.baba983.nativedo.R
 import io.github.baba983.nativedo.core.network.addImageRequestHeaders
 import io.github.baba983.nativedo.core.storage.CookieStore
@@ -1178,12 +1180,20 @@ internal fun PostImageViewerDialog(
                             rawUrl = viewerImage.rawUrl,
                         )
                     }
-                    val bitmap by rememberDiscourseBitmap(
-                        resolvedUrl = resolvedUrl,
-                        cookieStore = cookieStore,
-                        baseUrl = baseUrl,
-                        previewBitmap = previewBitmap,
-                    )
+                    val shouldAnimate = remember(resolvedUrl) {
+                        isAnimatedImageUrl(resolvedUrl)
+                    }
+                    val bitmap = if (shouldAnimate) {
+                        previewBitmap
+                    } else {
+                        val loadedBitmap by rememberDiscourseBitmap(
+                            resolvedUrl = resolvedUrl,
+                            cookieStore = cookieStore,
+                            baseUrl = baseUrl,
+                            previewBitmap = previewBitmap,
+                        )
+                        loadedBitmap
+                    }
                     val contentSize = rememberViewerContentSize(
                         image = viewerImage,
                         loadedBitmap = bitmap,
@@ -1617,6 +1627,8 @@ internal fun PostImageViewerDialog(
                         ViewerImageContent(
                             contentSize = renderedContentSize,
                             bitmap = bitmap,
+                            resolvedUrl = resolvedUrl,
+                            shouldAnimate = shouldAnimate,
                             clipInsets = openClipInsets,
                             cornerRadiusPx = openCornerRadiusPx,
                             modifier = Modifier.graphicsLayer {
@@ -1783,10 +1795,13 @@ internal fun PostImageViewerDialog(
 private fun ViewerImageContent(
     contentSize: IntSize,
     bitmap: Bitmap?,
+    resolvedUrl: String? = null,
+    shouldAnimate: Boolean = false,
     clipInsets: PostImageViewerClipInsets? = null,
     cornerRadiusPx: Float? = null,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
     val density = LocalDensity.current
     val contentWidth = remember(contentSize, density) {
         with(density) { contentSize.width.toDp() }
@@ -1845,7 +1860,16 @@ private fun ViewerImageContent(
             ),
         contentAlignment = Alignment.Center,
     ) {
-        if (bitmap == null) {
+        if (shouldAnimate) {
+            AsyncImage(
+                model = ImageRequest.Builder(context)
+                    .data(resolvedUrl)
+                    .build(),
+                contentDescription = null,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else if (bitmap == null) {
             androidx.compose.material3.CircularProgressIndicator(
                 modifier = Modifier.size(18.dp),
                 strokeWidth = 2.dp,

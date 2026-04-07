@@ -1,6 +1,7 @@
 package io.github.baba983.nativedo.core.ui
 
 import com.google.common.truth.Truth.assertThat
+import io.github.baba983.nativedo.core.di.AppContainer
 import io.github.baba983.nativedo.core.storage.CookieStore
 import java.util.Base64
 import kotlinx.coroutines.test.runTest
@@ -11,7 +12,11 @@ import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 
+@RunWith(RobolectricTestRunner::class)
 class DiscourseImageLoaderTest {
     private lateinit var server: MockWebServer
 
@@ -94,6 +99,64 @@ class DiscourseImageLoaderTest {
         assertThat(request.getHeader("Referer")).isEqualTo(baseUrl)
         assertThat(request.getHeader("User-Agent")).contains("Mozilla/5.0")
         assertThat(request.getHeader("Cookie")).isEqualTo("_t=auth")
+    }
+
+    @Test
+    fun newImageLoader_registersAnimatedImageDecoderFactory() {
+        val context = RuntimeEnvironment.getApplication()
+        val imageLoader = AppContainer(
+            context = context,
+            baseUrl = server.url("/").toString(),
+        ).newImageLoader(context)
+
+        val decoderFactoryNames = imageLoader.components.decoderFactories
+            .map { factory -> factory::class.java.name }
+
+        assertThat(decoderFactoryNames)
+            .contains("coil3.gif.AnimatedImageDecoder\$Factory")
+    }
+
+    @Test
+    fun newImageLoader_registersSvgDecoderFactory() {
+        val context = RuntimeEnvironment.getApplication()
+        val imageLoader = AppContainer(
+            context = context,
+            baseUrl = server.url("/").toString(),
+        ).newImageLoader(context)
+
+        val decoderFactoryNames = imageLoader.components.decoderFactories
+            .map { factory -> factory::class.java.name }
+
+        assertThat(decoderFactoryNames)
+            .contains("coil3.svg.SvgDecoder\$Factory")
+    }
+
+    @Test
+    fun resolvePostImageRenderRawUrl_prefersOriginalGifOverStaticThumbnail() {
+        val rawUrl = resolvePostImageRenderRawUrl(
+            PostBodyImage(
+                rawUrl = "https://cdn3.linux.do/optimized/demo_2_690x359.png",
+                originalUrl = "https://cdn3.linux.do/original/demo.gif",
+                width = 690,
+                height = 359,
+            ),
+        )
+
+        assertThat(rawUrl).isEqualTo("https://cdn3.linux.do/original/demo.gif")
+    }
+
+    @Test
+    fun resolvePostImageRenderRawUrl_keepsStaticOriginalThumbnailUrl() {
+        val rawUrl = resolvePostImageRenderRawUrl(
+            PostBodyImage(
+                rawUrl = "https://cdn3.linux.do/optimized/demo_2_690x359.png",
+                originalUrl = "https://cdn3.linux.do/original/demo.png",
+                width = 690,
+                height = 359,
+            ),
+        )
+
+        assertThat(rawUrl).isEqualTo("https://cdn3.linux.do/optimized/demo_2_690x359.png")
     }
 }
 
