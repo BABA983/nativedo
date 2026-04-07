@@ -8,6 +8,63 @@ import org.junit.Test
 
 class ProfileRouteStateTest {
     @Test
+    fun shouldShowProfileDebugTools_debugSelfViewer_returnsTrue() {
+        val shouldShow = shouldShowProfileDebugTools(
+            viewer = ProfileViewer.Self,
+            isDebugBuild = true,
+        )
+
+        assertThat(shouldShow).isTrue()
+    }
+
+    @Test
+    fun shouldShowProfileDebugTools_releaseBuild_returnsFalse() {
+        val shouldShow = shouldShowProfileDebugTools(
+            viewer = ProfileViewer.Self,
+            isDebugBuild = false,
+        )
+
+        assertThat(shouldShow).isFalse()
+    }
+
+    @Test
+    fun shouldShowProfileDebugTools_otherViewer_returnsFalse() {
+        val shouldShow = shouldShowProfileDebugTools(
+            viewer = ProfileViewer.Other("baba"),
+            isDebugBuild = true,
+        )
+
+        assertThat(shouldShow).isFalse()
+    }
+
+    @Test
+    fun parseLinuxDoTopicIdFromUrl_topicSlugUrl_returnsTopicId() {
+        val topicId = parseLinuxDoTopicIdFromUrl(
+            "https://linux.do/t/render-debug-case/123456/8",
+        )
+
+        assertThat(topicId).isEqualTo(123456L)
+    }
+
+    @Test
+    fun parseLinuxDoTopicIdFromUrl_shortTopicUrl_returnsTopicId() {
+        val topicId = parseLinuxDoTopicIdFromUrl(
+            "https://linux.do/t/123456",
+        )
+
+        assertThat(topicId).isEqualTo(123456L)
+    }
+
+    @Test
+    fun parseLinuxDoTopicIdFromUrl_nonLinuxDoUrl_returnsNull() {
+        val topicId = parseLinuxDoTopicIdFromUrl(
+            "https://meta.discourse.org/t/render-debug-case/123456",
+        )
+
+        assertThat(topicId).isNull()
+    }
+
+    @Test
     fun resolveProfileViewer_selfWithVerifiedSession_usesSnapshotUsername() {
         val resolvedViewer = resolveProfileViewer(
             viewer = ProfileViewer.Self,

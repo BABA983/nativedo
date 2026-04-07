@@ -1,5 +1,7 @@
 package io.github.baba983.nativedo.feature.profile.ui
 
+import android.content.pm.ApplicationInfo
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -7,12 +9,16 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -40,8 +46,10 @@ import io.github.baba983.nativedo.core.ui.UserAvatar
 import io.github.baba983.nativedo.core.ui.requestErrorPresentation
 import io.github.baba983.nativedo.feature.profile.data.ProfileRepository
 import io.github.baba983.nativedo.feature.profile.domain.LoadProfileUseCase
+import io.github.baba983.nativedo.ui.theme.NativeDoChromeShape
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 import kotlinx.coroutines.launch
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 @Composable
 fun ProfileRoute(
@@ -68,6 +76,11 @@ fun ProfileRoute(
         viewer = viewer,
         sessionState = sessionState,
     )
+    val showDebugTools = shouldShowProfileDebugTools(
+        viewer = viewer,
+        isDebugBuild = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0,
+    )
+    var showTopicUrlDialog by rememberSaveable { mutableStateOf(false) }
 
     val viewModel: ProfileViewModel = viewModel(
         key = "profile-$resolvedViewer",
@@ -244,6 +257,23 @@ fun ProfileRoute(
                     )
                 }
 
+                if (showDebugTools) {
+                    item {
+                        DeveloperToolsSection(
+                            onOpenTopicUrlClick = {
+                                showTopicUrlDialog = true
+                            },
+                        )
+                    }
+
+                    item {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(start = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.75f),
+                        )
+                    }
+                }
+
                 item {
                     Column(
                         modifier = Modifier
@@ -277,6 +307,18 @@ fun ProfileRoute(
             }
         }
     }
+
+    if (showDebugTools && showTopicUrlDialog) {
+        OpenTopicUrlDialog(
+            onDismissRequest = {
+                showTopicUrlDialog = false
+            },
+            onTopicOpen = { topicId ->
+                showTopicUrlDialog = false
+                onTopicClick(topicId)
+            },
+        )
+    }
 }
 
 internal fun resolveProfileViewer(
@@ -296,6 +338,27 @@ internal fun shouldShowProfileAuthLoading(
 ): Boolean {
     return viewer == ProfileViewer.Self &&
         (sessionState == AppSessionState.Unknown || sessionState is AppSessionState.Restoring)
+}
+
+internal fun shouldShowProfileDebugTools(
+    viewer: ProfileViewer,
+    isDebugBuild: Boolean,
+): Boolean {
+    return isDebugBuild && viewer == ProfileViewer.Self
+}
+
+internal fun parseLinuxDoTopicIdFromUrl(rawInput: String): Long? {
+    val url = rawInput.trim().toHttpUrlOrNull() ?: return null
+    if (url.host != "linux.do" && url.host != "www.linux.do") {
+        return null
+    }
+    val pathSegments = url.pathSegments.filter(String::isNotBlank)
+    if (pathSegments.firstOrNull() != "t") {
+        return null
+    }
+
+    return pathSegments.getOrNull(1)?.toLongOrNull()
+        ?: pathSegments.getOrNull(2)?.toLongOrNull()
 }
 
 internal fun shouldRefreshProfileForHandledAuthVersion(
@@ -320,6 +383,125 @@ private fun ProfileFeedbackCard(
     ) {
         content()
     }
+}
+
+@Composable
+private fun DeveloperToolsSection(
+    onOpenTopicUrlClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = NativeDoThemeExtras.colors
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(
+            text = "Developer Tools",
+            style = MaterialTheme.typography.labelLarge,
+            color = colors.textSecondary,
+        )
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 56.dp),
+            shape = NativeDoChromeShape,
+            color = colors.glassBackground,
+            border = BorderStroke(
+                width = 1.dp,
+                color = colors.glassStroke,
+            ),
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
+            onClick = onOpenTopicUrlClick,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = "Open Topic URL",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = colors.textPrimary,
+                )
+                Text(
+                    text = "Paste a linux.do topic URL and jump straight into the native topic screen.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun OpenTopicUrlDialog(
+    onDismissRequest: () -> Unit,
+    onTopicOpen: (Long) -> Unit,
+) {
+    var rawInput by rememberSaveable { mutableStateOf("") }
+    var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        title = {
+            Text(text = "Open Topic URL")
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    text = "Paste a linux.do web topic URL for render debugging.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                TextField(
+                    value = rawInput,
+                    onValueChange = { nextValue ->
+                        rawInput = nextValue
+                        errorMessage = null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    isError = errorMessage != null,
+                    placeholder = {
+                        Text(text = "https://linux.do/t/topic-slug/123456")
+                    },
+                )
+                errorMessage?.let { message ->
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val topicId = parseLinuxDoTopicIdFromUrl(rawInput)
+                    if (topicId != null) {
+                        onTopicOpen(topicId)
+                    } else {
+                        errorMessage = "Only linux.do topic URLs are supported."
+                    }
+                },
+                enabled = rawInput.isNotBlank(),
+            ) {
+                Text(text = "Open")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text(text = "Cancel")
+            }
+        },
+    )
 }
 
 private class ProfileViewModelFactory(
