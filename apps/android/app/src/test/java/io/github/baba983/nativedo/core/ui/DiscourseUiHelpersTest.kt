@@ -5,6 +5,26 @@ import org.junit.Test
 
 class DiscourseUiHelpersTest {
     @Test
+    fun shouldRenderAvatarFallback_returnsTrueWhenAvatarUrlIsBlank() {
+        assertThat(
+            shouldRenderAvatarFallback(
+                resolvedUrl = "",
+                isImageLoadSuccessful = false,
+            ),
+        ).isTrue()
+    }
+
+    @Test
+    fun shouldRenderAvatarFallback_returnsFalseAfterImageLoadsSuccessfully() {
+        assertThat(
+            shouldRenderAvatarFallback(
+                resolvedUrl = "https://linux.do/user_avatar/linux.do/baba/120/1.gif",
+                isImageLoadSuccessful = true,
+            ),
+        ).isFalse()
+    }
+
+    @Test
     fun resolveAvatarUrl_expandsTemplateAgainstBaseUrl() {
         val resolved = resolveAvatarUrl(
             baseUrl = "https://linux.do/",
@@ -13,6 +33,29 @@ class DiscourseUiHelpersTest {
         )
 
         assertThat(resolved).isEqualTo("https://linux.do/user_avatar/linux.do/baba/120/1.png")
+    }
+
+    @Test
+    fun resolveAvatarUrl_preservesGifAvatarTemplateAgainstBaseUrl() {
+        val resolved = resolveAvatarUrl(
+            baseUrl = "https://linux.do/",
+            avatarTemplate = "/user_avatar/linux.do/baba/{size}/1.gif",
+            size = 120,
+        )
+
+        assertThat(resolved).isEqualTo("https://linux.do/user_avatar/linux.do/baba/120/1.gif")
+    }
+
+    @Test
+    fun resolveAvatarUrl_prefersAnimatedAvatarUrlWhenPresent() {
+        val resolved = resolveAvatarUrl(
+            baseUrl = "https://linux.do/",
+            avatarTemplate = "/user_avatar/linux.do/baba/{size}/1.png",
+            animatedAvatarUrl = "/user_avatar/linux.do/baba/120/1.gif",
+            size = 120,
+        )
+
+        assertThat(resolved).isEqualTo("https://linux.do/user_avatar/linux.do/baba/120/1.gif")
     }
 
     @Test

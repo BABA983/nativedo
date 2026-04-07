@@ -1,5 +1,8 @@
 package io.github.baba983.nativedo.core.network
 
+import io.github.baba983.nativedo.core.log.NativeDoLogTag
+import io.github.baba983.nativedo.core.log.debugLog
+import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.SearchResult
 import io.github.baba983.nativedo.core.model.CategorySummary
 import io.github.baba983.nativedo.core.model.TopicDetail
@@ -31,7 +34,12 @@ class DiscourseApiClient(
 
     override suspend fun fetchProfile(username: String): UserProfile =
         runWithSessionRecovery {
-            service.profile(username).toModel()
+            service.profile(username).toModel().also { profile ->
+                logProfileMediaDebug(
+                    requestedUsername = username,
+                    profile = profile,
+                )
+            }
         }
 
     suspend fun fetchLatest(page: Int): List<TopicSummary> =
@@ -56,12 +64,22 @@ class DiscourseApiClient(
     }
 
     suspend fun fetchTopic(topicId: Long): TopicDetail = runWithSessionRecovery {
-        service.topic(topicId).toModel()
+        service.topic(topicId).toModel().also { topic ->
+            logPostMediaDebug(
+                source = "topicId=$topicId initial",
+                posts = topic.posts,
+            )
+        }
     }
 
     suspend fun fetchTopicPosts(topicId: Long, postIds: List<Long>) =
         runWithSessionRecovery {
-            service.topicPosts(id = topicId, postIds = postIds).toModel()
+            service.topicPosts(id = topicId, postIds = postIds).toModel().also { posts ->
+                logPostMediaDebug(
+                    source = "topicId=$topicId chunk=${postIds.joinToString(separator = ",")}",
+                    posts = posts,
+                )
+            }
         }
 
     suspend fun search(query: String): SearchResult = runWithSessionRecovery {
@@ -124,5 +142,75 @@ class DiscourseApiClient(
         val cfMitigated = response.headers()["cf-mitigated"].orEmpty()
         return contentType.contains("text/html", ignoreCase = true) ||
             cfMitigated.contains("challenge", ignoreCase = true)
+    }
+
+    private fun logPostMediaDebug(
+        source: String,
+        posts: List<Post>,
+    ) {
+        debugLog(TAG, formatPostMediaDebugSummary(source = source, posts = posts))
+    }
+
+    private fun logProfileMediaDebug(
+        requestedUsername: String,
+        profile: UserProfile,
+    ) {
+        debugLog(
+            TAG,
+            formatProfileMediaDebugSummary(
+                requestedUsername = requestedUsername,
+                profile = profile,
+            ),
+        )
+    }
+
+    private companion object {
+        val TAG: NativeDoLogTag = NativeDoLogTag.of("DiscourseApi")
+    }
+}
+
+internal fun formatPostMediaDebugSummary(
+    source: String,
+    posts: List<Post>,
+): String {
+    return buildString {
+        append("post-media source=")
+        append(source)
+        append(" count=")
+        append(posts.size)
+        append(" [")
+        append(
+            posts.joinToString(separator = "; ") { post ->
+                buildString {
+                    append("#")
+                    append(post.postNumber ?: "?")
+                    append("@")
+                    append(post.authorUsername)
+                    append(" avatar=")
+                    append(post.authorAvatarTemplate.ifBlank { "-" })
+                    append(" animated=")
+                    append(post.authorAnimatedAvatarUrl.ifBlank { "-" })
+                    append(" flair=")
+                    append(post.authorFlairUrl.ifBlank { "-" })
+                }
+            },
+        )
+        append("]")
+    }
+}
+
+internal fun formatProfileMediaDebugSummary(
+    requestedUsername: String,
+    profile: UserProfile,
+): String {
+    return buildString {
+        append("profile-media requested=")
+        append(requestedUsername)
+        append(" resolved=")
+        append(profile.username)
+        append(" avatar=")
+        append(profile.avatarUrl.ifBlank { "-" })
+        append(" animated=")
+        append(profile.animatedAvatarUrl.ifBlank { "-" })
     }
 }

@@ -7,19 +7,16 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.outlined.Edit
@@ -32,30 +29,23 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.baba983.nativedo.R
 import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.storage.CookieStore
 import io.github.baba983.nativedo.core.ui.HtmlPostBodyView
 import io.github.baba983.nativedo.core.ui.UserAvatar
-import io.github.baba983.nativedo.core.ui.resolvePostImageUrl
+import io.github.baba983.nativedo.core.ui.UserAvatarWithFlair
 import io.github.baba983.nativedo.ui.theme.NativeDoInnerCardShape
 import io.github.baba983.nativedo.ui.theme.NativeDoPillShape
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
-import coil3.compose.AsyncImage
-import coil3.request.ImageRequest
 
 @Composable
 internal fun TopicPostCard(
@@ -64,11 +54,13 @@ internal fun TopicPostCard(
     role: TopicPostRole,
     cookieStore: CookieStore,
     baseUrl: String,
+    svgSpriteMarkup: String,
     onTopicClick: (Long) -> Unit,
     onUserClick: (String) -> Unit,
     replyTargetFloorLabel: String? = null,
     replyTargetAvatarLabel: String = "",
     replyTargetAvatarTemplate: String = "",
+    replyTargetAnimatedAvatarUrl: String = "",
     onReplyTargetClick: (() -> Unit)? = null,
     isJumpHighlighted: Boolean = false,
     modifier: Modifier = Modifier,
@@ -116,16 +108,26 @@ internal fun TopicPostCard(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { onUserClick(post.authorUsername) },
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) { onUserClick(post.authorUsername) },
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                TopicPostAvatarWithFlair(
-                    username = post.authorUsername,
+                UserAvatarWithFlair(
+                    label = post.authorUsername,
                     avatarTemplate = post.authorAvatarTemplate,
+                    animatedAvatarUrl = post.authorAnimatedAvatarUrl,
                     flairName = post.authorFlairName,
                     flairUrl = post.authorFlairUrl,
+                    flairBgColor = post.authorFlairBgColor,
+                    flairColor = post.authorFlairColor,
+                    svgSpriteMarkup = svgSpriteMarkup,
                     baseUrl = baseUrl,
+                    avatarSize = 28.dp,
+                    flairBadgeSize = 13.dp,
+                    flairContentSize = 11.dp,
                 )
                 Column(
                     modifier = Modifier.weight(1f),
@@ -188,10 +190,15 @@ internal fun TopicPostCard(
                                         tint = colors.textSecondary,
                                         modifier = Modifier.size(10.dp),
                                     )
-                                    if (replyTargetAvatarLabel.isNotBlank() || replyTargetAvatarTemplate.isNotBlank()) {
+                                    if (
+                                        replyTargetAvatarLabel.isNotBlank() ||
+                                        replyTargetAvatarTemplate.isNotBlank() ||
+                                        replyTargetAnimatedAvatarUrl.isNotBlank()
+                                    ) {
                                         UserAvatar(
                                             label = replyTargetAvatarLabel,
                                             avatarTemplate = replyTargetAvatarTemplate,
+                                            animatedAvatarUrl = replyTargetAnimatedAvatarUrl,
                                             baseUrl = baseUrl,
                                             size = 14.dp,
                                         )
@@ -237,43 +244,6 @@ internal fun TopicPostCard(
                 onUserClick = onUserClick,
                 modifier = Modifier.fillMaxWidth(),
             )
-        }
-    }
-}
-
-@Composable
-private fun TopicPostAvatarWithFlair(
-    username: String,
-    avatarTemplate: String,
-    flairName: String,
-    flairUrl: String,
-    baseUrl: String,
-    modifier: Modifier = Modifier,
-) {
-    Box(modifier = modifier.size(28.dp)) {
-        UserAvatar(
-            label = username,
-            avatarTemplate = avatarTemplate,
-            baseUrl = baseUrl,
-            size = 28.dp,
-        )
-        if (flairUrl.isNotBlank()) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .background(
-                        color = NativeDoThemeExtras.colors.glassBackground,
-                        shape = CircleShape,
-                    )
-                    .padding(1.dp),
-            ) {
-                TopicPostFlairIcon(
-                    rawUrl = flairUrl,
-                    label = flairName,
-                    baseUrl = baseUrl,
-                    size = 11.dp,
-                )
-            }
         }
     }
 }
@@ -385,43 +355,6 @@ private const val TOPIC_POST_TITLE_GRADIENT_PERIOD = 320f
 private val TopicPostAnimatedTitleMagenta = Color(0xFFFF00FF)
 private val TopicPostAnimatedTitleCyan = Color(0xFF00FFFF)
 private val TopicPostAnimatedTitleYellow = Color(0xFFFFFF00)
-
-@Composable
-private fun TopicPostFlairIcon(
-    rawUrl: String,
-    label: String,
-    baseUrl: String,
-    size: Dp = 12.dp,
-    modifier: Modifier = Modifier,
-) {
-    val context = LocalContext.current
-    val resolvedUrl = remember(baseUrl, rawUrl) {
-        resolvePostImageUrl(
-            baseUrl = baseUrl,
-            rawUrl = rawUrl,
-        )
-    }
-
-    if (resolvedUrl.isBlank()) {
-        return
-    }
-
-    Box(
-        modifier = modifier
-            .size(size)
-            .clip(NativeDoPillShape),
-        contentAlignment = Alignment.Center,
-    ) {
-        AsyncImage(
-            model = ImageRequest.Builder(context)
-                .data(resolvedUrl)
-                .build(),
-            contentDescription = label.takeIf { it.isNotBlank() },
-            contentScale = ContentScale.Fit,
-            modifier = Modifier.fillMaxSize(),
-        )
-    }
-}
 
 @Composable
 private fun TopicPostEditBadge(

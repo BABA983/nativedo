@@ -3,6 +3,11 @@
     "username": "baba",
     "name": "Baba",
     "bio_cooked": "<p>Compose user</p>",
-    "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png"
+    "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png",
+    "animated_avatar": "/user_avatar/linux.do/baba/120/1.gif",
+    "flair_name": "Battery",
+    "flair_url": "battery-quarter",
+    "flair_bg_color": "001122",
+    "flair_color": "abcdef"
   }
 }

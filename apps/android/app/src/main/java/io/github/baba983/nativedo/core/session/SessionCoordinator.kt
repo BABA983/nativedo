@@ -137,8 +137,10 @@ class SessionCoordinator(
                     ?: matchingCachedSnapshot?.displayName
                         ?.takeIf { it.isNotBlank() }
                     ?: username,
-                avatarTemplate = profile?.avatarUrl
+                avatarTemplate = profile?.animatedAvatarUrl
                     ?.takeIf { it.isNotBlank() }
+                    ?: profile?.avatarUrl
+                        ?.takeIf { it.isNotBlank() }
                     ?: matchingCachedSnapshot?.avatarTemplate
                         .orEmpty(),
                 lastValidatedAt = now(),

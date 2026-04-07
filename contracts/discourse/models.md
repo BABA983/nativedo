@@ -11,5 +11,5 @@ These are screen-facing model semantics shared between Android today and iOS lat
 - `TopicDetail` - topic header metadata (`createdAt`, `lastPostedAt`, `viewCount`, `tags`) plus ordered `Post` items, `totalPosts`, and full `streamPostIds`
 - `Post` - post number, optional replied floor target, author username, optional display name/title/flair icon metadata, created timestamp, optional edit timestamp/edit count metadata, cooked HTML body, and extracted image URLs
 - `SearchResult` - topic hits plus lightweight user hits
-- `UserProfile` - profile header data for user and self pages
+- `UserProfile` - profile header data for user and self pages, including optional avatar flair metadata
 - `AppError` - normalized error surface for API and parsing failures

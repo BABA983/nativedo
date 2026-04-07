@@ -172,12 +172,18 @@ data class PostDto(
     val displayName: String? = null,
     @SerialName("avatar_template")
     val avatarTemplate: String = "",
+    @SerialName("animated_avatar")
+    val animatedAvatar: String? = null,
     @SerialName("user_title")
     val userTitle: String? = null,
     @SerialName("flair_name")
     val flairName: String? = null,
     @SerialName("flair_url")
     val flairUrl: String? = null,
+    @SerialName("flair_bg_color")
+    val flairBgColor: String? = null,
+    @SerialName("flair_color")
+    val flairColor: String? = null,
     @SerialName("created_at")
     val createdAt: String = "",
     @SerialName("updated_at")
@@ -254,6 +260,16 @@ data class UserDto(
     val bio: String? = null,
     @SerialName("avatar_template")
     val avatarTemplate: String = "",
+    @SerialName("animated_avatar")
+    val animatedAvatar: String? = null,
+    @SerialName("flair_name")
+    val flairName: String? = null,
+    @SerialName("flair_url")
+    val flairUrl: String? = null,
+    @SerialName("flair_bg_color")
+    val flairBgColor: String? = null,
+    @SerialName("flair_color")
+    val flairColor: String? = null,
 )
 
 @Serializable
@@ -297,9 +313,12 @@ internal fun PostDto.toModel(): Post = Post(
     authorUsername = username,
     authorDisplayName = displayName.orEmpty(),
     authorAvatarTemplate = avatarTemplate,
+    authorAnimatedAvatarUrl = animatedAvatar.orEmpty(),
     authorTitle = userTitle.orEmpty(),
     authorFlairName = flairName.orEmpty(),
     authorFlairUrl = flairUrl.orEmpty(),
+    authorFlairBgColor = flairBgColor.orEmpty(),
+    authorFlairColor = flairColor.orEmpty(),
     createdAt = createdAt,
     updatedAt = updatedAt,
     editCount = (version - 1).coerceAtLeast(0),
@@ -338,6 +357,11 @@ internal fun UserProfileResponseDto.toModel(): UserProfile = UserProfile(
     displayName = user.displayName.orEmpty(),
     bio = user.bio.orEmpty(),
     avatarUrl = user.avatarTemplate,
+    animatedAvatarUrl = user.animatedAvatar.orEmpty(),
+    flairName = user.flairName.orEmpty(),
+    flairUrl = user.flairUrl.orEmpty(),
+    flairBgColor = user.flairBgColor.orEmpty(),
+    flairColor = user.flairColor.orEmpty(),
 )
 
 private fun TopicDto.toTopicSummary(

@@ -1,5 +1,4 @@
 package io.github.baba983.nativedo.feature.topic.ui
-
 import com.google.common.truth.Truth.assertThat
 import io.github.baba983.nativedo.core.model.Post
 import java.time.Instant
@@ -54,6 +53,7 @@ class TopicRoutePaginationTest {
                     postId = 1001,
                     authorUsername = "baba",
                     authorAvatarTemplate = "/user_avatar/linux.do/baba/{size}/1.png",
+                    authorAnimatedAvatarUrl = "",
                 ),
                 2,
                 TopicReplyTarget(
@@ -61,6 +61,7 @@ class TopicRoutePaginationTest {
                     postId = 1002,
                     authorUsername = "alice",
                     authorAvatarTemplate = "/user_avatar/linux.do/alice/{size}/1.png",
+                    authorAnimatedAvatarUrl = "",
                 ),
             )
     }

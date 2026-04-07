@@ -3,6 +3,7 @@ package io.github.baba983.nativedo.core.network
 import com.google.common.truth.Truth.assertThat
 import io.github.baba983.nativedo.core.di.AppContainer
 import io.github.baba983.nativedo.core.di.SessionInvalidationGate
+import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.session.AppSessionState
 import io.github.baba983.nativedo.core.session.SessionExpiredReason
 import kotlinx.coroutines.async
@@ -272,6 +273,47 @@ class DiscourseApiClientTest {
     }
 
     @Test
+    fun formatPostMediaDebugSummary_includesAvatarAndFlairFields() {
+        val summary = formatPostMediaDebugSummary(
+            source = "topicId=1911417 initial",
+            posts = listOf(
+                Post(
+                    id = 2003,
+                    postNumber = 3,
+                    authorUsername = "hwang",
+                    authorAvatarTemplate = "/user_avatar/linux.do/hwang/{size}/1.gif",
+                    authorAnimatedAvatarUrl = "/user_avatar/linux.do/hwang/120/1.gif",
+                    authorFlairUrl = "/images/flair/hwang.gif",
+                    cookedHtml = "<p>hello</p>",
+                    imageUrls = emptyList(),
+                ),
+            ),
+        )
+
+        assertThat(summary).isEqualTo(
+            "post-media source=topicId=1911417 initial count=1 [#3@hwang avatar=/user_avatar/linux.do/hwang/{size}/1.gif animated=/user_avatar/linux.do/hwang/120/1.gif flair=/images/flair/hwang.gif]",
+        )
+    }
+
+    @Test
+    fun formatProfileMediaDebugSummary_includesAvatarField() {
+        val summary = formatProfileMediaDebugSummary(
+            requestedUsername = "hwang",
+            profile = io.github.baba983.nativedo.core.model.UserProfile(
+                username = "hwang",
+                displayName = "Hwang",
+                bio = "",
+                avatarUrl = "/user_avatar/linux.do/hwang/{size}/1.gif",
+                animatedAvatarUrl = "/user_avatar/linux.do/hwang/120/1.gif",
+            ),
+        )
+
+        assertThat(summary).isEqualTo(
+            "profile-media requested=hwang resolved=hwang avatar=/user_avatar/linux.do/hwang/{size}/1.gif animated=/user_avatar/linux.do/hwang/120/1.gif",
+        )
+    }
+
+    @Test
     fun sessionInvalidationGate_coalescesConcurrentDuplicateInvalidations() = runTest {
         var state: AppSessionState = AppSessionState.Unknown
         var invalidationCalls = 0
@@ -445,6 +487,7 @@ class DiscourseApiClientTest {
                             "id": 1001,
                             "username": "baba",
                             "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png",
+                            "animated_avatar": "/user_avatar/linux.do/baba/120/1.gif",
                             "cooked": "<p>Hello</p>"
                           }
                         ]
@@ -460,6 +503,43 @@ class DiscourseApiClientTest {
 
         assertThat(topic.posts.single().authorAvatarTemplate)
             .isEqualTo("/user_avatar/linux.do/baba/{size}/1.png")
+        assertThat(topic.posts.single().authorAnimatedAvatarUrl)
+            .isEqualTo("/user_avatar/linux.do/baba/120/1.gif")
+    }
+
+    @Test
+    fun fetchProfile_mapsAvatarTemplate() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setBody(
+                    """
+                    {
+                      "user": {
+                        "username": "baba",
+                        "name": "Baba",
+                        "bio_cooked": "<p>Compose user</p>",
+                        "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png",
+                        "animated_avatar": "/user_avatar/linux.do/baba/120/1.gif",
+                        "flair_name": "Battery",
+                        "flair_url": "battery-quarter",
+                        "flair_bg_color": "001122",
+                        "flair_color": "abcdef"
+                      }
+                    }
+                    """.trimIndent(),
+                )
+                .setHeader("Content-Type", "application/json"),
+        )
+
+        val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
+        val profile = client.fetchProfile(username = "baba")
+
+        assertThat(profile.avatarUrl).isEqualTo("/user_avatar/linux.do/baba/{size}/1.png")
+        assertThat(profile.animatedAvatarUrl).isEqualTo("/user_avatar/linux.do/baba/120/1.gif")
+        assertThat(profile.flairName).isEqualTo("Battery")
+        assertThat(profile.flairUrl).isEqualTo("battery-quarter")
+        assertThat(profile.flairBgColor).isEqualTo("001122")
+        assertThat(profile.flairColor).isEqualTo("abcdef")
     }
 
     @Test

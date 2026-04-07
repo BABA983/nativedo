@@ -33,12 +33,14 @@ internal enum class InlineImageKind {
 internal fun resolveAvatarUrl(
     baseUrl: String,
     avatarTemplate: String,
+    animatedAvatarUrl: String = "",
     size: Int,
 ): String {
-    if (avatarTemplate.isBlank()) {
+    val rawAvatarUrl = animatedAvatarUrl.ifBlank { avatarTemplate }
+    if (rawAvatarUrl.isBlank()) {
         return ""
     }
-    val expandedTemplate = avatarTemplate.replace("{size}", size.toString())
+    val expandedTemplate = rawAvatarUrl.replace("{size}", size.toString())
     return baseUrl.toHttpUrl().resolve(expandedTemplate)?.toString() ?: expandedTemplate
 }
 

@@ -42,7 +42,7 @@ import io.github.baba983.nativedo.core.session.AppSessionState
 import io.github.baba983.nativedo.core.session.SessionEvent
 import io.github.baba983.nativedo.core.ui.HtmlPostBodyView
 import io.github.baba983.nativedo.core.ui.RequestErrorCard
-import io.github.baba983.nativedo.core.ui.UserAvatar
+import io.github.baba983.nativedo.core.ui.UserAvatarWithFlair
 import io.github.baba983.nativedo.core.ui.requestErrorPresentation
 import io.github.baba983.nativedo.feature.profile.data.ProfileRepository
 import io.github.baba983.nativedo.feature.profile.domain.LoadProfileUseCase
@@ -67,6 +67,7 @@ fun ProfileRoute(
     val coroutineScope = rememberCoroutineScope()
     val sessionState by appContainer.sessionCoordinator.sessionState.collectAsStateWithLifecycle()
     val authVersion by appContainer.sessionCoordinator.authVersion.collectAsStateWithLifecycle()
+    val svgSpriteMarkup by appContainer.svgSpriteStore.sprite.collectAsStateWithLifecycle()
     var handledAuthVersion by rememberSaveable { mutableStateOf(UNSET_AUTH_VERSION) }
     val resolvedViewer = resolveProfileViewer(
         viewer = viewer,
@@ -218,11 +219,19 @@ fun ProfileRoute(
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        UserAvatar(
+                        UserAvatarWithFlair(
                             label = profile.displayName.ifBlank { profile.username },
                             avatarTemplate = profile.avatarUrl,
+                            animatedAvatarUrl = profile.animatedAvatarUrl,
+                            flairName = profile.flairName,
+                            flairUrl = profile.flairUrl,
+                            flairBgColor = profile.flairBgColor,
+                            flairColor = profile.flairColor,
+                            svgSpriteMarkup = svgSpriteMarkup,
                             baseUrl = appContainer.baseUrl,
-                            size = 56.dp,
+                            avatarSize = 56.dp,
+                            flairBadgeSize = 18.dp,
+                            flairContentSize = 14.dp,
                         )
                         Column(
                             modifier = Modifier.weight(1f),

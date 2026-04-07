@@ -30,7 +30,7 @@ class SessionCoordinatorTest {
         val bridge = FakeCookieSyncBridge(cookieStore = cookieStore)
         val expectedSnapshot = sessionSnapshot(
             displayName = "Baba",
-            avatarTemplate = "/user_avatar/linux.do/baba/{size}/verified.png",
+            avatarTemplate = "/user_avatar/linux.do/baba/120/verified.gif",
             lastValidatedAt = 42L,
         )
         val coordinator = SessionCoordinator(
@@ -44,6 +44,7 @@ class SessionCoordinatorTest {
                     displayName = "Baba",
                     bio = "",
                     avatarUrl = "/user_avatar/linux.do/baba/{size}/verified.png",
+                    animatedAvatarUrl = "/user_avatar/linux.do/baba/120/verified.gif",
                 ),
             ),
             cookieSyncBridge = bridge,

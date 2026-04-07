@@ -80,6 +80,7 @@ internal data class TopicReplyTarget(
     val postId: Long,
     val authorUsername: String,
     val authorAvatarTemplate: String,
+    val authorAnimatedAvatarUrl: String,
 )
 
 internal data class TopicJumpHighlight(
@@ -104,6 +105,7 @@ fun TopicRoute(
     val bulletinHostState = LocalBulletinHostState.current
     val sessionState by appContainer.sessionCoordinator.sessionState.collectAsStateWithLifecycle()
     val authVersion by appContainer.sessionCoordinator.authVersion.collectAsStateWithLifecycle()
+    val svgSpriteMarkup by appContainer.svgSpriteStore.sprite.collectAsStateWithLifecycle()
     var handledAuthVersion by rememberSaveable { mutableStateOf(UNSET_AUTH_VERSION) }
     val viewModel: TopicViewModel = viewModel(
         key = "topic-$topicId",
@@ -347,11 +349,13 @@ fun TopicRoute(
                             role = topicPostRole(index),
                             cookieStore = appContainer.cookieStore,
                             baseUrl = appContainer.baseUrl,
+                            svgSpriteMarkup = svgSpriteMarkup,
                             onTopicClick = onTopicClick,
                             onUserClick = onUserClick,
                             replyTargetFloorLabel = post.replyToPostNumber?.let(::topicFloorLabelForPostNumber),
                             replyTargetAvatarLabel = replyTarget?.authorUsername.orEmpty(),
                             replyTargetAvatarTemplate = replyTarget?.authorAvatarTemplate.orEmpty(),
+                            replyTargetAnimatedAvatarUrl = replyTarget?.authorAnimatedAvatarUrl.orEmpty(),
                             onReplyTargetClick = post.replyToPostNumber?.let { replyToPostNumber ->
                                 {
                                     val target = replyTargetsByPostNumber[replyToPostNumber]
@@ -469,6 +473,7 @@ internal fun topicReplyTargetsByPostNumber(
                     postId = post.id,
                     authorUsername = post.authorUsername,
                     authorAvatarTemplate = post.authorAvatarTemplate,
+                    authorAnimatedAvatarUrl = post.authorAnimatedAvatarUrl,
                 ),
             )
         }
