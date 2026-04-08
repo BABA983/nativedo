@@ -16,6 +16,9 @@ open class CookieSyncBridge(
     private val flushCookies: () -> Unit = {
         CookieManager.getInstance().flush()
     },
+    private val writeCookieToWebView: (String, String) -> Unit = { url, cookie ->
+        CookieManager.getInstance().setCookie(url, cookie)
+    },
     private val clearCookies: () -> Unit = {
         CookieManager.getInstance().removeAllCookies(null)
         CookieManager.getInstance().flush()
@@ -64,6 +67,26 @@ open class CookieSyncBridge(
             "syncFromWebView synced=${cookies.map { cookie -> cookie.name }.distinct()} hasAuthenticatedCookies=$hasAuthenticatedCookies",
         )
         return hasAuthenticatedCookies
+    }
+
+    open fun syncToWebView(url: String = baseUrl) {
+        val cookies = cookieStore.load(url.toHttpUrl())
+        debugLog(
+            TAG,
+            "syncToWebView url=$url cookies=${cookies.map { cookie -> cookie.name }.distinct()}",
+        )
+        if (cookies.isEmpty()) {
+            debugLog(TAG, "syncToWebView skipped: no cookies in store")
+            return
+        }
+        cookies.forEach { cookie ->
+            writeCookieToWebView(url, cookie.toString())
+        }
+        flushCookies()
+        debugLog(
+            TAG,
+            "syncToWebView wrote ${cookies.size} cookie(s) to WebView",
+        )
     }
 
     open fun clear() {

@@ -57,6 +57,7 @@ internal fun TopicPostCard(
     svgSpriteMarkup: String,
     onTopicClick: (Long) -> Unit,
     onUserClick: (String) -> Unit,
+    onOpenLink: (String) -> Unit,
     replyTargetFloorLabel: String? = null,
     replyTargetAvatarLabel: String = "",
     replyTargetAvatarTemplate: String = "",
@@ -243,6 +244,7 @@ internal fun TopicPostCard(
                 svgSpriteMarkup = svgSpriteMarkup,
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
+                onOpenLink = onOpenLink,
                 modifier = Modifier.fillMaxWidth(),
             )
         }

@@ -1,7 +1,6 @@
 package io.github.baba983.nativedo.feature.profile.ui
 
 import android.content.pm.ApplicationInfo
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,6 +57,7 @@ fun ProfileRoute(
     onSessionRecoveryRequired: () -> Unit = {},
     onTopicClick: (Long) -> Unit = {},
     onUserClick: (String) -> Unit = {},
+    onOpenLink: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -266,6 +266,23 @@ fun ProfileRoute(
                     )
                 }
 
+                if (viewer == ProfileViewer.Self) {
+                    item {
+                        QuickAccessSection(
+                            onOpenDashboardClick = {
+                                onOpenLink(CDK_DASHBOARD_URL)
+                            },
+                        )
+                    }
+
+                    item {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(start = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.75f),
+                        )
+                    }
+                }
+
                 if (showDebugTools) {
                     item {
                         DeveloperToolsSection(
@@ -309,6 +326,7 @@ fun ProfileRoute(
                                 svgSpriteMarkup = svgSpriteMarkup,
                                 onTopicClick = onTopicClick,
                                 onUserClick = onUserClick,
+                                onOpenLink = onOpenLink,
                                 modifier = Modifier.fillMaxWidth(),
                             )
                         }
@@ -330,6 +348,8 @@ fun ProfileRoute(
         )
     }
 }
+
+internal const val CDK_DASHBOARD_URL = "https://cdk.linux.do/dashboard"
 
 internal fun resolveProfileViewer(
     viewer: ProfileViewer,
@@ -396,6 +416,55 @@ private fun ProfileFeedbackCard(
 }
 
 @Composable
+private fun QuickAccessSection(
+    onOpenDashboardClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = NativeDoThemeExtras.colors
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(
+            text = "Quick Access",
+            style = MaterialTheme.typography.labelLarge,
+            color = colors.textSecondary,
+        )
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 56.dp),
+            shape = NativeDoChromeShape,
+            color = colors.glassBackgroundStrong.copy(alpha = 0.92f),
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
+            onClick = onOpenDashboardClick,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = "CDK Dashboard",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = colors.textPrimary,
+                )
+                Text(
+                    text = "Open https://cdk.linux.do/dashboard directly in the in-app browser.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun DeveloperToolsSection(
     onOpenTopicUrlClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -418,11 +487,7 @@ private fun DeveloperToolsSection(
                 .fillMaxWidth()
                 .heightIn(min = 56.dp),
             shape = NativeDoChromeShape,
-            color = colors.glassBackground,
-            border = BorderStroke(
-                width = 1.dp,
-                color = colors.glassStroke,
-            ),
+            color = colors.glassBackgroundStrong.copy(alpha = 0.92f),
             tonalElevation = 0.dp,
             shadowElevation = 0.dp,
             onClick = onOpenTopicUrlClick,

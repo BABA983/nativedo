@@ -1,0 +1,559 @@
+package io.github.baba983.nativedo.feature.browser
+
+import android.content.Intent
+import android.graphics.Bitmap
+import android.view.ViewGroup
+import android.webkit.CookieManager
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.updateTransition
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.baba983.nativedo.NativeDoApplication
+import io.github.baba983.nativedo.R
+import io.github.baba983.nativedo.core.navigation.LinkOpenTarget
+import io.github.baba983.nativedo.core.navigation.LinkRouter
+import io.github.baba983.nativedo.core.navigation.openInExternalApp
+import io.github.baba983.nativedo.core.navigation.openInSystemBrowser
+import io.github.baba983.nativedo.core.navigation.shouldTryOpenInExternalApp
+import io.github.baba983.nativedo.core.ui.BulletinMessage
+import io.github.baba983.nativedo.core.ui.BulletinTone
+import io.github.baba983.nativedo.core.ui.LocalBulletinHostState
+import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+
+@Composable
+internal fun AppBrowserRoute(
+    url: String,
+    onOpenLink: (String) -> Unit,
+    onChromeConfigChanged: (AppBrowserChromeConfig?) -> Unit,
+    onClose: () -> Unit,
+) {
+    val context = LocalContext.current
+    val appContainer = remember(context) {
+        (context.applicationContext as NativeDoApplication).appContainer
+    }
+    val linkRouter = remember(appContainer) { LinkRouter(appContainer.baseUrl) }
+    val clipboardManager = LocalClipboardManager.current
+    val bulletinHostState = LocalBulletinHostState.current
+    val linkCopiedText = stringResource(R.string.app_browser_link_copied)
+    val colors = NativeDoThemeExtras.colors
+    val browserHistory by appContainer.appBrowserHistoryStore.history.collectAsStateWithLifecycle()
+    val density = LocalDensity.current
+    val exitTranslationPx = remember(density) {
+        with(density) { appBrowserRouteExitTranslation.roundToPx().toFloat() }
+    }
+
+    var webViewRef by remember(url) { mutableStateOf<WebView?>(null) }
+    var currentUrl by remember(url) { mutableStateOf(url) }
+    var currentPageTitle by remember(url) { mutableStateOf<String?>(null) }
+    var progress by remember(url) { mutableIntStateOf(0) }
+    var canGoBack by remember(url) { mutableStateOf(false) }
+    var canGoForward by remember(url) { mutableStateOf(false) }
+    var closeRequested by remember(url) { mutableStateOf(false) }
+    var panel by remember(url) { mutableStateOf<AppBrowserPanel>(AppBrowserPanel.Page) }
+    val historyVisitMarks = remember(url) { mutableStateListOf<AppBrowserHistoryVisit>() }
+    var lastRecordedUrl by remember(url) { mutableStateOf<String?>(null) }
+    var lastRecordedAtMillis by remember(url) { mutableLongStateOf(0L) }
+
+    val presentationState = remember { MutableTransitionState(false) }
+
+    LaunchedEffect(Unit) {
+        presentationState.targetState = true
+    }
+
+    LaunchedEffect(closeRequested) {
+        if (closeRequested) {
+            presentationState.targetState = false
+        }
+    }
+
+    LaunchedEffect(
+        closeRequested,
+        presentationState.currentState,
+        presentationState.targetState,
+    ) {
+        if (closeRequested && !presentationState.currentState && !presentationState.targetState) {
+            onClose()
+        }
+    }
+
+    val presentationTransition = updateTransition(
+        transitionState = presentationState,
+        label = "appBrowserPresentation",
+    )
+    val routeAlpha by presentationTransition.animateFloat(
+        transitionSpec = {
+            tween(
+                durationMillis = if (targetState) {
+                    appBrowserRouteEnterDurationMillis
+                } else {
+                    appBrowserRouteExitDurationMillis
+                },
+                easing = LinearOutSlowInEasing,
+            )
+        },
+        label = "appBrowserRouteAlpha",
+    ) { visible ->
+        if (visible) 1f else 0f
+    }
+    val routeTranslationX by presentationTransition.animateFloat(
+        transitionSpec = {
+            tween(
+                durationMillis = if (targetState) {
+                    appBrowserRouteEnterDurationMillis
+                } else {
+                    appBrowserRouteExitDurationMillis
+                },
+                easing = LinearOutSlowInEasing,
+            )
+        },
+        label = "appBrowserRouteTranslationX",
+    ) { visible ->
+        if (visible) 0f else exitTranslationPx
+    }
+
+    val domain = remember(currentUrl) {
+        currentUrl.toHttpUrlOrNull()?.host ?: currentUrl
+    }
+    val isHttps = remember(currentUrl) {
+        currentUrl.toHttpUrlOrNull()?.isHttps == true
+    }
+    val titleOverride = currentPageTitle
+        ?.trim()
+        ?.takeIf { title ->
+            title.isNotBlank() && !title.equals(domain, ignoreCase = true)
+        }
+    val titleText = titleOverride ?: domain
+    val subtitleText = domain.takeIf { titleOverride != null }
+    val chromeTitle = when (panel) {
+        AppBrowserPanel.Page -> titleText
+        AppBrowserPanel.History -> context.getString(R.string.app_browser_history)
+        AppBrowserPanel.Settings -> context.getString(R.string.app_browser_settings)
+    }
+    val chromeSubtitle = if (panel == AppBrowserPanel.Page) subtitleText else null
+    val backHistoryEntries = remember(
+        webViewRef,
+        currentUrl,
+        currentPageTitle,
+        canGoBack,
+        historyVisitMarks.size,
+        lastRecordedAtMillis,
+    ) {
+        readAppBrowserHistoryEntries(
+            webView = webViewRef,
+            visits = historyVisitMarks,
+        )
+    }
+    val browserHistoryEntries = remember(backHistoryEntries, browserHistory) {
+        mergeAppBrowserHistoryEntries(
+            backHistoryEntries = backHistoryEntries,
+            browserHistoryEntries = browserHistory,
+        )
+    }
+
+    fun requestClose() {
+        if (closeRequested) {
+            return
+        }
+        closeRequested = true
+    }
+
+    fun navigateBack() {
+        val webView = webViewRef
+        if (webView?.canGoBack() == true) {
+            webView.goBack()
+            return
+        }
+        requestClose()
+    }
+
+    fun navigateHistory(entry: AppBrowserHistoryEntry) {
+        val offset = entry.offset
+        if (offset != null) {
+            webViewRef
+                ?.takeIf { webView -> webView.canGoBackOrForward(offset) }
+                ?.goBackOrForward(offset)
+                ?.also { return }
+        }
+        if (entry.url != currentUrl) {
+            webViewRef?.loadUrl(entry.url)
+        }
+    }
+
+    val handleNavigation: (String) -> Boolean = { requestUrl ->
+        when (val target = linkRouter.resolve(requestUrl)) {
+            is LinkOpenTarget.NativeTopic,
+            is LinkOpenTarget.NativeUser -> {
+                onOpenLink(requestUrl)
+                true
+            }
+
+            is LinkOpenTarget.ExternalApp -> context.openInExternalApp(target.url)
+
+            is LinkOpenTarget.AppBrowser -> {
+                shouldTryOpenInExternalApp(
+                    baseUrl = appContainer.baseUrl,
+                    url = target.url,
+                ) && context.openInExternalApp(target.url)
+            }
+
+            is LinkOpenTarget.SystemBrowser -> context.openInSystemBrowser(target.url)
+        }
+    }
+
+    BackHandler {
+        when {
+            panel != AppBrowserPanel.Page -> panel = AppBrowserPanel.Page
+            else -> navigateBack()
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            onChromeConfigChanged(null)
+            appContainer.cookieSyncBridge.syncFromWebView(appContainer.baseUrl)
+        }
+    }
+
+    LaunchedEffect(
+        chromeTitle,
+        chromeSubtitle,
+        panel,
+        isHttps,
+        progress,
+        canGoBack,
+        canGoForward,
+        routeAlpha,
+        routeTranslationX,
+        currentUrl,
+        webViewRef,
+        backHistoryEntries,
+        browserHistoryEntries,
+    ) {
+        onChromeConfigChanged(
+            AppBrowserChromeConfig(
+                title = chromeTitle,
+                subtitle = chromeSubtitle,
+                isHttps = isHttps,
+                progress = progress / 100f,
+                canGoForward = canGoForward,
+                backHistoryEntries = backHistoryEntries,
+                browserHistoryEntries = browserHistoryEntries,
+                panel = panel,
+                alpha = routeAlpha,
+                translationX = routeTranslationX,
+                onBack = {
+                    if (panel != AppBrowserPanel.Page) {
+                        panel = AppBrowserPanel.Page
+                    } else {
+                        navigateBack()
+                    }
+                },
+                onClose = ::requestClose,
+                onShowHistory = { panel = AppBrowserPanel.History },
+                onShowSettings = { panel = AppBrowserPanel.Settings },
+                onHistoryEntryClick = { entry ->
+                    panel = AppBrowserPanel.Page
+                    navigateHistory(entry)
+                },
+                onForward = { webViewRef?.goForward() },
+                onRefresh = { webViewRef?.reload() },
+                onShare = {
+                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, currentUrl)
+                    }
+                    context.startActivity(
+                        Intent.createChooser(
+                            shareIntent,
+                            context.getString(R.string.app_browser_share),
+                        ),
+                    )
+                },
+                onOpenInBrowser = {
+                    context.openInSystemBrowser(currentUrl)
+                },
+                onCopyLink = {
+                    clipboardManager.setText(AnnotatedString(currentUrl))
+                    bulletinHostState?.show(
+                        BulletinMessage(
+                            title = linkCopiedText,
+                            tone = BulletinTone.Success,
+                        ),
+                    )
+                },
+            ),
+        )
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colors.backgroundBase)
+            .graphicsLayer {
+                alpha = routeAlpha
+                translationX = routeTranslationX
+            },
+    ) {
+        AndroidView(
+            modifier = Modifier.fillMaxSize(),
+            factory = { ctx ->
+                WebView(ctx).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                    )
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.userAgentString = appContainer.userAgent
+                    settings.setSupportMultipleWindows(true)
+                    settings.javaScriptCanOpenWindowsAutomatically = true
+                    setBackgroundColor(colors.backgroundBase.toArgb())
+                    CookieManager.getInstance().setAcceptCookie(true)
+                    CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+
+                    webViewClient = object : WebViewClient() {
+                        override fun shouldOverrideUrlLoading(
+                            view: WebView?,
+                            request: WebResourceRequest?,
+                        ): Boolean {
+                            val requestUrl = request?.url?.toString() ?: return false
+                            return handleNavigation(requestUrl)
+                        }
+
+                        override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                            super.onPageStarted(view, url, favicon)
+                            url?.let { currentUrl = it }
+                            currentPageTitle = null
+                            canGoBack = view?.canGoBack() == true
+                            canGoForward = view?.canGoForward() == true
+                            recordAppBrowserVisit(
+                                visits = historyVisitMarks,
+                                url = url,
+                                lastRecordedUrl = lastRecordedUrl,
+                                onRecorded = { recordedUrl, recordedAt ->
+                                    lastRecordedUrl = recordedUrl
+                                    lastRecordedAtMillis = recordedAt
+                                },
+                            )
+                        }
+
+                        override fun onPageFinished(view: WebView?, url: String?) {
+                            super.onPageFinished(view, url)
+                            canGoBack = view?.canGoBack() == true
+                            canGoForward = view?.canGoForward() == true
+                            val finishedUrl = url.orEmpty()
+                            appContainer.appBrowserHistoryStore.recordVisit(
+                                url = finishedUrl,
+                                title = currentPageTitle,
+                            )
+                            if (finishedUrl.contains("linux.do")) {
+                                appContainer.cookieSyncBridge.syncFromWebView(finishedUrl)
+                            }
+                        }
+                    }
+
+                    webChromeClient = object : WebChromeClient() {
+                        override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                            progress = newProgress
+                        }
+
+                        override fun onReceivedTitle(view: WebView?, title: String?) {
+                            super.onReceivedTitle(view, title)
+                            currentPageTitle = title
+                                ?.trim()
+                                ?.takeIf(String::isNotBlank)
+                        }
+
+                        override fun onCreateWindow(
+                            view: WebView?,
+                            isDialog: Boolean,
+                            isUserGesture: Boolean,
+                            resultMsg: android.os.Message?,
+                        ): Boolean {
+                            val transport = resultMsg?.obj as? WebView.WebViewTransport
+                                ?: return false
+                            val tempWebView = WebView(ctx)
+                            tempWebView.webViewClient = object : WebViewClient() {
+                                override fun shouldOverrideUrlLoading(
+                                    view: WebView?,
+                                    request: WebResourceRequest?,
+                                ): Boolean {
+                                    val targetUrl = request?.url?.toString() ?: return false
+                                    if (handleNavigation(targetUrl)) {
+                                        tempWebView.destroy()
+                                        return true
+                                    }
+                                    this@apply.loadUrl(targetUrl)
+                                    tempWebView.destroy()
+                                    return true
+                                }
+                            }
+                            transport.webView = tempWebView
+                            resultMsg.sendToTarget()
+                            return true
+                        }
+                    }
+
+                    appContainer.cookieSyncBridge.syncToWebView(appContainer.baseUrl)
+                    loadUrl(url)
+                    webViewRef = this
+                }
+            },
+            update = { view ->
+                canGoBack = view.canGoBack()
+                canGoForward = view.canGoForward()
+            },
+        )
+
+        AnimatedContent(
+            targetState = panel,
+            transitionSpec = {
+                (slideInHorizontally { fullWidth -> fullWidth / 6 } + fadeIn())
+                    .togetherWith(slideOutHorizontally { fullWidth -> -fullWidth / 8 } + fadeOut())
+            },
+            label = "appBrowserPanel",
+        ) { currentPanel ->
+            when (currentPanel) {
+                AppBrowserPanel.History -> Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(colors.backgroundBase),
+                ) {
+                    AppBrowserHistoryPanel(
+                        entries = browserHistoryEntries,
+                        onEntryClick = { entry ->
+                            panel = AppBrowserPanel.Page
+                            navigateHistory(entry)
+                        },
+                    )
+                }
+
+                AppBrowserPanel.Settings -> Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(colors.backgroundBase),
+                ) {
+                    AppBrowserSettingsPanel(
+                        onOpenHistoryClick = { panel = AppBrowserPanel.History },
+                        onClearHistoryClick = {
+                            appContainer.appBrowserHistoryStore.clear()
+                            panel = AppBrowserPanel.History
+                        },
+                        onClearCookiesClick = {
+                            appContainer.cookieSyncBridge.clear()
+                            panel = AppBrowserPanel.Page
+                            webViewRef?.reload()
+                        },
+                        onClearCacheClick = {
+                            webViewRef?.clearCache(true)
+                            panel = AppBrowserPanel.Page
+                        },
+                    )
+                }
+
+                AppBrowserPanel.Page -> Box(modifier = Modifier.fillMaxSize())
+            }
+        }
+    }
+}
+
+private fun readAppBrowserHistoryEntries(
+    webView: WebView?,
+    visits: List<AppBrowserHistoryVisit>,
+): List<AppBrowserHistoryEntry> {
+    val historyList = webView?.copyBackForwardList() ?: return emptyList()
+    val currentIndex = historyList.currentIndex
+    if (currentIndex <= 0) {
+        return emptyList()
+    }
+    return buildList {
+        for (index in currentIndex - 1 downTo 0) {
+            val item = historyList.getItemAtIndex(index)
+            val itemUrl = item.url.orEmpty()
+            if (itemUrl.isBlank()) {
+                continue
+            }
+            add(
+                AppBrowserHistoryEntry(
+                    title = item.title
+                        ?.trim()
+                        ?.takeIf(String::isNotBlank)
+                        ?: (itemUrl.toHttpUrlOrNull()?.host ?: itemUrl),
+                    url = itemUrl,
+                    offset = index - currentIndex,
+                    host = itemUrl.toHttpUrlOrNull()?.host ?: itemUrl,
+                    visitedAtMillis = visits
+                        .lastOrNull { visit -> visit.url == itemUrl }
+                        ?.visitedAtMillis
+                        ?: 0L,
+                ),
+            )
+        }
+    }
+}
+
+private fun recordAppBrowserVisit(
+    visits: MutableList<AppBrowserHistoryVisit>,
+    url: String?,
+    lastRecordedUrl: String?,
+    onRecorded: (String, Long) -> Unit,
+) {
+    val resolvedUrl = url?.takeIf { it.isNotBlank() } ?: return
+    if (resolvedUrl == lastRecordedUrl) {
+        return
+    }
+    val visitedAtMillis = System.currentTimeMillis()
+    visits.add(
+        AppBrowserHistoryVisit(
+            url = resolvedUrl,
+            visitedAtMillis = visitedAtMillis,
+        ),
+    )
+    onRecorded(resolvedUrl, visitedAtMillis)
+}
+
+private data class AppBrowserHistoryVisit(
+    val url: String,
+    val visitedAtMillis: Long,
+)
+
+private val appBrowserRouteExitTranslation = 24.dp
+private const val appBrowserRouteEnterDurationMillis = 220
+private const val appBrowserRouteExitDurationMillis = 170

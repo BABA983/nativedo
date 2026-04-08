@@ -25,6 +25,7 @@ internal fun buildPostBodyText(
     baseUrl: String,
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
+    onOpenLink: ((String) -> Unit)? = null,
 ): CharSequence {
     val spanned = HtmlCompat.fromHtml(html, HtmlCompat.FROM_HTML_MODE_COMPACT)
     val builder = SpannableStringBuilder(spanned)
@@ -32,7 +33,7 @@ internal fun buildPostBodyText(
         val destination = parseInternalLinkDestination(
             baseUrl = baseUrl,
             rawUrl = span.url,
-        ) ?: return@forEach
+        )
 
         val onClick = when (destination) {
             is PostBodyInternalDestination.Topic -> onTopicClick?.let { callback ->
@@ -41,6 +42,14 @@ internal fun buildPostBodyText(
 
             is PostBodyInternalDestination.User -> onUserClick?.let { callback ->
                 { callback(destination.username) }
+            }
+
+            null -> onOpenLink?.let { callback ->
+                {
+                    val resolvedUrl = baseUrl.toHttpUrlOrNull()
+                        ?.resolve(span.url)?.toString() ?: span.url
+                    callback(resolvedUrl)
+                }
             }
         } ?: return@forEach
 

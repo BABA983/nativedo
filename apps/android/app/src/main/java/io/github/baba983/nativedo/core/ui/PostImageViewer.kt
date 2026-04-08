@@ -755,6 +755,7 @@ internal fun PostImageViewerDialog(
     cookieStore: CookieStore,
     baseUrl: String,
     onVisibleImageChanged: (PostBodyImage?) -> Unit = {},
+    onOpenLink: ((String) -> Unit)? = null,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -1748,15 +1749,19 @@ internal fun PostImageViewerDialog(
                         }
 
                         PostImageViewerAction.OpenExternal -> {
-                            context.startPostImageViewerIntent(
-                                Intent(Intent.ACTION_VIEW, Uri.parse(currentImageUrl)),
-                            ) {
-                                bulletinHostState?.show(
-                                    BulletinMessage(
-                                        title = context.getString(R.string.post_image_viewer_action_failed),
-                                        tone = BulletinTone.Error,
-                                    ),
-                                )
+                            if (onOpenLink != null) {
+                                onOpenLink(currentImageUrl)
+                            } else {
+                                context.startPostImageViewerIntent(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse(currentImageUrl)),
+                                ) {
+                                    bulletinHostState?.show(
+                                        BulletinMessage(
+                                            title = context.getString(R.string.post_image_viewer_action_failed),
+                                            tone = BulletinTone.Error,
+                                        ),
+                                    )
+                                }
                             }
                         }
 

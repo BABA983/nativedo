@@ -24,6 +24,7 @@ internal fun PostTextDocumentView(
     textColor: Color? = null,
     linkColor: Color? = null,
     onClick: (() -> Unit)? = null,
+    onOpenLink: ((String) -> Unit)? = null,
 ) {
     PostSpannableText(
         textStyle = textStyle,
@@ -40,6 +41,7 @@ internal fun PostTextDocumentView(
             onTopicClick = onTopicClick,
             onUserClick = onUserClick,
             textSizePx = textSizePx,
+            onOpenLink = onOpenLink,
         )
     }
 }
@@ -50,6 +52,7 @@ internal fun buildTextDocumentSpannable(
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
     textSizePx: Float,
+    onOpenLink: ((String) -> Unit)? = null,
 ): AppliedInlineImages {
     val builder = SpannableStringBuilder(document.text)
     val pendingImages = mutableListOf<PendingInlineImage>()
@@ -87,6 +90,7 @@ internal fun buildTextDocumentSpannable(
                         baseUrl = baseUrl,
                         onTopicClick = onTopicClick,
                         onUserClick = onUserClick,
+                        onOpenLink = onOpenLink,
                     ),
                     start = entity.start,
                     end = entity.end,
@@ -105,6 +109,7 @@ internal fun buildTextDocumentSpannable(
                     baseUrl = baseUrl,
                     onTopicClick = onTopicClick,
                     onUserClick = onUserClick,
+                    onOpenLink = onOpenLink,
                 ),
                 start = entity.start,
                 end = entity.end,

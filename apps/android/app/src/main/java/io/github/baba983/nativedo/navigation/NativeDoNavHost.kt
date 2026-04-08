@@ -22,11 +22,22 @@ import io.github.baba983.nativedo.feature.profile.ui.ProfileViewer
 import io.github.baba983.nativedo.feature.search.ui.SearchRoute
 import io.github.baba983.nativedo.feature.topic.ui.TopicRoute
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.navArgument
+import io.github.baba983.nativedo.feature.browser.AppBrowserChromeConfig
+import io.github.baba983.nativedo.feature.browser.AppBrowserRoute
+import java.net.URLDecoder
+
+internal const val APP_BROWSER_ROUTE = "app-browser?url={url}"
+
+internal fun buildAppBrowserRoute(
+    encodedUrl: String,
+): String = "app-browser?url=$encodedUrl"
 
 @Composable
-fun NativeDoNavHost(
+internal fun NativeDoNavHost(
     navController: NavHostController,
     contentPadding: PaddingValues,
     rootPagerState: PagerState,
@@ -34,6 +45,8 @@ fun NativeDoNavHost(
     homeRefreshRequestToken: Int,
     onHomeHeaderSearchVisibilityChanged: (Boolean) -> Unit,
     onTopicHeaderTitleChanged: (String?) -> Unit,
+    onOpenLink: (String) -> Unit,
+    onAppBrowserChromeConfigChanged: (AppBrowserChromeConfig?) -> Unit,
 ) {
     val context = LocalContext.current
     val appContainer = remember(context) {
@@ -91,6 +104,7 @@ fun NativeDoNavHost(
                             onUserClick = { username ->
                                 navController.navigate("user/$username")
                             },
+                            onOpenLink = onOpenLink,
                         )
                     }
 
@@ -120,6 +134,7 @@ fun NativeDoNavHost(
                 onUserClick = { username ->
                     navController.navigate("user/$username")
                 },
+                onOpenLink = onOpenLink,
             )
         }
         composable("user/{username}") { entry ->
@@ -134,6 +149,22 @@ fun NativeDoNavHost(
                 onUserClick = { username ->
                     navController.navigate("user/$username")
                 },
+                onOpenLink = onOpenLink,
+            )
+        }
+        composable(
+            APP_BROWSER_ROUTE,
+            arguments = listOf(
+                navArgument("url") { type = NavType.StringType },
+            ),
+        ) { entry ->
+            val encodedUrl = entry.arguments?.getString("url") ?: return@composable
+            val decodedUrl = URLDecoder.decode(encodedUrl, "UTF-8")
+            AppBrowserRoute(
+                url = decodedUrl,
+                onOpenLink = onOpenLink,
+                onChromeConfigChanged = onAppBrowserChromeConfigChanged,
+                onClose = { navController.popBackStack() },
             )
         }
         composable("login") {

@@ -39,6 +39,7 @@ internal fun buildPostInlineText(
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
     textSizePx: Float,
+    onOpenLink: ((String) -> Unit)? = null,
 ): AppliedInlineImages {
     val builder = SpannableStringBuilder()
     val inlineImages = mutableListOf<InlineImageSpec>()
@@ -49,6 +50,7 @@ internal fun buildPostInlineText(
         onTopicClick = onTopicClick,
         onUserClick = onUserClick,
         inlineImages = inlineImages,
+        onOpenLink = onOpenLink,
     )
     return applyInlineImagePlaceholders(
         text = builder,
@@ -67,6 +69,7 @@ internal fun PostInlineTextBlock(
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
     modifier: Modifier = Modifier,
+    onOpenLink: ((String) -> Unit)? = null,
 ) {
     PostInlineText(
         inlines = inlines,
@@ -76,6 +79,7 @@ internal fun PostInlineTextBlock(
         onTopicClick = onTopicClick,
         onUserClick = onUserClick,
         modifier = modifier,
+        onOpenLink = onOpenLink,
     )
 }
 
@@ -91,6 +95,7 @@ internal fun PostInlineText(
     textColor: Color? = null,
     linkColor: Color? = null,
     onClick: (() -> Unit)? = null,
+    onOpenLink: ((String) -> Unit)? = null,
 ) {
     PostSpannableText(
         textStyle = textStyle,
@@ -107,6 +112,7 @@ internal fun PostInlineText(
             onTopicClick = onTopicClick,
             onUserClick = onUserClick,
             textSizePx = textSizePx,
+            onOpenLink = onOpenLink,
         )
     }
 }
@@ -178,6 +184,7 @@ private fun appendPostInlines(
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
     inlineImages: MutableList<InlineImageSpec>,
+    onOpenLink: ((String) -> Unit)? = null,
 ) {
     inlines.forEach { inline ->
         when (inline) {
@@ -205,6 +212,7 @@ private fun appendPostInlines(
                     onTopicClick = onTopicClick,
                     onUserClick = onUserClick,
                     inlineImages = inlineImages,
+                    onOpenLink = onOpenLink,
                 )
             }
 
@@ -215,6 +223,7 @@ private fun appendPostInlines(
                         baseUrl = baseUrl,
                         onTopicClick = onTopicClick,
                         onUserClick = onUserClick,
+                        onOpenLink = onOpenLink,
                     ),
                 ) {
                     if (isMentionLink) {
@@ -226,6 +235,7 @@ private fun appendPostInlines(
                                 onTopicClick = onTopicClick,
                                 onUserClick = onUserClick,
                                 inlineImages = inlineImages,
+                                onOpenLink = onOpenLink,
                             )
                         }
                     } else {
@@ -236,6 +246,7 @@ private fun appendPostInlines(
                             onTopicClick = onTopicClick,
                             onUserClick = onUserClick,
                             inlineImages = inlineImages,
+                            onOpenLink = onOpenLink,
                         )
                     }
                 }
@@ -293,6 +304,7 @@ private fun PostInline.Link.toLinkSpans(
     baseUrl: String,
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
+    onOpenLink: ((String) -> Unit)? = null,
 ): List<Any> {
     return buildList {
         add(
@@ -301,6 +313,7 @@ private fun PostInline.Link.toLinkSpans(
                 baseUrl = baseUrl,
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
+                onOpenLink = onOpenLink,
             ),
         )
         if (rawUrl.isHashtagLink()) {
@@ -314,6 +327,7 @@ internal fun buildPostBodyLinkSpan(
     baseUrl: String,
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
+    onOpenLink: ((String) -> Unit)? = null,
 ): Any {
     val destination = parseInternalLinkDestination(
         baseUrl = baseUrl,
@@ -351,10 +365,20 @@ internal fun buildPostBodyLinkSpan(
             }
         }
 
-        null -> PostInlineUrlSpan(
-            url = resolveUrl(baseUrl, rawUrl),
-            emphasize = false,
-        )
+        null -> {
+            if (onOpenLink != null) {
+                PostInlineClickSpan(
+                    emphasize = false,
+                ) {
+                    onOpenLink(resolveUrl(baseUrl, rawUrl))
+                }
+            } else {
+                PostInlineUrlSpan(
+                    url = resolveUrl(baseUrl, rawUrl),
+                    emphasize = false,
+                )
+            }
+        }
     }
 }
 

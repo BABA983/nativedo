@@ -68,14 +68,24 @@ import io.github.baba983.nativedo.core.ui.LocalBulletinHostState
 import io.github.baba983.nativedo.core.ui.UserAvatar
 import io.github.baba983.nativedo.feature.auth.ui.AuthRestoreGate
 import io.github.baba983.nativedo.feature.auth.ui.shouldShowAuthRestoreGate
+import io.github.baba983.nativedo.feature.browser.AppBrowserChromeConfig
+import io.github.baba983.nativedo.feature.browser.AppBrowserTopBar
+import io.github.baba983.nativedo.navigation.APP_BROWSER_ROUTE
 import io.github.baba983.nativedo.navigation.NativeDoNavHost
 import io.github.baba983.nativedo.navigation.RootDestination
+import io.github.baba983.nativedo.navigation.buildAppBrowserRoute
 import io.github.baba983.nativedo.ui.theme.NativeDoChromeShape
 import io.github.baba983.nativedo.ui.theme.NativeDoPillShape
 import io.github.baba983.nativedo.ui.theme.NativeDoTheme
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 import io.github.baba983.nativedo.ui.theme.ThemeMode
+import io.github.baba983.nativedo.core.navigation.LinkOpenTarget
+import io.github.baba983.nativedo.core.navigation.LinkRouter
+import io.github.baba983.nativedo.core.navigation.openInExternalApp
+import io.github.baba983.nativedo.core.navigation.openInSystemBrowser
+import io.github.baba983.nativedo.core.navigation.shouldTryOpenInExternalApp
 import kotlinx.coroutines.launch
+import java.net.URLEncoder
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -100,6 +110,7 @@ fun NativeDoApp() {
         val bulletinHostState = remember { BulletinHostState() }
         val currentEntry = navController.currentBackStackEntryAsState().value
         val currentRoute = currentEntry?.destination?.route
+        var appBrowserChromeConfig by remember { mutableStateOf<AppBrowserChromeConfig?>(null) }
         val cachedSessionSnapshot = appContainer.sessionStore.snapshot()
         val chromeState = remember(sessionState, cachedSessionSnapshot) {
             NativeDoChromeState.from(sessionState, cachedSessionSnapshot)
@@ -113,6 +124,29 @@ fun NativeDoApp() {
             initialPage = RootDestination.bottomTabs.indexOf(RootDestination.start),
         ) { RootDestination.bottomTabs.size }
         val coroutineScope = rememberCoroutineScope()
+        val linkRouter = remember(appContainer) { LinkRouter(appContainer.baseUrl) }
+        val onOpenLink: (String) -> Unit = { url ->
+            when (val target = linkRouter.resolve(url)) {
+                is LinkOpenTarget.NativeTopic -> navController.navigate("topic/${target.topicId}")
+                is LinkOpenTarget.NativeUser -> navController.navigate("user/${target.username}")
+                is LinkOpenTarget.AppBrowser -> {
+                    val openedInExternalApp = shouldTryOpenInExternalApp(
+                        baseUrl = appContainer.baseUrl,
+                        url = target.url,
+                    ) && context.openInExternalApp(target.url)
+                    if (!openedInExternalApp) {
+                        val encoded = URLEncoder.encode(target.url, "UTF-8")
+                        navController.navigate(buildAppBrowserRoute(encoded))
+                    }
+                }
+                is LinkOpenTarget.ExternalApp -> {
+                    context.openInExternalApp(target.url)
+                }
+                is LinkOpenTarget.SystemBrowser -> {
+                    context.openInSystemBrowser(target.url)
+                }
+            }
+        }
         val selectedRootRoute = RootDestination.bottomTabs
             .getOrNull(rootPagerState.currentPage)
             ?.route
@@ -122,6 +156,7 @@ fun NativeDoApp() {
             RootDestination.rootContainerRoute -> selectedRootRoute
             else -> currentRoute
         }
+        val isAppBrowserRoute = currentRoute == APP_BROWSER_ROUTE
         val isRootRoute = currentRoute == null || currentRoute == RootDestination.rootContainerRoute
 
         CompositionLocalProvider(LocalBulletinHostState provides bulletinHostState) {
@@ -133,21 +168,27 @@ fun NativeDoApp() {
                     contentColor = MaterialTheme.colorScheme.onBackground,
                     contentWindowInsets = WindowInsets(0, 0, 0, 0),
                     topBar = {
-                        NativeDoTopBar(
-                            currentRoute = activeRoute,
-                            chromeState = chromeState,
-                            topicTitleOverride = topicHeaderTitle,
-                            showBack = !isRootRoute,
-                            reserveHomeSearchSlot = isRootRoute && activeRoute == RootDestination.Home.route,
-                            showHomeSearchAction = isRootRoute &&
-                                activeRoute == RootDestination.Home.route &&
-                                homeHeaderSearchVisible,
-                            themeMode = themeMode,
-                            onHomeRefreshClick = { homeRefreshRequestToken += 1 },
-                            onHomeSearchClick = { homeSearchRequestToken += 1 },
-                            onThemeModeClick = { themeMode = themeMode.next() },
-                            onBackClick = { navController.popBackStack() },
-                        )
+                        if (isAppBrowserRoute) {
+                            AppBrowserTopBar(
+                                config = appBrowserChromeConfig,
+                            )
+                        } else {
+                            NativeDoTopBar(
+                                currentRoute = activeRoute,
+                                chromeState = chromeState,
+                                topicTitleOverride = topicHeaderTitle,
+                                showBack = !isRootRoute,
+                                reserveHomeSearchSlot = isRootRoute && activeRoute == RootDestination.Home.route,
+                                showHomeSearchAction = isRootRoute &&
+                                    activeRoute == RootDestination.Home.route &&
+                                    homeHeaderSearchVisible,
+                                themeMode = themeMode,
+                                onHomeRefreshClick = { homeRefreshRequestToken += 1 },
+                                onHomeSearchClick = { homeSearchRequestToken += 1 },
+                                onThemeModeClick = { themeMode = themeMode.next() },
+                                onBackClick = { navController.popBackStack() },
+                            )
+                        }
                     },
                 ) { paddingValues ->
                     NativeDoNavHost(
@@ -158,6 +199,10 @@ fun NativeDoApp() {
                         homeRefreshRequestToken = homeRefreshRequestToken,
                         onHomeHeaderSearchVisibilityChanged = { homeHeaderSearchVisible = it },
                         onTopicHeaderTitleChanged = { topicHeaderTitle = it },
+                        onOpenLink = onOpenLink,
+                        onAppBrowserChromeConfigChanged = { config ->
+                            appBrowserChromeConfig = config
+                        },
                     )
                 }
 
@@ -228,8 +273,11 @@ private fun NativeDoTopBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 56.dp)
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .heightIn(min = AppTopBarRowMinHeight)
+                .padding(
+                    horizontal = AppTopBarHorizontalPadding,
+                    vertical = AppTopBarVerticalPadding,
+                ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (showBack) {
@@ -519,6 +567,7 @@ private fun topBarTitle(
     RootDestination.Profile.route -> stringResource(R.string.tab_profile)
     "user/{username}" -> stringResource(R.string.tab_profile)
     "login" -> stringResource(R.string.screen_sign_in)
+    "app-browser?url={url}" -> ""
     else -> stringResource(R.string.app_name)
 }
 

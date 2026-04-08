@@ -19,11 +19,13 @@ import io.github.baba983.nativedo.core.session.SessionCoordinator
 import io.github.baba983.nativedo.core.session.SessionExpiredReason
 import io.github.baba983.nativedo.core.storage.CategoryStore
 import io.github.baba983.nativedo.core.storage.CookieStore
+import io.github.baba983.nativedo.core.storage.SharedPreferencesAppBrowserHistoryStorePersistence
 import io.github.baba983.nativedo.core.storage.SharedPreferencesCookieStorePersistence
 import io.github.baba983.nativedo.core.storage.SharedPreferencesSessionStorePersistence
 import io.github.baba983.nativedo.core.storage.SharedPreferencesSvgSpriteStorePersistence
 import io.github.baba983.nativedo.core.storage.SessionStore
 import io.github.baba983.nativedo.core.storage.SvgSpriteStore
+import io.github.baba983.nativedo.feature.browser.AppBrowserHistoryStore
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
@@ -42,6 +44,7 @@ class AppContainer(
     private val appContext = context?.applicationContext
     val userAgent: String = userAgent ?: resolveNativeDoUserAgent(appContext)
     private val cookiePreferences = appContext?.getSharedPreferences(COOKIE_STORE_PREFS, Context.MODE_PRIVATE)
+    private val browserHistoryPreferences = appContext?.getSharedPreferences(BROWSER_HISTORY_PREFS, Context.MODE_PRIVATE)
     private val sessionPreferences = appContext?.getSharedPreferences(SESSION_STORE_PREFS, Context.MODE_PRIVATE)
     private val svgSpritePreferences = appContext?.getSharedPreferences(SVG_SPRITE_STORE_PREFS, Context.MODE_PRIVATE)
     val cookieStore: CookieStore = cookiePreferences
@@ -101,6 +104,13 @@ class AppContainer(
     val categoryStore: CategoryStore = CategoryStore(
         client = discourseApiClient,
     )
+    val appBrowserHistoryStore: AppBrowserHistoryStore = browserHistoryPreferences
+        ?.let { preferences ->
+            AppBrowserHistoryStore(
+                persistence = SharedPreferencesAppBrowserHistoryStorePersistence(preferences),
+            )
+        }
+        ?: AppBrowserHistoryStore()
     val sessionCoordinator: SessionCoordinator = SessionCoordinator(
         cookieStore = cookieStore,
         sessionStore = sessionStore,
@@ -125,6 +135,7 @@ class AppContainer(
     }
 
     private companion object {
+        const val BROWSER_HISTORY_PREFS: String = "nativedo.browser_history_store"
         const val COOKIE_STORE_PREFS: String = "nativedo.cookie_store"
         const val SESSION_STORE_PREFS: String = "nativedo.session_store"
         const val SVG_SPRITE_STORE_PREFS: String = "nativedo.svg_sprite_store"

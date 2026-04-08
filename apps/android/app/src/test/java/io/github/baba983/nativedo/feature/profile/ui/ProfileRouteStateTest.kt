@@ -8,6 +8,11 @@ import org.junit.Test
 
 class ProfileRouteStateTest {
     @Test
+    fun cdkDashboardUrl_pointsToDashboard() {
+        assertThat(CDK_DASHBOARD_URL).isEqualTo("https://cdk.linux.do/dashboard")
+    }
+
+    @Test
     fun shouldShowProfileDebugTools_debugSelfViewer_returnsTrue() {
         val shouldShow = shouldShowProfileDebugTools(
             viewer = ProfileViewer.Self,

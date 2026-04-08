@@ -37,7 +37,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -63,6 +62,7 @@ internal fun RenderPostBodyBlock(
     svgSpriteMarkup: String = "",
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
+    onOpenLink: ((String) -> Unit)?,
     hiddenImage: PostBodyImage? = null,
     onImageSourceChanged: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)?,
     onImageClick: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)?,
@@ -76,6 +76,7 @@ internal fun RenderPostBodyBlock(
                 baseUrl = baseUrl,
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
+                onOpenLink = onOpenLink,
                 modifier = modifier,
             )
         }
@@ -87,6 +88,7 @@ internal fun RenderPostBodyBlock(
                 baseUrl = baseUrl,
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
+                onOpenLink = onOpenLink,
                 modifier = modifier,
             )
         }
@@ -139,6 +141,7 @@ internal fun RenderPostBodyBlock(
                 block = block,
                 cookieStore = cookieStore,
                 baseUrl = baseUrl,
+                onOpenLink = onOpenLink,
                 modifier = modifier,
             )
         }
@@ -151,6 +154,7 @@ internal fun RenderPostBodyBlock(
                 baseUrl = baseUrl,
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
+                onOpenLink = onOpenLink,
                 modifier = modifier,
             )
         }
@@ -163,6 +167,7 @@ internal fun RenderPostBodyBlock(
                 baseUrl = baseUrl,
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
+                onOpenLink = onOpenLink,
                 modifier = modifier,
             )
         }
@@ -191,6 +196,7 @@ internal fun RenderPostBodyBlock(
                 svgSpriteMarkup = svgSpriteMarkup,
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
+                onOpenLink = onOpenLink,
                 hiddenImage = hiddenImage,
                 onImageSourceChanged = onImageSourceChanged,
                 onImageClick = onImageClick,
@@ -206,6 +212,7 @@ internal fun RenderPostBodyBlock(
                 svgSpriteMarkup = svgSpriteMarkup,
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
+                onOpenLink = onOpenLink,
                 hiddenImage = hiddenImage,
                 onImageSourceChanged = onImageSourceChanged,
                 onImageClick = onImageClick,
@@ -221,6 +228,7 @@ internal fun RenderPostBodyBlock(
                 svgSpriteMarkup = svgSpriteMarkup,
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
+                onOpenLink = onOpenLink,
                 hiddenImage = hiddenImage,
                 onImageSourceChanged = onImageSourceChanged,
                 onImageClick = onImageClick,
@@ -236,6 +244,7 @@ internal fun RenderPostBodyBlock(
                 svgSpriteMarkup = svgSpriteMarkup,
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
+                onOpenLink = onOpenLink,
                 hiddenImage = hiddenImage,
                 onImageSourceChanged = onImageSourceChanged,
                 onImageClick = onImageClick,
@@ -258,6 +267,7 @@ internal fun RenderPostBodyBlock(
                 svgSpriteMarkup = svgSpriteMarkup,
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
+                onOpenLink = onOpenLink,
                 hiddenImage = hiddenImage,
                 onImageSourceChanged = onImageSourceChanged,
                 onImageClick = onImageClick,
@@ -367,10 +377,10 @@ internal fun OneboxBlockView(
     block: PostBodyBlock.OneboxBlock,
     cookieStore: CookieStore,
     baseUrl: String,
+    onOpenLink: ((String) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val colors = NativeDoThemeExtras.colors
-    val uriHandler = LocalUriHandler.current
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(postBodyEmbeddedBlockCornerRadius)
 
     Column(
@@ -383,7 +393,9 @@ internal fun OneboxBlockView(
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f),
                 shape = shape,
             )
-            .clickable { uriHandler.openUri(block.targetUrl) }
+            .clickable(enabled = onOpenLink != null) {
+                onOpenLink?.invoke(block.targetUrl)
+            }
             .padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -455,6 +467,7 @@ internal fun DetailsBlockView(
     svgSpriteMarkup: String = "",
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
+    onOpenLink: ((String) -> Unit)?,
     hiddenImage: PostBodyImage? = null,
     onImageSourceChanged: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)?,
     onImageClick: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)?,
@@ -505,6 +518,7 @@ internal fun DetailsBlockView(
                 baseUrl = baseUrl,
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
+                onOpenLink = onOpenLink,
                 textColor = colors.textPrimary,
                 linkColor = colors.accent,
                 onClick = { expanded = !expanded },
@@ -529,6 +543,7 @@ internal fun DetailsBlockView(
                         svgSpriteMarkup = svgSpriteMarkup,
                         onTopicClick = onTopicClick,
                         onUserClick = onUserClick,
+                        onOpenLink = onOpenLink,
                         hiddenImage = hiddenImage,
                         onImageSourceChanged = onImageSourceChanged,
                         onImageClick = onImageClick,
@@ -556,6 +571,7 @@ internal fun CalloutBlockView(
     svgSpriteMarkup: String,
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
+    onOpenLink: ((String) -> Unit)?,
     hiddenImage: PostBodyImage? = null,
     onImageSourceChanged: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)?,
     onImageClick: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)?,
@@ -605,6 +621,7 @@ internal fun CalloutBlockView(
                         baseUrl = baseUrl,
                         onTopicClick = onTopicClick,
                         onUserClick = onUserClick,
+                        onOpenLink = onOpenLink,
                         textColor = accentColor,
                         linkColor = accentColor,
                         modifier = Modifier.weight(1f),
@@ -621,6 +638,7 @@ internal fun CalloutBlockView(
                 svgSpriteMarkup = svgSpriteMarkup,
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
+                onOpenLink = onOpenLink,
                 hiddenImage = hiddenImage,
                 onImageSourceChanged = onImageSourceChanged,
                 onImageClick = onImageClick,
@@ -671,6 +689,7 @@ internal fun DiscourseQuoteBlockView(
     svgSpriteMarkup: String = "",
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
+    onOpenLink: ((String) -> Unit)?,
     hiddenImage: PostBodyImage? = null,
     onImageSourceChanged: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)?,
     onImageClick: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)?,
@@ -717,6 +736,7 @@ internal fun DiscourseQuoteBlockView(
                     baseUrl = baseUrl,
                     onTopicClick = onTopicClick,
                     onUserClick = onUserClick,
+                    onOpenLink = onOpenLink,
                     textColor = colors.accent,
                     linkColor = colors.accent,
                 )
@@ -743,6 +763,7 @@ internal fun DiscourseQuoteBlockView(
                         svgSpriteMarkup = svgSpriteMarkup,
                         onTopicClick = onTopicClick,
                         onUserClick = onUserClick,
+                        onOpenLink = onOpenLink,
                         hiddenImage = hiddenImage,
                         onImageSourceChanged = onImageSourceChanged,
                         onImageClick = onImageClick,
@@ -770,6 +791,7 @@ internal fun QuoteBlockView(
     svgSpriteMarkup: String = "",
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
+    onOpenLink: ((String) -> Unit)?,
     hiddenImage: PostBodyImage? = null,
     onImageSourceChanged: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)?,
     onImageClick: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)?,
@@ -814,6 +836,7 @@ internal fun QuoteBlockView(
                 svgSpriteMarkup = svgSpriteMarkup,
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
+                onOpenLink = onOpenLink,
                 hiddenImage = hiddenImage,
                 onImageSourceChanged = onImageSourceChanged,
                 onImageClick = onImageClick,
@@ -967,6 +990,7 @@ internal fun ListBlockView(
     svgSpriteMarkup: String = "",
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
+    onOpenLink: ((String) -> Unit)?,
     hiddenImage: PostBodyImage? = null,
     onImageSourceChanged: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)?,
     onImageClick: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)?,
@@ -1008,6 +1032,7 @@ internal fun ListBlockView(
                             svgSpriteMarkup = svgSpriteMarkup,
                             onTopicClick = onTopicClick,
                             onUserClick = onUserClick,
+                            onOpenLink = onOpenLink,
                             hiddenImage = hiddenImage,
                             onImageSourceChanged = onImageSourceChanged,
                             onImageClick = onImageClick,

@@ -85,6 +85,7 @@ fun HtmlPostBodyView(
     svgSpriteMarkup: String = "",
     onTopicClick: ((Long) -> Unit)? = null,
     onUserClick: ((String) -> Unit)? = null,
+    onOpenLink: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val blocks = remember(html) { parsePostBodyBlocks(html) }
@@ -109,6 +110,7 @@ fun HtmlPostBodyView(
                 svgSpriteMarkup = svgSpriteMarkup,
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
+                onOpenLink = onOpenLink,
                 hiddenImage = hiddenViewerImage,
                 onImageSourceChanged = { image, launchSource ->
                     if (launchSource == null) {
@@ -149,6 +151,7 @@ fun HtmlPostBodyView(
                 cookieStore = cookieStore,
                 baseUrl = baseUrl,
                 onVisibleImageChanged = { hiddenViewerImage = it },
+                onOpenLink = onOpenLink,
                 onDismiss = {
                     hiddenViewerImage = null
                     viewerState = null
@@ -165,6 +168,7 @@ internal fun HtmlTextBlock(
     baseUrl: String,
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
+    onOpenLink: ((String) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val colors = NativeDoThemeExtras.colors
@@ -195,11 +199,12 @@ internal fun HtmlTextBlock(
             val inlineContent = prepareInlineContent(html)
             val appliedInlineImages = applyInlineImagePlaceholders(
                 text = buildPostBodyText(
-                    html = inlineContent.html,
-                    baseUrl = baseUrl,
-                    onTopicClick = onTopicClick,
-                    onUserClick = onUserClick,
-                ),
+                html = inlineContent.html,
+                baseUrl = baseUrl,
+                onTopicClick = onTopicClick,
+                onUserClick = onUserClick,
+                onOpenLink = onOpenLink,
+            ),
                 inlineImages = inlineContent.inlineImages,
                 baseUrl = baseUrl,
                 textSizePx = textView.textSize,
