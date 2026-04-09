@@ -7,7 +7,75 @@ import org.junit.Test
 
 class AppBrowserStateTest {
     @Test
-    fun buildAppBrowserMenuEntries_telegramLayout_removesSearchAndKeepsThreeGroups() {
+    fun appBrowserSearchPanelState_hiddenWhenSearchModeIsClosed() {
+        val state = buildAppBrowserSearchPanelState(
+            isSearching = false,
+            query = "linux",
+            activeMatchOrdinal = 0,
+            numberOfMatches = 4,
+        )
+
+        assertThat(state.visible).isEqualTo(false)
+    }
+
+    @Test
+    fun appBrowserSearchPanelState_hiddenWhenQueryIsBlank() {
+        val state = buildAppBrowserSearchPanelState(
+            isSearching = true,
+            query = " ",
+            activeMatchOrdinal = 0,
+            numberOfMatches = 4,
+        )
+
+        assertThat(state.visible).isEqualTo(false)
+    }
+
+    @Test
+    fun appBrowserSearchPanelState_showsNoResultsWhenNothingMatches() {
+        val state = buildAppBrowserSearchPanelState(
+            isSearching = true,
+            query = "linux",
+            activeMatchOrdinal = 0,
+            numberOfMatches = 0,
+        )
+
+        assertThat(state.visible).isEqualTo(true)
+        assertThat(state.matchText).isEmpty()
+        assertThat(state.canNavigate).isEqualTo(false)
+        assertThat(state.showsNoResults).isTrue()
+    }
+
+    @Test
+    fun appBrowserSearchPanelState_showsOrdinalAndEnablesNavigationWhenMatchesExist() {
+        val state = buildAppBrowserSearchPanelState(
+            isSearching = true,
+            query = "linux",
+            activeMatchOrdinal = 1,
+            numberOfMatches = 4,
+        )
+
+        assertThat(state.visible).isEqualTo(true)
+        assertThat(state.matchText).isEqualTo("2/4")
+        assertThat(state.canNavigate).isEqualTo(true)
+        assertThat(state.showsNoResults).isFalse()
+    }
+
+    @Test
+    fun appBrowserSearchPanelState_hidesWhenComposingTextResolvesToBlank() {
+        val state = buildAppBrowserSearchPanelState(
+            isSearching = true,
+            query = "",
+            activeMatchOrdinal = 0,
+            numberOfMatches = 3,
+        )
+
+        assertThat(state.visible).isEqualTo(false)
+        assertThat(state.canNavigate).isEqualTo(false)
+        assertThat(state.showsNoResults).isFalse()
+    }
+
+    @Test
+    fun buildAppBrowserMenuEntries_telegramLayout_includesSearchAndKeepsThreeGroups() {
         val entries = buildAppBrowserMenuEntries(
             canGoForward = false,
             hasBrowserHistory = true,
@@ -23,11 +91,29 @@ class AppBrowserStateTest {
             AppBrowserMenuAction.OpenInBrowser,
             AppBrowserMenuAction.Share,
             AppBrowserMenuAction.CopyLink,
+            AppBrowserMenuAction.Search,
             AppBrowserMenuAction.History,
             AppBrowserMenuAction.Settings,
             AppBrowserMenuAction.Close,
         ).inOrder()
         assertThat(entries.count { entry -> entry is AppBrowserMenuEntry.Divider }).isEqualTo(2)
+    }
+
+    @Test
+    fun buildAppBrowserMenuEntries_includesSearchBeforeHistory() {
+        val entries = buildAppBrowserMenuEntries(
+            canGoForward = true,
+            hasBrowserHistory = true,
+        )
+
+        val actions = entries
+            .filterIsInstance<AppBrowserMenuEntry.Item>()
+            .map { entry -> entry.item.action }
+
+        assertThat(actions).containsAtLeast(
+            AppBrowserMenuAction.Search,
+            AppBrowserMenuAction.History,
+        ).inOrder()
     }
 
     @Test

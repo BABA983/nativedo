@@ -24,6 +24,13 @@ sealed interface AppBrowserPanel {
     data object Settings : AppBrowserPanel
 }
 
+internal data class AppBrowserSearchPanelState(
+    val visible: Boolean,
+    val matchText: String,
+    val canNavigate: Boolean,
+    val showsNoResults: Boolean = false,
+)
+
 class AppBrowserHistoryStore(
     private val persistence: AppBrowserHistoryStorePersistence = NoOpAppBrowserHistoryStorePersistence,
 ) {
@@ -97,6 +104,7 @@ internal fun buildAppBrowserMenuEntries(
         AppBrowserMenuEntry.Item(AppBrowserMenuItem(action = AppBrowserMenuAction.Share)),
         AppBrowserMenuEntry.Item(AppBrowserMenuItem(action = AppBrowserMenuAction.CopyLink)),
         AppBrowserMenuEntry.Divider,
+        AppBrowserMenuEntry.Item(AppBrowserMenuItem(action = AppBrowserMenuAction.Search)),
         AppBrowserMenuEntry.Item(
             AppBrowserMenuItem(
                 action = AppBrowserMenuAction.History,
@@ -128,6 +136,36 @@ internal fun mergeAppBrowserHistoryEntries(
             offset = backEntry?.offset,
             host = record.host,
             visitedAtMillis = record.visitedAtMillis,
+        )
+    }
+}
+
+internal fun buildAppBrowserSearchPanelState(
+    isSearching: Boolean,
+    query: String,
+    activeMatchOrdinal: Int,
+    numberOfMatches: Int,
+): AppBrowserSearchPanelState {
+    if (!isSearching || query.isBlank()) {
+        return AppBrowserSearchPanelState(
+            visible = false,
+            matchText = "",
+            canNavigate = false,
+        )
+    }
+
+    return if (numberOfMatches == 0) {
+        AppBrowserSearchPanelState(
+            visible = true,
+            matchText = "",
+            canNavigate = false,
+            showsNoResults = true,
+        )
+    } else {
+        AppBrowserSearchPanelState(
+            visible = true,
+            matchText = "${activeMatchOrdinal + 1}/$numberOfMatches",
+            canNavigate = true,
         )
     }
 }

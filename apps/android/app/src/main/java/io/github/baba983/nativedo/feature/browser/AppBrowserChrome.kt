@@ -1,8 +1,28 @@
 package io.github.baba983.nativedo.feature.browser
 
+import android.text.Editable
+import android.text.InputType
+import android.text.TextWatcher
+import android.util.TypedValue
+import android.view.Gravity
+import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.View
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
+import androidx.appcompat.widget.AppCompatEditText
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.background
@@ -29,6 +49,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
+import androidx.compose.material.icons.outlined.Clear
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.History
@@ -38,6 +59,9 @@ import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.OpenInBrowser
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -49,8 +73,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,6 +90,7 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -73,6 +100,7 @@ import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
@@ -86,6 +114,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.delay
 import kotlin.math.max
 import kotlin.math.min
 
@@ -94,12 +123,15 @@ internal data class AppBrowserChromeConfig(
     val subtitle: String?,
     val isHttps: Boolean,
     val progress: Float,
+    val canGoBack: Boolean,
     val canGoForward: Boolean,
     val backHistoryEntries: List<AppBrowserHistoryEntry>,
     val browserHistoryEntries: List<AppBrowserHistoryEntry>,
     val panel: AppBrowserPanel,
     val alpha: Float,
     val translationX: Float,
+    val isSearching: Boolean = false,
+    val searchQuery: String = "",
     val onBack: () -> Unit,
     val onClose: () -> Unit,
     val onShowHistory: () -> Unit,
@@ -110,9 +142,13 @@ internal data class AppBrowserChromeConfig(
     val onShare: () -> Unit,
     val onOpenInBrowser: () -> Unit,
     val onCopyLink: () -> Unit,
+    val onStartSearch: () -> Unit = {},
+    val onSearchQueryChange: (String) -> Unit = {},
+    val onSearchClose: () -> Unit = {},
 )
 
 internal enum class AppBrowserMenuAction {
+    Search,
     History,
     Forward,
     Refresh,
@@ -166,8 +202,72 @@ internal fun AppBrowserTopBar(
     val showProgress = progress > 0f && progress < 1f
     val topBarAlpha = config?.alpha ?: 0f
     val topBarTranslationX = config?.translationX ?: 0f
+    val isSearching = config?.isSearching == true
+    val showCloseButton = config?.canGoBack != true && !isSearching
+    var searchFocusToken by remember { mutableIntStateOf(0) }
     var menuExpanded by remember { mutableStateOf(false) }
     var historyExpanded by remember { mutableStateOf(false) }
+    val searchTransition = updateTransition(
+        targetState = isSearching,
+        label = "appBrowserSearchMode",
+    )
+    val searchingProgress by searchTransition.animateFloat(
+        transitionSpec = {
+            tween(
+                durationMillis = if (targetState) 320 else 220,
+                easing = LinearOutSlowInEasing,
+            )
+        },
+        label = "appBrowserSearchingProgress",
+    ) { searching ->
+        if (searching) 1f else 0f
+    }
+    val titleScale by searchTransition.animateFloat(
+        transitionSpec = {
+            tween(
+                durationMillis = if (targetState) 320 else 180,
+                easing = LinearOutSlowInEasing,
+            )
+        },
+        label = "appBrowserSearchTitleScale",
+    ) { searching ->
+        if (searching) 0.985f else 1f
+    }
+    val searchScale by searchTransition.animateFloat(
+        transitionSpec = {
+            tween(
+                durationMillis = if (targetState) 320 else 180,
+                easing = LinearOutSlowInEasing,
+            )
+        },
+        label = "appBrowserSearchFieldScale",
+    ) { searching ->
+        if (searching) 1f else 0.985f
+    }
+    val backCloseTransition = updateTransition(
+        targetState = showCloseButton,
+        label = "appBrowserBackCloseState",
+    )
+    val backCloseProgress by backCloseTransition.animateFloat(
+        transitionSpec = {
+            tween(
+                durationMillis = 320,
+                easing = LinearOutSlowInEasing,
+            )
+        },
+        label = "appBrowserBackCloseProgress",
+    ) { closeVisible ->
+        if (closeVisible) 1f else 0f
+    }
+    val searchClearVisible = config?.searchQuery?.isNotEmpty() == true
+    val searchClearProgress by animateFloatAsState(
+        targetValue = if (searchClearVisible) 1f else 0f,
+        animationSpec = tween(
+            durationMillis = if (searchClearVisible) 140 else 100,
+            easing = LinearOutSlowInEasing,
+        ),
+        label = "appBrowserSearchClearProgress",
+    )
 
     val menuEntries = remember(config?.canGoForward, hasBrowserHistoryEntries) {
         buildAppBrowserMenuEntries(
@@ -182,6 +282,15 @@ internal fun AppBrowserTopBar(
             historyExpanded = false
         } else if (config.backHistoryEntries.isEmpty()) {
             historyExpanded = false
+        }
+    }
+
+    LaunchedEffect(isSearching) {
+        if (isSearching) {
+            menuExpanded = false
+            historyExpanded = false
+            delay(appBrowserSearchEnterDurationMillis.toLong())
+            searchFocusToken += 1
         }
     }
 
@@ -206,12 +315,17 @@ internal fun AppBrowserTopBar(
                         vertical = AppTopBarVerticalPadding,
                     ),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Box {
                     AppBrowserChromeButton(
-                        onClick = { config?.onBack?.invoke() },
-                        onLongClick = if (hasBackHistoryEntries) {
+                        onClick = {
+                            if (showCloseButton) {
+                                config?.onClose?.invoke()
+                            } else {
+                                config?.onBack?.invoke()
+                            }
+                        },
+                        onLongClick = if (hasBackHistoryEntries && !isSearching) {
                             {
                                 menuExpanded = false
                                 historyExpanded = true
@@ -219,8 +333,16 @@ internal fun AppBrowserTopBar(
                         } else {
                             null
                         },
-                        imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = stringResource(R.string.app_browser_close),
+                        animatedBackCloseProgress = backCloseProgress,
+                        contentDescription = stringResource(
+                            if (showCloseButton) {
+                                R.string.app_browser_close
+                            } else if (isSearching) {
+                                R.string.app_browser_search_back
+                            } else {
+                                R.string.app_browser_back
+                            },
+                        ),
                     )
                     AppBrowserHistoryPopup(
                         expanded = historyExpanded &&
@@ -233,6 +355,7 @@ internal fun AppBrowserTopBar(
                         },
                     )
                 }
+                Spacer(modifier = Modifier.width(12.dp))
 
                 Box(
                     modifier = Modifier.weight(1f),
@@ -242,39 +365,81 @@ internal fun AppBrowserTopBar(
                         title = config?.title.orEmpty(),
                         subtitle = config?.subtitle,
                         isHttps = config?.isHttps == true,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .graphicsLayer {
+                                alpha = 1f - searchingProgress
+                                scaleX = titleScale
+                                scaleY = titleScale
+                            },
                     )
+                    if (config != null) {
+                        AppBrowserSearchBar(
+                            query = config.searchQuery,
+                            onQueryChange = config.onSearchQueryChange,
+                            focusToken = searchFocusToken,
+                            isSearching = isSearching,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .graphicsLayer {
+                                    alpha = searchingProgress
+                                    scaleX = searchScale
+                                    scaleY = searchScale
+                                },
+                        )
+                    }
                 }
 
-                Box {
-                    AppBrowserChromeButton(
-                        onClick = {
-                            if (config != null) {
-                                historyExpanded = false
-                                menuExpanded = true
-                            }
-                        },
-                        imageVector = Icons.Outlined.MoreVert,
-                        contentDescription = stringResource(R.string.app_browser_more_actions),
-                    )
-                    AppBrowserActionPopup(
-                        expanded = menuExpanded && config != null,
-                        entries = menuEntries,
-                        onDismissRequest = { menuExpanded = false },
-                        onActionClick = { action ->
-                            menuExpanded = false
-                            when (action) {
-                                AppBrowserMenuAction.History -> config?.onShowHistory?.invoke()
-                                AppBrowserMenuAction.Forward -> config?.onForward?.invoke()
-                                AppBrowserMenuAction.Refresh -> config?.onRefresh?.invoke()
-                                AppBrowserMenuAction.Share -> config?.onShare?.invoke()
-                                AppBrowserMenuAction.OpenInBrowser -> config?.onOpenInBrowser?.invoke()
-                                AppBrowserMenuAction.CopyLink -> config?.onCopyLink?.invoke()
-                                AppBrowserMenuAction.Settings -> config?.onShowSettings?.invoke()
-                                AppBrowserMenuAction.Close -> config?.onClose?.invoke()
-                            }
-                        },
-                    )
+                Spacer(modifier = Modifier.width(12.dp))
+                Box(
+                    modifier = Modifier.width(44.dp),
+                ) {
+                    if (!isSearching) {
+                        AppBrowserChromeButton(
+                            onClick = {
+                                if (config != null) {
+                                    historyExpanded = false
+                                    menuExpanded = true
+                                }
+                            },
+                            imageVector = Icons.Outlined.MoreVert,
+                            contentDescription = stringResource(R.string.app_browser_more_actions),
+                            modifier = Modifier.align(Alignment.Center),
+                        )
+                        AppBrowserActionPopup(
+                            expanded = menuExpanded && config != null,
+                            entries = menuEntries,
+                            onDismissRequest = { menuExpanded = false },
+                            onActionClick = { action ->
+                                menuExpanded = false
+                                when (action) {
+                                    AppBrowserMenuAction.Search -> config?.onStartSearch?.invoke()
+                                    AppBrowserMenuAction.History -> config?.onShowHistory?.invoke()
+                                    AppBrowserMenuAction.Forward -> config?.onForward?.invoke()
+                                    AppBrowserMenuAction.Refresh -> config?.onRefresh?.invoke()
+                                    AppBrowserMenuAction.Share -> config?.onShare?.invoke()
+                                    AppBrowserMenuAction.OpenInBrowser -> config?.onOpenInBrowser?.invoke()
+                                    AppBrowserMenuAction.CopyLink -> config?.onCopyLink?.invoke()
+                                    AppBrowserMenuAction.Settings -> config?.onShowSettings?.invoke()
+                                    AppBrowserMenuAction.Close -> config?.onClose?.invoke()
+                                }
+                            },
+                        )
+                    } else {
+                        AppBrowserChromeButton(
+                            onClick = { config?.onSearchQueryChange?.invoke("") },
+                            imageVector = Icons.Outlined.Close,
+                            contentDescription = stringResource(R.string.app_browser_search_clear),
+                            enabled = searchClearVisible,
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .graphicsLayer {
+                                    alpha = searchClearProgress
+                                    scaleX = 0.9f + (searchClearProgress * 0.1f)
+                                    scaleY = 0.9f + (searchClearProgress * 0.1f)
+                                },
+                        )
+                    }
                 }
             }
 
@@ -309,8 +474,10 @@ internal fun AppBrowserTopBar(
 internal fun AppBrowserChromeButton(
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
-    imageVector: ImageVector,
+    imageVector: ImageVector? = null,
+    animatedBackCloseProgress: Float? = null,
     contentDescription: String,
+    enabled: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val colors = NativeDoThemeExtras.colors
@@ -336,14 +503,23 @@ internal fun AppBrowserChromeButton(
                     indication = null,
                     onClick = onClick,
                     onLongClick = onLongClick,
+                    enabled = enabled,
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                imageVector = imageVector,
-                contentDescription = contentDescription,
-                tint = colors.textPrimary,
-            )
+            when {
+                animatedBackCloseProgress != null -> AppBrowserBackCloseGlyph(
+                    progress = animatedBackCloseProgress,
+                    tint = colors.textPrimary,
+                    contentDescription = contentDescription,
+                )
+
+                imageVector != null -> Icon(
+                    imageVector = imageVector,
+                    contentDescription = contentDescription,
+                    tint = colors.textPrimary.copy(alpha = if (enabled) 1f else 0.38f),
+                )
+            }
         }
     }
 }
@@ -410,6 +586,311 @@ internal fun AppBrowserTitlePill(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+internal fun AppBrowserSearchBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    focusToken: Int,
+    isSearching: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val colors = NativeDoThemeExtras.colors
+    val onQueryChangeState = rememberUpdatedState(onQueryChange)
+    val searchHint = stringResource(R.string.app_browser_search_placeholder)
+    val isSearchingState = rememberUpdatedState(isSearching)
+
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(24.dp),
+        color = colors.glassBackgroundStrong.copy(alpha = 0.84f),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(44.dp)
+                .padding(start = 18.dp, end = 14.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                AndroidView(
+                    modifier = Modifier
+                        .fillMaxWidth(),
+                    factory = { context ->
+                        AppBrowserSearchEditText(context).apply {
+                            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+                            setSingleLine(true)
+                            hint = searchHint
+                            background = null
+                            gravity = Gravity.CENTER_VERTICAL
+                            setPadding(0, 0, 0, 0)
+                            setTextColor(colors.textPrimary.toArgb())
+                            setHintTextColor(colors.textSecondary.toArgb())
+                            inputType = inputType or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                            imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN or EditorInfo.IME_ACTION_SEARCH
+                            setTextIsSelectable(false)
+                            setOnEditorActionListener { _, actionId, event ->
+                                if (
+                                    actionId == EditorInfo.IME_ACTION_SEARCH ||
+                                    (event != null && (
+                                        event.action == KeyEvent.ACTION_UP &&
+                                            event.keyCode == KeyEvent.KEYCODE_SEARCH ||
+                                            event.action == KeyEvent.ACTION_DOWN &&
+                                            event.keyCode == KeyEvent.KEYCODE_ENTER
+                                        ))
+                                ) {
+                                    hideSoftKeyboard(this)
+                                }
+                                false
+                            }
+                            addTextChangedListener(
+                                object : TextWatcher {
+                                    override fun beforeTextChanged(
+                                        s: CharSequence?,
+                                        start: Int,
+                                        count: Int,
+                                        after: Int,
+                                    ) = Unit
+
+                                    override fun onTextChanged(
+                                        s: CharSequence?,
+                                        start: Int,
+                                        before: Int,
+                                        count: Int,
+                                    ) = Unit
+
+                                    override fun afterTextChanged(s: Editable?) {
+                                        onQueryChangeState.value(s?.toString().orEmpty())
+                                    }
+                                },
+                            )
+                            if (query.isNotEmpty()) {
+                                setText(query)
+                                setSelection(text?.length ?: 0)
+                            }
+                        }
+                    },
+                    update = { editText ->
+                        editText.setTextColor(colors.textPrimary.toArgb())
+                        editText.setHintTextColor(colors.textSecondary.toArgb())
+                        editText.visibility = if (isSearchingState.value) View.VISIBLE else View.INVISIBLE
+                        if (!isSearchingState.value) {
+                            editText.cancelPendingKeyboardOpen()
+                        }
+                        if (editText.text?.toString().orEmpty() != query) {
+                            editText.setText(query)
+                            editText.setSelection(editText.text?.length ?: 0)
+                        }
+                        if (isSearchingState.value && editText.appliedFocusToken != focusToken) {
+                            editText.scheduleKeyboardOpen(focusToken)
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
+
+private class AppBrowserSearchEditText(
+    context: android.content.Context,
+) : AppCompatEditText(context) {
+    var appliedFocusToken: Int = Int.MIN_VALUE
+    private var pendingKeyboardToken: Int = Int.MIN_VALUE
+    private val showKeyboardRunnable = Runnable {
+        if (pendingKeyboardToken == Int.MIN_VALUE || visibility != View.VISIBLE) {
+            return@Runnable
+        }
+        requestFocus()
+        setSelection(text?.length ?: 0)
+        showSoftKeyboard(this)
+    }
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.action == MotionEvent.ACTION_DOWN && !showSoftKeyboard(this)) {
+            clearFocus()
+            requestFocus()
+        }
+        return super.onTouchEvent(event)
+    }
+
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        if (hasWindowFocus && pendingKeyboardToken != Int.MIN_VALUE) {
+            removeCallbacks(showKeyboardRunnable)
+            postDelayed(showKeyboardRunnable, appBrowserSearchKeyboardDelayMillis)
+        }
+    }
+
+    fun scheduleKeyboardOpen(focusToken: Int) {
+        appliedFocusToken = focusToken
+        pendingKeyboardToken = focusToken
+        removeCallbacks(showKeyboardRunnable)
+        if (hasWindowFocus()) {
+            postDelayed(showKeyboardRunnable, appBrowserSearchKeyboardDelayMillis)
+        }
+    }
+
+    fun cancelPendingKeyboardOpen() {
+        pendingKeyboardToken = Int.MIN_VALUE
+        removeCallbacks(showKeyboardRunnable)
+        clearFocus()
+        hideSoftKeyboard(this)
+        appliedFocusToken = Int.MIN_VALUE
+    }
+}
+
+@Composable
+private fun AppBrowserBackCloseGlyph(
+    progress: Float,
+    tint: Color,
+    contentDescription: String,
+) {
+    Box(
+        modifier = Modifier.size(24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.graphicsLayer {
+                alpha = 1f - progress
+                rotationZ = -135f * progress
+                scaleX = 1f - (progress * 0.08f)
+                scaleY = 1f - (progress * 0.08f)
+            },
+        )
+        Icon(
+            imageVector = Icons.Outlined.Close,
+            contentDescription = contentDescription,
+            tint = tint,
+            modifier = Modifier.graphicsLayer {
+                alpha = progress
+                rotationZ = 90f * (1f - progress)
+                scaleX = 0.92f + (progress * 0.08f)
+                scaleY = 0.92f + (progress * 0.08f)
+            },
+        )
+    }
+}
+
+private fun showSoftKeyboard(view: AppCompatEditText): Boolean {
+    val inputMethodManager = view.context.getSystemService(InputMethodManager::class.java)
+    return inputMethodManager?.showSoftInput(view, InputMethodManager.SHOW_IMPLICIT) == true
+}
+
+private fun hideSoftKeyboard(view: AppCompatEditText) {
+    val inputMethodManager = view.context.getSystemService(InputMethodManager::class.java)
+    inputMethodManager?.hideSoftInputFromWindow(view.windowToken, 0)
+}
+
+private const val appBrowserSearchEnterDurationMillis = 320
+private const val appBrowserSearchKeyboardDelayMillis = 48L
+
+@Composable
+internal fun AppBrowserSearchPanel(
+    state: AppBrowserSearchPanelState,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = NativeDoThemeExtras.colors
+
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(0.dp),
+        color = colors.backgroundElevated.copy(alpha = 0.98f),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Column {
+            HorizontalDivider(
+                color = colors.glassStrokeStrong.copy(alpha = 0.32f),
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .padding(start = 18.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (state.showsNoResults) {
+                        stringResource(R.string.app_browser_search_no_results)
+                    } else {
+                        state.matchText
+                    },
+                    style = MaterialTheme.typography.titleSmall,
+                    color = if (state.canNavigate) colors.textPrimary else colors.textSecondary,
+                    modifier = Modifier.weight(1f),
+                )
+                AppBrowserSearchActionButton(
+                    onClick = onPrevious,
+                    enabled = state.canNavigate,
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.KeyboardArrowUp,
+                        contentDescription = stringResource(R.string.app_browser_search_previous),
+                        tint = colors.textPrimary.copy(alpha = if (state.canNavigate) 1f else 0.38f),
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+                AppBrowserSearchActionButton(
+                    onClick = onNext,
+                    enabled = state.canNavigate,
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.KeyboardArrowDown,
+                        contentDescription = stringResource(R.string.app_browser_search_next),
+                        tint = colors.textPrimary.copy(alpha = if (state.canNavigate) 1f else 0.38f),
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppBrowserSearchActionButton(
+    onClick: () -> Unit,
+    enabled: Boolean,
+    content: @Composable () -> Unit,
+) {
+    val colors = NativeDoThemeExtras.colors
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+
+    Surface(
+        shape = CircleShape,
+        color = when {
+            !enabled -> Color.Transparent
+            pressed -> colors.glassBackgroundStrong.copy(alpha = 0.96f)
+            else -> Color.Transparent
+        },
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .combinedClickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onClick = onClick,
+                    enabled = enabled,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            content()
         }
     }
 }
@@ -922,6 +1403,7 @@ private fun formatAppBrowserHistoryVisitedAt(
 
 @Composable
 private fun AppBrowserMenuAction.label(): String = when (this) {
+    AppBrowserMenuAction.Search -> androidx.compose.ui.res.stringResource(R.string.app_browser_search)
     AppBrowserMenuAction.History -> androidx.compose.ui.res.stringResource(R.string.app_browser_history)
     AppBrowserMenuAction.Forward -> androidx.compose.ui.res.stringResource(R.string.app_browser_forward)
     AppBrowserMenuAction.Refresh -> androidx.compose.ui.res.stringResource(R.string.app_browser_refresh)
@@ -933,6 +1415,7 @@ private fun AppBrowserMenuAction.label(): String = when (this) {
 }
 
 private fun AppBrowserMenuAction.icon(): ImageVector = when (this) {
+    AppBrowserMenuAction.Search -> Icons.Outlined.Search
     AppBrowserMenuAction.History -> Icons.Outlined.History
     AppBrowserMenuAction.Forward -> Icons.AutoMirrored.Outlined.ArrowForward
     AppBrowserMenuAction.Refresh -> Icons.Outlined.Refresh

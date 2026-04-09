@@ -10,10 +10,13 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.MutableTransitionState
@@ -23,6 +26,9 @@ import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -33,6 +39,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
@@ -87,6 +94,10 @@ internal fun AppBrowserRoute(
     var canGoForward by remember(url) { mutableStateOf(false) }
     var closeRequested by remember(url) { mutableStateOf(false) }
     var panel by remember(url) { mutableStateOf<AppBrowserPanel>(AppBrowserPanel.Page) }
+    var isSearching by remember(url) { mutableStateOf(false) }
+    var searchQuery by remember(url) { mutableStateOf("") }
+    var searchActiveMatchOrdinal by remember(url) { mutableIntStateOf(0) }
+    var searchNumberOfMatches by remember(url) { mutableIntStateOf(0) }
     val historyVisitMarks = remember(url) { mutableStateListOf<AppBrowserHistoryVisit>() }
     var lastRecordedUrl by remember(url) { mutableStateOf<String?>(null) }
     var lastRecordedAtMillis by remember(url) { mutableLongStateOf(0L) }
@@ -186,6 +197,19 @@ internal fun AppBrowserRoute(
             browserHistoryEntries = browserHistory,
         )
     }
+    val searchPanelState = remember(
+        isSearching,
+        searchQuery,
+        searchActiveMatchOrdinal,
+        searchNumberOfMatches,
+    ) {
+        buildAppBrowserSearchPanelState(
+            isSearching = isSearching,
+            query = searchQuery,
+            activeMatchOrdinal = searchActiveMatchOrdinal,
+            numberOfMatches = searchNumberOfMatches,
+        )
+    }
 
     fun requestClose() {
         if (closeRequested) {
@@ -216,6 +240,37 @@ internal fun AppBrowserRoute(
         }
     }
 
+    fun startSearch() {
+        isSearching = true
+    }
+
+    fun updateSearchQuery(query: String) {
+        searchQuery = query
+        if (query.isBlank()) {
+            searchActiveMatchOrdinal = 0
+            searchNumberOfMatches = 0
+            webViewRef?.clearMatches()
+        } else {
+            webViewRef?.findAllAsync(query)
+        }
+    }
+
+    fun searchNext() {
+        webViewRef?.findNext(true)
+    }
+
+    fun searchPrevious() {
+        webViewRef?.findNext(false)
+    }
+
+    fun closeSearch() {
+        isSearching = false
+        searchQuery = ""
+        searchActiveMatchOrdinal = 0
+        searchNumberOfMatches = 0
+        webViewRef?.clearMatches()
+    }
+
     val handleNavigation: (String) -> Boolean = { requestUrl ->
         when (val target = linkRouter.resolve(requestUrl)) {
             is LinkOpenTarget.NativeTopic,
@@ -239,6 +294,7 @@ internal fun AppBrowserRoute(
 
     BackHandler {
         when {
+            isSearching -> closeSearch()
             panel != AppBrowserPanel.Page -> panel = AppBrowserPanel.Page
             else -> navigateBack()
         }
@@ -265,6 +321,10 @@ internal fun AppBrowserRoute(
         webViewRef,
         backHistoryEntries,
         browserHistoryEntries,
+        isSearching,
+        searchQuery,
+        searchActiveMatchOrdinal,
+        searchNumberOfMatches,
     ) {
         onChromeConfigChanged(
             AppBrowserChromeConfig(
@@ -272,6 +332,7 @@ internal fun AppBrowserRoute(
                 subtitle = chromeSubtitle,
                 isHttps = isHttps,
                 progress = progress / 100f,
+                canGoBack = canGoBack,
                 canGoForward = canGoForward,
                 backHistoryEntries = backHistoryEntries,
                 browserHistoryEntries = browserHistoryEntries,
@@ -279,7 +340,9 @@ internal fun AppBrowserRoute(
                 alpha = routeAlpha,
                 translationX = routeTranslationX,
                 onBack = {
-                    if (panel != AppBrowserPanel.Page) {
+                    if (isSearching) {
+                        closeSearch()
+                    } else if (panel != AppBrowserPanel.Page) {
                         panel = AppBrowserPanel.Page
                     } else {
                         navigateBack()
@@ -318,6 +381,11 @@ internal fun AppBrowserRoute(
                         ),
                     )
                 },
+                isSearching = isSearching,
+                searchQuery = searchQuery,
+                onStartSearch = ::startSearch,
+                onSearchQueryChange = ::updateSearchQuery,
+                onSearchClose = ::closeSearch,
             ),
         )
     }
@@ -332,7 +400,9 @@ internal fun AppBrowserRoute(
             },
     ) {
         AndroidView(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .imePadding(),
             factory = { ctx ->
                 WebView(ctx).apply {
                     layoutParams = ViewGroup.LayoutParams(
@@ -431,6 +501,13 @@ internal fun AppBrowserRoute(
                         }
                     }
 
+                    setFindListener { activeMatchOrdinal, numberOfMatches, isDoneCounting ->
+                        if (isDoneCounting) {
+                            searchActiveMatchOrdinal = activeMatchOrdinal
+                            searchNumberOfMatches = numberOfMatches
+                        }
+                    }
+
                     appContainer.cookieSyncBridge.syncToWebView(appContainer.baseUrl)
                     loadUrl(url)
                     webViewRef = this
@@ -490,6 +567,45 @@ internal fun AppBrowserRoute(
 
                 AppBrowserPanel.Page -> Box(modifier = Modifier.fillMaxSize())
             }
+        }
+
+        AnimatedVisibility(
+            visible = searchPanelState.visible,
+            enter = slideInVertically(
+                animationSpec = tween(
+                    durationMillis = 320,
+                    easing = LinearOutSlowInEasing,
+                ),
+                initialOffsetY = { it },
+            ) + fadeIn(
+                animationSpec = tween(
+                    durationMillis = 220,
+                    easing = LinearOutSlowInEasing,
+                ),
+            ),
+            exit = slideOutVertically(
+                animationSpec = tween(
+                    durationMillis = 180,
+                    easing = LinearOutSlowInEasing,
+                ),
+                targetOffsetY = { it },
+            ) + fadeOut(
+                animationSpec = tween(
+                    durationMillis = 120,
+                    easing = LinearOutSlowInEasing,
+                ),
+            ),
+            modifier = Modifier.align(Alignment.BottomCenter),
+        ) {
+            AppBrowserSearchPanel(
+                state = searchPanelState,
+                onPrevious = ::searchPrevious,
+                onNext = ::searchNext,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .imePadding()
+                    .navigationBarsPadding(),
+            )
         }
     }
 }
