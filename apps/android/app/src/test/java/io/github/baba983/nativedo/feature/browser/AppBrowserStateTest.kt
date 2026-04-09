@@ -3,8 +3,13 @@ package io.github.baba983.nativedo.feature.browser
 import io.github.baba983.nativedo.core.storage.AppBrowserHistorySnapshot
 import com.google.common.truth.Truth.assertThat
 import io.github.baba983.nativedo.core.storage.AppBrowserHistoryStorePersistence
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class AppBrowserStateTest {
     @Test
     fun appBrowserSearchPanelState_hiddenWhenSearchModeIsClosed() {
@@ -131,8 +136,10 @@ class AppBrowserStateTest {
     }
 
     @Test
-    fun appBrowserHistoryStore_recordVisit_keepsNewestEntryAndDedupesUrl() {
-        val store = AppBrowserHistoryStore()
+    fun appBrowserHistoryStore_recordVisit_keepsNewestEntryAndDedupesUrl() = runTest {
+        val store = AppBrowserHistoryStore(
+            persistenceDispatcher = StandardTestDispatcher(testScheduler),
+        )
 
         store.recordVisit(
             url = "https://cdk.linux.do/dashboard",
@@ -149,6 +156,7 @@ class AppBrowserStateTest {
             title = "CDK Dashboard",
             visitedAtMillis = 300L,
         )
+        advanceUntilIdle()
 
         assertThat(store.history.value.map { entry -> entry.url }).containsExactly(
             "https://cdk.linux.do/dashboard",
@@ -280,9 +288,12 @@ class AppBrowserStateTest {
     }
 
     @Test
-    fun historyStore_clear_removesPersistedEntries() {
+    fun historyStore_clear_removesPersistedEntries() = runTest {
         val persistence = InMemoryAppBrowserHistoryStorePersistence()
-        val store = AppBrowserHistoryStore(persistence = persistence)
+        val store = AppBrowserHistoryStore(
+            persistence = persistence,
+            persistenceDispatcher = StandardTestDispatcher(testScheduler),
+        )
 
         store.recordVisit(
             url = "https://linux.do/t/render-debug-case/123456",
@@ -290,9 +301,59 @@ class AppBrowserStateTest {
             visitedAtMillis = 200L,
         )
         store.clear()
+        advanceUntilIdle()
 
         assertThat(store.history.value).isEmpty()
         assertThat(persistence.saved).isEmpty()
+    }
+
+    @Test
+    fun historyStore_restore_keepsPersistedFaviconSnapshot() {
+        val persistence = InMemoryAppBrowserHistoryStorePersistence(
+            records = listOf(
+                AppBrowserHistorySnapshot(
+                    title = "Linux.do",
+                    url = "https://linux.do",
+                    host = "linux.do",
+                    visitedAtMillis = 300L,
+                    faviconBase64 = "ZmFrZS1pY29u",
+                ),
+            ),
+        )
+
+        val store = AppBrowserHistoryStore(persistence = persistence)
+
+        assertThat(store.history.value.single().faviconBase64).isEqualTo("ZmFrZS1pY29u")
+    }
+
+    @Test
+    fun historyStore_recordVisit_withoutNewFavicon_keepsExistingSnapshot() = runTest {
+        val persistence = InMemoryAppBrowserHistoryStorePersistence(
+            records = listOf(
+                AppBrowserHistorySnapshot(
+                    title = "Linux.do",
+                    url = "https://linux.do",
+                    host = "linux.do",
+                    visitedAtMillis = 100L,
+                    faviconBase64 = "persisted-favicon",
+                ),
+            ),
+        )
+        val store = AppBrowserHistoryStore(
+            persistence = persistence,
+            persistenceDispatcher = StandardTestDispatcher(testScheduler),
+        )
+
+        store.recordVisit(
+            url = "https://linux.do",
+            title = "Linux.do Updated",
+            visitedAtMillis = 200L,
+            favicon = null,
+        )
+        advanceUntilIdle()
+
+        assertThat(store.history.value.single().faviconBase64).isEqualTo("persisted-favicon")
+        assertThat(persistence.saved.single().faviconBase64).isEqualTo("persisted-favicon")
     }
 }
 

@@ -2,6 +2,7 @@ package io.github.baba983.nativedo.feature.browser
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,7 +30,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -149,17 +152,14 @@ internal fun AppBrowserHistoryPanel(
                                 Box(
                                     modifier = Modifier
                                         .size(32.dp)
+                                        .clip(CircleShape)
                                         .background(
                                             color = colors.glassBackground,
                                             shape = CircleShape,
                                         ),
                                     contentAlignment = Alignment.Center,
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Outlined.History,
-                                        contentDescription = null,
-                                        tint = colors.textPrimary,
-                                    )
+                                    AppBrowserHistoryPanelIcon(entry = entry)
                                 }
                                 Column(
                                     modifier = Modifier.weight(1f),
@@ -191,6 +191,40 @@ internal fun AppBrowserHistoryPanel(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AppBrowserHistoryPanelIcon(
+    entry: AppBrowserHistoryEntry,
+) {
+    val colors = NativeDoThemeExtras.colors
+    val favicon = remember(entry.favicon) { entry.favicon }
+    if (favicon != null) {
+        Image(
+            bitmap = favicon.asImageBitmap(),
+            contentDescription = null,
+            modifier = Modifier.size(32.dp),
+        )
+        return
+    }
+
+    val fallbackText = remember(entry.title, entry.host) {
+        entry.title.ifBlank { entry.host }.trim().firstOrNull()?.uppercase() ?: ""
+    }
+    if (fallbackText.isNotBlank()) {
+        Text(
+            text = fallbackText,
+            style = MaterialTheme.typography.labelLarge,
+            color = colors.textPrimary,
+            maxLines = 1,
+        )
+    } else {
+        Icon(
+            imageVector = Icons.Outlined.History,
+            contentDescription = null,
+            tint = colors.textPrimary,
+        )
     }
 }
 

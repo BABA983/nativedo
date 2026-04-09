@@ -227,7 +227,6 @@ fun NativeDoApp() {
                         },
                     )
                 }
-
                 BulletinHost(
                     hostState = bulletinHostState,
                     modifier = Modifier.align(Alignment.TopCenter),

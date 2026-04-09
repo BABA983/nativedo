@@ -20,10 +20,13 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -33,14 +36,17 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -98,7 +104,9 @@ internal fun AppBrowserRoute(
     var searchQuery by remember(url) { mutableStateOf("") }
     var searchActiveMatchOrdinal by remember(url) { mutableIntStateOf(0) }
     var searchNumberOfMatches by remember(url) { mutableIntStateOf(0) }
+    var historyPopupExpanded by remember(url) { mutableStateOf(false) }
     val historyVisitMarks = remember(url) { mutableStateListOf<AppBrowserHistoryVisit>() }
+    val historyFavicons = remember(url) { mutableStateMapOf<String, Bitmap>() }
     var lastRecordedUrl by remember(url) { mutableStateOf<String?>(null) }
     var lastRecordedAtMillis by remember(url) { mutableLongStateOf(0L) }
 
@@ -189,6 +197,7 @@ internal fun AppBrowserRoute(
         readAppBrowserHistoryEntries(
             webView = webViewRef,
             visits = historyVisitMarks,
+            favicons = historyFavicons,
         )
     }
     val browserHistoryEntries = remember(backHistoryEntries, browserHistory) {
@@ -210,6 +219,11 @@ internal fun AppBrowserRoute(
             numberOfMatches = searchNumberOfMatches,
         )
     }
+    val historyScrimAlpha by animateFloatAsState(
+        targetValue = if (historyPopupExpanded) 0.48f else 0f,
+        animationSpec = tween(durationMillis = 180),
+        label = "appBrowserHistoryScrimAlpha",
+    )
 
     fun requestClose() {
         if (closeRequested) {
@@ -294,6 +308,7 @@ internal fun AppBrowserRoute(
 
     BackHandler {
         when {
+            historyPopupExpanded -> historyPopupExpanded = false
             isSearching -> closeSearch()
             panel != AppBrowserPanel.Page -> panel = AppBrowserPanel.Page
             else -> navigateBack()
@@ -325,6 +340,7 @@ internal fun AppBrowserRoute(
         searchQuery,
         searchActiveMatchOrdinal,
         searchNumberOfMatches,
+        historyPopupExpanded,
     ) {
         onChromeConfigChanged(
             AppBrowserChromeConfig(
@@ -381,6 +397,8 @@ internal fun AppBrowserRoute(
                         ),
                     )
                 },
+                isHistoryPopupVisible = historyPopupExpanded,
+                onHistoryPopupVisibilityChanged = { historyPopupExpanded = it },
                 isSearching = isSearching,
                 searchQuery = searchQuery,
                 onStartSearch = ::startSearch,
@@ -388,6 +406,14 @@ internal fun AppBrowserRoute(
                 onSearchClose = ::closeSearch,
             ),
         )
+    }
+    SideEffect {
+        if (panel != AppBrowserPanel.Page && historyPopupExpanded) {
+            historyPopupExpanded = false
+        }
+        if (isSearching && historyPopupExpanded) {
+            historyPopupExpanded = false
+        }
     }
 
     Box(
@@ -433,6 +459,9 @@ internal fun AppBrowserRoute(
                             currentPageTitle = null
                             canGoBack = view?.canGoBack() == true
                             canGoForward = view?.canGoForward() == true
+                            if (favicon != null && !url.isNullOrBlank()) {
+                                historyFavicons.rememberBest(url, favicon)
+                            }
                             recordAppBrowserVisit(
                                 visits = historyVisitMarks,
                                 url = url,
@@ -452,6 +481,7 @@ internal fun AppBrowserRoute(
                             appContainer.appBrowserHistoryStore.recordVisit(
                                 url = finishedUrl,
                                 title = currentPageTitle,
+                                favicon = historyFavicons[finishedUrl] ?: view?.favicon,
                             )
                             if (finishedUrl.contains("linux.do")) {
                                 appContainer.cookieSyncBridge.syncFromWebView(finishedUrl)
@@ -469,6 +499,14 @@ internal fun AppBrowserRoute(
                             currentPageTitle = title
                                 ?.trim()
                                 ?.takeIf(String::isNotBlank)
+                        }
+
+                        override fun onReceivedIcon(view: WebView?, icon: Bitmap?) {
+                            super.onReceivedIcon(view, icon)
+                            val iconUrl = view?.url.orEmpty()
+                            if (icon != null && iconUrl.isNotBlank()) {
+                                historyFavicons.rememberBest(iconUrl, icon)
+                            }
                         }
 
                         override fun onCreateWindow(
@@ -518,6 +556,20 @@ internal fun AppBrowserRoute(
                 canGoForward = view.canGoForward()
             },
         )
+
+        if (historyScrimAlpha > 0f) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = historyScrimAlpha }
+                    .background(Color.Black)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { historyPopupExpanded = false },
+                    ),
+            )
+        }
 
         AnimatedContent(
             targetState = panel,
@@ -610,9 +662,17 @@ internal fun AppBrowserRoute(
     }
 }
 
+private fun MutableMap<String, Bitmap>.rememberBest(url: String, icon: Bitmap) {
+    val current = this[url]
+    if (current == null || (icon.width * icon.height) > (current.width * current.height)) {
+        this[url] = icon
+    }
+}
+
 private fun readAppBrowserHistoryEntries(
     webView: WebView?,
     visits: List<AppBrowserHistoryVisit>,
+    favicons: Map<String, Bitmap>,
 ): List<AppBrowserHistoryEntry> {
     val historyList = webView?.copyBackForwardList() ?: return emptyList()
     val currentIndex = historyList.currentIndex
@@ -639,6 +699,7 @@ private fun readAppBrowserHistoryEntries(
                         .lastOrNull { visit -> visit.url == itemUrl }
                         ?.visitedAtMillis
                         ?: 0L,
+                    favicon = favicons[itemUrl] ?: item.favicon,
                 ),
             )
         }

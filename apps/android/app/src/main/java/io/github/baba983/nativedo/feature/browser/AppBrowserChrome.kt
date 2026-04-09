@@ -1,5 +1,6 @@
 package io.github.baba983.nativedo.feature.browser
 
+import android.graphics.Bitmap
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
@@ -26,6 +27,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -83,11 +85,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.clipRect
-import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
@@ -142,6 +143,8 @@ internal data class AppBrowserChromeConfig(
     val onShare: () -> Unit,
     val onOpenInBrowser: () -> Unit,
     val onCopyLink: () -> Unit,
+    val isHistoryPopupVisible: Boolean = false,
+    val onHistoryPopupVisibilityChanged: (Boolean) -> Unit = {},
     val onStartSearch: () -> Unit = {},
     val onSearchQueryChange: (String) -> Unit = {},
     val onSearchClose: () -> Unit = {},
@@ -175,11 +178,8 @@ internal data class AppBrowserHistoryEntry(
     val offset: Int?,
     val host: String,
     val visitedAtMillis: Long,
+    val favicon: Bitmap? = null,
 )
-
-private enum class AppBrowserHistoryPopupAnchor {
-    BackButton,
-}
 
 private data class AppBrowserPopupPalette(
     val background: Color,
@@ -203,10 +203,12 @@ internal fun AppBrowserTopBar(
     val topBarAlpha = config?.alpha ?: 0f
     val topBarTranslationX = config?.translationX ?: 0f
     val isSearching = config?.isSearching == true
-    val showCloseButton = config?.canGoBack != true && !isSearching
+    val isInSubPanel = config?.panel != AppBrowserPanel.Page
     var searchFocusToken by remember { mutableIntStateOf(0) }
     var menuExpanded by remember { mutableStateOf(false) }
-    var historyExpanded by remember { mutableStateOf(false) }
+    val historyExpanded = config?.isHistoryPopupVisible == true
+    val showBackButton = isSearching || isInSubPanel || historyExpanded
+    val showCloseButton = !showBackButton
     val searchTransition = updateTransition(
         targetState = isSearching,
         label = "appBrowserSearchMode",
@@ -279,16 +281,15 @@ internal fun AppBrowserTopBar(
     LaunchedEffect(config) {
         if (config == null) {
             menuExpanded = false
-            historyExpanded = false
         } else if (config.backHistoryEntries.isEmpty()) {
-            historyExpanded = false
+            config.onHistoryPopupVisibilityChanged(false)
         }
     }
 
     LaunchedEffect(isSearching) {
         if (isSearching) {
             menuExpanded = false
-            historyExpanded = false
+            config?.onHistoryPopupVisibilityChanged?.invoke(false)
             delay(appBrowserSearchEnterDurationMillis.toLong())
             searchFocusToken += 1
         }
@@ -317,23 +318,29 @@ internal fun AppBrowserTopBar(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box {
+                    AppBrowserHistoryAnchorHighlight(
+                        visible = historyExpanded,
+                    )
                     AppBrowserChromeButton(
                         onClick = {
-                            if (showCloseButton) {
+                            if (historyExpanded) {
+                                config?.onHistoryPopupVisibilityChanged?.invoke(false)
+                            } else if (showCloseButton) {
                                 config?.onClose?.invoke()
                             } else {
                                 config?.onBack?.invoke()
                             }
                         },
-                        onLongClick = if (hasBackHistoryEntries && !isSearching) {
+                        onLongClick = if (hasBackHistoryEntries && !isSearching && !isInSubPanel) {
                             {
                                 menuExpanded = false
-                                historyExpanded = true
+                                config?.onHistoryPopupVisibilityChanged?.invoke(true)
                             }
                         } else {
                             null
                         },
                         animatedBackCloseProgress = backCloseProgress,
+                        containerColorOverride = if (historyExpanded) Color.Transparent else null,
                         contentDescription = stringResource(
                             if (showCloseButton) {
                                 R.string.app_browser_close
@@ -348,9 +355,9 @@ internal fun AppBrowserTopBar(
                         expanded = historyExpanded &&
                             config?.backHistoryEntries?.isNotEmpty() == true,
                         entries = config?.backHistoryEntries.orEmpty(),
-                        onDismissRequest = { historyExpanded = false },
+                        onDismissRequest = { config?.onHistoryPopupVisibilityChanged?.invoke(false) },
                         onEntryClick = { entry ->
-                            historyExpanded = false
+                            config?.onHistoryPopupVisibilityChanged?.invoke(false)
                             config?.onHistoryEntryClick?.invoke(entry)
                         },
                     )
@@ -398,12 +405,13 @@ internal fun AppBrowserTopBar(
                         AppBrowserChromeButton(
                             onClick = {
                                 if (config != null) {
-                                    historyExpanded = false
+                                    config.onHistoryPopupVisibilityChanged(false)
                                     menuExpanded = true
                                 }
                             },
                             imageVector = Icons.Outlined.MoreVert,
                             contentDescription = stringResource(R.string.app_browser_more_actions),
+                            emphasized = menuExpanded,
                             modifier = Modifier.align(Alignment.Center),
                         )
                         AppBrowserActionPopup(
@@ -431,6 +439,7 @@ internal fun AppBrowserTopBar(
                             imageVector = Icons.Outlined.Close,
                             contentDescription = stringResource(R.string.app_browser_search_clear),
                             enabled = searchClearVisible,
+                            emphasized = searchClearVisible,
                             modifier = Modifier
                                 .align(Alignment.Center)
                                 .graphicsLayer {
@@ -478,16 +487,27 @@ internal fun AppBrowserChromeButton(
     animatedBackCloseProgress: Float? = null,
     contentDescription: String,
     enabled: Boolean = true,
+    emphasized: Boolean = true,
+    containerColorOverride: Color? = null,
     modifier: Modifier = Modifier,
 ) {
     val colors = NativeDoThemeExtras.colors
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
+    val contentTint = colors.textPrimary.copy(
+        alpha = when {
+            !enabled -> 0.38f
+            !emphasized -> 0.62f
+            else -> 1f
+        },
+    )
     Surface(
         modifier = modifier.size(44.dp),
         shape = CircleShape,
-        color = if (pressed) {
+        color = containerColorOverride ?: if (pressed) {
             colors.glassBackgroundStrong.copy(alpha = 0.94f)
+        } else if (!emphasized) {
+            colors.glassBackgroundStrong.copy(alpha = 0.22f)
         } else {
             colors.glassBackgroundStrong.copy(alpha = 0.82f)
         },
@@ -510,14 +530,14 @@ internal fun AppBrowserChromeButton(
             when {
                 animatedBackCloseProgress != null -> AppBrowserBackCloseGlyph(
                     progress = animatedBackCloseProgress,
-                    tint = colors.textPrimary,
+                    tint = contentTint,
                     contentDescription = contentDescription,
                 )
 
                 imageVector != null -> Icon(
                     imageVector = imageVector,
                     contentDescription = contentDescription,
-                    tint = colors.textPrimary.copy(alpha = if (enabled) 1f else 0.38f),
+                    tint = contentTint,
                 )
             }
         }
@@ -958,6 +978,21 @@ private fun AppBrowserHistoryPopup(
     ) { visible ->
         if (visible) 0f else -popupCloseTranslationPx
     }
+    val backgroundRevealProgress by transition.animateFloat(
+        transitionSpec = {
+            tween(
+                durationMillis = if (targetState) {
+                    popupOpenDuration
+                } else {
+                    appBrowserPopupCloseDurationMillis
+                },
+                easing = LinearOutSlowInEasing,
+            )
+        },
+        label = "appBrowserHistoryPopupBackgroundReveal",
+    ) { visible ->
+        if (visible) 1f else 0.001f
+    }
 
     Popup(
         popupPositionProvider = popupPositionProvider,
@@ -972,28 +1007,26 @@ private fun AppBrowserHistoryPopup(
         Box(
             modifier = Modifier
                 .graphicsLayer {
+                    alpha = popupProgress
                     translationY = containerTranslationY
                 }
                 .width(appBrowserHistoryPopupWidth)
                 .drawWithContent {
-                    val revealScale = max(popupProgress, 0.001f)
-                    val backgroundColor = palette.background.copy(alpha = 0.98f * popupProgress)
-                    withTransform({
-                        scale(
-                            scaleX = 1f,
-                            scaleY = revealScale,
-                            pivot = Offset(size.width, 0f),
-                        )
-                    }) {
+                    val backgroundColor = palette.background.copy(alpha = 0.985f)
+                    clipRect(
+                        right = size.width,
+                        bottom = size.height * max(backgroundRevealProgress, 0.001f),
+                    ) {
                         drawRoundRect(
                             color = backgroundColor,
                             cornerRadius = CornerRadius(popupCornerRadiusPx, popupCornerRadiusPx),
                         )
                     }
-                    clipRect(bottom = size.height * popupProgress) {
+                    clipRect(bottom = size.height * backgroundRevealProgress) {
                         this@drawWithContent.drawContent()
                     }
-                },
+                }
+                .clip(RoundedCornerShape(appBrowserPopupCornerRadius)),
         ) {
             LazyColumn(
                 modifier = Modifier
@@ -1010,7 +1043,7 @@ private fun AppBrowserHistoryPopup(
                         entry = entry,
                         index = index,
                         itemCount = entries.size,
-                        popupProgress = popupProgress,
+                        revealProgress = backgroundRevealProgress,
                         onClick = { onEntryClick(entry) },
                     )
                 }
@@ -1036,7 +1069,6 @@ internal fun AppBrowserActionPopup(
     val popupOpenDuration = remember(itemCount) {
         appBrowserPopupOpenDuration(itemCount)
     }
-    val popupCornerRadiusPx = with(density) { appBrowserPopupCornerRadius.toPx() }
     val popupCloseTranslationPx = with(density) { appBrowserPopupCloseTranslation.toPx() }
     val transitionState = remember { MutableTransitionState(false) }
 
@@ -1081,6 +1113,21 @@ internal fun AppBrowserActionPopup(
     ) { visible ->
         if (visible) 0f else -popupCloseTranslationPx
     }
+    val backgroundRevealProgress by transition.animateFloat(
+        transitionSpec = {
+            tween(
+                durationMillis = if (targetState) {
+                    popupOpenDuration
+                } else {
+                    appBrowserPopupCloseDurationMillis
+                },
+                easing = LinearOutSlowInEasing,
+            )
+        },
+        label = "appBrowserPopupBackgroundReveal",
+    ) { visible ->
+        if (visible) 1f else 0.001f
+    }
 
     Popup(
         popupPositionProvider = popupPositionProvider,
@@ -1092,31 +1139,20 @@ internal fun AppBrowserActionPopup(
             clippingEnabled = false,
         ),
     ) {
-        Box(
+        Surface(
             modifier = Modifier
                 .graphicsLayer {
+                    alpha = popupProgress
                     translationY = containerTranslationY
+                    scaleY = backgroundRevealProgress
+                    transformOrigin = TransformOrigin(1f, 0f)
                 }
                 .width(appBrowserPopupWidth)
-                .drawWithContent {
-                    val revealScale = max(popupProgress, 0.001f)
-                    val backgroundColor = palette.background.copy(alpha = 0.98f * popupProgress)
-                    withTransform({
-                        scale(
-                            scaleX = 1f,
-                            scaleY = revealScale,
-                            pivot = Offset(size.width, 0f),
-                        )
-                    }) {
-                        drawRoundRect(
-                            color = backgroundColor,
-                            cornerRadius = CornerRadius(popupCornerRadiusPx, popupCornerRadiusPx),
-                        )
-                    }
-                    clipRect(bottom = size.height * popupProgress) {
-                        this@drawWithContent.drawContent()
-                    }
-                },
+                .clip(RoundedCornerShape(appBrowserPopupCornerRadius)),
+            shape = RoundedCornerShape(appBrowserPopupCornerRadius),
+            color = palette.background.copy(alpha = 0.985f),
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
         ) {
             Column(
                 modifier = Modifier.padding(vertical = appBrowserPopupVerticalPadding),
@@ -1170,6 +1206,47 @@ private class AppBrowserPopupPositionProvider(
 private fun appBrowserPopupOpenDuration(
     itemCount: Int,
 ): Int = 150 + 16 * itemCount.coerceAtLeast(0)
+
+@Composable
+private fun AppBrowserHistoryAnchorHighlight(
+    visible: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val colors = NativeDoThemeExtras.colors
+    val alpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(
+            durationMillis = if (visible) 140 else 100,
+            easing = LinearOutSlowInEasing,
+        ),
+        label = "appBrowserHistoryAnchorAlpha",
+    )
+    val scale by animateFloatAsState(
+        targetValue = if (visible) 1f else 0.92f,
+        animationSpec = tween(
+            durationMillis = if (visible) 180 else 120,
+            easing = LinearOutSlowInEasing,
+        ),
+        label = "appBrowserHistoryAnchorScale",
+    )
+    if (alpha <= 0f) {
+        return
+    }
+    Box(
+        modifier = modifier
+            .size(44.dp)
+            .graphicsLayer {
+                this.alpha = alpha
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(CircleShape)
+            .background(
+                color = colors.glassBackgroundStrong.copy(alpha = 0.94f),
+                shape = CircleShape,
+            ),
+    )
+}
 
 @Composable
 private fun rememberAppBrowserPopupPalette(): AppBrowserPopupPalette {
@@ -1296,16 +1373,16 @@ private fun AppBrowserHistoryPopupItem(
     entry: AppBrowserHistoryEntry,
     index: Int,
     itemCount: Int,
-    popupProgress: Float,
+    revealProgress: Float,
     onClick: () -> Unit,
 ) {
     val density = LocalDensity.current
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
     val startTranslationPx = with(density) { appBrowserPopupChildStartTranslation.toPx() }
-    val rowProgress = remember(index, itemCount, popupProgress) {
+    val rowProgress = remember(index, itemCount, revealProgress) {
         appBrowserPopupCascadeProgress(
-            fullAnimationT = popupProgress,
+            fullAnimationT = revealProgress,
             position = index.toFloat(),
             count = itemCount.toFloat(),
             waveLength = appBrowserPopupCascadeWaveLength,
@@ -1339,11 +1416,10 @@ private fun AppBrowserHistoryPopupItem(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Icon(
-            imageVector = Icons.Outlined.History,
-            contentDescription = null,
-            tint = palette.icon,
-            modifier = Modifier.size(17.dp),
+        AppBrowserHistoryFavicon(
+            favicon = entry.favicon,
+            fallbackLabel = entry.title.ifBlank { entry.host },
+            palette = palette,
         )
         Column(
             modifier = Modifier.weight(1f),
@@ -1376,6 +1452,46 @@ private fun AppBrowserHistoryPopupItem(
                     maxLines = 1,
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun AppBrowserHistoryFavicon(
+    favicon: Bitmap?,
+    fallbackLabel: String,
+    palette: AppBrowserPopupPalette,
+) {
+    val fallbackText = remember(fallbackLabel) {
+        fallbackLabel.trim().firstOrNull()?.uppercase() ?: ""
+    }
+    Box(
+        modifier = Modifier
+            .size(17.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(
+                color = if (favicon == null) {
+                    palette.icon.copy(alpha = 0.12f)
+                } else {
+                    Color.Transparent
+                },
+                shape = RoundedCornerShape(4.dp),
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (favicon != null) {
+            Image(
+                bitmap = favicon.asImageBitmap(),
+                contentDescription = null,
+                modifier = Modifier.size(17.dp),
+            )
+        } else {
+            Text(
+                text = fallbackText,
+                style = MaterialTheme.typography.labelSmall,
+                color = palette.icon,
+                maxLines = 1,
+            )
         }
     }
 }
@@ -1436,7 +1552,7 @@ private val appBrowserPopupMargin = 12.dp
 private val appBrowserPopupSpacing = 6.dp
 private val appBrowserPopupCornerRadius = 14.dp
 private val appBrowserPopupChildStartTranslation = 6.dp
-private val appBrowserPopupCloseTranslation = 8.dp
+private val appBrowserPopupCloseTranslation = 6.dp
 private val appBrowserPopupDividerSpacing = 4.dp
 private val appBrowserPopupSectionGapHeight = 10.dp
 private val appBrowserProgressHeight = 3.dp

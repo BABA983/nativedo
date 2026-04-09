@@ -11,6 +11,7 @@ data class AppBrowserHistorySnapshot(
     val url: String,
     val host: String,
     val visitedAtMillis: Long,
+    val faviconBase64: String? = null,
 )
 
 interface AppBrowserHistoryStorePersistence {
