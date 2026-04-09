@@ -57,4 +57,5 @@
     <string name="app_browser_settings_clear_cookies_subtitle">Remove synced cookies and WebView cookies.</string>
     <string name="app_browser_settings_clear_cache_title">Clear Cache</string>
     <string name="app_browser_settings_clear_cache_subtitle">Clear the current WebView cache.</string>
+    <string name="app_browser_settings_history_count">%d pages</string>
 </resources>

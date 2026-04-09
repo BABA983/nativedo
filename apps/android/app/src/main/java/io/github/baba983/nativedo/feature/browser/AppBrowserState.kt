@@ -7,6 +7,8 @@ import android.util.Base64
 import io.github.baba983.nativedo.core.storage.AppBrowserHistorySnapshot
 import io.github.baba983.nativedo.core.storage.AppBrowserHistoryStorePersistence
 import java.io.ByteArrayOutputStream
+import java.io.File
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -43,6 +45,62 @@ internal data class AppBrowserSearchPanelState(
     val showsNoResults: Boolean = false,
 )
 
+internal data class AppBrowserLoadProgressState(
+    val displayedProgress: Float = 0f,
+    val actualProgress: Float = 0f,
+    val isLoading: Boolean = false,
+    val isVisible: Boolean = false,
+) {
+    fun start(): AppBrowserLoadProgressState {
+        return copy(
+            displayedProgress = appBrowserLoadProgressStart,
+            actualProgress = 0f,
+            isLoading = true,
+            isVisible = true,
+        )
+    }
+
+    fun advanceFakeTick(): AppBrowserLoadProgressState {
+        if (!isLoading) return this
+        val cap = maxOf(actualProgress, appBrowserLoadProgressFakeCap)
+        if (displayedProgress >= cap) return this
+        val tick = if (cap - displayedProgress < 0.25f) {
+            appBrowserLoadProgressSlowTick
+        } else {
+            appBrowserLoadProgressFastTick
+        }
+        return copy(displayedProgress = minOf(displayedProgress + tick, cap))
+    }
+
+    fun onActualProgressChanged(progress: Float): AppBrowserLoadProgressState {
+        val normalized = progress.coerceIn(0f, 1f)
+        return copy(
+            actualProgress = normalized,
+            displayedProgress = maxOf(displayedProgress, normalized),
+            isLoading = normalized < 1f,
+            isVisible = isVisible || normalized > 0f,
+        )
+    }
+
+    fun finish(): AppBrowserLoadProgressState {
+        return copy(
+            displayedProgress = 1f,
+            actualProgress = 1f,
+            isLoading = false,
+            isVisible = true,
+        )
+    }
+
+    fun dismiss(): AppBrowserLoadProgressState {
+        return AppBrowserLoadProgressState()
+    }
+}
+
+internal data class AppBrowserStorageUsage(
+    val cookiesSizeBytes: Long,
+    val cacheSizeBytes: Long,
+)
+
 class AppBrowserHistoryStore(
     private val persistence: AppBrowserHistoryStorePersistence = NoOpAppBrowserHistoryStorePersistence,
     private val persistenceDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -61,12 +119,16 @@ class AppBrowserHistoryStore(
     val history: StateFlow<List<AppBrowserHistoryRecord>> = _history.asStateFlow()
     private val persistenceScope = CoroutineScope(SupervisorJob() + persistenceDispatcher)
     private val mutations = Channel<HistoryMutation>(capacity = Channel.UNLIMITED)
+    private val mutationGeneration = AtomicLong(0L)
 
     init {
         persistenceScope.launch {
             for (mutation in mutations) {
                 when (mutation) {
                     is HistoryMutation.RecordVisit -> {
+                        if (mutation.generation != mutationGeneration.get()) {
+                            continue
+                        }
                         val host = mutation.url.toHttpUrlOrNull()?.host ?: mutation.url
                         val resolvedTitle = mutation.title?.trim().takeUnless { it.isNullOrBlank() } ?: host
                         val existingEntry = _history.value.firstOrNull { it.url == mutation.url }
@@ -83,7 +145,10 @@ class AppBrowserHistoryStore(
                         persistence.save(updatedHistory.toSnapshots())
                     }
 
-                    HistoryMutation.Clear -> {
+                    is HistoryMutation.Clear -> {
+                        if (mutation.generation != mutationGeneration.get()) {
+                            continue
+                        }
                         _history.value = emptyList()
                         persistence.save(emptyList())
                     }
@@ -103,6 +168,7 @@ class AppBrowserHistoryStore(
         }
         mutations.trySend(
             HistoryMutation.RecordVisit(
+                generation = mutationGeneration.get(),
                 url = url,
                 title = title,
                 visitedAtMillis = visitedAtMillis,
@@ -112,7 +178,18 @@ class AppBrowserHistoryStore(
     }
 
     fun clear() {
-        mutations.trySend(HistoryMutation.Clear)
+        val generation = mutationGeneration.incrementAndGet()
+        _history.value = emptyList()
+        mutations.trySend(HistoryMutation.Clear(generation = generation))
+    }
+
+    fun clearImmediate() {
+        val generation = mutationGeneration.incrementAndGet()
+        _history.value = emptyList()
+        while (mutations.tryReceive().isSuccess) {
+            // Drop stale queued writes so UI does not flicker with pre-clear history.
+        }
+        mutations.trySend(HistoryMutation.Clear(generation = generation))
     }
 
     private object NoOpAppBrowserHistoryStorePersistence : AppBrowserHistoryStorePersistence {
@@ -124,13 +201,16 @@ class AppBrowserHistoryStore(
 
 private sealed interface HistoryMutation {
     data class RecordVisit(
+        val generation: Long,
         val url: String,
         val title: String?,
         val visitedAtMillis: Long,
         val favicon: Bitmap?,
     ) : HistoryMutation
 
-    data object Clear : HistoryMutation
+    data class Clear(
+        val generation: Long,
+    ) : HistoryMutation
 }
 
 private fun List<AppBrowserHistoryRecord>.toSnapshots(): List<AppBrowserHistorySnapshot> {
@@ -229,6 +309,18 @@ internal fun buildAppBrowserSearchPanelState(
     }
 }
 
+internal fun buildAppBrowserScrollProgress(
+    scrollY: Int,
+    contentHeightPx: Int,
+    viewportHeightPx: Int,
+): Float {
+    val scrollableHeight = (contentHeightPx - viewportHeightPx).coerceAtLeast(0)
+    if (scrollableHeight == 0) {
+        return 0f
+    }
+    return (scrollY.toFloat() / scrollableHeight.toFloat()).coerceIn(0f, 1f)
+}
+
 internal fun AppBrowserHistoryRecord.historyFavicon(): Bitmap? = faviconBase64?.historyFaviconBitmap()
 
 internal fun String.historyFaviconBitmap(): Bitmap? {
@@ -266,6 +358,92 @@ private fun Bitmap.toHistoryFaviconBase64(): String? {
     }.getOrNull()
 }
 
+internal fun formatAppBrowserDataSize(bytes: Long): String {
+    if (bytes <= 0) return "0 B"
+    val units = arrayOf("B", "KB", "MB", "GB")
+    var value = bytes.toDouble()
+    var unitIndex = 0
+    while (value >= 1024 && unitIndex < units.lastIndex) {
+        value /= 1024
+        unitIndex++
+    }
+    return if (value == value.toLong().toDouble()) {
+        "${value.toLong()} ${units[unitIndex]}"
+    } else {
+        "${"%.1f".format(value)} ${units[unitIndex]}"
+    }
+}
+
+internal fun readAppBrowserStorageUsage(
+    appDataDir: File,
+    appCacheDir: File,
+): AppBrowserStorageUsage {
+    val webViewDir = File(appDataDir, "app_webview")
+    val cacheDir = File(appCacheDir, "WebView")
+    val cookiesSize = webViewDir.appBrowserDirectorySize(cookiesOnly = true)
+    var cacheSize = webViewDir.appBrowserDirectorySize(cookiesOnly = false)
+    cacheSize += cacheDir.appBrowserDirectorySize(cookiesOnly = null)
+    val webviewDb = File(appDataDir, "databases/webview.db")
+    val webviewCacheDb = File(appDataDir, "databases/webviewCache.db")
+    if (webviewDb.exists()) cacheSize += webviewDb.length()
+    if (webviewCacheDb.exists()) cacheSize += webviewCacheDb.length()
+    return AppBrowserStorageUsage(
+        cookiesSizeBytes = cookiesSize,
+        cacheSizeBytes = cacheSize,
+    )
+}
+
+internal fun clearAppBrowserCookieFiles(appDataDir: File) {
+    File(appDataDir, "app_webview").deleteAppBrowserDirectory(cookiesOnly = true)
+}
+
+internal fun clearAppBrowserCacheFiles(
+    appDataDir: File,
+    appCacheDir: File,
+) {
+    File(appDataDir, "databases/webview.db").delete()
+    File(appDataDir, "databases/webviewCache.db").delete()
+    File(appDataDir, "app_webview").deleteAppBrowserDirectory(cookiesOnly = false)
+    File(appCacheDir, "WebView").deleteAppBrowserDirectory(cookiesOnly = null)
+}
+
+private fun File.appBrowserDirectorySize(cookiesOnly: Boolean?): Long {
+    if (!exists()) return 0L
+    if (isDirectory) {
+        return listFiles()
+            ?.sumOf { child -> child.appBrowserDirectorySize(cookiesOnly) }
+            ?: 0L
+    }
+    if (cookiesOnly != null && isCookieFile() != cookiesOnly) {
+        return 0L
+    }
+    return length()
+}
+
+private fun File.deleteAppBrowserDirectory(cookiesOnly: Boolean?): Boolean {
+    if (!exists()) return false
+    return if (isDirectory) {
+        listFiles()?.forEach { child ->
+            child.deleteAppBrowserDirectory(cookiesOnly)
+        }
+        if (cookiesOnly == null || listFiles().isNullOrEmpty()) {
+            delete()
+        } else {
+            false
+        }
+    } else if (cookiesOnly == null || isCookieFile() == cookiesOnly) {
+        delete()
+    } else {
+        false
+    }
+}
+
+private fun File.isCookieFile(): Boolean = name.startsWith("Cookies")
+
 private const val appBrowserHistoryFaviconMaxEdgePx = 48
 private const val appBrowserHistoryFaviconQuality = 80
 private const val appBrowserHistoryMaxRecordCount = 100
+private const val appBrowserLoadProgressStart = 0.3f
+private const val appBrowserLoadProgressFakeCap = 0.7f
+private const val appBrowserLoadProgressFastTick = 0.02f
+private const val appBrowserLoadProgressSlowTick = 0.01f

@@ -3,6 +3,7 @@ package io.github.baba983.nativedo.feature.browser
 import io.github.baba983.nativedo.core.storage.AppBrowserHistorySnapshot
 import com.google.common.truth.Truth.assertThat
 import io.github.baba983.nativedo.core.storage.AppBrowserHistoryStorePersistence
+import java.io.File
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -11,6 +12,93 @@ import org.junit.Test
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AppBrowserStateTest {
+    @Test
+    fun appBrowserLoadProgressState_start_makesIndicatorVisibleWithHeadStart() {
+        val state = AppBrowserLoadProgressState().start()
+
+        assertThat(state.displayedProgress).isEqualTo(0.3f)
+        assertThat(state.actualProgress).isEqualTo(0f)
+        assertThat(state.isLoading).isTrue()
+        assertThat(state.isVisible).isTrue()
+    }
+
+    @Test
+    fun appBrowserLoadProgressState_advanceFakeTick_stopsAtTelegramCap() {
+        var state = AppBrowserLoadProgressState().start()
+
+        repeat(40) {
+            state = state.advanceFakeTick()
+        }
+
+        assertThat(state.displayedProgress).isEqualTo(0.7f)
+        assertThat(state.isLoading).isTrue()
+        assertThat(state.isVisible).isTrue()
+    }
+
+    @Test
+    fun appBrowserLoadProgressState_onActualProgressChanged_neverRegressesAndAllowsJumpAhead() {
+        var state = AppBrowserLoadProgressState().start()
+        state = state.advanceFakeTick()
+        state = state.advanceFakeTick()
+
+        val nonRegressed = state.onActualProgressChanged(0.12f)
+        val jumpedAhead = nonRegressed.onActualProgressChanged(0.84f)
+
+        assertThat(nonRegressed.displayedProgress).isEqualTo(state.displayedProgress)
+        assertThat(jumpedAhead.displayedProgress).isEqualTo(0.84f)
+        assertThat(jumpedAhead.actualProgress).isEqualTo(0.84f)
+    }
+
+    @Test
+    fun appBrowserLoadProgressState_finish_keepsFullProgressUntilDismissed() {
+        val state = AppBrowserLoadProgressState()
+            .start()
+            .onActualProgressChanged(0.86f)
+            .finish()
+        val dismissed = state.dismiss()
+
+        assertThat(state.displayedProgress).isEqualTo(1f)
+        assertThat(state.actualProgress).isEqualTo(1f)
+        assertThat(state.isLoading).isFalse()
+        assertThat(state.isVisible).isTrue()
+        assertThat(dismissed.displayedProgress).isEqualTo(0f)
+        assertThat(dismissed.actualProgress).isEqualTo(0f)
+        assertThat(dismissed.isVisible).isFalse()
+    }
+
+    @Test
+    fun appBrowserScrollProgress_zeroWhenContentFitsViewport() {
+        val progress = buildAppBrowserScrollProgress(
+            scrollY = 0,
+            contentHeightPx = 640,
+            viewportHeightPx = 640,
+        )
+
+        assertThat(progress).isEqualTo(0f)
+    }
+
+    @Test
+    fun appBrowserScrollProgress_computesFractionFromScrollableRange() {
+        val progress = buildAppBrowserScrollProgress(
+            scrollY = 240,
+            contentHeightPx = 1_200,
+            viewportHeightPx = 600,
+        )
+
+        assertThat(progress).isEqualTo(0.4f)
+    }
+
+    @Test
+    fun appBrowserScrollProgress_clampsToFullRange() {
+        val progress = buildAppBrowserScrollProgress(
+            scrollY = 999,
+            contentHeightPx = 1_200,
+            viewportHeightPx = 600,
+        )
+
+        assertThat(progress).isEqualTo(1f)
+    }
+
     @Test
     fun appBrowserSearchPanelState_hiddenWhenSearchModeIsClosed() {
         val state = buildAppBrowserSearchPanelState(
@@ -262,6 +350,74 @@ class AppBrowserStateTest {
     }
 
     @Test
+    fun formatBrowserDataSize_zeroBytes_showsZero() {
+        assertThat(formatAppBrowserDataSize(0L)).isEqualTo("0 B")
+    }
+
+    @Test
+    fun formatBrowserDataSize_kilobytes() {
+        assertThat(formatAppBrowserDataSize(1_536L)).isEqualTo("1.5 KB")
+    }
+
+    @Test
+    fun formatBrowserDataSize_megabytes() {
+        assertThat(formatAppBrowserDataSize(2_621_440L)).isEqualTo("2.5 MB")
+    }
+
+    @Test
+    fun readAppBrowserStorageUsage_countsNestedCookieFilesSeparatelyFromCache() {
+        val appDataDir = createTempDir(prefix = "appData")
+        val appCacheDir = createTempDir(prefix = "appCache")
+        try {
+            writeSizedFile(File(appDataDir, "app_webview/Default/Cookies"), 120)
+            writeSizedFile(File(appDataDir, "app_webview/Default/Cache_Data"), 80)
+            writeSizedFile(File(appCacheDir, "WebView/page-cache"), 40)
+            writeSizedFile(File(appDataDir, "databases/webview.db"), 30)
+            writeSizedFile(File(appDataDir, "databases/webviewCache.db"), 20)
+
+            val usage = readAppBrowserStorageUsage(
+                appDataDir = appDataDir,
+                appCacheDir = appCacheDir,
+            )
+
+            assertThat(usage.cookiesSizeBytes).isEqualTo(120L)
+            assertThat(usage.cacheSizeBytes).isEqualTo(170L)
+        } finally {
+            appDataDir.deleteRecursively()
+            appCacheDir.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun clearAppBrowserCacheFiles_keepsCookieFiles() {
+        val appDataDir = createTempDir(prefix = "appData")
+        val appCacheDir = createTempDir(prefix = "appCache")
+        try {
+            val cookieFile = File(appDataDir, "app_webview/Default/Cookies")
+            val cacheFile = File(appDataDir, "app_webview/Default/Cache_Data")
+            val sharedCacheFile = File(appCacheDir, "WebView/page-cache")
+            val webviewDb = File(appDataDir, "databases/webview.db")
+            writeSizedFile(cookieFile, 120)
+            writeSizedFile(cacheFile, 80)
+            writeSizedFile(sharedCacheFile, 40)
+            writeSizedFile(webviewDb, 30)
+
+            clearAppBrowserCacheFiles(
+                appDataDir = appDataDir,
+                appCacheDir = appCacheDir,
+            )
+
+            assertThat(cookieFile.exists()).isTrue()
+            assertThat(cacheFile.exists()).isFalse()
+            assertThat(sharedCacheFile.exists()).isFalse()
+            assertThat(webviewDb.exists()).isFalse()
+        } finally {
+            appDataDir.deleteRecursively()
+            appCacheDir.deleteRecursively()
+        }
+    }
+
+    @Test
     fun historyStore_restore_keepsPersistedEntries() {
         val persistence = InMemoryAppBrowserHistoryStorePersistence(
             records = listOf(
@@ -304,6 +460,28 @@ class AppBrowserStateTest {
         advanceUntilIdle()
 
         assertThat(store.history.value).isEmpty()
+        assertThat(persistence.saved).isEmpty()
+    }
+
+    @Test
+    fun historyStore_clearImmediate_clearsVisibleStateBeforeBackgroundPersistenceRuns() = runTest {
+        val persistence = InMemoryAppBrowserHistoryStorePersistence()
+        val store = AppBrowserHistoryStore(
+            persistence = persistence,
+            persistenceDispatcher = StandardTestDispatcher(testScheduler),
+        )
+
+        store.recordVisit(
+            url = "https://linux.do/t/render-debug-case/123456",
+            title = "Render Debug Case",
+            visitedAtMillis = 200L,
+        )
+        advanceUntilIdle()
+
+        store.clearImmediate()
+
+        assertThat(store.history.value).isEmpty()
+        advanceUntilIdle()
         assertThat(persistence.saved).isEmpty()
     }
 
@@ -367,4 +545,9 @@ private class InMemoryAppBrowserHistoryStorePersistence(
     override fun save(records: List<AppBrowserHistorySnapshot>) {
         saved = records
     }
+}
+
+private fun writeSizedFile(file: File, size: Int) {
+    file.parentFile?.mkdirs()
+    file.writeBytes(ByteArray(size) { 1 })
 }

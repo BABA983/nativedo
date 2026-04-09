@@ -19,6 +19,9 @@ import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 
 @Composable
 internal fun AppBrowserSettingsPanel(
+    historyCount: Int,
+    cookiesSizeBytes: Long,
+    cacheSizeBytes: Long,
     onOpenHistoryClick: () -> Unit,
     onClearHistoryClick: () -> Unit,
     onClearCookiesClick: () -> Unit,
@@ -33,22 +36,38 @@ internal fun AppBrowserSettingsPanel(
     ) {
         AppBrowserSettingsRow(
             title = stringResource(R.string.app_browser_settings_open_history_title),
-            subtitle = stringResource(R.string.app_browser_settings_open_history_subtitle),
+            subtitle = if (historyCount > 0) {
+                stringResource(R.string.app_browser_settings_history_count, historyCount)
+            } else {
+                stringResource(R.string.app_browser_settings_open_history_subtitle)
+            },
             onClick = onOpenHistoryClick,
         )
         AppBrowserSettingsRow(
             title = stringResource(R.string.app_browser_settings_clear_history_title),
-            subtitle = stringResource(R.string.app_browser_settings_clear_history_subtitle),
+            subtitle = if (historyCount > 0) {
+                stringResource(R.string.app_browser_settings_history_count, historyCount)
+            } else {
+                stringResource(R.string.app_browser_settings_clear_history_subtitle)
+            },
             onClick = onClearHistoryClick,
         )
         AppBrowserSettingsRow(
             title = stringResource(R.string.app_browser_settings_clear_cookies_title),
-            subtitle = stringResource(R.string.app_browser_settings_clear_cookies_subtitle),
+            subtitle = if (cookiesSizeBytes > 0) {
+                formatAppBrowserDataSize(cookiesSizeBytes)
+            } else {
+                stringResource(R.string.app_browser_settings_clear_cookies_subtitle)
+            },
             onClick = onClearCookiesClick,
         )
         AppBrowserSettingsRow(
             title = stringResource(R.string.app_browser_settings_clear_cache_title),
-            subtitle = stringResource(R.string.app_browser_settings_clear_cache_subtitle),
+            subtitle = if (cacheSizeBytes > 0) {
+                formatAppBrowserDataSize(cacheSizeBytes)
+            } else {
+                stringResource(R.string.app_browser_settings_clear_cache_subtitle)
+            },
             onClick = onClearCacheClick,
         )
     }

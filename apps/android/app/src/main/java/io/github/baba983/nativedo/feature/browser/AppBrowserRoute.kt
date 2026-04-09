@@ -43,6 +43,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,6 +69,8 @@ import io.github.baba983.nativedo.core.ui.BulletinMessage
 import io.github.baba983.nativedo.core.ui.BulletinTone
 import io.github.baba983.nativedo.core.ui.LocalBulletinHostState
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 @Composable
@@ -88,6 +91,7 @@ internal fun AppBrowserRoute(
     val colors = NativeDoThemeExtras.colors
     val browserHistory by appContainer.appBrowserHistoryStore.history.collectAsStateWithLifecycle()
     val density = LocalDensity.current
+    val coroutineScope = rememberCoroutineScope()
     val exitTranslationPx = remember(density) {
         with(density) { appBrowserRouteExitTranslation.roundToPx().toFloat() }
     }
@@ -96,6 +100,8 @@ internal fun AppBrowserRoute(
     var currentUrl by remember(url) { mutableStateOf(url) }
     var currentPageTitle by remember(url) { mutableStateOf<String?>(null) }
     var progress by remember(url) { mutableIntStateOf(0) }
+    var scrollProgress by remember(url) { mutableStateOf(0f) }
+    var loadProgressState by remember(url) { mutableStateOf(AppBrowserLoadProgressState()) }
     var canGoBack by remember(url) { mutableStateOf(false) }
     var canGoForward by remember(url) { mutableStateOf(false) }
     var closeRequested by remember(url) { mutableStateOf(false) }
@@ -109,6 +115,8 @@ internal fun AppBrowserRoute(
     val historyFavicons = remember(url) { mutableStateMapOf<String, Bitmap>() }
     var lastRecordedUrl by remember(url) { mutableStateOf<String?>(null) }
     var lastRecordedAtMillis by remember(url) { mutableLongStateOf(0L) }
+    var cookiesSizeBytes by remember { mutableLongStateOf(0L) }
+    var cacheSizeBytes by remember { mutableLongStateOf(0L) }
 
     val presentationState = remember { MutableTransitionState(false) }
 
@@ -120,6 +128,22 @@ internal fun AppBrowserRoute(
         if (closeRequested) {
             presentationState.targetState = false
         }
+    }
+
+    LaunchedEffect(loadProgressState.isLoading, loadProgressState.displayedProgress) {
+        if (!loadProgressState.isLoading || loadProgressState.displayedProgress >= 0.7f) {
+            return@LaunchedEffect
+        }
+        delay(appBrowserFakeProgressTickDelayMillis)
+        loadProgressState = loadProgressState.advanceFakeTick()
+    }
+
+    LaunchedEffect(loadProgressState.actualProgress, loadProgressState.isVisible, loadProgressState.isLoading) {
+        if (loadProgressState.isLoading || !loadProgressState.isVisible || loadProgressState.actualProgress < 1f) {
+            return@LaunchedEffect
+        }
+        delay(appBrowserProgressDismissDelayMillis)
+        loadProgressState = loadProgressState.dismiss()
     }
 
     LaunchedEffect(
@@ -225,6 +249,18 @@ internal fun AppBrowserRoute(
         label = "appBrowserHistoryScrimAlpha",
     )
 
+    suspend fun refreshSettingsStorageUsage() {
+        val appContext = context.applicationContext
+        val usage = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            readAppBrowserStorageUsage(
+                appDataDir = appContext.dataDir,
+                appCacheDir = appContext.cacheDir,
+            )
+        }
+        cookiesSizeBytes = usage.cookiesSizeBytes
+        cacheSizeBytes = usage.cacheSizeBytes
+    }
+
     fun requestClose() {
         if (closeRequested) {
             return
@@ -328,6 +364,8 @@ internal fun AppBrowserRoute(
         panel,
         isHttps,
         progress,
+        scrollProgress,
+        loadProgressState,
         canGoBack,
         canGoForward,
         routeAlpha,
@@ -347,7 +385,9 @@ internal fun AppBrowserRoute(
                 title = chromeTitle,
                 subtitle = chromeSubtitle,
                 isHttps = isHttps,
-                progress = progress / 100f,
+                progress = loadProgressState.displayedProgress,
+                scrollProgress = scrollProgress,
+                isLoadingProgressVisible = loadProgressState.isVisible,
                 canGoBack = canGoBack,
                 canGoForward = canGoForward,
                 backHistoryEntries = backHistoryEntries,
@@ -407,6 +447,11 @@ internal fun AppBrowserRoute(
             ),
         )
     }
+    LaunchedEffect(panel) {
+        if (panel == AppBrowserPanel.Settings) {
+            refreshSettingsStorageUsage()
+        }
+    }
     SideEffect {
         if (panel != AppBrowserPanel.Page && historyPopupExpanded) {
             historyPopupExpanded = false
@@ -457,6 +502,9 @@ internal fun AppBrowserRoute(
                             super.onPageStarted(view, url, favicon)
                             url?.let { currentUrl = it }
                             currentPageTitle = null
+                            progress = 0
+                            scrollProgress = 0f
+                            loadProgressState = AppBrowserLoadProgressState().start()
                             canGoBack = view?.canGoBack() == true
                             canGoForward = view?.canGoForward() == true
                             if (favicon != null && !url.isNullOrBlank()) {
@@ -475,6 +523,8 @@ internal fun AppBrowserRoute(
 
                         override fun onPageFinished(view: WebView?, url: String?) {
                             super.onPageFinished(view, url)
+                            progress = 100
+                            loadProgressState = loadProgressState.finish()
                             canGoBack = view?.canGoBack() == true
                             canGoForward = view?.canGoForward() == true
                             val finishedUrl = url.orEmpty()
@@ -492,6 +542,7 @@ internal fun AppBrowserRoute(
                     webChromeClient = object : WebChromeClient() {
                         override fun onProgressChanged(view: WebView?, newProgress: Int) {
                             progress = newProgress
+                            loadProgressState = loadProgressState.onActualProgressChanged(newProgress / 100f)
                         }
 
                         override fun onReceivedTitle(view: WebView?, title: String?) {
@@ -546,6 +597,14 @@ internal fun AppBrowserRoute(
                         }
                     }
 
+                    setOnScrollChangeListener { _, _, scrollY, _, _ ->
+                        scrollProgress = buildAppBrowserScrollProgress(
+                            scrollY = scrollY,
+                            contentHeightPx = (contentHeight * scale).toInt(),
+                            viewportHeightPx = height,
+                        )
+                    }
+
                     appContainer.cookieSyncBridge.syncToWebView(appContainer.baseUrl)
                     loadUrl(url)
                     webViewRef = this
@@ -554,6 +613,11 @@ internal fun AppBrowserRoute(
             update = { view ->
                 canGoBack = view.canGoBack()
                 canGoForward = view.canGoForward()
+                scrollProgress = buildAppBrowserScrollProgress(
+                    scrollY = view.scrollY,
+                    contentHeightPx = (view.contentHeight * view.scale).toInt(),
+                    viewportHeightPx = view.height,
+                )
             },
         )
 
@@ -600,19 +664,35 @@ internal fun AppBrowserRoute(
                         .background(colors.backgroundBase),
                 ) {
                     AppBrowserSettingsPanel(
+                        historyCount = browserHistory.size,
+                        cookiesSizeBytes = cookiesSizeBytes,
+                        cacheSizeBytes = cacheSizeBytes,
                         onOpenHistoryClick = { panel = AppBrowserPanel.History },
                         onClearHistoryClick = {
-                            appContainer.appBrowserHistoryStore.clear()
+                            appContainer.appBrowserHistoryStore.clearImmediate()
                             panel = AppBrowserPanel.History
                         },
                         onClearCookiesClick = {
-                            appContainer.cookieSyncBridge.clear()
-                            panel = AppBrowserPanel.Page
-                            webViewRef?.reload()
+                            coroutineScope.launch {
+                                appContainer.cookieSyncBridge.clear()
+                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    clearAppBrowserCookieFiles(context.applicationContext.dataDir)
+                                }
+                                webViewRef?.reload()
+                                refreshSettingsStorageUsage()
+                            }
                         },
                         onClearCacheClick = {
-                            webViewRef?.clearCache(true)
-                            panel = AppBrowserPanel.Page
+                            coroutineScope.launch {
+                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    clearAppBrowserCacheFiles(
+                                        appDataDir = context.applicationContext.dataDir,
+                                        appCacheDir = context.applicationContext.cacheDir,
+                                    )
+                                }
+                                webViewRef?.clearCache(true)
+                                refreshSettingsStorageUsage()
+                            }
                         },
                     )
                 }
@@ -734,3 +814,5 @@ private data class AppBrowserHistoryVisit(
 private val appBrowserRouteExitTranslation = 24.dp
 private const val appBrowserRouteEnterDurationMillis = 220
 private const val appBrowserRouteExitDurationMillis = 170
+private const val appBrowserFakeProgressTickDelayMillis = 100L
+private const val appBrowserProgressDismissDelayMillis = 180L
