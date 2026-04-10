@@ -11,7 +11,11 @@ import androidx.compose.ui.Modifier
 import io.github.baba983.nativedo.ui.AppTopBarRowMinHeight
 import io.github.baba983.nativedo.ui.AppTopBarVerticalPadding
 
-private val AppBrowserTopBarOverlayHeight = AppTopBarRowMinHeight + (AppTopBarVerticalPadding * 2) + 4.dp
+internal val AppBrowserTopBarOverlayHeight = AppTopBarRowMinHeight + (AppTopBarVerticalPadding * 2) + 4.dp
+
+internal fun Modifier.appBrowserTopBarOffset(): Modifier {
+    return statusBarsPadding().padding(top = AppBrowserTopBarOverlayHeight)
+}
 
 @Composable
 internal fun AppBrowserScreen(
@@ -27,16 +31,14 @@ internal fun AppBrowserScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
-                .padding(top = AppBrowserTopBarOverlayHeight),
+                .appBrowserTopBarOffset(),
         ) {
             content()
         }
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
-                .padding(top = AppBrowserTopBarOverlayHeight),
+                .appBrowserTopBarOffset(),
         ) {
             sheetContent()
         }
