@@ -218,7 +218,8 @@ internal fun AppBrowserTopBar(
     val topBarAlpha = config?.alpha ?: 0f
     val topBarTranslationX = config?.translationX ?: 0f
     val isSearching = config?.isSearching == true
-    val isInSubPanel = config?.panel != AppBrowserPanel.Page
+    val isInSubPanel = config?.panel?.let { panel -> panel != AppBrowserPanel.Page } == true
+    val showMenuButton = !isSearching && !isInSubPanel
     var searchFocusToken by remember { mutableIntStateOf(0) }
     var menuExpanded by remember { mutableStateOf(false) }
     val historyExpanded = config?.isHistoryPopupVisible == true
@@ -301,9 +302,11 @@ internal fun AppBrowserTopBar(
         }
     }
 
-    LaunchedEffect(isSearching) {
-        if (isSearching) {
+    LaunchedEffect(isSearching, isInSubPanel) {
+        if (isSearching || isInSubPanel) {
             menuExpanded = false
+        }
+        if (isSearching) {
             config?.onHistoryPopupVisibilityChanged?.invoke(false)
             delay(appBrowserSearchEnterDurationMillis.toLong())
             searchFocusToken += 1
@@ -436,7 +439,7 @@ internal fun AppBrowserTopBar(
                 Box(
                     modifier = Modifier.width(44.dp),
                 ) {
-                    if (!isSearching) {
+                    if (showMenuButton) {
                         AppBrowserChromeButton(
                             onClick = {
                                 if (config != null) {
@@ -468,7 +471,7 @@ internal fun AppBrowserTopBar(
                                 }
                             },
                         )
-                    } else {
+                    } else if (isSearching) {
                         AppBrowserChromeButton(
                             onClick = { config?.onSearchQueryChange?.invoke("") },
                             imageVector = Icons.Outlined.Close,
