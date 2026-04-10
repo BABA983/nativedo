@@ -2,12 +2,7 @@ package io.github.baba983.nativedo.feature.browser
 
 import android.content.Intent
 import android.graphics.Bitmap
-import android.view.ViewGroup
-import android.webkit.CookieManager
-import android.webkit.WebChromeClient
-import android.webkit.WebResourceRequest
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -36,9 +31,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -56,15 +49,16 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.baba983.nativedo.NativeDoApplication
 import io.github.baba983.nativedo.R
-import io.github.baba983.nativedo.core.navigation.LinkOpenTarget
-import io.github.baba983.nativedo.core.navigation.LinkRouter
+import io.github.baba983.nativedo.core.navigation.LinkNavigationDecision
+import io.github.baba983.nativedo.core.navigation.LinkOpenPolicy
 import io.github.baba983.nativedo.core.navigation.openInExternalApp
 import io.github.baba983.nativedo.core.navigation.openInSystemBrowser
-import io.github.baba983.nativedo.core.navigation.shouldTryOpenInExternalApp
 import io.github.baba983.nativedo.core.ui.BulletinMessage
 import io.github.baba983.nativedo.core.ui.BulletinTone
 import io.github.baba983.nativedo.core.ui.LocalBulletinHostState
@@ -77,14 +71,13 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 internal fun AppBrowserRoute(
     url: String,
     onOpenLink: (String) -> Unit,
-    onChromeConfigChanged: (AppBrowserChromeConfig?) -> Unit,
     onClose: () -> Unit,
 ) {
     val context = LocalContext.current
     val appContainer = remember(context) {
         (context.applicationContext as NativeDoApplication).appContainer
     }
-    val linkRouter = remember(appContainer) { LinkRouter(appContainer.baseUrl) }
+    val linkOpenPolicy = remember(appContainer) { LinkOpenPolicy(appContainer.baseUrl) }
     val clipboardManager = LocalClipboardManager.current
     val bulletinHostState = LocalBulletinHostState.current
     val linkCopiedText = stringResource(R.string.app_browser_link_copied)
@@ -92,25 +85,29 @@ internal fun AppBrowserRoute(
     val browserHistory by appContainer.appBrowserHistoryStore.history.collectAsStateWithLifecycle()
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
+    val webViewController = rememberAppBrowserWebViewController()
     val exitTranslationPx = remember(density) {
         with(density) { appBrowserRouteExitTranslation.roundToPx().toFloat() }
     }
+    val browserViewModel: AppBrowserViewModel = viewModel(
+        key = "app-browser-$url",
+        factory = remember(url, appContainer.baseUrl) {
+            AppBrowserViewModelFactory(
+                initialUrl = url,
+                baseUrl = appContainer.baseUrl,
+            )
+        },
+    )
+    val browserUiState by browserViewModel.uiState.collectAsStateWithLifecycle()
 
-    var webViewRef by remember(url) { mutableStateOf<WebView?>(null) }
+    var webViewRef by remember(url) { mutableStateOf<AppBrowserWebViewView?>(null) }
     var currentUrl by remember(url) { mutableStateOf(url) }
     var currentPageTitle by remember(url) { mutableStateOf<String?>(null) }
-    var progress by remember(url) { mutableIntStateOf(0) }
     var scrollProgress by remember(url) { mutableStateOf(0f) }
     var loadProgressState by remember(url) { mutableStateOf(AppBrowserLoadProgressState()) }
     var canGoBack by remember(url) { mutableStateOf(false) }
     var canGoForward by remember(url) { mutableStateOf(false) }
     var closeRequested by remember(url) { mutableStateOf(false) }
-    var panel by remember(url) { mutableStateOf<AppBrowserPanel>(AppBrowserPanel.Page) }
-    var isSearching by remember(url) { mutableStateOf(false) }
-    var searchQuery by remember(url) { mutableStateOf("") }
-    var searchActiveMatchOrdinal by remember(url) { mutableIntStateOf(0) }
-    var searchNumberOfMatches by remember(url) { mutableIntStateOf(0) }
-    var historyPopupExpanded by remember(url) { mutableStateOf(false) }
     val historyVisitMarks = remember(url) { mutableStateListOf<AppBrowserHistoryVisit>() }
     val historyFavicons = remember(url) { mutableStateMapOf<String, Bitmap>() }
     var lastRecordedUrl by remember(url) { mutableStateOf<String?>(null) }
@@ -204,6 +201,16 @@ internal fun AppBrowserRoute(
         }
     val titleText = titleOverride ?: domain
     val subtitleText = domain.takeIf { titleOverride != null }
+    val panel = when (browserUiState.sheet) {
+        AppBrowserSheet.None -> AppBrowserPanel.Page
+        AppBrowserSheet.History -> AppBrowserPanel.History
+        AppBrowserSheet.Settings -> AppBrowserPanel.Settings
+    }
+    val isSearching = browserUiState.search.isActive
+    val searchQuery = browserUiState.search.query
+    val searchActiveMatchOrdinal = browserUiState.search.activeMatchOrdinal
+    val searchNumberOfMatches = browserUiState.search.numberOfMatches
+    val historyPopupExpanded = browserUiState.isHistoryPopupVisible
     val chromeTitle = when (panel) {
         AppBrowserPanel.Page -> titleText
         AppBrowserPanel.History -> context.getString(R.string.app_browser_history)
@@ -248,6 +255,43 @@ internal fun AppBrowserRoute(
         animationSpec = tween(durationMillis = 180),
         label = "appBrowserHistoryScrimAlpha",
     )
+    val chromeModel = remember(
+        chromeTitle,
+        chromeSubtitle,
+        isHttps,
+        canGoBack,
+        canGoForward,
+        loadProgressState.displayedProgress,
+        scrollProgress,
+        loadProgressState.isVisible,
+        backHistoryEntries,
+        browserHistoryEntries,
+        panel,
+        routeAlpha,
+        routeTranslationX,
+        historyPopupExpanded,
+    ) {
+        AppBrowserChromeModel(
+            title = chromeTitle,
+            subtitle = chromeSubtitle,
+            isHttps = isHttps,
+            canGoBack = canGoBack,
+            canGoForward = canGoForward,
+            progress = loadProgressState.displayedProgress,
+            scrollProgress = scrollProgress,
+            isLoadingProgressVisible = loadProgressState.isVisible,
+            backHistoryEntries = backHistoryEntries,
+            browserHistoryEntries = browserHistoryEntries,
+            isInSubPanel = panel != AppBrowserPanel.Page,
+            alpha = routeAlpha,
+            translationX = routeTranslationX,
+            isHistoryPopupVisible = historyPopupExpanded,
+        )
+    }
+
+    LaunchedEffect(chromeModel) {
+        browserViewModel.setChrome(chromeModel)
+    }
 
     suspend fun refreshSettingsStorageUsage() {
         val appContext = context.applicationContext
@@ -269,9 +313,8 @@ internal fun AppBrowserRoute(
     }
 
     fun navigateBack() {
-        val webView = webViewRef
-        if (webView?.canGoBack() == true) {
-            webView.goBack()
+        if (browserUiState.chrome.canGoBack) {
+            webViewController.goBack()
             return
         }
         requestClose()
@@ -286,169 +329,156 @@ internal fun AppBrowserRoute(
                 ?.also { return }
         }
         if (entry.url != currentUrl) {
-            webViewRef?.loadUrl(entry.url)
+            webViewController.loadUrl(entry.url)
         }
     }
 
     fun startSearch() {
-        isSearching = true
+        browserViewModel.onAction(AppBrowserAction.StartSearch)
     }
 
     fun updateSearchQuery(query: String) {
-        searchQuery = query
+        browserViewModel.onAction(AppBrowserAction.UpdateSearchQuery(query))
         if (query.isBlank()) {
-            searchActiveMatchOrdinal = 0
-            searchNumberOfMatches = 0
-            webViewRef?.clearMatches()
+            browserViewModel.onAction(
+                AppBrowserAction.UpdateSearchMatches(
+                    activeMatchOrdinal = 0,
+                    numberOfMatches = 0,
+                ),
+            )
+            webViewController.clearMatches()
         } else {
-            webViewRef?.findAllAsync(query)
+            webViewController.findAllAsync(query)
         }
     }
 
     fun searchNext() {
-        webViewRef?.findNext(true)
+        webViewController.findNext(true)
     }
 
     fun searchPrevious() {
-        webViewRef?.findNext(false)
+        webViewController.findNext(false)
     }
 
     fun closeSearch() {
-        isSearching = false
-        searchQuery = ""
-        searchActiveMatchOrdinal = 0
-        searchNumberOfMatches = 0
-        webViewRef?.clearMatches()
-    }
-
-    fun calculateCurrentScrollProgress(view: AppBrowserWebView): Float {
-        return buildAppBrowserScrollProgress(
-            scrollY = view.scrollY,
-            contentHeightPx = view.verticalScrollRange,
-            viewportHeightPx = view.verticalScrollExtent,
-        )
+        browserViewModel.onAction(AppBrowserAction.CloseSearch)
+        webViewController.clearMatches()
     }
 
     val handleNavigation: (String) -> Boolean = { requestUrl ->
-        when (val target = linkRouter.resolve(requestUrl)) {
-            is LinkOpenTarget.NativeTopic,
-            is LinkOpenTarget.NativeUser -> {
+        when (val decision = linkOpenPolicy.resolve(requestUrl)) {
+            is LinkNavigationDecision.NativeTopic,
+            is LinkNavigationDecision.NativeUser -> {
                 onOpenLink(requestUrl)
                 true
             }
 
-            is LinkOpenTarget.ExternalApp -> context.openInExternalApp(target.url)
-
-            is LinkOpenTarget.AppBrowser -> {
-                shouldTryOpenInExternalApp(
-                    baseUrl = appContainer.baseUrl,
-                    url = target.url,
-                ) && context.openInExternalApp(target.url)
+            is LinkNavigationDecision.ExternalApp -> {
+                val openedInExternalApp = context.openInExternalApp(decision.url)
+                when {
+                    openedInExternalApp -> true
+                    decision.url.toHttpUrlOrNull() != null -> false
+                    else -> true
+                }
             }
 
-            is LinkOpenTarget.SystemBrowser -> context.openInSystemBrowser(target.url)
+            is LinkNavigationDecision.AppBrowser -> false
+
+            is LinkNavigationDecision.SystemBrowser -> context.openInSystemBrowser(decision.url)
+        }
+    }
+
+    fun handleBrowserAction(action: AppBrowserAction) {
+        when (action) {
+            AppBrowserAction.NavigateBack -> {
+                when {
+                    browserUiState.address.isVisible -> browserViewModel.onAction(AppBrowserAction.DismissSheet)
+                    historyPopupExpanded -> browserViewModel.onAction(AppBrowserAction.SetHistoryPopupVisible(false))
+                    isSearching -> closeSearch()
+                    panel != AppBrowserPanel.Page -> browserViewModel.onAction(AppBrowserAction.CloseSheet)
+                    else -> navigateBack()
+                }
+            }
+
+            AppBrowserAction.CloseBrowser -> requestClose()
+            AppBrowserAction.OpenAddressSheet -> {
+                browserViewModel.openAddressSheet(
+                    currentUrl = currentUrl,
+                    recentEntries = browserHistory,
+                )
+            }
+
+            AppBrowserAction.OpenHistory,
+            AppBrowserAction.OpenSettings,
+            AppBrowserAction.DismissSheet,
+            AppBrowserAction.CloseSheet,
+            AppBrowserAction.StartSearch,
+            is AppBrowserAction.UpdateSearchMatches,
+            is AppBrowserAction.UpdateAddressDraft,
+            is AppBrowserAction.SetHistoryPopupVisible -> browserViewModel.onAction(action)
+
+            AppBrowserAction.CloseSearch -> closeSearch()
+            is AppBrowserAction.SubmitAddress -> {
+                browserViewModel.onAction(action)
+                browserViewModel.lastSubmittedAddress?.let(webViewController::loadUrl)
+            }
+            is AppBrowserAction.UpdateSearchQuery -> updateSearchQuery(action.query)
+            is AppBrowserAction.OpenHistoryEntry -> {
+                browserViewModel.onAction(AppBrowserAction.CloseSheet)
+                navigateHistory(action.entry)
+            }
+
+            AppBrowserAction.GoForward -> webViewController.goForward()
+            AppBrowserAction.Refresh -> webViewController.reload()
+            AppBrowserAction.Share -> {
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, currentUrl)
+                }
+                context.startActivity(
+                    Intent.createChooser(
+                        shareIntent,
+                        context.getString(R.string.app_browser_share),
+                    ),
+                )
+            }
+
+            AppBrowserAction.OpenInBrowser -> context.openInSystemBrowser(currentUrl)
+            AppBrowserAction.CopyLink -> {
+                clipboardManager.setText(AnnotatedString(currentUrl))
+                bulletinHostState?.show(
+                    BulletinMessage(
+                        title = linkCopiedText,
+                        tone = BulletinTone.Success,
+                    ),
+                )
+            }
         }
     }
 
     BackHandler {
-        when {
-            historyPopupExpanded -> historyPopupExpanded = false
-            isSearching -> closeSearch()
-            panel != AppBrowserPanel.Page -> panel = AppBrowserPanel.Page
-            else -> navigateBack()
-        }
+        handleBrowserAction(AppBrowserAction.NavigateBack)
     }
 
     DisposableEffect(Unit) {
         onDispose {
-            onChromeConfigChanged(null)
             appContainer.cookieSyncBridge.syncFromWebView(appContainer.baseUrl)
         }
-    }
-
-    val chromeConfig = AppBrowserChromeConfig(
-        title = chromeTitle,
-        subtitle = chromeSubtitle,
-        isHttps = isHttps,
-        progress = loadProgressState.displayedProgress,
-        scrollProgress = scrollProgress,
-        isLoadingProgressVisible = loadProgressState.isVisible,
-        canGoBack = canGoBack,
-        canGoForward = canGoForward,
-        backHistoryEntries = backHistoryEntries,
-        browserHistoryEntries = browserHistoryEntries,
-        panel = panel,
-        alpha = routeAlpha,
-        translationX = routeTranslationX,
-        onBack = {
-            if (isSearching) {
-                closeSearch()
-            } else if (panel != AppBrowserPanel.Page) {
-                panel = AppBrowserPanel.Page
-            } else {
-                navigateBack()
-            }
-        },
-        onClose = ::requestClose,
-        onShowHistory = { panel = AppBrowserPanel.History },
-        onShowSettings = { panel = AppBrowserPanel.Settings },
-        onHistoryEntryClick = { entry ->
-            panel = AppBrowserPanel.Page
-            navigateHistory(entry)
-        },
-        onForward = { webViewRef?.goForward() },
-        onRefresh = { webViewRef?.reload() },
-        onShare = {
-            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"
-                putExtra(Intent.EXTRA_TEXT, currentUrl)
-            }
-            context.startActivity(
-                Intent.createChooser(
-                    shareIntent,
-                    context.getString(R.string.app_browser_share),
-                ),
-            )
-        },
-        onOpenInBrowser = {
-            context.openInSystemBrowser(currentUrl)
-        },
-        onCopyLink = {
-            clipboardManager.setText(AnnotatedString(currentUrl))
-            bulletinHostState?.show(
-                BulletinMessage(
-                    title = linkCopiedText,
-                    tone = BulletinTone.Success,
-                ),
-            )
-        },
-        isHistoryPopupVisible = historyPopupExpanded,
-        onHistoryPopupVisibilityChanged = { historyPopupExpanded = it },
-        isSearching = isSearching,
-        searchQuery = searchQuery,
-        onStartSearch = ::startSearch,
-        onSearchQueryChange = ::updateSearchQuery,
-        onSearchClose = ::closeSearch,
-    )
-
-    SideEffect {
-        onChromeConfigChanged(chromeConfig)
     }
     LaunchedEffect(panel) {
         if (panel == AppBrowserPanel.Settings) {
             refreshSettingsStorageUsage()
         }
     }
-    SideEffect {
-        if (panel != AppBrowserPanel.Page && historyPopupExpanded) {
-            historyPopupExpanded = false
-        }
-        if (isSearching && historyPopupExpanded) {
-            historyPopupExpanded = false
+    LaunchedEffect(panel, isSearching, historyPopupExpanded) {
+        if ((panel != AppBrowserPanel.Page || isSearching) && historyPopupExpanded) {
+            browserViewModel.onAction(AppBrowserAction.SetHistoryPopupVisible(false))
         }
     }
 
-    Box(
+    AppBrowserScreen(
+        uiState = browserUiState,
+        onAction = ::handleBrowserAction,
         modifier = Modifier
             .fillMaxSize()
             .background(colors.backgroundBase)
@@ -456,147 +486,194 @@ internal fun AppBrowserRoute(
                 alpha = routeAlpha
                 translationX = routeTranslationX
             },
+        sheetContent = {
+            AnimatedContent(
+                targetState = panel,
+                transitionSpec = {
+                    val isReturningToPage = targetState == AppBrowserPanel.Page
+                    (
+                        slideInHorizontally(
+                            animationSpec = tween(
+                                durationMillis = 260,
+                                easing = LinearOutSlowInEasing,
+                            ),
+                            initialOffsetX = { fullWidth ->
+                                if (isReturningToPage) -fullWidth / 10 else fullWidth / 7
+                            },
+                        ) + fadeIn(
+                            animationSpec = tween(
+                                durationMillis = 180,
+                                easing = LinearOutSlowInEasing,
+                            ),
+                        )
+                    ).togetherWith(
+                        slideOutHorizontally(
+                            animationSpec = tween(
+                                durationMillis = 180,
+                                easing = LinearOutSlowInEasing,
+                            ),
+                            targetOffsetX = { fullWidth ->
+                                if (isReturningToPage) fullWidth / 10 else -fullWidth / 9
+                            },
+                        ) + fadeOut(
+                            animationSpec = tween(
+                                durationMillis = 120,
+                                easing = LinearOutSlowInEasing,
+                            ),
+                        ),
+                    )
+                },
+                label = "appBrowserSubPanel",
+                modifier = Modifier.fillMaxSize(),
+            ) { currentPanel ->
+                when (currentPanel) {
+                    AppBrowserPanel.History -> {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(colors.backgroundBase.copy(alpha = 0.98f)),
+                        ) {
+                            AppBrowserHistoryPanel(
+                                entries = browserHistoryEntries,
+                                onEntryClick = { entry ->
+                                    browserViewModel.onAction(AppBrowserAction.CloseSheet)
+                                    navigateHistory(entry)
+                                },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
+
+                    AppBrowserPanel.Settings -> {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(colors.backgroundBase.copy(alpha = 0.98f)),
+                        ) {
+                            AppBrowserSettingsPanel(
+                                historyCount = browserHistory.size,
+                                cookiesSizeBytes = cookiesSizeBytes,
+                                cacheSizeBytes = cacheSizeBytes,
+                                onOpenHistoryClick = { browserViewModel.onAction(AppBrowserAction.OpenHistory) },
+                                onClearHistoryClick = {
+                                    appContainer.appBrowserHistoryStore.clearImmediate()
+                                    browserViewModel.onAction(AppBrowserAction.OpenHistory)
+                                },
+                                onClearCookiesClick = {
+                                    coroutineScope.launch {
+                                        appContainer.cookieSyncBridge.clear()
+                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                            clearAppBrowserCookieFiles(context.applicationContext.dataDir)
+                                        }
+                                        webViewController.reload()
+                                        refreshSettingsStorageUsage()
+                                    }
+                                },
+                                onClearCacheClick = {
+                                    coroutineScope.launch {
+                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                            clearAppBrowserCacheFiles(
+                                                appDataDir = context.applicationContext.dataDir,
+                                                appCacheDir = context.applicationContext.cacheDir,
+                                            )
+                                        }
+                                        webViewRef?.clearCache(true)
+                                        refreshSettingsStorageUsage()
+                                    }
+                                },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
+
+                    AppBrowserPanel.Page -> Box(modifier = Modifier.fillMaxSize())
+                }
+            }
+        },
     ) {
-        AndroidView(
+        AppBrowserWebView(
             modifier = Modifier
                 .fillMaxSize()
                 .imePadding(),
-            factory = { ctx ->
-                AppBrowserWebView(ctx).apply {
-                    layoutParams = ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                    )
-                    settings.javaScriptEnabled = true
-                    settings.domStorageEnabled = true
-                    settings.userAgentString = appContainer.userAgent
-                    settings.setSupportMultipleWindows(true)
-                    settings.javaScriptCanOpenWindowsAutomatically = true
-                    setBackgroundColor(colors.backgroundBase.toArgb())
-                    CookieManager.getInstance().setAcceptCookie(true)
-                    CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-
-                    webViewClient = object : WebViewClient() {
-                        override fun shouldOverrideUrlLoading(
-                            view: WebView?,
-                            request: WebResourceRequest?,
-                        ): Boolean {
-                            val requestUrl = request?.url?.toString() ?: return false
-                            return handleNavigation(requestUrl)
-                        }
-
-                        override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                            super.onPageStarted(view, url, favicon)
-                            url?.let { currentUrl = it }
-                            currentPageTitle = null
-                            progress = 0
-                            scrollProgress = 0f
-                            loadProgressState = AppBrowserLoadProgressState().start()
-                            canGoBack = view?.canGoBack() == true
-                            canGoForward = view?.canGoForward() == true
-                            if (favicon != null && !url.isNullOrBlank()) {
-                                historyFavicons.rememberBest(url, favicon)
-                            }
-                            recordAppBrowserVisit(
-                                visits = historyVisitMarks,
-                                url = url,
-                                lastRecordedUrl = lastRecordedUrl,
-                                onRecorded = { recordedUrl, recordedAt ->
-                                    lastRecordedUrl = recordedUrl
-                                    lastRecordedAtMillis = recordedAt
-                                },
-                            )
-                        }
-
-                        override fun onPageFinished(view: WebView?, url: String?) {
-                            super.onPageFinished(view, url)
-                            progress = 100
-                            loadProgressState = loadProgressState.finish()
-                            canGoBack = view?.canGoBack() == true
-                            canGoForward = view?.canGoForward() == true
-                            val finishedUrl = url.orEmpty()
-                            appContainer.appBrowserHistoryStore.recordVisit(
-                                url = finishedUrl,
-                                title = currentPageTitle,
-                                favicon = historyFavicons[finishedUrl] ?: view?.favicon,
-                            )
-                            if (finishedUrl.contains("linux.do")) {
-                                appContainer.cookieSyncBridge.syncFromWebView(finishedUrl)
-                            }
-                        }
-                    }
-
-                    webChromeClient = object : WebChromeClient() {
-                        override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                            progress = newProgress
-                            loadProgressState = loadProgressState.onActualProgressChanged(newProgress / 100f)
-                        }
-
-                        override fun onReceivedTitle(view: WebView?, title: String?) {
-                            super.onReceivedTitle(view, title)
-                            currentPageTitle = title
-                                ?.trim()
-                                ?.takeIf(String::isNotBlank)
-                        }
-
-                        override fun onReceivedIcon(view: WebView?, icon: Bitmap?) {
-                            super.onReceivedIcon(view, icon)
-                            val iconUrl = view?.url.orEmpty()
-                            if (icon != null && iconUrl.isNotBlank()) {
-                                historyFavicons.rememberBest(iconUrl, icon)
-                            }
-                        }
-
-                        override fun onCreateWindow(
-                            view: WebView?,
-                            isDialog: Boolean,
-                            isUserGesture: Boolean,
-                            resultMsg: android.os.Message?,
-                        ): Boolean {
-                            val transport = resultMsg?.obj as? WebView.WebViewTransport
-                                ?: return false
-                            val tempWebView = WebView(ctx)
-                            tempWebView.webViewClient = object : WebViewClient() {
-                                override fun shouldOverrideUrlLoading(
-                                    view: WebView?,
-                                    request: WebResourceRequest?,
-                                ): Boolean {
-                                    val targetUrl = request?.url?.toString() ?: return false
-                                    if (handleNavigation(targetUrl)) {
-                                        tempWebView.destroy()
-                                        return true
-                                    }
-                                    this@apply.loadUrl(targetUrl)
-                                    tempWebView.destroy()
-                                    return true
-                                }
-                            }
-                            transport.webView = tempWebView
-                            resultMsg.sendToTarget()
-                            return true
-                        }
-                    }
-
-                    setFindListener { activeMatchOrdinal, numberOfMatches, isDoneCounting ->
-                        if (isDoneCounting) {
-                            searchActiveMatchOrdinal = activeMatchOrdinal
-                            searchNumberOfMatches = numberOfMatches
-                        }
-                    }
-
-                    setOnScrollChangeListener { _, _, scrollY, _, _ ->
-                        scrollProgress = calculateCurrentScrollProgress(this)
-                    }
-
-                    appContainer.cookieSyncBridge.syncToWebView(appContainer.baseUrl)
-                    loadUrl(url)
-                    webViewRef = this
+            initialUrl = url,
+            userAgent = appContainer.userAgent,
+            backgroundColor = colors.backgroundBase,
+            controller = webViewController,
+            onWebViewCreated = { webView ->
+                webViewRef = webView
+            },
+            onWebViewReleased = {
+                webViewRef = null
+            },
+            onNavigationRequest = handleNavigation,
+            onPageStarted = { view, pageUrl, favicon ->
+                pageUrl?.let { currentUrl = it }
+                currentPageTitle = null
+                scrollProgress = 0f
+                loadProgressState = AppBrowserLoadProgressState().start()
+                canGoBack = view?.canGoBack() == true
+                canGoForward = view?.canGoForward() == true
+                if (favicon != null && !pageUrl.isNullOrBlank()) {
+                    historyFavicons.rememberBest(pageUrl, favicon)
+                }
+                recordAppBrowserVisit(
+                    visits = historyVisitMarks,
+                    url = pageUrl,
+                    lastRecordedUrl = lastRecordedUrl,
+                    onRecorded = { recordedUrl, recordedAt ->
+                        lastRecordedUrl = recordedUrl
+                        lastRecordedAtMillis = recordedAt
+                    },
+                )
+            },
+            onPageFinished = { view, pageUrl ->
+                loadProgressState = loadProgressState.finish()
+                canGoBack = view?.canGoBack() == true
+                canGoForward = view?.canGoForward() == true
+                val finishedUrl = pageUrl.orEmpty()
+                appContainer.appBrowserHistoryStore.recordVisit(
+                    url = finishedUrl,
+                    title = currentPageTitle,
+                    favicon = historyFavicons[finishedUrl] ?: view?.favicon,
+                )
+                if (finishedUrl.contains("linux.do")) {
+                    appContainer.cookieSyncBridge.syncFromWebView(finishedUrl)
                 }
             },
-            update = { view ->
-                canGoBack = view.canGoBack()
-                canGoForward = view.canGoForward()
-                scrollProgress = calculateCurrentScrollProgress(view)
+            onProgressChanged = { newProgress ->
+                loadProgressState = loadProgressState.onActualProgressChanged(newProgress / 100f)
+            },
+            onTitleChanged = { title ->
+                currentPageTitle = title
+                    ?.trim()
+                    ?.takeIf(String::isNotBlank)
+            },
+            onIconChanged = { iconUrl, icon ->
+                if (icon != null && iconUrl.isNotBlank()) {
+                    historyFavicons.rememberBest(iconUrl, icon)
+                }
+            },
+            onFindResultChanged = { activeMatchOrdinal, numberOfMatches, isDoneCounting ->
+                if (isDoneCounting) {
+                    browserViewModel.onAction(
+                        AppBrowserAction.UpdateSearchMatches(
+                            activeMatchOrdinal = activeMatchOrdinal,
+                            numberOfMatches = numberOfMatches,
+                        ),
+                    )
+                }
+            },
+            onScrollProgressChanged = { value ->
+                scrollProgress = value
+            },
+            onCanGoBackChanged = { value ->
+                canGoBack = value
+            },
+            onCanGoForwardChanged = { value ->
+                canGoForward = value
+            },
+            onSyncCookiesToWebView = {
+                appContainer.cookieSyncBridge.syncToWebView(appContainer.baseUrl)
             },
         )
 
@@ -609,75 +686,11 @@ internal fun AppBrowserRoute(
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
-                        onClick = { historyPopupExpanded = false },
+                        onClick = {
+                            browserViewModel.onAction(AppBrowserAction.SetHistoryPopupVisible(false))
+                        },
                     ),
             )
-        }
-
-        AnimatedContent(
-            targetState = panel,
-            transitionSpec = {
-                (slideInHorizontally { fullWidth -> fullWidth / 6 } + fadeIn())
-                    .togetherWith(slideOutHorizontally { fullWidth -> -fullWidth / 8 } + fadeOut())
-            },
-            label = "appBrowserPanel",
-        ) { currentPanel ->
-            when (currentPanel) {
-                AppBrowserPanel.History -> Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(colors.backgroundBase),
-                ) {
-                    AppBrowserHistoryPanel(
-                        entries = browserHistoryEntries,
-                        onEntryClick = { entry ->
-                            panel = AppBrowserPanel.Page
-                            navigateHistory(entry)
-                        },
-                    )
-                }
-
-                AppBrowserPanel.Settings -> Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(colors.backgroundBase),
-                ) {
-                    AppBrowserSettingsPanel(
-                        historyCount = browserHistory.size,
-                        cookiesSizeBytes = cookiesSizeBytes,
-                        cacheSizeBytes = cacheSizeBytes,
-                        onOpenHistoryClick = { panel = AppBrowserPanel.History },
-                        onClearHistoryClick = {
-                            appContainer.appBrowserHistoryStore.clearImmediate()
-                            panel = AppBrowserPanel.History
-                        },
-                        onClearCookiesClick = {
-                            coroutineScope.launch {
-                                appContainer.cookieSyncBridge.clear()
-                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                    clearAppBrowserCookieFiles(context.applicationContext.dataDir)
-                                }
-                                webViewRef?.reload()
-                                refreshSettingsStorageUsage()
-                            }
-                        },
-                        onClearCacheClick = {
-                            coroutineScope.launch {
-                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                    clearAppBrowserCacheFiles(
-                                        appDataDir = context.applicationContext.dataDir,
-                                        appCacheDir = context.applicationContext.cacheDir,
-                                    )
-                                }
-                                webViewRef?.clearCache(true)
-                                refreshSettingsStorageUsage()
-                            }
-                        },
-                    )
-                }
-
-                AppBrowserPanel.Page -> Box(modifier = Modifier.fillMaxSize())
-            }
         }
 
         AnimatedVisibility(
@@ -796,12 +809,18 @@ private const val appBrowserRouteExitDurationMillis = 170
 private const val appBrowserFakeProgressTickDelayMillis = 100L
 private const val appBrowserProgressDismissDelayMillis = 180L
 
-private class AppBrowserWebView(
-    context: android.content.Context,
-) : WebView(context) {
-    val verticalScrollRange: Int
-        get() = computeVerticalScrollRange()
-
-    val verticalScrollExtent: Int
-        get() = computeVerticalScrollExtent()
+private class AppBrowserViewModelFactory(
+    private val initialUrl: String,
+    private val baseUrl: String,
+) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        check(modelClass.isAssignableFrom(AppBrowserViewModel::class.java)) {
+            "Unknown ViewModel class: ${modelClass.name}"
+        }
+        return AppBrowserViewModel(
+            initialUrl = initialUrl,
+            baseUrl = baseUrl,
+        ) as T
+    }
 }

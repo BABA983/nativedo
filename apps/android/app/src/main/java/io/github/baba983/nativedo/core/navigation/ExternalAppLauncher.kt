@@ -6,17 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.net.URISyntaxException
-
-internal fun shouldTryOpenInExternalApp(
-    baseUrl: String,
-    url: String,
-): Boolean {
-    val baseHttpUrl = baseUrl.toHttpUrlOrNull() ?: return false
-    val resolvedUrl = baseHttpUrl.resolve(url) ?: url.toHttpUrlOrNull() ?: return false
-    return !resolvedUrl.host.equals(baseHttpUrl.host, ignoreCase = true)
-}
 
 internal fun Context.openInExternalApp(url: String): Boolean {
     val intent = buildOpenLinkIntent(url) ?: return false

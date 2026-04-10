@@ -26,7 +26,6 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
-import io.github.baba983.nativedo.feature.browser.AppBrowserChromeConfig
 import io.github.baba983.nativedo.feature.browser.AppBrowserRoute
 import java.net.URLDecoder
 
@@ -46,7 +45,6 @@ internal fun NativeDoNavHost(
     onHomeHeaderSearchVisibilityChanged: (Boolean) -> Unit,
     onTopicHeaderTitleChanged: (String?) -> Unit,
     onOpenLink: (String) -> Unit,
-    onAppBrowserChromeConfigChanged: (AppBrowserChromeConfig?) -> Unit,
 ) {
     val context = LocalContext.current
     val appContainer = remember(context) {
@@ -163,7 +161,6 @@ internal fun NativeDoNavHost(
             AppBrowserRoute(
                 url = decodedUrl,
                 onOpenLink = onOpenLink,
-                onChromeConfigChanged = onAppBrowserChromeConfigChanged,
                 onClose = { navController.popBackStack() },
             )
         }

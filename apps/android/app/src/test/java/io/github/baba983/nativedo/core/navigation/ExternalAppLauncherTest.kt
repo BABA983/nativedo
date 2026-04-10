@@ -6,36 +6,6 @@ import org.junit.Test
 class ExternalAppLauncherTest {
 
     @Test
-    fun shouldTryOpenInExternalApp_sameHost_returnsFalse() {
-        val result = shouldTryOpenInExternalApp(
-            baseUrl = "https://linux.do",
-            url = "https://linux.do/c/android/12",
-        )
-
-        assertThat(result).isFalse()
-    }
-
-    @Test
-    fun shouldTryOpenInExternalApp_relativeInternalPath_returnsFalse() {
-        val result = shouldTryOpenInExternalApp(
-            baseUrl = "https://linux.do",
-            url = "/tag/android",
-        )
-
-        assertThat(result).isFalse()
-    }
-
-    @Test
-    fun shouldTryOpenInExternalApp_externalHost_returnsTrue() {
-        val result = shouldTryOpenInExternalApp(
-            baseUrl = "https://linux.do",
-            url = "https://t.me/linuxdo",
-        )
-
-        assertThat(result).isTrue()
-    }
-
-    @Test
     fun selectNonBrowserPackageName_returnsFirstNonBrowserHandler() {
         val result = selectNonBrowserPackageName(
             handlerPackageNames = listOf(

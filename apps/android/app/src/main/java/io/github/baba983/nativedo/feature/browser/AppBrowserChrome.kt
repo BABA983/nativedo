@@ -196,17 +196,94 @@ private data class AppBrowserPopupPalette(
     val pressed: Color,
 )
 
+private fun AppBrowserChromeConfig.toChromeModel(): AppBrowserChromeModel {
+    return AppBrowserChromeModel(
+        title = title,
+        subtitle = subtitle,
+        isHttps = isHttps,
+        canGoBack = canGoBack,
+        canGoForward = canGoForward,
+        progress = progress,
+        scrollProgress = scrollProgress,
+        isLoadingProgressVisible = isLoadingProgressVisible,
+        backHistoryEntries = backHistoryEntries,
+        browserHistoryEntries = browserHistoryEntries,
+        isInSubPanel = panel != AppBrowserPanel.Page,
+        alpha = alpha,
+        translationX = translationX,
+        isHistoryPopupVisible = isHistoryPopupVisible,
+    )
+}
+
+private fun AppBrowserChromeConfig.toSearchUiState(): AppBrowserSearchUiState {
+    return AppBrowserSearchUiState(
+        isActive = isSearching,
+        query = searchQuery,
+    )
+}
+
+private fun dispatchAppBrowserChromeAction(
+    config: AppBrowserChromeConfig,
+    action: AppBrowserAction,
+) {
+    when (action) {
+        AppBrowserAction.NavigateBack -> config.onBack()
+        AppBrowserAction.CloseBrowser -> config.onClose()
+        AppBrowserAction.OpenHistory -> config.onShowHistory()
+        AppBrowserAction.OpenSettings -> config.onShowSettings()
+        AppBrowserAction.OpenAddressSheet,
+        AppBrowserAction.DismissSheet,
+        AppBrowserAction.CloseSheet -> Unit
+        is AppBrowserAction.OpenHistoryEntry -> config.onHistoryEntryClick(action.entry)
+        AppBrowserAction.StartSearch -> config.onStartSearch()
+        AppBrowserAction.CloseSearch -> config.onSearchClose()
+        is AppBrowserAction.UpdateAddressDraft,
+        is AppBrowserAction.SubmitAddress -> Unit
+        is AppBrowserAction.UpdateSearchQuery -> config.onSearchQueryChange(action.query)
+        is AppBrowserAction.UpdateSearchMatches -> Unit
+        AppBrowserAction.GoForward -> config.onForward()
+        AppBrowserAction.Refresh -> config.onRefresh()
+        AppBrowserAction.Share -> config.onShare()
+        AppBrowserAction.OpenInBrowser -> config.onOpenInBrowser()
+        AppBrowserAction.CopyLink -> config.onCopyLink()
+        is AppBrowserAction.SetHistoryPopupVisible -> config.onHistoryPopupVisibilityChanged(action.visible)
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AppBrowserTopBar(
     config: AppBrowserChromeConfig?,
 ) {
+    if (config == null) return
+
+    AppBrowserTopBar(
+        chrome = config.toChromeModel(),
+        search = config.toSearchUiState(),
+        onAction = { action ->
+            dispatchAppBrowserChromeAction(config, action)
+        },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun AppBrowserTopBar(
+    chrome: AppBrowserChromeModel,
+    search: AppBrowserSearchUiState,
+    onAction: (AppBrowserAction) -> Unit,
+) {
     val colors = NativeDoThemeExtras.colors
-    val hasBackHistoryEntries = config?.backHistoryEntries?.isNotEmpty() == true
-    val hasBrowserHistoryEntries = config?.browserHistoryEntries?.isNotEmpty() == true
-    val progress = config?.progress?.coerceIn(0f, 1f) ?: 0f
-    val scrollProgress = config?.scrollProgress?.coerceIn(0f, 1f) ?: 0f
-    val showProgress = config?.isLoadingProgressVisible == true
+    val hasBackHistoryEntries = chrome.backHistoryEntries.isNotEmpty()
+    val hasBrowserHistoryEntries = chrome.browserHistoryEntries.isNotEmpty()
+    val progress = chrome.progress.coerceIn(0f, 1f)
+    val isSearching = search.isActive
+    val scrollProgress = if (isSearching) {
+        0f
+    } else {
+        chrome.scrollProgress.coerceIn(0f, 1f)
+    }
+    val showProgress = chrome.isLoadingProgressVisible
     val scrollChromeState = remember(scrollProgress, showProgress) {
         buildAppBrowserScrollChromeBackgroundState(
             scrollProgress = scrollProgress,
@@ -215,14 +292,13 @@ internal fun AppBrowserTopBar(
     }
     val topBarGlassColor = colors.glassBackgroundStrong.copy(alpha = 0.84f)
     val scrollProgressFillColor = colors.accent.copy(alpha = scrollChromeState.fillAlpha)
-    val topBarAlpha = config?.alpha ?: 0f
-    val topBarTranslationX = config?.translationX ?: 0f
-    val isSearching = config?.isSearching == true
-    val isInSubPanel = config?.panel?.let { panel -> panel != AppBrowserPanel.Page } == true
+    val topBarAlpha = chrome.alpha
+    val topBarTranslationX = chrome.translationX
+    val isInSubPanel = chrome.isInSubPanel
     val showMenuButton = !isSearching && !isInSubPanel
     var searchFocusToken by remember { mutableIntStateOf(0) }
     var menuExpanded by remember { mutableStateOf(false) }
-    val historyExpanded = config?.isHistoryPopupVisible == true
+    val historyExpanded = chrome.isHistoryPopupVisible
     val showBackButton = isSearching || isInSubPanel || historyExpanded
     val showCloseButton = !showBackButton
     val searchTransition = updateTransition(
@@ -269,7 +345,7 @@ internal fun AppBrowserTopBar(
     val backCloseProgress by backCloseTransition.animateFloat(
         transitionSpec = {
             tween(
-                durationMillis = 320,
+                durationMillis = 220,
                 easing = LinearOutSlowInEasing,
             )
         },
@@ -277,7 +353,7 @@ internal fun AppBrowserTopBar(
     ) { closeVisible ->
         if (closeVisible) 1f else 0f
     }
-    val searchClearVisible = config?.searchQuery?.isNotEmpty() == true
+    val searchClearVisible = search.query.isNotEmpty()
     val searchClearProgress by animateFloatAsState(
         targetValue = if (searchClearVisible) 1f else 0f,
         animationSpec = tween(
@@ -287,18 +363,16 @@ internal fun AppBrowserTopBar(
         label = "appBrowserSearchClearProgress",
     )
 
-    val menuEntries = remember(config?.canGoForward, hasBrowserHistoryEntries) {
+    val menuEntries = remember(chrome.canGoForward, hasBrowserHistoryEntries) {
         buildAppBrowserMenuEntries(
-            canGoForward = config?.canGoForward == true,
+            canGoForward = chrome.canGoForward,
             hasBrowserHistory = hasBrowserHistoryEntries,
         )
     }
 
-    LaunchedEffect(config) {
-        if (config == null) {
-            menuExpanded = false
-        } else if (config.backHistoryEntries.isEmpty()) {
-            config.onHistoryPopupVisibilityChanged(false)
+    LaunchedEffect(chrome.backHistoryEntries) {
+        if (chrome.backHistoryEntries.isEmpty()) {
+            onAction(AppBrowserAction.SetHistoryPopupVisible(false))
         }
     }
 
@@ -307,7 +381,7 @@ internal fun AppBrowserTopBar(
             menuExpanded = false
         }
         if (isSearching) {
-            config?.onHistoryPopupVisibilityChanged?.invoke(false)
+            onAction(AppBrowserAction.SetHistoryPopupVisible(false))
             delay(appBrowserSearchEnterDurationMillis.toLong())
             searchFocusToken += 1
         }
@@ -362,17 +436,17 @@ internal fun AppBrowserTopBar(
                     AppBrowserChromeButton(
                         onClick = {
                             if (historyExpanded) {
-                                config?.onHistoryPopupVisibilityChanged?.invoke(false)
+                                onAction(AppBrowserAction.SetHistoryPopupVisible(false))
                             } else if (showCloseButton) {
-                                config?.onClose?.invoke()
+                                onAction(AppBrowserAction.CloseBrowser)
                             } else {
-                                config?.onBack?.invoke()
+                                onAction(AppBrowserAction.NavigateBack)
                             }
                         },
                         onLongClick = if (hasBackHistoryEntries && !isSearching && !isInSubPanel) {
                             {
                                 menuExpanded = false
-                                config?.onHistoryPopupVisibilityChanged?.invoke(true)
+                                onAction(AppBrowserAction.SetHistoryPopupVisible(true))
                             }
                         } else {
                             null
@@ -390,13 +464,14 @@ internal fun AppBrowserTopBar(
                         ),
                     )
                     AppBrowserHistoryPopup(
-                        expanded = historyExpanded &&
-                            config?.backHistoryEntries?.isNotEmpty() == true,
-                        entries = config?.backHistoryEntries.orEmpty(),
-                        onDismissRequest = { config?.onHistoryPopupVisibilityChanged?.invoke(false) },
+                        expanded = historyExpanded && hasBackHistoryEntries,
+                        entries = chrome.backHistoryEntries,
+                        onDismissRequest = {
+                            onAction(AppBrowserAction.SetHistoryPopupVisible(false))
+                        },
                         onEntryClick = { entry ->
-                            config?.onHistoryPopupVisibilityChanged?.invoke(false)
-                            config?.onHistoryEntryClick?.invoke(entry)
+                            onAction(AppBrowserAction.SetHistoryPopupVisible(false))
+                            onAction(AppBrowserAction.OpenHistoryEntry(entry))
                         },
                     )
                 }
@@ -407,9 +482,16 @@ internal fun AppBrowserTopBar(
                     contentAlignment = Alignment.Center,
                 ) {
                     AppBrowserTitlePill(
-                        title = config?.title.orEmpty(),
-                        subtitle = config?.subtitle,
-                        isHttps = config?.isHttps == true,
+                        title = chrome.title,
+                        subtitle = chrome.subtitle,
+                        isHttps = chrome.isHttps,
+                        onClick = if (!isSearching && !isInSubPanel) {
+                            {
+                                onAction(AppBrowserAction.OpenAddressSheet)
+                            }
+                        } else {
+                            null
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .graphicsLayer {
@@ -418,21 +500,21 @@ internal fun AppBrowserTopBar(
                                 scaleY = titleScale
                             },
                     )
-                    if (config != null) {
-                        AppBrowserSearchBar(
-                            query = config.searchQuery,
-                            onQueryChange = config.onSearchQueryChange,
-                            focusToken = searchFocusToken,
-                            isSearching = isSearching,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .graphicsLayer {
-                                    alpha = searchingProgress
-                                    scaleX = searchScale
-                                    scaleY = searchScale
-                                },
-                        )
-                    }
+                    AppBrowserSearchBar(
+                        query = search.query,
+                        onQueryChange = { query ->
+                            onAction(AppBrowserAction.UpdateSearchQuery(query))
+                        },
+                        focusToken = searchFocusToken,
+                        isSearching = isSearching,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .graphicsLayer {
+                                alpha = searchingProgress
+                                scaleX = searchScale
+                                scaleY = searchScale
+                            },
+                    )
                 }
 
                 Spacer(modifier = Modifier.width(12.dp))
@@ -442,10 +524,8 @@ internal fun AppBrowserTopBar(
                     if (showMenuButton) {
                         AppBrowserChromeButton(
                             onClick = {
-                                if (config != null) {
-                                    config.onHistoryPopupVisibilityChanged(false)
-                                    menuExpanded = true
-                                }
+                                onAction(AppBrowserAction.SetHistoryPopupVisible(false))
+                                menuExpanded = true
                             },
                             imageVector = Icons.Outlined.MoreVert,
                             contentDescription = stringResource(R.string.app_browser_more_actions),
@@ -453,27 +533,29 @@ internal fun AppBrowserTopBar(
                             modifier = Modifier.align(Alignment.Center),
                         )
                         AppBrowserActionPopup(
-                            expanded = menuExpanded && config != null,
+                            expanded = menuExpanded,
                             entries = menuEntries,
                             onDismissRequest = { menuExpanded = false },
                             onActionClick = { action ->
                                 menuExpanded = false
                                 when (action) {
-                                    AppBrowserMenuAction.Search -> config?.onStartSearch?.invoke()
-                                    AppBrowserMenuAction.History -> config?.onShowHistory?.invoke()
-                                    AppBrowserMenuAction.Forward -> config?.onForward?.invoke()
-                                    AppBrowserMenuAction.Refresh -> config?.onRefresh?.invoke()
-                                    AppBrowserMenuAction.Share -> config?.onShare?.invoke()
-                                    AppBrowserMenuAction.OpenInBrowser -> config?.onOpenInBrowser?.invoke()
-                                    AppBrowserMenuAction.CopyLink -> config?.onCopyLink?.invoke()
-                                    AppBrowserMenuAction.Settings -> config?.onShowSettings?.invoke()
-                                    AppBrowserMenuAction.Close -> config?.onClose?.invoke()
+                                    AppBrowserMenuAction.Search -> onAction(AppBrowserAction.StartSearch)
+                                    AppBrowserMenuAction.History -> onAction(AppBrowserAction.OpenHistory)
+                                    AppBrowserMenuAction.Forward -> onAction(AppBrowserAction.GoForward)
+                                    AppBrowserMenuAction.Refresh -> onAction(AppBrowserAction.Refresh)
+                                    AppBrowserMenuAction.Share -> onAction(AppBrowserAction.Share)
+                                    AppBrowserMenuAction.OpenInBrowser -> onAction(AppBrowserAction.OpenInBrowser)
+                                    AppBrowserMenuAction.CopyLink -> onAction(AppBrowserAction.CopyLink)
+                                    AppBrowserMenuAction.Settings -> onAction(AppBrowserAction.OpenSettings)
+                                    AppBrowserMenuAction.Close -> onAction(AppBrowserAction.CloseBrowser)
                                 }
                             },
                         )
                     } else if (isSearching) {
                         AppBrowserChromeButton(
-                            onClick = { config?.onSearchQueryChange?.invoke("") },
+                            onClick = {
+                                onAction(AppBrowserAction.UpdateSearchQuery(""))
+                            },
                             imageVector = Icons.Outlined.Close,
                             contentDescription = stringResource(R.string.app_browser_search_clear),
                             enabled = searchClearVisible,
@@ -510,9 +592,9 @@ internal fun AppBrowserTopBar(
                     alpha = if (showProgress) 1f else 0f
                     scaleX = if (showProgress) 1f else 0.92f
                     transformOrigin = TransformOrigin(0f, 0.5f)
-                    }
-                    .background(Color.Transparent),
-            )
+                }
+                .background(Color.Transparent),
+        )
     }
 }
 
@@ -586,6 +668,7 @@ internal fun AppBrowserTitlePill(
     title: String,
     subtitle: String?,
     isHttps: Boolean,
+    onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val colors = NativeDoThemeExtras.colors
@@ -593,7 +676,15 @@ internal fun AppBrowserTitlePill(
     val resolvedTitle = title.ifBlank { " " }
 
     Surface(
-        modifier = modifier,
+        modifier = if (onClick != null) {
+            modifier.clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            )
+        } else {
+            modifier
+        },
         shape = RoundedCornerShape(24.dp),
         color = colors.glassBackgroundStrong.copy(alpha = 0.84f),
         tonalElevation = 0.dp,

@@ -68,8 +68,6 @@ import io.github.baba983.nativedo.core.ui.LocalBulletinHostState
 import io.github.baba983.nativedo.core.ui.UserAvatar
 import io.github.baba983.nativedo.feature.auth.ui.AuthRestoreGate
 import io.github.baba983.nativedo.feature.auth.ui.shouldShowAuthRestoreGate
-import io.github.baba983.nativedo.feature.browser.AppBrowserChromeConfig
-import io.github.baba983.nativedo.feature.browser.AppBrowserTopBar
 import io.github.baba983.nativedo.navigation.APP_BROWSER_ROUTE
 import io.github.baba983.nativedo.navigation.NativeDoNavHost
 import io.github.baba983.nativedo.navigation.RootDestination
@@ -79,12 +77,12 @@ import io.github.baba983.nativedo.ui.theme.NativeDoPillShape
 import io.github.baba983.nativedo.ui.theme.NativeDoTheme
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 import io.github.baba983.nativedo.ui.theme.ThemeMode
-import io.github.baba983.nativedo.core.navigation.LinkOpenTarget
-import io.github.baba983.nativedo.core.navigation.LinkRouter
+import io.github.baba983.nativedo.core.navigation.LinkNavigationDecision
+import io.github.baba983.nativedo.core.navigation.LinkOpenPolicy
 import io.github.baba983.nativedo.core.navigation.openInExternalApp
 import io.github.baba983.nativedo.core.navigation.openInSystemBrowser
-import io.github.baba983.nativedo.core.navigation.shouldTryOpenInExternalApp
 import kotlinx.coroutines.launch
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.net.URLEncoder
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -110,7 +108,6 @@ fun NativeDoApp() {
         val bulletinHostState = remember { BulletinHostState() }
         val currentEntry = navController.currentBackStackEntryAsState().value
         val currentRoute = currentEntry?.destination?.route
-        var appBrowserChromeConfig by remember { mutableStateOf<AppBrowserChromeConfig?>(null) }
         val cachedSessionSnapshot = appContainer.sessionStore.snapshot()
         val chromeState = remember(sessionState, cachedSessionSnapshot) {
             NativeDoChromeState.from(sessionState, cachedSessionSnapshot)
@@ -124,26 +121,24 @@ fun NativeDoApp() {
             initialPage = RootDestination.bottomTabs.indexOf(RootDestination.start),
         ) { RootDestination.bottomTabs.size }
         val coroutineScope = rememberCoroutineScope()
-        val linkRouter = remember(appContainer) { LinkRouter(appContainer.baseUrl) }
+        val linkOpenPolicy = remember(appContainer) { LinkOpenPolicy(appContainer.baseUrl) }
+        val openInAppBrowser: (String) -> Unit = { browserUrl ->
+            val encoded = URLEncoder.encode(browserUrl, "UTF-8")
+            navController.navigate(buildAppBrowserRoute(encoded))
+        }
         val onOpenLink: (String) -> Unit = { url ->
-            when (val target = linkRouter.resolve(url)) {
-                is LinkOpenTarget.NativeTopic -> navController.navigate("topic/${target.topicId}")
-                is LinkOpenTarget.NativeUser -> navController.navigate("user/${target.username}")
-                is LinkOpenTarget.AppBrowser -> {
-                    val openedInExternalApp = shouldTryOpenInExternalApp(
-                        baseUrl = appContainer.baseUrl,
-                        url = target.url,
-                    ) && context.openInExternalApp(target.url)
-                    if (!openedInExternalApp) {
-                        val encoded = URLEncoder.encode(target.url, "UTF-8")
-                        navController.navigate(buildAppBrowserRoute(encoded))
+            when (val decision = linkOpenPolicy.resolve(url)) {
+                is LinkNavigationDecision.NativeTopic -> navController.navigate("topic/${decision.topicId}")
+                is LinkNavigationDecision.NativeUser -> navController.navigate("user/${decision.username}")
+                is LinkNavigationDecision.AppBrowser -> openInAppBrowser(decision.url)
+                is LinkNavigationDecision.ExternalApp -> {
+                    val openedInExternalApp = context.openInExternalApp(decision.url)
+                    if (!openedInExternalApp && decision.url.toHttpUrlOrNull() != null) {
+                        openInAppBrowser(decision.url)
                     }
                 }
-                is LinkOpenTarget.ExternalApp -> {
-                    context.openInExternalApp(target.url)
-                }
-                is LinkOpenTarget.SystemBrowser -> {
-                    context.openInSystemBrowser(target.url)
+                is LinkNavigationDecision.SystemBrowser -> {
+                    context.openInSystemBrowser(decision.url)
                 }
             }
         }
@@ -168,11 +163,7 @@ fun NativeDoApp() {
                     contentColor = MaterialTheme.colorScheme.onBackground,
                     contentWindowInsets = WindowInsets(0, 0, 0, 0),
                     topBar = {
-                        if (isAppBrowserRoute) {
-                            AppBrowserTopBar(
-                                config = appBrowserChromeConfig,
-                            )
-                        } else {
+                        if (!isAppBrowserRoute) {
                             NativeDoTopBar(
                                 currentRoute = activeRoute,
                                 chromeState = chromeState,
@@ -200,9 +191,6 @@ fun NativeDoApp() {
                         onHomeHeaderSearchVisibilityChanged = { homeHeaderSearchVisible = it },
                         onTopicHeaderTitleChanged = { topicHeaderTitle = it },
                         onOpenLink = onOpenLink,
-                        onAppBrowserChromeConfigChanged = { config ->
-                            appBrowserChromeConfig = config
-                        },
                     )
                 }
 
