@@ -43,7 +43,9 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
@@ -85,6 +87,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
@@ -105,6 +108,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
+import androidx.compose.foundation.layout.WindowInsets
 import io.github.baba983.nativedo.R
 import io.github.baba983.nativedo.ui.AppTopBarHorizontalPadding
 import io.github.baba983.nativedo.ui.AppTopBarRowMinHeight
@@ -124,6 +128,8 @@ internal data class AppBrowserChromeConfig(
     val subtitle: String?,
     val isHttps: Boolean,
     val progress: Float,
+    val scrollProgress: Float = 0f,
+    val isLoadingProgressVisible: Boolean,
     val canGoBack: Boolean,
     val canGoForward: Boolean,
     val backHistoryEntries: List<AppBrowserHistoryEntry>,
@@ -199,7 +205,16 @@ internal fun AppBrowserTopBar(
     val hasBackHistoryEntries = config?.backHistoryEntries?.isNotEmpty() == true
     val hasBrowserHistoryEntries = config?.browserHistoryEntries?.isNotEmpty() == true
     val progress = config?.progress?.coerceIn(0f, 1f) ?: 0f
-    val showProgress = progress > 0f && progress < 1f
+    val scrollProgress = config?.scrollProgress?.coerceIn(0f, 1f) ?: 0f
+    val showProgress = config?.isLoadingProgressVisible == true
+    val scrollChromeState = remember(scrollProgress, showProgress) {
+        buildAppBrowserScrollChromeBackgroundState(
+            scrollProgress = scrollProgress,
+            isLoadingVisible = showProgress,
+        )
+    }
+    val topBarGlassColor = colors.glassBackgroundStrong.copy(alpha = 0.84f)
+    val scrollProgressFillColor = colors.accent.copy(alpha = scrollChromeState.fillAlpha)
     val topBarAlpha = config?.alpha ?: 0f
     val topBarTranslationX = config?.translationX ?: 0f
     val isSearching = config?.isSearching == true
@@ -295,18 +310,38 @@ internal fun AppBrowserTopBar(
         }
     }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .statusBarsPadding()
             .graphicsLayer {
                 alpha = topBarAlpha
                 translationX = topBarTranslationX
             },
     ) {
         Box(
+            modifier = Modifier
+                .matchParentSize()
+                .drawWithContent {
+                    drawRect(color = topBarGlassColor)
+                    if (scrollChromeState.fillFraction > 0f) {
+                        drawRect(
+                            color = scrollProgressFillColor,
+                            size = Size(
+                                width = size.width * scrollChromeState.fillFraction,
+                                height = size.height,
+                            ),
+                        )
+                    }
+                    drawContent()
+                },
+        )
+
+        Column(
             modifier = Modifier.fillMaxWidth(),
         ) {
+            Spacer(
+                modifier = Modifier.windowInsetsTopHeight(WindowInsets.statusBars),
+            )
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -452,30 +487,29 @@ internal fun AppBrowserTopBar(
                 }
             }
 
-            LinearProgressIndicator(
-                progress = { progress },
-                color = colors.accent,
-                trackColor = colors.glassBackgroundStrong.copy(alpha = 0.24f),
-                gapSize = 0.dp,
-                drawStopIndicator = {},
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .padding(horizontal = AppTopBarHorizontalPadding)
-                    .height(appBrowserProgressHeight)
-                    .clip(NativeDoPillShape)
-                    .graphicsLayer {
-                        alpha = if (showProgress) 1f else 0f
-                        scaleX = if (showProgress) 1f else 0.92f
-                        transformOrigin = TransformOrigin(0f, 0.5f)
-                    }
-                    .background(Color.Transparent, NativeDoPillShape),
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = scrollChromeState.dividerAlpha),
             )
         }
 
-        HorizontalDivider(
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f),
-        )
+        LinearProgressIndicator(
+            progress = { progress },
+            color = colors.accent,
+            trackColor = colors.glassBackgroundStrong.copy(alpha = 0.18f),
+            gapSize = 0.dp,
+            drawStopIndicator = {},
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(horizontal = AppTopBarHorizontalPadding)
+                .height(appBrowserProgressHeight)
+                .graphicsLayer {
+                    alpha = if (showProgress) 1f else 0f
+                    scaleX = if (showProgress) 1f else 0.92f
+                    transformOrigin = TransformOrigin(0f, 0.5f)
+                    }
+                    .background(Color.Transparent),
+            )
     }
 }
 

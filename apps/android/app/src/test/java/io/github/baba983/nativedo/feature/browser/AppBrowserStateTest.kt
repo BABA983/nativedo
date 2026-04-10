@@ -67,6 +67,25 @@ class AppBrowserStateTest {
     }
 
     @Test
+    fun appBrowserLoadProgressState_advanceFakeTick_usesTelegramTickCadence() {
+        val fastTickState = AppBrowserLoadProgressState(
+            displayedProgress = 0.3f,
+            actualProgress = 0f,
+            isLoading = true,
+            isVisible = true,
+        ).advanceFakeTick()
+        val slowTickState = AppBrowserLoadProgressState(
+            displayedProgress = 0.52f,
+            actualProgress = 0f,
+            isLoading = true,
+            isVisible = true,
+        ).advanceFakeTick()
+
+        assertThat(fastTickState.displayedProgress).isWithin(0.0001f).of(0.32f)
+        assertThat(slowTickState.displayedProgress).isWithin(0.0001f).of(0.53f)
+    }
+
+    @Test
     fun appBrowserScrollProgress_zeroWhenContentFitsViewport() {
         val progress = buildAppBrowserScrollProgress(
             scrollY = 0,
@@ -97,6 +116,42 @@ class AppBrowserStateTest {
         )
 
         assertThat(progress).isEqualTo(1f)
+    }
+
+    @Test
+    fun appBrowserScrollChromeBackgroundState_hidesFillWhileLoading() {
+        val state = buildAppBrowserScrollChromeBackgroundState(
+            scrollProgress = 0.75f,
+            isLoadingVisible = true,
+        )
+
+        assertThat(state.fillFraction).isEqualTo(0f)
+        assertThat(state.fillAlpha).isEqualTo(0f)
+        assertThat(state.dividerAlpha).isEqualTo(0.16f)
+    }
+
+    @Test
+    fun appBrowserScrollChromeBackgroundState_scalesFillAndShadowWithScroll() {
+        val state = buildAppBrowserScrollChromeBackgroundState(
+            scrollProgress = 0.5f,
+            isLoadingVisible = false,
+        )
+
+        assertThat(state.fillFraction).isEqualTo(0.5f)
+        assertThat(state.fillAlpha).isWithin(0.0001f).of(0.09f)
+        assertThat(state.dividerAlpha).isWithin(0.0001f).of(0.2f)
+    }
+
+    @Test
+    fun appBrowserScrollChromeBackgroundState_clampsOverflowProgress() {
+        val state = buildAppBrowserScrollChromeBackgroundState(
+            scrollProgress = 1.4f,
+            isLoadingVisible = false,
+        )
+
+        assertThat(state.fillFraction).isEqualTo(1f)
+        assertThat(state.fillAlpha).isWithin(0.0001f).of(0.18f)
+        assertThat(state.dividerAlpha).isWithin(0.0001f).of(0.24f)
     }
 
     @Test

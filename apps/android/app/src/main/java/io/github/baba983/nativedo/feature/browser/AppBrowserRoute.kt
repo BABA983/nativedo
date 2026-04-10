@@ -321,6 +321,14 @@ internal fun AppBrowserRoute(
         webViewRef?.clearMatches()
     }
 
+    fun calculateCurrentScrollProgress(view: AppBrowserWebView): Float {
+        return buildAppBrowserScrollProgress(
+            scrollY = view.scrollY,
+            contentHeightPx = view.verticalScrollRange,
+            viewportHeightPx = view.verticalScrollExtent,
+        )
+    }
+
     val handleNavigation: (String) -> Boolean = { requestUrl ->
         when (val target = linkRouter.resolve(requestUrl)) {
             is LinkOpenTarget.NativeTopic,
@@ -358,94 +366,73 @@ internal fun AppBrowserRoute(
         }
     }
 
-    LaunchedEffect(
-        chromeTitle,
-        chromeSubtitle,
-        panel,
-        isHttps,
-        progress,
-        scrollProgress,
-        loadProgressState,
-        canGoBack,
-        canGoForward,
-        routeAlpha,
-        routeTranslationX,
-        currentUrl,
-        webViewRef,
-        backHistoryEntries,
-        browserHistoryEntries,
-        isSearching,
-        searchQuery,
-        searchActiveMatchOrdinal,
-        searchNumberOfMatches,
-        historyPopupExpanded,
-    ) {
-        onChromeConfigChanged(
-            AppBrowserChromeConfig(
-                title = chromeTitle,
-                subtitle = chromeSubtitle,
-                isHttps = isHttps,
-                progress = loadProgressState.displayedProgress,
-                scrollProgress = scrollProgress,
-                isLoadingProgressVisible = loadProgressState.isVisible,
-                canGoBack = canGoBack,
-                canGoForward = canGoForward,
-                backHistoryEntries = backHistoryEntries,
-                browserHistoryEntries = browserHistoryEntries,
-                panel = panel,
-                alpha = routeAlpha,
-                translationX = routeTranslationX,
-                onBack = {
-                    if (isSearching) {
-                        closeSearch()
-                    } else if (panel != AppBrowserPanel.Page) {
-                        panel = AppBrowserPanel.Page
-                    } else {
-                        navigateBack()
-                    }
-                },
-                onClose = ::requestClose,
-                onShowHistory = { panel = AppBrowserPanel.History },
-                onShowSettings = { panel = AppBrowserPanel.Settings },
-                onHistoryEntryClick = { entry ->
-                    panel = AppBrowserPanel.Page
-                    navigateHistory(entry)
-                },
-                onForward = { webViewRef?.goForward() },
-                onRefresh = { webViewRef?.reload() },
-                onShare = {
-                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                        type = "text/plain"
-                        putExtra(Intent.EXTRA_TEXT, currentUrl)
-                    }
-                    context.startActivity(
-                        Intent.createChooser(
-                            shareIntent,
-                            context.getString(R.string.app_browser_share),
-                        ),
-                    )
-                },
-                onOpenInBrowser = {
-                    context.openInSystemBrowser(currentUrl)
-                },
-                onCopyLink = {
-                    clipboardManager.setText(AnnotatedString(currentUrl))
-                    bulletinHostState?.show(
-                        BulletinMessage(
-                            title = linkCopiedText,
-                            tone = BulletinTone.Success,
-                        ),
-                    )
-                },
-                isHistoryPopupVisible = historyPopupExpanded,
-                onHistoryPopupVisibilityChanged = { historyPopupExpanded = it },
-                isSearching = isSearching,
-                searchQuery = searchQuery,
-                onStartSearch = ::startSearch,
-                onSearchQueryChange = ::updateSearchQuery,
-                onSearchClose = ::closeSearch,
-            ),
-        )
+    val chromeConfig = AppBrowserChromeConfig(
+        title = chromeTitle,
+        subtitle = chromeSubtitle,
+        isHttps = isHttps,
+        progress = loadProgressState.displayedProgress,
+        scrollProgress = scrollProgress,
+        isLoadingProgressVisible = loadProgressState.isVisible,
+        canGoBack = canGoBack,
+        canGoForward = canGoForward,
+        backHistoryEntries = backHistoryEntries,
+        browserHistoryEntries = browserHistoryEntries,
+        panel = panel,
+        alpha = routeAlpha,
+        translationX = routeTranslationX,
+        onBack = {
+            if (isSearching) {
+                closeSearch()
+            } else if (panel != AppBrowserPanel.Page) {
+                panel = AppBrowserPanel.Page
+            } else {
+                navigateBack()
+            }
+        },
+        onClose = ::requestClose,
+        onShowHistory = { panel = AppBrowserPanel.History },
+        onShowSettings = { panel = AppBrowserPanel.Settings },
+        onHistoryEntryClick = { entry ->
+            panel = AppBrowserPanel.Page
+            navigateHistory(entry)
+        },
+        onForward = { webViewRef?.goForward() },
+        onRefresh = { webViewRef?.reload() },
+        onShare = {
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, currentUrl)
+            }
+            context.startActivity(
+                Intent.createChooser(
+                    shareIntent,
+                    context.getString(R.string.app_browser_share),
+                ),
+            )
+        },
+        onOpenInBrowser = {
+            context.openInSystemBrowser(currentUrl)
+        },
+        onCopyLink = {
+            clipboardManager.setText(AnnotatedString(currentUrl))
+            bulletinHostState?.show(
+                BulletinMessage(
+                    title = linkCopiedText,
+                    tone = BulletinTone.Success,
+                ),
+            )
+        },
+        isHistoryPopupVisible = historyPopupExpanded,
+        onHistoryPopupVisibilityChanged = { historyPopupExpanded = it },
+        isSearching = isSearching,
+        searchQuery = searchQuery,
+        onStartSearch = ::startSearch,
+        onSearchQueryChange = ::updateSearchQuery,
+        onSearchClose = ::closeSearch,
+    )
+
+    SideEffect {
+        onChromeConfigChanged(chromeConfig)
     }
     LaunchedEffect(panel) {
         if (panel == AppBrowserPanel.Settings) {
@@ -475,7 +462,7 @@ internal fun AppBrowserRoute(
                 .fillMaxSize()
                 .imePadding(),
             factory = { ctx ->
-                WebView(ctx).apply {
+                AppBrowserWebView(ctx).apply {
                     layoutParams = ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT,
@@ -598,11 +585,7 @@ internal fun AppBrowserRoute(
                     }
 
                     setOnScrollChangeListener { _, _, scrollY, _, _ ->
-                        scrollProgress = buildAppBrowserScrollProgress(
-                            scrollY = scrollY,
-                            contentHeightPx = (contentHeight * scale).toInt(),
-                            viewportHeightPx = height,
-                        )
+                        scrollProgress = calculateCurrentScrollProgress(this)
                     }
 
                     appContainer.cookieSyncBridge.syncToWebView(appContainer.baseUrl)
@@ -613,11 +596,7 @@ internal fun AppBrowserRoute(
             update = { view ->
                 canGoBack = view.canGoBack()
                 canGoForward = view.canGoForward()
-                scrollProgress = buildAppBrowserScrollProgress(
-                    scrollY = view.scrollY,
-                    contentHeightPx = (view.contentHeight * view.scale).toInt(),
-                    viewportHeightPx = view.height,
-                )
+                scrollProgress = calculateCurrentScrollProgress(view)
             },
         )
 
@@ -816,3 +795,13 @@ private const val appBrowserRouteEnterDurationMillis = 220
 private const val appBrowserRouteExitDurationMillis = 170
 private const val appBrowserFakeProgressTickDelayMillis = 100L
 private const val appBrowserProgressDismissDelayMillis = 180L
+
+private class AppBrowserWebView(
+    context: android.content.Context,
+) : WebView(context) {
+    val verticalScrollRange: Int
+        get() = computeVerticalScrollRange()
+
+    val verticalScrollExtent: Int
+        get() = computeVerticalScrollExtent()
+}

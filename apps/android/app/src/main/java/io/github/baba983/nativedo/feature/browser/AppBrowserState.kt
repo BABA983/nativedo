@@ -45,6 +45,12 @@ internal data class AppBrowserSearchPanelState(
     val showsNoResults: Boolean = false,
 )
 
+internal data class AppBrowserScrollChromeBackgroundState(
+    val fillFraction: Float,
+    val fillAlpha: Float,
+    val dividerAlpha: Float,
+)
+
 internal data class AppBrowserLoadProgressState(
     val displayedProgress: Float = 0f,
     val actualProgress: Float = 0f,
@@ -319,6 +325,30 @@ internal fun buildAppBrowserScrollProgress(
         return 0f
     }
     return (scrollY.toFloat() / scrollableHeight.toFloat()).coerceIn(0f, 1f)
+}
+
+internal fun buildAppBrowserScrollChromeBackgroundState(
+    scrollProgress: Float,
+    isLoadingVisible: Boolean,
+): AppBrowserScrollChromeBackgroundState {
+    if (isLoadingVisible) {
+        return AppBrowserScrollChromeBackgroundState(
+            fillFraction = 0f,
+            fillAlpha = 0f,
+            dividerAlpha = 0.16f,
+        )
+    }
+
+    val progress = scrollProgress.coerceIn(0f, 1f)
+    return AppBrowserScrollChromeBackgroundState(
+        fillFraction = progress,
+        fillAlpha = lerpAppBrowserVisual(0f, 0.18f, progress),
+        dividerAlpha = lerpAppBrowserVisual(0.16f, 0.24f, progress),
+    )
+}
+
+private fun lerpAppBrowserVisual(start: Float, end: Float, progress: Float): Float {
+    return start + (end - start) * progress.coerceIn(0f, 1f)
 }
 
 internal fun AppBrowserHistoryRecord.historyFavicon(): Bitmap? = faviconBase64?.historyFaviconBitmap()
