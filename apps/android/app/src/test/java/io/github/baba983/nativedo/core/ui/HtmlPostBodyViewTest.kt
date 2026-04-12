@@ -2,6 +2,9 @@ package io.github.baba983.nativedo.core.ui
 
 import androidx.compose.ui.unit.IntRect
 import com.google.common.truth.Truth.assertThat
+import io.github.baba983.nativedo.core.ui.mediaviewer.MediaItem
+import io.github.baba983.nativedo.core.ui.mediaviewer.toMediaItem
+import io.github.baba983.nativedo.core.ui.mediaviewer.MediaViewerLaunchSource
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
@@ -11,15 +14,15 @@ import org.junit.Test
 
 class HtmlPostBodyViewTest {
     @Test
-    fun calculatePostImageViewerLaunchSource_translatesClippedBoundsIntoScreenSpace() {
-        val launchSource = calculatePostImageViewerLaunchSource(
+    fun calculateMediaViewerLaunchSource_translatesClippedBoundsIntoScreenSpace() {
+        val launchSource = calculateMediaViewerLaunchSource(
             imageBoundsOnScreen = IntRect(left = 24, top = 220, right = 324, bottom = 620),
             visibleBoundsOnScreen = IntRect(left = 24, top = 276, right = 324, bottom = 516),
             cornerRadiusPx = 18f,
         )
 
         assertThat(launchSource).isEqualTo(
-            PostImageViewerLaunchSource(
+            MediaViewerLaunchSource(
                 boundsOnScreen = IntRect(left = 24, top = 276, right = 324, bottom = 516),
                 fullBoundsOnScreen = IntRect(left = 24, top = 220, right = 324, bottom = 620),
                 cornerRadiusPx = 18f,
@@ -28,9 +31,9 @@ class HtmlPostBodyViewTest {
     }
 
     @Test
-    fun calculatePostImageViewerLaunchSource_returnsNullWhenClippedBoundsCollapse() {
+    fun calculateMediaViewerLaunchSource_returnsNullWhenClippedBoundsCollapse() {
         assertThat(
-            calculatePostImageViewerLaunchSource(
+            calculateMediaViewerLaunchSource(
                 imageBoundsOnScreen = IntRect(left = 24, top = 220, right = 324, bottom = 620),
                 visibleBoundsOnScreen = IntRect(left = 24, top = 276, right = 24, bottom = 516),
                 cornerRadiusPx = 18f,
@@ -1054,6 +1057,59 @@ class HtmlPostBodyViewTest {
             PostBodyImage(rawUrl = "/uploads/default/original/1X/grid-1.png"),
             PostBodyImage(rawUrl = "/uploads/default/original/1X/grid-2.png"),
         ).inOrder()
+    }
+
+    @Test
+    fun collectGalleryImageEntries_preservesLightboxMetadataForViewerChrome() {
+        val blocks = listOf(
+            PostBodyBlock.ImageBlock(
+                PostBodyImage(
+                    rawUrl = "/uploads/default/original/1X/plain.png",
+                ),
+            ),
+            PostBodyBlock.LightboxBlock(
+                image = PostBodyImage(
+                    rawUrl = "/uploads/default/optimized/1X/lightbox-thumb.png",
+                    originalUrl = "/uploads/default/original/1X/lightbox.png",
+                    width = 800,
+                    height = 600,
+                ),
+                filename = "lightbox.png",
+                information = "800×600 52 KB",
+            ),
+        )
+
+        val entries = collectGalleryImageEntries(blocks)
+
+        assertThat(entries).hasSize(2)
+        assertThat(entries[0]).isEqualTo(
+            GalleryImageEntry(
+                image = PostBodyImage(
+                    rawUrl = "/uploads/default/original/1X/plain.png",
+                ),
+                mediaItem = PostBodyImage(
+                    rawUrl = "/uploads/default/original/1X/plain.png",
+                ).toMediaItem(),
+            ),
+        )
+        assertThat(entries[1]).isEqualTo(
+            GalleryImageEntry(
+                image = PostBodyImage(
+                    rawUrl = "/uploads/default/optimized/1X/lightbox-thumb.png",
+                    originalUrl = "/uploads/default/original/1X/lightbox.png",
+                    width = 800,
+                    height = 600,
+                ),
+                mediaItem = MediaItem.Image(
+                    rawUrl = "/uploads/default/optimized/1X/lightbox-thumb.png",
+                    originalUrl = "/uploads/default/original/1X/lightbox.png",
+                    width = 800,
+                    height = 600,
+                    title = "lightbox.png",
+                    subtitle = "800×600 52 KB",
+                ),
+            ),
+        )
     }
 
     @Test

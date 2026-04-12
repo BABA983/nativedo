@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import io.github.baba983.nativedo.R
 import io.github.baba983.nativedo.core.storage.CookieStore
+import io.github.baba983.nativedo.core.ui.mediaviewer.MediaViewerLaunchSource
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 
 @Composable
@@ -64,8 +65,8 @@ internal fun RenderPostBodyBlock(
     onUserClick: ((String) -> Unit)?,
     onOpenLink: ((String) -> Unit)?,
     hiddenImage: PostBodyImage? = null,
-    onImageSourceChanged: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)?,
-    onImageClick: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)?,
+    onImageSourceChanged: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)?,
+    onImageClick: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     when (block) {
@@ -299,13 +300,13 @@ internal fun LightboxBlockView(
     cookieStore: CookieStore,
     baseUrl: String,
     hiddenImage: PostBodyImage? = null,
-    onImageSourceChanged: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)?,
-    onImageClick: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)?,
+    onImageSourceChanged: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)?,
+    onImageClick: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val colors = NativeDoThemeExtras.colors
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(postBodyEmbeddedMediaCornerRadius)
-    var launchSource by remember(block.image) { mutableStateOf<PostImageViewerLaunchSource?>(null) }
+    var launchSource by remember(block.image) { mutableStateOf<MediaViewerLaunchSource?>(null) }
     val clickModifier = if (onImageClick != null) {
         Modifier.clickable { onImageClick(block.image, launchSource) }
     } else {
@@ -469,8 +470,8 @@ internal fun DetailsBlockView(
     onUserClick: ((String) -> Unit)?,
     onOpenLink: ((String) -> Unit)?,
     hiddenImage: PostBodyImage? = null,
-    onImageSourceChanged: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)?,
-    onImageClick: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)?,
+    onImageSourceChanged: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)?,
+    onImageClick: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val colors = NativeDoThemeExtras.colors
@@ -573,8 +574,8 @@ internal fun CalloutBlockView(
     onUserClick: ((String) -> Unit)?,
     onOpenLink: ((String) -> Unit)?,
     hiddenImage: PostBodyImage? = null,
-    onImageSourceChanged: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)?,
-    onImageClick: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)?,
+    onImageSourceChanged: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)?,
+    onImageClick: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val colors = NativeDoThemeExtras.colors
@@ -691,8 +692,8 @@ internal fun DiscourseQuoteBlockView(
     onUserClick: ((String) -> Unit)?,
     onOpenLink: ((String) -> Unit)?,
     hiddenImage: PostBodyImage? = null,
-    onImageSourceChanged: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)?,
-    onImageClick: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)?,
+    onImageSourceChanged: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)?,
+    onImageClick: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val colors = NativeDoThemeExtras.colors
@@ -793,8 +794,8 @@ internal fun QuoteBlockView(
     onUserClick: ((String) -> Unit)?,
     onOpenLink: ((String) -> Unit)?,
     hiddenImage: PostBodyImage? = null,
-    onImageSourceChanged: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)?,
-    onImageClick: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)?,
+    onImageSourceChanged: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)?,
+    onImageClick: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val colors = NativeDoThemeExtras.colors
@@ -992,8 +993,8 @@ internal fun ListBlockView(
     onUserClick: ((String) -> Unit)?,
     onOpenLink: ((String) -> Unit)?,
     hiddenImage: PostBodyImage? = null,
-    onImageSourceChanged: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)?,
-    onImageClick: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)?,
+    onImageSourceChanged: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)?,
+    onImageClick: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val colors = NativeDoThemeExtras.colors

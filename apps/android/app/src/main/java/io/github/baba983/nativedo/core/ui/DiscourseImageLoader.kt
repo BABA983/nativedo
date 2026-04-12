@@ -82,16 +82,16 @@ internal fun rememberDiscourseBitmap(
     }
 }
 
-internal fun cachePostImageViewerPreviewBitmap(
+internal fun cacheMediaViewerPreviewBitmap(
     image: PostBodyImage,
     bitmap: Bitmap,
 ) {
-    postImageViewerPreviewCache.put(image.viewerCacheKey(), bitmap)
+    postImageViewerPreviewCache.put(image.mediaViewerCacheKey(), bitmap)
 }
 
-internal fun findPostImageViewerPreviewBitmap(
+internal fun findMediaViewerPreviewBitmap(
     image: PostBodyImage,
-): Bitmap? = postImageViewerPreviewCache.get(image.viewerCacheKey())
+): Bitmap? = postImageViewerPreviewCache.get(image.mediaViewerCacheKey())
 
 internal suspend fun fetchDiscourseBitmap(
     resolvedUrl: String,

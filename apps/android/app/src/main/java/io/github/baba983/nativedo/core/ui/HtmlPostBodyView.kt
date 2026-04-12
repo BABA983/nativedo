@@ -43,6 +43,10 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.CircularProgressIndicator
 import io.github.baba983.nativedo.core.storage.CookieStore
+import io.github.baba983.nativedo.core.ui.mediaviewer.MediaItem
+import io.github.baba983.nativedo.core.ui.mediaviewer.MediaViewerHost
+import io.github.baba983.nativedo.core.ui.mediaviewer.MediaViewerLaunchSource
+import io.github.baba983.nativedo.core.ui.mediaviewer.rememberMediaViewerState
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -55,22 +59,6 @@ import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.dp
 import java.util.IdentityHashMap
 import kotlin.math.roundToInt
-
-internal fun calculatePostImageViewerLaunchSource(
-    imageBoundsOnScreen: IntRect,
-    visibleBoundsOnScreen: IntRect,
-    cornerRadiusPx: Float = 0f,
-): PostImageViewerLaunchSource? {
-    if (visibleBoundsOnScreen.width <= 0 || visibleBoundsOnScreen.height <= 0) {
-        return null
-    }
-
-    return PostImageViewerLaunchSource(
-        boundsOnScreen = visibleBoundsOnScreen,
-        fullBoundsOnScreen = imageBoundsOnScreen,
-        cornerRadiusPx = cornerRadiusPx,
-    )
-}
 
 internal val postBodyEmbeddedBlockCornerRadius = 10.dp
 internal val postBodyEmbeddedMediaCornerRadius = 14.dp
@@ -89,15 +77,26 @@ fun HtmlPostBodyView(
     modifier: Modifier = Modifier,
 ) {
     val blocks = remember(html) { parsePostBodyBlocks(html) }
-    val galleryImages = remember(blocks) { collectGalleryImages(blocks) }
+    val galleryEntries = remember(blocks) { collectGalleryImageEntries(blocks) }
+    val galleryImages = remember(galleryEntries) { galleryEntries.map(GalleryImageEntry::image) }
     val galleryImageIndexLookup = remember(galleryImages) {
-        buildPostImageViewerImageIndexLookup(galleryImages)
+        buildMediaViewerImageIndexLookup(galleryImages)
     }
     val galleryImageSourceLookup = remember(galleryImages) {
-        IdentityHashMap<PostBodyImage, PostImageViewerLaunchSource>(galleryImages.size)
+        IdentityHashMap<PostBodyImage, MediaViewerLaunchSource>(galleryImages.size)
+    }
+    val galleryMediaItems = remember(galleryEntries) {
+        galleryEntries.map(GalleryImageEntry::mediaItem)
+    }
+    val galleryMediaImageLookup = remember(galleryEntries, galleryMediaItems) {
+        IdentityHashMap<MediaItem, PostBodyImage>(galleryImages.size).apply {
+            galleryMediaItems.forEachIndexed { index, mediaItem ->
+                put(mediaItem, galleryImages[index])
+            }
+        }
     }
     var hiddenViewerImage by remember(galleryImages) { mutableStateOf<PostBodyImage?>(null) }
-    var viewerState by remember(galleryImages) { mutableStateOf<PostImageViewerState?>(null) }
+    val mediaViewerState = rememberMediaViewerState()
 
     Column(
         modifier = modifier,
@@ -120,15 +119,25 @@ fun HtmlPostBodyView(
                     }
                 },
                 onImageClick = { clickedImage, launchSource ->
-                    viewerState = PostImageViewerState(
-                        images = galleryImages,
-                        initialIndex = galleryImageIndexLookup[clickedImage]
-                            ?: findGalleryStartIndex(
-                                galleryImages = galleryImages,
-                                clickedImage = clickedImage,
-                            ),
+                    val initialIndex = galleryImageIndexLookup[clickedImage]
+                        ?: findGalleryStartIndex(
+                            galleryImages = galleryImages,
+                            clickedImage = clickedImage,
+                        )
+                    val mediaLaunchSources = IdentityHashMap<MediaItem, MediaViewerLaunchSource>(
+                        galleryImages.size,
+                    )
+                    galleryImages.forEachIndexed { index, image ->
+                        val source = galleryImageSourceLookup[image] ?: return@forEachIndexed
+                        galleryMediaItems.getOrNull(index)?.let { mediaItem ->
+                            mediaLaunchSources[mediaItem] = source
+                        }
+                    }
+                    mediaViewerState.open(
+                        items = galleryMediaItems,
+                        initialIndex = initialIndex,
                         launchSource = launchSource ?: galleryImageSourceLookup[clickedImage],
-                        imageLaunchSources = galleryImageSourceLookup,
+                        itemLaunchSources = mediaLaunchSources,
                     )
                 },
                 modifier = Modifier.fillMaxWidth(),
@@ -144,21 +153,16 @@ fun HtmlPostBodyView(
         }
     }
 
-    viewerState?.let { state ->
-        if (state.images.isNotEmpty()) {
-            PostImageViewerDialog(
-                state = state,
-                cookieStore = cookieStore,
-                baseUrl = baseUrl,
-                onVisibleImageChanged = { hiddenViewerImage = it },
-                onOpenLink = onOpenLink,
-                onDismiss = {
-                    hiddenViewerImage = null
-                    viewerState = null
-                },
-            )
-        }
-    }
+    MediaViewerHost(
+        state = mediaViewerState,
+        cookieStore = cookieStore,
+        baseUrl = baseUrl,
+        onVisibleItemChanged = { visibleItem ->
+            hiddenViewerImage = visibleItem?.let(galleryMediaImageLookup::get)
+        },
+        onOpenLink = onOpenLink,
+        onDismiss = { hiddenViewerImage = null },
+    )
 }
 
 @Composable
@@ -249,8 +253,8 @@ internal fun PostImageView(
     clipRoundedCorners: Boolean = true,
     isHidden: Boolean = false,
     previewBitmap: android.graphics.Bitmap? = null,
-    onLaunchSourceChanged: ((PostImageViewerLaunchSource?) -> Unit)? = null,
-    onClick: ((PostImageViewerLaunchSource?) -> Unit)? = null,
+    onLaunchSourceChanged: ((MediaViewerLaunchSource?) -> Unit)? = null,
+    onClick: ((MediaViewerLaunchSource?) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val colors = NativeDoThemeExtras.colors
@@ -299,10 +303,10 @@ internal fun PostImageView(
             0f
         }
     }
-    var launchSource by remember(image) { mutableStateOf<PostImageViewerLaunchSource?>(null) }
+    var launchSource by remember(image) { mutableStateOf<MediaViewerLaunchSource?>(null) }
     LaunchedEffect(image, bitmap) {
         bitmap?.let { currentBitmap ->
-            cachePostImageViewerPreviewBitmap(
+            cacheMediaViewerPreviewBitmap(
                 image = image,
                 bitmap = currentBitmap,
             )
@@ -356,7 +360,7 @@ internal fun PostImageView(
                     right = (rootPosition.x + clippedBoundsInRoot.right).roundToInt(),
                     bottom = (rootPosition.y + clippedBoundsInRoot.bottom).roundToInt(),
                 )
-                val nextLaunchSource = calculatePostImageViewerLaunchSource(
+                val nextLaunchSource = calculateMediaViewerLaunchSource(
                     imageBoundsOnScreen = imageBoundsOnScreen,
                     visibleBoundsOnScreen = visibleBoundsOnScreen,
                     cornerRadiusPx = thumbnailCornerRadiusPx,
@@ -422,8 +426,8 @@ internal fun PostImageGrid(
     cookieStore: CookieStore,
     baseUrl: String,
     hiddenImage: PostBodyImage? = null,
-    onImageSourceChanged: ((PostBodyImage, PostImageViewerLaunchSource?) -> Unit)? = null,
-    onImageClick: (PostBodyImage, PostImageViewerLaunchSource?) -> Unit,
+    onImageSourceChanged: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)? = null,
+    onImageClick: (PostBodyImage, MediaViewerLaunchSource?) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val clampedColumns = columns.coerceAtLeast(1)
