@@ -96,7 +96,7 @@ data class TopicDto(
     @SerialName("category_id")
     val categoryId: Int? = null,
     @SerialName("last_poster_username")
-    val lastPosterUsername: String = "",
+    val lastPosterUsername: String? = null,
     val pinned: Boolean = false,
     @Serializable(with = TopicTagListSerializer::class)
     val tags: List<String> = emptyList(),
@@ -397,7 +397,7 @@ private fun TopicDto.toTopicSummary(
         viewCount = views,
         lastPostedAt = lastPostedAt,
         categoryId = categoryId,
-        lastPosterUsername = lastPosterUsername.ifBlank { recentPosterUser?.username.orEmpty() },
+        lastPosterUsername = lastPosterUsername.orEmpty().ifBlank { recentPosterUser?.username.orEmpty() },
         isPinned = pinned,
         tags = tags,
     )

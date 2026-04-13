@@ -35,6 +35,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -63,6 +64,7 @@ import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.OpenInBrowser
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.Search
@@ -126,6 +128,7 @@ import kotlin.math.min
 internal data class AppBrowserChromeConfig(
     val title: String,
     val subtitle: String?,
+    val currentUrl: String,
     val isHttps: Boolean,
     val progress: Float,
     val scrollProgress: Float = 0f,
@@ -200,6 +203,7 @@ private fun AppBrowserChromeConfig.toChromeModel(): AppBrowserChromeModel {
     return AppBrowserChromeModel(
         title = title,
         subtitle = subtitle,
+        currentUrl = currentUrl,
         isHttps = isHttps,
         canGoBack = canGoBack,
         canGoForward = canGoForward,
@@ -222,6 +226,10 @@ private fun AppBrowserChromeConfig.toSearchUiState(): AppBrowserSearchUiState {
     )
 }
 
+private fun AppBrowserChromeConfig.toAddressUiState(): AppBrowserAddressUiState {
+    return AppBrowserAddressUiState()
+}
+
 private fun dispatchAppBrowserChromeAction(
     config: AppBrowserChromeConfig,
     action: AppBrowserAction,
@@ -229,6 +237,8 @@ private fun dispatchAppBrowserChromeAction(
     when (action) {
         AppBrowserAction.NavigateBack -> config.onBack()
         AppBrowserAction.CloseBrowser -> config.onClose()
+        AppBrowserAction.StartAddressEditing,
+        AppBrowserAction.CancelAddressEditing -> Unit
         AppBrowserAction.OpenHistory -> config.onShowHistory()
         AppBrowserAction.OpenSettings -> config.onShowSettings()
         AppBrowserAction.OpenAddressSheet,
@@ -260,6 +270,7 @@ internal fun AppBrowserTopBar(
     AppBrowserTopBar(
         chrome = config.toChromeModel(),
         search = config.toSearchUiState(),
+        address = config.toAddressUiState(),
         onAction = { action ->
             dispatchAppBrowserChromeAction(config, action)
         },
@@ -271,6 +282,7 @@ internal fun AppBrowserTopBar(
 internal fun AppBrowserTopBar(
     chrome: AppBrowserChromeModel,
     search: AppBrowserSearchUiState,
+    address: AppBrowserAddressUiState,
     onAction: (AppBrowserAction) -> Unit,
 ) {
     val colors = NativeDoThemeExtras.colors
@@ -295,11 +307,13 @@ internal fun AppBrowserTopBar(
     val topBarAlpha = chrome.alpha
     val topBarTranslationX = chrome.translationX
     val isInSubPanel = chrome.isInSubPanel
-    val showMenuButton = !isSearching && !isInSubPanel
+    val isAddressEditing = address.isEditing
+    val showMenuButton = !isSearching && !isInSubPanel && !isAddressEditing
     var searchFocusToken by remember { mutableIntStateOf(0) }
+    var addressFocusToken by remember { mutableIntStateOf(0) }
     var menuExpanded by remember { mutableStateOf(false) }
     val historyExpanded = chrome.isHistoryPopupVisible
-    val showBackButton = isSearching || isInSubPanel || historyExpanded
+    val showBackButton = isSearching || isInSubPanel || historyExpanded || isAddressEditing
     val showCloseButton = !showBackButton
     val searchTransition = updateTransition(
         targetState = isSearching,
@@ -362,6 +376,28 @@ internal fun AppBrowserTopBar(
         ),
         label = "appBrowserSearchClearProgress",
     )
+    val addressTransition = updateTransition(
+        targetState = isAddressEditing,
+        label = "appBrowserAddressMode",
+    )
+    val addressingProgress by addressTransition.animateFloat(
+        transitionSpec = {
+            tween(
+                durationMillis = if (targetState) 320 else 280,
+                easing = if (targetState) {
+                    LinearOutSlowInEasing
+                } else {
+                    androidx.compose.animation.core.CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
+                },
+            )
+        },
+        label = "appBrowserAddressingProgress",
+    ) { editing ->
+        if (editing) 1f else 0f
+    }
+    val topBarRevealProgress = 1f - addressingProgress
+    val topBarExitOffset = with(LocalDensity.current) { 14.dp.toPx() }
+    val addressSceneExitOffset = with(LocalDensity.current) { 10.dp.toPx() }
 
     val menuEntries = remember(chrome.canGoForward, hasBrowserHistoryEntries) {
         buildAppBrowserMenuEntries(
@@ -376,14 +412,18 @@ internal fun AppBrowserTopBar(
         }
     }
 
-    LaunchedEffect(isSearching, isInSubPanel) {
-        if (isSearching || isInSubPanel) {
+    LaunchedEffect(isSearching, isInSubPanel, isAddressEditing) {
+        if (isSearching || isInSubPanel || isAddressEditing) {
             menuExpanded = false
         }
         if (isSearching) {
             onAction(AppBrowserAction.SetHistoryPopupVisible(false))
             delay(appBrowserSearchEnterDurationMillis.toLong())
             searchFocusToken += 1
+        }
+        if (isAddressEditing) {
+            onAction(AppBrowserAction.SetHistoryPopupVisible(false))
+            addressFocusToken += 1
         }
     }
 
@@ -395,206 +435,748 @@ internal fun AppBrowserTopBar(
                 translationX = topBarTranslationX
             },
     ) {
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .drawWithContent {
-                    drawRect(color = topBarGlassColor)
-                    if (scrollChromeState.fillFraction > 0f) {
-                        drawRect(
-                            color = scrollProgressFillColor,
-                            size = Size(
-                                width = size.width * scrollChromeState.fillFraction,
-                                height = size.height,
-                            ),
-                        )
-                    }
-                    drawContent()
-                },
-        )
-
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Spacer(
-                modifier = Modifier.windowInsetsTopHeight(WindowInsets.statusBars),
-            )
-            Row(
+        if (isAddressEditing || addressingProgress > 0f) {
+            AppBrowserAddressScene(
+                chrome = chrome,
+                historyExpanded = historyExpanded,
+                hasBackHistoryEntries = hasBackHistoryEntries,
+                address = address,
+                focusToken = addressFocusToken,
+                onAction = onAction,
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = AppTopBarRowMinHeight)
-                    .padding(
-                        horizontal = AppTopBarHorizontalPadding,
-                        vertical = AppTopBarVerticalPadding,
-                    ),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box {
-                    AppBrowserHistoryAnchorHighlight(
-                        visible = historyExpanded,
-                    )
-                    AppBrowserChromeButton(
-                        onClick = {
-                            if (historyExpanded) {
-                                onAction(AppBrowserAction.SetHistoryPopupVisible(false))
-                            } else if (showCloseButton) {
-                                onAction(AppBrowserAction.CloseBrowser)
-                            } else {
-                                onAction(AppBrowserAction.NavigateBack)
-                            }
-                        },
-                        onLongClick = if (hasBackHistoryEntries && !isSearching && !isInSubPanel) {
-                            {
-                                menuExpanded = false
-                                onAction(AppBrowserAction.SetHistoryPopupVisible(true))
-                            }
-                        } else {
-                            null
-                        },
-                        animatedBackCloseProgress = backCloseProgress,
-                        containerColorOverride = if (historyExpanded) Color.Transparent else null,
-                        contentDescription = stringResource(
-                            if (showCloseButton) {
-                                R.string.app_browser_close
-                            } else if (isSearching) {
-                                R.string.app_browser_search_back
-                            } else {
-                                R.string.app_browser_back
-                            },
-                        ),
-                    )
-                    AppBrowserHistoryPopup(
-                        expanded = historyExpanded && hasBackHistoryEntries,
-                        entries = chrome.backHistoryEntries,
-                        onDismissRequest = {
-                            onAction(AppBrowserAction.SetHistoryPopupVisible(false))
-                        },
-                        onEntryClick = { entry ->
-                            onAction(AppBrowserAction.SetHistoryPopupVisible(false))
-                            onAction(AppBrowserAction.OpenHistoryEntry(entry))
-                        },
-                    )
-                }
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Box(
-                    modifier = Modifier.weight(1f),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    AppBrowserTitlePill(
-                        title = chrome.title,
-                        subtitle = chrome.subtitle,
-                        isHttps = chrome.isHttps,
-                        onClick = if (!isSearching && !isInSubPanel) {
-                            {
-                                onAction(AppBrowserAction.OpenAddressSheet)
-                            }
-                        } else {
-                            null
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .graphicsLayer {
-                                alpha = 1f - searchingProgress
-                                scaleX = titleScale
-                                scaleY = titleScale
-                            },
-                    )
-                    AppBrowserSearchBar(
-                        query = search.query,
-                        onQueryChange = { query ->
-                            onAction(AppBrowserAction.UpdateSearchQuery(query))
-                        },
-                        focusToken = searchFocusToken,
-                        isSearching = isSearching,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .graphicsLayer {
-                                alpha = searchingProgress
-                                scaleX = searchScale
-                                scaleY = searchScale
-                            },
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(12.dp))
-                Box(
-                    modifier = Modifier.width(44.dp),
-                ) {
-                    if (showMenuButton) {
-                        AppBrowserChromeButton(
-                            onClick = {
-                                onAction(AppBrowserAction.SetHistoryPopupVisible(false))
-                                menuExpanded = true
-                            },
-                            imageVector = Icons.Outlined.MoreVert,
-                            contentDescription = stringResource(R.string.app_browser_more_actions),
-                            emphasized = menuExpanded,
-                            modifier = Modifier.align(Alignment.Center),
-                        )
-                        AppBrowserActionPopup(
-                            expanded = menuExpanded,
-                            entries = menuEntries,
-                            onDismissRequest = { menuExpanded = false },
-                            onActionClick = { action ->
-                                menuExpanded = false
-                                when (action) {
-                                    AppBrowserMenuAction.Search -> onAction(AppBrowserAction.StartSearch)
-                                    AppBrowserMenuAction.History -> onAction(AppBrowserAction.OpenHistory)
-                                    AppBrowserMenuAction.Forward -> onAction(AppBrowserAction.GoForward)
-                                    AppBrowserMenuAction.Refresh -> onAction(AppBrowserAction.Refresh)
-                                    AppBrowserMenuAction.Share -> onAction(AppBrowserAction.Share)
-                                    AppBrowserMenuAction.OpenInBrowser -> onAction(AppBrowserAction.OpenInBrowser)
-                                    AppBrowserMenuAction.CopyLink -> onAction(AppBrowserAction.CopyLink)
-                                    AppBrowserMenuAction.Settings -> onAction(AppBrowserAction.OpenSettings)
-                                    AppBrowserMenuAction.Close -> onAction(AppBrowserAction.CloseBrowser)
-                                }
-                            },
-                        )
-                    } else if (isSearching) {
-                        AppBrowserChromeButton(
-                            onClick = {
-                                onAction(AppBrowserAction.UpdateSearchQuery(""))
-                            },
-                            imageVector = Icons.Outlined.Close,
-                            contentDescription = stringResource(R.string.app_browser_search_clear),
-                            enabled = searchClearVisible,
-                            emphasized = searchClearVisible,
-                            modifier = Modifier
-                                .align(Alignment.Center)
-                                .graphicsLayer {
-                                    alpha = searchClearProgress
-                                    scaleX = 0.9f + (searchClearProgress * 0.1f)
-                                    scaleY = 0.9f + (searchClearProgress * 0.1f)
-                                },
-                        )
-                    }
-                }
-            }
-
-            HorizontalDivider(
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = scrollChromeState.dividerAlpha),
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        alpha = addressingProgress
+                        translationY = addressSceneExitOffset * topBarRevealProgress
+                    },
             )
         }
 
-        LinearProgressIndicator(
-            progress = { progress },
-            color = colors.accent,
-            trackColor = colors.glassBackgroundStrong.copy(alpha = 0.18f),
-            gapSize = 0.dp,
-            drawStopIndicator = {},
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .padding(horizontal = AppTopBarHorizontalPadding)
-                .height(appBrowserProgressHeight)
-                .graphicsLayer {
-                    alpha = if (showProgress) 1f else 0f
-                    scaleX = if (showProgress) 1f else 0.92f
-                    transformOrigin = TransformOrigin(0f, 0.5f)
+        if (!isAddressEditing || topBarRevealProgress > 0f) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .graphicsLayer {
+                        alpha = topBarRevealProgress
+                    },
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = AppBrowserTopBarOverlayHeight)
+                        .drawWithContent {
+                            drawRect(color = topBarGlassColor)
+                            if (scrollChromeState.fillFraction > 0f) {
+                                drawRect(
+                                    color = scrollProgressFillColor,
+                                    size = Size(
+                                        width = size.width * scrollChromeState.fillFraction,
+                                        height = size.height,
+                                    ),
+                                )
+                            }
+                            drawContent()
+                        },
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .graphicsLayer {
+                                translationY = topBarExitOffset * addressingProgress
+                            },
+                    ) {
+                        Spacer(
+                            modifier = Modifier.windowInsetsTopHeight(WindowInsets.statusBars),
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = AppTopBarRowMinHeight)
+                                .padding(
+                                    horizontal = AppTopBarHorizontalPadding,
+                                    vertical = AppTopBarVerticalPadding,
+                                ),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box {
+                                AppBrowserHistoryAnchorHighlight(
+                                    visible = historyExpanded,
+                                )
+                                AppBrowserChromeButton(
+                                    onClick = {
+                                        if (historyExpanded) {
+                                            onAction(AppBrowserAction.SetHistoryPopupVisible(false))
+                                        } else if (showCloseButton) {
+                                            onAction(AppBrowserAction.CloseBrowser)
+                                        } else {
+                                            onAction(AppBrowserAction.NavigateBack)
+                                        }
+                                    },
+                                    onLongClick = if (hasBackHistoryEntries && !isSearching && !isInSubPanel) {
+                                        {
+                                            menuExpanded = false
+                                            onAction(AppBrowserAction.SetHistoryPopupVisible(true))
+                                        }
+                                    } else {
+                                        null
+                                    },
+                                    animatedBackCloseProgress = backCloseProgress,
+                                    containerColorOverride = if (historyExpanded) Color.Transparent else null,
+                                    contentDescription = stringResource(
+                                        if (showCloseButton) {
+                                            R.string.app_browser_close
+                                        } else if (isSearching) {
+                                            R.string.app_browser_search_back
+                                        } else {
+                                            R.string.app_browser_back
+                                        },
+                                    ),
+                                )
+                                AppBrowserHistoryPopup(
+                                    expanded = historyExpanded && hasBackHistoryEntries,
+                                    entries = chrome.backHistoryEntries,
+                                    onDismissRequest = {
+                                        onAction(AppBrowserAction.SetHistoryPopupVisible(false))
+                                    },
+                                    onEntryClick = { entry ->
+                                        onAction(AppBrowserAction.SetHistoryPopupVisible(false))
+                                        onAction(AppBrowserAction.OpenHistoryEntry(entry))
+                                    },
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Box(
+                                modifier = Modifier.weight(1f),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (!isSearching || searchingProgress < 1f) {
+                                    AppBrowserTitlePill(
+                                        title = chrome.title,
+                                        subtitle = chrome.subtitle,
+                                        isHttps = chrome.isHttps,
+                                        onClick = if (!isSearching && !isInSubPanel) {
+                                            {
+                                                onAction(AppBrowserAction.StartAddressEditing)
+                                            }
+                                        } else {
+                                            null
+                                        },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .graphicsLayer {
+                                                alpha = 1f - searchingProgress
+                                                scaleX = titleScale
+                                                scaleY = titleScale
+                                            },
+                                    )
+                                }
+                                if (isSearching || searchingProgress > 0f) {
+                                    AppBrowserSearchBar(
+                                        query = search.query,
+                                        onQueryChange = { query ->
+                                            onAction(AppBrowserAction.UpdateSearchQuery(query))
+                                        },
+                                        focusToken = searchFocusToken,
+                                        isSearching = isSearching,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .graphicsLayer {
+                                                alpha = searchingProgress
+                                                scaleX = searchScale
+                                                scaleY = searchScale
+                                            },
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Box(
+                                modifier = Modifier.width(44.dp),
+                            ) {
+                                if (showMenuButton) {
+                                    AppBrowserChromeButton(
+                                        onClick = {
+                                            onAction(AppBrowserAction.SetHistoryPopupVisible(false))
+                                            menuExpanded = true
+                                        },
+                                        imageVector = Icons.Outlined.MoreVert,
+                                        contentDescription = stringResource(R.string.app_browser_more_actions),
+                                        emphasized = menuExpanded,
+                                        modifier = Modifier.align(Alignment.Center),
+                                    )
+                                    AppBrowserActionPopup(
+                                        expanded = menuExpanded,
+                                        entries = menuEntries,
+                                        onDismissRequest = { menuExpanded = false },
+                                        onActionClick = { action ->
+                                            menuExpanded = false
+                                            when (action) {
+                                                AppBrowserMenuAction.Search -> onAction(AppBrowserAction.StartSearch)
+                                                AppBrowserMenuAction.History -> onAction(AppBrowserAction.OpenHistory)
+                                                AppBrowserMenuAction.Forward -> onAction(AppBrowserAction.GoForward)
+                                                AppBrowserMenuAction.Refresh -> onAction(AppBrowserAction.Refresh)
+                                                AppBrowserMenuAction.Share -> onAction(AppBrowserAction.Share)
+                                                AppBrowserMenuAction.OpenInBrowser -> onAction(AppBrowserAction.OpenInBrowser)
+                                                AppBrowserMenuAction.CopyLink -> onAction(AppBrowserAction.CopyLink)
+                                                AppBrowserMenuAction.Settings -> onAction(AppBrowserAction.OpenSettings)
+                                                AppBrowserMenuAction.Close -> onAction(AppBrowserAction.CloseBrowser)
+                                            }
+                                        },
+                                    )
+                                } else if (isSearching) {
+                                    AppBrowserChromeButton(
+                                        onClick = {
+                                            onAction(AppBrowserAction.UpdateSearchQuery(""))
+                                        },
+                                        imageVector = Icons.Outlined.Close,
+                                        contentDescription = stringResource(R.string.app_browser_search_clear),
+                                        enabled = searchClearVisible,
+                                        emphasized = searchClearVisible,
+                                        modifier = Modifier
+                                            .align(Alignment.Center)
+                                            .graphicsLayer {
+                                                alpha = searchClearProgress
+                                                scaleX = 0.9f + (searchClearProgress * 0.1f)
+                                                scaleY = 0.9f + (searchClearProgress * 0.1f)
+                                            },
+                                    )
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = scrollChromeState.dividerAlpha),
+                        )
+                    }
                 }
-                .background(Color.Transparent),
+
+                LinearProgressIndicator(
+                    progress = { progress },
+                    color = colors.accent,
+                    trackColor = colors.glassBackgroundStrong.copy(alpha = 0.18f),
+                    gapSize = 0.dp,
+                    drawStopIndicator = {},
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .padding(horizontal = AppTopBarHorizontalPadding)
+                        .height(appBrowserProgressHeight)
+                        .graphicsLayer {
+                            alpha = if (showProgress) 1f else 0f
+                            scaleX = if (showProgress) 1f else 0.92f
+                            transformOrigin = TransformOrigin(0f, 0.5f)
+                        }
+                        .background(Color.Transparent),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppBrowserAddressScene(
+    chrome: AppBrowserChromeModel,
+    historyExpanded: Boolean,
+    hasBackHistoryEntries: Boolean,
+    address: AppBrowserAddressUiState,
+    focusToken: Int,
+    modifier: Modifier = Modifier,
+    onAction: (AppBrowserAction) -> Unit,
+) {
+    val colors = NativeDoThemeExtras.colors
+    val previewTitle = chrome.title.ifBlank {
+        chrome.currentUrl.ifBlank { chrome.subtitle.orEmpty() }
+    }
+    val previewUrl = chrome.currentUrl.ifBlank { chrome.subtitle ?: chrome.title }
+
+    Column(
+        modifier = modifier
+            .background(colors.backgroundBase)
+            .statusBarsPadding()
+            .padding(
+                horizontal = AppTopBarHorizontalPadding,
+                vertical = AppTopBarVerticalPadding,
+            ),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = AppTopBarRowMinHeight),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box {
+                AppBrowserHistoryAnchorHighlight(
+                    visible = historyExpanded,
+                )
+                AppBrowserChromeButton(
+                    onClick = {
+                        if (historyExpanded) {
+                            onAction(AppBrowserAction.SetHistoryPopupVisible(false))
+                        } else {
+                            onAction(AppBrowserAction.CancelAddressEditing)
+                        }
+                    },
+                    onLongClick = if (hasBackHistoryEntries) {
+                        {
+                            onAction(AppBrowserAction.SetHistoryPopupVisible(true))
+                        }
+                    } else {
+                        null
+                    },
+                    imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                    containerColorOverride = if (historyExpanded) Color.Transparent else null,
+                    contentDescription = stringResource(R.string.app_browser_back),
+                )
+                AppBrowserHistoryPopup(
+                    expanded = historyExpanded && hasBackHistoryEntries,
+                    entries = chrome.backHistoryEntries,
+                    onDismissRequest = {
+                        onAction(AppBrowserAction.SetHistoryPopupVisible(false))
+                    },
+                    onEntryClick = { entry ->
+                        onAction(AppBrowserAction.SetHistoryPopupVisible(false))
+                        onAction(AppBrowserAction.OpenHistoryEntry(entry))
+                    },
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            AppBrowserAddressInput(
+                value = address.draft,
+                isEditing = address.isEditing,
+                focusToken = focusToken,
+                onValueChange = { value -> onAction(AppBrowserAction.UpdateAddressDraft(value)) },
+                onSubmit = { onAction(AppBrowserAction.SubmitAddress(address.draft)) },
+                modifier = Modifier.weight(1f),
+            )
+        }
+        AppBrowserAddressPreviewCard(
+            title = previewTitle,
+            url = previewUrl,
+            favicon = chrome.favicon,
+            onCopyLink = { onAction(AppBrowserAction.CopyLink) },
         )
+        AppBrowserBookmarkPlaceholderCard(
+            onClick = {},
+        )
+        if (address.recentEntries.isNotEmpty()) {
+            AppBrowserAddressSuggestionsSection(
+                entries = address.recentEntries.take(5),
+                onEntryClick = { entry ->
+                    onAction(AppBrowserAction.SubmitAddress(entry.url))
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun AppBrowserAddressSuggestions(
+    entries: List<AppBrowserHistoryRecord>,
+    onEntryClick: (AppBrowserHistoryRecord) -> Unit,
+) {
+    val colors = NativeDoThemeExtras.colors
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        entries.forEachIndexed { index, entry ->
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onEntryClick(entry) }
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = entry.title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = colors.textPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = entry.url,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (index != entries.lastIndex) {
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.16f),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppBrowserAddressInput(
+    value: String,
+    isEditing: Boolean,
+    focusToken: Int,
+    onValueChange: (String) -> Unit,
+    onSubmit: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = NativeDoThemeExtras.colors
+
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(24.dp),
+        color = colors.glassBackgroundStrong.copy(alpha = 0.92f),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(46.dp)
+                .padding(start = 18.dp, end = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier.weight(1f),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                AndroidView(
+                    modifier = Modifier.fillMaxWidth(),
+                    factory = { context ->
+                        AppBrowserAddressEditText(context).apply {
+                            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+                            setSingleLine(true)
+                            hint = "https://linux.do 或搜索词"
+                            background = null
+                            gravity = Gravity.CENTER_VERTICAL
+                            setPadding(0, 0, 0, 0)
+                            setTextColor(colors.textPrimary.toArgb())
+                            setHintTextColor(colors.textSecondary.toArgb())
+                            inputType = inputType or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                            imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN or EditorInfo.IME_ACTION_GO
+                            addTextChangedListener(
+                                object : TextWatcher {
+                                    override fun beforeTextChanged(
+                                        s: CharSequence?,
+                                        start: Int,
+                                        count: Int,
+                                        after: Int,
+                                    ) = Unit
+
+                                    override fun onTextChanged(
+                                        s: CharSequence?,
+                                        start: Int,
+                                        before: Int,
+                                        count: Int,
+                                    ) = Unit
+
+                                    override fun afterTextChanged(s: Editable?) {
+                                        onValueChange(s?.toString().orEmpty())
+                                    }
+                                },
+                            )
+                            setOnEditorActionListener { _, actionId, event ->
+                                if (
+                                    actionId == EditorInfo.IME_ACTION_GO ||
+                                    (event != null && event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_ENTER)
+                                ) {
+                                    onSubmit()
+                                    true
+                                } else {
+                                    false
+                                }
+                            }
+                            if (value.isNotEmpty()) {
+                                setText(value)
+                                setSelection(text?.length ?: 0)
+                            }
+                        }
+                    },
+                    update = { editText ->
+                        editText.setTextColor(colors.textPrimary.toArgb())
+                        editText.setHintTextColor(colors.textSecondary.toArgb())
+                        if (editText.text?.toString().orEmpty() != value) {
+                            editText.setText(value)
+                            editText.setSelection(editText.text?.length ?: 0)
+                        }
+                        if (!isEditing) {
+                            editText.cancelPendingKeyboardOpen()
+                        } else if (editText.appliedFocusToken != focusToken) {
+                            editText.scheduleKeyboardOpen(focusToken)
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppBrowserAddressPreviewCard(
+    title: String,
+    url: String,
+    favicon: Bitmap?,
+    onCopyLink: () -> Unit,
+) {
+    val colors = NativeDoThemeExtras.colors
+
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = colors.glassBackgroundStrong.copy(alpha = 0.94f),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            AppBrowserAddressPreview(
+                title = title,
+                url = url,
+                favicon = favicon,
+                modifier = Modifier.weight(1f),
+            )
+            AppBrowserAddressQuickActionChip(
+                icon = Icons.Outlined.ContentCopy,
+                label = stringResource(R.string.app_browser_copy),
+                onClick = onCopyLink,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AppBrowserBookmarkPlaceholderCard(
+    onClick: () -> Unit,
+) {
+    val colors = NativeDoThemeExtras.colors
+
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = colors.glassBackgroundStrong.copy(alpha = 0.94f),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(
+                        color = colors.glassBackground.copy(alpha = 0.58f),
+                        shape = CircleShape,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.StarBorder,
+                    contentDescription = null,
+                    tint = colors.textPrimary.copy(alpha = 0.42f),
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.app_browser_bookmark_placeholder),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = colors.textPrimary.copy(alpha = 0.72f),
+                )
+                Text(
+                    text = stringResource(R.string.app_browser_bookmark_placeholder_subtitle),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                )
+            }
+            AppBrowserAddressQuickActionChip(
+                icon = Icons.Outlined.StarBorder,
+                label = stringResource(R.string.app_browser_coming_soon),
+                onClick = onClick,
+                enabled = false,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AppBrowserAddressPreview(
+    title: String,
+    url: String,
+    favicon: Bitmap?,
+    modifier: Modifier = Modifier,
+) {
+    val colors = NativeDoThemeExtras.colors
+
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .background(
+                    color = colors.glassBackground.copy(alpha = 0.58f),
+                    shape = CircleShape,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (favicon != null) {
+                Image(
+                    bitmap = favicon.asImageBitmap(),
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                )
+            } else {
+                Icon(
+                    imageVector = if (url.startsWith("https://")) Icons.Outlined.Lock else Icons.Outlined.LockOpen,
+                    contentDescription = null,
+                    tint = colors.textPrimary.copy(alpha = 0.72f),
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelLarge,
+                color = colors.textPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = url,
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.textSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AppBrowserAddressSuggestionsSection(
+    entries: List<AppBrowserHistoryRecord>,
+    onEntryClick: (AppBrowserHistoryRecord) -> Unit,
+) {
+    val colors = NativeDoThemeExtras.colors
+
+    Column(
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.History,
+                contentDescription = null,
+                tint = colors.textSecondary,
+                modifier = Modifier.size(16.dp),
+            )
+            Text(
+                text = stringResource(R.string.app_browser_recent_links),
+                style = MaterialTheme.typography.labelLarge,
+                color = colors.textSecondary,
+            )
+        }
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = colors.glassBackgroundStrong.copy(alpha = 0.94f),
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
+        ) {
+            AppBrowserAddressSuggestions(
+                entries = entries,
+                onEntryClick = onEntryClick,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AppBrowserAddressQuickActionChip(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    val colors = NativeDoThemeExtras.colors
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        color = when {
+            !enabled -> colors.glassBackground.copy(alpha = 0.36f)
+            pressed -> colors.glassBackground.copy(alpha = 0.82f)
+            else -> colors.glassBackground.copy(alpha = 0.58f)
+        },
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    enabled = enabled,
+                    onClick = onClick,
+                )
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = colors.textPrimary.copy(alpha = if (enabled) 1f else 0.42f),
+                modifier = Modifier.size(18.dp),
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelLarge,
+                color = colors.textPrimary.copy(alpha = if (enabled) 1f else 0.42f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+private class AppBrowserAddressEditText(
+    context: android.content.Context,
+) : AppCompatEditText(context) {
+    var appliedFocusToken: Int = Int.MIN_VALUE
+
+    fun scheduleKeyboardOpen(focusToken: Int) {
+        appliedFocusToken = focusToken
+        requestFocus()
+        setSelection(text?.length ?: 0)
+        showSoftKeyboard(this)
+    }
+
+    fun cancelPendingKeyboardOpen() {
+        clearFocus()
+        hideSoftKeyboard(this)
+        appliedFocusToken = Int.MIN_VALUE
     }
 }
 

@@ -46,6 +46,44 @@ class DiscourseApiClientTest {
     }
 
     @Test
+    fun latestTopics_acceptsNullLastPosterUsername() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setBody(
+                    """
+                    {
+                      "users": [],
+                      "topic_list": {
+                        "topics": [
+                          {
+                            "id": 101,
+                            "title": "Null last poster",
+                            "slug": "null-last-poster",
+                            "reply_count": 1,
+                            "views": 42,
+                            "last_posted_at": "2026-04-13T09:00:00.000Z",
+                            "last_poster_username": null,
+                            "category_id": 4,
+                            "pinned": false,
+                            "tags": [],
+                            "posters": []
+                          }
+                        ]
+                      }
+                    }
+                    """.trimIndent(),
+                )
+                .setHeader("Content-Type", "application/json"),
+        )
+
+        val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
+        val topics = client.fetchLatest(page = 0)
+
+        assertThat(topics).hasSize(1)
+        assertThat(topics.single().lastPosterUsername).isEmpty()
+    }
+
+    @Test
     fun fetchLatestPage_mapsMoreTopicsUrl() = runTest {
         val payload = checkNotNull(
             javaClass.classLoader?.getResource("discourse/latest-topics.json"),

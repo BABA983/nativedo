@@ -16,7 +16,7 @@ internal data class AppBrowserSearchUiState(
 )
 
 internal data class AppBrowserAddressUiState(
-    val isVisible: Boolean = false,
+    val isEditing: Boolean = false,
     val draft: String = "",
     val recentEntries: List<AppBrowserHistoryRecord> = emptyList(),
 )
@@ -24,7 +24,9 @@ internal data class AppBrowserAddressUiState(
 internal data class AppBrowserChromeModel(
     val title: String = "",
     val subtitle: String? = null,
+    val currentUrl: String = "",
     val isHttps: Boolean = false,
+    val favicon: android.graphics.Bitmap? = null,
     val canGoBack: Boolean = false,
     val canGoForward: Boolean = false,
     val progress: Float = 0f,
@@ -54,6 +56,7 @@ internal fun initialAppBrowserUiState(
         chrome = AppBrowserChromeModel(
             title = httpUrl?.host ?: initialUrl,
             subtitle = null,
+            currentUrl = initialUrl,
             isHttps = httpUrl?.isHttps == true,
         ),
     )

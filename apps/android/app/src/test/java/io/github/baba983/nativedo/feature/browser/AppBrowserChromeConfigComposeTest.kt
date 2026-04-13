@@ -26,6 +26,7 @@ class AppBrowserChromeConfigComposeTest {
                 val chromeConfig = AppBrowserChromeConfig(
                     title = "linux.do",
                     subtitle = null,
+                    currentUrl = "https://linux.do",
                     isHttps = true,
                     progress = 0f,
                     scrollProgress = scrollProgressState.value,

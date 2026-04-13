@@ -16,15 +16,15 @@ internal class AppBrowserViewModel(
     var lastSubmittedAddress: String? = null
         private set
 
-    fun openAddressSheet(
+    fun startAddressEditing(
         currentUrl: String,
         recentEntries: List<AppBrowserHistoryRecord>,
     ) {
         _uiState.update {
             it.copy(
                 address = AppBrowserAddressUiState(
-                    isVisible = true,
-                    draft = currentUrl,
+                    isEditing = true,
+                    draft = "",
                     recentEntries = recentEntries,
                 ),
                 search = AppBrowserSearchUiState(),
@@ -38,11 +38,12 @@ internal class AppBrowserViewModel(
             AppBrowserAction.NavigateBack,
             AppBrowserAction.CloseBrowser -> Unit
 
+            AppBrowserAction.StartAddressEditing,
             AppBrowserAction.OpenAddressSheet -> Unit
             AppBrowserAction.OpenHistory -> {
                 _uiState.update {
                     it.copy(
-                        address = it.address.copy(isVisible = false),
+                        address = it.address.copy(isEditing = false),
                         sheet = AppBrowserSheet.History,
                         isHistoryPopupVisible = false,
                     )
@@ -52,16 +53,17 @@ internal class AppBrowserViewModel(
             AppBrowserAction.OpenSettings -> {
                 _uiState.update {
                     it.copy(
-                        address = it.address.copy(isVisible = false),
+                        address = it.address.copy(isEditing = false),
                         sheet = AppBrowserSheet.Settings,
                         isHistoryPopupVisible = false,
                     )
                 }
             }
 
+            AppBrowserAction.CancelAddressEditing,
             AppBrowserAction.DismissSheet -> {
                 _uiState.update {
-                    it.copy(address = it.address.copy(isVisible = false))
+                    it.copy(address = it.address.copy(isEditing = false))
                 }
             }
 
@@ -72,7 +74,7 @@ internal class AppBrowserViewModel(
             AppBrowserAction.StartSearch -> {
                 _uiState.update {
                     it.copy(
-                        address = it.address.copy(isVisible = false),
+                        address = it.address.copy(isEditing = false),
                         search = it.search.copy(isActive = true),
                         isHistoryPopupVisible = false,
                     )
@@ -102,7 +104,7 @@ internal class AppBrowserViewModel(
                 _uiState.update {
                     it.copy(
                         address = it.address.copy(
-                            isVisible = false,
+                            isEditing = false,
                             draft = action.value,
                         ),
                     )

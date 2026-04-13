@@ -37,7 +37,7 @@ internal fun AppBrowserAddressSheet(
     state: AppBrowserAddressUiState,
     onAction: (AppBrowserAction) -> Unit,
 ) {
-    if (!state.isVisible) return
+    if (!state.isEditing) return
 
     val colors = NativeDoThemeExtras.colors
 
@@ -48,7 +48,7 @@ internal fun AppBrowserAddressSheet(
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
-                onClick = { onAction(AppBrowserAction.DismissSheet) },
+                onClick = { onAction(AppBrowserAction.CancelAddressEditing) },
             ),
     ) {
         Surface(

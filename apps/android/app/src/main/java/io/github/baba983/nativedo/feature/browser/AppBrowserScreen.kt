@@ -6,8 +6,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import io.github.baba983.nativedo.ui.AppTopBarRowMinHeight
 import io.github.baba983.nativedo.ui.AppTopBarVerticalPadding
 
@@ -45,10 +45,7 @@ internal fun AppBrowserScreen(
         AppBrowserTopBar(
             chrome = uiState.chrome,
             search = uiState.search,
-            onAction = onAction,
-        )
-        AppBrowserAddressSheet(
-            state = uiState.address,
+            address = uiState.address,
             onAction = onAction,
         )
     }

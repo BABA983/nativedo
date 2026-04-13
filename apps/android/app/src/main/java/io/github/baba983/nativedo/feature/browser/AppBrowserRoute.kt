@@ -2,7 +2,14 @@ package io.github.baba983.nativedo.feature.browser
 
 import android.content.Intent
 import android.graphics.Bitmap
+import android.net.Uri
+import android.net.http.SslError
+import android.webkit.SslErrorHandler
+import android.webkit.ValueCallback
+import android.webkit.WebChromeClient
 import android.webkit.WebView
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -13,20 +20,22 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -40,15 +49,21 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -83,11 +98,12 @@ internal fun AppBrowserRoute(
     val linkCopiedText = stringResource(R.string.app_browser_link_copied)
     val colors = NativeDoThemeExtras.colors
     val browserHistory by appContainer.appBrowserHistoryStore.history.collectAsStateWithLifecycle()
+    val configuration = LocalConfiguration.current
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
     val webViewController = rememberAppBrowserWebViewController()
-    val exitTranslationPx = remember(density) {
-        with(density) { appBrowserRouteExitTranslation.roundToPx().toFloat() }
+    val screenWidthPx = remember(configuration.screenWidthDp, density) {
+        with(density) { configuration.screenWidthDp.dp.toPx() }.coerceAtLeast(1f)
     }
     val browserViewModel: AppBrowserViewModel = viewModel(
         key = "app-browser-$url",
@@ -107,24 +123,28 @@ internal fun AppBrowserRoute(
     var loadProgressState by remember(url) { mutableStateOf(AppBrowserLoadProgressState()) }
     var canGoBack by remember(url) { mutableStateOf(false) }
     var canGoForward by remember(url) { mutableStateOf(false) }
-    var closeRequested by remember(url) { mutableStateOf(false) }
+    var isClosing by remember(url) { mutableStateOf(false) }
+    var isSwipeGestureActive by remember(url) { mutableStateOf(false) }
+    var swipeOffsetPx by remember(url) { mutableStateOf(0f) }
+    var entrancePlayed by remember(url) { mutableStateOf(false) }
     val historyVisitMarks = remember(url) { mutableStateListOf<AppBrowserHistoryVisit>() }
     val historyFavicons = remember(url) { mutableStateMapOf<String, Bitmap>() }
     var lastRecordedUrl by remember(url) { mutableStateOf<String?>(null) }
     var lastRecordedAtMillis by remember(url) { mutableLongStateOf(0L) }
     var cookiesSizeBytes by remember { mutableLongStateOf(0L) }
     var cacheSizeBytes by remember { mutableLongStateOf(0L) }
-
-    val presentationState = remember { MutableTransitionState(false) }
-
-    LaunchedEffect(Unit) {
-        presentationState.targetState = true
-    }
-
-    LaunchedEffect(closeRequested) {
-        if (closeRequested) {
-            presentationState.targetState = false
-        }
+    var pendingFileCallback by remember(url) { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
+    var pendingSslRequest by remember(url) { mutableStateOf<PendingSslRequest?>(null) }
+    val routeOffsetPx = remember(url, screenWidthPx) { Animatable(screenWidthPx) }
+    val fileChooserLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        val uris = WebChromeClient.FileChooserParams.parseResult(
+            result.resultCode,
+            result.data,
+        )
+        pendingFileCallback?.onReceiveValue(uris)
+        pendingFileCallback = null
     }
 
     LaunchedEffect(loadProgressState.isLoading, loadProgressState.displayedProgress) {
@@ -143,49 +163,30 @@ internal fun AppBrowserRoute(
         loadProgressState = loadProgressState.dismiss()
     }
 
-    LaunchedEffect(
-        closeRequested,
-        presentationState.currentState,
-        presentationState.targetState,
-    ) {
-        if (closeRequested && !presentationState.currentState && !presentationState.targetState) {
-            onClose()
+    LaunchedEffect(screenWidthPx) {
+        if (!entrancePlayed) {
+            entrancePlayed = true
+            routeOffsetPx.snapTo(screenWidthPx)
+            routeOffsetPx.animateTo(
+                targetValue = 0f,
+                animationSpec = tween(
+                    durationMillis = appBrowserRouteEnterDurationMillis,
+                    easing = AppBrowserEaseOutQuint,
+                ),
+            )
         }
     }
 
-    val presentationTransition = updateTransition(
-        transitionState = presentationState,
-        label = "appBrowserPresentation",
-    )
-    val routeAlpha by presentationTransition.animateFloat(
-        transitionSpec = {
-            tween(
-                durationMillis = if (targetState) {
-                    appBrowserRouteEnterDurationMillis
-                } else {
-                    appBrowserRouteExitDurationMillis
-                },
-                easing = LinearOutSlowInEasing,
-            )
-        },
-        label = "appBrowserRouteAlpha",
-    ) { visible ->
-        if (visible) 1f else 0f
+    val currentRouteOffsetPx = if (isSwipeGestureActive) {
+        swipeOffsetPx
+    } else {
+        routeOffsetPx.value
     }
-    val routeTranslationX by presentationTransition.animateFloat(
-        transitionSpec = {
-            tween(
-                durationMillis = if (targetState) {
-                    appBrowserRouteEnterDurationMillis
-                } else {
-                    appBrowserRouteExitDurationMillis
-                },
-                easing = LinearOutSlowInEasing,
-            )
-        },
-        label = "appBrowserRouteTranslationX",
-    ) { visible ->
-        if (visible) 0f else exitTranslationPx
+    val routePresentationState = remember(currentRouteOffsetPx, screenWidthPx) {
+        buildAppBrowserRoutePresentationState(
+            offsetPx = currentRouteOffsetPx,
+            screenWidthPx = screenWidthPx,
+        )
     }
 
     val domain = remember(currentUrl) {
@@ -258,7 +259,9 @@ internal fun AppBrowserRoute(
     val chromeModel = remember(
         chromeTitle,
         chromeSubtitle,
+        currentUrl,
         isHttps,
+        historyFavicons[currentUrl],
         canGoBack,
         canGoForward,
         loadProgressState.displayedProgress,
@@ -267,14 +270,14 @@ internal fun AppBrowserRoute(
         backHistoryEntries,
         browserHistoryEntries,
         panel,
-        routeAlpha,
-        routeTranslationX,
         historyPopupExpanded,
     ) {
         AppBrowserChromeModel(
             title = chromeTitle,
             subtitle = chromeSubtitle,
+            currentUrl = currentUrl,
             isHttps = isHttps,
+            favicon = historyFavicons[currentUrl],
             canGoBack = canGoBack,
             canGoForward = canGoForward,
             progress = loadProgressState.displayedProgress,
@@ -283,8 +286,8 @@ internal fun AppBrowserRoute(
             backHistoryEntries = backHistoryEntries,
             browserHistoryEntries = browserHistoryEntries,
             isInSubPanel = panel != AppBrowserPanel.Page,
-            alpha = routeAlpha,
-            translationX = routeTranslationX,
+            alpha = 1f,
+            translationX = 0f,
             isHistoryPopupVisible = historyPopupExpanded,
         )
     }
@@ -305,11 +308,25 @@ internal fun AppBrowserRoute(
         cacheSizeBytes = usage.cacheSizeBytes
     }
 
-    fun requestClose() {
-        if (closeRequested) {
+    fun requestClose(durationMillis: Int = appBrowserRouteExitDurationMillis) {
+        if (isClosing) {
             return
         }
-        closeRequested = true
+        isClosing = true
+        coroutineScope.launch {
+            if (isSwipeGestureActive) {
+                routeOffsetPx.snapTo(swipeOffsetPx)
+                isSwipeGestureActive = false
+            }
+            routeOffsetPx.animateTo(
+                targetValue = screenWidthPx,
+                animationSpec = tween(
+                    durationMillis = durationMillis,
+                    easing = AppBrowserEaseOutQuint,
+                ),
+            )
+            onClose()
+        }
     }
 
     fun navigateBack() {
@@ -392,7 +409,7 @@ internal fun AppBrowserRoute(
         when (action) {
             AppBrowserAction.NavigateBack -> {
                 when {
-                    browserUiState.address.isVisible -> browserViewModel.onAction(AppBrowserAction.DismissSheet)
+                    browserUiState.address.isEditing -> browserViewModel.onAction(AppBrowserAction.CancelAddressEditing)
                     historyPopupExpanded -> browserViewModel.onAction(AppBrowserAction.SetHistoryPopupVisible(false))
                     isSearching -> closeSearch()
                     panel != AppBrowserPanel.Page -> browserViewModel.onAction(AppBrowserAction.CloseSheet)
@@ -401,8 +418,9 @@ internal fun AppBrowserRoute(
             }
 
             AppBrowserAction.CloseBrowser -> requestClose()
+            AppBrowserAction.StartAddressEditing,
             AppBrowserAction.OpenAddressSheet -> {
-                browserViewModel.openAddressSheet(
+                browserViewModel.startAddressEditing(
                     currentUrl = currentUrl,
                     recentEntries = browserHistory,
                 )
@@ -410,6 +428,7 @@ internal fun AppBrowserRoute(
 
             AppBrowserAction.OpenHistory,
             AppBrowserAction.OpenSettings,
+            AppBrowserAction.CancelAddressEditing,
             AppBrowserAction.DismissSheet,
             AppBrowserAction.CloseSheet,
             AppBrowserAction.StartSearch,
@@ -462,6 +481,10 @@ internal fun AppBrowserRoute(
 
     DisposableEffect(Unit) {
         onDispose {
+            pendingFileCallback?.onReceiveValue(null)
+            pendingFileCallback = null
+            pendingSslRequest?.handler?.cancel()
+            pendingSslRequest = null
             appContainer.cookieSyncBridge.syncFromWebView(appContainer.baseUrl)
         }
     }
@@ -483,8 +506,8 @@ internal fun AppBrowserRoute(
             .fillMaxSize()
             .background(colors.backgroundBase)
             .graphicsLayer {
-                alpha = routeAlpha
-                translationX = routeTranslationX
+                alpha = routePresentationState.alpha
+                translationX = currentRouteOffsetPx
             },
         sheetContent = {
             AnimatedContent(
@@ -672,9 +695,35 @@ internal fun AppBrowserRoute(
             onCanGoForwardChanged = { value ->
                 canGoForward = value
             },
+            onShowFileChooser = { filePathCallback, fileChooserParams ->
+                pendingFileCallback?.onReceiveValue(null)
+                pendingFileCallback = filePathCallback
+                val chooserIntent = fileChooserParams?.createIntent()
+                if (chooserIntent == null) {
+                    pendingFileCallback?.onReceiveValue(null)
+                    pendingFileCallback = null
+                    return@AppBrowserWebView
+                }
+                fileChooserLauncher.launch(chooserIntent)
+            },
+            onSslError = { handler, error ->
+                val safeHandler = handler ?: return@AppBrowserWebView
+                pendingSslRequest?.handler?.cancel()
+                pendingSslRequest = PendingSslRequest(
+                    handler = safeHandler,
+                    error = error,
+                )
+            },
             onSyncCookiesToWebView = {
                 appContainer.cookieSyncBridge.syncToWebView(appContainer.baseUrl)
             },
+        )
+
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .graphicsLayer { alpha = routePresentationState.backdropAlpha }
+                .background(Color.Black),
         )
 
         if (historyScrimAlpha > 0f) {
@@ -689,7 +738,120 @@ internal fun AppBrowserRoute(
                         onClick = {
                             browserViewModel.onAction(AppBrowserAction.SetHistoryPopupVisible(false))
                         },
-                    ),
+                ),
+            )
+        }
+
+        pendingSslRequest?.let {
+            AlertDialog(
+                onDismissRequest = {
+                    it.handler.cancel()
+                    pendingSslRequest = null
+                },
+                title = {
+                    Text(text = stringResource(R.string.app_browser_ssl_error_title))
+                },
+                text = {
+                    Text(
+                        text = buildString {
+                            append(stringResource(R.string.app_browser_ssl_error_message))
+                            it.error?.url?.toString()?.takeIf(String::isNotBlank)?.let { url ->
+                                append("\n\n")
+                                append(url)
+                            }
+                        },
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            it.handler.proceed()
+                            pendingSslRequest = null
+                        },
+                    ) {
+                        Text(text = stringResource(R.string.app_browser_ssl_error_continue))
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            it.handler.cancel()
+                            pendingSslRequest = null
+                        },
+                    ) {
+                        Text(text = stringResource(R.string.app_browser_ssl_error_cancel))
+                    }
+                },
+            )
+        }
+
+        val gestureEnabled = !isClosing &&
+            panel == AppBrowserPanel.Page &&
+            !browserUiState.address.isEditing &&
+            !isSearching &&
+            !historyPopupExpanded
+        if (gestureEnabled) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(appBrowserSwipeEdgeWidth)
+                    .align(Alignment.CenterStart)
+                    .pointerInput(screenWidthPx, gestureEnabled) {
+                        var velocityTracker = VelocityTracker()
+                        detectHorizontalDragGestures(
+                            onDragStart = { offset ->
+                                velocityTracker = VelocityTracker()
+                                velocityTracker.addPosition(0L, offset)
+                                swipeOffsetPx = currentRouteOffsetPx
+                                isSwipeGestureActive = true
+                            },
+                            onHorizontalDrag = { change, dragAmount ->
+                                change.consume()
+                                velocityTracker.addPosition(change.uptimeMillis, change.position)
+                                swipeOffsetPx = (swipeOffsetPx + dragAmount).coerceIn(0f, screenWidthPx)
+                            },
+                            onDragCancel = {
+                                val settle = buildAppBrowserSwipeSettle(
+                                    currentOffsetPx = swipeOffsetPx,
+                                    velocityPxPerSecond = 0f,
+                                    screenWidthPx = screenWidthPx,
+                                )
+                                coroutineScope.launch {
+                                    routeOffsetPx.snapTo(swipeOffsetPx)
+                                    isSwipeGestureActive = false
+                                    routeOffsetPx.animateTo(
+                                        targetValue = settle.targetOffsetPx,
+                                        animationSpec = tween(
+                                            durationMillis = settle.durationMillis,
+                                            easing = AppBrowserEaseOutQuint,
+                                        ),
+                                    )
+                                }
+                            },
+                            onDragEnd = {
+                                val settle = buildAppBrowserSwipeSettle(
+                                    currentOffsetPx = swipeOffsetPx,
+                                    velocityPxPerSecond = velocityTracker.calculateVelocity().x,
+                                    screenWidthPx = screenWidthPx,
+                                )
+                                if (settle.shouldDismiss) {
+                                    requestClose(durationMillis = settle.durationMillis)
+                                } else {
+                                    coroutineScope.launch {
+                                        routeOffsetPx.snapTo(swipeOffsetPx)
+                                        isSwipeGestureActive = false
+                                        routeOffsetPx.animateTo(
+                                            targetValue = 0f,
+                                            animationSpec = tween(
+                                                durationMillis = settle.durationMillis,
+                                                easing = AppBrowserEaseOutQuint,
+                                            ),
+                                        )
+                                    }
+                                }
+                            },
+                        )
+                    },
             )
         }
 
@@ -803,9 +965,15 @@ private data class AppBrowserHistoryVisit(
     val visitedAtMillis: Long,
 )
 
-private val appBrowserRouteExitTranslation = 24.dp
-private const val appBrowserRouteEnterDurationMillis = 220
-private const val appBrowserRouteExitDurationMillis = 170
+private data class PendingSslRequest(
+    val handler: SslErrorHandler,
+    val error: SslError?,
+)
+
+private val AppBrowserEaseOutQuint = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
+private val appBrowserSwipeEdgeWidth = 24.dp
+private const val appBrowserRouteEnterDurationMillis = 380
+private const val appBrowserRouteExitDurationMillis = 300
 private const val appBrowserFakeProgressTickDelayMillis = 100L
 private const val appBrowserProgressDismissDelayMillis = 180L
 

@@ -51,6 +51,18 @@ internal data class AppBrowserScrollChromeBackgroundState(
     val dividerAlpha: Float,
 )
 
+internal data class AppBrowserRoutePresentationState(
+    val progress: Float,
+    val alpha: Float,
+    val backdropAlpha: Float,
+)
+
+internal data class AppBrowserSwipeSettle(
+    val shouldDismiss: Boolean,
+    val targetOffsetPx: Float,
+    val durationMillis: Int,
+)
+
 internal data class AppBrowserLoadProgressState(
     val displayedProgress: Float = 0f,
     val actualProgress: Float = 0f,
@@ -106,6 +118,44 @@ internal data class AppBrowserStorageUsage(
     val cookiesSizeBytes: Long,
     val cacheSizeBytes: Long,
 )
+
+internal fun buildAppBrowserRoutePresentationState(
+    offsetPx: Float,
+    screenWidthPx: Float,
+): AppBrowserRoutePresentationState {
+    val safeScreenWidthPx = screenWidthPx.takeIf { it > 0f } ?: 1f
+    val clampedOffset = offsetPx.coerceIn(0f, safeScreenWidthPx)
+    val progress = 1f - (clampedOffset / safeScreenWidthPx)
+    return AppBrowserRoutePresentationState(
+        progress = progress,
+        alpha = 0.92f + (progress * 0.08f),
+        backdropAlpha = (1f - progress) * 0.32f,
+    )
+}
+
+internal fun buildAppBrowserSwipeSettle(
+    currentOffsetPx: Float,
+    velocityPxPerSecond: Float,
+    screenWidthPx: Float,
+    dismissThresholdFraction: Float = 0.35f,
+    flingVelocityThresholdPxPerSecond: Float = 800f,
+): AppBrowserSwipeSettle {
+    val safeScreenWidthPx = screenWidthPx.takeIf { it > 0f } ?: 1f
+    val clampedOffset = currentOffsetPx.coerceIn(0f, safeScreenWidthPx)
+    val shouldDismiss = clampedOffset > (safeScreenWidthPx * dismissThresholdFraction) ||
+        velocityPxPerSecond > flingVelocityThresholdPxPerSecond
+    val remainingDistance = if (shouldDismiss) {
+        safeScreenWidthPx - clampedOffset
+    } else {
+        clampedOffset
+    }
+    val durationMillis = maxOf(((420f / safeScreenWidthPx) * remainingDistance).toInt(), 250)
+    return AppBrowserSwipeSettle(
+        shouldDismiss = shouldDismiss,
+        targetOffsetPx = if (shouldDismiss) safeScreenWidthPx else 0f,
+        durationMillis = durationMillis,
+    )
+}
 
 class AppBrowserHistoryStore(
     private val persistence: AppBrowserHistoryStorePersistence = NoOpAppBrowserHistoryStorePersistence,

@@ -2,12 +2,16 @@ package io.github.baba983.nativedo.feature.browser
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.net.Uri
+import android.net.http.SslError
 import android.view.ViewGroup
 import android.webkit.CookieManager
+import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.ValueCallback
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -39,6 +43,9 @@ internal fun AppBrowserWebView(
     onScrollProgressChanged: (Float) -> Unit,
     onCanGoBackChanged: (Boolean) -> Unit,
     onCanGoForwardChanged: (Boolean) -> Unit,
+    onShowFileChooser: (ValueCallback<Array<Uri>>?, WebChromeClient.FileChooserParams?) -> Unit =
+        { callback, _ -> callback?.onReceiveValue(null) },
+    onSslError: (SslErrorHandler?, SslError?) -> Unit = { handler, _ -> handler?.cancel() },
     onSyncCookiesToWebView: () -> Unit,
 ) {
     var attachedWebView by remember { mutableStateOf<AppBrowserWebViewView?>(null) }
@@ -88,6 +95,14 @@ internal fun AppBrowserWebView(
                         super.onPageFinished(view, url)
                         onPageFinished(view as? AppBrowserWebViewView, url)
                     }
+
+                    override fun onReceivedSslError(
+                        view: WebView?,
+                        handler: SslErrorHandler?,
+                        error: SslError?,
+                    ) {
+                        onSslError(handler, error)
+                    }
                 }
 
                 webChromeClient = object : WebChromeClient() {
@@ -103,6 +118,15 @@ internal fun AppBrowserWebView(
                     override fun onReceivedIcon(view: WebView?, icon: Bitmap?) {
                         super.onReceivedIcon(view, icon)
                         onIconChanged(view?.url.orEmpty(), icon)
+                    }
+
+                    override fun onShowFileChooser(
+                        webView: WebView?,
+                        filePathCallback: ValueCallback<Array<Uri>>?,
+                        fileChooserParams: FileChooserParams?,
+                    ): Boolean {
+                        onShowFileChooser(filePathCallback, fileChooserParams)
+                        return true
                     }
                 }
 

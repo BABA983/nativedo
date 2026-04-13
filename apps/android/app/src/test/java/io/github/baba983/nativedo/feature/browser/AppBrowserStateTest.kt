@@ -13,6 +13,69 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class AppBrowserStateTest {
     @Test
+    fun appBrowserRoutePresentationState_clampsOffsetAndDerivesProgressAlphaAndBackdrop() {
+        val state = buildAppBrowserRoutePresentationState(
+            offsetPx = 120f,
+            screenWidthPx = 400f,
+        )
+
+        assertThat(state.progress).isWithin(0.0001f).of(0.7f)
+        assertThat(state.alpha).isWithin(0.0001f).of(0.976f)
+        assertThat(state.backdropAlpha).isWithin(0.0001f).of(0.096f)
+    }
+
+    @Test
+    fun appBrowserRoutePresentationState_clampsOverflowOffsetToClosedState() {
+        val state = buildAppBrowserRoutePresentationState(
+            offsetPx = 999f,
+            screenWidthPx = 400f,
+        )
+
+        assertThat(state.progress).isEqualTo(0f)
+        assertThat(state.alpha).isWithin(0.0001f).of(0.92f)
+        assertThat(state.backdropAlpha).isWithin(0.0001f).of(0.32f)
+    }
+
+    @Test
+    fun appBrowserSwipeSettle_decidesDismissWhenThresholdExceeded() {
+        val settle = buildAppBrowserSwipeSettle(
+            currentOffsetPx = 180f,
+            velocityPxPerSecond = 100f,
+            screenWidthPx = 400f,
+        )
+
+        assertThat(settle.shouldDismiss).isTrue()
+        assertThat(settle.targetOffsetPx).isEqualTo(400f)
+        assertThat(settle.durationMillis).isEqualTo(250)
+    }
+
+    @Test
+    fun appBrowserSwipeSettle_decidesDismissWhenVelocityExceeded() {
+        val settle = buildAppBrowserSwipeSettle(
+            currentOffsetPx = 80f,
+            velocityPxPerSecond = 900f,
+            screenWidthPx = 400f,
+        )
+
+        assertThat(settle.shouldDismiss).isTrue()
+        assertThat(settle.targetOffsetPx).isEqualTo(400f)
+        assertThat(settle.durationMillis).isEqualTo(336)
+    }
+
+    @Test
+    fun appBrowserSwipeSettle_snapsBackWhenBelowThresholdAndVelocity() {
+        val settle = buildAppBrowserSwipeSettle(
+            currentOffsetPx = 80f,
+            velocityPxPerSecond = 100f,
+            screenWidthPx = 400f,
+        )
+
+        assertThat(settle.shouldDismiss).isFalse()
+        assertThat(settle.targetOffsetPx).isEqualTo(0f)
+        assertThat(settle.durationMillis).isEqualTo(250)
+    }
+
+    @Test
     fun appBrowserLoadProgressState_start_makesIndicatorVisibleWithHeadStart() {
         val state = AppBrowserLoadProgressState().start()
 
