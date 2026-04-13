@@ -1,21 +1,15 @@
 package io.github.baba983.nativedo.feature.browser
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import io.github.baba983.nativedo.R
-import io.github.baba983.nativedo.ui.theme.NativeDoChromeShape
-import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
+import io.github.baba983.nativedo.core.ui.NativeDoSettingsRow
+import io.github.baba983.nativedo.ui.theme.NativeDoSpacing
 
 @Composable
 internal fun AppBrowserSettingsPanel(
@@ -31,80 +25,46 @@ internal fun AppBrowserSettingsPanel(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(
+                horizontal = NativeDoSpacing.lg,
+                vertical = NativeDoSpacing.md + NativeDoSpacing.xxs,
+            ),
+        verticalArrangement = Arrangement.spacedBy(NativeDoSpacing.md),
     ) {
-        AppBrowserSettingsRow(
+        val historyCountSubtitle = appBrowserSettingsHistorySubtitleCount(historyCount)
+        NativeDoSettingsRow(
             title = stringResource(R.string.app_browser_settings_open_history_title),
-            subtitle = if (historyCount > 0) {
-                stringResource(R.string.app_browser_settings_history_count, historyCount)
-            } else {
-                stringResource(R.string.app_browser_settings_open_history_subtitle)
-            },
+            subtitle = historyCountSubtitle?.let { count ->
+                stringResource(R.string.app_browser_settings_history_count, count)
+            } ?: stringResource(R.string.app_browser_settings_open_history_subtitle),
             onClick = onOpenHistoryClick,
         )
-        AppBrowserSettingsRow(
+        NativeDoSettingsRow(
             title = stringResource(R.string.app_browser_settings_clear_history_title),
-            subtitle = if (historyCount > 0) {
-                stringResource(R.string.app_browser_settings_history_count, historyCount)
-            } else {
-                stringResource(R.string.app_browser_settings_clear_history_subtitle)
-            },
+            subtitle = historyCountSubtitle?.let { count ->
+                stringResource(R.string.app_browser_settings_history_count, count)
+            } ?: stringResource(R.string.app_browser_settings_clear_history_subtitle),
             onClick = onClearHistoryClick,
         )
-        AppBrowserSettingsRow(
+        NativeDoSettingsRow(
             title = stringResource(R.string.app_browser_settings_clear_cookies_title),
-            subtitle = if (cookiesSizeBytes > 0) {
-                formatAppBrowserDataSize(cookiesSizeBytes)
-            } else {
-                stringResource(R.string.app_browser_settings_clear_cookies_subtitle)
-            },
+            subtitle = appBrowserSettingsDataSizeSubtitle(cookiesSizeBytes)
+                ?: stringResource(R.string.app_browser_settings_clear_cookies_subtitle),
             onClick = onClearCookiesClick,
         )
-        AppBrowserSettingsRow(
+        NativeDoSettingsRow(
             title = stringResource(R.string.app_browser_settings_clear_cache_title),
-            subtitle = if (cacheSizeBytes > 0) {
-                formatAppBrowserDataSize(cacheSizeBytes)
-            } else {
-                stringResource(R.string.app_browser_settings_clear_cache_subtitle)
-            },
+            subtitle = appBrowserSettingsDataSizeSubtitle(cacheSizeBytes)
+                ?: stringResource(R.string.app_browser_settings_clear_cache_subtitle),
             onClick = onClearCacheClick,
         )
     }
 }
 
-@Composable
-private fun AppBrowserSettingsRow(
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit,
-) {
-    val colors = NativeDoThemeExtras.colors
+internal fun appBrowserSettingsHistorySubtitleCount(historyCount: Int): Int? = historyCount.takeIf { it > 0 }
 
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = NativeDoChromeShape,
-        color = colors.glassBackgroundStrong.copy(alpha = 0.92f),
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onClick)
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall,
-                color = colors.textPrimary,
-            )
-            Text(
-                text = subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = colors.textSecondary,
-            )
-        }
-    }
+internal fun appBrowserSettingsDataSizeSubtitle(sizeBytes: Long): String? = if (sizeBytes > 0L) {
+    formatAppBrowserDataSize(sizeBytes)
+} else {
+    null
 }

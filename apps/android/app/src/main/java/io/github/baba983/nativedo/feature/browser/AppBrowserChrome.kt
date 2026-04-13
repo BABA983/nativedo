@@ -20,7 +20,6 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -112,9 +111,14 @@ import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.foundation.layout.WindowInsets
 import io.github.baba983.nativedo.R
+import io.github.baba983.nativedo.core.ui.NativeDoChromeIconButton
+import io.github.baba983.nativedo.core.ui.nativeDoChromeIconButtonContainerColor
+import io.github.baba983.nativedo.core.ui.nativeDoChromeIconButtonContentAlpha
 import io.github.baba983.nativedo.ui.AppTopBarHorizontalPadding
 import io.github.baba983.nativedo.ui.AppTopBarRowMinHeight
 import io.github.baba983.nativedo.ui.AppTopBarVerticalPadding
+import io.github.baba983.nativedo.ui.theme.NativeDoDuration
+import io.github.baba983.nativedo.ui.theme.NativeDoEasing
 import io.github.baba983.nativedo.ui.theme.NativeDoPillShape
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 import java.text.SimpleDateFormat
@@ -322,8 +326,8 @@ internal fun AppBrowserTopBar(
     val searchingProgress by searchTransition.animateFloat(
         transitionSpec = {
             tween(
-                durationMillis = if (targetState) 320 else 220,
-                easing = LinearOutSlowInEasing,
+                durationMillis = if (targetState) NativeDoDuration.BrowserSearchEnter else NativeDoDuration.BrowserSearchExit,
+                easing = NativeDoEasing.Standard,
             )
         },
         label = "appBrowserSearchingProgress",
@@ -333,8 +337,8 @@ internal fun AppBrowserTopBar(
     val titleScale by searchTransition.animateFloat(
         transitionSpec = {
             tween(
-                durationMillis = if (targetState) 320 else 180,
-                easing = LinearOutSlowInEasing,
+                durationMillis = if (targetState) NativeDoDuration.BrowserSearchEnter else NativeDoDuration.ContentExit,
+                easing = NativeDoEasing.Standard,
             )
         },
         label = "appBrowserSearchTitleScale",
@@ -344,8 +348,8 @@ internal fun AppBrowserTopBar(
     val searchScale by searchTransition.animateFloat(
         transitionSpec = {
             tween(
-                durationMillis = if (targetState) 320 else 180,
-                easing = LinearOutSlowInEasing,
+                durationMillis = if (targetState) NativeDoDuration.BrowserSearchEnter else NativeDoDuration.ContentExit,
+                easing = NativeDoEasing.Standard,
             )
         },
         label = "appBrowserSearchFieldScale",
@@ -359,8 +363,8 @@ internal fun AppBrowserTopBar(
     val backCloseProgress by backCloseTransition.animateFloat(
         transitionSpec = {
             tween(
-                durationMillis = 220,
-                easing = LinearOutSlowInEasing,
+                durationMillis = NativeDoDuration.BrowserOpen,
+                easing = NativeDoEasing.Standard,
             )
         },
         label = "appBrowserBackCloseProgress",
@@ -371,8 +375,8 @@ internal fun AppBrowserTopBar(
     val searchClearProgress by animateFloatAsState(
         targetValue = if (searchClearVisible) 1f else 0f,
         animationSpec = tween(
-            durationMillis = if (searchClearVisible) 140 else 100,
-            easing = LinearOutSlowInEasing,
+            durationMillis = if (searchClearVisible) NativeDoDuration.AnchorReveal else 100,
+            easing = NativeDoEasing.Standard,
         ),
         label = "appBrowserSearchClearProgress",
     )
@@ -383,11 +387,11 @@ internal fun AppBrowserTopBar(
     val addressingProgress by addressTransition.animateFloat(
         transitionSpec = {
             tween(
-                durationMillis = if (targetState) 320 else 280,
+                durationMillis = if (targetState) NativeDoDuration.BrowserAddressEnter else NativeDoDuration.BrowserAddressExit,
                 easing = if (targetState) {
-                    LinearOutSlowInEasing
+                    NativeDoEasing.Standard
                 } else {
-                    androidx.compose.animation.core.CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
+                    NativeDoEasing.BrowserDismiss
                 },
             )
         },
@@ -651,17 +655,18 @@ internal fun AppBrowserTopBar(
                     }
                 }
 
+                val progressMetrics = remember { appBrowserProgressMetrics() }
                 LinearProgressIndicator(
                     progress = { progress },
                     color = colors.accent,
-                    trackColor = colors.glassBackgroundStrong.copy(alpha = 0.18f),
+                    trackColor = colors.glassBackgroundStrong.copy(alpha = progressMetrics.trackAlpha),
                     gapSize = 0.dp,
                     drawStopIndicator = {},
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
                         .padding(horizontal = AppTopBarHorizontalPadding)
-                        .height(appBrowserProgressHeight)
+                        .height(progressMetrics.height)
                         .graphicsLayer {
                             alpha = if (showProgress) 1f else 0f
                             scaleX = if (showProgress) 1f else 0.92f
@@ -1192,56 +1197,61 @@ internal fun AppBrowserChromeButton(
     containerColorOverride: Color? = null,
     modifier: Modifier = Modifier,
 ) {
-    val colors = NativeDoThemeExtras.colors
-    val interactionSource = remember { MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
-    val contentTint = colors.textPrimary.copy(
-        alpha = when {
-            !enabled -> 0.38f
-            !emphasized -> 0.62f
-            else -> 1f
-        },
-    )
-    Surface(
-        modifier = modifier.size(44.dp),
-        shape = CircleShape,
-        color = containerColorOverride ?: if (pressed) {
-            colors.glassBackgroundStrong.copy(alpha = 0.94f)
-        } else if (!emphasized) {
-            colors.glassBackgroundStrong.copy(alpha = 0.22f)
-        } else {
-            colors.glassBackgroundStrong.copy(alpha = 0.82f)
-        },
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 44.dp)
-                .combinedClickable(
-                    interactionSource = interactionSource,
-                    indication = null,
-                    onClick = onClick,
-                    onLongClick = onLongClick,
-                    enabled = enabled,
-                ),
-            contentAlignment = Alignment.Center,
+    if (animatedBackCloseProgress != null) {
+        val colors = NativeDoThemeExtras.colors
+        val interactionSource = remember { MutableInteractionSource() }
+        val pressed by interactionSource.collectIsPressedAsState()
+        val contentTint = colors.textPrimary.copy(
+            alpha = nativeDoChromeIconButtonContentAlpha(
+                enabled = enabled,
+                emphasized = emphasized,
+            ),
+        )
+
+        Surface(
+            modifier = modifier.size(44.dp),
+            shape = CircleShape,
+            color = nativeDoChromeIconButtonContainerColor(
+                colors = colors,
+                enabled = enabled,
+                emphasized = emphasized,
+                pressed = pressed,
+                containerColorOverride = containerColorOverride,
+            ),
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
         ) {
-            when {
-                animatedBackCloseProgress != null -> AppBrowserBackCloseGlyph(
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 44.dp)
+                    .combinedClickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        onClick = onClick,
+                        onLongClick = onLongClick,
+                        enabled = enabled,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                AppBrowserBackCloseGlyph(
                     progress = animatedBackCloseProgress,
                     tint = contentTint,
                     contentDescription = contentDescription,
                 )
-
-                imageVector != null -> Icon(
-                    imageVector = imageVector,
-                    contentDescription = contentDescription,
-                    tint = contentTint,
-                )
             }
         }
+    } else if (imageVector != null) {
+        NativeDoChromeIconButton(
+            imageVector = imageVector,
+            contentDescription = contentDescription,
+            onClick = onClick,
+            modifier = modifier,
+            enabled = enabled,
+            onLongClick = onLongClick,
+            emphasized = emphasized,
+            containerColorOverride = containerColorOverride,
+        )
     }
 }
 
@@ -1522,7 +1532,7 @@ private fun hideSoftKeyboard(view: AppCompatEditText) {
     inputMethodManager?.hideSoftInputFromWindow(view.windowToken, 0)
 }
 
-private const val appBrowserSearchEnterDurationMillis = 320
+private const val appBrowserSearchEnterDurationMillis = NativeDoDuration.BrowserSearchEnter
 private const val appBrowserSearchKeyboardDelayMillis = 48L
 
 @Composable
@@ -1670,7 +1680,7 @@ private fun AppBrowserHistoryPopup(
                 } else {
                     appBrowserPopupCloseDurationMillis
                 },
-                easing = LinearOutSlowInEasing,
+                easing = NativeDoEasing.Standard,
             )
         },
         label = "appBrowserHistoryPopupProgress",
@@ -1681,7 +1691,7 @@ private fun AppBrowserHistoryPopup(
         transitionSpec = {
             tween(
                 durationMillis = appBrowserPopupCloseDurationMillis,
-                easing = LinearOutSlowInEasing,
+                easing = NativeDoEasing.Standard,
             )
         },
         label = "appBrowserHistoryPopupTranslationY",
@@ -1696,7 +1706,7 @@ private fun AppBrowserHistoryPopup(
                 } else {
                     appBrowserPopupCloseDurationMillis
                 },
-                easing = LinearOutSlowInEasing,
+                easing = NativeDoEasing.Standard,
             )
         },
         label = "appBrowserHistoryPopupBackgroundReveal",
@@ -1805,7 +1815,7 @@ internal fun AppBrowserActionPopup(
                 } else {
                     appBrowserPopupCloseDurationMillis
                 },
-                easing = LinearOutSlowInEasing,
+                easing = NativeDoEasing.Standard,
             )
         },
         label = "appBrowserPopupProgress",
@@ -1816,7 +1826,7 @@ internal fun AppBrowserActionPopup(
         transitionSpec = {
             tween(
                 durationMillis = appBrowserPopupCloseDurationMillis,
-                easing = LinearOutSlowInEasing,
+                easing = NativeDoEasing.Standard,
             )
         },
         label = "appBrowserPopupTranslationY",
@@ -1831,7 +1841,7 @@ internal fun AppBrowserActionPopup(
                 } else {
                     appBrowserPopupCloseDurationMillis
                 },
-                easing = LinearOutSlowInEasing,
+                easing = NativeDoEasing.Standard,
             )
         },
         label = "appBrowserPopupBackgroundReveal",
@@ -1915,7 +1925,7 @@ private class AppBrowserPopupPositionProvider(
 
 private fun appBrowserPopupOpenDuration(
     itemCount: Int,
-): Int = 150 + 16 * itemCount.coerceAtLeast(0)
+): Int = NativeDoDuration.PopupOpen + NativeDoDuration.PopupCascadeStep * itemCount.coerceAtLeast(0)
 
 @Composable
 private fun AppBrowserHistoryAnchorHighlight(
@@ -1926,16 +1936,16 @@ private fun AppBrowserHistoryAnchorHighlight(
     val alpha by animateFloatAsState(
         targetValue = if (visible) 1f else 0f,
         animationSpec = tween(
-            durationMillis = if (visible) 140 else 100,
-            easing = LinearOutSlowInEasing,
+            durationMillis = if (visible) NativeDoDuration.AnchorReveal else 100,
+            easing = NativeDoEasing.Standard,
         ),
         label = "appBrowserHistoryAnchorAlpha",
     )
     val scale by animateFloatAsState(
         targetValue = if (visible) 1f else 0.92f,
         animationSpec = tween(
-            durationMillis = if (visible) 180 else 120,
-            easing = LinearOutSlowInEasing,
+            durationMillis = if (visible) NativeDoDuration.AnchorSettle else 120,
+            easing = NativeDoEasing.Standard,
         ),
         label = "appBrowserHistoryAnchorScale",
     )
@@ -1999,18 +2009,29 @@ private fun appBrowserPopupCascadeProgress(
     return ((fullAnimationT - waveOffset) / waveDuration).coerceIn(0f, 1f)
 }
 
+internal data class AppBrowserPopupDividerMetrics(
+    val spacing: androidx.compose.ui.unit.Dp,
+    val gapHeight: androidx.compose.ui.unit.Dp,
+)
+
+internal fun appBrowserPopupDividerMetrics(): AppBrowserPopupDividerMetrics = AppBrowserPopupDividerMetrics(
+    spacing = 2.dp,
+    gapHeight = 6.dp,
+)
+
 @Composable
 private fun AppBrowserPopupDivider(
     palette: AppBrowserPopupPalette,
 ) {
-    Spacer(modifier = Modifier.height(appBrowserPopupDividerSpacing))
+    val metrics = remember { appBrowserPopupDividerMetrics() }
+    Spacer(modifier = Modifier.height(metrics.spacing))
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(appBrowserPopupSectionGapHeight)
+            .height(metrics.gapHeight)
             .background(palette.sectionGap),
     )
-    Spacer(modifier = Modifier.height(appBrowserPopupDividerSpacing))
+    Spacer(modifier = Modifier.height(metrics.spacing))
 }
 
 @Composable
@@ -2263,8 +2284,15 @@ private val appBrowserPopupSpacing = 6.dp
 private val appBrowserPopupCornerRadius = 14.dp
 private val appBrowserPopupChildStartTranslation = 6.dp
 private val appBrowserPopupCloseTranslation = 6.dp
-private val appBrowserPopupDividerSpacing = 4.dp
-private val appBrowserPopupSectionGapHeight = 10.dp
-private val appBrowserProgressHeight = 3.dp
+internal data class AppBrowserProgressMetrics(
+    val height: androidx.compose.ui.unit.Dp,
+    val trackAlpha: Float,
+)
+
+internal fun appBrowserProgressMetrics(): AppBrowserProgressMetrics = AppBrowserProgressMetrics(
+    height = 2.dp,
+    trackAlpha = 0.12f,
+)
+
 private const val appBrowserPopupCascadeWaveLength = 4f
-private const val appBrowserPopupCloseDurationMillis = 150
+private const val appBrowserPopupCloseDurationMillis = NativeDoDuration.PopupClose

@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.baba983.nativedo.ui.theme.NativeDoChromeShape
+import io.github.baba983.nativedo.ui.theme.NativeDoDuration
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -106,13 +107,13 @@ internal fun BulletinHost(
         AnimatedVisibility(
             visible = uiState.isVisible,
             enter = slideInVertically(
-                animationSpec = tween(durationMillis = 240),
+                animationSpec = tween(durationMillis = NativeDoDuration.BulletinSlideIn),
                 initialOffsetY = { -it / 2 },
-            ) + fadeIn(animationSpec = tween(durationMillis = 180)),
+            ) + fadeIn(animationSpec = tween(durationMillis = NativeDoDuration.BulletinFadeIn)),
             exit = slideOutVertically(
-                animationSpec = tween(durationMillis = 200),
+                animationSpec = tween(durationMillis = NativeDoDuration.BulletinSlideOut),
                 targetOffsetY = { -it / 3 },
-            ) + fadeOut(animationSpec = tween(durationMillis = 160)),
+            ) + fadeOut(animationSpec = tween(durationMillis = NativeDoDuration.BulletinFadeOut)),
         ) {
             val currentMessage = uiState.currentMessage ?: return@AnimatedVisibility
             val colors = NativeDoThemeExtras.colors

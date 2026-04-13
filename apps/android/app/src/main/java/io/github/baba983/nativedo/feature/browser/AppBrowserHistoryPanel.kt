@@ -37,7 +37,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.baba983.nativedo.R
+import io.github.baba983.nativedo.core.ui.NativeDoDivider
+import io.github.baba983.nativedo.core.ui.NativeDoSectionHeader
 import io.github.baba983.nativedo.ui.theme.NativeDoChromeShape
+import io.github.baba983.nativedo.ui.theme.NativeDoSpacing
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 import java.time.Instant
 import java.time.ZoneId
@@ -70,8 +73,11 @@ internal fun AppBrowserHistoryPanel(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+            .padding(
+                horizontal = NativeDoSpacing.lg,
+                vertical = NativeDoSpacing.md + NativeDoSpacing.xxs,
+            ),
+        verticalArrangement = Arrangement.spacedBy(NativeDoSpacing.md + NativeDoSpacing.xxs),
     ) {
         Surface(
             shape = NativeDoChromeShape,
@@ -127,70 +133,19 @@ internal fun AppBrowserHistoryPanel(
             ) {
                 sections.forEach { section ->
                     item(key = section.label) {
-                        Text(
-                            text = section.label,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = colors.textSecondary,
-                            modifier = Modifier.padding(horizontal = 4.dp),
+                        NativeDoSectionHeader(
+                            title = section.label,
                         )
                     }
                     items(
                         items = section.entries,
                         key = { entry -> "${entry.url}-${entry.visitedAtMillis}" },
                     ) { entry ->
-                        Surface(
+                        AppBrowserHistoryRow(
+                            entry = entry,
+                            onClick = { onEntryClick(entry) },
                             modifier = Modifier.fillMaxWidth(),
-                            shape = NativeDoChromeShape,
-                            color = colors.glassBackgroundStrong.copy(alpha = 0.92f),
-                            tonalElevation = 0.dp,
-                            shadowElevation = 0.dp,
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onEntryClick(entry) }
-                                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .clip(CircleShape)
-                                        .background(
-                                            color = colors.glassBackground,
-                                            shape = CircleShape,
-                                        ),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    AppBrowserHistoryPanelIcon(entry = entry)
-                                }
-                                Column(
-                                    modifier = Modifier.weight(1f),
-                                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                                ) {
-                                    Text(
-                                        text = entry.title,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = colors.textPrimary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    Text(
-                                        text = entry.host,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = colors.textSecondary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                                Text(
-                                    text = formatAppBrowserHistoryTime(entry.visitedAtMillis),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = colors.textSecondary,
-                                )
-                            }
-                        }
+                        )
                     }
                 }
             }
@@ -199,36 +154,122 @@ internal fun AppBrowserHistoryPanel(
 }
 
 @Composable
-private fun AppBrowserHistoryPanelIcon(
+internal fun AppBrowserHistoryRow(
     entry: AppBrowserHistoryEntry,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    showDivider: Boolean = false,
 ) {
     val colors = NativeDoThemeExtras.colors
-    val favicon = remember(entry.favicon) { entry.favicon }
-    if (favicon != null) {
-        Image(
-            bitmap = favicon.asImageBitmap(),
-            contentDescription = null,
-            modifier = Modifier.size(32.dp),
-        )
-        return
-    }
 
-    val fallbackText = remember(entry.title, entry.host) {
-        entry.title.ifBlank { entry.host }.trim().firstOrNull()?.uppercase() ?: ""
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = NativeDoChromeShape,
+        color = colors.glassBackgroundStrong.copy(alpha = 0.92f),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onClick)
+                    .padding(
+                        horizontal = NativeDoSpacing.md + NativeDoSpacing.xxs,
+                        vertical = NativeDoSpacing.md,
+                    ),
+                horizontalArrangement = Arrangement.spacedBy(NativeDoSpacing.md),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AppBrowserHistoryBadge(
+                    title = entry.title,
+                    host = entry.host,
+                    favicon = entry.favicon,
+                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(NativeDoSpacing.xs),
+                ) {
+                    Text(
+                        text = entry.title.ifBlank { entry.host },
+                        style = MaterialTheme.typography.titleSmall,
+                        color = colors.textPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = entry.url,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.textSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Text(
+                    text = appBrowserHistoryRowTimeLabel(entry.visitedAtMillis),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.textSecondary,
+                    maxLines = 1,
+                )
+            }
+
+            if (showDivider) {
+                NativeDoDivider(
+                    startIndent = 58.dp,
+                    alpha = 0.18f,
+                )
+            }
+        }
     }
-    if (fallbackText.isNotBlank()) {
-        Text(
-            text = fallbackText,
-            style = MaterialTheme.typography.labelLarge,
-            color = colors.textPrimary,
-            maxLines = 1,
-        )
-    } else {
-        Icon(
-            imageVector = Icons.Outlined.History,
-            contentDescription = null,
-            tint = colors.textPrimary,
-        )
+}
+
+@Composable
+private fun AppBrowserHistoryBadge(
+    title: String,
+    host: String,
+    favicon: android.graphics.Bitmap?,
+    modifier: Modifier = Modifier,
+) {
+    val colors = NativeDoThemeExtras.colors
+
+    Box(
+        modifier = modifier
+            .size(32.dp)
+            .clip(CircleShape)
+            .background(
+                color = colors.glassBackground,
+                shape = CircleShape,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (favicon != null) {
+            Image(
+                bitmap = favicon.asImageBitmap(),
+                contentDescription = null,
+                modifier = Modifier.size(32.dp),
+            )
+        } else {
+            val fallbackText = remember(title, host) {
+                appBrowserHistoryBadgeLabel(
+                    title = title,
+                    host = host,
+                )
+            }
+            if (fallbackText.isNotBlank() && fallbackText != "•") {
+                Text(
+                    text = fallbackText,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = colors.textPrimary,
+                    maxLines = 1,
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Outlined.History,
+                    contentDescription = null,
+                    tint = colors.textPrimary,
+                )
+            }
+        }
     }
 }
 
@@ -275,11 +316,35 @@ internal fun groupAppBrowserHistoryEntries(
         }
 }
 
-internal fun formatAppBrowserHistoryTime(
-    visitedAtMillis: Long,
+internal fun appBrowserHistoryBadgeLabel(
+    title: String,
+    host: String,
 ): String {
-    val formatter = DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault())
-    return Instant.ofEpochMilli(visitedAtMillis)
-        .atZone(ZoneId.systemDefault())
-        .format(formatter)
+    val source = title.ifBlank { host }.trim()
+    return source.firstOrNull()
+        ?.uppercaseChar()
+        ?.toString()
+        ?: "•"
+}
+
+internal fun appBrowserHistoryRowTimeLabel(
+    visitedAtMillis: Long,
+    nowMillis: Long = System.currentTimeMillis(),
+    zoneId: ZoneId = ZoneId.systemDefault(),
+    locale: Locale = Locale.getDefault(),
+): String {
+    val visitedAt = Instant.ofEpochMilli(visitedAtMillis).atZone(zoneId)
+    val now = Instant.ofEpochMilli(nowMillis).atZone(zoneId)
+
+    return when {
+        visitedAt.toLocalDate() == now.toLocalDate() -> {
+            DateTimeFormatter.ofPattern("HH:mm", locale).format(visitedAt)
+        }
+        visitedAt.toLocalDate() == now.toLocalDate().minusDays(1) -> {
+            "Yesterday"
+        }
+        else -> {
+            DateTimeFormatter.ofPattern("MMM d", locale).format(visitedAt)
+        }
+    }
 }

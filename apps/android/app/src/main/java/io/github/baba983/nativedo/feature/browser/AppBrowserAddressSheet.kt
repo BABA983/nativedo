@@ -25,11 +25,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
+import io.github.baba983.nativedo.R
+import io.github.baba983.nativedo.ui.theme.NativeDoSpacing
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 
 @Composable
@@ -55,7 +58,7 @@ internal fun AppBrowserAddressSheet(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .appBrowserTopBarOffset()
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = NativeDoSpacing.lg)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -69,11 +72,11 @@ internal fun AppBrowserAddressSheet(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                    .padding(NativeDoSpacing.lg),
+                verticalArrangement = Arrangement.spacedBy(NativeDoSpacing.md),
             ) {
                 Text(
-                    text = "输入链接或搜索内容",
+                    text = stringResource(R.string.app_browser_address_title),
                     style = MaterialTheme.typography.titleMedium,
                     color = colors.textPrimary,
                 )
@@ -87,7 +90,7 @@ internal fun AppBrowserAddressSheet(
                     singleLine = true,
                     placeholder = {
                         Text(
-                            text = "https://linux.do 或搜索词",
+                            text = stringResource(R.string.app_browser_address_placeholder),
                             color = colors.textSecondary,
                         )
                     },
@@ -97,7 +100,7 @@ internal fun AppBrowserAddressSheet(
                                 onAction(AppBrowserAction.SubmitAddress(state.draft))
                             },
                         ) {
-                            Text(text = "前往")
+                            Text(text = stringResource(R.string.app_browser_address_submit))
                         }
                     },
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
@@ -121,7 +124,7 @@ internal fun AppBrowserAddressSheet(
 
                 if (state.recentEntries.isNotEmpty()) {
                     Text(
-                        text = "最近访问",
+                        text = stringResource(R.string.app_browser_recent_links),
                         style = MaterialTheme.typography.labelLarge,
                         color = colors.textSecondary,
                     )

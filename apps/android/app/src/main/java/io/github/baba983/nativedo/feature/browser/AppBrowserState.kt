@@ -385,7 +385,7 @@ internal fun buildAppBrowserScrollChromeBackgroundState(
         return AppBrowserScrollChromeBackgroundState(
             fillFraction = 0f,
             fillAlpha = 0f,
-            dividerAlpha = 0.16f,
+            dividerAlpha = 0.10f,
         )
     }
 
@@ -393,7 +393,7 @@ internal fun buildAppBrowserScrollChromeBackgroundState(
     return AppBrowserScrollChromeBackgroundState(
         fillFraction = progress,
         fillAlpha = lerpAppBrowserVisual(0f, 0.18f, progress),
-        dividerAlpha = lerpAppBrowserVisual(0.16f, 0.24f, progress),
+        dividerAlpha = lerpAppBrowserVisual(0.10f, 0.16f, progress),
     )
 }
 

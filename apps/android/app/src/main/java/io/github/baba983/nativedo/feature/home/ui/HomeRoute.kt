@@ -8,7 +8,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -57,13 +56,16 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.baba983.nativedo.NativeDoApplication
+import io.github.baba983.nativedo.R
 import io.github.baba983.nativedo.core.ui.LocalBulletinHostState
+import io.github.baba983.nativedo.core.ui.NativeDoSearchField
 import io.github.baba983.nativedo.core.ui.RequestErrorCard
 import io.github.baba983.nativedo.core.ui.requestErrorBulletin
 import io.github.baba983.nativedo.core.ui.requestErrorPresentation
@@ -76,12 +78,13 @@ import io.github.baba983.nativedo.feature.search.ui.SearchScreen
 import io.github.baba983.nativedo.feature.search.ui.rememberSearchViewModel
 import io.github.baba983.nativedo.ui.NativeDoPullToRefreshIndicator
 import io.github.baba983.nativedo.ui.theme.NativeDoChromeShape
+import io.github.baba983.nativedo.ui.theme.NativeDoDuration
+import io.github.baba983.nativedo.ui.theme.NativeDoEasing
 import io.github.baba983.nativedo.ui.theme.NativeDoPillShape
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 
 private const val HOME_HEADER_SEARCH_THRESHOLD = 0.98f
 private const val HOME_LOAD_MORE_THRESHOLD = 5
-private val HOME_SEARCH_FIELD_HEIGHT = 48.dp
 private val HOME_SEARCH_CONTAINER_HEIGHT = 64.dp
 private val HOME_TABS_CONTAINER_HEIGHT = 52.dp
 
@@ -224,15 +227,31 @@ fun HomeRoute(
         modifier = modifier.fillMaxSize(),
         transitionSpec = {
             (
-                fadeIn(animationSpec = tween(durationMillis = 220)) +
+                fadeIn(
+                    animationSpec = tween(
+                        durationMillis = NativeDoDuration.ContentEnter,
+                        easing = NativeDoEasing.Standard,
+                    ),
+                ) +
                     scaleIn(
-                        animationSpec = tween(durationMillis = 220),
+                        animationSpec = tween(
+                            durationMillis = NativeDoDuration.ContentEnter,
+                            easing = NativeDoEasing.Standard,
+                        ),
                         initialScale = 0.985f,
                     )
                 ) togetherWith (
-                fadeOut(animationSpec = tween(durationMillis = 180)) +
+                fadeOut(
+                    animationSpec = tween(
+                        durationMillis = NativeDoDuration.ContentExit,
+                        easing = NativeDoEasing.Standard,
+                    ),
+                ) +
                     scaleOut(
-                        animationSpec = tween(durationMillis = 180),
+                        animationSpec = tween(
+                            durationMillis = NativeDoDuration.ContentExit,
+                            easing = NativeDoEasing.Standard,
+                        ),
                         targetScale = 0.985f,
                     )
                 )
@@ -243,7 +262,6 @@ fun HomeRoute(
             SearchScreen(
                 uiState = searchUiState,
                 categories = categories,
-                cookieStore = appContainer.cookieStore,
                 baseUrl = appContainer.baseUrl,
                 onQueryChanged = searchViewModel::onQueryChanged,
                 onQuerySubmitted = searchViewModel::onQuerySubmitted,
@@ -259,7 +277,6 @@ fun HomeRoute(
                 categories = categories,
                 listState = listState,
                 forceShowSearchField = forceShowSearchField,
-                cookieStore = appContainer.cookieStore,
                 baseUrl = appContainer.baseUrl,
                 onTopicClick = onTopicClick,
                 onFeedSelected = viewModel::onFeedSelected,
@@ -284,7 +301,6 @@ private fun HomeFeedContent(
     categories: Map<Int, io.github.baba983.nativedo.core.model.CategorySummary>,
     listState: LazyListState,
     forceShowSearchField: Boolean,
-    cookieStore: io.github.baba983.nativedo.core.storage.CookieStore,
     baseUrl: String,
     onTopicClick: (Long) -> Unit,
     onFeedSelected: (HomeFeedTab) -> Unit,
@@ -544,8 +560,6 @@ private fun HomeSearchEntry(
         stop = colors.backgroundElevated,
         fraction = 0.34f,
     ).copy(alpha = 0.96f)
-    val fieldColor = colors.backgroundElevated.copy(alpha = 0.98f)
-
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -564,41 +578,16 @@ private fun HomeSearchEntry(
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.34f),
         )
 
-        Surface(
+        NativeDoSearchField(
+            value = "",
+            onValueChange = {},
             modifier = Modifier
                 .padding(horizontal = 16.dp, vertical = 8.dp)
-                .fillMaxWidth()
-                .height(HOME_SEARCH_FIELD_HEIGHT)
-                .clickable(onClick = onClick),
-            shape = NativeDoChromeShape,
-            color = fieldColor,
-            border = BorderStroke(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-            ),
-            shadowElevation = 0.dp,
-            tonalElevation = 0.dp,
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.Search,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = colors.textSecondary,
-                )
-                Text(
-                    text = "Search linux.do",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.textSecondary,
-                )
-            }
-        }
+                .fillMaxWidth(),
+            placeholder = stringResource(R.string.app_search_placeholder),
+            readOnly = true,
+            onClick = onClick,
+        )
     }
 }
 

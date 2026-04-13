@@ -1,6 +1,8 @@
 package io.github.baba983.nativedo.feature.browser
 
 import com.google.common.truth.Truth.assertThat
+import java.time.ZoneId
+import java.util.Locale
 import org.junit.Test
 
 class AppBrowserHistoryPanelStateTest {
@@ -51,5 +53,61 @@ class AppBrowserHistoryPanelStateTest {
         )
 
         assertThat(groups.map { group -> group.label }).containsAtLeast("Today", "Yesterday")
+    }
+
+    @Test
+    fun badgeLabel_usesTitleFirstLetterWhenAvailable() {
+        assertThat(
+            appBrowserHistoryBadgeLabel(
+                title = "Linux.do topic",
+                host = "linux.do",
+            ),
+        ).isEqualTo("L")
+    }
+
+    @Test
+    fun badgeLabel_fallsBackToHostWhenTitleIsBlank() {
+        assertThat(
+            appBrowserHistoryBadgeLabel(
+                title = "",
+                host = "cdk.linux.do",
+            ),
+        ).isEqualTo("C")
+    }
+
+    @Test
+    fun timeLabel_showsHourMinuteForToday() {
+        assertThat(
+            appBrowserHistoryRowTimeLabel(
+                visitedAtMillis = 1_710_000_000_000L,
+                nowMillis = 1_710_000_100_000L,
+                zoneId = ZoneId.of("UTC"),
+                locale = Locale.US,
+            ),
+        ).isEqualTo("16:00")
+    }
+
+    @Test
+    fun timeLabel_showsYesterdayForPreviousDay() {
+        assertThat(
+            appBrowserHistoryRowTimeLabel(
+                visitedAtMillis = 1_709_913_600_000L,
+                nowMillis = 1_710_000_000_000L,
+                zoneId = ZoneId.of("UTC"),
+                locale = Locale.US,
+            ),
+        ).isEqualTo("Yesterday")
+    }
+
+    @Test
+    fun timeLabel_showsMonthDayForOlderEntries() {
+        assertThat(
+            appBrowserHistoryRowTimeLabel(
+                visitedAtMillis = 1_709_222_400_000L,
+                nowMillis = 1_710_000_000_000L,
+                zoneId = ZoneId.of("UTC"),
+                locale = Locale.US,
+            ),
+        ).isEqualTo("Feb 29")
     }
 }

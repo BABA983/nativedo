@@ -73,6 +73,8 @@ import io.github.baba983.nativedo.navigation.NativeDoNavHost
 import io.github.baba983.nativedo.navigation.RootDestination
 import io.github.baba983.nativedo.navigation.buildAppBrowserRoute
 import io.github.baba983.nativedo.ui.theme.NativeDoChromeShape
+import io.github.baba983.nativedo.ui.theme.NativeDoDuration
+import io.github.baba983.nativedo.ui.theme.NativeDoEasing
 import io.github.baba983.nativedo.ui.theme.NativeDoPillShape
 import io.github.baba983.nativedo.ui.theme.NativeDoTheme
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
@@ -414,22 +416,34 @@ private fun NativeDoBottomTab(
     val interactionSource = remember { MutableInteractionSource() }
     val iconColor by animateColorAsState(
         targetValue = if (selected) MaterialTheme.colorScheme.primary else colors.textSecondary,
-        animationSpec = tween(durationMillis = 220),
+        animationSpec = tween(
+            durationMillis = NativeDoDuration.ColorBlend,
+            easing = NativeDoEasing.Standard,
+        ),
         label = "bottom_tab_icon",
     )
     val textColor by animateColorAsState(
         targetValue = if (selected) MaterialTheme.colorScheme.primary else colors.textSecondary,
-        animationSpec = tween(durationMillis = 220),
+        animationSpec = tween(
+            durationMillis = NativeDoDuration.ColorBlend,
+            easing = NativeDoEasing.Standard,
+        ),
         label = "bottom_tab_text",
     )
     val backgroundAlpha by animateFloatAsState(
         targetValue = if (selected) 1f else 0f,
-        animationSpec = tween(durationMillis = 220),
+        animationSpec = tween(
+            durationMillis = NativeDoDuration.ColorBlend,
+            easing = NativeDoEasing.Standard,
+        ),
         label = "bottom_tab_background",
     )
     val backgroundScale by animateFloatAsState(
         targetValue = if (selected) 1f else 0.6f,
-        animationSpec = tween(durationMillis = 220),
+        animationSpec = tween(
+            durationMillis = NativeDoDuration.ColorBlend,
+            easing = NativeDoEasing.Standard,
+        ),
         label = "bottom_tab_background_scale",
     )
 

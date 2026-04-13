@@ -190,7 +190,7 @@ class AppBrowserStateTest {
 
         assertThat(state.fillFraction).isEqualTo(0f)
         assertThat(state.fillAlpha).isEqualTo(0f)
-        assertThat(state.dividerAlpha).isEqualTo(0.16f)
+        assertThat(state.dividerAlpha).isEqualTo(0.10f)
     }
 
     @Test
@@ -202,7 +202,7 @@ class AppBrowserStateTest {
 
         assertThat(state.fillFraction).isEqualTo(0.5f)
         assertThat(state.fillAlpha).isWithin(0.0001f).of(0.09f)
-        assertThat(state.dividerAlpha).isWithin(0.0001f).of(0.2f)
+        assertThat(state.dividerAlpha).isWithin(0.0001f).of(0.13f)
     }
 
     @Test
@@ -214,7 +214,7 @@ class AppBrowserStateTest {
 
         assertThat(state.fillFraction).isEqualTo(1f)
         assertThat(state.fillAlpha).isWithin(0.0001f).of(0.18f)
-        assertThat(state.dividerAlpha).isWithin(0.0001f).of(0.24f)
+        assertThat(state.dividerAlpha).isWithin(0.0001f).of(0.16f)
     }
 
     @Test

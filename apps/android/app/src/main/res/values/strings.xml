@@ -10,6 +10,9 @@
     <string name="theme_mode_toggle">Switch theme mode</string>
     <string name="screen_topic">Topic</string>
     <string name="screen_sign_in">Sign In</string>
+    <string name="app_search_placeholder">Search linux.do</string>
+    <string name="app_search_submit">Go</string>
+    <string name="app_search_recent_queries">Recent searches</string>
     <string name="post_image_viewer_close">Close image viewer</string>
     <string name="post_image_viewer_more_actions">More image actions</string>
     <string name="post_image_viewer_action_share">Share</string>
@@ -52,6 +55,9 @@
     <string name="app_browser_history_empty">No browser history yet.</string>
     <string name="app_browser_history_empty_filtered">No matching history entries.</string>
     <string name="app_browser_recent_links">Recent links</string>
+    <string name="app_browser_address_title">Enter a link or search term</string>
+    <string name="app_browser_address_placeholder">https://linux.do or a search term</string>
+    <string name="app_browser_address_submit">Go</string>
     <string name="app_browser_settings_open_history_title">Open History</string>
     <string name="app_browser_settings_open_history_subtitle">Open the full browser history panel.</string>
     <string name="app_browser_settings_clear_history_title">Clear History</string>
