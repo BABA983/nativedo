@@ -101,6 +101,15 @@ data class TopicDto(
     @Serializable(with = TopicTagListSerializer::class)
     val tags: List<String> = emptyList(),
     val posters: List<PosterDto> = emptyList(),
+    @SerialName("highest_post_number")
+    val highestPostNumber: Int = 0,
+    @SerialName("last_read_post_number")
+    val lastReadPostNumber: Int? = null,
+    @SerialName("unread_posts")
+    val unreadPosts: Int = 0,
+    val unseen: Boolean = false,
+    @SerialName("notification_level")
+    val notificationLevel: Int? = null,
 )
 
 @Serializable
@@ -400,6 +409,9 @@ private fun TopicDto.toTopicSummary(
         lastPosterUsername = lastPosterUsername.orEmpty().ifBlank { recentPosterUser?.username.orEmpty() },
         isPinned = pinned,
         tags = tags,
+        unreadCount = if (notificationLevel != null && notificationLevel >= 2) unreadPosts else 0,
+        isUnseen = unseen,
+        isMuted = notificationLevel == 0,
     )
 }
 

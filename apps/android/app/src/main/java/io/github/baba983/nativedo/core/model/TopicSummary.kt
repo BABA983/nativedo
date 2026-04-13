@@ -14,4 +14,7 @@ data class TopicSummary(
     val lastPosterUsername: String = "",
     val isPinned: Boolean = false,
     val tags: List<String> = emptyList(),
+    val unreadCount: Int = 0,
+    val isUnseen: Boolean = false,
+    val isMuted: Boolean = false,
 )

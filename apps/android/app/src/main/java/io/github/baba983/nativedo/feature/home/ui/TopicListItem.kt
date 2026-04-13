@@ -1,13 +1,16 @@
 package io.github.baba983.nativedo.feature.home.ui
 
 import android.graphics.Color as AndroidColor
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Reply
 import androidx.compose.material.icons.outlined.PushPin
@@ -20,7 +23,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.baba983.nativedo.core.model.CategorySummary
@@ -149,6 +154,7 @@ fun TopicListItem(
                         )
                     }
                     TopicStatsRow(topic = topic)
+                    TopicUnreadBadge(topic = topic)
                 }
             }
         }
@@ -302,6 +308,44 @@ internal fun topicRelativeTime(
         duration < Duration.ofDays(1) -> "${duration.toHours()}h"
         duration < Duration.ofDays(7) -> "${duration.toDays()}d"
         else -> postedAt.atZoneSameInstant(zoneId).format(topicListDateFormatter)
+    }
+}
+
+@Composable
+private fun TopicUnreadBadge(
+    topic: TopicSummary,
+    modifier: Modifier = Modifier,
+) {
+    when {
+        topic.unreadCount > 0 -> {
+            val bgColor = if (topic.isMuted) {
+                NativeDoThemeExtras.colors.textSecondary.copy(alpha = 0.4f)
+            } else {
+                MaterialTheme.colorScheme.primary
+            }
+            Surface(
+                modifier = modifier,
+                shape = NativeDoPillShape,
+                color = bgColor,
+            ) {
+                Text(
+                    text = if (topic.unreadCount > 99) "99+" else topic.unreadCount.toString(),
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    maxLines = 1,
+                )
+            }
+        }
+        topic.isUnseen -> {
+            Box(
+                modifier = modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary),
+            )
+        }
     }
 }
 
