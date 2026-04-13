@@ -17,3 +17,6 @@ captures/
 *.keystore
 
 .ace-tool/
+.superpowers/
+.codex/
+.claude/
