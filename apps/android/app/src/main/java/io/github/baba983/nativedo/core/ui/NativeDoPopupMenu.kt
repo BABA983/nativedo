@@ -2,8 +2,10 @@ package io.github.baba983.nativedo.core.ui
 
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -143,7 +145,6 @@ fun NativeDoPopupMenu(
             cascadeStepMillis = popupMotion.cascadeStepMillis,
         )
     }
-    val closeTranslationPx = with(density) { closeTranslationY.toPx() }
     val transition = updateTransition(
         transitionState = transitionState,
         label = "native_do_popup_menu_transition",
@@ -159,17 +160,6 @@ fun NativeDoPopupMenu(
     ) { visible ->
         if (visible) 1f else 0f
     }
-    val translationY by transition.animateFloat(
-        transitionSpec = {
-            androidx.compose.animation.core.tween(
-                durationMillis = popupMotion.close.durationMillis,
-                easing = popupMotion.close.easing,
-            )
-        },
-        label = "native_do_popup_menu_translation_y",
-    ) { visible ->
-        if (visible) 0f else -closeTranslationPx
-    }
 
     Popup(
         popupPositionProvider = popupPositionProvider,
@@ -181,8 +171,6 @@ fun NativeDoPopupMenu(
                 .then(if (width != null) Modifier.width(width) else Modifier)
                 .graphicsLayer {
                     alpha = popupProgress
-                    this.translationY = translationY
-                    scaleY = max(popupProgress, 0.001f)
                     transformOrigin = TransformOrigin(1f, 0f)
                 }
                 .clip(shape),
@@ -205,7 +193,185 @@ fun NativeDoPopupMenu(
 }
 
 @Composable
-fun NativeDoPopupMenuItem(
+fun NativeDoAnchoredPopup(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    modifier: Modifier = Modifier,
+    width: Dp? = null,
+    itemCount: Int = 0,
+    margin: Dp = 12.dp,
+    spacing: Dp = 10.dp,
+    closeTranslationY: Dp = 12.dp,
+    shape: Shape = RoundedCornerShape(22.dp),
+    contentPadding: PaddingValues = PaddingValues(vertical = 8.dp),
+    glassSpec: NativeDoGlassSpec = NativeDoThemeExtras.glass(NativeDoGlassRole.Popup),
+    popupPositionProvider: PopupPositionProvider = rememberNativeDoPopupPositionProvider(
+        margin = margin,
+        spacing = spacing,
+        alignToAnchorTop = true,
+    ),
+    properties: PopupProperties = PopupProperties(
+        focusable = true,
+        dismissOnBackPress = true,
+        dismissOnClickOutside = true,
+        clippingEnabled = false,
+    ),
+    content: @Composable ColumnScope.(popupProgress: Float) -> Unit,
+) {
+    NativeDoPopupMenu(
+        expanded = expanded,
+        onDismissRequest = onDismissRequest,
+        modifier = modifier,
+        width = width,
+        itemCount = itemCount,
+        margin = margin,
+        spacing = spacing,
+        closeTranslationY = closeTranslationY,
+        shape = shape,
+        contentPadding = contentPadding,
+        glassSpec = glassSpec,
+        popupPositionProvider = popupPositionProvider,
+        properties = properties,
+        content = content,
+    )
+}
+
+@Composable
+fun NativeDoContextualOptions(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    modifier: Modifier = Modifier,
+    width: Dp? = null,
+    itemCount: Int = 0,
+    margin: Dp = 12.dp,
+    spacing: Dp = 10.dp,
+    closeTranslationY: Dp = 12.dp,
+    shape: Shape = RoundedCornerShape(24.dp),
+    surfaceTopInset: Dp = 12.dp,
+    contentPadding: PaddingValues = PaddingValues(vertical = 10.dp),
+    glassSpec: NativeDoGlassSpec = NativeDoThemeExtras.glass(NativeDoGlassRole.Popup),
+    popupPositionProvider: PopupPositionProvider = rememberNativeDoPopupPositionProvider(
+        margin = margin,
+        spacing = spacing,
+        alignToAnchorTop = true,
+        horizontalOffset = 4.dp,
+        verticalOffset = (-12).dp,
+    ),
+    properties: PopupProperties = PopupProperties(
+        focusable = true,
+        dismissOnBackPress = true,
+        dismissOnClickOutside = true,
+        clippingEnabled = false,
+    ),
+    content: @Composable ColumnScope.(popupProgress: Float) -> Unit,
+) {
+    val transitionState = remember { MutableTransitionState(false) }
+
+    LaunchedEffect(expanded) {
+        transitionState.targetState = expanded
+    }
+
+    if (!transitionState.currentState && !transitionState.targetState) {
+        return
+    }
+
+    val transition = updateTransition(
+        transitionState = transitionState,
+        label = "native_do_contextual_options_transition",
+    )
+    val popupMotion = NativeDoMotionTheme.scheme.popup
+    val openDuration = remember(itemCount, popupMotion) {
+        nativeDoPopupOpenDuration(
+            itemCount = itemCount,
+            baseDuration = popupMotion.open.durationMillis,
+            cascadeStepMillis = popupMotion.cascadeStepMillis,
+        )
+    }
+    val closeTranslationPx = with(LocalDensity.current) { closeTranslationY.toPx() }
+    val popupAlpha by transition.animateFloat(
+        transitionSpec = {
+            androidx.compose.animation.core.tween(
+                durationMillis = if (targetState) popupMotion.open.durationMillis else popupMotion.close.durationMillis,
+                easing = if (targetState) popupMotion.open.easing else popupMotion.close.easing,
+            )
+        },
+        label = "native_do_contextual_options_popup_alpha",
+    ) { visible ->
+        if (visible) 1f else 0f
+    }
+    val containerScale by transition.animateFloat(
+        transitionSpec = {
+            if (targetState) {
+                spring(
+                    dampingRatio = 0.72f,
+                    stiffness = 560f,
+                )
+            } else {
+                androidx.compose.animation.core.tween(
+                    durationMillis = popupMotion.close.durationMillis,
+                    easing = popupMotion.close.easing,
+                )
+            }
+        },
+        label = "native_do_contextual_options_popup_scale",
+    ) { visible ->
+        if (visible) 1f else 0.95f
+    }
+    val popupProgress by transition.animateFloat(
+        transitionSpec = {
+            androidx.compose.animation.core.tween(
+                durationMillis = if (targetState) openDuration else popupMotion.close.durationMillis,
+                easing = if (targetState) popupMotion.open.easing else popupMotion.close.easing,
+            )
+        },
+        label = "native_do_contextual_options_reveal_progress",
+    ) { visible ->
+        if (visible) 1f else 0f
+    }
+
+    Popup(
+        popupPositionProvider = popupPositionProvider,
+        onDismissRequest = onDismissRequest,
+        properties = properties,
+    ) {
+        Box(
+            modifier = modifier
+                .then(if (width != null) Modifier.width(width) else Modifier)
+                .graphicsLayer {
+                    alpha = popupAlpha
+                    translationY = -closeTranslationPx * (1f - popupProgress) * 0.28f
+                    scaleX = containerScale
+                    scaleY = containerScale
+                    transformOrigin = TransformOrigin(1f, 1f)
+                }
+        ) {
+            Surface(
+                modifier = Modifier
+                    .padding(top = surfaceTopInset)
+                    .clip(shape),
+                shape = shape,
+                color = glassSpec.containerColor,
+                border = BorderStroke(
+                    width = 1.dp,
+                    color = glassSpec.borderColor.copy(
+                        alpha = max(glassSpec.borderColor.alpha, 0.12f),
+                    ),
+                ),
+                tonalElevation = glassSpec.tonalElevation,
+                shadowElevation = glassSpec.shadowElevation,
+            ) {
+                Column(
+                    modifier = Modifier.padding(contentPadding),
+                ) {
+                    content(popupProgress)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun NativeDoPopupMenuItem(
     label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -217,12 +383,13 @@ fun NativeDoPopupMenuItem(
     popupProgress: Float = 1f,
     contentPadding: PaddingValues = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
     glassSpec: NativeDoGlassSpec = NativeDoThemeExtras.glass(NativeDoGlassRole.Popup),
+    paletteOverride: NativeDoPopupPalette? = null,
     trailing: (@Composable RowScope.() -> Unit)? = null,
 ) {
     val density = LocalDensity.current
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
-    val palette = rememberNativeDoPopupPalette(glassSpec = glassSpec)
+    val palette = paletteOverride ?: rememberNativeDoPopupPalette(glassSpec = glassSpec)
     val rowProgress = remember(index, itemCount, popupProgress) {
         nativeDoPopupCascadeProgress(
             fullAnimationT = popupProgress,
@@ -252,7 +419,7 @@ fun NativeDoPopupMenuItem(
             )
             .clickable(
                 interactionSource = interactionSource,
-                indication = null,
+                indication = LocalIndication.current,
                 enabled = enabled,
                 onClick = onClick,
             )
@@ -354,12 +521,18 @@ fun NativeDoPopupAnchorHighlight(
 fun rememberNativeDoPopupPositionProvider(
     margin: Dp = 12.dp,
     spacing: Dp = 10.dp,
+    alignToAnchorTop: Boolean = false,
+    horizontalOffset: Dp = 0.dp,
+    verticalOffset: Dp = 0.dp,
 ): PopupPositionProvider {
     val density = LocalDensity.current
-    return remember(density, margin, spacing) {
+    return remember(density, margin, spacing, alignToAnchorTop, horizontalOffset, verticalOffset) {
         NativeDoPopupPositionProvider(
             margin = with(density) { margin.roundToPx() },
             spacing = with(density) { spacing.roundToPx() },
+            alignToAnchorTop = alignToAnchorTop,
+            horizontalOffset = with(density) { horizontalOffset.roundToPx() },
+            verticalOffset = with(density) { verticalOffset.roundToPx() },
         )
     }
 }
@@ -384,9 +557,36 @@ fun nativeDoPopupCascadeProgress(
     return ((fullAnimationT - waveOffset) / waveDuration).coerceIn(0f, 1f)
 }
 
+fun calculateNativeDoPopupOffset(
+    anchorBounds: IntRect,
+    windowSize: IntSize,
+    popupSize: IntSize,
+    margin: Int,
+    spacing: Int,
+    alignToAnchorTop: Boolean = false,
+    horizontalOffset: Int = 0,
+    verticalOffset: Int = 0,
+): IntOffset {
+    val maxX = (windowSize.width - popupSize.width - margin).coerceAtLeast(margin)
+    val maxY = (windowSize.height - popupSize.height - margin).coerceAtLeast(margin)
+    val preferredX = anchorBounds.right - popupSize.width + horizontalOffset
+    val preferredY = if (alignToAnchorTop) {
+        anchorBounds.top + verticalOffset
+    } else {
+        anchorBounds.bottom + spacing + verticalOffset
+    }
+    return IntOffset(
+        x = preferredX.coerceIn(margin, maxX),
+        y = preferredY.coerceIn(margin, maxY),
+    )
+}
+
 private class NativeDoPopupPositionProvider(
     private val margin: Int,
     private val spacing: Int,
+    private val alignToAnchorTop: Boolean,
+    private val horizontalOffset: Int,
+    private val verticalOffset: Int,
 ) : PopupPositionProvider {
     override fun calculatePosition(
         anchorBounds: IntRect,
@@ -394,13 +594,15 @@ private class NativeDoPopupPositionProvider(
         layoutDirection: LayoutDirection,
         popupContentSize: IntSize,
     ): IntOffset {
-        val maxX = (windowSize.width - popupContentSize.width - margin).coerceAtLeast(margin)
-        val maxY = (windowSize.height - popupContentSize.height - margin).coerceAtLeast(margin)
-        val preferredX = anchorBounds.right - popupContentSize.width
-        val preferredY = anchorBounds.bottom + spacing
-        return IntOffset(
-            x = preferredX.coerceIn(margin, maxX),
-            y = preferredY.coerceIn(margin, maxY),
+        return calculateNativeDoPopupOffset(
+            anchorBounds = anchorBounds,
+            windowSize = windowSize,
+            popupSize = popupContentSize,
+            margin = margin,
+            spacing = spacing,
+            alignToAnchorTop = alignToAnchorTop,
+            horizontalOffset = horizontalOffset,
+            verticalOffset = verticalOffset,
         )
     }
 }

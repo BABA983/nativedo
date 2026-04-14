@@ -24,6 +24,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -74,7 +75,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -101,6 +101,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.foundation.layout.WindowInsets
 import io.github.baba983.nativedo.R
 import io.github.baba983.nativedo.core.ui.NativeDoAnimatedLabel
+import io.github.baba983.nativedo.core.ui.NativeDoAnchoredPopup
 import io.github.baba983.nativedo.core.ui.NativeDoBackIcon
 import io.github.baba983.nativedo.core.ui.NativeDoChromeIconButton
 import io.github.baba983.nativedo.core.ui.NativeDoGlassBar
@@ -181,8 +182,9 @@ internal fun AppBrowserTopBar(
     val colors = NativeDoThemeExtras.colors
     val hasBackHistoryEntries = chrome.backHistoryEntries.isNotEmpty()
     val hasBrowserHistoryEntries = chrome.browserHistoryEntries.isNotEmpty()
+    val chromeScene = chrome.scene
     val progress = chrome.progress.coerceIn(0f, 1f)
-    val isSearching = search.isActive
+    val isSearching = chromeScene == AppBrowserChromeScene.Search
     val scrollProgress = if (isSearching) {
         0f
     } else {
@@ -199,14 +201,17 @@ internal fun AppBrowserTopBar(
     val scrollProgressFillColor = colors.accent.copy(alpha = scrollChromeState.fillAlpha)
     val topBarAlpha = chrome.alpha
     val topBarTranslationX = chrome.translationX
-    val isInSubPanel = chrome.isInSubPanel
-    val isAddressEditing = address.isEditing
-    val showMenuButton = !isSearching && !isInSubPanel && !isAddressEditing
+    val isInSubPanel = chromeScene == AppBrowserChromeScene.Subpanel
+    val isAddressEditing = chromeScene == AppBrowserChromeScene.AddressEditing
+    val historyExpanded = chromeScene == AppBrowserChromeScene.HistoryPopup
+    val menuExpanded = chromeScene == AppBrowserChromeScene.OverflowMenu
+    val showMenuButton = chromeScene == AppBrowserChromeScene.Browse ||
+        chromeScene == AppBrowserChromeScene.HistoryPopup ||
+        chromeScene == AppBrowserChromeScene.OverflowMenu
     var searchFocusToken by remember { mutableIntStateOf(0) }
     var addressFocusToken by remember { mutableIntStateOf(0) }
-    var menuExpanded by remember { mutableStateOf(false) }
-    val historyExpanded = chrome.isHistoryPopupVisible
-    val showBackButton = isSearching || isInSubPanel || historyExpanded || isAddressEditing
+    val showBackButton = chromeScene != AppBrowserChromeScene.Browse &&
+        chromeScene != AppBrowserChromeScene.OverflowMenu
     val showCloseButton = !showBackButton
     val searchTransition = updateTransition(
         targetState = isSearching,
@@ -307,7 +312,7 @@ internal fun AppBrowserTopBar(
 
     LaunchedEffect(isSearching, isInSubPanel, isAddressEditing) {
         if (isSearching || isInSubPanel || isAddressEditing) {
-            menuExpanded = false
+            onAction(AppBrowserAction.SetOverflowMenuVisible(false))
         }
         if (isSearching) {
             onAction(AppBrowserAction.SetHistoryPopupVisible(false))
@@ -406,7 +411,7 @@ internal fun AppBrowserTopBar(
                                         },
                                         onLongClick = if (hasBackHistoryEntries && !isSearching && !isInSubPanel) {
                                             {
-                                                menuExpanded = false
+                                                onAction(AppBrowserAction.SetOverflowMenuVisible(false))
                                                 onAction(AppBrowserAction.SetHistoryPopupVisible(true))
                                             }
                                         } else {
@@ -487,22 +492,25 @@ internal fun AppBrowserTopBar(
                                     modifier = Modifier.width(44.dp),
                                 ) {
                                     if (showMenuButton) {
-                                        AppBrowserChromeButton(
-                                            onClick = {
-                                                onAction(AppBrowserAction.SetHistoryPopupVisible(false))
-                                                menuExpanded = true
-                                            },
-                                            imageVector = Icons.Outlined.MoreVert,
-                                            contentDescription = stringResource(R.string.app_browser_more_actions),
-                                            emphasized = menuExpanded,
-                                            modifier = Modifier.align(Alignment.Center),
-                                        )
+                                        Box {
+                                            AppBrowserChromeButton(
+                                                onClick = {
+                                                    onAction(AppBrowserAction.SetHistoryPopupVisible(false))
+                                                    onAction(AppBrowserAction.SetOverflowMenuVisible(!menuExpanded))
+                                                },
+                                                imageVector = Icons.Outlined.MoreVert,
+                                                contentDescription = stringResource(R.string.app_browser_more_actions),
+                                                modifier = Modifier.align(Alignment.Center),
+                                            )
+                                        }
                                         AppBrowserActionPopup(
                                             expanded = menuExpanded,
                                             entries = menuEntries,
-                                            onDismissRequest = { menuExpanded = false },
+                                            onDismissRequest = {
+                                                onAction(AppBrowserAction.SetOverflowMenuVisible(false))
+                                            },
                                             onActionClick = { action ->
-                                                menuExpanded = false
+                                                onAction(AppBrowserAction.SetOverflowMenuVisible(false))
                                                 when (action) {
                                                     AppBrowserMenuAction.Search -> onAction(AppBrowserAction.StartSearch)
                                                     AppBrowserMenuAction.History -> onAction(AppBrowserAction.OpenHistory)
@@ -1097,7 +1105,6 @@ internal fun AppBrowserChromeButton(
                 emphasized = emphasized,
             ),
         )
-
         Surface(
             modifier = modifier.size(44.dp),
             shape = CircleShape,
@@ -1117,7 +1124,7 @@ internal fun AppBrowserChromeButton(
                     .heightIn(min = 44.dp)
                     .combinedClickable(
                         interactionSource = interactionSource,
-                        indication = null,
+                        indication = LocalIndication.current,
                         onClick = onClick,
                         onLongClick = onLongClick,
                         enabled = enabled,
@@ -1370,9 +1377,9 @@ private fun AppBrowserHistoryPopup(
         return
     }
 
-    val popupGlass = NativeDoThemeExtras.glass(NativeDoGlassRole.Popup)
+    val popupGlass = rememberAppBrowserPopupGlass()
     val palette = rememberNativeDoPopupPalette(glassSpec = popupGlass)
-    NativeDoPopupMenu(
+    NativeDoAnchoredPopup(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
         width = appBrowserHistoryPopupWidth,
@@ -1381,6 +1388,7 @@ private fun AppBrowserHistoryPopup(
         spacing = appBrowserPopupSpacing,
         closeTranslationY = appBrowserPopupCloseTranslation,
         shape = RoundedCornerShape(appBrowserPopupCornerRadius),
+        contentPadding = PaddingValues(vertical = 0.dp),
         glassSpec = popupGlass,
     ) { popupProgress ->
         Box(modifier = Modifier.width(appBrowserHistoryPopupWidth)) {
@@ -1419,8 +1427,9 @@ internal fun AppBrowserActionPopup(
         entries.count { it is AppBrowserMenuEntry.Item }
     }
     val dividerMetrics = remember { appBrowserPopupDividerMetrics() }
-    val popupGlass = NativeDoThemeExtras.glass(NativeDoGlassRole.Popup)
-    NativeDoPopupMenu(
+    val popupGlass = rememberAppBrowserPopupGlass()
+    val palette = rememberNativeDoPopupPalette(glassSpec = popupGlass)
+    NativeDoAnchoredPopup(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
         width = appBrowserPopupWidth,
@@ -1429,6 +1438,7 @@ internal fun AppBrowserActionPopup(
         spacing = appBrowserPopupSpacing,
         closeTranslationY = appBrowserPopupCloseTranslation,
         shape = RoundedCornerShape(appBrowserPopupCornerRadius),
+        contentPadding = PaddingValues(vertical = 0.dp),
         glassSpec = popupGlass,
     ) { popupProgress ->
         Box(modifier = Modifier.width(appBrowserPopupWidth)) {
@@ -1441,6 +1451,7 @@ internal fun AppBrowserActionPopup(
                         AppBrowserMenuEntry.Divider -> NativeDoPopupMenuDivider(
                             spacing = dividerMetrics.spacing,
                             gapHeight = dividerMetrics.gapHeight,
+                            color = appBrowserPopupDividerColor(popupGlass),
                         )
                         is AppBrowserMenuEntry.Item -> {
                             NativeDoPopupMenuItem(
@@ -1450,7 +1461,9 @@ internal fun AppBrowserActionPopup(
                                 index = itemIndex,
                                 itemCount = itemCount.coerceAtLeast(1),
                                 popupProgress = popupProgress,
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 9.dp),
                                 glassSpec = popupGlass,
+                                paletteOverride = palette,
                                 onClick = { onActionClick(entry.item.action) },
                             )
                             itemIndex += 1
@@ -1471,6 +1484,33 @@ private fun AppBrowserHistoryAnchorHighlight(
         visible = visible,
         modifier = modifier,
     )
+}
+
+@Composable
+private fun rememberAppBrowserPopupGlass(): io.github.baba983.nativedo.ui.theme.NativeDoGlassSpec {
+    val basePopup = NativeDoThemeExtras.glass(NativeDoGlassRole.Popup)
+    val chromeGlass = NativeDoThemeExtras.glass(NativeDoGlassRole.Chrome)
+    return remember(basePopup, chromeGlass) {
+        val useLightPopup = chromeGlass.containerColor.luminance() > 0.72f
+        if (useLightPopup) {
+            basePopup.copy(
+                containerColor = Color.White.copy(alpha = 0.985f),
+                borderColor = Color.Black.copy(alpha = 0.08f),
+            )
+        } else {
+            basePopup.copy(
+                containerColor = Color(0xFF181819).copy(alpha = 0.985f),
+                borderColor = Color.White.copy(alpha = 0.08f),
+            )
+        }
+    }
+}
+private fun appBrowserPopupDividerColor(
+    glassSpec: io.github.baba983.nativedo.ui.theme.NativeDoGlassSpec,
+): Color = if (glassSpec.containerColor.luminance() > 0.72f) {
+    Color.Black.copy(alpha = 0.06f)
+} else {
+    Color.White.copy(alpha = 0.08f)
 }
 
 @Composable
@@ -1648,16 +1688,16 @@ private fun AppBrowserMenuAction.icon(): ImageVector = when (this) {
     AppBrowserMenuAction.Close -> Icons.Outlined.Close
 }
 
-private val appBrowserPopupWidth = 200.dp
+private val appBrowserPopupWidth = 204.dp
 private val appBrowserHistoryPopupWidth = 252.dp
 private val appBrowserHistoryPopupMaxHeight = 320.dp
 private val appBrowserHistoryPopupRowMinHeight = 54.dp
-private val appBrowserPopupVerticalPadding = 5.dp
+private val appBrowserPopupVerticalPadding = 2.dp
 private val appBrowserPopupMargin = 12.dp
-private val appBrowserPopupSpacing = 6.dp
-private val appBrowserPopupCornerRadius = 14.dp
-private val appBrowserPopupChildStartTranslation = 6.dp
-private val appBrowserPopupCloseTranslation = 6.dp
+private val appBrowserPopupSpacing = 2.dp
+private val appBrowserPopupCornerRadius = 18.dp
+private val appBrowserPopupChildStartTranslation = 5.dp
+private val appBrowserPopupCloseTranslation = 0.dp
 internal data class AppBrowserProgressMetrics(
     val height: androidx.compose.ui.unit.Dp,
     val trackAlpha: Float,

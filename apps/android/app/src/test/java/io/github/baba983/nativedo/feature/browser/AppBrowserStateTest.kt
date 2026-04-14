@@ -13,6 +13,45 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class AppBrowserStateTest {
     @Test
+    fun appBrowserChromeScene_returnsBrowseWhenNoTransientStateIsActive() {
+        val scene = resolveAppBrowserChromeScene(
+            isSearching = false,
+            isAddressEditing = false,
+            isHistoryPopupVisible = false,
+            isOverflowMenuVisible = false,
+            isInSubPanel = false,
+        )
+
+        assertThat(scene).isEqualTo(AppBrowserChromeScene.Browse)
+    }
+
+    @Test
+    fun appBrowserChromeScene_prioritizesAddressEditingOverOtherScenes() {
+        val scene = resolveAppBrowserChromeScene(
+            isSearching = true,
+            isAddressEditing = true,
+            isHistoryPopupVisible = true,
+            isOverflowMenuVisible = true,
+            isInSubPanel = true,
+        )
+
+        assertThat(scene).isEqualTo(AppBrowserChromeScene.AddressEditing)
+    }
+
+    @Test
+    fun appBrowserChromeScene_reportsOverflowMenuWhenOnlyMenuIsExpanded() {
+        val scene = resolveAppBrowserChromeScene(
+            isSearching = false,
+            isAddressEditing = false,
+            isHistoryPopupVisible = false,
+            isOverflowMenuVisible = true,
+            isInSubPanel = false,
+        )
+
+        assertThat(scene).isEqualTo(AppBrowserChromeScene.OverflowMenu)
+    }
+
+    @Test
     fun appBrowserRoutePresentationState_clampsOffsetAndDerivesProgressAlphaAndBackdrop() {
         val state = buildAppBrowserRoutePresentationState(
             offsetPx = 120f,

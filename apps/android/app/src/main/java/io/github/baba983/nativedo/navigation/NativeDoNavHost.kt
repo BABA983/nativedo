@@ -43,6 +43,7 @@ internal fun NativeDoNavHost(
     homeSearchRequestToken: Int,
     homeRefreshRequestToken: Int,
     onHomeHeaderSearchVisibilityChanged: (Boolean) -> Unit,
+    onHomeSearchModeChanged: (Boolean) -> Unit,
     onTopicHeaderTitleChanged: (String?) -> Unit,
     onOpenLink: (String) -> Unit,
 ) {
@@ -88,6 +89,7 @@ internal fun NativeDoNavHost(
                             headerSearchRequestToken = homeSearchRequestToken,
                             refreshRequestToken = homeRefreshRequestToken,
                             onHeaderSearchVisibilityChanged = onHomeHeaderSearchVisibilityChanged,
+                            onSearchModeChanged = onHomeSearchModeChanged,
                         )
                     }
 

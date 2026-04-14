@@ -26,4 +26,5 @@ internal sealed interface AppBrowserAction {
     data object OpenInBrowser : AppBrowserAction
     data object CopyLink : AppBrowserAction
     data class SetHistoryPopupVisible(val visible: Boolean) : AppBrowserAction
+    data class SetOverflowMenuVisible(val visible: Boolean) : AppBrowserAction
 }

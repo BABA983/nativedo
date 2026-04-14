@@ -212,6 +212,7 @@ internal fun AppBrowserRoute(
     val searchActiveMatchOrdinal = browserUiState.search.activeMatchOrdinal
     val searchNumberOfMatches = browserUiState.search.numberOfMatches
     val historyPopupExpanded = browserUiState.isHistoryPopupVisible
+    val overflowMenuExpanded = browserUiState.isOverflowMenuVisible
     val chromeTitle = when (panel) {
         AppBrowserPanel.Page -> titleText
         AppBrowserPanel.History -> context.getString(R.string.app_browser_history)
@@ -271,8 +272,11 @@ internal fun AppBrowserRoute(
         browserHistoryEntries,
         panel,
         historyPopupExpanded,
+        overflowMenuExpanded,
+        browserUiState.chromeScene,
     ) {
         AppBrowserChromeModel(
+            scene = browserUiState.chromeScene,
             title = chromeTitle,
             subtitle = chromeSubtitle,
             currentUrl = currentUrl,
@@ -289,6 +293,7 @@ internal fun AppBrowserRoute(
             alpha = 1f,
             translationX = 0f,
             isHistoryPopupVisible = historyPopupExpanded,
+            isOverflowMenuVisible = overflowMenuExpanded,
         )
     }
 
@@ -410,6 +415,7 @@ internal fun AppBrowserRoute(
             AppBrowserAction.NavigateBack -> {
                 when {
                     browserUiState.address.isEditing -> browserViewModel.onAction(AppBrowserAction.CancelAddressEditing)
+                    overflowMenuExpanded -> browserViewModel.onAction(AppBrowserAction.SetOverflowMenuVisible(false))
                     historyPopupExpanded -> browserViewModel.onAction(AppBrowserAction.SetHistoryPopupVisible(false))
                     isSearching -> closeSearch()
                     panel != AppBrowserPanel.Page -> browserViewModel.onAction(AppBrowserAction.CloseSheet)
@@ -434,7 +440,8 @@ internal fun AppBrowserRoute(
             AppBrowserAction.StartSearch,
             is AppBrowserAction.UpdateSearchMatches,
             is AppBrowserAction.UpdateAddressDraft,
-            is AppBrowserAction.SetHistoryPopupVisible -> browserViewModel.onAction(action)
+            is AppBrowserAction.SetHistoryPopupVisible,
+            is AppBrowserAction.SetOverflowMenuVisible -> browserViewModel.onAction(action)
 
             AppBrowserAction.CloseSearch -> closeSearch()
             is AppBrowserAction.SubmitAddress -> {
@@ -493,9 +500,12 @@ internal fun AppBrowserRoute(
             refreshSettingsStorageUsage()
         }
     }
-    LaunchedEffect(panel, isSearching, historyPopupExpanded) {
+    LaunchedEffect(panel, isSearching, browserUiState.address.isEditing, historyPopupExpanded, overflowMenuExpanded) {
         if ((panel != AppBrowserPanel.Page || isSearching) && historyPopupExpanded) {
             browserViewModel.onAction(AppBrowserAction.SetHistoryPopupVisible(false))
+        }
+        if ((panel != AppBrowserPanel.Page || isSearching || browserUiState.address.isEditing) && overflowMenuExpanded) {
+            browserViewModel.onAction(AppBrowserAction.SetOverflowMenuVisible(false))
         }
     }
 

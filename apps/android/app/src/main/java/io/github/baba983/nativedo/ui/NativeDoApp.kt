@@ -26,6 +26,8 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -67,8 +69,10 @@ import io.github.baba983.nativedo.core.ui.BulletinHostState
 import io.github.baba983.nativedo.core.ui.LocalBulletinHostState
 import io.github.baba983.nativedo.core.ui.NativeDoAnimatedLabel
 import io.github.baba983.nativedo.core.ui.NativeDoBackIcon
+import io.github.baba983.nativedo.core.ui.NativeDoContextualOptions
 import io.github.baba983.nativedo.core.ui.NativeDoGlassBar
 import io.github.baba983.nativedo.core.ui.NativeDoGlassTab
+import io.github.baba983.nativedo.core.ui.NativeDoPopupMenuItem
 import io.github.baba983.nativedo.core.ui.UserAvatar
 import io.github.baba983.nativedo.feature.auth.ui.AuthRestoreGate
 import io.github.baba983.nativedo.feature.auth.ui.shouldShowAuthRestoreGate
@@ -102,8 +106,11 @@ fun NativeDoApp() {
     val sessionState by appContainer.sessionCoordinator.sessionState.collectAsStateWithLifecycle()
     var themeMode by rememberSaveable { mutableStateOf(ThemeMode.System) }
     var homeHeaderSearchVisible by rememberSaveable { mutableStateOf(false) }
+    var homeSearchModeActive by rememberSaveable { mutableStateOf(false) }
     var homeSearchRequestToken by rememberSaveable { mutableIntStateOf(0) }
     var homeRefreshRequestToken by rememberSaveable { mutableIntStateOf(0) }
+    var rootActionModeSelectionCount by rememberSaveable { mutableIntStateOf(0) }
+    var rootContextualOptionsExpanded by rememberSaveable { mutableStateOf(false) }
     var topicHeaderTitle by rememberSaveable { mutableStateOf<String?>(null) }
 
     LaunchedEffect(appContainer.sessionCoordinator) {
@@ -116,9 +123,6 @@ fun NativeDoApp() {
         val currentEntry = navController.currentBackStackEntryAsState().value
         val currentRoute = currentEntry?.destination?.route
         val cachedSessionSnapshot = appContainer.sessionStore.snapshot()
-        val chromeState = remember(sessionState, cachedSessionSnapshot) {
-            NativeDoChromeState.from(sessionState, cachedSessionSnapshot)
-        }
         val sessionSnapshot = sessionSnapshotForChrome(sessionState, cachedSessionSnapshot)
         val profileAvatarLabel = sessionSnapshot?.username
         val profileAvatarTemplate = sessionSnapshot
@@ -160,6 +164,29 @@ fun NativeDoApp() {
         }
         val isAppBrowserRoute = currentRoute == APP_BROWSER_ROUTE
         val isRootRoute = currentRoute == null || currentRoute == RootDestination.rootContainerRoute
+        val rootChromeModel = remember(
+            isRootRoute,
+            activeRoute,
+            homeHeaderSearchVisible,
+            homeSearchModeActive,
+            rootActionModeSelectionCount,
+            rootContextualOptionsExpanded,
+        ) {
+            buildNativeDoRootChromeModel(
+                isRootRoute = isRootRoute,
+                activeRoute = activeRoute,
+                homeHeaderSearchVisible = homeHeaderSearchVisible,
+                isHomeSearchMode = homeSearchModeActive,
+                actionModeSelectionCount = rootActionModeSelectionCount,
+                isContextualOptionsExpanded = rootContextualOptionsExpanded,
+            )
+        }
+
+        LaunchedEffect(isRootRoute, homeSearchModeActive, rootChromeModel.showContextualOptionsAction) {
+            if (!isRootRoute || homeSearchModeActive || !rootChromeModel.showContextualOptionsAction) {
+                rootContextualOptionsExpanded = false
+            }
+        }
 
         CompositionLocalProvider(LocalBulletinHostState provides bulletinHostState) {
             NativeDoChromeScaffold(
@@ -167,17 +194,26 @@ fun NativeDoApp() {
                     {
                         NativeDoTopBar(
                             currentRoute = activeRoute,
-                            chromeState = chromeState,
+                            rootChrome = rootChromeModel,
                             topicTitleOverride = topicHeaderTitle,
                             showBack = !isRootRoute,
-                            reserveHomeSearchSlot = isRootRoute && activeRoute == RootDestination.Home.route,
-                            showHomeSearchAction = isRootRoute &&
-                                activeRoute == RootDestination.Home.route &&
-                                homeHeaderSearchVisible,
                             themeMode = themeMode,
                             onHomeRefreshClick = { homeRefreshRequestToken += 1 },
                             onHomeSearchClick = { homeSearchRequestToken += 1 },
-                            onThemeModeClick = { themeMode = themeMode.next() },
+                            onThemeModeSelected = {
+                                themeMode = it
+                                rootContextualOptionsExpanded = false
+                            },
+                            onToggleContextualOptions = {
+                                rootContextualOptionsExpanded = !rootContextualOptionsExpanded
+                            },
+                            onDismissContextualOptions = {
+                                rootContextualOptionsExpanded = false
+                            },
+                            onExitActionMode = {
+                                rootActionModeSelectionCount = 0
+                                rootContextualOptionsExpanded = false
+                            },
                             onBackClick = { navController.popBackStack() },
                         )
                     }
@@ -231,6 +267,7 @@ fun NativeDoApp() {
                     homeSearchRequestToken = homeSearchRequestToken,
                     homeRefreshRequestToken = homeRefreshRequestToken,
                     onHomeHeaderSearchVisibilityChanged = { homeHeaderSearchVisible = it },
+                    onHomeSearchModeChanged = { homeSearchModeActive = it },
                     onTopicHeaderTitleChanged = { topicHeaderTitle = it },
                     onOpenLink = onOpenLink,
                 )
@@ -242,23 +279,26 @@ fun NativeDoApp() {
 @Composable
 private fun NativeDoTopBar(
     currentRoute: String?,
-    chromeState: NativeDoChromeState,
+    rootChrome: NativeDoRootChromeModel,
     topicTitleOverride: String?,
     showBack: Boolean,
-    reserveHomeSearchSlot: Boolean,
-    showHomeSearchAction: Boolean,
     themeMode: ThemeMode,
     onHomeRefreshClick: () -> Unit,
     onHomeSearchClick: () -> Unit,
-    onThemeModeClick: () -> Unit,
+    onThemeModeSelected: (ThemeMode) -> Unit,
+    onToggleContextualOptions: () -> Unit,
+    onDismissContextualOptions: () -> Unit,
+    onExitActionMode: () -> Unit,
     onBackClick: () -> Unit,
 ) {
     val colors = NativeDoThemeExtras.colors
     val titleInteractionSource = remember { MutableInteractionSource() }
+    val showActionModeBack = rootChrome.actionModeSelectionCount > 0
+    val showLeadingBack = showBack || showActionModeBack
     val titleRefreshEnabled = shouldRequestHomeRefreshFromTitleTap(
         currentRoute = currentRoute,
         showBack = showBack,
-    )
+    ) && rootChrome.scene == NativeDoRootChromeScene.Normal
 
     Column(
         modifier = Modifier
@@ -273,9 +313,15 @@ private fun NativeDoTopBar(
                 vertical = AppTopBarVerticalPadding,
             ),
             sectionSpacing = 12.dp,
-            leading = if (showBack) {
+            leading = if (showLeadingBack) {
                 {
-                    IconButton(onClick = onBackClick) {
+                    IconButton(
+                        onClick = if (showActionModeBack) {
+                            onExitActionMode
+                        } else {
+                            onBackClick
+                        },
+                    ) {
                         NativeDoBackIcon(
                             progress = 0f,
                             contentDescription = null,
@@ -297,16 +343,19 @@ private fun NativeDoTopBar(
                             onClick = onHomeRefreshClick,
                         )
                         .padding(
-                            start = if (showBack) 4.dp else 0.dp,
+                            start = if (showLeadingBack) 4.dp else 0.dp,
                             end = 12.dp,
                         )
                         .padding(vertical = 4.dp),
                     contentAlignment = Alignment.CenterStart,
                 ) {
                     NativeDoAnimatedLabel(
-                        title = topBarTitle(
-                            currentRoute = currentRoute,
-                            topicTitleOverride = topicTitleOverride,
+                        title = resolveNativeDoRootChromeTitle(
+                            defaultTitle = topBarTitle(
+                                currentRoute = currentRoute,
+                                topicTitleOverride = topicTitleOverride,
+                            ),
+                            actionModeSelectionCount = rootChrome.actionModeSelectionCount,
                         ),
                         modifier = Modifier.fillMaxWidth(),
                         titleStyle = MaterialTheme.typography.titleLarge,
@@ -319,12 +368,12 @@ private fun NativeDoTopBar(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    if (reserveHomeSearchSlot) {
+                    if (rootChrome.reserveHomeSearchSlot) {
                         Box(
                             modifier = Modifier.size(40.dp),
                             contentAlignment = Alignment.Center,
                         ) {
-                            if (showHomeSearchAction) {
+                            if (rootChrome.showHomeSearchAction) {
                                 IconButton(
                                     onClick = onHomeSearchClick,
                                     modifier = Modifier.size(40.dp),
@@ -339,18 +388,49 @@ private fun NativeDoTopBar(
                         }
                     }
 
-                    Box(
-                        modifier = Modifier
-                            .clip(NativeDoPillShape)
-                            .background(colors.backgroundElevated.copy(alpha = 0.82f))
-                            .clickable(onClick = onThemeModeClick)
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                    ) {
-                        Text(
-                            text = themeModeLabel(themeMode),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = colors.textSecondary,
-                        )
+                    if (rootChrome.showContextualOptionsAction) {
+                        Box(
+                            modifier = Modifier.size(44.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            IconButton(
+                                onClick = onToggleContextualOptions,
+                                modifier = Modifier.size(44.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.MoreVert,
+                                    contentDescription = stringResource(R.string.app_browser_more_actions),
+                                    tint = colors.textPrimary,
+                                )
+                            }
+                            NativeDoContextualOptions(
+                                expanded = rootChrome.isContextualOptionsExpanded,
+                                onDismissRequest = onDismissContextualOptions,
+                                width = 220.dp,
+                                itemCount = ThemeMode.entries.size,
+                            ) { popupProgress ->
+                                ThemeMode.entries.forEachIndexed { index, mode ->
+                                    NativeDoPopupMenuItem(
+                                        label = themeModeLabel(mode),
+                                        index = index,
+                                        itemCount = ThemeMode.entries.size,
+                                        popupProgress = popupProgress,
+                                        onClick = { onThemeModeSelected(mode) },
+                                        trailing = if (mode == themeMode) {
+                                            {
+                                                Icon(
+                                                    imageVector = Icons.Outlined.Check,
+                                                    contentDescription = null,
+                                                    tint = colors.textSecondary,
+                                                )
+                                            }
+                                        } else {
+                                            null
+                                        },
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             },
@@ -545,24 +625,6 @@ private fun themeModeLabel(themeMode: ThemeMode): String = when (themeMode) {
     ThemeMode.System -> stringResource(R.string.theme_mode_system)
     ThemeMode.Light -> stringResource(R.string.theme_mode_light)
     ThemeMode.Dark -> stringResource(R.string.theme_mode_dark)
-}
-
-data class NativeDoChromeState(
-    val title: String = "",
-) {
-    companion object {
-        fun from(
-            sessionState: AppSessionState,
-            cachedSnapshot: SessionSnapshot? = null,
-        ): NativeDoChromeState {
-            val snapshot = sessionSnapshotForChrome(sessionState, cachedSnapshot)
-            return if (snapshot == null) {
-                NativeDoChromeState()
-            } else {
-                NativeDoChromeState(title = snapshot.chromeTitle)
-            }
-        }
-    }
 }
 
 internal fun sessionSnapshotForChrome(

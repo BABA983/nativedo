@@ -8,6 +8,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.IntRect
 import java.util.IdentityHashMap
 
+data class MediaViewerChromeState(
+    val isVisible: Boolean = true,
+    val isMenuExpanded: Boolean = false,
+    val isAutoHideSuspended: Boolean = false,
+)
+
 data class MediaViewerLaunchSource(
     val boundsOnScreen: IntRect,
     val fullBoundsOnScreen: IntRect = boundsOnScreen,
@@ -17,8 +23,10 @@ data class MediaViewerLaunchSource(
 class MediaViewerState {
     var activeRequest by mutableStateOf<MediaViewerRequest?>(null)
         private set
-    var isChromeVisible by mutableStateOf(true)
+    var chromeState by mutableStateOf(MediaViewerChromeState())
         private set
+    val isChromeVisible: Boolean
+        get() = chromeState.isVisible
 
     fun open(
         items: List<MediaItem>,
@@ -26,7 +34,7 @@ class MediaViewerState {
         launchSource: MediaViewerLaunchSource? = null,
         itemLaunchSources: Map<MediaItem, MediaViewerLaunchSource> = emptyMap(),
     ) {
-        isChromeVisible = true
+        chromeState = MediaViewerChromeState()
         activeRequest = MediaViewerRequest(
             items = items,
             initialIndex = initialIndex.coerceIn(0, items.lastIndex.coerceAtLeast(0)),
@@ -37,19 +45,47 @@ class MediaViewerState {
 
     fun dismiss() {
         activeRequest = null
-        isChromeVisible = true
+        chromeState = MediaViewerChromeState()
     }
 
     fun showChrome() {
-        isChromeVisible = true
+        chromeState = chromeState.copy(isVisible = true)
     }
 
     fun hideChrome() {
-        isChromeVisible = false
+        if (chromeState.isMenuExpanded) {
+            return
+        }
+        chromeState = chromeState.copy(isVisible = false)
     }
 
     fun toggleChrome() {
-        isChromeVisible = !isChromeVisible
+        if (chromeState.isMenuExpanded) {
+            setMenuExpanded(false)
+            return
+        }
+        chromeState = chromeState.copy(isVisible = !chromeState.isVisible)
+    }
+
+    fun setMenuExpanded(expanded: Boolean) {
+        chromeState = if (expanded) {
+            chromeState.copy(
+                isVisible = true,
+                isMenuExpanded = true,
+                isAutoHideSuspended = true,
+            )
+        } else {
+            chromeState.copy(
+                isMenuExpanded = false,
+                isAutoHideSuspended = false,
+            )
+        }
+    }
+
+    fun setAutoHideSuspended(suspended: Boolean) {
+        chromeState = chromeState.copy(
+            isAutoHideSuspended = suspended || chromeState.isMenuExpanded,
+        )
     }
 }
 

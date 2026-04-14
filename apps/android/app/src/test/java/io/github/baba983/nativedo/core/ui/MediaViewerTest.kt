@@ -360,6 +360,23 @@ class MediaViewerTest {
     }
 
     @Test
+    fun mediaViewerState_menuExpansion_keepsChromeVisibleAndSuspendsAutoHide() {
+        val state = MediaViewerState()
+
+        state.hideChrome()
+        state.setMenuExpanded(true)
+
+        assertThat(state.chromeState.isVisible).isTrue()
+        assertThat(state.chromeState.isMenuExpanded).isTrue()
+        assertThat(state.chromeState.isAutoHideSuspended).isTrue()
+
+        state.setMenuExpanded(false)
+
+        assertThat(state.chromeState.isMenuExpanded).isFalse()
+        assertThat(state.chromeState.isAutoHideSuspended).isFalse()
+    }
+
+    @Test
     fun calculateMediaViewerThumbnailWindow_keepsCurrentPageCenteredWhenPossible() {
         assertThat(
             calculateMediaViewerThumbnailWindow(
@@ -961,6 +978,18 @@ class MediaViewerTest {
             MediaViewerAction.Share,
             MediaViewerAction.OpenExternal,
             MediaViewerAction.SaveImage,
+        ).inOrder()
+    }
+
+    @Test
+    fun mediaViewerActions_videoOmitsSaveImage() {
+        assertThat(
+            mediaViewerActions(
+                MediaItem.Video(url = "https://linux.do/uploads/demo.mp4"),
+            ),
+        ).containsExactly(
+            MediaViewerAction.Share,
+            MediaViewerAction.OpenExternal,
         ).inOrder()
     }
 

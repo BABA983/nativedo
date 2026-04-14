@@ -8,6 +8,15 @@ internal enum class AppBrowserSheet {
     Settings,
 }
 
+internal enum class AppBrowserChromeScene {
+    Browse,
+    Search,
+    AddressEditing,
+    HistoryPopup,
+    OverflowMenu,
+    Subpanel,
+}
+
 internal data class AppBrowserSearchUiState(
     val isActive: Boolean = false,
     val query: String = "",
@@ -22,6 +31,7 @@ internal data class AppBrowserAddressUiState(
 )
 
 internal data class AppBrowserChromeModel(
+    val scene: AppBrowserChromeScene = AppBrowserChromeScene.Browse,
     val title: String = "",
     val subtitle: String? = null,
     val currentUrl: String = "",
@@ -38,6 +48,7 @@ internal data class AppBrowserChromeModel(
     val alpha: Float = 0f,
     val translationX: Float = 0f,
     val isHistoryPopupVisible: Boolean = false,
+    val isOverflowMenuVisible: Boolean = false,
 )
 
 internal data class AppBrowserUiState(
@@ -46,7 +57,34 @@ internal data class AppBrowserUiState(
     val address: AppBrowserAddressUiState = AppBrowserAddressUiState(),
     val sheet: AppBrowserSheet = AppBrowserSheet.None,
     val isHistoryPopupVisible: Boolean = false,
-)
+    val isOverflowMenuVisible: Boolean = false,
+) {
+    val chromeScene: AppBrowserChromeScene
+        get() = resolveAppBrowserChromeScene(
+            isSearching = search.isActive,
+            isAddressEditing = address.isEditing,
+            isHistoryPopupVisible = isHistoryPopupVisible,
+            isOverflowMenuVisible = isOverflowMenuVisible,
+            isInSubPanel = sheet != AppBrowserSheet.None || chrome.isInSubPanel,
+        )
+}
+
+internal fun resolveAppBrowserChromeScene(
+    isSearching: Boolean,
+    isAddressEditing: Boolean,
+    isHistoryPopupVisible: Boolean,
+    isOverflowMenuVisible: Boolean,
+    isInSubPanel: Boolean,
+): AppBrowserChromeScene {
+    return when {
+        isAddressEditing -> AppBrowserChromeScene.AddressEditing
+        isSearching -> AppBrowserChromeScene.Search
+        isInSubPanel -> AppBrowserChromeScene.Subpanel
+        isHistoryPopupVisible -> AppBrowserChromeScene.HistoryPopup
+        isOverflowMenuVisible -> AppBrowserChromeScene.OverflowMenu
+        else -> AppBrowserChromeScene.Browse
+    }
+}
 
 internal fun initialAppBrowserUiState(
     initialUrl: String,

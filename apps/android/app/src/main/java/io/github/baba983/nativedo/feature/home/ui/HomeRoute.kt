@@ -99,6 +99,7 @@ fun HomeRoute(
     headerSearchRequestToken: Int = 0,
     refreshRequestToken: Int = 0,
     onHeaderSearchVisibilityChanged: (Boolean) -> Unit = {},
+    onSearchModeChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -219,11 +220,18 @@ fun HomeRoute(
         if (isSearchMode) {
             onHeaderSearchVisibilityChanged(false)
         }
+        onSearchModeChanged(isSearchMode)
     }
 
     DisposableEffect(onHeaderSearchVisibilityChanged) {
         onDispose {
             onHeaderSearchVisibilityChanged(false)
+        }
+    }
+
+    DisposableEffect(onSearchModeChanged) {
+        onDispose {
+            onSearchModeChanged(false)
         }
     }
 

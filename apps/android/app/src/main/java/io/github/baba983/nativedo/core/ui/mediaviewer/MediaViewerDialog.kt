@@ -612,9 +612,7 @@ internal fun MediaViewerDialog(
     }
     val gestureState = remember { MediaViewerGestureState() }
     val pageMotionState = remember(initialPage) { MediaViewerPageMotionState(initialPage) }
-    var isMenuExpanded by remember { mutableStateOf(false) }
     var viewerWindowSize by remember { mutableStateOf(IntSize.Zero) }
-    var menuAnchorBounds by remember { mutableStateOf<IntRect?>(null) }
     var currentPageContentSize by remember { mutableStateOf(IntSize.Zero) }
     var currentPageBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var contentContainerBoundsOnScreen by remember { mutableStateOf<IntRect?>(null) }
@@ -639,7 +637,7 @@ internal fun MediaViewerDialog(
     }
     val dismissProgress = dismissProgressFraction(gestureState.dismissOffsetY, dismissDistancePx)
     val chromeVisibilityProgress by animateFloatAsState(
-        targetValue = if (state.isChromeVisible) 1f else 0f,
+        targetValue = if (state.chromeState.isVisible) 1f else 0f,
         animationSpec = tween(
             durationMillis = 180,
             easing = LinearOutSlowInEasing,
@@ -698,7 +696,7 @@ internal fun MediaViewerDialog(
     }
 
     LaunchedEffect(currentPage) {
-        isMenuExpanded = false
+        state.setMenuExpanded(false)
         state.showChrome()
         isPagerGestureLocked = false
         currentPageContentSize = IntSize.Zero
@@ -733,7 +731,7 @@ internal fun MediaViewerDialog(
     suspend fun requestDismiss() {
         if (isClosing) return
 
-        isMenuExpanded = false
+        state.setMenuExpanded(false)
         val currentDismissProgress = dismissProgressFraction(gestureState.dismissOffsetY, dismissDistancePx)
         val currentOpenTransform = request.launchSource
             ?.takeIf {
@@ -1213,10 +1211,9 @@ internal fun MediaViewerDialog(
                         coroutineScope.launch { requestDismiss() }
                     },
                     onToggleChrome = {
-                        isMenuExpanded = false
                         state.toggleChrome()
                     },
-                    onMenuDismiss = { isMenuExpanded = false },
+                    onMenuDismiss = { state.setMenuExpanded(false) },
                 )
             }
 
@@ -1278,19 +1275,79 @@ internal fun MediaViewerDialog(
                     ViewerChromeButton(
                         onClick = {
                             if (!isTransitionAnimating) {
-                                isMenuExpanded = true
+                                state.setMenuExpanded(true)
                             }
                         },
                         imageVector = Icons.Outlined.MoreVert,
                         contentDescription = stringResource(R.string.post_image_viewer_more_actions),
-                        modifier = Modifier.onGloballyPositioned { coordinates ->
-                            val position = coordinates.positionInRoot()
-                            menuAnchorBounds = IntRect(
-                                left = position.x.roundToInt(),
-                                top = position.y.roundToInt(),
-                                right = (position.x + coordinates.size.width).roundToInt(),
-                                bottom = (position.y + coordinates.size.height).roundToInt(),
-                            )
+                    )
+                    ViewerActionPopup(
+                        expanded = state.chromeState.isMenuExpanded,
+                        actions = mediaViewerActions(currentItem),
+                        onDismissRequest = { state.setMenuExpanded(false) },
+                        onActionClick = { action ->
+                            state.setMenuExpanded(false)
+                            when (action) {
+                                MediaViewerAction.Share -> {
+                                    context.startMediaViewerIntent(
+                                        Intent.createChooser(
+                                            Intent(Intent.ACTION_SEND)
+                                                .putExtra(Intent.EXTRA_TEXT, currentVisibleUrl)
+                                                .setType("text/plain"),
+                                            context.getString(R.string.post_image_viewer_action_share),
+                                        ),
+                                    ) {
+                                        bulletinHostState?.show(
+                                            BulletinMessage(
+                                                title = context.getString(R.string.post_image_viewer_action_failed),
+                                                tone = BulletinTone.Error,
+                                            ),
+                                        )
+                                    }
+                                }
+
+                                MediaViewerAction.OpenExternal -> {
+                                    if (onOpenLink != null) {
+                                        onOpenLink(currentVisibleUrl)
+                                    } else {
+                                        context.startMediaViewerIntent(
+                                            Intent(Intent.ACTION_VIEW, Uri.parse(currentVisibleUrl)),
+                                        ) {
+                                            bulletinHostState?.show(
+                                                BulletinMessage(
+                                                    title = context.getString(R.string.post_image_viewer_action_failed),
+                                                    tone = BulletinTone.Error,
+                                                ),
+                                            )
+                                        }
+                                    }
+                                }
+
+                                MediaViewerAction.SaveImage -> {
+                                    val enqueued = enqueueMediaViewerDownload(
+                                        context = context,
+                                        resolvedUrl = currentVisibleUrl,
+                                        cookieStore = cookieStore,
+                                        baseUrl = baseUrl,
+                                    )
+                                    bulletinHostState?.show(
+                                        BulletinMessage(
+                                            title = context.getString(
+                                                if (enqueued) {
+                                                    R.string.post_image_viewer_download_started
+                                                } else {
+                                                    R.string.post_image_viewer_action_failed
+                                                },
+                                            ),
+                                            tone = if (enqueued) {
+                                                BulletinTone.Info
+                                            } else {
+                                                BulletinTone.Error
+                                            },
+                                        ),
+                                    )
+                                }
+                            }
                         },
                     )
                 }
@@ -1329,77 +1386,6 @@ internal fun MediaViewerDialog(
                     .padding(horizontal = 16.dp, vertical = 16.dp),
             )
 
-            ViewerActionPopup(
-                expanded = isMenuExpanded,
-                anchorBounds = menuAnchorBounds,
-                windowSize = viewerWindowSize,
-                actions = mediaViewerActions(),
-                onDismissRequest = { isMenuExpanded = false },
-                onActionClick = { action ->
-                    isMenuExpanded = false
-                    when (action) {
-                        MediaViewerAction.Share -> {
-                            context.startMediaViewerIntent(
-                                Intent.createChooser(
-                                    Intent(Intent.ACTION_SEND)
-                                        .putExtra(Intent.EXTRA_TEXT, currentVisibleUrl)
-                                        .setType("text/plain"),
-                                    context.getString(R.string.post_image_viewer_action_share),
-                                ),
-                            ) {
-                                bulletinHostState?.show(
-                                    BulletinMessage(
-                                        title = context.getString(R.string.post_image_viewer_action_failed),
-                                        tone = BulletinTone.Error,
-                                    ),
-                                )
-                            }
-                        }
-
-                        MediaViewerAction.OpenExternal -> {
-                            if (onOpenLink != null) {
-                                onOpenLink(currentVisibleUrl)
-                            } else {
-                                context.startMediaViewerIntent(
-                                    Intent(Intent.ACTION_VIEW, Uri.parse(currentVisibleUrl)),
-                                ) {
-                                    bulletinHostState?.show(
-                                        BulletinMessage(
-                                            title = context.getString(R.string.post_image_viewer_action_failed),
-                                            tone = BulletinTone.Error,
-                                        ),
-                                    )
-                                }
-                            }
-                        }
-
-                        MediaViewerAction.SaveImage -> {
-                            val enqueued = enqueueMediaViewerDownload(
-                                context = context,
-                                resolvedUrl = currentVisibleUrl,
-                                cookieStore = cookieStore,
-                                baseUrl = baseUrl,
-                            )
-                            bulletinHostState?.show(
-                                BulletinMessage(
-                                    title = context.getString(
-                                        if (enqueued) {
-                                            R.string.post_image_viewer_download_started
-                                        } else {
-                                            R.string.post_image_viewer_action_failed
-                                        },
-                                    ),
-                                    tone = if (enqueued) {
-                                        BulletinTone.Info
-                                    } else {
-                                        BulletinTone.Error
-                                    },
-                                ),
-                            )
-                        }
-                    }
-                },
-            )
         }
     }
 }

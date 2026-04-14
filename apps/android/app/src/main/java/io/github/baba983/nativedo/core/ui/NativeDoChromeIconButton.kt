@@ -1,6 +1,7 @@
 package io.github.baba983.nativedo.core.ui
 
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
@@ -69,7 +70,7 @@ fun NativeDoChromeIconButton(
                 .heightIn(min = 44.dp)
                 .combinedClickable(
                     interactionSource = interactionSource,
-                    indication = null,
+                    indication = LocalIndication.current,
                     onClick = onClick,
                     onLongClick = onLongClick,
                     enabled = enabled,

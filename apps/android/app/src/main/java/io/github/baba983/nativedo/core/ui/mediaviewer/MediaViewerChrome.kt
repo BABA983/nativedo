@@ -1,11 +1,6 @@
 package io.github.baba983.nativedo.core.ui.mediaviewer
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.animation.core.MutableTransitionState
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -13,6 +8,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -45,17 +41,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.clipRect
-import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -68,11 +57,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import io.github.baba983.nativedo.R
 import io.github.baba983.nativedo.core.storage.CookieStore
+import io.github.baba983.nativedo.core.ui.NativeDoContextualOptions
+import io.github.baba983.nativedo.core.ui.NativeDoPopupPalette
+import io.github.baba983.nativedo.core.ui.NativeDoPopupMenuItem
 import io.github.baba983.nativedo.core.ui.PostBodyImage
+import io.github.baba983.nativedo.core.ui.calculateNativeDoPopupOffset
 import io.github.baba983.nativedo.core.ui.findMediaViewerPreviewBitmap
+import io.github.baba983.nativedo.core.ui.nativeDoPopupCascadeProgress
+import io.github.baba983.nativedo.core.ui.nativeDoPopupOpenDuration
 import io.github.baba983.nativedo.core.ui.rememberDiscourseBitmap
 import io.github.baba983.nativedo.core.ui.resolvePostImageRenderRawUrl
 import io.github.baba983.nativedo.core.ui.resolvePostImageUrl
+import io.github.baba983.nativedo.ui.theme.NativeDoGlassRole
+import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -84,6 +81,18 @@ internal enum class MediaViewerAction {
     Share,
     OpenExternal,
     SaveImage,
+}
+
+internal fun mediaViewerActions(item: MediaItem): List<MediaViewerAction> = when (item) {
+    is MediaItem.Image -> listOf(
+        MediaViewerAction.Share,
+        MediaViewerAction.OpenExternal,
+        MediaViewerAction.SaveImage,
+    )
+    is MediaItem.Video -> listOf(
+        MediaViewerAction.Share,
+        MediaViewerAction.OpenExternal,
+    )
 }
 
 internal fun mediaViewerActions(): List<MediaViewerAction> = listOf(
@@ -295,219 +304,65 @@ private fun ViewerTitleBlockContent(
 @Composable
 internal fun ViewerActionPopup(
     expanded: Boolean,
-    anchorBounds: IntRect?,
-    windowSize: IntSize,
     actions: List<MediaViewerAction>,
     onDismissRequest: () -> Unit,
     onActionClick: (MediaViewerAction) -> Unit,
 ) {
-    if (anchorBounds == null || windowSize == IntSize.Zero) {
-        return
-    }
-
-    val density = LocalDensity.current
-    val popupWidth = with(density) { mediaViewerPopupWidth.roundToPx() }
-    val popupHeight = with(density) {
-        (mediaViewerPopupVerticalPadding * 2 +
-            mediaViewerPopupRowHeight * actions.size).roundToPx()
-    }
-    val popupMargin = with(density) { mediaViewerPopupMargin.roundToPx() }
-    val popupSpacing = with(density) { mediaViewerPopupSpacing.roundToPx() }
-    val popupOpenDuration = remember(actions.size) {
-        mediaViewerPopupOpenDuration(actions.size)
-    }
-    val popupCornerRadiusPx = with(density) { mediaViewerPopupCornerRadius.toPx() }
-    val popupBorderWidthPx = with(density) { mediaViewerPopupBorderWidth.toPx() }
-    val popupCloseTranslationPx = with(density) {
-        mediaViewerPopupCloseTranslation.toPx()
-    }
-    val transitionState = remember { MutableTransitionState(false) }
-
-    LaunchedEffect(expanded) {
-        transitionState.targetState = expanded
-    }
-
-    if (!transitionState.currentState && !transitionState.targetState) {
-        return
-    }
-
     BackHandler(enabled = expanded) {
         onDismissRequest()
     }
 
-    val popupOffset = remember(anchorBounds, windowSize, popupWidth, popupHeight, popupMargin, popupSpacing) {
-        calculateMediaViewerPopupOffset(
-            anchorBounds = anchorBounds,
-            windowSize = windowSize,
-            popupSize = IntSize(width = popupWidth, height = popupHeight),
-            margin = popupMargin,
-            spacing = popupSpacing,
+    val popupGlass = NativeDoThemeExtras.glass(NativeDoGlassRole.Popup).copy(
+        containerColor = Color(0xFF181A1E).copy(alpha = 0.96f),
+        borderColor = Color.White.copy(alpha = 0.08f),
+    )
+    val popupPalette = remember(popupGlass) {
+        NativeDoPopupPalette(
+            text = Color.White.copy(alpha = 0.97f),
+            secondaryText = Color.White.copy(alpha = 0.72f),
+            icon = Color.White.copy(alpha = 0.92f),
+            pressed = Color.White.copy(alpha = 0.18f),
+            iconContainer = Color.White.copy(alpha = 0.14f),
         )
     }
-    val transition = updateTransition(transitionState, label = "viewerPopupTransition")
-    val popupProgress = transition.animateFloat(
-        transitionSpec = {
-            tween(
-                durationMillis = if (targetState) {
-                    popupOpenDuration
-                } else {
-                    mediaViewerPopupCloseDurationMillis
-                },
-                easing = LinearOutSlowInEasing,
-            )
-        },
-        label = "viewerPopupProgress",
-    ) { visible ->
-        if (visible) 1f else 0f
-    }
-    val containerTranslationY = transition.animateFloat(
-        transitionSpec = {
-            tween(
-                durationMillis = mediaViewerPopupCloseDurationMillis,
-                easing = LinearOutSlowInEasing,
-            )
-        },
-        label = "viewerPopupTranslationY",
-    ) { visible ->
-        if (visible) 0f else -popupCloseTranslationPx
-    }
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        if (expanded || transition.currentState) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .pointerInput(onDismissRequest) {
-                        detectTapGestures(onTap = { onDismissRequest() })
-                    },
-            )
-        }
-
-        Box(
-            modifier = Modifier
-                .offset { popupOffset }
-                .graphicsLayer {
-                    translationY = containerTranslationY.value
-                }
-                .width(mediaViewerPopupWidth)
-                .drawWithContent {
-                    val progress = popupProgress.value
-                    val revealScale = max(progress, 0.001f)
-                    val backgroundColor = Color(0xFF15171A).copy(alpha = 0.96f * progress)
-                    val borderColor = Color.White.copy(alpha = 0.08f * progress)
-                    withTransform({
-                        scale(scaleX = 1f, scaleY = revealScale, pivot = androidx.compose.ui.geometry.Offset(size.width, 0f))
-                    }) {
-                        drawRoundRect(
-                            color = backgroundColor,
-                            cornerRadius = CornerRadius(popupCornerRadiusPx, popupCornerRadiusPx),
-                        )
-                        drawRoundRect(
-                            color = borderColor,
-                            cornerRadius = CornerRadius(popupCornerRadiusPx, popupCornerRadiusPx),
-                            style = Stroke(width = popupBorderWidthPx),
-                        )
-                    }
-                    clipRect(bottom = size.height * progress) {
-                        this@drawWithContent.drawContent()
-                    }
-                },
-        ) {
-            Column(
-                modifier = Modifier.padding(vertical = mediaViewerPopupVerticalPadding),
-            ) {
-                actions.forEachIndexed { index, action ->
-                    ViewerActionPopupItem(
-                        action = action,
-                        index = index,
-                        actionCount = actions.size,
-                        popupProgress = popupProgress.value,
-                        onClick = { onActionClick(action) },
-                    )
-                }
+    NativeDoContextualOptions(
+        expanded = expanded,
+        onDismissRequest = onDismissRequest,
+        width = mediaViewerPopupWidth,
+        itemCount = actions.size,
+        margin = mediaViewerPopupMargin,
+        spacing = mediaViewerPopupSpacing,
+        closeTranslationY = mediaViewerPopupCloseTranslation,
+        shape = RoundedCornerShape(mediaViewerPopupCornerRadius),
+        surfaceTopInset = 12.dp,
+        contentPadding = PaddingValues(vertical = mediaViewerPopupVerticalPadding),
+        glassSpec = popupGlass,
+    ) { popupProgress ->
+        Column {
+            actions.forEachIndexed { index, action ->
+                NativeDoPopupMenuItem(
+                    label = action.label(),
+                    icon = action.icon(),
+                    index = index,
+                    itemCount = actions.size.coerceAtLeast(1),
+                    popupProgress = popupProgress,
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+                    glassSpec = popupGlass,
+                    paletteOverride = popupPalette,
+                    onClick = { onActionClick(action) },
+                )
             }
         }
-    }
-}
-
-@Composable
-internal fun ViewerActionPopupItem(
-    action: MediaViewerAction,
-    index: Int,
-    actionCount: Int,
-    popupProgress: Float,
-    onClick: () -> Unit,
-) {
-    val density = LocalDensity.current
-    val interactionSource = remember { MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
-    val startTranslationPx = with(density) { mediaViewerPopupChildStartTranslation.toPx() }
-    val rowProgress = remember(
-        index,
-        actionCount,
-        popupProgress,
-    ) {
-        mediaViewerPopupCascadeProgress(
-            fullAnimationT = popupProgress,
-            position = index.toFloat(),
-            count = actionCount.toFloat(),
-            waveLength = mediaViewerPopupCascadeWaveLength,
-        )
-    }
-    val rowAlpha = rowProgress
-    val rowTranslationY = (1f - rowProgress) * -startTranslationPx
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(mediaViewerPopupRowHeight)
-            .graphicsLayer {
-                alpha = rowAlpha
-                translationY = rowTranslationY
-            }
-            .background(
-                color = if (pressed) {
-                    Color.White.copy(alpha = 0.08f)
-                } else {
-                    Color.Transparent
-                },
-                shape = RoundedCornerShape(14.dp),
-            )
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick,
-            )
-            .padding(horizontal = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = action.icon(),
-            contentDescription = null,
-            tint = Color.White.copy(alpha = 0.95f),
-            modifier = Modifier.size(20.dp),
-        )
-        Spacer(modifier = Modifier.size(12.dp))
-        Text(
-            text = action.label(),
-            style = MaterialTheme.typography.bodyMedium,
-            color = Color.White.copy(alpha = 0.96f),
-        )
     }
 }
 
 // --- Popup constants ---
 private val mediaViewerPopupWidth = 204.dp
-private val mediaViewerPopupRowHeight = 48.dp
 private val mediaViewerPopupVerticalPadding = 6.dp
 private val mediaViewerPopupMargin = 12.dp
 private val mediaViewerPopupSpacing = 8.dp
 private val mediaViewerPopupCornerRadius = 18.dp
-private val mediaViewerPopupBorderWidth = 1.dp
-private val mediaViewerPopupChildStartTranslation = 6.dp
 private val mediaViewerPopupCloseTranslation = 8.dp
-private const val mediaViewerPopupCascadeWaveLength = 4f
-private const val mediaViewerPopupCloseDurationMillis = 150
 
 internal fun calculateMediaViewerPopupOffset(
     anchorBounds: IntRect,
@@ -515,34 +370,33 @@ internal fun calculateMediaViewerPopupOffset(
     popupSize: IntSize,
     margin: Int,
     spacing: Int,
-): IntOffset {
-    val maxX = (windowSize.width - popupSize.width - margin).coerceAtLeast(margin)
-    val maxY = (windowSize.height - popupSize.height - margin).coerceAtLeast(margin)
-    val preferredX = anchorBounds.right - popupSize.width
-    val preferredY = anchorBounds.bottom + spacing
-    return IntOffset(
-        x = preferredX.coerceIn(margin, maxX),
-        y = preferredY.coerceIn(margin, maxY),
-    )
-}
+): IntOffset = calculateNativeDoPopupOffset(
+    anchorBounds = anchorBounds,
+    windowSize = windowSize,
+    popupSize = popupSize,
+    margin = margin,
+    spacing = spacing,
+)
 
 internal fun mediaViewerPopupOpenDuration(
     itemCount: Int,
-): Int = 150 + 16 * itemCount.coerceAtLeast(0)
+): Int = nativeDoPopupOpenDuration(
+    itemCount = itemCount,
+    baseDuration = 150,
+    cascadeStepMillis = 16,
+)
 
 internal fun mediaViewerPopupCascadeProgress(
     fullAnimationT: Float,
     position: Float,
     count: Float,
     waveLength: Float,
-): Float {
-    if (count <= 0f) {
-        return fullAnimationT
-    }
-    val waveDuration = (1f / count) * min(waveLength, count)
-    val waveOffset = (position / count) * (1f - waveDuration)
-    return ((fullAnimationT - waveOffset) / waveDuration).coerceIn(0f, 1f)
-}
+): Float = nativeDoPopupCascadeProgress(
+    fullAnimationT = fullAnimationT,
+    position = position,
+    count = count,
+    waveLength = waveLength,
+)
 
 @Composable
 internal fun MediaViewerAction.label(): String = when (this) {

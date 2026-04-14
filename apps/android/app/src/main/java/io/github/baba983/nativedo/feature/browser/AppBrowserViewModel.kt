@@ -28,7 +28,9 @@ internal class AppBrowserViewModel(
                     recentEntries = recentEntries,
                 ),
                 search = AppBrowserSearchUiState(),
+                sheet = AppBrowserSheet.None,
                 isHistoryPopupVisible = false,
+                isOverflowMenuVisible = false,
             )
         }
     }
@@ -46,6 +48,7 @@ internal class AppBrowserViewModel(
                         address = it.address.copy(isEditing = false),
                         sheet = AppBrowserSheet.History,
                         isHistoryPopupVisible = false,
+                        isOverflowMenuVisible = false,
                     )
                 }
             }
@@ -56,6 +59,7 @@ internal class AppBrowserViewModel(
                         address = it.address.copy(isEditing = false),
                         sheet = AppBrowserSheet.Settings,
                         isHistoryPopupVisible = false,
+                        isOverflowMenuVisible = false,
                     )
                 }
             }
@@ -63,12 +67,20 @@ internal class AppBrowserViewModel(
             AppBrowserAction.CancelAddressEditing,
             AppBrowserAction.DismissSheet -> {
                 _uiState.update {
-                    it.copy(address = it.address.copy(isEditing = false))
+                    it.copy(
+                        address = it.address.copy(isEditing = false),
+                        isOverflowMenuVisible = false,
+                    )
                 }
             }
 
             AppBrowserAction.CloseSheet -> {
-                _uiState.update { it.copy(sheet = AppBrowserSheet.None) }
+                _uiState.update {
+                    it.copy(
+                        sheet = AppBrowserSheet.None,
+                        isOverflowMenuVisible = false,
+                    )
+                }
             }
 
             AppBrowserAction.StartSearch -> {
@@ -76,7 +88,9 @@ internal class AppBrowserViewModel(
                     it.copy(
                         address = it.address.copy(isEditing = false),
                         search = it.search.copy(isActive = true),
+                        sheet = AppBrowserSheet.None,
                         isHistoryPopupVisible = false,
+                        isOverflowMenuVisible = false,
                     )
                 }
             }
@@ -86,6 +100,7 @@ internal class AppBrowserViewModel(
                     it.copy(
                         search = AppBrowserSearchUiState(),
                         isHistoryPopupVisible = false,
+                        isOverflowMenuVisible = false,
                     )
                 }
             }
@@ -132,7 +147,27 @@ internal class AppBrowserViewModel(
 
             is AppBrowserAction.SetHistoryPopupVisible -> {
                 _uiState.update {
-                    it.copy(isHistoryPopupVisible = action.visible)
+                    val canOpenHistoryPopup = !it.search.isActive &&
+                        !it.address.isEditing &&
+                        it.sheet == AppBrowserSheet.None
+                    val historyPopupVisible = action.visible && canOpenHistoryPopup
+                    it.copy(
+                        isHistoryPopupVisible = historyPopupVisible,
+                        isOverflowMenuVisible = if (historyPopupVisible) false else it.isOverflowMenuVisible,
+                    )
+                }
+            }
+
+            is AppBrowserAction.SetOverflowMenuVisible -> {
+                _uiState.update {
+                    val canOpenOverflowMenu = !it.search.isActive &&
+                        !it.address.isEditing &&
+                        it.sheet == AppBrowserSheet.None
+                    val overflowMenuVisible = action.visible && canOpenOverflowMenu
+                    it.copy(
+                        isHistoryPopupVisible = if (overflowMenuVisible) false else it.isHistoryPopupVisible,
+                        isOverflowMenuVisible = overflowMenuVisible,
+                    )
                 }
             }
 
