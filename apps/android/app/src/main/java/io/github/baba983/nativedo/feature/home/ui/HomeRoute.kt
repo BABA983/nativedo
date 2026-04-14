@@ -272,6 +272,7 @@ fun HomeRoute(
                 forceShowSearchField = forceShowSearchField,
                 baseUrl = appContainer.baseUrl,
                 onTopicClick = { topicId ->
+                    homeViewModel.markTopicSeen(topicId)
                     onTopicClick(topicId)
                 },
                 onFeedSelected = homeViewModel::onFeedSelected,

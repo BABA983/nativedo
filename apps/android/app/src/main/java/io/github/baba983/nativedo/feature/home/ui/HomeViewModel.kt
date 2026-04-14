@@ -25,6 +25,19 @@ class HomeViewModel(
         }
     }
 
+    fun markTopicSeen(topicId: Long) {
+        val state = _uiState.value
+        _uiState.value = state.copy(
+            items = state.items.map { topic ->
+                if (topic.id == topicId && (topic.isUnseen || topic.unreadCount > 0)) {
+                    topic.copy(isUnseen = false, unreadCount = 0)
+                } else {
+                    topic
+                }
+            },
+        )
+    }
+
     fun onRefresh() {
         refresh(_uiState.value.selectedTab, initial = false)
     }
