@@ -102,6 +102,34 @@ class HomeRouteSearchChromeTest {
     }
 
     @Test
+    fun chromeState_resetsCollapseWhenSearchFieldIsForcedVisible() {
+        val state = buildHomeSearchChromeState(
+            collapseProgress = 1f,
+            forceShowSearchField = true,
+        )
+
+        assertThat(state.collapseProgress).isEqualTo(0f)
+        assertThat(state.tabsOffsetProgress).isEqualTo(1f)
+        assertThat(state.entryAlpha).isEqualTo(1f)
+        assertThat(state.entryOffsetProgress).isEqualTo(0f)
+        assertThat(state.showHeaderSearch).isFalse()
+    }
+
+    @Test
+    fun chromeState_usesCollapsedProgressForHeaderChrome() {
+        val state = buildHomeSearchChromeState(
+            collapseProgress = 1f,
+            forceShowSearchField = false,
+        )
+
+        assertThat(state.collapseProgress).isEqualTo(1f)
+        assertThat(state.tabsOffsetProgress).isEqualTo(0f)
+        assertThat(state.entryAlpha).isEqualTo(0f)
+        assertThat(state.entryOffsetProgress).isEqualTo(1f)
+        assertThat(state.showHeaderSearch).isTrue()
+    }
+
+    @Test
     fun loadMore_requestedWhenLastVisibleItemIsInsideThreshold() {
         assertThat(
             shouldLoadMoreHomeFeed(

@@ -6,6 +6,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.dp
+import io.github.baba983.nativedo.ui.theme.BlurMode
+import io.github.baba983.nativedo.ui.theme.NativeDoGlassRole
+import io.github.baba983.nativedo.ui.theme.NativeDoGlassSpec
 import io.github.baba983.nativedo.ui.theme.NativeDoCardShape
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 
@@ -13,21 +16,30 @@ import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 fun NativeDoGlassSurface(
     modifier: Modifier = Modifier,
     shape: Shape = NativeDoCardShape,
+    glassSpec: NativeDoGlassSpec = NativeDoThemeExtras.glass(NativeDoGlassRole.Card),
+    blurMode: BlurMode = glassSpec.blurMode,
     strong: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    val colors = NativeDoThemeExtras.colors
+    val resolvedGlassSpec = if (strong && glassSpec.role == NativeDoGlassRole.Card) {
+        NativeDoThemeExtras.glass(NativeDoGlassRole.Chrome)
+    } else {
+        glassSpec
+    }
+
+    @Suppress("UNUSED_VARIABLE")
+    val resolvedBlurMode = blurMode
 
     Surface(
         modifier = modifier,
         shape = shape,
-        color = if (strong) colors.glassBackgroundStrong else colors.glassBackground,
+        color = resolvedGlassSpec.containerColor,
         border = BorderStroke(
             width = 1.dp,
-            color = if (strong) colors.glassStrokeStrong else colors.glassStroke,
+            color = resolvedGlassSpec.borderColor,
         ),
-        shadowElevation = if (strong) 10.dp else 4.dp,
-        tonalElevation = 0.dp,
+        shadowElevation = resolvedGlassSpec.shadowElevation,
+        tonalElevation = resolvedGlassSpec.tonalElevation,
         content = content,
     )
 }

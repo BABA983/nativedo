@@ -47,42 +47,62 @@ object NativeDoEasing {
 
 object NativeDoMotionPreset {
     fun popupOpenFloat(): TweenSpec<Float> = tween(
-        durationMillis = NativeDoDuration.PopupOpen,
-        easing = NativeDoEasing.Standard,
+        durationMillis = DefaultNativeDoMotionScheme.popup.open.durationMillis,
+        delayMillis = DefaultNativeDoMotionScheme.popup.open.delayMillis,
+        easing = DefaultNativeDoMotionScheme.popup.open.easing,
     )
 
     fun popupCloseFloat(): TweenSpec<Float> = tween(
-        durationMillis = NativeDoDuration.PopupClose,
-        easing = NativeDoEasing.Standard,
+        durationMillis = DefaultNativeDoMotionScheme.popup.close.durationMillis,
+        delayMillis = DefaultNativeDoMotionScheme.popup.close.delayMillis,
+        easing = DefaultNativeDoMotionScheme.popup.close.easing,
     )
 
     fun colorBlendFloat(): TweenSpec<Float> = tween(
-        durationMillis = NativeDoDuration.ColorBlend,
-        easing = NativeDoEasing.Standard,
+        durationMillis = DefaultNativeDoMotionScheme.tab.durationMillis,
+        delayMillis = DefaultNativeDoMotionScheme.tab.delayMillis,
+        easing = DefaultNativeDoMotionScheme.tab.easing,
+    )
+
+    fun contentEnterFloat(): TweenSpec<Float> = tween(
+        durationMillis = DefaultNativeDoMotionScheme.content.enter.durationMillis,
+        delayMillis = DefaultNativeDoMotionScheme.content.enter.delayMillis,
+        easing = DefaultNativeDoMotionScheme.content.enter.easing,
+    )
+
+    fun contentExitFloat(): TweenSpec<Float> = tween(
+        durationMillis = DefaultNativeDoMotionScheme.content.exit.durationMillis,
+        delayMillis = DefaultNativeDoMotionScheme.content.exit.delayMillis,
+        easing = DefaultNativeDoMotionScheme.content.exit.easing,
     )
 
     fun browserOpenFloat(): TweenSpec<Float> = tween(
-        durationMillis = NativeDoDuration.BrowserOpen,
-        easing = NativeDoEasing.EaseOutQuint,
+        durationMillis = DefaultNativeDoMotionScheme.browser.open.durationMillis,
+        delayMillis = DefaultNativeDoMotionScheme.browser.open.delayMillis,
+        easing = DefaultNativeDoMotionScheme.browser.open.easing,
     )
 
     fun browserFullscreenFloat(): TweenSpec<Float> = tween(
-        durationMillis = NativeDoDuration.BrowserFullscreen,
-        easing = NativeDoEasing.EaseOutQuint,
+        durationMillis = DefaultNativeDoMotionScheme.browser.fullscreen.durationMillis,
+        delayMillis = DefaultNativeDoMotionScheme.browser.fullscreen.delayMillis,
+        easing = DefaultNativeDoMotionScheme.browser.fullscreen.easing,
     )
 
     fun pageHorizontalFloat(): TweenSpec<Float> = tween(
-        durationMillis = NativeDoDuration.PageHorizontal,
-        easing = NativeDoEasing.EaseOutQuint,
+        durationMillis = DefaultNativeDoMotionScheme.page.durationMillis,
+        delayMillis = DefaultNativeDoMotionScheme.page.delayMillis,
+        easing = DefaultNativeDoMotionScheme.page.easing,
     )
 
     fun mediaOpenFloat(): TweenSpec<Float> = tween(
-        durationMillis = NativeDoDuration.MediaOpen,
-        easing = NativeDoEasing.EaseOutQuint,
+        durationMillis = DefaultNativeDoMotionScheme.media.enter.durationMillis,
+        delayMillis = DefaultNativeDoMotionScheme.media.enter.delayMillis,
+        easing = DefaultNativeDoMotionScheme.media.enter.easing,
     )
 
     fun mediaCloseFloat(): TweenSpec<Float> = tween(
-        durationMillis = NativeDoDuration.MediaClose,
-        easing = NativeDoEasing.EaseOutQuint,
+        durationMillis = DefaultNativeDoMotionScheme.media.exit.durationMillis,
+        delayMillis = DefaultNativeDoMotionScheme.media.exit.delayMillis,
+        easing = DefaultNativeDoMotionScheme.media.exit.easing,
     )
 }

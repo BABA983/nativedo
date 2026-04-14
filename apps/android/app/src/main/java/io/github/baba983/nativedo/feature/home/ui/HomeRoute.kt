@@ -2,7 +2,7 @@ package io.github.baba983.nativedo.feature.home.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -25,18 +25,14 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
@@ -53,7 +49,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -77,16 +72,25 @@ import io.github.baba983.nativedo.feature.home.domain.LoadHomeFeedUseCase
 import io.github.baba983.nativedo.feature.search.ui.SearchScreen
 import io.github.baba983.nativedo.feature.search.ui.rememberSearchViewModel
 import io.github.baba983.nativedo.ui.NativeDoPullToRefreshIndicator
-import io.github.baba983.nativedo.ui.theme.NativeDoChromeShape
-import io.github.baba983.nativedo.ui.theme.NativeDoDuration
-import io.github.baba983.nativedo.ui.theme.NativeDoEasing
+import io.github.baba983.nativedo.ui.theme.NativeDoCardShape
+import io.github.baba983.nativedo.ui.theme.NativeDoGlassRole
+import io.github.baba983.nativedo.ui.theme.NativeDoMotionTheme
 import io.github.baba983.nativedo.ui.theme.NativeDoPillShape
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
+import io.github.baba983.nativedo.ui.theme.nativeDoMotionProgressValue
 
 private const val HOME_HEADER_SEARCH_THRESHOLD = 0.98f
 private const val HOME_LOAD_MORE_THRESHOLD = 5
 private val HOME_SEARCH_CONTAINER_HEIGHT = 64.dp
 private val HOME_TABS_CONTAINER_HEIGHT = 52.dp
+
+internal data class HomeSearchChromeState(
+    val collapseProgress: Float,
+    val tabsOffsetProgress: Float,
+    val entryAlpha: Float,
+    val entryOffsetProgress: Float,
+    val showHeaderSearch: Boolean,
+)
 
 @Composable
 fun HomeRoute(
@@ -105,7 +109,7 @@ fun HomeRoute(
     val authVersion by appContainer.sessionCoordinator.authVersion.collectAsStateWithLifecycle()
     val categories by appContainer.categoryStore.categories.collectAsStateWithLifecycle()
     var handledAuthVersion by rememberSaveable { mutableStateOf(UNSET_HOME_AUTH_VERSION) }
-    val viewModel: HomeViewModel = viewModel(
+    val homeViewModel: HomeViewModel = viewModel(
         factory = remember(appContainer) {
             HomeViewModelFactory(
                 loadHomeFeed = LoadHomeFeedUseCase(
@@ -121,7 +125,7 @@ fun HomeRoute(
         recentSearchStore = recentSearchStore,
         key = "home-search",
     )
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val uiState by homeViewModel.uiState.collectAsStateWithLifecycle()
     val searchUiState by searchViewModel.uiState.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     var isSearchMode by rememberSaveable { mutableStateOf(false) }
@@ -131,6 +135,7 @@ fun HomeRoute(
     var handledRefreshRequestToken by rememberSaveable { mutableIntStateOf(0) }
     val currentSessionState by rememberUpdatedState(sessionState)
     val currentAuthVersion by rememberUpdatedState(authVersion)
+    val contentMotion = NativeDoMotionTheme.scheme.content
 
     fun closeSearch() {
         forceShowSearchField = searchOpenedFromHeader
@@ -161,7 +166,7 @@ fun HomeRoute(
             ) {
                 listState.scrollToItem(0)
             }
-            viewModel.onRefresh()
+            homeViewModel.onRefresh()
         }
     }
 
@@ -175,7 +180,7 @@ fun HomeRoute(
             )
         ) {
             handledAuthVersion = latestAuthVersion
-            viewModel.onRefresh()
+            homeViewModel.onRefresh()
         }
     }
 
@@ -228,30 +233,18 @@ fun HomeRoute(
         transitionSpec = {
             (
                 fadeIn(
-                    animationSpec = tween(
-                        durationMillis = NativeDoDuration.ContentEnter,
-                        easing = NativeDoEasing.Standard,
-                    ),
+                    animationSpec = contentMotion.enter.tweenSpec(),
                 ) +
                     scaleIn(
-                        animationSpec = tween(
-                            durationMillis = NativeDoDuration.ContentEnter,
-                            easing = NativeDoEasing.Standard,
-                        ),
+                        animationSpec = contentMotion.enter.tweenSpec(),
                         initialScale = 0.985f,
                     )
                 ) togetherWith (
                 fadeOut(
-                    animationSpec = tween(
-                        durationMillis = NativeDoDuration.ContentExit,
-                        easing = NativeDoEasing.Standard,
-                    ),
+                    animationSpec = contentMotion.exit.tweenSpec(),
                 ) +
                     scaleOut(
-                        animationSpec = tween(
-                            durationMillis = NativeDoDuration.ContentExit,
-                            easing = NativeDoEasing.Standard,
-                        ),
+                        animationSpec = contentMotion.exit.tweenSpec(),
                         targetScale = 0.985f,
                     )
                 )
@@ -278,10 +271,12 @@ fun HomeRoute(
                 listState = listState,
                 forceShowSearchField = forceShowSearchField,
                 baseUrl = appContainer.baseUrl,
-                onTopicClick = onTopicClick,
-                onFeedSelected = viewModel::onFeedSelected,
-                onRefresh = viewModel::onRefresh,
-                onLoadMore = viewModel::loadNextPage,
+                onTopicClick = { topicId ->
+                    onTopicClick(topicId)
+                },
+                onFeedSelected = homeViewModel::onFeedSelected,
+                onRefresh = homeViewModel::onRefresh,
+                onLoadMore = homeViewModel::loadNextPage,
                 onSearchClick = {
                     searchOpenedFromHeader = false
                     forceShowSearchField = false
@@ -313,6 +308,7 @@ private fun HomeFeedContent(
     val pullToRefreshState = rememberPullToRefreshState()
     val bulletinHostState = LocalBulletinHostState.current
     val colors = NativeDoThemeExtras.colors
+    val chromeGlass = NativeDoThemeExtras.glass(NativeDoGlassRole.Chrome)
     val errorMessage = uiState.errorMessage
     val initialLoadErrorPresentation = errorMessage?.let {
         requestErrorPresentation(
@@ -341,24 +337,17 @@ private fun HomeFeedContent(
             )
         }
     }
-    val searchCollapseProgress = if (forceShowSearchField) 0f else rawSearchCollapseProgress
-    val showHeaderSearch by remember(searchCollapseProgress, forceShowSearchField) {
-        derivedStateOf {
-            shouldShowHomeHeaderSearch(
-                collapseProgress = searchCollapseProgress,
-                forceShowSearchField = forceShowSearchField,
-            )
-        }
+    val searchChromeState = remember(rawSearchCollapseProgress, forceShowSearchField) {
+        buildHomeSearchChromeState(
+            collapseProgress = rawSearchCollapseProgress,
+            forceShowSearchField = forceShowSearchField,
+        )
     }
     var shownRefreshError by rememberSaveable(uiState.selectedTab) { mutableStateOf<String?>(null) }
-    val stickyChromeColor = lerp(
-        start = colors.backgroundBase,
-        stop = colors.backgroundElevated,
-        fraction = 0.34f,
-    ).copy(alpha = 0.97f)
+    val stickyChromeColor = chromeGlass.containerColor.copy(alpha = 0.97f)
 
-    LaunchedEffect(showHeaderSearch, onHeaderSearchVisibilityChanged) {
-        onHeaderSearchVisibilityChanged(showHeaderSearch)
+    LaunchedEffect(searchChromeState.showHeaderSearch, onHeaderSearchVisibilityChanged) {
+        onHeaderSearchVisibilityChanged(searchChromeState.showHeaderSearch)
     }
 
     LaunchedEffect(errorMessage, uiState.items.size) {
@@ -502,7 +491,7 @@ private fun HomeFeedContent(
                     .fillMaxWidth()
                     .height(HOME_TABS_CONTAINER_HEIGHT)
                     .graphicsLayer {
-                        translationY = searchFieldTravelPx * (1f - searchCollapseProgress)
+                        translationY = searchFieldTravelPx * searchChromeState.tabsOffsetProgress
                     }
                     .background(stickyChromeColor),
             ) {
@@ -531,17 +520,17 @@ private fun HomeFeedContent(
                 }
                 HorizontalDivider(
                     modifier = Modifier.align(Alignment.BottomCenter),
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.34f),
+                    color = chromeGlass.borderColor.copy(alpha = 0.64f),
                 )
             }
 
             HomeSearchEntry(
                 onClick = onSearchClick,
-                collapseProgress = searchCollapseProgress,
+                chromeState = searchChromeState,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .graphicsLayer {
-                        translationY = -searchFieldTravelPx * searchCollapseProgress
+                        translationY = -searchFieldTravelPx * searchChromeState.entryOffsetProgress
                     },
             )
         }
@@ -551,31 +540,26 @@ private fun HomeFeedContent(
 @Composable
 private fun HomeSearchEntry(
     onClick: () -> Unit,
-    collapseProgress: Float,
+    chromeState: HomeSearchChromeState,
     modifier: Modifier = Modifier,
 ) {
-    val colors = NativeDoThemeExtras.colors
-    val stickyBackgroundColor = lerp(
-        start = colors.backgroundBase,
-        stop = colors.backgroundElevated,
-        fraction = 0.34f,
-    ).copy(alpha = 0.96f)
+    val chromeGlass = NativeDoThemeExtras.glass(NativeDoGlassRole.Chrome)
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(HOME_SEARCH_CONTAINER_HEIGHT)
             .graphicsLayer {
-                alpha = 1f - collapseProgress
+                alpha = chromeState.entryAlpha
             },
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(stickyBackgroundColor),
+                .background(chromeGlass.containerColor.copy(alpha = 0.96f)),
         )
         HorizontalDivider(
             modifier = Modifier.align(Alignment.BottomCenter),
-            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.34f),
+            color = chromeGlass.borderColor.copy(alpha = 0.64f),
         )
 
         NativeDoSearchField(
@@ -595,13 +579,29 @@ private fun HomeSearchEntry(
 private fun HomeFeedbackCard(
     content: @Composable () -> Unit,
 ) {
-    Box(
+    val colors = NativeDoThemeExtras.colors
+
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 40.dp),
-        contentAlignment = Alignment.Center,
+            .padding(horizontal = 24.dp, vertical = 32.dp),
+        shape = NativeDoCardShape,
+        color = colors.backgroundElevated.copy(alpha = 0.9f),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+        border = BorderStroke(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.24f),
+        ),
     ) {
-        content()
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 18.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            content()
+        }
     }
 }
 
@@ -619,6 +619,35 @@ internal fun shouldShowHomeHeaderSearch(
     collapseProgress: Float,
     forceShowSearchField: Boolean,
 ): Boolean = !forceShowSearchField && collapseProgress >= HOME_HEADER_SEARCH_THRESHOLD
+
+internal fun buildHomeSearchChromeState(
+    collapseProgress: Float,
+    forceShowSearchField: Boolean,
+): HomeSearchChromeState {
+    val resolvedCollapseProgress = if (forceShowSearchField) {
+        0f
+    } else {
+        collapseProgress.coerceIn(0f, 1f)
+    }
+    return HomeSearchChromeState(
+        collapseProgress = resolvedCollapseProgress,
+        tabsOffsetProgress = nativeDoMotionProgressValue(
+            progress = resolvedCollapseProgress,
+            start = 1f,
+            end = 0f,
+        ),
+        entryAlpha = nativeDoMotionProgressValue(
+            progress = resolvedCollapseProgress,
+            start = 1f,
+            end = 0f,
+        ),
+        entryOffsetProgress = resolvedCollapseProgress,
+        showHeaderSearch = shouldShowHomeHeaderSearch(
+            collapseProgress = resolvedCollapseProgress,
+            forceShowSearchField = forceShowSearchField,
+        ),
+    )
+}
 
 internal fun shouldLoadMoreHomeFeed(
     lastVisibleIndex: Int,

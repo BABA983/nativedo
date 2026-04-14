@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
+import io.github.baba983.nativedo.ui.theme.NativeDoGlassRole
 import io.github.baba983.nativedo.ui.theme.NativeDoPillShape
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 import kotlin.math.min
@@ -54,6 +55,11 @@ fun NativeDoPullToRefreshIndicator(
         animationSpec = tween(durationMillis = 180),
         label = "pull_refresh_arrow_scale",
     )
+    val glassSpec = if (isRefreshing || pullProgress > 0.92f) {
+        NativeDoThemeExtras.glass(NativeDoGlassRole.Chrome)
+    } else {
+        NativeDoThemeExtras.glass(NativeDoGlassRole.Card)
+    }
 
     Box(
         modifier = modifier
@@ -74,7 +80,7 @@ fun NativeDoPullToRefreshIndicator(
         NativeDoGlassSurface(
             modifier = Modifier.size(PullRefreshIndicatorSize),
             shape = NativeDoPillShape,
-            strong = isRefreshing || pullProgress > 0.92f,
+            glassSpec = glassSpec,
         ) {
             Box(
                 modifier = Modifier

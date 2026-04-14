@@ -1,6 +1,9 @@
 package io.github.baba983.nativedo.core.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,15 +24,19 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import io.github.baba983.nativedo.ui.theme.NativeDoChromeShape
+import io.github.baba983.nativedo.ui.theme.NativeDoGlassRole
+import io.github.baba983.nativedo.ui.theme.NativeDoGlassSpec
+import io.github.baba983.nativedo.ui.theme.NativeDoMotionTheme
 import io.github.baba983.nativedo.ui.theme.NativeDoSpacing
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 
@@ -45,17 +52,25 @@ fun NativeDoSearchField(
     readOnly: Boolean = false,
     enabled: Boolean = true,
     focusRequester: FocusRequester? = null,
+    glassSpec: NativeDoGlassSpec = NativeDoThemeExtras.glass(NativeDoGlassRole.Field),
     onClick: (() -> Unit)? = null,
     onSubmit: (() -> Unit)? = null,
     trailingContent: @Composable RowScope.() -> Unit = {},
 ) {
     val colors = NativeDoThemeExtras.colors
-    val containerColor = lerp(
-        start = colors.backgroundElevated,
-        stop = colors.glassBackgroundStrong,
-        fraction = 0.28f,
-    ).copy(alpha = 0.98f)
-    val borderColor = colors.glassStrokeStrong.copy(alpha = 0.72f)
+    val labelMotion = NativeDoMotionTheme.scheme.label
+    val containerColor by animateColorAsState(
+        targetValue = glassSpec.containerColor,
+        animationSpec = labelMotion.enter.tweenSpec(),
+        label = "native_do_search_field_container",
+    )
+    val borderColor by animateColorAsState(
+        targetValue = glassSpec.borderColor,
+        animationSpec = labelMotion.enter.tweenSpec(),
+        label = "native_do_search_field_border",
+    )
+    val placeholderVisible = shouldShowNativeDoSearchFieldPlaceholder(value)
+    val readOnlyText = nativeDoSearchFieldReadOnlyText(value)
 
     Surface(
         modifier = modifier
@@ -95,7 +110,12 @@ fun NativeDoSearchField(
                 modifier = Modifier.weight(1f),
                 contentAlignment = Alignment.CenterStart,
             ) {
-                if (shouldShowNativeDoSearchFieldPlaceholder(value)) {
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = placeholderVisible,
+                    enter = fadeIn(animationSpec = labelMotion.enter.tweenSpec()),
+                    exit = fadeOut(animationSpec = labelMotion.exit.tweenSpec()),
+                    label = "native_do_search_field_placeholder",
+                ) {
                     Text(
                         text = placeholder,
                         style = MaterialTheme.typography.bodyMedium,
@@ -104,9 +124,9 @@ fun NativeDoSearchField(
                 }
 
                 if (readOnly) {
-                    nativeDoSearchFieldReadOnlyText(value)?.let { readOnlyText ->
+                    readOnlyText?.let { resolvedReadOnlyText ->
                         Text(
-                            text = readOnlyText,
+                            text = resolvedReadOnlyText,
                             style = MaterialTheme.typography.bodyMedium,
                             color = colors.textPrimary,
                             maxLines = 1,

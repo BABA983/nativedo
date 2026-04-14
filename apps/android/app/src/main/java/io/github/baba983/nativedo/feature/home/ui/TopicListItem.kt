@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -33,6 +34,7 @@ import io.github.baba983.nativedo.core.model.TopicSummary
 import io.github.baba983.nativedo.core.ui.compactCount
 import io.github.baba983.nativedo.core.ui.UserAvatar
 import io.github.baba983.nativedo.ui.theme.NativeDoPillShape
+import io.github.baba983.nativedo.ui.theme.NativeDoSpacing
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 import java.time.Duration
 import java.time.Instant
@@ -65,7 +67,10 @@ fun TopicListItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(
+                    horizontal = NativeDoSpacing.lg,
+                    vertical = 13.dp,
+                ),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.Top,
         ) {
@@ -101,7 +106,8 @@ fun TopicListItem(
                         Text(
                             text = topic.title,
                             modifier = Modifier.weight(1f),
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
                             color = colors.textPrimary,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
@@ -131,7 +137,7 @@ fun TopicListItem(
                                 text = tagLine,
                                 modifier = Modifier.weight(1f, fill = false),
                                 style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.88f),
+                                color = colors.accent.copy(alpha = 0.94f),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -147,7 +153,7 @@ fun TopicListItem(
                         Text(
                             text = activityLine,
                             modifier = Modifier.weight(1f),
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.labelMedium,
                             color = colors.textSecondary,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
@@ -161,8 +167,10 @@ fun TopicListItem(
 
         if (showDivider) {
             HorizontalDivider(
-                modifier = Modifier.padding(start = 16.dp),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.75f),
+                modifier = Modifier.padding(
+                    start = NativeDoSpacing.lg + 40.dp + NativeDoSpacing.md,
+                ),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.52f),
             )
         }
     }
@@ -177,18 +185,22 @@ private fun TopicCategoryBadge(
         rawHex = category.colorHex,
         fallback = MaterialTheme.colorScheme.primary,
     )
-    val labelColor = Color(0xFF161616)
+    val labelColor = if (badgeColor.luminance() > 0.62f) {
+        Color(0xFF161616)
+    } else {
+        Color.White.copy(alpha = 0.96f)
+    }
 
     Surface(
         modifier = modifier,
         shape = NativeDoPillShape,
-        color = badgeColor.copy(alpha = 0.18f),
+        color = badgeColor.copy(alpha = if (badgeColor.luminance() > 0.62f) 0.2f else 0.28f),
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,
     ) {
         Text(
             text = category.name,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
             style = MaterialTheme.typography.labelSmall,
             color = labelColor,
             maxLines = 1,
@@ -210,7 +222,7 @@ private fun TopicStatsRow(
 
     Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (topic.replyCount > 0) {
@@ -219,12 +231,12 @@ private fun TopicStatsRow(
                     Icon(
                         imageVector = Icons.AutoMirrored.Outlined.Reply,
                         contentDescription = null,
-                        modifier = Modifier.size(14.dp),
-                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(13.dp),
+                        tint = colors.accent,
                     )
                 },
                 text = compactCount(topic.replyCount),
-                color = MaterialTheme.colorScheme.primary,
+                color = colors.accent,
             )
         }
         if (topic.viewCount > 0) {
@@ -233,7 +245,7 @@ private fun TopicStatsRow(
                     Icon(
                         imageVector = Icons.Outlined.Visibility,
                         contentDescription = null,
-                        modifier = Modifier.size(14.dp),
+                        modifier = Modifier.size(13.dp),
                         tint = colors.textSecondary,
                     )
                 },
@@ -253,13 +265,13 @@ private fun TopicStat(
 ) {
     Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         icon()
         Text(
             text = text,
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.labelSmall,
             color = color,
             maxLines = 1,
         )

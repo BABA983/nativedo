@@ -2,6 +2,8 @@ package io.github.baba983.nativedo.ui.theme
 
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.unit.dp
 
 internal val NativeDoLightPrimary = Color(0xFF1E7755)
 internal val NativeDoLightOnPrimary = Color(0xFFFFFFFF)
@@ -75,3 +77,51 @@ internal val NativeDoDarkExtendedColors = NativeDoExtendedColors(
     glowPrimary = Color(0x40337F64),
     glowSecondary = Color(0x333A5579),
 )
+
+internal fun NativeDoExtendedColors.chromeGlassSpec(): NativeDoGlassSpec {
+    return NativeDoGlassSpec(
+        role = NativeDoGlassRole.Chrome,
+        containerColor = glassBackgroundStrong,
+        borderColor = glassStrokeStrong,
+        highlightColor = glassStrokeStrong.copy(alpha = 0.42f),
+        shadowColor = glassShadow,
+        shadowElevation = 10.dp,
+    )
+}
+
+internal fun NativeDoExtendedColors.popupGlassSpec(): NativeDoGlassSpec {
+    return NativeDoGlassSpec(
+        role = NativeDoGlassRole.Popup,
+        containerColor = glassBackgroundStrong.copy(alpha = 0.94f),
+        borderColor = glassStrokeStrong.copy(alpha = 0.72f),
+        highlightColor = glassStrokeStrong.copy(alpha = 0.58f),
+        shadowColor = glassShadow,
+        shadowElevation = 12.dp,
+    )
+}
+
+internal fun NativeDoExtendedColors.fieldGlassSpec(): NativeDoGlassSpec {
+    return NativeDoGlassSpec(
+        role = NativeDoGlassRole.Field,
+        containerColor = lerp(
+            start = backgroundElevated,
+            stop = glassBackgroundStrong,
+            fraction = 0.28f,
+        ).copy(alpha = 0.98f),
+        borderColor = glassStrokeStrong.copy(alpha = 0.72f),
+        highlightColor = glassStrokeStrong.copy(alpha = 0.58f),
+        shadowColor = glassShadow,
+        shadowElevation = 0.dp,
+    )
+}
+
+internal fun NativeDoExtendedColors.cardGlassSpec(): NativeDoGlassSpec {
+    return NativeDoGlassSpec(
+        role = NativeDoGlassRole.Card,
+        containerColor = glassBackground,
+        borderColor = glassStroke,
+        highlightColor = glassStrokeStrong.copy(alpha = 0.3f),
+        shadowColor = glassShadow,
+        shadowElevation = 4.dp,
+    )
+}

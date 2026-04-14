@@ -23,7 +23,7 @@ class AppBrowserChromeConfigComposeTest {
         activity.runOnUiThread {
             scrollProgressState = mutableStateOf(0f)
             activity.setContent {
-                val chromeConfig = AppBrowserChromeConfig(
+                val chrome = AppBrowserChromeModel(
                     title = "linux.do",
                     subtitle = null,
                     currentUrl = "https://linux.do",
@@ -35,22 +35,11 @@ class AppBrowserChromeConfigComposeTest {
                     canGoForward = false,
                     backHistoryEntries = emptyList(),
                     browserHistoryEntries = emptyList(),
-                    panel = AppBrowserPanel.Page,
                     alpha = 1f,
                     translationX = 0f,
-                    onBack = {},
-                    onClose = {},
-                    onShowHistory = {},
-                    onShowSettings = {},
-                    onHistoryEntryClick = {},
-                    onForward = {},
-                    onRefresh = {},
-                    onShare = {},
-                    onOpenInBrowser = {},
-                    onCopyLink = {},
                 )
                 SideEffect {
-                    emittedScrollProgress += chromeConfig.scrollProgress
+                    emittedScrollProgress += chrome.scrollProgress
                 }
             }
         }

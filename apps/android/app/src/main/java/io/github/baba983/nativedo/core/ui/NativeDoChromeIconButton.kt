@@ -17,9 +17,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import io.github.baba983.nativedo.ui.theme.NativeDoExtendedColors
+import io.github.baba983.nativedo.ui.theme.BlurMode
+import io.github.baba983.nativedo.ui.theme.NativeDoGlassRole
+import io.github.baba983.nativedo.ui.theme.NativeDoGlassSpec
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 import androidx.compose.foundation.shape.CircleShape
+import kotlin.math.max
+import kotlin.math.min
 
 @Composable
 fun NativeDoChromeIconButton(
@@ -30,6 +34,8 @@ fun NativeDoChromeIconButton(
     enabled: Boolean = true,
     onLongClick: (() -> Unit)? = null,
     emphasized: Boolean = true,
+    glassSpec: NativeDoGlassSpec = NativeDoThemeExtras.glass(NativeDoGlassRole.Chrome),
+    blurMode: BlurMode = glassSpec.blurMode,
     containerColorOverride: Color? = null,
 ) {
     val colors = NativeDoThemeExtras.colors
@@ -41,18 +47,20 @@ fun NativeDoChromeIconButton(
             emphasized = emphasized,
         ),
     )
+    @Suppress("UNUSED_VARIABLE")
+    val resolvedBlurMode = blurMode
 
     Surface(
         modifier = modifier.size(44.dp),
         shape = CircleShape,
         color = nativeDoChromeIconButtonContainerColor(
-            colors = colors,
+            glassSpec = glassSpec,
             enabled = enabled,
             emphasized = emphasized,
             pressed = pressed,
             containerColorOverride = containerColorOverride,
         ),
-        tonalElevation = 0.dp,
+        tonalElevation = glassSpec.tonalElevation,
         shadowElevation = 0.dp,
     ) {
         Box(
@@ -87,7 +95,7 @@ fun nativeDoChromeIconButtonContentAlpha(
 }
 
 fun nativeDoChromeIconButtonContainerColor(
-    colors: NativeDoExtendedColors,
+    glassSpec: NativeDoGlassSpec,
     enabled: Boolean,
     emphasized: Boolean,
     pressed: Boolean,
@@ -96,9 +104,16 @@ fun nativeDoChromeIconButtonContainerColor(
     if (containerColorOverride != null) {
         return containerColorOverride
     }
+    val baseColor = glassSpec.containerColor
+    val baseAlpha = baseColor.alpha
+    val resolvedAlpha = when {
+        !enabled -> baseAlpha * 0.48f
+        pressed -> max(baseAlpha, 0.94f)
+        !emphasized -> min(baseAlpha, 0.22f)
+        else -> max(baseAlpha, 0.82f)
+    }
     return when {
-        pressed && enabled -> colors.glassBackgroundStrong.copy(alpha = 0.94f)
-        !emphasized -> colors.glassBackgroundStrong.copy(alpha = 0.22f)
-        else -> colors.glassBackgroundStrong.copy(alpha = 0.82f)
+        resolvedAlpha <= 0f -> Color.Transparent
+        else -> baseColor.copy(alpha = resolvedAlpha.coerceIn(0f, 1f))
     }
 }

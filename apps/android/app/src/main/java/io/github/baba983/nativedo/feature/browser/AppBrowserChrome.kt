@@ -7,20 +7,15 @@ import android.text.TextWatcher
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.KeyEvent
-import android.view.MotionEvent
-import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import androidx.appcompat.widget.AppCompatEditText
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -34,6 +29,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -53,7 +49,6 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
-import androidx.compose.material.icons.outlined.Clear
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.History
@@ -85,40 +80,47 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
-import androidx.compose.ui.unit.IntRect
-import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupPositionProvider
-import androidx.compose.ui.window.PopupProperties
 import androidx.compose.foundation.layout.WindowInsets
 import io.github.baba983.nativedo.R
+import io.github.baba983.nativedo.core.ui.NativeDoAnimatedLabel
+import io.github.baba983.nativedo.core.ui.NativeDoBackIcon
 import io.github.baba983.nativedo.core.ui.NativeDoChromeIconButton
+import io.github.baba983.nativedo.core.ui.NativeDoGlassBar
+import io.github.baba983.nativedo.core.ui.NativeDoSearchField
+import io.github.baba983.nativedo.core.ui.NativeDoPopupPalette
+import io.github.baba983.nativedo.core.ui.NativeDoPopupAnchorHighlight
+import io.github.baba983.nativedo.core.ui.NativeDoPopupMenu
+import io.github.baba983.nativedo.core.ui.NativeDoPopupMenuDivider
+import io.github.baba983.nativedo.core.ui.NativeDoPopupMenuItem
 import io.github.baba983.nativedo.core.ui.nativeDoChromeIconButtonContainerColor
 import io.github.baba983.nativedo.core.ui.nativeDoChromeIconButtonContentAlpha
+import io.github.baba983.nativedo.core.ui.nativeDoPopupCascadeProgress
+import io.github.baba983.nativedo.core.ui.rememberNativeDoPopupPalette
 import io.github.baba983.nativedo.ui.AppTopBarHorizontalPadding
 import io.github.baba983.nativedo.ui.AppTopBarRowMinHeight
 import io.github.baba983.nativedo.ui.AppTopBarVerticalPadding
+import io.github.baba983.nativedo.ui.NativeDoGlassSurface
 import io.github.baba983.nativedo.ui.theme.NativeDoDuration
 import io.github.baba983.nativedo.ui.theme.NativeDoEasing
+import io.github.baba983.nativedo.ui.theme.NativeDoGlassRole
 import io.github.baba983.nativedo.ui.theme.NativeDoPillShape
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 import java.text.SimpleDateFormat
@@ -126,42 +128,6 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.delay
-import kotlin.math.max
-import kotlin.math.min
-
-internal data class AppBrowserChromeConfig(
-    val title: String,
-    val subtitle: String?,
-    val currentUrl: String,
-    val isHttps: Boolean,
-    val progress: Float,
-    val scrollProgress: Float = 0f,
-    val isLoadingProgressVisible: Boolean,
-    val canGoBack: Boolean,
-    val canGoForward: Boolean,
-    val backHistoryEntries: List<AppBrowserHistoryEntry>,
-    val browserHistoryEntries: List<AppBrowserHistoryEntry>,
-    val panel: AppBrowserPanel,
-    val alpha: Float,
-    val translationX: Float,
-    val isSearching: Boolean = false,
-    val searchQuery: String = "",
-    val onBack: () -> Unit,
-    val onClose: () -> Unit,
-    val onShowHistory: () -> Unit,
-    val onShowSettings: () -> Unit,
-    val onHistoryEntryClick: (AppBrowserHistoryEntry) -> Unit,
-    val onForward: () -> Unit,
-    val onRefresh: () -> Unit,
-    val onShare: () -> Unit,
-    val onOpenInBrowser: () -> Unit,
-    val onCopyLink: () -> Unit,
-    val isHistoryPopupVisible: Boolean = false,
-    val onHistoryPopupVisibilityChanged: (Boolean) -> Unit = {},
-    val onStartSearch: () -> Unit = {},
-    val onSearchQueryChange: (String) -> Unit = {},
-    val onSearchClose: () -> Unit = {},
-)
 
 internal enum class AppBrowserMenuAction {
     Search,
@@ -185,6 +151,16 @@ internal data class AppBrowserMenuItem(
     val enabled: Boolean = true,
 )
 
+internal data class AppBrowserPopupDividerMetrics(
+    val spacing: androidx.compose.ui.unit.Dp,
+    val gapHeight: androidx.compose.ui.unit.Dp,
+)
+
+internal fun appBrowserPopupDividerMetrics(): AppBrowserPopupDividerMetrics = AppBrowserPopupDividerMetrics(
+    spacing = 2.dp,
+    gapHeight = 6.dp,
+)
+
 internal data class AppBrowserHistoryEntry(
     val title: String,
     val url: String,
@@ -193,93 +169,6 @@ internal data class AppBrowserHistoryEntry(
     val visitedAtMillis: Long,
     val favicon: Bitmap? = null,
 )
-
-private data class AppBrowserPopupPalette(
-    val background: Color,
-    val sectionGap: Color,
-    val text: Color,
-    val secondaryText: Color,
-    val icon: Color,
-    val pressed: Color,
-)
-
-private fun AppBrowserChromeConfig.toChromeModel(): AppBrowserChromeModel {
-    return AppBrowserChromeModel(
-        title = title,
-        subtitle = subtitle,
-        currentUrl = currentUrl,
-        isHttps = isHttps,
-        canGoBack = canGoBack,
-        canGoForward = canGoForward,
-        progress = progress,
-        scrollProgress = scrollProgress,
-        isLoadingProgressVisible = isLoadingProgressVisible,
-        backHistoryEntries = backHistoryEntries,
-        browserHistoryEntries = browserHistoryEntries,
-        isInSubPanel = panel != AppBrowserPanel.Page,
-        alpha = alpha,
-        translationX = translationX,
-        isHistoryPopupVisible = isHistoryPopupVisible,
-    )
-}
-
-private fun AppBrowserChromeConfig.toSearchUiState(): AppBrowserSearchUiState {
-    return AppBrowserSearchUiState(
-        isActive = isSearching,
-        query = searchQuery,
-    )
-}
-
-private fun AppBrowserChromeConfig.toAddressUiState(): AppBrowserAddressUiState {
-    return AppBrowserAddressUiState()
-}
-
-private fun dispatchAppBrowserChromeAction(
-    config: AppBrowserChromeConfig,
-    action: AppBrowserAction,
-) {
-    when (action) {
-        AppBrowserAction.NavigateBack -> config.onBack()
-        AppBrowserAction.CloseBrowser -> config.onClose()
-        AppBrowserAction.StartAddressEditing,
-        AppBrowserAction.CancelAddressEditing -> Unit
-        AppBrowserAction.OpenHistory -> config.onShowHistory()
-        AppBrowserAction.OpenSettings -> config.onShowSettings()
-        AppBrowserAction.OpenAddressSheet,
-        AppBrowserAction.DismissSheet,
-        AppBrowserAction.CloseSheet -> Unit
-        is AppBrowserAction.OpenHistoryEntry -> config.onHistoryEntryClick(action.entry)
-        AppBrowserAction.StartSearch -> config.onStartSearch()
-        AppBrowserAction.CloseSearch -> config.onSearchClose()
-        is AppBrowserAction.UpdateAddressDraft,
-        is AppBrowserAction.SubmitAddress -> Unit
-        is AppBrowserAction.UpdateSearchQuery -> config.onSearchQueryChange(action.query)
-        is AppBrowserAction.UpdateSearchMatches -> Unit
-        AppBrowserAction.GoForward -> config.onForward()
-        AppBrowserAction.Refresh -> config.onRefresh()
-        AppBrowserAction.Share -> config.onShare()
-        AppBrowserAction.OpenInBrowser -> config.onOpenInBrowser()
-        AppBrowserAction.CopyLink -> config.onCopyLink()
-        is AppBrowserAction.SetHistoryPopupVisible -> config.onHistoryPopupVisibilityChanged(action.visible)
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-internal fun AppBrowserTopBar(
-    config: AppBrowserChromeConfig?,
-) {
-    if (config == null) return
-
-    AppBrowserTopBar(
-        chrome = config.toChromeModel(),
-        search = config.toSearchUiState(),
-        address = config.toAddressUiState(),
-        onAction = { action ->
-            dispatchAppBrowserChromeAction(config, action)
-        },
-    )
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -492,162 +381,162 @@ internal fun AppBrowserTopBar(
                         Spacer(
                             modifier = Modifier.windowInsetsTopHeight(WindowInsets.statusBars),
                         )
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = AppTopBarRowMinHeight)
-                                .padding(
-                                    horizontal = AppTopBarHorizontalPadding,
-                                    vertical = AppTopBarVerticalPadding,
-                                ),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Box {
-                                AppBrowserHistoryAnchorHighlight(
-                                    visible = historyExpanded,
-                                )
-                                AppBrowserChromeButton(
-                                    onClick = {
-                                        if (historyExpanded) {
-                                            onAction(AppBrowserAction.SetHistoryPopupVisible(false))
-                                        } else if (showCloseButton) {
-                                            onAction(AppBrowserAction.CloseBrowser)
-                                        } else {
-                                            onAction(AppBrowserAction.NavigateBack)
-                                        }
-                                    },
-                                    onLongClick = if (hasBackHistoryEntries && !isSearching && !isInSubPanel) {
-                                        {
-                                            menuExpanded = false
-                                            onAction(AppBrowserAction.SetHistoryPopupVisible(true))
-                                        }
-                                    } else {
-                                        null
-                                    },
-                                    animatedBackCloseProgress = backCloseProgress,
-                                    containerColorOverride = if (historyExpanded) Color.Transparent else null,
-                                    contentDescription = stringResource(
-                                        if (showCloseButton) {
-                                            R.string.app_browser_close
-                                        } else if (isSearching) {
-                                            R.string.app_browser_search_back
-                                        } else {
-                                            R.string.app_browser_back
+                        NativeDoGlassBar(
+                            modifier = Modifier.fillMaxWidth(),
+                            minHeight = AppTopBarRowMinHeight,
+                            contentPadding = PaddingValues(
+                                horizontal = AppTopBarHorizontalPadding,
+                                vertical = AppTopBarVerticalPadding,
+                            ),
+                            sectionSpacing = 12.dp,
+                            leading = {
+                                Box {
+                                    AppBrowserHistoryAnchorHighlight(
+                                        visible = historyExpanded,
+                                    )
+                                    AppBrowserChromeButton(
+                                        onClick = {
+                                            if (historyExpanded) {
+                                                onAction(AppBrowserAction.SetHistoryPopupVisible(false))
+                                            } else if (showCloseButton) {
+                                                onAction(AppBrowserAction.CloseBrowser)
+                                            } else {
+                                                onAction(AppBrowserAction.NavigateBack)
+                                            }
                                         },
-                                    ),
-                                )
-                                AppBrowserHistoryPopup(
-                                    expanded = historyExpanded && hasBackHistoryEntries,
-                                    entries = chrome.backHistoryEntries,
-                                    onDismissRequest = {
-                                        onAction(AppBrowserAction.SetHistoryPopupVisible(false))
-                                    },
-                                    onEntryClick = { entry ->
-                                        onAction(AppBrowserAction.SetHistoryPopupVisible(false))
-                                        onAction(AppBrowserAction.OpenHistoryEntry(entry))
-                                    },
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-
-                            Box(
-                                modifier = Modifier.weight(1f),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                if (!isSearching || searchingProgress < 1f) {
-                                    AppBrowserTitlePill(
-                                        title = chrome.title,
-                                        subtitle = chrome.subtitle,
-                                        isHttps = chrome.isHttps,
-                                        onClick = if (!isSearching && !isInSubPanel) {
+                                        onLongClick = if (hasBackHistoryEntries && !isSearching && !isInSubPanel) {
                                             {
-                                                onAction(AppBrowserAction.StartAddressEditing)
+                                                menuExpanded = false
+                                                onAction(AppBrowserAction.SetHistoryPopupVisible(true))
                                             }
                                         } else {
                                             null
                                         },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .graphicsLayer {
-                                                alpha = 1f - searchingProgress
-                                                scaleX = titleScale
-                                                scaleY = titleScale
+                                        animatedBackCloseProgress = backCloseProgress,
+                                        containerColorOverride = if (historyExpanded) Color.Transparent else null,
+                                        contentDescription = stringResource(
+                                            if (showCloseButton) {
+                                                R.string.app_browser_close
+                                            } else if (isSearching) {
+                                                R.string.app_browser_search_back
+                                            } else {
+                                                R.string.app_browser_back
                                             },
+                                        ),
                                     )
-                                }
-                                if (isSearching || searchingProgress > 0f) {
-                                    AppBrowserSearchBar(
-                                        query = search.query,
-                                        onQueryChange = { query ->
-                                            onAction(AppBrowserAction.UpdateSearchQuery(query))
-                                        },
-                                        focusToken = searchFocusToken,
-                                        isSearching = isSearching,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .graphicsLayer {
-                                                alpha = searchingProgress
-                                                scaleX = searchScale
-                                                scaleY = searchScale
-                                            },
-                                    )
-                                }
-                            }
-
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Box(
-                                modifier = Modifier.width(44.dp),
-                            ) {
-                                if (showMenuButton) {
-                                    AppBrowserChromeButton(
-                                        onClick = {
+                                    AppBrowserHistoryPopup(
+                                        expanded = historyExpanded && hasBackHistoryEntries,
+                                        entries = chrome.backHistoryEntries,
+                                        onDismissRequest = {
                                             onAction(AppBrowserAction.SetHistoryPopupVisible(false))
-                                            menuExpanded = true
                                         },
-                                        imageVector = Icons.Outlined.MoreVert,
-                                        contentDescription = stringResource(R.string.app_browser_more_actions),
-                                        emphasized = menuExpanded,
-                                        modifier = Modifier.align(Alignment.Center),
-                                    )
-                                    AppBrowserActionPopup(
-                                        expanded = menuExpanded,
-                                        entries = menuEntries,
-                                        onDismissRequest = { menuExpanded = false },
-                                        onActionClick = { action ->
-                                            menuExpanded = false
-                                            when (action) {
-                                                AppBrowserMenuAction.Search -> onAction(AppBrowserAction.StartSearch)
-                                                AppBrowserMenuAction.History -> onAction(AppBrowserAction.OpenHistory)
-                                                AppBrowserMenuAction.Forward -> onAction(AppBrowserAction.GoForward)
-                                                AppBrowserMenuAction.Refresh -> onAction(AppBrowserAction.Refresh)
-                                                AppBrowserMenuAction.Share -> onAction(AppBrowserAction.Share)
-                                                AppBrowserMenuAction.OpenInBrowser -> onAction(AppBrowserAction.OpenInBrowser)
-                                                AppBrowserMenuAction.CopyLink -> onAction(AppBrowserAction.CopyLink)
-                                                AppBrowserMenuAction.Settings -> onAction(AppBrowserAction.OpenSettings)
-                                                AppBrowserMenuAction.Close -> onAction(AppBrowserAction.CloseBrowser)
-                                            }
+                                        onEntryClick = { entry ->
+                                            onAction(AppBrowserAction.SetHistoryPopupVisible(false))
+                                            onAction(AppBrowserAction.OpenHistoryEntry(entry))
                                         },
-                                    )
-                                } else if (isSearching) {
-                                    AppBrowserChromeButton(
-                                        onClick = {
-                                            onAction(AppBrowserAction.UpdateSearchQuery(""))
-                                        },
-                                        imageVector = Icons.Outlined.Close,
-                                        contentDescription = stringResource(R.string.app_browser_search_clear),
-                                        enabled = searchClearVisible,
-                                        emphasized = searchClearVisible,
-                                        modifier = Modifier
-                                            .align(Alignment.Center)
-                                            .graphicsLayer {
-                                                alpha = searchClearProgress
-                                                scaleX = 0.9f + (searchClearProgress * 0.1f)
-                                                scaleY = 0.9f + (searchClearProgress * 0.1f)
-                                            },
                                     )
                                 }
-                            }
-                        }
+                            },
+                            title = {
+                                Box(
+                                    modifier = Modifier.weight(1f),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    if (!isSearching || searchingProgress < 1f) {
+                                        AppBrowserTitlePill(
+                                            title = chrome.title,
+                                            subtitle = chrome.subtitle,
+                                            isHttps = chrome.isHttps,
+                                            onClick = if (!isSearching && !isInSubPanel) {
+                                                {
+                                                    onAction(AppBrowserAction.StartAddressEditing)
+                                                }
+                                            } else {
+                                                null
+                                            },
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .graphicsLayer {
+                                                    alpha = 1f - searchingProgress
+                                                    scaleX = titleScale
+                                                    scaleY = titleScale
+                                                },
+                                        )
+                                    }
+                                    if (isSearching || searchingProgress > 0f) {
+                                        AppBrowserSearchBar(
+                                            query = search.query,
+                                            onQueryChange = { query ->
+                                                onAction(AppBrowserAction.UpdateSearchQuery(query))
+                                            },
+                                            focusToken = searchFocusToken,
+                                            isSearching = isSearching,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .graphicsLayer {
+                                                    alpha = searchingProgress
+                                                    scaleX = searchScale
+                                                    scaleY = searchScale
+                                                },
+                                        )
+                                    }
+                                }
+                            },
+                            trailing = {
+                                Box(
+                                    modifier = Modifier.width(44.dp),
+                                ) {
+                                    if (showMenuButton) {
+                                        AppBrowserChromeButton(
+                                            onClick = {
+                                                onAction(AppBrowserAction.SetHistoryPopupVisible(false))
+                                                menuExpanded = true
+                                            },
+                                            imageVector = Icons.Outlined.MoreVert,
+                                            contentDescription = stringResource(R.string.app_browser_more_actions),
+                                            emphasized = menuExpanded,
+                                            modifier = Modifier.align(Alignment.Center),
+                                        )
+                                        AppBrowserActionPopup(
+                                            expanded = menuExpanded,
+                                            entries = menuEntries,
+                                            onDismissRequest = { menuExpanded = false },
+                                            onActionClick = { action ->
+                                                menuExpanded = false
+                                                when (action) {
+                                                    AppBrowserMenuAction.Search -> onAction(AppBrowserAction.StartSearch)
+                                                    AppBrowserMenuAction.History -> onAction(AppBrowserAction.OpenHistory)
+                                                    AppBrowserMenuAction.Forward -> onAction(AppBrowserAction.GoForward)
+                                                    AppBrowserMenuAction.Refresh -> onAction(AppBrowserAction.Refresh)
+                                                    AppBrowserMenuAction.Share -> onAction(AppBrowserAction.Share)
+                                                    AppBrowserMenuAction.OpenInBrowser -> onAction(AppBrowserAction.OpenInBrowser)
+                                                    AppBrowserMenuAction.CopyLink -> onAction(AppBrowserAction.CopyLink)
+                                                    AppBrowserMenuAction.Settings -> onAction(AppBrowserAction.OpenSettings)
+                                                    AppBrowserMenuAction.Close -> onAction(AppBrowserAction.CloseBrowser)
+                                                }
+                                            },
+                                        )
+                                    } else if (isSearching) {
+                                        AppBrowserChromeButton(
+                                            onClick = {
+                                                onAction(AppBrowserAction.UpdateSearchQuery(""))
+                                            },
+                                            imageVector = Icons.Outlined.Close,
+                                            contentDescription = stringResource(R.string.app_browser_search_clear),
+                                            enabled = searchClearVisible,
+                                            emphasized = searchClearVisible,
+                                            modifier = Modifier
+                                                .align(Alignment.Center)
+                                                .graphicsLayer {
+                                                    alpha = searchClearProgress
+                                                    scaleX = 0.9f + (searchClearProgress * 0.1f)
+                                                    scaleY = 0.9f + (searchClearProgress * 0.1f)
+                                                },
+                                        )
+                                    }
+                                }
+                            },
+                        )
 
                         HorizontalDivider(
                             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = scrollChromeState.dividerAlpha),
@@ -705,57 +594,59 @@ private fun AppBrowserAddressScene(
             ),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Row(
+        NativeDoGlassBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(min = AppTopBarRowMinHeight),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box {
-                AppBrowserHistoryAnchorHighlight(
-                    visible = historyExpanded,
-                )
-                AppBrowserChromeButton(
-                    onClick = {
-                        if (historyExpanded) {
-                            onAction(AppBrowserAction.SetHistoryPopupVisible(false))
+            sectionSpacing = 12.dp,
+            leading = {
+                Box {
+                    AppBrowserHistoryAnchorHighlight(
+                        visible = historyExpanded,
+                    )
+                    AppBrowserChromeButton(
+                        onClick = {
+                            if (historyExpanded) {
+                                onAction(AppBrowserAction.SetHistoryPopupVisible(false))
+                            } else {
+                                onAction(AppBrowserAction.CancelAddressEditing)
+                            }
+                        },
+                        onLongClick = if (hasBackHistoryEntries) {
+                            {
+                                onAction(AppBrowserAction.SetHistoryPopupVisible(true))
+                            }
                         } else {
-                            onAction(AppBrowserAction.CancelAddressEditing)
-                        }
-                    },
-                    onLongClick = if (hasBackHistoryEntries) {
-                        {
-                            onAction(AppBrowserAction.SetHistoryPopupVisible(true))
-                        }
-                    } else {
-                        null
-                    },
-                    imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                    containerColorOverride = if (historyExpanded) Color.Transparent else null,
-                    contentDescription = stringResource(R.string.app_browser_back),
+                            null
+                        },
+                        imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                        containerColorOverride = if (historyExpanded) Color.Transparent else null,
+                        contentDescription = stringResource(R.string.app_browser_back),
+                    )
+                    AppBrowserHistoryPopup(
+                        expanded = historyExpanded && hasBackHistoryEntries,
+                        entries = chrome.backHistoryEntries,
+                        onDismissRequest = {
+                            onAction(AppBrowserAction.SetHistoryPopupVisible(false))
+                        },
+                        onEntryClick = { entry ->
+                            onAction(AppBrowserAction.SetHistoryPopupVisible(false))
+                            onAction(AppBrowserAction.OpenHistoryEntry(entry))
+                        },
+                    )
+                }
+            },
+            title = {
+                AppBrowserAddressInput(
+                    value = address.draft,
+                    isEditing = address.isEditing,
+                    focusToken = focusToken,
+                    onValueChange = { value -> onAction(AppBrowserAction.UpdateAddressDraft(value)) },
+                    onSubmit = { onAction(AppBrowserAction.SubmitAddress(address.draft)) },
+                    modifier = Modifier.weight(1f),
                 )
-                AppBrowserHistoryPopup(
-                    expanded = historyExpanded && hasBackHistoryEntries,
-                    entries = chrome.backHistoryEntries,
-                    onDismissRequest = {
-                        onAction(AppBrowserAction.SetHistoryPopupVisible(false))
-                    },
-                    onEntryClick = { entry ->
-                        onAction(AppBrowserAction.SetHistoryPopupVisible(false))
-                        onAction(AppBrowserAction.OpenHistoryEntry(entry))
-                    },
-                )
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            AppBrowserAddressInput(
-                value = address.draft,
-                isEditing = address.isEditing,
-                focusToken = focusToken,
-                onValueChange = { value -> onAction(AppBrowserAction.UpdateAddressDraft(value)) },
-                onSubmit = { onAction(AppBrowserAction.SubmitAddress(address.draft)) },
-                modifier = Modifier.weight(1f),
-            )
-        }
+            },
+        )
         AppBrowserAddressPreviewCard(
             title = previewTitle,
             url = previewUrl,
@@ -828,92 +719,90 @@ private fun AppBrowserAddressInput(
 ) {
     val colors = NativeDoThemeExtras.colors
 
-    Surface(
+    NativeDoGlassSurface(
         modifier = modifier,
-        shape = RoundedCornerShape(24.dp),
-        color = colors.glassBackgroundStrong.copy(alpha = 0.92f),
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
+        shape = NativeDoPillShape,
+        glassSpec = NativeDoThemeExtras.glass(NativeDoGlassRole.Field),
     ) {
-        Row(
+        NativeDoGlassBar(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(46.dp)
-                .padding(start = 18.dp, end = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier.weight(1f),
-                contentAlignment = Alignment.CenterStart,
-            ) {
-                AndroidView(
-                    modifier = Modifier.fillMaxWidth(),
-                    factory = { context ->
-                        AppBrowserAddressEditText(context).apply {
-                            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-                            setSingleLine(true)
-                            hint = "https://linux.do 或搜索词"
-                            background = null
-                            gravity = Gravity.CENTER_VERTICAL
-                            setPadding(0, 0, 0, 0)
-                            setTextColor(colors.textPrimary.toArgb())
-                            setHintTextColor(colors.textSecondary.toArgb())
-                            inputType = inputType or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-                            imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN or EditorInfo.IME_ACTION_GO
-                            addTextChangedListener(
-                                object : TextWatcher {
-                                    override fun beforeTextChanged(
-                                        s: CharSequence?,
-                                        start: Int,
-                                        count: Int,
-                                        after: Int,
-                                    ) = Unit
+                .height(46.dp),
+            contentPadding = PaddingValues(start = 18.dp, end = 10.dp),
+            title = {
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    AndroidView(
+                        modifier = Modifier.fillMaxWidth(),
+                        factory = { context ->
+                            AppBrowserAddressEditText(context).apply {
+                                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+                                setSingleLine(true)
+                                hint = "https://linux.do 或搜索词"
+                                background = null
+                                gravity = Gravity.CENTER_VERTICAL
+                                setPadding(0, 0, 0, 0)
+                                setTextColor(colors.textPrimary.toArgb())
+                                setHintTextColor(colors.textSecondary.toArgb())
+                                inputType = inputType or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+                                imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN or EditorInfo.IME_ACTION_GO
+                                addTextChangedListener(
+                                    object : TextWatcher {
+                                        override fun beforeTextChanged(
+                                            s: CharSequence?,
+                                            start: Int,
+                                            count: Int,
+                                            after: Int,
+                                        ) = Unit
 
-                                    override fun onTextChanged(
-                                        s: CharSequence?,
-                                        start: Int,
-                                        before: Int,
-                                        count: Int,
-                                    ) = Unit
+                                        override fun onTextChanged(
+                                            s: CharSequence?,
+                                            start: Int,
+                                            before: Int,
+                                            count: Int,
+                                        ) = Unit
 
-                                    override fun afterTextChanged(s: Editable?) {
-                                        onValueChange(s?.toString().orEmpty())
+                                        override fun afterTextChanged(s: Editable?) {
+                                            onValueChange(s?.toString().orEmpty())
+                                        }
+                                    },
+                                )
+                                setOnEditorActionListener { _, actionId, event ->
+                                    if (
+                                        actionId == EditorInfo.IME_ACTION_GO ||
+                                        (event != null && event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_ENTER)
+                                    ) {
+                                        onSubmit()
+                                        true
+                                    } else {
+                                        false
                                     }
-                                },
-                            )
-                            setOnEditorActionListener { _, actionId, event ->
-                                if (
-                                    actionId == EditorInfo.IME_ACTION_GO ||
-                                    (event != null && event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_ENTER)
-                                ) {
-                                    onSubmit()
-                                    true
-                                } else {
-                                    false
+                                }
+                                if (value.isNotEmpty()) {
+                                    setText(value)
+                                    setSelection(text?.length ?: 0)
                                 }
                             }
-                            if (value.isNotEmpty()) {
-                                setText(value)
-                                setSelection(text?.length ?: 0)
+                        },
+                        update = { editText ->
+                            editText.setTextColor(colors.textPrimary.toArgb())
+                            editText.setHintTextColor(colors.textSecondary.toArgb())
+                            if (editText.text?.toString().orEmpty() != value) {
+                                editText.setText(value)
+                                editText.setSelection(editText.text?.length ?: 0)
                             }
-                        }
-                    },
-                    update = { editText ->
-                        editText.setTextColor(colors.textPrimary.toArgb())
-                        editText.setHintTextColor(colors.textSecondary.toArgb())
-                        if (editText.text?.toString().orEmpty() != value) {
-                            editText.setText(value)
-                            editText.setSelection(editText.text?.length ?: 0)
-                        }
-                        if (!isEditing) {
-                            editText.cancelPendingKeyboardOpen()
-                        } else if (editText.appliedFocusToken != focusToken) {
-                            editText.scheduleKeyboardOpen(focusToken)
-                        }
-                    },
-                )
-            }
-        }
+                            if (!isEditing) {
+                                editText.cancelPendingKeyboardOpen()
+                            } else if (editText.appliedFocusToken != focusToken) {
+                                editText.scheduleKeyboardOpen(focusToken)
+                            }
+                        },
+                    )
+                }
+            },
+        )
     }
 }
 
@@ -1199,6 +1088,7 @@ internal fun AppBrowserChromeButton(
 ) {
     if (animatedBackCloseProgress != null) {
         val colors = NativeDoThemeExtras.colors
+        val glassSpec = NativeDoThemeExtras.glass(NativeDoGlassRole.Chrome)
         val interactionSource = remember { MutableInteractionSource() }
         val pressed by interactionSource.collectIsPressedAsState()
         val contentTint = colors.textPrimary.copy(
@@ -1212,7 +1102,7 @@ internal fun AppBrowserChromeButton(
             modifier = modifier.size(44.dp),
             shape = CircleShape,
             color = nativeDoChromeIconButtonContainerColor(
-                colors = colors,
+                glassSpec = glassSpec,
                 enabled = enabled,
                 emphasized = emphasized,
                 pressed = pressed,
@@ -1234,7 +1124,7 @@ internal fun AppBrowserChromeButton(
                     ),
                 contentAlignment = Alignment.Center,
             ) {
-                AppBrowserBackCloseGlyph(
+                NativeDoBackIcon(
                     progress = animatedBackCloseProgress,
                     tint = contentTint,
                     contentDescription = contentDescription,
@@ -1267,7 +1157,7 @@ internal fun AppBrowserTitlePill(
     val statusTint = if (isHttps) colors.accent else colors.textSecondary
     val resolvedTitle = title.ifBlank { " " }
 
-    Surface(
+    NativeDoGlassSurface(
         modifier = if (onClick != null) {
             modifier.clickable(
                 interactionSource = remember { MutableInteractionSource() },
@@ -1277,56 +1167,44 @@ internal fun AppBrowserTitlePill(
         } else {
             modifier
         },
-        shape = RoundedCornerShape(24.dp),
-        color = colors.glassBackgroundStrong.copy(alpha = 0.84f),
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
+        shape = NativeDoPillShape,
+        glassSpec = NativeDoThemeExtras.glass(NativeDoGlassRole.Chrome),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .background(
-                        color = statusTint.copy(alpha = 0.14f),
-                        shape = CircleShape,
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = if (isHttps) Icons.Outlined.Lock else Icons.Outlined.LockOpen,
-                    contentDescription = null,
-                    tint = statusTint,
-                    modifier = Modifier.size(14.dp),
-                )
-            }
-
-            Column(
-                modifier = Modifier.weight(1f),
-            ) {
-                Text(
-                    text = resolvedTitle,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = colors.textPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                subtitle?.let {
-                    Text(
-                        text = it,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = colors.textSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+        NativeDoGlassBar(
+            modifier = Modifier.fillMaxWidth(),
+            minHeight = 0.dp,
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
+            sectionSpacing = 10.dp,
+            leading = {
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .background(
+                            color = statusTint.copy(alpha = 0.14f),
+                            shape = CircleShape,
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = if (isHttps) Icons.Outlined.Lock else Icons.Outlined.LockOpen,
+                        contentDescription = null,
+                        tint = statusTint,
+                        modifier = Modifier.size(14.dp),
                     )
                 }
-            }
-        }
+            },
+            title = {
+                NativeDoAnimatedLabel(
+                    title = resolvedTitle,
+                    subtitle = subtitle,
+                    modifier = Modifier.weight(1f),
+                    titleStyle = MaterialTheme.typography.labelLarge,
+                    subtitleStyle = MaterialTheme.typography.labelSmall,
+                    titleColor = colors.textPrimary,
+                    subtitleColor = colors.textSecondary,
+                )
+            },
+        )
     }
 }
 
@@ -1338,188 +1216,34 @@ internal fun AppBrowserSearchBar(
     isSearching: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val colors = NativeDoThemeExtras.colors
-    val onQueryChangeState = rememberUpdatedState(onQueryChange)
     val searchHint = stringResource(R.string.app_browser_search_placeholder)
-    val isSearchingState = rememberUpdatedState(isSearching)
+    val focusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
 
-    Surface(
+    LaunchedEffect(isSearching, focusToken) {
+        if (isSearching) {
+            delay(appBrowserSearchKeyboardDelayMillis)
+            focusRequester.requestFocus()
+            keyboardController?.show()
+        } else {
+            focusManager.clearFocus(force = true)
+            keyboardController?.hide()
+        }
+    }
+
+    NativeDoSearchField(
+        value = query,
+        onValueChange = onQueryChange,
         modifier = modifier,
-        shape = RoundedCornerShape(24.dp),
-        color = colors.glassBackgroundStrong.copy(alpha = 0.84f),
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(44.dp)
-                .padding(start = 18.dp, end = 14.dp, top = 8.dp, bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier.weight(1f),
-                contentAlignment = Alignment.CenterStart,
-            ) {
-                AndroidView(
-                    modifier = Modifier
-                        .fillMaxWidth(),
-                    factory = { context ->
-                        AppBrowserSearchEditText(context).apply {
-                            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
-                            setSingleLine(true)
-                            hint = searchHint
-                            background = null
-                            gravity = Gravity.CENTER_VERTICAL
-                            setPadding(0, 0, 0, 0)
-                            setTextColor(colors.textPrimary.toArgb())
-                            setHintTextColor(colors.textSecondary.toArgb())
-                            inputType = inputType or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-                            imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN or EditorInfo.IME_ACTION_SEARCH
-                            setTextIsSelectable(false)
-                            setOnEditorActionListener { _, actionId, event ->
-                                if (
-                                    actionId == EditorInfo.IME_ACTION_SEARCH ||
-                                    (event != null && (
-                                        event.action == KeyEvent.ACTION_UP &&
-                                            event.keyCode == KeyEvent.KEYCODE_SEARCH ||
-                                            event.action == KeyEvent.ACTION_DOWN &&
-                                            event.keyCode == KeyEvent.KEYCODE_ENTER
-                                        ))
-                                ) {
-                                    hideSoftKeyboard(this)
-                                }
-                                false
-                            }
-                            addTextChangedListener(
-                                object : TextWatcher {
-                                    override fun beforeTextChanged(
-                                        s: CharSequence?,
-                                        start: Int,
-                                        count: Int,
-                                        after: Int,
-                                    ) = Unit
-
-                                    override fun onTextChanged(
-                                        s: CharSequence?,
-                                        start: Int,
-                                        before: Int,
-                                        count: Int,
-                                    ) = Unit
-
-                                    override fun afterTextChanged(s: Editable?) {
-                                        onQueryChangeState.value(s?.toString().orEmpty())
-                                    }
-                                },
-                            )
-                            if (query.isNotEmpty()) {
-                                setText(query)
-                                setSelection(text?.length ?: 0)
-                            }
-                        }
-                    },
-                    update = { editText ->
-                        editText.setTextColor(colors.textPrimary.toArgb())
-                        editText.setHintTextColor(colors.textSecondary.toArgb())
-                        editText.visibility = if (isSearchingState.value) View.VISIBLE else View.INVISIBLE
-                        if (!isSearchingState.value) {
-                            editText.cancelPendingKeyboardOpen()
-                        }
-                        if (editText.text?.toString().orEmpty() != query) {
-                            editText.setText(query)
-                            editText.setSelection(editText.text?.length ?: 0)
-                        }
-                        if (isSearchingState.value && editText.appliedFocusToken != focusToken) {
-                            editText.scheduleKeyboardOpen(focusToken)
-                        }
-                    },
-                )
-            }
-        }
-    }
-}
-
-private class AppBrowserSearchEditText(
-    context: android.content.Context,
-) : AppCompatEditText(context) {
-    var appliedFocusToken: Int = Int.MIN_VALUE
-    private var pendingKeyboardToken: Int = Int.MIN_VALUE
-    private val showKeyboardRunnable = Runnable {
-        if (pendingKeyboardToken == Int.MIN_VALUE || visibility != View.VISIBLE) {
-            return@Runnable
-        }
-        requestFocus()
-        setSelection(text?.length ?: 0)
-        showSoftKeyboard(this)
-    }
-
-    override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (event.action == MotionEvent.ACTION_DOWN && !showSoftKeyboard(this)) {
-            clearFocus()
-            requestFocus()
-        }
-        return super.onTouchEvent(event)
-    }
-
-    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
-        super.onWindowFocusChanged(hasWindowFocus)
-        if (hasWindowFocus && pendingKeyboardToken != Int.MIN_VALUE) {
-            removeCallbacks(showKeyboardRunnable)
-            postDelayed(showKeyboardRunnable, appBrowserSearchKeyboardDelayMillis)
-        }
-    }
-
-    fun scheduleKeyboardOpen(focusToken: Int) {
-        appliedFocusToken = focusToken
-        pendingKeyboardToken = focusToken
-        removeCallbacks(showKeyboardRunnable)
-        if (hasWindowFocus()) {
-            postDelayed(showKeyboardRunnable, appBrowserSearchKeyboardDelayMillis)
-        }
-    }
-
-    fun cancelPendingKeyboardOpen() {
-        pendingKeyboardToken = Int.MIN_VALUE
-        removeCallbacks(showKeyboardRunnable)
-        clearFocus()
-        hideSoftKeyboard(this)
-        appliedFocusToken = Int.MIN_VALUE
-    }
-}
-
-@Composable
-private fun AppBrowserBackCloseGlyph(
-    progress: Float,
-    tint: Color,
-    contentDescription: String,
-) {
-    Box(
-        modifier = Modifier.size(24.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-            contentDescription = contentDescription,
-            tint = tint,
-            modifier = Modifier.graphicsLayer {
-                alpha = 1f - progress
-                rotationZ = -135f * progress
-                scaleX = 1f - (progress * 0.08f)
-                scaleY = 1f - (progress * 0.08f)
-            },
-        )
-        Icon(
-            imageVector = Icons.Outlined.Close,
-            contentDescription = contentDescription,
-            tint = tint,
-            modifier = Modifier.graphicsLayer {
-                alpha = progress
-                rotationZ = 90f * (1f - progress)
-                scaleX = 0.92f + (progress * 0.08f)
-                scaleY = 0.92f + (progress * 0.08f)
-            },
-        )
-    }
+        placeholder = searchHint,
+        enabled = isSearching,
+        focusRequester = focusRequester,
+        onSubmit = {
+            keyboardController?.hide()
+        },
+        glassSpec = NativeDoThemeExtras.glass(NativeDoGlassRole.Field),
+    )
 }
 
 private fun showSoftKeyboard(view: AppCompatEditText): Boolean {
@@ -1646,108 +1370,20 @@ private fun AppBrowserHistoryPopup(
         return
     }
 
-    val palette = rememberAppBrowserPopupPalette()
-    val density = LocalDensity.current
-    val popupMargin = with(density) { appBrowserPopupMargin.roundToPx() }
-    val popupSpacing = with(density) { appBrowserPopupSpacing.roundToPx() }
-    val popupOpenDuration = remember(entries.size) {
-        appBrowserPopupOpenDuration(entries.size.coerceAtMost(6))
-    }
-    val popupCornerRadiusPx = with(density) { appBrowserPopupCornerRadius.toPx() }
-    val popupCloseTranslationPx = with(density) { appBrowserPopupCloseTranslation.toPx() }
-    val transitionState = remember { MutableTransitionState(false) }
-
-    LaunchedEffect(expanded) {
-        transitionState.targetState = expanded
-    }
-
-    if (!transitionState.currentState && !transitionState.targetState) {
-        return
-    }
-
-    val popupPositionProvider = remember(popupMargin, popupSpacing) {
-        AppBrowserPopupPositionProvider(
-            margin = popupMargin,
-            spacing = popupSpacing,
-        )
-    }
-    val transition = updateTransition(transitionState, label = "appBrowserHistoryPopupTransition")
-    val popupProgress by transition.animateFloat(
-        transitionSpec = {
-            tween(
-                durationMillis = if (targetState) {
-                    popupOpenDuration
-                } else {
-                    appBrowserPopupCloseDurationMillis
-                },
-                easing = NativeDoEasing.Standard,
-            )
-        },
-        label = "appBrowserHistoryPopupProgress",
-    ) { visible ->
-        if (visible) 1f else 0f
-    }
-    val containerTranslationY by transition.animateFloat(
-        transitionSpec = {
-            tween(
-                durationMillis = appBrowserPopupCloseDurationMillis,
-                easing = NativeDoEasing.Standard,
-            )
-        },
-        label = "appBrowserHistoryPopupTranslationY",
-    ) { visible ->
-        if (visible) 0f else -popupCloseTranslationPx
-    }
-    val backgroundRevealProgress by transition.animateFloat(
-        transitionSpec = {
-            tween(
-                durationMillis = if (targetState) {
-                    popupOpenDuration
-                } else {
-                    appBrowserPopupCloseDurationMillis
-                },
-                easing = NativeDoEasing.Standard,
-            )
-        },
-        label = "appBrowserHistoryPopupBackgroundReveal",
-    ) { visible ->
-        if (visible) 1f else 0.001f
-    }
-
-    Popup(
-        popupPositionProvider = popupPositionProvider,
+    val popupGlass = NativeDoThemeExtras.glass(NativeDoGlassRole.Popup)
+    val palette = rememberNativeDoPopupPalette(glassSpec = popupGlass)
+    NativeDoPopupMenu(
+        expanded = expanded,
         onDismissRequest = onDismissRequest,
-        properties = PopupProperties(
-            focusable = true,
-            dismissOnBackPress = true,
-            dismissOnClickOutside = true,
-            clippingEnabled = false,
-        ),
-    ) {
-        Box(
-            modifier = Modifier
-                .graphicsLayer {
-                    alpha = popupProgress
-                    translationY = containerTranslationY
-                }
-                .width(appBrowserHistoryPopupWidth)
-                .drawWithContent {
-                    val backgroundColor = palette.background.copy(alpha = 0.985f)
-                    clipRect(
-                        right = size.width,
-                        bottom = size.height * max(backgroundRevealProgress, 0.001f),
-                    ) {
-                        drawRoundRect(
-                            color = backgroundColor,
-                            cornerRadius = CornerRadius(popupCornerRadiusPx, popupCornerRadiusPx),
-                        )
-                    }
-                    clipRect(bottom = size.height * backgroundRevealProgress) {
-                        this@drawWithContent.drawContent()
-                    }
-                }
-                .clip(RoundedCornerShape(appBrowserPopupCornerRadius)),
-        ) {
+        width = appBrowserHistoryPopupWidth,
+        itemCount = entries.size.coerceAtMost(6),
+        margin = appBrowserPopupMargin,
+        spacing = appBrowserPopupSpacing,
+        closeTranslationY = appBrowserPopupCloseTranslation,
+        shape = RoundedCornerShape(appBrowserPopupCornerRadius),
+        glassSpec = popupGlass,
+    ) { popupProgress ->
+        Box(modifier = Modifier.width(appBrowserHistoryPopupWidth)) {
             LazyColumn(
                 modifier = Modifier
                     .width(appBrowserHistoryPopupWidth)
@@ -1763,7 +1399,7 @@ private fun AppBrowserHistoryPopup(
                         entry = entry,
                         index = index,
                         itemCount = entries.size,
-                        revealProgress = backgroundRevealProgress,
+                        revealProgress = popupProgress,
                         onClick = { onEntryClick(entry) },
                     )
                 }
@@ -1779,115 +1415,42 @@ internal fun AppBrowserActionPopup(
     onDismissRequest: () -> Unit,
     onActionClick: (AppBrowserMenuAction) -> Unit,
 ) {
-    val palette = rememberAppBrowserPopupPalette()
-    val density = LocalDensity.current
-    val popupMargin = with(density) { appBrowserPopupMargin.roundToPx() }
-    val popupSpacing = with(density) { appBrowserPopupSpacing.roundToPx() }
     val itemCount = remember(entries) {
         entries.count { it is AppBrowserMenuEntry.Item }
     }
-    val popupOpenDuration = remember(itemCount) {
-        appBrowserPopupOpenDuration(itemCount)
-    }
-    val popupCloseTranslationPx = with(density) { appBrowserPopupCloseTranslation.toPx() }
-    val transitionState = remember { MutableTransitionState(false) }
-
-    LaunchedEffect(expanded) {
-        transitionState.targetState = expanded
-    }
-
-    if (!transitionState.currentState && !transitionState.targetState) {
-        return
-    }
-
-    val popupPositionProvider = remember(popupMargin, popupSpacing) {
-        AppBrowserPopupPositionProvider(
-            margin = popupMargin,
-            spacing = popupSpacing,
-        )
-    }
-    val transition = updateTransition(transitionState, label = "appBrowserPopupTransition")
-    val popupProgress by transition.animateFloat(
-        transitionSpec = {
-            tween(
-                durationMillis = if (targetState) {
-                    popupOpenDuration
-                } else {
-                    appBrowserPopupCloseDurationMillis
-                },
-                easing = NativeDoEasing.Standard,
-            )
-        },
-        label = "appBrowserPopupProgress",
-    ) { visible ->
-        if (visible) 1f else 0f
-    }
-    val containerTranslationY by transition.animateFloat(
-        transitionSpec = {
-            tween(
-                durationMillis = appBrowserPopupCloseDurationMillis,
-                easing = NativeDoEasing.Standard,
-            )
-        },
-        label = "appBrowserPopupTranslationY",
-    ) { visible ->
-        if (visible) 0f else -popupCloseTranslationPx
-    }
-    val backgroundRevealProgress by transition.animateFloat(
-        transitionSpec = {
-            tween(
-                durationMillis = if (targetState) {
-                    popupOpenDuration
-                } else {
-                    appBrowserPopupCloseDurationMillis
-                },
-                easing = NativeDoEasing.Standard,
-            )
-        },
-        label = "appBrowserPopupBackgroundReveal",
-    ) { visible ->
-        if (visible) 1f else 0.001f
-    }
-
-    Popup(
-        popupPositionProvider = popupPositionProvider,
+    val dividerMetrics = remember { appBrowserPopupDividerMetrics() }
+    val popupGlass = NativeDoThemeExtras.glass(NativeDoGlassRole.Popup)
+    NativeDoPopupMenu(
+        expanded = expanded,
         onDismissRequest = onDismissRequest,
-        properties = PopupProperties(
-            focusable = true,
-            dismissOnBackPress = true,
-            dismissOnClickOutside = true,
-            clippingEnabled = false,
-        ),
-    ) {
-        Surface(
-            modifier = Modifier
-                .graphicsLayer {
-                    alpha = popupProgress
-                    translationY = containerTranslationY
-                    scaleY = backgroundRevealProgress
-                    transformOrigin = TransformOrigin(1f, 0f)
-                }
-                .width(appBrowserPopupWidth)
-                .clip(RoundedCornerShape(appBrowserPopupCornerRadius)),
-            shape = RoundedCornerShape(appBrowserPopupCornerRadius),
-            color = palette.background.copy(alpha = 0.985f),
-            tonalElevation = 0.dp,
-            shadowElevation = 0.dp,
-        ) {
+        width = appBrowserPopupWidth,
+        itemCount = itemCount,
+        margin = appBrowserPopupMargin,
+        spacing = appBrowserPopupSpacing,
+        closeTranslationY = appBrowserPopupCloseTranslation,
+        shape = RoundedCornerShape(appBrowserPopupCornerRadius),
+        glassSpec = popupGlass,
+    ) { popupProgress ->
+        Box(modifier = Modifier.width(appBrowserPopupWidth)) {
             Column(
                 modifier = Modifier.padding(vertical = appBrowserPopupVerticalPadding),
             ) {
                 var itemIndex = 0
                 entries.forEach { entry ->
                     when (entry) {
-                        AppBrowserMenuEntry.Divider -> AppBrowserPopupDivider(palette)
+                        AppBrowserMenuEntry.Divider -> NativeDoPopupMenuDivider(
+                            spacing = dividerMetrics.spacing,
+                            gapHeight = dividerMetrics.gapHeight,
+                        )
                         is AppBrowserMenuEntry.Item -> {
-                            AppBrowserPopupItem(
-                                palette = palette,
-                                item = entry.item,
+                            NativeDoPopupMenuItem(
+                                label = entry.item.action.label(),
+                                icon = entry.item.action.icon(),
+                                enabled = entry.item.enabled,
                                 index = itemIndex,
-                                itemCount = itemCount,
+                                itemCount = itemCount.coerceAtLeast(1),
                                 popupProgress = popupProgress,
+                                glassSpec = popupGlass,
                                 onClick = { onActionClick(entry.item.action) },
                             )
                             itemIndex += 1
@@ -1899,208 +1462,20 @@ internal fun AppBrowserActionPopup(
     }
 }
 
-private class AppBrowserPopupPositionProvider(
-    margin: Int,
-    spacing: Int,
-) : PopupPositionProvider {
-    private val margin = margin
-    private val spacing = spacing
-
-    override fun calculatePosition(
-        anchorBounds: IntRect,
-        windowSize: IntSize,
-        layoutDirection: LayoutDirection,
-        popupContentSize: IntSize,
-    ): IntOffset {
-        val maxX = (windowSize.width - popupContentSize.width - margin).coerceAtLeast(margin)
-        val maxY = (windowSize.height - popupContentSize.height - margin).coerceAtLeast(margin)
-        val preferredX = anchorBounds.right - popupContentSize.width
-        val preferredY = anchorBounds.bottom + spacing
-        return IntOffset(
-            x = preferredX.coerceIn(margin, maxX),
-            y = preferredY.coerceIn(margin, maxY),
-        )
-    }
-}
-
-private fun appBrowserPopupOpenDuration(
-    itemCount: Int,
-): Int = NativeDoDuration.PopupOpen + NativeDoDuration.PopupCascadeStep * itemCount.coerceAtLeast(0)
-
 @Composable
 private fun AppBrowserHistoryAnchorHighlight(
     visible: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val colors = NativeDoThemeExtras.colors
-    val alpha by animateFloatAsState(
-        targetValue = if (visible) 1f else 0f,
-        animationSpec = tween(
-            durationMillis = if (visible) NativeDoDuration.AnchorReveal else 100,
-            easing = NativeDoEasing.Standard,
-        ),
-        label = "appBrowserHistoryAnchorAlpha",
+    NativeDoPopupAnchorHighlight(
+        visible = visible,
+        modifier = modifier,
     )
-    val scale by animateFloatAsState(
-        targetValue = if (visible) 1f else 0.92f,
-        animationSpec = tween(
-            durationMillis = if (visible) NativeDoDuration.AnchorSettle else 120,
-            easing = NativeDoEasing.Standard,
-        ),
-        label = "appBrowserHistoryAnchorScale",
-    )
-    if (alpha <= 0f) {
-        return
-    }
-    Box(
-        modifier = modifier
-            .size(44.dp)
-            .graphicsLayer {
-                this.alpha = alpha
-                scaleX = scale
-                scaleY = scale
-            }
-            .clip(CircleShape)
-            .background(
-                color = colors.glassBackgroundStrong.copy(alpha = 0.94f),
-                shape = CircleShape,
-            ),
-    )
-}
-
-@Composable
-private fun rememberAppBrowserPopupPalette(): AppBrowserPopupPalette {
-    val colors = NativeDoThemeExtras.colors
-    val isLightTheme = colors.backgroundBase.luminance() > 0.5f
-    return remember(colors, isLightTheme) {
-        if (isLightTheme) {
-            AppBrowserPopupPalette(
-                background = Color(0xFFF7F4ED),
-                sectionGap = Color(0xFFE9E2D6),
-                text = colors.textPrimary.copy(alpha = 0.97f),
-                secondaryText = colors.textSecondary.copy(alpha = 0.92f),
-                icon = colors.textPrimary.copy(alpha = 0.90f),
-                pressed = Color(0x12000000),
-            )
-        } else {
-            AppBrowserPopupPalette(
-                background = Color(0xFF1B211F),
-                sectionGap = Color(0xFF121715),
-                text = colors.textPrimary.copy(alpha = 0.98f),
-                secondaryText = colors.textSecondary.copy(alpha = 0.92f),
-                icon = colors.textPrimary.copy(alpha = 0.90f),
-                pressed = Color(0x18FFFFFF),
-            )
-        }
-    }
-}
-
-private fun appBrowserPopupCascadeProgress(
-    fullAnimationT: Float,
-    position: Float,
-    count: Float,
-    waveLength: Float,
-): Float {
-    if (count <= 0f) {
-        return fullAnimationT
-    }
-    val waveDuration = (1f / count) * min(waveLength, count)
-    val waveOffset = (position / count) * (1f - waveDuration)
-    return ((fullAnimationT - waveOffset) / waveDuration).coerceIn(0f, 1f)
-}
-
-internal data class AppBrowserPopupDividerMetrics(
-    val spacing: androidx.compose.ui.unit.Dp,
-    val gapHeight: androidx.compose.ui.unit.Dp,
-)
-
-internal fun appBrowserPopupDividerMetrics(): AppBrowserPopupDividerMetrics = AppBrowserPopupDividerMetrics(
-    spacing = 2.dp,
-    gapHeight = 6.dp,
-)
-
-@Composable
-private fun AppBrowserPopupDivider(
-    palette: AppBrowserPopupPalette,
-) {
-    val metrics = remember { appBrowserPopupDividerMetrics() }
-    Spacer(modifier = Modifier.height(metrics.spacing))
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(metrics.gapHeight)
-            .background(palette.sectionGap),
-    )
-    Spacer(modifier = Modifier.height(metrics.spacing))
-}
-
-@Composable
-private fun AppBrowserPopupItem(
-    palette: AppBrowserPopupPalette,
-    item: AppBrowserMenuItem,
-    index: Int,
-    itemCount: Int,
-    popupProgress: Float,
-    onClick: () -> Unit,
-) {
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    val interactionSource = remember { MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
-    val startTranslationPx = with(density) { appBrowserPopupChildStartTranslation.toPx() }
-    val rowProgress = remember(index, itemCount, popupProgress) {
-        appBrowserPopupCascadeProgress(
-            fullAnimationT = popupProgress,
-            position = index.toFloat(),
-            count = itemCount.toFloat(),
-            waveLength = appBrowserPopupCascadeWaveLength,
-        )
-    }
-    val rowAlpha = rowProgress * if (item.enabled) 1f else 0.42f
-    val rowTranslationY = (1f - rowProgress) * -startTranslationPx
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(appBrowserPopupRowHeight)
-            .graphicsLayer {
-                alpha = rowAlpha
-                translationY = rowTranslationY
-            }
-            .background(
-                color = if (pressed && item.enabled) {
-                    palette.pressed
-                } else {
-                    Color.Transparent
-                },
-                shape = RoundedCornerShape(14.dp),
-            )
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                enabled = item.enabled,
-                onClick = onClick,
-            )
-            .padding(horizontal = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = item.action.icon(),
-            contentDescription = null,
-            tint = palette.icon,
-            modifier = Modifier.size(19.dp),
-        )
-        Spacer(modifier = Modifier.width(11.dp))
-        Text(
-            text = item.action.label(),
-            style = MaterialTheme.typography.bodyMedium,
-            color = palette.text,
-        )
-    }
 }
 
 @Composable
 private fun AppBrowserHistoryPopupItem(
-    palette: AppBrowserPopupPalette,
+    palette: NativeDoPopupPalette,
     entry: AppBrowserHistoryEntry,
     index: Int,
     itemCount: Int,
@@ -2112,7 +1487,7 @@ private fun AppBrowserHistoryPopupItem(
     val pressed by interactionSource.collectIsPressedAsState()
     val startTranslationPx = with(density) { appBrowserPopupChildStartTranslation.toPx() }
     val rowProgress = remember(index, itemCount, revealProgress) {
-        appBrowserPopupCascadeProgress(
+        nativeDoPopupCascadeProgress(
             fullAnimationT = revealProgress,
             position = index.toFloat(),
             count = itemCount.toFloat(),
@@ -2191,7 +1566,7 @@ private fun AppBrowserHistoryPopupItem(
 private fun AppBrowserHistoryFavicon(
     favicon: Bitmap?,
     fallbackLabel: String,
-    palette: AppBrowserPopupPalette,
+    palette: NativeDoPopupPalette,
 ) {
     val fallbackText = remember(fallbackLabel) {
         fallbackLabel.trim().firstOrNull()?.uppercase() ?: ""
@@ -2202,7 +1577,7 @@ private fun AppBrowserHistoryFavicon(
             .clip(RoundedCornerShape(4.dp))
             .background(
                 color = if (favicon == null) {
-                    palette.icon.copy(alpha = 0.12f)
+                    palette.iconContainer
                 } else {
                     Color.Transparent
                 },
@@ -2277,7 +1652,6 @@ private val appBrowserPopupWidth = 200.dp
 private val appBrowserHistoryPopupWidth = 252.dp
 private val appBrowserHistoryPopupMaxHeight = 320.dp
 private val appBrowserHistoryPopupRowMinHeight = 54.dp
-private val appBrowserPopupRowHeight = 46.dp
 private val appBrowserPopupVerticalPadding = 5.dp
 private val appBrowserPopupMargin = 12.dp
 private val appBrowserPopupSpacing = 6.dp
@@ -2295,4 +1669,3 @@ internal fun appBrowserProgressMetrics(): AppBrowserProgressMetrics = AppBrowser
 )
 
 private const val appBrowserPopupCascadeWaveLength = 4f
-private const val appBrowserPopupCloseDurationMillis = NativeDoDuration.PopupClose

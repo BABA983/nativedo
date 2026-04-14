@@ -36,16 +36,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import io.github.baba983.nativedo.ui.theme.NativeDoChromeShape
-import io.github.baba983.nativedo.ui.theme.NativeDoDuration
+import io.github.baba983.nativedo.ui.theme.NativeDoGlassRole
+import io.github.baba983.nativedo.ui.theme.NativeDoGlassSpec
+import io.github.baba983.nativedo.ui.theme.NativeDoMotionTheme
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlin.math.min
 
 internal enum class BulletinTone {
     Info,
@@ -89,6 +91,8 @@ internal fun BulletinHost(
     modifier: Modifier = Modifier,
 ) {
     var uiState by remember { mutableStateOf(BulletinHostUiState()) }
+    val bulletinMotion = NativeDoMotionTheme.scheme.bulletin
+    val glassSpec = NativeDoThemeExtras.glass(NativeDoGlassRole.Popup)
 
     LaunchedEffect(hostState) {
         hostState.messages.collectLatest { nextMessage ->
@@ -107,37 +111,32 @@ internal fun BulletinHost(
         AnimatedVisibility(
             visible = uiState.isVisible,
             enter = slideInVertically(
-                animationSpec = tween(durationMillis = NativeDoDuration.BulletinSlideIn),
+                animationSpec = bulletinMotion.slideIn.tweenSpec(),
                 initialOffsetY = { -it / 2 },
-            ) + fadeIn(animationSpec = tween(durationMillis = NativeDoDuration.BulletinFadeIn)),
+            ) + fadeIn(animationSpec = bulletinMotion.fadeIn.tweenSpec()),
             exit = slideOutVertically(
-                animationSpec = tween(durationMillis = NativeDoDuration.BulletinSlideOut),
+                animationSpec = bulletinMotion.slideOut.tweenSpec(),
                 targetOffsetY = { -it / 3 },
-            ) + fadeOut(animationSpec = tween(durationMillis = NativeDoDuration.BulletinFadeOut)),
+            ) + fadeOut(animationSpec = bulletinMotion.fadeOut.tweenSpec()),
         ) {
             val currentMessage = uiState.currentMessage ?: return@AnimatedVisibility
             val colors = NativeDoThemeExtras.colors
-            val containerColor = lerp(
-                start = colors.backgroundElevated,
-                stop = colors.textPrimary,
-                fraction = 0.08f,
-            ).copy(alpha = 0.98f)
 
             Surface(
                 modifier = Modifier
                     .padding(horizontal = 16.dp, vertical = 76.dp)
                     .widthIn(max = 420.dp),
                 shape = NativeDoChromeShape,
-                color = containerColor,
-                tonalElevation = 0.dp,
-                shadowElevation = 0.dp,
+                color = glassSpec.containerColor,
+                tonalElevation = glassSpec.tonalElevation,
+                shadowElevation = glassSpec.shadowElevation,
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .border(
                             width = 1.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.34f),
+                            color = glassSpec.borderColor,
                             shape = NativeDoChromeShape,
                         )
                         .padding(horizontal = 14.dp, vertical = 12.dp),
@@ -148,7 +147,10 @@ internal fun BulletinHost(
                         modifier = Modifier
                             .size(32.dp)
                             .background(
-                                color = bulletinIconContainerColor(currentMessage.tone),
+                                color = bulletinIconContainerColor(
+                                    tone = currentMessage.tone,
+                                    glassSpec = glassSpec,
+                                ),
                                 shape = CircleShape,
                             ),
                         contentAlignment = Alignment.Center,
@@ -157,7 +159,7 @@ internal fun BulletinHost(
                             imageVector = bulletinIcon(currentMessage.tone),
                             contentDescription = null,
                             modifier = Modifier.size(18.dp),
-                            tint = bulletinIconTint(currentMessage.tone),
+                            tint = bulletinIconTint(tone = currentMessage.tone),
                         )
                     }
 
@@ -191,8 +193,11 @@ internal fun BulletinHost(
 private const val BULLETIN_EXIT_DURATION_MILLIS = 220L
 
 @Composable
-private fun bulletinIconContainerColor(tone: BulletinTone) = when (tone) {
-    BulletinTone.Info -> NativeDoThemeExtras.colors.backgroundBase.copy(alpha = 0.88f)
+private fun bulletinIconContainerColor(
+    tone: BulletinTone,
+    glassSpec: NativeDoGlassSpec,
+) = when (tone) {
+    BulletinTone.Info -> glassSpec.containerColor.copy(alpha = min(glassSpec.containerColor.alpha, 0.88f))
     BulletinTone.Error -> MaterialTheme.colorScheme.error.copy(alpha = 0.14f)
     BulletinTone.Success -> MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)
 }

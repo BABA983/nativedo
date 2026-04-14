@@ -2,7 +2,8 @@ package io.github.baba983.nativedo.core.ui
 
 import androidx.compose.ui.graphics.Color
 import com.google.common.truth.Truth.assertThat
-import io.github.baba983.nativedo.ui.theme.NativeDoExtendedColors
+import io.github.baba983.nativedo.ui.theme.NativeDoGlassRole
+import io.github.baba983.nativedo.ui.theme.NativeDoGlassSpec
 import org.junit.Test
 
 class NativeDoChromeIconButtonTest {
@@ -40,7 +41,7 @@ class NativeDoChromeIconButtonTest {
     fun containerColor_prefersOverrideWhenProvided() {
         val override = Color(0xFF123456)
         val resolved = nativeDoChromeIconButtonContainerColor(
-            colors = sampleColors(),
+            glassSpec = sampleGlassSpec(),
             enabled = true,
             emphasized = true,
             pressed = false,
@@ -51,18 +52,8 @@ class NativeDoChromeIconButtonTest {
     }
 }
 
-private fun sampleColors() = NativeDoExtendedColors(
-    backgroundBase = Color(0xFFFFFFFF),
-    backgroundElevated = Color(0xFFF6F6F6),
-    glassBackground = Color(0xFFEEEEEE),
-    glassBackgroundStrong = Color(0xFFDDDDDD),
-    glassStroke = Color(0xFFCCCCCC),
-    glassStrokeStrong = Color(0xFFBBBBBB),
-    glassShadow = Color(0x11000000),
-    accent = Color(0xFF00AA88),
-    accentMuted = Color(0x2200AA88),
-    textPrimary = Color(0xFF111111),
-    textSecondary = Color(0xFF666666),
-    glowPrimary = Color(0x2200AA88),
-    glowSecondary = Color(0x220088AA),
+private fun sampleGlassSpec() = NativeDoGlassSpec(
+    role = NativeDoGlassRole.Chrome,
+    containerColor = Color(0xFFDDDDDD),
+    borderColor = Color(0xFFBBBBBB),
 )

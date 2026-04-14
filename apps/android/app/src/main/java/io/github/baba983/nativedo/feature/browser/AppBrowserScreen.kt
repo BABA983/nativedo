@@ -3,18 +3,16 @@ package io.github.baba983.nativedo.feature.browser
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
-import io.github.baba983.nativedo.ui.AppTopBarRowMinHeight
-import io.github.baba983.nativedo.ui.AppTopBarVerticalPadding
+import io.github.baba983.nativedo.ui.NativeDoBrowserScaffold
+import io.github.baba983.nativedo.ui.NativeDoBrowserTopBarOverlayHeight
+import io.github.baba983.nativedo.ui.nativeDoBrowserTopBarOffset
 
-internal val AppBrowserTopBarOverlayHeight = AppTopBarRowMinHeight + (AppTopBarVerticalPadding * 2) + 4.dp
+internal val AppBrowserTopBarOverlayHeight = NativeDoBrowserTopBarOverlayHeight
 
 internal fun Modifier.appBrowserTopBarOffset(): Modifier {
-    return statusBarsPadding().padding(top = AppBrowserTopBarOverlayHeight)
+    return nativeDoBrowserTopBarOffset()
 }
 
 @Composable
@@ -23,30 +21,21 @@ internal fun AppBrowserScreen(
     onAction: (AppBrowserAction) -> Unit,
     modifier: Modifier = Modifier,
     sheetContent: @Composable BoxScope.() -> Unit = {},
+    overlayContent: @Composable BoxScope.() -> Unit = {},
     content: @Composable BoxScope.() -> Unit,
 ) {
-    Box(
-        modifier = modifier.fillMaxSize(),
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .appBrowserTopBarOffset(),
-        ) {
-            content()
-        }
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .appBrowserTopBarOffset(),
-        ) {
-            sheetContent()
-        }
-        AppBrowserTopBar(
-            chrome = uiState.chrome,
-            search = uiState.search,
-            address = uiState.address,
-            onAction = onAction,
-        )
-    }
+    NativeDoBrowserScaffold(
+        modifier = modifier,
+        pageContent = content,
+        sheetContent = sheetContent,
+        overlayContent = overlayContent,
+        topBar = {
+            AppBrowserTopBar(
+                chrome = uiState.chrome,
+                search = uiState.search,
+                address = uiState.address,
+                onAction = onAction,
+            )
+        },
+    )
 }

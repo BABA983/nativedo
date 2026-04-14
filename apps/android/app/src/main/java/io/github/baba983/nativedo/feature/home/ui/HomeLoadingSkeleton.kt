@@ -22,6 +22,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,12 +33,14 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.dp
 import io.github.baba983.nativedo.ui.theme.NativeDoExtendedColors
+import io.github.baba983.nativedo.ui.theme.NativeDoGlassRole
+import io.github.baba983.nativedo.ui.theme.NativeDoMotionTheme
+import io.github.baba983.nativedo.ui.theme.NativeDoSpacing
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 
 internal const val HOME_SKELETON_ITEM_COUNT = 6
 
 private const val HOME_SKELETON_HIGHLIGHT_TRAVEL = 900f
-private const val HOME_SKELETON_ANIMATION_DURATION_MILLIS = 1400
 
 internal data class HomeTopicSkeletonSpec(
     val titleWidthFraction: Float,
@@ -96,6 +99,7 @@ internal fun HomeTopicSkeletonItem(
 ) {
     val spec = homeTopicSkeletonSpec(index)
     val shimmerBrush = rememberHomeSkeletonBrush()
+    val dividerColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.52f)
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -103,7 +107,10 @@ internal fun HomeTopicSkeletonItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(
+                    horizontal = NativeDoSpacing.lg,
+                    vertical = 13.dp,
+                ),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.Top,
         ) {
@@ -115,19 +122,19 @@ internal fun HomeTopicSkeletonItem(
 
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp),
             ) {
                 HomeSkeletonBlock(
                     modifier = Modifier
                         .fillMaxWidth(spec.titleWidthFraction)
-                        .height(20.dp),
+                        .height(18.dp),
                     shape = RoundedCornerShape(10.dp),
                     brush = shimmerBrush,
                 )
                 HomeSkeletonBlock(
                     modifier = Modifier
                         .fillMaxWidth(spec.metaWidthFraction)
-                        .height(12.dp),
+                        .height(11.dp),
                     shape = RoundedCornerShape(8.dp),
                     brush = shimmerBrush,
                 )
@@ -147,8 +154,10 @@ internal fun HomeTopicSkeletonItem(
 
         if (showDivider) {
             HorizontalDivider(
-                modifier = Modifier.padding(start = 16.dp),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.75f),
+                modifier = Modifier.padding(
+                    start = NativeDoSpacing.lg + 40.dp + NativeDoSpacing.md,
+                ),
+                color = dividerColor,
             )
         }
     }
@@ -157,14 +166,24 @@ internal fun HomeTopicSkeletonItem(
 @Composable
 private fun rememberHomeSkeletonBrush(): Brush {
     val colors = NativeDoThemeExtras.colors
-    val palette = homeSkeletonPalette(colors)
+    val motionScheme = NativeDoMotionTheme.scheme
+    val cardGlass = NativeDoThemeExtras.glass(NativeDoGlassRole.Card)
+    val palette = remember(colors, cardGlass) {
+        homeSkeletonPalette(
+            colors = colors,
+            cardBorderAlpha = cardGlass.borderColor.alpha,
+        )
+    }
+    val shimmerDurationMillis = remember(motionScheme) {
+        (motionScheme.page.durationMillis * 4) + motionScheme.label.enter.durationMillis
+    }
     val transition = rememberInfiniteTransition(label = "home_skeleton_transition")
     val highlightOffset by transition.animateFloat(
         initialValue = -HOME_SKELETON_HIGHLIGHT_TRAVEL,
         targetValue = HOME_SKELETON_HIGHLIGHT_TRAVEL,
         animationSpec = infiniteRepeatable(
             animation = tween(
-                durationMillis = HOME_SKELETON_ANIMATION_DURATION_MILLIS,
+                durationMillis = shimmerDurationMillis,
                 easing = LinearEasing,
             ),
             repeatMode = RepeatMode.Restart,
@@ -183,17 +202,21 @@ private fun rememberHomeSkeletonBrush(): Brush {
     )
 }
 
-internal fun homeSkeletonPalette(colors: NativeDoExtendedColors): HomeSkeletonPalette {
+internal fun homeSkeletonPalette(
+    colors: NativeDoExtendedColors,
+    cardBorderAlpha: Float = 0f,
+): HomeSkeletonPalette {
+    val resolvedBorderAlpha = cardBorderAlpha.coerceIn(0f, 1f)
     return HomeSkeletonPalette(
         base = lerp(
             start = colors.backgroundElevated,
             stop = colors.textSecondary,
-            fraction = 0.08f,
+            fraction = 0.08f + (resolvedBorderAlpha * 0.02f),
         ).copy(alpha = 0.94f),
         highlight = lerp(
             start = colors.backgroundElevated,
             stop = colors.textSecondary,
-            fraction = 0.18f,
+            fraction = 0.18f + (resolvedBorderAlpha * 0.04f),
         ).copy(alpha = 0.72f),
     )
 }

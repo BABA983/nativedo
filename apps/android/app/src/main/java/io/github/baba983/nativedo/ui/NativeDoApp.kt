@@ -65,6 +65,10 @@ import io.github.baba983.nativedo.core.session.SessionSnapshot
 import io.github.baba983.nativedo.core.ui.BulletinHost
 import io.github.baba983.nativedo.core.ui.BulletinHostState
 import io.github.baba983.nativedo.core.ui.LocalBulletinHostState
+import io.github.baba983.nativedo.core.ui.NativeDoAnimatedLabel
+import io.github.baba983.nativedo.core.ui.NativeDoBackIcon
+import io.github.baba983.nativedo.core.ui.NativeDoGlassBar
+import io.github.baba983.nativedo.core.ui.NativeDoGlassTab
 import io.github.baba983.nativedo.core.ui.UserAvatar
 import io.github.baba983.nativedo.feature.auth.ui.AuthRestoreGate
 import io.github.baba983.nativedo.feature.auth.ui.shouldShowAuthRestoreGate
@@ -75,6 +79,7 @@ import io.github.baba983.nativedo.navigation.buildAppBrowserRoute
 import io.github.baba983.nativedo.ui.theme.NativeDoChromeShape
 import io.github.baba983.nativedo.ui.theme.NativeDoDuration
 import io.github.baba983.nativedo.ui.theme.NativeDoEasing
+import io.github.baba983.nativedo.ui.theme.NativeDoGlassRole
 import io.github.baba983.nativedo.ui.theme.NativeDoPillShape
 import io.github.baba983.nativedo.ui.theme.NativeDoTheme
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
@@ -157,77 +162,78 @@ fun NativeDoApp() {
         val isRootRoute = currentRoute == null || currentRoute == RootDestination.rootContainerRoute
 
         CompositionLocalProvider(LocalBulletinHostState provides bulletinHostState) {
-            Box(modifier = Modifier.fillMaxSize()) {
-                NativeDoBackground(modifier = Modifier.fillMaxSize())
-
-                Scaffold(
-                    containerColor = Color.Transparent,
-                    contentColor = MaterialTheme.colorScheme.onBackground,
-                    contentWindowInsets = WindowInsets(0, 0, 0, 0),
-                    topBar = {
-                        if (!isAppBrowserRoute) {
-                            NativeDoTopBar(
-                                currentRoute = activeRoute,
-                                chromeState = chromeState,
-                                topicTitleOverride = topicHeaderTitle,
-                                showBack = !isRootRoute,
-                                reserveHomeSearchSlot = isRootRoute && activeRoute == RootDestination.Home.route,
-                                showHomeSearchAction = isRootRoute &&
-                                    activeRoute == RootDestination.Home.route &&
-                                    homeHeaderSearchVisible,
-                                themeMode = themeMode,
-                                onHomeRefreshClick = { homeRefreshRequestToken += 1 },
-                                onHomeSearchClick = { homeSearchRequestToken += 1 },
-                                onThemeModeClick = { themeMode = themeMode.next() },
-                                onBackClick = { navController.popBackStack() },
-                            )
-                        }
-                    },
-                ) { paddingValues ->
-                    NativeDoNavHost(
-                        navController = navController,
-                        contentPadding = paddingValues,
-                        rootPagerState = rootPagerState,
-                        homeSearchRequestToken = homeSearchRequestToken,
-                        homeRefreshRequestToken = homeRefreshRequestToken,
-                        onHomeHeaderSearchVisibilityChanged = { homeHeaderSearchVisible = it },
-                        onTopicHeaderTitleChanged = { topicHeaderTitle = it },
-                        onOpenLink = onOpenLink,
-                    )
-                }
-
-                if (isRootRoute) {
-                    NativeDoBottomBarFade(
-                        modifier = Modifier.align(Alignment.BottomCenter),
-                    )
-                    NativeDoBottomBar(
-                        baseUrl = appContainer.baseUrl,
-                        currentRoute = activeRoute,
-                        modifier = Modifier.align(Alignment.BottomCenter),
-                        profileAvatarLabel = profileAvatarLabel,
-                        profileAvatarTemplate = profileAvatarTemplate,
-                        onHomeRefreshRequest = { homeRefreshRequestToken += 1 },
-                        onNavigate = { route ->
-                            val page = RootDestination.bottomTabs.indexOfFirst { it.route == route }
-                            if (page != -1 && page != rootPagerState.currentPage) {
-                                coroutineScope.launch {
-                                    rootPagerState.animateScrollToPage(page)
+            NativeDoChromeScaffold(
+                topBar = if (!isAppBrowserRoute) {
+                    {
+                        NativeDoTopBar(
+                            currentRoute = activeRoute,
+                            chromeState = chromeState,
+                            topicTitleOverride = topicHeaderTitle,
+                            showBack = !isRootRoute,
+                            reserveHomeSearchSlot = isRootRoute && activeRoute == RootDestination.Home.route,
+                            showHomeSearchAction = isRootRoute &&
+                                activeRoute == RootDestination.Home.route &&
+                                homeHeaderSearchVisible,
+                            themeMode = themeMode,
+                            onHomeRefreshClick = { homeRefreshRequestToken += 1 },
+                            onHomeSearchClick = { homeSearchRequestToken += 1 },
+                            onThemeModeClick = { themeMode = themeMode.next() },
+                            onBackClick = { navController.popBackStack() },
+                        )
+                    }
+                } else {
+                    null
+                },
+                bottomBar = if (isRootRoute) {
+                    {
+                        NativeDoBottomBarFade(
+                            modifier = Modifier.align(Alignment.BottomCenter),
+                        )
+                        NativeDoBottomBar(
+                            baseUrl = appContainer.baseUrl,
+                            currentRoute = activeRoute,
+                            modifier = Modifier.align(Alignment.BottomCenter),
+                            profileAvatarLabel = profileAvatarLabel,
+                            profileAvatarTemplate = profileAvatarTemplate,
+                            onHomeRefreshRequest = { homeRefreshRequestToken += 1 },
+                            onNavigate = { route ->
+                                val page = RootDestination.bottomTabs.indexOfFirst { it.route == route }
+                                if (page != -1 && page != rootPagerState.currentPage) {
+                                    coroutineScope.launch {
+                                        rootPagerState.animateScrollToPage(page)
+                                    }
                                 }
-                            }
-                        },
+                            },
+                        )
+                    }
+                } else {
+                    null
+                },
+                bulletinHost = {
+                    BulletinHost(
+                        hostState = bulletinHostState,
+                        modifier = Modifier.align(Alignment.TopCenter),
                     )
-                }
-                BulletinHost(
-                    hostState = bulletinHostState,
-                    modifier = Modifier.align(Alignment.TopCenter),
+                },
+                overlay = {
+                    if (shouldShowAuthRestoreGate(sessionState)) {
+                        AuthRestoreGate(
+                            snapshot = sessionSnapshot,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                },
+            ) { paddingValues ->
+                NativeDoNavHost(
+                    navController = navController,
+                    contentPadding = paddingValues,
+                    rootPagerState = rootPagerState,
+                    homeSearchRequestToken = homeSearchRequestToken,
+                    homeRefreshRequestToken = homeRefreshRequestToken,
+                    onHomeHeaderSearchVisibilityChanged = { homeHeaderSearchVisible = it },
+                    onTopicHeaderTitleChanged = { topicHeaderTitle = it },
+                    onOpenLink = onOpenLink,
                 )
-
-                if (shouldShowAuthRestoreGate(sessionState)) {
-                    AuthRestoreGate(
-                        snapshot = sessionSnapshot,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
             }
         }
     }
@@ -259,89 +265,96 @@ private fun NativeDoTopBar(
             .fillMaxWidth()
             .statusBarsPadding(),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = AppTopBarRowMinHeight)
-                .padding(
-                    horizontal = AppTopBarHorizontalPadding,
-                    vertical = AppTopBarVerticalPadding,
-                ),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (showBack) {
-                IconButton(onClick = onBackClick) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
-                        contentDescription = null,
+        NativeDoGlassBar(
+            modifier = Modifier.fillMaxWidth(),
+            minHeight = AppTopBarRowMinHeight,
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                horizontal = AppTopBarHorizontalPadding,
+                vertical = AppTopBarVerticalPadding,
+            ),
+            sectionSpacing = 12.dp,
+            leading = if (showBack) {
+                {
+                    IconButton(onClick = onBackClick) {
+                        NativeDoBackIcon(
+                            progress = 0f,
+                            contentDescription = null,
+                        )
+                    }
+                }
+            } else {
+                null
+            },
+            title = {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(NativeDoPillShape)
+                        .clickable(
+                            enabled = titleRefreshEnabled,
+                            interactionSource = titleInteractionSource,
+                            indication = null,
+                            onClick = onHomeRefreshClick,
+                        )
+                        .padding(
+                            start = if (showBack) 4.dp else 0.dp,
+                            end = 12.dp,
+                        )
+                        .padding(vertical = 4.dp),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    NativeDoAnimatedLabel(
+                        title = topBarTitle(
+                            currentRoute = currentRoute,
+                            topicTitleOverride = topicTitleOverride,
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                        titleStyle = MaterialTheme.typography.titleLarge,
+                        titleColor = colors.textPrimary,
                     )
                 }
-            }
-
-            Text(
-                text = topBarTitle(
-                    currentRoute = currentRoute,
-                    topicTitleOverride = topicTitleOverride,
-                ),
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(
-                        start = if (showBack) 4.dp else 0.dp,
-                        end = 12.dp,
-                    )
-                    .clip(NativeDoPillShape)
-                    .clickable(
-                        enabled = titleRefreshEnabled,
-                        interactionSource = titleInteractionSource,
-                        indication = null,
-                        onClick = onHomeRefreshClick,
-                    )
-                    .padding(horizontal = 4.dp, vertical = 4.dp),
-                style = MaterialTheme.typography.titleLarge,
-                color = colors.textPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                if (reserveHomeSearchSlot) {
-                    Box(
-                        modifier = Modifier.size(40.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (showHomeSearchAction) {
-                            IconButton(
-                                onClick = onHomeSearchClick,
-                                modifier = Modifier.size(40.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Outlined.Search,
-                                    contentDescription = stringResource(R.string.tab_search),
-                                    tint = colors.textPrimary,
-                                )
+            },
+            trailing = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    if (reserveHomeSearchSlot) {
+                        Box(
+                            modifier = Modifier.size(40.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (showHomeSearchAction) {
+                                IconButton(
+                                    onClick = onHomeSearchClick,
+                                    modifier = Modifier.size(40.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Search,
+                                        contentDescription = stringResource(R.string.tab_search),
+                                        tint = colors.textPrimary,
+                                    )
+                                }
                             }
                         }
                     }
-                }
 
-                Box(
-                    modifier = Modifier
-                        .clip(NativeDoPillShape)
-                        .background(colors.backgroundElevated.copy(alpha = 0.82f))
-                        .clickable(onClick = onThemeModeClick)
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                ) {
-                    Text(
-                        text = themeModeLabel(themeMode),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = colors.textSecondary,
-                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(NativeDoPillShape)
+                            .background(colors.backgroundElevated.copy(alpha = 0.82f))
+                            .clickable(onClick = onThemeModeClick)
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                    ) {
+                        Text(
+                            text = themeModeLabel(themeMode),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = colors.textSecondary,
+                        )
+                    }
                 }
-            }
-        }
+            },
+        )
 
         HorizontalDivider(
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f),
@@ -369,7 +382,7 @@ private fun NativeDoBottomBar(
         NativeDoGlassSurface(
             modifier = Modifier,
             shape = NativeDoChromeShape,
-            strong = true,
+            glassSpec = NativeDoThemeExtras.glass(NativeDoGlassRole.Chrome),
         ) {
             Row(
                 modifier = Modifier
@@ -411,70 +424,16 @@ private fun NativeDoBottomTab(
     selected: Boolean,
     onDoubleClick: (() -> Unit)?,
     onClick: () -> Unit,
-) {
-    val colors = NativeDoThemeExtras.colors
-    val interactionSource = remember { MutableInteractionSource() }
-    val iconColor by animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.primary else colors.textSecondary,
-        animationSpec = tween(
-            durationMillis = NativeDoDuration.ColorBlend,
-            easing = NativeDoEasing.Standard,
-        ),
-        label = "bottom_tab_icon",
-    )
-    val textColor by animateColorAsState(
-        targetValue = if (selected) MaterialTheme.colorScheme.primary else colors.textSecondary,
-        animationSpec = tween(
-            durationMillis = NativeDoDuration.ColorBlend,
-            easing = NativeDoEasing.Standard,
-        ),
-        label = "bottom_tab_text",
-    )
-    val backgroundAlpha by animateFloatAsState(
-        targetValue = if (selected) 1f else 0f,
-        animationSpec = tween(
-            durationMillis = NativeDoDuration.ColorBlend,
-            easing = NativeDoEasing.Standard,
-        ),
-        label = "bottom_tab_background",
-    )
-    val backgroundScale by animateFloatAsState(
-        targetValue = if (selected) 1f else 0.6f,
-        animationSpec = tween(
-            durationMillis = NativeDoDuration.ColorBlend,
-            easing = NativeDoEasing.Standard,
-        ),
-        label = "bottom_tab_background_scale",
-    )
-
-    Box(
-        modifier = modifier
-            .widthIn(min = 68.dp)
-            .height(48.dp)
-            .clip(NativeDoPillShape)
-            .combinedClickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onDoubleClick = onDoubleClick,
-                onClick = onClick,
-            )
-            .padding(horizontal = 2.dp),
-        contentAlignment = Alignment.Center,
     ) {
+        NativeDoGlassTab(
+            selected = selected,
+            onClick = onClick,
+            onDoubleClick = onDoubleClick,
+            modifier = modifier.widthIn(min = 68.dp),
+        ) { _, contentColor ->
         Box(
             modifier = Modifier
-                .matchParentSize()
-                .padding(horizontal = 2.dp, vertical = 3.dp)
-                .graphicsLayer(
-                    scaleX = backgroundScale,
-                    scaleY = backgroundScale,
-                )
-                .clip(NativeDoPillShape)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.09f * backgroundAlpha)),
-        )
-        Box(
-            modifier = Modifier
-                .fillMaxHeight()
+                .height(48.dp)
                 .padding(horizontal = 4.dp),
         ) {
             if (shouldRenderProfileAvatarTab(destination, profileAvatarLabel, profileAvatarTemplate)) {
@@ -495,7 +454,7 @@ private fun NativeDoBottomTab(
                         .align(Alignment.TopCenter)
                         .padding(top = 4.dp)
                         .size(24.dp),
-                    tint = iconColor,
+                    tint = contentColor,
                 )
             }
             Text(
@@ -503,7 +462,7 @@ private fun NativeDoBottomTab(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(top = 28.dp),
-                color = textColor,
+                color = contentColor,
                 fontSize = 12.sp,
                 lineHeight = 13.sp,
                 maxLines = 1,

@@ -613,6 +613,139 @@ internal fun AppBrowserRoute(
                 }
             }
         },
+        overlayContent = {
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .graphicsLayer { alpha = routePresentationState.backdropAlpha }
+                    .background(Color.Black),
+            )
+
+            if (historyScrimAlpha > 0f) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = historyScrimAlpha }
+                        .background(Color.Black)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {
+                                browserViewModel.onAction(AppBrowserAction.SetHistoryPopupVisible(false))
+                            },
+                        ),
+                )
+            }
+
+            val gestureEnabled = !isClosing &&
+                panel == AppBrowserPanel.Page &&
+                !browserUiState.address.isEditing &&
+                !isSearching &&
+                !historyPopupExpanded
+            if (gestureEnabled) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .width(appBrowserSwipeEdgeWidth)
+                        .align(Alignment.CenterStart)
+                        .pointerInput(screenWidthPx, gestureEnabled) {
+                            var velocityTracker = VelocityTracker()
+                            detectHorizontalDragGestures(
+                                onDragStart = { offset ->
+                                    velocityTracker = VelocityTracker()
+                                    velocityTracker.addPosition(0L, offset)
+                                    swipeOffsetPx = currentRouteOffsetPx
+                                    isSwipeGestureActive = true
+                                },
+                                onHorizontalDrag = { change, dragAmount ->
+                                    change.consume()
+                                    velocityTracker.addPosition(change.uptimeMillis, change.position)
+                                    swipeOffsetPx = (swipeOffsetPx + dragAmount).coerceIn(0f, screenWidthPx)
+                                },
+                                onDragCancel = {
+                                    val settle = buildAppBrowserSwipeSettle(
+                                        currentOffsetPx = swipeOffsetPx,
+                                        velocityPxPerSecond = 0f,
+                                        screenWidthPx = screenWidthPx,
+                                    )
+                                    coroutineScope.launch {
+                                        routeOffsetPx.snapTo(swipeOffsetPx)
+                                        isSwipeGestureActive = false
+                                        routeOffsetPx.animateTo(
+                                            targetValue = settle.targetOffsetPx,
+                                            animationSpec = tween(
+                                                durationMillis = settle.durationMillis,
+                                                easing = AppBrowserEaseOutQuint,
+                                            ),
+                                        )
+                                    }
+                                },
+                                onDragEnd = {
+                                    val settle = buildAppBrowserSwipeSettle(
+                                        currentOffsetPx = swipeOffsetPx,
+                                        velocityPxPerSecond = velocityTracker.calculateVelocity().x,
+                                        screenWidthPx = screenWidthPx,
+                                    )
+                                    if (settle.shouldDismiss) {
+                                        requestClose(durationMillis = settle.durationMillis)
+                                    } else {
+                                        coroutineScope.launch {
+                                            routeOffsetPx.snapTo(swipeOffsetPx)
+                                            isSwipeGestureActive = false
+                                            routeOffsetPx.animateTo(
+                                                targetValue = 0f,
+                                                animationSpec = tween(
+                                                    durationMillis = settle.durationMillis,
+                                                    easing = AppBrowserEaseOutQuint,
+                                                ),
+                                            )
+                                        }
+                                    }
+                                },
+                            )
+                        },
+                )
+            }
+
+            AnimatedVisibility(
+                visible = searchPanelState.visible,
+                enter = slideInVertically(
+                    animationSpec = tween(
+                        durationMillis = 320,
+                        easing = LinearOutSlowInEasing,
+                    ),
+                    initialOffsetY = { it },
+                ) + fadeIn(
+                    animationSpec = tween(
+                        durationMillis = 220,
+                        easing = LinearOutSlowInEasing,
+                    ),
+                ),
+                exit = slideOutVertically(
+                    animationSpec = tween(
+                        durationMillis = 180,
+                        easing = LinearOutSlowInEasing,
+                    ),
+                    targetOffsetY = { it },
+                ) + fadeOut(
+                    animationSpec = tween(
+                        durationMillis = 120,
+                        easing = LinearOutSlowInEasing,
+                    ),
+                ),
+                modifier = Modifier.align(Alignment.BottomCenter),
+            ) {
+                AppBrowserSearchPanel(
+                    state = searchPanelState,
+                    onPrevious = ::searchPrevious,
+                    onNext = ::searchNext,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .imePadding()
+                        .navigationBarsPadding(),
+                )
+            }
+        },
     ) {
         AppBrowserWebView(
             modifier = Modifier
@@ -718,181 +851,49 @@ internal fun AppBrowserRoute(
                 appContainer.cookieSyncBridge.syncToWebView(appContainer.baseUrl)
             },
         )
+    }
 
-        Box(
-            modifier = Modifier
-                .matchParentSize()
-                .graphicsLayer { alpha = routePresentationState.backdropAlpha }
-                .background(Color.Black),
-        )
-
-        if (historyScrimAlpha > 0f) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .graphicsLayer { alpha = historyScrimAlpha }
-                    .background(Color.Black)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = {
-                            browserViewModel.onAction(AppBrowserAction.SetHistoryPopupVisible(false))
-                        },
-                ),
-            )
-        }
-
-        pendingSslRequest?.let {
-            AlertDialog(
-                onDismissRequest = {
-                    it.handler.cancel()
-                    pendingSslRequest = null
-                },
-                title = {
-                    Text(text = stringResource(R.string.app_browser_ssl_error_title))
-                },
-                text = {
-                    Text(
-                        text = buildString {
-                            append(stringResource(R.string.app_browser_ssl_error_message))
-                            it.error?.url?.toString()?.takeIf(String::isNotBlank)?.let { url ->
-                                append("\n\n")
-                                append(url)
-                            }
-                        },
-                    )
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            it.handler.proceed()
-                            pendingSslRequest = null
-                        },
-                    ) {
-                        Text(text = stringResource(R.string.app_browser_ssl_error_continue))
-                    }
-                },
-                dismissButton = {
-                    TextButton(
-                        onClick = {
-                            it.handler.cancel()
-                            pendingSslRequest = null
-                        },
-                    ) {
-                        Text(text = stringResource(R.string.app_browser_ssl_error_cancel))
-                    }
-                },
-            )
-        }
-
-        val gestureEnabled = !isClosing &&
-            panel == AppBrowserPanel.Page &&
-            !browserUiState.address.isEditing &&
-            !isSearching &&
-            !historyPopupExpanded
-        if (gestureEnabled) {
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .width(appBrowserSwipeEdgeWidth)
-                    .align(Alignment.CenterStart)
-                    .pointerInput(screenWidthPx, gestureEnabled) {
-                        var velocityTracker = VelocityTracker()
-                        detectHorizontalDragGestures(
-                            onDragStart = { offset ->
-                                velocityTracker = VelocityTracker()
-                                velocityTracker.addPosition(0L, offset)
-                                swipeOffsetPx = currentRouteOffsetPx
-                                isSwipeGestureActive = true
-                            },
-                            onHorizontalDrag = { change, dragAmount ->
-                                change.consume()
-                                velocityTracker.addPosition(change.uptimeMillis, change.position)
-                                swipeOffsetPx = (swipeOffsetPx + dragAmount).coerceIn(0f, screenWidthPx)
-                            },
-                            onDragCancel = {
-                                val settle = buildAppBrowserSwipeSettle(
-                                    currentOffsetPx = swipeOffsetPx,
-                                    velocityPxPerSecond = 0f,
-                                    screenWidthPx = screenWidthPx,
-                                )
-                                coroutineScope.launch {
-                                    routeOffsetPx.snapTo(swipeOffsetPx)
-                                    isSwipeGestureActive = false
-                                    routeOffsetPx.animateTo(
-                                        targetValue = settle.targetOffsetPx,
-                                        animationSpec = tween(
-                                            durationMillis = settle.durationMillis,
-                                            easing = AppBrowserEaseOutQuint,
-                                        ),
-                                    )
-                                }
-                            },
-                            onDragEnd = {
-                                val settle = buildAppBrowserSwipeSettle(
-                                    currentOffsetPx = swipeOffsetPx,
-                                    velocityPxPerSecond = velocityTracker.calculateVelocity().x,
-                                    screenWidthPx = screenWidthPx,
-                                )
-                                if (settle.shouldDismiss) {
-                                    requestClose(durationMillis = settle.durationMillis)
-                                } else {
-                                    coroutineScope.launch {
-                                        routeOffsetPx.snapTo(swipeOffsetPx)
-                                        isSwipeGestureActive = false
-                                        routeOffsetPx.animateTo(
-                                            targetValue = 0f,
-                                            animationSpec = tween(
-                                                durationMillis = settle.durationMillis,
-                                                easing = AppBrowserEaseOutQuint,
-                                            ),
-                                        )
-                                    }
-                                }
-                            },
-                        )
+    pendingSslRequest?.let {
+        AlertDialog(
+            onDismissRequest = {
+                it.handler.cancel()
+                pendingSslRequest = null
+            },
+            title = {
+                Text(text = stringResource(R.string.app_browser_ssl_error_title))
+            },
+            text = {
+                Text(
+                    text = buildString {
+                        append(stringResource(R.string.app_browser_ssl_error_message))
+                        it.error?.url?.toString()?.takeIf(String::isNotBlank)?.let { url ->
+                            append("\n\n")
+                            append(url)
+                        }
                     },
-            )
-        }
-
-        AnimatedVisibility(
-            visible = searchPanelState.visible,
-            enter = slideInVertically(
-                animationSpec = tween(
-                    durationMillis = 320,
-                    easing = LinearOutSlowInEasing,
-                ),
-                initialOffsetY = { it },
-            ) + fadeIn(
-                animationSpec = tween(
-                    durationMillis = 220,
-                    easing = LinearOutSlowInEasing,
-                ),
-            ),
-            exit = slideOutVertically(
-                animationSpec = tween(
-                    durationMillis = 180,
-                    easing = LinearOutSlowInEasing,
-                ),
-                targetOffsetY = { it },
-            ) + fadeOut(
-                animationSpec = tween(
-                    durationMillis = 120,
-                    easing = LinearOutSlowInEasing,
-                ),
-            ),
-            modifier = Modifier.align(Alignment.BottomCenter),
-        ) {
-            AppBrowserSearchPanel(
-                state = searchPanelState,
-                onPrevious = ::searchPrevious,
-                onNext = ::searchNext,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .imePadding()
-                    .navigationBarsPadding(),
-            )
-        }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        it.handler.proceed()
+                        pendingSslRequest = null
+                    },
+                ) {
+                    Text(text = stringResource(R.string.app_browser_ssl_error_continue))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        it.handler.cancel()
+                        pendingSslRequest = null
+                    },
+                ) {
+                    Text(text = stringResource(R.string.app_browser_ssl_error_cancel))
+                }
+            },
+        )
     }
 }
 
