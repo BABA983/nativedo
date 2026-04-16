@@ -8,6 +8,8 @@ import io.github.baba983.nativedo.core.session.AppSessionState
 import io.github.baba983.nativedo.core.session.SessionExpiredReason
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
+import okhttp3.Cookie
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
@@ -25,6 +27,18 @@ class DiscourseApiClientTest {
     @After
     fun tearDown() {
         server.shutdown()
+    }
+
+    private fun enqueueJsonResponse(body: String) {
+        server.enqueue(
+            MockResponse()
+                .setBody(body)
+                .setHeader("Content-Type", "application/json"),
+        )
+    }
+
+    private fun enqueueEmojiCatalogResponse() {
+        enqueueJsonResponse("{}")
     }
 
     @Test
@@ -169,6 +183,57 @@ class DiscourseApiClientTest {
 
         val request = checkNotNull(server.takeRequest())
         assertThat(request.getHeader("User-Agent")).isEqualTo("NativeDo-Test-UA/1.0")
+    }
+
+    @Test
+    fun latestTopics_withAuthenticatedCookies_sendsDiscourseLoggedInHeaders() = runTest {
+        val payload = checkNotNull(
+            javaClass.classLoader?.getResource("discourse/latest-topics.json"),
+        ).readText()
+        server.enqueue(
+            MockResponse()
+                .setBody(payload)
+                .setHeader("Content-Type", "application/json"),
+        )
+
+        val appContainer = AppContainer(baseUrl = server.url("/").toString())
+        appContainer.cookieStore.save(
+            url = server.url("/").toString().toHttpUrl(),
+            cookies = listOf(
+                Cookie.Builder()
+                    .name("_t")
+                    .value("auth-token")
+                    .domain("localhost")
+                    .path("/")
+                    .build(),
+            ),
+        )
+
+        appContainer.discourseApiClient.fetchLatest(page = 0)
+
+        val request = checkNotNull(server.takeRequest())
+        assertThat(request.getHeader("Discourse-Logged-In")).isEqualTo("true")
+        assertThat(request.getHeader("Discourse-Present")).isEqualTo("true")
+    }
+
+    @Test
+    fun latestTopics_withoutAuthenticatedCookies_omitsDiscourseLoggedInHeaders() = runTest {
+        val payload = checkNotNull(
+            javaClass.classLoader?.getResource("discourse/latest-topics.json"),
+        ).readText()
+        server.enqueue(
+            MockResponse()
+                .setBody(payload)
+                .setHeader("Content-Type", "application/json"),
+        )
+
+        val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
+
+        client.fetchLatest(page = 0)
+
+        val request = checkNotNull(server.takeRequest())
+        assertThat(request.getHeader("Discourse-Logged-In")).isNull()
+        assertThat(request.getHeader("Discourse-Present")).isNull()
     }
 
     @Test
@@ -512,28 +577,25 @@ class DiscourseApiClientTest {
 
     @Test
     fun fetchTopic_mapsPostAvatarTemplate() = runTest {
-        server.enqueue(
-            MockResponse()
-                .setBody(
-                    """
-                    {
-                      "id": 101,
-                      "title": "Welcome",
-                      "post_stream": {
-                        "posts": [
-                          {
-                            "id": 1001,
-                            "username": "baba",
-                            "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png",
-                            "animated_avatar": "/user_avatar/linux.do/baba/120/1.gif",
-                            "cooked": "<p>Hello</p>"
-                          }
-                        ]
-                      }
-                    }
-                    """.trimIndent(),
-                )
-                .setHeader("Content-Type", "application/json"),
+        enqueueEmojiCatalogResponse()
+        enqueueJsonResponse(
+            """
+            {
+              "id": 101,
+              "title": "Welcome",
+              "post_stream": {
+                "posts": [
+                  {
+                    "id": 1001,
+                    "username": "baba",
+                    "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png",
+                    "animated_avatar": "/user_avatar/linux.do/baba/120/1.gif",
+                    "cooked": "<p>Hello</p>"
+                  }
+                ]
+              }
+            }
+            """.trimIndent(),
         )
 
         val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
@@ -585,11 +647,8 @@ class DiscourseApiClientTest {
         val payload = checkNotNull(
             javaClass.classLoader?.getResource("discourse/topic-detail.json"),
         ).readText()
-        server.enqueue(
-            MockResponse()
-                .setBody(payload)
-                .setHeader("Content-Type", "application/json"),
-        )
+        enqueueEmojiCatalogResponse()
+        enqueueJsonResponse(payload)
 
         val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
         val topic = client.fetchTopic(topicId = 101)
@@ -603,11 +662,8 @@ class DiscourseApiClientTest {
         val payload = checkNotNull(
             javaClass.classLoader?.getResource("discourse/topic-detail.json"),
         ).readText()
-        server.enqueue(
-            MockResponse()
-                .setBody(payload)
-                .setHeader("Content-Type", "application/json"),
-        )
+        enqueueEmojiCatalogResponse()
+        enqueueJsonResponse(payload)
 
         val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
         val topic = client.fetchTopic(topicId = 101)
@@ -620,38 +676,35 @@ class DiscourseApiClientTest {
 
     @Test
     fun fetchTopic_mapsObjectTagsToDisplayNames() = runTest {
-        server.enqueue(
-            MockResponse()
-                .setBody(
-                    """
-                    {
-                      "id": 101,
-                      "title": "Welcome",
-                      "tags": [
-                        {
-                          "id": 1436,
-                          "name": "快问快答",
-                          "slug": "quick-question"
-                        },
-                        {
-                          "id": 1437,
-                          "name": "Android",
-                          "slug": "android"
-                        }
-                      ],
-                      "post_stream": {
-                        "posts": [
-                          {
-                            "id": 1001,
-                            "username": "baba",
-                            "cooked": "<p>Hello</p>"
-                          }
-                        ]
-                      }
-                    }
-                    """.trimIndent(),
-                )
-                .setHeader("Content-Type", "application/json"),
+        enqueueEmojiCatalogResponse()
+        enqueueJsonResponse(
+            """
+            {
+              "id": 101,
+              "title": "Welcome",
+              "tags": [
+                {
+                  "id": 1436,
+                  "name": "快问快答",
+                  "slug": "quick-question"
+                },
+                {
+                  "id": 1437,
+                  "name": "Android",
+                  "slug": "android"
+                }
+              ],
+              "post_stream": {
+                "posts": [
+                  {
+                    "id": 1001,
+                    "username": "baba",
+                    "cooked": "<p>Hello</p>"
+                  }
+                ]
+              }
+            }
+            """.trimIndent(),
         )
 
         val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
@@ -665,11 +718,8 @@ class DiscourseApiClientTest {
         val payload = checkNotNull(
             javaClass.classLoader?.getResource("discourse/topic-detail.json"),
         ).readText()
-        server.enqueue(
-            MockResponse()
-                .setBody(payload)
-                .setHeader("Content-Type", "application/json"),
-        )
+        enqueueEmojiCatalogResponse()
+        enqueueJsonResponse(payload)
 
         val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
         val topic = client.fetchTopic(topicId = 101)
@@ -682,11 +732,8 @@ class DiscourseApiClientTest {
         val payload = checkNotNull(
             javaClass.classLoader?.getResource("discourse/topic-detail.json"),
         ).readText()
-        server.enqueue(
-            MockResponse()
-                .setBody(payload)
-                .setHeader("Content-Type", "application/json"),
-        )
+        enqueueEmojiCatalogResponse()
+        enqueueJsonResponse(payload)
 
         val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
         val topic = client.fetchTopic(topicId = 101)
@@ -700,11 +747,8 @@ class DiscourseApiClientTest {
         val payload = checkNotNull(
             javaClass.classLoader?.getResource("discourse/topic-detail.json"),
         ).readText()
-        server.enqueue(
-            MockResponse()
-                .setBody(payload)
-                .setHeader("Content-Type", "application/json"),
-        )
+        enqueueEmojiCatalogResponse()
+        enqueueJsonResponse(payload)
 
         val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
         val topic = client.fetchTopic(topicId = 101)
@@ -717,11 +761,8 @@ class DiscourseApiClientTest {
         val payload = checkNotNull(
             javaClass.classLoader?.getResource("discourse/topic-detail.json"),
         ).readText()
-        server.enqueue(
-            MockResponse()
-                .setBody(payload)
-                .setHeader("Content-Type", "application/json"),
-        )
+        enqueueEmojiCatalogResponse()
+        enqueueJsonResponse(payload)
 
         val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
         val topic = client.fetchTopic(topicId = 101)
@@ -734,11 +775,8 @@ class DiscourseApiClientTest {
         val payload = checkNotNull(
             javaClass.classLoader?.getResource("discourse/topic-detail.json"),
         ).readText()
-        server.enqueue(
-            MockResponse()
-                .setBody(payload)
-                .setHeader("Content-Type", "application/json"),
-        )
+        enqueueEmojiCatalogResponse()
+        enqueueJsonResponse(payload)
 
         val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
         val topic = client.fetchTopic(topicId = 101)
@@ -753,11 +791,8 @@ class DiscourseApiClientTest {
         val payload = checkNotNull(
             javaClass.classLoader?.getResource("discourse/topic-detail.json"),
         ).readText()
-        server.enqueue(
-            MockResponse()
-                .setBody(payload)
-                .setHeader("Content-Type", "application/json"),
-        )
+        enqueueEmojiCatalogResponse()
+        enqueueJsonResponse(payload)
 
         val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
         val topic = client.fetchTopic(topicId = 101)
@@ -768,29 +803,26 @@ class DiscourseApiClientTest {
 
     @Test
     fun fetchTopic_allowsNullPostDisplayName() = runTest {
-        server.enqueue(
-            MockResponse()
-                .setBody(
-                    """
-                    {
-                      "id": 101,
-                      "title": "Welcome",
-                      "post_stream": {
-                        "posts": [
-                          {
-                            "id": 1001,
-                            "post_number": 1,
-                            "username": "LifetimeKD01",
-                            "name": null,
-                            "avatar_template": "/user_avatar/linux.do/lifetimekd01/{size}/1.png",
-                            "cooked": "<p>Hello</p>"
-                          }
-                        ]
-                      }
-                    }
-                    """.trimIndent(),
-                )
-                .setHeader("Content-Type", "application/json"),
+        enqueueEmojiCatalogResponse()
+        enqueueJsonResponse(
+            """
+            {
+              "id": 101,
+              "title": "Welcome",
+              "post_stream": {
+                "posts": [
+                  {
+                    "id": 1001,
+                    "post_number": 1,
+                    "username": "LifetimeKD01",
+                    "name": null,
+                    "avatar_template": "/user_avatar/linux.do/lifetimekd01/{size}/1.png",
+                    "cooked": "<p>Hello</p>"
+                  }
+                ]
+              }
+            }
+            """.trimIndent(),
         )
 
         val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
@@ -805,11 +837,8 @@ class DiscourseApiClientTest {
         val payload = checkNotNull(
             javaClass.classLoader?.getResource("discourse/topic-posts.json"),
         ).readText()
-        server.enqueue(
-            MockResponse()
-                .setBody(payload)
-                .setHeader("Content-Type", "application/json"),
-        )
+        enqueueEmojiCatalogResponse()
+        enqueueJsonResponse(payload)
 
         val client = AppContainer(baseUrl = server.url("/").toString()).discourseApiClient
         val posts = client.fetchTopicPosts(topicId = 101, postIds = listOf(1002L, 1003L))

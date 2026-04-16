@@ -51,17 +51,25 @@ class TopicRoutePaginationTest {
                 TopicReplyTarget(
                     itemIndex = 1,
                     postId = 1001,
+                    postNumber = 1,
                     authorUsername = "baba",
+                    authorDisplayName = "",
                     authorAvatarTemplate = "/user_avatar/linux.do/baba/{size}/1.png",
                     authorAnimatedAvatarUrl = "",
+                    createdAt = "",
+                    cookedHtml = "<p>Hello</p>",
                 ),
                 2,
                 TopicReplyTarget(
                     itemIndex = 2,
                     postId = 1002,
+                    postNumber = 2,
                     authorUsername = "alice",
+                    authorDisplayName = "",
                     authorAvatarTemplate = "/user_avatar/linux.do/alice/{size}/1.png",
                     authorAnimatedAvatarUrl = "",
+                    createdAt = "",
+                    cookedHtml = "<p>Reply</p>",
                 ),
             )
     }

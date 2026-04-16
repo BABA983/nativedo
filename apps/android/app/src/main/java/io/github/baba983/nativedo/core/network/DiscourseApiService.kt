@@ -1,6 +1,9 @@
 package io.github.baba983.nativedo.core.network
 
 import io.github.baba983.nativedo.core.model.Post
+import io.github.baba983.nativedo.core.model.PostReaction
+import io.github.baba983.nativedo.core.model.PostReactionUser
+import io.github.baba983.nativedo.core.model.PostReactionUsersGroup
 import io.github.baba983.nativedo.core.model.SearchResult
 import io.github.baba983.nativedo.core.model.SearchUser
 import io.github.baba983.nativedo.core.model.CategorySummary
@@ -24,7 +27,9 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.ResponseBody
 import retrofit2.http.GET
+import retrofit2.http.Header
 import retrofit2.http.Headers
+import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -51,11 +56,32 @@ interface DiscourseApiService {
         @Query("post_ids[]") postIds: List<Long>,
     ): TopicPostsResponseDto
 
+    @GET("posts/by_number/{topicId}/{postNumber}.json")
+    suspend fun postByNumber(
+        @Path("topicId") topicId: Long,
+        @Path("postNumber") postNumber: Int,
+    ): PostDto
+
+    @GET("discourse-reactions/posts/{id}/reactions-users.json")
+    suspend fun reactionUsers(
+        @Path("id") postId: Long,
+    ): ReactionUsersResponseDto
+
+    @PUT("discourse-reactions/posts/{id}/custom-reactions/{reaction}/toggle.json")
+    suspend fun toggleReaction(
+        @Path("id") postId: Long,
+        @Path("reaction") reactionId: String,
+        @Header("X-CSRF-Token") csrfToken: String,
+    ): okhttp3.ResponseBody
+
     @GET("search.json")
     suspend fun search(@Query("q") query: String): SearchResponseDto
 
     @GET("site.json")
     suspend fun site(): SiteResponseDto
+
+    @GET("emojis.json")
+    suspend fun emojis(): EmojiGroupsDto
 
     @GET("u/{username}.json")
     suspend fun profile(@Path("username") username: String): UserProfileResponseDto
@@ -148,6 +174,8 @@ data class TopicResponseDto(
     val views: Int = 0,
     @Serializable(with = TopicTagListSerializer::class)
     val tags: List<String> = emptyList(),
+    @SerialName("valid_reactions")
+    val validReactions: List<String> = emptyList(),
     @SerialName("post_stream")
     val postStream: PostStreamDto,
 )
@@ -198,8 +226,78 @@ data class PostDto(
     @SerialName("updated_at")
     val updatedAt: String = "",
     val version: Int = 1,
+    @SerialName("actions_summary")
+    val actionsSummary: List<PostActionSummaryDto> = emptyList(),
+    @SerialName("reactions")
+    val reactions: List<PostReactionDto> = emptyList(),
+    @SerialName("current_user_reaction")
+    val currentUserReaction: CurrentUserReactionDto? = null,
+    @SerialName("reaction_users_count")
+    val reactionUsersCount: Int = 0,
     @SerialName("cooked")
     val cookedHtml: String,
+)
+
+@Serializable
+data class PostReactionDto(
+    val id: String,
+    val count: Int = 0,
+    @SerialName("type")
+    val type: String? = null,
+    @SerialName("icon")
+    val icon: String? = null,
+)
+
+@Serializable
+data class CurrentUserReactionDto(
+    val id: String,
+    @SerialName("type")
+    val type: String? = null,
+    @SerialName("can_undo")
+    val canUndo: Boolean = false,
+)
+
+@Serializable
+data class PostActionSummaryDto(
+    val id: Int,
+    val count: Int = 0,
+    @SerialName("can_act")
+    val canAct: Boolean = false,
+)
+
+@Serializable
+data class ReactionUsersResponseDto(
+    @SerialName("reaction_users")
+    val reactionUsers: List<PostReactionUsersGroupDto> = emptyList(),
+)
+
+@Serializable
+data class PostReactionUsersGroupDto(
+    val id: String,
+    val count: Int = 0,
+    val users: List<PostReactionUserDto> = emptyList(),
+)
+
+@Serializable
+data class PostReactionUserDto(
+    val username: String,
+    @SerialName("name")
+    val displayName: String? = null,
+    @SerialName("avatar_template")
+    val avatarTemplate: String = "",
+    @SerialName("can_undo")
+    val canUndo: Boolean = false,
+    @SerialName("created_at")
+    val createdAt: String = "",
+)
+
+typealias EmojiGroupsDto = Map<String, List<EmojiDto>>
+
+@Serializable
+data class EmojiDto(
+    val name: String,
+    val url: String,
+    val group: String? = null,
 )
 
 @Serializable
@@ -207,6 +305,28 @@ data class SearchResponseDto(
     val topics: List<TopicDto> = emptyList(),
     val users: List<SearchUserDto> = emptyList(),
 )
+
+internal fun EmojiGroupsDto.toEmojiCatalog(): Map<String, String> {
+    return values.flatten().associate { emoji -> emoji.name to emoji.url }
+}
+
+internal fun ReactionUsersResponseDto.toModel(): List<PostReactionUsersGroup> {
+    return reactionUsers.map { group ->
+        PostReactionUsersGroup(
+            id = group.id,
+            count = group.count,
+            users = group.users.map { user ->
+                PostReactionUser(
+                    username = user.username,
+                    displayName = user.displayName.orEmpty(),
+                    avatarTemplate = user.avatarTemplate,
+                    canUndo = user.canUndo,
+                    createdAt = user.createdAt,
+                )
+            },
+        )
+    }
+}
 
 @Serializable
 data class SiteResponseDto(
@@ -298,24 +418,32 @@ internal fun TopicListResponseDto.toModel(): TopicListPage = TopicListPage(
     moreTopicsUrl = topicList.moreTopicsUrl,
 )
 
-internal fun TopicResponseDto.toModel(): TopicDetail {
+internal fun TopicResponseDto.toModel(
+    emojiCatalog: Map<String, String> = emptyMap(),
+): TopicDetail {
     val streamPostIds = postStream.stream.ifEmpty { postStream.posts.map { it.id } }
     return TopicDetail(
         id = id,
         title = title,
-        posts = postStream.posts.map { it.toModel() },
+        posts = postStream.posts.map { it.toModel(emojiCatalog = emojiCatalog) },
         createdAt = createdAt,
         lastPostedAt = lastPostedAt,
         viewCount = views,
         tags = tags,
+        validReactions = validReactions,
+        emojiCatalog = emojiCatalog,
         totalPosts = postsCount.takeIf { it > 0 } ?: streamPostIds.size,
         streamPostIds = streamPostIds,
     )
 }
 
-internal fun TopicPostsResponseDto.toModel(): List<Post> = postStream.posts.map { it.toModel() }
+internal fun TopicPostsResponseDto.toModel(
+    emojiCatalog: Map<String, String> = emptyMap(),
+): List<Post> = postStream.posts.map { it.toModel(emojiCatalog = emojiCatalog) }
 
-internal fun PostDto.toModel(): Post = Post(
+internal fun PostDto.toModel(
+    emojiCatalog: Map<String, String> = emptyMap(),
+): Post = Post(
     id = id,
     postNumber = postNumber,
     replyToPostNumber = replyToPostNumber,
@@ -331,6 +459,16 @@ internal fun PostDto.toModel(): Post = Post(
     createdAt = createdAt,
     updatedAt = updatedAt,
     editCount = (version - 1).coerceAtLeast(0),
+    currentUserReaction = currentUserReaction?.id,
+    reactionUsersCount = reactionUsersCount,
+    reactions = reactions.map { reaction ->
+        PostReaction(
+            id = reaction.id,
+            count = reaction.count,
+            iconUrl = reaction.icon ?: emojiCatalog[reaction.id],
+            reacted = reaction.id == currentUserReaction?.id,
+        )
+    },
     cookedHtml = cookedHtml,
     imageUrls = Regex("<img[^>]+src=\\\"([^\\\"]+)\\\"")
         .findAll(cookedHtml)

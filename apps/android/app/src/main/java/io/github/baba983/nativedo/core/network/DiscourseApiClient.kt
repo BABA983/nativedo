@@ -3,6 +3,7 @@ package io.github.baba983.nativedo.core.network
 import io.github.baba983.nativedo.core.log.NativeDoLogTag
 import io.github.baba983.nativedo.core.log.debugLog
 import io.github.baba983.nativedo.core.model.Post
+import io.github.baba983.nativedo.core.model.PostReactionUsersGroup
 import io.github.baba983.nativedo.core.model.SearchResult
 import io.github.baba983.nativedo.core.model.CategorySummary
 import io.github.baba983.nativedo.core.model.TopicDetail
@@ -64,7 +65,8 @@ class DiscourseApiClient(
     }
 
     suspend fun fetchTopic(topicId: Long): TopicDetail = runWithSessionRecovery {
-        service.topic(topicId).toModel().also { topic ->
+        val emojiCatalog = service.emojis().toEmojiCatalog()
+        service.topic(topicId).toModel(emojiCatalog = emojiCatalog).also { topic ->
             logPostMediaDebug(
                 source = "topicId=$topicId initial",
                 posts = topic.posts,
@@ -74,13 +76,33 @@ class DiscourseApiClient(
 
     suspend fun fetchTopicPosts(topicId: Long, postIds: List<Long>) =
         runWithSessionRecovery {
-            service.topicPosts(id = topicId, postIds = postIds).toModel().also { posts ->
+            val emojiCatalog = service.emojis().toEmojiCatalog()
+            service.topicPosts(id = topicId, postIds = postIds).toModel(emojiCatalog = emojiCatalog).also { posts ->
                 logPostMediaDebug(
                     source = "topicId=$topicId chunk=${postIds.joinToString(separator = ",")}",
                     posts = posts,
                 )
             }
         }
+
+    suspend fun fetchPostByNumber(topicId: Long, postNumber: Int): Post = runWithSessionRecovery {
+        val emojiCatalog = service.emojis().toEmojiCatalog()
+        service.postByNumber(topicId = topicId, postNumber = postNumber).toModel(emojiCatalog = emojiCatalog).also { post ->
+            logPostMediaDebug(
+                source = "topicId=$topicId byNumber=$postNumber",
+                posts = listOf(post),
+            )
+        }
+    }
+
+    suspend fun fetchReactionUsers(postId: Long): List<PostReactionUsersGroup> = runWithSessionRecovery {
+        service.reactionUsers(postId).toModel()
+    }
+
+    suspend fun toggleReaction(postId: Long, reactionId: String) = runWithSessionRecovery {
+        val csrfToken = service.csrf().csrf
+        service.toggleReaction(postId = postId, reactionId = reactionId, csrfToken = csrfToken).close()
+    }
 
     suspend fun search(query: String): SearchResult = runWithSessionRecovery {
         service.search(query).toModel()

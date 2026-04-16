@@ -5,17 +5,40 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -25,13 +48,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
-import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -40,20 +66,29 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.baba983.nativedo.NativeDoApplication
 import io.github.baba983.nativedo.R
 import io.github.baba983.nativedo.core.model.Post
+import io.github.baba983.nativedo.core.model.defaultReactionFallback
+import io.github.baba983.nativedo.core.model.toggledReaction
 import io.github.baba983.nativedo.core.session.AppSessionState
 import io.github.baba983.nativedo.core.session.SessionEvent
 import io.github.baba983.nativedo.core.ui.BulletinMessage
+import io.github.baba983.nativedo.core.ui.BulletinTone
 import io.github.baba983.nativedo.core.ui.LocalBulletinHostState
 import io.github.baba983.nativedo.core.ui.RequestErrorCard
+import io.github.baba983.nativedo.core.ui.UserAvatar
+import io.github.baba983.nativedo.core.ui.htmlToPreviewText
 import io.github.baba983.nativedo.core.ui.requestErrorBulletin
 import io.github.baba983.nativedo.core.ui.requestErrorPresentation
 import io.github.baba983.nativedo.feature.topic.data.TopicRepository
 import io.github.baba983.nativedo.feature.topic.domain.LoadTopicUseCase
 import io.github.baba983.nativedo.ui.NativeDoPullToRefreshIndicator
+import io.github.baba983.nativedo.ui.theme.NativeDoGlassRole
+import io.github.baba983.nativedo.ui.theme.NativeDoMotionTheme
+import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 import java.time.Duration
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.time.ZoneId
+import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -64,6 +99,7 @@ private const val TOPIC_BOTTOM_SHELF_BUFFER_ITEMS = 2
 private const val TOPIC_STATIC_ITEMS_BEFORE_POSTS = 1
 private val topicPostTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
 private val topicPostDateTimeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("MM-dd HH:mm")
+private val topicPostUtcFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss 'UTC'")
 
 internal enum class TopicPostRole {
     OriginalPoster,
@@ -78,14 +114,42 @@ internal data class TopicScrollSnapshot(
 internal data class TopicReplyTarget(
     val itemIndex: Int,
     val postId: Long,
+    val postNumber: Int?,
     val authorUsername: String,
+    val authorDisplayName: String,
     val authorAvatarTemplate: String,
     val authorAnimatedAvatarUrl: String,
+    val createdAt: String,
+    val cookedHtml: String,
 )
 
 internal data class TopicJumpHighlight(
     val postId: Long,
     val nonce: Int,
+)
+
+internal data class TopicReplySheetItem(
+    val postId: Long,
+    val postNumber: Int?,
+    val authorUsername: String,
+    val authorDisplayName: String,
+    val authorAvatarTemplate: String,
+    val authorAnimatedAvatarUrl: String,
+    val createdAt: String,
+    val previewText: String,
+)
+
+internal data class TopicReactionSheetState(
+    val postId: Long,
+    val reactions: List<io.github.baba983.nativedo.core.model.PostReaction>,
+    val initialReactionId: String? = null,
+)
+
+internal data class TopicReactionUsersUiState(
+    val groups: List<io.github.baba983.nativedo.core.model.PostReactionUsersGroup> = emptyList(),
+    val selectedReactionId: String? = null,
+    val isLoading: Boolean = false,
+    val hasLoaded: Boolean = false,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -148,6 +212,15 @@ fun TopicRoute(
     val replyTargetsByPostNumber = remember(uiState.posts) {
         topicReplyTargetsByPostNumber(uiState.posts)
     }
+    val replySheetEntriesByPostNumber = remember(uiState.posts) {
+        topicReplySheetEntriesByPostNumber(uiState.posts)
+    }
+    var activeReplySheetPostNumber by rememberSaveable(topicId) { mutableStateOf<Int?>(null) }
+    val activeReplySheetItems = activeReplySheetPostNumber?.let(replySheetEntriesByPostNumber::get).orEmpty()
+    val replySheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    var activeReactionSheetState by remember(topicId) { mutableStateOf<TopicReactionSheetState?>(null) }
+    val reactionSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false)
+    var reactionUsersUiState by remember(topicId) { mutableStateOf(TopicReactionUsersUiState()) }
     val refreshTopicIfNeeded: () -> Unit = {
         val latestAuthVersion = currentAuthVersion
         if (
@@ -243,6 +316,29 @@ fun TopicRoute(
         if (jumpHighlight == currentHighlight) {
             jumpHighlight = null
         }
+    }
+
+    LaunchedEffect(activeReactionSheetState?.postId) {
+        val reactionSheet = activeReactionSheetState ?: return@LaunchedEffect
+        val defaultReactionId = reactionSheet.initialReactionId
+            ?: reactionSheet.reactions.firstOrNull { it.reacted }?.id
+            ?: reactionSheet.reactions.firstOrNull()?.id
+        reactionUsersUiState = TopicReactionUsersUiState(
+            selectedReactionId = defaultReactionId,
+            isLoading = true,
+            hasLoaded = false,
+        )
+        val groups = runCatching {
+            appContainer.discourseApiClient.fetchReactionUsers(reactionSheet.postId)
+        }.getOrDefault(emptyList())
+        val resolvedSelectedReactionId = reactionUsersUiState.selectedReactionId
+            ?: groups.firstOrNull()?.id
+        reactionUsersUiState = TopicReactionUsersUiState(
+            groups = groups,
+            selectedReactionId = resolvedSelectedReactionId,
+            isLoading = false,
+            hasLoaded = true,
+        )
     }
 
     LaunchedEffect(showCollapsedTopicTitle, uiState.title) {
@@ -344,6 +440,7 @@ fun TopicRoute(
                         key = { _, post -> post.id },
                     ) { index, post ->
                         val replyTarget = post.replyToPostNumber?.let(replyTargetsByPostNumber::get)
+                        val replySheetItems = post.postNumber?.let(replySheetEntriesByPostNumber::get).orEmpty()
                         TopicPostCard(
                             post = post,
                             postIndex = index,
@@ -354,10 +451,95 @@ fun TopicRoute(
                             onTopicClick = onTopicClick,
                             onUserClick = onUserClick,
                             onOpenLink = onOpenLink,
+                            validReactionIds = uiState.validReactions,
+                            emojiCatalog = uiState.emojiCatalog,
+                            currentTopicId = topicId,
+                            localPostsByPostNumber = uiState.posts
+                                .mapNotNull { loadedPost -> loadedPost.postNumber?.let { number -> number to loadedPost.cookedHtml } }
+                                .toMap(),
+                            onExpandQuote = { sourceTopicId, sourcePostNumber ->
+                                runCatching {
+                                    appContainer.discourseApiClient
+                                        .fetchPostByNumber(sourceTopicId, sourcePostNumber)
+                                        .cookedHtml
+                                }
+                            },
                             replyTargetFloorLabel = post.replyToPostNumber?.let(::topicFloorLabelForPostNumber),
-                            replyTargetAvatarLabel = replyTarget?.authorUsername.orEmpty(),
-                            replyTargetAvatarTemplate = replyTarget?.authorAvatarTemplate.orEmpty(),
-                            replyTargetAnimatedAvatarUrl = replyTarget?.authorAnimatedAvatarUrl.orEmpty(),
+                            replyTargetAuthorLabel = replyTarget?.let { target ->
+                                topicPostDisplayName(
+                                    displayName = target.authorDisplayName,
+                                    username = target.authorUsername,
+                                )
+                            }.orEmpty(),
+                            replyTargetSummary = replyTarget?.cookedHtml?.htmlToPreviewText().orEmpty(),
+                            replyCount = replySheetItems.size,
+                            recentReplyParticipantLabels = replySheetItems.map { item -> item.authorUsername },
+                            onRepliesClick = post.postNumber?.let { postNumber ->
+                                if (replySheetItems.isNotEmpty()) {
+                                    { activeReplySheetPostNumber = postNumber }
+                                } else {
+                                    null
+                                }
+                            },
+                            onMoreReactionsClick = { reactions: List<io.github.baba983.nativedo.core.model.PostReaction>, initialReactionId: String? ->
+                                activeReactionSheetState = TopicReactionSheetState(
+                                    postId = post.id,
+                                    reactions = reactions,
+                                    initialReactionId = initialReactionId,
+                                )
+                            },
+                            onReactionSelected = { reaction ->
+                                coroutineScope.launch {
+                                    val currentPost = uiState.posts.firstOrNull { candidate -> candidate.id == post.id } ?: return@launch
+                                    val optimisticPost = currentPost.toggledReaction(
+                                        reactionId = reaction.id,
+                                        emojiCatalog = uiState.emojiCatalog,
+                                    )
+                                    viewModel.replacePost(optimisticPost)
+                                    val result = runCatching {
+                                        appContainer.discourseApiClient.toggleReaction(
+                                            postId = post.id,
+                                            reactionId = reaction.id,
+                                        )
+                                    }
+                                    if (result.isFailure) {
+                                        viewModel.replacePost(currentPost)
+                                        bulletinHostState?.show(
+                                            BulletinMessage(
+                                                title = "Couldn't update reaction",
+                                                subtitle = "Please try again.",
+                                                tone = BulletinTone.Error,
+                                            ),
+                                        )
+                                    }
+                                }
+                            },
+                            onReactionPickerSelect = { reaction ->
+                                coroutineScope.launch {
+                                    val currentPost = uiState.posts.firstOrNull { candidate -> candidate.id == post.id } ?: return@launch
+                                    val optimisticPost = currentPost.toggledReaction(
+                                        reactionId = reaction.id,
+                                        emojiCatalog = uiState.emojiCatalog,
+                                    )
+                                    viewModel.replacePost(optimisticPost)
+                                    val result = runCatching {
+                                        appContainer.discourseApiClient.toggleReaction(
+                                            postId = post.id,
+                                            reactionId = reaction.id,
+                                        )
+                                    }
+                                    if (result.isFailure) {
+                                        viewModel.replacePost(currentPost)
+                                        bulletinHostState?.show(
+                                            BulletinMessage(
+                                                title = "Couldn't update reaction",
+                                                subtitle = "Please try again.",
+                                                tone = BulletinTone.Error,
+                                            ),
+                                        )
+                                    }
+                                }
+                            },
                             onReplyTargetClick = post.replyToPostNumber?.let { replyToPostNumber ->
                                 {
                                     val target = replyTargetsByPostNumber[replyToPostNumber]
@@ -434,6 +616,54 @@ fun TopicRoute(
             }
         }
     }
+
+    if (activeReplySheetPostNumber != null) {
+        TopicRepliesSheet(
+            sheetState = replySheetState,
+            replies = activeReplySheetItems,
+            baseUrl = appContainer.baseUrl,
+            onDismissRequest = {
+                activeReplySheetPostNumber = null
+            },
+            onReplyClick = { reply ->
+                coroutineScope.launch {
+                    activeReplySheetPostNumber = null
+                    val target = reply.postNumber?.let(replyTargetsByPostNumber::get)
+                    if (target != null) {
+                        listState.animateScrollToItem(target.itemIndex)
+                        jumpHighlightNonce += 1
+                        jumpHighlight = TopicJumpHighlight(
+                            postId = target.postId,
+                            nonce = jumpHighlightNonce,
+                        )
+                    }
+                }
+            },
+        )
+    }
+
+    activeReactionSheetState?.let { reactionSheet ->
+        TopicReactionsSheet(
+            sheetState = reactionSheetState,
+            reactions = reactionSheet.reactions,
+            baseUrl = appContainer.baseUrl,
+            usersUiState = reactionUsersUiState,
+            onReactionSelected = { reactionId ->
+                reactionUsersUiState = reactionUsersUiState.copy(
+                    selectedReactionId = reactionId,
+                )
+            },
+            onUserClick = { username ->
+                activeReactionSheetState = null
+                reactionUsersUiState = TopicReactionUsersUiState()
+                onUserClick(username)
+            },
+            onDismissRequest = {
+                activeReactionSheetState = null
+                reactionUsersUiState = TopicReactionUsersUiState()
+            },
+        )
+    }
 }
 
 internal fun topicPostRole(index: Int): TopicPostRole =
@@ -473,14 +703,38 @@ internal fun topicReplyTargetsByPostNumber(
                 TopicReplyTarget(
                     itemIndex = index + leadingItemsCount,
                     postId = post.id,
+                    postNumber = post.postNumber,
                     authorUsername = post.authorUsername,
+                    authorDisplayName = post.authorDisplayName,
                     authorAvatarTemplate = post.authorAvatarTemplate,
                     authorAnimatedAvatarUrl = post.authorAnimatedAvatarUrl,
+                    createdAt = post.createdAt,
+                    cookedHtml = post.cookedHtml,
                 ),
             )
         }
     }
 }
+
+internal fun topicReplySheetEntriesByPostNumber(
+    posts: List<Post>,
+): Map<Int, List<TopicReplySheetItem>> = posts
+    .filter { it.replyToPostNumber != null }
+    .groupBy { requireNotNull(it.replyToPostNumber) }
+    .mapValues { (_, replies) ->
+        replies.map { post ->
+            TopicReplySheetItem(
+                postId = post.id,
+                postNumber = post.postNumber,
+                authorUsername = post.authorUsername,
+                authorDisplayName = post.authorDisplayName,
+                authorAvatarTemplate = post.authorAvatarTemplate,
+                authorAnimatedAvatarUrl = post.authorAnimatedAvatarUrl,
+                createdAt = post.createdAt,
+                previewText = post.cookedHtml.htmlToPreviewText(),
+            )
+        }
+    }
 
 internal fun topicPostMetaLabel(
     index: Int,
@@ -509,10 +763,16 @@ internal fun topicPostTimeLabel(
 ): String? {
     if (rawValue.isBlank()) return null
 
-    val postedAt = runCatching { OffsetDateTime.parse(rawValue) }.getOrNull() ?: return null
-    val postedInstant = postedAt.toInstant()
+    val postedInstant = runCatching { OffsetDateTime.parse(rawValue).toInstant() }
+        .recoverCatching {
+            java.time.LocalDateTime.parse(rawValue, topicPostUtcFormatter)
+                .atOffset(ZoneOffset.UTC)
+                .toInstant()
+        }
+        .getOrNull()
+        ?: return null
     val duration = Duration.between(postedInstant, now)
-    val postedLocalDateTime = postedAt.atZoneSameInstant(zoneId)
+    val postedLocalDateTime = postedInstant.atZone(zoneId)
     val nowLocalDate = now.atZone(zoneId).toLocalDate()
 
     if (duration.isNegative) {
@@ -599,6 +859,385 @@ private fun TopicFeedbackCard(
         contentAlignment = Alignment.Center,
     ) {
         content()
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TopicRepliesSheet(
+    sheetState: androidx.compose.material3.SheetState,
+    replies: List<TopicReplySheetItem>,
+    baseUrl: String,
+    onDismissRequest: () -> Unit,
+    onReplyClick: (TopicReplySheetItem) -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismissRequest,
+        sheetState = sheetState,
+        containerColor = NativeDoThemeExtras.colors.backgroundElevated,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = topicReplyCountLabel(replies.size),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                items(
+                    items = replies,
+                    key = { reply -> reply.postId },
+                ) { reply ->
+                    ReplySheetItem(
+                        reply = reply,
+                        baseUrl = baseUrl,
+                        onClick = { onReplyClick(reply) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TopicReactionsSheet(
+    sheetState: androidx.compose.material3.SheetState,
+    reactions: List<io.github.baba983.nativedo.core.model.PostReaction>,
+    baseUrl: String,
+    usersUiState: TopicReactionUsersUiState,
+    onReactionSelected: (String) -> Unit,
+    onUserClick: (String) -> Unit,
+    onDismissRequest: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismissRequest,
+        sheetState = sheetState,
+        containerColor = NativeDoThemeExtras.colors.backgroundElevated,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 420.dp, max = 560.dp)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "Reactions",
+                style = MaterialTheme.typography.titleMedium,
+            )
+            ReactionFlowLayout(
+                reactions = reactions,
+                baseUrl = baseUrl,
+                selectedReactionId = usersUiState.selectedReactionId,
+                onReactionSelected = onReactionSelected,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            TopicReactionUsersSection(
+                usersUiState = usersUiState,
+                baseUrl = baseUrl,
+                onUserClick = onUserClick,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ReactionFlowLayout(
+    reactions: List<io.github.baba983.nativedo.core.model.PostReaction>,
+    baseUrl: String,
+    selectedReactionId: String?,
+    onReactionSelected: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val sortedReactions = reactions.sortedWith(
+        compareByDescending<io.github.baba983.nativedo.core.model.PostReaction> { it.reacted }
+            .thenByDescending { it.count }
+            .thenBy { it.id },
+    )
+    FlowRow(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        maxItemsInEachRow = 6,
+    ) {
+        sortedReactions.forEach { reaction ->
+            TopicReactionChip(
+                reaction = reaction,
+                baseUrl = baseUrl,
+                selected = reaction.id == selectedReactionId,
+                modifier = Modifier.clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) {
+                    onReactionSelected(reaction.id)
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun TopicReactionUsersSection(
+    usersUiState: TopicReactionUsersUiState,
+    baseUrl: String,
+    onUserClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val selectedGroup = usersUiState.groups.firstOrNull { it.id == usersUiState.selectedReactionId }
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(
+            text = "Users",
+            style = MaterialTheme.typography.titleSmall,
+        )
+        when {
+            usersUiState.isLoading -> {
+                TopicReactionUsersSkeleton(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                )
+            }
+            selectedGroup == null || selectedGroup.users.isEmpty() -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    Text(
+                        text = "No users yet",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = NativeDoThemeExtras.colors.textSecondary,
+                    )
+                }
+            }
+            else -> {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    items(
+                        items = selectedGroup.users,
+                        key = { user -> user.username },
+                    ) { user ->
+                        val interactionSource = remember { MutableInteractionSource() }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(
+                                    interactionSource = interactionSource,
+                                    indication = null,
+                                ) { onUserClick(user.username) },
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            UserAvatar(
+                                label = user.username,
+                                avatarTemplate = user.avatarTemplate,
+                                animatedAvatarUrl = "",
+                                baseUrl = baseUrl,
+                                size = 24.dp,
+                            )
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
+                                Text(
+                                    text = topicPostDisplayName(
+                                        displayName = user.displayName,
+                                        username = user.username,
+                                    ),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = topicPostUsernameLabel(user.username),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = NativeDoThemeExtras.colors.textSecondary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    user.createdAt.takeIf { it.isNotBlank() }?.let { createdAt ->
+                                        Text(
+                                            text = "· ${topicPostTimeLabel(createdAt).orEmpty()}",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = NativeDoThemeExtras.colors.textSecondary,
+                                        )
+                                    }
+                                    if (user.canUndo) {
+                                        Text(
+                                            text = "· can undo",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = NativeDoThemeExtras.colors.accent,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TopicReactionUsersSkeleton(
+    modifier: Modifier = Modifier,
+) {
+    val shimmerBrush = rememberTopicReactionSkeletonBrush()
+    LazyColumn(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        items(4) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(shimmerBrush),
+                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.42f)
+                            .height(12.dp)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                            .background(shimmerBrush),
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.58f)
+                            .height(10.dp)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                            .background(shimmerBrush),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun rememberTopicReactionSkeletonBrush(): Brush {
+    val colors = NativeDoThemeExtras.colors
+    val motionScheme = NativeDoMotionTheme.scheme
+    val glass = NativeDoThemeExtras.glass(NativeDoGlassRole.Card)
+    val durationMillis = remember(motionScheme) {
+        (motionScheme.page.durationMillis * 4) + motionScheme.label.enter.durationMillis
+    }
+    val transition = rememberInfiniteTransition(label = "topic_reaction_users_skeleton")
+    val offset by transition.animateFloat(
+        initialValue = -900f,
+        targetValue = 900f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = durationMillis, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "topic_reaction_users_skeleton_offset",
+    )
+    val base = lerp(
+        start = colors.backgroundElevated,
+        stop = colors.textSecondary,
+        fraction = 0.08f + (glass.borderColor.alpha * 0.02f),
+    ).copy(alpha = 0.94f)
+    val highlight = lerp(
+        start = colors.backgroundElevated,
+        stop = colors.textSecondary,
+        fraction = 0.18f + (glass.borderColor.alpha * 0.04f),
+    ).copy(alpha = 0.72f)
+    return Brush.linearGradient(
+        colors = listOf(base, highlight, base),
+        start = Offset(x = offset - 220f, y = 0f),
+        end = Offset(x = offset + 220f, y = 220f),
+    )
+}
+
+@Composable
+private fun ReplySheetItem(
+    reply: TopicReplySheetItem,
+    baseUrl: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        UserAvatar(
+            label = reply.authorUsername,
+            avatarTemplate = reply.authorAvatarTemplate,
+            animatedAvatarUrl = reply.authorAnimatedAvatarUrl,
+            baseUrl = baseUrl,
+            size = 28.dp,
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = topicPostDisplayName(
+                        displayName = reply.authorDisplayName,
+                        username = reply.authorUsername,
+                    ),
+                    style = MaterialTheme.typography.labelLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = topicPostTimeLabel(reply.createdAt).orEmpty(),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = NativeDoThemeExtras.colors.textSecondary,
+                )
+            }
+            Text(
+                text = reply.previewText.ifBlank { "View original reply" },
+                style = MaterialTheme.typography.bodyMedium,
+                color = NativeDoThemeExtras.colors.textSecondary,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+            TextButton(onClick = onClick) {
+                Text(text = "View original reply")
+            }
+        }
     }
 }
 

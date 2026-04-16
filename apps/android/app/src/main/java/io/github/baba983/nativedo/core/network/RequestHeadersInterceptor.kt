@@ -1,5 +1,6 @@
 package io.github.baba983.nativedo.core.network
 
+import io.github.baba983.nativedo.core.storage.CookieStore
 import okhttp3.Interceptor
 import okhttp3.Response
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -7,6 +8,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 class RequestHeadersInterceptor(
     baseUrl: String = "https://linux.do/",
     private val userAgent: String = FALLBACK_USER_AGENT,
+    private val cookieStore: CookieStore? = null,
 ) : Interceptor {
     private val siteUrl = baseUrl.toHttpUrl()
     private val siteOrigin = buildString {
@@ -48,6 +50,14 @@ class RequestHeadersInterceptor(
                 if (originalRequest.header("Referer") == null) {
                     header("Referer", "$siteOrigin/")
                 }
+                if (cookieStore?.hasAuthenticatedCookies() == true) {
+                    if (originalRequest.header("Discourse-Logged-In") == null) {
+                        header("Discourse-Logged-In", LOGGED_IN_HEADER_VALUE)
+                    }
+                    if (originalRequest.header("Discourse-Present") == null) {
+                        header("Discourse-Present", LOGGED_IN_HEADER_VALUE)
+                    }
+                }
             }
         }.build()
         return chain.proceed(request)
@@ -57,5 +67,6 @@ class RequestHeadersInterceptor(
         private const val JSON_ACCEPT_HEADER = "application/json;q=0.9, text/plain;q=0.8, */*;q=0.5"
         private const val ACCEPT_LANGUAGE_HEADER = "zh-CN,zh;q=0.9,en;q=0.8"
         private const val XHR_HEADER_VALUE = "XMLHttpRequest"
+        private const val LOGGED_IN_HEADER_VALUE = "true"
     }
 }

@@ -69,7 +69,13 @@ class AppContainer(
 
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .cookieJar(PersistentCookieJar(cookieStore))
-        .addInterceptor(RequestHeadersInterceptor(baseUrl = baseUrl, userAgent = this.userAgent))
+        .addInterceptor(
+            RequestHeadersInterceptor(
+                baseUrl = baseUrl,
+                userAgent = this.userAgent,
+                cookieStore = cookieStore,
+            ),
+        )
         .addNetworkInterceptor(NetworkDebugLoggingInterceptor())
         .build()
 

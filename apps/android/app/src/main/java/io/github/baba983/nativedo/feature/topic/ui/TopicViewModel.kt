@@ -53,6 +53,8 @@ class TopicViewModel(
                         lastPostedAt = detail.lastPostedAt,
                         viewCount = detail.viewCount,
                         tags = detail.tags,
+                        validReactions = detail.validReactions,
+                        emojiCatalog = detail.emojiCatalog,
                         totalPosts = detail.totalPosts,
                         posts = detail.posts,
                         isLoading = false,
@@ -138,6 +140,14 @@ class TopicViewModel(
                 },
             )
         }
+    }
+
+    fun replacePost(post: io.github.baba983.nativedo.core.model.Post) {
+        _uiState.value = _uiState.value.copy(
+            posts = _uiState.value.posts.map { existing ->
+                if (existing.id == post.id) post else existing
+            },
+        )
     }
 
     fun onAuthRecoveryHandled() {
