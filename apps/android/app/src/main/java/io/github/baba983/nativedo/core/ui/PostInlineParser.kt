@@ -71,6 +71,42 @@ private fun Element.toPostInlines(
                 children = parseInlineNodes(childNodes(), preserveRawText = preserveRawText),
             ),
         )
+        tagName() == "u" -> listOf(
+            PostInline.Styled(
+                style = InlineStyle.Underline,
+                children = parseInlineNodes(childNodes(), preserveRawText = preserveRawText),
+            ),
+        )
+        tagName() == "mark" -> listOf(
+            PostInline.Styled(
+                style = InlineStyle.Highlight,
+                children = parseInlineNodes(childNodes(), preserveRawText = preserveRawText),
+            ),
+        )
+        tagName() == "sup" -> listOf(
+            PostInline.Styled(
+                style = InlineStyle.Superscript,
+                children = parseInlineNodes(childNodes(), preserveRawText = preserveRawText),
+            ),
+        )
+        tagName() == "sub" -> listOf(
+            PostInline.Styled(
+                style = InlineStyle.Subscript,
+                children = parseInlineNodes(childNodes(), preserveRawText = preserveRawText),
+            ),
+        )
+        tagName() == "small" -> listOf(
+            PostInline.Styled(
+                style = InlineStyle.Small,
+                children = parseInlineNodes(childNodes(), preserveRawText = preserveRawText),
+            ),
+        )
+        tagName() == "kbd" -> listOf(
+            PostInline.Styled(
+                style = InlineStyle.Kbd,
+                children = parseInlineNodes(childNodes(), preserveRawText = preserveRawText),
+            ),
+        )
         tagName() == "code" -> listOf(
             PostInline.Styled(
                 style = InlineStyle.Code,

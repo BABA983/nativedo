@@ -149,6 +149,48 @@ private fun appendElement(
             }
         }
 
+        element.tagName() == "u" -> {
+            appendNodes(element.childNodes(), state, preserveRawText)
+            if (state.text.length > start) {
+                state.entities += TextEntity.Underline(start = start, end = state.text.length)
+            }
+        }
+
+        element.tagName() == "mark" -> {
+            appendNodes(element.childNodes(), state, preserveRawText)
+            if (state.text.length > start) {
+                state.entities += TextEntity.Highlight(start = start, end = state.text.length)
+            }
+        }
+
+        element.tagName() == "sup" -> {
+            appendNodes(element.childNodes(), state, preserveRawText)
+            if (state.text.length > start) {
+                state.entities += TextEntity.Superscript(start = start, end = state.text.length)
+            }
+        }
+
+        element.tagName() == "sub" -> {
+            appendNodes(element.childNodes(), state, preserveRawText)
+            if (state.text.length > start) {
+                state.entities += TextEntity.Subscript(start = start, end = state.text.length)
+            }
+        }
+
+        element.tagName() == "small" -> {
+            appendNodes(element.childNodes(), state, preserveRawText)
+            if (state.text.length > start) {
+                state.entities += TextEntity.Small(start = start, end = state.text.length)
+            }
+        }
+
+        element.tagName() == "kbd" -> {
+            appendNodes(element.childNodes(), state, preserveRawText)
+            if (state.text.length > start) {
+                state.entities += TextEntity.Kbd(start = start, end = state.text.length)
+            }
+        }
+
         element.tagName() == "a" -> {
             if (element.shouldPrefixHashtagMarker()) {
                 state.text.append('#')

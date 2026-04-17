@@ -41,6 +41,36 @@ sealed interface TextEntity {
         override val end: Int,
     ) : TextEntity
 
+    data class Underline(
+        override val start: Int,
+        override val end: Int,
+    ) : TextEntity
+
+    data class Highlight(
+        override val start: Int,
+        override val end: Int,
+    ) : TextEntity
+
+    data class Superscript(
+        override val start: Int,
+        override val end: Int,
+    ) : TextEntity
+
+    data class Subscript(
+        override val start: Int,
+        override val end: Int,
+    ) : TextEntity
+
+    data class Small(
+        override val start: Int,
+        override val end: Int,
+    ) : TextEntity
+
+    data class Kbd(
+        override val start: Int,
+        override val end: Int,
+    ) : TextEntity
+
     data class Spoiler(
         override val start: Int,
         override val end: Int,

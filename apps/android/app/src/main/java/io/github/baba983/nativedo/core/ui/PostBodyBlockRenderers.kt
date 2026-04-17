@@ -18,16 +18,25 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.FormatQuote
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,6 +63,7 @@ import io.github.baba983.nativedo.R
 import io.github.baba983.nativedo.core.storage.CookieStore
 import io.github.baba983.nativedo.core.ui.mediaviewer.MediaViewerLaunchSource
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
+import kotlinx.coroutines.launch
 
 @Composable
 internal fun RenderPostBodyBlock(
@@ -64,6 +74,9 @@ internal fun RenderPostBodyBlock(
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
     onOpenLink: ((String) -> Unit)?,
+    onExpandQuote: (suspend (Long, Int) -> Result<String>)? = null,
+    currentTopicId: Long? = null,
+    localPostsByPostNumber: Map<Int, String> = emptyMap(),
     hiddenImage: PostBodyImage? = null,
     onImageSourceChanged: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)?,
     onImageClick: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)?,
@@ -198,6 +211,9 @@ internal fun RenderPostBodyBlock(
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
                 onOpenLink = onOpenLink,
+                onExpandQuote = onExpandQuote,
+                currentTopicId = currentTopicId,
+                localPostsByPostNumber = localPostsByPostNumber,
                 hiddenImage = hiddenImage,
                 onImageSourceChanged = onImageSourceChanged,
                 onImageClick = onImageClick,
@@ -214,6 +230,9 @@ internal fun RenderPostBodyBlock(
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
                 onOpenLink = onOpenLink,
+                onExpandQuote = onExpandQuote,
+                currentTopicId = currentTopicId,
+                localPostsByPostNumber = localPostsByPostNumber,
                 hiddenImage = hiddenImage,
                 onImageSourceChanged = onImageSourceChanged,
                 onImageClick = onImageClick,
@@ -230,6 +249,9 @@ internal fun RenderPostBodyBlock(
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
                 onOpenLink = onOpenLink,
+                onExpandQuote = onExpandQuote,
+                currentTopicId = currentTopicId,
+                localPostsByPostNumber = localPostsByPostNumber,
                 hiddenImage = hiddenImage,
                 onImageSourceChanged = onImageSourceChanged,
                 onImageClick = onImageClick,
@@ -246,6 +268,9 @@ internal fun RenderPostBodyBlock(
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
                 onOpenLink = onOpenLink,
+                onExpandQuote = onExpandQuote,
+                currentTopicId = currentTopicId,
+                localPostsByPostNumber = localPostsByPostNumber,
                 hiddenImage = hiddenImage,
                 onImageSourceChanged = onImageSourceChanged,
                 onImageClick = onImageClick,
@@ -269,6 +294,9 @@ internal fun RenderPostBodyBlock(
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
                 onOpenLink = onOpenLink,
+                onExpandQuote = onExpandQuote,
+                currentTopicId = currentTopicId,
+                localPostsByPostNumber = localPostsByPostNumber,
                 hiddenImage = hiddenImage,
                 onImageSourceChanged = onImageSourceChanged,
                 onImageClick = onImageClick,
@@ -469,6 +497,9 @@ internal fun DetailsBlockView(
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
     onOpenLink: ((String) -> Unit)?,
+    onExpandQuote: (suspend (Long, Int) -> Result<String>)? = null,
+    currentTopicId: Long? = null,
+    localPostsByPostNumber: Map<Int, String> = emptyMap(),
     hiddenImage: PostBodyImage? = null,
     onImageSourceChanged: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)?,
     onImageClick: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)?,
@@ -545,6 +576,9 @@ internal fun DetailsBlockView(
                         onTopicClick = onTopicClick,
                         onUserClick = onUserClick,
                         onOpenLink = onOpenLink,
+                        onExpandQuote = onExpandQuote,
+                        currentTopicId = currentTopicId,
+                        localPostsByPostNumber = localPostsByPostNumber,
                         hiddenImage = hiddenImage,
                         onImageSourceChanged = onImageSourceChanged,
                         onImageClick = onImageClick,
@@ -573,6 +607,9 @@ internal fun CalloutBlockView(
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
     onOpenLink: ((String) -> Unit)?,
+    onExpandQuote: (suspend (Long, Int) -> Result<String>)? = null,
+    currentTopicId: Long? = null,
+    localPostsByPostNumber: Map<Int, String> = emptyMap(),
     hiddenImage: PostBodyImage? = null,
     onImageSourceChanged: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)?,
     onImageClick: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)?,
@@ -640,6 +677,9 @@ internal fun CalloutBlockView(
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
                 onOpenLink = onOpenLink,
+                onExpandQuote = onExpandQuote,
+                currentTopicId = currentTopicId,
+                localPostsByPostNumber = localPostsByPostNumber,
                 hiddenImage = hiddenImage,
                 onImageSourceChanged = onImageSourceChanged,
                 onImageClick = onImageClick,
@@ -691,97 +731,73 @@ internal fun DiscourseQuoteBlockView(
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
     onOpenLink: ((String) -> Unit)?,
+    onExpandQuote: (suspend (Long, Int) -> Result<String>)? = null,
+    currentTopicId: Long? = null,
+    localPostsByPostNumber: Map<Int, String> = emptyMap(),
     hiddenImage: PostBodyImage? = null,
     onImageSourceChanged: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)?,
     onImageClick: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
-    val colors = NativeDoThemeExtras.colors
-    val accentColor = colors.accent.copy(alpha = 0.92f)
-    val shape = androidx.compose.foundation.shape.RoundedCornerShape(postBodyEmbeddedBlockCornerRadius)
-    val containerColor = postBodyQuoteContainerColor()
-    val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)
-
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(containerColor)
-            .border(
-                width = 1.dp,
-                color = borderColor,
-                shape = shape,
-            )
-            .drawBehind {
-                val barWidth = 2.5.dp.toPx()
-                val verticalInset = 5.dp.toPx()
-                drawRoundRect(
-                    color = accentColor,
-                    topLeft = Offset(0f, verticalInset),
-                    size = Size(
-                        barWidth,
-                        (size.height - verticalInset * 2f).coerceAtLeast(barWidth),
-                    ),
-                    cornerRadius = CornerRadius(barWidth / 2f, barWidth / 2f),
-                )
-            }
-            .padding(start = 10.dp, top = 8.dp, end = 10.dp, bottom = 8.dp),
-    ) {
-        block.title
-            ?.takeIf { title -> title.text.isNotBlank() }
-            ?.let { title ->
-                PostTextDocumentView(
-                    document = title,
-                    textStyle = MaterialTheme.typography.labelMedium,
-                    cookieStore = cookieStore,
-                    baseUrl = baseUrl,
-                    onTopicClick = onTopicClick,
-                    onUserClick = onUserClick,
-                    onOpenLink = onOpenLink,
-                    textColor = colors.accent,
-                    linkColor = colors.accent,
-                )
-            }
-            ?: block.authorDisplayName
-                .takeIf(String::isNotBlank)
-                ?.let { author ->
-                    Text(
-                        text = author,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = colors.textSecondary,
-                    )
-                }
-
-        if (block.children.isNotEmpty()) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                block.children.forEachIndexed { index, child ->
-                    RenderPostBodyBlock(
-                        block = child,
-                        cookieStore = cookieStore,
-                        baseUrl = baseUrl,
-                        svgSpriteMarkup = svgSpriteMarkup,
-                        onTopicClick = onTopicClick,
-                        onUserClick = onUserClick,
-                        onOpenLink = onOpenLink,
-                        hiddenImage = hiddenImage,
-                        onImageSourceChanged = onImageSourceChanged,
-                        onImageClick = onImageClick,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-
-                    val spacing = postBodyBlockSpacingAfter(
-                        current = child,
-                        next = block.children.getOrNull(index + 1),
-                    )
-                    if (spacing > 0.dp) {
-                        Spacer(modifier = Modifier.height(spacing))
-                    }
-                }
-            }
+    val localExpandedHtml = remember(block.sourceTopicId, block.sourcePostNumber, currentTopicId, localPostsByPostNumber) {
+        if (block.isExpandable && block.sourceTopicId != null && block.sourcePostNumber != null && block.sourceTopicId == currentTopicId) {
+            localPostsByPostNumber[block.sourcePostNumber]
+        } else {
+            null
         }
     }
+    var expandedHtml by remember(block) { mutableStateOf<String?>(null) }
+    var isLoadingExpandedQuote by remember(block) { mutableStateOf(false) }
+    var quoteLoadFailed by remember(block) { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+    val expandedBlocks = remember(expandedHtml) {
+        expandedHtml?.let(::parsePostBodyBlocks).orEmpty()
+    }
+    val titleDocument = block.title?.takeIf { title -> title.text.isNotBlank() }
+    val canExpandRemotely = block.isExpandable && block.sourceTopicId != null && block.sourcePostNumber != null && onExpandQuote != null
+    val showingExpandedBlocks = expandedBlocks.isNotEmpty()
+
+    QuoteContainer(
+        title = titleDocument,
+        fallbackTitle = block.authorDisplayName.takeIf(String::isNotBlank),
+        children = if (showingExpandedBlocks) expandedBlocks else block.children,
+        cookieStore = cookieStore,
+        baseUrl = baseUrl,
+        svgSpriteMarkup = svgSpriteMarkup,
+        onTopicClick = onTopicClick,
+        onUserClick = onUserClick,
+        onOpenLink = onOpenLink,
+        onExpandQuote = onExpandQuote,
+        currentTopicId = currentTopicId,
+        localPostsByPostNumber = localPostsByPostNumber,
+        hiddenImage = hiddenImage,
+        onImageSourceChanged = onImageSourceChanged,
+        onImageClick = onImageClick,
+        modifier = modifier,
+        forceCollapsed = canExpandRemotely && !showingExpandedBlocks,
+        loading = isLoadingExpandedQuote,
+        loadFailed = quoteLoadFailed,
+        onToggleExpand = if (canExpandRemotely && !showingExpandedBlocks) {
+            {
+                val topicId = block.sourceTopicId ?: return@QuoteContainer
+                val postNumber = block.sourcePostNumber ?: return@QuoteContainer
+                coroutineScope.launch {
+                    quoteLoadFailed = false
+                    localExpandedHtml?.let { cachedHtml ->
+                        expandedHtml = cachedHtml
+                        return@launch
+                    }
+                    isLoadingExpandedQuote = true
+                    val result = onExpandQuote(topicId, postNumber)
+                    expandedHtml = result.getOrNull()
+                    quoteLoadFailed = result.isFailure
+                    isLoadingExpandedQuote = false
+                }
+            }
+        } else {
+            null
+        },
+    )
 }
 
 @Composable
@@ -793,65 +809,289 @@ internal fun QuoteBlockView(
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
     onOpenLink: ((String) -> Unit)?,
+    onExpandQuote: (suspend (Long, Int) -> Result<String>)? = null,
+    currentTopicId: Long? = null,
+    localPostsByPostNumber: Map<Int, String> = emptyMap(),
     hiddenImage: PostBodyImage? = null,
     onImageSourceChanged: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)?,
     onImageClick: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
+    QuoteContainer(
+        title = null,
+        fallbackTitle = null,
+        children = block.children,
+        cookieStore = cookieStore,
+        baseUrl = baseUrl,
+        svgSpriteMarkup = svgSpriteMarkup,
+        onTopicClick = onTopicClick,
+        onUserClick = onUserClick,
+        onOpenLink = onOpenLink,
+        hiddenImage = hiddenImage,
+        onImageSourceChanged = onImageSourceChanged,
+        onImageClick = onImageClick,
+        modifier = modifier,
+    )
+}
+
+@Composable
+private fun QuoteContainer(
+    title: TextDocument?,
+    fallbackTitle: String?,
+    children: List<PostBodyBlock>,
+    cookieStore: CookieStore,
+    baseUrl: String,
+    svgSpriteMarkup: String,
+    onTopicClick: ((Long) -> Unit)?,
+    onUserClick: ((String) -> Unit)?,
+    onOpenLink: ((String) -> Unit)?,
+    onExpandQuote: (suspend (Long, Int) -> Result<String>)? = null,
+    currentTopicId: Long? = null,
+    localPostsByPostNumber: Map<Int, String> = emptyMap(),
+    hiddenImage: PostBodyImage?,
+    onImageSourceChanged: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)?,
+    onImageClick: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)?,
+    modifier: Modifier = Modifier,
+    forceCollapsed: Boolean = false,
+    loading: Boolean = false,
+    loadFailed: Boolean = false,
+    onToggleExpand: (suspend () -> Unit)? = null,
+) {
     val colors = NativeDoThemeExtras.colors
-    val accentColor = colors.accent.copy(alpha = 0.92f)
-    val shape = androidx.compose.foundation.shape.RoundedCornerShape(postBodyEmbeddedBlockCornerRadius)
-    val containerColor = postBodyQuoteContainerColor()
-    val borderColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.28f)
+    val accentColor = colors.accent.copy(alpha = 0.88f)
+    val coroutineScope = rememberCoroutineScope()
+    val shouldCollapse = remember(title, fallbackTitle, children, forceCollapsed) {
+        forceCollapsed || shouldCollapseQuoteBlock(
+            title = title,
+            fallbackTitle = fallbackTitle,
+            children = children,
+        )
+    }
+    var expanded by rememberSaveable(title, fallbackTitle, children, forceCollapsed) { mutableStateOf(!shouldCollapse) }
+    LaunchedEffect(forceCollapsed, children) {
+        if (forceCollapsed && children.isNotEmpty()) {
+            expanded = false
+        }
+        if (!forceCollapsed) {
+            expanded = true
+        }
+    }
+    val toggleInteractionSource = remember { MutableInteractionSource() }
+    val visibleChildren = if (!shouldCollapse || expanded) {
+        children
+    } else {
+        children.take(1)
+    }
 
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .clip(shape)
-            .background(containerColor)
-            .border(
-                width = 1.dp,
-                color = borderColor,
-                shape = shape,
-            )
             .drawBehind {
-                val barWidth = 2.5.dp.toPx()
-                val verticalInset = 5.dp.toPx()
+                val barWidth = 2.dp.toPx()
+                val topInset = 3.dp.toPx()
+                val bottomInset = 3.dp.toPx()
                 drawRoundRect(
                     color = accentColor,
-                    topLeft = Offset(0f, verticalInset),
+                    topLeft = Offset(0f, topInset),
                     size = Size(
-                        barWidth,
-                        (size.height - verticalInset * 2f).coerceAtLeast(barWidth),
+                        width = barWidth,
+                        height = (size.height - topInset - bottomInset).coerceAtLeast(barWidth),
                     ),
-                    cornerRadius = CornerRadius(barWidth / 2f, barWidth / 2f),
+                    cornerRadius = CornerRadius(barWidth, barWidth),
                 )
             }
-            .padding(start = 10.dp, top = 8.dp, end = 10.dp, bottom = 8.dp),
+            .padding(start = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        block.children.forEachIndexed { index, child ->
-            RenderPostBodyBlock(
-                block = child,
-                cookieStore = cookieStore,
-                baseUrl = baseUrl,
-                svgSpriteMarkup = svgSpriteMarkup,
-                onTopicClick = onTopicClick,
-                onUserClick = onUserClick,
-                onOpenLink = onOpenLink,
-                hiddenImage = hiddenImage,
-                onImageSourceChanged = onImageSourceChanged,
-                onImageClick = onImageClick,
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            val spacing = postBodyBlockSpacingAfter(
-                current = child,
-                next = block.children.getOrNull(index + 1),
-            )
-            if (spacing > 0.dp) {
-                Spacer(modifier = Modifier.height(spacing))
+        val quoteTitleContent: (@Composable (Modifier) -> Unit)? = title?.let { resolvedTitle ->
+            { titleModifier ->
+                PostTextDocumentView(
+                    document = resolvedTitle,
+                    textStyle = MaterialTheme.typography.labelMedium,
+                    cookieStore = cookieStore,
+                    baseUrl = baseUrl,
+                    onTopicClick = onTopicClick,
+                    onUserClick = onUserClick,
+                    onOpenLink = onOpenLink,
+                    modifier = titleModifier,
+                    textColor = colors.accent,
+                    linkColor = colors.accent,
+                )
+            }
+        } ?: fallbackTitle?.let { label ->
+            { titleModifier ->
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = colors.textSecondary,
+                    modifier = titleModifier,
+                )
             }
         }
+
+        if (quoteTitleContent != null) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                quoteTitleContent(Modifier.weight(1f))
+                Icon(
+                    imageVector = Icons.Outlined.FormatQuote,
+                    contentDescription = null,
+                    tint = colors.textSecondary.copy(alpha = 0.42f),
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        } else if (shouldCollapse) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.FormatQuote,
+                    contentDescription = null,
+                    tint = colors.textSecondary.copy(alpha = 0.42f),
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(if (shouldCollapse && !expanded) Modifier.alpha(0.96f) else Modifier),
+        ) {
+            if (loading) {
+                Text(
+                    text = "Loading quote…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                )
+            }
+            if (loadFailed) {
+                Text(
+                    text = "Failed to load quote",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+            visibleChildren.forEachIndexed { index, child ->
+                RenderPostBodyBlock(
+                    block = child,
+                    cookieStore = cookieStore,
+                    baseUrl = baseUrl,
+                    svgSpriteMarkup = svgSpriteMarkup,
+                    onTopicClick = onTopicClick,
+                    onUserClick = onUserClick,
+                    onOpenLink = onOpenLink,
+                    hiddenImage = hiddenImage,
+                    onImageSourceChanged = onImageSourceChanged,
+                    onImageClick = onImageClick,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                val spacing = postBodyBlockSpacingAfter(
+                    current = child,
+                    next = visibleChildren.getOrNull(index + 1),
+                )
+                if (spacing > 0.dp) {
+                    Spacer(modifier = Modifier.height(spacing))
+                }
+            }
+        }
+
+        if (shouldCollapse) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = if (expanded) {
+                        Icons.Outlined.KeyboardArrowUp
+                    } else {
+                        Icons.Outlined.KeyboardArrowDown
+                    },
+                    contentDescription = null,
+                    tint = colors.textSecondary,
+                    modifier = Modifier.clickable(
+                        interactionSource = toggleInteractionSource,
+                        indication = null,
+                    ) {
+                        if (onToggleExpand != null && !expanded) {
+                            coroutineScope.launch {
+                                onToggleExpand()
+                            }
+                        } else {
+                            expanded = !expanded
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
+
+private fun shouldCollapseQuoteBlock(
+    title: TextDocument?,
+    fallbackTitle: String?,
+    children: List<PostBodyBlock>,
+): Boolean {
+    if (children.isEmpty()) {
+        return false
+    }
+    if (children.size > 1) {
+        return true
+    }
+
+    val firstChild = children.first()
+    if (firstChild is PostBodyBlock.CodeBlock ||
+        firstChild is PostBodyBlock.ImageBlock ||
+        firstChild is PostBodyBlock.LightboxBlock ||
+        firstChild is PostBodyBlock.ImageGridBlock ||
+        firstChild is PostBodyBlock.OneboxBlock ||
+        firstChild is PostBodyBlock.DiscourseQuoteBlock ||
+        firstChild is PostBodyBlock.QuoteBlock
+    ) {
+        return true
+    }
+
+    val titleLength = title?.text?.length ?: fallbackTitle?.length ?: 0
+    val childTextLength = children.sumOf { child -> quoteBlockTextLength(child) }
+    return titleLength + childTextLength > 200
+}
+
+private fun quoteBlockTextLength(block: PostBodyBlock): Int {
+    return when (block) {
+        is PostBodyBlock.HtmlBlock -> block.html.length
+        is PostBodyBlock.UnknownBlock -> block.rawHtml.length
+        is PostBodyBlock.RichTextBlock -> block.inlines.sumOf { inline -> inlineTextLength(inline) }
+        is PostBodyBlock.ParagraphBlock -> block.content.text.length
+        is PostBodyBlock.HeadingBlock -> block.content.text.length
+        is PostBodyBlock.HorizontalRuleBlock -> 0
+        is PostBodyBlock.ImageBlock,
+        is PostBodyBlock.LightboxBlock,
+        is PostBodyBlock.ImageGridBlock -> 120
+        is PostBodyBlock.OneboxBlock -> block.title.length + (block.description?.length ?: 0)
+        is PostBodyBlock.DetailsBlock -> block.summary.text.length + block.children.sumOf(::quoteBlockTextLength)
+        is PostBodyBlock.CalloutBlock -> (block.title?.text?.length ?: 0) + block.children.sumOf(::quoteBlockTextLength)
+        is PostBodyBlock.QuoteBlock -> block.children.sumOf(::quoteBlockTextLength)
+        is PostBodyBlock.DiscourseQuoteBlock ->
+            block.authorDisplayName.length + (block.title?.text?.length ?: 0) + block.children.sumOf(::quoteBlockTextLength)
+        is PostBodyBlock.CodeBlock -> block.code.length
+        is PostBodyBlock.ListBlock -> block.items.sumOf { item -> item.children.sumOf(::quoteBlockTextLength) }
+    }
+}
+
+private fun inlineTextLength(inline: PostInline): Int {
+    return when (inline) {
+        is PostInline.Text -> inline.text.length
+        is PostInline.Link -> inline.children.sumOf(::inlineTextLength)
+        is PostInline.Emoji -> inline.fallback.length
+        is PostInline.SiteIcon -> inline.fallback.length
+        is PostInline.Styled -> inline.children.sumOf(::inlineTextLength)
+        PostInline.LineBreak -> 1
     }
 }
 
@@ -992,6 +1232,9 @@ internal fun ListBlockView(
     onTopicClick: ((Long) -> Unit)?,
     onUserClick: ((String) -> Unit)?,
     onOpenLink: ((String) -> Unit)?,
+    onExpandQuote: (suspend (Long, Int) -> Result<String>)? = null,
+    currentTopicId: Long? = null,
+    localPostsByPostNumber: Map<Int, String> = emptyMap(),
     hiddenImage: PostBodyImage? = null,
     onImageSourceChanged: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)?,
     onImageClick: ((PostBodyImage, MediaViewerLaunchSource?) -> Unit)?,
@@ -1128,7 +1371,10 @@ private fun postBodyQuoteContainerColor() = lerp(
 private fun Int.toHeadingTextStyle() = when (this) {
     1 -> MaterialTheme.typography.headlineMedium
     2 -> MaterialTheme.typography.headlineSmall
-    else -> MaterialTheme.typography.titleLarge
+    3 -> MaterialTheme.typography.titleLarge
+    4 -> MaterialTheme.typography.titleMedium
+    5 -> MaterialTheme.typography.titleSmall
+    else -> MaterialTheme.typography.labelLarge
 }
 
 private val postBodyCodeBlockMaxHeight = 220.dp

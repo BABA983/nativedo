@@ -75,6 +75,7 @@ import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 import java.net.URLConnection
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 import kotlin.math.roundToInt
 
@@ -194,7 +195,7 @@ internal fun buildMediaViewerRequestHeaders(
     cookieStore: CookieStore,
     baseUrl: String,
 ): Map<String, String> {
-    val imageUrl = resolvedUrl.toHttpUrl()
+    val imageUrl = resolvedUrl.toHttpUrlOrNull() ?: return emptyMap()
     val requestBuilder = Request.Builder()
         .url(imageUrl)
         .apply { addImageRequestHeaders(baseUrl = baseUrl) }
@@ -218,7 +219,7 @@ internal fun suggestMediaDownloadFileName(
     resolvedUrl: String,
 ): String {
     return runCatching {
-        resolvedUrl.toHttpUrl().pathSegments.lastOrNull()
+        resolvedUrl.toHttpUrlOrNull()?.pathSegments?.lastOrNull()
             ?.substringBefore("?")
             ?.takeIf { it.isNotBlank() }
     }.getOrNull() ?: "nativedo-media"

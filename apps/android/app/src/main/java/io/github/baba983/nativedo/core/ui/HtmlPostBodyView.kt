@@ -41,7 +41,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.CircularProgressIndicator
 import io.github.baba983.nativedo.core.storage.CookieStore
 import io.github.baba983.nativedo.core.ui.mediaviewer.MediaItem
 import io.github.baba983.nativedo.core.ui.mediaviewer.MediaViewerHost
@@ -74,6 +73,9 @@ fun HtmlPostBodyView(
     onTopicClick: ((Long) -> Unit)? = null,
     onUserClick: ((String) -> Unit)? = null,
     onOpenLink: ((String) -> Unit)? = null,
+    onExpandQuote: (suspend (Long, Int) -> Result<String>)? = null,
+    currentTopicId: Long? = null,
+    localPostsByPostNumber: Map<Int, String> = emptyMap(),
     modifier: Modifier = Modifier,
 ) {
     val blocks = remember(html) { parsePostBodyBlocks(html) }
@@ -110,6 +112,9 @@ fun HtmlPostBodyView(
                 onTopicClick = onTopicClick,
                 onUserClick = onUserClick,
                 onOpenLink = onOpenLink,
+                onExpandQuote = onExpandQuote,
+                currentTopicId = currentTopicId,
+                localPostsByPostNumber = localPostsByPostNumber,
                 hiddenImage = hiddenViewerImage,
                 onImageSourceChanged = { image, launchSource ->
                     if (launchSource == null) {
@@ -402,14 +407,18 @@ internal fun PostImageView(
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxSize(),
                 )
-            } else if (bitmap == null) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(18.dp),
-                    strokeWidth = 2.dp,
-                )
-            } else {
+            } else if (bitmap != null) {
                 Image(
                     bitmap = bitmap!!.asImageBitmap(),
+                    contentDescription = null,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(resolvedUrl)
+                        .build(),
                     contentDescription = null,
                     contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxSize(),

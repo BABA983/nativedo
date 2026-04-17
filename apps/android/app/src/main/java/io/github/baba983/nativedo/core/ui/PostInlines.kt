@@ -32,6 +32,12 @@ enum class InlineStyle {
     Bold,
     Italic,
     Strike,
+    Underline,
+    Highlight,
+    Superscript,
+    Subscript,
+    Small,
+    Kbd,
     Code,
     LargeText,
 }

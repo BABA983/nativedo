@@ -74,6 +74,10 @@ sealed interface PostBodyBlock {
         val avatarUrl: String?,
         val title: TextDocument?,
         val children: List<PostBodyBlock>,
+        val sourceTopicId: Long? = null,
+        val sourcePostNumber: Int? = null,
+        val isExpandable: Boolean = false,
+        val isInitiallyExpanded: Boolean = true,
     ) : PostBodyBlock
 
     data class CodeBlock(

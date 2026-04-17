@@ -3,12 +3,18 @@ package io.github.baba983.nativedo.core.ui
 import android.graphics.Typeface
 import android.text.SpannableStringBuilder
 import android.text.Spanned
+import android.text.style.BackgroundColorSpan
+import android.text.style.RelativeSizeSpan
 import android.text.style.StrikethroughSpan
 import android.text.style.StyleSpan
+import android.text.style.SubscriptSpan
+import android.text.style.SuperscriptSpan
+import android.text.style.UnderlineSpan
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.Dp
 import io.github.baba983.nativedo.core.storage.CookieStore
 import kotlin.math.roundToInt
 
@@ -25,6 +31,7 @@ internal fun PostTextDocumentView(
     linkColor: Color? = null,
     onClick: (() -> Unit)? = null,
     onOpenLink: ((String) -> Unit)? = null,
+    lineSpacingAdd: Dp? = null,
 ) {
     PostSpannableText(
         textStyle = textStyle,
@@ -34,6 +41,7 @@ internal fun PostTextDocumentView(
         textColor = textColor,
         linkColor = linkColor,
         onClick = onClick,
+        lineSpacingAdd = lineSpacingAdd,
     ) { textSizePx ->
         buildTextDocumentSpannable(
             document = document,
@@ -79,6 +87,56 @@ internal fun buildTextDocumentSpannable(
 
             is TextEntity.Strike -> builder.setEntitySpan(
                 span = StrikethroughSpan(),
+                start = entity.start,
+                end = entity.end,
+            )
+
+            is TextEntity.Underline -> builder.setEntitySpan(
+                span = UnderlineSpan(),
+                start = entity.start,
+                end = entity.end,
+            )
+
+            is TextEntity.Highlight -> builder.setEntitySpan(
+                span = BackgroundColorSpan(HIGHLIGHT_MARK_COLOR),
+                start = entity.start,
+                end = entity.end,
+            )
+
+            is TextEntity.Superscript -> {
+                builder.setEntitySpan(
+                    span = SuperscriptSpan(),
+                    start = entity.start,
+                    end = entity.end,
+                )
+                builder.setEntitySpan(
+                    span = RelativeSizeSpan(0.75f),
+                    start = entity.start,
+                    end = entity.end,
+                )
+            }
+
+            is TextEntity.Subscript -> {
+                builder.setEntitySpan(
+                    span = SubscriptSpan(),
+                    start = entity.start,
+                    end = entity.end,
+                )
+                builder.setEntitySpan(
+                    span = RelativeSizeSpan(0.75f),
+                    start = entity.start,
+                    end = entity.end,
+                )
+            }
+
+            is TextEntity.Small -> builder.setEntitySpan(
+                span = RelativeSizeSpan(0.85f),
+                start = entity.start,
+                end = entity.end,
+            )
+
+            is TextEntity.Kbd -> builder.setEntitySpan(
+                span = InlineCodeSpan(),
                 start = entity.start,
                 end = entity.end,
             )
@@ -130,6 +188,12 @@ internal fun buildTextDocumentSpannable(
             is TextEntity.Bold,
             is TextEntity.Italic,
             is TextEntity.Strike,
+            is TextEntity.Underline,
+            is TextEntity.Highlight,
+            is TextEntity.Superscript,
+            is TextEntity.Subscript,
+            is TextEntity.Small,
+            is TextEntity.Kbd,
             is TextEntity.Link,
             is TextEntity.Mention,
             is TextEntity.InlineCode -> Unit
@@ -210,3 +274,5 @@ private fun SpannableStringBuilder.replaceRangeWithInlineImage(
         drawable = drawable,
     )
 }
+
+private const val HIGHLIGHT_MARK_COLOR = 0x55FFEB3B

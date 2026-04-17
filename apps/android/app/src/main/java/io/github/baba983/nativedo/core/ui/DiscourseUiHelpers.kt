@@ -61,6 +61,14 @@ internal fun replaceEmojiImagesWithText(html: String): String {
     return normalizeInlineHtml(html)
 }
 
+internal fun String.htmlToPreviewText(): String {
+    return Jsoup.parseBodyFragment(normalizeInlineHtml(this))
+        .body()
+        .text()
+        .replace(Regex("\\s+"), " ")
+        .trim()
+}
+
 internal fun prepareInlineContent(html: String): PreparedInlineContent {
     val body = Jsoup.parseBodyFragment(html).body()
     val inlineImages = mutableListOf<InlineImageSpec>()

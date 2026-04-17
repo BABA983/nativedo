@@ -6,7 +6,7 @@ import org.jsoup.nodes.Node
 import org.jsoup.nodes.TextNode
 
 private const val defaultGridColumns = 2
-private val headingTags = setOf("h1", "h2", "h3")
+private val headingTags = setOf("h1", "h2", "h3", "h4", "h5", "h6")
 private val discourseCalloutMarkerRegex = Regex("""^\s*\[!([A-Za-z0-9_-]+)](?:[+-])?\s*""")
 
 internal fun parsePostBodyBlocks(html: String): List<PostBodyBlock> {
@@ -173,6 +173,9 @@ private fun Element.toHeadingLevel(): Int {
         "h1" -> 1
         "h2" -> 2
         "h3" -> 3
+        "h4" -> 4
+        "h5" -> 5
+        "h6" -> 6
         else -> error("Unsupported heading tag: ${tagName()}")
     }
 }
@@ -199,6 +202,10 @@ private fun Element.toDiscourseQuoteBlock(): PostBodyBlock.DiscourseQuoteBlock {
         children = blockquoteElement?.let { element ->
             parsePostBodyNodes(element.discourseQuoteBodyNodes())
         }.orEmpty(),
+        sourceTopicId = attr("data-topic").toLongOrNull(),
+        sourcePostNumber = attr("data-post").toIntOrNull(),
+        isExpandable = titleElement?.hasAttr("data-can-toggle-quote") == true || hasClass("quote-modified"),
+        isInitiallyExpanded = attr("data-expanded").ifBlank { "true" }.toBoolean(),
     )
 }
 
@@ -907,6 +914,12 @@ private fun TextEntity.copyWithRange(
         is TextEntity.Bold -> copy(start = start, end = end)
         is TextEntity.Italic -> copy(start = start, end = end)
         is TextEntity.Strike -> copy(start = start, end = end)
+        is TextEntity.Underline -> copy(start = start, end = end)
+        is TextEntity.Highlight -> copy(start = start, end = end)
+        is TextEntity.Superscript -> copy(start = start, end = end)
+        is TextEntity.Subscript -> copy(start = start, end = end)
+        is TextEntity.Small -> copy(start = start, end = end)
+        is TextEntity.Kbd -> copy(start = start, end = end)
         is TextEntity.Link -> copy(start = start, end = end)
         is TextEntity.Mention -> copy(start = start, end = end)
         is TextEntity.InlineCode -> copy(start = start, end = end)

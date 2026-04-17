@@ -2,6 +2,7 @@ package io.github.baba983.nativedo.core.ui
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.util.Base64
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.produceState
@@ -78,7 +79,7 @@ internal fun rememberDiscourseBitmap(
             resolvedUrl = resolvedUrl,
             cookieStore = cookieStore,
             baseUrl = baseUrl,
-        )
+        ) ?: value
     }
 }
 
@@ -98,6 +99,10 @@ internal suspend fun fetchDiscourseBitmap(
     cookieStore: CookieStore,
     baseUrl: String,
 ): Bitmap? {
+    decodeInlineDataBitmap(resolvedUrl)?.let { inlineBitmap ->
+        discourseBitmapCache.put(resolvedUrl, inlineBitmap)
+        return inlineBitmap
+    }
     discourseBitmapCache.get(resolvedUrl)?.let { cachedBitmap ->
         return cachedBitmap
     }
@@ -133,6 +138,30 @@ internal suspend fun fetchDiscourseBitmap(
             }
         }.getOrNull()
     }
+}
+
+private fun decodeInlineDataBitmap(
+    resolvedUrl: String,
+): Bitmap? {
+    if (!resolvedUrl.startsWith("data:", ignoreCase = true)) {
+        return null
+    }
+    val payloadStart = resolvedUrl.indexOf(',')
+    if (payloadStart <= 5) {
+        return null
+    }
+    val metadata = resolvedUrl.substring(5, payloadStart)
+    val payload = resolvedUrl.substring(payloadStart + 1)
+    val bytes = if (metadata.contains(";base64", ignoreCase = true)) {
+        runCatching {
+            Base64.decode(payload, Base64.DEFAULT)
+        }.getOrNull()
+    } else {
+        runCatching {
+            java.net.URLDecoder.decode(payload, "UTF-8").toByteArray()
+        }.getOrNull()
+    } ?: return null
+    return decodeDiscourseBitmapBytes(bytes)
 }
 
 internal fun extractLargestPngPayloadFromIco(bytes: ByteArray): ByteArray? {

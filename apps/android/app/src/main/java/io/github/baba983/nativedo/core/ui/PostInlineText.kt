@@ -10,11 +10,16 @@ import android.text.TextPaint
 import android.text.method.LinkMovementMethod
 import android.text.style.ClickableSpan
 import android.text.style.ReplacementSpan
+import android.text.style.BackgroundColorSpan
 import android.text.style.RelativeSizeSpan
 import android.text.style.StyleSpan
 import android.text.style.StrikethroughSpan
+import android.text.style.SubscriptSpan
+import android.text.style.SuperscriptSpan
+import android.text.style.UnderlineSpan
 import android.text.style.URLSpan
 import android.util.TypedValue
+import android.view.Gravity
 import android.view.View
 import android.widget.TextView
 import androidx.compose.material3.MaterialTheme
@@ -22,8 +27,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import io.github.baba983.nativedo.core.storage.CookieStore
@@ -126,12 +134,16 @@ internal fun PostSpannableText(
     textColor: Color? = null,
     linkColor: Color? = null,
     onClick: (() -> Unit)? = null,
+    lineSpacingAdd: Dp? = null,
     buildAppliedInlineImages: (textSizePx: Float) -> AppliedInlineImages,
 ) {
     val colors = NativeDoThemeExtras.colors
     val resolvedTextColor = (textColor ?: colors.textPrimary).toArgb()
     val resolvedLinkColor = (linkColor ?: colors.accent).toArgb()
     val coroutineScope = rememberCoroutineScope()
+    val resolvedLineSpacingAddPx = lineSpacingAdd?.let { spacing ->
+        with(LocalDensity.current) { spacing.toPx() }
+    }
 
     AndroidView(
         modifier = modifier,
@@ -152,7 +164,24 @@ internal fun PostSpannableText(
                 View.OnClickListener { callback() }
             })
             textView.setTextSize(TypedValue.COMPLEX_UNIT_SP, textStyle.fontSize.value)
-            if (textStyle.lineHeight.value > 0f && textStyle.fontSize.value > 0f) {
+            textView.gravity = when (textStyle.textAlign) {
+                TextAlign.Center -> Gravity.CENTER_HORIZONTAL
+                TextAlign.End,
+                TextAlign.Right -> Gravity.END
+                else -> Gravity.START
+            }
+            textView.textAlignment = when (textStyle.textAlign) {
+                TextAlign.Center -> View.TEXT_ALIGNMENT_CENTER
+                TextAlign.End,
+                TextAlign.Right -> View.TEXT_ALIGNMENT_VIEW_END
+                else -> View.TEXT_ALIGNMENT_VIEW_START
+            }
+            if (resolvedLineSpacingAddPx != null) {
+                textView.setLineSpacing(
+                    resolvedLineSpacingAddPx,
+                    1.0f,
+                )
+            } else if (textStyle.lineHeight.value > 0f && textStyle.fontSize.value > 0f) {
                 textView.setLineSpacing(0f, textStyle.lineHeight.value / textStyle.fontSize.value)
             }
 
@@ -295,10 +324,18 @@ private fun PostInline.Styled.toSpans(
         InlineStyle.Bold -> listOf(StyleSpan(Typeface.BOLD))
         InlineStyle.Italic -> listOf(StyleSpan(Typeface.ITALIC))
         InlineStyle.Strike -> listOf(StrikethroughSpan())
+        InlineStyle.Underline -> listOf(UnderlineSpan())
+        InlineStyle.Highlight -> listOf(BackgroundColorSpan(HIGHLIGHT_MARK_COLOR))
+        InlineStyle.Superscript -> listOf(SuperscriptSpan(), RelativeSizeSpan(0.75f))
+        InlineStyle.Subscript -> listOf(SubscriptSpan(), RelativeSizeSpan(0.75f))
+        InlineStyle.Small -> listOf(RelativeSizeSpan(0.85f))
+        InlineStyle.Kbd -> listOf(InlineCodeSpan())
         InlineStyle.Code -> listOf(InlineCodeSpan())
         InlineStyle.LargeText -> listOf(RelativeSizeSpan(1.8f))
     }
 }
+
+private const val HIGHLIGHT_MARK_COLOR = 0x55FFEB3B
 
 private fun PostInline.Link.toLinkSpans(
     baseUrl: String,
