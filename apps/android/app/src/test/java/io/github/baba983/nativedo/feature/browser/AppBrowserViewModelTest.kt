@@ -1,6 +1,7 @@
 package io.github.baba983.nativedo.feature.browser
 
 import com.google.common.truth.Truth.assertThat
+import io.github.baba983.nativedo.core.storage.AppBrowserSearchEngine
 import org.junit.Test
 
 class AppBrowserViewModelTest {
@@ -12,6 +13,24 @@ class AppBrowserViewModelTest {
         viewModel.onAction(AppBrowserAction.UpdateSearchQuery("compose"))
 
         assertThat(viewModel.uiState.value.search.query).isEqualTo("compose")
+        assertThat(viewModel.uiState.value.search.isCounting).isTrue()
+    }
+
+    @Test
+    fun onAction_updateSearchMatches_clearsCountingState() {
+        val viewModel = AppBrowserViewModel(initialUrl = "https://linux.do")
+
+        viewModel.onAction(AppBrowserAction.UpdateSearchQuery("compose"))
+        viewModel.onAction(
+            AppBrowserAction.UpdateSearchMatches(
+                activeMatchOrdinal = 1,
+                numberOfMatches = 4,
+            ),
+        )
+
+        assertThat(viewModel.uiState.value.search.activeMatchOrdinal).isEqualTo(1)
+        assertThat(viewModel.uiState.value.search.numberOfMatches).isEqualTo(4)
+        assertThat(viewModel.uiState.value.search.isCounting).isFalse()
     }
 
     @Test
@@ -25,6 +44,20 @@ class AppBrowserViewModelTest {
         viewModel.onAction(AppBrowserAction.OpenHistory)
 
         assertThat(viewModel.uiState.value.sheet).isEqualTo(AppBrowserSheet.History)
+        assertThat(viewModel.uiState.value.address.isEditing).isFalse()
+    }
+
+    @Test
+    fun onAction_openBookmarks_switchesSheetAndStopsAddressEditing() {
+        val viewModel = AppBrowserViewModel(initialUrl = "https://linux.do")
+        viewModel.startAddressEditing(
+            currentUrl = "https://linux.do/t/123",
+            recentEntries = emptyList(),
+        )
+
+        viewModel.onAction(AppBrowserAction.OpenBookmarks)
+
+        assertThat(viewModel.uiState.value.sheet).isEqualTo(AppBrowserSheet.Bookmarks)
         assertThat(viewModel.uiState.value.address.isEditing).isFalse()
     }
 
@@ -122,6 +155,17 @@ class AppBrowserViewModelTest {
     }
 
     @Test
+    fun onAction_startSearch_closesHistoryPopup() {
+        val viewModel = AppBrowserViewModel(initialUrl = "https://linux.do")
+
+        viewModel.onAction(AppBrowserAction.SetHistoryPopupVisible(true))
+        viewModel.onAction(AppBrowserAction.StartSearch)
+
+        assertThat(viewModel.uiState.value.search.isActive).isTrue()
+        assertThat(viewModel.uiState.value.isHistoryPopupVisible).isFalse()
+    }
+
+    @Test
     fun startAddressEditing_closesOverflowMenu() {
         val viewModel = AppBrowserViewModel(initialUrl = "https://linux.do")
 
@@ -133,6 +177,20 @@ class AppBrowserViewModelTest {
 
         assertThat(viewModel.uiState.value.address.isEditing).isTrue()
         assertThat(viewModel.uiState.value.isOverflowMenuVisible).isFalse()
+    }
+
+    @Test
+    fun startAddressEditing_closesHistoryPopup() {
+        val viewModel = AppBrowserViewModel(initialUrl = "https://linux.do")
+
+        viewModel.onAction(AppBrowserAction.SetHistoryPopupVisible(true))
+        viewModel.startAddressEditing(
+            currentUrl = "https://linux.do/t/123",
+            recentEntries = emptyList(),
+        )
+
+        assertThat(viewModel.uiState.value.address.isEditing).isTrue()
+        assertThat(viewModel.uiState.value.isHistoryPopupVisible).isFalse()
     }
 
     @Test
@@ -178,5 +236,51 @@ class AppBrowserViewModelTest {
 
         assertThat(viewModel.lastSubmittedAddress).contains("/search?q=compose%20webview")
         assertThat(viewModel.uiState.value.address.isEditing).isFalse()
+    }
+
+    @Test
+    fun resolveAddressInput_withGoogleSearchEngine_usesGoogleSearchUrl() {
+        val resolved = resolveAppBrowserAddressInput(
+            value = "compose webview",
+            baseUrl = "https://linux.do",
+            searchEngine = AppBrowserSearchEngine.Google,
+        )
+
+        assertThat(resolved).isEqualTo("https://www.google.com/search?q=compose%20webview")
+    }
+
+    @Test
+    fun updateAddressSuggestions_updatesRecentSearchesAndSuggestionSections() {
+        val viewModel = AppBrowserViewModel(initialUrl = "https://linux.do")
+        viewModel.startAddressEditing(
+            currentUrl = "https://linux.do",
+            recentEntries = emptyList(),
+        )
+
+        val suggestions = listOf(
+            AppBrowserAddressSuggestionSection(
+                kind = AppBrowserAddressSuggestionSectionKind.RecentSearches,
+                items = listOf(
+                    AppBrowserAddressSuggestion.RecentSearch(
+                        query = "compose animation",
+                        searchedAtMillis = 1L,
+                    ),
+                ),
+            ),
+        )
+        val recentSearches = listOf(
+            io.github.baba983.nativedo.core.storage.AppBrowserRecentSearchRecord(
+                query = "compose animation",
+                searchedAtMillis = 1L,
+            ),
+        )
+
+        viewModel.updateAddressSuggestions(
+            recentSearches = recentSearches,
+            suggestionSections = suggestions,
+        )
+
+        assertThat(viewModel.uiState.value.address.recentSearches).isEqualTo(recentSearches)
+        assertThat(viewModel.uiState.value.address.suggestionSections).isEqualTo(suggestions)
     }
 }

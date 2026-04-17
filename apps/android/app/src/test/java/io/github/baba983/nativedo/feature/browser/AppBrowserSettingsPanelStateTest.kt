@@ -1,6 +1,8 @@
 package io.github.baba983.nativedo.feature.browser
 
 import com.google.common.truth.Truth.assertThat
+import io.github.baba983.nativedo.core.storage.AppBrowserExternalOpenMode
+import io.github.baba983.nativedo.core.storage.AppBrowserSearchEngine
 import org.junit.Test
 
 class AppBrowserSettingsPanelStateTest {
@@ -22,5 +24,15 @@ class AppBrowserSettingsPanelStateTest {
     @Test
     fun dataSizeSubtitle_formatsPositiveSizes() {
         assertThat(appBrowserSettingsDataSizeSubtitle(1_536L)).isEqualTo("1.5 KB")
+    }
+
+    @Test
+    fun externalOpenModeLabel_formatsInAppBrowser() {
+        assertThat(appBrowserExternalOpenModeLabelText(AppBrowserExternalOpenMode.InAppBrowser)).isEqualTo("In-app browser")
+    }
+
+    @Test
+    fun searchEngineLabel_formatsGoogle() {
+        assertThat(appBrowserSearchEngineLabelText(AppBrowserSearchEngine.Google)).isEqualTo("Google")
     }
 }

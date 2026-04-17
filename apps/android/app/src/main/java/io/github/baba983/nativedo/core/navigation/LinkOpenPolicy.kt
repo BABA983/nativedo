@@ -1,5 +1,7 @@
 package io.github.baba983.nativedo.core.navigation
 
+import io.github.baba983.nativedo.core.storage.AppBrowserExternalOpenMode
+import io.github.baba983.nativedo.core.storage.normalizeAppBrowserRestrictedDomain
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 sealed interface LinkNavigationDecision {
@@ -12,6 +14,8 @@ sealed interface LinkNavigationDecision {
 
 internal class LinkOpenPolicy(
     private val baseUrl: String,
+    private val restrictedDomains: Set<String> = emptySet(),
+    private val defaultExternalOpenMode: AppBrowserExternalOpenMode = AppBrowserExternalOpenMode.InAppBrowser,
 ) {
 
     fun resolve(url: String): LinkNavigationDecision {
@@ -26,16 +30,33 @@ internal class LinkOpenPolicy(
             ?: return LinkNavigationDecision.AppBrowser(url)
 
         if (!resolvedUrl.host.equals(baseHttpUrl.host, ignoreCase = true)) {
-            return LinkNavigationDecision.ExternalApp(resolvedUrl.toString())
+            val normalizedHost = normalizeAppBrowserRestrictedDomain(resolvedUrl.host)
+            if (normalizedHost != null && normalizedHost in restrictedDomains) {
+                return LinkNavigationDecision.SystemBrowser(resolvedUrl.toString())
+            }
+            return when (defaultExternalOpenMode) {
+                AppBrowserExternalOpenMode.InAppBrowser -> LinkNavigationDecision.ExternalApp(resolvedUrl.toString())
+                AppBrowserExternalOpenMode.SystemBrowser -> LinkNavigationDecision.SystemBrowser(resolvedUrl.toString())
+            }
         }
 
         val segments = resolvedUrl.pathSegments.filter { it.isNotBlank() }
+        val normalizedHost = normalizeAppBrowserRestrictedDomain(resolvedUrl.host)
 
         return when (segments.firstOrNull()) {
-            "t" -> parseTopicDecision(segments) ?: LinkNavigationDecision.AppBrowser(resolvedUrl.toString())
+            "t" -> parseTopicDecision(segments) ?: restrictedOrBrowserDecision(
+                url = resolvedUrl.toString(),
+                normalizedHost = normalizedHost,
+            )
             "u" -> segments.getOrNull(1)?.let { LinkNavigationDecision.NativeUser(it) }
-                ?: LinkNavigationDecision.AppBrowser(resolvedUrl.toString())
-            else -> LinkNavigationDecision.AppBrowser(resolvedUrl.toString())
+                ?: restrictedOrBrowserDecision(
+                    url = resolvedUrl.toString(),
+                    normalizedHost = normalizedHost,
+                )
+            else -> restrictedOrBrowserDecision(
+                url = resolvedUrl.toString(),
+                normalizedHost = normalizedHost,
+            )
         }
     }
 
@@ -47,6 +68,16 @@ internal class LinkOpenPolicy(
         if (sluggedId != null) return LinkNavigationDecision.NativeTopic(sluggedId)
 
         return null
+    }
+
+    private fun restrictedOrBrowserDecision(
+        url: String,
+        normalizedHost: String?,
+    ): LinkNavigationDecision {
+        if (normalizedHost != null && normalizedHost in restrictedDomains) {
+            return LinkNavigationDecision.SystemBrowser(url)
+        }
+        return LinkNavigationDecision.AppBrowser(url)
     }
 
     private companion object {

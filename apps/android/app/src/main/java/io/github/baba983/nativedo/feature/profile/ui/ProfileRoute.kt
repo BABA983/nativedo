@@ -20,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,19 +46,27 @@ import io.github.baba983.nativedo.core.ui.UserAvatarWithFlair
 import io.github.baba983.nativedo.core.ui.requestErrorPresentation
 import io.github.baba983.nativedo.feature.profile.data.ProfileRepository
 import io.github.baba983.nativedo.feature.profile.domain.LoadProfileUseCase
+import io.github.baba983.nativedo.navigation.RootDestination
+import io.github.baba983.nativedo.ui.NativeDoReaderScaffold
+import io.github.baba983.nativedo.ui.NativeDoTopBar
+import io.github.baba983.nativedo.ui.buildNativeDoRootChromeModel
 import io.github.baba983.nativedo.ui.theme.NativeDoChromeShape
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
+import io.github.baba983.nativedo.ui.theme.ThemeMode
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 @Composable
 fun ProfileRoute(
     viewer: ProfileViewer,
+    themeMode: ThemeMode = ThemeMode.System,
+    onThemeModeSelected: (ThemeMode) -> Unit = {},
     onLoginClick: () -> Unit = {},
     onSessionRecoveryRequired: () -> Unit = {},
     onTopicClick: (Long) -> Unit = {},
     onUserClick: (String) -> Unit = {},
     onOpenLink: (String) -> Unit = {},
+    onHeaderTitleChanged: (String?) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -81,7 +90,10 @@ fun ProfileRoute(
         viewer = viewer,
         isDebugBuild = context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0,
     )
+    val isRootProfileScene = viewer == ProfileViewer.Self
+    var showBrowserUrlDialog by rememberSaveable { mutableStateOf(false) }
     var showTopicUrlDialog by rememberSaveable { mutableStateOf(false) }
+    var contextualOptionsExpanded by rememberSaveable(viewer) { mutableStateOf(false) }
 
     val viewModel: ProfileViewModel = viewModel(
         key = "profile-$resolvedViewer",
@@ -102,6 +114,23 @@ fun ProfileRoute(
         genericTitle = "Couldn't load profile",
         genericDescription = "Please try again in a moment.",
     )
+    val localHeaderTitle = remember(uiState.profile?.displayName, uiState.profile?.username, viewer) {
+        resolveProfileHeaderTitle(
+            profile = uiState.profile,
+            viewer = viewer,
+        )
+    }
+    val publishedHeaderTitle = if (viewer is ProfileViewer.Other) localHeaderTitle else null
+    val rootChromeModel = remember(isRootProfileScene, contextualOptionsExpanded) {
+        buildNativeDoRootChromeModel(
+            isRootRoute = isRootProfileScene,
+            activeRoute = RootDestination.Profile.route,
+            homeHeaderSearchVisible = false,
+            isHomeSearchMode = false,
+            actionModeSelectionCount = 0,
+            isContextualOptionsExpanded = contextualOptionsExpanded,
+        )
+    }
     val currentSessionState by rememberUpdatedState(sessionState)
     val currentAuthVersion by rememberUpdatedState(authVersion)
     val refreshProfileIfNeeded: () -> Unit = {
@@ -144,196 +173,266 @@ fun ProfileRoute(
         }
     }
 
-    when {
-        showAuthLoading -> {
-            ProfileFeedbackCard(
-                modifier = modifier.fillMaxSize(),
-            ) {
-                CircularProgressIndicator()
+    LaunchedEffect(publishedHeaderTitle) {
+        onHeaderTitleChanged(publishedHeaderTitle)
+    }
+
+    DisposableEffect(onHeaderTitleChanged, viewer) {
+        onDispose {
+            if (viewer is ProfileViewer.Other) {
+                onHeaderTitleChanged(null)
             }
         }
+    }
 
-        uiState.isLoading -> {
-            ProfileFeedbackCard(
-                modifier = modifier.fillMaxSize(),
-            ) {
-                CircularProgressIndicator()
-            }
-        }
-
-        errorMessage != null -> {
-            ProfileFeedbackCard(
-                modifier = modifier.fillMaxSize(),
-            ) {
-                RequestErrorCard(
-                    presentation = errorPresentation,
-                    onRetry = viewModel::refresh,
-                    modifier = Modifier.fillMaxWidth(),
+    NativeDoReaderScaffold(
+        modifier = modifier,
+        topBar = if (isRootProfileScene) {
+            {
+                NativeDoTopBar(
+                    currentRoute = RootDestination.Profile.route,
+                    rootChrome = rootChromeModel,
+                    titleOverride = localHeaderTitle,
+                    showBack = false,
+                    themeMode = themeMode,
+                    onHomeRefreshClick = {},
+                    onHomeSearchClick = {},
+                    onThemeModeSelected = {
+                        contextualOptionsExpanded = false
+                        onThemeModeSelected(it)
+                    },
+                    onToggleContextualOptions = {
+                        contextualOptionsExpanded = !contextualOptionsExpanded
+                    },
+                    onDismissContextualOptions = {
+                        contextualOptionsExpanded = false
+                    },
+                    onExitActionMode = {
+                        contextualOptionsExpanded = false
+                    },
+                    onBackClick = {},
                 )
             }
-        }
+        } else {
+            null
+        },
+    ) { paddingValues ->
+        when {
+            showAuthLoading -> {
+                ProfileFeedbackCard(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues),
+                ) {
+                    CircularProgressIndicator()
+                }
+            }
 
-        uiState.profile == null && resolvedViewer == ProfileViewer.Self -> {
-            ProfileFeedbackCard(
-                modifier = modifier.fillMaxSize(),
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "Login required",
-                        style = MaterialTheme.typography.bodyMedium,
+            uiState.isLoading -> {
+                ProfileFeedbackCard(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues),
+                ) {
+                    CircularProgressIndicator()
+                }
+            }
+
+            errorMessage != null -> {
+                ProfileFeedbackCard(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues),
+                ) {
+                    RequestErrorCard(
+                        presentation = errorPresentation,
+                        onRetry = viewModel::refresh,
+                        modifier = Modifier.fillMaxWidth(),
                     )
-                    if (resolvedViewer == ProfileViewer.Self) {
+                }
+            }
+
+            uiState.profile == null && resolvedViewer == ProfileViewer.Self -> {
+                ProfileFeedbackCard(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues),
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "Login required",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
                         TextButton(onClick = onLoginClick) {
                             Text(text = "Login")
                         }
                     }
                 }
             }
-        }
 
-        uiState.profile == null -> {
-            ProfileFeedbackCard(
-                modifier = modifier.fillMaxSize(),
-            ) {
-                RequestErrorCard(
-                    presentation = errorPresentation,
-                    onRetry = viewModel::refresh,
-                    modifier = Modifier.fillMaxWidth(),
-                )
+            uiState.profile == null -> {
+                ProfileFeedbackCard(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues),
+                ) {
+                    RequestErrorCard(
+                        presentation = errorPresentation,
+                        onRetry = viewModel::refresh,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
-        }
 
-        else -> {
-            val profile = requireNotNull(uiState.profile)
-            val colors = NativeDoThemeExtras.colors
+            else -> {
+                val profile = requireNotNull(uiState.profile)
+                val colors = NativeDoThemeExtras.colors
 
-            LazyColumn(
-                modifier = modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 28.dp),
-            ) {
-                item {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        UserAvatarWithFlair(
-                            label = profile.displayName.ifBlank { profile.username },
-                            avatarTemplate = profile.avatarUrl,
-                            animatedAvatarUrl = profile.animatedAvatarUrl,
-                            flairName = profile.flairName,
-                            flairUrl = profile.flairUrl,
-                            flairBgColor = profile.flairBgColor,
-                            flairColor = profile.flairColor,
-                            svgSpriteMarkup = svgSpriteMarkup,
-                            baseUrl = appContainer.baseUrl,
-                            avatarSize = 56.dp,
-                            flairBadgeSize = 18.dp,
-                            flairContentSize = 14.dp,
-                        )
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(paddingValues),
+                    contentPadding = PaddingValues(bottom = 28.dp),
+                ) {
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(
-                                text = profile.displayName.ifBlank { profile.username },
-                                style = MaterialTheme.typography.headlineSmall,
+                            UserAvatarWithFlair(
+                                label = profile.displayName.ifBlank { profile.username },
+                                avatarTemplate = profile.avatarUrl,
+                                animatedAvatarUrl = profile.animatedAvatarUrl,
+                                flairName = profile.flairName,
+                                flairUrl = profile.flairUrl,
+                                flairBgColor = profile.flairBgColor,
+                                flairColor = profile.flairColor,
+                                svgSpriteMarkup = svgSpriteMarkup,
+                                baseUrl = appContainer.baseUrl,
+                                avatarSize = 56.dp,
+                                flairBadgeSize = 18.dp,
+                                flairContentSize = 14.dp,
                             )
-                            Text(
-                                text = "@${profile.username}",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = colors.textSecondary,
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Text(
+                                    text = profile.displayName.ifBlank { profile.username },
+                                    style = MaterialTheme.typography.headlineSmall,
+                                )
+                                Text(
+                                    text = "@${profile.username}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = colors.textSecondary,
+                                )
+                            }
+                            if (viewer == ProfileViewer.Self) {
+                                TextButton(
+                                    onClick = {
+                                        coroutineScope.launch {
+                                            appContainer.sessionCoordinator.onLogout()
+                                        }
+                                    },
+                                ) {
+                                    Text(text = "Logout")
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(
+                            modifier = Modifier.padding(start = 16.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.75f),
+                        )
+                    }
+
+                    if (viewer == ProfileViewer.Self) {
+                        item {
+                            QuickAccessSection(
+                                onOpenDashboardClick = {
+                                    onOpenLink(CDK_DASHBOARD_URL)
+                                },
                             )
                         }
-                        if (viewer == ProfileViewer.Self) {
-                            TextButton(
-                                onClick = {
-                                    coroutineScope.launch {
-                                        appContainer.sessionCoordinator.onLogout()
-                                    }
+
+                        item {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(start = 16.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.75f),
+                            )
+                        }
+                    }
+
+                    if (showDebugTools) {
+                        item {
+                            DeveloperToolsSection(
+                                onOpenBrowserUrlClick = {
+                                    showBrowserUrlDialog = true
                                 },
-                            ) {
-                                Text(text = "Logout")
+                                onOpenTopicUrlClick = {
+                                    showTopicUrlDialog = true
+                                },
+                            )
+                        }
+
+                        item {
+                            HorizontalDivider(
+                                modifier = Modifier.padding(start = 16.dp),
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.75f),
+                            )
+                        }
+                    }
+
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Text(
+                                text = "Bio",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = colors.textSecondary,
+                            )
+                            if (profile.bio.isBlank()) {
+                                Text(
+                                    text = "No bio yet",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = colors.textSecondary,
+                                )
+                            } else {
+                                HtmlPostBodyView(
+                                    html = profile.bio,
+                                    cookieStore = appContainer.cookieStore,
+                                    baseUrl = appContainer.baseUrl,
+                                    svgSpriteMarkup = svgSpriteMarkup,
+                                    onTopicClick = onTopicClick,
+                                    onUserClick = onUserClick,
+                                    onOpenLink = onOpenLink,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
                             }
                         }
                     }
-
-                    HorizontalDivider(
-                        modifier = Modifier.padding(start = 16.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.75f),
-                    )
-                }
-
-                if (viewer == ProfileViewer.Self) {
-                    item {
-                        QuickAccessSection(
-                            onOpenDashboardClick = {
-                                onOpenLink(CDK_DASHBOARD_URL)
-                            },
-                        )
-                    }
-
-                    item {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(start = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.75f),
-                        )
-                    }
-                }
-
-                if (showDebugTools) {
-                    item {
-                        DeveloperToolsSection(
-                            onOpenTopicUrlClick = {
-                                showTopicUrlDialog = true
-                            },
-                        )
-                    }
-
-                    item {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(start = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.75f),
-                        )
-                    }
-                }
-
-                item {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Text(
-                            text = "Bio",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = colors.textSecondary,
-                        )
-                        if (profile.bio.isBlank()) {
-                            Text(
-                                text = "No bio yet",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = colors.textSecondary,
-                            )
-                        } else {
-                            HtmlPostBodyView(
-                                html = profile.bio,
-                                cookieStore = appContainer.cookieStore,
-                                baseUrl = appContainer.baseUrl,
-                                svgSpriteMarkup = svgSpriteMarkup,
-                                onTopicClick = onTopicClick,
-                                onUserClick = onUserClick,
-                                onOpenLink = onOpenLink,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
-                    }
                 }
             }
         }
+    }
+
+    if (showDebugTools && showBrowserUrlDialog) {
+        OpenBrowserUrlDialog(
+            onDismissRequest = {
+                showBrowserUrlDialog = false
+            },
+            onBrowserOpen = { url ->
+                showBrowserUrlDialog = false
+                onOpenLink(url)
+            },
+        )
     }
 
     if (showDebugTools && showTopicUrlDialog) {
@@ -350,6 +449,16 @@ fun ProfileRoute(
 }
 
 internal const val CDK_DASHBOARD_URL = "https://cdk.linux.do/dashboard"
+
+internal fun resolveProfileHeaderTitle(
+    profile: io.github.baba983.nativedo.core.model.UserProfile?,
+    viewer: ProfileViewer,
+): String = when {
+    profile != null -> profile.displayName.ifBlank { profile.username }
+    viewer == ProfileViewer.Self -> "Profile"
+    viewer is ProfileViewer.Other -> "@${viewer.username}"
+    else -> "Profile"
+}
 
 internal fun resolveProfileViewer(
     viewer: ProfileViewer,
@@ -389,6 +498,20 @@ internal fun parseLinuxDoTopicIdFromUrl(rawInput: String): Long? {
 
     return pathSegments.getOrNull(1)?.toLongOrNull()
         ?: pathSegments.getOrNull(2)?.toLongOrNull()
+}
+
+internal fun resolveProfileBrowserUrlInput(rawInput: String): String? {
+    val trimmedInput = rawInput.trim()
+    if (trimmedInput.isBlank()) {
+        return null
+    }
+
+    trimmedInput.toHttpUrlOrNull()?.let { return it.toString() }
+    if (trimmedInput.contains(' ')) {
+        return null
+    }
+
+    return "https://$trimmedInput".toHttpUrlOrNull()?.toString()
 }
 
 internal fun shouldRefreshProfileForHandledAuthVersion(
@@ -466,6 +589,7 @@ private fun QuickAccessSection(
 
 @Composable
 private fun DeveloperToolsSection(
+    onOpenBrowserUrlClick: () -> Unit,
     onOpenTopicUrlClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -482,6 +606,34 @@ private fun DeveloperToolsSection(
             style = MaterialTheme.typography.labelLarge,
             color = colors.textSecondary,
         )
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 56.dp),
+            shape = NativeDoChromeShape,
+            color = colors.glassBackgroundStrong.copy(alpha = 0.92f),
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
+            onClick = onOpenBrowserUrlClick,
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = "Open Browser URL",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = colors.textPrimary,
+                )
+                Text(
+                    text = "Paste any web URL and open it through the app browser flow.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.textSecondary,
+                )
+            }
+        }
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
@@ -511,6 +663,72 @@ private fun DeveloperToolsSection(
             }
         }
     }
+}
+
+@Composable
+private fun OpenBrowserUrlDialog(
+    onDismissRequest: () -> Unit,
+    onBrowserOpen: (String) -> Unit,
+) {
+    var rawInput by rememberSaveable { mutableStateOf("") }
+    var errorMessage by rememberSaveable { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        title = {
+            Text(text = "Open Browser URL")
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    text = "Paste a web URL for in-app browser testing.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                TextField(
+                    value = rawInput,
+                    onValueChange = { nextValue ->
+                        rawInput = nextValue
+                        errorMessage = null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    isError = errorMessage != null,
+                    placeholder = {
+                        Text(text = "https://example.com/path")
+                    },
+                )
+                errorMessage?.let { message ->
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val resolvedUrl = resolveProfileBrowserUrlInput(rawInput)
+                    if (resolvedUrl != null) {
+                        onBrowserOpen(resolvedUrl)
+                    } else {
+                        errorMessage = "Only valid http(s) URLs are supported."
+                    }
+                },
+                enabled = rawInput.isNotBlank(),
+            ) {
+                Text(text = "Open")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text(text = "Cancel")
+            }
+        },
+    )
 }
 
 @Composable

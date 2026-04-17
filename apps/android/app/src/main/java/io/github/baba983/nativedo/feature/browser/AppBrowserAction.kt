@@ -7,10 +7,12 @@ internal sealed interface AppBrowserAction {
     data object CancelAddressEditing : AppBrowserAction
     data object OpenAddressSheet : AppBrowserAction
     data object OpenHistory : AppBrowserAction
+    data object OpenBookmarks : AppBrowserAction
     data object OpenSettings : AppBrowserAction
     data object DismissSheet : AppBrowserAction
     data object CloseSheet : AppBrowserAction
     data class OpenHistoryEntry(val entry: AppBrowserHistoryEntry) : AppBrowserAction
+    data class ApplyAddressSuggestion(val suggestion: AppBrowserAddressSuggestion) : AppBrowserAction
     data object StartSearch : AppBrowserAction
     data object CloseSearch : AppBrowserAction
     data class UpdateAddressDraft(val value: String) : AppBrowserAction
@@ -23,8 +25,10 @@ internal sealed interface AppBrowserAction {
     data object GoForward : AppBrowserAction
     data object Refresh : AppBrowserAction
     data object Share : AppBrowserAction
+    data object OpenInstantView : AppBrowserAction
     data object OpenInBrowser : AppBrowserAction
     data object CopyLink : AppBrowserAction
+    data object ToggleBookmark : AppBrowserAction
     data class SetHistoryPopupVisible(val visible: Boolean) : AppBrowserAction
     data class SetOverflowMenuVisible(val visible: Boolean) : AppBrowserAction
 }

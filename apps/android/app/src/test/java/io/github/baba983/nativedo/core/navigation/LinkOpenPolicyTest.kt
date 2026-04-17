@@ -1,11 +1,17 @@
 package io.github.baba983.nativedo.core.navigation
 
 import com.google.common.truth.Truth.assertThat
+import io.github.baba983.nativedo.core.storage.AppBrowserExternalOpenMode
 import org.junit.Test
 
 class LinkOpenPolicyTest {
 
     private val policy = LinkOpenPolicy(baseUrl = "https://linux.do")
+    private val restrictedPolicy = LinkOpenPolicy(
+        baseUrl = "https://linux.do",
+        restrictedDomains = setOf("example.com"),
+        defaultExternalOpenMode = AppBrowserExternalOpenMode.SystemBrowser,
+    )
 
     @Test
     fun resolve_topicLink_returnsNativeTopic() {
@@ -43,6 +49,40 @@ class LinkOpenPolicyTest {
 
         assertThat(result).isEqualTo(
             LinkNavigationDecision.ExternalApp("mailto:test@example.com"),
+        )
+    }
+
+    @Test
+    fun resolve_restrictedDomain_returnsSystemBrowserInsteadOfAppBrowser() {
+        val result = restrictedPolicy.resolve("https://example.com/page")
+
+        assertThat(result).isEqualTo(
+            LinkNavigationDecision.SystemBrowser("https://example.com/page"),
+        )
+    }
+
+    @Test
+    fun resolve_defaultExternalOpenMode_systemBrowserReturnsSystemBrowserForExternalWebLink() {
+        val result = restrictedPolicy.resolve("https://another.example/page")
+
+        assertThat(result).isEqualTo(
+            LinkNavigationDecision.SystemBrowser("https://another.example/page"),
+        )
+    }
+
+    @Test
+    fun resolve_restrictedLinuxDoBrowserTarget_returnsSystemBrowserWithoutAffectingNativeRoutes() {
+        val policy = LinkOpenPolicy(
+            baseUrl = "https://linux.do",
+            restrictedDomains = setOf("linux.do"),
+            defaultExternalOpenMode = AppBrowserExternalOpenMode.InAppBrowser,
+        )
+
+        assertThat(policy.resolve("https://linux.do/c/android/5")).isEqualTo(
+            LinkNavigationDecision.SystemBrowser("https://linux.do/c/android/5"),
+        )
+        assertThat(policy.resolve("https://linux.do/t/topic-slug/12345")).isEqualTo(
+            LinkNavigationDecision.NativeTopic(12345),
         )
     }
 }

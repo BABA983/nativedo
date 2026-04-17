@@ -1,187 +1,150 @@
 package io.github.baba983.nativedo.navigation
 
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.PagerState
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
 import io.github.baba983.nativedo.NativeDoApplication
 import io.github.baba983.nativedo.core.session.SessionEvent
 import io.github.baba983.nativedo.feature.auth.ui.LoginWebViewRoute
-import io.github.baba983.nativedo.feature.home.ui.HomeRoute
-import io.github.baba983.nativedo.feature.profile.ui.ProfileRoute
-import io.github.baba983.nativedo.feature.profile.ui.ProfileViewer
 import io.github.baba983.nativedo.feature.search.ui.SearchRoute
-import io.github.baba983.nativedo.feature.topic.ui.TopicRoute
+import io.github.baba983.nativedo.ui.theme.NativeDoEasing
 import androidx.navigation.NavHostController
-import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.navArgument
-import io.github.baba983.nativedo.feature.browser.AppBrowserRoute
-import java.net.URLDecoder
-
-internal const val APP_BROWSER_ROUTE = "app-browser?url={url}"
-
-internal fun buildAppBrowserRoute(
-    encodedUrl: String,
-): String = "app-browser?url=$encodedUrl"
+import io.github.baba983.nativedo.core.navigation.TelegramStyleScaffold
 
 @Composable
 internal fun NativeDoNavHost(
     navController: NavHostController,
     contentPadding: PaddingValues,
-    rootPagerState: PagerState,
-    homeSearchRequestToken: Int,
-    homeRefreshRequestToken: Int,
-    onHomeHeaderSearchVisibilityChanged: (Boolean) -> Unit,
-    onHomeSearchModeChanged: (Boolean) -> Unit,
-    onTopicHeaderTitleChanged: (String?) -> Unit,
-    onOpenLink: (String) -> Unit,
+    onOpenLogin: () -> Unit,
+    rootContainer: @Composable BoxScope.() -> Unit,
+    onOpenTopic: (Long) -> Unit,
+    onOpenUser: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val appContainer = remember(context) {
         (context.applicationContext as NativeDoApplication).appContainer
     }
-    val openLogin: () -> Unit = {
-        if (navController.currentDestination?.route != "login") {
-            navController.navigate("login")
-        }
-    }
 
     LaunchedEffect(appContainer.sessionCoordinator) {
         appContainer.sessionCoordinator.events.collect { event ->
             if (event is SessionEvent.SessionExpired) {
-                openLogin()
+                onOpenLogin()
             }
         }
     }
 
+    // Telegram-style transitions: 48dp slide + fade, 150ms with decelerate easing
+    val density = LocalDensity.current
+    val slideOffsetPx = with(density) { 48.dp.roundToPx() }
+    val transitionDurationMs = 150
+    val transitionEasing = NativeDoEasing.Standard
+
     NavHost(
         navController = navController,
         startDestination = RootDestination.rootContainerRoute,
-        modifier = Modifier.padding(contentPadding),
+        modifier = Modifier.fillMaxSize(),
+        enterTransition = {
+            // New page slides in from right (+48dp) with fade in
+            slideInHorizontally(
+                initialOffsetX = { slideOffsetPx },
+                animationSpec = tween(transitionDurationMs, easing = transitionEasing),
+            ) + fadeIn(
+                animationSpec = tween(transitionDurationMs, easing = transitionEasing)
+            )
+        },
+        exitTransition = {
+            // Current page stays in place but fades out slightly
+            fadeOut(
+                animationSpec = tween(transitionDurationMs, easing = transitionEasing),
+                targetAlpha = 0.7f, // Keep slightly visible like Telegram
+            )
+        },
+        popEnterTransition = {
+            // Previous page fades back in (was at alpha 0.7)
+            fadeIn(
+                initialAlpha = 0.7f,
+                animationSpec = tween(transitionDurationMs, easing = transitionEasing)
+            )
+        },
+        popExitTransition = {
+            // Current page slides out to right (+48dp) with fade out
+            slideOutHorizontally(
+                targetOffsetX = { slideOffsetPx },
+                animationSpec = tween(transitionDurationMs, easing = transitionEasing),
+            ) + fadeOut(
+                animationSpec = tween(transitionDurationMs, easing = transitionEasing)
+            )
+        },
     ) {
-        composable(RootDestination.rootContainerRoute) {
-            HorizontalPager(
-                state = rootPagerState,
-                modifier = Modifier.fillMaxSize(),
-                beyondViewportPageCount = 1,
-                key = { page -> RootDestination.bottomTabs[page].route },
-            ) { page ->
-                when (RootDestination.bottomTabs[page]) {
-                    RootDestination.Home -> {
-                        HomeRoute(
-                            onTopicClick = { topicId ->
-                                navController.navigate("topic/$topicId")
-                            },
-                            onUserClick = { username ->
-                                navController.navigate("user/$username")
-                            },
-                            headerSearchRequestToken = homeSearchRequestToken,
-                            refreshRequestToken = homeRefreshRequestToken,
-                            onHeaderSearchVisibilityChanged = onHomeHeaderSearchVisibilityChanged,
-                            onSearchModeChanged = onHomeSearchModeChanged,
-                        )
-                    }
-
-                    RootDestination.Profile -> {
-                        ProfileRoute(
-                            viewer = ProfileViewer.Self,
-                            onLoginClick = openLogin,
-                            onSessionRecoveryRequired = openLogin,
-                            onTopicClick = { topicId ->
-                                navController.navigate("topic/$topicId")
-                            },
-                            onUserClick = { username ->
-                                navController.navigate("user/$username")
-                            },
-                            onOpenLink = onOpenLink,
-                        )
-                    }
-
-                    RootDestination.Search -> Unit
-                }
+        composable(
+            RootDestination.rootContainerRoute,
+            // Root container uses the default enter/exit transitions defined
+            // on NavHost so the Home tab actually fades out (to alpha 0.7) when
+            // a Topic/User page slides in from the right. Without this the
+            // background page stays static and the forward-nav animation is
+            // barely visible.
+        ) {
+            NativeDoNavScenePadding(contentPadding = contentPadding) {
+                rootContainer()
             }
         }
         composable(RootDestination.Search.route) {
-            SearchRoute(
-                onTopicClick = { topicId ->
-                    navController.navigate("topic/$topicId")
-                },
-                onUserClick = { username ->
-                    navController.navigate("user/$username")
-                },
-            )
-        }
-        composable("topic/{topicId}") { entry ->
-            val topicId = entry.arguments?.getString("topicId")!!.toLong()
-            TopicRoute(
-                topicId = topicId,
-                onHeaderTitleChanged = onTopicHeaderTitleChanged,
-                onSessionRecoveryRequired = openLogin,
-                onTopicClick = { linkedTopicId ->
-                    navController.navigate("topic/$linkedTopicId")
-                },
-                onUserClick = { username ->
-                    navController.navigate("user/$username")
-                },
-                onOpenLink = onOpenLink,
-            )
-        }
-        composable("user/{username}") { entry ->
-            ProfileRoute(
-                viewer = ProfileViewer.Other(
-                    entry.arguments!!.getString("username")!!,
-                ),
-                onSessionRecoveryRequired = openLogin,
-                onTopicClick = { topicId ->
-                    navController.navigate("topic/$topicId")
-                },
-                onUserClick = { username ->
-                    navController.navigate("user/$username")
-                },
-                onOpenLink = onOpenLink,
-            )
-        }
-        composable(
-            APP_BROWSER_ROUTE,
-            arguments = listOf(
-                navArgument("url") { type = NavType.StringType },
-            ),
-        ) { entry ->
-            val encodedUrl = entry.arguments?.getString("url") ?: return@composable
-            val decodedUrl = URLDecoder.decode(encodedUrl, "UTF-8")
-            AppBrowserRoute(
-                url = decodedUrl,
-                onOpenLink = onOpenLink,
-                onClose = { navController.popBackStack() },
-            )
+            NativeDoNavScenePadding(contentPadding = contentPadding) {
+                SearchRoute(
+                    onTopicClick = { topicId ->
+                        onOpenTopic(topicId)
+                    },
+                    onUserClick = { username ->
+                        onOpenUser(username)
+                    },
+                    onCloseRequest = { navController.popBackStack() },
+                    autoFocus = true,
+                )
+            }
         }
         composable("login") {
-            LoginWebViewRoute(
-                onLoginFinished = {
-                    navController.popBackStack()
-                },
-            )
+            NativeDoNavScenePadding(contentPadding = contentPadding) {
+                TelegramStyleScaffold(
+                    canNavigateBack = navController.previousBackStackEntry != null,
+                    onNavigateBack = { navController.popBackStack() },
+                    enableSwipeBack = true,
+                ) {
+                    LoginWebViewRoute(
+                        onLoginFinished = {
+                            navController.popBackStack()
+                        },
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun DestinationPlaceholder(label: String) {
+private fun NativeDoNavScenePadding(
+    contentPadding: PaddingValues,
+    content: @Composable BoxScope.() -> Unit,
+) {
     Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(text = label)
-    }
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(contentPadding),
+        content = content,
+    )
 }

@@ -70,6 +70,42 @@ class ProfileRouteStateTest {
     }
 
     @Test
+    fun resolveProfileBrowserUrlInput_httpsUrl_returnsNormalizedUrl() {
+        val resolvedUrl = resolveProfileBrowserUrlInput(
+            " https://example.com/path?q=1#anchor ",
+        )
+
+        assertThat(resolvedUrl).isEqualTo("https://example.com/path?q=1#anchor")
+    }
+
+    @Test
+    fun resolveProfileBrowserUrlInput_hostWithoutScheme_addsHttps() {
+        val resolvedUrl = resolveProfileBrowserUrlInput(
+            "example.com/test",
+        )
+
+        assertThat(resolvedUrl).isEqualTo("https://example.com/test")
+    }
+
+    @Test
+    fun resolveProfileBrowserUrlInput_blankInput_returnsNull() {
+        val resolvedUrl = resolveProfileBrowserUrlInput(
+            "   ",
+        )
+
+        assertThat(resolvedUrl).isNull()
+    }
+
+    @Test
+    fun resolveProfileBrowserUrlInput_whitespaceQuery_returnsNull() {
+        val resolvedUrl = resolveProfileBrowserUrlInput(
+            "not a url",
+        )
+
+        assertThat(resolvedUrl).isNull()
+    }
+
+    @Test
     fun resolveProfileViewer_selfWithVerifiedSession_usesSnapshotUsername() {
         val resolvedViewer = resolveProfileViewer(
             viewer = ProfileViewer.Self,

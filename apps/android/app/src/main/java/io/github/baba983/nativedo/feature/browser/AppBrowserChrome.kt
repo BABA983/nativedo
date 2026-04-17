@@ -11,6 +11,7 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import androidx.appcompat.widget.AppCompatEditText
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -39,17 +40,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.windowInsetsTopHeight
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.ArrowForward
+import androidx.compose.material.icons.outlined.Article
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.History
@@ -96,9 +96,10 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.foundation.layout.WindowInsets
 import io.github.baba983.nativedo.R
 import io.github.baba983.nativedo.core.ui.NativeDoAnimatedLabel
 import io.github.baba983.nativedo.core.ui.NativeDoAnchoredPopup
@@ -131,6 +132,9 @@ import java.util.Locale
 import kotlinx.coroutines.delay
 
 internal enum class AppBrowserMenuAction {
+    AddBookmark,
+    RemoveBookmark,
+    InstantView,
     Search,
     History,
     Forward,
@@ -177,6 +181,7 @@ internal fun AppBrowserTopBar(
     chrome: AppBrowserChromeModel,
     search: AppBrowserSearchUiState,
     address: AppBrowserAddressUiState,
+    topInset: Dp = 0.dp,
     onAction: (AppBrowserAction) -> Unit,
 ) {
     val colors = NativeDoThemeExtras.colors
@@ -184,6 +189,14 @@ internal fun AppBrowserTopBar(
     val hasBrowserHistoryEntries = chrome.browserHistoryEntries.isNotEmpty()
     val chromeScene = chrome.scene
     val progress = chrome.progress.coerceIn(0f, 1f)
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress,
+        animationSpec = tween(
+            durationMillis = if (progress >= 1f) 180 else 220,
+            easing = NativeDoEasing.Standard,
+        ),
+        label = "appBrowserLoadingProgress",
+    )
     val isSearching = chromeScene == AppBrowserChromeScene.Search
     val scrollProgress = if (isSearching) {
         0f
@@ -197,10 +210,32 @@ internal fun AppBrowserTopBar(
             isLoadingVisible = showProgress,
         )
     }
-    val topBarGlassColor = colors.glassBackgroundStrong.copy(alpha = 0.84f)
+    val topBarGlassColor by animateColorAsState(
+        targetValue = if (chrome.chromeColor != Color.Unspecified) {
+            chrome.chromeColor
+        } else {
+            colors.glassBackgroundStrong.copy(alpha = 0.84f)
+        },
+        animationSpec = tween(
+            durationMillis = 200,
+            easing = NativeDoEasing.Standard,
+        ),
+        label = "appBrowserTopBarGlassColor",
+    )
     val scrollProgressFillColor = colors.accent.copy(alpha = scrollChromeState.fillAlpha)
     val topBarAlpha = chrome.alpha
     val topBarTranslationX = chrome.translationX
+    val headerCollapseProgress = chrome.headerCollapseProgress.coerceIn(0f, 1f)
+    val topBarOverlayHeight = lerp(
+        start = AppBrowserTopBarOverlayHeight,
+        stop = AppBrowserCollapsedTopBarOverlayHeight,
+        fraction = headerCollapseProgress,
+    )
+    val topBarVerticalPadding = lerp(
+        start = AppTopBarVerticalPadding,
+        stop = AppBrowserCollapsedTopBarVerticalPadding,
+        fraction = headerCollapseProgress,
+    )
     val isInSubPanel = chromeScene == AppBrowserChromeScene.Subpanel
     val isAddressEditing = chromeScene == AppBrowserChromeScene.AddressEditing
     val historyExpanded = chromeScene == AppBrowserChromeScene.HistoryPopup
@@ -296,11 +331,19 @@ internal fun AppBrowserTopBar(
     val topBarRevealProgress = 1f - addressingProgress
     val topBarExitOffset = with(LocalDensity.current) { 14.dp.toPx() }
     val addressSceneExitOffset = with(LocalDensity.current) { 10.dp.toPx() }
+    val collapsedTitleScale = 1f - (0.06f * headerCollapseProgress)
 
-    val menuEntries = remember(chrome.canGoForward, hasBrowserHistoryEntries) {
+    val menuEntries = remember(
+        chrome.canGoForward,
+        hasBrowserHistoryEntries,
+        chrome.isBookmarked,
+        chrome.instantView,
+    ) {
         buildAppBrowserMenuEntries(
             canGoForward = chrome.canGoForward,
             hasBrowserHistory = hasBrowserHistoryEntries,
+            isBookmarked = chrome.isBookmarked,
+            instantViewActionAvailability = chrome.instantView.actionAvailability,
         )
     }
 
@@ -340,6 +383,7 @@ internal fun AppBrowserTopBar(
                 hasBackHistoryEntries = hasBackHistoryEntries,
                 address = address,
                 focusToken = addressFocusToken,
+                topInset = topInset,
                 onAction = onAction,
                 modifier = Modifier
                     .fillMaxSize()
@@ -361,9 +405,11 @@ internal fun AppBrowserTopBar(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = AppBrowserTopBarOverlayHeight)
+                        .heightIn(min = topBarOverlayHeight)
                         .drawWithContent {
+                            // 绘制背景色
                             drawRect(color = topBarGlassColor)
+                            // 绘制滚动进度填充
                             if (scrollChromeState.fillFraction > 0f) {
                                 drawRect(
                                     color = scrollProgressFillColor,
@@ -373,7 +419,21 @@ internal fun AppBrowserTopBar(
                                     ),
                                 )
                             }
+                            // 绘制内容
                             drawContent()
+                            // 绘制底部细阴影线 (对齐 Telegram: max(0.66dp, 1px))
+                            val shadowAlpha = scrollChromeState.dividerAlpha
+                            if (shadowAlpha > 0f) {
+                                val shadowHeight = maxOf(0.66f.dp.toPx(), 1f)
+                                drawRect(
+                                    color = Color.Black.copy(alpha = shadowAlpha),
+                                    topLeft = androidx.compose.ui.geometry.Offset(
+                                        0f,
+                                        size.height - shadowHeight,
+                                    ),
+                                    size = Size(size.width, shadowHeight),
+                                )
+                            }
                         },
                 ) {
                     Column(
@@ -383,15 +443,13 @@ internal fun AppBrowserTopBar(
                                 translationY = topBarExitOffset * addressingProgress
                             },
                     ) {
-                        Spacer(
-                            modifier = Modifier.windowInsetsTopHeight(WindowInsets.statusBars),
-                        )
+                        Spacer(modifier = Modifier.height(topInset))
                         NativeDoGlassBar(
                             modifier = Modifier.fillMaxWidth(),
                             minHeight = AppTopBarRowMinHeight,
                             contentPadding = PaddingValues(
                                 horizontal = AppTopBarHorizontalPadding,
-                                vertical = AppTopBarVerticalPadding,
+                                vertical = topBarVerticalPadding,
                             ),
                             sectionSpacing = 12.dp,
                             leading = {
@@ -463,8 +521,8 @@ internal fun AppBrowserTopBar(
                                                 .fillMaxWidth()
                                                 .graphicsLayer {
                                                     alpha = 1f - searchingProgress
-                                                    scaleX = titleScale
-                                                    scaleY = titleScale
+                                                    scaleX = titleScale * collapsedTitleScale
+                                                    scaleY = titleScale * collapsedTitleScale
                                                 },
                                         )
                                     }
@@ -512,6 +570,9 @@ internal fun AppBrowserTopBar(
                                             onActionClick = { action ->
                                                 onAction(AppBrowserAction.SetOverflowMenuVisible(false))
                                                 when (action) {
+                                                    AppBrowserMenuAction.AddBookmark,
+                                                    AppBrowserMenuAction.RemoveBookmark -> onAction(AppBrowserAction.ToggleBookmark)
+                                                    AppBrowserMenuAction.InstantView -> onAction(AppBrowserAction.OpenInstantView)
                                                     AppBrowserMenuAction.Search -> onAction(AppBrowserAction.StartSearch)
                                                     AppBrowserMenuAction.History -> onAction(AppBrowserAction.OpenHistory)
                                                     AppBrowserMenuAction.Forward -> onAction(AppBrowserAction.GoForward)
@@ -545,16 +606,14 @@ internal fun AppBrowserTopBar(
                                 }
                             },
                         )
-
-                        HorizontalDivider(
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = scrollChromeState.dividerAlpha),
-                        )
                     }
                 }
 
+                // 移除原来的 HorizontalDivider,改用上面的渐变阴影
+
                 val progressMetrics = remember { appBrowserProgressMetrics() }
                 LinearProgressIndicator(
-                    progress = { progress },
+                    progress = { animatedProgress },
                     color = colors.accent,
                     trackColor = colors.glassBackgroundStrong.copy(alpha = progressMetrics.trackAlpha),
                     gapSize = 0.dp,
@@ -583,6 +642,7 @@ private fun AppBrowserAddressScene(
     hasBackHistoryEntries: Boolean,
     address: AppBrowserAddressUiState,
     focusToken: Int,
+    topInset: Dp = 0.dp,
     modifier: Modifier = Modifier,
     onAction: (AppBrowserAction) -> Unit,
 ) {
@@ -595,13 +655,12 @@ private fun AppBrowserAddressScene(
     Column(
         modifier = modifier
             .background(colors.backgroundBase)
-            .statusBarsPadding()
             .padding(
                 horizontal = AppTopBarHorizontalPadding,
-                vertical = AppTopBarVerticalPadding,
             ),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        Spacer(modifier = Modifier.height(topInset + AppTopBarVerticalPadding))
         NativeDoGlassBar(
             modifier = Modifier
                 .fillMaxWidth()
@@ -662,13 +721,14 @@ private fun AppBrowserAddressScene(
             onCopyLink = { onAction(AppBrowserAction.CopyLink) },
         )
         AppBrowserBookmarkPlaceholderCard(
-            onClick = {},
+            isBookmarked = chrome.isBookmarked,
+            onClick = { onAction(AppBrowserAction.ToggleBookmark) },
         )
-        if (address.recentEntries.isNotEmpty()) {
-            AppBrowserAddressSuggestionsSection(
-                entries = address.recentEntries.take(5),
-                onEntryClick = { entry ->
-                    onAction(AppBrowserAction.SubmitAddress(entry.url))
+        if (address.suggestionSections.isNotEmpty()) {
+            AppBrowserAddressSuggestionSections(
+                sections = address.suggestionSections,
+                onSuggestionClick = { suggestion ->
+                    onAction(AppBrowserAction.ApplyAddressSuggestion(suggestion))
                 },
             )
         }
@@ -676,42 +736,18 @@ private fun AppBrowserAddressScene(
 }
 
 @Composable
-private fun AppBrowserAddressSuggestions(
-    entries: List<AppBrowserHistoryRecord>,
-    onEntryClick: (AppBrowserHistoryRecord) -> Unit,
+private fun AppBrowserAddressSuggestionSections(
+    sections: List<AppBrowserAddressSuggestionSection>,
+    onSuggestionClick: (AppBrowserAddressSuggestion) -> Unit,
 ) {
-    val colors = NativeDoThemeExtras.colors
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        entries.forEachIndexed { index, entry ->
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onEntryClick(entry) }
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(
-                    text = entry.title,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = colors.textPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = entry.url,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = colors.textSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            if (index != entries.lastIndex) {
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.16f),
-                )
-            }
+        sections.forEach { section ->
+            AppBrowserAddressSuggestionSection(
+                section = section,
+                onSuggestionClick = onSuggestionClick,
+            )
         }
     }
 }
@@ -853,9 +889,25 @@ private fun AppBrowserAddressPreviewCard(
 
 @Composable
 private fun AppBrowserBookmarkPlaceholderCard(
+    isBookmarked: Boolean,
     onClick: () -> Unit,
 ) {
     val colors = NativeDoThemeExtras.colors
+    val titleRes = if (isBookmarked) {
+        R.string.app_browser_bookmark_saved_title
+    } else {
+        R.string.app_browser_bookmark_unsaved_title
+    }
+    val subtitleRes = if (isBookmarked) {
+        R.string.app_browser_bookmark_saved_subtitle
+    } else {
+        R.string.app_browser_bookmark_unsaved_subtitle
+    }
+    val bookmarkIcon = if (isBookmarked) {
+        Icons.Filled.Star
+    } else {
+        Icons.Outlined.StarBorder
+    }
 
     Surface(
         shape = RoundedCornerShape(24.dp),
@@ -880,9 +932,9 @@ private fun AppBrowserBookmarkPlaceholderCard(
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    imageVector = Icons.Outlined.StarBorder,
+                    imageVector = bookmarkIcon,
                     contentDescription = null,
-                    tint = colors.textPrimary.copy(alpha = 0.42f),
+                    tint = if (isBookmarked) colors.accent else colors.textPrimary.copy(alpha = 0.72f),
                     modifier = Modifier.size(18.dp),
                 )
             }
@@ -891,21 +943,26 @@ private fun AppBrowserBookmarkPlaceholderCard(
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 Text(
-                    text = stringResource(R.string.app_browser_bookmark_placeholder),
+                    text = stringResource(titleRes),
                     style = MaterialTheme.typography.labelLarge,
-                    color = colors.textPrimary.copy(alpha = 0.72f),
+                    color = colors.textPrimary,
                 )
                 Text(
-                    text = stringResource(R.string.app_browser_bookmark_placeholder_subtitle),
+                    text = stringResource(subtitleRes),
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.textSecondary,
                 )
             }
             AppBrowserAddressQuickActionChip(
-                icon = Icons.Outlined.StarBorder,
-                label = stringResource(R.string.app_browser_coming_soon),
+                icon = bookmarkIcon,
+                label = stringResource(
+                    if (isBookmarked) {
+                        R.string.app_browser_remove_bookmark
+                    } else {
+                        R.string.app_browser_add_bookmark
+                    },
+                ),
                 onClick = onClick,
-                enabled = false,
             )
         }
     }
@@ -972,9 +1029,9 @@ private fun AppBrowserAddressPreview(
 }
 
 @Composable
-private fun AppBrowserAddressSuggestionsSection(
-    entries: List<AppBrowserHistoryRecord>,
-    onEntryClick: (AppBrowserHistoryRecord) -> Unit,
+private fun AppBrowserAddressSuggestionSection(
+    section: AppBrowserAddressSuggestionSection,
+    onSuggestionClick: (AppBrowserAddressSuggestion) -> Unit,
 ) {
     val colors = NativeDoThemeExtras.colors
 
@@ -986,13 +1043,13 @@ private fun AppBrowserAddressSuggestionsSection(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
-                imageVector = Icons.Outlined.History,
+                imageVector = appBrowserAddressSuggestionSectionIcon(section.kind),
                 contentDescription = null,
                 tint = colors.textSecondary,
                 modifier = Modifier.size(16.dp),
             )
             Text(
-                text = stringResource(R.string.app_browser_recent_links),
+                text = appBrowserAddressSuggestionSectionTitle(section.kind),
                 style = MaterialTheme.typography.labelLarge,
                 color = colors.textSecondary,
             )
@@ -1003,12 +1060,85 @@ private fun AppBrowserAddressSuggestionsSection(
             tonalElevation = 0.dp,
             shadowElevation = 0.dp,
         ) {
-            AppBrowserAddressSuggestions(
-                entries = entries,
-                onEntryClick = onEntryClick,
+            Column(modifier = Modifier.fillMaxWidth()) {
+                section.items.forEachIndexed { index, item ->
+                    AppBrowserAddressSuggestionRow(
+                        suggestion = item,
+                        onClick = { onSuggestionClick(item) },
+                    )
+                    if (index != section.items.lastIndex) {
+                        HorizontalDivider(
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.16f),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppBrowserAddressSuggestionRow(
+    suggestion: AppBrowserAddressSuggestion,
+    onClick: () -> Unit,
+) {
+    val colors = NativeDoThemeExtras.colors
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            text = appBrowserAddressSuggestionTitle(suggestion),
+            style = MaterialTheme.typography.bodyMedium,
+            color = colors.textPrimary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        appBrowserAddressSuggestionSubtitle(suggestion)?.let { subtitle ->
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = colors.textSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
+}
+
+@Composable
+private fun appBrowserAddressSuggestionSectionTitle(kind: AppBrowserAddressSuggestionSectionKind): String = when (kind) {
+    AppBrowserAddressSuggestionSectionKind.QuickActions -> stringResource(R.string.app_browser_address_quick_actions)
+    AppBrowserAddressSuggestionSectionKind.RecentSearches -> stringResource(R.string.app_browser_recent_searches)
+    AppBrowserAddressSuggestionSectionKind.Bookmarks -> stringResource(R.string.app_browser_bookmarks)
+    AppBrowserAddressSuggestionSectionKind.RecentLinks -> stringResource(R.string.app_browser_recent_links)
+}
+
+private fun appBrowserAddressSuggestionSectionIcon(kind: AppBrowserAddressSuggestionSectionKind): ImageVector = when (kind) {
+    AppBrowserAddressSuggestionSectionKind.QuickActions -> Icons.Outlined.MoreVert
+    AppBrowserAddressSuggestionSectionKind.RecentSearches -> Icons.Outlined.Search
+    AppBrowserAddressSuggestionSectionKind.Bookmarks -> Icons.Outlined.StarBorder
+    AppBrowserAddressSuggestionSectionKind.RecentLinks -> Icons.Outlined.History
+}
+
+private fun appBrowserAddressSuggestionTitle(suggestion: AppBrowserAddressSuggestion): String = when (suggestion) {
+    is AppBrowserAddressSuggestion.RecentLink -> suggestion.title
+    is AppBrowserAddressSuggestion.Bookmark -> suggestion.title
+    is AppBrowserAddressSuggestion.RecentSearch -> suggestion.query
+    is AppBrowserAddressSuggestion.QuickAction -> when (suggestion.action) {
+        AppBrowserAddressQuickAction.CopyCurrentLink -> "Copy current link"
+        AppBrowserAddressQuickAction.ToggleBookmark -> "Toggle bookmark"
+    }
+}
+
+private fun appBrowserAddressSuggestionSubtitle(suggestion: AppBrowserAddressSuggestion): String? = when (suggestion) {
+    is AppBrowserAddressSuggestion.RecentLink -> suggestion.url
+    is AppBrowserAddressSuggestion.Bookmark -> suggestion.url
+    is AppBrowserAddressSuggestion.RecentSearch -> null
+    is AppBrowserAddressSuggestion.QuickAction -> null
 }
 
 @Composable
@@ -1180,12 +1310,12 @@ internal fun AppBrowserTitlePill(
         NativeDoGlassBar(
             modifier = Modifier.fillMaxWidth(),
             minHeight = 0.dp,
-            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 10.dp),
-            sectionSpacing = 10.dp,
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),  // 从 14dp/10dp 减小到 12dp/6dp
+            sectionSpacing = 8.dp,  // 从 10dp 减小到 8dp
             leading = {
                 Box(
                     modifier = Modifier
-                        .size(28.dp)
+                        .size(24.dp)  // 从 28dp 减小到 24dp
                         .background(
                             color = statusTint.copy(alpha = 0.14f),
                             shape = CircleShape,
@@ -1196,7 +1326,7 @@ internal fun AppBrowserTitlePill(
                         imageVector = if (isHttps) Icons.Outlined.Lock else Icons.Outlined.LockOpen,
                         contentDescription = null,
                         tint = statusTint,
-                        modifier = Modifier.size(14.dp),
+                        modifier = Modifier.size(12.dp),  // 从 14dp 减小到 12dp
                     )
                 }
             },
@@ -1665,6 +1795,9 @@ private fun formatAppBrowserHistoryVisitedAt(
 
 @Composable
 private fun AppBrowserMenuAction.label(): String = when (this) {
+    AppBrowserMenuAction.AddBookmark -> androidx.compose.ui.res.stringResource(R.string.app_browser_add_bookmark)
+    AppBrowserMenuAction.RemoveBookmark -> androidx.compose.ui.res.stringResource(R.string.app_browser_remove_bookmark)
+    AppBrowserMenuAction.InstantView -> androidx.compose.ui.res.stringResource(R.string.app_browser_instant_view)
     AppBrowserMenuAction.Search -> androidx.compose.ui.res.stringResource(R.string.app_browser_search)
     AppBrowserMenuAction.History -> androidx.compose.ui.res.stringResource(R.string.app_browser_history)
     AppBrowserMenuAction.Forward -> androidx.compose.ui.res.stringResource(R.string.app_browser_forward)
@@ -1677,6 +1810,9 @@ private fun AppBrowserMenuAction.label(): String = when (this) {
 }
 
 private fun AppBrowserMenuAction.icon(): ImageVector = when (this) {
+    AppBrowserMenuAction.AddBookmark -> Icons.Outlined.StarBorder
+    AppBrowserMenuAction.RemoveBookmark -> Icons.Filled.Star
+    AppBrowserMenuAction.InstantView -> Icons.Outlined.Article
     AppBrowserMenuAction.Search -> Icons.Outlined.Search
     AppBrowserMenuAction.History -> Icons.Outlined.History
     AppBrowserMenuAction.Forward -> Icons.AutoMirrored.Outlined.ArrowForward

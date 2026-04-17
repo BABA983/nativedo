@@ -4,13 +4,19 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
 import android.net.http.SslError
+import android.os.Message
 import android.view.ViewGroup
 import android.webkit.CookieManager
+import android.webkit.DownloadListener
+import android.webkit.PermissionRequest
 import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.WebView.WebViewTransport
 import android.webkit.ValueCallback
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -40,11 +46,15 @@ internal fun AppBrowserWebView(
     onTitleChanged: (String?) -> Unit,
     onIconChanged: (String, Bitmap?) -> Unit,
     onFindResultChanged: (Int, Int, Boolean) -> Unit,
-    onScrollProgressChanged: (Float) -> Unit,
+    onScrollSnapshotChanged: (AppBrowserScrollSnapshot) -> Unit,
     onCanGoBackChanged: (Boolean) -> Unit,
     onCanGoForwardChanged: (Boolean) -> Unit,
     onShowFileChooser: (ValueCallback<Array<Uri>>?, WebChromeClient.FileChooserParams?) -> Unit =
         { callback, _ -> callback?.onReceiveValue(null) },
+    onPopupRequest: (AppBrowserPopupRequest) -> Unit = {},
+    onDownloadRequest: (AppBrowserDownloadRequest) -> Unit = {},
+    onWebPermissionRequest: (PermissionRequest?) -> Unit = { it?.deny() },
+    onPageLoadError: (AppBrowserPageLoadError) -> Unit = {},
     onSslError: (SslErrorHandler?, SslError?) -> Unit = { handler, _ -> handler?.cancel() },
     onSyncCookiesToWebView: () -> Unit,
 ) {
@@ -70,8 +80,9 @@ internal fun AppBrowserWebView(
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
                 settings.userAgentString = userAgent
-                // 单窗口模式下，window.open / target=_blank 会回落到当前会话导航。
-                settings.setSupportMultipleWindows(false)
+                // 允许 WebChromeClient.onCreateWindow 接住 popup/new-window 请求，
+                // 但仍由上层把它们回收到当前 browser 会话中处理。
+                settings.setSupportMultipleWindows(true)
                 settings.javaScriptCanOpenWindowsAutomatically = true
                 setBackgroundColor(backgroundColor.toArgb())
                 CookieManager.getInstance().setAcceptCookie(true)
@@ -94,6 +105,34 @@ internal fun AppBrowserWebView(
                     override fun onPageFinished(view: WebView?, url: String?) {
                         super.onPageFinished(view, url)
                         onPageFinished(view as? AppBrowserWebViewView, url)
+                    }
+
+                    override fun onReceivedError(
+                        view: WebView?,
+                        request: WebResourceRequest?,
+                        error: WebResourceError?,
+                    ) {
+                        super.onReceivedError(view, request, error)
+                        buildAppBrowserPageLoadError(
+                            failingUrl = request?.url?.toString().orEmpty(),
+                            isForMainFrame = request?.isForMainFrame == true,
+                            description = error?.description?.toString(),
+                        )?.let(onPageLoadError)
+                    }
+
+                    override fun onReceivedHttpError(
+                        view: WebView?,
+                        request: WebResourceRequest?,
+                        errorResponse: WebResourceResponse?,
+                    ) {
+                        super.onReceivedHttpError(view, request, errorResponse)
+                        buildAppBrowserPageLoadError(
+                            failingUrl = request?.url?.toString().orEmpty(),
+                            isForMainFrame = request?.isForMainFrame == true,
+                            description = errorResponse?.reasonPhrase,
+                            statusCode = errorResponse?.statusCode,
+                            reasonPhrase = errorResponse?.reasonPhrase,
+                        )?.let(onPageLoadError)
                     }
 
                     override fun onReceivedSslError(
@@ -120,6 +159,53 @@ internal fun AppBrowserWebView(
                         onIconChanged(view?.url.orEmpty(), icon)
                     }
 
+                    override fun onCreateWindow(
+                        view: WebView?,
+                        isDialog: Boolean,
+                        isUserGesture: Boolean,
+                        resultMsg: Message?,
+                    ): Boolean {
+                        val transport = resultMsg?.obj as? WebViewTransport ?: return false
+                        val popupWebView = AppBrowserWebViewView(context)
+                        var dispatched = false
+                        val dispatchPopup: (String?) -> Unit = dispatch@{ requestedUrl ->
+                            if (dispatched) {
+                                return@dispatch
+                            }
+                            dispatched = true
+                            onPopupRequest(
+                                AppBrowserPopupRequest(
+                                    requestedUrl = requestedUrl,
+                                    fallbackUrl = view?.hitTestResult?.extra,
+                                    isDialog = isDialog,
+                                    isUserGesture = isUserGesture,
+                                ),
+                            )
+                            popupWebView.stopLoading()
+                            popupWebView.destroy()
+                        }
+                        popupWebView.webViewClient = object : WebViewClient() {
+                            override fun shouldOverrideUrlLoading(
+                                view: WebView?,
+                                request: WebResourceRequest?,
+                            ): Boolean {
+                                dispatchPopup(request?.url?.toString())
+                                return true
+                            }
+
+                            override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+                                dispatchPopup(url)
+                            }
+                        }
+                        transport.webView = popupWebView
+                        resultMsg.sendToTarget()
+                        return true
+                    }
+
+                    override fun onPermissionRequest(request: PermissionRequest?) {
+                        onWebPermissionRequest(request)
+                    }
+
                     override fun onShowFileChooser(
                         webView: WebView?,
                         filePathCallback: ValueCallback<Array<Uri>>?,
@@ -130,12 +216,37 @@ internal fun AppBrowserWebView(
                     }
                 }
 
+                setDownloadListener(
+                    DownloadListener { url, userAgent, contentDisposition, mimeType, contentLength ->
+                        url
+                            ?.takeIf(String::isNotBlank)
+                            ?.let { resolvedUrl ->
+                                onDownloadRequest(
+                                    AppBrowserDownloadRequest(
+                                        url = resolvedUrl,
+                                        userAgent = userAgent,
+                                        contentDisposition = contentDisposition,
+                                        mimeType = mimeType,
+                                        contentLength = contentLength,
+                                    ),
+                                )
+                            }
+                    },
+                )
+
                 setFindListener { activeMatchOrdinal, numberOfMatches, isDoneCounting ->
                     onFindResultChanged(activeMatchOrdinal, numberOfMatches, isDoneCounting)
                 }
 
-                setOnScrollChangeListener { _, _, _, _, _ ->
-                    onScrollProgressChanged(calculateCurrentScrollProgress(this))
+                setOnScrollChangeListener { _, _, scrollY, _, oldScrollY ->
+                    onScrollSnapshotChanged(
+                        buildAppBrowserScrollSnapshot(
+                            scrollY = scrollY,
+                            previousScrollY = oldScrollY,
+                            contentHeightPx = verticalScrollRange,
+                            viewportHeightPx = verticalScrollExtent,
+                        ),
+                    )
                 }
 
                 controller.attach(this)
@@ -149,7 +260,14 @@ internal fun AppBrowserWebView(
             attachedWebView = view
             onCanGoBackChanged(view.canGoBack())
             onCanGoForwardChanged(view.canGoForward())
-            onScrollProgressChanged(calculateCurrentScrollProgress(view))
+            onScrollSnapshotChanged(
+                buildAppBrowserScrollSnapshot(
+                    scrollY = view.scrollY,
+                    previousScrollY = view.scrollY,
+                    contentHeightPx = view.verticalScrollRange,
+                    viewportHeightPx = view.verticalScrollExtent,
+                ),
+            )
         },
     )
 }
@@ -162,12 +280,4 @@ internal class AppBrowserWebViewView(
 
     val verticalScrollExtent: Int
         get() = computeVerticalScrollExtent()
-}
-
-private fun calculateCurrentScrollProgress(view: AppBrowserWebViewView): Float {
-    return buildAppBrowserScrollProgress(
-        scrollY = view.scrollY,
-        contentHeightPx = view.verticalScrollRange,
-        viewportHeightPx = view.verticalScrollExtent,
-    )
 }

@@ -43,6 +43,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -69,15 +70,22 @@ import io.github.baba983.nativedo.core.session.SessionEvent
 import io.github.baba983.nativedo.core.storage.RecentSearchStore
 import io.github.baba983.nativedo.feature.home.data.HomeRepository
 import io.github.baba983.nativedo.feature.home.domain.LoadHomeFeedUseCase
-import io.github.baba983.nativedo.feature.search.ui.SearchScreen
+import io.github.baba983.nativedo.feature.search.ui.SearchResultsContent
+import io.github.baba983.nativedo.feature.search.ui.SearchSceneTopBar
 import io.github.baba983.nativedo.feature.search.ui.rememberSearchViewModel
+import io.github.baba983.nativedo.navigation.RootDestination
+import io.github.baba983.nativedo.ui.NativeDoReaderScaffold
 import io.github.baba983.nativedo.ui.NativeDoPullToRefreshIndicator
+import io.github.baba983.nativedo.ui.NativeDoTopBar
+import io.github.baba983.nativedo.ui.buildNativeDoRootChromeModel
 import io.github.baba983.nativedo.ui.theme.NativeDoCardShape
 import io.github.baba983.nativedo.ui.theme.NativeDoGlassRole
 import io.github.baba983.nativedo.ui.theme.NativeDoMotionTheme
 import io.github.baba983.nativedo.ui.theme.NativeDoPillShape
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
+import io.github.baba983.nativedo.ui.theme.ThemeMode
 import io.github.baba983.nativedo.ui.theme.nativeDoMotionProgressValue
+import kotlinx.coroutines.launch
 
 private const val HOME_HEADER_SEARCH_THRESHOLD = 0.98f
 private const val HOME_LOAD_MORE_THRESHOLD = 5
@@ -96,9 +104,9 @@ internal data class HomeSearchChromeState(
 fun HomeRoute(
     onTopicClick: (Long) -> Unit,
     onUserClick: (String) -> Unit,
-    headerSearchRequestToken: Int = 0,
     refreshRequestToken: Int = 0,
-    onHeaderSearchVisibilityChanged: (Boolean) -> Unit = {},
+    themeMode: ThemeMode = ThemeMode.System,
+    onThemeModeSelected: (ThemeMode) -> Unit = {},
     onSearchModeChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -129,14 +137,49 @@ fun HomeRoute(
     val uiState by homeViewModel.uiState.collectAsStateWithLifecycle()
     val searchUiState by searchViewModel.uiState.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
     var isSearchMode by rememberSaveable { mutableStateOf(false) }
     var searchOpenedFromHeader by rememberSaveable { mutableStateOf(false) }
     var forceShowSearchField by rememberSaveable { mutableStateOf(false) }
-    var handledHeaderSearchRequestToken by rememberSaveable { mutableIntStateOf(0) }
     var handledRefreshRequestToken by rememberSaveable { mutableIntStateOf(0) }
+    var contextualOptionsExpanded by rememberSaveable { mutableStateOf(false) }
     val currentSessionState by rememberUpdatedState(sessionState)
     val currentAuthVersion by rememberUpdatedState(authVersion)
+    val currentOnSearchModeChanged by rememberUpdatedState(onSearchModeChanged)
     val contentMotion = NativeDoMotionTheme.scheme.content
+    val density = LocalDensity.current
+    val searchFieldTravelPx = remember(density) {
+        with(density) { HOME_SEARCH_CONTAINER_HEIGHT.roundToPx() }
+    }
+    val rawSearchCollapseProgress by remember(listState, searchFieldTravelPx) {
+        derivedStateOf {
+            homeSearchCollapseProgress(
+                firstVisibleItemIndex = listState.firstVisibleItemIndex,
+                firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
+                collapseDistancePx = searchFieldTravelPx,
+            )
+        }
+    }
+    val searchChromeState = remember(rawSearchCollapseProgress, forceShowSearchField) {
+        buildHomeSearchChromeState(
+            collapseProgress = rawSearchCollapseProgress,
+            forceShowSearchField = forceShowSearchField,
+        )
+    }
+    val rootChromeModel = remember(
+        searchChromeState.showHeaderSearch,
+        isSearchMode,
+        contextualOptionsExpanded,
+    ) {
+        buildNativeDoRootChromeModel(
+            isRootRoute = true,
+            activeRoute = RootDestination.Home.route,
+            homeHeaderSearchVisible = searchChromeState.showHeaderSearch,
+            isHomeSearchMode = isSearchMode,
+            actionModeSelectionCount = 0,
+            isContextualOptionsExpanded = contextualOptionsExpanded,
+        )
+    }
 
     fun closeSearch() {
         forceShowSearchField = searchOpenedFromHeader
@@ -144,16 +187,22 @@ fun HomeRoute(
         isSearchMode = false
     }
 
-    BackHandler(enabled = isSearchMode) {
-        closeSearch()
+    fun refreshFromHeader() {
+        coroutineScope.launch {
+            if (
+                shouldScrollHomeFeedToTopOnRefreshRequest(
+                    firstVisibleItemIndex = listState.firstVisibleItemIndex,
+                    firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
+                )
+            ) {
+                listState.scrollToItem(0)
+            }
+            homeViewModel.onRefresh()
+        }
     }
 
-    LaunchedEffect(headerSearchRequestToken) {
-        if (headerSearchRequestToken > handledHeaderSearchRequestToken) {
-            handledHeaderSearchRequestToken = headerSearchRequestToken
-            searchOpenedFromHeader = true
-            isSearchMode = true
-        }
+    BackHandler(enabled = isSearchMode) {
+        closeSearch()
     }
 
     LaunchedEffect(refreshRequestToken) {
@@ -216,84 +265,122 @@ fun HomeRoute(
         }
     }
 
+    LaunchedEffect(isSearchMode, rootChromeModel.showContextualOptionsAction) {
+        if (isSearchMode || !rootChromeModel.showContextualOptionsAction) {
+            contextualOptionsExpanded = false
+        }
+    }
+
     LaunchedEffect(isSearchMode) {
-        if (isSearchMode) {
-            onHeaderSearchVisibilityChanged(false)
-        }
-        onSearchModeChanged(isSearchMode)
+        currentOnSearchModeChanged(isSearchMode)
     }
 
-    DisposableEffect(onHeaderSearchVisibilityChanged) {
+    DisposableEffect(currentOnSearchModeChanged) {
         onDispose {
-            onHeaderSearchVisibilityChanged(false)
+            currentOnSearchModeChanged(false)
         }
     }
 
-    DisposableEffect(onSearchModeChanged) {
-        onDispose {
-            onSearchModeChanged(false)
-        }
-    }
-
-    AnimatedContent(
-        targetState = isSearchMode,
+    NativeDoReaderScaffold(
         modifier = modifier.fillMaxSize(),
-        transitionSpec = {
-            (
-                fadeIn(
-                    animationSpec = contentMotion.enter.tweenSpec(),
-                ) +
-                    scaleIn(
-                        animationSpec = contentMotion.enter.tweenSpec(),
-                        initialScale = 0.985f,
-                    )
-                ) togetherWith (
-                fadeOut(
-                    animationSpec = contentMotion.exit.tweenSpec(),
-                ) +
-                    scaleOut(
-                        animationSpec = contentMotion.exit.tweenSpec(),
-                        targetScale = 0.985f,
-                    )
+        topBar = {
+            if (isSearchMode) {
+                SearchSceneTopBar(
+                    query = searchUiState.query,
+                    onQueryChanged = searchViewModel::onQueryChanged,
+                    onQuerySubmitted = searchViewModel::onQuerySubmitted,
+                    onCloseRequest = ::closeSearch,
+                    autoFocus = true,
                 )
+            } else {
+                NativeDoTopBar(
+                    currentRoute = RootDestination.Home.route,
+                    rootChrome = rootChromeModel,
+                    titleOverride = null,
+                    showBack = false,
+                    themeMode = themeMode,
+                    onHomeRefreshClick = ::refreshFromHeader,
+                    onHomeSearchClick = {
+                        searchOpenedFromHeader = true
+                        forceShowSearchField = false
+                        isSearchMode = true
+                    },
+                    onThemeModeSelected = {
+                        contextualOptionsExpanded = false
+                        onThemeModeSelected(it)
+                    },
+                    onToggleContextualOptions = {
+                        contextualOptionsExpanded = !contextualOptionsExpanded
+                    },
+                    onDismissContextualOptions = {
+                        contextualOptionsExpanded = false
+                    },
+                    onExitActionMode = {
+                        contextualOptionsExpanded = false
+                    },
+                    onBackClick = {},
+                )
+            }
         },
-        label = "home_search_mode",
-    ) { searchMode ->
-        if (searchMode) {
-            SearchScreen(
-                uiState = searchUiState,
-                categories = categories,
-                baseUrl = appContainer.baseUrl,
-                onQueryChanged = searchViewModel::onQueryChanged,
-                onQuerySubmitted = searchViewModel::onQuerySubmitted,
-                onTopicClick = onTopicClick,
-                onUserClick = onUserClick,
-                modifier = Modifier.fillMaxSize(),
-                onCloseRequest = ::closeSearch,
-                autoFocus = true,
-            )
-        } else {
-            HomeFeedContent(
-                uiState = uiState,
-                categories = categories,
-                listState = listState,
-                forceShowSearchField = forceShowSearchField,
-                baseUrl = appContainer.baseUrl,
-                onTopicClick = { topicId ->
-                    homeViewModel.markTopicSeen(topicId)
-                    onTopicClick(topicId)
-                },
-                onFeedSelected = homeViewModel::onFeedSelected,
-                onRefresh = homeViewModel::onRefresh,
-                onLoadMore = homeViewModel::loadNextPage,
-                onSearchClick = {
-                    searchOpenedFromHeader = false
-                    forceShowSearchField = false
-                    isSearchMode = true
-                },
-                onHeaderSearchVisibilityChanged = onHeaderSearchVisibilityChanged,
-                modifier = Modifier.fillMaxSize(),
-            )
+    ) { paddingValues ->
+        AnimatedContent(
+            targetState = isSearchMode,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues),
+            transitionSpec = {
+                (
+                    fadeIn(
+                        animationSpec = contentMotion.enter.tweenSpec(),
+                    ) +
+                        scaleIn(
+                            animationSpec = contentMotion.enter.tweenSpec(),
+                            initialScale = 0.985f,
+                        )
+                    ) togetherWith (
+                    fadeOut(
+                        animationSpec = contentMotion.exit.tweenSpec(),
+                    ) +
+                        scaleOut(
+                            animationSpec = contentMotion.exit.tweenSpec(),
+                            targetScale = 0.985f,
+                        )
+                    )
+            },
+            label = "home_search_mode",
+        ) { searchActive ->
+            if (searchActive) {
+                SearchResultsContent(
+                    uiState = searchUiState,
+                    categories = categories,
+                    baseUrl = appContainer.baseUrl,
+                    onQuerySubmitted = searchViewModel::onQuerySubmitted,
+                    onTopicClick = onTopicClick,
+                    onUserClick = onUserClick,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                HomeFeedContent(
+                    uiState = uiState,
+                    categories = categories,
+                    listState = listState,
+                    searchChromeState = searchChromeState,
+                    baseUrl = appContainer.baseUrl,
+                    onTopicClick = { topicId ->
+                        homeViewModel.markTopicSeen(topicId)
+                        onTopicClick(topicId)
+                    },
+                    onFeedSelected = homeViewModel::onFeedSelected,
+                    onRefresh = homeViewModel::onRefresh,
+                    onLoadMore = homeViewModel::loadNextPage,
+                    onSearchClick = {
+                        searchOpenedFromHeader = false
+                        forceShowSearchField = false
+                        isSearchMode = true
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
     }
 }
@@ -304,14 +391,13 @@ private fun HomeFeedContent(
     uiState: HomeUiState,
     categories: Map<Int, io.github.baba983.nativedo.core.model.CategorySummary>,
     listState: LazyListState,
-    forceShowSearchField: Boolean,
+    searchChromeState: HomeSearchChromeState,
     baseUrl: String,
     onTopicClick: (Long) -> Unit,
     onFeedSelected: (HomeFeedTab) -> Unit,
     onRefresh: () -> Unit,
     onLoadMore: () -> Unit,
     onSearchClick: () -> Unit,
-    onHeaderSearchVisibilityChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val pullToRefreshState = rememberPullToRefreshState()
@@ -337,27 +423,8 @@ private fun HomeFeedContent(
     val searchFieldTravelPx = remember(density) {
         with(density) { HOME_SEARCH_CONTAINER_HEIGHT.roundToPx() }
     }
-    val rawSearchCollapseProgress by remember(listState, searchFieldTravelPx) {
-        derivedStateOf {
-            homeSearchCollapseProgress(
-                firstVisibleItemIndex = listState.firstVisibleItemIndex,
-                firstVisibleItemScrollOffset = listState.firstVisibleItemScrollOffset,
-                collapseDistancePx = searchFieldTravelPx,
-            )
-        }
-    }
-    val searchChromeState = remember(rawSearchCollapseProgress, forceShowSearchField) {
-        buildHomeSearchChromeState(
-            collapseProgress = rawSearchCollapseProgress,
-            forceShowSearchField = forceShowSearchField,
-        )
-    }
     var shownRefreshError by rememberSaveable(uiState.selectedTab) { mutableStateOf<String?>(null) }
     val stickyChromeColor = chromeGlass.containerColor.copy(alpha = 0.97f)
-
-    LaunchedEffect(searchChromeState.showHeaderSearch, onHeaderSearchVisibilityChanged) {
-        onHeaderSearchVisibilityChanged(searchChromeState.showHeaderSearch)
-    }
 
     LaunchedEffect(errorMessage, uiState.items.size) {
         when {

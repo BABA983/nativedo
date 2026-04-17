@@ -2,6 +2,7 @@ package io.github.baba983.nativedo.ui.theme
 
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 
 enum class NativeDoSystemBarBackgroundPolicy {
     Transparent,
@@ -35,3 +36,9 @@ internal fun nativeDoDefaultSystemBarStyle(darkTheme: Boolean): NativeDoSystemBa
         enforceNavigationBarContrast = false,
     )
 }
+
+internal fun nativeDoUseDarkSystemBarIcons(
+    backgroundColor: Color,
+): Boolean = backgroundColor.luminance() > nativeDoLightSystemBarLuminanceThreshold
+
+private const val nativeDoLightSystemBarLuminanceThreshold = 0.721f

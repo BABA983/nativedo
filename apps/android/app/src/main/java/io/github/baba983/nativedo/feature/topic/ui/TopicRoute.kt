@@ -1,5 +1,4 @@
 package io.github.baba983.nativedo.feature.topic.ui
-
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -26,10 +25,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -80,6 +80,7 @@ import io.github.baba983.nativedo.core.ui.requestErrorBulletin
 import io.github.baba983.nativedo.core.ui.requestErrorPresentation
 import io.github.baba983.nativedo.feature.topic.data.TopicRepository
 import io.github.baba983.nativedo.feature.topic.domain.LoadTopicUseCase
+import io.github.baba983.nativedo.ui.NativeDoGlassSurface
 import io.github.baba983.nativedo.ui.NativeDoPullToRefreshIndicator
 import io.github.baba983.nativedo.ui.theme.NativeDoGlassRole
 import io.github.baba983.nativedo.ui.theme.NativeDoMotionTheme
@@ -154,12 +155,14 @@ internal data class TopicReactionUsersUiState(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TopicRoute(
+internal fun TopicRoute(
     topicId: Long,
     onTopicClick: (Long) -> Unit = {},
     onUserClick: (String) -> Unit = {},
     onOpenLink: (String) -> Unit = {},
     onHeaderTitleChanged: (String?) -> Unit = {},
+    initialScrollSnapshot: TopicScrollSnapshot? = null,
+    onScrollSnapshotChanged: (TopicScrollSnapshot) -> Unit = {},
     onSessionRecoveryRequired: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
@@ -200,7 +203,19 @@ fun TopicRoute(
         )
     }
     var shownRefreshError by rememberSaveable(topicId) { mutableStateOf<String?>(null) }
-    val listState = rememberLazyListState()
+    // Keep the list save key stable while this topic moves between current/previous host slots.
+    val initialListScrollSnapshot = remember(topicId) {
+        resolveInitialTopicScrollSnapshot(initialScrollSnapshot)
+    }
+    val listState = rememberSaveable(
+        topicId,
+        saver = LazyListState.Saver,
+    ) {
+        LazyListState(
+            firstVisibleItemIndex = initialListScrollSnapshot.firstVisibleItemIndex,
+            firstVisibleItemScrollOffset = initialListScrollSnapshot.firstVisibleItemScrollOffset,
+        )
+    }
     val pullToRefreshState = rememberPullToRefreshState()
     val coroutineScope = rememberCoroutineScope()
     var previousScrollSnapshot by remember { mutableStateOf<TopicScrollSnapshot?>(null) }
@@ -379,17 +394,16 @@ fun TopicRoute(
         }
 
         previousScrollSnapshot = currentScrollSnapshot
+        onScrollSnapshotChanged(currentScrollSnapshot)
     }
 
     val showBottomShelf = uiState.posts.isNotEmpty() && bottomShelfArmed
 
     when {
         uiState.isLoading -> {
-            TopicFeedbackCard(
+            TopicLoadingScene(
                 modifier = modifier.fillMaxSize(),
-            ) {
-                CircularProgressIndicator()
-            }
+            )
         }
 
         uiState.canRetry -> {
@@ -849,6 +863,13 @@ internal fun shouldRefreshTopicForHandledAuthVersion(
         currentAuthVersion > handledAuthVersion
 }
 
+internal fun resolveInitialTopicScrollSnapshot(
+    snapshot: TopicScrollSnapshot?,
+): TopicScrollSnapshot = snapshot ?: TopicScrollSnapshot(
+    firstVisibleItemIndex = 0,
+    firstVisibleItemScrollOffset = 0,
+)
+
 @Composable
 private fun TopicFeedbackCard(
     modifier: Modifier = Modifier,
@@ -859,6 +880,103 @@ private fun TopicFeedbackCard(
         contentAlignment = Alignment.Center,
     ) {
         content()
+    }
+}
+
+@Composable
+private fun TopicLoadingScene(
+    modifier: Modifier = Modifier,
+) {
+    val shimmerBrush = rememberTopicReactionSkeletonBrush()
+    Box(
+        modifier = modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
+                .widthIn(max = 520.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            NativeDoGlassSurface(
+                modifier = Modifier.fillMaxWidth(),
+                strong = true,
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                    )
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(0.42f)
+                                .height(12.dp)
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                                .background(shimmerBrush),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(0.26f)
+                                .height(10.dp)
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                                .background(shimmerBrush),
+                        )
+                    }
+                }
+            }
+
+            repeat(2) {
+                NativeDoGlassSurface(
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(0.34f)
+                                .height(11.dp)
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                                .background(shimmerBrush),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(12.dp)
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                                .background(shimmerBrush),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(0.88f)
+                                .height(12.dp)
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                                .background(shimmerBrush),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(0.56f)
+                                .height(12.dp)
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                                .background(shimmerBrush),
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

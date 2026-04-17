@@ -38,7 +38,7 @@ fun NativeDoChromeScaffold(
         }
 
         bottomBar?.invoke(this)
-        bulletinHost?.invoke(this)
         overlay?.invoke(this)
+        bulletinHost?.invoke(this)
     }
 }

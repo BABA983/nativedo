@@ -1,8 +1,5 @@
 package io.github.baba983.nativedo.ui
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -24,8 +21,8 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.activity.compose.BackHandler
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.Search
@@ -74,12 +71,13 @@ import io.github.baba983.nativedo.core.ui.NativeDoGlassBar
 import io.github.baba983.nativedo.core.ui.NativeDoGlassTab
 import io.github.baba983.nativedo.core.ui.NativeDoPopupMenuItem
 import io.github.baba983.nativedo.core.ui.UserAvatar
+import io.github.baba983.nativedo.core.navigation.AppBrowserReaderContent
 import io.github.baba983.nativedo.feature.auth.ui.AuthRestoreGate
 import io.github.baba983.nativedo.feature.auth.ui.shouldShowAuthRestoreGate
-import io.github.baba983.nativedo.navigation.APP_BROWSER_ROUTE
+import io.github.baba983.nativedo.feature.browser.AppBrowserReaderScene
+import io.github.baba983.nativedo.feature.browser.AppBrowserSheetContainer
 import io.github.baba983.nativedo.navigation.NativeDoNavHost
 import io.github.baba983.nativedo.navigation.RootDestination
-import io.github.baba983.nativedo.navigation.buildAppBrowserRoute
 import io.github.baba983.nativedo.ui.theme.NativeDoChromeShape
 import io.github.baba983.nativedo.ui.theme.NativeDoDuration
 import io.github.baba983.nativedo.ui.theme.NativeDoEasing
@@ -88,199 +86,37 @@ import io.github.baba983.nativedo.ui.theme.NativeDoPillShape
 import io.github.baba983.nativedo.ui.theme.NativeDoTheme
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 import io.github.baba983.nativedo.ui.theme.ThemeMode
+import io.github.baba983.nativedo.core.navigation.AppBrowserOpenRequest
+import io.github.baba983.nativedo.core.navigation.AppBrowserPresentationAvailability
+import io.github.baba983.nativedo.core.navigation.AppBrowserPresentationPolicy
+import io.github.baba983.nativedo.core.navigation.AppBrowserPresentationTarget
 import io.github.baba983.nativedo.core.navigation.LinkNavigationDecision
 import io.github.baba983.nativedo.core.navigation.LinkOpenPolicy
 import io.github.baba983.nativedo.core.navigation.openInExternalApp
 import io.github.baba983.nativedo.core.navigation.openInSystemBrowser
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import java.net.URLEncoder
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NativeDoApp() {
-    val context = LocalContext.current
-    val appContainer = remember(context) {
-        (context.applicationContext as NativeDoApplication).appContainer
-    }
-    val sessionState by appContainer.sessionCoordinator.sessionState.collectAsStateWithLifecycle()
-    var themeMode by rememberSaveable { mutableStateOf(ThemeMode.System) }
-    var homeHeaderSearchVisible by rememberSaveable { mutableStateOf(false) }
-    var homeSearchModeActive by rememberSaveable { mutableStateOf(false) }
-    var homeSearchRequestToken by rememberSaveable { mutableIntStateOf(0) }
-    var homeRefreshRequestToken by rememberSaveable { mutableIntStateOf(0) }
-    var rootActionModeSelectionCount by rememberSaveable { mutableIntStateOf(0) }
-    var rootContextualOptionsExpanded by rememberSaveable { mutableStateOf(false) }
-    var topicHeaderTitle by rememberSaveable { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(appContainer.sessionCoordinator) {
-        appContainer.sessionCoordinator.start()
-    }
-
-    NativeDoTheme(themeMode = themeMode) {
-        val navController = rememberNavController()
-        val bulletinHostState = remember { BulletinHostState() }
-        val currentEntry = navController.currentBackStackEntryAsState().value
-        val currentRoute = currentEntry?.destination?.route
-        val cachedSessionSnapshot = appContainer.sessionStore.snapshot()
-        val sessionSnapshot = sessionSnapshotForChrome(sessionState, cachedSessionSnapshot)
-        val profileAvatarLabel = sessionSnapshot?.username
-        val profileAvatarTemplate = sessionSnapshot
-            ?.avatarTemplate
-            ?.takeIf { it.isNotBlank() }
-        val rootPagerState = rememberPagerState(
-            initialPage = RootDestination.bottomTabs.indexOf(RootDestination.start),
-        ) { RootDestination.bottomTabs.size }
-        val coroutineScope = rememberCoroutineScope()
-        val linkOpenPolicy = remember(appContainer) { LinkOpenPolicy(appContainer.baseUrl) }
-        val openInAppBrowser: (String) -> Unit = { browserUrl ->
-            val encoded = URLEncoder.encode(browserUrl, "UTF-8")
-            navController.navigate(buildAppBrowserRoute(encoded))
-        }
-        val onOpenLink: (String) -> Unit = { url ->
-            when (val decision = linkOpenPolicy.resolve(url)) {
-                is LinkNavigationDecision.NativeTopic -> navController.navigate("topic/${decision.topicId}")
-                is LinkNavigationDecision.NativeUser -> navController.navigate("user/${decision.username}")
-                is LinkNavigationDecision.AppBrowser -> openInAppBrowser(decision.url)
-                is LinkNavigationDecision.ExternalApp -> {
-                    val openedInExternalApp = context.openInExternalApp(decision.url)
-                    if (!openedInExternalApp && decision.url.toHttpUrlOrNull() != null) {
-                        openInAppBrowser(decision.url)
-                    }
-                }
-                is LinkNavigationDecision.SystemBrowser -> {
-                    context.openInSystemBrowser(decision.url)
-                }
-            }
-        }
-        val selectedRootRoute = RootDestination.bottomTabs
-            .getOrNull(rootPagerState.currentPage)
-            ?.route
-            ?: RootDestination.start.route
-        val activeRoute = when (currentRoute) {
-            null,
-            RootDestination.rootContainerRoute -> selectedRootRoute
-            else -> currentRoute
-        }
-        val isAppBrowserRoute = currentRoute == APP_BROWSER_ROUTE
-        val isRootRoute = currentRoute == null || currentRoute == RootDestination.rootContainerRoute
-        val rootChromeModel = remember(
-            isRootRoute,
-            activeRoute,
-            homeHeaderSearchVisible,
-            homeSearchModeActive,
-            rootActionModeSelectionCount,
-            rootContextualOptionsExpanded,
-        ) {
-            buildNativeDoRootChromeModel(
-                isRootRoute = isRootRoute,
-                activeRoute = activeRoute,
-                homeHeaderSearchVisible = homeHeaderSearchVisible,
-                isHomeSearchMode = homeSearchModeActive,
-                actionModeSelectionCount = rootActionModeSelectionCount,
-                isContextualOptionsExpanded = rootContextualOptionsExpanded,
-            )
-        }
-
-        LaunchedEffect(isRootRoute, homeSearchModeActive, rootChromeModel.showContextualOptionsAction) {
-            if (!isRootRoute || homeSearchModeActive || !rootChromeModel.showContextualOptionsAction) {
-                rootContextualOptionsExpanded = false
-            }
-        }
-
-        CompositionLocalProvider(LocalBulletinHostState provides bulletinHostState) {
-            NativeDoChromeScaffold(
-                topBar = if (!isAppBrowserRoute) {
-                    {
-                        NativeDoTopBar(
-                            currentRoute = activeRoute,
-                            rootChrome = rootChromeModel,
-                            topicTitleOverride = topicHeaderTitle,
-                            showBack = !isRootRoute,
-                            themeMode = themeMode,
-                            onHomeRefreshClick = { homeRefreshRequestToken += 1 },
-                            onHomeSearchClick = { homeSearchRequestToken += 1 },
-                            onThemeModeSelected = {
-                                themeMode = it
-                                rootContextualOptionsExpanded = false
-                            },
-                            onToggleContextualOptions = {
-                                rootContextualOptionsExpanded = !rootContextualOptionsExpanded
-                            },
-                            onDismissContextualOptions = {
-                                rootContextualOptionsExpanded = false
-                            },
-                            onExitActionMode = {
-                                rootActionModeSelectionCount = 0
-                                rootContextualOptionsExpanded = false
-                            },
-                            onBackClick = { navController.popBackStack() },
-                        )
-                    }
-                } else {
-                    null
-                },
-                bottomBar = if (isRootRoute) {
-                    {
-                        NativeDoBottomBarFade(
-                            modifier = Modifier.align(Alignment.BottomCenter),
-                        )
-                        NativeDoBottomBar(
-                            baseUrl = appContainer.baseUrl,
-                            currentRoute = activeRoute,
-                            modifier = Modifier.align(Alignment.BottomCenter),
-                            profileAvatarLabel = profileAvatarLabel,
-                            profileAvatarTemplate = profileAvatarTemplate,
-                            onHomeRefreshRequest = { homeRefreshRequestToken += 1 },
-                            onNavigate = { route ->
-                                val page = RootDestination.bottomTabs.indexOfFirst { it.route == route }
-                                if (page != -1 && page != rootPagerState.currentPage) {
-                                    coroutineScope.launch {
-                                        rootPagerState.animateScrollToPage(page)
-                                    }
-                                }
-                            },
-                        )
-                    }
-                } else {
-                    null
-                },
-                bulletinHost = {
-                    BulletinHost(
-                        hostState = bulletinHostState,
-                        modifier = Modifier.align(Alignment.TopCenter),
-                    )
-                },
-                overlay = {
-                    if (shouldShowAuthRestoreGate(sessionState)) {
-                        AuthRestoreGate(
-                            snapshot = sessionSnapshot,
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    }
-                },
-            ) { paddingValues ->
-                NativeDoNavHost(
-                    navController = navController,
-                    contentPadding = paddingValues,
-                    rootPagerState = rootPagerState,
-                    homeSearchRequestToken = homeSearchRequestToken,
-                    homeRefreshRequestToken = homeRefreshRequestToken,
-                    onHomeHeaderSearchVisibilityChanged = { homeHeaderSearchVisible = it },
-                    onHomeSearchModeChanged = { homeSearchModeActive = it },
-                    onTopicHeaderTitleChanged = { topicHeaderTitle = it },
-                    onOpenLink = onOpenLink,
-                )
-            }
-        }
-    }
+    AppRoot()
 }
 
 @Composable
-private fun NativeDoTopBar(
+internal fun NativeDoTopBarPlaceholder() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .height(AppTopBarRowMinHeight + (AppTopBarVerticalPadding * 2)),
+    )
+}
+
+@Composable
+internal fun NativeDoTopBar(
     currentRoute: String?,
     rootChrome: NativeDoRootChromeModel,
-    topicTitleOverride: String?,
+    titleOverride: String?,
     showBack: Boolean,
     themeMode: ThemeMode,
     onHomeRefreshClick: () -> Unit,
@@ -353,7 +189,7 @@ private fun NativeDoTopBar(
                         title = resolveNativeDoRootChromeTitle(
                             defaultTitle = topBarTitle(
                                 currentRoute = currentRoute,
-                                topicTitleOverride = topicTitleOverride,
+                                titleOverride = titleOverride,
                             ),
                             actionModeSelectionCount = rootChrome.actionModeSelectionCount,
                         ),
@@ -443,7 +279,7 @@ private fun NativeDoTopBar(
 }
 
 @Composable
-private fun NativeDoBottomBar(
+internal fun NativeDoBottomBar(
     baseUrl: String,
     currentRoute: String?,
     modifier: Modifier = Modifier,
@@ -556,6 +392,73 @@ internal fun shouldRequestHomeRefreshFromTitleTap(
     showBack: Boolean,
 ): Boolean = !showBack && currentRoute == RootDestination.Home.route
 
+internal fun shouldBlockNavigationLayout(
+    currentRoute: String?,
+): Boolean = currentRoute == "login"
+
+internal enum class NativeDoTopBarOwner {
+    Root,
+    Pushed,
+    Browser,
+}
+
+internal fun resolveNativeDoTopBarOwner(
+    currentRoute: String?,
+    overlayState: BrowserHostState = BrowserHostState(),
+    pushedEntryRoutePattern: String? = null,
+): NativeDoTopBarOwner = overlayState.activeTopBarOwner ?: when (pushedEntryRoutePattern) {
+    null -> when (currentRoute) {
+        null,
+        RootDestination.rootContainerRoute -> NativeDoTopBarOwner.Root
+        RootDestination.Search.route -> NativeDoTopBarOwner.Pushed
+        else -> NativeDoTopBarOwner.Pushed
+    }
+    else -> NativeDoTopBarOwner.Pushed
+}
+
+internal fun shouldRenderNativeDoRootTopBar(
+    owner: NativeDoTopBarOwner,
+): Boolean = owner == NativeDoTopBarOwner.Root
+
+internal fun resolveNativeDoRootChromeRoute(
+    currentRoute: String?,
+    selectedRootRoute: String,
+): String? = when (currentRoute) {
+    null,
+    RootDestination.rootContainerRoute -> selectedRootRoute
+    else -> null
+}
+
+internal fun shouldKeepNativeDoRootTopBarInBackground(
+    currentRoute: String?,
+    overlayState: BrowserHostState = BrowserHostState(),
+    isPushedEntryShowing: Boolean = false,
+): Boolean = false
+
+internal fun shouldRenderNativeDoRootTopBarPlaceholder(
+    owner: NativeDoTopBarOwner,
+): Boolean = false
+
+internal fun shouldRenderNativeDoRootBottomBar(
+    owner: NativeDoTopBarOwner,
+    isHomeSearchActive: Boolean = false,
+): Boolean = owner == NativeDoTopBarOwner.Root && !isHomeSearchActive
+
+internal fun shouldKeepNativeDoRootBottomBarInBackground(
+    currentRoute: String?,
+    overlayState: BrowserHostState = BrowserHostState(),
+    isPushedEntryShowing: Boolean = false,
+): Boolean {
+    val isBottomBarRootRoute = currentRoute == null || currentRoute == RootDestination.rootContainerRoute
+    if (!isBottomBarRootRoute) {
+        return false
+    }
+    if (isPushedEntryShowing) {
+        return true
+    }
+    return overlayState.sheetRequest != null
+}
+
 internal fun shouldRequestHomeRefreshFromBottomTabDoubleTap(
     destination: RootDestination,
     currentRoute: String?,
@@ -572,7 +475,7 @@ internal fun shouldRenderProfileAvatarTab(
 }
 
 @Composable
-private fun NativeDoBottomBarFade(
+internal fun NativeDoBottomBarFade(
     modifier: Modifier = Modifier,
 ) {
     val colors = NativeDoThemeExtras.colors
@@ -597,19 +500,18 @@ private fun NativeDoBottomBarFade(
 @Composable
 private fun topBarTitle(
     currentRoute: String?,
-    topicTitleOverride: String?,
-): String = when (currentRoute) {
-    "topic/{topicId}" -> topicRouteTitleOverride(
-        currentRoute = currentRoute,
-        topicTitleOverride = topicTitleOverride,
-    ) ?: stringResource(R.string.screen_topic)
-    RootDestination.Search.route -> stringResource(R.string.tab_search)
-    RootDestination.Profile.route -> stringResource(R.string.tab_profile)
-    "user/{username}" -> stringResource(R.string.tab_profile)
-    "login" -> stringResource(R.string.screen_sign_in)
-    "app-browser?url={url}" -> ""
-    else -> stringResource(R.string.app_name)
-}
+    titleOverride: String?,
+): String = titleOverride
+    ?.takeUnless(String::isBlank)
+    ?: when (currentRoute) {
+        "topic/{topicId}" -> stringResource(R.string.screen_topic)
+        RootDestination.Search.route -> stringResource(R.string.tab_search)
+        RootDestination.Profile.route -> stringResource(R.string.tab_profile)
+        "user/{username}" -> stringResource(R.string.tab_profile)
+        "login" -> stringResource(R.string.screen_sign_in)
+        null -> stringResource(R.string.app_name)
+        else -> stringResource(R.string.app_name)
+    }
 
 internal fun topicRouteTitleOverride(
     currentRoute: String?,

@@ -1,10 +1,13 @@
 package io.github.baba983.nativedo.feature.browser
 
+import androidx.compose.ui.graphics.Color
+import io.github.baba983.nativedo.core.storage.AppBrowserRecentSearchRecord
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
 internal enum class AppBrowserSheet {
     None,
     History,
+    Bookmarks,
     Settings,
 }
 
@@ -17,17 +20,40 @@ internal enum class AppBrowserChromeScene {
     Subpanel,
 }
 
+internal enum class AppBrowserInstantViewActionAvailability {
+    Hidden,
+    Disabled,
+    Enabled,
+}
+
+internal enum class AppBrowserInstantViewPhase {
+    Hidden,
+    Probing,
+    Ready,
+    Unsupported,
+}
+
+internal data class AppBrowserInstantViewUiState(
+    val phase: AppBrowserInstantViewPhase = AppBrowserInstantViewPhase.Hidden,
+    val actionAvailability: AppBrowserInstantViewActionAvailability =
+        AppBrowserInstantViewActionAvailability.Hidden,
+    val isPendingOpen: Boolean = false,
+)
+
 internal data class AppBrowserSearchUiState(
     val isActive: Boolean = false,
     val query: String = "",
     val activeMatchOrdinal: Int = 0,
     val numberOfMatches: Int = 0,
+    val isCounting: Boolean = false,
 )
 
 internal data class AppBrowserAddressUiState(
     val isEditing: Boolean = false,
     val draft: String = "",
     val recentEntries: List<AppBrowserHistoryRecord> = emptyList(),
+    val recentSearches: List<AppBrowserRecentSearchRecord> = emptyList(),
+    val suggestionSections: List<AppBrowserAddressSuggestionSection> = emptyList(),
 )
 
 internal data class AppBrowserChromeModel(
@@ -42,11 +68,15 @@ internal data class AppBrowserChromeModel(
     val progress: Float = 0f,
     val scrollProgress: Float = 0f,
     val isLoadingProgressVisible: Boolean = false,
+    val instantView: AppBrowserInstantViewUiState = AppBrowserInstantViewUiState(),
+    val chromeColor: Color = Color.Unspecified,
+    val isBookmarked: Boolean = false,
     val backHistoryEntries: List<AppBrowserHistoryEntry> = emptyList(),
     val browserHistoryEntries: List<AppBrowserHistoryEntry> = emptyList(),
     val isInSubPanel: Boolean = false,
     val alpha: Float = 0f,
     val translationX: Float = 0f,
+    val headerCollapseProgress: Float = 0f,
     val isHistoryPopupVisible: Boolean = false,
     val isOverflowMenuVisible: Boolean = false,
 )

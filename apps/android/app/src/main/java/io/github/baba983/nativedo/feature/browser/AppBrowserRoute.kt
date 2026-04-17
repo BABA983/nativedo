@@ -1,10 +1,17 @@
 package io.github.baba983.nativedo.feature.browser
 
+import android.app.DownloadManager
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.Color as AndroidColor
 import android.net.Uri
 import android.net.http.SslError
+import android.os.Environment
+import android.webkit.CookieManager
+import android.webkit.PermissionRequest
 import android.webkit.SslErrorHandler
+import android.webkit.URLUtil
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebView
@@ -13,6 +20,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -35,7 +43,11 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -46,6 +58,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,52 +71,106 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.baba983.nativedo.NativeDoApplication
 import io.github.baba983.nativedo.R
+import io.github.baba983.nativedo.core.navigation.AppBrowserOpenRequest
+import io.github.baba983.nativedo.core.navigation.AppBrowserPresentationAvailability
+import io.github.baba983.nativedo.core.navigation.AppBrowserPresentationPolicy
+import io.github.baba983.nativedo.core.navigation.AppBrowserReaderContent
+import io.github.baba983.nativedo.core.navigation.AppBrowserReaderDocument
+import io.github.baba983.nativedo.core.navigation.AppBrowserReaderSupport
+import io.github.baba983.nativedo.core.navigation.AppBrowserPresentationTarget
 import io.github.baba983.nativedo.core.navigation.LinkNavigationDecision
 import io.github.baba983.nativedo.core.navigation.LinkOpenPolicy
 import io.github.baba983.nativedo.core.navigation.openInExternalApp
 import io.github.baba983.nativedo.core.navigation.openInSystemBrowser
+import io.github.baba983.nativedo.core.storage.AppBrowserExternalOpenMode
+import io.github.baba983.nativedo.core.storage.AppBrowserSearchEngine
 import io.github.baba983.nativedo.core.ui.BulletinMessage
 import io.github.baba983.nativedo.core.ui.BulletinTone
 import io.github.baba983.nativedo.core.ui.LocalBulletinHostState
+import io.github.baba983.nativedo.core.ui.RequestErrorCard
+import io.github.baba983.nativedo.core.ui.RequestErrorPresentation
+import io.github.baba983.nativedo.core.ui.requestErrorPresentation
+import io.github.baba983.nativedo.ui.NativeDoPullToRefreshIndicator
+import io.github.baba983.nativedo.ui.theme.NativeDoProvideScreenStyle
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
+import io.github.baba983.nativedo.ui.theme.nativeDoBrowserScreenStyle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AppBrowserRoute(
     url: String,
     onOpenLink: (String) -> Unit,
+    onOpenReader: (AppBrowserReaderContent, AppBrowserOpenRequest?) -> Unit = { _, _ -> },
     onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+    presentationMode: AppBrowserContainerMode = AppBrowserContainerMode.FullRoute,
+    presentationProgress: Float = 1f,
+    topInset: Dp = 0.dp,
+    onSheetFullscreenPreferenceChanged: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
     val appContainer = remember(context) {
         (context.applicationContext as NativeDoApplication).appContainer
     }
-    val linkOpenPolicy = remember(appContainer) { LinkOpenPolicy(appContainer.baseUrl) }
+    val browserPreferences by appContainer.appBrowserPreferenceStore.preferences.collectAsStateWithLifecycle()
+    val linkOpenPolicy = remember(appContainer, browserPreferences) {
+        LinkOpenPolicy(
+            baseUrl = appContainer.baseUrl,
+            restrictedDomains = browserPreferences.restrictedDomains,
+            defaultExternalOpenMode = browserPreferences.defaultExternalOpenMode,
+        )
+    }
+    val browserPresentationPolicy = remember(appContainer) {
+        AppBrowserPresentationPolicy(appContainer.baseUrl)
+    }
     val clipboardManager = LocalClipboardManager.current
     val bulletinHostState = LocalBulletinHostState.current
     val linkCopiedText = stringResource(R.string.app_browser_link_copied)
+    val bookmarkSavedText = stringResource(R.string.app_browser_bookmark_saved_message)
+    val bookmarkRemovedText = stringResource(R.string.app_browser_bookmark_removed_message)
     val colors = NativeDoThemeExtras.colors
+    val rootScreenStyle = NativeDoThemeExtras.screenStyle
+    val browserBookmarks by appContainer.appBrowserBookmarkStore.bookmarks.collectAsStateWithLifecycle()
     val browserHistory by appContainer.appBrowserHistoryStore.history.collectAsStateWithLifecycle()
+    val browserRecentSearches by appContainer.appBrowserRecentSearchStore.recentSearches.collectAsStateWithLifecycle()
     val configuration = LocalConfiguration.current
     val density = LocalDensity.current
+    val view = LocalView.current
     val coroutineScope = rememberCoroutineScope()
     val webViewController = rememberAppBrowserWebViewController()
     val screenWidthPx = remember(configuration.screenWidthDp, density) {
         with(density) { configuration.screenWidthDp.dp.toPx() }.coerceAtLeast(1f)
+    }
+    val topBarPresentationTranslationPx = remember(density) {
+        with(density) { 56.dp.toPx() }
+    }
+    val statusBarInsetDp = remember(view, density) {
+        with(density) {
+            (view.rootWindowInsets?.systemWindowInsetTop ?: 0).toDp()
+        }
+    }
+    val headerCollapseDistancePx = remember(density) {
+        with(density) {
+            (AppBrowserTopBarOverlayHeight - AppBrowserCollapsedTopBarOverlayHeight).toPx()
+        }
     }
     val browserViewModel: AppBrowserViewModel = viewModel(
         key = "app-browser-$url",
@@ -111,21 +178,31 @@ internal fun AppBrowserRoute(
             AppBrowserViewModelFactory(
                 initialUrl = url,
                 baseUrl = appContainer.baseUrl,
+                searchEngine = browserPreferences.searchEngine,
             )
         },
     )
     val browserUiState by browserViewModel.uiState.collectAsStateWithLifecycle()
 
+    LaunchedEffect(browserPreferences.searchEngine) {
+        browserViewModel.updateSearchEngine(browserPreferences.searchEngine)
+    }
+
     var webViewRef by remember(url) { mutableStateOf<AppBrowserWebViewView?>(null) }
     var currentUrl by remember(url) { mutableStateOf(url) }
     var currentPageTitle by remember(url) { mutableStateOf<String?>(null) }
+    val instantViewLoader = remember(url) { AppBrowserInstantViewLoader() }
+    val instantViewUiState = instantViewLoader.uiState
+    var pageThemeColor by remember(url) { mutableStateOf<Color?>(null) }
     var scrollProgress by remember(url) { mutableStateOf(0f) }
+    var headerCollapseState by remember(url) { mutableStateOf(AppBrowserHeaderCollapseState()) }
     var loadProgressState by remember(url) { mutableStateOf(AppBrowserLoadProgressState()) }
     var canGoBack by remember(url) { mutableStateOf(false) }
     var canGoForward by remember(url) { mutableStateOf(false) }
     var isClosing by remember(url) { mutableStateOf(false) }
     var isSwipeGestureActive by remember(url) { mutableStateOf(false) }
     var swipeOffsetPx by remember(url) { mutableStateOf(0f) }
+    var dispatchedFindQuery by remember(url) { mutableStateOf<String?>(null) }
     var entrancePlayed by remember(url) { mutableStateOf(false) }
     val historyVisitMarks = remember(url) { mutableStateListOf<AppBrowserHistoryVisit>() }
     val historyFavicons = remember(url) { mutableStateMapOf<String, Bitmap>() }
@@ -135,7 +212,42 @@ internal fun AppBrowserRoute(
     var cacheSizeBytes by remember { mutableLongStateOf(0L) }
     var pendingFileCallback by remember(url) { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
     var pendingSslRequest by remember(url) { mutableStateOf<PendingSslRequest?>(null) }
+    var pendingWebPermissionRequest by remember(url) { mutableStateOf<PendingWebPermissionRequest?>(null) }
+    var currentPageLoadError by remember(url) { mutableStateOf<AppBrowserPageLoadError?>(null) }
     val routeOffsetPx = remember(url, screenWidthPx) { Animatable(screenWidthPx) }
+    val pullToRefreshState = rememberPullToRefreshState()
+    var isPullRefreshing by remember(url) { mutableStateOf(false) }
+    val permissionRequestLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+    ) { grantResults ->
+        val pendingRequest = pendingWebPermissionRequest
+        if (pendingRequest == null) {
+            return@rememberLauncherForActivityResult
+        }
+        val granted = pendingRequest.requestData.requiredAndroidPermissions.all { permission ->
+            grantResults[permission] == true
+        }
+        if (granted) {
+            pendingRequest.permissionRequest.grant(
+                pendingRequest.requestData.grantableResources.toTypedArray(),
+            )
+            bulletinHostState?.show(
+                BulletinMessage(
+                    title = context.getString(R.string.app_browser_permission_granted),
+                    tone = BulletinTone.Success,
+                ),
+            )
+        } else {
+            pendingRequest.permissionRequest.deny()
+            bulletinHostState?.show(
+                BulletinMessage(
+                    title = context.getString(R.string.app_browser_permission_denied),
+                    tone = BulletinTone.Error,
+                ),
+            )
+        }
+        pendingWebPermissionRequest = null
+    }
     val fileChooserLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult(),
     ) { result ->
@@ -147,14 +259,6 @@ internal fun AppBrowserRoute(
         pendingFileCallback = null
     }
 
-    LaunchedEffect(loadProgressState.isLoading, loadProgressState.displayedProgress) {
-        if (!loadProgressState.isLoading || loadProgressState.displayedProgress >= 0.7f) {
-            return@LaunchedEffect
-        }
-        delay(appBrowserFakeProgressTickDelayMillis)
-        loadProgressState = loadProgressState.advanceFakeTick()
-    }
-
     LaunchedEffect(loadProgressState.actualProgress, loadProgressState.isVisible, loadProgressState.isLoading) {
         if (loadProgressState.isLoading || !loadProgressState.isVisible || loadProgressState.actualProgress < 1f) {
             return@LaunchedEffect
@@ -163,29 +267,119 @@ internal fun AppBrowserRoute(
         loadProgressState = loadProgressState.dismiss()
     }
 
-    LaunchedEffect(screenWidthPx) {
-        if (!entrancePlayed) {
-            entrancePlayed = true
-            routeOffsetPx.snapTo(screenWidthPx)
-            routeOffsetPx.animateTo(
-                targetValue = 0f,
-                animationSpec = tween(
-                    durationMillis = appBrowserRouteEnterDurationMillis,
-                    easing = AppBrowserEaseOutQuint,
-                ),
+    LaunchedEffect(screenWidthPx, presentationMode) {
+        if (presentationMode != AppBrowserContainerMode.FullRoute || entrancePlayed) {
+            return@LaunchedEffect
+        }
+        entrancePlayed = true
+        routeOffsetPx.snapTo(screenWidthPx)
+        routeOffsetPx.animateTo(
+            targetValue = 0f,
+            animationSpec = tween(
+                durationMillis = appBrowserRouteEnterDurationMillis,
+                easing = AppBrowserEaseOutQuint,
+            ),
+        )
+    }
+
+    val currentRouteOffsetPx = if (presentationMode == AppBrowserContainerMode.FullRoute && isSwipeGestureActive) {
+        swipeOffsetPx
+    } else if (presentationMode == AppBrowserContainerMode.FullRoute) {
+        routeOffsetPx.value
+    } else {
+        0f
+    }
+    val routePresentationState = remember(currentRouteOffsetPx, screenWidthPx, presentationMode) {
+        if (presentationMode == AppBrowserContainerMode.FullRoute) {
+            buildAppBrowserRoutePresentationState(
+                offsetPx = currentRouteOffsetPx,
+                screenWidthPx = screenWidthPx,
+            )
+        } else {
+            AppBrowserRoutePresentationState(
+                progress = 1f,
+                translationX = 0f,
+                alpha = 1f,
+                backdropAlpha = 0f,
             )
         }
     }
-
-    val currentRouteOffsetPx = if (isSwipeGestureActive) {
-        swipeOffsetPx
-    } else {
-        routeOffsetPx.value
+    val topBarPresentationState = remember(
+        currentRouteOffsetPx,
+        screenWidthPx,
+        topBarPresentationTranslationPx,
+        presentationMode,
+    ) {
+        if (presentationMode == AppBrowserContainerMode.FullRoute) {
+            buildAppBrowserTopBarPresentationState(
+                offsetPx = currentRouteOffsetPx,
+                screenWidthPx = screenWidthPx,
+                maxTranslationPx = topBarPresentationTranslationPx,
+            )
+        } else {
+            AppBrowserTopBarPresentationState(
+                alpha = 1f,
+                translationX = 0f,
+            )
+        }
     }
-    val routePresentationState = remember(currentRouteOffsetPx, screenWidthPx) {
-        buildAppBrowserRoutePresentationState(
-            offsetPx = currentRouteOffsetPx,
-            screenWidthPx = screenWidthPx,
+    val resolvedTopInset = if (presentationMode == AppBrowserContainerMode.Sheet) {
+        topInset
+    } else {
+        statusBarInsetDp
+    }
+
+    val resolvedPresentationProgress = if (presentationMode == AppBrowserContainerMode.FullRoute) {
+        routePresentationState.progress
+    } else {
+        presentationProgress.coerceIn(0f, 1f)
+    }
+
+    LaunchedEffect(isPullRefreshing, loadProgressState.isLoading, loadProgressState.actualProgress) {
+        if (isPullRefreshing && !loadProgressState.isLoading && loadProgressState.actualProgress >= 1f) {
+            isPullRefreshing = false
+        }
+    }
+    val fallbackChromeColor = remember(colors) {
+        colors.glassBackgroundStrong.copy(alpha = 0.90f)
+    }
+    val resolvedBrowserChromeColor = remember(fallbackChromeColor, pageThemeColor) {
+        pageThemeColor?.let { themeColor ->
+            androidx.compose.ui.graphics.lerp(
+                start = fallbackChromeColor,
+                stop = themeColor,
+                fraction = 0.78f,
+            )
+        } ?: fallbackChromeColor
+    }
+    val resolvedBrowserNavigationColor = remember(colors, resolvedBrowserChromeColor) {
+        androidx.compose.ui.graphics.lerp(
+            start = colors.backgroundBase,
+            stop = resolvedBrowserChromeColor,
+            fraction = 0.68f,
+        ).copy(alpha = 1f)
+    }
+    val animatedBrowserChromeColor by animateColorAsState(
+        targetValue = resolvedBrowserChromeColor,
+        animationSpec = tween(durationMillis = 200),
+        label = "appBrowserChromeColor",
+    )
+    val animatedBrowserNavigationColor by animateColorAsState(
+        targetValue = resolvedBrowserNavigationColor,
+        animationSpec = tween(durationMillis = 200),
+        label = "appBrowserNavigationColor",
+    )
+    val browserScreenStyle = remember(
+        rootScreenStyle,
+        animatedBrowserChromeColor,
+        animatedBrowserNavigationColor,
+        resolvedPresentationProgress,
+    ) {
+        nativeDoBrowserScreenStyle(
+            baseStyle = rootScreenStyle,
+            browserChromeColor = animatedBrowserChromeColor,
+            browserNavigationBarColor = animatedBrowserNavigationColor,
+            presentationProgress = resolvedPresentationProgress,
         )
     }
 
@@ -205,17 +399,33 @@ internal fun AppBrowserRoute(
     val panel = when (browserUiState.sheet) {
         AppBrowserSheet.None -> AppBrowserPanel.Page
         AppBrowserSheet.History -> AppBrowserPanel.History
+        AppBrowserSheet.Bookmarks -> AppBrowserPanel.Bookmarks
         AppBrowserSheet.Settings -> AppBrowserPanel.Settings
     }
     val isSearching = browserUiState.search.isActive
     val searchQuery = browserUiState.search.query
     val searchActiveMatchOrdinal = browserUiState.search.activeMatchOrdinal
     val searchNumberOfMatches = browserUiState.search.numberOfMatches
+    val searchIsCounting = browserUiState.search.isCounting
     val historyPopupExpanded = browserUiState.isHistoryPopupVisible
     val overflowMenuExpanded = browserUiState.isOverflowMenuVisible
+    val headerCollapseEnabled = panel == AppBrowserPanel.Page &&
+        !isSearching &&
+        !browserUiState.address.isEditing &&
+        !historyPopupExpanded &&
+        !overflowMenuExpanded
+    val prefersSheetFullscreen = presentationMode == AppBrowserContainerMode.Sheet &&
+        (panel != AppBrowserPanel.Page || isSearching || browserUiState.address.isEditing)
+    val currentBookmarkUrl = remember(currentUrl) {
+        normalizeAppBrowserBookmarkUrl(currentUrl)
+    }
+    val currentBookmark = remember(browserBookmarks, currentBookmarkUrl) {
+        browserBookmarks.firstOrNull { bookmark -> bookmark.url == currentBookmarkUrl }
+    }
     val chromeTitle = when (panel) {
         AppBrowserPanel.Page -> titleText
         AppBrowserPanel.History -> context.getString(R.string.app_browser_history)
+        AppBrowserPanel.Bookmarks -> context.getString(R.string.app_browser_bookmarks)
         AppBrowserPanel.Settings -> context.getString(R.string.app_browser_settings)
     }
     val chromeSubtitle = if (panel == AppBrowserPanel.Page) subtitleText else null
@@ -239,17 +449,36 @@ internal fun AppBrowserRoute(
             browserHistoryEntries = browserHistory,
         )
     }
+    val addressSuggestionSections = remember(
+        browserUiState.address.draft,
+        currentUrl,
+        currentPageTitle,
+        browserHistory,
+        browserBookmarks,
+        browserRecentSearches,
+    ) {
+        buildAppBrowserAddressSuggestionSections(
+            draft = browserUiState.address.draft,
+            currentUrl = currentUrl,
+            currentTitle = currentPageTitle,
+            historyEntries = browserHistory,
+            bookmarks = browserBookmarks,
+            recentSearches = browserRecentSearches,
+        )
+    }
     val searchPanelState = remember(
         isSearching,
         searchQuery,
         searchActiveMatchOrdinal,
         searchNumberOfMatches,
+        searchIsCounting,
     ) {
         buildAppBrowserSearchPanelState(
             isSearching = isSearching,
             query = searchQuery,
             activeMatchOrdinal = searchActiveMatchOrdinal,
             numberOfMatches = searchNumberOfMatches,
+            isCounting = searchIsCounting,
         )
     }
     val historyScrimAlpha by animateFloatAsState(
@@ -268,12 +497,16 @@ internal fun AppBrowserRoute(
         loadProgressState.displayedProgress,
         scrollProgress,
         loadProgressState.isVisible,
+        instantViewUiState,
+        animatedBrowserChromeColor,
+        currentBookmark?.url,
         backHistoryEntries,
         browserHistoryEntries,
         panel,
         historyPopupExpanded,
         overflowMenuExpanded,
         browserUiState.chromeScene,
+        headerCollapseState.progress,
     ) {
         AppBrowserChromeModel(
             scene = browserUiState.chromeScene,
@@ -287,11 +520,23 @@ internal fun AppBrowserRoute(
             progress = loadProgressState.displayedProgress,
             scrollProgress = scrollProgress,
             isLoadingProgressVisible = loadProgressState.isVisible,
+            instantView = instantViewUiState,
+            chromeColor = animatedBrowserChromeColor,
+            isBookmarked = currentBookmark != null,
             backHistoryEntries = backHistoryEntries,
             browserHistoryEntries = browserHistoryEntries,
             isInSubPanel = panel != AppBrowserPanel.Page,
-            alpha = 1f,
-            translationX = 0f,
+            alpha = if (presentationMode == AppBrowserContainerMode.FullRoute) {
+                topBarPresentationState.alpha
+            } else {
+                1f
+            },
+            translationX = if (presentationMode == AppBrowserContainerMode.FullRoute) {
+                topBarPresentationState.translationX
+            } else {
+                0f
+            },
+            headerCollapseProgress = headerCollapseState.progress,
             isHistoryPopupVisible = historyPopupExpanded,
             isOverflowMenuVisible = overflowMenuExpanded,
         )
@@ -299,6 +544,19 @@ internal fun AppBrowserRoute(
 
     LaunchedEffect(chromeModel) {
         browserViewModel.setChrome(chromeModel)
+    }
+
+    LaunchedEffect(browserRecentSearches, addressSuggestionSections) {
+        browserViewModel.updateAddressSuggestions(
+            recentSearches = browserRecentSearches,
+            suggestionSections = addressSuggestionSections,
+        )
+    }
+
+    LaunchedEffect(prefersSheetFullscreen, presentationMode, onSheetFullscreenPreferenceChanged) {
+        if (presentationMode == AppBrowserContainerMode.Sheet) {
+            onSheetFullscreenPreferenceChanged(prefersSheetFullscreen)
+        }
     }
 
     suspend fun refreshSettingsStorageUsage() {
@@ -319,6 +577,10 @@ internal fun AppBrowserRoute(
         }
         isClosing = true
         coroutineScope.launch {
+            if (presentationMode != AppBrowserContainerMode.FullRoute) {
+                onClose()
+                return@launch
+            }
             if (isSwipeGestureActive) {
                 routeOffsetPx.snapTo(swipeOffsetPx)
                 isSwipeGestureActive = false
@@ -355,6 +617,33 @@ internal fun AppBrowserRoute(
         }
     }
 
+    fun navigateBookmark(entry: AppBrowserBookmarkRecord) {
+        browserViewModel.onAction(AppBrowserAction.CloseSheet)
+        if (entry.url != currentUrl) {
+            webViewController.loadUrl(entry.url)
+        }
+    }
+
+    fun toggleBookmark() {
+        val bookmarkUrl = currentBookmarkUrl ?: return
+        val bookmarkTitle = currentPageTitle
+            ?.trim()
+            ?.takeIf(String::isNotBlank)
+            ?: chromeTitle
+        val bookmarkFavicon = historyFavicons[currentUrl] ?: historyFavicons[bookmarkUrl] ?: webViewRef?.favicon
+        val saved = appContainer.appBrowserBookmarkStore.toggle(
+            url = bookmarkUrl,
+            title = bookmarkTitle,
+            favicon = bookmarkFavicon,
+        )
+        bulletinHostState?.show(
+            BulletinMessage(
+                title = if (saved) bookmarkSavedText else bookmarkRemovedText,
+                tone = BulletinTone.Success,
+            ),
+        )
+    }
+
     fun startSearch() {
         browserViewModel.onAction(AppBrowserAction.StartSearch)
     }
@@ -362,15 +651,8 @@ internal fun AppBrowserRoute(
     fun updateSearchQuery(query: String) {
         browserViewModel.onAction(AppBrowserAction.UpdateSearchQuery(query))
         if (query.isBlank()) {
-            browserViewModel.onAction(
-                AppBrowserAction.UpdateSearchMatches(
-                    activeMatchOrdinal = 0,
-                    numberOfMatches = 0,
-                ),
-            )
+            dispatchedFindQuery = null
             webViewController.clearMatches()
-        } else {
-            webViewController.findAllAsync(query)
         }
     }
 
@@ -383,8 +665,19 @@ internal fun AppBrowserRoute(
     }
 
     fun closeSearch() {
+        dispatchedFindQuery = null
         browserViewModel.onAction(AppBrowserAction.CloseSearch)
         webViewController.clearMatches()
+    }
+
+    val shouldPromoteSheetNavigationToFullRoute: (String) -> Boolean = { requestUrl ->
+        presentationMode == AppBrowserContainerMode.Sheet &&
+            browserPresentationPolicy.resolveTarget(
+                request = AppBrowserOpenRequest(url = requestUrl),
+                availability = AppBrowserPresentationAvailability(
+                    supportsSheetBrowser = true,
+                ),
+            ) == AppBrowserPresentationTarget.FullRoute
     }
 
     val handleNavigation: (String) -> Boolean = { requestUrl ->
@@ -399,15 +692,177 @@ internal fun AppBrowserRoute(
                 val openedInExternalApp = context.openInExternalApp(decision.url)
                 when {
                     openedInExternalApp -> true
-                    decision.url.toHttpUrlOrNull() != null -> false
-                    else -> true
+                    decision.url.toHttpUrlOrNull() == null -> true
+                    shouldPromoteSheetNavigationToFullRoute(decision.url) -> {
+                        onOpenLink(decision.url)
+                        true
+                    }
+                    else -> false
                 }
             }
 
-            is LinkNavigationDecision.AppBrowser -> false
+            is LinkNavigationDecision.AppBrowser -> {
+                if (shouldPromoteSheetNavigationToFullRoute(decision.url)) {
+                    onOpenLink(decision.url)
+                    true
+                } else {
+                    false
+                }
+            }
 
             is LinkNavigationDecision.SystemBrowser -> context.openInSystemBrowser(decision.url)
         }
+    }
+
+    fun handlePopupRequest(request: AppBrowserPopupRequest) {
+        val popupUrl = request.resolvedUrl
+        if (popupUrl.isNullOrBlank()) {
+            bulletinHostState?.show(
+                BulletinMessage(
+                    title = context.getString(R.string.app_browser_popup_blocked),
+                    tone = BulletinTone.Info,
+                ),
+            )
+            return
+        }
+        when (val decision = linkOpenPolicy.resolve(popupUrl)) {
+            is LinkNavigationDecision.NativeTopic,
+            is LinkNavigationDecision.NativeUser -> onOpenLink(popupUrl)
+
+            is LinkNavigationDecision.ExternalApp -> {
+                val opened = context.openInExternalApp(decision.url)
+                if (!opened) {
+                    if (shouldPromoteSheetNavigationToFullRoute(decision.url)) {
+                        onOpenLink(decision.url)
+                    } else {
+                        webViewController.loadUrl(decision.url)
+                    }
+                }
+            }
+
+            is LinkNavigationDecision.AppBrowser -> {
+                if (shouldPromoteSheetNavigationToFullRoute(decision.url)) {
+                    onOpenLink(decision.url)
+                } else {
+                    webViewController.loadUrl(decision.url)
+                }
+            }
+
+            is LinkNavigationDecision.SystemBrowser -> {
+                context.openInSystemBrowser(decision.url)
+            }
+        }
+    }
+
+    fun handleDownloadRequest(request: AppBrowserDownloadRequest) {
+        val downloadManager = context.getSystemService(DownloadManager::class.java)
+        if (downloadManager != null) {
+            val fileName = URLUtil.guessFileName(
+                request.url,
+                request.contentDisposition,
+                request.mimeType,
+            )
+            val downloadRequest = DownloadManager.Request(Uri.parse(request.url))
+                .setTitle(fileName)
+                .setMimeType(request.mimeType)
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                .setAllowedOverMetered(true)
+                .setAllowedOverRoaming(true)
+                .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+            buildAppBrowserDownloadHeaders(
+                cookie = CookieManager.getInstance().getCookie(request.url),
+                userAgent = request.userAgent ?: appContainer.userAgent,
+            ).forEach { (name, value) ->
+                downloadRequest.addRequestHeader(name, value)
+            }
+            runCatching {
+                downloadManager.enqueue(downloadRequest)
+            }.onSuccess {
+                bulletinHostState?.show(
+                    BulletinMessage(
+                        title = context.getString(R.string.app_browser_download_started),
+                        tone = BulletinTone.Success,
+                    ),
+                )
+                return
+            }
+        }
+        val openedInBrowser = context.openInSystemBrowser(request.url)
+        bulletinHostState?.show(
+            BulletinMessage(
+                title = context.getString(
+                    if (openedInBrowser) {
+                        R.string.app_browser_download_opened_in_browser
+                    } else {
+                        R.string.app_browser_download_failed
+                    },
+                ),
+                tone = if (openedInBrowser) BulletinTone.Info else BulletinTone.Error,
+            ),
+        )
+    }
+
+    fun handleWebPermissionRequest(permissionRequest: PermissionRequest?) {
+        val safeRequest = permissionRequest ?: return
+        pendingWebPermissionRequest?.permissionRequest?.deny()
+        val requestData = buildAppBrowserWebPermissionRequestData(safeRequest.resources)
+        if (requestData == null) {
+            safeRequest.deny()
+            bulletinHostState?.show(
+                BulletinMessage(
+                    title = context.getString(R.string.app_browser_permission_unsupported),
+                    tone = BulletinTone.Info,
+                ),
+            )
+            return
+        }
+        val missingPermissions = requestData.requiredAndroidPermissions.filter { permission ->
+            ContextCompat.checkSelfPermission(context, permission) != PackageManager.PERMISSION_GRANTED
+        }
+        if (missingPermissions.isEmpty()) {
+            safeRequest.grant(requestData.grantableResources.toTypedArray())
+            bulletinHostState?.show(
+                BulletinMessage(
+                    title = context.getString(R.string.app_browser_permission_granted),
+                    tone = BulletinTone.Success,
+                ),
+            )
+            return
+        }
+        pendingWebPermissionRequest = PendingWebPermissionRequest(
+            permissionRequest = safeRequest,
+            requestData = requestData,
+        )
+        permissionRequestLauncher.launch(missingPermissions.toTypedArray())
+    }
+
+    fun dismissPageLoadError() {
+        currentPageLoadError = null
+    }
+
+    SideEffect {
+        instantViewLoader.bind(
+            resolveHost = { webViewRef?.asInstantViewResolveHost() },
+            buildReaderContent = ::buildAppBrowserReaderContent,
+            onOpenReader = { content ->
+                onOpenReader(
+                    content,
+                    AppBrowserOpenRequest(
+                        url = currentUrl,
+                        preferredTarget = AppBrowserPresentationTarget.InstantView,
+                        readerSupport = AppBrowserReaderSupport.Supported,
+                    ),
+                )
+            },
+            onUnavailable = {
+                bulletinHostState?.show(
+                    BulletinMessage(
+                        title = context.getString(R.string.app_browser_instant_view_unavailable),
+                        tone = BulletinTone.Info,
+                    ),
+                )
+            },
+        )
     }
 
     fun handleBrowserAction(action: AppBrowserAction) {
@@ -429,10 +884,13 @@ internal fun AppBrowserRoute(
                 browserViewModel.startAddressEditing(
                     currentUrl = currentUrl,
                     recentEntries = browserHistory,
+                    recentSearches = browserRecentSearches,
+                    suggestionSections = addressSuggestionSections,
                 )
             }
 
             AppBrowserAction.OpenHistory,
+            AppBrowserAction.OpenBookmarks,
             AppBrowserAction.OpenSettings,
             AppBrowserAction.CancelAddressEditing,
             AppBrowserAction.DismissSheet,
@@ -445,6 +903,17 @@ internal fun AppBrowserRoute(
 
             AppBrowserAction.CloseSearch -> closeSearch()
             is AppBrowserAction.SubmitAddress -> {
+                val submittedValue = action.value.trim()
+                if (submittedValue.isNotBlank()) {
+                    val resolvedAddress = resolveAppBrowserAddressInput(
+                        value = submittedValue,
+                        baseUrl = appContainer.baseUrl,
+                        searchEngine = browserPreferences.searchEngine,
+                    )
+                    if (resolvedAddress != null && resolvedAddress != submittedValue) {
+                        appContainer.appBrowserRecentSearchStore.recordSearch(submittedValue)
+                    }
+                }
                 browserViewModel.onAction(action)
                 browserViewModel.lastSubmittedAddress?.let(webViewController::loadUrl)
             }
@@ -452,6 +921,27 @@ internal fun AppBrowserRoute(
             is AppBrowserAction.OpenHistoryEntry -> {
                 browserViewModel.onAction(AppBrowserAction.CloseSheet)
                 navigateHistory(action.entry)
+            }
+
+            is AppBrowserAction.ApplyAddressSuggestion -> {
+                when (
+                    val result = applyAppBrowserAddressSuggestion(
+                        suggestion = action.suggestion,
+                        currentDraft = browserUiState.address.draft,
+                        baseUrl = appContainer.baseUrl,
+                        searchEngine = browserPreferences.searchEngine,
+                    )
+                ) {
+                    is AppBrowserAddressSuggestionResult.SubmitAddress -> {
+                        handleBrowserAction(AppBrowserAction.SubmitAddress(result.value))
+                    }
+                    is AppBrowserAddressSuggestionResult.QuickAction -> {
+                        when (result.action) {
+                            AppBrowserAddressQuickAction.CopyCurrentLink -> handleBrowserAction(AppBrowserAction.CopyLink)
+                            AppBrowserAddressQuickAction.ToggleBookmark -> handleBrowserAction(AppBrowserAction.ToggleBookmark)
+                        }
+                    }
+                }
             }
 
             AppBrowserAction.GoForward -> webViewController.goForward()
@@ -469,7 +959,11 @@ internal fun AppBrowserRoute(
                 )
             }
 
+            AppBrowserAction.OpenInstantView -> {
+                instantViewLoader.onOpenRequested()
+            }
             AppBrowserAction.OpenInBrowser -> context.openInSystemBrowser(currentUrl)
+            AppBrowserAction.ToggleBookmark -> toggleBookmark()
             AppBrowserAction.CopyLink -> {
                 clipboardManager.setText(AnnotatedString(currentUrl))
                 bulletinHostState?.show(
@@ -492,6 +986,8 @@ internal fun AppBrowserRoute(
             pendingFileCallback = null
             pendingSslRequest?.handler?.cancel()
             pendingSslRequest = null
+            pendingWebPermissionRequest?.permissionRequest?.deny()
+            pendingWebPermissionRequest = null
             appContainer.cookieSyncBridge.syncFromWebView(appContainer.baseUrl)
         }
     }
@@ -508,19 +1004,47 @@ internal fun AppBrowserRoute(
             browserViewModel.onAction(AppBrowserAction.SetOverflowMenuVisible(false))
         }
     }
+    LaunchedEffect(headerCollapseEnabled) {
+        if (!headerCollapseEnabled) {
+            headerCollapseState = AppBrowserHeaderCollapseState()
+        }
+    }
+    LaunchedEffect(isSearching, searchQuery, currentUrl, loadProgressState.isLoading) {
+        if (!isSearching) {
+            return@LaunchedEffect
+        }
+        if (searchQuery.isBlank()) {
+            dispatchedFindQuery = null
+            webViewController.clearMatches()
+            return@LaunchedEffect
+        }
+        if (loadProgressState.isLoading) {
+            return@LaunchedEffect
+        }
+        delay(appBrowserFindDispatchDebounceMillis)
+        dispatchedFindQuery = searchQuery
+        webViewController.findAllAsync(searchQuery)
+    }
 
-    AppBrowserScreen(
-        uiState = browserUiState,
-        onAction = ::handleBrowserAction,
-        modifier = Modifier
-            .fillMaxSize()
-            .background(colors.backgroundBase)
-            .graphicsLayer {
-                alpha = routePresentationState.alpha
-                translationX = currentRouteOffsetPx
+    NativeDoProvideScreenStyle(screenStyle = browserScreenStyle) {
+        AppBrowserScreen(
+            uiState = browserUiState,
+            chrome = chromeModel,
+            onAction = ::handleBrowserAction,
+            modifier = modifier
+                .fillMaxSize()
+                .background(colors.backgroundBase),
+            sceneModifier = if (presentationMode == AppBrowserContainerMode.FullRoute) {
+                Modifier.graphicsLayer {
+                    alpha = routePresentationState.alpha
+                    translationX = routePresentationState.translationX
+                }
+            } else {
+                Modifier
             },
-        sheetContent = {
-            AnimatedContent(
+            topInset = resolvedTopInset,
+            sheetContent = {
+                AnimatedContent(
                 targetState = panel,
                 transitionSpec = {
                     val isReturningToPage = targetState == AppBrowserPanel.Page
@@ -558,7 +1082,7 @@ internal fun AppBrowserRoute(
                 },
                 label = "appBrowserSubPanel",
                 modifier = Modifier.fillMaxSize(),
-            ) { currentPanel ->
+                ) { currentPanel ->
                 when (currentPanel) {
                     AppBrowserPanel.History -> {
                         Box(
@@ -577,6 +1101,20 @@ internal fun AppBrowserRoute(
                         }
                     }
 
+                    AppBrowserPanel.Bookmarks -> {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(colors.backgroundBase.copy(alpha = 0.98f)),
+                        ) {
+                            AppBrowserBookmarksPanel(
+                                entries = browserBookmarks,
+                                onEntryClick = ::navigateBookmark,
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
+
                     AppBrowserPanel.Settings -> {
                         Box(
                             modifier = Modifier
@@ -585,9 +1123,40 @@ internal fun AppBrowserRoute(
                         ) {
                             AppBrowserSettingsPanel(
                                 historyCount = browserHistory.size,
+                                bookmarkCount = browserBookmarks.size,
                                 cookiesSizeBytes = cookiesSizeBytes,
                                 cacheSizeBytes = cacheSizeBytes,
+                                externalOpenMode = browserPreferences.defaultExternalOpenMode,
+                                searchEngine = browserPreferences.searchEngine,
+                                restrictedDomainCount = browserPreferences.restrictedDomains.size,
+                                onExternalOpenModeClick = {
+                                    val nextMode = when (browserPreferences.defaultExternalOpenMode) {
+                                        AppBrowserExternalOpenMode.InAppBrowser -> AppBrowserExternalOpenMode.SystemBrowser
+                                        AppBrowserExternalOpenMode.SystemBrowser -> AppBrowserExternalOpenMode.InAppBrowser
+                                    }
+                                    appContainer.appBrowserPreferenceStore.setDefaultExternalOpenMode(nextMode)
+                                },
+                                onSearchEngineClick = {
+                                    val nextEngine = when (browserPreferences.searchEngine) {
+                                        AppBrowserSearchEngine.LinuxDo -> AppBrowserSearchEngine.Google
+                                        AppBrowserSearchEngine.Google -> AppBrowserSearchEngine.Bing
+                                        AppBrowserSearchEngine.Bing -> AppBrowserSearchEngine.LinuxDo
+                                    }
+                                    appContainer.appBrowserPreferenceStore.setSearchEngine(nextEngine)
+                                },
+                                onRestrictedDomainsClick = {
+                                    val host = currentUrl.toHttpUrlOrNull()?.host
+                                    if (host != null) {
+                                        val updatedDomains = browserPreferences.restrictedDomains.toMutableSet().apply {
+                                            if (!add(host)) {
+                                                remove(host)
+                                            }
+                                        }
+                                        appContainer.appBrowserPreferenceStore.updateRestrictedDomains(updatedDomains.toList())
+                                    }
+                                },
                                 onOpenHistoryClick = { browserViewModel.onAction(AppBrowserAction.OpenHistory) },
+                                onOpenBookmarksClick = { browserViewModel.onAction(AppBrowserAction.OpenBookmarks) },
                                 onClearHistoryClick = {
                                     appContainer.appBrowserHistoryStore.clearImmediate()
                                     browserViewModel.onAction(AppBrowserAction.OpenHistory)
@@ -620,19 +1189,21 @@ internal fun AppBrowserRoute(
                     }
 
                     AppBrowserPanel.Page -> Box(modifier = Modifier.fillMaxSize())
+                    }
                 }
-            }
-        },
-        overlayContent = {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .graphicsLayer { alpha = routePresentationState.backdropAlpha }
-                    .background(Color.Black),
-            )
+            },
+            overlayContent = {
+                if (presentationMode == AppBrowserContainerMode.FullRoute) {
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .graphicsLayer { alpha = routePresentationState.backdropAlpha }
+                            .background(Color.Black),
+                    )
+                }
 
-            if (historyScrimAlpha > 0f) {
-                Box(
+                if (historyScrimAlpha > 0f) {
+                    Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .graphicsLayer { alpha = historyScrimAlpha }
@@ -644,16 +1215,17 @@ internal fun AppBrowserRoute(
                                 browserViewModel.onAction(AppBrowserAction.SetHistoryPopupVisible(false))
                             },
                         ),
-                )
-            }
+                    )
+                }
 
-            val gestureEnabled = !isClosing &&
-                panel == AppBrowserPanel.Page &&
-                !browserUiState.address.isEditing &&
-                !isSearching &&
-                !historyPopupExpanded
-            if (gestureEnabled) {
-                Box(
+                val gestureEnabled = presentationMode == AppBrowserContainerMode.FullRoute &&
+                    !isClosing &&
+                    panel == AppBrowserPanel.Page &&
+                    !browserUiState.address.isEditing &&
+                    !isSearching &&
+                    !historyPopupExpanded
+                if (gestureEnabled) {
+                    Box(
                     modifier = Modifier
                         .fillMaxHeight()
                         .width(appBrowserSwipeEdgeWidth)
@@ -714,10 +1286,10 @@ internal fun AppBrowserRoute(
                                 },
                             )
                         },
-                )
-            }
+                    )
+                }
 
-            AnimatedVisibility(
+                AnimatedVisibility(
                 visible = searchPanelState.visible,
                 enter = slideInVertically(
                     animationSpec = tween(
@@ -744,8 +1316,8 @@ internal fun AppBrowserRoute(
                     ),
                 ),
                 modifier = Modifier.align(Alignment.BottomCenter),
-            ) {
-                AppBrowserSearchPanel(
+                ) {
+                    AppBrowserSearchPanel(
                     state = searchPanelState,
                     onPrevious = ::searchPrevious,
                     onNext = ::searchNext,
@@ -753,11 +1325,175 @@ internal fun AppBrowserRoute(
                         .fillMaxWidth()
                         .imePadding()
                         .navigationBarsPadding(),
-                )
-            }
-        },
-    ) {
-        AppBrowserWebView(
+                    )
+                }
+            },
+        ) {
+            if (presentationMode == AppBrowserContainerMode.Sheet && panel == AppBrowserPanel.Page) {
+                PullToRefreshBox(
+                    isRefreshing = isPullRefreshing,
+                    onRefresh = {
+                        isPullRefreshing = true
+                        webViewController.reload()
+                    },
+                    state = pullToRefreshState,
+                    modifier = Modifier.fillMaxSize(),
+                    indicator = {
+                        NativeDoPullToRefreshIndicator(
+                            state = pullToRefreshState,
+                            isRefreshing = isPullRefreshing,
+                            modifier = Modifier.align(Alignment.TopCenter),
+                        )
+                    },
+                ) {
+                    AppBrowserWebView(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .imePadding(),
+                        initialUrl = url,
+                        userAgent = appContainer.userAgent,
+                        backgroundColor = colors.backgroundBase,
+                        controller = webViewController,
+                        onWebViewCreated = { webView ->
+                            webViewRef = webView
+                        },
+                        onWebViewReleased = {
+                            webViewRef = null
+                        },
+                        onNavigationRequest = handleNavigation,
+                        onPageStarted = { view, pageUrl, favicon ->
+                            dismissPageLoadError()
+                            pageUrl?.let { currentUrl = it }
+                            currentPageTitle = null
+                            instantViewLoader.onPageStarted(pageUrl)
+                            pageThemeColor = null
+                            scrollProgress = 0f
+                            headerCollapseState = AppBrowserHeaderCollapseState()
+                            dispatchedFindQuery = null
+                            loadProgressState = AppBrowserLoadProgressState().start()
+                            canGoBack = view?.canGoBack() == true
+                            canGoForward = view?.canGoForward() == true
+                            if (favicon != null && !pageUrl.isNullOrBlank()) {
+                                historyFavicons.rememberBest(pageUrl, favicon)
+                            }
+                            recordAppBrowserVisit(
+                                visits = historyVisitMarks,
+                                url = pageUrl,
+                                lastRecordedUrl = lastRecordedUrl,
+                                onRecorded = { recordedUrl, recordedAt ->
+                                    lastRecordedUrl = recordedUrl
+                                    lastRecordedAtMillis = recordedAt
+                                },
+                            )
+                        },
+                        onPageFinished = { view, pageUrl ->
+                            loadProgressState = loadProgressState.finish()
+                            isPullRefreshing = false
+                            canGoBack = view?.canGoBack() == true
+                            canGoForward = view?.canGoForward() == true
+                            val finishedUrl = pageUrl?.takeIf(String::isNotBlank) ?: currentUrl
+                            instantViewLoader.onPageFinished(finishedUrl)
+                            appContainer.appBrowserHistoryStore.recordVisit(
+                                url = finishedUrl,
+                                title = currentPageTitle,
+                                favicon = historyFavicons[finishedUrl] ?: view?.favicon,
+                            )
+                            if (finishedUrl.contains("linux.do")) {
+                                appContainer.cookieSyncBridge.syncFromWebView(finishedUrl)
+                            }
+                            resolveAppBrowserThemeColor(
+                                webView = view,
+                                expectedUrl = finishedUrl,
+                            ) { resolvedColor ->
+                                if (currentUrl == finishedUrl) {
+                                    pageThemeColor = resolvedColor
+                                }
+                            }
+                        },
+                        onProgressChanged = { newProgress ->
+                            val normalizedProgress = newProgress / 100f
+                            loadProgressState = loadProgressState.onActualProgressChanged(normalizedProgress)
+                            instantViewLoader.onPageSnapshotChanged(
+                                pageUrl = currentUrl,
+                                pageProgress = normalizedProgress,
+                            )
+                        },
+                        onTitleChanged = { title ->
+                            currentPageTitle = title
+                                ?.trim()
+                                ?.takeIf(String::isNotBlank)
+                        },
+                        onIconChanged = { iconUrl, icon ->
+                            if (icon != null && iconUrl.isNotBlank()) {
+                                historyFavicons.rememberBest(iconUrl, icon)
+                            }
+                        },
+                        onFindResultChanged = { activeMatchOrdinal, numberOfMatches, isDoneCounting ->
+                            if (
+                                isDoneCounting &&
+                                shouldApplyAppBrowserFindResult(
+                                    isSearching = isSearching,
+                                    visibleQuery = searchQuery,
+                                    dispatchedQuery = dispatchedFindQuery,
+                                )
+                            ) {
+                                browserViewModel.onAction(
+                                    AppBrowserAction.UpdateSearchMatches(
+                                        activeMatchOrdinal = activeMatchOrdinal,
+                                        numberOfMatches = numberOfMatches,
+                                    ),
+                                )
+                            }
+                        },
+                        onScrollSnapshotChanged = { snapshot ->
+                            scrollProgress = snapshot.progress
+                            headerCollapseState = buildAppBrowserHeaderCollapseState(
+                                currentOffsetPx = headerCollapseState.offsetPx,
+                                scrollY = snapshot.scrollY,
+                                deltaY = snapshot.deltaY,
+                                maxCollapseOffsetPx = headerCollapseDistancePx,
+                                isEnabled = headerCollapseEnabled,
+                            )
+                        },
+                        onCanGoBackChanged = { value ->
+                            canGoBack = value
+                        },
+                        onCanGoForwardChanged = { value ->
+                            canGoForward = value
+                        },
+                        onShowFileChooser = { filePathCallback, fileChooserParams ->
+                            pendingFileCallback?.onReceiveValue(null)
+                            pendingFileCallback = filePathCallback
+                            val chooserIntent = fileChooserParams?.createIntent()
+                            if (chooserIntent == null) {
+                                pendingFileCallback?.onReceiveValue(null)
+                                pendingFileCallback = null
+                                return@AppBrowserWebView
+                            }
+                            fileChooserLauncher.launch(chooserIntent)
+                        },
+                        onPopupRequest = ::handlePopupRequest,
+                        onDownloadRequest = ::handleDownloadRequest,
+                        onWebPermissionRequest = ::handleWebPermissionRequest,
+                        onPageLoadError = { error ->
+                            currentPageLoadError = error
+                            isPullRefreshing = false
+                        },
+                        onSslError = { handler, error ->
+                            val safeHandler = handler ?: return@AppBrowserWebView
+                            pendingSslRequest?.handler?.cancel()
+                            pendingSslRequest = PendingSslRequest(
+                                handler = safeHandler,
+                                error = error,
+                            )
+                        },
+                        onSyncCookiesToWebView = {
+                            appContainer.cookieSyncBridge.syncToWebView(appContainer.baseUrl)
+                        },
+                    )
+                }
+            } else {
+                AppBrowserWebView(
             modifier = Modifier
                 .fillMaxSize()
                 .imePadding(),
@@ -773,9 +1509,14 @@ internal fun AppBrowserRoute(
             },
             onNavigationRequest = handleNavigation,
             onPageStarted = { view, pageUrl, favicon ->
+                dismissPageLoadError()
                 pageUrl?.let { currentUrl = it }
                 currentPageTitle = null
+                instantViewLoader.onPageStarted(pageUrl)
+                pageThemeColor = null
                 scrollProgress = 0f
+                headerCollapseState = AppBrowserHeaderCollapseState()
+                dispatchedFindQuery = null
                 loadProgressState = AppBrowserLoadProgressState().start()
                 canGoBack = view?.canGoBack() == true
                 canGoForward = view?.canGoForward() == true
@@ -794,9 +1535,11 @@ internal fun AppBrowserRoute(
             },
             onPageFinished = { view, pageUrl ->
                 loadProgressState = loadProgressState.finish()
+                isPullRefreshing = false
                 canGoBack = view?.canGoBack() == true
                 canGoForward = view?.canGoForward() == true
-                val finishedUrl = pageUrl.orEmpty()
+                val finishedUrl = pageUrl?.takeIf(String::isNotBlank) ?: currentUrl
+                instantViewLoader.onPageFinished(finishedUrl)
                 appContainer.appBrowserHistoryStore.recordVisit(
                     url = finishedUrl,
                     title = currentPageTitle,
@@ -805,9 +1548,22 @@ internal fun AppBrowserRoute(
                 if (finishedUrl.contains("linux.do")) {
                     appContainer.cookieSyncBridge.syncFromWebView(finishedUrl)
                 }
+                resolveAppBrowserThemeColor(
+                    webView = view,
+                    expectedUrl = finishedUrl,
+                ) { resolvedColor ->
+                    if (currentUrl == finishedUrl) {
+                        pageThemeColor = resolvedColor
+                    }
+                }
             },
             onProgressChanged = { newProgress ->
-                loadProgressState = loadProgressState.onActualProgressChanged(newProgress / 100f)
+                val normalizedProgress = newProgress / 100f
+                loadProgressState = loadProgressState.onActualProgressChanged(normalizedProgress)
+                instantViewLoader.onPageSnapshotChanged(
+                    pageUrl = currentUrl,
+                    pageProgress = normalizedProgress,
+                )
             },
             onTitleChanged = { title ->
                 currentPageTitle = title
@@ -820,7 +1576,14 @@ internal fun AppBrowserRoute(
                 }
             },
             onFindResultChanged = { activeMatchOrdinal, numberOfMatches, isDoneCounting ->
-                if (isDoneCounting) {
+                if (
+                    isDoneCounting &&
+                    shouldApplyAppBrowserFindResult(
+                        isSearching = isSearching,
+                        visibleQuery = searchQuery,
+                        dispatchedQuery = dispatchedFindQuery,
+                    )
+                ) {
                     browserViewModel.onAction(
                         AppBrowserAction.UpdateSearchMatches(
                             activeMatchOrdinal = activeMatchOrdinal,
@@ -829,8 +1592,15 @@ internal fun AppBrowserRoute(
                     )
                 }
             },
-            onScrollProgressChanged = { value ->
-                scrollProgress = value
+            onScrollSnapshotChanged = { snapshot ->
+                scrollProgress = snapshot.progress
+                headerCollapseState = buildAppBrowserHeaderCollapseState(
+                    currentOffsetPx = headerCollapseState.offsetPx,
+                    scrollY = snapshot.scrollY,
+                    deltaY = snapshot.deltaY,
+                    maxCollapseOffsetPx = headerCollapseDistancePx,
+                    isEnabled = headerCollapseEnabled,
+                )
             },
             onCanGoBackChanged = { value ->
                 canGoBack = value
@@ -849,6 +1619,13 @@ internal fun AppBrowserRoute(
                 }
                 fileChooserLauncher.launch(chooserIntent)
             },
+            onPopupRequest = ::handlePopupRequest,
+            onDownloadRequest = ::handleDownloadRequest,
+            onWebPermissionRequest = ::handleWebPermissionRequest,
+            onPageLoadError = { error ->
+                currentPageLoadError = error
+                isPullRefreshing = false
+            },
             onSslError = { handler, error ->
                 val safeHandler = handler ?: return@AppBrowserWebView
                 pendingSslRequest?.handler?.cancel()
@@ -860,50 +1637,131 @@ internal fun AppBrowserRoute(
             onSyncCookiesToWebView = {
                 appContainer.cookieSyncBridge.syncToWebView(appContainer.baseUrl)
             },
-        )
-    }
+            )
+            }
+        }
 
-    pendingSslRequest?.let {
-        AlertDialog(
-            onDismissRequest = {
-                it.handler.cancel()
-                pendingSslRequest = null
-            },
-            title = {
-                Text(text = stringResource(R.string.app_browser_ssl_error_title))
-            },
-            text = {
-                Text(
-                    text = buildString {
-                        append(stringResource(R.string.app_browser_ssl_error_message))
-                        it.error?.url?.toString()?.takeIf(String::isNotBlank)?.let { url ->
-                            append("\n\n")
-                            append(url)
+        currentPageLoadError?.let { pageLoadError ->
+            val errorPresentation: RequestErrorPresentation = remember(pageLoadError) {
+                requestErrorPresentation(
+                    rawMessage = pageLoadError.rawMessage,
+                    genericTitle = if (pageLoadError.kind == AppBrowserPageLoadErrorKind.Http) {
+                        "Page couldn't load"
+                    } else {
+                        "Couldn't open page"
+                    },
+                    genericDescription = if (pageLoadError.kind == AppBrowserPageLoadErrorKind.Http) {
+                        buildString {
+                            append("The server returned an error")
+                            pageLoadError.statusCode?.let { code ->
+                                append(" (")
+                                append(code)
+                                pageLoadError.reasonPhrase?.takeIf(String::isNotBlank)?.let { reason ->
+                                    append(" ")
+                                    append(reason)
+                                }
+                                append(")")
+                            }
+                            append(". Try again or open it externally.")
                         }
+                    } else {
+                        "The page failed to load. Try again or open it externally."
                     },
                 )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        it.handler.proceed()
-                        pendingSslRequest = null
-                    },
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(colors.backgroundBase.copy(alpha = 0.96f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = {},
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                androidx.compose.foundation.layout.Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text(text = stringResource(R.string.app_browser_ssl_error_continue))
+                    RequestErrorCard(
+                        presentation = errorPresentation,
+                        onRetry = {
+                            dismissPageLoadError()
+                            webViewController.reload()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    androidx.compose.foundation.layout.Row {
+                        TextButton(
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(pageLoadError.url))
+                                bulletinHostState?.show(
+                                    BulletinMessage(
+                                        title = linkCopiedText,
+                                        tone = BulletinTone.Success,
+                                    ),
+                                )
+                            },
+                        ) {
+                            Text(text = stringResource(R.string.app_browser_copy_link))
+                        }
+                        TextButton(
+                            onClick = {
+                                context.openInSystemBrowser(pageLoadError.url)
+                            },
+                        ) {
+                            Text(text = stringResource(R.string.app_browser_open_in_browser))
+                        }
+                    }
                 }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        it.handler.cancel()
-                        pendingSslRequest = null
-                    },
-                ) {
-                    Text(text = stringResource(R.string.app_browser_ssl_error_cancel))
-                }
-            },
-        )
+            }
+        }
+
+        pendingSslRequest?.let {
+            AlertDialog(
+                onDismissRequest = {
+                    it.handler.cancel()
+                    pendingSslRequest = null
+                },
+                title = {
+                    Text(text = stringResource(R.string.app_browser_ssl_error_title))
+                },
+                text = {
+                    Text(
+                        text = buildString {
+                            append(stringResource(R.string.app_browser_ssl_error_message))
+                            it.error?.url?.toString()?.takeIf(String::isNotBlank)?.let { url ->
+                                append("\n\n")
+                                append(url)
+                            }
+                        },
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            it.handler.proceed()
+                            pendingSslRequest = null
+                        },
+                    ) {
+                        Text(text = stringResource(R.string.app_browser_ssl_error_continue))
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            it.handler.cancel()
+                            pendingSslRequest = null
+                        },
+                    ) {
+                        Text(text = stringResource(R.string.app_browser_ssl_error_cancel))
+                    }
+                },
+            )
+        }
     }
 }
 
@@ -915,11 +1773,11 @@ private fun MutableMap<String, Bitmap>.rememberBest(url: String, icon: Bitmap) {
 }
 
 private fun readAppBrowserHistoryEntries(
-    webView: WebView?,
+    webView: android.webkit.WebView?,
     visits: List<AppBrowserHistoryVisit>,
     favicons: Map<String, Bitmap>,
 ): List<AppBrowserHistoryEntry> {
-    val historyList = webView?.copyBackForwardList() ?: return emptyList()
+    val historyList = webView?.let(android.webkit.WebView::copyBackForwardList) ?: return emptyList()
     val currentIndex = historyList.currentIndex
     if (currentIndex <= 0) {
         return emptyList()
@@ -981,16 +1839,80 @@ private data class PendingSslRequest(
     val error: SslError?,
 )
 
+private data class PendingWebPermissionRequest(
+    val permissionRequest: PermissionRequest,
+    val requestData: AppBrowserWebPermissionRequestData,
+)
+
+private fun resolveAppBrowserThemeColor(
+    webView: AppBrowserWebViewView?,
+    expectedUrl: String,
+    onResolved: (Color?) -> Unit,
+) {
+    if (webView == null || expectedUrl.isBlank()) {
+        onResolved(null)
+        return
+    }
+    webView.evaluateJavascript(appBrowserThemeColorJavascript) { rawValue ->
+        if (webView.url != expectedUrl) {
+            return@evaluateJavascript
+        }
+        onResolved(rawValue.parseAppBrowserThemeColor())
+    }
+}
+
+private fun String?.parseAppBrowserThemeColor(): Color? {
+    val candidate = this
+        ?.trim()
+        ?.takeUnless { value -> value == "null" }
+        ?.removeSurrounding("\"")
+        ?.replace("\\\"", "\"")
+        ?.replace("\\\\", "\\")
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+        ?: return null
+
+    val normalizedCandidate = candidate.lowercase()
+    if (normalizedCandidate.startsWith("rgb(") || normalizedCandidate.startsWith("rgba(")) {
+        val values = normalizedCandidate
+            .substringAfter('(')
+            .substringBeforeLast(')')
+            .split(',')
+            .map(String::trim)
+        if (values.size !in 3..4) {
+            return null
+        }
+        val red = values.getOrNull(0)?.toIntOrNull()?.coerceIn(0, 255) ?: return null
+        val green = values.getOrNull(1)?.toIntOrNull()?.coerceIn(0, 255) ?: return null
+        val blue = values.getOrNull(2)?.toIntOrNull()?.coerceIn(0, 255) ?: return null
+        val alpha = values.getOrNull(3)
+            ?.toFloatOrNull()
+            ?.coerceIn(0f, 1f)
+            ?.let { (it * 255f).toInt() }
+            ?: 255
+        return Color(
+            android.graphics.Color.argb(alpha, red, green, blue),
+        )
+    }
+
+    return runCatching {
+        Color(AndroidColor.parseColor(candidate))
+    }.getOrNull()
+}
+
 private val AppBrowserEaseOutQuint = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
-private val appBrowserSwipeEdgeWidth = 24.dp
-private const val appBrowserRouteEnterDurationMillis = 380
-private const val appBrowserRouteExitDurationMillis = 300
-private const val appBrowserFakeProgressTickDelayMillis = 100L
+private val appBrowserSwipeEdgeWidth = 48.dp
+private const val appBrowserRouteEnterDurationMillis = 280
+private const val appBrowserRouteExitDurationMillis = 250
+private const val appBrowserFindDispatchDebounceMillis = 400L
 private const val appBrowserProgressDismissDelayMillis = 180L
+private const val appBrowserThemeColorJavascript =
+    "(function(){var meta=document.querySelector('meta[name=\"theme-color\" i]');return meta?meta.content:null;})()"
 
 private class AppBrowserViewModelFactory(
     private val initialUrl: String,
     private val baseUrl: String,
+    private val searchEngine: AppBrowserSearchEngine,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -1000,6 +1922,7 @@ private class AppBrowserViewModelFactory(
         return AppBrowserViewModel(
             initialUrl = initialUrl,
             baseUrl = baseUrl,
+            initialSearchEngine = searchEngine,
         ) as T
     }
 }

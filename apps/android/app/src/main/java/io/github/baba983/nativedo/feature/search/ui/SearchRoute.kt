@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
@@ -49,6 +50,7 @@ import io.github.baba983.nativedo.core.ui.requestErrorPresentation
 import io.github.baba983.nativedo.feature.home.ui.TopicListItem
 import io.github.baba983.nativedo.feature.search.data.SearchRepository
 import io.github.baba983.nativedo.feature.search.domain.SearchTopicsUseCase
+import io.github.baba983.nativedo.ui.NativeDoReaderScaffold
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 
 @Composable
@@ -76,18 +78,30 @@ fun SearchRoute(
         appContainer.categoryStore.loadIfNeeded()
     }
 
-    SearchScreen(
-        uiState = uiState,
-        categories = categories,
-        baseUrl = appContainer.baseUrl,
-        onQueryChanged = viewModel::onQueryChanged,
-        onQuerySubmitted = viewModel::onQuerySubmitted,
-        onTopicClick = onTopicClick,
-        onUserClick = onUserClick,
+    NativeDoReaderScaffold(
         modifier = modifier,
-        onCloseRequest = onCloseRequest,
-        autoFocus = autoFocus,
-    )
+        topBar = {
+            SearchSceneTopBar(
+                query = uiState.query,
+                onQueryChanged = viewModel::onQueryChanged,
+                onQuerySubmitted = viewModel::onQuerySubmitted,
+                onCloseRequest = onCloseRequest,
+                autoFocus = autoFocus,
+            )
+        },
+    ) { paddingValues ->
+        SearchResultsContent(
+            uiState = uiState,
+            categories = categories,
+            baseUrl = appContainer.baseUrl,
+            onQuerySubmitted = viewModel::onQuerySubmitted,
+            onTopicClick = onTopicClick,
+            onUserClick = onUserClick,
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues),
+        )
+    }
 }
 
 @Composable
@@ -110,26 +124,15 @@ internal fun rememberSearchViewModel(
 }
 
 @Composable
-internal fun SearchScreen(
-    uiState: SearchUiState,
-    categories: Map<Int, io.github.baba983.nativedo.core.model.CategorySummary>,
-    baseUrl: String,
+internal fun SearchSceneTopBar(
+    query: String,
     onQueryChanged: (String) -> Unit,
     onQuerySubmitted: (String) -> Unit,
-    onTopicClick: (Long) -> Unit,
-    onUserClick: (String) -> Unit,
     modifier: Modifier = Modifier,
     onCloseRequest: (() -> Unit)? = null,
     autoFocus: Boolean = false,
 ) {
     val colors = NativeDoThemeExtras.colors
-    val errorPresentation = uiState.errorMessage?.let {
-        requestErrorPresentation(
-            rawMessage = it,
-            genericTitle = "Couldn't search Linux.do",
-            genericDescription = "Please try again in a moment.",
-        )
-    }
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
     val stickyBackgroundColor = lerp(
@@ -144,55 +147,76 @@ internal fun SearchScreen(
         }
     }
 
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .background(stickyBackgroundColor),
+    ) {
+        HorizontalDivider(
+            modifier = Modifier.align(Alignment.BottomCenter),
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.34f),
+        )
+        NativeDoSearchField(
+            value = query,
+            onValueChange = onQueryChanged,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            placeholder = stringResource(R.string.app_search_placeholder),
+            focusRequester = focusRequester,
+            onSubmit = { onQuerySubmitted(query) },
+            trailingContent = {
+                if (onCloseRequest != null) {
+                    IconButton(
+                        onClick = onCloseRequest,
+                        modifier = Modifier.size(32.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Close,
+                            contentDescription = null,
+                            tint = colors.textSecondary,
+                        )
+                    }
+                } else {
+                    Text(
+                        text = stringResource(R.string.app_search_submit),
+                        modifier = Modifier.clickable { onQuerySubmitted(query) },
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (query.isBlank()) {
+                            colors.textSecondary
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
+                    )
+                }
+            },
+        )
+    }
+}
+
+@Composable
+internal fun SearchResultsContent(
+    uiState: SearchUiState,
+    categories: Map<Int, io.github.baba983.nativedo.core.model.CategorySummary>,
+    baseUrl: String,
+    onQuerySubmitted: (String) -> Unit,
+    onTopicClick: (Long) -> Unit,
+    onUserClick: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val colors = NativeDoThemeExtras.colors
+    val errorPresentation = uiState.errorMessage?.let {
+        requestErrorPresentation(
+            rawMessage = it,
+            genericTitle = "Couldn't search Linux.do",
+            genericDescription = "Please try again in a moment.",
+        )
+    }
+
     Column(
         modifier = modifier.fillMaxSize(),
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(stickyBackgroundColor),
-        ) {
-            HorizontalDivider(
-                modifier = Modifier.align(Alignment.BottomCenter),
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.34f),
-            )
-            NativeDoSearchField(
-                value = uiState.query,
-                onValueChange = onQueryChanged,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                placeholder = stringResource(R.string.app_search_placeholder),
-                focusRequester = focusRequester,
-                onSubmit = { onQuerySubmitted(uiState.query) },
-                trailingContent = {
-                    if (onCloseRequest != null) {
-                        IconButton(
-                            onClick = onCloseRequest,
-                            modifier = Modifier.size(32.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Close,
-                                contentDescription = null,
-                                tint = colors.textSecondary,
-                            )
-                        }
-                    } else {
-                        Text(
-                            text = stringResource(R.string.app_search_submit),
-                            modifier = Modifier.clickable { onQuerySubmitted(uiState.query) },
-                            style = MaterialTheme.typography.labelLarge,
-                            color = if (uiState.query.isBlank()) {
-                                colors.textSecondary
-                            } else {
-                                MaterialTheme.colorScheme.primary
-                            },
-                        )
-                    }
-                },
-            )
-        }
-
         if (uiState.isSearching) {
             CircularProgressIndicator(
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),

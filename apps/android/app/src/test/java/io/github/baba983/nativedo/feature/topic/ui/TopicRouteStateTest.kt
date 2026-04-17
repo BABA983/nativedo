@@ -66,4 +66,33 @@ class TopicRouteStateTest {
 
         assertThat(shouldRefresh).isFalse()
     }
+
+    @Test
+    fun resolveInitialTopicScrollSnapshot_returnsSavedScrollWhenAvailable() {
+        assertThat(
+            resolveInitialTopicScrollSnapshot(
+                TopicScrollSnapshot(
+                    firstVisibleItemIndex = 4,
+                    firstVisibleItemScrollOffset = 320,
+                ),
+            ),
+        ).isEqualTo(
+            TopicScrollSnapshot(
+                firstVisibleItemIndex = 4,
+                firstVisibleItemScrollOffset = 320,
+            ),
+        )
+    }
+
+    @Test
+    fun resolveInitialTopicScrollSnapshot_defaultsToTopWhenMissing() {
+        assertThat(
+            resolveInitialTopicScrollSnapshot(null),
+        ).isEqualTo(
+            TopicScrollSnapshot(
+                firstVisibleItemIndex = 0,
+                firstVisibleItemScrollOffset = 0,
+            ),
+        )
+    }
 }

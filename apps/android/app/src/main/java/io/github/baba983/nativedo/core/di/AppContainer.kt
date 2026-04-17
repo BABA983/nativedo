@@ -19,12 +19,18 @@ import io.github.baba983.nativedo.core.session.SessionCoordinator
 import io.github.baba983.nativedo.core.session.SessionExpiredReason
 import io.github.baba983.nativedo.core.storage.CategoryStore
 import io.github.baba983.nativedo.core.storage.CookieStore
+import io.github.baba983.nativedo.core.storage.AppBrowserPreferenceStore
+import io.github.baba983.nativedo.core.storage.SharedPreferencesAppBrowserBookmarkStorePersistence
 import io.github.baba983.nativedo.core.storage.SharedPreferencesAppBrowserHistoryStorePersistence
+import io.github.baba983.nativedo.core.storage.AppBrowserRecentSearchStore
+import io.github.baba983.nativedo.core.storage.SharedPreferencesAppBrowserPreferenceStorePersistence
+import io.github.baba983.nativedo.core.storage.SharedPreferencesAppBrowserRecentSearchStorePersistence
 import io.github.baba983.nativedo.core.storage.SharedPreferencesCookieStorePersistence
 import io.github.baba983.nativedo.core.storage.SharedPreferencesSessionStorePersistence
 import io.github.baba983.nativedo.core.storage.SharedPreferencesSvgSpriteStorePersistence
 import io.github.baba983.nativedo.core.storage.SessionStore
 import io.github.baba983.nativedo.core.storage.SvgSpriteStore
+import io.github.baba983.nativedo.feature.browser.AppBrowserBookmarkStore
 import io.github.baba983.nativedo.feature.browser.AppBrowserHistoryStore
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -44,7 +50,10 @@ class AppContainer(
     private val appContext = context?.applicationContext
     val userAgent: String = userAgent ?: resolveNativeDoUserAgent(appContext)
     private val cookiePreferences = appContext?.getSharedPreferences(COOKIE_STORE_PREFS, Context.MODE_PRIVATE)
+    private val browserBookmarkPreferences = appContext?.getSharedPreferences(BROWSER_BOOKMARK_PREFS, Context.MODE_PRIVATE)
     private val browserHistoryPreferences = appContext?.getSharedPreferences(BROWSER_HISTORY_PREFS, Context.MODE_PRIVATE)
+    private val browserPreferencePreferences = appContext?.getSharedPreferences(BROWSER_PREFERENCE_PREFS, Context.MODE_PRIVATE)
+    private val browserRecentSearchPreferences = appContext?.getSharedPreferences(BROWSER_RECENT_SEARCH_PREFS, Context.MODE_PRIVATE)
     private val sessionPreferences = appContext?.getSharedPreferences(SESSION_STORE_PREFS, Context.MODE_PRIVATE)
     private val svgSpritePreferences = appContext?.getSharedPreferences(SVG_SPRITE_STORE_PREFS, Context.MODE_PRIVATE)
     val cookieStore: CookieStore = cookiePreferences
@@ -117,6 +126,27 @@ class AppContainer(
             )
         }
         ?: AppBrowserHistoryStore()
+    val appBrowserBookmarkStore: AppBrowserBookmarkStore = browserBookmarkPreferences
+        ?.let { preferences ->
+            AppBrowserBookmarkStore(
+                persistence = SharedPreferencesAppBrowserBookmarkStorePersistence(preferences),
+            )
+        }
+        ?: AppBrowserBookmarkStore()
+    internal val appBrowserPreferenceStore: AppBrowserPreferenceStore = browserPreferencePreferences
+        ?.let { preferences ->
+            AppBrowserPreferenceStore(
+                persistence = SharedPreferencesAppBrowserPreferenceStorePersistence(preferences),
+            )
+        }
+        ?: AppBrowserPreferenceStore()
+    internal val appBrowserRecentSearchStore: AppBrowserRecentSearchStore = browserRecentSearchPreferences
+        ?.let { preferences ->
+            AppBrowserRecentSearchStore(
+                persistence = SharedPreferencesAppBrowserRecentSearchStorePersistence(preferences),
+            )
+        }
+        ?: AppBrowserRecentSearchStore()
     val sessionCoordinator: SessionCoordinator = SessionCoordinator(
         cookieStore = cookieStore,
         sessionStore = sessionStore,
@@ -141,10 +171,13 @@ class AppContainer(
     }
 
     private companion object {
+        const val BROWSER_BOOKMARK_PREFS: String = "nativedo.browser_bookmark_store"
         const val BROWSER_HISTORY_PREFS: String = "nativedo.browser_history_store"
         const val COOKIE_STORE_PREFS: String = "nativedo.cookie_store"
         const val SESSION_STORE_PREFS: String = "nativedo.session_store"
         const val SVG_SPRITE_STORE_PREFS: String = "nativedo.svg_sprite_store"
+        const val BROWSER_PREFERENCE_PREFS: String = "nativedo.browser_preference_store"
+        const val BROWSER_RECENT_SEARCH_PREFS: String = "nativedo.browser_recent_search_store"
     }
 }
 
