@@ -1,6 +1,7 @@
 package io.github.baba983.nativedo.feature.browser
 
 import android.app.DownloadManager
+import android.graphics.Canvas
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -8,6 +9,7 @@ import android.graphics.Color as AndroidColor
 import android.net.Uri
 import android.net.http.SslError
 import android.os.Environment
+import android.view.View
 import android.webkit.CookieManager
 import android.webkit.PermissionRequest
 import android.webkit.SslErrorHandler
@@ -28,23 +30,18 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
@@ -62,16 +59,12 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.Dp
@@ -87,12 +80,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import io.github.baba983.nativedo.NativeDoApplication
 import io.github.baba983.nativedo.R
 import io.github.baba983.nativedo.core.navigation.AppBrowserOpenRequest
-import io.github.baba983.nativedo.core.navigation.AppBrowserPresentationAvailability
-import io.github.baba983.nativedo.core.navigation.AppBrowserPresentationPolicy
 import io.github.baba983.nativedo.core.navigation.AppBrowserReaderContent
 import io.github.baba983.nativedo.core.navigation.AppBrowserReaderDocument
-import io.github.baba983.nativedo.core.navigation.AppBrowserReaderSupport
 import io.github.baba983.nativedo.core.navigation.AppBrowserPresentationTarget
+import io.github.baba983.nativedo.core.navigation.AppBrowserReaderSupport
 import io.github.baba983.nativedo.core.navigation.LinkNavigationDecision
 import io.github.baba983.nativedo.core.navigation.LinkOpenPolicy
 import io.github.baba983.nativedo.core.navigation.openInExternalApp
@@ -105,6 +96,8 @@ import io.github.baba983.nativedo.core.ui.LocalBulletinHostState
 import io.github.baba983.nativedo.core.ui.RequestErrorCard
 import io.github.baba983.nativedo.core.ui.RequestErrorPresentation
 import io.github.baba983.nativedo.core.ui.requestErrorPresentation
+import io.github.baba983.nativedo.ui.BrowserHostMinimizedPreview
+import io.github.baba983.nativedo.ui.buildBrowserHostBrowserPreview
 import io.github.baba983.nativedo.ui.NativeDoPullToRefreshIndicator
 import io.github.baba983.nativedo.ui.theme.NativeDoProvideScreenStyle
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
@@ -112,18 +105,22 @@ import io.github.baba983.nativedo.ui.theme.nativeDoBrowserScreenStyle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun AppBrowserRoute(
+    entryId: Long,
     url: String,
     onOpenLink: (String) -> Unit,
     onOpenReader: (AppBrowserReaderContent, AppBrowserOpenRequest?) -> Unit = { _, _ -> },
+    onMinimize: () -> Unit = {},
     onClose: () -> Unit,
+    onPreviewChanged: (BrowserHostMinimizedPreview) -> Unit = {},
     modifier: Modifier = Modifier,
-    presentationMode: AppBrowserContainerMode = AppBrowserContainerMode.FullRoute,
     presentationProgress: Float = 1f,
     topInset: Dp = 0.dp,
+    isForeground: Boolean = true,
     onSheetFullscreenPreferenceChanged: (Boolean) -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -138,9 +135,6 @@ internal fun AppBrowserRoute(
             defaultExternalOpenMode = browserPreferences.defaultExternalOpenMode,
         )
     }
-    val browserPresentationPolicy = remember(appContainer) {
-        AppBrowserPresentationPolicy(appContainer.baseUrl)
-    }
     val clipboardManager = LocalClipboardManager.current
     val bulletinHostState = LocalBulletinHostState.current
     val linkCopiedText = stringResource(R.string.app_browser_link_copied)
@@ -151,30 +145,17 @@ internal fun AppBrowserRoute(
     val browserBookmarks by appContainer.appBrowserBookmarkStore.bookmarks.collectAsStateWithLifecycle()
     val browserHistory by appContainer.appBrowserHistoryStore.history.collectAsStateWithLifecycle()
     val browserRecentSearches by appContainer.appBrowserRecentSearchStore.recentSearches.collectAsStateWithLifecycle()
-    val configuration = LocalConfiguration.current
     val density = LocalDensity.current
-    val view = LocalView.current
     val coroutineScope = rememberCoroutineScope()
     val webViewController = rememberAppBrowserWebViewController()
-    val screenWidthPx = remember(configuration.screenWidthDp, density) {
-        with(density) { configuration.screenWidthDp.dp.toPx() }.coerceAtLeast(1f)
-    }
-    val topBarPresentationTranslationPx = remember(density) {
-        with(density) { 56.dp.toPx() }
-    }
-    val statusBarInsetDp = remember(view, density) {
-        with(density) {
-            (view.rootWindowInsets?.systemWindowInsetTop ?: 0).toDp()
-        }
-    }
     val headerCollapseDistancePx = remember(density) {
         with(density) {
             (AppBrowserTopBarOverlayHeight - AppBrowserCollapsedTopBarOverlayHeight).toPx()
         }
     }
     val browserViewModel: AppBrowserViewModel = viewModel(
-        key = "app-browser-$url",
-        factory = remember(url, appContainer.baseUrl) {
+        key = "app-browser-$entryId",
+        factory = remember(entryId, url, appContainer.baseUrl) {
             AppBrowserViewModelFactory(
                 initialUrl = url,
                 baseUrl = appContainer.baseUrl,
@@ -188,35 +169,31 @@ internal fun AppBrowserRoute(
         browserViewModel.updateSearchEngine(browserPreferences.searchEngine)
     }
 
-    var webViewRef by remember(url) { mutableStateOf<AppBrowserWebViewView?>(null) }
-    var currentUrl by remember(url) { mutableStateOf(url) }
-    var currentPageTitle by remember(url) { mutableStateOf<String?>(null) }
-    val instantViewLoader = remember(url) { AppBrowserInstantViewLoader() }
+    var webViewRef by remember(entryId) { mutableStateOf<AppBrowserWebViewView?>(null) }
+    var currentUrl by remember(entryId) { mutableStateOf(url) }
+    var currentPageTitle by remember(entryId) { mutableStateOf<String?>(null) }
+    val instantViewLoader = remember(entryId) { AppBrowserInstantViewLoader() }
     val instantViewUiState = instantViewLoader.uiState
-    var pageThemeColor by remember(url) { mutableStateOf<Color?>(null) }
-    var scrollProgress by remember(url) { mutableStateOf(0f) }
-    var headerCollapseState by remember(url) { mutableStateOf(AppBrowserHeaderCollapseState()) }
-    var loadProgressState by remember(url) { mutableStateOf(AppBrowserLoadProgressState()) }
-    var canGoBack by remember(url) { mutableStateOf(false) }
-    var canGoForward by remember(url) { mutableStateOf(false) }
-    var isClosing by remember(url) { mutableStateOf(false) }
-    var isSwipeGestureActive by remember(url) { mutableStateOf(false) }
-    var swipeOffsetPx by remember(url) { mutableStateOf(0f) }
-    var dispatchedFindQuery by remember(url) { mutableStateOf<String?>(null) }
-    var entrancePlayed by remember(url) { mutableStateOf(false) }
-    val historyVisitMarks = remember(url) { mutableStateListOf<AppBrowserHistoryVisit>() }
-    val historyFavicons = remember(url) { mutableStateMapOf<String, Bitmap>() }
-    var lastRecordedUrl by remember(url) { mutableStateOf<String?>(null) }
-    var lastRecordedAtMillis by remember(url) { mutableLongStateOf(0L) }
+    var pageThemeColor by remember(entryId) { mutableStateOf<Color?>(null) }
+    var scrollProgress by remember(entryId) { mutableStateOf(0f) }
+    var headerCollapseState by remember(entryId) { mutableStateOf(AppBrowserHeaderCollapseState()) }
+    var loadProgressState by remember(entryId) { mutableStateOf(AppBrowserLoadProgressState()) }
+    var canGoBack by remember(entryId) { mutableStateOf(false) }
+    var canGoForward by remember(entryId) { mutableStateOf(false) }
+    var isClosing by remember(entryId) { mutableStateOf(false) }
+    var dispatchedFindQuery by remember(entryId) { mutableStateOf<String?>(null) }
+    val historyVisitMarks = remember(entryId) { mutableStateListOf<AppBrowserHistoryVisit>() }
+    val historyFavicons = remember(entryId) { mutableStateMapOf<String, Bitmap>() }
+    var lastRecordedUrl by remember(entryId) { mutableStateOf<String?>(null) }
+    var lastRecordedAtMillis by remember(entryId) { mutableLongStateOf(0L) }
     var cookiesSizeBytes by remember { mutableLongStateOf(0L) }
     var cacheSizeBytes by remember { mutableLongStateOf(0L) }
-    var pendingFileCallback by remember(url) { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
-    var pendingSslRequest by remember(url) { mutableStateOf<PendingSslRequest?>(null) }
-    var pendingWebPermissionRequest by remember(url) { mutableStateOf<PendingWebPermissionRequest?>(null) }
-    var currentPageLoadError by remember(url) { mutableStateOf<AppBrowserPageLoadError?>(null) }
-    val routeOffsetPx = remember(url, screenWidthPx) { Animatable(screenWidthPx) }
+    var pendingFileCallback by remember(entryId) { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
+    var pendingSslRequest by remember(entryId) { mutableStateOf<PendingSslRequest?>(null) }
+    var pendingWebPermissionRequest by remember(entryId) { mutableStateOf<PendingWebPermissionRequest?>(null) }
+    var currentPageLoadError by remember(entryId) { mutableStateOf<AppBrowserPageLoadError?>(null) }
     val pullToRefreshState = rememberPullToRefreshState()
-    var isPullRefreshing by remember(url) { mutableStateOf(false) }
+    var isPullRefreshing by remember(entryId) { mutableStateOf(false) }
     val permissionRequestLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
     ) { grantResults ->
@@ -266,74 +243,8 @@ internal fun AppBrowserRoute(
         delay(appBrowserProgressDismissDelayMillis)
         loadProgressState = loadProgressState.dismiss()
     }
-
-    LaunchedEffect(screenWidthPx, presentationMode) {
-        if (presentationMode != AppBrowserContainerMode.FullRoute || entrancePlayed) {
-            return@LaunchedEffect
-        }
-        entrancePlayed = true
-        routeOffsetPx.snapTo(screenWidthPx)
-        routeOffsetPx.animateTo(
-            targetValue = 0f,
-            animationSpec = tween(
-                durationMillis = appBrowserRouteEnterDurationMillis,
-                easing = AppBrowserEaseOutQuint,
-            ),
-        )
-    }
-
-    val currentRouteOffsetPx = if (presentationMode == AppBrowserContainerMode.FullRoute && isSwipeGestureActive) {
-        swipeOffsetPx
-    } else if (presentationMode == AppBrowserContainerMode.FullRoute) {
-        routeOffsetPx.value
-    } else {
-        0f
-    }
-    val routePresentationState = remember(currentRouteOffsetPx, screenWidthPx, presentationMode) {
-        if (presentationMode == AppBrowserContainerMode.FullRoute) {
-            buildAppBrowserRoutePresentationState(
-                offsetPx = currentRouteOffsetPx,
-                screenWidthPx = screenWidthPx,
-            )
-        } else {
-            AppBrowserRoutePresentationState(
-                progress = 1f,
-                translationX = 0f,
-                alpha = 1f,
-                backdropAlpha = 0f,
-            )
-        }
-    }
-    val topBarPresentationState = remember(
-        currentRouteOffsetPx,
-        screenWidthPx,
-        topBarPresentationTranslationPx,
-        presentationMode,
-    ) {
-        if (presentationMode == AppBrowserContainerMode.FullRoute) {
-            buildAppBrowserTopBarPresentationState(
-                offsetPx = currentRouteOffsetPx,
-                screenWidthPx = screenWidthPx,
-                maxTranslationPx = topBarPresentationTranslationPx,
-            )
-        } else {
-            AppBrowserTopBarPresentationState(
-                alpha = 1f,
-                translationX = 0f,
-            )
-        }
-    }
-    val resolvedTopInset = if (presentationMode == AppBrowserContainerMode.Sheet) {
-        topInset
-    } else {
-        statusBarInsetDp
-    }
-
-    val resolvedPresentationProgress = if (presentationMode == AppBrowserContainerMode.FullRoute) {
-        routePresentationState.progress
-    } else {
-        presentationProgress.coerceIn(0f, 1f)
-    }
+    val resolvedTopInset = topInset
+    val resolvedPresentationProgress = presentationProgress.coerceIn(0f, 1f)
 
     LaunchedEffect(isPullRefreshing, loadProgressState.isLoading, loadProgressState.actualProgress) {
         if (isPullRefreshing && !loadProgressState.isLoading && loadProgressState.actualProgress >= 1f) {
@@ -396,6 +307,7 @@ internal fun AppBrowserRoute(
         }
     val titleText = titleOverride ?: domain
     val subtitleText = domain.takeIf { titleOverride != null }
+    val currentPreviewFavicon = historyFavicons[currentUrl] ?: webViewRef?.favicon
     val panel = when (browserUiState.sheet) {
         AppBrowserSheet.None -> AppBrowserPanel.Page
         AppBrowserSheet.History -> AppBrowserPanel.History
@@ -409,13 +321,8 @@ internal fun AppBrowserRoute(
     val searchIsCounting = browserUiState.search.isCounting
     val historyPopupExpanded = browserUiState.isHistoryPopupVisible
     val overflowMenuExpanded = browserUiState.isOverflowMenuVisible
-    val headerCollapseEnabled = panel == AppBrowserPanel.Page &&
-        !isSearching &&
-        !browserUiState.address.isEditing &&
-        !historyPopupExpanded &&
-        !overflowMenuExpanded
-    val prefersSheetFullscreen = presentationMode == AppBrowserContainerMode.Sheet &&
-        (panel != AppBrowserPanel.Page || isSearching || browserUiState.address.isEditing)
+    val headerCollapseEnabled = false
+    val prefersSheetFullscreen = panel != AppBrowserPanel.Page || isSearching || browserUiState.address.isEditing
     val currentBookmarkUrl = remember(currentUrl) {
         normalizeAppBrowserBookmarkUrl(currentUrl)
     }
@@ -526,16 +433,8 @@ internal fun AppBrowserRoute(
             backHistoryEntries = backHistoryEntries,
             browserHistoryEntries = browserHistoryEntries,
             isInSubPanel = panel != AppBrowserPanel.Page,
-            alpha = if (presentationMode == AppBrowserContainerMode.FullRoute) {
-                topBarPresentationState.alpha
-            } else {
-                1f
-            },
-            translationX = if (presentationMode == AppBrowserContainerMode.FullRoute) {
-                topBarPresentationState.translationX
-            } else {
-                0f
-            },
+            alpha = 1f,
+            translationX = 0f,
             headerCollapseProgress = headerCollapseState.progress,
             isHistoryPopupVisible = historyPopupExpanded,
             isOverflowMenuVisible = overflowMenuExpanded,
@@ -553,10 +452,8 @@ internal fun AppBrowserRoute(
         )
     }
 
-    LaunchedEffect(prefersSheetFullscreen, presentationMode, onSheetFullscreenPreferenceChanged) {
-        if (presentationMode == AppBrowserContainerMode.Sheet) {
-            onSheetFullscreenPreferenceChanged(prefersSheetFullscreen)
-        }
+    LaunchedEffect(prefersSheetFullscreen, onSheetFullscreenPreferenceChanged) {
+        onSheetFullscreenPreferenceChanged(prefersSheetFullscreen)
     }
 
     suspend fun refreshSettingsStorageUsage() {
@@ -576,24 +473,7 @@ internal fun AppBrowserRoute(
             return
         }
         isClosing = true
-        coroutineScope.launch {
-            if (presentationMode != AppBrowserContainerMode.FullRoute) {
-                onClose()
-                return@launch
-            }
-            if (isSwipeGestureActive) {
-                routeOffsetPx.snapTo(swipeOffsetPx)
-                isSwipeGestureActive = false
-            }
-            routeOffsetPx.animateTo(
-                targetValue = screenWidthPx,
-                animationSpec = tween(
-                    durationMillis = durationMillis,
-                    easing = AppBrowserEaseOutQuint,
-                ),
-            )
-            onClose()
-        }
+        onClose()
     }
 
     fun navigateBack() {
@@ -622,6 +502,25 @@ internal fun AppBrowserRoute(
         if (entry.url != currentUrl) {
             webViewController.loadUrl(entry.url)
         }
+    }
+
+    fun scrubBrowserScroll(deltaFraction: Float) {
+        val webView = webViewRef ?: return
+        val scrollableHeight = (webView.verticalScrollRange - webView.verticalScrollExtent)
+            .coerceAtLeast(0)
+        if (scrollableHeight == 0) {
+            return
+        }
+        val currentProgress = (webView.scrollY.toFloat() / scrollableHeight.toFloat())
+            .coerceIn(0f, 1f)
+        val targetProgress = buildAppBrowserScrubbedProgress(
+            currentProgress = currentProgress,
+            deltaFraction = deltaFraction,
+        )
+        webView.scrollTo(
+            webView.scrollX,
+            (scrollableHeight * targetProgress).toInt().coerceIn(0, scrollableHeight),
+        )
     }
 
     fun toggleBookmark() {
@@ -670,16 +569,6 @@ internal fun AppBrowserRoute(
         webViewController.clearMatches()
     }
 
-    val shouldPromoteSheetNavigationToFullRoute: (String) -> Boolean = { requestUrl ->
-        presentationMode == AppBrowserContainerMode.Sheet &&
-            browserPresentationPolicy.resolveTarget(
-                request = AppBrowserOpenRequest(url = requestUrl),
-                availability = AppBrowserPresentationAvailability(
-                    supportsSheetBrowser = true,
-                ),
-            ) == AppBrowserPresentationTarget.FullRoute
-    }
-
     val handleNavigation: (String) -> Boolean = { requestUrl ->
         when (val decision = linkOpenPolicy.resolve(requestUrl)) {
             is LinkNavigationDecision.NativeTopic,
@@ -693,22 +582,11 @@ internal fun AppBrowserRoute(
                 when {
                     openedInExternalApp -> true
                     decision.url.toHttpUrlOrNull() == null -> true
-                    shouldPromoteSheetNavigationToFullRoute(decision.url) -> {
-                        onOpenLink(decision.url)
-                        true
-                    }
                     else -> false
                 }
             }
 
-            is LinkNavigationDecision.AppBrowser -> {
-                if (shouldPromoteSheetNavigationToFullRoute(decision.url)) {
-                    onOpenLink(decision.url)
-                    true
-                } else {
-                    false
-                }
-            }
+            is LinkNavigationDecision.AppBrowser -> false
 
             is LinkNavigationDecision.SystemBrowser -> context.openInSystemBrowser(decision.url)
         }
@@ -732,21 +610,11 @@ internal fun AppBrowserRoute(
             is LinkNavigationDecision.ExternalApp -> {
                 val opened = context.openInExternalApp(decision.url)
                 if (!opened) {
-                    if (shouldPromoteSheetNavigationToFullRoute(decision.url)) {
-                        onOpenLink(decision.url)
-                    } else {
-                        webViewController.loadUrl(decision.url)
-                    }
-                }
-            }
-
-            is LinkNavigationDecision.AppBrowser -> {
-                if (shouldPromoteSheetNavigationToFullRoute(decision.url)) {
-                    onOpenLink(decision.url)
-                } else {
                     webViewController.loadUrl(decision.url)
                 }
             }
+
+            is LinkNavigationDecision.AppBrowser -> webViewController.loadUrl(decision.url)
 
             is LinkNavigationDecision.SystemBrowser -> {
                 context.openInSystemBrowser(decision.url)
@@ -840,6 +708,20 @@ internal fun AppBrowserRoute(
         currentPageLoadError = null
     }
 
+    fun publishPreview(
+        snapshot: Bitmap? = null,
+    ) {
+        onPreviewChanged(
+            buildBrowserHostBrowserPreview(
+                url = currentUrl,
+                title = titleText,
+                subtitle = subtitleText,
+                favicon = currentPreviewFavicon,
+                snapshot = snapshot,
+            ),
+        )
+    }
+
     SideEffect {
         instantViewLoader.bind(
             resolveHost = { webViewRef?.asInstantViewResolveHost() },
@@ -879,6 +761,10 @@ internal fun AppBrowserRoute(
             }
 
             AppBrowserAction.CloseBrowser -> requestClose()
+            AppBrowserAction.MinimizeBrowser -> {
+                publishPreview()
+                onMinimize()
+            }
             AppBrowserAction.StartAddressEditing,
             AppBrowserAction.OpenAddressSheet -> {
                 browserViewModel.startAddressEditing(
@@ -976,7 +862,7 @@ internal fun AppBrowserRoute(
         }
     }
 
-    BackHandler {
+    BackHandler(enabled = isForeground) {
         handleBrowserAction(AppBrowserAction.NavigateBack)
     }
 
@@ -1025,6 +911,14 @@ internal fun AppBrowserRoute(
         dispatchedFindQuery = searchQuery
         webViewController.findAllAsync(searchQuery)
     }
+    LaunchedEffect(
+        currentUrl,
+        titleText,
+        subtitleText,
+        currentPreviewFavicon?.generationId,
+    ) {
+        publishPreview()
+    }
 
     NativeDoProvideScreenStyle(screenStyle = browserScreenStyle) {
         AppBrowserScreen(
@@ -1034,15 +928,9 @@ internal fun AppBrowserRoute(
             modifier = modifier
                 .fillMaxSize()
                 .background(colors.backgroundBase),
-            sceneModifier = if (presentationMode == AppBrowserContainerMode.FullRoute) {
-                Modifier.graphicsLayer {
-                    alpha = routePresentationState.alpha
-                    translationX = routePresentationState.translationX
-                }
-            } else {
-                Modifier
-            },
+            sceneModifier = Modifier,
             topInset = resolvedTopInset,
+            onScrollScrub = ::scrubBrowserScroll,
             sheetContent = {
                 AnimatedContent(
                 targetState = panel,
@@ -1193,15 +1081,6 @@ internal fun AppBrowserRoute(
                 }
             },
             overlayContent = {
-                if (presentationMode == AppBrowserContainerMode.FullRoute) {
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .graphicsLayer { alpha = routePresentationState.backdropAlpha }
-                            .background(Color.Black),
-                    )
-                }
-
                 if (historyScrimAlpha > 0f) {
                     Box(
                     modifier = Modifier
@@ -1215,77 +1094,6 @@ internal fun AppBrowserRoute(
                                 browserViewModel.onAction(AppBrowserAction.SetHistoryPopupVisible(false))
                             },
                         ),
-                    )
-                }
-
-                val gestureEnabled = presentationMode == AppBrowserContainerMode.FullRoute &&
-                    !isClosing &&
-                    panel == AppBrowserPanel.Page &&
-                    !browserUiState.address.isEditing &&
-                    !isSearching &&
-                    !historyPopupExpanded
-                if (gestureEnabled) {
-                    Box(
-                    modifier = Modifier
-                        .fillMaxHeight()
-                        .width(appBrowserSwipeEdgeWidth)
-                        .align(Alignment.CenterStart)
-                        .pointerInput(screenWidthPx, gestureEnabled) {
-                            var velocityTracker = VelocityTracker()
-                            detectHorizontalDragGestures(
-                                onDragStart = { offset ->
-                                    velocityTracker = VelocityTracker()
-                                    velocityTracker.addPosition(0L, offset)
-                                    swipeOffsetPx = currentRouteOffsetPx
-                                    isSwipeGestureActive = true
-                                },
-                                onHorizontalDrag = { change, dragAmount ->
-                                    change.consume()
-                                    velocityTracker.addPosition(change.uptimeMillis, change.position)
-                                    swipeOffsetPx = (swipeOffsetPx + dragAmount).coerceIn(0f, screenWidthPx)
-                                },
-                                onDragCancel = {
-                                    val settle = buildAppBrowserSwipeSettle(
-                                        currentOffsetPx = swipeOffsetPx,
-                                        velocityPxPerSecond = 0f,
-                                        screenWidthPx = screenWidthPx,
-                                    )
-                                    coroutineScope.launch {
-                                        routeOffsetPx.snapTo(swipeOffsetPx)
-                                        isSwipeGestureActive = false
-                                        routeOffsetPx.animateTo(
-                                            targetValue = settle.targetOffsetPx,
-                                            animationSpec = tween(
-                                                durationMillis = settle.durationMillis,
-                                                easing = AppBrowserEaseOutQuint,
-                                            ),
-                                        )
-                                    }
-                                },
-                                onDragEnd = {
-                                    val settle = buildAppBrowserSwipeSettle(
-                                        currentOffsetPx = swipeOffsetPx,
-                                        velocityPxPerSecond = velocityTracker.calculateVelocity().x,
-                                        screenWidthPx = screenWidthPx,
-                                    )
-                                    if (settle.shouldDismiss) {
-                                        requestClose(durationMillis = settle.durationMillis)
-                                    } else {
-                                        coroutineScope.launch {
-                                            routeOffsetPx.snapTo(swipeOffsetPx)
-                                            isSwipeGestureActive = false
-                                            routeOffsetPx.animateTo(
-                                                targetValue = 0f,
-                                                animationSpec = tween(
-                                                    durationMillis = settle.durationMillis,
-                                                    easing = AppBrowserEaseOutQuint,
-                                                ),
-                                            )
-                                        }
-                                    }
-                                },
-                            )
-                        },
                     )
                 }
 
@@ -1329,7 +1137,7 @@ internal fun AppBrowserRoute(
                 }
             },
         ) {
-            if (presentationMode == AppBrowserContainerMode.Sheet && panel == AppBrowserPanel.Page) {
+            if (panel == AppBrowserPanel.Page) {
                 PullToRefreshBox(
                     isRefreshing = isPullRefreshing,
                     onRefresh = {
@@ -1409,6 +1217,9 @@ internal fun AppBrowserRoute(
                                     pageThemeColor = resolvedColor
                                 }
                             }
+                            publishPreview(
+                                snapshot = captureAppBrowserPreviewBitmap(view),
+                            )
                         },
                         onProgressChanged = { newProgress ->
                             val normalizedProgress = newProgress / 100f
@@ -1556,6 +1367,9 @@ internal fun AppBrowserRoute(
                         pageThemeColor = resolvedColor
                     }
                 }
+                publishPreview(
+                    snapshot = captureAppBrowserPreviewBitmap(view),
+                )
             },
             onProgressChanged = { newProgress ->
                 val normalizedProgress = newProgress / 100f
@@ -1900,9 +1714,43 @@ private fun String?.parseAppBrowserThemeColor(): Color? {
     }.getOrNull()
 }
 
-private val AppBrowserEaseOutQuint = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)
-private val appBrowserSwipeEdgeWidth = 48.dp
-private const val appBrowserRouteEnterDurationMillis = 280
+private fun captureAppBrowserPreviewBitmap(
+    webView: AppBrowserWebViewView?,
+): Bitmap? = captureScaledViewBitmap(
+    view = webView,
+    maxWidthPx = 720,
+    maxHeightPx = 1280,
+)
+
+private fun captureScaledViewBitmap(
+    view: View?,
+    maxWidthPx: Int,
+    maxHeightPx: Int,
+): Bitmap? {
+    val safeView = view ?: return null
+    val sourceWidth = safeView.width.takeIf { it > 0 } ?: safeView.measuredWidth
+    val sourceHeight = safeView.height.takeIf { it > 0 } ?: safeView.measuredHeight
+    if (sourceWidth <= 0 || sourceHeight <= 0) {
+        return null
+    }
+    val scale = minOf(
+        1f,
+        maxWidthPx.toFloat() / sourceWidth.toFloat(),
+        maxHeightPx.toFloat() / sourceHeight.toFloat(),
+    )
+    val targetWidth = (sourceWidth * scale).roundToInt().coerceAtLeast(1)
+    val targetHeight = (sourceHeight * scale).roundToInt().coerceAtLeast(1)
+    val bitmap = Bitmap.createBitmap(
+        targetWidth,
+        targetHeight,
+        Bitmap.Config.ARGB_8888,
+    )
+    val canvas = Canvas(bitmap)
+    canvas.scale(scale, scale)
+    safeView.draw(canvas)
+    return bitmap
+}
+
 private const val appBrowserRouteExitDurationMillis = 250
 private const val appBrowserFindDispatchDebounceMillis = 400L
 private const val appBrowserProgressDismissDelayMillis = 180L

@@ -41,7 +41,7 @@ import io.github.baba983.nativedo.ui.theme.NativeDoSpacing
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 
 private val NativeDoSearchFieldHeight = 48.dp
-private val NativeDoSearchFieldIconSize = 18.dp
+private val NativeDoSearchFieldIconSize = 22.dp
 
 @Composable
 fun NativeDoSearchField(
@@ -118,7 +118,7 @@ fun NativeDoSearchField(
                 ) {
                     Text(
                         text = placeholder,
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodyLarge,
                         color = colors.textSecondary,
                     )
                 }
@@ -127,7 +127,7 @@ fun NativeDoSearchField(
                     readOnlyText?.let { resolvedReadOnlyText ->
                         Text(
                             text = resolvedReadOnlyText,
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodyLarge,
                             color = colors.textPrimary,
                             maxLines = 1,
                         )
@@ -147,7 +147,7 @@ fun NativeDoSearchField(
                             ),
                         enabled = enabled,
                         singleLine = true,
-                        textStyle = MaterialTheme.typography.bodyMedium.copy(
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(
                             color = colors.textPrimary,
                         ),
                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),

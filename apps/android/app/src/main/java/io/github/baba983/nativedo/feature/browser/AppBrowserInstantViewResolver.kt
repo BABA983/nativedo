@@ -3,7 +3,6 @@ package io.github.baba983.nativedo.feature.browser
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
-import android.util.Base64
 import android.view.ViewGroup
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -13,14 +12,17 @@ import android.widget.FrameLayout
 import io.github.baba983.nativedo.R
 import io.github.baba983.nativedo.core.navigation.AppBrowserReaderBlock
 import io.github.baba983.nativedo.core.navigation.AppBrowserReaderDocument
+import io.github.baba983.nativedo.core.navigation.flattenBodyText
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import org.json.JSONArray
-import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.nio.charset.Charset
 import java.nio.charset.StandardCharsets
+import java.util.Base64
 
 internal interface AppBrowserInstantViewResolveHost {
     val context: Context
@@ -146,6 +148,10 @@ internal class AppBrowserInstantViewResolver(
                 html = sanitizedHtml,
                 pageUrl = expectedUrl,
             )?.resolveArchiveBackedReaderMedia(archiveSnapshot)
+                ?.takeIf { document ->
+                    normalizeAppBrowserReaderBodyText(document.flattenBodyText()).length >=
+                        appBrowserInstantViewHtmlFallbackMinBodyLength
+                }
             if (extractedFromHtml != null) {
                 onResolved(extractedFromHtml)
                 return@hiddenExtraction
@@ -306,13 +312,15 @@ internal tailrec fun Context.findActivity(): Activity? {
     }
 }
 
+private val appBrowserJavascriptStringJson = Json
+
 internal fun String?.parseAppBrowserJavascriptString(): String? {
     val candidate = this
         ?.trim()
         ?.takeUnless { value -> value == "null" }
         ?: return null
     return runCatching {
-        JSONArray("[$candidate]").optString(0)
+        appBrowserJavascriptStringJson.decodeFromString<String>(candidate)
     }.getOrNull()
 }
 
@@ -431,8 +439,8 @@ internal fun buildAppBrowserInstantViewBootstrapHtml(
           <title>NativeDo Instant View</title>
           <script>
             window.NativeDoInstantViewConfig = {
-              pageUrl: ${JSONObject.quote(pageUrl)},
-              indexUrl: ${JSONObject.quote(indexUrl.orEmpty())}
+              pageUrl: ${appBrowserJavascriptStringJson.encodeToString(pageUrl)},
+              indexUrl: ${appBrowserJavascriptStringJson.encodeToString(indexUrl.orEmpty())}
             };
           </script>
           <script src="${domPurifyUrl.orEmpty()}"></script>
@@ -696,10 +704,7 @@ private fun decodeAppBrowserMhtmlBodyToBytes(
     return when {
         transferEncoding.equals("base64", ignoreCase = true) -> {
             runCatching {
-                Base64.decode(
-                    body.filterNot { it.isWhitespace() },
-                    Base64.DEFAULT,
-                )
+                Base64.getDecoder().decode(body.filterNot { it.isWhitespace() })
             }.getOrNull()
         }
 
@@ -870,7 +875,7 @@ internal fun resolveAppBrowserArchiveImageDataUrl(
     val resource = snapshot.resourcesByUrl[normalizedUrl]
         ?.takeIf { it.mimeType.startsWith("image/", ignoreCase = true) }
         ?: return null
-    val encoded = Base64.encodeToString(resource.data, Base64.NO_WRAP)
+    val encoded = Base64.getEncoder().encodeToString(resource.data)
     return "data:${resource.mimeType};base64,$encoded"
 }
 
@@ -967,6 +972,7 @@ private fun Char.isAppBrowserHexDigit(): Boolean {
     return this in '0'..'9' || this in 'a'..'f' || this in 'A'..'F'
 }
 
+private const val appBrowserInstantViewHtmlFallbackMinBodyLength = 80
 internal const val appBrowserInstantViewHiddenExtractionTimeoutMillis = 1_500L
 internal const val appBrowserInstantViewHtmlJavascript =
     "(function(){return document.documentElement?document.documentElement.outerHTML:null;})()"

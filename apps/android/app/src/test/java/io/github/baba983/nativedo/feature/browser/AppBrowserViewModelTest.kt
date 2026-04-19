@@ -225,6 +225,16 @@ class AppBrowserViewModelTest {
     }
 
     @Test
+    fun onAction_minimizeBrowser_keepsCurrentUiStateStable() {
+        val viewModel = AppBrowserViewModel(initialUrl = "https://linux.do")
+        viewModel.onAction(AppBrowserAction.OpenHistory)
+
+        viewModel.onAction(AppBrowserAction.MinimizeBrowser)
+
+        assertThat(viewModel.uiState.value.sheet).isEqualTo(AppBrowserSheet.History)
+    }
+
+    @Test
     fun onAction_submitAddress_plainTextConvertsToSearchQueryAndStopsEditing() {
         val viewModel = AppBrowserViewModel(initialUrl = "https://linux.do")
         viewModel.startAddressEditing(

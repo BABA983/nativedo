@@ -456,7 +456,7 @@ internal fun shouldKeepNativeDoRootBottomBarInBackground(
     if (isPushedEntryShowing) {
         return true
     }
-    return overlayState.sheetRequest != null
+    return overlayState.activeTopBarOwner != null
 }
 
 internal fun shouldRequestHomeRefreshFromBottomTabDoubleTap(

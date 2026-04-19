@@ -43,6 +43,7 @@
     <string name="app_browser_instant_view_unavailable">Instant View isn’t available for this page yet</string>
     <string name="app_browser_bookmarks">Bookmarks</string>
     <string name="app_browser_settings">Settings</string>
+    <string name="app_browser_minimize">Minimize</string>
     <string name="app_browser_close">Close</string>
     <string name="app_browser_back">Back</string>
     <string name="app_browser_search_back">Back from search</string>

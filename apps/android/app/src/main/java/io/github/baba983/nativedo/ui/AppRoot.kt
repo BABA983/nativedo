@@ -1,5 +1,7 @@
 package io.github.baba983.nativedo.ui
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -7,12 +9,18 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
@@ -36,8 +44,16 @@ import io.github.baba983.nativedo.feature.browser.AppBrowserSheetContainer
 import io.github.baba983.nativedo.navigation.NativeDoNavHost
 import io.github.baba983.nativedo.navigation.RootDestination
 import io.github.baba983.nativedo.ui.theme.NativeDoTheme
+import io.github.baba983.nativedo.ui.theme.NativeDoEasing
 import io.github.baba983.nativedo.ui.theme.ThemeMode
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+
+private enum class BrowserTabsManagerMode {
+    Hidden,
+    Entering,
+    Visible,
+    Exiting,
+}
 
 @Composable
 internal fun AppRoot() {
@@ -55,6 +71,8 @@ internal fun AppRoot() {
     }
 
     NativeDoTheme(themeMode = themeMode) {
+        val configuration = LocalConfiguration.current
+        val density = LocalDensity.current
         val navController = rememberNavController()
         val openLogin: () -> Unit = {
             if (navController.currentDestination?.route != "login") {
@@ -69,6 +87,16 @@ internal fun AppRoot() {
         val cachedSessionSnapshot = appContainer.sessionStore.snapshot()
         val sessionSnapshot = sessionSnapshotForChrome(sessionState, cachedSessionSnapshot)
         var browserHostState by remember { mutableStateOf(BrowserHostState()) }
+        var browserTabsManagerMode by remember { mutableStateOf(BrowserTabsManagerMode.Hidden) }
+        var nextBrowserTabsTransitionId by rememberSaveable { mutableLongStateOf(1L) }
+        var browserTabsTransitionRequest by remember { mutableStateOf<BrowserTabsTransitionRequest?>(null) }
+        val browserTabsTransitionProgress = remember { Animatable(0f) }
+        var pendingManagerRestoreSessionId by remember { mutableStateOf<Long?>(null) }
+        var shouldCloseAllManagerSessions by remember { mutableStateOf(false) }
+        val activePreviewFrames = remember { mutableStateMapOf<Long, BrowserTabsPreviewFrame>() }
+        val dockPreviewFrames = remember { mutableStateMapOf<Long, BrowserTabsPreviewFrame>() }
+        val managerPreviewFrames = remember { mutableStateMapOf<Long, BrowserTabsPreviewFrame>() }
+        val isBrowserTabsManagerVisible = browserTabsManagerMode != BrowserTabsManagerMode.Hidden
         val profileAvatarLabel = sessionSnapshot?.username
         val profileAvatarTemplate = sessionSnapshot
             ?.avatarTemplate
@@ -90,39 +118,30 @@ internal fun AppRoot() {
             )
         }
         val openInAppBrowser: (AppBrowserOpenRequest) -> Unit = { request ->
-            when (
-                val target = browserPresentationPolicy.resolveTarget(
-                    request = request,
-                    availability = browserPresentationAvailability,
-                )
-            ) {
-                AppBrowserPresentationTarget.Sheet,
-                AppBrowserPresentationTarget.InstantView,
-                AppBrowserPresentationTarget.FullRoute -> {
-                    browserHostState = browserHostState.present(
-                        request = request,
-                        target = target,
-                    )
-                }
-            }
+            val target = browserPresentationPolicy.resolveTarget(
+                request = request,
+                availability = browserPresentationAvailability,
+            )
+            browserHostState = browserHostState.present(
+                request = request,
+                target = target,
+            )
         }
         val openReader: (AppBrowserReaderContent, AppBrowserOpenRequest?) -> Unit = { content, sourceRequest ->
             browserHostState = browserHostState.presentReader(
                 content = content,
-                sourceBrowserRequest = sourceRequest
-                    ?: browserHostState.sheetRequest
-                    ?: browserHostState.fullScreenRequest,
+                sourceBrowserRequest = sourceRequest ?: browserHostState.browserEntry?.request,
             )
         }
         val onOpenLink: (String) -> Unit = { url ->
-            when (val decision = linkOpenPolicy.resolve(url)) {
+                when (val decision = linkOpenPolicy.resolve(url)) {
                 is LinkNavigationDecision.NativeTopic -> {
-                    browserHostState = browserHostState.dismissAll()
+                    browserHostState = browserHostState.closeActiveSession()
                     nativePageStackState.presentTopic(decision.topicId)
                 }
 
                 is LinkNavigationDecision.NativeUser -> {
-                    browserHostState = browserHostState.dismissAll()
+                    browserHostState = browserHostState.closeActiveSession()
                     nativePageStackState.presentUser(decision.username)
                 }
 
@@ -178,9 +197,167 @@ internal fun AppRoot() {
             owner = topBarOwner,
             isHomeSearchActive = hideBottomBarForHomeSearch,
         ) || keepRootBottomBarInBackground
+        val browserTabsShellState = remember(
+            browserHostState,
+            isBrowserTabsManagerVisible,
+        ) {
+            buildBrowserTabsShellState(
+                hostState = browserHostState,
+                isManagerVisible = isBrowserTabsManagerVisible,
+            )
+        }
+        val browserTabsViewportWidthPx = remember(
+            configuration.screenWidthDp,
+            density,
+        ) {
+            with(density) {
+                configuration.screenWidthDp.dp.roundToPx()
+            }
+        }
+        val browserTabsTransitionState = buildBrowserTabsTransitionState(
+            request = browserTabsTransitionRequest,
+            activeFrames = activePreviewFrames,
+            dockFrames = dockPreviewFrames,
+            managerFrames = managerPreviewFrames,
+            viewportWidthPx = browserTabsViewportWidthPx,
+        )
+        val browserTabsTransitionRenderSource = resolveBrowserTabsTransitionRenderSource(
+            transition = browserTabsTransitionState,
+            hasLiveSurface = browserTabsTransitionState
+                ?.sessionId
+                ?.let(browserHostState::findSession) != null,
+        )
+        val browserTabsLiveSurfaceTransitionState = buildBrowserTabsLiveSurfaceTransitionState(
+            transition = browserTabsTransitionState,
+            hasLiveSurface = browserTabsTransitionRenderSource ==
+                BrowserTabsTransitionRenderSource.LiveSurface,
+            progress = browserTabsTransitionProgress.value,
+        )
+        val hidesCollapsedDockForTransition = when (browserTabsTransitionState?.kind) {
+            BrowserTabsTransitionKind.MinimizeToDock,
+            BrowserTabsTransitionKind.RestoreFromDock,
+            BrowserTabsTransitionKind.OpenManager,
+            BrowserTabsTransitionKind.CloseManager,
+            -> true
+
+            null,
+            BrowserTabsTransitionKind.RestoreFromManager,
+            BrowserTabsTransitionKind.DismissFromManager,
+            -> false
+        }
+
+        LaunchedEffect(browserTabsTransitionState?.transitionId) {
+            val transition = browserTabsTransitionState ?: return@LaunchedEffect
+            browserTabsTransitionProgress.snapTo(0f)
+            browserTabsTransitionProgress.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(
+                    durationMillis = browserTabsTransitionDurationMillis(transition.kind),
+                    easing = NativeDoEasing.EaseOutQuint,
+                ),
+            )
+            if (browserTabsTransitionRequest?.transitionId == transition.transitionId) {
+                browserTabsTransitionRequest = null
+            }
+        }
+
+        fun enqueueBrowserTabsTransition(
+            kind: BrowserTabsTransitionKind,
+            session: BrowserHostSession,
+            dismissDirection: BrowserTabsDismissDirection? = null,
+            sourceBoundsOverride: androidx.compose.ui.unit.IntRect? = null,
+        ) {
+            val preview = session.preview ?: return
+            browserTabsTransitionRequest = BrowserTabsTransitionRequest(
+                transitionId = nextBrowserTabsTransitionId,
+                kind = kind,
+                sessionId = session.stableId,
+                preview = preview,
+                dismissDirection = dismissDirection,
+                sourceBoundsOverride = sourceBoundsOverride,
+            )
+            nextBrowserTabsTransitionId += 1L
+        }
+
+        fun minimizeActiveBrowserSession() {
+            val activeSession = browserHostState.activeSession ?: return
+            enqueueBrowserTabsTransition(
+                kind = BrowserTabsTransitionKind.MinimizeToDock,
+                session = activeSession,
+            )
+            browserHostState = browserHostState.minimize()
+        }
+
+        fun restoreLatestDockedSession() {
+            val latestSession = browserHostState.dockedSessions.firstOrNull() ?: return
+            enqueueBrowserTabsTransition(
+                kind = BrowserTabsTransitionKind.RestoreFromDock,
+                session = latestSession,
+            )
+            browserHostState = browserHostState.restoreDockedSession(latestSession.stableId)
+        }
+
+        fun openBrowserTabsManager() {
+            val latestSession = browserHostState.dockedSessions.firstOrNull() ?: return
+            if (browserHostState.dockedSessions.size <= 1) {
+                return
+            }
+            pendingManagerRestoreSessionId = null
+            shouldCloseAllManagerSessions = false
+            browserTabsManagerMode = BrowserTabsManagerMode.Entering
+            enqueueBrowserTabsTransition(
+                kind = BrowserTabsTransitionKind.OpenManager,
+                session = latestSession,
+            )
+        }
+
+        fun dismissBrowserTabsManager() {
+            pendingManagerRestoreSessionId = null
+            shouldCloseAllManagerSessions = false
+            browserTabsManagerMode = BrowserTabsManagerMode.Exiting
+        }
+
+        fun restoreManagerSession(sessionId: Long) {
+            val dockedSession = browserHostState.dockedSessions.firstOrNull { it.stableId == sessionId } ?: return
+            pendingManagerRestoreSessionId = null
+            shouldCloseAllManagerSessions = false
+            enqueueBrowserTabsTransition(
+                kind = BrowserTabsTransitionKind.RestoreFromManager,
+                session = dockedSession,
+            )
+            browserHostState = browserHostState.restoreDockedSession(sessionId)
+            browserTabsManagerMode = BrowserTabsManagerMode.Exiting
+        }
+
+        fun dismissManagerSession(
+            sessionId: Long,
+            dismissDirection: BrowserTabsDismissDirection,
+            sourceBoundsOverride: androidx.compose.ui.unit.IntRect?,
+        ) {
+            val dockedSession = browserHostState.dockedSessions.firstOrNull { it.stableId == sessionId } ?: return
+            enqueueBrowserTabsTransition(
+                kind = BrowserTabsTransitionKind.DismissFromManager,
+                session = dockedSession,
+                dismissDirection = dismissDirection,
+                sourceBoundsOverride = sourceBoundsOverride,
+            )
+            browserHostState = browserHostState.closeDockedSession(sessionId)
+        }
+
+        LaunchedEffect(browserHostState.dockedSessions.size, browserTabsManagerMode) {
+            if (
+                browserHostState.dockedSessions.size <= 1 &&
+                browserTabsManagerMode == BrowserTabsManagerMode.Visible
+            ) {
+                browserTabsManagerMode = BrowserTabsManagerMode.Hidden
+                pendingManagerRestoreSessionId = null
+                shouldCloseAllManagerSessions = false
+            }
+        }
 
         CompositionLocalProvider(LocalBulletinHostState provides bulletinHostState) {
             NativeDoChromeScaffold(
+                bottomInsetHeight = browserTabsShellState.occupiedHeight,
                 bottomBar = if (resolvedShouldRenderRootBottomBar) {
                     {
                         NativeDoBottomBarFade(
@@ -199,6 +376,31 @@ internal fun AppRoot() {
                 } else {
                     null
                 },
+                bottomDock = {
+                    if (browserTabsShellState.showsCollapsedDock) {
+                        BrowserTabsCollapsedDock(
+                            sessions = browserHostState.dockedSessions,
+                            dockAction = browserTabsShellState.dockAction,
+                            onRestoreLatest = {
+                                restoreLatestDockedSession()
+                            },
+                            onOpenManager = {
+                                openBrowserTabsManager()
+                            },
+                            onCloseLatest = { sessionId ->
+                                browserHostState = browserHostState.closeDockedSession(sessionId)
+                            },
+                            onPreviewFrameChange = { frame ->
+                                dockPreviewFrames[frame.sessionId] = frame
+                            },
+                            modifier = Modifier
+                                .align(androidx.compose.ui.Alignment.BottomCenter)
+                                .graphicsLayer {
+                                    alpha = if (hidesCollapsedDockForTransition) 0f else 1f
+                                },
+                        )
+                    }
+                },
                 bulletinHost = {
                     BulletinHost(
                         hostState = bulletinHostState,
@@ -215,37 +417,107 @@ internal fun AppRoot() {
                     }
                     BrowserHost(
                         state = browserHostState,
-                        fullScreenContent = { request ->
-                            io.github.baba983.nativedo.feature.browser.AppBrowserRoute(
-                                url = request.url,
-                                onOpenLink = onOpenLink,
-                                onOpenReader = openReader,
-                                onClose = {
-                                    browserHostState = browserHostState.dismissFullScreen()
-                                },
-                                presentationMode = io.github.baba983.nativedo.feature.browser.AppBrowserContainerMode.FullRoute,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        },
-                        sheetContent = { request ->
+                        browserContent = { entry, isForeground ->
                             AppBrowserSheetContainer(
-                                url = request.url,
+                                entryId = entry.id,
+                                url = entry.request.url,
+                                foregroundActivationKey = entry.foregroundActivationKey,
                                 onOpenLink = onOpenLink,
                                 onOpenReader = openReader,
-                                onClose = {
-                                    browserHostState = browserHostState.dismissAll()
+                                onMinimize = {
+                                    minimizeActiveBrowserSession()
                                 },
+                                onClose = {
+                                    browserHostState = browserHostState.closeActiveSession()
+                                },
+                                onPreviewChanged = { preview ->
+                                    browserHostState = browserHostState.updateSessionPreview(
+                                        sessionId = entry.id,
+                                        preview = preview,
+                                    )
+                                },
+                                isForeground = isForeground,
                             )
                         },
-                        readerContent = { request ->
+                        readerContent = { request, isForeground ->
                             AppBrowserReaderScene(
+                                entryId = request.id,
                                 content = request.content,
+                                foregroundActivationKey = request.foregroundActivationKey,
+                                restoredFromDock = request.restoredFromDock,
+                                onMinimize = {
+                                    minimizeActiveBrowserSession()
+                                },
                                 onClose = {
                                     browserHostState = browserHostState.dismissReader()
                                 },
+                                onPreviewChanged = { preview ->
+                                    browserHostState = browserHostState.updateSessionPreview(
+                                        sessionId = request.id,
+                                        preview = preview,
+                                    )
+                                },
                                 onOpenLink = onOpenLink,
+                                isForeground = isForeground,
                             )
                         },
+                        onActivePreviewFrameChange = { frame ->
+                            activePreviewFrames[frame.sessionId] = frame
+                        },
+                        liveSurfaceTransition = browserTabsLiveSurfaceTransitionState,
+                    )
+                    if (isBrowserTabsManagerVisible &&
+                        browserHostState.activeSession == null &&
+                        browserHostState.dockedSessions.size > 1
+                    ) {
+                        BrowserTabsManager(
+                            sessions = browserHostState.dockedSessions,
+                            targetOpen = browserTabsManagerMode != BrowserTabsManagerMode.Exiting,
+                            onDismiss = {
+                                dismissBrowserTabsManager()
+                            },
+                            onRestoreSession = { sessionId ->
+                                restoreManagerSession(sessionId)
+                            },
+                            onCloseSession = { sessionId ->
+                                browserHostState = browserHostState.closeDockedSession(sessionId)
+                            },
+                            onSwipeDismissSession = { sessionId, dismissDirection, sourceBoundsOverride ->
+                                dismissManagerSession(
+                                    sessionId = sessionId,
+                                    dismissDirection = dismissDirection,
+                                    sourceBoundsOverride = sourceBoundsOverride,
+                                )
+                            },
+                            onPreviewFrameChange = { frame ->
+                                managerPreviewFrames[frame.sessionId] = frame
+                            },
+                            onCloseAll = {
+                                pendingManagerRestoreSessionId = null
+                                shouldCloseAllManagerSessions = true
+                                browserTabsManagerMode = BrowserTabsManagerMode.Exiting
+                            },
+                            onOpenAnimationFinished = {
+                                if (browserTabsManagerMode == BrowserTabsManagerMode.Entering) {
+                                    browserTabsManagerMode = BrowserTabsManagerMode.Visible
+                                }
+                            },
+                            onCloseAnimationFinished = {
+                                val closeAllSessions = shouldCloseAllManagerSessions
+                                pendingManagerRestoreSessionId = null
+                                shouldCloseAllManagerSessions = false
+                                browserTabsManagerMode = BrowserTabsManagerMode.Hidden
+                                if (closeAllSessions) {
+                                    browserHostState = browserHostState.closeBrowserStack()
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                    BrowserTabsTransitionOverlay(
+                        transition = browserTabsTransitionState,
+                        progress = browserTabsTransitionProgress.value,
+                        renderSource = browserTabsTransitionRenderSource,
                     )
                     if (shouldShowAuthRestoreGate(sessionState)) {
                         AuthRestoreGate(

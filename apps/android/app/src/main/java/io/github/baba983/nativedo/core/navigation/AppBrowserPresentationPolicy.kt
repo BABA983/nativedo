@@ -34,7 +34,7 @@ internal class AppBrowserPresentationPolicy(
         request: AppBrowserOpenRequest,
         availability: AppBrowserPresentationAvailability = AppBrowserPresentationAvailability(),
     ): AppBrowserPresentationTarget {
-        val resolvedUrl = resolveBrowserUrl(request.url) ?: return AppBrowserPresentationTarget.FullRoute
+        resolveBrowserUrl(request.url) ?: return AppBrowserPresentationTarget.Sheet
 
         if (
             request.preferredTarget == AppBrowserPresentationTarget.InstantView &&
@@ -44,30 +44,7 @@ internal class AppBrowserPresentationPolicy(
             return AppBrowserPresentationTarget.InstantView
         }
 
-        if (requiresFullRouteBrowser(resolvedUrl)) {
-            return AppBrowserPresentationTarget.FullRoute
-        }
-
-        return when (request.preferredTarget) {
-            AppBrowserPresentationTarget.FullRoute -> AppBrowserPresentationTarget.FullRoute
-            AppBrowserPresentationTarget.Sheet -> {
-                if (availability.supportsSheetBrowser && isSheetBrowserEligible(resolvedUrl)) {
-                    AppBrowserPresentationTarget.Sheet
-                } else {
-                    AppBrowserPresentationTarget.FullRoute
-                }
-            }
-
-            AppBrowserPresentationTarget.InstantView -> AppBrowserPresentationTarget.FullRoute
-
-            null -> {
-                if (availability.supportsSheetBrowser && isSheetBrowserEligible(resolvedUrl)) {
-                    AppBrowserPresentationTarget.Sheet
-                } else {
-                    AppBrowserPresentationTarget.FullRoute
-                }
-            }
-        }
+        return AppBrowserPresentationTarget.Sheet
     }
 
     private fun resolveBrowserUrl(url: String): HttpUrl? {
@@ -79,115 +56,4 @@ internal class AppBrowserPresentationPolicy(
         return baseHttpUrl?.resolve(url)
     }
 
-    private fun requiresFullRouteBrowser(url: HttpUrl): Boolean {
-        val segments = url.pathSegments
-            .filter { it.isNotBlank() }
-            .map(String::lowercase)
-        val firstSegment = segments.firstOrNull()
-        val sameHost = baseHttpUrl?.host?.equals(url.host, ignoreCase = true) == true
-        val containsCloudflareChallenge = url.encodedPath.contains("/cdn-cgi/challenge-platform")
-        val containsAuthCallbackParams = url.queryParameterNames.any { parameter ->
-            parameter.lowercase() in authCallbackParameters
-        }
-
-        if (containsCloudflareChallenge || containsAuthCallbackParams) {
-            return true
-        }
-
-        if (segments.any { it in authSensitiveSegments || it in complexFlowSegments }) {
-            return true
-        }
-
-        if (!sameHost) {
-            return false
-        }
-
-        return firstSegment == "u" && segments.drop(2).any { it == "preferences" }
-    }
-
-    private fun isSheetBrowserEligible(url: HttpUrl): Boolean {
-        if (hasDownloadLikeExtension(url)) {
-            return false
-        }
-
-        val sameHost = baseHttpUrl?.host?.equals(url.host, ignoreCase = true) == true
-        if (!sameHost) {
-            return url.scheme in setOf("http", "https") && !hasDownloadLikeExtension(url)
-        }
-
-        val segments = url.pathSegments
-            .filter { it.isNotBlank() }
-            .map(String::lowercase)
-        if (segments.isEmpty()) {
-            return true
-        }
-
-        return segments.first() in lightweightLinuxDoSegments
-    }
-
-    private fun hasDownloadLikeExtension(url: HttpUrl): Boolean {
-        val lastSegment = url.pathSegments.lastOrNull()
-            ?.substringAfterLast('.', missingDelimiterValue = "")
-            ?.lowercase()
-            .orEmpty()
-        return lastSegment in downloadLikeExtensions
-    }
-
-    private companion object {
-        val authSensitiveSegments = setOf(
-            "login",
-            "signin",
-            "signup",
-            "session",
-            "auth",
-            "oauth",
-            "sso",
-        )
-
-        val complexFlowSegments = setOf(
-            "compose",
-            "composer",
-            "reply",
-            "edit",
-            "wizard",
-            "checkout",
-            "payment",
-            "settings",
-            "upload",
-            "uploads",
-            "new-message",
-            "messages",
-            "my",
-        )
-
-        val authCallbackParameters = setOf(
-            "code",
-            "state",
-            "token",
-            "__cf_chl_rt_tk",
-        )
-
-        val lightweightLinuxDoSegments = setOf(
-            "c",
-            "tag",
-            "tags",
-            "search",
-            "top",
-            "latest",
-            "categories",
-            "guidelines",
-            "faq",
-            "badges",
-        )
-
-        val downloadLikeExtensions = setOf(
-            "apk",
-            "zip",
-            "rar",
-            "7z",
-            "pdf",
-            "dmg",
-            "exe",
-        )
-    }
 }

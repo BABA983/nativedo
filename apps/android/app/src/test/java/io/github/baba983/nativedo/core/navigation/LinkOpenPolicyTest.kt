@@ -28,10 +28,10 @@ class LinkOpenPolicyTest {
     }
 
     @Test
-    fun resolve_externalUrl_returnsExternalApp() {
+    fun resolve_externalUrl_returnsAppBrowser() {
         val result = policy.resolve("https://example.com/page")
 
-        assertThat(result).isEqualTo(LinkNavigationDecision.ExternalApp("https://example.com/page"))
+        assertThat(result).isEqualTo(LinkNavigationDecision.AppBrowser("https://example.com/page"))
     }
 
     @Test

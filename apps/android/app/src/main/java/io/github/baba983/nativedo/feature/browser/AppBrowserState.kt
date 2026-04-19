@@ -79,12 +79,6 @@ internal data class AppBrowserRoutePresentationState(
     val backdropAlpha: Float,
 )
 
-internal enum class AppBrowserContainerMode {
-    FullRoute,
-    Stack,
-    Sheet,
-}
-
 internal enum class AppBrowserSheetAnchor {
     Closed,
     Partial,
@@ -94,6 +88,7 @@ internal enum class AppBrowserSheetAnchor {
 internal data class AppBrowserSheetPresentationState(
     val openedProgress: Float,
     val fullscreenProgress: Float,
+    val attachedProgress: Float,
     val topOffsetPx: Float,
     val scrimAlpha: Float,
 )
@@ -460,10 +455,15 @@ internal fun buildAppBrowserSheetPresentationState(
     val openedProgress = ((safeClosedTopOffsetPx - clampedTopOffsetPx) / openedTravel)
         .coerceIn(0f, 1f)
     val fullscreenProgress = if (safePartialTopOffsetPx == 0f) {
-        1f
+        openedProgress
     } else {
         ((safePartialTopOffsetPx - clampedTopOffsetPx) / safePartialTopOffsetPx)
             .coerceIn(0f, 1f)
+    }
+    val attachedProgress = if (safePartialTopOffsetPx == 0f) {
+        fullscreenProgress
+    } else {
+        buildAppBrowserSheetAttachedProgress(fullscreenProgress)
     }
     val scrimAlpha = (
         lerpAppBrowserVisual(0f, 0.22f, openedProgress) +
@@ -472,9 +472,23 @@ internal fun buildAppBrowserSheetPresentationState(
     return AppBrowserSheetPresentationState(
         openedProgress = openedProgress,
         fullscreenProgress = fullscreenProgress,
+        attachedProgress = attachedProgress,
         topOffsetPx = clampedTopOffsetPx,
         scrimAlpha = scrimAlpha,
     )
+}
+
+internal fun buildAppBrowserSheetAttachedProgress(
+    fullscreenProgress: Float,
+    attachThresholdProgress: Float = 0.85f,
+): Float {
+    val clampedProgress = fullscreenProgress.coerceIn(0f, 1f)
+    val clampedThreshold = attachThresholdProgress.coerceIn(0f, 0.999f)
+    if (clampedProgress <= clampedThreshold) {
+        return 0f
+    }
+    return ((clampedProgress - clampedThreshold) / (1f - clampedThreshold))
+        .coerceIn(0f, 1f)
 }
 
 internal fun buildAppBrowserSheetSettle(
@@ -497,7 +511,7 @@ internal fun buildAppBrowserSheetSettle(
         velocityPxPerSecond <= fullscreenVelocityThresholdPxPerSecond -> AppBrowserSheetAnchor.Fullscreen
         clampedTopOffsetPx >= dismissThresholdTopOffsetPx -> AppBrowserSheetAnchor.Closed
         clampedTopOffsetPx <= fullscreenThresholdTopOffsetPx -> AppBrowserSheetAnchor.Fullscreen
-        else -> AppBrowserSheetAnchor.Partial
+        else -> AppBrowserSheetAnchor.Fullscreen
     }
     val targetOffsetPx = when (target) {
         AppBrowserSheetAnchor.Closed -> safeClosedTopOffsetPx
@@ -763,6 +777,7 @@ internal fun buildAppBrowserMenuEntries(
             ),
         ),
         AppBrowserMenuEntry.Item(AppBrowserMenuItem(action = AppBrowserMenuAction.Settings)),
+        AppBrowserMenuEntry.Item(AppBrowserMenuItem(action = AppBrowserMenuAction.Minimize)),
         AppBrowserMenuEntry.Item(AppBrowserMenuItem(action = AppBrowserMenuAction.Close)),
     ).filterNotNull()
 }
@@ -2076,7 +2091,7 @@ internal fun buildAppBrowserScrollChromeBackgroundState(
         return AppBrowserScrollChromeBackgroundState(
             fillFraction = 0f,
             fillAlpha = 0f,
-            dividerAlpha = 0.06f,
+            dividerAlpha = 0f,
         )
     }
 
@@ -2084,7 +2099,7 @@ internal fun buildAppBrowserScrollChromeBackgroundState(
     return AppBrowserScrollChromeBackgroundState(
         fillFraction = progress,
         fillAlpha = lerpAppBrowserVisual(0f, 0.18f, progress),
-        dividerAlpha = lerpAppBrowserVisual(0.06f, 0.12f, progress),
+        dividerAlpha = lerpAppBrowserVisual(0f, 0.08f, progress),
     )
 }
 

@@ -9,15 +9,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.lerp
+import io.github.baba983.nativedo.ui.AppTopBarVerticalPadding
 import io.github.baba983.nativedo.ui.NativeDoBrowserScaffold
-import io.github.baba983.nativedo.ui.NativeDoBrowserTopBarOverlayHeight
 import io.github.baba983.nativedo.ui.nativeDoBrowserTopBarOffset
 import io.github.baba983.nativedo.ui.AppTopBarRowMinHeight
 
-internal val AppBrowserTopBarOverlayHeight = NativeDoBrowserTopBarOverlayHeight
+internal val AppBrowserTopBarRowMinHeight = AppTopBarRowMinHeight - (AppTopBarVerticalPadding * 2)
+internal val AppBrowserTopBarOverlayHeight = AppBrowserTopBarRowMinHeight + (AppTopBarVerticalPadding * 2)
 internal val AppBrowserCollapsedTopBarVerticalPadding = 1.dp  // 从 2dp 减小到 1dp
-internal val AppBrowserCollapsedTopBarOverlayHeight =
-    AppTopBarRowMinHeight + (AppBrowserCollapsedTopBarVerticalPadding * 2)
+internal val AppBrowserCollapsedTopBarOverlayHeight = AppBrowserTopBarRowMinHeight +
+    (AppBrowserCollapsedTopBarVerticalPadding * 2)
 
 internal fun Modifier.appBrowserTopBarOffset(
     topInset: Dp = 0.dp,
@@ -33,6 +34,7 @@ internal fun AppBrowserScreen(
     sceneModifier: Modifier = Modifier,
     topInset: Dp = 0.dp,
     chrome: AppBrowserChromeModel = uiState.chrome,
+    onScrollScrub: (Float) -> Unit = {},
     sheetContent: @Composable BoxScope.() -> Unit = {},
     overlayContent: @Composable BoxScope.() -> Unit = {},
     content: @Composable BoxScope.() -> Unit,
@@ -58,6 +60,7 @@ internal fun AppBrowserScreen(
                 search = uiState.search,
                 address = uiState.address,
                 topInset = topInset,
+                onScrollScrub = onScrollScrub,
                 onAction = onAction,
             )
         },

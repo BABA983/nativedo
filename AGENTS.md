@@ -1,5 +1,12 @@
 # NativeDo Agent Guide
 
+## Project reference
+
+- `/Users/baba/Documents/workspace_github/Telegram` — primary reference for UI components, animations, gesture interactions (swipe, long-press, pull-to-refresh), navigation transitions, and list performance patterns.
+- `/Users/baba/Documents/workspace_github/stripe-android` — modern Android SDK reference for architecture and code patterns.
+- `/Users/baba/Documents/workspace_github/fluxdo` — reference for linux.do-specific Discourse features and flows.
+- <https://docs.discourse.org/> — canonical Discourse API documentation.
+
 ## Project Scope
 
 - This repository builds a native client for `https://linux.do/`, not a generic Discourse SDK.
@@ -35,12 +42,22 @@
 ## UI And Theme
 
 - Keep using `NativeDoTheme`, `NativeDoThemeExtras`, and the existing semantic color model instead of scattering raw colors through features.
-- Telegram is a visual reference, not a requirement to port Telegram internals. Prefer borrowing chrome hierarchy, spacing, and glass semantics over copying complex blur infrastructure.
+- Avoid Material 3 component styles (Button, Card, TopAppBar, etc.); build custom composables whose look, animation, and interaction patterns reference the Telegram Android codebase (`/Users/baba/Documents/workspace_github/Telegram`). Material icons may be used as placeholders.
 - Preserve support for `System`, `Light`, and `Dark` theme modes unless the user asks to simplify them.
-- When editing Compose UI, preserve the current design direction: layered backgrounds, elevated glass surfaces, and a distinct non-default visual identity.
+- When editing Compose UI, preserve the current design direction: glass surfaces are reserved for chrome elements (tab bars, navigation bars, overlays); content areas and list items use standard opaque styling.
 
-## Verification
+## Build, Lint, And Test
 
-- For Android code changes, run `./apps/android/gradlew -p apps/android :app:testDebugUnitTest`.
-- For changes that could affect runtime behavior or resources, also run `./apps/android/gradlew -p apps/android :app:assembleDebug`.
+- Do not run gradlew commands in parallel; add `--quiet` when possible.
+- **All unit tests:** `./apps/android/gradlew -p apps/android :app:testDebugUnitTest --quiet`
+- **Single test class:** `./apps/android/gradlew -p apps/android :app:testDebugUnitTest --tests 'io.github.baba983.nativedo.feature.home.ui.HomeViewModelTest' --quiet`
+- **Assemble (runtime/resource changes):** `./apps/android/gradlew -p apps/android :app:assembleDebug --quiet`
 - For docs-only changes, verification can be limited to checking the edited Markdown for accuracy and consistency.
+
+## Code Style
+
+- Kotlin, JVM 17, compileSdk 35, minSdk 28. Compose UI (custom components, not M3 widgets).
+- Trailing commas on multi-line parameter/argument lists. No wildcard imports.
+- Sealed interfaces for UI state variants (`sealed interface HomeUiState`); data classes for state snapshots.
+- Networking: Retrofit + OkHttp + kotlinx.serialization (not Gson/Moshi). Images: Coil 3. HTML parsing: Jsoup.
+- Test deps: JUnit 4, Truth assertions, MockWebServer, Turbine for Flow, Robolectric for Android framework.

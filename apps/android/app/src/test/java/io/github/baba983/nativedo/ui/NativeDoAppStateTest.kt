@@ -1,6 +1,7 @@
 package io.github.baba983.nativedo.ui
 
 import com.google.common.truth.Truth.assertThat
+import androidx.compose.ui.unit.IntRect
 import io.github.baba983.nativedo.core.navigation.AppBrowserOpenRequest
 import io.github.baba983.nativedo.core.navigation.AppBrowserReaderContent
 import io.github.baba983.nativedo.core.navigation.AppBrowserPresentationAvailability
@@ -8,6 +9,7 @@ import io.github.baba983.nativedo.core.navigation.AppBrowserPresentationPolicy
 import io.github.baba983.nativedo.core.navigation.AppBrowserPresentationTarget
 import io.github.baba983.nativedo.navigation.RootDestination
 import org.junit.Test
+import androidx.compose.ui.unit.dp
 
 class NativeDoAppStateTest {
     @Test
@@ -54,7 +56,10 @@ class NativeDoAppStateTest {
     @Test
     fun resolveNativeDoTopBarOwner_returnsBrowserWhenBrowserSceneIsShowing() {
         val overlayState = BrowserHostState(
-            fullScreenRequest = AppBrowserOpenRequest(url = "https://example.com/article"),
+            browserEntry = BrowserHostBrowserEntry(
+                id = 1L,
+                request = AppBrowserOpenRequest(url = "https://example.com/article"),
+            ),
         )
 
         assertThat(
@@ -68,7 +73,10 @@ class NativeDoAppStateTest {
     @Test
     fun resolveNativeDoTopBarOwner_prefersOverlayOwnerWhenPresent() {
         val overlayState = BrowserHostState(
-            sheetRequest = AppBrowserOpenRequest(url = "https://example.com/article"),
+            browserEntry = BrowserHostBrowserEntry(
+                id = 1L,
+                request = AppBrowserOpenRequest(url = "https://example.com/article"),
+            ),
         )
 
         assertThat(
@@ -159,7 +167,10 @@ class NativeDoAppStateTest {
             shouldKeepNativeDoRootTopBarInBackground(
                 currentRoute = RootDestination.Search.route,
                 overlayState = BrowserHostState(
-                    sheetRequest = AppBrowserOpenRequest(url = "https://example.com/article"),
+                    browserEntry = BrowserHostBrowserEntry(
+                        id = 1L,
+                        request = AppBrowserOpenRequest(url = "https://example.com/article"),
+                    ),
                 ),
             ),
         ).isFalse()
@@ -185,7 +196,10 @@ class NativeDoAppStateTest {
             shouldKeepNativeDoRootBottomBarInBackground(
                 currentRoute = RootDestination.rootContainerRoute,
                 overlayState = BrowserHostState(
-                    sheetRequest = AppBrowserOpenRequest(url = "https://example.com/article"),
+                    browserEntry = BrowserHostBrowserEntry(
+                        id = 1L,
+                        request = AppBrowserOpenRequest(url = "https://example.com/article"),
+                    ),
                 ),
             ),
         ).isTrue()
@@ -194,6 +208,21 @@ class NativeDoAppStateTest {
             shouldKeepNativeDoRootBottomBarInBackground(
                 currentRoute = RootDestination.Search.route,
                 isPushedEntryShowing = true,
+            ),
+        ).isFalse()
+    }
+
+    @Test
+    fun rootChromeBackgroundVisibility_dockedBrowserSessionsDoNotKeepRootBottomBarHidden() {
+        val overlayState = BrowserHostState().present(
+            request = AppBrowserOpenRequest(url = "https://example.com/article"),
+            target = AppBrowserPresentationTarget.Sheet,
+        ).minimize()
+
+        assertThat(
+            shouldKeepNativeDoRootBottomBarInBackground(
+                currentRoute = RootDestination.rootContainerRoute,
+                overlayState = overlayState,
             ),
         ).isFalse()
     }
@@ -236,7 +265,10 @@ class NativeDoAppStateTest {
     fun browserOverlayState_dismissingReaderRestoresUnderlyingSheetOwner() {
         val sheetRequest = AppBrowserOpenRequest(url = "https://example.com/article")
         val overlayState = BrowserHostState(
-            sheetRequest = sheetRequest,
+            browserEntry = BrowserHostBrowserEntry(
+                id = 1L,
+                request = sheetRequest,
+            ),
         ).presentReader(
             content = AppBrowserReaderContent(
                 url = "https://example.com/article/instant-view",
@@ -272,13 +304,104 @@ class NativeDoAppStateTest {
     }
 
     @Test
-    fun browserReaderDialogProperties_drawBehindSystemBars_andDisableImplicitDismiss() {
-        val properties = browserReaderDialogProperties()
+    fun browserOverlayState_minimize_hidesOverlayOwnershipUntilRestored() {
+        val overlayState = BrowserHostState().present(
+            request = AppBrowserOpenRequest(url = "https://example.com/article"),
+            target = AppBrowserPresentationTarget.Sheet,
+        ).minimize()
 
-        assertThat(properties.dismissOnBackPress).isFalse()
-        assertThat(properties.dismissOnClickOutside).isFalse()
-        assertThat(properties.usePlatformDefaultWidth).isFalse()
-        assertThat(properties.decorFitsSystemWindows).isFalse()
+        assertThat(overlayState.activeTopBarOwner).isNull()
+        assertThat(overlayState.restoreMinimized().activeTopBarOwner).isEqualTo(NativeDoTopBarOwner.Browser)
+    }
+
+    @Test
+    fun browserOverlayState_minimize_movesActiveSessionIntoDockAndClearsForegroundSession() {
+        val overlayState = BrowserHostState().present(
+            request = AppBrowserOpenRequest(url = "https://example.com/article"),
+            target = AppBrowserPresentationTarget.Sheet,
+        ).minimize()
+
+        assertThat(overlayState.activeSession).isNull()
+        assertThat(overlayState.dockedSessions).hasSize(1)
+        assertThat(overlayState.dockedSessions.first().browserEntry?.request?.url)
+            .isEqualTo("https://example.com/article")
+
+        val restored = overlayState.restoreMinimized()
+        assertThat(restored.activeSession?.browserEntry?.request?.url)
+            .isEqualTo("https://example.com/article")
+        assertThat(restored.dockedSessions).isEmpty()
+    }
+
+    @Test
+    fun browserOverlayState_restoreDockedSession_canSelectOlderDockedSessionWithoutClosingNewerOne() {
+        val firstDocked = BrowserHostState().present(
+            request = AppBrowserOpenRequest(url = "https://example.com/first"),
+            target = AppBrowserPresentationTarget.Sheet,
+        ).minimize()
+        val secondDocked = firstDocked.present(
+            request = AppBrowserOpenRequest(url = "https://example.com/second"),
+            target = AppBrowserPresentationTarget.Sheet,
+        ).minimize()
+        val olderSessionId = firstDocked.dockedSessions.first().stableId
+
+        val restored = secondDocked.restoreDockedSession(olderSessionId)
+
+        assertThat(restored.activeSession?.browserEntry?.request?.url)
+            .isEqualTo("https://example.com/first")
+        assertThat(restored.dockedSessions).hasSize(1)
+        assertThat(restored.dockedSessions.first().browserEntry?.request?.url)
+            .isEqualTo("https://example.com/second")
+    }
+
+    @Test
+    fun browserOverlayState_restoreDockedBrowserSession_keepsForegroundActivationKeyForLiveRestore() {
+        val minimized = BrowserHostState().present(
+            request = AppBrowserOpenRequest(url = "https://example.com/article"),
+            target = AppBrowserPresentationTarget.Sheet,
+        ).minimize()
+
+        val restored = minimized.restoreMinimized()
+
+        assertThat(restored.browserEntry?.foregroundActivationKey).isEqualTo(0L)
+    }
+
+    @Test
+    fun browserOverlayState_restoreDockedReaderSession_keepsLiveReaderStateWithoutDockReentry() {
+        val minimized = BrowserHostState().presentReader(
+            content = AppBrowserReaderContent(
+                url = "https://example.com/article/instant-view",
+                title = "Example Reader",
+                bodyText = "Reader body",
+            ),
+            sourceBrowserRequest = AppBrowserOpenRequest(
+                url = "https://example.com/article",
+            ),
+        ).minimize()
+
+        val restored = minimized.restoreMinimized()
+
+        assertThat(restored.readerEntry?.foregroundActivationKey).isEqualTo(0L)
+        assertThat(restored.readerEntry?.restoredFromDock).isFalse()
+    }
+
+    @Test
+    fun browserOverlayState_closeDockedSession_keepsRemainingDockedSessionsAvailable() {
+        val firstDocked = BrowserHostState().present(
+            request = AppBrowserOpenRequest(url = "https://example.com/first"),
+            target = AppBrowserPresentationTarget.Sheet,
+        ).minimize()
+        val secondDocked = firstDocked.present(
+            request = AppBrowserOpenRequest(url = "https://example.com/second"),
+            target = AppBrowserPresentationTarget.Sheet,
+        ).minimize()
+        val latestSessionId = secondDocked.dockedSessions.first().stableId
+
+        val closed = secondDocked.closeDockedSession(latestSessionId)
+
+        assertThat(closed.activeSession).isNull()
+        assertThat(closed.dockedSessions).hasSize(1)
+        assertThat(closed.dockedSessions.first().browserEntry?.request?.url)
+            .isEqualTo("https://example.com/first")
     }
 
     @Test
@@ -295,12 +418,12 @@ class NativeDoAppStateTest {
         )
 
         assertThat(target).isEqualTo(AppBrowserPresentationTarget.Sheet)
-        assertThat(overlayState.sheetRequest?.url).isEqualTo("https://example.com/article")
-        assertThat(overlayState.readerRequest).isNull()
+        assertThat(overlayState.browserEntry?.request?.url).isEqualTo("https://example.com/article")
+        assertThat(overlayState.readerEntry).isNull()
     }
 
     @Test
-    fun browserHostState_present_usesFullScreenForFullRouteBrowserRequest() {
+    fun browserHostState_present_collapsesLegacyFullRouteIntoSingleBrowserRequest() {
         val request = AppBrowserOpenRequest(
             url = "https://example.com/article",
             preferredTarget = AppBrowserPresentationTarget.FullRoute,
@@ -311,9 +434,8 @@ class NativeDoAppStateTest {
             target = AppBrowserPresentationTarget.FullRoute,
         )
 
-        assertThat(overlayState.fullScreenRequest).isEqualTo(request)
-        assertThat(overlayState.sheetRequest).isNull()
-        assertThat(overlayState.readerRequest).isNull()
+        assertThat(overlayState.browserEntry?.request).isEqualTo(request)
+        assertThat(overlayState.readerEntry).isNull()
         assertThat(overlayState.activeTopBarOwner).isEqualTo(NativeDoTopBarOwner.Browser)
     }
 
@@ -321,7 +443,10 @@ class NativeDoAppStateTest {
     fun browserOverlayState_presentReader_preservesSourceBrowserRequestForReaderRestoration() {
         val sourceRequest = AppBrowserOpenRequest(url = "https://example.com/article")
         val overlayState = BrowserHostState(
-            sheetRequest = sourceRequest,
+            browserEntry = BrowserHostBrowserEntry(
+                id = 1L,
+                request = sourceRequest,
+            ),
         ).presentReader(
             content = AppBrowserReaderContent(
                 url = "https://example.com/article/instant-view",
@@ -331,15 +456,18 @@ class NativeDoAppStateTest {
             sourceBrowserRequest = sourceRequest,
         )
 
-        assertThat(overlayState.readerRequest?.sourceBrowserRequest).isEqualTo(sourceRequest)
-        assertThat(overlayState.sheetRequest).isEqualTo(sourceRequest)
+        assertThat(overlayState.readerEntry?.sourceBrowserRequest).isEqualTo(sourceRequest)
+        assertThat(overlayState.browserEntry?.request).isEqualTo(sourceRequest)
     }
 
     @Test
     fun browserOverlayState_presentReader_withoutSourceFallsBackToCurrentSheetRequest() {
         val sourceRequest = AppBrowserOpenRequest(url = "https://example.com/article")
         val overlayState = BrowserHostState(
-            sheetRequest = sourceRequest,
+            browserEntry = BrowserHostBrowserEntry(
+                id = 1L,
+                request = sourceRequest,
+            ),
         ).presentReader(
             content = AppBrowserReaderContent(
                 url = "https://example.com/article/instant-view",
@@ -348,14 +476,15 @@ class NativeDoAppStateTest {
             ),
         )
 
-        assertThat(overlayState.readerRequest?.sourceBrowserRequest).isEqualTo(sourceRequest)
+        assertThat(overlayState.readerEntry?.sourceBrowserRequest).isEqualTo(sourceRequest)
     }
 
     @Test
-    fun browserHostState_presentReader_withoutSourceFallsBackToCurrentFullScreenRequest() {
+    fun browserHostState_presentReader_withoutSourceFallsBackToCollapsedLegacyFullRouteRequest() {
         val sourceRequest = AppBrowserOpenRequest(url = "https://example.com/article")
-        val overlayState = BrowserHostState(
-            fullScreenRequest = sourceRequest,
+        val overlayState = BrowserHostState().present(
+            request = sourceRequest,
+            target = AppBrowserPresentationTarget.FullRoute,
         ).presentReader(
             content = AppBrowserReaderContent(
                 url = "https://example.com/article/instant-view",
@@ -364,8 +493,136 @@ class NativeDoAppStateTest {
             ),
         )
 
-        assertThat(overlayState.readerRequest?.sourceBrowserRequest).isEqualTo(sourceRequest)
-        assertThat(overlayState.fullScreenRequest).isEqualTo(sourceRequest)
+        assertThat(overlayState.readerEntry?.sourceBrowserRequest).isEqualTo(sourceRequest)
+        assertThat(overlayState.browserEntry?.request).isEqualTo(sourceRequest)
+    }
+
+    @Test
+    fun browserOverlayState_closeBrowserStack_clearsMinimizedReaderAndBrowserEntries() {
+        val overlayState = BrowserHostState().present(
+            request = AppBrowserOpenRequest(url = "https://example.com/article"),
+            target = AppBrowserPresentationTarget.Sheet,
+        ).presentReader(
+            content = AppBrowserReaderContent(
+                url = "https://example.com/article/instant-view",
+                title = "Example Reader",
+                bodyText = "Reader body",
+            ),
+        ).minimize().closeBrowserStack()
+
+        assertThat(overlayState.browserEntry).isNull()
+        assertThat(overlayState.readerEntry).isNull()
+        assertThat(overlayState.activeTopBarOwner).isNull()
+    }
+
+    @Test
+    fun browserOverlayState_minimizedReaderRestore_keepsReaderAndSourceBrowserContinuity() {
+        val sourceRequest = AppBrowserOpenRequest(url = "https://example.com/article")
+        val minimized = BrowserHostState().present(
+            request = sourceRequest,
+            target = AppBrowserPresentationTarget.Sheet,
+        ).presentReader(
+            content = AppBrowserReaderContent(
+                url = "https://example.com/article/instant-view",
+                title = "Example Reader",
+                bodyText = "Reader body",
+            ),
+            sourceBrowserRequest = sourceRequest,
+        ).minimize()
+
+        val restored = minimized.restoreMinimized()
+
+        assertThat(restored.browserEntry?.request).isEqualTo(sourceRequest)
+        assertThat(restored.readerEntry?.content?.title).isEqualTo("Example Reader")
+        assertThat(restored.readerEntry?.sourceBrowserRequest).isEqualTo(sourceRequest)
+    }
+
+    @Test
+    fun browserTabsShellState_hidesCollapsedDockWhileBrowserSessionIsActive() {
+        val overlayState = BrowserHostState().present(
+            request = AppBrowserOpenRequest(url = "https://example.com/article"),
+            target = AppBrowserPresentationTarget.Sheet,
+        )
+
+        assertThat(
+            buildBrowserTabsShellState(
+                hostState = overlayState,
+                isManagerVisible = false,
+            ),
+        ).isEqualTo(
+            BrowserTabsShellState(
+                showsCollapsedDock = false,
+                occupiedHeight = 0.dp,
+                dockAction = BrowserTabsShellDockAction.None,
+            ),
+        )
+    }
+
+    @Test
+    fun browserTabsShellState_singleDockedSession_usesDirectRestoreAndOccupiesShellBottom() {
+        val overlayState = BrowserHostState().present(
+            request = AppBrowserOpenRequest(url = "https://example.com/article"),
+            target = AppBrowserPresentationTarget.Sheet,
+        ).minimize()
+
+        assertThat(
+            buildBrowserTabsShellState(
+                hostState = overlayState,
+                isManagerVisible = false,
+            ),
+        ).isEqualTo(
+            BrowserTabsShellState(
+                showsCollapsedDock = true,
+                occupiedHeight = 60.dp,
+                dockAction = BrowserTabsShellDockAction.RestoreLatest,
+            ),
+        )
+    }
+
+    @Test
+    fun browserTabsShellState_multipleDockedSessions_openManagerInsteadOfDirectRestore() {
+        val firstDocked = BrowserHostState().present(
+            request = AppBrowserOpenRequest(url = "https://example.com/first"),
+            target = AppBrowserPresentationTarget.Sheet,
+        ).minimize()
+        val secondDocked = firstDocked.present(
+            request = AppBrowserOpenRequest(url = "https://example.com/second"),
+            target = AppBrowserPresentationTarget.Sheet,
+        ).minimize()
+
+        assertThat(
+            buildBrowserTabsShellState(
+                hostState = secondDocked,
+                isManagerVisible = false,
+            ),
+        ).isEqualTo(
+            BrowserTabsShellState(
+                showsCollapsedDock = true,
+                occupiedHeight = BrowserTabsCollapsedDockOccupiedHeight,
+                dockAction = BrowserTabsShellDockAction.OpenManager,
+            ),
+        )
+    }
+
+    @Test
+    fun browserTabsShellState_managerVisibilityHidesCollapsedDockAndReleasesBottomInset() {
+        val overlayState = BrowserHostState().present(
+            request = AppBrowserOpenRequest(url = "https://example.com/article"),
+            target = AppBrowserPresentationTarget.Sheet,
+        ).minimize()
+
+        assertThat(
+            buildBrowserTabsShellState(
+                hostState = overlayState,
+                isManagerVisible = true,
+            ),
+        ).isEqualTo(
+            BrowserTabsShellState(
+                showsCollapsedDock = false,
+                occupiedHeight = 0.dp,
+                dockAction = BrowserTabsShellDockAction.None,
+            ),
+        )
     }
 
     @Test
@@ -396,5 +653,147 @@ class NativeDoAppStateTest {
                 profileAvatarTemplate = "",
             ),
         ).isFalse()
+    }
+
+    @Test
+    fun browserTabsTransitionState_minimizeUsesActiveAndDockFrames() {
+        val preview = BrowserHostMinimizedPreview(
+            kind = BrowserHostMinimizedKind.Browser,
+            title = "linux.do",
+            subtitle = "Browser",
+        )
+        val request = BrowserTabsTransitionRequest(
+            transitionId = 1L,
+            kind = BrowserTabsTransitionKind.MinimizeToDock,
+            sessionId = 11L,
+            preview = preview,
+        )
+
+        assertThat(
+            buildBrowserTabsTransitionState(
+                request = request,
+                activeFrames = mapOf(
+                    11L to BrowserTabsPreviewFrame(
+                        sessionId = 11L,
+                        preview = preview,
+                        boundsInRoot = IntRect(0, 0, 1080, 2200),
+                    ),
+                ),
+                dockFrames = mapOf(
+                    11L to BrowserTabsPreviewFrame(
+                        sessionId = 11L,
+                        preview = preview,
+                        boundsInRoot = IntRect(48, 2088, 1032, 2188),
+                    ),
+                ),
+                managerFrames = emptyMap(),
+                viewportWidthPx = 1080,
+            ),
+        ).isEqualTo(
+            BrowserTabsTransitionState(
+                transitionId = 1L,
+                kind = BrowserTabsTransitionKind.MinimizeToDock,
+                sessionId = 11L,
+                preview = preview,
+                sourceSurface = BrowserTabsTransitionSurface.Active,
+                targetSurface = BrowserTabsTransitionSurface.Dock,
+                sourceBounds = IntRect(0, 0, 1080, 2200),
+                targetBounds = IntRect(48, 2088, 1032, 2188),
+                dismissDirection = null,
+            ),
+        )
+    }
+
+    @Test
+    fun browserTabsTransitionState_restoreFromManagerUsesManagerAndActiveFrames() {
+        val preview = BrowserHostMinimizedPreview(
+            kind = BrowserHostMinimizedKind.Reader,
+            title = "Instant View",
+            subtitle = "linux.do",
+        )
+        val request = BrowserTabsTransitionRequest(
+            transitionId = 2L,
+            kind = BrowserTabsTransitionKind.RestoreFromManager,
+            sessionId = 17L,
+            preview = preview,
+        )
+
+        assertThat(
+            buildBrowserTabsTransitionState(
+                request = request,
+                activeFrames = mapOf(
+                    17L to BrowserTabsPreviewFrame(
+                        sessionId = 17L,
+                        preview = preview,
+                        boundsInRoot = IntRect(0, 0, 1080, 2200),
+                    ),
+                ),
+                dockFrames = emptyMap(),
+                managerFrames = mapOf(
+                    17L to BrowserTabsPreviewFrame(
+                        sessionId = 17L,
+                        preview = preview,
+                        boundsInRoot = IntRect(92, 320, 988, 1180),
+                    ),
+                ),
+                viewportWidthPx = 1080,
+            ),
+        ).isEqualTo(
+            BrowserTabsTransitionState(
+                transitionId = 2L,
+                kind = BrowserTabsTransitionKind.RestoreFromManager,
+                sessionId = 17L,
+                preview = preview,
+                sourceSurface = BrowserTabsTransitionSurface.Manager,
+                targetSurface = BrowserTabsTransitionSurface.Active,
+                sourceBounds = IntRect(92, 320, 988, 1180),
+                targetBounds = IntRect(0, 0, 1080, 2200),
+                dismissDirection = null,
+            ),
+        )
+    }
+
+    @Test
+    fun browserTabsTransitionState_swipeDismissBuildsOffscreenTargetFromViewportAndDirection() {
+        val preview = BrowserHostMinimizedPreview(
+            kind = BrowserHostMinimizedKind.Browser,
+            title = "linux.do",
+            subtitle = "Browser",
+        )
+        val request = BrowserTabsTransitionRequest(
+            transitionId = 3L,
+            kind = BrowserTabsTransitionKind.DismissFromManager,
+            sessionId = 23L,
+            preview = preview,
+            dismissDirection = BrowserTabsDismissDirection.Right,
+        )
+
+        assertThat(
+            buildBrowserTabsTransitionState(
+                request = request,
+                activeFrames = emptyMap(),
+                dockFrames = emptyMap(),
+                managerFrames = mapOf(
+                    23L to BrowserTabsPreviewFrame(
+                        sessionId = 23L,
+                        preview = preview,
+                        boundsInRoot = IntRect(100, 240, 500, 920),
+                    ),
+                ),
+                viewportWidthPx = 1080,
+            ),
+        ).isEqualTo(
+            BrowserTabsTransitionState(
+                transitionId = 3L,
+                kind = BrowserTabsTransitionKind.DismissFromManager,
+                sessionId = 23L,
+                preview = preview,
+                sourceSurface = BrowserTabsTransitionSurface.Manager,
+                targetSurface = BrowserTabsTransitionSurface.Dismissed,
+                sourceBounds = IntRect(100, 240, 500, 920),
+                targetBounds = IntRect(1112, 240, 1512, 920),
+                dismissDirection = BrowserTabsDismissDirection.Right,
+            ),
+        )
     }
 }

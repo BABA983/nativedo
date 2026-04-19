@@ -2,6 +2,8 @@ package io.github.baba983.nativedo.feature.home.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -79,6 +81,7 @@ import io.github.baba983.nativedo.ui.NativeDoPullToRefreshIndicator
 import io.github.baba983.nativedo.ui.NativeDoTopBar
 import io.github.baba983.nativedo.ui.buildNativeDoRootChromeModel
 import io.github.baba983.nativedo.ui.theme.NativeDoCardShape
+import io.github.baba983.nativedo.ui.theme.NativeDoEasing
 import io.github.baba983.nativedo.ui.theme.NativeDoGlassRole
 import io.github.baba983.nativedo.ui.theme.NativeDoMotionTheme
 import io.github.baba983.nativedo.ui.theme.NativeDoPillShape
@@ -281,71 +284,115 @@ fun HomeRoute(
         }
     }
 
+    val searchTransitionProgress by animateFloatAsState(
+        targetValue = if (isSearchMode) 1f else 0f,
+        animationSpec = tween(
+            durationMillis = if (isSearchMode) 200 else 180,
+            delayMillis = if (isSearchMode) 0 else 20,
+            easing = NativeDoEasing.Standard,
+        ),
+        label = "home_search_transition",
+    )
+    val showSearchTopBar = isSearchMode || searchTransitionProgress > 0f
+
     NativeDoReaderScaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
-            if (isSearchMode) {
-                SearchSceneTopBar(
-                    query = searchUiState.query,
-                    onQueryChanged = searchViewModel::onQueryChanged,
-                    onQuerySubmitted = searchViewModel::onQuerySubmitted,
-                    onCloseRequest = ::closeSearch,
-                    autoFocus = true,
-                )
-            } else {
-                NativeDoTopBar(
-                    currentRoute = RootDestination.Home.route,
-                    rootChrome = rootChromeModel,
-                    titleOverride = null,
-                    showBack = false,
-                    themeMode = themeMode,
-                    onHomeRefreshClick = ::refreshFromHeader,
-                    onHomeSearchClick = {
-                        searchOpenedFromHeader = true
-                        forceShowSearchField = false
-                        isSearchMode = true
+            Box(modifier = Modifier.fillMaxWidth()) {
+                // NativeDoTopBar: title/icons fade + scale 0.95 in place (no translation)
+                Box(
+                    modifier = Modifier.graphicsLayer {
+                        alpha = 1f - searchTransitionProgress
+                        scaleX = 1f - 0.05f * searchTransitionProgress
+                        scaleY = 1f - 0.05f * searchTransitionProgress
                     },
-                    onThemeModeSelected = {
-                        contextualOptionsExpanded = false
-                        onThemeModeSelected(it)
-                    },
-                    onToggleContextualOptions = {
-                        contextualOptionsExpanded = !contextualOptionsExpanded
-                    },
-                    onDismissContextualOptions = {
-                        contextualOptionsExpanded = false
-                    },
-                    onExitActionMode = {
-                        contextualOptionsExpanded = false
-                    },
-                    onBackClick = {},
-                )
+                ) {
+                    NativeDoTopBar(
+                        currentRoute = RootDestination.Home.route,
+                        rootChrome = rootChromeModel,
+                        titleOverride = null,
+                        showBack = false,
+                        themeMode = themeMode,
+                        onHomeRefreshClick = ::refreshFromHeader,
+                        onHomeSearchClick = {
+                            searchOpenedFromHeader = true
+                            forceShowSearchField = false
+                            isSearchMode = true
+                        },
+                        onThemeModeSelected = {
+                            contextualOptionsExpanded = false
+                            onThemeModeSelected(it)
+                        },
+                        onToggleContextualOptions = {
+                            contextualOptionsExpanded = !contextualOptionsExpanded
+                        },
+                        onDismissContextualOptions = {
+                            contextualOptionsExpanded = false
+                        },
+                        onExitActionMode = {
+                            contextualOptionsExpanded = false
+                        },
+                        onBackClick = {},
+                    )
+                }
+
+                // SearchSceneTopBar: just fade in place (no translation)
+                if (showSearchTopBar) {
+                    Box(
+                        modifier = Modifier.graphicsLayer {
+                            alpha = searchTransitionProgress
+                        },
+                    ) {
+                        SearchSceneTopBar(
+                            query = searchUiState.query,
+                            onQueryChanged = searchViewModel::onQueryChanged,
+                            onQuerySubmitted = searchViewModel::onQuerySubmitted,
+                            onCloseRequest = ::closeSearch,
+                            autoFocus = isSearchMode,
+                        )
+                    }
+                }
             }
         },
     ) { paddingValues ->
+        // Content area: list fades + scales 0.95, search results fade + scale 1.05→1.0
         AnimatedContent(
             targetState = isSearchMode,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues),
             transitionSpec = {
-                (
-                    fadeIn(
-                        animationSpec = contentMotion.enter.tweenSpec(),
-                    ) +
-                        scaleIn(
-                            animationSpec = contentMotion.enter.tweenSpec(),
-                            initialScale = 0.985f,
+                if (targetState) {
+                    // Opening: search results fade in, list scales down
+                    (
+                        fadeIn(animationSpec = tween(200, easing = NativeDoEasing.Standard)) +
+                            scaleIn(
+                                animationSpec = tween(200, easing = NativeDoEasing.Standard),
+                                initialScale = 1.05f,
+                            )
+                        ) togetherWith (
+                        fadeOut(animationSpec = tween(200, easing = NativeDoEasing.Standard)) +
+                            scaleOut(
+                                animationSpec = tween(200, easing = NativeDoEasing.Standard),
+                                targetScale = 0.95f,
+                            )
                         )
-                    ) togetherWith (
-                    fadeOut(
-                        animationSpec = contentMotion.exit.tweenSpec(),
-                    ) +
-                        scaleOut(
-                            animationSpec = contentMotion.exit.tweenSpec(),
-                            targetScale = 0.985f,
+                } else {
+                    // Closing: list fades in, search results scale up
+                    (
+                        fadeIn(animationSpec = tween(180, delayMillis = 20, easing = NativeDoEasing.Standard)) +
+                            scaleIn(
+                                animationSpec = tween(180, delayMillis = 20, easing = NativeDoEasing.Standard),
+                                initialScale = 0.95f,
+                            )
+                        ) togetherWith (
+                        fadeOut(animationSpec = tween(180, easing = NativeDoEasing.Standard)) +
+                            scaleOut(
+                                animationSpec = tween(180, easing = NativeDoEasing.Standard),
+                                targetScale = 1.05f,
+                            )
                         )
-                    )
+                }
             },
             label = "home_search_mode",
         ) { searchActive ->

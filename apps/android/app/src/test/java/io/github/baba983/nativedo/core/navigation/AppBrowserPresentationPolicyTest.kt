@@ -13,7 +13,7 @@ class AppBrowserPresentationPolicyTest {
             availability = AppBrowserPresentationAvailability(supportsSheetBrowser = true),
         )
 
-        assertThat(target).isEqualTo(AppBrowserPresentationTarget.FullRoute)
+        assertThat(target).isEqualTo(AppBrowserPresentationTarget.Sheet)
     }
 
     @Test
@@ -43,16 +43,38 @@ class AppBrowserPresentationPolicyTest {
             availability = AppBrowserPresentationAvailability(supportsSheetBrowser = true),
         )
 
-        assertThat(target).isEqualTo(AppBrowserPresentationTarget.FullRoute)
+        assertThat(target).isEqualTo(AppBrowserPresentationTarget.Sheet)
     }
 
     @Test
-    fun resolveTarget_fallsBackToFullRouteWhenSheetIsUnavailable() {
+    fun resolveTarget_returnsFullRouteForLinuxDoSiblingSubdomainFlow() {
+        val target = policy.resolveTarget(
+            request = AppBrowserOpenRequest(url = "https://cdk.linux.do/dashboard"),
+            availability = AppBrowserPresentationAvailability(supportsSheetBrowser = true),
+        )
+
+        assertThat(target).isEqualTo(AppBrowserPresentationTarget.Sheet)
+    }
+
+    @Test
+    fun resolveTarget_keepsRegularBrowserTargetWhenLegacySheetAvailabilityIsFalse() {
         val target = policy.resolveTarget(
             request = AppBrowserOpenRequest(url = "https://linux.do/c/android/5"),
         )
 
-        assertThat(target).isEqualTo(AppBrowserPresentationTarget.FullRoute)
+        assertThat(target).isEqualTo(AppBrowserPresentationTarget.Sheet)
+    }
+
+    @Test
+    fun resolveTarget_ignoresLegacyFullRoutePreference() {
+        val target = policy.resolveTarget(
+            request = AppBrowserOpenRequest(
+                url = "https://example.com/login",
+                preferredTarget = AppBrowserPresentationTarget.FullRoute,
+            ),
+        )
+
+        assertThat(target).isEqualTo(AppBrowserPresentationTarget.Sheet)
     }
 
     @Test
@@ -80,6 +102,6 @@ class AppBrowserPresentationPolicyTest {
             availability = AppBrowserPresentationAvailability(supportsInstantView = true),
         )
 
-        assertThat(target).isEqualTo(AppBrowserPresentationTarget.FullRoute)
+        assertThat(target).isEqualTo(AppBrowserPresentationTarget.Sheet)
     }
 }

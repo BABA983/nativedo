@@ -45,6 +45,7 @@ internal class AppBrowserViewModel(
     fun onAction(action: AppBrowserAction) {
         when (action) {
             AppBrowserAction.NavigateBack,
+            AppBrowserAction.MinimizeBrowser,
             AppBrowserAction.CloseBrowser -> Unit
 
             AppBrowserAction.StartAddressEditing,

@@ -3,9 +3,13 @@ package io.github.baba983.nativedo.feature.browser
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.view.View
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -20,7 +24,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -28,6 +31,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.MoreVert
 import androidx.compose.material.icons.outlined.OpenInBrowser
 import androidx.compose.material.icons.outlined.Share
@@ -35,11 +40,11 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -51,6 +56,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
@@ -78,7 +85,6 @@ import io.github.baba983.nativedo.core.ui.LocalBulletinHostState
 import io.github.baba983.nativedo.core.ui.buildMediaViewerImageIndexLookup
 import io.github.baba983.nativedo.core.ui.findGalleryStartIndex
 import io.github.baba983.nativedo.core.storage.CookieStore
-import io.github.baba983.nativedo.core.ui.NativeDoAnimatedLabel
 import io.github.baba983.nativedo.core.ui.NativeDoAnchoredPopup
 import io.github.baba983.nativedo.core.ui.NativeDoBackIcon
 import io.github.baba983.nativedo.core.ui.NativeDoPopupMenuDivider
@@ -93,23 +99,29 @@ import io.github.baba983.nativedo.core.ui.mediaviewer.MediaViewerLaunchSource
 import io.github.baba983.nativedo.core.ui.mediaviewer.rememberMediaViewerState
 import io.github.baba983.nativedo.ui.AppTopBarHorizontalPadding
 import io.github.baba983.nativedo.ui.AppTopBarRowMinHeight
-import io.github.baba983.nativedo.ui.AppTopBarVerticalPadding
 import io.github.baba983.nativedo.ui.NativeDoReaderScaffold
 import io.github.baba983.nativedo.ui.theme.NativeDoEasing
 import io.github.baba983.nativedo.ui.theme.NativeDoThemeExtras
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Velocity
 import android.content.Intent
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.lerp
 import io.github.baba983.nativedo.core.navigation.openInSystemBrowser
+import io.github.baba983.nativedo.ui.BrowserHostMinimizedPreview
+import io.github.baba983.nativedo.ui.buildBrowserHostReaderPreview
 import java.util.IdentityHashMap
 import java.time.LocalDateTime
 import java.time.OffsetDateTime
@@ -118,35 +130,153 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import kotlin.math.max
 
+private val ReaderHandleAreaHeight = 24.dp
+private val ReaderHandleMinWidth = 32.dp
+private val ReaderHandleMaxWidth = 48.dp
+private val ReaderHandleHeight = 4.dp
+private val ReaderSheetCornerRadius = 16.dp
+private const val ReaderSheetPartialTopFraction = 0.4f
+private const val ReaderSheetDismissResistance = 0.72f
+private val ReaderHeaderMaxHeight = AppTopBarRowMinHeight
+private val ReaderHeaderMinHeight = 32.dp
+private const val ReaderFollowUpEnterDurationMillis = 320
+private const val ReaderFollowUpReturnDurationMillis = 220
+
+internal data class AppBrowserReaderContainerChromeState(
+    val cornerRadius: Dp,
+    val handleWidth: Dp,
+    val handleAlpha: Float,
+    val occupiesStatusBar: Boolean,
+)
+
+internal data class AppBrowserReaderFollowUpTransitionState(
+    val translationFraction: Float,
+    val alpha: Float,
+)
+
+private enum class AppBrowserReaderDismissMode {
+    ReturnToBrowser,
+    MinimizeToDock,
+}
+
+private enum class AppBrowserReaderDragOwner {
+    Header,
+    Content,
+}
+
+internal fun buildAppBrowserReaderContainerChromeState(
+    fullscreenProgress: Float,
+): AppBrowserReaderContainerChromeState {
+    val progress = buildAppBrowserSheetAttachedProgress(fullscreenProgress)
+    return AppBrowserReaderContainerChromeState(
+        cornerRadius = lerp(ReaderSheetCornerRadius, 0.dp, progress),
+        handleWidth = lerp(ReaderHandleMinWidth, ReaderHandleMaxWidth, progress),
+        handleAlpha = 1f - progress,
+        occupiesStatusBar = progress >= 0.999f,
+    )
+}
+
+internal fun buildAppBrowserReaderTopChromeHeight(
+    fullscreenProgress: Float,
+    statusBarInset: Dp,
+): Dp = lerp(
+    start = ReaderHandleAreaHeight,
+    stop = statusBarInset.coerceAtLeast(0.dp),
+    fraction = buildAppBrowserSheetAttachedProgress(fullscreenProgress),
+)
+
+internal fun buildAppBrowserReaderFollowUpTransitionState(
+    progress: Float,
+): AppBrowserReaderFollowUpTransitionState {
+    val normalizedProgress = progress.coerceIn(0f, 1f)
+    return AppBrowserReaderFollowUpTransitionState(
+        translationFraction = 1f - normalizedProgress,
+        alpha = 0.92f + (0.08f * normalizedProgress),
+    )
+}
+
+internal fun buildAppBrowserReaderSheetSettle(
+    currentTopOffsetPx: Float,
+    velocityPxPerSecond: Float,
+    partialTopOffsetPx: Float,
+    closedTopOffsetPx: Float,
+    dismissThresholdFraction: Float = 0.34f,
+    dismissVelocityThresholdPxPerSecond: Float = 900f,
+    fullscreenVelocityThresholdPxPerSecond: Float = -900f,
+): AppBrowserSheetSettle {
+    val safeClosedTopOffsetPx = closedTopOffsetPx.coerceAtLeast(1f)
+    val safePartialTopOffsetPx = partialTopOffsetPx.coerceIn(0f, safeClosedTopOffsetPx)
+    val clampedTopOffsetPx = currentTopOffsetPx.coerceIn(0f, safeClosedTopOffsetPx)
+    val dismissThresholdTopOffsetPx = safePartialTopOffsetPx +
+        ((safeClosedTopOffsetPx - safePartialTopOffsetPx) * dismissThresholdFraction)
+    val fullscreenThresholdTopOffsetPx = safePartialTopOffsetPx * 0.55f
+    val target = when {
+        velocityPxPerSecond >= dismissVelocityThresholdPxPerSecond -> AppBrowserSheetAnchor.Closed
+        velocityPxPerSecond <= fullscreenVelocityThresholdPxPerSecond -> AppBrowserSheetAnchor.Fullscreen
+        clampedTopOffsetPx >= dismissThresholdTopOffsetPx -> AppBrowserSheetAnchor.Closed
+        clampedTopOffsetPx <= fullscreenThresholdTopOffsetPx -> AppBrowserSheetAnchor.Fullscreen
+        else -> AppBrowserSheetAnchor.Partial
+    }
+    val targetOffsetPx = when (target) {
+        AppBrowserSheetAnchor.Closed -> safeClosedTopOffsetPx
+        AppBrowserSheetAnchor.Partial -> safePartialTopOffsetPx
+        AppBrowserSheetAnchor.Fullscreen -> 0f
+    }
+    val travelDistancePx = kotlin.math.abs(targetOffsetPx - clampedTopOffsetPx)
+    val durationMillis = maxOf(((360f / safeClosedTopOffsetPx) * travelDistancePx).toInt(), 220)
+    return AppBrowserSheetSettle(
+        target = target,
+        durationMillis = durationMillis,
+    )
+}
+
 @Composable
 internal fun AppBrowserReaderScene(
+    entryId: Long,
     content: AppBrowserReaderContent,
+    foregroundActivationKey: Long,
+    restoredFromDock: Boolean,
+    onMinimize: () -> Unit = {},
     onClose: () -> Unit,
+    onPreviewChanged: (BrowserHostMinimizedPreview) -> Unit = {},
     onOpenLink: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier,
+    isForeground: Boolean = true,
 ) {
     val context = LocalContext.current
     val appContainer = remember(context) {
         (context.applicationContext as NativeDoApplication).appContainer
     }
     AppBrowserReaderScene(
+        entryId = entryId,
         content = content,
         cookieStore = appContainer.cookieStore,
         baseUrl = appContainer.baseUrl,
+        foregroundActivationKey = foregroundActivationKey,
+        restoredFromDock = restoredFromDock,
+        onMinimize = onMinimize,
         onClose = onClose,
+        onPreviewChanged = onPreviewChanged,
         onOpenLink = onOpenLink,
         modifier = modifier,
+        isForeground = isForeground,
     )
 }
 
 @Composable
 private fun AppBrowserReaderScene(
+    entryId: Long,
     content: AppBrowserReaderContent,
     cookieStore: CookieStore,
     baseUrl: String,
+    foregroundActivationKey: Long,
+    restoredFromDock: Boolean,
+    onMinimize: () -> Unit,
     onClose: () -> Unit,
+    onPreviewChanged: (BrowserHostMinimizedPreview) -> Unit,
     onOpenLink: ((String) -> Unit)?,
     modifier: Modifier = Modifier,
+    isForeground: Boolean = true,
 ) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
@@ -155,12 +285,68 @@ private fun AppBrowserReaderScene(
     val configuration = LocalConfiguration.current
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
-    val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }
-    val sceneProgress = remember(content.url) { Animatable(0f) }
-    var isClosing by remember(content.url) { mutableStateOf(false) }
-    var dismissOffset by remember(content.url) { mutableFloatStateOf(0f) }
+    val view = LocalView.current
+    val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }.coerceAtLeast(1f)
+    val screenHeightPx = with(density) { configuration.screenHeightDp.dp.toPx() }.coerceAtLeast(1f)
+    val statusBarInsetDp = remember(view, density) {
+        with(density) {
+            (view.rootWindowInsets?.systemWindowInsetTop ?: 0).toDp()
+        }
+    }
+    val statusBarInsetPx = remember(statusBarInsetDp, density) {
+        with(density) { statusBarInsetDp.toPx() }
+    }
+    val partialTopOffsetPx = remember(screenHeightPx, statusBarInsetPx, density) {
+        max(
+            screenHeightPx * ReaderSheetPartialTopFraction,
+            statusBarInsetPx + with(density) { (ReaderHandleAreaHeight + 56.dp).toPx() },
+        )
+    }
+    val sheetTopOffsetPx = remember(entryId) { Animatable(0f) }
+    val followUpTransitionProgress = remember(entryId) { Animatable(0f) }
+    var isClosing by remember(entryId) { mutableStateOf(false) }
+    var lastAnimatedForegroundActivationKey by remember(entryId) {
+        mutableLongStateOf(Long.MIN_VALUE)
+    }
+    var dragOwner by remember(entryId) { mutableStateOf<AppBrowserReaderDragOwner?>(null) }
+    var dragTopOffsetPx by remember(entryId) { mutableStateOf(0f) }
     val lazyListState = rememberLazyListState()
-    var actionsExpanded by remember(content.url) { mutableStateOf(false) }
+    var actionsExpanded by remember(entryId) { mutableStateOf(false) }
+    var headerHeightDp by remember(entryId) { mutableStateOf(ReaderHeaderMaxHeight) }
+    val isDragging = dragOwner != null
+    val currentTopOffsetPx = if (isDragging) dragTopOffsetPx else sheetTopOffsetPx.value
+    val presentationState = remember(currentTopOffsetPx, partialTopOffsetPx, screenHeightPx) {
+        buildAppBrowserSheetPresentationState(
+            topOffsetPx = currentTopOffsetPx,
+            partialTopOffsetPx = partialTopOffsetPx,
+            closedTopOffsetPx = screenHeightPx,
+        )
+    }
+    val containerChromeState = remember(presentationState.fullscreenProgress) {
+        buildAppBrowserReaderContainerChromeState(presentationState.fullscreenProgress)
+    }
+    val followUpTransitionState = remember(followUpTransitionProgress.value) {
+        buildAppBrowserReaderFollowUpTransitionState(followUpTransitionProgress.value)
+    }
+    val topChromeHeight = remember(presentationState.fullscreenProgress, statusBarInsetDp) {
+        buildAppBrowserReaderTopChromeHeight(
+            fullscreenProgress = presentationState.fullscreenProgress,
+            statusBarInset = statusBarInsetDp,
+        )
+    }
+    val canCollapseHeader = containerChromeState.occupiesStatusBar && !isDragging
+    val animatedHeaderHeight by animateDpAsState(
+        targetValue = headerHeightDp,
+        animationSpec = tween(durationMillis = 180, easing = NativeDoEasing.Standard),
+        label = "readerHeaderHeight",
+    )
+    val headerCollapseProgress = remember(animatedHeaderHeight) {
+        1f - ((animatedHeaderHeight - ReaderHeaderMinHeight) /
+            (ReaderHeaderMaxHeight - ReaderHeaderMinHeight)).coerceIn(0f, 1f)
+    }
+    val headerScale = remember(headerCollapseProgress) {
+        1f - (0.12f * headerCollapseProgress)
+    }
     val readerMaxImageHeight = remember(configuration.screenWidthDp, configuration.screenHeightDp) {
         readerImageMaxHeight(
             screenWidthDp = configuration.screenWidthDp,
@@ -209,6 +395,7 @@ private fun AppBrowserReaderScene(
     }
     val mediaViewerState = rememberMediaViewerState()
     var hiddenViewerImage by remember(readerImages) { mutableStateOf<PostBodyImage?>(null) }
+    var contentBoundsInWindow by remember(entryId) { mutableStateOf<IntRect?>(null) }
     val sourceHost = remember(content.url) {
         content.url.toHttpUrlOrNull()?.host ?: content.url
     }
@@ -234,168 +421,395 @@ private fun AppBrowserReaderScene(
     val quoteStyle = typography.quote
     val captionStyle = typography.caption
 
-    LaunchedEffect(content.url) {
-        sceneProgress.snapTo(0f)
-        sceneProgress.animateTo(
-            targetValue = 1f,
-            animationSpec = tween(
-                durationMillis = 320,
-                easing = NativeDoEasing.EaseOutQuint,
+    fun publishReaderPreview(
+        snapshot: Bitmap? = null,
+    ) {
+        onPreviewChanged(
+            buildBrowserHostReaderPreview(
+                content = content,
+                snapshot = snapshot,
             ),
         )
     }
 
-    fun requestClose() {
+    suspend fun animateToAnchor(
+        target: AppBrowserSheetAnchor,
+        durationMillis: Int? = null,
+    ) {
+        val targetOffsetPx = when (target) {
+            AppBrowserSheetAnchor.Closed -> screenHeightPx
+            AppBrowserSheetAnchor.Partial -> partialTopOffsetPx
+            AppBrowserSheetAnchor.Fullscreen -> 0f
+        }
+        sheetTopOffsetPx.animateTo(
+            targetValue = targetOffsetPx,
+            animationSpec = tween(
+                durationMillis = durationMillis ?: 320,
+                easing = if (target == AppBrowserSheetAnchor.Closed) {
+                    NativeDoEasing.BrowserDismiss
+                } else {
+                    NativeDoEasing.EaseOutQuint
+                },
+            ),
+        )
+    }
+
+    LaunchedEffect(
+        screenHeightPx,
+        partialTopOffsetPx,
+        foregroundActivationKey,
+        restoredFromDock,
+        isForeground,
+    ) {
+        if (!isForeground || lastAnimatedForegroundActivationKey == foregroundActivationKey) {
+            return@LaunchedEffect
+        }
+        lastAnimatedForegroundActivationKey = foregroundActivationKey
+        isClosing = false
+        dragOwner = null
+        dragTopOffsetPx = 0f
+        headerHeightDp = ReaderHeaderMaxHeight
+        actionsExpanded = false
+        if (restoredFromDock) {
+            followUpTransitionProgress.snapTo(1f)
+            sheetTopOffsetPx.snapTo(screenHeightPx)
+            animateToAnchor(
+                target = AppBrowserSheetAnchor.Fullscreen,
+                durationMillis = ReaderFollowUpEnterDurationMillis,
+            )
+        } else {
+            sheetTopOffsetPx.snapTo(0f)
+            followUpTransitionProgress.snapTo(0f)
+            followUpTransitionProgress.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(
+                    durationMillis = ReaderFollowUpEnterDurationMillis,
+                    easing = NativeDoEasing.EaseOutQuint,
+                ),
+            )
+        }
+    }
+
+    fun requestClose(
+        dismissMode: AppBrowserReaderDismissMode = AppBrowserReaderDismissMode.ReturnToBrowser,
+        durationMillis: Int = when (dismissMode) {
+            AppBrowserReaderDismissMode.ReturnToBrowser -> ReaderFollowUpReturnDurationMillis
+            AppBrowserReaderDismissMode.MinimizeToDock -> 220
+        },
+    ) {
         if (isClosing) {
             return
         }
         isClosing = true
         coroutineScope.launch {
-            sceneProgress.animateTo(
-                targetValue = 0f,
-                animationSpec = tween(
-                    durationMillis = 180,
-                    easing = NativeDoEasing.BrowserDismiss,
-                ),
-            )
+            if (isDragging) {
+                sheetTopOffsetPx.snapTo(dragTopOffsetPx)
+                dragOwner = null
+            }
+            when (dismissMode) {
+                AppBrowserReaderDismissMode.ReturnToBrowser -> {
+                    dragTopOffsetPx = 0f
+                    sheetTopOffsetPx.snapTo(0f)
+                    followUpTransitionProgress.animateTo(
+                        targetValue = 0f,
+                        animationSpec = tween(
+                            durationMillis = durationMillis,
+                            easing = NativeDoEasing.EaseOutQuint,
+                        ),
+                    )
+                }
+
+                AppBrowserReaderDismissMode.MinimizeToDock -> {
+                    publishReaderPreview()
+                    onMinimize()
+                    return@launch
+                }
+            }
             onClose()
         }
     }
 
-    BackHandler(onBack = ::requestClose)
+    fun ensureDragOwner(owner: AppBrowserReaderDragOwner): Boolean {
+        val currentOwner = dragOwner
+        if (currentOwner != null && currentOwner != owner) {
+            return false
+        }
+        if (currentOwner == null) {
+            dragTopOffsetPx = sheetTopOffsetPx.value
+            dragOwner = owner
+        }
+        return true
+    }
 
-    val nestedScrollConnection = remember(coroutineScope) {
+    fun applyDraggedSheetDelta(
+        owner: AppBrowserReaderDragOwner,
+        dragAmount: Float,
+    ) {
+        if (!ensureDragOwner(owner)) {
+            return
+        }
+        val adjustedDragAmount = if (dragTopOffsetPx >= partialTopOffsetPx && dragAmount > 0f) {
+            dragAmount * ReaderSheetDismissResistance
+        } else {
+            dragAmount
+        }
+        dragTopOffsetPx = (dragTopOffsetPx + adjustedDragAmount)
+            .coerceIn(0f, screenHeightPx)
+    }
+
+    suspend fun completeDraggedSheet(
+        owner: AppBrowserReaderDragOwner,
+        settle: AppBrowserSheetSettle,
+    ) {
+        if (dragOwner != owner) {
+            return
+        }
+        sheetTopOffsetPx.snapTo(dragTopOffsetPx)
+        dragOwner = null
+        when (settle.target) {
+            AppBrowserSheetAnchor.Closed -> requestClose(
+                dismissMode = AppBrowserReaderDismissMode.MinimizeToDock,
+                durationMillis = settle.durationMillis,
+            )
+            AppBrowserSheetAnchor.Partial,
+            AppBrowserSheetAnchor.Fullscreen -> animateToAnchor(
+                target = settle.target,
+                durationMillis = settle.durationMillis,
+            )
+        }
+    }
+
+    fun settleDraggedSheet(owner: AppBrowserReaderDragOwner, velocityPxPerSecond: Float) {
+        if (dragOwner != owner) {
+            return
+        }
+        val settle = buildAppBrowserReaderSheetSettle(
+            currentTopOffsetPx = dragTopOffsetPx,
+            velocityPxPerSecond = velocityPxPerSecond,
+            partialTopOffsetPx = partialTopOffsetPx,
+            closedTopOffsetPx = screenHeightPx,
+        )
+        coroutineScope.launch {
+            completeDraggedSheet(owner, settle)
+        }
+    }
+
+    BackHandler(enabled = isForeground) { requestClose() }
+
+    fun resolveCurrentTopOffsetPx(): Float = if (isDragging) dragTopOffsetPx else sheetTopOffsetPx.value
+
+    fun resolveCanCollapseHeader(): Boolean {
+        return buildAppBrowserReaderContainerChromeState(
+            buildAppBrowserSheetPresentationState(
+                topOffsetPx = resolveCurrentTopOffsetPx(),
+                partialTopOffsetPx = partialTopOffsetPx,
+                closedTopOffsetPx = screenHeightPx,
+            ).attachedProgress,
+        ).occupiesStatusBar && !isDragging
+    }
+
+    val headerMaxPx = with(density) { ReaderHeaderMaxHeight.toPx() }
+    val headerMinPx = with(density) { ReaderHeaderMinHeight.toPx() }
+    val nestedScrollConnection = remember(
+        density,
+        lazyListState,
+        screenHeightPx,
+        partialTopOffsetPx,
+    ) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (available.y > 0f && dismissOffset > 0f) {
-                    val consumed = minOf(available.y, dismissOffset)
-                    dismissOffset -= consumed
-                    return Offset(0f, consumed)
-                }
-                return Offset.Zero
-            }
-
-            override fun onPostScroll(
-                consumed: Offset,
-                available: Offset,
-                source: NestedScrollSource,
-            ): Offset {
-                if (available.y > 0f && lazyListState.firstVisibleItemIndex == 0 &&
+                val isAtTop = lazyListState.firstVisibleItemIndex == 0 &&
                     lazyListState.firstVisibleItemScrollOffset == 0
-                ) {
-                    dismissOffset += available.y
+                val currentTopOffsetPx = resolveCurrentTopOffsetPx()
+                val canCollapseHeader = resolveCanCollapseHeader()
+
+                if (currentTopOffsetPx > 0f && available.y < 0f) {
+                    if (!ensureDragOwner(AppBrowserReaderDragOwner.Content)) {
+                        return Offset.Zero
+                    }
+                    val consumable = minOf(-available.y, dragTopOffsetPx)
+                    applyDraggedSheetDelta(
+                        owner = AppBrowserReaderDragOwner.Content,
+                        dragAmount = -consumable,
+                    )
+                    return Offset(0f, -consumable)
+                }
+
+                if (available.y > 0f && isAtTop) {
+                    if (canCollapseHeader) {
+                        val currentPx = with(density) { headerHeightDp.toPx() }
+                        if (currentPx < headerMaxPx) {
+                            val consumable = minOf(available.y, headerMaxPx - currentPx)
+                            headerHeightDp = with(density) { (currentPx + consumable).toDp() }
+                            return Offset(0f, consumable)
+                        }
+                    }
+                    if (!ensureDragOwner(AppBrowserReaderDragOwner.Content)) {
+                        return Offset.Zero
+                    }
+                    applyDraggedSheetDelta(
+                        owner = AppBrowserReaderDragOwner.Content,
+                        dragAmount = available.y,
+                    )
                     return Offset(0f, available.y)
+                }
+
+                if (canCollapseHeader && available.y < 0f) {
+                    val currentPx = with(density) { headerHeightDp.toPx() }
+                    if (currentPx > headerMinPx) {
+                        val consumable = minOf(-available.y, currentPx - headerMinPx)
+                        headerHeightDp = with(density) { (currentPx - consumable).toDp() }
+                        return Offset(0f, -consumable)
+                    }
                 }
                 return Offset.Zero
             }
 
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                val threshold = screenHeightPx * 0.25f
-                if (dismissOffset > threshold || (dismissOffset > 0f && available.y > 1000f)) {
-                    requestClose()
-                } else if (dismissOffset > 0f) {
-                    val anim = Animatable(dismissOffset)
-                    anim.animateTo(
-                        targetValue = 0f,
-                        animationSpec = tween(180, easing = NativeDoEasing.Standard),
-                    ) { dismissOffset = value }
+                if (dragOwner == AppBrowserReaderDragOwner.Content) {
+                    completeDraggedSheet(
+                        owner = AppBrowserReaderDragOwner.Content,
+                        settle = buildAppBrowserReaderSheetSettle(
+                            currentTopOffsetPx = dragTopOffsetPx,
+                            velocityPxPerSecond = available.y,
+                            partialTopOffsetPx = partialTopOffsetPx,
+                            closedTopOffsetPx = screenHeightPx,
+                        ),
+                    )
+                } else if (resolveCanCollapseHeader()) {
+                    val currentPx = with(density) { headerHeightDp.toPx() }
+                    val mid = (headerMaxPx + headerMinPx) / 2f
+                    headerHeightDp = if (currentPx > mid) {
+                        ReaderHeaderMaxHeight
+                    } else {
+                        ReaderHeaderMinHeight
+                    }
+                } else {
+                    headerHeightDp = ReaderHeaderMaxHeight
                 }
                 return Velocity.Zero
             }
         }
     }
 
-    // Scrim background
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .drawBehind {
-                drawRect(
-                    androidx.compose.ui.graphics.Color.Black.copy(
-                        alpha = 0.38f * sceneProgress.value *
-                            (1f - (dismissOffset / screenHeightPx).coerceIn(0f, 1f)),
-                    ),
-                )
-            }
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = ::requestClose,
-            ),
-    )
+    LaunchedEffect(canCollapseHeader) {
+        if (!canCollapseHeader) {
+            headerHeightDp = ReaderHeaderMaxHeight
+        }
+    }
+    LaunchedEffect(
+        content.title,
+        content.sourceName,
+        content.url,
+    ) {
+        publishReaderPreview()
+    }
+
+    Box(modifier = Modifier.fillMaxSize())
 
     NativeDoReaderScaffold(
         modifier = modifier
+            .fillMaxSize()
             .graphicsLayer {
-                translationY = (1f - sceneProgress.value) * screenHeightPx + dismissOffset
+                translationX = screenWidthPx * followUpTransitionState.translationFraction
+                translationY = currentTopOffsetPx
+                alpha = followUpTransitionState.alpha
             }
-            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)),
+            .clip(
+                RoundedCornerShape(
+                    topStart = containerChromeState.cornerRadius,
+                    topEnd = containerChromeState.cornerRadius,
+                ),
+            ),
         topBar = {
+            val headerInteractionSource = remember { MutableInteractionSource() }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .statusBarsPadding(),
+                    .background(colors.backgroundElevated)
+                    .clickable(
+                        interactionSource = headerInteractionSource,
+                        indication = null,
+                        onClick = {},
+                    ),
             ) {
-                // Drag handle
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(colors.backgroundElevated)
-                        .padding(top = 8.dp, bottom = 4.dp),
+                        .height(topChromeHeight),
                     contentAlignment = Alignment.Center,
                 ) {
                     Box(
                         modifier = Modifier
-                            .width(32.dp)
-                            .height(4.dp)
+                            .width(containerChromeState.handleWidth)
+                            .height(ReaderHandleHeight)
+                            .clip(RoundedCornerShape(percent = 50))
                             .background(
-                                color = colors.textSecondary.copy(alpha = 0.2f),
-                                shape = RoundedCornerShape(2.dp),
+                                colors.textSecondary.copy(alpha = 0.18f * containerChromeState.handleAlpha),
                             ),
                     )
                 }
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    color = colors.backgroundElevated,
-                    tonalElevation = 0.dp,
-                    shadowElevation = 0.dp,
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(animatedHeaderHeight)
+                        .padding(horizontal = AppTopBarHorizontalPadding)
+                        .graphicsLayer {
+                            scaleX = headerScale
+                            scaleY = headerScale
+                            transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 1f)
+                        },
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(
+                    IconButton(onClick = { requestClose() }) {
+                        Icon(
+                            imageVector = Icons.Outlined.Close,
+                            contentDescription = stringResource(R.string.app_browser_close),
+                            tint = colors.textPrimary,
+                        )
+                    }
+                    Text(
+                        text = topLabel,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = colors.textPrimary,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .height(AppTopBarRowMinHeight)
-                            .padding(
-                                horizontal = AppTopBarHorizontalPadding,
-                                vertical = AppTopBarVerticalPadding,
-                            ),
+                            .weight(1f)
+                            .padding(horizontal = 4.dp),
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        IconButton(onClick = ::requestClose) {
-                            NativeDoBackIcon(
-                                progress = 0f,
-                                contentDescription = null,
+                        IconButton(
+                            onClick = {
+                                actionsExpanded = false
+                                publishReaderPreview(
+                                    snapshot = captureWindowRegionBitmap(
+                                        rootView = view.rootView,
+                                        boundsInWindow = contentBoundsInWindow,
+                                        maxWidthPx = 720,
+                                        maxHeightPx = 1280,
+                                    ),
+                                )
+                                onMinimize()
+                            },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.KeyboardArrowDown,
+                                contentDescription = stringResource(R.string.app_browser_minimize),
+                                tint = colors.textPrimary,
                             )
                         }
-                        NativeDoAnimatedLabel(
-                            title = topLabel,
-                            subtitle = sourceHost,
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(horizontal = 4.dp),
-                            titleStyle = MaterialTheme.typography.titleMedium,
-                            subtitleStyle = MaterialTheme.typography.labelMedium,
-                            titleColor = colors.textPrimary,
-                            subtitleColor = colors.textSecondary,
-                        )
                         IconButton(onClick = { actionsExpanded = !actionsExpanded }) {
                             androidx.compose.material3.Icon(
-                                imageVector = Icons.Outlined.MoreVert,
-                                contentDescription = stringResource(R.string.app_browser_more_actions),
-                                tint = colors.textPrimary,
+                            imageVector = Icons.Outlined.MoreVert,
+                            contentDescription = stringResource(R.string.app_browser_more_actions),
+                            tint = colors.textPrimary,
                             )
                         }
                     }
                 }
-                // Thin shadow line (Telegram-style: 0.66dp)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -439,6 +853,9 @@ private fun AppBrowserReaderScene(
             modifier = Modifier
                 .fillMaxSize()
                 .nestedScroll(nestedScrollConnection)
+                .onGloballyPositioned { coordinates ->
+                    contentBoundsInWindow = coordinates.boundsInWindow().roundToIntRect()
+                }
                 .padding(paddingValues)
                 .background(colors.backgroundElevated),
             contentPadding = PaddingValues(
@@ -1940,3 +2357,40 @@ private fun formatAppBrowserReaderPublishedTime(
         .atZone(zoneId)
         .format(appBrowserReaderMetaDateFormatter)
 }
+
+private fun captureWindowRegionBitmap(
+    rootView: View?,
+    boundsInWindow: IntRect?,
+    maxWidthPx: Int,
+    maxHeightPx: Int,
+): Bitmap? {
+    val safeRootView = rootView ?: return null
+    val rect = boundsInWindow ?: return null
+    if (rect.width <= 0 || rect.height <= 0) {
+        return null
+    }
+    val scale = minOf(
+        1f,
+        maxWidthPx.toFloat() / rect.width.toFloat(),
+        maxHeightPx.toFloat() / rect.height.toFloat(),
+    )
+    val targetWidth = (rect.width * scale).toInt().coerceAtLeast(1)
+    val targetHeight = (rect.height * scale).toInt().coerceAtLeast(1)
+    val bitmap = Bitmap.createBitmap(
+        targetWidth,
+        targetHeight,
+        Bitmap.Config.ARGB_8888,
+    )
+    val canvas = Canvas(bitmap)
+    canvas.scale(scale, scale)
+    canvas.translate(-rect.left.toFloat(), -rect.top.toFloat())
+    safeRootView.draw(canvas)
+    return bitmap
+}
+
+private fun androidx.compose.ui.geometry.Rect.roundToIntRect(): IntRect = IntRect(
+    left = left.toInt(),
+    top = top.toInt(),
+    right = right.toInt(),
+    bottom = bottom.toInt(),
+)

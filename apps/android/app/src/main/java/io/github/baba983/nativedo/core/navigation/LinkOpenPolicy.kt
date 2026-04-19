@@ -35,7 +35,7 @@ internal class LinkOpenPolicy(
                 return LinkNavigationDecision.SystemBrowser(resolvedUrl.toString())
             }
             return when (defaultExternalOpenMode) {
-                AppBrowserExternalOpenMode.InAppBrowser -> LinkNavigationDecision.ExternalApp(resolvedUrl.toString())
+                AppBrowserExternalOpenMode.InAppBrowser -> LinkNavigationDecision.AppBrowser(resolvedUrl.toString())
                 AppBrowserExternalOpenMode.SystemBrowser -> LinkNavigationDecision.SystemBrowser(resolvedUrl.toString())
             }
         }

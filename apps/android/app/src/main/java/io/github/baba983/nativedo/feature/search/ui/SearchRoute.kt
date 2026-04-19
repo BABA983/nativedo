@@ -28,6 +28,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -142,6 +143,7 @@ internal fun SearchSceneTopBar(
     ).copy(alpha = 0.97f)
     LaunchedEffect(autoFocus) {
         if (autoFocus) {
+            kotlinx.coroutines.delay(100)
             focusRequester.requestFocus()
             keyboardController?.show()
         }
@@ -168,14 +170,41 @@ internal fun SearchSceneTopBar(
             onSubmit = { onQuerySubmitted(query) },
             trailingContent = {
                 if (onCloseRequest != null) {
+                    val showClear = query.isNotBlank()
+                    val clearRotation by androidx.compose.animation.core.animateFloatAsState(
+                        targetValue = if (showClear) 0f else 90f,
+                        animationSpec = androidx.compose.animation.core.tween(
+                            durationMillis = 200,
+                            easing = androidx.compose.animation.core.LinearOutSlowInEasing,
+                        ),
+                        label = "search_clear_rotation",
+                    )
+                    val clearAlpha by androidx.compose.animation.core.animateFloatAsState(
+                        targetValue = if (showClear) 1f else 0f,
+                        animationSpec = androidx.compose.animation.core.tween(
+                            durationMillis = 200,
+                            easing = androidx.compose.animation.core.LinearOutSlowInEasing,
+                        ),
+                        label = "search_clear_alpha",
+                    )
                     IconButton(
-                        onClick = onCloseRequest,
+                        onClick = {
+                            if (showClear) {
+                                onQueryChanged("")
+                            } else {
+                                onCloseRequest()
+                            }
+                        },
                         modifier = Modifier.size(32.dp),
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.Close,
                             contentDescription = null,
                             tint = colors.textSecondary,
+                            modifier = Modifier.graphicsLayer {
+                                rotationZ = clearRotation
+                                alpha = if (showClear) clearAlpha else 1f
+                            },
                         )
                     }
                 } else {

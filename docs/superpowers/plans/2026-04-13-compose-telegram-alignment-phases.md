@@ -642,6 +642,20 @@
 
 - backdrop substrate 是否继续深入，有明确结论
 
+### 当前进度（2026-04-14）
+
+- [x] 已落地 `BackdropHost / Registry / Node` 协议，glass surface 可按 bounds 注册 backdrop 节点
+- [x] 已完成 system bar 收口、Android substrate 接线、低分辨率 snapshot + blur + 材质裁切
+- [ ] `scene-only capture` 仍未完成；当前 snapshot 仍抓 `composeView.rootView`，这是本轮 spike 的已知限制
+- [x] `NativeDoGlassSurface` 已支持 `TintOnly / Blurred / Liquid`，并保留 fake glass 作为降级路径
+- [x] root chrome、browser chrome、bulletin、search field、popup menu 已接到 substrate 第一批试点
+- [x] 已按 Android 版本与 low-RAM 条件做第一层降级；滚动/转场中的动态回退仍待补
+- [x] 验证基线已跑通：`compileDebugKotlin`、`:app:testDebugUnitTest`、`:app:assembleDebug`
+- [x] 已收口 chrome popup presenter 边界：browser / media viewer 使用 `AnchoredPopup`，root header 使用 `ContextualOptions`
+- [x] browser chrome 已切到显式 `Browse / Search / AddressEditing / HistoryPopup / OverflowMenu / Subpanel` scene
+- [x] media viewer chrome state 已显式建模 `isVisible / isMenuExpanded / isAutoHideSuspended`，菜单展开不再散落在 dialog 局部状态
+- [x] root shell 已接入 `Normal / Search / ActionMode / ContextualOptions` 状态模型，并通过 `HomeRoute` 回传搜索态
+
 ### Phase B 验收标准
 
 - [ ] root chrome 可切换 `TintOnly / Blurred / Liquid`

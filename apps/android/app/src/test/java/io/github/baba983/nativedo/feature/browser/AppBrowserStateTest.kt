@@ -197,7 +197,7 @@ class AppBrowserStateTest {
     }
 
     @Test
-    fun appBrowserSheetSettle_snapsBackToPartialByDefault() {
+    fun appBrowserSheetSettle_restoresFullscreenByDefault() {
         val settle = buildAppBrowserSheetSettle(
             currentTopOffsetPx = 220f,
             velocityPxPerSecond = 100f,
@@ -205,7 +205,7 @@ class AppBrowserStateTest {
             closedTopOffsetPx = 800f,
         )
 
-        assertThat(settle.target).isEqualTo(AppBrowserSheetAnchor.Partial)
+        assertThat(settle.target).isEqualTo(AppBrowserSheetAnchor.Fullscreen)
     }
 
     @Test
@@ -536,7 +536,7 @@ class AppBrowserStateTest {
 
         assertThat(state.fillFraction).isEqualTo(0f)
         assertThat(state.fillAlpha).isEqualTo(0f)
-        assertThat(state.dividerAlpha).isEqualTo(0.06f)
+        assertThat(state.dividerAlpha).isEqualTo(0f)
     }
 
     @Test
@@ -548,7 +548,7 @@ class AppBrowserStateTest {
 
         assertThat(state.fillFraction).isEqualTo(0.5f)
         assertThat(state.fillAlpha).isWithin(0.0001f).of(0.09f)
-        assertThat(state.dividerAlpha).isWithin(0.0001f).of(0.09f)
+        assertThat(state.dividerAlpha).isWithin(0.0001f).of(0.04f)
     }
 
     @Test
@@ -560,7 +560,7 @@ class AppBrowserStateTest {
 
         assertThat(state.fillFraction).isEqualTo(1f)
         assertThat(state.fillAlpha).isWithin(0.0001f).of(0.18f)
-        assertThat(state.dividerAlpha).isWithin(0.0001f).of(0.12f)
+        assertThat(state.dividerAlpha).isWithin(0.0001f).of(0.08f)
     }
 
     @Test
@@ -674,6 +674,7 @@ class AppBrowserStateTest {
             AppBrowserMenuAction.Search,
             AppBrowserMenuAction.History,
             AppBrowserMenuAction.Settings,
+            AppBrowserMenuAction.Minimize,
             AppBrowserMenuAction.Close,
         ).inOrder()
         assertThat(entries.count { entry -> entry is AppBrowserMenuEntry.Divider }).isEqualTo(2)

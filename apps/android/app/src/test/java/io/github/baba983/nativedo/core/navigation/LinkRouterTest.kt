@@ -59,10 +59,10 @@ class LinkRouterTest {
     }
 
     @Test
-    fun resolve_externalUrl_returnsExternalApp() {
+    fun resolve_externalUrl_returnsAppBrowser() {
         val url = "https://example.com/page"
         val result = router.resolve(url)
-        assertThat(result).isEqualTo(LinkOpenTarget.ExternalApp(url))
+        assertThat(result).isEqualTo(LinkOpenTarget.AppBrowser(url))
     }
 
     @Test

@@ -2,6 +2,7 @@ package io.github.baba983.nativedo.feature.browser
 
 internal sealed interface AppBrowserAction {
     data object NavigateBack : AppBrowserAction
+    data object MinimizeBrowser : AppBrowserAction
     data object CloseBrowser : AppBrowserAction
     data object StartAddressEditing : AppBrowserAction
     data object CancelAddressEditing : AppBrowserAction

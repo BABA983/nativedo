@@ -6,6 +6,7 @@ import android.text.InputType
 import android.text.TextWatcher
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
@@ -23,6 +24,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.LocalIndication
@@ -94,8 +96,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
@@ -129,6 +133,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlin.math.sqrt
 import kotlinx.coroutines.delay
 
 internal enum class AppBrowserMenuAction {
@@ -143,6 +148,7 @@ internal enum class AppBrowserMenuAction {
     OpenInBrowser,
     CopyLink,
     Settings,
+    Minimize,
     Close,
 }
 
@@ -161,10 +167,40 @@ internal data class AppBrowserPopupDividerMetrics(
     val gapHeight: androidx.compose.ui.unit.Dp,
 )
 
+internal data class AppBrowserTopBarCollapseMetrics(
+    val menuScale: Float,
+    val menuTranslationProgress: Float,
+    val titleScale: Float,
+    val titleTranslationProgress: Float,
+)
+
 internal fun appBrowserPopupDividerMetrics(): AppBrowserPopupDividerMetrics = AppBrowserPopupDividerMetrics(
     spacing = 2.dp,
     gapHeight = 6.dp,
 )
+
+internal fun buildAppBrowserTopBarCollapseMetrics(
+    headerCollapseProgress: Float,
+    scrollProgress: Float,
+): AppBrowserTopBarCollapseMetrics {
+    val resolvedHeaderProgress = headerCollapseProgress.coerceIn(0f, 1f)
+    val resolvedScrollProgress = scrollProgress.coerceIn(0f, 1f)
+    val expandedHeight = AppBrowserTopBarOverlayHeight.value.coerceAtLeast(1f)
+    val collapsedHeight = AppBrowserCollapsedTopBarOverlayHeight.value.coerceIn(0f, expandedHeight)
+    val currentHeight = expandedHeight - ((expandedHeight - collapsedHeight) * resolvedHeaderProgress)
+    val menuScale = sqrt((currentHeight / expandedHeight).coerceIn(0f, 1f).toDouble()).toFloat()
+    return AppBrowserTopBarCollapseMetrics(
+        menuScale = menuScale,
+        menuTranslationProgress = (1f - menuScale).coerceIn(0f, 1f),
+        titleScale = menuScale * (1f - (0.03f * resolvedScrollProgress)),
+        titleTranslationProgress = resolvedHeaderProgress,
+    )
+}
+
+internal fun buildAppBrowserScrubbedProgress(
+    currentProgress: Float,
+    deltaFraction: Float,
+): Float = (currentProgress + deltaFraction).coerceIn(0f, 1f)
 
 internal data class AppBrowserHistoryEntry(
     val title: String,
@@ -182,9 +218,11 @@ internal fun AppBrowserTopBar(
     search: AppBrowserSearchUiState,
     address: AppBrowserAddressUiState,
     topInset: Dp = 0.dp,
+    onScrollScrub: (Float) -> Unit = {},
     onAction: (AppBrowserAction) -> Unit,
 ) {
     val colors = NativeDoThemeExtras.colors
+    val view = LocalView.current
     val hasBackHistoryEntries = chrome.backHistoryEntries.isNotEmpty()
     val hasBrowserHistoryEntries = chrome.browserHistoryEntries.isNotEmpty()
     val chromeScene = chrome.scene
@@ -263,7 +301,7 @@ internal fun AppBrowserTopBar(
     ) { searching ->
         if (searching) 1f else 0f
     }
-    val titleScale by searchTransition.animateFloat(
+    val searchTitleScale by searchTransition.animateFloat(
         transitionSpec = {
             tween(
                 durationMillis = if (targetState) NativeDoDuration.BrowserSearchEnter else NativeDoDuration.ContentExit,
@@ -331,7 +369,15 @@ internal fun AppBrowserTopBar(
     val topBarRevealProgress = 1f - addressingProgress
     val topBarExitOffset = with(LocalDensity.current) { 14.dp.toPx() }
     val addressSceneExitOffset = with(LocalDensity.current) { 10.dp.toPx() }
-    val collapsedTitleScale = 1f - (0.06f * headerCollapseProgress)
+    val collapseMetrics = remember(headerCollapseProgress, scrollProgress) {
+        buildAppBrowserTopBarCollapseMetrics(
+            headerCollapseProgress = headerCollapseProgress,
+            scrollProgress = scrollProgress,
+        )
+    }
+    val menuTranslationX = with(LocalDensity.current) { 42.dp.toPx() * collapseMetrics.menuTranslationProgress }
+    val menuTranslationY = with(LocalDensity.current) { (-12).dp.toPx() * collapseMetrics.menuTranslationProgress }
+    val titleTranslationY = with(LocalDensity.current) { (-4).dp.toPx() * collapseMetrics.titleTranslationProgress }
 
     val menuEntries = remember(
         chrome.canGoForward,
@@ -446,14 +492,22 @@ internal fun AppBrowserTopBar(
                         Spacer(modifier = Modifier.height(topInset))
                         NativeDoGlassBar(
                             modifier = Modifier.fillMaxWidth(),
-                            minHeight = AppTopBarRowMinHeight,
+                            minHeight = AppBrowserTopBarRowMinHeight,
                             contentPadding = PaddingValues(
                                 horizontal = AppTopBarHorizontalPadding,
                                 vertical = topBarVerticalPadding,
                             ),
                             sectionSpacing = 12.dp,
                             leading = {
-                                Box {
+                                Box(
+                                    modifier = Modifier.graphicsLayer {
+                                        scaleX = collapseMetrics.menuScale
+                                        scaleY = collapseMetrics.menuScale
+                                        translationX = menuTranslationX
+                                        translationY = menuTranslationY
+                                        transformOrigin = TransformOrigin(0f, 0f)
+                                    },
+                                ) {
                                     AppBrowserHistoryAnchorHighlight(
                                         visible = historyExpanded,
                                     )
@@ -510,6 +564,13 @@ internal fun AppBrowserTopBar(
                                             title = chrome.title,
                                             subtitle = chrome.subtitle,
                                             isHttps = chrome.isHttps,
+                                            onProgressScrub = if (!isSearching && !isInSubPanel) {
+                                                { deltaFraction ->
+                                                    onScrollScrub(deltaFraction)
+                                                }
+                                            } else {
+                                                null
+                                            },
                                             onClick = if (!isSearching && !isInSubPanel) {
                                                 {
                                                     onAction(AppBrowserAction.StartAddressEditing)
@@ -521,8 +582,10 @@ internal fun AppBrowserTopBar(
                                                 .fillMaxWidth()
                                                 .graphicsLayer {
                                                     alpha = 1f - searchingProgress
-                                                    scaleX = titleScale * collapsedTitleScale
-                                                    scaleY = titleScale * collapsedTitleScale
+                                                    scaleX = searchTitleScale * collapseMetrics.titleScale
+                                                    scaleY = searchTitleScale * collapseMetrics.titleScale
+                                                    translationY = titleTranslationY
+                                                    transformOrigin = TransformOrigin(0.5f, 0f)
                                                 },
                                         )
                                     }
@@ -547,19 +610,38 @@ internal fun AppBrowserTopBar(
                             },
                             trailing = {
                                 Box(
-                                    modifier = Modifier.width(44.dp),
+                                    modifier = Modifier
+                                        .width(if (showMenuButton) 92.dp else 44.dp)
+                                        .graphicsLayer {
+                                            scaleX = collapseMetrics.menuScale
+                                            scaleY = collapseMetrics.menuScale
+                                            translationX = -menuTranslationX
+                                            translationY = menuTranslationY
+                                            transformOrigin = TransformOrigin(1f, 0f)
+                                        },
                                 ) {
                                     if (showMenuButton) {
-                                        Box {
+                                        Row(
+                                            modifier = Modifier.align(Alignment.CenterEnd),
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
                                             AppBrowserChromeButton(
-                                                onClick = {
-                                                    onAction(AppBrowserAction.SetHistoryPopupVisible(false))
-                                                    onAction(AppBrowserAction.SetOverflowMenuVisible(!menuExpanded))
-                                                },
-                                                imageVector = Icons.Outlined.MoreVert,
-                                                contentDescription = stringResource(R.string.app_browser_more_actions),
-                                                modifier = Modifier.align(Alignment.Center),
+                                                onClick = { onAction(AppBrowserAction.MinimizeBrowser) },
+                                                imageVector = Icons.Outlined.KeyboardArrowDown,
+                                                contentDescription = stringResource(R.string.app_browser_minimize),
                                             )
+                                            Box {
+                                                AppBrowserChromeButton(
+                                                    onClick = {
+                                                        onAction(AppBrowserAction.SetHistoryPopupVisible(false))
+                                                        onAction(AppBrowserAction.SetOverflowMenuVisible(!menuExpanded))
+                                                    },
+                                                    imageVector = Icons.Outlined.MoreVert,
+                                                    contentDescription = stringResource(R.string.app_browser_more_actions),
+                                                    modifier = Modifier.align(Alignment.Center),
+                                                )
+                                            }
                                         }
                                         AppBrowserActionPopup(
                                             expanded = menuExpanded,
@@ -581,6 +663,7 @@ internal fun AppBrowserTopBar(
                                                     AppBrowserMenuAction.OpenInBrowser -> onAction(AppBrowserAction.OpenInBrowser)
                                                     AppBrowserMenuAction.CopyLink -> onAction(AppBrowserAction.CopyLink)
                                                     AppBrowserMenuAction.Settings -> onAction(AppBrowserAction.OpenSettings)
+                                                    AppBrowserMenuAction.Minimize -> onAction(AppBrowserAction.MinimizeBrowser)
                                                     AppBrowserMenuAction.Close -> onAction(AppBrowserAction.CloseBrowser)
                                                 }
                                             },
@@ -1288,34 +1371,56 @@ internal fun AppBrowserTitlePill(
     subtitle: String?,
     isHttps: Boolean,
     onClick: (() -> Unit)? = null,
+    onProgressScrub: ((Float) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val colors = NativeDoThemeExtras.colors
+    val view = LocalView.current
     val statusTint = if (isHttps) colors.accent else colors.textSecondary
     val resolvedTitle = title.ifBlank { " " }
+    val interactionSource = remember { MutableInteractionSource() }
 
     NativeDoGlassSurface(
-        modifier = if (onClick != null) {
-            modifier.clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-            )
-        } else {
-            modifier
-        },
+        modifier = modifier
+            .pointerInput(onProgressScrub) {
+                if (onProgressScrub == null) {
+                    return@pointerInput
+                }
+                detectDragGesturesAfterLongPress(
+                    onDragStart = {
+                        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                    },
+                    onDrag = { change, dragAmount ->
+                        change.consume()
+                        if (size.width > 0) {
+                            onProgressScrub(dragAmount.x / (0.8f * size.width))
+                        }
+                    },
+                )
+            }
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        onClick = onClick,
+                    )
+                } else {
+                    Modifier
+                },
+            ),
         shape = NativeDoPillShape,
         glassSpec = NativeDoThemeExtras.glass(NativeDoGlassRole.Chrome),
     ) {
         NativeDoGlassBar(
             modifier = Modifier.fillMaxWidth(),
             minHeight = 0.dp,
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),  // 从 14dp/10dp 减小到 12dp/6dp
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 5.dp),
             sectionSpacing = 8.dp,  // 从 10dp 减小到 8dp
             leading = {
                 Box(
                     modifier = Modifier
-                        .size(24.dp)  // 从 28dp 减小到 24dp
+                        .size(22.dp)
                         .background(
                             color = statusTint.copy(alpha = 0.14f),
                             shape = CircleShape,
@@ -1326,7 +1431,7 @@ internal fun AppBrowserTitlePill(
                         imageVector = if (isHttps) Icons.Outlined.Lock else Icons.Outlined.LockOpen,
                         contentDescription = null,
                         tint = statusTint,
-                        modifier = Modifier.size(12.dp),  // 从 14dp 减小到 12dp
+                        modifier = Modifier.size(11.dp),
                     )
                 }
             },
@@ -1806,6 +1911,7 @@ private fun AppBrowserMenuAction.label(): String = when (this) {
     AppBrowserMenuAction.OpenInBrowser -> androidx.compose.ui.res.stringResource(R.string.app_browser_open_in_browser)
     AppBrowserMenuAction.CopyLink -> androidx.compose.ui.res.stringResource(R.string.app_browser_copy_link)
     AppBrowserMenuAction.Settings -> androidx.compose.ui.res.stringResource(R.string.app_browser_settings)
+    AppBrowserMenuAction.Minimize -> androidx.compose.ui.res.stringResource(R.string.app_browser_minimize)
     AppBrowserMenuAction.Close -> androidx.compose.ui.res.stringResource(R.string.app_browser_close)
 }
 
@@ -1821,6 +1927,7 @@ private fun AppBrowserMenuAction.icon(): ImageVector = when (this) {
     AppBrowserMenuAction.OpenInBrowser -> Icons.Outlined.OpenInBrowser
     AppBrowserMenuAction.CopyLink -> Icons.Outlined.ContentCopy
     AppBrowserMenuAction.Settings -> Icons.Outlined.Settings
+    AppBrowserMenuAction.Minimize -> Icons.Outlined.KeyboardArrowDown
     AppBrowserMenuAction.Close -> Icons.Outlined.Close
 }
 

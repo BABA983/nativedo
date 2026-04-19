@@ -1,6 +1,7 @@
 package io.github.baba983.nativedo.feature.browser
 
 import com.google.common.truth.Truth.assertThat
+import androidx.compose.ui.unit.dp
 import io.github.baba983.nativedo.core.navigation.AppBrowserReaderBlock
 import io.github.baba983.nativedo.core.navigation.AppBrowserReaderTableCell
 import io.github.baba983.nativedo.core.navigation.AppBrowserReaderTableRow
@@ -100,6 +101,76 @@ class AppBrowserReaderSceneTest {
         assertThat(readerListMarkerWidth(ordered = true, itemCount = 3).value).isEqualTo(26f)
         assertThat(readerListMarkerWidth(ordered = true, itemCount = 10).value).isEqualTo(30f)
         assertThat(readerListMarkerWidth(ordered = true, itemCount = 100).value).isEqualTo(34f)
+    }
+
+    @Test
+    fun appBrowserReaderContainerChromeState_matchesTelegramFullscreenAndHalfSheet() {
+        val partial = buildAppBrowserReaderContainerChromeState(fullscreenProgress = 0f)
+        val fullscreen = buildAppBrowserReaderContainerChromeState(fullscreenProgress = 1f)
+
+        assertThat(partial.cornerRadius).isEqualTo(16.dp)
+        assertThat(partial.handleWidth).isEqualTo(32.dp)
+        assertThat(partial.handleAlpha).isEqualTo(1f)
+        assertThat(partial.occupiesStatusBar).isFalse()
+
+        assertThat(fullscreen.cornerRadius).isEqualTo(0.dp)
+        assertThat(fullscreen.handleWidth).isEqualTo(48.dp)
+        assertThat(fullscreen.handleAlpha).isEqualTo(0f)
+        assertThat(fullscreen.occupiesStatusBar).isTrue()
+    }
+
+    @Test
+    fun appBrowserReaderTopChromeHeight_onlyInterpolatesAfterAttachThreshold() {
+        val partial = buildAppBrowserReaderTopChromeHeight(
+            fullscreenProgress = 0f,
+            statusBarInset = 30.dp,
+        )
+        val mid = buildAppBrowserReaderTopChromeHeight(
+            fullscreenProgress = 0.5f,
+            statusBarInset = 30.dp,
+        )
+        val fullscreen = buildAppBrowserReaderTopChromeHeight(
+            fullscreenProgress = 1f,
+            statusBarInset = 30.dp,
+        )
+
+        assertThat(partial).isEqualTo(24.dp)
+        assertThat(mid).isEqualTo(24.dp)
+        assertThat(fullscreen).isEqualTo(30.dp)
+    }
+
+    @Test
+    fun appBrowserReaderTopChromeHeight_waitsForAttachThresholdBeforeOccupyingStatusBar() {
+        val beforeAttach = buildAppBrowserReaderTopChromeHeight(
+            fullscreenProgress = 0.84f,
+            statusBarInset = 30.dp,
+        )
+
+        assertThat(beforeAttach).isEqualTo(24.dp)
+    }
+
+    @Test
+    fun appBrowserReaderContainerChromeState_keepsSheetGeometryUntilAttachThreshold() {
+        val beforeAttach = buildAppBrowserReaderContainerChromeState(fullscreenProgress = 0.84f)
+
+        assertThat(beforeAttach.cornerRadius).isEqualTo(16.dp)
+        assertThat(beforeAttach.handleWidth).isEqualTo(32.dp)
+        assertThat(beforeAttach.handleAlpha).isEqualTo(1f)
+        assertThat(beforeAttach.occupiesStatusBar).isFalse()
+    }
+
+    @Test
+    fun appBrowserReaderFollowUpTransitionState_slidesInFromRightWithoutReusingSheetOpenMotion() {
+        val entering = buildAppBrowserReaderFollowUpTransitionState(progress = 0f)
+        val mid = buildAppBrowserReaderFollowUpTransitionState(progress = 0.5f)
+        val shown = buildAppBrowserReaderFollowUpTransitionState(progress = 1f)
+
+        assertThat(entering.translationFraction).isEqualTo(1f)
+        assertThat(entering.alpha).isEqualTo(0.92f)
+        assertThat(mid.translationFraction).isEqualTo(0.5f)
+        assertThat(mid.alpha).isWithin(0.0001f).of(0.96f)
+        assertThat(shown.translationFraction).isEqualTo(0f)
+        assertThat(shown.alpha).isEqualTo(1f)
     }
 }
 
