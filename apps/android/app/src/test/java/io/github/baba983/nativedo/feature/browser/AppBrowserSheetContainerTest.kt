@@ -22,6 +22,28 @@ class AppBrowserSheetContainerTest {
     }
 
     @Test
+    fun appBrowserSheetRestoreSettleMotionState_addsTinyInPlaceSettle() {
+        assertThat(
+            buildAppBrowserSheetRestoreSettleMotionState(progress = 0f),
+        ).isEqualTo(
+            AppBrowserSheetMotionState(
+                scale = 0.996f,
+                alpha = 0.985f,
+                scrimAlpha = 0f,
+            ),
+        )
+        assertThat(
+            buildAppBrowserSheetRestoreSettleMotionState(progress = 1f),
+        ).isEqualTo(
+            AppBrowserSheetMotionState(
+                scale = 1f,
+                alpha = 1f,
+                scrimAlpha = 0f,
+            ),
+        )
+    }
+
+    @Test
     fun appBrowserSheetMotionState_closedKeepsNearlyAttachedScaleAndNoScrim() {
         assertThat(
             buildAppBrowserSheetMotionState(openProgress = 0f),

@@ -381,7 +381,7 @@ class NativeDoAppStateTest {
 
         val restored = minimized.restoreMinimized()
 
-        assertThat(restored.browserEntry?.foregroundActivationKey).isEqualTo(0L)
+        assertThat(restored.browserEntry?.foregroundActivationKey).isEqualTo(1L)
         assertThat(restored.browserEntry?.restoredFromDock).isTrue()
     }
 
@@ -400,7 +400,7 @@ class NativeDoAppStateTest {
 
         val restored = minimized.restoreMinimized()
 
-        assertThat(restored.readerEntry?.foregroundActivationKey).isEqualTo(0L)
+        assertThat(restored.readerEntry?.foregroundActivationKey).isEqualTo(1L)
         assertThat(restored.readerEntry?.restoredFromDock).isFalse()
     }
 

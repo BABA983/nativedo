@@ -1,47 +1,45 @@
-# Autoresearch: Browser restore continuity
+# Autoresearch: Browser restore settle polish
 
 ## Objective
-Eliminate the abrupt browser re-entry feel when restoring a docked browser-family session.
+Polish the browser restore handoff after dock or manager restore.
 
-This round focuses on one concrete parity gap reported by the user:
-- restoring a browser from the dock or tabs manager should not behave like a brand new bottom-up sheet open
-- once the shared shell transition has already brought the live surface back toward the active position, the browser container should settle coherently instead of replaying a full-screen modal entry
+The current implementation no longer replays the heavy fresh open path, but restore still lacks an explicit reactivation token and a dedicated in-place settle animation. The goal is to make restored browser sessions feel like the same live surface smoothly reclaiming foreground ownership.
 
 ## Metrics
-- **Primary**: `browser_restore_continuity_penalty` (unitless, lower is better)
+- **Primary**: `browser_restore_settle_penalty` (unitless, lower is better)
   - Penalizes:
-    - missing restore marker on `BrowserHostBrowserEntry`
-    - `restoreDockedSession()` not marking restored browser entries as restored-from-dock
-    - `AppRoot` not passing restore marker into `AppBrowserSheetContainer`
-    - `AppBrowserSheetContainer` still treating restored browser foreground activation like a fresh sheet open
+    - browser restore not incrementing `foregroundActivationKey`
+    - reader restore not incrementing `foregroundActivationKey`
+    - missing dedicated restore-settle helper in `AppBrowserSheetContainer`
+    - missing restore-settle animation path in `AppBrowserSheetContainer`
 - **Secondary**:
-  - restore marker penalty
-  - host restore wiring penalty
-  - app root propagation penalty
-  - sheet activation penalty
+  - browser reactivation key penalty
+  - reader reactivation key penalty
+  - restore helper penalty
+  - restore settle animation penalty
 
 ## How to Run
 `./autoresearch.sh`
 
 ## Files in Scope
 - `apps/android/app/src/main/java/io/github/baba983/nativedo/ui/BrowserHost.kt`
-- `apps/android/app/src/main/java/io/github/baba983/nativedo/ui/AppRoot.kt`
 - `apps/android/app/src/main/java/io/github/baba983/nativedo/feature/browser/AppBrowserSheetContainer.kt`
 - `apps/android/app/src/test/java/io/github/baba983/nativedo/ui/NativeDoAppStateTest.kt`
 - `apps/android/app/src/test/java/io/github/baba983/nativedo/feature/browser/AppBrowserSheetContainerTest.kt`
 
 ## Constraints
-- Preserve current dock/header Telegram parity.
-- Preserve manager motion improvements from the previous kept experiment.
-- Do not rebuild browser runtime state from URL-only data.
-- Keep correctness coverage in targeted unit tests.
+- Preserve previous keeps: minimal chrome, manager motion continuity, and no heavy fresh-open replay on restore.
+- Avoid reintroducing bottom-up restore motion.
+- Keep changes small and testable.
 
 ## Telegram Findings To Preserve
-- Restoring a docked browser should feel like resuming the same live surface, not creating a brand new browser sheet.
-- The shell transition owns the visible morph; the browser container should not replay a second full modal entry once foreground ownership returns.
+- Restore should feel like live-surface reactivation, not new scene creation.
+- A tiny in-place settle is acceptable; a second bottom-up open is not.
 
 ## What's Been Tried
-- Kept experiment `902be67`: minimal Telegram dock/header chrome + lighter browser-sheet entry motion.
-- Kept experiment `f23619c`: manager dismiss/open continuity tuning.
-- Remaining gap:
-  - browser restore path still lacks an explicit restored-from-dock semantic, so `AppBrowserSheetContainer` treats restored foreground activation too much like a fresh open.
+- `902be67`: Telegram-like dock/header chrome and lighter browser-sheet entry motion.
+- `f23619c`: tabs-manager open/close continuity tuning.
+- `1d2f490`: restored browser sessions bypass fresh bottom-up entry path.
+- Remaining gap for this round:
+  - restored browser entries still keep the same activation key, so there is no explicit reactivation signal
+  - there is no dedicated in-place restore settle animation helper

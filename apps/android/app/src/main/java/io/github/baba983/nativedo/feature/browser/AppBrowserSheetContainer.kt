@@ -60,6 +60,17 @@ internal fun buildAppBrowserSheetRestoreMotionState(
     null
 }
 
+internal fun buildAppBrowserSheetRestoreSettleMotionState(
+    progress: Float,
+): AppBrowserSheetMotionState {
+    val clampedProgress = progress.coerceIn(0f, 1f)
+    return AppBrowserSheetMotionState(
+        scale = 0.996f + ((1f - 0.996f) * clampedProgress),
+        alpha = 0.985f + ((1f - 0.985f) * clampedProgress),
+        scrimAlpha = 0f,
+    )
+}
+
 internal fun buildAppBrowserSheetMotionState(
     openProgress: Float,
     scrimAlpha: Float? = null,
@@ -105,6 +116,7 @@ internal fun AppBrowserSheetContainer(
     var lastAnimatedForegroundActivationKey by remember(entryId) {
         mutableLongStateOf(Long.MIN_VALUE)
     }
+    val restoreSettleProgress = remember(entryId) { Animatable(1f) }
 
     suspend fun animateToOffset(
         targetOffsetPx: Float,
@@ -150,7 +162,16 @@ internal fun AppBrowserSheetContainer(
         isClosing = false
         if (restoredFromDock) {
             sheetTopOffsetPx.snapTo(0f)
+            restoreSettleProgress.snapTo(0f)
+            restoreSettleProgress.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(
+                    durationMillis = 180,
+                    easing = NativeDoEasing.EaseOutQuint,
+                ),
+            )
         } else {
+            restoreSettleProgress.snapTo(1f)
             sheetTopOffsetPx.snapTo(screenHeightPx)
             animateToOffset(
                 targetOffsetPx = 0f,
@@ -167,12 +188,17 @@ internal fun AppBrowserSheetContainer(
             closedTopOffsetPx = screenHeightPx,
         )
     }
-    val motionState = remember(presentationState, restoredFromDock) {
-        buildAppBrowserSheetRestoreMotionState(restoredFromDock)
-            ?: buildAppBrowserSheetMotionState(
+    val motionState = remember(presentationState, restoredFromDock, restoreSettleProgress.value) {
+        when {
+            restoredFromDock -> buildAppBrowserSheetRestoreSettleMotionState(
+                progress = restoreSettleProgress.value,
+            )
+
+            else -> buildAppBrowserSheetMotionState(
                 openProgress = presentationState.openedProgress,
                 scrimAlpha = presentationState.scrimAlpha,
             )
+        }
     }
     val topInset = buildAppBrowserSheetTopInset(
         openProgress = presentationState.attachedProgress,

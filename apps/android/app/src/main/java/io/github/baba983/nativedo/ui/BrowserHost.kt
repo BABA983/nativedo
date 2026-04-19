@@ -208,9 +208,11 @@ internal data class BrowserHostState(
         val session = dockedSessions.firstOrNull { it.stableId == sessionId } ?: return this
         return copy(
             browserEntry = session.browserEntry?.copy(
+                foregroundActivationKey = session.browserEntry.foregroundActivationKey + 1,
                 restoredFromDock = true,
             ),
             readerEntry = session.readerEntry?.copy(
+                foregroundActivationKey = session.readerEntry.foregroundActivationKey + 1,
                 restoredFromDock = false,
             ),
             dockedSessions = dockedSessions.filterNot { it.stableId == sessionId },
