@@ -6,27 +6,27 @@ import org.junit.Test
 
 class AppBrowserSheetContainerTest {
     @Test
-    fun appBrowserSheetMotionState_closedKeepsSubtleScaleAndNoScrim() {
+    fun appBrowserSheetMotionState_closedKeepsNearlyAttachedScaleAndNoScrim() {
         assertThat(
             buildAppBrowserSheetMotionState(openProgress = 0f),
         ).isEqualTo(
             AppBrowserSheetMotionState(
-                scale = 0.985f,
-                alpha = 0.92f,
+                scale = 0.992f,
+                alpha = 0.97f,
                 scrimAlpha = 0f,
             ),
         )
     }
 
     @Test
-    fun appBrowserSheetMotionState_openRestoresFullScaleAndScrim() {
+    fun appBrowserSheetMotionState_openRestoresFullScaleAndUsesLighterScrim() {
         assertThat(
             buildAppBrowserSheetMotionState(openProgress = 1f),
         ).isEqualTo(
             AppBrowserSheetMotionState(
                 scale = 1f,
                 alpha = 1f,
-                scrimAlpha = 0.14f,
+                scrimAlpha = 0.10f,
             ),
         )
     }

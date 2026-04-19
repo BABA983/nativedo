@@ -372,10 +372,6 @@ private fun BrowserTabsTransitionDockSurface(
                     tint = colors.textPrimary.copy(alpha = 0.86f),
                 )
             }
-            BrowserTabsLeadingIcon(
-                preview = preview,
-                size = 24.dp,
-            )
             Text(
                 text = preview.title,
                 style = MaterialTheme.typography.titleMedium,
@@ -384,7 +380,7 @@ private fun BrowserTabsTransitionDockSurface(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(start = 12.dp, end = 8.dp),
+                    .padding(start = 8.dp, end = 8.dp),
             )
             Icon(
                 imageVector = Icons.Outlined.KeyboardArrowUp,

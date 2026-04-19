@@ -736,10 +736,6 @@ private fun BrowserTabsDockCard(
                     tint = colors.textPrimary.copy(alpha = 0.86f),
                 )
             }
-            BrowserTabsLeadingIcon(
-                preview = preview,
-                size = 24.dp,
-            )
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
@@ -748,7 +744,7 @@ private fun BrowserTabsDockCard(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .weight(1f)
-                    .padding(start = 12.dp, end = 8.dp),
+                    .padding(start = 8.dp, end = 8.dp),
             )
             Icon(
                 imageVector = Icons.Outlined.KeyboardArrowUp,
@@ -885,10 +881,6 @@ internal fun BrowserTabsLargePreviewSurface(
                             tint = colors.textPrimary.copy(alpha = 0.86f),
                         )
                     }
-                    BrowserTabsLeadingIcon(
-                        preview = preview,
-                        size = 22.dp,
-                    )
                     Text(
                         text = preview.title,
                         style = MaterialTheme.typography.titleMedium,
@@ -897,13 +889,10 @@ internal fun BrowserTabsLargePreviewSurface(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier
                             .weight(1f)
-                            .padding(start = 10.dp),
+                            .padding(start = 8.dp, end = 8.dp),
                     )
                     Icon(
-                        imageVector = when (preview.kind) {
-                            BrowserHostMinimizedKind.Browser -> Icons.Outlined.OpenInBrowser
-                            BrowserHostMinimizedKind.Reader -> Icons.Outlined.Article
-                        },
+                        imageVector = Icons.Outlined.KeyboardArrowUp,
                         contentDescription = null,
                         tint = colors.textPrimary.copy(alpha = 0.56f),
                     )

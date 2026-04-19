@@ -54,9 +54,9 @@ internal fun buildAppBrowserSheetMotionState(
 ): AppBrowserSheetMotionState {
     val clampedProgress = openProgress.coerceIn(0f, 1f)
     return AppBrowserSheetMotionState(
-        scale = 0.985f + ((1f - 0.985f) * clampedProgress),
-        alpha = 0.92f + ((1f - 0.92f) * clampedProgress),
-        scrimAlpha = scrimAlpha ?: (0f + (0.14f * clampedProgress)),
+        scale = 0.992f + ((1f - 0.992f) * clampedProgress),
+        alpha = 0.97f + ((1f - 0.97f) * clampedProgress),
+        scrimAlpha = scrimAlpha ?: (0f + (0.10f * clampedProgress)),
     )
 }
 
