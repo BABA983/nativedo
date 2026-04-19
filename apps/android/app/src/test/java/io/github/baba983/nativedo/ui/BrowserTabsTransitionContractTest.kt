@@ -71,7 +71,14 @@ class BrowserTabsTransitionContractTest {
         assertThat(state?.sessionId).isEqualTo(23L)
         assertThat(state?.boundsInRoot).isEqualTo(IntRect(24, 1044, 1056, 2194))
         assertThat(state?.cornerRadius).isEqualTo(5.dp)
-        assertThat(state?.alpha).isWithin(0.0001f).of(0.98f)
+        assertThat(state?.alpha).isWithin(0.0001f).of(1f)
+    }
+
+    @Test
+    fun browserTabsTransitionDuration_closeManager_matchesManagerCloseCadence() {
+        assertThat(
+            browserTabsTransitionDurationMillis(BrowserTabsTransitionKind.CloseManager),
+        ).isEqualTo(320)
     }
 
     private fun browserPreview() = BrowserHostMinimizedPreview(

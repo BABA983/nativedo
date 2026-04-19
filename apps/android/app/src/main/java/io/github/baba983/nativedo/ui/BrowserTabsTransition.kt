@@ -215,6 +215,8 @@ internal fun buildBrowserTabsTransitionFrameState(
     progress: Float,
 ): BrowserTabsTransitionFrameState {
     val clampedProgress = progress.coerceIn(0f, 1f)
+    val hasActiveSurface = transition.sourceSurface == BrowserTabsTransitionSurface.Active ||
+        transition.targetSurface == BrowserTabsTransitionSurface.Active
     return BrowserTabsTransitionFrameState(
         boundsInRoot = lerpIntRect(
             start = transition.sourceBounds,
@@ -226,9 +228,10 @@ internal fun buildBrowserTabsTransitionFrameState(
             stop = browserTabsSurfaceCornerRadius(transition.targetSurface),
             fraction = clampedProgress,
         ),
-        alpha = when (transition.kind) {
-            BrowserTabsTransitionKind.DismissFromManager -> 1f - (0.22f * clampedProgress)
-            BrowserTabsTransitionKind.OpenManager -> 0.92f + (0.08f * clampedProgress)
+        alpha = when {
+            hasActiveSurface -> 1f
+            transition.kind == BrowserTabsTransitionKind.DismissFromManager -> 1f - (0.22f * clampedProgress)
+            transition.kind == BrowserTabsTransitionKind.OpenManager -> 0.92f + (0.08f * clampedProgress)
             else -> 0.96f + (0.04f * clampedProgress)
         },
     )
@@ -424,7 +427,7 @@ internal fun browserTabsTransitionDurationMillis(
     BrowserTabsTransitionKind.MinimizeToDock -> 220
     BrowserTabsTransitionKind.RestoreFromDock -> 320
     BrowserTabsTransitionKind.OpenManager -> 320
-    BrowserTabsTransitionKind.CloseManager -> 220
+    BrowserTabsTransitionKind.CloseManager -> 320
     BrowserTabsTransitionKind.RestoreFromManager -> 320
     BrowserTabsTransitionKind.DismissFromManager -> 220
 }
