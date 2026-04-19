@@ -48,6 +48,18 @@ internal data class AppBrowserSheetMotionState(
     val scrimAlpha: Float,
 )
 
+internal fun buildAppBrowserSheetRestoreMotionState(
+    restoredFromDock: Boolean,
+): AppBrowserSheetMotionState? = if (restoredFromDock) {
+    AppBrowserSheetMotionState(
+        scale = 1f,
+        alpha = 1f,
+        scrimAlpha = 0f,
+    )
+} else {
+    null
+}
+
 internal fun buildAppBrowserSheetMotionState(
     openProgress: Float,
     scrimAlpha: Float? = null,
@@ -65,6 +77,7 @@ internal fun AppBrowserSheetContainer(
     entryId: Long,
     url: String,
     foregroundActivationKey: Long,
+    restoredFromDock: Boolean = false,
     onOpenLink: (String) -> Unit,
     onOpenReader: (AppBrowserReaderContent, AppBrowserOpenRequest?) -> Unit,
     onMinimize: () -> Unit,
@@ -127,6 +140,7 @@ internal fun AppBrowserSheetContainer(
     LaunchedEffect(
         screenHeightPx,
         foregroundActivationKey,
+        restoredFromDock,
         isForeground,
     ) {
         if (!isForeground || lastAnimatedForegroundActivationKey == foregroundActivationKey) {
@@ -134,11 +148,15 @@ internal fun AppBrowserSheetContainer(
         }
         lastAnimatedForegroundActivationKey = foregroundActivationKey
         isClosing = false
-        sheetTopOffsetPx.snapTo(screenHeightPx)
-        animateToOffset(
-            targetOffsetPx = 0f,
-            durationMillis = AppBrowserSheetOpenDurationMillis,
-        )
+        if (restoredFromDock) {
+            sheetTopOffsetPx.snapTo(0f)
+        } else {
+            sheetTopOffsetPx.snapTo(screenHeightPx)
+            animateToOffset(
+                targetOffsetPx = 0f,
+                durationMillis = AppBrowserSheetOpenDurationMillis,
+            )
+        }
     }
 
     val currentTopOffsetPx = sheetTopOffsetPx.value
@@ -149,11 +167,12 @@ internal fun AppBrowserSheetContainer(
             closedTopOffsetPx = screenHeightPx,
         )
     }
-    val motionState = remember(presentationState) {
-        buildAppBrowserSheetMotionState(
-            openProgress = presentationState.openedProgress,
-            scrimAlpha = presentationState.scrimAlpha,
-        )
+    val motionState = remember(presentationState, restoredFromDock) {
+        buildAppBrowserSheetRestoreMotionState(restoredFromDock)
+            ?: buildAppBrowserSheetMotionState(
+                openProgress = presentationState.openedProgress,
+                scrimAlpha = presentationState.scrimAlpha,
+            )
     }
     val topInset = buildAppBrowserSheetTopInset(
         openProgress = presentationState.attachedProgress,

@@ -434,6 +434,7 @@ internal fun AppRoot() {
                                 entryId = entry.id,
                                 url = entry.request.url,
                                 foregroundActivationKey = entry.foregroundActivationKey,
+                                restoredFromDock = entry.restoredFromDock,
                                 onOpenLink = onOpenLink,
                                 onOpenReader = openReader,
                                 onMinimize = {

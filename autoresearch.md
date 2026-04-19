@@ -1,59 +1,47 @@
-# Autoresearch: Telegram browser tabs manager motion smoothness
+# Autoresearch: Browser restore continuity
 
 ## Objective
-Improve Telegram-like motion smoothness for the Android browser tabs manager.
+Eliminate the abrupt browser re-entry feel when restoring a docked browser-family session.
 
-This round focuses on interaction continuity rather than static chrome parity:
-- manager open/close continuity between dock and overlay
-- manager dismiss returning cleanly toward dock instead of only fading away
-- manager presentation tuning so the open state feels less heavy and less detached
-- preserve the previous round’s minimal Telegram dock/header chrome
+This round focuses on one concrete parity gap reported by the user:
+- restoring a browser from the dock or tabs manager should not behave like a brand new bottom-up sheet open
+- once the shared shell transition has already brought the live surface back toward the active position, the browser container should settle coherently instead of replaying a full-screen modal entry
 
 ## Metrics
-- **Primary**: `telegram_motion_penalty` (unitless, lower is better)
-  - Static motion-parity score derived from the current code.
+- **Primary**: `browser_restore_continuity_penalty` (unitless, lower is better)
   - Penalizes:
-    - missing `CloseManager` transition wiring on manager dismiss
-    - manager close duration shorter than Telegram-like overlay timing
-    - oversized manager launch translation
-    - overly dim manager entry alpha
+    - missing restore marker on `BrowserHostBrowserEntry`
+    - `restoreDockedSession()` not marking restored browser entries as restored-from-dock
+    - `AppRoot` not passing restore marker into `AppBrowserSheetContainer`
+    - `AppBrowserSheetContainer` still treating restored browser foreground activation like a fresh sheet open
 - **Secondary**:
-  - close-manager wiring penalty
-  - close-duration penalty
-  - launch-translation penalty
-  - list-alpha penalty
+  - restore marker penalty
+  - host restore wiring penalty
+  - app root propagation penalty
+  - sheet activation penalty
 
 ## How to Run
 `./autoresearch.sh`
 
 ## Files in Scope
+- `apps/android/app/src/main/java/io/github/baba983/nativedo/ui/BrowserHost.kt`
 - `apps/android/app/src/main/java/io/github/baba983/nativedo/ui/AppRoot.kt`
-- `apps/android/app/src/main/java/io/github/baba983/nativedo/ui/BrowserTabsShell.kt`
-- `apps/android/app/src/main/java/io/github/baba983/nativedo/ui/BrowserTabsTransition.kt`
-- `apps/android/app/src/test/java/io/github/baba983/nativedo/ui/BrowserTabsShellMotionModelTest.kt`
+- `apps/android/app/src/main/java/io/github/baba983/nativedo/feature/browser/AppBrowserSheetContainer.kt`
 - `apps/android/app/src/test/java/io/github/baba983/nativedo/ui/NativeDoAppStateTest.kt`
-
-## Off Limits
-- unrelated feature logic
-- auth/session/network contracts
-- artificial benchmark tricks that do not correspond to real motion improvements
+- `apps/android/app/src/test/java/io/github/baba983/nativedo/feature/browser/AppBrowserSheetContainerTest.kt`
 
 ## Constraints
-- Keep current Telegram-like minimal header chrome from the previous kept experiment.
-- Targeted unit tests must pass.
-- Prefer pure helper extraction for motion tuning so behavior is testable.
+- Preserve current dock/header Telegram parity.
+- Preserve manager motion improvements from the previous kept experiment.
+- Do not rebuild browser runtime state from URL-only data.
+- Keep correctness coverage in targeted unit tests.
 
 ## Telegram Findings To Preserve
-- `BottomSheetTabsOverlay.animateOpen()` uses one overlay owner and a 320ms ease-out-quint timing in both directions.
-- Dismissing the manager should visually return authority to the dock instead of simply dropping the overlay state.
-- Manager stack presentation should feel present immediately, not start too low or too faded.
+- Restoring a docked browser should feel like resuming the same live surface, not creating a brand new browser sheet.
+- The shell transition owns the visible morph; the browser container should not replay a second full modal entry once foreground ownership returns.
 
 ## What's Been Tried
-- Previous kept experiment `902be67`:
-  - removed extra leading icons from dock / transition dock / manager header
-  - restored right-side expand chevron
-  - softened browser sheet entry scale/alpha/scrim
-- Remaining gap for this round:
-  - `dismissBrowserTabsManager()` still does not enqueue `CloseManager`
-  - manager close duration is still shorter than Telegram overlay timing
-  - manager opens with relatively large lift (`72.dp`) and low initial list alpha (`0.6f`)
+- Kept experiment `902be67`: minimal Telegram dock/header chrome + lighter browser-sheet entry motion.
+- Kept experiment `f23619c`: manager dismiss/open continuity tuning.
+- Remaining gap:
+  - browser restore path still lacks an explicit restored-from-dock semantic, so `AppBrowserSheetContainer` treats restored foreground activation too much like a fresh open.

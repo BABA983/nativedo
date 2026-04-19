@@ -6,6 +6,22 @@ import org.junit.Test
 
 class AppBrowserSheetContainerTest {
     @Test
+    fun appBrowserSheetRestoreMotionState_keepsForegroundWithoutReplayingBottomUpEntry() {
+        assertThat(
+            buildAppBrowserSheetRestoreMotionState(restoredFromDock = true),
+        ).isEqualTo(
+            AppBrowserSheetMotionState(
+                scale = 1f,
+                alpha = 1f,
+                scrimAlpha = 0f,
+            ),
+        )
+        assertThat(
+            buildAppBrowserSheetRestoreMotionState(restoredFromDock = false),
+        ).isNull()
+    }
+
+    @Test
     fun appBrowserSheetMotionState_closedKeepsNearlyAttachedScaleAndNoScrim() {
         assertThat(
             buildAppBrowserSheetMotionState(openProgress = 0f),

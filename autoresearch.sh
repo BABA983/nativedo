@@ -4,37 +4,39 @@ cd "$(dirname "$0")"
 
 python3 <<'PY'
 from pathlib import Path
-import re
 
+host = Path('apps/android/app/src/main/java/io/github/baba983/nativedo/ui/BrowserHost.kt').read_text()
 app_root = Path('apps/android/app/src/main/java/io/github/baba983/nativedo/ui/AppRoot.kt').read_text()
-shell_text = Path('apps/android/app/src/main/java/io/github/baba983/nativedo/ui/BrowserTabsShell.kt').read_text()
+sheet = Path('apps/android/app/src/main/java/io/github/baba983/nativedo/feature/browser/AppBrowserSheetContainer.kt').read_text()
 
 score = 0
 reasons = []
 
-m = re.search(r"fun dismissBrowserTabsManager\(\) \{(.*?)\n        \}", app_root, re.S)
-body = m.group(1) if m else ''
-if 'BrowserTabsTransitionKind.CloseManager' not in body:
-    score += 40
-    reasons.append('dismiss_manager_missing_close_transition:+40')
+if 'val restoredFromDock: Boolean = false' not in host:
+    score += 35
+    reasons.append('browser_entry_missing_restore_marker:+35')
 
-if 'private const val BrowserTabsManagerCloseDurationMillis = 220' in shell_text:
+if 'browserEntry = session.browserEntry?.copy(' not in host or 'restoredFromDock = true' not in host:
+    score += 30
+    reasons.append('restore_docked_browser_not_marked_as_restore:+30')
+
+if 'restoredFromDock = entry.restoredFromDock' not in app_root:
     score += 20
-    reasons.append('manager_close_duration_too_short:+20')
+    reasons.append('app_root_not_propagating_restore_marker:+20')
 
-if 'lerp(72.dp.toPx(), 0f, openProgress.value)' in shell_text:
-    score += 15
-    reasons.append('manager_launch_translation_too_large:+15')
-
-if 'alpha = 0.6f + (0.4f * openProgress.value)' in shell_text:
+if 'restoredFromDock: Boolean = false' not in sheet:
     score += 10
-    reasons.append('manager_entry_alpha_too_low:+10')
+    reasons.append('sheet_container_missing_restore_parameter:+10')
 
-print('Telegram motion diagnostics:')
+if 'if (restoredFromDock)' not in sheet:
+    score += 20
+    reasons.append('sheet_container_treats_restore_like_fresh_open:+20')
+
+print('Browser restore continuity diagnostics:')
 if reasons:
     for reason in reasons:
         print(f' - {reason}')
 else:
     print(' - no currently tracked penalties')
-print(f'METRIC telegram_motion_penalty={score}')
+print(f'METRIC browser_restore_continuity_penalty={score}')
 PY

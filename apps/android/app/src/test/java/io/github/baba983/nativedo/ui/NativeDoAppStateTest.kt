@@ -373,7 +373,7 @@ class NativeDoAppStateTest {
     }
 
     @Test
-    fun browserOverlayState_restoreDockedBrowserSession_keepsForegroundActivationKeyForLiveRestore() {
+    fun browserOverlayState_restoreDockedBrowserSession_marksBrowserAsRestoredFromDock() {
         val minimized = BrowserHostState().present(
             request = AppBrowserOpenRequest(url = "https://example.com/article"),
             target = AppBrowserPresentationTarget.Sheet,
@@ -382,6 +382,7 @@ class NativeDoAppStateTest {
         val restored = minimized.restoreMinimized()
 
         assertThat(restored.browserEntry?.foregroundActivationKey).isEqualTo(0L)
+        assertThat(restored.browserEntry?.restoredFromDock).isTrue()
     }
 
     @Test

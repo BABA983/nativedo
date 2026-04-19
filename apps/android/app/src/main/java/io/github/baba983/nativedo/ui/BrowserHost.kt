@@ -28,6 +28,7 @@ internal data class BrowserHostBrowserEntry(
     val id: Long,
     val request: AppBrowserOpenRequest,
     val foregroundActivationKey: Long = 0L,
+    val restoredFromDock: Boolean = false,
     val preview: BrowserHostMinimizedPreview = buildBrowserHostBrowserPreview(
         url = request.url,
     ),
@@ -113,6 +114,7 @@ internal data class BrowserHostState(
                 id = nextEntryId,
                 request = request,
                 foregroundActivationKey = 0L,
+                restoredFromDock = false,
                 preview = buildBrowserHostBrowserPreview(url = request.url),
             ),
             readerEntry = null,
@@ -154,6 +156,7 @@ internal data class BrowserHostState(
                 id = nextEntryId,
                 request = request,
                 foregroundActivationKey = 0L,
+                restoredFromDock = false,
                 preview = buildBrowserHostBrowserPreview(url = request.url),
             )
         }
@@ -204,8 +207,12 @@ internal data class BrowserHostState(
     fun restoreDockedSession(sessionId: Long): BrowserHostState {
         val session = dockedSessions.firstOrNull { it.stableId == sessionId } ?: return this
         return copy(
-            browserEntry = session.browserEntry,
-            readerEntry = session.readerEntry,
+            browserEntry = session.browserEntry?.copy(
+                restoredFromDock = true,
+            ),
+            readerEntry = session.readerEntry?.copy(
+                restoredFromDock = false,
+            ),
             dockedSessions = dockedSessions.filterNot { it.stableId == sessionId },
         )
     }
