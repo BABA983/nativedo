@@ -1,85 +1,59 @@
-# Autoresearch: Telegram browser tabs manager parity
+# Autoresearch: Telegram browser tabs manager motion smoothness
 
 ## Objective
-Improve Telegram parity for the Android browser tabs manager and browser sheet presentation.
+Improve Telegram-like motion smoothness for the Android browser tabs manager.
 
-Focus areas:
-- collapsed bottom dock interaction and structure
-- tabs manager open/close feel and tab-card chrome
-- dock/manager tab chrome parity with Telegram: left close, centered title, right expand icon, no extra buttons
-- browser sheet opening motion so it feels less stiff and avoids the abrupt full-screen jump described by the user
-
-The user explicitly asked for deeper Telegram analysis and 1:1 behavior alignment, not just superficial restyling.
+This round focuses on interaction continuity rather than static chrome parity:
+- manager open/close continuity between dock and overlay
+- manager dismiss returning cleanly toward dock instead of only fading away
+- manager presentation tuning so the open state feels less heavy and less detached
+- preserve the previous round’s minimal Telegram dock/header chrome
 
 ## Metrics
-- **Primary**: `telegram_parity_penalty` (unitless, lower is better)
-  - Static parity score derived from the current code.
+- **Primary**: `telegram_motion_penalty` (unitless, lower is better)
+  - Static motion-parity score derived from the current code.
   - Penalizes:
-    - extra dock/header controls beyond Telegram’s minimal left-close / title / right-expand structure
-    - missing expand affordance in the preview header
-    - overly modal browser-sheet entry motion constants that contribute to the current stiff feel
-- **Secondary / diagnostics printed by benchmark**:
-  - dock extra-icon penalty
-  - manager header extra-icon penalty
-  - transition dock extra-icon penalty
-  - sheet motion penalty
+    - missing `CloseManager` transition wiring on manager dismiss
+    - manager close duration shorter than Telegram-like overlay timing
+    - oversized manager launch translation
+    - overly dim manager entry alpha
+- **Secondary**:
+  - close-manager wiring penalty
+  - close-duration penalty
+  - launch-translation penalty
+  - list-alpha penalty
 
 ## How to Run
 `./autoresearch.sh`
 
-The script outputs `METRIC telegram_parity_penalty=<number>`.
-
 ## Files in Scope
-- `apps/android/app/src/main/java/io/github/baba983/nativedo/ui/BrowserTabsShell.kt`
-  - collapsed dock, tabs manager overlay, preview header chrome
-- `apps/android/app/src/main/java/io/github/baba983/nativedo/ui/BrowserTabsTransition.kt`
-  - dock/manager transition preview surface
 - `apps/android/app/src/main/java/io/github/baba983/nativedo/ui/AppRoot.kt`
-  - shell wiring, manager open/close orchestration
-- `apps/android/app/src/main/java/io/github/baba983/nativedo/feature/browser/AppBrowserSheetContainer.kt`
-  - browser sheet entry/dismiss motion model
-- `apps/android/app/src/main/java/io/github/baba983/nativedo/feature/browser/AppBrowserState.kt`
-  - pure motion helpers and presentation state
-- `apps/android/app/src/test/java/io/github/baba983/nativedo/feature/browser/AppBrowserSheetContainerTest.kt`
-  - sheet motion tests
-- `apps/android/app/src/test/java/io/github/baba983/nativedo/feature/browser/AppBrowserSheetMotionModelTest.kt`
-  - presentation-state tests
-- `apps/android/app/src/test/java/io/github/baba983/nativedo/ui/BrowserTabsTransitionContractTest.kt`
-  - transition contract tests
+- `apps/android/app/src/main/java/io/github/baba983/nativedo/ui/BrowserTabsShell.kt`
+- `apps/android/app/src/main/java/io/github/baba983/nativedo/ui/BrowserTabsTransition.kt`
+- `apps/android/app/src/test/java/io/github/baba983/nativedo/ui/BrowserTabsShellMotionModelTest.kt`
+- `apps/android/app/src/test/java/io/github/baba983/nativedo/ui/NativeDoAppStateTest.kt`
 
 ## Off Limits
-- unrelated navigation, auth, search, or topic/profile features
-- introducing new dependencies or DI frameworks
-- changing browser runtime semantics unrelated to tabs-manager parity
-- any benchmark cheating such as faking parity score without real source changes
+- unrelated feature logic
+- auth/session/network contracts
+- artificial benchmark tricks that do not correspond to real motion improvements
 
 ## Constraints
-- Do not overfit by gaming the benchmark without improving real Telegram parity.
-- Keep verification through targeted Android unit tests.
-- Preserve existing browser/session continuity behavior.
-- Prefer small, reviewable changes.
-- Work directly on `main` per user request.
+- Keep current Telegram-like minimal header chrome from the previous kept experiment.
+- Targeted unit tests must pass.
+- Prefer pure helper extraction for motion tuning so behavior is testable.
 
 ## Telegram Findings To Preserve
-- `BottomSheetTabs.click()` behavior:
-  - 1 tab => direct reopen
-  - multiple tabs => open overlay manager
-- Dock tab chrome in Telegram is minimal and action-oriented:
-  - left close `X`
-  - centered title
-  - right expand chevron
-- `BottomSheetTabsOverlay.animateOpen()` uses a single overlay authority with 320ms ease-out-quint motion.
-- Telegram’s smoothness comes from single-owner rendering during dock/manager transitions, not independent list item animations.
+- `BottomSheetTabsOverlay.animateOpen()` uses one overlay owner and a 320ms ease-out-quint timing in both directions.
+- Dismissing the manager should visually return authority to the dock instead of simply dropping the overlay state.
+- Manager stack presentation should feel present immediately, not start too low or too faded.
 
 ## What's Been Tried
-- Initial analysis completed against:
-  - Telegram `BottomSheetTabs.java`
-  - Telegram `BottomSheetTabsOverlay.java`
-  - Telegram `BotWebViewAttachedSheet.java`
-- Current NativeDo gaps identified:
-  - `BrowserTabsDockCard`, `BrowserTabsTransitionDockSurface`, and `BrowserTabsLargePreviewSurface` still render extra iconography compared with the requested minimal Telegram structure.
-  - `AppBrowserSheetContainer` still uses a modal-feeling scale/alpha curve (`0.985 -> 1`, `0.92 -> 1`) that likely contributes to stiffness.
-- First optimization direction:
-  1. remove extra dock/header icons
-  2. restore Telegram-like right expand affordance
-  3. soften browser-sheet entry motion and attach feel
+- Previous kept experiment `902be67`:
+  - removed extra leading icons from dock / transition dock / manager header
+  - restored right-side expand chevron
+  - softened browser sheet entry scale/alpha/scrim
+- Remaining gap for this round:
+  - `dismissBrowserTabsManager()` still does not enqueue `CloseManager`
+  - manager close duration is still shorter than Telegram overlay timing
+  - manager opens with relatively large lift (`72.dp`) and low initial list alpha (`0.6f`)

@@ -55,6 +55,10 @@ private enum class BrowserTabsManagerMode {
     Exiting,
 }
 
+internal fun shouldEnqueueCloseTransitionForBrowserTabsManagerDismiss(
+    dockedSessionCount: Int,
+): Boolean = dockedSessionCount > 1
+
 @Composable
 internal fun AppRoot() {
     val context = LocalContext.current
@@ -314,6 +318,14 @@ internal fun AppRoot() {
         fun dismissBrowserTabsManager() {
             pendingManagerRestoreSessionId = null
             shouldCloseAllManagerSessions = false
+            if (shouldEnqueueCloseTransitionForBrowserTabsManagerDismiss(browserHostState.dockedSessions.size)) {
+                browserHostState.dockedSessions.firstOrNull()?.let { latestSession ->
+                    enqueueBrowserTabsTransition(
+                        kind = BrowserTabsTransitionKind.CloseManager,
+                        session = latestSession,
+                    )
+                }
+            }
             browserTabsManagerMode = BrowserTabsManagerMode.Exiting
         }
 

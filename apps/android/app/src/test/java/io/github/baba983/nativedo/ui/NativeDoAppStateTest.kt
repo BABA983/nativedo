@@ -228,6 +228,25 @@ class NativeDoAppStateTest {
     }
 
     @Test
+    fun shouldEnqueueCloseTransitionForBrowserTabsManagerDismiss_requiresAtLeastTwoDockedSessions() {
+        assertThat(
+            shouldEnqueueCloseTransitionForBrowserTabsManagerDismiss(
+                dockedSessionCount = 0,
+            ),
+        ).isFalse()
+        assertThat(
+            shouldEnqueueCloseTransitionForBrowserTabsManagerDismiss(
+                dockedSessionCount = 1,
+            ),
+        ).isFalse()
+        assertThat(
+            shouldEnqueueCloseTransitionForBrowserTabsManagerDismiss(
+                dockedSessionCount = 2,
+            ),
+        ).isTrue()
+    }
+
+    @Test
     fun shouldBlockNavigationLayout_blocksLoginOnly() {
         assertThat(shouldBlockNavigationLayout("login")).isTrue()
         assertThat(shouldBlockNavigationLayout(RootDestination.rootContainerRoute)).isFalse()

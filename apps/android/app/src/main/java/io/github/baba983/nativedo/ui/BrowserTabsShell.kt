@@ -96,9 +96,26 @@ private val BrowserTabsManagerTabBarHeight = 50.dp
 private const val BrowserTabsManagerDismissThreshold = 0.28f
 private const val BrowserTabsManagerPullDismissVelocity = 1800f
 private const val BrowserTabsManagerOpenDurationMillis = 320
-private const val BrowserTabsManagerCloseDurationMillis = 220
+private const val BrowserTabsManagerCloseDurationMillis = 320
 
 internal val BrowserTabsCollapsedDockOccupiedHeight = BrowserTabsDockMultipleOccupiedHeight
+
+internal data class BrowserTabsManagerPresentationState(
+    val translationY: Dp,
+    val listAlpha: Float,
+)
+
+internal fun buildBrowserTabsManagerPresentationState(
+    openProgress: Float,
+): BrowserTabsManagerPresentationState {
+    val clampedProgress = openProgress.coerceIn(0f, 1f)
+    return BrowserTabsManagerPresentationState(
+        translationY = androidx.compose.ui.unit.lerp(56.dp, 0.dp, clampedProgress),
+        listAlpha = 0.72f + (0.28f * clampedProgress),
+    )
+}
+
+internal fun browserTabsManagerCloseDurationMillis(): Int = BrowserTabsManagerCloseDurationMillis
 
 internal enum class BrowserTabsShellDockAction {
     None,
@@ -332,8 +349,11 @@ internal fun BoxScope.BrowserTabsManager(
     val managerDragProgress = remember(managerDragOffsetY.value, screenHeightPx) {
         (managerDragOffsetY.value / screenHeightPx).coerceIn(0f, 1f)
     }
+    val managerPresentationState = remember(openProgress.value) {
+        buildBrowserTabsManagerPresentationState(openProgress = openProgress.value)
+    }
     val managerTranslationYPx = with(density) {
-        lerp(72.dp.toPx(), 0f, openProgress.value)
+        managerPresentationState.translationY.toPx()
     } + managerDragOffsetY.value
     val scrimAlphaMultiplier = 1f - (0.42f * managerDragProgress)
 
@@ -434,7 +454,7 @@ internal fun BoxScope.BrowserTabsManager(
                     .align(Alignment.TopCenter)
                     .padding(top = BrowserTabsManagerTopPadding)
                     .graphicsLayer {
-                        alpha = 0.6f + (0.4f * openProgress.value)
+                        alpha = managerPresentationState.listAlpha
                         translationY = managerTranslationYPx
                     }
                     .widthIn(max = BrowserTabsManagerCardMaxWidth)
