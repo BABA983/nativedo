@@ -10,7 +10,7 @@ class AppBrowserSheetContainerTest {
         assertThat(
             buildAppBrowserSheetRestoreMotionState(restoredFromDock = true),
         ).isEqualTo(
-            AppBrowserSheetMotionState(
+            BrowserSheetMotionState(
                 scale = 1f,
                 alpha = 1f,
                 scrimAlpha = 0f,
@@ -26,7 +26,7 @@ class AppBrowserSheetContainerTest {
         assertThat(
             buildAppBrowserSheetRestoreSettleMotionState(progress = 0f),
         ).isEqualTo(
-            AppBrowserSheetMotionState(
+            BrowserSheetMotionState(
                 scale = 0.996f,
                 alpha = 0.985f,
                 scrimAlpha = 0f,
@@ -35,7 +35,7 @@ class AppBrowserSheetContainerTest {
         assertThat(
             buildAppBrowserSheetRestoreSettleMotionState(progress = 1f),
         ).isEqualTo(
-            AppBrowserSheetMotionState(
+            BrowserSheetMotionState(
                 scale = 1f,
                 alpha = 1f,
                 scrimAlpha = 0f,
@@ -46,9 +46,9 @@ class AppBrowserSheetContainerTest {
     @Test
     fun appBrowserSheetMotionState_closedKeepsNearlyAttachedScaleAndNoScrim() {
         assertThat(
-            buildAppBrowserSheetMotionState(openProgress = 0f),
+            buildBrowserSheetMotionState(openProgress = 0f),
         ).isEqualTo(
-            AppBrowserSheetMotionState(
+            BrowserSheetMotionState(
                 scale = 0.992f,
                 alpha = 0.97f,
                 scrimAlpha = 0f,
@@ -59,9 +59,9 @@ class AppBrowserSheetContainerTest {
     @Test
     fun appBrowserSheetMotionState_openRestoresFullScaleAndUsesLighterScrim() {
         assertThat(
-            buildAppBrowserSheetMotionState(openProgress = 1f),
+            buildBrowserSheetMotionState(openProgress = 1f),
         ).isEqualTo(
-            AppBrowserSheetMotionState(
+            BrowserSheetMotionState(
                 scale = 1f,
                 alpha = 1f,
                 scrimAlpha = 0.10f,

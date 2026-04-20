@@ -4,16 +4,16 @@ import com.google.common.truth.Truth.assertThat
 import io.github.baba983.nativedo.core.storage.AppBrowserRecentSearchRecord
 import org.junit.Test
 
-class AppBrowserAddressSuggestionsTest {
+class BrowserAddressSuggestionsTest {
 
     @Test
     fun buildAddressSuggestionSections_combinesQuickActionsRecentSearchesBookmarksAndLinks() {
-        val sections = buildAppBrowserAddressSuggestionSections(
+        val sections = buildBrowserAddressSuggestionSections(
             draft = "compose",
             currentUrl = "https://linux.do/t/123",
             currentTitle = "Compose Thread",
             historyEntries = listOf(
-                AppBrowserHistoryRecord(
+                BrowserHistoryRecord(
                     title = "Compose history",
                     url = "https://linux.do/t/compose/1",
                     host = "linux.do",
@@ -37,21 +37,21 @@ class AppBrowserAddressSuggestionsTest {
         )
 
         assertThat(sections.map { it.kind }).containsExactly(
-            AppBrowserAddressSuggestionSectionKind.QuickActions,
-            AppBrowserAddressSuggestionSectionKind.RecentSearches,
-            AppBrowserAddressSuggestionSectionKind.Bookmarks,
-            AppBrowserAddressSuggestionSectionKind.RecentLinks,
+            BrowserAddressSuggestionSectionKind.QuickActions,
+            BrowserAddressSuggestionSectionKind.RecentSearches,
+            BrowserAddressSuggestionSectionKind.Bookmarks,
+            BrowserAddressSuggestionSectionKind.RecentLinks,
         ).inOrder()
     }
 
     @Test
     fun buildAddressSuggestionSections_filtersEntriesUsingDraft() {
-        val sections = buildAppBrowserAddressSuggestionSections(
+        val sections = buildBrowserAddressSuggestionSections(
             draft = "anim",
             currentUrl = "https://linux.do/t/123",
             currentTitle = "Compose Thread",
             historyEntries = listOf(
-                AppBrowserHistoryRecord(
+                BrowserHistoryRecord(
                     title = "Compose history",
                     url = "https://linux.do/t/compose/1",
                     host = "linux.do",
@@ -74,8 +74,8 @@ class AppBrowserAddressSuggestionsTest {
             ),
         )
 
-        val bookmarkSection = sections.first { it.kind == AppBrowserAddressSuggestionSectionKind.Bookmarks }
-        val linkSection = sections.firstOrNull { it.kind == AppBrowserAddressSuggestionSectionKind.RecentLinks }
+        val bookmarkSection = sections.first { it.kind == BrowserAddressSuggestionSectionKind.Bookmarks }
+        val linkSection = sections.firstOrNull { it.kind == BrowserAddressSuggestionSectionKind.RecentLinks }
 
         assertThat(bookmarkSection.items).hasSize(1)
         assertThat(linkSection).isNull()
@@ -83,8 +83,8 @@ class AppBrowserAddressSuggestionsTest {
 
     @Test
     fun applyAddressSuggestion_forRecentSearch_usesSearchResolver() {
-        val result = applyAppBrowserAddressSuggestion(
-            suggestion = AppBrowserAddressSuggestion.RecentSearch(
+        val result = applyBrowserAddressSuggestion(
+            suggestion = BrowserAddressSuggestion.RecentSearch(
                 query = "compose animation",
                 searchedAtMillis = 1L,
             ),
@@ -94,7 +94,7 @@ class AppBrowserAddressSuggestionsTest {
         )
 
         assertThat(result).isEqualTo(
-            AppBrowserAddressSuggestionResult.SubmitAddress(
+            BrowserAddressSuggestionResult.SubmitAddress(
                 "https://www.google.com/search?q=compose%20animation",
             ),
         )
@@ -102,9 +102,9 @@ class AppBrowserAddressSuggestionsTest {
 
     @Test
     fun applyAddressSuggestion_forQuickAction_returnsActionResult() {
-        val result = applyAppBrowserAddressSuggestion(
-            suggestion = AppBrowserAddressSuggestion.QuickAction(
-                action = AppBrowserAddressQuickAction.CopyCurrentLink,
+        val result = applyBrowserAddressSuggestion(
+            suggestion = BrowserAddressSuggestion.QuickAction(
+                action = BrowserAddressQuickAction.CopyCurrentLink,
             ),
             currentDraft = "",
             baseUrl = "https://linux.do",
@@ -112,7 +112,7 @@ class AppBrowserAddressSuggestionsTest {
         )
 
         assertThat(result).isEqualTo(
-            AppBrowserAddressSuggestionResult.QuickAction(AppBrowserAddressQuickAction.CopyCurrentLink),
+            BrowserAddressSuggestionResult.QuickAction(BrowserAddressQuickAction.CopyCurrentLink),
         )
     }
 }

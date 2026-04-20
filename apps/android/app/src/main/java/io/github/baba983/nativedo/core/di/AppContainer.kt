@@ -31,7 +31,7 @@ import io.github.baba983.nativedo.core.storage.SharedPreferencesSvgSpriteStorePe
 import io.github.baba983.nativedo.core.storage.SessionStore
 import io.github.baba983.nativedo.core.storage.SvgSpriteStore
 import io.github.baba983.nativedo.feature.browser.AppBrowserBookmarkStore
-import io.github.baba983.nativedo.feature.browser.AppBrowserHistoryStore
+import io.github.baba983.nativedo.feature.browser.BrowserHistoryStore
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
@@ -119,13 +119,13 @@ class AppContainer(
     val categoryStore: CategoryStore = CategoryStore(
         client = discourseApiClient,
     )
-    val appBrowserHistoryStore: AppBrowserHistoryStore = browserHistoryPreferences
+    val appBrowserHistoryStore: BrowserHistoryStore = browserHistoryPreferences
         ?.let { preferences ->
-            AppBrowserHistoryStore(
+            BrowserHistoryStore(
                 persistence = SharedPreferencesAppBrowserHistoryStorePersistence(preferences),
             )
         }
-        ?: AppBrowserHistoryStore()
+        ?: BrowserHistoryStore()
     val appBrowserBookmarkStore: AppBrowserBookmarkStore = browserBookmarkPreferences
         ?.let { preferences ->
             AppBrowserBookmarkStore(

@@ -74,8 +74,8 @@ import io.github.baba983.nativedo.core.ui.UserAvatar
 import io.github.baba983.nativedo.core.navigation.AppBrowserReaderContent
 import io.github.baba983.nativedo.feature.auth.ui.AuthRestoreGate
 import io.github.baba983.nativedo.feature.auth.ui.shouldShowAuthRestoreGate
-import io.github.baba983.nativedo.feature.browser.AppBrowserReaderScene
-import io.github.baba983.nativedo.feature.browser.AppBrowserSheetContainer
+import io.github.baba983.nativedo.feature.browser.BrowserReaderScene
+import io.github.baba983.nativedo.feature.browser.BrowserSheetContainer
 import io.github.baba983.nativedo.navigation.NativeDoNavHost
 import io.github.baba983.nativedo.navigation.RootDestination
 import io.github.baba983.nativedo.ui.theme.NativeDoChromeShape

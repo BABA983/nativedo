@@ -9,14 +9,14 @@ class AppBrowserHistoryPanelStateTest {
     @Test
     fun filterHistoryEntries_matchesTitleHostAndUrl() {
         val entries = listOf(
-            AppBrowserHistoryEntry(
+            BrowserHistoryEntry(
                 title = "CDK Dashboard",
                 url = "https://cdk.linux.do/dashboard",
                 offset = null,
                 host = "cdk.linux.do",
                 visitedAtMillis = 1_710_000_000_000L,
             ),
-            AppBrowserHistoryEntry(
+            BrowserHistoryEntry(
                 title = "Render Debug Case",
                 url = "https://linux.do/t/render-debug-case/123456",
                 offset = null,
@@ -25,23 +25,23 @@ class AppBrowserHistoryPanelStateTest {
             ),
         )
 
-        assertThat(filterAppBrowserHistoryEntries(entries, "cdk")).hasSize(1)
-        assertThat(filterAppBrowserHistoryEntries(entries, "render-debug-case")).hasSize(1)
-        assertThat(filterAppBrowserHistoryEntries(entries, "linux.do")).hasSize(2)
+        assertThat(filterBrowserHistoryEntries(entries, "cdk")).hasSize(1)
+        assertThat(filterBrowserHistoryEntries(entries, "render-debug-case")).hasSize(1)
+        assertThat(filterBrowserHistoryEntries(entries, "linux.do")).hasSize(2)
     }
 
     @Test
     fun groupHistoryEntries_splitsTodayYesterdayAndOlder() {
-        val groups = groupAppBrowserHistoryEntries(
+        val groups = groupBrowserHistoryEntries(
             entries = listOf(
-                AppBrowserHistoryEntry(
+                BrowserHistoryEntry(
                     title = "Today",
                     url = "https://linux.do/t/today/1",
                     offset = null,
                     host = "linux.do",
                     visitedAtMillis = 1_710_000_000_000L,
                 ),
-                AppBrowserHistoryEntry(
+                BrowserHistoryEntry(
                     title = "Yesterday",
                     url = "https://linux.do/t/yesterday/2",
                     offset = null,
@@ -58,7 +58,7 @@ class AppBrowserHistoryPanelStateTest {
     @Test
     fun badgeLabel_usesTitleFirstLetterWhenAvailable() {
         assertThat(
-            appBrowserHistoryBadgeLabel(
+            browserHistoryBadgeLabel(
                 title = "Linux.do topic",
                 host = "linux.do",
             ),
@@ -68,7 +68,7 @@ class AppBrowserHistoryPanelStateTest {
     @Test
     fun badgeLabel_fallsBackToHostWhenTitleIsBlank() {
         assertThat(
-            appBrowserHistoryBadgeLabel(
+            browserHistoryBadgeLabel(
                 title = "",
                 host = "cdk.linux.do",
             ),
@@ -78,7 +78,7 @@ class AppBrowserHistoryPanelStateTest {
     @Test
     fun timeLabel_showsHourMinuteForToday() {
         assertThat(
-            appBrowserHistoryRowTimeLabel(
+            browserHistoryRowTimeLabel(
                 visitedAtMillis = 1_710_000_000_000L,
                 nowMillis = 1_710_000_100_000L,
                 zoneId = ZoneId.of("UTC"),
@@ -90,7 +90,7 @@ class AppBrowserHistoryPanelStateTest {
     @Test
     fun timeLabel_showsYesterdayForPreviousDay() {
         assertThat(
-            appBrowserHistoryRowTimeLabel(
+            browserHistoryRowTimeLabel(
                 visitedAtMillis = 1_709_913_600_000L,
                 nowMillis = 1_710_000_000_000L,
                 zoneId = ZoneId.of("UTC"),
@@ -102,7 +102,7 @@ class AppBrowserHistoryPanelStateTest {
     @Test
     fun timeLabel_showsMonthDayForOlderEntries() {
         assertThat(
-            appBrowserHistoryRowTimeLabel(
+            browserHistoryRowTimeLabel(
                 visitedAtMillis = 1_709_222_400_000L,
                 nowMillis = 1_710_000_000_000L,
                 zoneId = ZoneId.of("UTC"),

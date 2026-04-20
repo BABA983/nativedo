@@ -8,31 +8,31 @@ import org.junit.Test
 class AppBrowserSettingsPanelStateTest {
     @Test
     fun historySubtitleCount_returnsNullWhenThereIsNoHistory() {
-        assertThat(appBrowserSettingsHistorySubtitleCount(0)).isNull()
+        assertThat(browserSettingsHistorySubtitleCount(0)).isNull()
     }
 
     @Test
     fun historySubtitleCount_returnsCountWhenHistoryExists() {
-        assertThat(appBrowserSettingsHistorySubtitleCount(7)).isEqualTo(7)
+        assertThat(browserSettingsHistorySubtitleCount(7)).isEqualTo(7)
     }
 
     @Test
     fun dataSizeSubtitle_returnsNullWhenSizeIsZero() {
-        assertThat(appBrowserSettingsDataSizeSubtitle(0L)).isNull()
+        assertThat(browserSettingsDataSizeSubtitle(0L)).isNull()
     }
 
     @Test
     fun dataSizeSubtitle_formatsPositiveSizes() {
-        assertThat(appBrowserSettingsDataSizeSubtitle(1_536L)).isEqualTo("1.5 KB")
+        assertThat(browserSettingsDataSizeSubtitle(1_536L)).isEqualTo("1.5 KB")
     }
 
     @Test
     fun externalOpenModeLabel_formatsInAppBrowser() {
-        assertThat(appBrowserExternalOpenModeLabelText(AppBrowserExternalOpenMode.InAppBrowser)).isEqualTo("In-app browser")
+        assertThat(browserExternalOpenModeLabelText(AppBrowserExternalOpenMode.InAppBrowser)).isEqualTo("In-app browser")
     }
 
     @Test
     fun searchEngineLabel_formatsGoogle() {
-        assertThat(appBrowserSearchEngineLabelText(AppBrowserSearchEngine.Google)).isEqualTo("Google")
+        assertThat(browserSearchEngineLabelText(AppBrowserSearchEngine.Google)).isEqualTo("Google")
     }
 }

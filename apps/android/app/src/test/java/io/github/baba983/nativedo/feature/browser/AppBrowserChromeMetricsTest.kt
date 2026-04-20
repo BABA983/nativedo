@@ -8,7 +8,7 @@ import kotlin.math.sqrt
 class AppBrowserChromeMetricsTest {
     @Test
     fun browserProgressMetrics_useMoreTelegramLikeThinLine() {
-        val metrics = appBrowserProgressMetrics()
+        val metrics = browserProgressMetrics()
 
         assertThat(metrics.height).isEqualTo(2.dp)
         assertThat(metrics.trackAlpha).isEqualTo(0.12f)
@@ -16,7 +16,7 @@ class AppBrowserChromeMetricsTest {
 
     @Test
     fun browserTopBarCollapseMetrics_startExpanded() {
-        val metrics = buildAppBrowserTopBarCollapseMetrics(
+        val metrics = buildBrowserTopBarCollapseMetrics(
             headerCollapseProgress = 0f,
             scrollProgress = 0f,
         )
@@ -29,12 +29,12 @@ class AppBrowserChromeMetricsTest {
 
     @Test
     fun browserTopBarCollapseMetrics_followTelegramLikeCollapseDirection() {
-        val metrics = buildAppBrowserTopBarCollapseMetrics(
+        val metrics = buildBrowserTopBarCollapseMetrics(
             headerCollapseProgress = 1f,
             scrollProgress = 1f,
         )
         val expectedMenuScale = sqrt(
-            (AppBrowserCollapsedTopBarOverlayHeight.value / AppBrowserTopBarOverlayHeight.value).toDouble(),
+            (BrowserCollapsedTopBarOverlayHeight.value / BrowserTopBarOverlayHeight.value).toDouble(),
         ).toFloat()
 
         assertThat(metrics.menuScale).isWithin(0.0001f).of(expectedMenuScale)

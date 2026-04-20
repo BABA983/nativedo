@@ -39,8 +39,8 @@ import io.github.baba983.nativedo.core.ui.BulletinHostState
 import io.github.baba983.nativedo.core.ui.LocalBulletinHostState
 import io.github.baba983.nativedo.feature.auth.ui.AuthRestoreGate
 import io.github.baba983.nativedo.feature.auth.ui.shouldShowAuthRestoreGate
-import io.github.baba983.nativedo.feature.browser.AppBrowserReaderScene
-import io.github.baba983.nativedo.feature.browser.AppBrowserSheetContainer
+import io.github.baba983.nativedo.feature.browser.BrowserReaderScene
+import io.github.baba983.nativedo.feature.browser.BrowserSheetContainer
 import io.github.baba983.nativedo.navigation.NativeDoNavHost
 import io.github.baba983.nativedo.navigation.RootDestination
 import io.github.baba983.nativedo.ui.theme.NativeDoTheme
@@ -430,7 +430,7 @@ internal fun AppRoot() {
                     BrowserHost(
                         state = browserHostState,
                         browserContent = { entry, isForeground ->
-                            AppBrowserSheetContainer(
+                            BrowserSheetContainer(
                                 entryId = entry.id,
                                 url = entry.request.url,
                                 foregroundActivationKey = entry.foregroundActivationKey,
@@ -453,7 +453,7 @@ internal fun AppRoot() {
                             )
                         },
                         readerContent = { request, isForeground ->
-                            AppBrowserReaderScene(
+                            BrowserReaderScene(
                                 entryId = request.id,
                                 content = request.content,
                                 foregroundActivationKey = request.foregroundActivationKey,

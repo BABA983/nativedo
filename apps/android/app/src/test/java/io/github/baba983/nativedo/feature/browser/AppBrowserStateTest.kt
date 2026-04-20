@@ -21,7 +21,7 @@ import org.junit.Test
 class AppBrowserStateTest {
     @Test
     fun appBrowserChromeScene_returnsBrowseWhenNoTransientStateIsActive() {
-        val scene = resolveAppBrowserChromeScene(
+        val scene = resolveBrowserChromeScene(
             isSearching = false,
             isAddressEditing = false,
             isHistoryPopupVisible = false,
@@ -29,12 +29,12 @@ class AppBrowserStateTest {
             isInSubPanel = false,
         )
 
-        assertThat(scene).isEqualTo(AppBrowserChromeScene.Browse)
+        assertThat(scene).isEqualTo(BrowserChromeScene.Browse)
     }
 
     @Test
     fun appBrowserChromeScene_prioritizesAddressEditingOverOtherScenes() {
-        val scene = resolveAppBrowserChromeScene(
+        val scene = resolveBrowserChromeScene(
             isSearching = true,
             isAddressEditing = true,
             isHistoryPopupVisible = true,
@@ -42,12 +42,12 @@ class AppBrowserStateTest {
             isInSubPanel = true,
         )
 
-        assertThat(scene).isEqualTo(AppBrowserChromeScene.AddressEditing)
+        assertThat(scene).isEqualTo(BrowserChromeScene.AddressEditing)
     }
 
     @Test
     fun appBrowserChromeScene_reportsOverflowMenuWhenOnlyMenuIsExpanded() {
-        val scene = resolveAppBrowserChromeScene(
+        val scene = resolveBrowserChromeScene(
             isSearching = false,
             isAddressEditing = false,
             isHistoryPopupVisible = false,
@@ -55,12 +55,12 @@ class AppBrowserStateTest {
             isInSubPanel = false,
         )
 
-        assertThat(scene).isEqualTo(AppBrowserChromeScene.OverflowMenu)
+        assertThat(scene).isEqualTo(BrowserChromeScene.OverflowMenu)
     }
 
     @Test
     fun appBrowserRoutePresentationState_clampsOffsetAndDerivesProgressAlphaAndBackdrop() {
-        val state = buildAppBrowserRoutePresentationState(
+        val state = buildBrowserRoutePresentationState(
             offsetPx = 120f,
             screenWidthPx = 400f,
         )
@@ -73,7 +73,7 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserRoutePresentationState_clampsOverflowOffsetToClosedState() {
-        val state = buildAppBrowserRoutePresentationState(
+        val state = buildBrowserRoutePresentationState(
             offsetPx = 999f,
             screenWidthPx = 400f,
         )
@@ -86,7 +86,7 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserTopBarPresentationState_keepsTopBarVisibleWhileAddingTelegramShift() {
-        val state = buildAppBrowserTopBarPresentationState(
+        val state = buildBrowserTopBarPresentationState(
             offsetPx = 120f,
             screenWidthPx = 400f,
             maxTranslationPx = 56f,
@@ -98,7 +98,7 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserTopBarPresentationState_clampsClosedOffsetToMaxShift() {
-        val state = buildAppBrowserTopBarPresentationState(
+        val state = buildBrowserTopBarPresentationState(
             offsetPx = 999f,
             screenWidthPx = 400f,
             maxTranslationPx = 56f,
@@ -210,7 +210,7 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserSwipeSettle_decidesDismissWhenThresholdExceeded() {
-        val settle = buildAppBrowserSwipeSettle(
+        val settle = buildBrowserSwipeSettle(
             currentOffsetPx = 180f,
             velocityPxPerSecond = 100f,
             screenWidthPx = 400f,
@@ -223,7 +223,7 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserSwipeSettle_decidesDismissWhenVelocityExceeded() {
-        val settle = buildAppBrowserSwipeSettle(
+        val settle = buildBrowserSwipeSettle(
             currentOffsetPx = 80f,
             velocityPxPerSecond = 900f,
             screenWidthPx = 400f,
@@ -236,7 +236,7 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserSwipeSettle_snapsBackWhenBelowThresholdAndVelocity() {
-        val settle = buildAppBrowserSwipeSettle(
+        val settle = buildBrowserSwipeSettle(
             currentOffsetPx = 80f,
             velocityPxPerSecond = 100f,
             screenWidthPx = 400f,
@@ -249,7 +249,7 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserLoadProgressState_start_makesIndicatorVisibleWithHeadStart() {
-        val state = AppBrowserLoadProgressState().start()
+        val state = BrowserLoadProgressState().start()
 
         assertThat(state.displayedProgress).isEqualTo(0.08f)
         assertThat(state.actualProgress).isEqualTo(0f)
@@ -259,7 +259,7 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserLoadProgressState_onActualProgressChanged_neverRegressesAndAllowsJumpAhead() {
-        val state = AppBrowserLoadProgressState(
+        val state = BrowserLoadProgressState(
             displayedProgress = 0.24f,
             actualProgress = 0.24f,
             isLoading = true,
@@ -276,7 +276,7 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserLoadProgressState_finish_keepsFullProgressUntilDismissed() {
-        val state = AppBrowserLoadProgressState()
+        val state = BrowserLoadProgressState()
             .start()
             .onActualProgressChanged(0.86f)
             .finish()
@@ -293,7 +293,7 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserWebPermissionRequestData_returnsNullWhenNoSupportedResourcesExist() {
-        val request = buildAppBrowserWebPermissionRequestData(
+        val request = buildBrowserWebPermissionRequestData(
             requestedResources = arrayOf("android.webkit.resource.PROTECTED_MEDIA_ID"),
         )
 
@@ -302,7 +302,7 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserWebPermissionRequestData_mapsSupportedResourcesToAndroidPermissions() {
-        val request = buildAppBrowserWebPermissionRequestData(
+        val request = buildBrowserWebPermissionRequestData(
             requestedResources = arrayOf(
                 "android.webkit.resource.VIDEO_CAPTURE",
                 "android.webkit.resource.AUDIO_CAPTURE",
@@ -346,7 +346,7 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserPageLoadError_returnsNullForNonMainFrameRequests() {
-        val error = buildAppBrowserPageLoadError(
+        val error = buildBrowserPageLoadError(
             failingUrl = "https://linux.do/t/123",
             isForMainFrame = false,
             description = "host lookup failed",
@@ -357,14 +357,14 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserPageLoadError_buildsNetworkErrorForMainFrameFailure() {
-        val error = buildAppBrowserPageLoadError(
+        val error = buildBrowserPageLoadError(
             failingUrl = "https://linux.do/t/123",
             isForMainFrame = true,
             description = "Unable to resolve host linux.do",
         )
 
         requireNotNull(error)
-        assertThat(error.kind).isEqualTo(AppBrowserPageLoadErrorKind.Network)
+        assertThat(error.kind).isEqualTo(BrowserPageLoadErrorKind.Network)
         assertThat(error.url).isEqualTo("https://linux.do/t/123")
         assertThat(error.rawMessage).contains("Unable to resolve host")
         assertThat(error.statusCode).isNull()
@@ -372,7 +372,7 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserPageLoadError_buildsHttpErrorWhenStatusCodeExists() {
-        val error = buildAppBrowserPageLoadError(
+        val error = buildBrowserPageLoadError(
             failingUrl = "https://linux.do/t/123",
             isForMainFrame = true,
             description = null,
@@ -381,7 +381,7 @@ class AppBrowserStateTest {
         )
 
         requireNotNull(error)
-        assertThat(error.kind).isEqualTo(AppBrowserPageLoadErrorKind.Http)
+        assertThat(error.kind).isEqualTo(BrowserPageLoadErrorKind.Http)
         assertThat(error.statusCode).isEqualTo(404)
         assertThat(error.reasonPhrase).isEqualTo("Not Found")
     }
@@ -408,7 +408,7 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserPopupRequest_resolvesUsingRequestedUrlBeforeFallback() {
-        val request = AppBrowserPopupRequest(
+        val request = BrowserPopupRequest(
             requestedUrl = "https://linux.do/latest",
             fallbackUrl = "https://linux.do/ignored",
             isDialog = false,
@@ -420,7 +420,7 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserScrollSnapshot_reportsProgressAndDelta() {
-        val snapshot = buildAppBrowserScrollSnapshot(
+        val snapshot = buildBrowserScrollSnapshot(
             scrollY = 240,
             previousScrollY = 180,
             contentHeightPx = 1_200,
@@ -434,7 +434,7 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserHeaderCollapseState_accumulatesDeltaUntilCap() {
-        val state = buildAppBrowserHeaderCollapseState(
+        val state = buildBrowserHeaderCollapseState(
             currentOffsetPx = 10f,
             scrollY = 220,
             deltaY = 18,
@@ -448,14 +448,14 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserHeaderCollapseState_resetsWhenDisabledOrNearTop() {
-        val disabled = buildAppBrowserHeaderCollapseState(
+        val disabled = buildBrowserHeaderCollapseState(
             currentOffsetPx = 10f,
             scrollY = 220,
             deltaY = 18,
             maxCollapseOffsetPx = 24f,
             isEnabled = false,
         )
-        val nearTop = buildAppBrowserHeaderCollapseState(
+        val nearTop = buildBrowserHeaderCollapseState(
             currentOffsetPx = 18f,
             scrollY = 8,
             deltaY = -12,
@@ -529,7 +529,7 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserScrollChromeBackgroundState_hidesFillWhileLoading() {
-        val state = buildAppBrowserScrollChromeBackgroundState(
+        val state = buildBrowserScrollChromeBackgroundState(
             scrollProgress = 0.75f,
             isLoadingVisible = true,
         )
@@ -541,7 +541,7 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserScrollChromeBackgroundState_scalesFillAndShadowWithScroll() {
-        val state = buildAppBrowserScrollChromeBackgroundState(
+        val state = buildBrowserScrollChromeBackgroundState(
             scrollProgress = 0.5f,
             isLoadingVisible = false,
         )
@@ -553,7 +553,7 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserScrollChromeBackgroundState_clampsOverflowProgress() {
-        val state = buildAppBrowserScrollChromeBackgroundState(
+        val state = buildBrowserScrollChromeBackgroundState(
             scrollProgress = 1.4f,
             isLoadingVisible = false,
         )
@@ -565,7 +565,7 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserSearchPanelState_hiddenWhenSearchModeIsClosed() {
-        val state = buildAppBrowserSearchPanelState(
+        val state = buildBrowserSearchPanelState(
             isSearching = false,
             query = "linux",
             activeMatchOrdinal = 0,
@@ -578,7 +578,7 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserSearchPanelState_hiddenWhenQueryIsBlank() {
-        val state = buildAppBrowserSearchPanelState(
+        val state = buildBrowserSearchPanelState(
             isSearching = true,
             query = " ",
             activeMatchOrdinal = 0,
@@ -591,7 +591,7 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserSearchPanelState_showsNoResultsWhenNothingMatches() {
-        val state = buildAppBrowserSearchPanelState(
+        val state = buildBrowserSearchPanelState(
             isSearching = true,
             query = "linux",
             activeMatchOrdinal = 0,
@@ -607,7 +607,7 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserSearchPanelState_showsOrdinalAndEnablesNavigationWhenMatchesExist() {
-        val state = buildAppBrowserSearchPanelState(
+        val state = buildBrowserSearchPanelState(
             isSearching = true,
             query = "linux",
             activeMatchOrdinal = 1,
@@ -623,7 +623,7 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserSearchPanelState_hidesWhenComposingTextResolvesToBlank() {
-        val state = buildAppBrowserSearchPanelState(
+        val state = buildBrowserSearchPanelState(
             isSearching = true,
             query = "",
             activeMatchOrdinal = 0,
@@ -638,7 +638,7 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserSearchPanelState_hidesNoResultsWhileSearchIsCounting() {
-        val state = buildAppBrowserSearchPanelState(
+        val state = buildBrowserSearchPanelState(
             isSearching = true,
             query = "linux",
             activeMatchOrdinal = 0,
@@ -653,127 +653,127 @@ class AppBrowserStateTest {
     }
 
     @Test
-    fun buildAppBrowserMenuEntries_telegramLayout_includesSearchAndKeepsThreeGroups() {
-        val entries = buildAppBrowserMenuEntries(
+    fun buildBrowserMenuEntries_telegramLayout_includesSearchAndKeepsThreeGroups() {
+        val entries = buildBrowserMenuEntries(
             canGoForward = false,
             hasBrowserHistory = true,
             isBookmarked = false,
         )
 
         val actions = entries
-            .filterIsInstance<AppBrowserMenuEntry.Item>()
+            .filterIsInstance<BrowserMenuEntry.Item>()
             .map { entry -> entry.item.action }
 
         assertThat(actions).containsExactly(
-            AppBrowserMenuAction.Forward,
-            AppBrowserMenuAction.Refresh,
-            AppBrowserMenuAction.AddBookmark,
-            AppBrowserMenuAction.OpenInBrowser,
-            AppBrowserMenuAction.Share,
-            AppBrowserMenuAction.CopyLink,
-            AppBrowserMenuAction.Search,
-            AppBrowserMenuAction.History,
-            AppBrowserMenuAction.Settings,
-            AppBrowserMenuAction.Minimize,
-            AppBrowserMenuAction.Close,
+            BrowserMenuAction.Forward,
+            BrowserMenuAction.Refresh,
+            BrowserMenuAction.AddBookmark,
+            BrowserMenuAction.OpenInBrowser,
+            BrowserMenuAction.Share,
+            BrowserMenuAction.CopyLink,
+            BrowserMenuAction.Search,
+            BrowserMenuAction.History,
+            BrowserMenuAction.Settings,
+            BrowserMenuAction.Minimize,
+            BrowserMenuAction.Close,
         ).inOrder()
-        assertThat(entries.count { entry -> entry is AppBrowserMenuEntry.Divider }).isEqualTo(2)
+        assertThat(entries.count { entry -> entry is BrowserMenuEntry.Divider }).isEqualTo(2)
     }
 
     @Test
-    fun buildAppBrowserMenuEntries_includesSearchBeforeHistory() {
-        val entries = buildAppBrowserMenuEntries(
+    fun buildBrowserMenuEntries_includesSearchBeforeHistory() {
+        val entries = buildBrowserMenuEntries(
             canGoForward = true,
             hasBrowserHistory = true,
             isBookmarked = false,
         )
 
         val actions = entries
-            .filterIsInstance<AppBrowserMenuEntry.Item>()
+            .filterIsInstance<BrowserMenuEntry.Item>()
             .map { entry -> entry.item.action }
 
         assertThat(actions).containsAtLeast(
-            AppBrowserMenuAction.Search,
-            AppBrowserMenuAction.History,
+            BrowserMenuAction.Search,
+            BrowserMenuAction.History,
         ).inOrder()
     }
 
     @Test
-    fun buildAppBrowserMenuEntries_withoutBrowserHistory_disablesHistoryButKeepsEntry() {
-        val entries = buildAppBrowserMenuEntries(
+    fun buildBrowserMenuEntries_withoutBrowserHistory_disablesHistoryButKeepsEntry() {
+        val entries = buildBrowserMenuEntries(
             canGoForward = false,
             hasBrowserHistory = false,
             isBookmarked = false,
         )
 
         val historyEntry = entries
-            .filterIsInstance<AppBrowserMenuEntry.Item>()
-            .first { entry -> entry.item.action == AppBrowserMenuAction.History }
+            .filterIsInstance<BrowserMenuEntry.Item>()
+            .first { entry -> entry.item.action == BrowserMenuAction.History }
 
         assertThat(historyEntry.item.enabled).isFalse()
     }
 
     @Test
-    fun buildAppBrowserMenuEntries_switchesToRemoveBookmarkWhenCurrentPageIsSaved() {
-        val entries = buildAppBrowserMenuEntries(
+    fun buildBrowserMenuEntries_switchesToRemoveBookmarkWhenCurrentPageIsSaved() {
+        val entries = buildBrowserMenuEntries(
             canGoForward = false,
             hasBrowserHistory = true,
             isBookmarked = true,
         )
 
         val bookmarkEntry = entries
-            .filterIsInstance<AppBrowserMenuEntry.Item>()
+            .filterIsInstance<BrowserMenuEntry.Item>()
             .first { entry ->
-                entry.item.action == AppBrowserMenuAction.RemoveBookmark
+                entry.item.action == BrowserMenuAction.RemoveBookmark
             }
 
         assertThat(bookmarkEntry.item.enabled).isTrue()
     }
 
     @Test
-    fun buildAppBrowserMenuEntries_includesInstantViewOnlyWhenShown() {
-        val supportedEntries = buildAppBrowserMenuEntries(
+    fun buildBrowserMenuEntries_includesInstantViewOnlyWhenShown() {
+        val supportedEntries = buildBrowserMenuEntries(
             canGoForward = false,
             hasBrowserHistory = true,
             isBookmarked = false,
-            instantViewActionAvailability = AppBrowserInstantViewActionAvailability.Enabled,
+            instantViewActionAvailability = BrowserInstantViewActionAvailability.Enabled,
         )
-        val hiddenEntries = buildAppBrowserMenuEntries(
+        val hiddenEntries = buildBrowserMenuEntries(
             canGoForward = false,
             hasBrowserHistory = true,
             isBookmarked = false,
-            instantViewActionAvailability = AppBrowserInstantViewActionAvailability.Hidden,
+            instantViewActionAvailability = BrowserInstantViewActionAvailability.Hidden,
         )
 
         assertThat(
-            supportedEntries.filterIsInstance<AppBrowserMenuEntry.Item>().map { it.item.action },
-        ).contains(AppBrowserMenuAction.InstantView)
+            supportedEntries.filterIsInstance<BrowserMenuEntry.Item>().map { it.item.action },
+        ).contains(BrowserMenuAction.InstantView)
         assertThat(
-            hiddenEntries.filterIsInstance<AppBrowserMenuEntry.Item>().map { it.item.action },
-        ).doesNotContain(AppBrowserMenuAction.InstantView)
+            hiddenEntries.filterIsInstance<BrowserMenuEntry.Item>().map { it.item.action },
+        ).doesNotContain(BrowserMenuAction.InstantView)
     }
 
     @Test
-    fun buildAppBrowserMenuEntries_disablesInstantViewUntilContentIsReady() {
-        val entries = buildAppBrowserMenuEntries(
+    fun buildBrowserMenuEntries_disablesInstantViewUntilContentIsReady() {
+        val entries = buildBrowserMenuEntries(
             canGoForward = false,
             hasBrowserHistory = true,
             isBookmarked = false,
-            instantViewActionAvailability = AppBrowserInstantViewActionAvailability.Disabled,
+            instantViewActionAvailability = BrowserInstantViewActionAvailability.Disabled,
         )
 
         val instantEntry = entries
-            .filterIsInstance<AppBrowserMenuEntry.Item>()
-            .first { it.item.action == AppBrowserMenuAction.InstantView }
+            .filterIsInstance<BrowserMenuEntry.Item>()
+            .first { it.item.action == BrowserMenuAction.InstantView }
 
         assertThat(instantEntry.item.enabled).isFalse()
     }
 
     @Test
     fun appBrowserInstantViewLoaderState_actionAvailability_isEnabledWhenDocumentExists() {
-        val state = AppBrowserInstantViewLoaderState(
+        val state = BrowserInstantViewLoaderState(
             pageUrl = "https://example.com/article",
-            phase = AppBrowserInstantViewPhase.Ready,
+            phase = BrowserInstantViewPhase.Ready,
             document = AppBrowserReaderDocument(
                 url = "https://example.com/article",
                 title = "Example Article",
@@ -781,46 +781,46 @@ class AppBrowserStateTest {
             ),
         )
 
-        assertThat(state.actionAvailability).isEqualTo(AppBrowserInstantViewActionAvailability.Enabled)
+        assertThat(state.actionAvailability).isEqualTo(BrowserInstantViewActionAvailability.Enabled)
     }
 
     @Test
     fun appBrowserInstantViewLoaderState_actionAvailability_isDisabledForVisiblePlaceholder() {
-        val state = AppBrowserInstantViewLoaderState(
+        val state = BrowserInstantViewLoaderState(
             pageUrl = "https://example.com/article",
-            phase = AppBrowserInstantViewPhase.Probing,
+            phase = BrowserInstantViewPhase.Probing,
             document = null,
         )
 
-        assertThat(state.actionAvailability).isEqualTo(AppBrowserInstantViewActionAvailability.Disabled)
+        assertThat(state.actionAvailability).isEqualTo(BrowserInstantViewActionAvailability.Disabled)
     }
 
     @Test
     fun appBrowserInstantViewLoaderState_onPageStarted_showsPlaceholder() {
-        val state = AppBrowserInstantViewLoaderState().onPageStarted(
+        val state = BrowserInstantViewLoaderState().onPageStarted(
             pageUrl = "https://example.com/article",
         )
 
-        assertThat(state.phase).isEqualTo(AppBrowserInstantViewPhase.Probing)
-        assertThat(state.actionAvailability).isEqualTo(AppBrowserInstantViewActionAvailability.Disabled)
+        assertThat(state.phase).isEqualTo(BrowserInstantViewPhase.Probing)
+        assertThat(state.actionAvailability).isEqualTo(BrowserInstantViewActionAvailability.Disabled)
     }
 
     @Test
     fun appBrowserInstantViewLoaderState_onResolveStarted_keepsPlaceholderVisible() {
-        val state = AppBrowserInstantViewLoaderState()
+        val state = BrowserInstantViewLoaderState()
             .onPageStarted(pageUrl = "https://example.com/article")
             .onResolveStarted(
                 pageUrl = "https://example.com/article",
                 openWhenResolved = false,
             )
 
-        assertThat(state.phase).isEqualTo(AppBrowserInstantViewPhase.Probing)
-        assertThat(state.actionAvailability).isEqualTo(AppBrowserInstantViewActionAvailability.Disabled)
+        assertThat(state.phase).isEqualTo(BrowserInstantViewPhase.Probing)
+        assertThat(state.actionAvailability).isEqualTo(BrowserInstantViewActionAvailability.Disabled)
     }
 
     @Test
     fun appBrowserInstantViewLoaderState_onResolvedWithDocument_keepsActionVisibleAndSupported() {
-        val state = AppBrowserInstantViewLoaderState()
+        val state = BrowserInstantViewLoaderState()
             .onResolveStarted(
                 pageUrl = "https://example.com/article",
                 openWhenResolved = false,
@@ -834,13 +834,13 @@ class AppBrowserStateTest {
                 ),
             )
 
-        assertThat(state.phase).isEqualTo(AppBrowserInstantViewPhase.Ready)
-        assertThat(state.actionAvailability).isEqualTo(AppBrowserInstantViewActionAvailability.Enabled)
+        assertThat(state.phase).isEqualTo(BrowserInstantViewPhase.Ready)
+        assertThat(state.actionAvailability).isEqualTo(BrowserInstantViewActionAvailability.Enabled)
     }
 
     @Test
     fun appBrowserInstantViewLoaderState_onResolvedWithoutDocument_hidesAction() {
-        val state = AppBrowserInstantViewLoaderState()
+        val state = BrowserInstantViewLoaderState()
             .onResolveStarted(
                 pageUrl = "https://example.com/article",
                 openWhenResolved = false,
@@ -850,13 +850,13 @@ class AppBrowserStateTest {
                 document = null,
             )
 
-        assertThat(state.phase).isEqualTo(AppBrowserInstantViewPhase.Unsupported)
-        assertThat(state.actionAvailability).isEqualTo(AppBrowserInstantViewActionAvailability.Hidden)
+        assertThat(state.phase).isEqualTo(BrowserInstantViewPhase.Unsupported)
+        assertThat(state.actionAvailability).isEqualTo(BrowserInstantViewActionAvailability.Hidden)
     }
 
     @Test
     fun appBrowserInstantViewLoaderState_preservesPendingOpenWhileResolving() {
-        val state = AppBrowserInstantViewLoaderState()
+        val state = BrowserInstantViewLoaderState()
             .onResolveStarted(
                 pageUrl = "https://example.com/article",
                 openWhenResolved = true,
@@ -871,9 +871,9 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserInstantViewLoaderState_clearPendingOpen_resetsOpenRequest() {
-        val state = AppBrowserInstantViewLoaderState(
+        val state = BrowserInstantViewLoaderState(
             pageUrl = "https://example.com/article",
-            phase = AppBrowserInstantViewPhase.Probing,
+            phase = BrowserInstantViewPhase.Probing,
             pendingOpenRequested = true,
         )
 
@@ -882,11 +882,11 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserInstantViewLoaderState_onPageSnapshotChanged_invalidatesResolvedDocument() {
-        val state = AppBrowserInstantViewLoaderState(
+        val state = BrowserInstantViewLoaderState(
             pageUrl = "https://example.com/article",
             pageProgress = 1f,
             pageLoaded = true,
-            phase = AppBrowserInstantViewPhase.Ready,
+            phase = BrowserInstantViewPhase.Ready,
             document = AppBrowserReaderDocument(
                 url = "https://example.com/article",
                 title = "Example Article",
@@ -902,8 +902,8 @@ class AppBrowserStateTest {
         assertThat(invalidated.pageProgress).isEqualTo(1f)
         assertThat(invalidated.pageLoaded).isTrue()
         assertThat(invalidated.document).isNotNull()
-        assertThat(invalidated.phase).isEqualTo(AppBrowserInstantViewPhase.Ready)
-        assertThat(invalidated.actionAvailability).isEqualTo(AppBrowserInstantViewActionAvailability.Enabled)
+        assertThat(invalidated.phase).isEqualTo(BrowserInstantViewPhase.Ready)
+        assertThat(invalidated.actionAvailability).isEqualTo(BrowserInstantViewActionAvailability.Enabled)
     }
 
     @Test
@@ -913,11 +913,11 @@ class AppBrowserStateTest {
             title = "Example Article",
             blocks = emptyList<AppBrowserReaderBlock>(),
         )
-        val state = AppBrowserInstantViewLoaderState(
+        val state = BrowserInstantViewLoaderState(
             pageUrl = "https://example.com/article",
             pageProgress = 1f,
             pageLoaded = true,
-            phase = AppBrowserInstantViewPhase.Ready,
+            phase = BrowserInstantViewPhase.Ready,
             document = document,
         )
 
@@ -929,12 +929,12 @@ class AppBrowserStateTest {
         assertThat(updated.pageProgress).isEqualTo(1f)
         assertThat(updated.pageLoaded).isTrue()
         assertThat(updated.document).isEqualTo(document)
-        assertThat(updated.phase).isEqualTo(AppBrowserInstantViewPhase.Ready)
+        assertThat(updated.phase).isEqualTo(BrowserInstantViewPhase.Ready)
     }
 
     @Test
     fun appBrowserInstantViewLoaderState_isStaleForSnapshot_returnsTrueWhenProgressChanges() {
-        val state = AppBrowserInstantViewLoaderState(
+        val state = BrowserInstantViewLoaderState(
             pageUrl = "https://example.com/article",
             pageProgress = 1f,
             pageLoaded = true,
@@ -951,7 +951,7 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserInstantViewLoaderState_isStaleForSnapshot_returnsFalseWhenSnapshotMatches() {
-        val state = AppBrowserInstantViewLoaderState(
+        val state = BrowserInstantViewLoaderState(
             pageUrl = "https://example.com/article",
             pageProgress = 1f,
             pageLoaded = true,
@@ -1410,7 +1410,7 @@ class AppBrowserStateTest {
     }
 
     @Test
-    fun parseAppBrowserInstantViewJsonDocument_parsesStructuredBlocks() {
+    fun parseBrowserInstantViewJsonDocument_parsesStructuredBlocks() {
         val document = invokeParseInstantViewJsonDocument(
             pageUrl = "https://example.com/instant-view",
             json = """
@@ -1504,7 +1504,7 @@ class AppBrowserStateTest {
     }
 
     @Test
-    fun parseAppBrowserInstantViewJsonDocument_dropsNearDuplicateLeadingHeading() {
+    fun parseBrowserInstantViewJsonDocument_dropsNearDuplicateLeadingHeading() {
         val document = invokeParseInstantViewJsonDocument(
             pageUrl = "https://example.com/instant-view",
             json = """
@@ -1525,7 +1525,7 @@ class AppBrowserStateTest {
     }
 
     @Test
-    fun parseAppBrowserInstantViewJsonDocument_returnsNullWhenBlocksAreMissing() {
+    fun parseBrowserInstantViewJsonDocument_returnsNullWhenBlocksAreMissing() {
         val document = invokeParseInstantViewJsonDocumentOrNull(
             pageUrl = "https://example.com/instant-view",
             json = """{"title":"No Content","blocks":[]}""",
@@ -1535,7 +1535,7 @@ class AppBrowserStateTest {
     }
 
     @Test
-    fun parseAppBrowserInstantViewJsonDocument_parsesRichTextEntitiesAndImageBlocks() {
+    fun parseBrowserInstantViewJsonDocument_parsesRichTextEntitiesAndImageBlocks() {
         val document = invokeParseInstantViewJsonDocument(
             pageUrl = "https://example.com/instant-view",
             json = """
@@ -1896,7 +1896,7 @@ class AppBrowserStateTest {
 
     @Test
     fun appBrowserHistoryStore_recordVisit_keepsNewestEntryAndDedupesUrl() = runTest {
-        val store = AppBrowserHistoryStore(
+        val store = BrowserHistoryStore(
             persistenceDispatcher = StandardTestDispatcher(testScheduler),
         )
 
@@ -1973,11 +1973,11 @@ class AppBrowserStateTest {
     }
 
     @Test
-    fun mergeAppBrowserHistoryEntries_withoutBackStack_returnsBrowserHistoryEntries() {
-        val merged = mergeAppBrowserHistoryEntries(
+    fun mergeBrowserHistoryEntries_withoutBackStack_returnsBrowserHistoryEntries() {
+        val merged = mergeBrowserHistoryEntries(
             backHistoryEntries = emptyList(),
             browserHistoryEntries = listOf(
-                AppBrowserHistoryRecord(
+                BrowserHistoryRecord(
                     title = "CDK Dashboard",
                     url = "https://cdk.linux.do/dashboard",
                     host = "cdk.linux.do",
@@ -1993,9 +1993,9 @@ class AppBrowserStateTest {
 
     @Test
     fun mergeHistoryEntries_withoutBrowserHistory_returnsEmptyList() {
-        val merged = mergeAppBrowserHistoryEntries(
+        val merged = mergeBrowserHistoryEntries(
             backHistoryEntries = listOf(
-                AppBrowserHistoryEntry(
+                BrowserHistoryEntry(
                     title = "Back stack only",
                     url = "https://linux.do/t/back-only/1",
                     offset = -1,
@@ -2011,9 +2011,9 @@ class AppBrowserStateTest {
 
     @Test
     fun mergeHistoryEntries_prefersBackStackOffsetWhenUrlExistsInCurrentTab() {
-        val merged = mergeAppBrowserHistoryEntries(
+        val merged = mergeBrowserHistoryEntries(
             backHistoryEntries = listOf(
-                AppBrowserHistoryEntry(
+                BrowserHistoryEntry(
                     title = "Topic",
                     url = "https://linux.do/t/render-debug-case/123456",
                     offset = -1,
@@ -2022,7 +2022,7 @@ class AppBrowserStateTest {
                 ),
             ),
             browserHistoryEntries = listOf(
-                AppBrowserHistoryRecord(
+                BrowserHistoryRecord(
                     title = "Topic",
                     url = "https://linux.do/t/render-debug-case/123456",
                     host = "linux.do",
@@ -2036,16 +2036,16 @@ class AppBrowserStateTest {
 
     @Test
     fun mergeHistoryEntries_prefersNearestBackStackMatchWhenUrlRepeats() {
-        val merged = mergeAppBrowserHistoryEntries(
+        val merged = mergeBrowserHistoryEntries(
             backHistoryEntries = listOf(
-                AppBrowserHistoryEntry(
+                BrowserHistoryEntry(
                     title = "Nearest",
                     url = "https://linux.do/t/repeat/1",
                     offset = -1,
                     host = "linux.do",
                     visitedAtMillis = 300L,
                 ),
-                AppBrowserHistoryEntry(
+                BrowserHistoryEntry(
                     title = "Older",
                     url = "https://linux.do/t/repeat/1",
                     offset = -3,
@@ -2054,7 +2054,7 @@ class AppBrowserStateTest {
                 ),
             ),
             browserHistoryEntries = listOf(
-                AppBrowserHistoryRecord(
+                BrowserHistoryRecord(
                     title = "Repeat",
                     url = "https://linux.do/t/repeat/1",
                     host = "linux.do",
@@ -2083,7 +2083,7 @@ class AppBrowserStateTest {
     }
 
     @Test
-    fun readAppBrowserStorageUsage_countsNestedCookieFilesSeparatelyFromCache() {
+    fun readBrowserStorageUsage_countsNestedCookieFilesSeparatelyFromCache() {
         val appDataDir = createTempDir(prefix = "appData")
         val appCacheDir = createTempDir(prefix = "appCache")
         try {
@@ -2093,7 +2093,7 @@ class AppBrowserStateTest {
             writeSizedFile(File(appDataDir, "databases/webview.db"), 30)
             writeSizedFile(File(appDataDir, "databases/webviewCache.db"), 20)
 
-            val usage = readAppBrowserStorageUsage(
+            val usage = readBrowserStorageUsage(
                 appDataDir = appDataDir,
                 appCacheDir = appCacheDir,
             )
@@ -2148,11 +2148,11 @@ class AppBrowserStateTest {
             ),
         )
 
-        val store = AppBrowserHistoryStore(persistence = persistence)
+        val store = BrowserHistoryStore(persistence = persistence)
 
         assertThat(store.history.value).hasSize(1)
         assertThat(store.history.value.single()).isEqualTo(
-            AppBrowserHistoryRecord(
+            BrowserHistoryRecord(
                 title = "CDK Dashboard",
                 url = "https://cdk.linux.do/dashboard",
                 host = "cdk.linux.do",
@@ -2164,7 +2164,7 @@ class AppBrowserStateTest {
     @Test
     fun historyStore_clear_removesPersistedEntries() = runTest {
         val persistence = InMemoryAppBrowserHistoryStorePersistence()
-        val store = AppBrowserHistoryStore(
+        val store = BrowserHistoryStore(
             persistence = persistence,
             persistenceDispatcher = StandardTestDispatcher(testScheduler),
         )
@@ -2184,7 +2184,7 @@ class AppBrowserStateTest {
     @Test
     fun historyStore_clearImmediate_clearsVisibleStateBeforeBackgroundPersistenceRuns() = runTest {
         val persistence = InMemoryAppBrowserHistoryStorePersistence()
-        val store = AppBrowserHistoryStore(
+        val store = BrowserHistoryStore(
             persistence = persistence,
             persistenceDispatcher = StandardTestDispatcher(testScheduler),
         )
@@ -2217,7 +2217,7 @@ class AppBrowserStateTest {
             ),
         )
 
-        val store = AppBrowserHistoryStore(persistence = persistence)
+        val store = BrowserHistoryStore(persistence = persistence)
 
         assertThat(store.history.value.single().faviconBase64).isEqualTo("ZmFrZS1pY29u")
     }
@@ -2235,7 +2235,7 @@ class AppBrowserStateTest {
                 ),
             ),
         )
-        val store = AppBrowserHistoryStore(
+        val store = BrowserHistoryStore(
             persistence = persistence,
             persistenceDispatcher = StandardTestDispatcher(testScheduler),
         )
@@ -2317,7 +2317,7 @@ class AppBrowserStateTest {
         val method = Class.forName("io.github.baba983.nativedo.feature.browser.AppBrowserStateKt")
             .methods
             .firstOrNull { candidate ->
-                candidate.name == "parseAppBrowserInstantViewJsonDocument" &&
+                candidate.name == "parseBrowserInstantViewJsonDocument" &&
                     candidate.parameterTypes.contentEquals(arrayOf(String::class.java, String::class.java))
             }
 

@@ -41,7 +41,7 @@ import org.jsoup.nodes.TextNode
 import kotlin.math.abs
 
 @Serializable
-data class AppBrowserHistoryRecord(
+data class BrowserHistoryRecord(
     val title: String,
     val url: String,
     val host: String,
@@ -59,20 +59,20 @@ sealed interface AppBrowserPanel {
     data object Settings : AppBrowserPanel
 }
 
-internal data class AppBrowserSearchPanelState(
+internal data class BrowserSearchPanelState(
     val visible: Boolean,
     val matchText: String,
     val canNavigate: Boolean,
     val showsNoResults: Boolean = false,
 )
 
-internal data class AppBrowserScrollChromeBackgroundState(
+internal data class BrowserScrollChromeBackgroundState(
     val fillFraction: Float,
     val fillAlpha: Float,
     val dividerAlpha: Float,
 )
 
-internal data class AppBrowserRoutePresentationState(
+internal data class BrowserRoutePresentationState(
     val progress: Float,
     val translationX: Float,
     val alpha: Float,
@@ -98,35 +98,35 @@ internal data class AppBrowserSheetSettle(
     val durationMillis: Int,
 )
 
-internal data class AppBrowserTopBarPresentationState(
+internal data class BrowserTopBarPresentationState(
     val alpha: Float,
     val translationX: Float,
 )
 
-internal data class AppBrowserSwipeSettle(
+internal data class BrowserSwipeSettle(
     val shouldDismiss: Boolean,
     val targetOffsetPx: Float,
     val durationMillis: Int,
 )
 
-internal data class AppBrowserScrollSnapshot(
+internal data class BrowserScrollSnapshot(
     val scrollY: Int,
     val deltaY: Int,
     val progress: Float,
 )
 
-internal data class AppBrowserHeaderCollapseState(
+internal data class BrowserHeaderCollapseState(
     val offsetPx: Float = 0f,
     val progress: Float = 0f,
 )
 
-internal data class AppBrowserLoadProgressState(
+internal data class BrowserLoadProgressState(
     val displayedProgress: Float = 0f,
     val actualProgress: Float = 0f,
     val isLoading: Boolean = false,
     val isVisible: Boolean = false,
 ) {
-    fun start(): AppBrowserLoadProgressState {
+    fun start(): BrowserLoadProgressState {
         return copy(
             displayedProgress = appBrowserLoadProgressStart,
             actualProgress = 0f,
@@ -135,7 +135,7 @@ internal data class AppBrowserLoadProgressState(
         )
     }
 
-    fun onActualProgressChanged(progress: Float): AppBrowserLoadProgressState {
+    fun onActualProgressChanged(progress: Float): BrowserLoadProgressState {
         val normalized = progress.coerceIn(0f, 1f)
         return copy(
             actualProgress = normalized,
@@ -145,7 +145,7 @@ internal data class AppBrowserLoadProgressState(
         )
     }
 
-    fun finish(): AppBrowserLoadProgressState {
+    fun finish(): BrowserLoadProgressState {
         return copy(
             displayedProgress = 1f,
             actualProgress = 1f,
@@ -154,21 +154,21 @@ internal data class AppBrowserLoadProgressState(
         )
     }
 
-    fun dismiss(): AppBrowserLoadProgressState {
-        return AppBrowserLoadProgressState()
+    fun dismiss(): BrowserLoadProgressState {
+        return BrowserLoadProgressState()
     }
 }
 
-internal data class AppBrowserStorageUsage(
+internal data class BrowserStorageUsage(
     val cookiesSizeBytes: Long,
     val cacheSizeBytes: Long,
 )
 
-internal data class AppBrowserInstantViewLoaderState(
+internal data class BrowserInstantViewLoaderState(
     val pageUrl: String? = null,
     val pageProgress: Float = 0f,
     val pageLoaded: Boolean = false,
-    val phase: AppBrowserInstantViewPhase = AppBrowserInstantViewPhase.Hidden,
+    val phase: BrowserInstantViewPhase = BrowserInstantViewPhase.Hidden,
     val document: AppBrowserReaderDocument? = null,
     val pendingOpenRequested: Boolean = false,
     val resolveInFlight: Boolean = false,
@@ -176,20 +176,20 @@ internal data class AppBrowserInstantViewLoaderState(
     val supportsInstantView: Boolean
         get() = document != null
 
-    val actionAvailability: AppBrowserInstantViewActionAvailability
+    val actionAvailability: BrowserInstantViewActionAvailability
         get() = when {
-            phase == AppBrowserInstantViewPhase.Hidden ||
-                phase == AppBrowserInstantViewPhase.Unsupported -> AppBrowserInstantViewActionAvailability.Hidden
-            phase == AppBrowserInstantViewPhase.Ready && document != null -> AppBrowserInstantViewActionAvailability.Enabled
-            else -> AppBrowserInstantViewActionAvailability.Disabled
+            phase == BrowserInstantViewPhase.Hidden ||
+                phase == BrowserInstantViewPhase.Unsupported -> BrowserInstantViewActionAvailability.Hidden
+            phase == BrowserInstantViewPhase.Ready && document != null -> BrowserInstantViewActionAvailability.Enabled
+            else -> BrowserInstantViewActionAvailability.Disabled
         }
 
-    fun onPageStarted(pageUrl: String?): AppBrowserInstantViewLoaderState {
+    fun onPageStarted(pageUrl: String?): BrowserInstantViewLoaderState {
         return copy(
             pageUrl = pageUrl?.takeIf(String::isNotBlank),
             pageProgress = 0f,
             pageLoaded = false,
-            phase = AppBrowserInstantViewPhase.Probing,
+            phase = BrowserInstantViewPhase.Probing,
             document = null,
             pendingOpenRequested = false,
             resolveInFlight = false,
@@ -199,16 +199,16 @@ internal data class AppBrowserInstantViewLoaderState(
     fun onResolveStarted(
         pageUrl: String,
         openWhenResolved: Boolean,
-    ): AppBrowserInstantViewLoaderState {
+    ): BrowserInstantViewLoaderState {
         return copy(
             pageUrl = pageUrl,
-            phase = AppBrowserInstantViewPhase.Probing,
+            phase = BrowserInstantViewPhase.Probing,
             pendingOpenRequested = pendingOpenRequested || openWhenResolved,
             resolveInFlight = true,
         )
     }
 
-    fun onPageFinished(pageUrl: String?): AppBrowserInstantViewLoaderState {
+    fun onPageFinished(pageUrl: String?): BrowserInstantViewLoaderState {
         val normalizedUrl = pageUrl?.takeIf(String::isNotBlank) ?: this.pageUrl
         return copy(
             pageUrl = normalizedUrl,
@@ -220,16 +220,16 @@ internal data class AppBrowserInstantViewLoaderState(
     fun onResolved(
         pageUrl: String,
         document: AppBrowserReaderDocument?,
-    ): AppBrowserInstantViewLoaderState {
+    ): BrowserInstantViewLoaderState {
         if (this.pageUrl != null && this.pageUrl != pageUrl) {
             return this
         }
         return copy(
             pageUrl = pageUrl,
             phase = if (document != null) {
-                AppBrowserInstantViewPhase.Ready
+                BrowserInstantViewPhase.Ready
             } else {
-                AppBrowserInstantViewPhase.Unsupported
+                BrowserInstantViewPhase.Unsupported
             },
             document = document,
             resolveInFlight = false,
@@ -251,7 +251,7 @@ internal data class AppBrowserInstantViewLoaderState(
     fun onPageSnapshotChanged(
         pageUrl: String?,
         pageProgress: Float,
-    ): AppBrowserInstantViewLoaderState {
+    ): BrowserInstantViewLoaderState {
         val normalizedUrl = pageUrl?.takeIf(String::isNotBlank)
         val normalizedProgress = pageProgress.coerceIn(0f, 1f)
         val preservesLoadedSnapshot = pageLoaded &&
@@ -273,7 +273,7 @@ internal data class AppBrowserInstantViewLoaderState(
             pageProgress = effectiveProgress,
             pageLoaded = effectiveLoaded,
             phase = if (document != null && isStale) {
-                AppBrowserInstantViewPhase.Probing
+                BrowserInstantViewPhase.Probing
             } else {
                 phase
             },
@@ -286,17 +286,17 @@ internal data class AppBrowserInstantViewLoaderState(
         )
     }
 
-    fun clearPendingOpen(): AppBrowserInstantViewLoaderState {
+    fun clearPendingOpen(): BrowserInstantViewLoaderState {
         return copy(pendingOpenRequested = false)
     }
 }
 
-internal data class AppBrowserWebPermissionRequestData(
+internal data class BrowserWebPermissionRequestData(
     val grantableResources: List<String>,
     val requiredAndroidPermissions: List<String>,
 )
 
-internal data class AppBrowserPopupRequest(
+internal data class BrowserPopupRequest(
     val requestedUrl: String?,
     val fallbackUrl: String?,
     val isDialog: Boolean,
@@ -309,7 +309,7 @@ internal data class AppBrowserPopupRequest(
         )
 }
 
-internal data class AppBrowserDownloadRequest(
+internal data class BrowserDownloadRequest(
     val url: String,
     val userAgent: String?,
     val contentDisposition: String?,
@@ -317,22 +317,22 @@ internal data class AppBrowserDownloadRequest(
     val contentLength: Long,
 )
 
-internal enum class AppBrowserPageLoadErrorKind {
+internal enum class BrowserPageLoadErrorKind {
     Network,
     Http,
 }
 
-internal data class AppBrowserPageLoadError(
-    val kind: AppBrowserPageLoadErrorKind,
+internal data class BrowserPageLoadError(
+    val kind: BrowserPageLoadErrorKind,
     val url: String,
     val rawMessage: String? = null,
     val statusCode: Int? = null,
     val reasonPhrase: String? = null,
 )
 
-internal fun buildAppBrowserWebPermissionRequestData(
+internal fun buildBrowserWebPermissionRequestData(
     requestedResources: Array<String>,
-): AppBrowserWebPermissionRequestData? {
+): BrowserWebPermissionRequestData? {
     val grantableResources = buildList {
         if (requestedResources.contains(appBrowserVideoCaptureResource)) {
             add(appBrowserVideoCaptureResource)
@@ -352,7 +352,7 @@ internal fun buildAppBrowserWebPermissionRequestData(
             add(Manifest.permission.RECORD_AUDIO)
         }
     }
-    return AppBrowserWebPermissionRequestData(
+    return BrowserWebPermissionRequestData(
         grantableResources = grantableResources,
         requiredAndroidPermissions = requiredAndroidPermissions,
     )
@@ -374,27 +374,27 @@ internal fun buildAppBrowserDownloadHeaders(
     }
 }
 
-internal fun buildAppBrowserPageLoadError(
+internal fun buildBrowserPageLoadError(
     failingUrl: String,
     isForMainFrame: Boolean,
     description: String?,
     statusCode: Int? = null,
     reasonPhrase: String? = null,
-): AppBrowserPageLoadError? {
+): BrowserPageLoadError? {
     if (!isForMainFrame || failingUrl.isBlank()) {
         return null
     }
     return if (statusCode != null) {
-        AppBrowserPageLoadError(
-            kind = AppBrowserPageLoadErrorKind.Http,
+        BrowserPageLoadError(
+            kind = BrowserPageLoadErrorKind.Http,
             url = failingUrl,
             rawMessage = description?.trim()?.takeIf(String::isNotBlank),
             statusCode = statusCode,
             reasonPhrase = reasonPhrase?.trim()?.takeIf(String::isNotBlank),
         )
     } else {
-        AppBrowserPageLoadError(
-            kind = AppBrowserPageLoadErrorKind.Network,
+        BrowserPageLoadError(
+            kind = BrowserPageLoadErrorKind.Network,
             url = failingUrl,
             rawMessage = description?.trim()?.takeIf(String::isNotBlank),
         )
@@ -413,14 +413,14 @@ internal fun resolveAppBrowserPopupUrl(
             ?.takeIf(String::isNotBlank)
 }
 
-internal fun buildAppBrowserRoutePresentationState(
+internal fun buildBrowserRoutePresentationState(
     offsetPx: Float,
     screenWidthPx: Float,
-): AppBrowserRoutePresentationState {
+): BrowserRoutePresentationState {
     val safeScreenWidthPx = screenWidthPx.takeIf { it > 0f } ?: 1f
     val clampedOffset = offsetPx.coerceIn(0f, safeScreenWidthPx)
     val progress = 1f - (clampedOffset / safeScreenWidthPx)
-    return AppBrowserRoutePresentationState(
+    return BrowserRoutePresentationState(
         progress = progress,
         translationX = clampedOffset,
         alpha = lerpAppBrowserVisual(0.84f, 1f, progress),
@@ -428,16 +428,16 @@ internal fun buildAppBrowserRoutePresentationState(
     )
 }
 
-internal fun buildAppBrowserTopBarPresentationState(
+internal fun buildBrowserTopBarPresentationState(
     offsetPx: Float,
     screenWidthPx: Float,
     maxTranslationPx: Float,
-): AppBrowserTopBarPresentationState {
+): BrowserTopBarPresentationState {
     val safeScreenWidthPx = screenWidthPx.takeIf { it > 0f } ?: 1f
     val clampedOffset = offsetPx.coerceIn(0f, safeScreenWidthPx)
     val progress = 1f - (clampedOffset / safeScreenWidthPx)
     val clampedMaxTranslationPx = maxTranslationPx.coerceAtLeast(0f)
-    return AppBrowserTopBarPresentationState(
+    return BrowserTopBarPresentationState(
         alpha = lerpAppBrowserVisual(0.90f, 1f, progress),
         translationX = clampedMaxTranslationPx * (1f - progress),
     )
@@ -526,13 +526,13 @@ internal fun buildAppBrowserSheetSettle(
     )
 }
 
-internal fun buildAppBrowserSwipeSettle(
+internal fun buildBrowserSwipeSettle(
     currentOffsetPx: Float,
     velocityPxPerSecond: Float,
     screenWidthPx: Float,
     dismissThresholdFraction: Float = 0.35f,
     flingVelocityThresholdPxPerSecond: Float = 800f,
-): AppBrowserSwipeSettle {
+): BrowserSwipeSettle {
     val safeScreenWidthPx = screenWidthPx.takeIf { it > 0f } ?: 1f
     val clampedOffset = currentOffsetPx.coerceIn(0f, safeScreenWidthPx)
     val shouldDismiss = clampedOffset > (safeScreenWidthPx * dismissThresholdFraction) ||
@@ -543,20 +543,20 @@ internal fun buildAppBrowserSwipeSettle(
         clampedOffset
     }
     val durationMillis = maxOf(((420f / safeScreenWidthPx) * remainingDistance).toInt(), 250)
-    return AppBrowserSwipeSettle(
+    return BrowserSwipeSettle(
         shouldDismiss = shouldDismiss,
         targetOffsetPx = if (shouldDismiss) safeScreenWidthPx else 0f,
         durationMillis = durationMillis,
     )
 }
 
-internal fun buildAppBrowserScrollSnapshot(
+internal fun buildBrowserScrollSnapshot(
     scrollY: Int,
     previousScrollY: Int,
     contentHeightPx: Int,
     viewportHeightPx: Int,
-): AppBrowserScrollSnapshot {
-    return AppBrowserScrollSnapshot(
+): BrowserScrollSnapshot {
+    return BrowserScrollSnapshot(
         scrollY = scrollY.coerceAtLeast(0),
         deltaY = scrollY - previousScrollY,
         progress = buildAppBrowserScrollProgress(
@@ -567,19 +567,19 @@ internal fun buildAppBrowserScrollSnapshot(
     )
 }
 
-internal fun buildAppBrowserHeaderCollapseState(
+internal fun buildBrowserHeaderCollapseState(
     currentOffsetPx: Float,
     scrollY: Int,
     deltaY: Int,
     maxCollapseOffsetPx: Float,
     isEnabled: Boolean,
-): AppBrowserHeaderCollapseState {
+): BrowserHeaderCollapseState {
     val safeMaxCollapseOffsetPx = maxCollapseOffsetPx.coerceAtLeast(0f)
     if (!isEnabled || safeMaxCollapseOffsetPx == 0f) {
-        return AppBrowserHeaderCollapseState()
+        return BrowserHeaderCollapseState()
     }
     if (scrollY <= appBrowserHeaderRestoreThresholdPx) {
-        return AppBrowserHeaderCollapseState()
+        return BrowserHeaderCollapseState()
     }
     val filteredDeltaPx = if (abs(deltaY) <= appBrowserHeaderDeltaThresholdPx) {
         0f
@@ -590,7 +590,7 @@ internal fun buildAppBrowserHeaderCollapseState(
     }
     val resolvedOffsetPx = (currentOffsetPx + filteredDeltaPx)
         .coerceIn(0f, safeMaxCollapseOffsetPx)
-    return AppBrowserHeaderCollapseState(
+    return BrowserHeaderCollapseState(
         offsetPx = resolvedOffsetPx,
         progress = (resolvedOffsetPx / safeMaxCollapseOffsetPx).coerceIn(0f, 1f),
     )
@@ -606,13 +606,13 @@ internal fun shouldApplyAppBrowserFindResult(
         visibleQuery == dispatchedQuery
 }
 
-class AppBrowserHistoryStore(
+class BrowserHistoryStore(
     private val persistence: AppBrowserHistoryStorePersistence = NoOpAppBrowserHistoryStorePersistence,
     private val persistenceDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val _history = MutableStateFlow(
         persistence.load().map { snapshot ->
-            AppBrowserHistoryRecord(
+            BrowserHistoryRecord(
                 title = snapshot.title,
                 url = snapshot.url,
                 host = snapshot.host,
@@ -621,7 +621,7 @@ class AppBrowserHistoryStore(
             )
         },
     )
-    val history: StateFlow<List<AppBrowserHistoryRecord>> = _history.asStateFlow()
+    val history: StateFlow<List<BrowserHistoryRecord>> = _history.asStateFlow()
     private val persistenceScope = CoroutineScope(SupervisorJob() + persistenceDispatcher)
     private val mutations = Channel<HistoryMutation>(capacity = Channel.UNLIMITED)
     private val mutationGeneration = AtomicLong(0L)
@@ -637,7 +637,7 @@ class AppBrowserHistoryStore(
                         val host = mutation.url.toHttpUrlOrNull()?.host ?: mutation.url
                         val resolvedTitle = mutation.title?.trim().takeUnless { it.isNullOrBlank() } ?: host
                         val existingEntry = _history.value.firstOrNull { it.url == mutation.url }
-                        val entry = AppBrowserHistoryRecord(
+                        val entry = BrowserHistoryRecord(
                             title = resolvedTitle,
                             url = mutation.url,
                             host = host,
@@ -718,7 +718,7 @@ private sealed interface HistoryMutation {
     ) : HistoryMutation
 }
 
-private fun List<AppBrowserHistoryRecord>.toSnapshots(): List<AppBrowserHistorySnapshot> {
+private fun List<BrowserHistoryRecord>.toSnapshots(): List<AppBrowserHistorySnapshot> {
     return map { record ->
         AppBrowserHistorySnapshot(
             title = record.title,
@@ -730,55 +730,55 @@ private fun List<AppBrowserHistoryRecord>.toSnapshots(): List<AppBrowserHistoryS
     }
 }
 
-internal fun buildAppBrowserMenuEntries(
+internal fun buildBrowserMenuEntries(
     canGoForward: Boolean,
     hasBrowserHistory: Boolean,
     isBookmarked: Boolean,
-    instantViewActionAvailability: AppBrowserInstantViewActionAvailability =
-        AppBrowserInstantViewActionAvailability.Hidden,
-): List<AppBrowserMenuEntry> {
+    instantViewActionAvailability: BrowserInstantViewActionAvailability =
+        BrowserInstantViewActionAvailability.Hidden,
+): List<BrowserMenuEntry> {
     return listOf(
-        AppBrowserMenuEntry.Item(
-            AppBrowserMenuItem(
-                action = AppBrowserMenuAction.Forward,
+        BrowserMenuEntry.Item(
+            BrowserMenuItem(
+                action = BrowserMenuAction.Forward,
                 enabled = canGoForward,
             ),
         ),
-        AppBrowserMenuEntry.Item(AppBrowserMenuItem(action = AppBrowserMenuAction.Refresh)),
-        AppBrowserMenuEntry.Item(
-            AppBrowserMenuItem(
+        BrowserMenuEntry.Item(BrowserMenuItem(action = BrowserMenuAction.Refresh)),
+        BrowserMenuEntry.Item(
+            BrowserMenuItem(
                 action = if (isBookmarked) {
-                    AppBrowserMenuAction.RemoveBookmark
+                    BrowserMenuAction.RemoveBookmark
                 } else {
-                    AppBrowserMenuAction.AddBookmark
+                    BrowserMenuAction.AddBookmark
                 },
             ),
         ),
-        AppBrowserMenuEntry.Divider,
+        BrowserMenuEntry.Divider,
         instantViewActionAvailability
-            .takeUnless { it == AppBrowserInstantViewActionAvailability.Hidden }
+            .takeUnless { it == BrowserInstantViewActionAvailability.Hidden }
             ?.let {
-            AppBrowserMenuEntry.Item(
-                AppBrowserMenuItem(
-                    action = AppBrowserMenuAction.InstantView,
-                    enabled = instantViewActionAvailability == AppBrowserInstantViewActionAvailability.Enabled,
+            BrowserMenuEntry.Item(
+                BrowserMenuItem(
+                    action = BrowserMenuAction.InstantView,
+                    enabled = instantViewActionAvailability == BrowserInstantViewActionAvailability.Enabled,
                 ),
             )
         },
-        AppBrowserMenuEntry.Item(AppBrowserMenuItem(action = AppBrowserMenuAction.OpenInBrowser)),
-        AppBrowserMenuEntry.Item(AppBrowserMenuItem(action = AppBrowserMenuAction.Share)),
-        AppBrowserMenuEntry.Item(AppBrowserMenuItem(action = AppBrowserMenuAction.CopyLink)),
-        AppBrowserMenuEntry.Divider,
-        AppBrowserMenuEntry.Item(AppBrowserMenuItem(action = AppBrowserMenuAction.Search)),
-        AppBrowserMenuEntry.Item(
-            AppBrowserMenuItem(
-                action = AppBrowserMenuAction.History,
+        BrowserMenuEntry.Item(BrowserMenuItem(action = BrowserMenuAction.OpenInBrowser)),
+        BrowserMenuEntry.Item(BrowserMenuItem(action = BrowserMenuAction.Share)),
+        BrowserMenuEntry.Item(BrowserMenuItem(action = BrowserMenuAction.CopyLink)),
+        BrowserMenuEntry.Divider,
+        BrowserMenuEntry.Item(BrowserMenuItem(action = BrowserMenuAction.Search)),
+        BrowserMenuEntry.Item(
+            BrowserMenuItem(
+                action = BrowserMenuAction.History,
                 enabled = hasBrowserHistory,
             ),
         ),
-        AppBrowserMenuEntry.Item(AppBrowserMenuItem(action = AppBrowserMenuAction.Settings)),
-        AppBrowserMenuEntry.Item(AppBrowserMenuItem(action = AppBrowserMenuAction.Minimize)),
-        AppBrowserMenuEntry.Item(AppBrowserMenuItem(action = AppBrowserMenuAction.Close)),
+        BrowserMenuEntry.Item(BrowserMenuItem(action = BrowserMenuAction.Settings)),
+        BrowserMenuEntry.Item(BrowserMenuItem(action = BrowserMenuAction.Minimize)),
+        BrowserMenuEntry.Item(BrowserMenuItem(action = BrowserMenuAction.Close)),
     ).filterNotNull()
 }
 
@@ -920,55 +920,55 @@ internal fun extractAppBrowserReaderBodyFromHtml(
 }
 
 @Serializable
-private data class AppBrowserInstantViewJsonDocument(
+private data class BrowserInstantViewJsonDocument(
     val title: String? = null,
     val sourceName: String? = null,
     val excerpt: String? = null,
     val byline: String? = null,
     val publishedTime: String? = null,
     val heroImageUrl: String? = null,
-    val blocks: List<AppBrowserInstantViewJsonBlock> = emptyList(),
+    val blocks: List<BrowserInstantViewJsonBlock> = emptyList(),
 )
 
 @Serializable
-private data class AppBrowserInstantViewJsonBlock(
+private data class BrowserInstantViewJsonBlock(
     val type: String,
     val text: String? = null,
-    val content: AppBrowserInstantViewJsonTextContent? = null,
-    val attribution: AppBrowserInstantViewJsonTextContent? = null,
-    val summary: AppBrowserInstantViewJsonTextContent? = null,
-    val titleContent: AppBrowserInstantViewJsonTextContent? = null,
+    val content: BrowserInstantViewJsonTextContent? = null,
+    val attribution: BrowserInstantViewJsonTextContent? = null,
+    val summary: BrowserInstantViewJsonTextContent? = null,
+    val titleContent: BrowserInstantViewJsonTextContent? = null,
     val level: Int? = null,
     val ordered: Boolean? = null,
     val expanded: Boolean? = null,
     val striped: Boolean? = null,
     val bordered: Boolean? = null,
-    val items: List<AppBrowserInstantViewJsonListItem> = emptyList(),
-    val blocks: List<AppBrowserInstantViewJsonBlock> = emptyList(),
-    val rows: List<AppBrowserInstantViewJsonTableRow> = emptyList(),
+    val items: List<BrowserInstantViewJsonListItem> = emptyList(),
+    val blocks: List<BrowserInstantViewJsonBlock> = emptyList(),
+    val rows: List<BrowserInstantViewJsonTableRow> = emptyList(),
     val code: String? = null,
     val language: String? = null,
     val url: String? = null,
     val width: Int? = null,
     val height: Int? = null,
     val alt: String? = null,
-    val caption: AppBrowserInstantViewJsonTextContent? = null,
-    val credit: AppBrowserInstantViewJsonTextContent? = null,
+    val caption: BrowserInstantViewJsonTextContent? = null,
+    val credit: BrowserInstantViewJsonTextContent? = null,
 )
 
 @Serializable
-private data class AppBrowserInstantViewJsonListItem(
-    val blocks: List<AppBrowserInstantViewJsonBlock> = emptyList(),
+private data class BrowserInstantViewJsonListItem(
+    val blocks: List<BrowserInstantViewJsonBlock> = emptyList(),
 )
 
 @Serializable
-private data class AppBrowserInstantViewJsonTableRow(
-    val cells: List<AppBrowserInstantViewJsonTableCell> = emptyList(),
+private data class BrowserInstantViewJsonTableRow(
+    val cells: List<BrowserInstantViewJsonTableCell> = emptyList(),
 )
 
 @Serializable
-private data class AppBrowserInstantViewJsonTableCell(
-    val content: AppBrowserInstantViewJsonTextContent? = null,
+private data class BrowserInstantViewJsonTableCell(
+    val content: BrowserInstantViewJsonTextContent? = null,
     val text: String? = null,
     val header: Boolean? = null,
     val colspan: Int? = null,
@@ -977,13 +977,13 @@ private data class AppBrowserInstantViewJsonTableCell(
 )
 
 @Serializable
-private data class AppBrowserInstantViewJsonTextContent(
+private data class BrowserInstantViewJsonTextContent(
     val text: String? = null,
-    val entities: List<AppBrowserInstantViewJsonTextEntity> = emptyList(),
+    val entities: List<BrowserInstantViewJsonTextEntity> = emptyList(),
 )
 
 @Serializable
-private data class AppBrowserInstantViewJsonTextEntity(
+private data class BrowserInstantViewJsonTextEntity(
     val type: String,
     val start: Int,
     val end: Int,
@@ -996,7 +996,7 @@ private val appBrowserInstantViewJson = Json {
     ignoreUnknownKeys = true
 }
 
-internal fun parseAppBrowserInstantViewJsonDocument(
+internal fun parseBrowserInstantViewJsonDocument(
     pageUrl: String,
     json: String?,
 ): AppBrowserReaderDocument? {
@@ -1006,7 +1006,7 @@ internal fun parseAppBrowserInstantViewJsonDocument(
         ?.takeIf(String::isNotBlank)
         ?: return null
     val parsed = runCatching {
-        appBrowserInstantViewJson.decodeFromString<AppBrowserInstantViewJsonDocument>(payload)
+        appBrowserInstantViewJson.decodeFromString<BrowserInstantViewJsonDocument>(payload)
     }.getOrNull() ?: return null
     val parsedBlocks = parsed.blocks
         .mapNotNull(::toAppBrowserReaderBlock)
@@ -1044,7 +1044,7 @@ internal fun sanitizeAppBrowserInstantViewHtmlSnapshot(
 }
 
 private fun toAppBrowserReaderBlock(
-    block: AppBrowserInstantViewJsonBlock,
+    block: BrowserInstantViewJsonBlock,
 ): AppBrowserReaderBlock? {
     return when (block.type.lowercase()) {
         "paragraph" -> block.toAppBrowserTextDocument()?.let(AppBrowserReaderBlock::Paragraph)
@@ -1103,12 +1103,12 @@ private fun toAppBrowserReaderBlock(
     }
 }
 
-private fun AppBrowserInstantViewJsonBlock.toAppBrowserTextDocument(): TextDocument? {
+private fun BrowserInstantViewJsonBlock.toAppBrowserTextDocument(): TextDocument? {
     return content.toAppBrowserTextDocument()
         ?: text.toAppBrowserTextDocument()
 }
 
-private fun AppBrowserInstantViewJsonTextContent?.toAppBrowserTextDocument(): TextDocument? {
+private fun BrowserInstantViewJsonTextContent?.toAppBrowserTextDocument(): TextDocument? {
     val text = this
         ?.text
         ?.trim()
@@ -1135,10 +1135,10 @@ private fun String?.toAppBrowserTextDocument(): TextDocument? {
     )
 }
 
-private fun AppBrowserInstantViewJsonTextEntity.toTextEntity(
+private fun BrowserInstantViewJsonTextEntity.toTextEntity(
     textLength: Int,
 ): TextEntity? {
-    val range = normalizeAppBrowserTextEntityRange(textLength) ?: return null
+    val range = normalizeBrowserTextEntityRange(textLength) ?: return null
     return when (type.lowercase()) {
         "bold" -> TextEntity.Bold(range.start, range.end)
         "italic" -> TextEntity.Italic(range.start, range.end)
@@ -1160,21 +1160,21 @@ private fun AppBrowserInstantViewJsonTextEntity.toTextEntity(
     }
 }
 
-private fun AppBrowserInstantViewJsonTextEntity.normalizeAppBrowserTextEntityRange(
+private fun BrowserInstantViewJsonTextEntity.normalizeBrowserTextEntityRange(
     textLength: Int,
-): AppBrowserTextEntityRange? {
+): BrowserTextEntityRange? {
     val normalizedStart = start.coerceIn(0, textLength)
     val normalizedEnd = end.coerceIn(0, textLength)
     if (normalizedStart >= normalizedEnd) {
         return null
     }
-    return AppBrowserTextEntityRange(
+    return BrowserTextEntityRange(
         start = normalizedStart,
         end = normalizedEnd,
     )
 }
 
-private fun AppBrowserInstantViewJsonBlock.toAppBrowserImageBlock(): AppBrowserReaderBlock.Image? {
+private fun BrowserInstantViewJsonBlock.toAppBrowserImageBlock(): AppBrowserReaderBlock.Image? {
     val resolvedUrl = url
         ?.trim()
         ?.takeIf(String::isNotBlank)
@@ -1191,7 +1191,7 @@ private fun AppBrowserInstantViewJsonBlock.toAppBrowserImageBlock(): AppBrowserR
     )
 }
 
-private fun AppBrowserInstantViewJsonBlock.toAppBrowserTableBlock(): AppBrowserReaderBlock.Table? {
+private fun BrowserInstantViewJsonBlock.toAppBrowserTableBlock(): AppBrowserReaderBlock.Table? {
     val parsedRows = rows.mapNotNull { row ->
         row.cells
             .mapNotNull { cell -> cell.toAppBrowserReaderTableCell() }
@@ -1209,7 +1209,7 @@ private fun AppBrowserInstantViewJsonBlock.toAppBrowserTableBlock(): AppBrowserR
     )
 }
 
-private fun AppBrowserInstantViewJsonTableCell.toAppBrowserReaderTableCell(): AppBrowserReaderTableCell? {
+private fun BrowserInstantViewJsonTableCell.toAppBrowserReaderTableCell(): AppBrowserReaderTableCell? {
     val document = content.toAppBrowserTextDocument()
         ?: text.toAppBrowserTextDocument()
         ?: return null
@@ -1226,7 +1226,7 @@ private fun AppBrowserInstantViewJsonTableCell.toAppBrowserReaderTableCell(): Ap
     )
 }
 
-private data class AppBrowserTextEntityRange(
+private data class BrowserTextEntityRange(
     val start: Int,
     val end: Int,
 )
@@ -2007,21 +2007,21 @@ private const val appBrowserReaderMinLineCount = 5
 private const val appBrowserVideoCaptureResource = "android.webkit.resource.VIDEO_CAPTURE"
 private const val appBrowserAudioCaptureResource = "android.webkit.resource.AUDIO_CAPTURE"
 
-internal fun mergeAppBrowserHistoryEntries(
-    backHistoryEntries: List<AppBrowserHistoryEntry>,
-    browserHistoryEntries: List<AppBrowserHistoryRecord>,
-): List<AppBrowserHistoryEntry> {
+internal fun mergeBrowserHistoryEntries(
+    backHistoryEntries: List<BrowserHistoryEntry>,
+    browserHistoryEntries: List<BrowserHistoryRecord>,
+): List<BrowserHistoryEntry> {
     if (browserHistoryEntries.isEmpty()) {
         return emptyList()
     }
 
-    val backEntriesByUrl = LinkedHashMap<String, AppBrowserHistoryEntry>()
+    val backEntriesByUrl = LinkedHashMap<String, BrowserHistoryEntry>()
     backHistoryEntries.forEach { entry ->
         backEntriesByUrl.putIfAbsent(entry.url, entry)
     }
     return browserHistoryEntries.map { record ->
         val backEntry = backEntriesByUrl[record.url]
-        AppBrowserHistoryEntry(
+        BrowserHistoryEntry(
             title = backEntry?.title ?: record.title,
             url = record.url,
             offset = backEntry?.offset,
@@ -2032,15 +2032,15 @@ internal fun mergeAppBrowserHistoryEntries(
     }
 }
 
-internal fun buildAppBrowserSearchPanelState(
+internal fun buildBrowserSearchPanelState(
     isSearching: Boolean,
     query: String,
     activeMatchOrdinal: Int,
     numberOfMatches: Int,
     isCounting: Boolean,
-): AppBrowserSearchPanelState {
+): BrowserSearchPanelState {
     if (!isSearching || query.isBlank()) {
-        return AppBrowserSearchPanelState(
+        return BrowserSearchPanelState(
             visible = false,
             matchText = "",
             canNavigate = false,
@@ -2048,7 +2048,7 @@ internal fun buildAppBrowserSearchPanelState(
     }
 
     if (isCounting) {
-        return AppBrowserSearchPanelState(
+        return BrowserSearchPanelState(
             visible = true,
             matchText = "",
             canNavigate = false,
@@ -2056,14 +2056,14 @@ internal fun buildAppBrowserSearchPanelState(
     }
 
     return if (numberOfMatches == 0) {
-        AppBrowserSearchPanelState(
+        BrowserSearchPanelState(
             visible = true,
             matchText = "",
             canNavigate = false,
             showsNoResults = true,
         )
     } else {
-        AppBrowserSearchPanelState(
+        BrowserSearchPanelState(
             visible = true,
             matchText = "${activeMatchOrdinal + 1}/$numberOfMatches",
             canNavigate = true,
@@ -2083,12 +2083,12 @@ internal fun buildAppBrowserScrollProgress(
     return (scrollY.toFloat() / scrollableHeight.toFloat()).coerceIn(0f, 1f)
 }
 
-internal fun buildAppBrowserScrollChromeBackgroundState(
+internal fun buildBrowserScrollChromeBackgroundState(
     scrollProgress: Float,
     isLoadingVisible: Boolean,
-): AppBrowserScrollChromeBackgroundState {
+): BrowserScrollChromeBackgroundState {
     if (isLoadingVisible) {
-        return AppBrowserScrollChromeBackgroundState(
+        return BrowserScrollChromeBackgroundState(
             fillFraction = 0f,
             fillAlpha = 0f,
             dividerAlpha = 0f,
@@ -2096,7 +2096,7 @@ internal fun buildAppBrowserScrollChromeBackgroundState(
     }
 
     val progress = scrollProgress.coerceIn(0f, 1f)
-    return AppBrowserScrollChromeBackgroundState(
+    return BrowserScrollChromeBackgroundState(
         fillFraction = progress,
         fillAlpha = lerpAppBrowserVisual(0f, 0.18f, progress),
         dividerAlpha = lerpAppBrowserVisual(0f, 0.08f, progress),
@@ -2111,7 +2111,7 @@ private const val appBrowserHeaderRestoreThresholdPx = 12
 private const val appBrowserHeaderDeltaThresholdPx = 1
 private const val appBrowserHeaderMaxStepPx = 24
 
-internal fun AppBrowserHistoryRecord.historyFavicon(): Bitmap? = faviconBase64?.historyFaviconBitmap()
+internal fun BrowserHistoryRecord.historyFavicon(): Bitmap? = faviconBase64?.historyFaviconBitmap()
 
 internal fun String.historyFaviconBitmap(): Bitmap? {
     return runCatching {
@@ -2164,10 +2164,10 @@ internal fun formatAppBrowserDataSize(bytes: Long): String {
     }
 }
 
-internal fun readAppBrowserStorageUsage(
+internal fun readBrowserStorageUsage(
     appDataDir: File,
     appCacheDir: File,
-): AppBrowserStorageUsage {
+): BrowserStorageUsage {
     val webViewDir = File(appDataDir, "app_webview")
     val cacheDir = File(appCacheDir, "WebView")
     val cookiesSize = webViewDir.appBrowserDirectorySize(cookiesOnly = true)
@@ -2177,7 +2177,7 @@ internal fun readAppBrowserStorageUsage(
     val webviewCacheDb = File(appDataDir, "databases/webviewCache.db")
     if (webviewDb.exists()) cacheSize += webviewDb.length()
     if (webviewCacheDb.exists()) cacheSize += webviewCacheDb.length()
-    return AppBrowserStorageUsage(
+    return BrowserStorageUsage(
         cookiesSizeBytes = cookiesSize,
         cacheSizeBytes = cacheSize,
     )

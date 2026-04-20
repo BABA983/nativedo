@@ -23,7 +23,7 @@ class AppBrowserChromeConfigComposeTest {
         activity.runOnUiThread {
             scrollProgressState = mutableStateOf(0f)
             activity.setContent {
-                val chrome = AppBrowserChromeModel(
+                val chrome = BrowserChromeModel(
                     title = "linux.do",
                     subtitle = null,
                     currentUrl = "https://linux.do",

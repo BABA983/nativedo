@@ -7,7 +7,7 @@ import org.junit.Test
 class AppBrowserPopupDividerMetricsTest {
     @Test
     fun popupDividerMetrics_useMoreCompactTelegramLikeGap() {
-        val metrics = appBrowserPopupDividerMetrics()
+        val metrics = browserPopupDividerMetrics()
 
         assertThat(metrics.spacing).isEqualTo(2.dp)
         assertThat(metrics.gapHeight).isEqualTo(6.dp)

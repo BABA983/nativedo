@@ -1,0 +1,17 @@
+{"file": ".claude/commands/trellis/finish-work.md", "reason": "Finish work checklist"}
+{"file": ".claude/commands/trellis/check.md", "reason": "Code quality check spec"}
+{"file": ".trellis/spec/frontend/directory-structure.md", "reason": "Android frontend package boundaries and placement rules"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Compose route/component structure and shared chrome expectations"}
+{"file": ".trellis/spec/frontend/hook-guidelines.md", "reason": "Compose effect/state idioms instead of React-style hooks"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "ViewModel StateFlow and AppContainer-backed store patterns"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Kotlin serialization DTO/model boundaries and typed state snapshots"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Testing and forbidden-pattern expectations for the Android app"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse existing browser/session/storage patterns before adding new abstractions"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Track browser data flow across WebView, stores, session, and UI layers"}
+{"file": "docs/superpowers/specs/2026-04-19-browser-rewrite-telegram-parity.md", "reason": "Primary browser rewrite design and phase plan"}
+{"file": "openspec/changes/browser-rewrite-telegram-parity/design.md", "reason": "Detailed browser rewrite design decisions"}
+{"file": "openspec/changes/browser-rewrite-telegram-parity/specs/browser-web-runtime/spec.md", "reason": "Browser web runtime requirements"}
+{"file": "openspec/changes/browser-rewrite-telegram-parity/specs/browser-scene-chrome/spec.md", "reason": "Browser chrome and action bar requirements"}
+{"file": "openspec/changes/browser-rewrite-telegram-parity/specs/browser-reader-scene/spec.md", "reason": "Reader scene behavior and transitions"}
+{"file": "openspec/changes/browser-rewrite-telegram-parity/specs/browser-tabs-manager/spec.md", "reason": "Tabs dock and overlay requirements for later phases"}
+{"file": "openspec/changes/browser-rewrite-telegram-parity/specs/browser-sheet-presentation/spec.md", "reason": "Sheet presentation, gesture, and transition requirements"}
