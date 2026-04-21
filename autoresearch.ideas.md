@@ -1,1 +1,0 @@
-- Explore replacing the current LazyColumn-based manager with a single overlay-owned preview renderer and richer live-surface draw contract, so dock/manager/restore transitions are not limited by independent item composables or preview bitmaps.

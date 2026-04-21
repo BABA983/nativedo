@@ -1,0 +1,533 @@
+## Context
+
+NativeDo 是 linux.do（基于 Discourse 的中文技术社区）的原生 Android 客户端。当前 v1 基于 Kotlin + Jetpack Compose + Material 3 + Compose Navigation 构建，已实现话题列表、帖子详情、搜索、个人中心、WebView 登录等核心功能。
+
+当前实现的核心痛点：
+1. **Compose LazyColumn 在复杂帖子列表中性能不足**：帖子包含 cooked HTML（代码块、引用、图片、emoji），Compose 的 recomposition 开销大
+2. **Compose Navigation 不支持手势驱动转场**：无法实现 Telegram 级别的 swipe-back 和连续手势拖拽
+3. **Material 3 组件无法定制到 Telegram 的交互精度**：动画曲线、触摸反馈、长按菜单等都受限于 M3 的预设行为
+4. **Discourse 的 cookie-based session 和 Cloudflare 防护增加了网络层复杂度**
+
+Telegram Android 开源代码库（GPL v2）提供了一套经过 10 年打磨的高性能 Android UI 框架，其核心设计（自定义导航栈、Canvas Cell 渲染、color-key 主题引擎）可以被移植到 Kotlin 中，作为 NativeDo 的基础设施。
+
+### 约束
+- **语言**：Kotlin（不回退到 Java）
+- **最低 SDK**：API 28 (Android 9)
+- **编译 SDK**：35
+- **JVM**：17
+- **许可证**：Telegram 源码 GPL v2，移植代码需遵守
+- **后端**：linux.do 是标准 Discourse 站点，API 端点固定
+- **认证**：WebView cookie-based，不可改变
+
+## Goals / Non-Goals
+
+**Goals:**
+- 将 Telegram 的核心 UI 框架（导航、主题、列表、动画）移植为 Kotlin 实现，作为 NativeDo 的基础设施层
+- 构建 Discourse 专用的业务基础设施（session、HTML 渲染、帖子流分页）
+- 在新框架上重建所有功能页面，达到 Telegram 级别的交互流畅度
+- 保留 Compose 作为非性能关键场景的 UI 工具（设置页、弹窗内容等）
+- 每个 Phase 产出可运行的 APK，支持渐进式迁移
+
+**Non-Goals:**
+- 不做 Telegram 的 1:1 Java→Kotlin 翻译，而是理解设计思想后用 Kotlin 惯用法重新实现
+- 不实现 Telegram 的消息/通话/故事等通讯功能
+- 不引入 Telegram 的 native C++ 层（tgnet、SQLite JNI）
+- 不支持多账号（Discourse 单站点客户端，不需要 Telegram 的 `AccountInstance` 多实例模式）
+- 不实现发帖/回帖等写操作（v1 scope 限制）
+- 不做 iOS 端（本次仅 Android）
+
+## Decisions
+
+### D1: 导航系统 — 移植 ActionBarLayout 而非使用 Compose Navigation 或 AndroidX Navigation
+
+**选择**：将 Telegram 的 `ActionBarLayout` + `BaseFragment` + `INavigationLayout` 移植为 Kotlin 实现
+
+**为什么不用 Compose Navigation**：
+- 不支持手势驱动的连续转场（手指跟随的 swipe-back）
+- 页面间动画受限于 `AnimatedNavHost` 的预设过渡
+- 无法精确控制页面栈的内存（Compose 的 `NavBackStackEntry` 生命周期不够灵活）
+
+**为什么不用 AndroidX Navigation + Fragment**：
+- Fragment 转场动画 API 过于抽象，无法做到 Telegram 级别的 ActionBar 联动过渡
+- 每个 Fragment 的 View 生命周期管理复杂
+
+**移植策略**：
+- `INavigationLayout` → Kotlin interface，保持 API 形状
+- `ActionBarLayout` → Kotlin class，核心逻辑 1:1 翻译，去除 Telegram 特有功能（preview mode、bubble mode、drawer 等）
+- `BaseFragment` → Kotlin abstract class，保留 `createView()`/`onFragmentCreate()`/`onFragmentDestroy()` 生命周期，去除 Telegram 账号相关方法
+- 页面容器：单 Activity（`MainActivity`）+ `ActionBarLayout` 作为根容器；`MainActivity` 直接承担 Telegram `LaunchActivity` 的简化 host 角色，负责系统生命周期、返回、intent、window inset、系统栏等桥接，不额外发明 `RootActivity` / `WindowHost` 抽象
+- 导航执行：不再引入额外的 screen router；页面跳转统一由 `ActionBarLayout.presentFragment()` 驱动
+
+**简化点**（vs Telegram 原版）：
+- 去掉多账号支持（`currentAccount` 参数）
+- 去掉 Drawer（linux.do 不需要侧栏）
+- 去掉 preview/bubble mode
+- 去掉 `pulledDialogs`（消息预览功能）
+- 保留 swipe-back、转场动画、ActionBar 联动
+
+### D2: 主题系统 — color-key 映射引擎
+
+**选择**：移植 Telegram `Theme.java` 的 color-key 架构，用 Kotlin 重写
+
+**设计**：
+```kotlin
+object NdTheme {
+    // color-key 常量
+    const val key_windowBackgroundWhite = "windowBackgroundWhite"
+    const val key_actionBarDefault = "actionBarDefault"
+    const val key_actionBarDefaultTitle = "actionBarDefaultTitle"
+    const val key_chats_nameMessage = "chats_nameMessage"
+    // ... Discourse 特有 key
+    const val key_topic_title = "topic_title"
+    const val key_topic_excerpt = "topic_excerpt"
+    const val key_topic_categoryBadge = "topic_categoryBadge"
+    const val key_post_codeBlock = "post_codeBlock"
+    const val key_post_blockquote = "post_blockquote"
+
+    // 当前调色板
+    private var currentColors: HashMap<String, Int> = HashMap()
+
+    fun getColor(key: String): Int { ... }
+    fun setColor(key: String, value: Int) { ... }
+    fun applyTheme(theme: ThemeInfo) { ... }
+}
+```
+
+**为什么不用 Compose MaterialTheme**：
+- Material Theme 只支持编译时静态 token
+- 无法在运行时动态切换单个颜色
+- 无法支持用户自定义主题（未来功能）
+
+**内置主题**：Light、Dark、System（跟随系统），通过 `SharedPreferences` 持久化选择
+
+### D3: 列表渲染 — RecyclerView + Canvas Cell
+
+**选择**：使用 RecyclerView（增强版）+ 自定义 Canvas Cell，不用 Compose LazyColumn
+
+**TopicCell 渲染策略**（对标 Telegram `DialogCell`）：
+- 继承 `BaseCell`（→ `View`），重写 `onMeasure` + `onDraw`
+- 直接用 `Canvas.drawText()`/`Canvas.drawBitmap()`/`Canvas.drawRoundRect()` 绘制：
+  - 帖子标题（多行截断）
+  - 分类徽章（颜色圆点 + 文字）
+  - 作者头像（圆形裁剪）
+  - 回复数/浏览数
+  - 时间戳
+  - 可选缩略图
+- 优势：零 View 层级、零 layout pass、零 recomposition
+
+**RecyclerListView 增强**（对标 Telegram `RecyclerListView`）：
+- 内置 sectioned adapter 支持
+- 内置快速滚动条
+- 内置 item 点击/长按处理（避免每个 Cell 设置 listener）
+- 内置边缘效果定制
+
+### D4: Discourse cooked HTML 渲染 — CookedHtmlRenderer
+
+**选择**：用 Jsoup 解析 HTML → 转为 `RenderBlock` 序列 → Canvas/View 混合渲染
+
+**设计思路**（参考 Telegram `ArticleViewer` 的 Instant View 方案）：
+
+```
+cooked HTML string
+    ↓ Jsoup parse
+HTML DOM tree
+    ↓ walk & convert
+List<RenderBlock> + TextDocument/InlineEntity
+    ↓ RecyclerView adapter
+Canvas 绘制 / WebView fallback
+```
+
+**块级 `RenderBlock` 类型**：
+```kotlin
+sealed interface RenderBlock {
+    data class Paragraph(val content: TextDocument) : RenderBlock
+    data class Heading(val level: Int, val content: TextDocument) : RenderBlock
+    data object HorizontalRule : RenderBlock
+    data class CodeBlock(val code: String, val language: String?) : RenderBlock
+    data class Blockquote(val children: List<RenderBlock>) : RenderBlock
+    data class DiscourseQuote(
+        val authorDisplayName: String,
+        val authorUsername: String?,
+        val avatarUrl: String?,
+        val title: TextDocument?,
+        val children: List<RenderBlock>,
+        val sourceTopicId: Long?,
+        val sourcePostNumber: Int?,
+        val isExpandable: Boolean,
+        val isInitiallyExpanded: Boolean,
+    ) : RenderBlock
+    data class Callout(
+        val style: CalloutStyle,
+        val title: TextDocument?,
+        val children: List<RenderBlock>,
+    ) : RenderBlock
+    data class Image(val url: String, val alt: String?, val width: Int?, val height: Int?) : RenderBlock
+    data class LightboxImage(
+        val previewUrl: String,
+        val originalUrl: String?,
+        val filename: String?,
+        val information: String?,
+        val width: Int?,
+        val height: Int?,
+    ) : RenderBlock
+    data class ImageGrid(val images: List<Image>, val columns: Int) : RenderBlock
+    data class List(val items: List<ListItem>, val ordered: Boolean) : RenderBlock
+    data class Table(val headers: List<String>, val rows: List<List<String>>) : RenderBlock
+    data class Onebox(val url: String, val title: String?, val description: String?, val thumbnail: String?) : RenderBlock
+    data class Details(val summary: TextDocument, val children: List<RenderBlock>, val expandedByDefault: Boolean) : RenderBlock
+    data class Spoiler(val children: List<RenderBlock>, val revealedByDefault: Boolean = false) : RenderBlock
+    data class Poll(
+        val title: String?,
+        val options: List<PollOption>,
+        val chartType: String?,
+        val isPublic: Boolean,
+        val resultsVisibility: String?,
+        val status: String?,
+    ) : RenderBlock
+    data class RawHtml(val html: String) : RenderBlock  // fallback：不认识的 HTML 用小型 WebView
+}
+
+data class TextDocument(
+    val text: String,
+    val entities: List<InlineEntity>,
+)
+
+sealed interface InlineEntity {
+    data class Bold(val start: Int, val end: Int) : InlineEntity
+    data class Italic(val start: Int, val end: Int) : InlineEntity
+    data class Strike(val start: Int, val end: Int) : InlineEntity
+    data class Link(val start: Int, val end: Int, val url: String) : InlineEntity
+    data class Mention(val start: Int, val end: Int, val username: String) : InlineEntity
+    data class Hashtag(val start: Int, val end: Int, val slug: String) : InlineEntity
+    data class Emoji(val start: Int, val end: Int, val shortcode: String, val imageUrl: String?) : InlineEntity
+    data class InlineCode(val start: Int, val end: Int) : InlineEntity
+}
+```
+
+**迁移基线**：
+- 新的 `CookedHtmlRenderer` 不能比当前实现退化
+- 当前 parser 已经支持 `DetailsBlock`、`CalloutBlock`、`DiscourseQuoteBlock`、`LightboxBlock`、`ImageGridBlock`
+- 具体可参考 [PostBodyBlocks.kt](/Users/baba/Documents/workspace_baba/linuxdo-native/apps/android/app/src/main/java/io/github/baba983/nativedo/core/ui/PostBodyBlocks.kt) 和 [PostBodyBlockParser.kt](/Users/baba/Documents/workspace_baba/linuxdo-native/apps/android/app/src/main/java/io/github/baba983/nativedo/core/ui/PostBodyBlockParser.kt)
+
+**为什么不全用 WebView**：
+- WebView 每个帖子一个实例，内存暴增
+- 无法与原生列表滚动无缝融合
+- 无法应用自定义主题颜色
+
+**为什么不全用 Canvas**：
+- 部分 Discourse 插件生成的 HTML 极其复杂（嵌入视频、交互式图表）
+- 用 `RawHtml` fallback 保底
+
+### D5: 依赖管理 — 手动 bootstrap + 单账号 runtime
+
+**选择**：不用 Hilt/Dagger/Koin，采用手动 Service Locator 模式
+
+**设计**：
+```kotlin
+object NdApp {
+    lateinit var runtime: NdRuntime
+
+    fun init(context: Context) {
+        runtime = NdRuntime(context)
+    }
+}
+
+class NdRuntime(context: Context) {
+    val discourseClient: DiscourseClient = ...
+    val sessionStore: CookieSessionStore = ...
+    val csrfProvider: CsrfTokenProvider = ...
+    val theme: NdTheme = ...
+    val database: NdDatabase = ...
+}
+```
+
+**为什么不用 Hilt**：
+- Telegram 不用 DI 框架，所有依赖手动管理
+- 对于单 Activity 应用，DI 框架增加编译时间和 APK 大小，但收益有限
+- 手动管理更容易理解和调试
+
+**注意**：
+- 这与 Telegram 的 `AccountInstance` 模式类似，但因为我们不需要多账号，简化为单个 `NdRuntime`
+- `NdApp` 只负责 bootstrap，不承载几十个裸 `lateinit` 全局服务
+- 现有 [AppContainer.kt](/Users/baba/Documents/workspace_baba/linuxdo-native/apps/android/app/src/main/java/io/github/baba983/nativedo/core/di/AppContainer.kt) 的集中式依赖形状可以作为 `NdRuntime` 的直接演化基线
+
+### D6: 网络层 — OkHttp + Retrofit + kotlinx.serialization
+
+**选择**：保持现有网络栈，不引入 Telegram 的 `ConnectionsManager`（那是 Telegram 自有协议的 native 实现）
+
+**架构**：
+```
+DiscourseClient
+  ├── OkHttpClient (共享实例)
+  │     ├── CookieJar (CookieSessionStore)
+  │     ├── CloudflareInterceptor
+  │     ├── CsrfInterceptor
+  │     └── UserAgentInterceptor
+  ├── Retrofit (JSON endpoints)
+  │     └── DiscourseApi interface
+  └── Jsoup (HTML endpoints)
+        └── BootstrapParser
+```
+
+### D7: 图片加载 — Coil 3 底层 + 自定义 ImageReceiver
+
+**选择**：保留 Coil 3 作为底层加载/缓存引擎，但在 Cell 内通过 `ImageReceiver` 包装使用
+
+**为什么不直接用 Telegram 的 `ImageLoader`**：
+- Telegram 的 `ImageLoader` 深度绑定其私有文件系统（`FileLoader`/`FileLoadOperation`）
+- Coil 3 已经是项目依赖，替换成本高且无明显收益
+- `ImageReceiver` 只需要包装 Coil 的 `ImageRequest` 并管理 Canvas 绘制回调
+
+### D8: Compose 保留策略
+
+**选择**：保留 Compose runtime 依赖，在特定场景通过 `ComposeView` 嵌入使用
+
+**适用场景**：
+| 场景 | 用 Compose？ | 原因 |
+|------|-------------|------|
+| 话题列表 | ✗ | Canvas Cell 性能更好 |
+| 帖子详情 | ✗ | RecyclerView + RenderBlock Cell |
+| 内置浏览器 | ✗ | WebView + 自定义 ActionBar |
+| 搜索结果 | ✗ | Canvas Cell |
+| 设置页 | ✓ | 静态表单，性能不敏感 |
+| 登录页 | ✓ | WebView + 简单 UI |
+| About / 关于 | ✓ | 静态内容 |
+| BottomSheet 内容 | ✓ | 简单内容填充 |
+
+**嵌入方式**：
+```kotlin
+class SettingsFragment : BaseFragment() {
+    override fun createView(context: Context): View {
+        return ComposeView(context).apply {
+            setContent {
+                NdComposeTheme { // 桥接 NdTheme → Compose Theme
+                    SettingsScreen(...)
+                }
+            }
+        }
+    }
+}
+```
+
+### D9: V0 必须前置的 Telegram substrate
+
+**选择**：V0 先实现 Telegram 风格的“基础设施底座”，而不是并行铺开所有组件。优先级按依赖链决定：
+
+```
+NdApp / app bootstrap
+    ↓
+AndroidUtilities + Utilities + DispatchQueue + FileLog
+    ↓
+NotificationCenter + NdTheme + LayoutHelper
+    ↓
+SimpleTextView + ActionBar + BaseFragment + ActionBarLayout
+    ↓
+RecyclerListView(minimal) + BaseCell + ImageReceiver + AvatarDrawable
+    ↓
+DiscourseClient + CookieSessionStore + BootstrapParser
+```
+
+**为什么这样拆**：
+- Telegram 原版很多基础类被业务层反向污染，不能整包照搬
+- `ActionBarLayout`、`RecyclerListView`、`ImageReceiver` 都依赖前面的工具/主题/调度基元
+- 如果 V0 缺少 `NdApp`、线程队列、日志、布局辅助，后续组件会各自长出一套简化版，最后很难收敛回 Telegram 风格架构
+
+**V0 应该先做的类**：
+- `NdApp`：应用 bootstrap、全局 context、service registry、主线程 handler
+- `NdRuntime`：单账号 service/runtime 持有者，集中组织 session、network、theme、storage、media 这类长期存活依赖
+- `AndroidUtilities`：dp/lerp/系统栏/键盘/屏幕指标
+- `Utilities`：只保留通用数学与线程辅助，例如 `clamp()`、主线程切换、命名后台队列入口
+- `DispatchQueue`：少量命名串行后台队列，供日志、主题 I/O、图片相关工作使用
+- `FileLog`：异步日志记录，便于早期移植排错
+- `NotificationCenter`：全局观察者分发，但只承载跨页面、跨层级的全局事件
+- `AppLifecycleMonitor`：最小前后台 / 网络可用性监控，服务于 offline banner、session restore、Cloudflare recovery 这类 truly global 行为
+- `NdTheme`：先做精简版 color-key 引擎，不移植 Telegram `Theme.java` 的壁纸/动态主题/编辑器部分，但 V0 就要提供 selector/ripple、圆角背景、header shadow 这类主题辅助 drawable 工厂
+- `NdUiConfig`：只保留 V0 真正需要的全局 UI 开关，作为 Telegram `SharedConfig` 的瘦身替代，例如 `animationsEnabled`、`drawActionBarShadow`、`sectionShadows`
+- `LayoutHelper`：轻量布局参数工厂
+- `SimpleTextView`：ActionBar 和少量高频 UI 的轻量文本组件
+- `BackDrawable`：最小可用的返回箭头/关闭态 animated drawable；`MenuDrawable` 只在 V0 的搜索或菜单状态切换明确需要时再一起落地
+- `ActionBar` / `BaseFragment` / `ActionBarLayout`：先做最小导航闭环，其中 `BaseFragment` 至少要预留 `isSwipeBackEnabled()`、`onSlideProgress()`、`onTransitionAnimationStart/End()`、`onBecomeFullyVisible()`、`getNavigationBarColor()`、`hasForceLightStatusBar()` 这些转场和系统栏 hook，避免后续页面接入时返工接口
+- `BaseFragment` 的 page scope：每个页面自带 coroutine/request scope，在 `onFragmentDestroy()` 或 swipe-back 真正完成时统一 cancel，避免 topic load、HTML parse、图片请求残留
+- `ActionBarLayout` 的最小状态恢复：V0 就支持“fragment 标识 + args bundle”的 stack save/restore，至少覆盖配置变更和进程重建后的冷恢复
+- 重资源对象生命周期约束：`ImageReceiver`、共享 WebView、HTML renderer host 都要有 attach/detach/release 三段式边界，避免后面再补资源清理协议
+
+**不应该塞进 V0 的 Telegram 能力**：
+- Telegram 原版 `Theme.java` 的完整能力
+- Telegram 原版 `SharedConfig` 的完整能力
+- `LocaleController` 的整套语言/RTL 体系
+- `ImageLoader` 的完整文件系统和缓存体系
+- `SizeNotifierFrameLayout` 的 blur-behind 链路
+- `Bulletin` / `UndoView` 这类全局浮层反馈体系
+- `ViewPagerFixed` / `ScrollSlidingTextTabStrip` 这类标签容器
+- `BackupImageView`
+- `BottomSheet` 的复杂嵌套滚动和多态内容能力
+- `RecyclerListView` 的全部 sticky header / fast scroll / blur / overlay 能力
+
+**对当前 change 的影响**：
+- Phase 0 应先补齐上述 substrate，再进入完整 UI 组件和业务页面
+- `BottomSheet`、高级 `RecyclerListView` 特性、复杂主题能力更适合放到 Phase 1 之后
+
+### D10: 测试策略遵循 Telegram 的“高风险契约优先”
+
+**选择**：不追求传统 UI 基础设施的单元测试覆盖率，而是把测试集中在高风险、强契约、容易静默回归的逻辑上。
+
+**Telegram 参考结论**：
+- Telegram 仓库几乎没有常规 `src/test`
+- 测试集中在独立的 `TMessagesProj_AppTests/src/androidTest` 模块
+- 绝大部分测试都在验证 TL 协议对象的序列化/反序列化 round-trip
+- 少量额外测试覆盖 native 协议边界和数据库 migration
+- `ActionBarLayout`、`Theme`、`RecyclerListView`、`BottomSheet`、`AvatarDrawable` 这类视觉/交互基础设施没有成体系的单元测试
+
+**因此本项目应测试的内容**：
+- JSON 反序列化和接口契约
+- cooked HTML 解析
+- cookie/session/csrf 恢复逻辑
+- topic stream 分页和 jump-to-post 逻辑
+- error normalization
+- Room / cache schema 和 migration
+
+**因此本项目默认不写单测的内容**：
+- `AndroidUtilities` / `LayoutHelper` 这类基础 helper
+- `ActionBarLayout` / `ActionBar` / `RecyclerListView` / `BottomSheet`
+- `AvatarDrawable` / `SimpleTextView` / `ImageReceiver` 的视觉细节
+- 依赖手势、动画、布局和绘制时序的 UI substrate
+
+**这些基础设施如何验证**：
+- 用最小宿主页面跑通
+- 通过 HelloFragment / mock screen 做手工 smoke test
+- 在 Phase 完成时做端到端运行验证，而不是为每个 UI 类单独补测试
+
+### D11: App 级 host、鉴权命名与链接分发
+
+**选择**：App 级基础设施沿用 Telegram 的职责划分思路，但命名不使用 `Coordinator`。优先使用更贴近 Telegram 代码风格的 `MainActivity` / `NdApp` / `*Manager` / `*Bootstrap`。
+
+**命名约定**：
+- 启动首屏决策层使用 `LaunchBootstrap`，负责冷启动时触发 session restore，并决定先进入 `TopicsFragment` 还是 `LoginFragment`
+- cookie 驱动的鉴权状态机使用 `AuthSessionManager`，负责 login completion、session restore、logout、expired/recovery 流程
+- 链接分类使用最小 `LinkManager`，只负责 `url -> target` 解析，不承担页面导航栈职责
+
+**为什么不用 `StartupCoordinator` / `SessionCoordinator`**：
+- Telegram 代码库几乎不用 `Coordinator` 这一套命名
+- 启动职责主要分布在 `ApplicationLoader` 和 `LaunchActivity`
+- 会话/账号/网络状态主要分布在 `UserConfig`、`MessagesController`、`ConnectionsManager`、`NotificationCenter`
+- 对本项目来说，用 `LaunchBootstrap` + `AuthSessionManager` 更接近 Telegram 的风格，也更容易让 Android 开发者一眼看懂职责
+
+**最小 `LinkManager` 边界**：
+- 只处理 URL 分类，不处理 fragment push/pop
+- 首版只识别：站内 topic、站内 user、站内其他页面（走 app 内浏览器）、站外可外部 App 打开、站外系统浏览器
+- `BrowserFragment`、cooked HTML link、mention/hashtag/onebox 后续都统一走这条分类链
+
+**登录与浏览器的关系**：
+- `LoginFragment` 不是“普通 Browser 打开 `/login`”
+- `LoginFragment` 与 `BrowserFragment` 是两个独立 scene
+- 二者共享同一套 WebView 基础设施：`CookieSyncBridge`、共同的 WebView settings / factory、linux.do 域名策略
+- 登录成功后由 `AuthSessionManager` 把 WebView cookie 转为 app 的 authenticated session，而不是由浏览器页自己决定 app 导航
+
+### D12: 迁移期 root host 策略 — 保持单 `MainActivity`，在同一 launcher 内切换新旧 root
+
+**选择**：迁移期间不引入单独的 rewrite/debug Activity。保留单个 `MainActivity` 作为唯一 launcher/intent host，在其内部按内部开关或迁移状态选择挂载 legacy Compose root 或新的 `ActionBarLayout` root。
+
+**为什么这样做**：
+- 避免把 deep link、返回、window inset、系统栏、登录后的 intent 恢复逻辑拆成两套 host
+- 与 [MainActivity.kt](/Users/baba/Documents/workspace_baba/linuxdo-native/apps/android/app/src/main/java/io/github/baba983/nativedo/MainActivity.kt) 的现状连续，利于渐进迁移
+- 可以在 Phase 0/1 跑通新 substrate，而不用过早切断现有 Compose 主流程
+
+**迁移规则**：
+- `MainActivity` 始终是唯一 launcher activity
+- Phase 0/1：默认保留 legacy Compose root，同时提供内部 rewrite root 开关或开发入口
+- Phase 2：开始让 `Topics`、`TopicDetail` 等新页面接管默认入口
+- Phase 3：当新 root 覆盖主流程后，再删除 legacy Compose root 和切换开关
+
+**结果**：
+- 允许“新代码独立包 + 边界文件少量修改”同时成立
+- 不需要额外发明 `RewriteActivity` / `SandboxHostActivity`
+
+## Risks / Trade-offs
+
+### R1: ActionBarLayout 移植工作量巨大
+**风险**：Telegram 的 `ActionBarLayout.java` 有 3489 行，涉及手势处理、动画插值、页面栈管理等复杂逻辑
+**缓解**：
+- 先移植简化版（仅 push/pop + swipe-back），约 1500 行
+- 渐进式添加高级功能（ActionBar 联动、自定义转场）
+- 每个阶段保持可编译可运行
+
+### R2: CookedHtmlRenderer 的 HTML 多样性
+**风险**：Discourse 用户 HTML 多样性远超 Telegram Instant View（Telegram 只需处理 Telegram 自己生成的 IV 格式）
+**缓解**：
+- `RawHtml` fallback 保底（不认识的 HTML 用 WebView 渲染）
+- 优先覆盖 80% 常见格式：`<p>`, `<pre>`, `<blockquote>`, `<img>`, `<a>`, `<ul>/<ol>`, `<h1-6>`, Discourse emoji
+- 持续迭代支持更多格式
+
+### R3: 过渡期新旧代码共存
+**风险**：重写期间新旧代码需共存编译
+**缓解**：
+- Phase 0 和 Phase 1 新框架代码放在独立包中；仅允许修改 `MainActivity`、`NativeDoApplication`、Gradle/Manifest/Proguard 这类边界文件来挂接迁移入口
+- Phase 2 开始逐个替换页面，每替换一个页面就删除对应旧代码
+- 用内部 root 开关或 feature flag 控制新旧页面切换（开发期间）
+
+### R4: GPL v2 许可证合规
+**风险**：Telegram 源码 GPL v2 授权，移植代码需遵守
+**缓解**：
+- NativeDo 仓库保持开源
+- 在移植文件头部标注出处和许可证
+
+### R5: 不用 DI 框架的可测试性
+**风险**：手动 Service Locator 在测试中不如 Hilt 方便 mock
+**缓解**：
+- 关键服务通过 interface 定义，测试时可替换实现
+- `NdApp` 提供 `initForTesting()` 方法注入 mock
+
+## Migration Plan
+
+### Phase 0: Foundation（基础设施层）
+1. 先实现 Telegram substrate：`NdApp`、`NdRuntime`、`AndroidUtilities`、`Utilities`、`DispatchQueue`、`FileLog`、`NotificationCenter`、`AppLifecycleMonitor`、`NdTheme`、`LayoutHelper`
+2. 新建 `ui/actionbar/` 包，实现 `SimpleTextView`、ActionBar、ActionBarLayout + BaseFragment 最小闭环，并补上 page scope cancel 与最小 stack save/restore
+3. 新建 `ui/components/` 和 `core/media/` 包，实现最小 `RecyclerListView`、`BaseCell`、`ImageReceiver`、`AvatarDrawable`，同步确定 attach/detach/release 约束
+4. 新建 `discourse/` 包，实现 DiscourseClient + session 管理
+5. 在 `MainActivity` 内挂上迁移期 root 切换能力，不新增第二个 launcher host
+6. **验证**：用一个 HelloWorld Fragment 跑通 ActionBarLayout 导航，并验证日志、主题、事件、线程队列、root 切换、page scope cancel 可用
+
+### Phase 1: Core Components（核心组件层）
+1. 补全 `RecyclerListView` 高级能力、BottomSheet、ActionBar 搜索模式等非 V0 必需组件
+2. 实现 CookedHtmlRenderer 基础版（覆盖 p/pre/blockquote/img/a）
+3. **验证**：用 mock 数据展示一个完整的话题列表 + 帖子详情
+
+### Phase 2: Features（功能重建）
+1. 逐个用新框架重建页面：Topics → TopicDetail → Browser → Profile → Search → Login
+2. 每完成一个页面，通过 feature flag 切换，验证后删除旧实现
+3. **验证**：每个页面独立可测试
+
+### Phase 3: Polish（打磨）
+1. swipe-back 手势微调
+2. 共享元素转场
+3. 离屏渲染优化
+4. 删除所有旧代码和 feature flag
+5. **验证**：完整 APK，无旧代码残留
+
+### Rollback
+- 每个 Phase 独立 git branch
+- Phase 2 之前旧代码完全保留，可随时回退
+- Feature flag 控制新旧页面切换
+
+## Resolved Questions
+
+1. **Lottie**：暂不引入，简单动画用 Canvas 自绘
+2. **离线缓存**：使用 Room 缓存话题列表和帖子内容，采用 stale-while-revalidate 模式。帖子编辑通过 `version` 字段对比检测，新版本直接 REPLACE 旧缓存
+3. **Discourse 插件 HTML**：从 linux.do 抓取真实帖子的 `cooked` HTML 作为测试数据，保存到 `fixtures/discourse/cooked-*.html`
+4. **主题色调**：以 linux.do 品牌绿色为主色调，后续添加自定义调色板选项
+5. **测试策略**：遵循 Telegram 的“高风险契约优先”思路，只为有实际意义的逻辑写测试（JSON 反序列化、HTML 解析、Session 逻辑、分页逻辑、migration 等），不为视觉/手势 substrate 和琐碎 helper 写单测。现有测试不做一次性清空，保留仍然表达有效契约的网络/session/html parsing 测试，待新实现与替代测试落地后再删除
+6. **迁移期 host**：保持单个 `MainActivity`，在同一 launcher 内按内部开关切换 legacy Compose root 和 rewrite `ActionBarLayout` root，不引入第二个 rewrite Activity
+
+## Open Questions
+
+1. **linux.do 独有的 Discourse 插件清单？** 当前已从真实 cooked HTML 样本确认以下形态需要纳入 `CookedHtmlRenderer` 设计范围：
+   - `details/summary` 折叠块
+   - `div.spoiler` 剧透块
+   - `div.poll` 投票块（至少支持只读渲染）
+   - `div.lightbox-wrapper > a.lightbox > img + div.meta` 图片灯箱包装（原图 URL、下载链接、文件名、尺寸信息）
+   - `a.onebox` / `a.inline-onebox` 链接型 onebox
+   - `a.hashtag-cooked` 标签链接
+   - `aside.quote` 的完整元数据：`data-topic`、`data-post`、`data-username`、`data-display-name`、头像、来源标题、修改态/可展开状态
+   - blockquote 中的 markdown 风格 callout 标记（例如 `[!warning]`）
+2. **哪些节点应该视为装饰性包装而不是 `RawHtml`？** 当前样本里已出现 `div.md-table`、`div.lightbox-wrapper`、装饰性 `svg.d-icon`、空 `blockquote`、`div[data-theme-toc=true]`，这些更适合作为解析期归一化或忽略规则，而不是直接回退到 WebView
+3. **还缺哪些 cooked 样本？** 建议继续补充 `d-image-grid` 图片宫格、非图片附件、视频/iframe/embed、数学公式等样本，再决定是否继续扩展 `RenderBlock`
