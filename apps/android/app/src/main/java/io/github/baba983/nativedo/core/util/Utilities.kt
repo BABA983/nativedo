@@ -1,11 +1,24 @@
+/*
+ * This file is part of NativeDo.
+ *
+ * Derived in part from Telegram for Android's
+ * org.telegram.messenger.Utilities.
+ *
+ * Source reference:
+ * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/messenger/Utilities.java
+ *
+ * Copyright (C) Telegram FZ-LLC
+ * Copyright (C) 2026 NativeDo contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under terms of GNU General Public License version 2 as published by
+ * Free Software Foundation.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
+ */
 package io.github.baba983.nativedo.core.util
 
-import android.os.Handler
-import android.os.Looper
-
 object Utilities {
-    private val mainHandler = Handler(Looper.getMainLooper())
-
     fun clamp(value: Int, max: Int, min: Int): Int {
         return value.coerceAtMost(max).coerceAtLeast(min)
     }
@@ -21,23 +34,4 @@ object Utilities {
     }
 
     fun clamp01(value: Float): Float = clamp(value = value, max = 1f, min = 0f)
-
-    fun isMainThread(): Boolean = Looper.myLooper() == Looper.getMainLooper()
-
-    fun runOnMainThread(
-        delayMillis: Long = 0L,
-        runnable: () -> Unit,
-    ): Runnable {
-        val task = Runnable(runnable)
-        if (delayMillis <= 0L) {
-            mainHandler.post(task)
-        } else {
-            mainHandler.postDelayed(task, delayMillis)
-        }
-        return task
-    }
-
-    fun cancelRunOnMainThread(runnable: Runnable) {
-        mainHandler.removeCallbacks(runnable)
-    }
 }

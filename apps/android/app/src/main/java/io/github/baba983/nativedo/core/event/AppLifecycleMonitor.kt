@@ -24,6 +24,7 @@ class AppLifecycleMonitor(
     private val connectivityManager =
         application.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
     private var startedActivityCount: Int = 0
+    private var activityLifecycleCallbacksRegistered: Boolean = false
     private var connectivityReceiverRegistered: Boolean = false
 
     private val _state = MutableStateFlow(
@@ -42,6 +43,7 @@ class AppLifecycleMonitor(
 
     init {
         application.registerActivityLifecycleCallbacks(this)
+        activityLifecycleCallbacksRegistered = true
         application.registerReceiver(
             connectivityReceiver,
             IntentFilter(ConnectivityManager.CONNECTIVITY_ACTION),
@@ -77,12 +79,19 @@ class AppLifecycleMonitor(
         updateNetworkAvailability(isNetworkAvailable)
     }
 
-    internal fun disposeForTesting() {
-        application.unregisterActivityLifecycleCallbacks(this)
+    fun dispose() {
+        if (activityLifecycleCallbacksRegistered) {
+            application.unregisterActivityLifecycleCallbacks(this)
+            activityLifecycleCallbacksRegistered = false
+        }
         if (connectivityReceiverRegistered) {
             application.unregisterReceiver(connectivityReceiver)
             connectivityReceiverRegistered = false
         }
+    }
+
+    internal fun disposeForTesting() {
+        dispose()
     }
 
     private fun updateForegroundState(isForeground: Boolean) {

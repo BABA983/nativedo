@@ -32,6 +32,14 @@ android {
     buildTypes {
         debug {
             versionNameSuffix = debugVersionNameSuffix
+            proguardFiles("proguard-rules.pro")
+        }
+        release {
+            isMinifyEnabled = false
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 
@@ -53,31 +61,25 @@ kotlin {
 
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
-    androidTestImplementation(platform(libs.androidx.compose.bom))
 
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.activity.ktx)
     implementation(libs.androidx.dynamicanimation)
-    implementation(libs.androidx.activity.compose)
-    implementation(libs.androidx.lifecycle.runtime.compose)
-    implementation(libs.androidx.lifecycle.viewmodel.compose)
-    implementation(libs.androidx.navigation.compose)
-    implementation(libs.androidx.compose.foundation)
-    implementation(libs.androidx.compose.ui)
-    implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.androidx.compose.runtime)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.retrofit)
     implementation(libs.retrofit.kotlinx)
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
     implementation(libs.jsoup)
-    implementation(libs.coil.compose)
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    implementation(libs.coil.core)
     implementation(libs.coil.gif)
     implementation(libs.coil.network.okhttp)
     implementation(libs.coil.svg)
     implementation(libs.androidsvg)
-    debugImplementation(libs.androidx.compose.ui.tooling)
 
     testImplementation(libs.junit4)
     testImplementation(libs.truth)

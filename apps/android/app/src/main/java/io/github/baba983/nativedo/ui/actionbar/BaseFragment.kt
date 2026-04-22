@@ -1,6 +1,25 @@
+/*
+ * This file is part of NativeDo.
+ *
+ * Derived in part from Telegram for Android's
+ * org.telegram.ui.ActionBar.BaseFragment.
+ *
+ * Source reference:
+ * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/BaseFragment.java
+ *
+ * Copyright (C) Telegram FZ-LLC
+ * Copyright (C) 2026 NativeDo contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under terms of GNU General Public License version 2 as published by
+ * Free Software Foundation.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
+ */
 package io.github.baba983.nativedo.ui.actionbar
 
 import android.content.Context
+import android.os.Bundle
 import android.view.View
 import android.widget.LinearLayout
 import kotlinx.coroutines.CoroutineScope
@@ -19,6 +38,7 @@ abstract class BaseFragment {
 
     private var fragmentView: View? = null
     private var lifecycleCreated: Boolean = false
+    private var paused: Boolean = true
 
     abstract fun createView(context: Context): View
 
@@ -32,7 +52,7 @@ abstract class BaseFragment {
 
     open fun onPause() = Unit
 
-    open fun onBackPressed(): Boolean = false
+    open fun onBackPressed(): Boolean = true
 
     open fun isSwipeBackEnabled(): Boolean = true
 
@@ -47,6 +67,10 @@ abstract class BaseFragment {
     open fun getNavigationBarColor(): Int? = null
 
     open fun hasForceLightStatusBar(): Boolean = false
+
+    open fun getNavigationKey(): String? = null
+
+    open fun saveArguments(): Bundle = Bundle()
 
     protected open fun onCreateActionBar(context: Context): ActionBar? = null
 
@@ -79,7 +103,22 @@ abstract class BaseFragment {
         parentLayout = null
         actionBar = null
         fragmentView = null
+        paused = true
     }
+
+    internal fun setPaused(value: Boolean) {
+        if (paused == value) {
+            return
+        }
+        paused = value
+        if (value) {
+            onPause()
+        } else {
+            onResume()
+        }
+    }
+
+    fun isPaused(): Boolean = paused
 
     private fun wrapWithActionBar(
         context: Context,

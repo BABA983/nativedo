@@ -1,43 +1,46 @@
 ## 0. Ground Rules
 
-> **默认业务实现使用新文件。** 新框架的业务与基础设施实现写入新的包路径下；旧代码（`core/`、`feature/`、`ui/`、`navigation/` 下的现有文件）仅作为参考，不在其上缝补。
+> **默认业务实现使用新文件。** 新框架的业务与基础设施实现写入新的包路径下；当前 `feature/refactor` 分支中的 `apps/android` 视为 clean-slate 重构工作区，不再维护 legacy/rewrite 共存运行模式。
 > `MainActivity`、`NativeDoApplication`、Gradle/Manifest/Proguard、应用主题等集成边界文件允许按迁移需要修改。
-> 新代码写入新的包路径下，完成后旧文件整体删除。旧代码的有用逻辑（如 Discourse API 端点定义、Session 管理细节）可以提取复制到新文件中。
-> 现有测试不做一次性清空；仍然表达有效契约的网络/session/html parsing 测试先保留，待新实现和替代验证到位后再删除。
+> 新代码写入新的包路径下，完成后旧文件整体删除。旧代码的有用逻辑（如 Discourse API 端点定义、Session 管理细节）可以提取复制到新文件中；旧实现溯源依赖 `main` 分支与 git 历史，不在当前仓库工作树内保留 `apps/android-bak`。
+> 现有测试默认优先保留仍然表达有效契约的 network/session/html parsing 覆盖；但在当前 clean-slate 分支上，若这些旧测试强耦合 legacy 实现并阻碍整体清理，可先连同旧实现一起删除，保留 `contracts/` 与 `fixtures/` 作为后续重建测试的输入源。
 > 每个 Phase 结束时，确认该 Phase 涉及的旧文件无引用后批量删除。
 > 对于明确采用 Telegram 同名类/方法的基础设施，默认保持 Telegram 的公开 API 形状与行为语义；可以只引入当前真正需要的子集，但不应把同名 helper 改造成语义不同的项目私有 convenience wrapper。若因 Android 平台限制、linux.do 场景裁剪、或 Telegram 的 native/MTProto/多账号依赖而必须偏离，需先在 change artifacts 中写明偏离理由，再实现。
+> **区分 `Telegram-derived` 与 `Telegram-inspired project-specific`。** 直接按 Telegram 源码翻译、改写、摘录实现，或明确采用 Telegram 同名类/方法并以其公开 API 作为默认契约的文件，视为 `Telegram-derived`；这类文件必须使用 Telegram-derived GPL v2 文件头模板并写明 upstream class/path。仅沿用 Telegram 的职责边界或架构思路、但未直接翻译/摘录代码的文件，视为 `Telegram-inspired project-specific`，不默认套用 derived 文件头。
 > **无直接 consumer 不预建 helper。** 对 Telegram 没有对应公共类、且当前 Phase 没有真实调用方的工具类，不为“任务完整度”预先创建独立 `*Utils` / `*Helper` 文件。
 > **默认不新增 substrate standalone unit test。** `core/util/`、`core/event/` 这类 Telegram substrate 除非在修复已复现回归，否则不新增 standalone unit test；验证以 host screen、manual smoke、integration 契约为主。
+> **执行状态**：本文件现在是 umbrella backlog reference。新的实现工作必须先进入 `openspec/changes/split-telegram-parity-phases/phase-plan.md` 和对应 `phase-batches/` owner phase，再回到这里做对照；不要再把本文件当成唯一执行清单自由打勾。
+> **跟踪规则**：若某项工作没有 owner phase、前置 gate 未满足、或还未经过 Phase 0 audit，就不应在这里继续推进或宣称完成。
 
 - 当前 2.x / 3.x 实现审视结论：保留为 parity-first 基线的有 `AndroidUtilities.kt`、`Utilities.kt`、`DispatchQueue.kt`、`FileLog.kt`、`AnimatedFloat.kt`、`AnimatedColor.kt`、`NotificationCenter.kt`、`AppLifecycleMonitor.kt`。
-- 当前 2.x / 3.x 需要回退或重做的有 `LayoutHelper.kt`、`CubicBezierInterpolator.kt` 的常量/API 形状、`SpringAnimationUtils.kt`、`AndroidUtilitiesTest.kt`、`NotificationCenterTest.kt`。
+- 当前 2.x / 3.x 需要按本轮 audit 收紧或重做的有 `Telegram-derived` 文件的 GPL 头应用、`AndroidUtilities.kt` / `Utilities.kt` 的 main-thread helper 归属、`FileLog.kt` 的主 API 形状、`LayoutHelper.kt` 的 adopted subset 边界、`CubicBezierInterpolator.kt` 的常量/API 形状、`SpringAnimationUtils.kt`、`AndroidUtilitiesTest.kt`、`NotificationCenterTest.kt`。
 
 ## 1. Project Scaffolding & Build Config
 
-- [ ] 1.1 Create new package structure under `io.github.baba983.nativedo/`: `core/util/`, `core/event/`, `core/theme/`, `core/media/`, `ui/actionbar/`, `ui/cells/`, `ui/components/`, `ui/web/`, `discourse/api/`, `discourse/model/`, `discourse/session/` — 全部新文件，不复用旧包
-- [ ] 1.2 Update `build.gradle.kts` dependencies: remove Compose Navigation, keep OkHttp/Retrofit/kotlinx.serialization/Coil 3/Jsoup/Room, keep Compose runtime (for ComposeView embedding)
-- [ ] 1.3 Add GPL v2 license header template for files derived from Telegram source
-- [ ] 1.4 Configure proguard rules for new class structure
-- [ ] 1.5 Implement `NdApp.kt` bootstrap and `NdRuntime.kt` single-account service holder: global context, main-thread handler, shared services registry, and early init of logging/theme/session infrastructure
-- [ ] 1.6 Define `MainActivity.kt` as the simplified `LaunchActivity`-like host: keep a migration-time root switch between legacy Compose root and new `ActionBarLayout` root, bridge lifecycle/back/new-intent/window-insets/system-bar policy, and avoid introducing a separate screen router abstraction or second launcher Activity
+- [x] 1.1 Create new package structure under `io.github.baba983.nativedo/`: `core/util/`, `core/event/`, `core/theme/`, `core/media/`, `ui/actionbar/`, `ui/cells/`, `ui/components/`, `ui/web/`, `discourse/api/`, `discourse/model/`, `discourse/session/` — 全部新文件，不复用旧包
+- [x] 1.2 Update `build.gradle.kts` dependencies: remove Compose Navigation, keep OkHttp/Retrofit/kotlinx.serialization/Coil 3/Jsoup/Room, keep Compose runtime (for ComposeView embedding)
+- [x] 1.3 Add and apply GPL v2 license header template to every `Telegram-derived` file adopted in this change; each header must include the upstream class/path, source reference, Telegram + NativeDo copyright lines, and SPDX line. `Telegram-inspired project-specific` files do not use the derived header unless code was actually translated or excerpted
+- [x] 1.4 Configure proguard rules for new class structure
+- [x] 1.5 Implement `NdApp.kt` bootstrap and `NdRuntime.kt` single-account service holder: global context, main-thread handler, shared services registry, and early init of logging/theme/session infrastructure
+- [x] 1.6 Define `MainActivity.kt` as the simplified `LaunchActivity`-like host: mount new `LaunchBootstrap` / `ActionBarLayout` as default and only root, bridge lifecycle/back/new-intent/window-insets/system-bar policy, and avoid introducing a separate screen router abstraction or second launcher Activity
 
 ## 2. Core Utilities (core/util/)
 
-- [x] 2.1 Implement `AndroidUtilities.kt` as a parity-first Kotlin port of the currently needed subset of Telegram `org.telegram.messenger.AndroidUtilities.java`: `dp()`, `dpf2()`, `lerp()`, `displaySize`, `statusBarHeight`, `navigationBarHeight`, `density`, configuration change listener
+- [x] 2.1 Implement `AndroidUtilities.kt` as a parity-first Kotlin port of the currently needed subset of Telegram `org.telegram.messenger.AndroidUtilities.java`: `dp()`, `dpf2()`, `lerp()`, `displaySize`, `statusBarHeight`, `navigationBarHeight`, `density`, configuration change listener, and the UI-thread scheduling entry points `runOnUIThread()` / `cancelRunOnUIThread()`
 - [x] 2.2 Implement color utilities: `blendColors()`, `setAlpha()`, `argb()` helpers
 - [x] 2.3 Implement keyboard utilities: `showKeyboard()`, `hideKeyboard()`, keyboard height detection
-- [x] 2.4 Implement slim `Utilities.kt` as a parity-first subset of Telegram `org.telegram.messenger.Utilities.java`: `clamp()`, `clamp01()`, main-thread helpers, and only the small cross-cutting helpers actually needed by new infrastructure
+- [x] 2.4 Implement slim `Utilities.kt` as a parity-first subset of Telegram `org.telegram.messenger.Utilities.java`: `clamp()`, `clamp01()`, and only the small cross-cutting non-UI-thread helpers actually needed by new infrastructure. Do not relocate Telegram's `runOnUIThread()` / `cancelRunOnUIThread()` contract from `AndroidUtilities`
 - [x] 2.5 Implement `DispatchQueue.kt` as a parity-first subset port of Telegram `org.telegram.messenger.DispatchQueue.java`: named serial background queue abstraction for logging, theme I/O, and image-related support work
-- [x] 2.6 Implement `FileLog.kt` as a parity-first subset port of Telegram `org.telegram.messenger.FileLog.java`: async debug logger backed by `DispatchQueue`, available from app startup
-- [ ] 2.7 Rework `LayoutHelper.kt` as a parity-first subset port of Telegram `org.telegram.ui.Components.LayoutHelper.java`: preserve imported method names, return types, and layout params semantics; `createScroll()` must follow Telegram `ScrollView.LayoutParams` behavior instead of a project-private substitute
-- [ ] 2.8 Audit existing unit tests under `src/test/`: keep contract-bearing tests for network/session/html parsing, remove low-value standalone substrate tests (including `AndroidUtilitiesTest.kt` and `NotificationCenterTest.kt` unless they become regression tests), and only remove legacy UI/navigation/theme tests after the rewrite path has replacement verification
+- [x] 2.6 Implement `FileLog.kt` as a parity-first subset port of Telegram `org.telegram.messenger.FileLog.java`: async debug logger backed by `DispatchQueue`, available from app startup, and keep Telegram-compatible primary logging entry points for the adopted subset instead of redefining the class around project-local tag-first wrappers
+- [x] 2.7 Rework `LayoutHelper.kt` as a parity-first subset port of Telegram `org.telegram.ui.Components.LayoutHelper.java`: preserve imported method names, return types, and layout params semantics. Phase 0 adopted subset is `MATCH_PARENT`, `WRAP_CONTENT`, and the `createFrame(...)`, `createLinear(...)`, `createScroll(...)` families used by current callers; `createScroll()` must follow Telegram `ScrollView.LayoutParams` behavior instead of a project-private substitute, while other public helpers stay deferred until a real caller exists
+- [x] 2.8 Audit existing unit tests under `src/test/`: keep or consciously retire legacy tests based on clean-slate value; preserve contract intent via `contracts/` + `fixtures/`, remove low-value standalone substrate tests (including `AndroidUtilitiesTest.kt` and `NotificationCenterTest.kt` unless they become regression tests), and delete legacy UI/navigation/theme/feature tests that only validate removed implementation
 
 ## 3. Animation Primitives (core/util/)
 
-- [ ] 3.1 Rework `CubicBezierInterpolator.kt` to the adopted Telegram `org.telegram.ui.Components.CubicBezierInterpolator.java` API surface with predefined instances: `DEFAULT`, `EASE_OUT`, `EASE_OUT_QUINT`, `EASE_IN`, `EASE_BOTH`, `EASE_OUT_BACK`
+- [x] 3.1 Rework `CubicBezierInterpolator.kt` to the adopted Telegram `org.telegram.ui.Components.CubicBezierInterpolator.java` API surface with predefined instances: `DEFAULT`, `EASE_OUT`, `EASE_OUT_QUINT`, `EASE_IN`, `EASE_BOTH`, `EASE_OUT_BACK`
 - [x] 3.2 Implement `AnimatedFloat.kt` as a parity-first Kotlin port of Telegram `org.telegram.ui.Components.AnimatedFloat.java`: configurable duration/interpolator, `set(value)`, `set(value, force)`, `force(value)`, frame-driven `getValue()`, and optional deprecated `get()` compatibility if retained
 - [x] 3.3 Implement `AnimatedColor.kt` as a parity-first Kotlin port of Telegram `org.telegram.ui.Components.AnimatedColor.java`: per-channel interpolation with `set(color)`, `set(color, force)`, and `force(color)`
-- [ ] 3.4 Do not keep a standalone spring helper just to complete substrate parity. If a real UI consumer later needs spring motion, introduce it in that consumer first (using AndroidX DynamicAnimation directly unless a Telegram-style public API is explicitly documented in artifacts)
+- [x] 3.4 Do not keep a standalone spring helper just to complete substrate parity. If a real UI consumer later needs spring motion, introduce it in that consumer first (using AndroidX DynamicAnimation directly unless a Telegram-style public API is explicitly documented in artifacts)
 - [ ] 3.5 _(no standalone unit tests for these substrate classes by default; verify via the first real consumer screen and manual smoke test)_
 
 ## 4. Event Bus (core/event/)
@@ -58,25 +61,25 @@
 - [ ] 5.5 Implement theme mode management: `Light`/`Dark`/`System` enum, `SharedPreferences` persistence, system dark mode listener
 - [ ] 5.6 Implement runtime theme switching: crossfade animation (~300ms), post `themeDidChange` notification
 - [ ] 5.7 Implement theme-aware helpers: `createPaint(key)`, `getThemedDrawable(key)`, selector/ripple drawable factories, rounded background helpers, and ActionBar header shadow drawable creation
-- [ ] 5.8 Implement `NdUiConfig.kt`: minimal global UI flags replacing only the tiny V0 subset of Telegram `SharedConfig` (`animationsEnabled`, `drawActionBarShadow`, `sectionShadows`, optional haptics toggle)
+- [x] 5.8 Implement `NdUiConfig.kt`: minimal global UI flags replacing only the tiny V0 subset of Telegram `SharedConfig` (`animationsEnabled`, `drawActionBarShadow`, `sectionShadows`, optional haptics toggle)
 - [ ] 5.9 _(theme is runtime visual — verify by running app, no unit test)_
 
 ## 6. Navigation Stack (ui/actionbar/)
 
 - [x] 6.1 Define `INavigationLayout.kt` interface (simplified from Telegram): `presentFragment()`, `closeLastFragment()`, `getFragmentStack()`, `addFragmentToStack()`, `removeFragmentFromStack()`, `setDelegate()`
 - [x] 6.2 Implement `BaseFragment.kt`: abstract class with `createView()`, `onFragmentCreate()`, `onFragmentDestroy()`, `onResume()`, `onPause()`, `onBackPressed()`, `parentLayout` reference, optional `actionBar` property, page-level coroutine/request scope canceled on destroy, plus transition/system-bar hooks: `isSwipeBackEnabled()`, `onSlideProgress()`, `onTransitionAnimationStart/End()`, `onBecomeFullyVisible()`, `getNavigationBarColor()`, `hasForceLightStatusBar()`
-- [ ] 6.3 Implement `ActionBarLayout.kt` core: fragment stack management, push/pop with slide animation (fragment slides in from right, previous fragment shifts left), invoke fragment transition hooks, and keep status/navigation bar state in sync during transitions
-- [ ] 6.4 Implement `ActionBarLayout.kt` swipe-back gesture: left-edge touch detection, finger-following drag, 35% threshold or velocity-based dismissal, cancel animation
-- [ ] 6.5 Implement ActionBar integration: include ActionBar at top of fragment view, wire back button to `closeLastFragment()`
+- [x] 6.3 Implement `ActionBarLayout.kt` core: fragment stack management, push/pop with slide animation (fragment slides in from right, previous fragment shifts left), invoke fragment transition hooks, and keep status/navigation bar state in sync during transitions
+- [x] 6.4 Implement `ActionBarLayout.kt` swipe-back gesture: left-edge touch detection, finger-following drag, 35% threshold or velocity-based dismissal, cancel animation
+- [x] 6.5 Implement ActionBar integration: include ActionBar at top of fragment view, wire back button to `closeLastFragment()`
 - [ ] 6.6 Implement minimal navigation state save/restore: persist fragment descriptors and args bundle so the custom stack can recover after configuration change and process recreation
-- [x] 6.7 Update `MainActivity.kt` to host the migration-time root switch and mount `ActionBarLayout` when rewrite mode is enabled
-- [ ] 6.8 Create a `HelloFragment` test fragment to verify navigation push/pop/swipe-back/state-restore works end-to-end
+- [x] 6.7 Update `MainActivity.kt` to host `ActionBarLayout` as the default app root (no rewrite mode / legacy Compose root switch)
+- [x] 6.8 Create a `HelloFragment` test fragment to verify navigation push/pop/swipe-back/state-restore works end-to-end
 - [ ] 6.9 _(navigation is visual/gesture — verify by running HelloFragment, rotating the device, and relaunching after process death, no unit test)_
 
 ## 7. ActionBar Component (ui/actionbar/)
 
-- [ ] 7.1 Implement `BackDrawable.kt` and the minimal animated action icon drawables needed by V0 ActionBar state changes; add `MenuDrawable` only if V0 search/menu transitions actually depend on it
-- [ ] 7.2 Implement `ActionBar.kt` ViewGroup: back button area with themed selector background + animated back drawable, title/subtitle `SimpleTextView`, menu area, theme-aware background/title/icon colors
+- [x] 7.1 Implement `BackDrawable.kt` and the minimal animated action icon drawables needed by V0 ActionBar state changes; add `MenuDrawable` only if V0 search/menu transitions actually depend on it
+- [x] 7.2 Implement `ActionBar.kt` ViewGroup: back button area with themed selector background + animated back drawable, title/subtitle `SimpleTextView`, menu area, theme-aware background/title/icon colors
 - [ ] 7.3 Implement `ActionBarMenu.kt` and `ActionBarMenuItem.kt`: add items with icon/text, click listeners, optional popup submenu
 - [ ] 7.4 Implement ActionBar search mode: `openSearchField()` / `closeSearchField()`, animated transition between title and search input, keyboard show/hide
 - [ ] 7.5 Implement `SimpleTextView.kt`: lightweight text view using `Canvas.drawText()` instead of `TextView` for ActionBar titles (better performance)
@@ -216,7 +219,7 @@
 - [x] 22.2 Implement `NdApp.initForTesting()` / runtime replacement hooks with mock injection support
 - [ ] 22.3 Implement `LaunchBootstrap.kt`: cold-start entry that asks `AuthSessionManager` to restore session and decides initial destination (`TopicsFragment` or `LoginFragment`)
 - [ ] 22.4 Implement session restore logic: check cookie validity → load Topics or show Login
-- [ ] 22.5 Wire the startup decision into `MainActivity`'s migration-time root switch so rewrite mode and legacy mode both keep a single launcher host
+- [ ] 22.5 Wire the startup decision into `MainActivity`'s default root so a single launcher host goes straight to `TopicsFragment` or `LoginFragment` without rewrite/legacy switching
 
 ## 23. Topics Screen (feature/)
 
@@ -284,12 +287,12 @@
 ## 30. Integration & Cleanup
 
 - [ ] 30.1 Wire bottom tab bar: Topics, Search, Profile tabs in root ActionBarLayout or custom tab container
-- [ ] 30.2 Delete old navigation infrastructure: `navigation/` package, `NativeDoApp.kt`, `NativePageStackHost.kt`, `RootTabsHost.kt`, `AppRoot.kt` and all Compose Navigation graph code
-- [ ] 30.3 Delete old theme files: `ui/theme/` package, `NativeDoGlassSurface.kt`, `NativeDoBackground.kt` and all NativeDoTheme/NativeDoThemeExtras references
-- [ ] 30.4 Delete old UI components: `core/ui/HtmlPostBodyView.kt`, `core/ui/UserAvatar.kt`, `NativeDoPullToRefreshIndicator.kt`, `NativeDoBrowserScaffold.kt`, `NativeDoReaderScaffold.kt`, `NativeDoChromeScaffold.kt`, `NativeDoRootChrome.kt`, `BrowserHost.kt`, `BrowserTabsShell.kt`, `BrowserTabsTransition.kt`
-- [ ] 30.5 Delete old feature screens: entire `feature/auth/`, `feature/browser/`, `feature/home/`, `feature/profile/`, `feature/search/`, `feature/topic/` packages
-- [ ] 30.6 Delete old DI: `core/di/AppContainer.kt` and related references
-- [ ] 30.7 Delete old model/network layers: `core/model/`, `core/network/`, `core/session/`, `core/storage/` — logic already migrated to new `discourse/` package
+- [x] 30.2 Delete old navigation infrastructure: `navigation/` package, `NativeDoApp.kt`, `NativePageStackHost.kt`, `RootTabsHost.kt`, `AppRoot.kt` and all Compose Navigation graph code (clean-slate branch allows doing this before page-for-page replacement)
+- [x] 30.3 Delete old theme files: `ui/theme/` package, `NativeDoGlassSurface.kt`, `NativeDoBackground.kt` and all NativeDoTheme/NativeDoThemeExtras references
+- [x] 30.4 Delete old UI components: `core/ui/HtmlPostBodyView.kt`, `core/ui/UserAvatar.kt`, `NativeDoPullToRefreshIndicator.kt`, `NativeDoBrowserScaffold.kt`, `NativeDoReaderScaffold.kt`, `NativeDoChromeScaffold.kt`, `NativeDoRootChrome.kt`, `BrowserHost.kt`, `BrowserTabsShell.kt`, `BrowserTabsTransition.kt`
+- [x] 30.5 Delete old feature screens: entire `feature/auth/`, `feature/browser/`, `feature/home/`, `feature/profile/`, `feature/search/`, `feature/topic/` packages
+- [x] 30.6 Delete old DI: `core/di/AppContainer.kt` and related references
+- [x] 30.7 Delete old model/network layers: `core/model/`, `core/network/`, `core/session/`, `core/storage/`; if any logic is still needed, recover it from `main` / git history into new `discourse/` or `core/` packages rather than keeping legacy in-tree
 - [ ] 30.8 Verify no remaining imports from deleted packages: `grep -r "import.*nativedo.core\.\|import.*nativedo.feature\.\|import.*nativedo.navigation\." --include="*.kt"`
 - [ ] 30.9 Full build verification: `./apps/android/gradlew -p apps/android :app:assembleDebug --quiet`
 - [ ] 30.10 Run all unit tests: `./apps/android/gradlew -p apps/android :app:testDebugUnitTest --quiet`

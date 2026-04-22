@@ -4,6 +4,10 @@
 
 本次完全重写以 Telegram Android 开源代码库为架构蓝本，用 Kotlin 重新实现其核心基础设施（自定义导航栈、主题引擎、Canvas Cell 渲染、手势系统），同时构建 Discourse 论坛客户端特有的业务层（cookie session、cooked HTML 原生渲染、帖子流分页）。目标是打造一个在交互品质上对标 Telegram、在功能覆盖上满足 linux.do 用户日常使用的原生客户端。
 
+## Execution Status
+
+`full-rewrite-telegram-parity` 现在保留为 umbrella reference，用来说明总体目标、原始范围和历史 backlog。自 `split-telegram-parity-phases` 起，新的实现工作必须进入对应的 phase batch，而不是继续把本 change 当作唯一执行清单自由铺开。
+
 ## What Changes
 
 ### 架构层面
@@ -12,6 +16,7 @@
 - **BREAKING**: 废弃 `NativeDoTheme` / `NativeDoThemeExtras`，改用 Telegram 风格 color-key 映射主题引擎
 - **BREAKING**: 废弃 Hilt/Dagger DI，改用 Telegram 风格的轻量级手动依赖管理（`AccountInstance` 模式）
 - **BREAKING**: 重组包结构为 `core/` + `ui/` + `discourse/` 三层
+- **BREAKING**: `feature/refactor` 分支直接在 `apps/android` 上做 clean-slate 重构，不保留仓库内 `android-bak` 或 legacy/rewrite 双 root；旧实现以 `main` 分支作为快照溯源
 
 ### 基础设施层（core/）
 - 新增 `NdApp.kt` — 应用级 bootstrap / service locator 入口，对标 Telegram `ApplicationLoader` 的职责边界，但只保留单站点客户端所需的初始化
@@ -94,7 +99,7 @@ _无现有 spec，首次全量创建。_
 ## Impact
 
 ### 代码影响
-- `apps/android/app/src/main/java/io/github/baba983/nativedo/` 目录下所有现有代码将被逐步替换
+- `feature/refactor` 分支中的 `apps/android/app/src/main/java/io/github/baba983/nativedo/` 将被 clean-slate 重建；旧实现不在当前工作树内长期共存，回溯依赖 `main` 分支与 git 历史
 - 现有 `core/`、`feature/`、`ui/`、`navigation/` 包将被重组
 - 现有 Compose UI 组件（`NativeDoGlassSurface`、`NativeDoPullToRefreshIndicator`、`HtmlPostBodyView` 等）将被新的 View/Canvas 实现替代
 
@@ -113,4 +118,4 @@ _无现有 spec，首次全量创建。_
 - 工作量巨大，需要严格分 phase 推进，每个 phase 应产出可运行的 APK
 - ActionBarLayout 移植是最大技术风险点（3500 行核心导航逻辑的 Kotlin 化）
 - CookedHtmlRenderer 是最大产品风险点（Discourse HTML 多样性远超 Telegram Instant View）
-- 过渡期新旧代码共存需管理好编译和运行时的兼容
+- clean-slate 切换后缺少仓库内并存 fallback，需要依赖 `main` 分支快照与阶段性可运行 APK 作为回退保障

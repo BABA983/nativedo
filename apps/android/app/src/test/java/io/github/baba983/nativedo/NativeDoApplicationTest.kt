@@ -1,6 +1,7 @@
 package io.github.baba983.nativedo
 
 import com.google.common.truth.Truth.assertThat
+import org.junit.After
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -13,12 +14,17 @@ import org.robolectric.annotation.Config
     manifest = "src/main/AndroidManifest.xml",
 )
 class NativeDoApplicationTest {
+    @After
+    fun tearDown() {
+        NdApp.clearForTesting()
+    }
+
     @Test
-    fun setup_initializesNdAppAndDelegatesAppContainer() {
+    fun setup_initializesNdAppAndExposesRuntime() {
         val application = RuntimeEnvironment.getApplication() as NativeDoApplication
 
-        assertThat(NdApp.runtime.appContext).isSameInstanceAs(application.applicationContext)
-        assertThat(application.appContainer).isSameInstanceAs(NdApp.runtime.appContainer)
-        assertThat(application.newImageLoader(application)).isNotNull()
+        assertThat(application.runtime).isSameInstanceAs(NdApp.runtime)
+        assertThat(application.runtime.appContext).isSameInstanceAs(application.applicationContext)
+        assertThat(application.newImageLoader(application)).isSameInstanceAs(application.runtime.imageLoader)
     }
 }

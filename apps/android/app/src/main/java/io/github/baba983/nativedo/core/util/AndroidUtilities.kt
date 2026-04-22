@@ -1,3 +1,21 @@
+/*
+ * This file is part of NativeDo.
+ *
+ * Derived in part from Telegram for Android's
+ * org.telegram.messenger.AndroidUtilities.
+ *
+ * Source reference:
+ * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/messenger/AndroidUtilities.java
+ *
+ * Copyright (C) Telegram FZ-LLC
+ * Copyright (C) 2026 NativeDo contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under terms of GNU General Public License version 2 as published by
+ * Free Software Foundation.
+ *
+ * SPDX-License-Identifier: GPL-2.0-only
+ */
 package io.github.baba983.nativedo.core.util
 
 import android.content.ComponentCallbacks
@@ -5,6 +23,8 @@ import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.Point
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.view.inputmethod.InputMethodManager
 import androidx.core.view.ViewCompat
@@ -14,6 +34,7 @@ import kotlin.math.roundToInt
 
 object AndroidUtilities : ComponentCallbacks {
     private val lock = Any()
+    private val applicationHandler = Handler(Looper.getMainLooper())
 
     @Volatile
     private var initializedContext: Context? = null
@@ -64,6 +85,31 @@ object AndroidUtilities : ComponentCallbacks {
         return density * value
     }
 
+    fun runOnUIThread(runnable: Runnable) {
+        runOnUIThread(runnable, 0L)
+    }
+
+    fun runOnUIThread(
+        runnable: Runnable,
+        delay: Long,
+    ) {
+        if (initializedContext == null) {
+            return
+        }
+        if (delay <= 0L) {
+            applicationHandler.post(runnable)
+        } else {
+            applicationHandler.postDelayed(runnable, delay)
+        }
+    }
+
+    fun cancelRunOnUIThread(runnable: Runnable) {
+        if (initializedContext == null) {
+            return
+        }
+        applicationHandler.removeCallbacks(runnable)
+    }
+
     fun lerp(a: Int, b: Int, t: Float): Int = (a + (t * (b - a))).toInt()
 
     fun lerp(a: Float, b: Float, t: Float): Float = a + ((b - a) * t)
@@ -106,7 +152,7 @@ object AndroidUtilities : ComponentCallbacks {
                 ?: return false
             inputMethodManager.showSoftInput(view, InputMethodManager.SHOW_IMPLICIT)
         } catch (error: Exception) {
-            FileLog.e("AndroidUtilities", "Failed to show keyboard", error)
+            FileLog.e("AndroidUtilities: Failed to show keyboard", error)
             false
         }
     }
@@ -123,7 +169,7 @@ object AndroidUtilities : ComponentCallbacks {
             }
             inputMethodManager.hideSoftInputFromWindow(view.windowToken, 0)
         } catch (error: Exception) {
-            FileLog.e("AndroidUtilities", "Failed to hide keyboard", error)
+            FileLog.e("AndroidUtilities: Failed to hide keyboard", error)
         }
     }
 

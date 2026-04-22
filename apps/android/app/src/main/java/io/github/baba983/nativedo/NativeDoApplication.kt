@@ -4,11 +4,10 @@ import android.app.Application
 import android.content.Context
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
-import io.github.baba983.nativedo.core.di.AppContainer
 
 class NativeDoApplication : Application(), SingletonImageLoader.Factory {
-    val appContainer: AppContainer
-        get() = NdApp.runtime.appContainer
+    val runtime: NdRuntime
+        get() = NdApp.runtime
 
     override fun onCreate() {
         super.onCreate()
@@ -16,6 +15,6 @@ class NativeDoApplication : Application(), SingletonImageLoader.Factory {
     }
 
     override fun newImageLoader(context: Context): ImageLoader {
-        return NdApp.runtime.newImageLoader(context)
+        return runtime.newImageLoader(context)
     }
 }
