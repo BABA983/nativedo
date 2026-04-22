@@ -5,6 +5,12 @@
 > 新代码写入新的包路径下，完成后旧文件整体删除。旧代码的有用逻辑（如 Discourse API 端点定义、Session 管理细节）可以提取复制到新文件中。
 > 现有测试不做一次性清空；仍然表达有效契约的网络/session/html parsing 测试先保留，待新实现和替代验证到位后再删除。
 > 每个 Phase 结束时，确认该 Phase 涉及的旧文件无引用后批量删除。
+> 对于明确采用 Telegram 同名类/方法的基础设施，默认保持 Telegram 的公开 API 形状与行为语义；可以只引入当前真正需要的子集，但不应把同名 helper 改造成语义不同的项目私有 convenience wrapper。若因 Android 平台限制、linux.do 场景裁剪、或 Telegram 的 native/MTProto/多账号依赖而必须偏离，需先在 change artifacts 中写明偏离理由，再实现。
+> **无直接 consumer 不预建 helper。** 对 Telegram 没有对应公共类、且当前 Phase 没有真实调用方的工具类，不为“任务完整度”预先创建独立 `*Utils` / `*Helper` 文件。
+> **默认不新增 substrate standalone unit test。** `core/util/`、`core/event/` 这类 Telegram substrate 除非在修复已复现回归，否则不新增 standalone unit test；验证以 host screen、manual smoke、integration 契约为主。
+
+- 当前 2.x / 3.x 实现审视结论：保留为 parity-first 基线的有 `AndroidUtilities.kt`、`Utilities.kt`、`DispatchQueue.kt`、`FileLog.kt`、`AnimatedFloat.kt`、`AnimatedColor.kt`、`NotificationCenter.kt`、`AppLifecycleMonitor.kt`。
+- 当前 2.x / 3.x 需要回退或重做的有 `LayoutHelper.kt`、`CubicBezierInterpolator.kt` 的常量/API 形状、`SpringAnimationUtils.kt`、`AndroidUtilitiesTest.kt`、`NotificationCenterTest.kt`。
 
 ## 1. Project Scaffolding & Build Config
 
@@ -17,31 +23,31 @@
 
 ## 2. Core Utilities (core/util/)
 
-- [ ] 2.1 Implement `AndroidUtilities.kt`: `dp()`, `dpf2()`, `lerp()`, `displaySize`, `statusBarHeight`, `navigationBarHeight`, `density`, configuration change listener
-- [ ] 2.2 Implement color utilities: `blendColors()`, `setAlpha()`, `argb()` helpers
-- [ ] 2.3 Implement keyboard utilities: `showKeyboard()`, `hideKeyboard()`, keyboard height detection
-- [ ] 2.4 Implement slim `Utilities.kt`: `clamp()`, `clamp01()`, main-thread helpers, and only the small cross-cutting helpers actually needed by new infrastructure
-- [ ] 2.5 Implement `DispatchQueue.kt`: named serial background queue abstraction for logging, theme I/O, and image-related support work
-- [ ] 2.6 Implement `FileLog.kt`: async debug logger backed by `DispatchQueue`, available from app startup
-- [ ] 2.7 Implement `LayoutHelper.kt`: lightweight FrameLayout/LinearLayout/ScrollView layout params factory methods used by ActionBar and future sheets
-- [ ] 2.8 Audit existing unit tests under `src/test/`: keep contract-bearing tests for network/session/html parsing, remove legacy UI/navigation/theme tests only after the rewrite path has replacement verification
+- [x] 2.1 Implement `AndroidUtilities.kt` as a parity-first Kotlin port of the currently needed subset of Telegram `org.telegram.messenger.AndroidUtilities.java`: `dp()`, `dpf2()`, `lerp()`, `displaySize`, `statusBarHeight`, `navigationBarHeight`, `density`, configuration change listener
+- [x] 2.2 Implement color utilities: `blendColors()`, `setAlpha()`, `argb()` helpers
+- [x] 2.3 Implement keyboard utilities: `showKeyboard()`, `hideKeyboard()`, keyboard height detection
+- [x] 2.4 Implement slim `Utilities.kt` as a parity-first subset of Telegram `org.telegram.messenger.Utilities.java`: `clamp()`, `clamp01()`, main-thread helpers, and only the small cross-cutting helpers actually needed by new infrastructure
+- [x] 2.5 Implement `DispatchQueue.kt` as a parity-first subset port of Telegram `org.telegram.messenger.DispatchQueue.java`: named serial background queue abstraction for logging, theme I/O, and image-related support work
+- [x] 2.6 Implement `FileLog.kt` as a parity-first subset port of Telegram `org.telegram.messenger.FileLog.java`: async debug logger backed by `DispatchQueue`, available from app startup
+- [ ] 2.7 Rework `LayoutHelper.kt` as a parity-first subset port of Telegram `org.telegram.ui.Components.LayoutHelper.java`: preserve imported method names, return types, and layout params semantics; `createScroll()` must follow Telegram `ScrollView.LayoutParams` behavior instead of a project-private substitute
+- [ ] 2.8 Audit existing unit tests under `src/test/`: keep contract-bearing tests for network/session/html parsing, remove low-value standalone substrate tests (including `AndroidUtilitiesTest.kt` and `NotificationCenterTest.kt` unless they become regression tests), and only remove legacy UI/navigation/theme tests after the rewrite path has replacement verification
 
 ## 3. Animation Primitives (core/util/)
 
-- [ ] 3.1 Implement `CubicBezierInterpolator.kt` with predefined instances: `EASE_IN`, `EASE_OUT`, `EASE_IN_OUT`, `EASE_OUT_QUINT`, `DEFAULT`, `DECELERATE`
-- [ ] 3.2 Implement `AnimatedFloat.kt`: float value wrapper with configurable duration and interpolator, `set(value, animated)`, `get()` returning interpolated value
-- [ ] 3.3 Implement `AnimatedColor.kt`: ARGB color wrapper with per-channel interpolation
-- [ ] 3.4 Implement spring animation utility with configurable stiffness and damping ratio
-- [ ] 3.5 _(no trivial unit tests — these are pure math, verify visually)_
+- [ ] 3.1 Rework `CubicBezierInterpolator.kt` to the adopted Telegram `org.telegram.ui.Components.CubicBezierInterpolator.java` API surface with predefined instances: `DEFAULT`, `EASE_OUT`, `EASE_OUT_QUINT`, `EASE_IN`, `EASE_BOTH`, `EASE_OUT_BACK`
+- [x] 3.2 Implement `AnimatedFloat.kt` as a parity-first Kotlin port of Telegram `org.telegram.ui.Components.AnimatedFloat.java`: configurable duration/interpolator, `set(value)`, `set(value, force)`, `force(value)`, frame-driven `getValue()`, and optional deprecated `get()` compatibility if retained
+- [x] 3.3 Implement `AnimatedColor.kt` as a parity-first Kotlin port of Telegram `org.telegram.ui.Components.AnimatedColor.java`: per-channel interpolation with `set(color)`, `set(color, force)`, and `force(color)`
+- [ ] 3.4 Do not keep a standalone spring helper just to complete substrate parity. If a real UI consumer later needs spring motion, introduce it in that consumer first (using AndroidX DynamicAnimation directly unless a Telegram-style public API is explicitly documented in artifacts)
+- [ ] 3.5 _(no standalone unit tests for these substrate classes by default; verify via the first real consumer screen and manual smoke test)_
 
 ## 4. Event Bus (core/event/)
 
-- [x] 4.1 Implement `NotificationCenter.kt`: singleton, `addObserver()`, `removeObserver()`, `postNotificationName()`, `NotificationCenterDelegate` interface
+- [x] 4.1 Implement `NotificationCenter.kt` as a parity-first subset port of Telegram `org.telegram.messenger.NotificationCenter.java`: singleton, `addObserver()`, `removeObserver()`, `postNotificationName()`, `NotificationCenterDelegate` interface
 - [x] 4.2 Define Discourse-specific event constants: `topicsDidLoad`, `topicDetailDidLoad`, `sessionDidChange`, `sessionDidExpire`, `csrfTokenDidRefresh`, `themeDidChange`, `categoryDataDidLoad`, `searchResultsDidLoad`, `profileDidLoad`, `cloudflareChallenge`, `appForegroundStateChanged`, `networkStateChanged`
 - [x] 4.3 Implement observer lifecycle safety: remove all observations for a delegate, prevent delivery to removed observers
-- [ ] 4.4 Document and enforce `NotificationCenter` boundaries: only use it for truly global cross-cutting events, not for screen data state that should stay local to a page/controller
+- [x] 4.4 Document and enforce `NotificationCenter` boundaries: only use it for truly global cross-cutting events, not for screen data state that should stay local to a page/controller
 - [x] 4.5 Implement `AppLifecycleMonitor.kt`: observe process foreground/background and connectivity changes, expose a minimal app/network state for offline banner, session restore, and Cloudflare recovery flows
-- [ ] 4.6 _(event bus and lifecycle monitor are integration primitives — verify via app startup/background/network smoke test, no standalone unit test)_
+- [ ] 4.6 _(event bus and lifecycle monitor are integration primitives — verify via app startup/background/network smoke test; do not keep standalone `NotificationCenter` unit tests by default unless they are protecting a reproduced regression)_
 
 ## 5. Theme Engine (core/theme/)
 
@@ -57,13 +63,13 @@
 
 ## 6. Navigation Stack (ui/actionbar/)
 
-- [ ] 6.1 Define `INavigationLayout.kt` interface (simplified from Telegram): `presentFragment()`, `closeLastFragment()`, `getFragmentStack()`, `addFragmentToStack()`, `removeFragmentFromStack()`, `setDelegate()`
-- [ ] 6.2 Implement `BaseFragment.kt`: abstract class with `createView()`, `onFragmentCreate()`, `onFragmentDestroy()`, `onResume()`, `onPause()`, `onBackPressed()`, `parentLayout` reference, optional `actionBar` property, page-level coroutine/request scope canceled on destroy, plus transition/system-bar hooks: `isSwipeBackEnabled()`, `onSlideProgress()`, `onTransitionAnimationStart/End()`, `onBecomeFullyVisible()`, `getNavigationBarColor()`, `hasForceLightStatusBar()`
+- [x] 6.1 Define `INavigationLayout.kt` interface (simplified from Telegram): `presentFragment()`, `closeLastFragment()`, `getFragmentStack()`, `addFragmentToStack()`, `removeFragmentFromStack()`, `setDelegate()`
+- [x] 6.2 Implement `BaseFragment.kt`: abstract class with `createView()`, `onFragmentCreate()`, `onFragmentDestroy()`, `onResume()`, `onPause()`, `onBackPressed()`, `parentLayout` reference, optional `actionBar` property, page-level coroutine/request scope canceled on destroy, plus transition/system-bar hooks: `isSwipeBackEnabled()`, `onSlideProgress()`, `onTransitionAnimationStart/End()`, `onBecomeFullyVisible()`, `getNavigationBarColor()`, `hasForceLightStatusBar()`
 - [ ] 6.3 Implement `ActionBarLayout.kt` core: fragment stack management, push/pop with slide animation (fragment slides in from right, previous fragment shifts left), invoke fragment transition hooks, and keep status/navigation bar state in sync during transitions
 - [ ] 6.4 Implement `ActionBarLayout.kt` swipe-back gesture: left-edge touch detection, finger-following drag, 35% threshold or velocity-based dismissal, cancel animation
 - [ ] 6.5 Implement ActionBar integration: include ActionBar at top of fragment view, wire back button to `closeLastFragment()`
 - [ ] 6.6 Implement minimal navigation state save/restore: persist fragment descriptors and args bundle so the custom stack can recover after configuration change and process recreation
-- [ ] 6.7 Update `MainActivity.kt` to host the migration-time root switch and mount `ActionBarLayout` when rewrite mode is enabled
+- [x] 6.7 Update `MainActivity.kt` to host the migration-time root switch and mount `ActionBarLayout` when rewrite mode is enabled
 - [ ] 6.8 Create a `HelloFragment` test fragment to verify navigation push/pop/swipe-back/state-restore works end-to-end
 - [ ] 6.9 _(navigation is visual/gesture — verify by running HelloFragment, rotating the device, and relaunching after process death, no unit test)_
 

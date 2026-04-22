@@ -29,7 +29,8 @@ Telegram Android 开源代码库（GPL v2）提供了一套经过 10 年打磨�
 - 每个 Phase 产出可运行的 APK，支持渐进式迁移
 
 **Non-Goals:**
-- 不做 Telegram 的 1:1 Java→Kotlin 翻译，而是理解设计思想后用 Kotlin 惯用法重新实现
+- 不做“整仓无差别”的 Telegram 1:1 Java→Kotlin 机械搬运；但对当前 change 明确 adopt 的 Telegram substrate，采用 parity-first 迁移：优先保持同名类/方法的公开 API 形状与行为语义，只裁剪当前未使用的子集
+- 不以“参考 Telegram 思路”为名重新包装同名基础类；若因为 Android 平台限制、linux.do 场景裁剪、或 Telegram 的 native/MTProto/多账号依赖而必须偏离，必须先在 change artifacts 中写明偏离理由，再实现
 - 不实现 Telegram 的消息/通话/故事等通讯功能
 - 不引入 Telegram 的 native C++ 层（tgnet、SQLite JNI）
 - 不支持多账号（Discourse 单站点客户端，不需要 Telegram 的 `AccountInstance` 多实例模式）
@@ -37,6 +38,27 @@ Telegram Android 开源代码库（GPL v2）提供了一套经过 10 年打磨�
 - 不做 iOS 端（本次仅 Android）
 
 ## Decisions
+
+### D0: Telegram parity-first for adopted substrate APIs
+
+**选择**：对当前 change 中明确采用 Telegram 同名类/方法的基础设施，默认按 Telegram 源码的公开 API 形状与行为语义直接移植；“受 Telegram 启发但自由改写”不再作为默认路径。
+
+**硬规则**：
+- 若当前阶段决定采用 Telegram 的同名类/方法，就优先直接 port 对应公开 API；可以只引入当前真正需要的子集，但不能把同名 API 改造成项目私有 convenience wrapper
+- 若 Telegram 没有对应公共类，且当前 phase 里也没有真实调用方，不预先新造 `*Utils` / `*Helper` / wrapper 文件来“补齐底座”
+- 若确实需要偏离 Telegram 语义，必须先在 artifacts 里写明偏离原因、边界和受影响类，再允许实现
+- 后续任务评审以“是否仍然对齐 Telegram 对应 API”作为默认标准，而不是“看起来功能差不多即可”
+
+**当前 change 的 reference source set**：
+- `org.telegram.messenger.AndroidUtilities`
+- `org.telegram.messenger.Utilities`
+- `org.telegram.messenger.DispatchQueue`
+- `org.telegram.messenger.FileLog`
+- `org.telegram.messenger.NotificationCenter`
+- `org.telegram.ui.Components.LayoutHelper`
+- `org.telegram.ui.Components.CubicBezierInterpolator`
+- `org.telegram.ui.Components.AnimatedFloat`
+- `org.telegram.ui.Components.AnimatedColor`
 
 ### D1: 导航系统 — 移植 ActionBarLayout 而非使用 Compose Navigation 或 AndroidX Navigation
 
@@ -351,6 +373,24 @@ DiscourseClient + CookieSessionStore + BootstrapParser
 - `ActionBarLayout` 的最小状态恢复：V0 就支持“fragment 标识 + args bundle”的 stack save/restore，至少覆盖配置变更和进程重建后的冷恢复
 - 重资源对象生命周期约束：`ImageReceiver`、共享 WebView、HTML renderer host 都要有 attach/detach/release 三段式边界，避免后面再补资源清理协议
 
+**当前 2.x / 3.x 实现审视结论**：
+
+| 当前文件 | Telegram 参考 | 处置 |
+|---|---|---|
+| `AndroidUtilities.kt` | `org.telegram.messenger.AndroidUtilities.java` | 保留现有最小子集实现方向，后续只按 parity-first 扩充，不再改造成项目私有 helper 集 |
+| `Utilities.kt` | `org.telegram.messenger.Utilities.java` | 保留“瘦身但同名语义对齐”的方向；只保留真实 consumer 需要的通用子集 |
+| `DispatchQueue.kt` | `org.telegram.messenger.DispatchQueue.java` | 保留现有最小串行队列方向，不额外包装第二层 queue helper |
+| `FileLog.kt` | `org.telegram.messenger.FileLog.java` | 保留异步日志基元方向，继续作为 parity-first 精简移植 |
+| `AnimatedFloat.kt` | `org.telegram.ui.Components.AnimatedFloat.java` | 保留，后续继续以 Telegram 的 `set()` / `force()` / `getValue()` 语义为准 |
+| `AnimatedColor.kt` | `org.telegram.ui.Components.AnimatedColor.java` | 保留，后续继续以 Telegram 的 `set()` / `force()` 语义为准 |
+| `NotificationCenter.kt` | `org.telegram.messenger.NotificationCenter.java` | 保留当前全局事件总线方向，但边界继续限制为 truly global cross-cutting events |
+| `AppLifecycleMonitor.kt` | 无同名 Telegram 公共类；参考 Telegram app/network 全局状态职责拆分 | 保留为 NativeDo 特有全局基础设施，但不再为它额外衍生 typed event wrapper |
+| `CubicBezierInterpolator.kt` | `org.telegram.ui.Components.CubicBezierInterpolator.java` | 保留数学实现方向，但回退公开常量集合与命名到 Telegram 原接口：`DEFAULT`、`EASE_OUT`、`EASE_OUT_QUINT`、`EASE_IN`、`EASE_BOTH`、`EASE_OUT_BACK` |
+| `LayoutHelper.kt` | `org.telegram.ui.Components.LayoutHelper.java` | 回退并按 Telegram 子集重做；尤其 `createScroll()` 等返回类型和 layout params 语义必须与 Telegram 保持一致 |
+| `SpringAnimationUtils.kt` | 无 Telegram 对应公共类 | 回退；在首个真实 consumer 出现前，不保留 standalone spring helper 文件 |
+| `AndroidUtilitiesTest.kt` | 无 Telegram parity 价值 | 回退/删除；除非后续转化为已复现回归的保护用例，否则不作为默认模式 |
+| `NotificationCenterTest.kt` | 无 Telegram parity 价值 | 回退/删除；除非后续转化为已复现回归的保护用例，否则不作为默认模式 |
+
 **不应该塞进 V0 的 Telegram 能力**：
 - Telegram 原版 `Theme.java` 的完整能力
 - Telegram 原版 `SharedConfig` 的完整能力
@@ -388,6 +428,7 @@ DiscourseClient + CookieSessionStore + BootstrapParser
 
 **因此本项目默认不写单测的内容**：
 - `AndroidUtilities` / `LayoutHelper` 这类基础 helper
+- `NotificationCenter` / `AppLifecycleMonitor` 这类 integration primitive
 - `ActionBarLayout` / `ActionBar` / `RecyclerListView` / `BottomSheet`
 - `AvatarDrawable` / `SimpleTextView` / `ImageReceiver` 的视觉细节
 - 依赖手势、动画、布局和绘制时序的 UI substrate
@@ -396,6 +437,7 @@ DiscourseClient + CookieSessionStore + BootstrapParser
 - 用最小宿主页面跑通
 - 通过 HelloFragment / mock screen 做手工 smoke test
 - 在 Phase 完成时做端到端运行验证，而不是为每个 UI 类单独补测试
+- 当前已经出现的 `AndroidUtilitiesTest.kt`、`NotificationCenterTest.kt` 不应作为后续默认模式；只有当它们被重写为复现过的回归保护用例时才值得保留
 
 ### D11: App 级 host、鉴权命名与链接分发
 
@@ -515,7 +557,7 @@ DiscourseClient + CookieSessionStore + BootstrapParser
 2. **离线缓存**：使用 Room 缓存话题列表和帖子内容，采用 stale-while-revalidate 模式。帖子编辑通过 `version` 字段对比检测，新版本直接 REPLACE 旧缓存
 3. **Discourse 插件 HTML**：从 linux.do 抓取真实帖子的 `cooked` HTML 作为测试数据，保存到 `fixtures/discourse/cooked-*.html`
 4. **主题色调**：以 linux.do 品牌绿色为主色调，后续添加自定义调色板选项
-5. **测试策略**：遵循 Telegram 的“高风险契约优先”思路，只为有实际意义的逻辑写测试（JSON 反序列化、HTML 解析、Session 逻辑、分页逻辑、migration 等），不为视觉/手势 substrate 和琐碎 helper 写单测。现有测试不做一次性清空，保留仍然表达有效契约的网络/session/html parsing 测试，待新实现与替代测试落地后再删除
+5. **测试策略**：遵循 Telegram 的“高风险契约优先”思路，只为有实际意义的逻辑写测试（JSON 反序列化、HTML 解析、Session 逻辑、分页逻辑、migration 等），不为视觉/手势 substrate 和琐碎 helper 写单测。现有测试不做一次性清空，保留仍然表达有效契约的网络/session/html parsing 测试，待新实现与替代测试落地后再删除；`AndroidUtilitiesTest.kt`、`NotificationCenterTest.kt` 这类 standalone substrate test 不作为后续默认模式，应在 parity audit 中回退或删除，除非转成已复现回归的保护用例
 6. **迁移期 host**：保持单个 `MainActivity`，在同一 launcher 内按内部开关切换 legacy Compose root 和 rewrite `ActionBarLayout` root，不引入第二个 rewrite Activity
 
 ## Open Questions

@@ -35,3 +35,10 @@ The system SHALL NOT deliver events to observers that have been removed. The sys
 #### Scenario: Remove all observations
 - **WHEN** `NotificationCenter.removeObserver(fragment)` is called
 - **THEN** the fragment receives no further event callbacks for any event
+
+### Requirement: NotificationCenter stays a global cross-cutting bus
+The system SHALL use `NotificationCenter` only for truly global, cross-cutting events and SHALL NOT require screen-local loading or view state to flow through it.
+
+#### Scenario: Screen-local state stays local
+- **WHEN** a page needs to track its own loading, selection, or transient render state
+- **THEN** that state remains inside the page/controller instead of being promoted to `NotificationCenter`
