@@ -22,7 +22,7 @@
 - [x] 1.3 Add and apply GPL v2 license header template to every `Telegram-derived` file adopted in this change; each header must include the upstream class/path, source reference, Telegram + NativeDo copyright lines, and SPDX line. `Telegram-inspired project-specific` files do not use the derived header unless code was actually translated or excerpted
 - [x] 1.4 Configure proguard rules for new class structure
 - [x] 1.5 Implement `NdApp.kt` bootstrap and `NdRuntime.kt` single-account service holder: global context, main-thread handler, shared services registry, and early init of logging/theme/session infrastructure
-- [x] 1.6 Define `MainActivity.kt` as the simplified `LaunchActivity`-like host: mount new `LaunchBootstrap` / `ActionBarLayout` as default and only root, bridge lifecycle/back/new-intent/window-insets/system-bar policy, and avoid introducing a separate screen router abstraction or second launcher Activity
+- [x] 1.6 Define `MainActivity.kt` as the simplified `LaunchActivity`-like host: mount new `ActionBarLayout` as the default and only root for the demo phase, bridge lifecycle/back/new-intent/window-insets/system-bar policy, and avoid introducing a separate screen router abstraction or second launcher Activity. Introduce `LaunchBootstrap` later only when startup routing becomes session-dependent
 
 ## 2. Core Utilities (core/util/)
 

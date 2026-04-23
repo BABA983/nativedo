@@ -473,10 +473,10 @@ DiscourseClient + CookieSessionStore + BootstrapParser
 **选择**：App 级基础设施沿用 Telegram 的职责划分思路，但命名不使用 `Coordinator`。优先使用更贴近 Telegram 代码风格的 `MainActivity` / `NdApp` / `*Manager` / `*Bootstrap`。
 
 **命名约定**：
-- 启动首屏决策层使用 `LaunchBootstrap`，负责冷启动时触发 session restore，并决定先进入 `TopicsFragment` 还是 `LoginFragment`
+- 启动首屏决策层使用 `LaunchBootstrap`，负责冷启动时触发 session restore，并决定先进入 `TopicsFragment` 还是 `LoginFragment`；但它只在真正出现 session-dependent startup routing 时引入，不是 demo-root phase 的前置要求
 - cookie 驱动的鉴权状态机使用 `AuthSessionManager`，负责 login completion、session restore、logout、expired/recovery 流程
 - 链接分类使用最小 `LinkManager`，只负责 `url -> target` 解析，不承担页面导航栈职责
-- `NdApp` / `NdRuntime` / `MainActivity` / `LaunchBootstrap` / `AppLifecycleMonitor` 属于 `Telegram-inspired project-specific` host/integration 层：参考 Telegram 的职责划分，但不宣称自己是 `ApplicationLoader` / `LaunchActivity` / 某个 Telegram 同名类的直接移植
+- `NdApp` / `NdRuntime` / `MainActivity` / `AppLifecycleMonitor` 属于 `Telegram-inspired project-specific` host/integration 层；`LaunchBootstrap` 只在后续 owner phase 引入后归入同一层。它们参考 Telegram 的职责划分，但不宣称自己是 `ApplicationLoader` / `LaunchActivity` / 某个 Telegram 同名类的直接移植
 
 **为什么不用 `StartupCoordinator` / `SessionCoordinator`**：
 - Telegram 代码库几乎不用 `Coordinator` 这一套命名
@@ -497,7 +497,7 @@ DiscourseClient + CookieSessionStore + BootstrapParser
 
 ### D12: clean-slate root host 策略 — 保持单 `MainActivity`，不再保留 legacy/rewrite 双 root
 
-**选择**：不引入单独的 rewrite/debug Activity，也不在当前工作树里继续维护 legacy Compose root。保留单个 `MainActivity` 作为唯一 launcher/intent host，并让新的 `ActionBarLayout` + `LaunchBootstrap` 成为默认且唯一的运行时 root。
+**选择**：不引入单独的 rewrite/debug Activity，也不在当前工作树里继续维护 legacy Compose root。保留单个 `MainActivity` 作为唯一 launcher/intent host，并让新的 `ActionBarLayout` 成为默认且唯一的运行时 root。`LaunchBootstrap` 只在后续 startup/auth phase 真正需要条件分流时再进入主链路。
 
 **为什么这样做**：
 - 去掉 dual-root 带来的宿主复杂度、状态分叉、测试噪音和代码搜索污染
@@ -558,7 +558,7 @@ DiscourseClient + CookieSessionStore + BootstrapParser
 2. 新建 `ui/actionbar/` 包，实现 `SimpleTextView`、ActionBar、ActionBarLayout + BaseFragment 最小闭环，并补上 page scope cancel 与最小 stack save/restore
 3. 新建 `ui/components/` 和 `core/media/` 包，实现最小 `RecyclerListView`、`BaseCell`、`ImageReceiver`、`AvatarDrawable`，同步确定 attach/detach/release 约束
 4. 新建 `discourse/` 包，实现 DiscourseClient + session 管理
-5. 让 `MainActivity` 直接承载新的默认 root（`LaunchBootstrap` + `ActionBarLayout`），不新增第二个 launcher host，也不保留 legacy root 开关
+5. 让 `MainActivity` 直接承载新的默认 root（先直接挂 `ActionBarLayout`，后续需要时再接入 `LaunchBootstrap`），不新增第二个 launcher host，也不保留 legacy root 开关
 6. **验证**：用一个 HelloWorld Fragment 跑通 ActionBarLayout 导航，并验证日志、主题、事件、线程队列、page scope cancel 可用
 
 ### Phase 1: Core Components（核心组件层）
@@ -590,7 +590,7 @@ DiscourseClient + CookieSessionStore + BootstrapParser
 3. **Discourse 插件 HTML**：从 linux.do 抓取真实帖子的 `cooked` HTML 作为测试数据，保存到 `fixtures/discourse/cooked-*.html`
 4. **主题色调**：以 linux.do 品牌绿色为主色调，后续添加自定义调色板选项
 5. **测试策略**：遵循 Telegram 的“高风险契约优先”思路，只为有实际意义的逻辑写测试（JSON 反序列化、HTML 解析、Session 逻辑、分页逻辑、startup/auth/navigation 主链路等），不为视觉/手势 substrate 和琐碎 helper 写单测。现有测试不做一次性清空，保留仍然表达有效契约的网络/session/html parsing 测试，待新实现与替代测试落地后再删除；`AndroidUtilitiesTest.kt`、`NotificationCenterTest.kt` 这类 standalone substrate test 不作为后续默认模式，应在 parity audit 中回退或删除，除非转成已复现回归的保护用例
-6. **root host**：保持单个 `MainActivity` 作为唯一 launcher，但当前分支只保留新的默认 `ActionBarLayout` / `LaunchBootstrap` 主链路，不再维护 legacy Compose root 开关，也不引入第二个 rewrite Activity
+6. **root host**：保持单个 `MainActivity` 作为唯一 launcher，但当前分支先只保留新的默认 `ActionBarLayout` 主链路；`LaunchBootstrap` 留到真实 startup/auth phase 再接入，不再维护 legacy Compose root 开关，也不引入第二个 rewrite Activity
 
 ## Open Questions
 
