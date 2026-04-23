@@ -69,6 +69,35 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
 
+## Hard Rules For Telegram-Derived Code
+
+This is the most important implementation constraint for the milestone.
+
+1. Telegram-derived code should be upstream-guided, not freely "inspired by Telegram" rewrites.
+2. Prefer the smallest upstream-faithful slice that serves the current milestone:
+   - copy a file nearly verbatim when the whole file is needed and its dependencies are acceptable
+   - copy or port only the necessary methods/fields when the upstream file contains large out-of-scope systems
+   - use minimal NativeDo adapters or compile-only stubs at integration boundaries
+   - when upstream has a matching helper/class for the behavior being kept, preserve that helper/class name and shape instead of inventing a replacement wrapper or abstraction
+3. For any Telegram behavior that is kept, preserve upstream names, parameters, classes, fields, callbacks, state variables, and control flow as much as practical.
+4. Do not rewrite retained Telegram logic just to make it more Kotlin-idiomatic, cleaner, or more abstract.
+5. If retained Telegram logic cannot compile because support code is missing, first decide whether that dependency is in scope:
+   - if it is in scope, add the missing support code or a minimal compatibility shim
+   - if it is out of scope, trim the unsupported branch instead of importing a large unused subsystem
+6. Keep NativeDo-specific behavior outside Telegram-derived files when practical. Prefer thin adapters around copied code over mixing business logic into copied code.
+7. If a Telegram-derived file requires changes, limit them to what is needed for the current milestone:
+   - package rename
+   - import rewrite
+   - resource reference substitution
+   - host-activity boundary wiring
+   - compile-only compatibility shims
+   - removal of clearly out-of-scope branches
+8. Document the copy strategy in the file header or an adjacent note when the file is not a near-verbatim copy:
+   - upstream file/path used
+   - retained behavior
+   - intentionally omitted Telegram subsystems
+   - any unavoidable behavior changes
+
 ## Build, Lint, And Test
 
 - Do not run gradlew commands in parallel; add `--quiet` when possible.

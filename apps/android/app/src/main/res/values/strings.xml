@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">NativeDo</string>
+    <string name="action_back">Back</string>
+    <string name="screen_topic_list">linux.do</string>
     <string name="tab_home">Home</string>
     <string name="tab_search">Search</string>
     <string name="tab_profile">Profile</string>
