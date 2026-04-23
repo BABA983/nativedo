@@ -317,26 +317,20 @@ Visual target:
 
 ### Automated
 
-1. `ActionBarLayout` stack behavior
-   - root cannot pop below one fragment
-   - present/push adds a fragment correctly
-   - repeated detail pushes preserve order
-   - pop returns to the expected previous fragment
+Automated tests are not a blanket requirement for every navigation branch in this milestone.
 
-2. back-state behavior
-   - predictive back cancel restores original state
-   - predictive back commit removes the top fragment
-   - repeated nested detail pages behave the same way
+Rule:
 
-3. NativeDo fragment wiring
-   - topic list click requests detail presentation
-   - topic detail related-topic click requests another detail presentation
-   - action bar back delegates to the Telegram-style navigation container
+- only add a test when it protects NativeDo-owned glue code or a small, high-risk regression point
+- do not force broad test coverage onto direct Telegram copies just because the files are new
+- prefer no test over low-value tests that merely restate Telegram behavior without adding confidence
 
-4. simple UI contract checks
-   - root list has no back arrow
-   - detail shows back arrow
-   - detail title reflects the current mock topic
+For milestone 1, likely necessary automated coverage is limited to one small NativeDo-owned wiring test if that glue becomes non-trivial, for example:
+
+- list click requests presentation of the correct detail fragment
+- detail related-topic click requests presentation of another detail fragment
+
+If those interactions stay simple and obvious in implementation, manual verification alone is acceptable for the first cut.
 
 ### Manual
 
@@ -358,4 +352,5 @@ Visual target:
 - topic detail can be pushed repeatedly
 - action bar back, system back, left-edge swipe-back, and predictive back all work through the same navigation stack
 - Compose is used for page content only, not for a second navigation stack
+- only necessary tests are added; broad coverage is not required for direct Telegram-derived behavior
 - no real network or auth flow is introduced
