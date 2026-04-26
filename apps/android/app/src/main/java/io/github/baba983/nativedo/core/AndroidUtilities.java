@@ -8,7 +8,9 @@
  * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/messenger/AndroidUtilities.java
  *
  * NativeDo milestone slice: keeps display metrics, dp conversion, keyboard hiding,
- * and UI-thread helpers used by the navigation shell; omits Telegram app-wide utilities.
+ * status-bar appearance, cascade animation, and UI-thread helpers used by the
+ * navigation shell; uses WindowCompat for the AndroidX edge-to-edge host and
+ * omits Telegram app-wide utilities.
  *
  * Copyright (C) Telegram FZ-LLC
  * Copyright (C) 2026 NativeDo contributors
@@ -22,16 +24,22 @@
 package io.github.baba983.nativedo.core;
 
 import android.content.Context;
+import android.graphics.Color;
 import android.graphics.Point;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.DisplayMetrics;
 import android.view.View;
+import android.view.Window;
 import android.view.inputmethod.InputMethodManager;
+
+import androidx.core.view.WindowCompat;
 
 public final class AndroidUtilities {
 
     public static final Point displaySize = new Point();
+    public static final int LIGHT_STATUS_BAR_OVERLAY = 0x0f000000;
+    public static final int DARK_STATUS_BAR_OVERLAY = 0x33000000;
     public static float density = 1.0f;
     public static int statusBarHeight;
     public static int navigationBarHeight;
@@ -71,6 +79,15 @@ public final class AndroidUtilities {
         return from + (to - from) * progress;
     }
 
+    public static float cascade(float fullAnimationT, float position, float count, float waveLength) {
+        if (count <= 0) {
+            return fullAnimationT;
+        }
+        final float waveDuration = 1f / count * Math.min(waveLength, count);
+        final float waveOffset = position / count * (1f - waveDuration);
+        return Math.max(0f, Math.min(1f, (fullAnimationT - waveOffset) / waveDuration));
+    }
+
     public static int getPixelsInCM(float cm, boolean isX) {
         final float dpi = isX ? xdpi : ydpi;
         if (dpi == 0) {
@@ -101,5 +118,21 @@ public final class AndroidUtilities {
             return;
         }
         mainHandler.removeCallbacks(runnable);
+    }
+
+    public static void setLightStatusBar(Window window, boolean enable) {
+        setLightStatusBar(window, enable, false);
+    }
+
+    public static void setLightStatusBar(Window window, boolean enable, boolean forceTransparentStatusbar) {
+        if (window == null) {
+            return;
+        }
+        View decorView = window.getDecorView();
+        WindowCompat.getInsetsController(window, decorView).setAppearanceLightStatusBars(enable);
+        int statusBarColor = forceTransparentStatusbar ? Color.TRANSPARENT : (enable ? LIGHT_STATUS_BAR_OVERLAY : DARK_STATUS_BAR_OVERLAY);
+        if (window.getStatusBarColor() != statusBarColor) {
+            window.setStatusBarColor(statusBarColor);
+        }
     }
 }

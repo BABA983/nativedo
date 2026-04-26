@@ -7,8 +7,9 @@
  * Source reference:
  * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBar.java
  *
- * NativeDo milestone slice: keeps title, back button, status-bar height, and menu click
- * callback behavior; omits Telegram menus, search, action mode, themes, and overlays.
+ * NativeDo milestone slice: keeps title, back button, status-bar height, menu creation,
+ * menu click callback behavior, and theme color wiring; omits Telegram search, action
+ * mode, and overlays.
  *
  * Copyright (C) Telegram FZ-LLC
  * Copyright (C) 2026 NativeDo contributors
@@ -24,15 +25,15 @@ package io.github.baba983.nativedo.ui.actionbar;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffColorFilter;
 import android.graphics.drawable.Drawable;
-import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 
 import androidx.annotation.NonNull;
-import androidx.appcompat.content.res.AppCompatResources;
 
 import io.github.baba983.nativedo.R;
 import io.github.baba983.nativedo.core.AndroidUtilities;
@@ -48,17 +49,18 @@ public class ActionBar extends FrameLayout {
 
     private final ImageView backButtonImageView;
     private final SimpleTextView titleTextView;
+    public ActionBarMenu menu;
+    public int itemsColor;
+    public int itemsBackgroundColor;
     private ActionBarMenuOnItemClick actionBarMenuOnItemClick;
     private boolean occupyStatusBar = true;
 
     public ActionBar(Context context) {
         super(context);
-        setBackgroundColor(Color.WHITE);
         setWillNotDraw(false);
 
         backButtonImageView = new ImageView(context);
         backButtonImageView.setScaleType(ImageView.ScaleType.CENTER);
-        backButtonImageView.setBackground(AppCompatResources.getDrawable(context, android.R.drawable.list_selector_background));
         backButtonImageView.setContentDescription(context.getString(R.string.action_back));
         backButtonImageView.setVisibility(GONE);
         backButtonImageView.setOnClickListener(v -> {
@@ -69,9 +71,9 @@ public class ActionBar extends FrameLayout {
         addView(backButtonImageView, LayoutHelper.createFrame(54, 56, Gravity.START | Gravity.TOP));
 
         titleTextView = new SimpleTextView(context);
-        titleTextView.setTextColor(Color.parseColor("#111827"));
         titleTextView.setTypeface(titleTextView.getTypeface(), android.graphics.Typeface.BOLD);
         addView(titleTextView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 56, Gravity.TOP | Gravity.START));
+        applyTheme();
     }
 
     public void setTitle(CharSequence value) {
@@ -85,10 +87,41 @@ public class ActionBar extends FrameLayout {
     public void setBackButtonDrawable(Drawable drawable) {
         backButtonImageView.setImageDrawable(drawable);
         backButtonImageView.setVisibility(drawable == null ? GONE : VISIBLE);
+        applyBackButtonColor(drawable);
     }
 
     public void setActionBarMenuOnItemClick(ActionBarMenuOnItemClick listener) {
         actionBarMenuOnItemClick = listener;
+    }
+
+    public ActionBarMenuOnItemClick getActionBarMenuOnItemClick() {
+        return actionBarMenuOnItemClick;
+    }
+
+    public ActionBarMenu createMenu() {
+        if (menu != null) {
+            return menu;
+        }
+        menu = new ActionBarMenu(getContext(), this);
+        addView(menu, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.MATCH_PARENT, Gravity.RIGHT));
+        return menu;
+    }
+
+    public void applyTheme() {
+        setBackgroundColor(Theme.getColor(Theme.key_actionBarDefault));
+        itemsColor = Theme.getColor(Theme.key_actionBarDefaultIcon);
+        itemsBackgroundColor = Theme.getColor(Theme.key_actionBarDefaultSelector);
+        titleTextView.setTextColor(Theme.getColor(Theme.key_actionBarDefaultTitle));
+        backButtonImageView.setBackground(Theme.createSelectorDrawable(itemsBackgroundColor));
+        applyBackButtonColor(backButtonImageView.getDrawable());
+        if (menu != null) {
+            menu.updateItemsBackgroundColor();
+            menu.updateItemsColor();
+            menu.setPopupItemsColor(Theme.getColor(Theme.key_actionBarDefaultSubmenuItem), true);
+            menu.setPopupItemsSelectorColor(Theme.getColor(Theme.key_listSelector));
+            menu.redrawPopup(Theme.getColor(Theme.key_actionBarDefaultSubmenuBackground));
+        }
+        invalidate();
     }
 
     public boolean shouldAddToContainer() {
@@ -114,6 +147,15 @@ public class ActionBar extends FrameLayout {
         int totalHeight = topInset + barHeight;
         setMeasuredDimension(width, totalHeight);
 
+        int menuWidth = 0;
+        if (menu != null && menu.getVisibility() != GONE) {
+            menu.measure(
+                MeasureSpec.makeMeasureSpec(width, MeasureSpec.AT_MOST),
+                MeasureSpec.makeMeasureSpec(barHeight, MeasureSpec.EXACTLY)
+            );
+            menuWidth = menu.getMeasuredWidth();
+        }
+
         int buttonSize = AndroidUtilities.dp(54);
         backButtonImageView.measure(
             MeasureSpec.makeMeasureSpec(buttonSize, MeasureSpec.EXACTLY),
@@ -121,7 +163,7 @@ public class ActionBar extends FrameLayout {
         );
         int titleLeft = backButtonImageView.getVisibility() == VISIBLE ? AndroidUtilities.dp(72) : AndroidUtilities.dp(20);
         titleTextView.measure(
-            MeasureSpec.makeMeasureSpec(Math.max(0, width - titleLeft - AndroidUtilities.dp(16)), MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(Math.max(0, width - titleLeft - menuWidth - AndroidUtilities.dp(16)), MeasureSpec.EXACTLY),
             MeasureSpec.makeMeasureSpec(barHeight, MeasureSpec.EXACTLY)
         );
     }
@@ -132,6 +174,11 @@ public class ActionBar extends FrameLayout {
         int barHeight = AndroidUtilities.dp(56);
         int buttonSize = AndroidUtilities.dp(54);
         backButtonImageView.layout(0, topInset, buttonSize, topInset + barHeight);
+
+        if (menu != null && menu.getVisibility() != GONE) {
+            int menuLeft = getMeasuredWidth() - menu.getMeasuredWidth();
+            menu.layout(menuLeft, topInset, getMeasuredWidth(), topInset + barHeight);
+        }
 
         int titleLeft = backButtonImageView.getVisibility() == VISIBLE ? AndroidUtilities.dp(72) : AndroidUtilities.dp(20);
         titleTextView.layout(
@@ -151,6 +198,17 @@ public class ActionBar extends FrameLayout {
             canvas.clipRect(0, getHeight() - 1, getWidth(), getHeight());
             canvas.drawColor(Color.parseColor("#1F000000"));
             canvas.restore();
+        }
+    }
+
+    private void applyBackButtonColor(Drawable drawable) {
+        if (drawable == null) {
+            return;
+        }
+        if (drawable instanceof BackDrawable) {
+            ((BackDrawable) drawable).setColor(itemsColor);
+        } else {
+            drawable.setColorFilter(new PorterDuffColorFilter(itemsColor, PorterDuff.Mode.MULTIPLY));
         }
     }
 }

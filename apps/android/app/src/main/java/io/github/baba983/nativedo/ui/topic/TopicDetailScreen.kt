@@ -19,7 +19,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
@@ -29,9 +28,11 @@ fun TopicDetailScreen(
     relatedTopics: List<MockTopic>,
     onRelatedTopicClick: (MockTopic) -> Unit,
 ) {
+    val colors = rememberTopicThemeColors()
+
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = Color(0xFFF9FAFB),
+        color = colors.background,
     ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -41,39 +42,39 @@ fun TopicDetailScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color.White)
+                        .background(colors.rowBackground)
                         .padding(horizontal = 18.dp, vertical = 18.dp),
                 ) {
                     Text(
                         text = topic.category,
                         style = MaterialTheme.typography.labelMedium,
-                        color = Color(0xFF2563EB),
+                        color = colors.primary,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Spacer(modifier = Modifier.height(10.dp))
                     Text(
                         text = topic.title,
                         style = MaterialTheme.typography.headlineSmall,
-                        color = Color(0xFF111827),
+                        color = colors.title,
                         fontWeight = FontWeight.Bold,
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         text = "by ${topic.author}",
                         style = MaterialTheme.typography.labelLarge,
-                        color = Color(0xFF6B7280),
+                        color = colors.secondary,
                     )
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         text = topic.excerpt,
                         style = MaterialTheme.typography.bodyLarge,
-                        color = Color(0xFF374151),
+                        color = colors.body,
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
                         text = "这一阶段先用 mock 内容验证 Telegram 风格的导航骨架。后续再把真实的 post body、分页和回复操作接进来。",
                         style = MaterialTheme.typography.bodyLarge,
-                        color = Color(0xFF374151),
+                        color = colors.body,
                     )
                 }
             }
@@ -83,7 +84,7 @@ fun TopicDetailScreen(
                     text = "Related Topics",
                     modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
                     style = MaterialTheme.typography.labelLarge,
-                    color = Color(0xFF6B7280),
+                    color = colors.secondary,
                     fontWeight = FontWeight.SemiBold,
                 )
             }
@@ -91,7 +92,7 @@ fun TopicDetailScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color.White)
+                        .background(colors.rowBackground)
                         .clickable { onRelatedTopicClick(relatedTopic) }
                         .padding(horizontal = 18.dp, vertical = 14.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -99,23 +100,23 @@ fun TopicDetailScreen(
                     Text(
                         text = relatedTopic.title,
                         style = MaterialTheme.typography.titleMedium,
-                        color = Color(0xFF111827),
+                        color = colors.title,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text(
                             text = relatedTopic.category,
                             style = MaterialTheme.typography.labelMedium,
-                            color = Color(0xFF2563EB),
+                            color = colors.primary,
                         )
                         Text(
                             text = "${relatedTopic.replyCount} replies",
                             style = MaterialTheme.typography.labelMedium,
-                            color = Color(0xFF6B7280),
+                            color = colors.secondary,
                         )
                     }
                 }
-                HorizontalDivider(color = Color(0xFFE5E7EB))
+                HorizontalDivider(color = colors.divider)
             }
         }
     }

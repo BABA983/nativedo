@@ -20,7 +20,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
@@ -29,9 +28,11 @@ fun TopicListScreen(
     topics: List<MockTopic>,
     onTopicClick: (MockTopic) -> Unit,
 ) {
+    val colors = rememberTopicThemeColors()
+
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = Color(0xFFF3F4F6),
+        color = colors.background,
     ) {
         LazyColumn(
             contentPadding = PaddingValues(vertical = 8.dp),
@@ -40,6 +41,7 @@ fun TopicListScreen(
             items(topics, key = MockTopic::id) { topic ->
                 TopicListRow(
                     topic = topic,
+                    colors = colors,
                     onClick = { onTopicClick(topic) },
                 )
             }
@@ -50,12 +52,13 @@ fun TopicListScreen(
 @Composable
 private fun TopicListRow(
     topic: MockTopic,
+    colors: TopicThemeColors,
     onClick: () -> Unit,
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color.White)
+            .background(colors.rowBackground)
             .clickable(onClick = onClick)
             .padding(horizontal = 18.dp, vertical = 14.dp),
     ) {
@@ -66,43 +69,46 @@ private fun TopicListRow(
             Text(
                 text = topic.category,
                 style = MaterialTheme.typography.labelMedium,
-                color = Color(0xFF2563EB),
+                color = colors.primary,
                 fontWeight = FontWeight.SemiBold,
             )
             Text(
                 text = topic.author,
                 style = MaterialTheme.typography.labelMedium,
-                color = Color(0xFF6B7280),
+                color = colors.secondary,
             )
         }
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = topic.title,
             style = MaterialTheme.typography.titleMedium,
-            color = Color(0xFF111827),
+            color = colors.title,
             fontWeight = FontWeight.SemiBold,
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = topic.excerpt,
             style = MaterialTheme.typography.bodyMedium,
-            color = Color(0xFF4B5563),
+            color = colors.body,
         )
         Spacer(modifier = Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            MetaText("回复 ${topic.replyCount}")
-            MetaText("浏览 ${topic.viewCount}")
-            MetaText("赞 ${topic.likeCount}")
+            MetaText("回复 ${topic.replyCount}", colors)
+            MetaText("浏览 ${topic.viewCount}", colors)
+            MetaText("赞 ${topic.likeCount}", colors)
         }
     }
-    HorizontalDivider(color = Color(0xFFE5E7EB))
+    HorizontalDivider(color = colors.divider)
 }
 
 @Composable
-private fun MetaText(text: String) {
+private fun MetaText(
+    text: String,
+    colors: TopicThemeColors,
+) {
     Text(
         text = text,
         style = MaterialTheme.typography.labelMedium,
-        color = Color(0xFF6B7280),
+        color = colors.secondary,
     )
 }

@@ -2,6 +2,7 @@
 <resources>
     <string name="app_name">NativeDo</string>
     <string name="action_back">Back</string>
+    <string name="action_more_options">More options</string>
     <string name="screen_topic_list">linux.do</string>
     <string name="tab_home">Home</string>
     <string name="tab_search">Search</string>
@@ -10,6 +11,8 @@
     <string name="theme_mode_light">Light</string>
     <string name="theme_mode_dark">Dark</string>
     <string name="theme_mode_toggle">Switch theme mode</string>
+    <string name="theme_mode_day">Day mode</string>
+    <string name="theme_mode_night">Night mode</string>
     <string name="screen_topic">Topic</string>
     <string name="screen_sign_in">Sign In</string>
     <string name="app_search_placeholder">Search linux.do</string>

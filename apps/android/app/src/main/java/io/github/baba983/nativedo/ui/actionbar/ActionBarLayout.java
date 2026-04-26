@@ -9,7 +9,7 @@
  *
  * NativeDo milestone slice: keeps Telegram's single-stack container choreography,
  * NavigationParams-backed push/pop frame animation, edge swipe-back, and predictive-back
- * wiring; omits drawer, sheets, previews, themes, dialogs, and multi-window branches.
+ * wiring; omits drawer, sheets, previews, dialogs, and multi-window branches.
  *
  * Copyright (C) Telegram FZ-LLC
  * Copyright (C) 2026 NativeDo contributors
@@ -118,7 +118,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
         AndroidUtilities.init(context);
         setClipChildren(false);
         setClipToPadding(false);
-        setBackgroundColor(Color.WHITE);
+        setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
 
         containerViewBack = new LayoutContainer(context);
         containerViewBack.setVisibility(INVISIBLE);
