@@ -7,6 +7,14 @@
     <string name="tab_home">Home</string>
     <string name="tab_search">Search</string>
     <string name="tab_profile">Profile</string>
+    <string name="profile_dev_tools_title">Dev tools</string>
+    <string name="profile_dev_tools_subtitle">Open a URL entry dialog for the upcoming in-app browser.</string>
+    <string name="profile_dev_url_title">Open URL</string>
+    <string name="profile_dev_url_message">Paste an http or https link. Browser launch will be wired in the next in-app browser milestone.</string>
+    <string name="profile_dev_url_hint">https://linux.do</string>
+    <string name="profile_dev_url_open">Open</string>
+    <string name="profile_dev_url_invalid">Enter a valid http or https URL</string>
+    <string name="profile_dev_url_ready">Browser placeholder: %1$s</string>
     <string name="theme_mode_system">System</string>
     <string name="theme_mode_light">Light</string>
     <string name="theme_mode_dark">Dark</string>
