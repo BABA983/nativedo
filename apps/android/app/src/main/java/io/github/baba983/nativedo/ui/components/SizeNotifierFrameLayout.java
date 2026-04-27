@@ -1,3 +1,11 @@
+// UPSTREAM-LEVEL: L2
+// UPSTREAM-PATH:  org/telegram/ui/Components/SizeNotifierFrameLayout.java
+// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
+// SUBSYSTEMS: compile-shim=L2, layout-host=L2
+// ADAPTED:
+//   - Minimal FrameLayout host with fitsSystemWindows disabled for the current navigation shell.
+// OMITTED:
+//   - Telegram keyboard size, inset notification, blur, and emoji panel layout behavior.
 /*
  * This file is part of NativeDo.
  *

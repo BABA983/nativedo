@@ -1,3 +1,13 @@
+// UPSTREAM-LEVEL: L1
+// UPSTREAM-PATH:  org/telegram/ui/ActionBar/ActionBar.java
+// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
+// SUBSYSTEMS: action-bar=L1, custom-layout=L1, theme/resource-mapping=L2
+// HOST-WIRING:
+//   - Telegram Theme/AndroidUtilities/LayoutHelper imports rewritten to NativeDo.
+// ADAPTED:
+//   - Keeps the title, back button, menu creation, status-bar height, and menu click callback surface used by NativeDo.
+// OMITTED:
+//   - Telegram search, action mode, overlays, subtitle/status widgets, and broader menu/action surfaces.
 /*
  * This file is part of NativeDo.
  *

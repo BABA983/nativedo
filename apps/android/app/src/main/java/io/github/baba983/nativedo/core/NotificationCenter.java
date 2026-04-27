@@ -1,3 +1,11 @@
+// UPSTREAM-LEVEL: L2
+// UPSTREAM-PATH:  org/telegram/messenger/NotificationCenter.java
+// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
+// SUBSYSTEMS: compile-shim=L2, notification-constants=L2
+// HOST-WIRING:
+//   - Keeps constants referenced by copied UI/theme code.
+// OMITTED:
+//   - Telegram event bus, account/global instances, observers, and animation delivery deferral.
 /*
  * This file is part of NativeDo.
  *

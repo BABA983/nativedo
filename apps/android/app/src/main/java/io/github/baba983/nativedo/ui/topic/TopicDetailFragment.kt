@@ -7,6 +7,7 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import io.github.baba983.nativedo.ui.actionbar.BackDrawable
 import io.github.baba983.nativedo.ui.actionbar.BaseFragment
+import io.github.baba983.nativedo.ui.main.MainTabsActivity
 
 class TopicDetailFragment(
     private val topicId: Int,
@@ -24,6 +25,7 @@ class TopicDetailFragment(
                     TopicDetailScreen(
                         topic = topic,
                         relatedTopics = MockTopics.relatedTopicsFor(topicId),
+                        mainTabsContentPadding = MainTabsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS,
                         onRelatedTopicClick = { relatedTopic ->
                             presentFragment(TopicDetailFragment(relatedTopic.id))
                         },

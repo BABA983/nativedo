@@ -17,6 +17,7 @@ import io.github.baba983.nativedo.core.AndroidUtilities
 import io.github.baba983.nativedo.ui.actionbar.ActionBar
 import io.github.baba983.nativedo.ui.actionbar.BaseFragment
 import io.github.baba983.nativedo.ui.actionbar.Theme
+import io.github.baba983.nativedo.ui.main.MainTabsActivity
 
 private const val MENU_SWITCH_THEME = 1
 
@@ -54,6 +55,7 @@ class TopicListFragment : BaseFragment() {
                 MaterialTheme {
                     TopicListScreen(
                         topics = MockTopics.all,
+                        mainTabsContentPadding = MainTabsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS,
                         onTopicClick = { topic ->
                             presentFragment(TopicDetailFragment(topic.id))
                         },

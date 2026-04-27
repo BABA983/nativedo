@@ -1,3 +1,11 @@
+// UPSTREAM-LEVEL: L2
+// UPSTREAM-PATH:  org/telegram/ui/ActionBar/ThemeColors.java
+// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
+// SUBSYSTEMS: theme/resource-mapping=L2
+// ADAPTED:
+//   - Keeps only default colors for theme keys currently used by NativeDo UI ports.
+// OMITTED:
+//   - Telegram's complete generated theme color table.
 /*
  * This file is part of NativeDo.
  *
@@ -51,6 +59,10 @@ public final class ThemeColors {
         defaultColors[key_actionBarDefaultSubmenuItemIcon] = DEFAULT_BLACK_TEXT;
         defaultColors[key_actionBarDefaultSubmenuBackground] = 0xffffffff;
         defaultColors[key_actionBarDefaultSubmenuSeparator] = 0xfff5f5f5;
+        defaultColors[key_glass_tabSelected] = TELEGRAM_COLOR;
+        defaultColors[key_glass_tabSelectedText] = TELEGRAM_COLOR;
+        defaultColors[key_glass_tabUnselected] = DEFAULT_BLACK_TEXT;
+        defaultColors[key_telegram_color] = TELEGRAM_COLOR;
         return defaultColors;
     }
 }

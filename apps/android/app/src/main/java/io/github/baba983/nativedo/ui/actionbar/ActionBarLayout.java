@@ -1,3 +1,15 @@
+// UPSTREAM-LEVEL: L1
+// UPSTREAM-PATH:  org/telegram/ui/ActionBar/ActionBarLayout.java
+// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
+// SUBSYSTEMS: navigation-stack=L1, gesture=L0, animation=L0, lifecycle-orchestration=L1
+// HOST-WIRING:
+//   - Telegram BaseFragment/Theme/LayoutHelper/AndroidUtilities imports rewritten to NativeDo.
+//   - NativeDo MainActivity forwards Android predictive-back callbacks into this layout.
+// ADAPTED:
+//   - Keeps a single-stack container model for NativeDo fragments only.
+//   - Uses direct Activity finish fallback instead of Telegram LaunchActivity/parentActivity orchestration.
+// OMITTED:
+//   - Drawer, sheets, previews, dialogs, story layers, multi-window branches, and Telegram delegate surfaces.
 /*
  * This file is part of NativeDo.
  *

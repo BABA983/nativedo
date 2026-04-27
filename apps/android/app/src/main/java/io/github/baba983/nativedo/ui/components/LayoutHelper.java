@@ -1,3 +1,11 @@
+// UPSTREAM-LEVEL: L1
+// UPSTREAM-PATH:  org/telegram/ui/Components/LayoutHelper.java
+// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
+// SUBSYSTEMS: layout-helper=L1
+// HOST-WIRING:
+//   - AndroidUtilities.dp import rewritten to NativeDo.
+// OMITTED:
+//   - Helper overloads for LinearLayout, RelativeLayout, RecyclerView, ScrollView, and other ViewGroup types not used by current ports.
 /*
  * This file is part of NativeDo.
  *

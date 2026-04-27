@@ -12,13 +12,14 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import io.github.baba983.nativedo.core.AndroidUtilities
 import io.github.baba983.nativedo.ui.actionbar.ActionBarLayout
-import io.github.baba983.nativedo.ui.topic.TopicListFragment
+import io.github.baba983.nativedo.ui.main.MainTabsActivity
 
 private const val LAZY_START = 0.015f
 
 class MainActivity : ComponentActivity() {
 
     private lateinit var actionBarLayout: ActionBarLayout
+    private lateinit var mainTabsActivity: MainTabsActivity
     private var onBackAnimationCallback: OnBackAnimationCallback? = null
     private var onBackInvokedCallback: OnBackInvokedCallback? = null
 
@@ -27,8 +28,9 @@ class MainActivity : ComponentActivity() {
         AndroidUtilities.init(this)
         enableEdgeToEdge()
 
+        mainTabsActivity = MainTabsActivity()
         actionBarLayout = ActionBarLayout(this).apply {
-            addFragmentToStack(TopicListFragment())
+            addFragmentToStack(mainTabsActivity)
         }
         setContentView(actionBarLayout)
         registerBackCallbacks()
@@ -90,7 +92,7 @@ class MainActivity : ComponentActivity() {
                     invoked = true
                     if (actionBarLayout.canHandleBack()) {
                         actionBarLayout.onBackInvoked()
-                    } else {
+                    } else if (!mainTabsActivity.handleBackPressed()) {
                         finish()
                     }
                 }
@@ -102,7 +104,7 @@ class MainActivity : ComponentActivity() {
             )
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val callback = OnBackInvokedCallback {
-                if (!actionBarLayout.handleBackPressed()) {
+                if (!actionBarLayout.handleBackPressed() && !mainTabsActivity.handleBackPressed()) {
                     finish()
                 }
             }
@@ -116,7 +118,7 @@ class MainActivity : ComponentActivity() {
                 this,
                 object : OnBackPressedCallback(true) {
                     override fun handleOnBackPressed() {
-                        if (!actionBarLayout.handleBackPressed()) {
+                        if (!actionBarLayout.handleBackPressed() && !mainTabsActivity.handleBackPressed()) {
                             finish()
                         }
                     }

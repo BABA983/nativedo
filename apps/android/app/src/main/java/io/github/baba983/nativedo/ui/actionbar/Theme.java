@@ -1,3 +1,13 @@
+// UPSTREAM-LEVEL: L2
+// UPSTREAM-PATH:  org/telegram/ui/ActionBar/Theme.java
+// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
+// SUBSYSTEMS: theme/resource-mapping=L2
+// HOST-WIRING:
+//   - Preserves Telegram theme key names used by copied UI code.
+// ADAPTED:
+//   - Uses NativeDo day/night theme state, selector drawables, and theme delegates.
+// OMITTED:
+//   - Telegram wallpaper, remote theme loading, theme editor, ThemeDescription system, and account/global theme plumbing.
 /*
  * This file is part of NativeDo.
  *
@@ -48,6 +58,27 @@ public final class Theme {
         void didSetNewTheme();
     }
 
+    /**
+     * Compile-only shim mirroring Telegram's {@code Theme.ResourcesProvider}.
+     * Telegram lets fragments override theme color lookups by passing a
+     * provider; this milestone always reads from the global {@link Theme}, so
+     * the methods are here only to preserve upstream constructor signatures
+     * and let L0 ports compile. See AGENTS.md Hard Rules.
+     */
+    public interface ResourcesProvider {
+        default int getColor(int key) {
+            return Theme.getColor(key);
+        }
+
+        default Integer getColorOrNull(int key) {
+            return Theme.getColor(key);
+        }
+
+        default Drawable getDrawable(String drawableKey) {
+            return null;
+        }
+    }
+
     public static final int RIPPLE_MASK_CIRCLE_20DP = 1;
     public static final int RIPPLE_MASK_ALL = 2;
 
@@ -69,6 +100,10 @@ public final class Theme {
     public static final int key_actionBarDefaultSubmenuItemIcon = colorsCount++;
     public static final int key_actionBarDefaultSubmenuBackground = colorsCount++;
     public static final int key_actionBarDefaultSubmenuSeparator = colorsCount++;
+    public static final int key_glass_tabSelected = colorsCount++;
+    public static final int key_glass_tabSelectedText = colorsCount++;
+    public static final int key_glass_tabUnselected = colorsCount++;
+    public static final int key_telegram_color = colorsCount++;
 
     public static final class ThemeInfo {
         public String name;
@@ -299,6 +334,10 @@ public final class Theme {
         themeInfo.colors.put(key_actionBarDefaultSubmenuItem, 0xff1c2119);
         themeInfo.colors.put(key_actionBarDefaultSubmenuBackground, 0xfffbfaf3);
         themeInfo.colors.put(key_actionBarDefaultSubmenuSeparator, 0xffe6e1d5);
+        themeInfo.colors.put(key_glass_tabSelected, 0xff1e7755);
+        themeInfo.colors.put(key_glass_tabSelectedText, 0xff1e7755);
+        themeInfo.colors.put(key_glass_tabUnselected, 0xff20251f);
+        themeInfo.colors.put(key_telegram_color, 0xff1e7755);
         return themeInfo;
     }
 
@@ -321,6 +360,10 @@ public final class Theme {
         themeInfo.colors.put(key_actionBarDefaultSubmenuItemIcon, -1);
         themeInfo.colors.put(key_actionBarDefaultSubmenuBackground, -14141368);
         themeInfo.colors.put(key_actionBarDefaultSubmenuSeparator, -14733761);
+        themeInfo.colors.put(key_glass_tabSelected, -10177041);
+        themeInfo.colors.put(key_glass_tabSelectedText, -10177041);
+        themeInfo.colors.put(key_glass_tabUnselected, -1);
+        themeInfo.colors.put(key_telegram_color, -10177041);
         return themeInfo;
     }
 }

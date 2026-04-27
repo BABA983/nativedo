@@ -1,3 +1,13 @@
+// UPSTREAM-LEVEL: L1
+// UPSTREAM-PATH:  org/telegram/ui/ActionBar/BaseFragment.java
+// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
+// SUBSYSTEMS: lifecycle-orchestration=L1, navigation-contract=L1
+// HOST-WIRING:
+//   - NativeDo fragments use this as the bridge between View-system navigation and Compose content.
+// ADAPTED:
+//   - Automatically creates a minimal NativeDo ActionBar when attached to an INavigationLayout.
+// OMITTED:
+//   - Telegram dialogs, sheets, themes, menus, stories, arguments, and account/activity plumbing.
 /*
  * This file is part of NativeDo.
  *

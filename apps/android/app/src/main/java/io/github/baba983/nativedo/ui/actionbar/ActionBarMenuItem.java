@@ -1,3 +1,11 @@
+// UPSTREAM-LEVEL: L1
+// UPSTREAM-PATH:  org/telegram/ui/ActionBar/ActionBarMenuItem.java
+// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
+// SUBSYSTEMS: actionbar-menu=L1, popup-menu=L1, theme/resource-mapping=L2
+// HOST-WIRING:
+//   - Popup background/resource lookups use NativeDo R and Theme.
+// OMITTED:
+//   - Telegram search field, filters, Lottie, action mode, complex popup rows, and drag/reorder menu behavior.
 /*
  * This file is part of NativeDo.
  *

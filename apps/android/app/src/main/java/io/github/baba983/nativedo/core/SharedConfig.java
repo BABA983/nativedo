@@ -1,3 +1,11 @@
+// UPSTREAM-LEVEL: L2
+// UPSTREAM-PATH:  org/telegram/messenger/SharedConfig.java
+// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
+// SUBSYSTEMS: compile-shim=L2, config-flag=L2
+// HOST-WIRING:
+//   - Keeps flags read by the current ActionBar slice.
+// OMITTED:
+//   - Telegram persisted shared configuration and unrelated feature flags.
 /*
  * This file is part of NativeDo.
  *

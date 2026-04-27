@@ -1,3 +1,10 @@
+// UPSTREAM-LEVEL: L0
+// UPSTREAM-PATH:  org/telegram/ui/Components/CubicBezierInterpolator.java
+// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
+// SUBSYSTEMS: animation=L0, interpolators=L0
+// HOST-WIRING:
+//   - Package/import rewrite to NativeDo and AndroidX PathParser.
+// OMITTED:
 /*
  * This file is part of NativeDo.
  *

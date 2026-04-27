@@ -9,7 +9,7 @@ import io.github.baba983.nativedo.ui.actionbar.rememberThemeRevision
 import io.github.baba983.nativedo.ui.actionbar.themedColor
 
 @Immutable
-internal data class TopicThemeColors(
+data class TopicThemeColors(
     val background: Color,
     val rowBackground: Color,
     val primary: Color,
@@ -20,7 +20,7 @@ internal data class TopicThemeColors(
 )
 
 @Composable
-internal fun rememberTopicThemeColors(): TopicThemeColors {
+fun rememberTopicThemeColors(): TopicThemeColors {
     val revision = rememberThemeRevision()
     return remember(revision) {
         TopicThemeColors(

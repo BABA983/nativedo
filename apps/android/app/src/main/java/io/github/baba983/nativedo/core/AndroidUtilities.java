@@ -1,3 +1,13 @@
+// UPSTREAM-LEVEL: L2
+// UPSTREAM-PATH:  org/telegram/messenger/AndroidUtilities.java
+// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
+// SUBSYSTEMS: host-utility=L2, display-metrics=L2
+// HOST-WIRING:
+//   - Uses AndroidX WindowCompat for NativeDo edge-to-edge status bar control.
+// ADAPTED:
+//   - Keeps only display metrics, dp conversion, keyboard, status-bar, cascade, and UI-thread helpers used by current ports.
+// OMITTED:
+//   - Telegram app-wide utilities, account state, media/cache helpers, and broad UI helpers outside the current navigation shell.
 /*
  * This file is part of NativeDo.
  *

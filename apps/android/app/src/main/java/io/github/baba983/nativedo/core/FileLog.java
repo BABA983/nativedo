@@ -1,3 +1,11 @@
+// UPSTREAM-LEVEL: L2
+// UPSTREAM-PATH:  org/telegram/messenger/FileLog.java
+// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
+// SUBSYSTEMS: compile-shim=L2, logging=L2
+// HOST-WIRING:
+//   - Routes Telegram-derived error logging to Android Log with the NativeDo tag.
+// OMITTED:
+//   - Telegram file logging pipeline, log rotation, network logging, and debug toggles.
 /*
  * This file is part of NativeDo.
  *
