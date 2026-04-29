@@ -71,32 +71,86 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 ## Hard Rules For Telegram-Derived Code
 
-This is the most important implementation constraint for the milestone.
+Telegram-derived code is a vendored upstream slice with NativeDo adapters around it. The goal is not byte-for-byte copying everywhere; the goal is that every local difference from Telegram is intentional, visible, and reviewable.
 
-1. Telegram-derived code should be upstream-guided, not freely "inspired by Telegram" rewrites.
-2. Prefer the smallest upstream-faithful slice that serves the current milestone:
-   - copy a file nearly verbatim when the whole file is needed and its dependencies are acceptable
-   - copy or port only the necessary methods/fields when the upstream file contains large out-of-scope systems
-   - use minimal NativeDo adapters or compile-only stubs at integration boundaries
-   - when upstream has a matching helper/class for the behavior being kept, preserve that helper/class name and shape instead of inventing a replacement wrapper or abstraction
-3. For any Telegram behavior that is kept, preserve upstream names, parameters, classes, fields, callbacks, state variables, and control flow as much as practical.
-4. Do not rewrite retained Telegram logic just to make it more Kotlin-idiomatic, cleaner, or more abstract.
-5. If retained Telegram logic cannot compile because support code is missing, first decide whether that dependency is in scope:
-   - if it is in scope, add the missing support code or a minimal compatibility shim
-   - if it is out of scope, trim the unsupported branch instead of importing a large unused subsystem
-6. Keep NativeDo-specific behavior outside Telegram-derived files when practical. Prefer thin adapters around copied code over mixing business logic into copied code.
-7. If a Telegram-derived file requires changes, limit them to what is needed for the current milestone:
-   - package rename
-   - import rewrite
-   - resource reference substitution
-   - host-activity boundary wiring
-   - compile-only compatibility shims
-   - removal of clearly out-of-scope branches
-8. Document the copy strategy in the file header or an adjacent note when the file is not a near-verbatim copy:
-   - upstream file/path used
-   - retained behavior
-   - intentionally omitted Telegram subsystems
-   - any unavoidable behavior changes
+When adding or repairing Telegram-derived code, open the upstream file or upstream diff first. Do not recreate behavior from memory or write code that is merely "inspired by Telegram".
+
+Local differences from upstream are allowed only in these buckets:
+
+- **HOST-WIRING:** package/import/resource/theme/navigation glue required to compile inside NativeDo.
+- **ADAPTED:** intentional NativeDo product difference. Keep the upstream symbol name when practical and record the reason.
+- **OMITTED:** whole upstream subsystem removed because it is out of scope. Record the removed block and reason.
+
+Unknown drift is not allowed. If behavior feels different from Telegram, compare against upstream before patching by guesswork. If a product-specific change is needed, record it as `ADAPTED` or put it in an L2 adapter.
+
+### Port Levels
+
+Every Telegram-derived file MUST declare its port level.
+
+| Level | Use it for | Rule |
+|---|---|---|
+| **L0 - Verbatim Core** | Touch, gesture, animation, scroll, recycling, and interaction constants. | Kept code matches upstream except `HOST-WIRING`. Do not change branches, method shapes, magic numbers, durations, thresholds, or interpolators. |
+| **L1 - Faithful Slice** | Upstream files where NativeDo only needs part of the class. | Kept code stays upstream-shaped. Whole out-of-scope subsystems may be `OMITTED`; intentional product differences must be `ADAPTED`. |
+| **L2 - Bridged Adapter** | Glue from Telegram-derived views into NativeDo screens, ViewModels, Compose, resources, or product constraints. | NativeDo idioms are allowed. Put product-specific decisions here when practical instead of editing L0/L1 code. |
+| **L3 - Native** | Pure NativeDo code, Discourse logic, repositories, app-specific UI. | No upstream preservation contract. Do not claim Telegram-derived behavior unless it is L0/L1/L2. |
+
+### Subsystem Classes — Forced Minimum Levels
+
+When a Telegram-derived file participates in any of these subsystems, the kept code in that subsystem must use at least the listed level, regardless of file-level declaration. A file may be L1 overall while specific subsystems inside it are L0.
+
+| Subsystem | Forced minimum | Examples |
+|---|---|---|
+| Touch / gesture arbitration | **L0** | `ViewPagerFixed.onTouchEventInternal`, `BottomSheet`, `RecyclerListView` swipe |
+| Animation curves, durations, interpolators | **L0** | `distanceInfluenceForSnapDuration`, quintic-out interpolator, `clamp(150, 600)` snap duration |
+| List / view recycling pools | **L0** | `viewsByType`, `updateViewForIndex` swap logic |
+| Edge tolerances and magic numbers in interaction code | **L0** | `< 1px` snap, `touchSlop = 0.3 cm`, `velX >= 3000` thresholds |
+| Custom Path / Canvas drawing | L1 | `GlassTabView.dispatchDraw`, ActionBar back button |
+| Lifecycle orchestration | L1 | `ViewPagerActivity.onPageSelected` evict/resume |
+| Theme / resource mapping | L2 | `Theme.key_*` constants |
+| Discourse / linux.do business logic | L3 | login, CSRF, bootstrap parse, repository |
+
+### File Header (Required for L0/L1)
+
+Every L0 and L1 file MUST include port metadata above or inside the copyright banner:
+
+```
+// UPSTREAM-LEVEL: L0 | L1
+// UPSTREAM-PATH:  org/telegram/ui/Components/ViewPagerFixed.java
+// UPSTREAM-COMMIT: <40-char sha or "master@<YYYY-MM-DD>">
+// SUBSYSTEMS: gesture=L0, animation=L0, custom-layout=L1
+// HOST-WIRING:
+//   - Theme.ResourcesProvider -> Theme.getColor(Theme.key_*)
+// ADAPTED:
+//   - MAIN_TABS_MIN_CONTENT_WIDTH = 160dp - NativeDo currently has fixed Home/Profile tabs.
+// OMITTED:
+//   - drag-reorder (ItemTouchHelper path) - out of scope until multi-tab editing ships.
+```
+
+L2 files SHOULD have an abbreviated header (`UPSTREAM-LEVEL: L2`, `UPSTREAM-PATH:`, free-form notes). L3 files do not need this header.
+
+### When You Find Something Missing
+
+If a previously shipped slice dropped behavior that affects feel, compare against upstream first. For L0 subsystems, re-align the kept code to upstream instead of patching by guesswork. For intentional NativeDo differences, record the difference as `ADAPTED`.
+
+### Workflow
+
+When asked to add a Telegram-derived file or modify one:
+
+1. Identify touched subsystems and their minimum level.
+2. Open the upstream file or upstream diff before editing.
+3. Keep L0/L1 code upstream-shaped; prefer L2 adapters for NativeDo-specific behavior.
+4. Record every local difference as `HOST-WIRING`, `ADAPTED`, or `OMITTED`.
+5. Verify retained method names, parameter lists, key fields, and interaction constants against upstream.
+6. Build (`./apps/android/gradlew -p apps/android :app:assembleDebug --quiet`) and exercise touch/gesture-related tests if applicable.
+
+### Mechanical Self-Check Before Declaring Done
+
+For an L0 or L1 file, summarize the upstream comparison in the final response or commit message:
+
+- Upstream path and commit/date checked.
+- Local differences added or changed under `HOST-WIRING`, `ADAPTED`, or `OMITTED`.
+- L0 interaction constants checked, for example `dp(10)`, `0.3f`, `>= 3000`, `clamp(150, 600)`, `< 1`.
+- Any unexpected divergence was fixed or explicitly escalated before declaring done.
 
 ## Build, Lint, And Test
 

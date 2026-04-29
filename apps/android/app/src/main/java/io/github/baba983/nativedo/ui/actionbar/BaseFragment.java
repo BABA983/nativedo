@@ -6,8 +6,10 @@
 //   - NativeDo fragments use this as the bridge between View-system navigation and Compose content.
 // ADAPTED:
 //   - Automatically creates a minimal NativeDo ActionBar when attached to an INavigationLayout.
+//   - Keeps the AttachedSheet stack surface needed by NativeDo browser sheets.
+//   - Keeps Telegram's edge-to-edge method surface so ActionBarLayout/ViewPagerActivity can route insets.
 // OMITTED:
-//   - Telegram dialogs, sheets, themes, menus, stories, arguments, and account/activity plumbing.
+//   - Telegram dialogs, themes, menus, stories, arguments, and account/activity plumbing.
 /*
  * This file is part of NativeDo.
  *
@@ -17,8 +19,8 @@
  * Source reference:
  * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/BaseFragment.java
  *
- * NativeDo milestone slice: keeps fragment view, action bar, parent layout, and navigation
- * lifecycle hooks; omits Telegram dialogs, sheets, themes, menus, stories, and arguments.
+ * NativeDo milestone slice: keeps fragment view, action bar, parent layout, attached sheets,
+ * and navigation lifecycle hooks; omits Telegram dialogs, themes, menus, stories, and arguments.
  *
  * Copyright (C) Telegram FZ-LLC
  * Copyright (C) 2026 NativeDo contributors
@@ -31,16 +33,58 @@
  */
 package io.github.baba983.nativedo.ui.actionbar;
 
+import android.app.Dialog;
 import android.content.Context;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+
+import androidx.core.view.WindowInsetsCompat;
+
+import java.util.ArrayList;
 
 public abstract class BaseFragment {
 
     protected View fragmentView;
     protected INavigationLayout parentLayout;
     protected ActionBar actionBar;
+    public ArrayList<AttachedSheet> sheetsStack;
+
+    public interface AttachedSheet {
+        View getWindowView();
+
+        boolean isShown();
+
+        void dismiss();
+
+        default void dismiss(boolean tabs) {
+            dismiss();
+        }
+
+        void release();
+
+        boolean isFullyVisible();
+
+        boolean attachedToParent();
+
+        boolean onAttachedBackPressed();
+
+        boolean showDialog(Dialog dialog);
+
+        void setKeyboardHeightFromParent(int keyboardHeight);
+
+        boolean isAttachedLightStatusBar();
+
+        int getNavigationBarColor(int color);
+
+        void setOnDismissListener(Runnable onDismiss);
+
+        default void setLastVisible(boolean lastVisible) {
+        }
+    }
+
+    public interface AttachedSheetWindow {
+    }
 
     public View createView(Context context) {
         return null;
@@ -74,6 +118,10 @@ public abstract class BaseFragment {
     }
 
     public boolean onBackPressed() {
+        AttachedSheet sheet = getLastSheet();
+        if (sheet != null && sheet.isShown()) {
+            return !sheet.onAttachedBackPressed();
+        }
         return true;
     }
 
@@ -83,6 +131,14 @@ public abstract class BaseFragment {
 
     public boolean isSwipeBackEnabled(MotionEvent event) {
         return true;
+    }
+
+    public boolean isSupportEdgeToEdge() {
+        return false;
+    }
+
+    public WindowInsetsCompat onInsetsInternal(View view, WindowInsetsCompat insets) {
+        return insets;
     }
 
     public void onBeginSlide() {
@@ -108,5 +164,85 @@ public abstract class BaseFragment {
 
     public INavigationLayout getParentLayout() {
         return parentLayout;
+    }
+
+    public Context getContext() {
+        if (parentLayout instanceof ViewGroup) {
+            return ((ViewGroup) parentLayout).getContext();
+        }
+        return fragmentView == null ? null : fragmentView.getContext();
+    }
+
+    public AttachedSheet getLastSheet() {
+        if (sheetsStack == null || sheetsStack.isEmpty()) {
+            return null;
+        }
+        for (int i = sheetsStack.size() - 1; i >= 0; i--) {
+            AttachedSheet sheet = sheetsStack.get(i);
+            if (sheet.isShown()) {
+                return sheet;
+            }
+        }
+        return null;
+    }
+
+    public boolean hasSheet() {
+        return sheetsStack != null && !sheetsStack.isEmpty();
+    }
+
+    public boolean hasShownSheet() {
+        return getLastSheet() != null;
+    }
+
+    public boolean hasShownFullyVisibleSheet() {
+        if (sheetsStack == null || sheetsStack.isEmpty()) {
+            return false;
+        }
+        for (int i = sheetsStack.size() - 1; i >= 0; i--) {
+            AttachedSheet sheet = sheetsStack.get(i);
+            if (sheet.isShown() && sheet.isFullyVisible()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public void addSheet(AttachedSheet sheet) {
+        if (sheet == null) {
+            return;
+        }
+        if (sheetsStack == null) {
+            sheetsStack = new ArrayList<>();
+        }
+        sheetsStack.add(sheet);
+        updateSheetsVisibility();
+    }
+
+    public void removeSheet(AttachedSheet sheet) {
+        if (sheetsStack == null) {
+            return;
+        }
+        sheetsStack.remove(sheet);
+        updateSheetsVisibility();
+    }
+
+    public void clearSheets() {
+        if (sheetsStack == null || sheetsStack.isEmpty()) {
+            return;
+        }
+        for (int i = sheetsStack.size() - 1; i >= 0; i--) {
+            sheetsStack.get(i).dismiss(true);
+        }
+        sheetsStack.clear();
+    }
+
+    public void updateSheetsVisibility() {
+        if (sheetsStack == null) {
+            return;
+        }
+        for (int i = 0; i < sheetsStack.size(); i++) {
+            AttachedSheet sheet = sheetsStack.get(i);
+            sheet.setLastVisible(i == sheetsStack.size() - 1 && sheet.isShown());
+        }
     }
 }

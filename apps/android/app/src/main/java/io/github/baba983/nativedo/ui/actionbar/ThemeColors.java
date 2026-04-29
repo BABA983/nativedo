@@ -4,6 +4,7 @@
 // SUBSYSTEMS: theme/resource-mapping=L2
 // ADAPTED:
 //   - Keeps only default colors for theme keys currently used by NativeDo UI ports.
+//   - Includes Telegram browser/Instant View surface keys used by the BrowserSheet port.
 // OMITTED:
 //   - Telegram's complete generated theme color table.
 /*
@@ -63,6 +64,9 @@ public final class ThemeColors {
         defaultColors[key_glass_tabSelectedText] = TELEGRAM_COLOR;
         defaultColors[key_glass_tabUnselected] = DEFAULT_BLACK_TEXT;
         defaultColors[key_telegram_color] = TELEGRAM_COLOR;
+        defaultColors[key_iv_background] = 0xffffffff;
+        defaultColors[key_iv_backgroundGray] = 0xfff0f0f0;
+        defaultColors[key_iv_navigationBackground] = 0xffffffff;
         return defaultColors;
     }
 }

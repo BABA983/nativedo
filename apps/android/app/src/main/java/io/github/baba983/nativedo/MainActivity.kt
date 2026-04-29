@@ -74,12 +74,17 @@ class MainActivity : ComponentActivity() {
 
                     val progress = backEvent.progress
                     if (!predictiveBackStarted && progress > LAZY_START) {
+                        if (!actionBarLayout.canStartPredictiveBack()) {
+                            return
+                        }
                         predictiveBackStarted = true
                         actionBarLayout.onBackStarted(backEvent.touchX, backEvent.touchY)
                     }
 
                     val fixedProgress = ((progress - LAZY_START) / (1f - LAZY_START)).coerceAtLeast(0f)
-                    actionBarLayout.onBackProgress(fixedProgress)
+                    if (predictiveBackStarted) {
+                        actionBarLayout.onBackProgress(fixedProgress)
+                    }
                 }
 
                 override fun onBackCancelled() {

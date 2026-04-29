@@ -217,6 +217,7 @@ public class ActionBar extends FrameLayout {
         }
         if (drawable instanceof BackDrawable) {
             ((BackDrawable) drawable).setColor(itemsColor);
+            ((BackDrawable) drawable).setRotatedColor(itemsColor);
         } else {
             drawable.setColorFilter(new PorterDuffColorFilter(itemsColor, PorterDuff.Mode.MULTIPLY));
         }

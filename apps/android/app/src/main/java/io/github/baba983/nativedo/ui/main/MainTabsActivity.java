@@ -11,7 +11,7 @@
 //   - MAIN_TABS_MIN_CONTENT_WIDTH = 160dp; upstream tab wrapper is sized for a wider dynamic tab set.
 // OMITTED:
 //   - Account switching, contacts/calls/settings tabs, unread counters, app-update layout, blur3 render-node capture,
-//     RLottie icons, and overlay/collapsed browser tab containers - deferred until those milestones exist.
+//     RLottie icons, and expanded browser tab overlay containers - deferred until those milestones exist.
 /*
  * This file is part of NativeDo.
  *
@@ -50,7 +50,6 @@ import android.widget.FrameLayout;
 
 import androidx.annotation.NonNull;
 import androidx.core.graphics.ColorUtils;
-import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
 import io.github.baba983.nativedo.R;
@@ -140,13 +139,15 @@ public class MainTabsActivity extends ViewPagerActivity implements Theme.ThemeDe
         );
         contentView.addView(tabsViewWrapper, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM));
 
-        ViewCompat.setOnApplyWindowInsetsListener(contentView, (v, insets) -> {
-            navigationBarHeight = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom;
-            checkUiTabsPosition();
-            checkUiFadeView();
-            return insets;
-        });
         return contentView;
+    }
+
+    @Override
+    protected WindowInsetsCompat onApplyWindowInsets(View view, WindowInsetsCompat insets) {
+        navigationBarHeight = insets.getInsets(WindowInsetsCompat.Type.systemBars()).bottom;
+        checkUiTabsPosition();
+        checkUiFadeView();
+        return super.onApplyWindowInsets(view, insets);
     }
 
     @Override
@@ -182,9 +183,18 @@ public class MainTabsActivity extends ViewPagerActivity implements Theme.ThemeDe
      * ActionBarLayout (true == consumed).
      */
     public boolean handleBackPressed() {
+        if (!super.onBackPressed()) {
+            return true;
+        }
         BaseFragment fragment = getCurrentVisibleFragment();
         if (fragment != null && !fragment.onBackPressed()) {
             return true;
+        }
+        for (int i = 0; i < fragmentsArr.size(); i++) {
+            BaseFragment otherFragment = fragmentsArr.valueAt(i).fragment;
+            if (otherFragment != fragment && otherFragment.hasShownSheet() && !otherFragment.onBackPressed()) {
+                return true;
+            }
         }
         if (viewPager != null && viewPager.getCurrentPosition() != POSITION_HOME) {
             selectTab(POSITION_HOME, true);

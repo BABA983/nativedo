@@ -17,7 +17,6 @@ import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.widget.Toast
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
@@ -26,6 +25,7 @@ import io.github.baba983.nativedo.R
 import io.github.baba983.nativedo.core.AndroidUtilities
 import io.github.baba983.nativedo.ui.actionbar.BaseFragment
 import io.github.baba983.nativedo.ui.actionbar.Theme
+import io.github.baba983.nativedo.ui.browser.BrowserSheet
 
 class ProfileFragment : BaseFragment() {
 
@@ -71,12 +71,8 @@ class ProfileFragment : BaseFragment() {
             if (url == null) {
                 input.error = context.getString(R.string.profile_dev_url_invalid)
             } else {
-                Toast.makeText(
-                    context,
-                    context.getString(R.string.profile_dev_url_ready, url),
-                    Toast.LENGTH_SHORT,
-                ).show()
                 dialog.dismiss()
+                openBrowser(url)
             }
         }
 
@@ -190,6 +186,12 @@ class ProfileFragment : BaseFragment() {
             return uri.toString()
         }
         return null
+    }
+
+    private fun openBrowser(url: String) {
+        val sheet = BrowserSheet(this, url)
+        addSheet(sheet)
+        sheet.show()
     }
 
     private fun createDialogButton(

@@ -5,6 +5,8 @@
 // HOST-WIRING:
 //   - Telegram ActionBar/BaseFragment imports -> NativeDo actionbar package.
 //   - ViewPagerFixed.Adapter binds NativeDo BaseFragment views into FrameLayout page containers.
+//   - Insets dispatch is kept in the upstream shape so MainTabs and Compose page fragments receive
+//     the post-bottom-tabs insets from ActionBarLayout.
 // OMITTED:
 //   - getThemeDescriptions / theme-description collection - Telegram's animated theme editor is out of scope.
 //   - fragmentVisibility factors / system-bar color orchestration - current milestone uses one status-bar style.
@@ -39,6 +41,9 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 
 import io.github.baba983.nativedo.ui.actionbar.ActionBar;
 import io.github.baba983.nativedo.ui.actionbar.BaseFragment;
@@ -155,12 +160,32 @@ public abstract class ViewPagerActivity extends BaseFragment {
                 if (actionBar != null && actionBar.shouldAddToContainer()) {
                     container.addView(actionBar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, actionBarHeight, Gravity.TOP | Gravity.START));
                 }
+                ViewCompat.requestApplyInsets(container);
             }
         });
 
         contentView.addView(viewPager, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
         fragmentView = contentView;
+        ViewCompat.setOnApplyWindowInsetsListener(fragmentView, this::onApplyWindowInsets);
         return fragmentView;
+    }
+
+    @Override
+    public boolean isSupportEdgeToEdge() {
+        return true;
+    }
+
+    protected WindowInsetsCompat onApplyWindowInsets(View view, WindowInsetsCompat insets) {
+        for (int i = 0, count = fragmentsArr.size(); i < count; i++) {
+            FragmentState state = fragmentsArr.valueAt(i);
+            if (state != null) {
+                View fragmentView = state.fragment.getFragmentView();
+                if (fragmentView != null) {
+                    ViewCompat.dispatchApplyWindowInsets(fragmentView, insets);
+                }
+            }
+        }
+        return WindowInsetsCompat.CONSUMED;
     }
 
     @Override

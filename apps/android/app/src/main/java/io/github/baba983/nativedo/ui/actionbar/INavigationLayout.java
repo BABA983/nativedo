@@ -4,6 +4,7 @@
 // SUBSYSTEMS: navigation-contract=L1
 // ADAPTED:
 //   - Keeps only present, stack, close, and NavigationParams API used by this shell.
+//   - Keeps Telegram's bottom-tabs height surface so NativeDo tab hosts can follow browser-tab motion.
 // OMITTED:
 //   - Telegram delegate, preview menu, sheet navigation, theme animation, and broader launch surfaces.
 /*
@@ -51,6 +52,10 @@ public interface INavigationLayout {
 
     default void closeLastFragment(boolean animated) {
         closeLastFragment(animated, false);
+    }
+
+    default int getBottomTabsHeight(boolean animated) {
+        return 0;
     }
 
     class NavigationParams {

@@ -1,15 +1,24 @@
 // UPSTREAM-LEVEL: L1
 // UPSTREAM-PATH:  org/telegram/ui/ActionBar/ActionBarLayout.java
 // UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: navigation-stack=L1, gesture=L0, animation=L0, lifecycle-orchestration=L1
+// SUBSYSTEMS: navigation-stack=L1, gesture=L0, animation=L0, lifecycle-orchestration=L1, bottom-tabs-insets=L1
 // HOST-WIRING:
 //   - Telegram BaseFragment/Theme/LayoutHelper/AndroidUtilities imports rewritten to NativeDo.
 //   - NativeDo MainActivity forwards Android predictive-back callbacks into this layout.
+//   - BottomSheetTabsOverlay is hosted inside this layout, so bottom-tabs clipping skips that overlay.
 // ADAPTED:
 //   - Keeps a single-stack container model for NativeDo fragments only.
 //   - Uses direct Activity finish fallback instead of Telegram LaunchActivity/parentActivity orchestration.
+//   - Hosts NativeDo's BottomSheetTabs and BottomSheetTabsOverlay without Telegram LaunchActivity wiring.
+//   - Keeps BottomSheetTabs behind fragment containers like upstream; only the locally hosted overlay
+//     is raised above containers during navigation swaps.
+//   - Draw-compensates LayoutContainer by the difference between target and animated bottom-tabs
+//     heights because NativeDo has no separate Telegram sheetContainer/updateLayout host.
+//   - Dispatches bottom-tabs margins through Telegram's LayoutContainer edge-to-edge branch while
+//     keeping NativeDo's single-stack fragment attachment.
+//   - Uses Telegram's browser white/black shell background behind NativeDo's parchment content theme.
 // OMITTED:
-//   - Drawer, sheets, previews, dialogs, story layers, multi-window branches, and Telegram delegate surfaces.
+//   - Drawer, previews, dialogs, story layers, multi-window branches, BottomSheetTabDialog, and Telegram delegate surfaces.
 /*
  * This file is part of NativeDo.
  *
@@ -20,8 +29,9 @@
  * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java
  *
  * NativeDo milestone slice: keeps Telegram's single-stack container choreography,
- * NavigationParams-backed push/pop frame animation, edge swipe-back, and predictive-back
- * wiring; omits drawer, sheets, previews, dialogs, and multi-window branches.
+ * NavigationParams-backed push/pop frame animation, edge swipe-back, predictive-back wiring,
+ * attached-sheet stack host, collapsed browser tabs, and expanded tabs overlay; omits drawer,
+ * previews, dialogs, story layers, BottomSheetTabDialog, and multi-window branches.
  *
  * Copyright (C) Telegram FZ-LLC
  * Copyright (C) 2026 NativeDo contributors
@@ -53,9 +63,14 @@ import android.view.RoundedCorner;
 import android.view.VelocityTracker;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewGroup.MarginLayoutParams;
 import android.view.WindowInsets;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
+
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -64,13 +79,22 @@ import io.github.baba983.nativedo.core.AndroidUtilities;
 import io.github.baba983.nativedo.ui.components.CubicBezierInterpolator;
 import io.github.baba983.nativedo.ui.components.LayoutHelper;
 
-public class ActionBarLayout extends FrameLayout implements INavigationLayout {
+public class ActionBarLayout extends FrameLayout implements INavigationLayout, Theme.ThemeDelegate {
 
     public class LayoutContainer extends FrameLayout {
+
+        private boolean isSupportEdgeToEdge;
 
         public LayoutContainer(Context context) {
             super(context);
             setWillNotDraw(false);
+        }
+
+        public void setShouldHandleBottomInsets(boolean isSupportEdgeToEdge) {
+            if (this.isSupportEdgeToEdge != isSupportEdgeToEdge) {
+                this.isSupportEdgeToEdge = isSupportEdgeToEdge;
+                ViewCompat.requestApplyInsets(ActionBarLayout.this);
+            }
         }
 
         @Override
@@ -94,6 +118,9 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
 
     private LayoutContainer containerViewBack;
     private LayoutContainer containerView;
+    private BottomSheetTabs bottomSheetTabs;
+    private BottomSheetTabs.ClipTools bottomSheetTabsClip;
+    private BottomSheetTabsOverlay bottomSheetTabsOverlay;
     private final ArrayList<BaseFragment> fragmentsStack = new ArrayList<>();
     private final Paint scrimPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Rect rect = new Rect();
@@ -118,11 +145,13 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
     private boolean predictiveBackLeft = true;
     private float predictiveBackY;
     private AnimatorSet backAnimator;
+    private AnimatorSet bottomSheetAnimator;
     private Runnable animationRunnable;
     private float animationProgress;
     private long lastFrameTime;
     private BaseFragment newFragment;
     private BaseFragment oldFragment;
+    private WindowInsetsCompat lastWindowInsetsCompat;
     private final DecelerateInterpolator decelerateInterpolator = new DecelerateInterpolator(1.5f);
 
     public ActionBarLayout(Context context) {
@@ -130,7 +159,12 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
         AndroidUtilities.init(context);
         setClipChildren(false);
         setClipToPadding(false);
-        setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        updateShellBackgroundColor();
+
+        bottomSheetTabs = new BottomSheetTabs(context, this);
+        bottomSheetTabsClip = new BottomSheetTabs.ClipTools(bottomSheetTabs);
+        bottomSheetTabs.listen(this::invalidate, this::relayout);
+        addView(bottomSheetTabs, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 68 + 8, Gravity.BOTTOM | Gravity.START));
 
         containerViewBack = new LayoutContainer(context);
         containerViewBack.setVisibility(INVISIBLE);
@@ -138,6 +172,20 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
 
         containerView = new LayoutContainer(context);
         addView(containerView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.START));
+
+        bottomSheetTabsOverlay = new BottomSheetTabsOverlay(context);
+        bottomSheetTabsOverlay.setTabsView(bottomSheetTabs);
+        addView(bottomSheetTabsOverlay, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.START));
+
+        ViewCompat.setOnApplyWindowInsetsListener(this, this::onApplyWindowInsets);
+    }
+
+    @Override
+    public void addView(View child, int index, ViewGroup.LayoutParams params) {
+        super.addView(child, index, params);
+        if (lastWindowInsetsCompat != null) {
+            dispatchApplyWindowInsetsInternal(child, lastWindowInsetsCompat);
+        }
     }
 
     @Override
@@ -160,19 +208,39 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
     }
 
     public boolean canHandleBack() {
-        return fragmentsStack.size() > 1;
+        BaseFragment currentFragment = fragmentsStack.isEmpty() ? null : fragmentsStack.get(fragmentsStack.size() - 1);
+        return bottomSheetTabsOverlay != null && bottomSheetTabsOverlay.isOpened()
+                || fragmentsStack.size() > 1
+                || currentFragment != null && currentFragment.hasShownSheet();
+    }
+
+    public boolean canStartPredictiveBack() {
+        if (bottomSheetTabsOverlay != null && bottomSheetTabsOverlay.isOpened()) {
+            return false;
+        }
+        if (animationInProgress || predictiveBackInProgress || predictiveInput || startedTracking || fragmentsStack.size() <= 1) {
+            return false;
+        }
+        BaseFragment currentFragment = fragmentsStack.get(fragmentsStack.size() - 1);
+        return !currentFragment.hasShownSheet() && currentFragment.canBeginSlide();
     }
 
     public boolean handleBackPressed() {
         if (animationInProgress) {
             return true;
         }
-        if (fragmentsStack.size() <= 1) {
+        if (fragmentsStack.isEmpty()) {
             return false;
+        }
+        if (bottomSheetTabsOverlay != null && bottomSheetTabsOverlay.onBackPressed()) {
+            return true;
         }
         BaseFragment currentFragment = fragmentsStack.get(fragmentsStack.size() - 1);
         if (!currentFragment.onBackPressed()) {
             return true;
+        }
+        if (fragmentsStack.size() <= 1) {
+            return false;
         }
         closeLastFragment(true, false);
         return true;
@@ -215,10 +283,44 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
         containerView.setAlpha(0.0f);
         containerView.setTranslationX(48.0f);
         bringChildToFront(containerView);
+        bringBrowserTabViewsToFront();
 
         oldFragment = currentFragment;
         newFragment = fragment;
         startLayoutAnimation(true, true);
+        return true;
+    }
+
+    public boolean presentFragmentFromBottom(BaseFragment fragment) {
+        if (fragment == null || animationInProgress) {
+            return false;
+        }
+        if (fragmentsStack.isEmpty()) {
+            return addFragmentToStack(fragment);
+        }
+
+        BaseFragment currentFragment = fragmentsStack.get(fragmentsStack.size() - 1);
+        currentFragment.onPause();
+        fragment.setParentLayout(this);
+        fragmentsStack.add(fragment);
+
+        animationInProgress = true;
+        containerViewBack.removeAllViews();
+        attachViewTo(fragment, containerViewBack);
+        containerViewBack.setVisibility(VISIBLE);
+
+        LayoutContainer temp = containerView;
+        containerView = containerViewBack;
+        containerViewBack = temp;
+        containerView.setAlpha(1.0f);
+        containerView.setTranslationX(0.0f);
+        containerView.setTranslationY(getBottomPresentationDistance());
+        bringChildToFront(containerView);
+        bringBrowserTabViewsToFront();
+
+        oldFragment = currentFragment;
+        newFragment = fragment;
+        startBottomOpenAnimation();
         return true;
     }
 
@@ -235,6 +337,31 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
             return;
         }
         startLayoutCloseAnimation();
+    }
+
+    public boolean closeLastFragmentFromBottom() {
+        if (fragmentsStack.size() <= 1 || animationInProgress) {
+            return false;
+        }
+
+        BaseFragment currentFragment = fragmentsStack.get(fragmentsStack.size() - 1);
+        BaseFragment previousFragment = fragmentsStack.get(fragmentsStack.size() - 2);
+        previousFragment.setParentLayout(this);
+        containerViewBack.removeAllViews();
+        attachViewTo(previousFragment, containerViewBack);
+        containerViewBack.setVisibility(VISIBLE);
+        containerViewBack.setAlpha(1.0f);
+        containerViewBack.setTranslationX(0.0f);
+        containerViewBack.setTranslationY(0.0f);
+        previousFragment.onResume();
+        bringChildToFront(containerView);
+        bringBrowserTabViewsToFront();
+
+        oldFragment = currentFragment;
+        newFragment = previousFragment;
+        animationInProgress = true;
+        startBottomCloseAnimation();
+        return true;
     }
 
     @Override
@@ -305,6 +432,9 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
 
     @Override
     public boolean onInterceptTouchEvent(MotionEvent ev) {
+        if (bottomSheetTabsOverlay != null && bottomSheetTabsOverlay.isOpened()) {
+            return false;
+        }
         return animationInProgress || onTouchEvent(ev);
     }
 
@@ -424,6 +554,9 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
         }
 
         int restoreCount = canvas.save();
+        if (child != bottomSheetTabs && child != bottomSheetTabsOverlay && bottomSheetTabsClip != null) {
+            bottomSheetTabsClip.clip(canvas, true, false, getWidth(), getHeight(), 1.0f);
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && translationX != 0) {
             if (child == containerView) {
                 WindowInsets insets = getRootWindowInsets();
@@ -468,6 +601,13 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
         int childRestoreCount = canvas.save();
         if (!animationInProgress) {
             canvas.clipRect(clipLeft, 0, clipRight, getHeight());
+        }
+        float bottomTabsTranslationY = 0f;
+        if (child instanceof LayoutContainer && bottomSheetTabs != null) {
+            bottomTabsTranslationY = getBottomTabsHeight(false) - getBottomTabsHeight(true);
+        }
+        if (bottomTabsTranslationY != 0f) {
+            canvas.translate(0, bottomTabsTranslationY);
         }
         boolean result = super.drawChild(canvas, child, drawingTime);
         canvas.restoreToCount(childRestoreCount);
@@ -608,6 +748,208 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
         startLayoutAnimation(false, true);
     }
 
+    private void startBottomOpenAnimation() {
+        if (bottomSheetAnimator != null) {
+            bottomSheetAnimator.cancel();
+        }
+        AnimatorSet animatorSet = new AnimatorSet();
+        animatorSet.playTogether(ObjectAnimator.ofFloat(containerView, View.TRANSLATION_Y, 0.0f));
+        animatorSet.setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT);
+        animatorSet.setDuration(320);
+        animatorSet.addListener(new AnimatorListenerAdapter() {
+            private boolean cancelled;
+
+            @Override
+            public void onAnimationCancel(Animator animation) {
+                cancelled = true;
+            }
+
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                if (cancelled) {
+                    return;
+                }
+                containerView.setTranslationY(0.0f);
+                containerViewBack.removeAllViews();
+                containerViewBack.setVisibility(INVISIBLE);
+                bringBrowserTabViewsToFront();
+                if (newFragment != null) {
+                    newFragment.onResume();
+                }
+                oldFragment = null;
+                newFragment = null;
+                animationInProgress = false;
+                bottomSheetAnimator = null;
+            }
+        });
+        bottomSheetAnimator = animatorSet;
+        animatorSet.start();
+    }
+
+    private void startBottomCloseAnimation() {
+        if (bottomSheetAnimator != null) {
+            bottomSheetAnimator.cancel();
+        }
+        AnimatorSet animatorSet = new AnimatorSet();
+        animatorSet.playTogether(ObjectAnimator.ofFloat(containerView, View.TRANSLATION_Y, getBottomPresentationDistance()));
+        animatorSet.setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT);
+        animatorSet.setDuration(250);
+        animatorSet.addListener(new AnimatorListenerAdapter() {
+            private boolean cancelled;
+
+            @Override
+            public void onAnimationCancel(Animator animation) {
+                cancelled = true;
+            }
+
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                if (cancelled) {
+                    return;
+                }
+                if (fragmentsStack.size() >= 2 && oldFragment != null) {
+                    fragmentsStack.remove(fragmentsStack.size() - 1);
+                    oldFragment.onPause();
+                }
+                containerView.removeAllViews();
+                containerView.setTranslationY(0.0f);
+
+                LayoutContainer temp = containerView;
+                containerView = containerViewBack;
+                containerViewBack = temp;
+                containerViewBack.removeAllViews();
+                containerViewBack.setVisibility(INVISIBLE);
+                containerViewBack.setAlpha(1.0f);
+                containerViewBack.setTranslationX(0.0f);
+                containerViewBack.setTranslationY(0.0f);
+                bringChildToFront(containerView);
+                bringBrowserTabViewsToFront();
+
+                oldFragment = null;
+                newFragment = null;
+                animationInProgress = false;
+                bottomSheetAnimator = null;
+            }
+        });
+        bottomSheetAnimator = animatorSet;
+        animatorSet.start();
+    }
+
+    private float getBottomPresentationDistance() {
+        return Math.max(getHeight(), AndroidUtilities.displaySize.y);
+    }
+
+    public BottomSheetTabs getBottomSheetTabs() {
+        return bottomSheetTabs;
+    }
+
+    public BottomSheetTabsOverlay getBottomSheetTabsOverlay() {
+        return bottomSheetTabsOverlay;
+    }
+
+    public BaseFragment getLastFragment() {
+        return fragmentsStack.isEmpty() ? null : fragmentsStack.get(fragmentsStack.size() - 1);
+    }
+
+    @Override
+    public int getBottomTabsHeight(boolean animated) {
+        return bottomSheetTabs == null ? 0 : bottomSheetTabs.getHeight(animated);
+    }
+
+    private void relayout() {
+        requestLayout();
+        containerView.requestLayout();
+        containerViewBack.requestLayout();
+    }
+
+    private void dispatchApplyWindowInsetsInternal(View child, WindowInsetsCompat insets) {
+        if (child == null || !(child.getLayoutParams() instanceof MarginLayoutParams)) {
+            return;
+        }
+        Insets systemInsets = insets.getInsets(WindowInsetsCompat.Type.systemBars());
+        Insets systemWithImeInsets = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars()
+                        | WindowInsetsCompat.Type.ime()
+                        | WindowInsetsCompat.Type.displayCutout()
+        );
+        MarginLayoutParams lp = (MarginLayoutParams) child.getLayoutParams();
+        if (child == bottomSheetTabs) {
+            if (lp.bottomMargin != systemInsets.bottom) {
+                lp.bottomMargin = systemInsets.bottom;
+                child.requestLayout();
+            }
+            return;
+        }
+        if (child instanceof LayoutContainer) {
+            LayoutContainer layoutContainer = (LayoutContainer) child;
+            int bottomTabsHeight = getBottomTabsHeight(false);
+            int tabsInset = bottomTabsHeight > 0 ? systemInsets.bottom + bottomTabsHeight : 0;
+            if (layoutContainer.isSupportEdgeToEdge) {
+                if (lp.bottomMargin != tabsInset) {
+                    lp.bottomMargin = tabsInset;
+                    child.requestLayout();
+                }
+                WindowInsetsCompat consumed = insets.inset(0, 0, 0, lp.bottomMargin);
+                ViewCompat.dispatchApplyWindowInsets(child, consumed);
+            } else {
+                int legacySystemInset = Math.max(tabsInset, systemWithImeInsets.bottom);
+                if (lp.bottomMargin != legacySystemInset) {
+                    lp.bottomMargin = legacySystemInset;
+                    child.requestLayout();
+                }
+                ViewCompat.dispatchApplyWindowInsets(child, WindowInsetsCompat.CONSUMED);
+            }
+        }
+    }
+
+    private WindowInsetsCompat onApplyWindowInsets(View view, WindowInsetsCompat insets) {
+        lastWindowInsetsCompat = insets;
+        for (int i = 0, count = getChildCount(); i < count; i++) {
+            dispatchApplyWindowInsetsInternal(getChildAt(i), insets);
+        }
+        return WindowInsetsCompat.CONSUMED;
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        Theme.addThemeDelegate(this);
+        updateShellBackgroundColor();
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        Theme.removeThemeDelegate(this);
+        super.onDetachedFromWindow();
+        maybeStartTracking = false;
+        startedTracking = false;
+        startedTrackingPointerId = -1;
+        beginTrackingSent = false;
+        if (velocityTracker != null) {
+            velocityTracker.recycle();
+            velocityTracker = null;
+        }
+    }
+
+    @Override
+    public void didSetNewTheme() {
+        updateShellBackgroundColor();
+    }
+
+    private void updateShellBackgroundColor() {
+        int shellColor = Theme.getColor(Theme.key_iv_background);
+        setBackgroundColor(shellColor);
+        if (bottomSheetTabs != null) {
+            bottomSheetTabs.setNavigationBarColor(shellColor, false);
+        }
+    }
+
+    private void bringBrowserTabViewsToFront() {
+        if (bottomSheetTabsOverlay != null) {
+            bringChildToFront(bottomSheetTabsOverlay);
+        }
+    }
+
     private void startLayoutAnimation(final boolean open, final boolean first) {
         if (first) {
             animationProgress = 0.0f;
@@ -739,6 +1081,9 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
         FrameLayout.LayoutParams contentLayoutParams = LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.START);
         contentLayoutParams.topMargin = actionBarHeight;
         container.addView(contentView, contentLayoutParams);
+        if (container instanceof LayoutContainer) {
+            ((LayoutContainer) container).setShouldHandleBottomInsets(fragment.isSupportEdgeToEdge());
+        }
         if (actionBar != null && actionBar.shouldAddToContainer()) {
             container.addView(actionBar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, actionBarHeight, Gravity.TOP | Gravity.START));
         }
@@ -750,19 +1095,6 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
         }
         if (view.getParent() instanceof ViewGroup) {
             ((ViewGroup) view.getParent()).removeView(view);
-        }
-    }
-
-    @Override
-    protected void onDetachedFromWindow() {
-        super.onDetachedFromWindow();
-        maybeStartTracking = false;
-        startedTracking = false;
-        startedTrackingPointerId = -1;
-        beginTrackingSent = false;
-        if (velocityTracker != null) {
-            velocityTracker.recycle();
-            velocityTracker = null;
         }
     }
 

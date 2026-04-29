@@ -6,6 +6,8 @@
 //   - Preserves Telegram theme key names used by copied UI code.
 // ADAPTED:
 //   - Uses NativeDo day/night theme state, selector drawables, and theme delegates.
+//   - Maps Telegram Instant View/browser surface keys to white/black browser chrome instead of
+//     NativeDo's parchment content background.
 // OMITTED:
 //   - Telegram wallpaper, remote theme loading, theme editor, ThemeDescription system, and account/global theme plumbing.
 /*
@@ -104,6 +106,12 @@ public final class Theme {
     public static final int key_glass_tabSelectedText = colorsCount++;
     public static final int key_glass_tabUnselected = colorsCount++;
     public static final int key_telegram_color = colorsCount++;
+    public static final int key_iv_background = colorsCount++;
+    public static final int key_iv_backgroundGray = colorsCount++;
+    public static final int key_iv_navigationBackground = colorsCount++;
+    public static final int key_actionBarActionModeDefaultSelector = colorsCount++;
+    public static final int key_chat_messagePanelBackground = colorsCount++;
+    public static final int key_chat_messagePanelShadow = colorsCount++;
 
     public static final class ThemeInfo {
         public String name;
@@ -338,6 +346,12 @@ public final class Theme {
         themeInfo.colors.put(key_glass_tabSelectedText, 0xff1e7755);
         themeInfo.colors.put(key_glass_tabUnselected, 0xff20251f);
         themeInfo.colors.put(key_telegram_color, 0xff1e7755);
+        themeInfo.colors.put(key_iv_background, 0xffffffff);
+        themeInfo.colors.put(key_iv_backgroundGray, 0xfff0f0f0);
+        themeInfo.colors.put(key_iv_navigationBackground, 0xffffffff);
+        themeInfo.colors.put(key_actionBarActionModeDefaultSelector, 0xffe2e2e2);
+        themeInfo.colors.put(key_chat_messagePanelBackground, 0xffffffff);
+        themeInfo.colors.put(key_chat_messagePanelShadow, 0xff000000);
         return themeInfo;
     }
 
@@ -364,6 +378,12 @@ public final class Theme {
         themeInfo.colors.put(key_glass_tabSelectedText, -10177041);
         themeInfo.colors.put(key_glass_tabUnselected, -1);
         themeInfo.colors.put(key_telegram_color, -10177041);
+        themeInfo.colors.put(key_iv_background, 0xff000000);
+        themeInfo.colors.put(key_iv_backgroundGray, 0xff1f1f1f);
+        themeInfo.colors.put(key_iv_navigationBackground, 0xff000000);
+        themeInfo.colors.put(key_actionBarActionModeDefaultSelector, 0xff3a3a3a);
+        themeInfo.colors.put(key_chat_messagePanelBackground, 0xff1c1c1e);
+        themeInfo.colors.put(key_chat_messagePanelShadow, 0xff000000);
         return themeInfo;
     }
 }

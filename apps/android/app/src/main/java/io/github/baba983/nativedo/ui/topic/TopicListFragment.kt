@@ -67,7 +67,9 @@ class TopicListFragment : BaseFragment() {
 
     private fun applyCurrentTheme(context: Context) {
         actionBar.applyTheme()
-        (parentLayout as? View)?.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite))
+        (parentLayout as? View)?.setBackgroundColor(
+            Theme.getColor(Theme.key_iv_background),
+        )
         (context as? Activity)?.let {
             AndroidUtilities.setLightStatusBar(it.window, !Theme.isCurrentThemeDark())
         }

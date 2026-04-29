@@ -1,11 +1,12 @@
 // UPSTREAM-LEVEL: L2
 // UPSTREAM-PATH:  org/telegram/messenger/AndroidUtilities.java
 // UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: host-utility=L2, display-metrics=L2
+// SUBSYSTEMS: host-utility=L2, display-metrics=L2, animation=L0
 // HOST-WIRING:
 //   - Uses AndroidX WindowCompat for NativeDo edge-to-edge status bar control.
 // ADAPTED:
 //   - Keeps only display metrics, dp conversion, keyboard, status-bar, cascade, and UI-thread helpers used by current ports.
+//   - Adds Telegram's applySpring animator helper for copied interaction animations.
 // OMITTED:
 //   - Telegram app-wide utilities, account state, media/cache helpers, and broad UI helpers outside the current navigation shell.
 /*
@@ -33,6 +34,7 @@
  */
 package io.github.baba983.nativedo.core;
 
+import android.animation.Animator;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Point;
@@ -41,6 +43,7 @@ import android.os.Looper;
 import android.util.DisplayMetrics;
 import android.view.View;
 import android.view.Window;
+import android.view.animation.Interpolator;
 import android.view.inputmethod.InputMethodManager;
 
 import androidx.core.view.WindowCompat;
@@ -89,6 +92,10 @@ public final class AndroidUtilities {
         return from + (to - from) * progress;
     }
 
+    public static float computePerceivedBrightness(int color) {
+        return (android.graphics.Color.red(color) * 0.2126f + android.graphics.Color.green(color) * 0.7152f + android.graphics.Color.blue(color) * 0.0722f) / 255f;
+    }
+
     public static float cascade(float fullAnimationT, float position, float count, float waveLength) {
         if (count <= 0) {
             return fullAnimationT;
@@ -96,6 +103,40 @@ public final class AndroidUtilities {
         final float waveDuration = 1f / count * Math.min(waveLength, count);
         final float waveOffset = position / count * (1f - waveDuration);
         return Math.max(0f, Math.min(1f, (fullAnimationT - waveOffset) / waveDuration));
+    }
+
+    public static void applySpring(Animator animator, double stiffness, double damping) {
+        applySpring(animator, stiffness, damping, 1, 0);
+    }
+
+    public static void applySpring(Animator animator, double stiffness, double damping, double mass, double initialVelocity) {
+        final double w0 = Math.sqrt(stiffness / mass);
+        final double zeta = damping / (2.0 * Math.sqrt(stiffness * mass));
+        final double wd;
+        final double a;
+        final double b;
+        if (zeta < 1) {
+            wd = w0 * Math.sqrt(1.0 - zeta * zeta);
+            a = 1.0;
+            b = (zeta * w0 + -initialVelocity) / wd;
+        } else {
+            wd = 0.0;
+            a = 1.0;
+            b = -initialVelocity + w0;
+        }
+        final double threshold = 0.0025;
+        final double duration = Math.log(threshold) / (-zeta * w0);
+        animator.setDuration((long) (duration * 1000L));
+        animator.setInterpolator(new Interpolator() {
+            @Override
+            public float getInterpolation(float t) {
+                if (zeta < 1) {
+                    return (float) (1.0 - Math.exp(-t * zeta * w0) * (a * Math.cos(wd * t) + b * Math.sin(wd * t)));
+                } else {
+                    return (float) (1.0 - (a + b * t) * Math.exp(-t * w0));
+                }
+            }
+        });
     }
 
     public static int getPixelsInCM(float cm, boolean isX) {

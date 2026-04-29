@@ -4,6 +4,9 @@
 // SUBSYSTEMS: actionbar-menu=L1, popup-menu=L1, theme/resource-mapping=L2
 // HOST-WIRING:
 //   - Popup background/resource lookups use NativeDo R and Theme.
+// ADAPTED:
+//   - Adds setSubItemVisible so NativeDo's simple persistent popup layout can mirror Telegram
+//     WebActionBar's conditional ItemOptions rows.
 // OMITTED:
 //   - Telegram search field, filters, Lottie, action mode, complex popup rows, and drag/reorder menu behavior.
 /*
@@ -168,6 +171,17 @@ public class ActionBarMenuItem extends FrameLayout {
         View view = popupLayout.findViewWithTag(id);
         if (view instanceof TextView) {
             ((TextView) view).setText(text);
+        }
+    }
+
+    public void setSubItemVisible(int id, boolean visible) {
+        if (popupLayout == null) {
+            return;
+        }
+        View view = popupLayout.findViewWithTag(id);
+        if (view != null) {
+            view.setVisibility(visible ? VISIBLE : GONE);
+            view.setEnabled(visible);
         }
     }
 
