@@ -1,7 +1,7 @@
 // UPSTREAM-LEVEL: L1
-// UPSTREAM-PATH:  org/telegram/ui/web/BotWebViewContainer.java; org/telegram/ui/WebviewActivity.java
+// UPSTREAM-PATH:  org/telegram/ui/web/BotWebViewContainer.java; org/telegram/ui/WebviewActivity.java; res/raw/webview_ext.js
 // UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: webview-settings=L1, webview-lifecycle=L1, theme/resource-mapping=L2
+// SUBSYSTEMS: webview-settings=L1, webview-lifecycle=L1, theme/resource-mapping=L2, color-bridge=L1, gesture-allow-scroll=L0, scroll-progress=L1
 // HOST-WIRING:
 //   - Telegram ApplicationLoader/FileLog/LocaleController/Browser helpers replaced with Android framework APIs.
 //   - NativeDo strings and Theme keys are used for progress/download user feedback.
@@ -12,9 +12,15 @@
 //     action-bar progress line instead of a second WebView-container line.
 //   - Keeps Telegram's setKeyboardFocusable(lastVisible) surface so sheet-to-tab collapse can
 //     drop WebView focus before the overlay starts drawing the proxy sheet.
-//   - Adds Telegram-style PixelCopy preview bitmap capture for collapsed tab thumbnails.
-//   - Exposes canWebViewScrollHorizontallyBack() so BrowserSheet's swipe-back gesture can mirror
-//     upstream pages[0].swipeContainer.allowingScroll(true) without porting WebViewSwipeContainer.
+//   - Ports the upstream tg:theme-accent / theme-color / body backgroundColor JS bridge from
+//     res/raw/webview_ext.js. NativeDo registers TelegramWebviewProxy for the same postEvent
+//     color and allowScroll event shapes.
+//     Color events are decoded the same way as upstream's onWebEventReceived (BotWebViewContainer
+//     L1216-1240) and forwarded as Delegate.onWebBackgroundChanged.
+//   - Mirrors upstream MyWebView.getScrollProgress / setScrollProgress (BotWebViewContainer
+//     L4934-4944) from a small WebView subclass so computeVerticalScrollRange/Extent stay exact.
+//   - Exposes MyWebView.onScrollChanged as Delegate.onWebViewScrolled so BrowserSheet can mirror
+//     ArticleViewer.updatePages() and redraw action-bar reading progress.
 // OMITTED:
 //   - Bot bridge, Telegram WebViewProxy, TON proxying, payments, age verification, history serialization,
 //     popup sheets, permissions UI, JS dialogs, and Telegram-specific dangerous URL handling.
@@ -43,6 +49,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.SurfaceTexture;
 import android.net.Uri;
 import android.net.http.SslError;
@@ -53,6 +60,7 @@ import android.view.PixelCopy;
 import android.view.Surface;
 import android.view.View;
 import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.SslErrorHandler;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -63,6 +71,13 @@ import android.widget.FrameLayout;
 import android.widget.Toast;
 
 import androidx.annotation.Nullable;
+
+import org.json.JSONArray;
+
+import java.io.BufferedReader;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 
 import io.github.baba983.nativedo.R;
 import io.github.baba983.nativedo.core.AndroidUtilities;
@@ -81,11 +96,17 @@ public class BrowserWebViewContainer extends FrameLayout {
         void onUrlChanged(String url, boolean canGoBack, boolean canGoForward);
 
         void onProgressChanged(int progress, boolean visible);
+
+        default void onWebBackgroundChanged(boolean actionBarColor, int color) {}
+
+        default void onWebViewScrolled(int dx, int dy) {}
     }
 
     private final Delegate delegate;
-    private WebView webView;
+    private final BrowserWebViewProxy webViewProxy = new BrowserWebViewProxy();
+    private BrowserWebView webView;
     private String currentUrl;
+    private String browserExtensionScript;
     private Bitmap currentFavicon;
     private int currentProgress;
     private boolean keyboardFocusable;
@@ -103,9 +124,10 @@ public class BrowserWebViewContainer extends FrameLayout {
         setupWebView();
     }
 
-    @SuppressLint("SetJavaScriptEnabled")
+    @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     private void setupWebView() {
-        webView = new WebView(getContext());
+        webView = new BrowserWebView(getContext());
+        webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
         webView.setBackgroundColor(Theme.getColor(Theme.key_iv_background));
         webView.setVerticalScrollBarEnabled(false);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
@@ -140,6 +162,8 @@ public class BrowserWebViewContainer extends FrameLayout {
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         settings.setTextSize(WebSettings.TextSize.NORMAL);
 
+        webView.addJavascriptInterface(webViewProxy, "TelegramWebviewProxy");
+
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
@@ -158,6 +182,13 @@ public class BrowserWebViewContainer extends FrameLayout {
                 notifyUrlChanged();
                 notifyProgress(10);
                 super.onPageStarted(view, url, favicon);
+                setInjectedJS(false);
+            }
+
+            @Override
+            public void onPageCommitVisible(WebView view, String url) {
+                injectBrowserExtension();
+                super.onPageCommitVisible(view, url);
             }
 
             @Override
@@ -165,6 +196,7 @@ public class BrowserWebViewContainer extends FrameLayout {
                 currentUrl = url;
                 notifyUrlChanged();
                 notifyProgress(100);
+                injectBrowserExtension();
                 super.onPageFinished(view, url);
             }
 
@@ -212,6 +244,14 @@ public class BrowserWebViewContainer extends FrameLayout {
         addView(webView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
     }
 
+    @Override
+    protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
+        if (child == webView && (AndroidUtilities.makingGlobalBlurBitmap || getLayerType() == LAYER_TYPE_HARDWARE && !canvas.isHardwareAccelerated())) {
+            return true;
+        }
+        return super.drawChild(canvas, child, drawingTime);
+    }
+
     public void loadUrl(String url) {
         currentUrl = url;
         webView.loadUrl(url);
@@ -238,13 +278,9 @@ public class BrowserWebViewContainer extends FrameLayout {
         return webView != null && webView.canGoForward();
     }
 
-    /**
-     * Mirrors upstream pages[0].swipeContainer.allowingScroll(true) gating: returns true when the
-     * underlying WebView can still scroll horizontally toward the left, i.e. the swipe-back gesture
-     * should yield to the page instead of dismissing the sheet.
-     */
-    public boolean canWebViewScrollHorizontallyBack() {
-        return webView != null && webView.canScrollHorizontally(-1);
+    /** Mirrors upstream WebViewSwipeContainer allowingScroll / PageLayout.isAtTop(). */
+    public boolean isAtTop() {
+        return webView == null || webView.getScrollY() <= 0;
     }
 
     public void goForward() {
@@ -334,12 +370,34 @@ public class BrowserWebViewContainer extends FrameLayout {
     }
 
     @Nullable
+    public WebView getWebView() {
+        return webView;
+    }
+
+    @Nullable
     public Bitmap getFavicon() {
         return currentFavicon;
     }
 
     public int getProgress() {
         return currentProgress;
+    }
+
+    public float getScrollProgress() {
+        return webView == null ? 0f : webView.getScrollProgress();
+    }
+
+    public void setScrollProgress(float progress) {
+        if (webView != null) {
+            webView.setScrollProgress(progress);
+        }
+    }
+
+    public void setBrowserBackgroundColor(int color) {
+        setBackgroundColor(color);
+        if (webView != null) {
+            webView.setBackgroundColor(color);
+        }
     }
 
     public int getWebViewScrollY() {
@@ -405,6 +463,68 @@ public class BrowserWebViewContainer extends FrameLayout {
         wasFocusable = focusable;
     }
 
+    private void injectBrowserExtension() {
+        if (webView == null) {
+            return;
+        }
+        setInjectedJS(true);
+        webView.evaluateJS(readBrowserExtensionScript());
+    }
+
+    private String readBrowserExtensionScript() {
+        if (browserExtensionScript != null) {
+            return browserExtensionScript;
+        }
+        StringBuilder builder = new StringBuilder();
+        try (InputStream stream = getResources().openRawResource(R.raw.app_browser_webview_ext);
+             BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                builder.append(line).append('\n');
+            }
+        } catch (Exception ignored) {
+        }
+        browserExtensionScript = builder.toString().replace("$DEBUG$", "false");
+        return browserExtensionScript;
+    }
+
+    private void setInjectedJS(boolean injected) {
+        if (getParent() instanceof WebViewSwipeContainer) {
+            ((WebViewSwipeContainer) getParent()).injectedJS = injected;
+        }
+    }
+
+    private void onWebEventReceived(String type, String data) {
+        if ("actionBarColor".equals(type) || "navigationBarColor".equals(type)) {
+            try {
+                JSONArray jsonArray = new JSONArray(data);
+                boolean isActionBarColor = "actionBarColor".equals(type);
+                int color = Color.argb(
+                        (int) Math.round(jsonArray.optDouble(3, 1) * 255),
+                        (int) Math.round(jsonArray.optDouble(0)),
+                        (int) Math.round(jsonArray.optDouble(1)),
+                        (int) Math.round(jsonArray.optDouble(2))
+                );
+                if (delegate != null) {
+                    delegate.onWebBackgroundChanged(isActionBarColor, color);
+                }
+            } catch (Exception ignored) {
+            }
+        } else if ("allowScroll".equals(type)) {
+            boolean x = true;
+            boolean y = true;
+            try {
+                JSONArray jsonArray = new JSONArray(data);
+                x = jsonArray.optBoolean(0, true);
+                y = jsonArray.optBoolean(1, true);
+            } catch (Exception ignored) {
+            }
+            if (getParent() instanceof WebViewSwipeContainer) {
+                ((WebViewSwipeContainer) getParent()).allowThisScroll(x, y);
+            }
+        }
+    }
+
     private void renderHardwareViewToBitmap(View view, float offsetY, PreviewCallback callback) {
         SurfaceTexture surfaceTexture = new SurfaceTexture(false);
         surfaceTexture.setDefaultBufferSize(view.getWidth(), view.getHeight());
@@ -464,5 +584,59 @@ public class BrowserWebViewContainer extends FrameLayout {
         if (delegate != null) {
             delegate.onUrlChanged(currentUrl, webView != null && webView.canGoBack(), webView != null && webView.canGoForward());
         }
+    }
+
+    private final class BrowserWebViewProxy {
+        @JavascriptInterface
+        public void postEvent(String type, String data) {
+            AndroidUtilities.runOnUIThread(() -> onWebEventReceived(type, data));
+        }
+
+        @JavascriptInterface
+        public void postEvent(String type) {
+            postEvent(type, "");
+        }
+    }
+
+    private class BrowserWebView extends WebView {
+        private int prevScrollX;
+        private int prevScrollY;
+
+        BrowserWebView(Context context) {
+            super(context);
+        }
+
+        public void evaluateJS(String script) {
+            if (script == null || script.isEmpty()) {
+                return;
+            }
+            evaluateJavascript(script, value -> {});
+        }
+
+        public float getScrollProgress() {
+            final float scrollHeight = Math.max(1, computeVerticalScrollRange() - computeVerticalScrollExtent());
+            if (scrollHeight <= getHeight()) {
+                return 0f;
+            }
+            return clamp01((float) getScrollY() / scrollHeight);
+        }
+
+        public void setScrollProgress(float progress) {
+            setScrollY((int) (clamp01(progress) * Math.max(1, computeVerticalScrollRange() - computeVerticalScrollExtent())));
+        }
+
+        @Override
+        protected void onScrollChanged(int l, int t, int oldl, int oldt) {
+            super.onScrollChanged(l, t, oldl, oldt);
+            if (delegate != null) {
+                delegate.onWebViewScrolled(getScrollX() - prevScrollX, getScrollY() - prevScrollY);
+            }
+            prevScrollX = getScrollX();
+            prevScrollY = getScrollY();
+        }
+    }
+
+    private static float clamp01(float value) {
+        return Math.max(0f, Math.min(1f, value));
     }
 }

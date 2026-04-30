@@ -6,6 +6,8 @@
 //   - Telegram BaseFragment/Theme/LayoutHelper/AndroidUtilities imports rewritten to NativeDo.
 //   - NativeDo MainActivity forwards Android predictive-back callbacks into this layout.
 //   - BottomSheetTabsOverlay is hosted inside this layout, so bottom-tabs clipping skips that overlay.
+//   - Bottom-tabs keyboard visibility is derived from WindowInsetsCompat.Type.ime() because
+//     NativeDo's simplified ActionBarLayout omits Telegram's measureKeyboardHeight path.
 // ADAPTED:
 //   - Keeps a single-stack container model for NativeDo fragments only.
 //   - Uses direct Activity finish fallback instead of Telegram LaunchActivity/parentActivity orchestration.
@@ -152,6 +154,8 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
     private BaseFragment newFragment;
     private BaseFragment oldFragment;
     private WindowInsetsCompat lastWindowInsetsCompat;
+    private boolean isKeyboardVisible;
+    private boolean withShadow;
     private final DecelerateInterpolator decelerateInterpolator = new DecelerateInterpolator(1.5f);
 
     public ActionBarLayout(Context context) {
@@ -541,6 +545,12 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
     }
 
     @Override
+    protected void dispatchDraw(Canvas canvas) {
+        withShadow = true;
+        super.dispatchDraw(canvas);
+    }
+
+    @Override
     protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
         int width = getWidth();
         int translationX = (int) innerTranslationX;
@@ -555,7 +565,8 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
 
         int restoreCount = canvas.save();
         if (child != bottomSheetTabs && child != bottomSheetTabsOverlay && bottomSheetTabsClip != null) {
-            bottomSheetTabsClip.clip(canvas, true, false, getWidth(), getHeight(), 1.0f);
+            bottomSheetTabsClip.clip(canvas, withShadow, isKeyboardVisible, getWidth(), (int) getY() + getHeight(), 1.0f);
+            withShadow = false;
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && translationX != 0) {
             if (child == containerView) {
@@ -904,6 +915,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
 
     private WindowInsetsCompat onApplyWindowInsets(View view, WindowInsetsCompat insets) {
         lastWindowInsetsCompat = insets;
+        isKeyboardVisible = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom > 0;
         for (int i = 0, count = getChildCount(); i < count; i++) {
             dispatchApplyWindowInsetsInternal(getChildAt(i), insets);
         }

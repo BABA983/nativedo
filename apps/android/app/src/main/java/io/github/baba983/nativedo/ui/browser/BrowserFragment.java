@@ -1,7 +1,7 @@
 // UPSTREAM-LEVEL: L2
 // UPSTREAM-PATH:  org/telegram/messenger/browser/Browser.java; org/telegram/ui/ArticleViewer.java; org/telegram/ui/WebviewActivity.java
 // UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: browser-entry=L2, bottom-up-animation=L0, webview-lifecycle=L1
+// SUBSYSTEMS: browser-entry=L2, bottom-up-animation=L0, webview-lifecycle=L1, adaptive-color=L2, scroll-progress=L2, scrubber-wiring=L2
 // HOST-WIRING:
 //   - NativeDo Profile dev URL entry presents this fragment through ActionBarLayout.
 //   - Uses NativeDo WebActionBar and BrowserWebViewContainer instead of Telegram ArticleViewer pages.
@@ -42,7 +42,10 @@ import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.Toast;
 
+import androidx.core.graphics.ColorUtils;
+
 import io.github.baba983.nativedo.R;
+import io.github.baba983.nativedo.core.SharedConfig;
 import io.github.baba983.nativedo.ui.actionbar.ActionBarLayout;
 import io.github.baba983.nativedo.ui.actionbar.BaseFragment;
 import io.github.baba983.nativedo.ui.actionbar.Theme;
@@ -55,7 +58,10 @@ public class BrowserFragment extends BaseFragment {
     private WebActionBar webActionBar;
     private BrowserSearchPanel searchPanel;
     private BrowserAddressPanel addressPanel;
+    private FrameLayout rootView;
     private boolean closing;
+    private int webActionBarColor = Theme.getColor(Theme.key_iv_background);
+    private int webBackgroundColor = Theme.getColor(Theme.key_iv_background);
 
     public BrowserFragment(String initialUrl) {
         this.initialUrl = initialUrl;
@@ -119,13 +125,22 @@ public class BrowserFragment extends BaseFragment {
                 }
                 webActionBar.showAddress("", true);
             }
+
+            @Override
+            public void onScrolledProgress(float delta) {
+                if (webViewContainer != null) {
+                    webViewContainer.setScrollProgress(clamp01(webViewContainer.getScrollProgress() + delta));
+                    updatePageProgress();
+                }
+            }
         });
         actionBar = webActionBar;
+        webActionBar.setBackgroundColor(getBrowserActionBarColor());
         webActionBar.setTitle(titleFromUrl(initialUrl));
         webActionBar.setCurrentUrl(initialUrl);
 
-        FrameLayout root = new FrameLayout(context);
-        root.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        FrameLayout root = rootView = new FrameLayout(context);
+        root.setBackgroundColor(getBrowserBackgroundColor());
         webViewContainer = new BrowserWebViewContainer(context, new BrowserWebViewContainer.Delegate() {
             @Override
             public void onTitleChanged(String title) {
@@ -144,7 +159,17 @@ public class BrowserFragment extends BaseFragment {
 
             @Override
             public void onProgressChanged(int progress, boolean visible) {
-                webActionBar.setProgress(progress, visible);
+                webActionBar.setLoadingProgress(progress, visible);
+            }
+
+            @Override
+            public void onWebViewScrolled(int dx, int dy) {
+                updatePageProgress();
+            }
+
+            @Override
+            public void onWebBackgroundChanged(boolean actionBarColor, int color) {
+                setWebBackgroundColor(actionBarColor, color);
             }
         });
         root.addView(webViewContainer, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
@@ -287,6 +312,39 @@ public class BrowserFragment extends BaseFragment {
         webViewContainer.loadUrl(url);
     }
 
+    private void updatePageProgress() {
+        if (webActionBar != null && webViewContainer != null) {
+            webActionBar.setProgress(webViewContainer.getScrollProgress());
+        }
+    }
+
+    private int getBrowserBackgroundColor() {
+        return SharedConfig.adaptableColorInBrowser ? webBackgroundColor : Theme.getColor(Theme.key_iv_background);
+    }
+
+    private int getBrowserActionBarColor() {
+        return SharedConfig.adaptableColorInBrowser ? webActionBarColor : Theme.getColor(Theme.key_iv_background);
+    }
+
+    private void setWebBackgroundColor(boolean actionBarColor, int color) {
+        if (actionBarColor) {
+            webActionBarColor = blendOver(Theme.getColor(Theme.key_iv_background), color);
+            if (SharedConfig.adaptableColorInBrowser && webActionBar != null) {
+                webActionBar.setColors(webActionBarColor, true);
+            }
+        } else {
+            webBackgroundColor = blendOver(0xFFFFFFFF, color);
+            if (SharedConfig.adaptableColorInBrowser) {
+                if (rootView != null) {
+                    rootView.setBackgroundColor(webBackgroundColor);
+                }
+                if (webViewContainer != null) {
+                    webViewContainer.setBrowserBackgroundColor(webBackgroundColor);
+                }
+            }
+        }
+    }
+
     private String normalizeAddressValue(String value) {
         if (value == null) {
             return null;
@@ -311,5 +369,13 @@ public class BrowserFragment extends BaseFragment {
         Uri uri = Uri.parse(url);
         String host = uri.getHost();
         return host == null || host.trim().isEmpty() ? url : host;
+    }
+
+    private static int blendOver(int background, int foreground) {
+        return ColorUtils.compositeColors(foreground, background);
+    }
+
+    private static float clamp01(float value) {
+        return Math.max(0f, Math.min(1f, value));
     }
 }

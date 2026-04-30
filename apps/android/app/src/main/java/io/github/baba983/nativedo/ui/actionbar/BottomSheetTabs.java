@@ -329,7 +329,7 @@ public class BottomSheetTabs extends FrameLayout {
             overlay.openTabsView();
             return;
         }
-        openTab(tabs.get(0));
+        openTab(tabs.get(tabs.size() - 1));
     }
 
     @Override
@@ -644,7 +644,7 @@ public class BottomSheetTabs extends FrameLayout {
             rectPath.addRoundRect(bounds, radii, Path.Direction.CW);
             canvas.drawPath(rectPath, backgroundPaint);
 
-            if (progress > 0 && alpha > 0) {
+            if (progress > 0 && expandProgress > 0 && alpha > 0) {
                 canvas.save();
                 canvas.clipPath(rectPath);
                 progressPaint.setColor(multAlpha(computePerceivedBrightness(backgroundColor) > .721f ? Color.BLACK : Color.WHITE, .07f * alpha));

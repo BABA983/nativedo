@@ -1,7 +1,7 @@
 // UPSTREAM-LEVEL: L2
 // UPSTREAM-PATH:  org/telegram/ui/web/WebActionBar.java
 // UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: browser-actionbar=L2, address-animation=L0, progress-animation=L1, title-swap=L1, popup-menu=L1
+// SUBSYSTEMS: browser-actionbar=L2, address-animation=L0, progress-animation=L1, scroll-progress=L1, title-swap=L1, popup-menu=L1, adaptive-color=L1, scrubber-gesture=L0
 // HOST-WIRING:
 //   - Extends NativeDo's current ActionBar slice so ActionBarLayout can host it unchanged.
 //   - Uses NativeDo strings, Theme keys, and existing ActionBarMenu popup support.
@@ -11,12 +11,27 @@
 //   - Keeps Telegram's sheet-browser toolbar semantics: the right toolbar arrow collapses to tabs;
 //     NativeDo omits forward from both the action bar and overflow for http browser parity.
 //   - Replaces the placeholder line with NativeDo's LineProgressView (smooth 200ms EASE_OUT_QUINT chase).
+//   - Ports the upstream action-bar reading progress background fill driven by
+//     ArticleViewer.updatePages() -> WebActionBar.setProgress(index, pageProgress).
 //   - Adds Title[2] slots + titleProgress cross-slide (360ms EASE_OUT_QUINT) for navigation
 //     transitions, in lieu of the upstream AnimatedTextDrawable per-character animation
 //     (kept as a follow-up).
+//   - Adds upstream WebActionBar.setColors(int, boolean) adaptive color path: animated
+//     blendARGB(fromBackgroundColor -> backgroundColor), derives
+//     textColor / iconColor / addressBackgroundColor / addressTextColor from the page
+//     background's perceived brightness (<= .721 => dark) and applies them to the bar
+//     background, BackDrawable, ActionBarMenu icons, address rounded fill, search/address
+//     EditTexts. Mirrors WebActionBar.java L518-602.
+//   - Ports WebActionBar.dispatchTouchEvent / longPressRunnable / onScrolledProgress
+//     (L1001-1034). NativeDo computes the same leftmenu.getRight()/rightmenu.getLeft()
+//     bounds from the current back button and menu geometry because its ActionBar slice
+//     does not expose those upstream LinearLayouts. Constants kept verbatim:
+//     0.8 * ViewConfiguration.getLongPressTimeout() press window and
+//     (x - pressX) / (0.8 * getWidth()) normalized delta.
 // OMITTED:
-//   - Search field, dynamic color extraction, Instant View, bookmarks/history/settings state,
-//     bottom action bar mode, long-press page scrubber, and Telegram item-options menu icons.
+//   - Search field full theming pass, Instant View, bookmarks/history/settings state,
+//     bottom action bar mode, and Telegram item-options menu icons. Forward button still
+//     omitted from both the action bar and overflow for http browser parity.
 /*
  * This file is part of NativeDo.
  *
@@ -55,7 +70,10 @@ import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
+import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
@@ -96,6 +114,13 @@ public class WebActionBar extends ActionBar {
         default void onAddressInputChanged(String text) {}
 
         default void onTitleClicked() {}
+
+        /**
+         * Mirrors upstream WebActionBar.onScrolledProgress(float) -> ArticleViewer
+         * pages[0].addProgress(delta). The host should call
+         * {@code webViewContainer.setScrollProgress(getScrollProgress() + delta)}.
+         */
+        default void onScrolledProgress(float delta) {}
     }
 
     public static final int MENU_OPEN_EXTERNAL = 1;
@@ -110,6 +135,8 @@ public class WebActionBar extends ActionBar {
     private final Title[] titles = new Title[2];
     private final EditText addressEditText;
     private final LineProgressView progressView;
+    private final float[] progress = new float[2];
+    private final Paint[] progressBackgroundPaint = new Paint[2];
 
     private String currentTitle = "";
     private String currentUrl = "";
@@ -132,10 +159,36 @@ public class WebActionBar extends ActionBar {
     private int addressBackgroundColor;
     private int addressTextColor;
 
+    // Upstream-style adaptive color state (WebActionBar.java L74-82, L466-470).
+    private boolean adaptiveColorSet;
+    private int currentBackgroundColor;
+    private int currentTextColor;
+    private int currentIconColor;
+    private int fromBackgroundColor;
+    private ValueAnimator colorAnimator;
+
+    // Long-press scrubber state (WebActionBar.java L999-1011).
+    private float pressX;
+    private float pressY;
+    private long pressTime;
+    private boolean longClicked;
+    private final Runnable longPressRunnable = () -> {
+        longClicked = true;
+        if (getParent() != null) {
+            getParent().requestDisallowInterceptTouchEvent(true);
+        }
+        try {
+            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS, HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING);
+        } catch (Exception ignored) {}
+    };
+
     public WebActionBar(Context context, Delegate delegate) {
         super(context);
         this.delegate = delegate;
         super.setTitle("");
+        for (int i = 0; i < progressBackgroundPaint.length; ++i) {
+            progressBackgroundPaint[i] = new Paint(Paint.ANTI_ALIAS_FLAG);
+        }
         backButtonDrawable = new BackDrawable(false);
         backButtonDrawable.setAnimationTime(200.0f);
         backButtonDrawable.setRotation(1.0f, false);
@@ -152,7 +205,13 @@ public class WebActionBar extends ActionBar {
                 FrameLayout.LayoutParams.MATCH_PARENT);
         titleContainer.addView(titles[0], slotLp);
         titleContainer.addView(titles[1], new FrameLayout.LayoutParams(slotLp));
+        // Upstream WebActionBar checks `longClicked` from its dispatchTouchEvent gesture; we
+        // mirror that here so the scrubber long-press doesn't also fire the address overlay.
         View.OnClickListener showAddressClick = v -> {
+            if (longClicked) {
+                longClicked = false;
+                return;
+            }
             if (delegate != null) {
                 delegate.onTitleClicked();
             }
@@ -286,6 +345,8 @@ public class WebActionBar extends ActionBar {
                 }
             }
         });
+
+        setColors(Theme.getColor(Theme.key_iv_background), false);
     }
 
     @Override
@@ -377,9 +438,114 @@ public class WebActionBar extends ActionBar {
         titles[1].setSubtitleText("");
     }
 
-    public void setProgress(int progress, boolean visible) {
+    public void setLoadingProgress(int progress, boolean visible) {
         int clamped = Math.max(0, Math.min(100, progress));
         progressView.setProgress(clamped / 100f, true);
+    }
+
+    public void setProgress(float progress) {
+        setProgress(0, progress);
+    }
+
+    public void setProgress(int i, float progress) {
+        this.progress[i] = progress;
+        invalidate();
+    }
+
+    /**
+     * Adaptive color entry point — mirrors WebActionBar.java L518-519. Always animates from
+     * the previous bar color (or the theme color on first call) to {@code backgroundColor}.
+     */
+    public void setColors(int backgroundColor, boolean animated) {
+        setColors(backgroundColor, -1f, animated);
+    }
+
+    /**
+     * Adaptive color update — mirrors WebActionBar.java L522-602. {@code dark} negative means
+     * "compute from perceived brightness"; the animator path passes the lerp'd value so the
+     * derived text/icon colors don't twitch between frames.
+     */
+    public void setColors(int backgroundColor, float dark, boolean animated) {
+        if (adaptiveColorSet && currentBackgroundColor == backgroundColor) {
+            return;
+        }
+        if (!animated) {
+            adaptiveColorSet = true;
+            if (dark < 0) {
+                dark = AndroidUtilities.computePerceivedBrightness(backgroundColor) <= .721f ? 1f : 0f;
+            }
+            currentBackgroundColor = backgroundColor;
+            currentTextColor = ColorUtils.blendARGB(Color.BLACK, Color.WHITE, dark);
+            currentIconColor = multAlpha(currentTextColor, .55f);
+
+            super.setBackgroundColor(backgroundColor);
+            int progressBackgroundColor = ColorUtils.compositeColors(multAlpha(currentTextColor, AndroidUtilities.lerp(.07f, .2f, dark)), backgroundColor);
+            for (Paint paint : progressBackgroundPaint) {
+                paint.setColor(progressBackgroundColor);
+            }
+            updateAddressColors();
+
+            // Apply text/icon colors to title slots, address EditText, search EditText, back
+            // button, and ActionBarMenu icons so the whole bar tracks the page brightness.
+            for (Title title : titles) {
+                title.setTitleTextColor(currentTextColor);
+                int subtitleColor = ColorUtils.compositeColors(multAlpha(currentTextColor, .6f), backgroundColor);
+                title.setSubtitleTextColor(subtitleColor);
+            }
+            addressEditText.setTextColor(addressTextColor);
+            addressEditText.setHintTextColor(multAlpha(addressTextColor, .6f));
+            searchEditText.setTextColor(currentTextColor);
+            searchEditText.setHintTextColor(multAlpha(currentTextColor, .6f));
+
+            backButtonDrawable.setColor(ColorUtils.blendARGB(currentTextColor, addressTextColor, addressingProgress));
+            backButtonDrawable.setRotatedColor(ColorUtils.blendARGB(currentTextColor, addressTextColor, addressingProgress));
+
+            itemsColor = currentTextColor;
+            if (menu != null) {
+                // ActionBarMenu.updateItemsColor() is package-private, but we already know the
+                // children are ActionBarMenuItem and they expose setIconColor publicly.
+                for (int i = 0; i < menu.getChildCount(); i++) {
+                    View child = menu.getChildAt(i);
+                    if (child instanceof ActionBarMenuItem) {
+                        ((ActionBarMenuItem) child).setIconColor(currentTextColor);
+                    }
+                }
+            }
+
+            invalidate();
+            return;
+        }
+
+        if (colorAnimator != null) {
+            colorAnimator.cancel();
+        }
+        fromBackgroundColor = currentBackgroundColor;
+        final float fromDark = AndroidUtilities.computePerceivedBrightness(fromBackgroundColor) <= .721f ? 1f : 0f;
+        final float toDark = AndroidUtilities.computePerceivedBrightness(backgroundColor) <= .721f ? 1f : 0f;
+        colorAnimator = ValueAnimator.ofFloat(0f, 1f);
+        colorAnimator.addUpdateListener(animation -> {
+            float t = (float) animation.getAnimatedValue();
+            setColors(
+                    ColorUtils.blendARGB(fromBackgroundColor, backgroundColor, t),
+                    AndroidUtilities.lerp(fromDark, toDark, t),
+                    false
+            );
+        });
+        colorAnimator.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                setColors(backgroundColor, toDark, false);
+            }
+        });
+        colorAnimator.start();
+    }
+
+    public int getBackgroundColorAdaptive() {
+        return adaptiveColorSet ? currentBackgroundColor : Theme.getColor(Theme.key_actionBarDefault);
+    }
+
+    public int getTextColorAdaptive() {
+        return adaptiveColorSet ? currentTextColor : Theme.getColor(Theme.key_actionBarDefaultTitle);
     }
 
     public boolean isAddressing() {
@@ -574,27 +740,57 @@ public class WebActionBar extends ActionBar {
     }
 
     private void onAddressingProgress(float progress) {
-        backButtonDrawable.setColor(ColorUtils.blendARGB(itemsColor, addressTextColor, addressingProgress));
-        backButtonDrawable.setRotatedColor(ColorUtils.blendARGB(itemsColor, addressTextColor, addressingProgress));
+        // Blend from the live page-derived textColor (see setColors) when adaptive, otherwise
+        // from the stock items color, just as upstream does in WebActionBar.java L560-561.
+        int restColor = adaptiveColorSet ? currentTextColor : itemsColor;
+        backButtonDrawable.setColor(ColorUtils.blendARGB(restColor, addressTextColor, addressingProgress));
+        backButtonDrawable.setRotatedColor(ColorUtils.blendARGB(restColor, addressTextColor, addressingProgress));
         if (delegate != null) {
             delegate.onAddressingProgress(progress);
         }
     }
 
     private void updateAddressColors() {
-        int bg = Theme.getColor(Theme.key_actionBarDefault);
+        // When adaptive color is active, source the brightness from the live page color so the
+        // address overlay matches the bar; otherwise keep upstream's theme-based fallback.
+        int bg = adaptiveColorSet ? currentBackgroundColor : Theme.getColor(Theme.key_actionBarDefault);
         float dark = AndroidUtilities.computePerceivedBrightness(bg) <= .721f ? 1f : 0f;
         addressBackgroundColor = ColorUtils.blendARGB(Color.WHITE, Color.BLACK, dark);
         addressTextColor = ColorUtils.blendARGB(Color.WHITE, Color.BLACK, 1f - dark);
         addressBackgroundPaint.setColor(addressBackgroundColor);
-        addressRoundPaint.setColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        if (adaptiveColorSet) {
+            // Mirrors upstream addressRoundPaint = blendOver(addressBackgroundColor,
+            // multAlpha(textColor, lerp(.07f, .2f, dark))) — see WebActionBar.java L552.
+            int tint = multAlpha(currentTextColor, AndroidUtilities.lerp(.07f, .2f, dark));
+            addressRoundPaint.setColor(ColorUtils.compositeColors(tint, addressBackgroundColor));
+        } else {
+            addressRoundPaint.setColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        }
         if (delegate != null) {
             delegate.onAddressColorsChanged(addressBackgroundColor, addressTextColor);
         }
     }
 
+    private static int multAlpha(int color, float multiply) {
+        int a = Math.max(0, Math.min(0xFF, Math.round(Color.alpha(color) * multiply)));
+        return ColorUtils.setAlphaComponent(color, a);
+    }
+
     @Override
     protected void dispatchDraw(Canvas canvas) {
+        float l = getWidth() * titleProgress;
+        if (titleProgress > 0f && progress[1] > 0f) {
+            int wasAlpha = progressBackgroundPaint[1].getAlpha();
+            progressBackgroundPaint[1].setAlpha((int) (wasAlpha * (1f - searchingProgress) * (1f - addressingProgress)));
+            canvas.drawRect(0, 0, progress[1] * getWidth(), getHeight(), progressBackgroundPaint[1]);
+            progressBackgroundPaint[1].setAlpha(wasAlpha);
+        }
+        if (progress[0] > 0f) {
+            int wasAlpha = progressBackgroundPaint[0].getAlpha();
+            progressBackgroundPaint[0].setAlpha((int) ((1f - clamp01(titleProgress * 4)) * wasAlpha * (1f - searchingProgress) * (1f - addressingProgress)));
+            canvas.drawRect(l, 0, l + progress[0] * getWidth(), getHeight(), progressBackgroundPaint[0]);
+            progressBackgroundPaint[0].setAlpha(wasAlpha);
+        }
         if (addressingProgress > 0) {
             int wasAlpha = addressBackgroundPaint.getAlpha();
             addressBackgroundPaint.setAlpha((int) (wasAlpha * addressingProgress));
@@ -621,6 +817,10 @@ public class WebActionBar extends ActionBar {
         }
 
         super.dispatchDraw(canvas);
+    }
+
+    private static float clamp01(float value) {
+        return Math.max(0f, Math.min(1f, value));
     }
 
     @Override
@@ -675,6 +875,61 @@ public class WebActionBar extends ActionBar {
     }
 
     /**
+     * L0 port of WebActionBar.dispatchTouchEvent (L1013-1034). The press window
+     * {@code 0.8 * ViewConfiguration.getLongPressTimeout()} and the normalized
+     * {@code (x - pressX) / (0.8f * getWidth())} delta are kept verbatim so the scrubber
+     * feels identical to upstream.
+     */
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent ev) {
+        if (ev.getAction() == MotionEvent.ACTION_DOWN) {
+            longClicked = false;
+            AndroidUtilities.cancelRunOnUIThread(longPressRunnable);
+            if (ev.getX() > getLeftMenuRight() && ev.getX() < getRightMenuLeft()
+                    && !isSearching() && !isAddressing()) {
+                pressX = ev.getX();
+                pressY = ev.getY();
+                pressTime = System.currentTimeMillis();
+                AndroidUtilities.runOnUIThread(longPressRunnable, (long) (ViewConfiguration.getLongPressTimeout() * .8f));
+            }
+        } else if (ev.getAction() == MotionEvent.ACTION_MOVE
+                && System.currentTimeMillis() - pressTime > ViewConfiguration.getLongPressTimeout() * .8f) {
+            AndroidUtilities.cancelRunOnUIThread(longPressRunnable);
+            longClicked = true;
+            onScrolledProgress((ev.getX() - pressX) / (.8f * getWidth()));
+            getParent().requestDisallowInterceptTouchEvent(true);
+        } else if (ev.getAction() == MotionEvent.ACTION_UP || ev.getAction() == MotionEvent.ACTION_CANCEL) {
+            AndroidUtilities.cancelRunOnUIThread(longPressRunnable);
+            pressTime = 0;
+        }
+        pressX = ev.getX();
+        return super.dispatchTouchEvent(ev);
+    }
+
+    private int getLeftMenuRight() {
+        return AndroidUtilities.dp(54);
+    }
+
+    private int getRightMenuLeft() {
+        if (menu == null) {
+            return getWidth();
+        }
+        int menuWidth = menu.getWidth() > 0 ? menu.getWidth() : menu.getMeasuredWidth();
+        return getWidth() - menuWidth;
+    }
+
+    /**
+     * Forwards the L0 normalized delta to the host so it can advance the WebView scroll —
+     * mirrors WebActionBar.onScrolledProgress(float) being overridden in ArticleViewer to
+     * call pages[0].addProgress(delta).
+     */
+    protected void onScrolledProgress(float delta) {
+        if (delegate != null) {
+            delegate.onScrolledProgress(delta);
+        }
+    }
+
+    /**
      * Single title/subtitle slot. Two of these layered inside titleContainer give us the cross-slide
      * swap upstream achieves with its painted titles[] + AnimatedTextDrawable; that fancier per-glyph
      * animation can replace this slot later without changing the public swap() API.
@@ -719,6 +974,14 @@ public class WebActionBar extends ActionBar {
 
         void setSubtitleText(CharSequence value) {
             subtitleView.setText(value);
+        }
+
+        void setTitleTextColor(int color) {
+            titleView.setTextColor(color);
+        }
+
+        void setSubtitleTextColor(int color) {
+            subtitleView.setTextColor(color);
         }
 
         CharSequence getTitleText() {

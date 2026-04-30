@@ -3,7 +3,7 @@
 // UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
 // SUBSYSTEMS: compile-shim=L2, config-flag=L2
 // HOST-WIRING:
-//   - Keeps flags read by the current ActionBar slice.
+//   - Keeps flags read by the current ActionBar/browser slices.
 // OMITTED:
 //   - Telegram persisted shared configuration and unrelated feature flags.
 /*
@@ -32,6 +32,7 @@ package io.github.baba983.nativedo.core;
 public final class SharedConfig {
 
     public static boolean drawActionBarShadow = true;
+    public static boolean adaptableColorInBrowser = true;
 
     private SharedConfig() {
     }

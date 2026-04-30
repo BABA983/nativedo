@@ -7,6 +7,8 @@
 // ADAPTED:
 //   - Keeps only display metrics, dp conversion, keyboard, status-bar, cascade, and UI-thread helpers used by current ports.
 //   - Adds Telegram's applySpring animator helper for copied interaction animations.
+//   - Adds software blur snapshot helpers for BottomSheetTabsOverlay because NativeDo does not
+//     ship Telegram's native Utilities.stackBlurBitmap pipeline.
 // OMITTED:
 //   - Telegram app-wide utilities, account state, media/cache helpers, and broad UI helpers outside the current navigation shell.
 /*
@@ -36,7 +38,10 @@ package io.github.baba983.nativedo.core;
 
 import android.animation.Animator;
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.ColorMatrix;
 import android.graphics.Point;
 import android.os.Handler;
 import android.os.Looper;
@@ -48,6 +53,8 @@ import android.view.inputmethod.InputMethodManager;
 
 import androidx.core.view.WindowCompat;
 
+import io.github.baba983.nativedo.ui.actionbar.Theme;
+
 public final class AndroidUtilities {
 
     public static final Point displaySize = new Point();
@@ -56,6 +63,7 @@ public final class AndroidUtilities {
     public static float density = 1.0f;
     public static int statusBarHeight;
     public static int navigationBarHeight;
+    public static boolean makingGlobalBlurBitmap;
     private static final Handler mainHandler = new Handler(Looper.getMainLooper());
     private static float xdpi;
     private static float ydpi;
@@ -88,12 +96,52 @@ public final class AndroidUtilities {
         return density * value;
     }
 
+    public static float distance(float x1, float y1, float x2, float y2) {
+        return (float) Math.sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
+    }
+
     public static float lerp(float from, float to, float progress) {
         return from + (to - from) * progress;
     }
 
     public static float computePerceivedBrightness(int color) {
         return (android.graphics.Color.red(color) * 0.2126f + android.graphics.Color.green(color) * 0.7152f + android.graphics.Color.blue(color) * 0.0722f) / 255f;
+    }
+
+    public static void adjustSaturationColorMatrix(ColorMatrix colorMatrix, float saturation) {
+        if (colorMatrix == null) {
+            return;
+        }
+        float x = 1 + saturation;
+        final float lumR = 0.3086f;
+        final float lumG = 0.6094f;
+        final float lumB = 0.0820f;
+
+        colorMatrix.postConcat(new ColorMatrix(new float[]{
+                lumR * (1 - x) + x, lumG * (1 - x), lumB * (1 - x), 0, 0,
+                lumR * (1 - x), lumG * (1 - x) + x, lumB * (1 - x), 0, 0,
+                lumR * (1 - x), lumG * (1 - x), lumB * (1 - x) + x, 0, 0,
+                0, 0, 0, 1, 0
+        }));
+    }
+
+    public static Bitmap makeBlurBitmap(View view) {
+        return makeBlurBitmap(view, 6f, 7);
+    }
+
+    public static Bitmap makeBlurBitmap(View view, float downscale, int maxRadius) {
+        if (view == null || view.getWidth() <= 0 || view.getHeight() <= 0) {
+            return null;
+        }
+        int width = Math.max(1, (int) (view.getWidth() / downscale));
+        int height = Math.max(1, (int) (view.getHeight() / downscale));
+        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        canvas.scale(1.0f / downscale, 1.0f / downscale);
+        canvas.drawColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        view.draw(canvas);
+        stackBlurBitmap(bitmap, Math.max(maxRadius, Math.max(width, height) / 180));
+        return bitmap;
     }
 
     public static float cascade(float fullAnimationT, float position, float count, float waveLength) {
@@ -158,10 +206,18 @@ public final class AndroidUtilities {
     }
 
     public static void runOnUIThread(Runnable runnable) {
+        runOnUIThread(runnable, 0);
+    }
+
+    public static void runOnUIThread(Runnable runnable, long delay) {
         if (runnable == null) {
             return;
         }
-        mainHandler.post(runnable);
+        if (delay <= 0) {
+            mainHandler.post(runnable);
+        } else {
+            mainHandler.postDelayed(runnable, delay);
+        }
     }
 
     public static void cancelRunOnUIThread(Runnable runnable) {
@@ -185,5 +241,213 @@ public final class AndroidUtilities {
         if (window.getStatusBarColor() != statusBarColor) {
             window.setStatusBarColor(statusBarColor);
         }
+    }
+
+    private static void stackBlurBitmap(Bitmap bitmap, int radius) {
+        if (bitmap == null || radius < 1) {
+            return;
+        }
+        int width = bitmap.getWidth();
+        int height = bitmap.getHeight();
+        if (width == 0 || height == 0) {
+            return;
+        }
+
+        int pixelCount = width * height;
+        int[] pixels = new int[pixelCount];
+        bitmap.getPixels(pixels, 0, width, 0, 0, width, height);
+
+        int[] red = new int[pixelCount];
+        int[] green = new int[pixelCount];
+        int[] blue = new int[pixelCount];
+
+        int widthMinusOne = width - 1;
+        int heightMinusOne = height - 1;
+        int div = radius + radius + 1;
+
+        int[] divSumLookup = new int[256 * (((div + 1) >> 1) * ((div + 1) >> 1))];
+        for (int i = 0; i < divSumLookup.length; i++) {
+            divSumLookup[i] = i / (((div + 1) >> 1) * ((div + 1) >> 1));
+        }
+
+        int[][] stack = new int[div][3];
+        int[] min = new int[Math.max(width, height)];
+
+        int yi = 0;
+        int yw = 0;
+        for (int y = 0; y < height; y++) {
+            int rInSum = 0;
+            int gInSum = 0;
+            int bInSum = 0;
+            int rSum = 0;
+            int gSum = 0;
+            int bSum = 0;
+            int rOutSum = 0;
+            int gOutSum = 0;
+            int bOutSum = 0;
+
+            for (int i = -radius; i <= radius; i++) {
+                int pixel = pixels[yi + clamp(i, 0, widthMinusOne)];
+                int[] sir = stack[i + radius];
+                sir[0] = (pixel >> 16) & 0xff;
+                sir[1] = (pixel >> 8) & 0xff;
+                sir[2] = pixel & 0xff;
+                int rbs = radius + 1 - Math.abs(i);
+                rSum += sir[0] * rbs;
+                gSum += sir[1] * rbs;
+                bSum += sir[2] * rbs;
+                if (i > 0) {
+                    rInSum += sir[0];
+                    gInSum += sir[1];
+                    bInSum += sir[2];
+                } else {
+                    rOutSum += sir[0];
+                    gOutSum += sir[1];
+                    bOutSum += sir[2];
+                }
+            }
+
+            int stackPointer = radius;
+            for (int x = 0; x < width; x++) {
+                red[yi] = divSumLookup[rSum];
+                green[yi] = divSumLookup[gSum];
+                blue[yi] = divSumLookup[bSum];
+
+                rSum -= rOutSum;
+                gSum -= gOutSum;
+                bSum -= bOutSum;
+
+                int stackStart = stackPointer - radius + div;
+                int[] sir = stack[stackStart % div];
+
+                rOutSum -= sir[0];
+                gOutSum -= sir[1];
+                bOutSum -= sir[2];
+
+                if (y == 0) {
+                    min[x] = Math.min(x + radius + 1, widthMinusOne);
+                }
+                int pixel = pixels[yw + min[x]];
+
+                sir[0] = (pixel >> 16) & 0xff;
+                sir[1] = (pixel >> 8) & 0xff;
+                sir[2] = pixel & 0xff;
+
+                rInSum += sir[0];
+                gInSum += sir[1];
+                bInSum += sir[2];
+
+                rSum += rInSum;
+                gSum += gInSum;
+                bSum += bInSum;
+
+                stackPointer = (stackPointer + 1) % div;
+                sir = stack[stackPointer % div];
+
+                rOutSum += sir[0];
+                gOutSum += sir[1];
+                bOutSum += sir[2];
+
+                rInSum -= sir[0];
+                gInSum -= sir[1];
+                bInSum -= sir[2];
+
+                yi++;
+            }
+            yw += width;
+        }
+
+        for (int x = 0; x < width; x++) {
+            int rInSum = 0;
+            int gInSum = 0;
+            int bInSum = 0;
+            int rSum = 0;
+            int gSum = 0;
+            int bSum = 0;
+            int rOutSum = 0;
+            int gOutSum = 0;
+            int bOutSum = 0;
+            int yp = -radius * width;
+
+            for (int i = -radius; i <= radius; i++) {
+                yi = Math.max(0, yp) + x;
+                int[] sir = stack[i + radius];
+                sir[0] = red[yi];
+                sir[1] = green[yi];
+                sir[2] = blue[yi];
+                int rbs = radius + 1 - Math.abs(i);
+                rSum += red[yi] * rbs;
+                gSum += green[yi] * rbs;
+                bSum += blue[yi] * rbs;
+                if (i > 0) {
+                    rInSum += sir[0];
+                    gInSum += sir[1];
+                    bInSum += sir[2];
+                } else {
+                    rOutSum += sir[0];
+                    gOutSum += sir[1];
+                    bOutSum += sir[2];
+                }
+                if (i < heightMinusOne) {
+                    yp += width;
+                }
+            }
+
+            yi = x;
+            int stackPointer = radius;
+            for (int y = 0; y < height; y++) {
+                pixels[yi] = (pixels[yi] & 0xff000000)
+                        | (divSumLookup[rSum] << 16)
+                        | (divSumLookup[gSum] << 8)
+                        | divSumLookup[bSum];
+
+                rSum -= rOutSum;
+                gSum -= gOutSum;
+                bSum -= bOutSum;
+
+                int stackStart = stackPointer - radius + div;
+                int[] sir = stack[stackStart % div];
+
+                rOutSum -= sir[0];
+                gOutSum -= sir[1];
+                bOutSum -= sir[2];
+
+                if (x == 0) {
+                    min[y] = Math.min(y + radius + 1, heightMinusOne) * width;
+                }
+                int p = x + min[y];
+
+                sir[0] = red[p];
+                sir[1] = green[p];
+                sir[2] = blue[p];
+
+                rInSum += sir[0];
+                gInSum += sir[1];
+                bInSum += sir[2];
+
+                rSum += rInSum;
+                gSum += gInSum;
+                bSum += bInSum;
+
+                stackPointer = (stackPointer + 1) % div;
+                sir = stack[stackPointer];
+
+                rOutSum += sir[0];
+                gOutSum += sir[1];
+                bOutSum += sir[2];
+
+                rInSum -= sir[0];
+                gInSum -= sir[1];
+                bInSum -= sir[2];
+
+                yi += width;
+            }
+        }
+
+        bitmap.setPixels(pixels, 0, width, 0, 0, width, height);
+    }
+
+    private static int clamp(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
     }
 }

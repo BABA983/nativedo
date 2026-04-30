@@ -1,11 +1,16 @@
 // UPSTREAM-LEVEL: L2
 // UPSTREAM-PATH:  org/telegram/ui/ArticleViewer.java; org/telegram/ui/ActionBar/BaseFragment.java
 // UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: attached-sheet=L2, bottom-up-animation=L0, swipe-back-gesture=L0, browser-lifecycle=L1
+// SUBSYSTEMS: attached-sheet=L2, bottom-up-animation=L0, swipe-back-gesture=L0, browser-lifecycle=L1, adaptive-color=L2, scroll-progress=L2, scrubber-wiring=L2
 // HOST-WIRING:
 //   - Attaches the browser window directly to NativeDo's ActionBarLayout ViewGroup.
 //   - Uses NativeDo WebActionBar and BrowserWebViewContainer for page UI.
-//   - WebView edge-detection replaces upstream pages[0].swipeContainer.allowingScroll() check.
+//   - WebViewSwipeContainer (L0 port from ChatAttachAlertBotWebViewLayout) handles vertical
+//     dismiss gestures with GestureDetector + spring physics, replacing the earlier manual
+//     dismiss-tracking approach. swipeContainer.allowingScroll(true) gates the horizontal
+//     swipe-back gesture, matching upstream ArticleViewer.WindowView L1018.
+//   - BaseFragment keyboard height is wired into WebViewSwipeContainer.setIsKeyboardVisible,
+//     matching upstream ChatAttachAlertBotWebViewLayout's 20dp keyboard guard.
 // ADAPTED:
 //   - Keeps Telegram ArticleViewer.Sheet open/dismiss timing and BaseFragment.AttachedSheet shape.
 //   - Keeps Telegram's dismissingIntoTabs state: sheet-to-tab collapse is drawn by BottomSheetTabsOverlay
@@ -14,8 +19,8 @@
 //   - Implements BottomSheetTabsOverlay.SheetView for Telegram-style sheet-to-tab collapse drawing.
 //   - Wraps NativeDo WebView + WebActionBar in ArticleViewer.Sheet.containerView so drawInto()
 //     can use Telegram's sheet-to-tab content offset model.
-//   - Maps ArticleViewer.PageLayout.getListTop() to NativeDo's WebActionBar height because
-//     NativeDo has not ported Telegram's WebViewSwipeContainer vertical sheet offset yet.
+//   - Uses Telegram's WebViewSwipeContainer topActionBarOffsetY/offsetY geometry while keeping
+//     NativeDo's standalone WebActionBar sibling.
 //   - Uses Telegram ArticleViewer browser surface colors instead of NativeDo's parchment content
 //     background so sheet-to-tab collapse fades over the same white/black shell.
 //   - Keeps the WindowView fixed and applies open/dismiss/back motion while drawing, matching
@@ -28,8 +33,12 @@
 //     (0.4cm slop, dx/3 > dy, velX>=3500 fast-flick, 0.3*width commit, velX<2500||velX<velY back,
 //      duration max(420f/width*dist, 250), EASE_OUT_QUINT). The ported gesture only drives
 //      sheet dismissal because NativeDo has no Telegram page stack.
+//   - Ports WebViewSwipeContainer (L0, from ChatAttachAlertBotWebViewLayout) for vertical
+//     swipe-to-dismiss with GestureDetector, 60dp cap, ACTION_CANCEL on WebView children,
+//     spring-physics stickTo, and the shouldWaitWebViewScroll/allowingScroll gating chain.
+//     swipeContainer.Delegate.onDismiss(byTap) drives BrowserSheet.dismiss(true).
 // OMITTED:
-//   - Telegram page stack movingPage branch, nested scroll dismissal,
+//   - Telegram page stack movingPage branch,
 //     BottomSheetTabDialog, RenderNode preview-node capture, nav/status color orchestration, and process save/restore.
 /*
  * This file is part of NativeDo.
@@ -72,9 +81,9 @@ import android.widget.FrameLayout;
 import android.widget.Toast;
 
 import androidx.core.graphics.ColorUtils;
-
 import io.github.baba983.nativedo.R;
 import io.github.baba983.nativedo.core.AndroidUtilities;
+import io.github.baba983.nativedo.core.SharedConfig;
 import io.github.baba983.nativedo.ui.actionbar.ActionBarLayout;
 import io.github.baba983.nativedo.ui.actionbar.BaseFragment;
 import io.github.baba983.nativedo.ui.actionbar.BottomSheetTabs;
@@ -91,6 +100,7 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
     private final FrameLayout containerView;
     private final WebActionBar webActionBar;
     private final BrowserWebViewContainer webViewContainer;
+    private final WebViewSwipeContainer swipeContainer;
     private final BrowserSearchPanel searchPanel;
     private final BrowserAddressPanel addressPanel;
     private final String initialUrl;
@@ -110,6 +120,9 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
     private boolean attachedToActionBar;
     private boolean fullyAttachedToActionBar;
     private boolean wasFullyVisible;
+    private int keyboardHeight;
+    private int webActionBarColor = Theme.getColor(Theme.key_iv_background);
+    private int webBackgroundColor = Theme.getColor(Theme.key_iv_background);
 
     public BrowserSheet(BaseFragment fragment, String initialUrl) {
         this.fragment = fragment;
@@ -179,6 +192,13 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
                 }
                 webActionBar.showAddress("", true);
             }
+
+            @Override
+            public void onScrolledProgress(float delta) {
+                webViewContainer.setScrollProgress(clamp01(webViewContainer.getScrollProgress() + delta));
+                updatePageProgress();
+                windowView.invalidate();
+            }
         });
         webActionBar.setBackgroundColor(getActionBarColor());
         webActionBar.setTitle(titleFromUrl(initialUrl));
@@ -197,7 +217,6 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
             public void onUrlChanged(String url, boolean canGoBack, boolean canGoForward) {
                 String currentHost = hostOf(url);
                 if (lastHost != null && currentHost != null && !currentHost.equals(lastHost)) {
-                    // Navigation to a different site: cross-slide the title slot.
                     webActionBar.setNextTitle(titleFromUrl(url), url == null ? "" : url);
                     webActionBar.swap(true);
                 } else {
@@ -211,14 +230,44 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
 
             @Override
             public void onProgressChanged(int progress, boolean visible) {
-                webActionBar.setProgress(progress, visible);
+                webActionBar.setLoadingProgress(progress, visible);
+            }
+
+            @Override
+            public void onWebViewScrolled(int dx, int dy) {
+                updatePageProgress();
+            }
+
+            @Override
+            public void onWebBackgroundChanged(boolean actionBarColor, int color) {
+                setWebBackgroundColor(actionBarColor, color);
             }
         });
 
+        swipeContainer = new WebViewSwipeContainer(context);
+        swipeContainer.setShouldWaitWebViewScroll(true);
+        swipeContainer.setFullSize(true);
+        swipeContainer.setAllowFullSizeSwipe(true);
+        swipeContainer.setTopActionBarOffsetY(getActionBarHeight());
+        swipeContainer.setSwipeOffsetY(-swipeContainer.getOffsetY() + swipeContainer.getTopActionBarOffsetY());
+        swipeContainer.setIsKeyboardVisible(obj -> keyboardHeight >= AndroidUtilities.dp(20));
+        swipeContainer.setDelegate(byTap -> {
+            if (!dismissing) {
+                dismiss(true);
+            }
+        });
+        swipeContainer.setScrollListener(() -> {
+            if (!dismissingIntoTabs) {
+                updateTranslation();
+            }
+            windowView.invalidate();
+        });
+        swipeContainer.setWebView(webViewContainer.getWebView());
+        swipeContainer.addView(webViewContainer, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+
         int actionBarHeight = webActionBar.getCurrentActionBarHeight();
         FrameLayout.LayoutParams contentLayoutParams = LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.START);
-        contentLayoutParams.topMargin = actionBarHeight;
-        containerView.addView(webViewContainer, contentLayoutParams);
+        containerView.addView(swipeContainer, contentLayoutParams);
         containerView.addView(webActionBar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, actionBarHeight, Gravity.TOP | Gravity.START));
 
         addressPanel = new BrowserAddressPanel(context);
@@ -386,6 +435,7 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
 
     @Override
     public void setKeyboardHeightFromParent(int keyboardHeight) {
+        this.keyboardHeight = keyboardHeight;
         searchPanel.setKeyboardHeight(keyboardHeight);
     }
 
@@ -439,6 +489,9 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
         }
         searchPanel.show(false, false);
         searchPanel.attachKeyboardTracking(windowView);
+        swipeContainer.cancelStickTo();
+        swipeContainer.setSwipeOffsetY(-swipeContainer.getOffsetY() + swipeContainer.getTopActionBarOffsetY());
+        updateSwipeContainerOffset();
         windowView.resetDrawingState();
         checkFullyVisible();
         updateTranslation();
@@ -527,7 +580,7 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
     }
 
     private int getListTop() {
-        return getActionBarHeight();
+        return (int) swipeContainer.getTranslationY();
     }
 
     private int getListPaddingTop() {
@@ -543,12 +596,36 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
         return webActionBar.getMeasuredHeight() > 0 ? webActionBar.getMeasuredHeight() : webActionBar.getCurrentActionBarHeight();
     }
 
+    private void updateSwipeContainerOffset() {
+        if (windowView.getMeasuredHeight() <= 0) {
+            return;
+        }
+        float targetOffsetY = windowView.getMeasuredHeight() * 0.4f;
+        swipeContainer.setOffsetY(targetOffsetY);
+    }
+
     private int getBackgroundColor() {
-        return Theme.getColor(Theme.key_iv_background);
+        return SharedConfig.adaptableColorInBrowser ? webBackgroundColor : Theme.getColor(Theme.key_iv_background);
     }
 
     private int getActionBarColor() {
-        return Theme.getColor(Theme.key_iv_background);
+        return SharedConfig.adaptableColorInBrowser ? webActionBarColor : Theme.getColor(Theme.key_iv_background);
+    }
+
+    private void setWebBackgroundColor(boolean actionBarColor, int color) {
+        if (actionBarColor) {
+            webActionBarColor = blendOver(Theme.getColor(Theme.key_iv_background), color);
+            if (SharedConfig.adaptableColorInBrowser) {
+                webActionBar.setColors(webActionBarColor, true);
+            }
+        } else {
+            webBackgroundColor = blendOver(Color.WHITE, color);
+            if (SharedConfig.adaptableColorInBrowser) {
+                webViewContainer.setBrowserBackgroundColor(webBackgroundColor);
+            }
+        }
+        updateTranslation();
+        checkFullyVisible();
     }
 
     private void checkFullyVisible() {
@@ -630,7 +707,7 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
         tab.startUrl = initialUrl;
         tab.currentUrl = webViewContainer.getCurrentUrl();
         tab.favicon = webViewContainer.getFavicon();
-        tab.articleProgress = webViewContainer.getProgress() / 100f;
+        tab.articleProgress = webViewContainer.getScrollProgress();
         tab.viewWidth = webViewContainer.getWebViewWidth();
         tab.viewHeight = webViewContainer.getWebViewHeight();
         tab.viewScroll = webViewContainer.getWebViewScrollY();
@@ -638,6 +715,11 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
         tab.backgroundColor = getBackgroundColor();
         tab.themeIsDark = Theme.isCurrentThemeDark();
         return tab;
+    }
+
+    private void updatePageProgress() {
+        webActionBar.setProgress(webViewContainer.getScrollProgress());
+        windowView.invalidate();
     }
 
     @Override
@@ -730,6 +812,7 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
         private final Paint shadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint backgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint handlePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint headerBackgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final AnimatedFloat attachedActionBar = new AnimatedFloat(this, 0, 420, CubicBezierInterpolator.EASE_OUT_QUINT);
         private boolean drawingFromOverlay;
 
@@ -750,6 +833,7 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
         @Override
         protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
             super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+            updateSwipeContainerOffset();
             updateTranslation();
         }
 
@@ -793,9 +877,6 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
             if (closeAnimationInProgress || dismissing || released) {
                 return false;
             }
-            // Match upstream pages[0].swipeContainer.allowingScroll(true) gating with a simpler edge check.
-            lastWebViewAllowedScroll = !webViewContainer.canWebViewScrollHorizontallyBack();
-
             if (event != null && event.getAction() == MotionEvent.ACTION_DOWN && !startedTracking && !maybeStartTracking) {
                 startedTrackingPointerId = event.getPointerId(0);
                 maybeStartTracking = true;
@@ -814,6 +895,10 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
                 int dx = Math.max(0, (int) (event.getX() - startedTrackingX));
                 int dy = Math.abs((int) event.getY() - startedTrackingY);
                 velocityTracker.addMovement(event);
+                // UPSTREAM: ArticleViewer.WindowView L1018
+                // lastWebviewAllowedScroll = pages[0] == null || !pages[0].isWeb() || pages[0].swipeContainer.allowingScroll(true) && !pages[0].swipeContainer.isScrolling;
+                lastWebViewAllowedScroll = swipeContainer.allowingScroll(true) && !swipeContainer.isScrolling;
+
                 if (maybeStartTracking && !startedTracking
                         && dx >= AndroidUtilities.getPixelsInCM(0.4f, true)
                         && Math.abs(dx) / 3 > dy
@@ -825,6 +910,7 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
                     int width = getWidth();
                     setBackProgress(width <= 0 ? 0f : dx / (float) width);
                 }
+
                 return startedTracking;
             }
 
@@ -840,6 +926,7 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
                 velocityTracker.computeCurrentVelocity(1000);
                 float velX = velocityTracker.getXVelocity();
                 float velY = velocityTracker.getYVelocity();
+
                 if (!startedTracking && velX >= 3500 && velX > Math.abs(velY)) {
                     maybeStartTracking = false;
                     startedTracking = true;
@@ -943,6 +1030,19 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
             backgroundPaint.setColor(getBackgroundColor());
             backgroundPaint.setAlpha(0xFF);
             canvas.drawRect(rect, backgroundPaint);
+
+            // UPSTREAM: ArticleViewer.WindowView.dispatchDraw L14264-14271
+            // Draw actionBar background explicitly so title/subtitle text
+            // doesn't bleed below the handle during dismiss.
+            if (attachedActionBar > 0) {
+                canvas.save();
+                float t = AndroidUtilities.lerp(top + getListPaddingTop() + 1, 0, attachedActionBar);
+                canvas.translate(0, t);
+                headerBackgroundPaint.setColor(getActionBarColor());
+                float barH = (top + getListPaddingTop() + 1) - t;
+                canvas.drawRect(0, 0, getWidth(), barH, headerBackgroundPaint);
+                canvas.restore();
+            }
 
             canvas.translate(0, -y);
             super.dispatchDraw(canvas);
@@ -1061,5 +1161,9 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
             return color;
         }
         return ColorUtils.setAlphaComponent(color, Math.max(0, Math.min(0xFF, (int) (Color.alpha(color) * multiply))));
+    }
+
+    private static int blendOver(int background, int foreground) {
+        return ColorUtils.compositeColors(foreground, background);
     }
 }

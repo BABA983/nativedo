@@ -10,13 +10,14 @@
 //     ActionBarLayout sibling instead of routing tabs through Telegram's sheet window.
 //   - Clears the local sheet morph animator after completion so NativeDo's reused BrowserSheet is
 //     not released again by a stale listener on the next collapse.
-//   - Switches the live sheet to overlay drawing immediately on dismiss to avoid a one-frame
-//     double-scrim caused by NativeDo hosting the overlay and sheet in the same parent.
 // ADAPTED:
-//   - Telegram blur background is replaced with NativeDo's current theme background.
+//   - Blur snapshot uses NativeDo's AndroidUtilities.makeBlurBitmap() software helper because
+//     NativeDo does not ship Telegram's native Utilities.stackBlurBitmap/global-view pipeline.
 //   - WebView preview capture is delegated to NativeDo BrowserWebViewContainer.
+//   - Close-all button keeps Paint/TextPaint rendering because NativeDo does not ship Telegram's
+//     Text helper and selector round-rect drawable path.
 // OMITTED:
-//   - BottomSheetTabDialog, tablet dialog mode, blur bitmap capture, RenderNode preview-node capture,
+//   - BottomSheetTabDialog, tablet dialog mode, RenderNode preview-node capture,
 //     bot fields, and drag/reorder.
 /*
  * This file is part of NativeDo.
@@ -42,8 +43,12 @@ import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.BitmapShader;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.ColorMatrix;
+import android.graphics.ColorMatrixColorFilter;
 import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
@@ -60,12 +65,15 @@ import android.widget.OverScroller;
 
 import androidx.annotation.NonNull;
 import androidx.core.graphics.ColorUtils;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 
 import java.util.ArrayList;
 
 import io.github.baba983.nativedo.R;
 import io.github.baba983.nativedo.core.AndroidUtilities;
 import io.github.baba983.nativedo.ui.components.CubicBezierInterpolator;
+import io.github.baba983.nativedo.ui.GradientClip;
 
 public class BottomSheetTabsOverlay extends View {
 
@@ -105,8 +113,8 @@ public class BottomSheetTabsOverlay extends View {
     private final OverScroller scroller;
     private final int maximumVelocity;
     private final int minimumVelocity;
+    private int navigationBarInset;
 
-    private final Paint backgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF tabsViewBounds = new RectF();
     private final RectF rect = new RectF();
     private final RectF rect2 = new RectF();
@@ -133,6 +141,14 @@ public class BottomSheetTabsOverlay extends View {
     private final RectF closeAllButtonBounds = new RectF();
     private final Paint closeAllButtonPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final TextPaint closeAllTextPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+    private Bitmap blurBitmap;
+    private BitmapShader blurBitmapShader;
+    private Paint blurBitmapPaint;
+    private Matrix blurMatrix;
+    private View actionBarLayout;
+    private GradientClip gradientClip;
+    private final int[] pos = new int[2];
+    private final int[] pos2 = new int[2];
 
     public BottomSheetTabsOverlay(Context context) {
         super(context);
@@ -150,6 +166,15 @@ public class BottomSheetTabsOverlay extends View {
         closeAllTextPaint.setColor(Color.WHITE);
         closeAllTextPaint.setTextSize(AndroidUtilities.dp(14));
         closeAllTextPaint.setTypeface(Typeface.DEFAULT_BOLD);
+
+        ViewCompat.setOnApplyWindowInsetsListener(this, this::onApplyWindowInsets);
+    }
+
+    @NonNull
+    private WindowInsetsCompat onApplyWindowInsets(@NonNull View ignoredView, @NonNull WindowInsetsCompat insets) {
+        navigationBarInset = insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom;
+        invalidate();
+        return WindowInsetsCompat.CONSUMED;
     }
 
     public boolean isOpened() {
@@ -433,13 +458,26 @@ public class BottomSheetTabsOverlay extends View {
         }
         bringToFront();
         stopAnimations();
+        actionBarLayout = (View) tabsView.getParent();
+        if (actionBarLayout != null) {
+            actionBarLayout.getLocationOnScreen(pos);
+        } else {
+            pos[0] = pos[1] = 0;
+        }
+        getLocationOnScreen(pos2);
+        tabsViewBounds.set(
+                pos[0] - pos2[0],
+                pos[1] - pos2[1],
+                pos[0] - pos2[0] + (actionBarLayout == null ? 0 : actionBarLayout.getWidth()),
+                pos[1] - pos2[1] + (actionBarLayout == null ? 0 : actionBarLayout.getHeight())
+        );
+        prepareBlur(actionBarLayout);
         clearTabs();
         prepareTabs();
         if (tabs.isEmpty()) {
             return;
         }
         setVisibility(VISIBLE);
-        setScrollOffset(getScrollMax(false));
         animateOpen(true);
     }
 
@@ -466,6 +504,7 @@ public class BottomSheetTabsOverlay extends View {
             }
         }
         animatedCount.set(tabs.size(), true);
+        setScrollOffset(getScrollMax());
     }
 
     public void closeTabsView() {
@@ -561,13 +600,17 @@ public class BottomSheetTabsOverlay extends View {
 
         dismissingSheet = sheet;
         sheet.setLastVisible(false);
-        ((SheetView) sheet.getWindowView()).setDrawingFromOverlay(true);
         BottomSheetTabs.WebTabData tab = sheet.saveState();
         dismissingTab = tabsView.pushTab(tab);
         tabsView.drawTabs = true;
         tabsView.invalidate();
         setVisibility(VISIBLE);
         bringToFront();
+        post(() -> {
+            if (sheet.getWindowView() instanceof SheetView) {
+                ((SheetView) sheet.getWindowView()).setDrawingFromOverlay(true);
+            }
+        });
         dismissProgress = 0f;
         invalidate();
 
@@ -582,17 +625,16 @@ public class BottomSheetTabsOverlay extends View {
                 if (sheetAnimator == animation) {
                     sheetAnimator = null;
                 }
-                dismissingSheet = null;
-                invalidate();
                 sheet.capturePreviewBitmap(tab, () -> {
                     ((SheetView) sheet.getWindowView()).setDrawingFromOverlay(false);
                     sheet.release();
-                    dismissingTab = null;
-                    if (!isOpen && openingSheet == null) {
-                        setVisibility(GONE);
-                    }
-                    invalidate();
                 });
+                dismissingSheet = null;
+                dismissingTab = null;
+                if (!isOpen && openingSheet == null) {
+                    setVisibility(GONE);
+                }
+                invalidate();
             }
         });
         AndroidUtilities.applySpring(sheetAnimator, 220, 30, 1, 0);
@@ -667,11 +709,13 @@ public class BottomSheetTabsOverlay extends View {
             return;
         }
 
+        getLocationOnScreen(pos2);
+        tabsView.getLocationOnScreen(pos);
         tabsView.getTabBounds(rect, 0);
-        rect.offset(tabsView.getX(), tabsView.getY());
+        rect.offset(pos[0] - pos2[0], pos[1] - pos2[1]);
 
         canvas.save();
-        canvas.clipRect(0, 0, getMeasuredWidth(), getMeasuredHeight());
+        canvas.clipRect(0, 0, getMeasuredWidth(), getMeasuredHeight() - navigationBarInset);
         float radius = ((SheetView) dismissingSheet.getWindowView()).drawInto(canvas, rect, dismissProgress, clipRect, dismissProgress, false);
 
         if (dismissingTab != null) {
@@ -694,15 +738,34 @@ public class BottomSheetTabsOverlay extends View {
         }
 
         canvas.save();
-        tabsViewBounds.set(0, 0, getWidth(), getHeight());
+        if (actionBarLayout != null) {
+            actionBarLayout.getLocationOnScreen(pos);
+            getLocationOnScreen(pos2);
+            tabsViewBounds.set(
+                    pos[0] - pos2[0],
+                    pos[1] - pos2[1],
+                    pos[0] - pos2[0] + actionBarLayout.getWidth(),
+                    pos[1] - pos2[1] + actionBarLayout.getHeight()
+            );
+        } else {
+            pos[0] = pos[1] = 0;
+            tabsViewBounds.set(0, 0, 0, 0);
+        }
         canvas.clipRect(tabsViewBounds);
+        canvas.translate(tabsViewBounds.left, tabsViewBounds.top);
 
         final float thisWidth = tabsViewBounds.width();
         final float thisHeight = tabsViewBounds.height();
 
-        backgroundPaint.setColor(Theme.getColor(Theme.key_windowBackgroundGray));
-        backgroundPaint.setAlpha((int) (0xEE * openProgress));
-        canvas.drawRect(0, 0, thisWidth, thisHeight, backgroundPaint);
+        if (blurBitmap != null) {
+            blurMatrix.reset();
+            float scale = thisWidth / blurBitmap.getWidth();
+            blurMatrix.postScale(scale, scale);
+            blurBitmapShader.setLocalMatrix(blurMatrix);
+
+            blurBitmapPaint.setAlpha((int) (0xFF * openProgress));
+            canvas.drawRect(0, 0, thisWidth, thisHeight, blurBitmapPaint);
+        }
 
         canvas.saveLayerAlpha(0, 0, thisWidth, thisHeight, 0xFF, Canvas.ALL_SAVE_FLAG);
 
@@ -805,19 +868,26 @@ public class BottomSheetTabsOverlay extends View {
 
             canvas.restore();
         }
+        canvas.save();
+        if (gradientClip == null) {
+            gradientClip = new GradientClip();
+        }
+        rect.set(0, 0, thisWidth, paddingTop);
+        gradientClip.draw(canvas, rect, true, openProgress);
         canvas.restore();
-        drawCloseAllButton(canvas, thisWidth, paddingTop);
         canvas.restore();
+        canvas.restore();
+        drawCloseAllButton(canvas, tabsViewBounds.left, tabsViewBounds.top, thisWidth, paddingTop);
     }
 
-    private void drawCloseAllButton(Canvas canvas, float width, float paddingTop) {
+    private void drawCloseAllButton(Canvas canvas, float left, float top, float width, float paddingTop) {
         String text = getContext().getString(R.string.app_browser_close_all_tabs);
         float buttonWidth = closeAllTextPaint.measureText(text) + AndroidUtilities.dp(24);
-        float centerY = paddingTop - AndroidUtilities.dp(75 + 20) / 2f;
+        float centerY = top + paddingTop - AndroidUtilities.dp(75 + 20) / 2f;
         closeAllButtonBounds.set(
-                (width - buttonWidth) / 2f,
+                left + (width - buttonWidth) / 2f,
                 centerY - AndroidUtilities.dp(14),
-                (width + buttonWidth) / 2f,
+                left + (width + buttonWidth) / 2f,
                 centerY + AndroidUtilities.dp(14)
         );
         closeAllButtonPaint.setColor(hitCloseAllButton
@@ -830,6 +900,25 @@ public class BottomSheetTabsOverlay extends View {
         Paint.FontMetrics fontMetrics = closeAllTextPaint.getFontMetrics();
         float baseline = closeAllButtonBounds.centerY() - (fontMetrics.ascent + fontMetrics.descent) / 2f;
         canvas.drawText(text, closeAllButtonBounds.left + AndroidUtilities.dp(12), baseline, closeAllTextPaint);
+    }
+
+    private void prepareBlur(View view) {
+        AndroidUtilities.makingGlobalBlurBitmap = true;
+        blurBitmap = AndroidUtilities.makeBlurBitmap(view, 14, 14);
+        AndroidUtilities.makingGlobalBlurBitmap = false;
+        if (blurBitmap == null) {
+            blurBitmapShader = null;
+            blurBitmapPaint = null;
+            blurMatrix = null;
+            return;
+        }
+
+        blurBitmapPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        blurBitmapPaint.setShader(blurBitmapShader = new BitmapShader(blurBitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP));
+        ColorMatrix colorMatrix = new ColorMatrix();
+        AndroidUtilities.adjustSaturationColorMatrix(colorMatrix, Theme.isCurrentThemeDark() ? .08f : .25f);
+        blurBitmapPaint.setColorFilter(new ColorMatrixColorFilter(colorMatrix));
+        blurMatrix = new Matrix();
     }
 
     private static class TabPreview {
