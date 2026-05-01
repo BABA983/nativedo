@@ -1,7 +1,7 @@
 // UPSTREAM-LEVEL: L2
 // UPSTREAM-PATH:  org/telegram/ui/ArticleViewer.java; org/telegram/ui/ActionBar/BaseFragment.java
 // UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: attached-sheet=L2, bottom-up-animation=L0, swipe-back-gesture=L0, browser-lifecycle=L1, adaptive-color=L2, scroll-progress=L2, scrubber-wiring=L2
+// SUBSYSTEMS: attached-sheet=L2, bottom-up-animation=L0, swipe-back-gesture=L0, browser-lifecycle=L1, adaptive-color=L2, scroll-progress=L2, scrubber-wiring=L2, page-stack=L1, back-history=L1
 // HOST-WIRING:
 //   - Attaches the browser window directly to NativeDo's ActionBarLayout ViewGroup.
 //   - Uses NativeDo WebActionBar and BrowserWebViewContainer for page UI.
@@ -31,14 +31,31 @@
 //     matching ArticleViewer.PageLayout keyboard focus ownership.
 //   - Ports ArticleViewer$WindowView#handleTouchEvent with upstream L0 constants
 //     (0.4cm slop, dx/3 > dy, velX>=3500 fast-flick, 0.3*width commit, velX<2500||velX<velY back,
-//      duration max(420f/width*dist, 250), EASE_OUT_QUINT). The ported gesture only drives
-//      sheet dismissal because NativeDo has no Telegram page stack.
+//      duration max(420f/width*dist, 250), EASE_OUT_QUINT). The ported gesture drives
+//      pagesStack pop when a previous page exists, otherwise sheet dismissal.
 //   - Ports WebViewSwipeContainer (L0, from ChatAttachAlertBotWebViewLayout) for vertical
 //     swipe-to-dismiss with GestureDetector, 60dp cap, ACTION_CANCEL on WebView children,
 //     spring-physics stickTo, and the shouldWaitWebViewScroll/allowingScroll gating chain.
 //     swipeContainer.Delegate.onDismiss(byTap) drives BrowserSheet.dismiss(true).
+//   - Ports Telegram ArticleViewer pages[0]/pages[1] + pagesStack for Web pages using
+//     CachedWeb-shaped attach/detach. NativeDo only has web pages, so TLRPC.WebPage/Instant View
+//     stack entries remain omitted.
+//   - Ports ArticleViewer back-button long press history menu behavior: WebView back-forward
+//     entries first, then pagesStack entries, with button rotation held at back-arrow while shown.
+//     NativeDo's web-only stack mirrors ArticleViewer.isFirstArticle() == false, so WebView
+//     history does not turn the resting top-left X into a back arrow.
+//   - In NativeDo's web-only stack, normal back press/swipe treat ArticleViewer.isFirstArticle()
+//     as false and only pop pagesStack; WebView back-forward history is exposed through the
+//     long-press ItemOptions menu.
+//   - Uses NativeDo's ItemOptions slice for ArticleViewer's long-click menu shell, dim, and
+//     scrim behavior instead of porting Telegram ItemOptions wholesale.
+//   - Ports ArticleViewer address submit behavior: typed web URLs load in the current WebView,
+//     plain text is submitted to the default search URL, and address navigation does not create
+//     a pagesStack entry.
+//   - Uses Telegram SearchEngine's default Google search URL; user-configurable search engines
+//     remain omitted with the rest of Telegram browser settings.
 // OMITTED:
-//   - Telegram page stack movingPage branch,
+//   - Telegram TLRPC.WebPage/Instant View page-stack entries,
 //     BottomSheetTabDialog, RenderNode preview-node capture, nav/status color orchestration, and process save/restore.
 /*
  * This file is part of NativeDo.
@@ -61,34 +78,51 @@ package io.github.baba983.nativedo.ui.browser;
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
+import android.animation.AnimatorSet;
+import android.animation.ObjectAnimator;
 import android.animation.ValueAnimator;
 import android.app.Dialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffColorFilter;
 import android.graphics.RectF;
+import android.graphics.drawable.Drawable;
 import android.net.Uri;
+import android.text.TextUtils;
+import android.util.Patterns;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.VelocityTracker;
 import android.view.View;
 import android.view.ViewGroup;
+import android.webkit.WebBackForwardList;
+import android.webkit.WebHistoryItem;
+import android.webkit.WebView;
 import android.widget.FrameLayout;
 import android.widget.Toast;
 
 import androidx.core.graphics.ColorUtils;
+
+import java.util.ArrayList;
+
 import io.github.baba983.nativedo.R;
 import io.github.baba983.nativedo.core.AndroidUtilities;
 import io.github.baba983.nativedo.core.SharedConfig;
+import io.github.baba983.nativedo.ui.actionbar.ActionBarMenuSubItem;
 import io.github.baba983.nativedo.ui.actionbar.ActionBarLayout;
 import io.github.baba983.nativedo.ui.actionbar.BaseFragment;
 import io.github.baba983.nativedo.ui.actionbar.BottomSheetTabs;
 import io.github.baba983.nativedo.ui.actionbar.BottomSheetTabsOverlay;
 import io.github.baba983.nativedo.ui.actionbar.Theme;
+import io.github.baba983.nativedo.ui.components.ItemOptions;
 import io.github.baba983.nativedo.ui.components.AnimatedFloat;
 import io.github.baba983.nativedo.ui.components.CubicBezierInterpolator;
 import io.github.baba983.nativedo.ui.components.LayoutHelper;
@@ -99,8 +133,8 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
     private final WindowView windowView;
     private final FrameLayout containerView;
     private final WebActionBar webActionBar;
-    private final BrowserWebViewContainer webViewContainer;
-    private final WebViewSwipeContainer swipeContainer;
+    private final PageLayout[] pages = new PageLayout[2];
+    private final ArrayList<CachedWeb> pagesStack = new ArrayList<>();
     private final BrowserSearchPanel searchPanel;
     private final BrowserAddressPanel addressPanel;
     private final String initialUrl;
@@ -115,15 +149,13 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
     private ValueAnimator openAnimator;
     private ValueAnimator dismissAnimator;
     private ValueAnimator backAnimator;
+    private AnimatorSet pageSwitchAnimation;
+    private ItemOptions historyOptions;
     private Runnable onDismissListener;
-    private String lastHost;
     private boolean attachedToActionBar;
     private boolean fullyAttachedToActionBar;
     private boolean wasFullyVisible;
     private int keyboardHeight;
-    private int webActionBarColor = Theme.getColor(Theme.key_iv_background);
-    private int webBackgroundColor = Theme.getColor(Theme.key_iv_background);
-
     public BrowserSheet(BaseFragment fragment, String initialUrl) {
         this.fragment = fragment;
         this.initialUrl = initialUrl;
@@ -174,8 +206,9 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
                 if (webActionBar.isAddressing()) return;
                 CharSequence titleCs = webActionBar.getTitle();
                 String title = titleCs == null ? "" : titleCs.toString();
-                String url = webViewContainer.getCurrentUrl();
-                android.graphics.Bitmap favicon = webViewContainer.getFavicon();
+                PageLayout page = pages[0];
+                String url = page == null ? null : page.webViewContainer.getCurrentUrl();
+                Bitmap favicon = page == null ? null : page.webViewContainer.getFavicon();
                 if (addressPanel != null) {
                     addressPanel.setCurrent(
                         title,
@@ -195,79 +228,27 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
 
             @Override
             public void onScrolledProgress(float delta) {
-                webViewContainer.setScrollProgress(clamp01(webViewContainer.getScrollProgress() + delta));
-                updatePageProgress();
+                if (pages[0] != null) {
+                    pages[0].addProgress(delta);
+                }
                 windowView.invalidate();
             }
         });
         webActionBar.setBackgroundColor(getActionBarColor());
         webActionBar.setTitle(titleFromUrl(initialUrl));
         webActionBar.setCurrentUrl(initialUrl);
-        lastHost = hostOf(initialUrl);
+        webActionBar.setOnBackButtonLongClickListener(this::showBackHistoryMenu);
 
-        webViewContainer = new BrowserWebViewContainer(context, new BrowserWebViewContainer.Delegate() {
-            @Override
-            public void onTitleChanged(String title) {
-                if (!dismissing && title != null && title.trim().length() > 0) {
-                    webActionBar.setTitle(title);
-                }
-            }
-
-            @Override
-            public void onUrlChanged(String url, boolean canGoBack, boolean canGoForward) {
-                String currentHost = hostOf(url);
-                if (lastHost != null && currentHost != null && !currentHost.equals(lastHost)) {
-                    webActionBar.setNextTitle(titleFromUrl(url), url == null ? "" : url);
-                    webActionBar.swap(true);
-                } else {
-                    webActionBar.setCurrentUrl(url);
-                    if (webActionBar.getTitle() == null || webActionBar.getTitle().length() == 0) {
-                        webActionBar.setTitle(titleFromUrl(url));
-                    }
-                }
-                lastHost = currentHost;
-            }
-
-            @Override
-            public void onProgressChanged(int progress, boolean visible) {
-                webActionBar.setLoadingProgress(progress, visible);
-            }
-
-            @Override
-            public void onWebViewScrolled(int dx, int dy) {
-                updatePageProgress();
-            }
-
-            @Override
-            public void onWebBackgroundChanged(boolean actionBarColor, int color) {
-                setWebBackgroundColor(actionBarColor, color);
-            }
-        });
-
-        swipeContainer = new WebViewSwipeContainer(context);
-        swipeContainer.setShouldWaitWebViewScroll(true);
-        swipeContainer.setFullSize(true);
-        swipeContainer.setAllowFullSizeSwipe(true);
-        swipeContainer.setTopActionBarOffsetY(getActionBarHeight());
-        swipeContainer.setSwipeOffsetY(-swipeContainer.getOffsetY() + swipeContainer.getTopActionBarOffsetY());
-        swipeContainer.setIsKeyboardVisible(obj -> keyboardHeight >= AndroidUtilities.dp(20));
-        swipeContainer.setDelegate(byTap -> {
-            if (!dismissing) {
-                dismiss(true);
-            }
-        });
-        swipeContainer.setScrollListener(() -> {
-            if (!dismissingIntoTabs) {
-                updateTranslation();
-            }
-            windowView.invalidate();
-        });
-        swipeContainer.setWebView(webViewContainer.getWebView());
-        swipeContainer.addView(webViewContainer, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        pages[0] = new PageLayout(context);
+        pages[1] = new PageLayout(context);
+        pages[1].setVisibility(View.GONE);
+        pagesStack.add(new CachedWeb(initialUrl));
+        pages[0].setWeb(pagesStack.get(0));
 
         int actionBarHeight = webActionBar.getCurrentActionBarHeight();
         FrameLayout.LayoutParams contentLayoutParams = LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.START);
-        containerView.addView(swipeContainer, contentLayoutParams);
+        containerView.addView(pages[1], contentLayoutParams);
+        containerView.addView(pages[0], new FrameLayout.LayoutParams(contentLayoutParams));
         containerView.addView(webActionBar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, actionBarHeight, Gravity.TOP | Gravity.START));
 
         addressPanel = new BrowserAddressPanel(context);
@@ -279,18 +260,21 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
         searchPanel.setCallback(new BrowserSearchPanel.Callback() {
             @Override
             public void onFindPrevious() {
-                webViewContainer.findNext(false);
+                if (pages[0] != null) {
+                    pages[0].webViewContainer.findNext(false);
+                }
             }
 
             @Override
             public void onFindNext() {
-                webViewContainer.findNext(true);
+                if (pages[0] != null) {
+                    pages[0].webViewContainer.findNext(true);
+                }
             }
         });
         containerView.addView(searchPanel, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 51, Gravity.BOTTOM | Gravity.START));
         searchPanel.attachKeyboardTracking(windowView);
 
-        webViewContainer.loadUrl(initialUrl);
     }
 
     public void show() {
@@ -327,7 +311,9 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
                 overlay.bringToFront();
             }
         }
-        webViewContainer.onResume();
+        if (pages[0] != null) {
+            pages[0].webViewContainer.onResume();
+        }
     }
 
     @Override
@@ -380,9 +366,17 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
         if (webActionBar.isAddressing()) {
             webActionBar.showAddress(false, false);
         }
+        if (historyOptions != null) {
+            historyOptions.dismiss(false);
+            historyOptions = null;
+        }
         searchPanel.show(false, false);
         searchPanel.detachKeyboardTracking(windowView);
-        webViewContainer.onPause();
+        for (PageLayout page : pages) {
+            if (page != null) {
+                page.webViewContainer.onPause();
+            }
+        }
         fragment.removeSheet(this);
         removeFromParent(windowView);
         if (onDismissListener != null) {
@@ -392,7 +386,15 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
     }
 
     private void destroy() {
-        webViewContainer.destroyWebView();
+        for (PageLayout page : pages) {
+            if (page != null) {
+                page.cleanup();
+            }
+        }
+        for (CachedWeb web : pagesStack) {
+            web.destroy();
+        }
+        pagesStack.clear();
     }
 
     public void destroyFromTabs() {
@@ -420,8 +422,8 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
             webActionBar.closeAddress(true);
             return true;
         }
-        if (webViewContainer.canGoBack()) {
-            webViewContainer.goBack();
+        if (pagesStack.size() > 1) {
+            goBack();
             return true;
         }
         dismiss(false);
@@ -457,7 +459,12 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
 
     @Override
     public void setLastVisible(boolean lastVisible) {
-        webViewContainer.setKeyboardFocusable(lastVisible);
+        if (pages[0] != null) {
+            pages[0].setLastVisible(lastVisible);
+        }
+        if (pages[1] != null) {
+            pages[1].setLastVisible(false);
+        }
     }
 
     public void reset() {
@@ -487,10 +494,15 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
         if (webActionBar.isAddressing()) {
             webActionBar.showAddress(false, false);
         }
+        if (historyOptions != null) {
+            historyOptions.dismiss(false);
+            historyOptions = null;
+        }
         searchPanel.show(false, false);
         searchPanel.attachKeyboardTracking(windowView);
-        swipeContainer.cancelStickTo();
-        swipeContainer.setSwipeOffsetY(-swipeContainer.getOffsetY() + swipeContainer.getTopActionBarOffsetY());
+        if (pages[0] != null) {
+            pages[0].resetSwipeOffset();
+        }
         updateSwipeContainerOffset();
         windowView.resetDrawingState();
         checkFullyVisible();
@@ -580,7 +592,7 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
     }
 
     private int getListTop() {
-        return (int) swipeContainer.getTranslationY();
+        return pages[0] == null ? 0 : (int) pages[0].getListTop();
     }
 
     private int getListPaddingTop() {
@@ -601,31 +613,19 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
             return;
         }
         float targetOffsetY = windowView.getMeasuredHeight() * 0.4f;
-        swipeContainer.setOffsetY(targetOffsetY);
+        for (PageLayout page : pages) {
+            if (page != null) {
+                page.setSwipeOffset(targetOffsetY);
+            }
+        }
     }
 
     private int getBackgroundColor() {
-        return SharedConfig.adaptableColorInBrowser ? webBackgroundColor : Theme.getColor(Theme.key_iv_background);
+        return pages[0] != null ? pages[0].getBackgroundColor() : Theme.getColor(Theme.key_iv_background);
     }
 
     private int getActionBarColor() {
-        return SharedConfig.adaptableColorInBrowser ? webActionBarColor : Theme.getColor(Theme.key_iv_background);
-    }
-
-    private void setWebBackgroundColor(boolean actionBarColor, int color) {
-        if (actionBarColor) {
-            webActionBarColor = blendOver(Theme.getColor(Theme.key_iv_background), color);
-            if (SharedConfig.adaptableColorInBrowser) {
-                webActionBar.setColors(webActionBarColor, true);
-            }
-        } else {
-            webBackgroundColor = blendOver(Color.WHITE, color);
-            if (SharedConfig.adaptableColorInBrowser) {
-                webViewContainer.setBrowserBackgroundColor(webBackgroundColor);
-            }
-        }
-        updateTranslation();
-        checkFullyVisible();
+        return pages[0] != null ? pages[0].getActionBarColor() : Theme.getColor(Theme.key_iv_background);
     }
 
     private void checkFullyVisible() {
@@ -659,10 +659,14 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
     }
 
     private void handleMenuItem(int id) {
+        PageLayout page = pages[0];
+        if (page == null) {
+            return;
+        }
         if (id == WebActionBar.MENU_REFRESH) {
-            webViewContainer.reload();
+            page.webViewContainer.reload();
         } else if (id == WebActionBar.MENU_OPEN_EXTERNAL) {
-            webViewContainer.openCurrentUrlExternal();
+            page.webViewContainer.openCurrentUrlExternal();
         } else if (id == WebActionBar.MENU_COPY_LINK) {
             copyCurrentLink();
         } else if (id == WebActionBar.MENU_MINIMIZE) {
@@ -673,15 +677,19 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
     }
 
     private void processSearch(String text) {
+        PageLayout page = pages[0];
+        if (page == null) {
+            return;
+        }
         if (text == null || text.trim().isEmpty()) {
-            webViewContainer.clearSearch();
+            page.webViewContainer.clearSearch();
             searchPanel.show(false, true);
             return;
         }
         searchPanel.show(true, true);
-        webViewContainer.search(text, () -> {
-            int count = webViewContainer.getSearchCount();
-            int index = webViewContainer.getSearchIndex();
+        page.webViewContainer.search(text, () -> {
+            int count = page.webViewContainer.getSearchCount();
+            int index = page.webViewContainer.getSearchIndex();
             searchPanel.updateResults(index, count);
         });
     }
@@ -702,15 +710,16 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
     @Override
     public BottomSheetTabs.WebTabData saveState() {
         BottomSheetTabs.WebTabData tab = new BottomSheetTabs.WebTabData();
+        PageLayout page = pages[0];
         tab.browserSheet = this;
-        tab.title = webActionBar.getTitle() == null ? titleFromUrl(webViewContainer.getCurrentUrl()) : webActionBar.getTitle().toString();
+        tab.title = webActionBar.getTitle() == null ? titleFromUrl(page == null ? null : page.webViewContainer.getCurrentUrl()) : webActionBar.getTitle().toString();
         tab.startUrl = initialUrl;
-        tab.currentUrl = webViewContainer.getCurrentUrl();
-        tab.favicon = webViewContainer.getFavicon();
-        tab.articleProgress = webViewContainer.getScrollProgress();
-        tab.viewWidth = webViewContainer.getWebViewWidth();
-        tab.viewHeight = webViewContainer.getWebViewHeight();
-        tab.viewScroll = webViewContainer.getWebViewScrollY();
+        tab.currentUrl = page == null ? null : page.webViewContainer.getCurrentUrl();
+        tab.favicon = page == null ? null : page.webViewContainer.getFavicon();
+        tab.articleProgress = page == null ? 0f : page.getProgress();
+        tab.viewWidth = page == null ? 0 : page.webViewContainer.getWebViewWidth();
+        tab.viewHeight = page == null ? 0 : page.webViewContainer.getWebViewHeight();
+        tab.viewScroll = page == null ? 0 : page.webViewContainer.getWebViewScrollY();
         tab.actionBarColor = getActionBarColor();
         tab.backgroundColor = getBackgroundColor();
         tab.themeIsDark = Theme.isCurrentThemeDark();
@@ -718,13 +727,35 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
     }
 
     private void updatePageProgress() {
-        webActionBar.setProgress(webViewContainer.getScrollProgress());
+        if (pages[0] == null || pages[1] == null) {
+            return;
+        }
+        float page0Alpha = pages[0].getVisibility() != View.VISIBLE || pages[0].getWidth() <= 0 ? 1f : 1f - pages[0].getTranslationX() / pages[0].getWidth();
+        page0Alpha = clamp01(page0Alpha);
+        float page1Alpha = 1f - page0Alpha;
+        webActionBar.setProgress(0, pages[0].getProgress());
+        webActionBar.setProgress(1, pages[1].getProgress());
+        if (windowView.movingPage || windowView.openingPage) {
+            webActionBar.setTransitionProgress(page1Alpha);
+            if (!webActionBar.isAddressing() && !webActionBar.isSearching()) {
+                float backButton = AndroidUtilities.lerp(pagesStack.size() > 1 ? 1f : 0f, pagesStack.size() > 2 ? 1f : 0f, page1Alpha);
+                webActionBar.setBackButtonRotation(1f - backButton, false);
+                webActionBar.setBackButtonCached(backButton > .5f);
+            }
+            webActionBar.setColors(ColorUtils.blendARGB(pages[0].getActionBarColor(), pages[1].getActionBarColor(), page1Alpha), false);
+        }
         windowView.invalidate();
     }
 
     @Override
     public void capturePreviewBitmap(BottomSheetTabs.WebTabData tab, Runnable whenDone) {
-        webViewContainer.capturePreviewBitmap(bitmap -> {
+        if (pages[0] == null) {
+            if (whenDone != null) {
+                whenDone.run();
+            }
+            return;
+        }
+        pages[0].webViewContainer.capturePreviewBitmap(bitmap -> {
             tab.previewBitmap = bitmap;
             if (whenDone != null) {
                 whenDone.run();
@@ -733,7 +764,7 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
     }
 
     private void copyCurrentLink() {
-        String url = webViewContainer.getCurrentUrl();
+        String url = pages[0] == null ? null : pages[0].webViewContainer.getCurrentUrl();
         if (url == null || url.trim().isEmpty()) {
             return;
         }
@@ -746,12 +777,278 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
 
     private void loadAddressValue(String value) {
         String url = normalizeAddressValue(value);
-        if (url == null) {
+        PageLayout page = pages[0];
+        if (url == null || page == null) {
             return;
         }
-        webActionBar.setCurrentUrl(url);
-        webActionBar.setTitle(titleFromUrl(url));
-        webViewContainer.loadUrl(url);
+        page.webViewContainer.loadUrl(url);
+    }
+
+    private boolean addPageToStack(String url, int order) {
+        if (pages[0] != null) {
+            pages[0].updateWeb();
+        }
+        CachedWeb web = new CachedWeb(url);
+        pagesStack.add(web);
+        webActionBar.showSearch(false, true);
+        updateInterfaceForCurrentPage(web, false, order);
+        return false;
+    }
+
+    private void updateInterfaceForCurrentPage(CachedWeb web, boolean previous, int order) {
+        if (web == null) {
+            return;
+        }
+        if (!previous && order != 0) {
+            PageLayout pageToUpdate = pages[1];
+            pages[1] = pages[0];
+            pages[0] = pageToUpdate;
+            webActionBar.swap();
+            pageToUpdate.setWeb(web);
+            pageToUpdate.setVisibility(View.VISIBLE);
+            pageToUpdate.setAlpha(1f);
+            pageToUpdate.setTranslationX(order == 1 ? windowView.getWidth() : 0);
+            bringPageToFront(pageToUpdate);
+            pageSwitchAnimation = new AnimatorSet();
+            if (order == 1) {
+                pageSwitchAnimation.playTogether(ObjectAnimator.ofFloat(pageToUpdate, View.TRANSLATION_X, windowView.getWidth(), 0));
+            } else if (order == -1) {
+                pages[1].setTranslationX(0);
+                pageSwitchAnimation.playTogether(ObjectAnimator.ofFloat(pages[1], View.TRANSLATION_X, 0, windowView.getWidth()));
+            }
+            pageSwitchAnimation.setDuration(320);
+            pageSwitchAnimation.setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT);
+            pageSwitchAnimation.addListener(new AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(Animator animation) {
+                    pages[1].cleanup();
+                    pages[1].setVisibility(View.GONE);
+                    pageSwitchAnimation = null;
+                    windowView.openingPage = false;
+                    updateActivePage();
+                }
+            });
+            windowView.openingPage = true;
+            updateTitleSlots();
+            pageSwitchAnimation.start();
+            updateActivePage();
+            return;
+        }
+        int index = previous ? 1 : 0;
+        pages[index].setWeb(web);
+        pages[index].setVisibility(View.VISIBLE);
+        pages[index].setAlpha(1f);
+        pages[index].setTranslationX(0);
+        if (!previous) {
+            updateActivePage();
+        }
+    }
+
+    private void goBack() {
+        goBack(pagesStack.size() - 2);
+    }
+
+    private void goBack(int intoIndex) {
+        if (pagesStack.size() <= 1 || intoIndex < 0 || intoIndex >= pagesStack.size() - 1) {
+            dismiss(false);
+            return;
+        }
+        if (pageSwitchAnimation != null) {
+            pageSwitchAnimation.cancel();
+        }
+        windowView.openingPage = true;
+        windowView.movingPage = true;
+        PageLayout previousPage = pages[1];
+        CachedWeb previousWeb = pagesStack.get(intoIndex);
+        previousPage.setWeb(previousWeb);
+        previousPage.setVisibility(View.VISIBLE);
+        previousPage.setAlpha(1f);
+        previousPage.setTranslationX(0f);
+        sendPageToBack(previousPage);
+
+        PageLayout currentPage = pages[0];
+        pageSwitchAnimation = new AnimatorSet();
+        pageSwitchAnimation.playTogether(ObjectAnimator.ofFloat(currentPage, View.TRANSLATION_X, currentPage.getMeasuredWidth()));
+        pageSwitchAnimation.setDuration(420);
+        pageSwitchAnimation.setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT);
+        pageSwitchAnimation.addListener(new AnimatorListenerAdapter() {
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                finishPageBack(intoIndex, currentPage, previousPage);
+            }
+        });
+        updateTitleSlots();
+        pageSwitchAnimation.start();
+        closeAnimationInProgress = true;
+        updateTranslation();
+    }
+
+    private void finishPageBack(int intoIndex, PageLayout currentPage, PageLayout previousPage) {
+        ArrayList<CachedWeb> removed = new ArrayList<>();
+        currentPage.cleanup();
+        currentPage.setVisibility(View.GONE);
+        currentPage.setTranslationX(0f);
+        for (int i = pagesStack.size() - 1; i > intoIndex; --i) {
+            removed.add(pagesStack.remove(i));
+        }
+        for (CachedWeb web : removed) {
+            web.destroy();
+        }
+        pages[0] = previousPage;
+        pages[1] = currentPage;
+        webActionBar.finishTransition();
+        pageSwitchAnimation = null;
+        windowView.openingPage = false;
+        windowView.movingPage = false;
+        windowView.startedTracking = false;
+        closeAnimationInProgress = false;
+        updateActivePage();
+    }
+
+    private void updateActivePage() {
+        PageLayout page = pages[0];
+        if (page == null) {
+            return;
+        }
+        page.setLastVisible(true);
+        if (pages[1] != null) {
+            pages[1].setLastVisible(false);
+        }
+        webActionBar.setCurrentUrl(page.getSubtitle());
+        webActionBar.setTitle(page.getTitle());
+        webActionBar.setColors(page.getActionBarColor(), true);
+        webActionBar.setBackButton(pagesStack.size() > 1);
+        webActionBar.setLoadingProgress(page.webViewContainer.getProgress(), page.webViewContainer.getProgress() < 100);
+        updatePageProgress();
+    }
+
+    private void updateTitleSlots() {
+        if (pages[0] == null || pages[1] == null) {
+            return;
+        }
+        webActionBar.setTitle(0, pages[0].getTitle(), pages[0].getSubtitle());
+        webActionBar.setTitle(1, pages[1].getTitle(), pages[1].getSubtitle());
+    }
+
+    private void bringPageToFront(PageLayout page) {
+        containerView.removeView(page);
+        int chromeIndex = containerView.indexOfChild(webActionBar);
+        containerView.addView(page, Math.max(0, chromeIndex), LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.START));
+    }
+
+    private void sendPageToBack(PageLayout page) {
+        containerView.removeView(page);
+        containerView.addView(page, 0, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.START));
+    }
+
+    private boolean showBackHistoryMenu(View anchor) {
+        PageLayout page = pages[0];
+        if (page == null) {
+            return false;
+        }
+        ItemOptions options = ItemOptions.makeOptions(windowView, anchor);
+        int backgroundColor = SharedConfig.adaptableColorInBrowser ? Theme.getColor(Theme.key_iv_background) : page.getBackgroundColor();
+        int textColor = SharedConfig.adaptableColorInBrowser
+                ? Theme.getColor(Theme.key_windowBackgroundWhiteBlackText)
+                : AndroidUtilities.computePerceivedBrightness(page.getBackgroundColor()) >= .721f ? Color.BLACK : Color.WHITE;
+        int subtextColor = multAlpha(textColor, .65f);
+
+        WebBackForwardList history = page.webViewContainer.copyBackForwardList();
+        int currentIndex = history == null ? -1 : history.getCurrentIndex();
+        if (currentIndex > 0) {
+            for (int i = 0; i < currentIndex; ++i) {
+                WebHistoryItem item = history.getItemAtIndex(i);
+                final int index = i;
+                addHistoryItem(options, item == null ? null : item.getTitle(), item == null ? null : item.getUrl(), item == null ? null : item.getFavicon(), textColor, subtextColor, () -> page.webViewContainer.goBackToHistoryIndex(index));
+            }
+        }
+
+        for (int i = pagesStack.size() - 2; i >= 0; --i) {
+            CachedWeb web = pagesStack.get(i);
+            final int index = i;
+            addHistoryItem(options, web.getTitle(), web.lastUrl, web.favicon, textColor, subtextColor, () -> goBack(index));
+        }
+
+        if (options.getItemsCount() <= 0) {
+            return false;
+        }
+        if (historyOptions != null && historyOptions.isShown()) {
+            historyOptions.dismiss(false);
+        }
+        float wasRotation = webActionBar.getBackButtonRotation();
+        webActionBar.setBackButtonRotation(0f, true);
+        options.setScrimViewBackground(Theme.createCircleDrawable(AndroidUtilities.dp(40), webActionBar.getBackgroundColorAdaptive()));
+        options.setBackgroundColor(backgroundColor);
+        options.updateColors();
+        options.setOnDismiss(() -> {
+            webActionBar.setBackButtonRotation(wasRotation, true);
+            historyOptions = null;
+        });
+        historyOptions = options;
+        options.show();
+        return true;
+    }
+
+    private void addHistoryItem(ItemOptions options, String title, String url, Bitmap favicon, int textColor, int subtextColor, Runnable onClick) {
+        options.add(TextUtils.isEmpty(title) ? titleFromUrl(url) : title, onClick);
+        ActionBarMenuSubItem item = options.getLast();
+        if (item == null) {
+            return;
+        }
+        item.setSubtext(TextUtils.isEmpty(url) ? "about:blank" : url);
+        item.setTextColor(textColor);
+        item.setSubtextColor(subtextColor);
+        item.setColors(textColor, textColor);
+        item.setIconDrawable(createFaviconDrawable(favicon, textColor));
+        item.setMinimumWidth(AndroidUtilities.dp(240));
+    }
+
+    private Drawable createFaviconDrawable(Bitmap favicon, int fallbackColor) {
+        if (favicon == null) {
+            Drawable fallback = windowView.getContext().getDrawable(R.drawable.msg_language);
+            if (fallback != null) {
+                fallback = fallback.mutate();
+                fallback.setColorFilter(new PorterDuffColorFilter(fallbackColor, PorterDuff.Mode.SRC_IN));
+            }
+            return fallback;
+        }
+        return new Drawable() {
+            private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+
+            @Override
+            public void draw(Canvas canvas) {
+                canvas.save();
+                canvas.translate(getBounds().left, getBounds().top);
+                canvas.scale(getBounds().width() / (float) favicon.getWidth(), getBounds().height() / (float) favicon.getHeight());
+                canvas.drawBitmap(favicon, 0, 0, paint);
+                canvas.restore();
+            }
+
+            @Override
+            public void setAlpha(int alpha) {
+                paint.setAlpha(alpha);
+            }
+
+            @Override
+            public void setColorFilter(android.graphics.ColorFilter colorFilter) {
+                paint.setColorFilter(colorFilter);
+            }
+
+            @Override
+            public int getOpacity() {
+                return android.graphics.PixelFormat.TRANSPARENT;
+            }
+
+            @Override
+            public int getIntrinsicWidth() {
+                return AndroidUtilities.dp(24);
+            }
+
+            @Override
+            public int getIntrinsicHeight() {
+                return AndroidUtilities.dp(24);
+            }
+        };
     }
 
     private String normalizeAddressValue(String value) {
@@ -764,11 +1061,16 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
         }
         Uri uri = Uri.parse(trimmed);
         String scheme = uri.getScheme() == null ? null : uri.getScheme().toLowerCase();
-        if (("http".equals(scheme) || "https".equals(scheme)) && uri.getHost() != null && !uri.getHost().trim().isEmpty()) {
+        if ("javascript".equals(scheme)) {
+            return null;
+        }
+        if (scheme != null) {
             return uri.toString();
         }
-        Uri httpsUri = Uri.parse("https://" + trimmed);
-        return httpsUri.getHost() == null || httpsUri.getHost().trim().isEmpty() ? null : httpsUri.toString();
+        if (Patterns.WEB_URL.matcher(trimmed).matches()) {
+            return "https://" + trimmed;
+        }
+        return "https://www.google.com/search?q=" + Uri.encode(trimmed);
     }
 
     private String titleFromUrl(String url) {
@@ -778,14 +1080,6 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
         Uri uri = Uri.parse(url);
         String host = uri.getHost();
         return host == null || host.trim().isEmpty() ? url : host;
-    }
-
-    private String hostOf(String url) {
-        if (url == null || url.trim().isEmpty()) {
-            return null;
-        }
-        String host = Uri.parse(url).getHost();
-        return host == null || host.trim().isEmpty() ? null : host;
     }
 
     private ViewGroup getParentView() {
@@ -803,6 +1097,279 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
         }
     }
 
+    private class PageLayout extends FrameLayout {
+        private final BrowserWebViewContainer webViewContainer;
+        private final WebViewSwipeContainer swipeContainer;
+        private CachedWeb web;
+        private boolean backButton;
+        private int webActionBarColor = Theme.getColor(Theme.key_iv_background);
+        private int webBackgroundColor = Theme.getColor(Theme.key_iv_background);
+
+        PageLayout(Context context) {
+            super(context);
+            setClipChildren(false);
+            setClipToPadding(false);
+
+            webViewContainer = new BrowserWebViewContainer(context, new BrowserWebViewContainer.Delegate() {
+                @Override
+                public void onTitleChanged(String title) {
+                    updateWeb();
+                    if (PageLayout.this == pages[0] && !dismissing && title != null && title.trim().length() > 0) {
+                        webActionBar.setTitle(title);
+                    }
+                }
+
+                @Override
+                public void onUrlChanged(String url, boolean canGoBack, boolean canGoForward) {
+                    backButton = canGoBack;
+                    updateWeb();
+                    if (PageLayout.this == pages[0] && !webActionBar.isAddressing() && !webActionBar.isSearching() && !windowView.movingPage && !windowView.openingPage) {
+                        webActionBar.setCurrentUrl(url);
+                        if (webActionBar.getTitle() == null || webActionBar.getTitle().length() == 0) {
+                            webActionBar.setTitle(titleFromUrl(url));
+                        }
+                        if (pagesStack.size() > 1) {
+                            webActionBar.setBackButton(true);
+                        } else {
+                            webActionBar.setBackButtonCached(false);
+                        }
+                    }
+                }
+
+                @Override
+                public void onProgressChanged(int progress, boolean visible) {
+                    if (PageLayout.this == pages[0]) {
+                        webActionBar.setLoadingProgress(progress, visible);
+                    }
+                }
+
+                @Override
+                public void onWebViewScrolled(int dx, int dy) {
+                    if (PageLayout.this == pages[0]) {
+                        updatePageProgress();
+                    }
+                }
+
+                @Override
+                public void onWebBackgroundChanged(boolean actionBarColor, int color) {
+                    setWebBgColor(actionBarColor, color);
+                }
+            });
+
+            swipeContainer = new WebViewSwipeContainer(context);
+            swipeContainer.setShouldWaitWebViewScroll(true);
+            swipeContainer.setFullSize(true);
+            swipeContainer.setAllowFullSizeSwipe(true);
+            swipeContainer.setTopActionBarOffsetY(getActionBarHeight());
+            swipeContainer.setSwipeOffsetY(-swipeContainer.getOffsetY() + swipeContainer.getTopActionBarOffsetY());
+            swipeContainer.setIsKeyboardVisible(obj -> keyboardHeight >= AndroidUtilities.dp(20));
+            swipeContainer.setDelegate(byTap -> {
+                if (!dismissing) {
+                    dismiss(true);
+                }
+            });
+            swipeContainer.setScrollListener(() -> {
+                if (!dismissingIntoTabs) {
+                    updateTranslation();
+                }
+                windowView.invalidate();
+            });
+            swipeContainer.setWebView(webViewContainer.getWebView());
+            swipeContainer.addView(webViewContainer, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+            addView(swipeContainer, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        }
+
+        void setSwipeOffset(float offsetY) {
+            swipeContainer.setOffsetY(offsetY);
+        }
+
+        void resetSwipeOffset() {
+            swipeContainer.cancelStickTo();
+            swipeContainer.setSwipeOffsetY(-swipeContainer.getOffsetY() + swipeContainer.getTopActionBarOffsetY());
+        }
+
+        float getListTop() {
+            return swipeContainer.getTranslationY();
+        }
+
+        int getBackgroundColor() {
+            return SharedConfig.adaptableColorInBrowser ? webBackgroundColor : Theme.getColor(Theme.key_iv_background);
+        }
+
+        int getActionBarColor() {
+            return SharedConfig.adaptableColorInBrowser ? webActionBarColor : Theme.getColor(Theme.key_iv_background);
+        }
+
+        String getTitle() {
+            String title = webViewContainer.getTitle();
+            if (!TextUtils.isEmpty(title)) {
+                return title;
+            }
+            return web == null ? titleFromUrl(webViewContainer.getCurrentUrl()) : web.getTitle();
+        }
+
+        String getSubtitle() {
+            String url = webViewContainer.getCurrentUrl();
+            if (!TextUtils.isEmpty(url)) {
+                return url;
+            }
+            return web == null ? "" : web.lastUrl;
+        }
+
+        boolean hasBackButton() {
+            return backButton;
+        }
+
+        void back() {
+            webViewContainer.goBack();
+        }
+
+        float getProgress() {
+            return webViewContainer.getScrollProgress();
+        }
+
+        void addProgress(float delta) {
+            webViewContainer.setScrollProgress(clamp01(getProgress() + delta));
+            updatePageProgress();
+        }
+
+        void setLastVisible(boolean lastVisible) {
+            webViewContainer.setKeyboardFocusable(lastVisible);
+        }
+
+        void setWebBgColor(boolean actionBarColor, int color) {
+            if (actionBarColor) {
+                webActionBarColor = blendOver(Theme.getColor(Theme.key_iv_background), color);
+                if (PageLayout.this == pages[0] && SharedConfig.adaptableColorInBrowser) {
+                    webActionBar.setColors(webActionBarColor, true);
+                }
+            } else {
+                webBackgroundColor = blendOver(Color.WHITE, color);
+                if (SharedConfig.adaptableColorInBrowser) {
+                    webViewContainer.setBrowserBackgroundColor(webBackgroundColor);
+                }
+            }
+            updateWeb();
+            updateTranslation();
+            checkFullyVisible();
+        }
+
+        void setWeb(CachedWeb web) {
+            if (this.web == web) {
+                return;
+            }
+            if (this.web != null) {
+                this.web.detach(this);
+            }
+            this.web = web;
+            if (this.web != null) {
+                this.web.attach(this);
+            }
+            swipeContainer.setWebView(webViewContainer.getWebView());
+        }
+
+        void updateWeb() {
+            if (web != null) {
+                web.enrich(this);
+            }
+        }
+
+        void cleanup() {
+            backButton = false;
+            setWeb(null);
+            webViewContainer.destroyWebView();
+            webActionBarColor = Theme.getColor(Theme.key_iv_background);
+            webBackgroundColor = Theme.getColor(Theme.key_iv_background);
+        }
+
+        @Override
+        public void setTranslationX(float translationX) {
+            super.setTranslationX(translationX);
+            updatePageProgress();
+            if (windowView.openingPage || windowView.movingPage) {
+                containerView.invalidate();
+            }
+            updateTranslation();
+        }
+    }
+
+    private class CachedWeb {
+        private final String startUrl;
+        private String lastUrl;
+        private String title;
+        private Bitmap favicon;
+        private WebView webView;
+        private int actionBarColor = Theme.getColor(Theme.key_iv_background);
+        private int backgroundColor = Theme.getColor(Theme.key_iv_background);
+
+        CachedWeb(String url) {
+            startUrl = url;
+            lastUrl = url;
+            title = titleFromUrl(url);
+        }
+
+        void attach(PageLayout pageLayout) {
+            if (webView != null) {
+                webView.onResume();
+                pageLayout.webViewContainer.replaceWebView(webView);
+                webView = null;
+                pageLayout.setWebBgColor(true, actionBarColor);
+                pageLayout.setWebBgColor(false, backgroundColor);
+            } else if (lastUrl != null) {
+                pageLayout.webViewContainer.loadUrl(lastUrl);
+            }
+        }
+
+        void enrich(PageLayout pageLayout) {
+            String currentTitle = pageLayout.webViewContainer.getTitle();
+            if (!TextUtils.isEmpty(currentTitle)) {
+                title = currentTitle;
+            }
+            Bitmap currentFavicon = pageLayout.webViewContainer.getFavicon();
+            if (currentFavicon != null) {
+                favicon = currentFavicon;
+            }
+            String currentUrl = pageLayout.webViewContainer.getCurrentUrl();
+            if (!TextUtils.isEmpty(currentUrl)) {
+                lastUrl = currentUrl;
+            }
+            actionBarColor = pageLayout.webActionBarColor;
+            backgroundColor = pageLayout.webBackgroundColor;
+        }
+
+        void detach(PageLayout pageLayout) {
+            enrich(pageLayout);
+            WebView preserved = pageLayout.webViewContainer.preserveWebView();
+            if (preserved != null) {
+                preserved.onPause();
+                webView = preserved;
+            }
+        }
+
+        void destroy() {
+            if (webView != null) {
+                webView.stopLoading();
+                webView.loadUrl("about:blank");
+                webView.destroy();
+                webView = null;
+            }
+        }
+
+        String getTitle() {
+            if (webView != null && !TextUtils.isEmpty(webView.getTitle())) {
+                return webView.getTitle();
+            }
+            if (!TextUtils.isEmpty(title)) {
+                return title;
+            }
+            return titleFromUrl(lastUrl == null ? startUrl : lastUrl);
+        }
+
+        String getSubtitle() {
+            return TextUtils.isEmpty(lastUrl) ? startUrl : lastUrl;
+        }
+    }
+
     private class WindowView extends FrameLayout implements BaseFragment.AttachedSheetWindow, BottomSheetTabsOverlay.SheetView {
         private final RectF rect = new RectF();
         private final RectF clipRect = new RectF();
@@ -815,6 +1382,8 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
         private final Paint headerBackgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final AnimatedFloat attachedActionBar = new AnimatedFloat(this, 0, 420, CubicBezierInterpolator.EASE_OUT_QUINT);
         private boolean drawingFromOverlay;
+        private boolean movingPage;
+        private boolean openingPage;
 
         private int startedTrackingPointerId;
         private boolean maybeStartTracking;
@@ -846,6 +1415,8 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
         private void resetDrawingState() {
             drawingFromOverlay = false;
             attachedActionBar.force(0f);
+            movingPage = false;
+            openingPage = false;
             maybeStartTracking = false;
             startedTracking = false;
             startedTrackingPointerId = -1;
@@ -873,8 +1444,28 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
             super.requestDisallowInterceptTouchEvent(disallowIntercept);
         }
 
+        private void prepareForMoving(MotionEvent ev) {
+            maybeStartTracking = false;
+            startedTracking = true;
+            startedTrackingX = (int) ev.getX();
+            if (pagesStack.size() > 1 && !webActionBar.isSearching() && !webActionBar.isAddressing()) {
+                movingPage = true;
+                PageLayout previousPage = pages[1];
+                CachedWeb previousWeb = pagesStack.get(pagesStack.size() - 2);
+                previousPage.setWeb(previousWeb);
+                previousPage.setVisibility(View.VISIBLE);
+                previousPage.setAlpha(1f);
+                previousPage.setTranslationX(0f);
+                sendPageToBack(previousPage);
+                webActionBar.setNextTitle(previousWeb.getTitle(), previousWeb.getSubtitle());
+                webActionBar.setTransitionProgress(0f);
+            } else {
+                movingPage = false;
+            }
+        }
+
         boolean handleTouchEvent(MotionEvent event) {
-            if (closeAnimationInProgress || dismissing || released) {
+            if (pageSwitchAnimation != null || closeAnimationInProgress || dismissing || released) {
                 return false;
             }
             if (event != null && event.getAction() == MotionEvent.ACTION_DOWN && !startedTracking && !maybeStartTracking) {
@@ -897,18 +1488,22 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
                 velocityTracker.addMovement(event);
                 // UPSTREAM: ArticleViewer.WindowView L1018
                 // lastWebviewAllowedScroll = pages[0] == null || !pages[0].isWeb() || pages[0].swipeContainer.allowingScroll(true) && !pages[0].swipeContainer.isScrolling;
-                lastWebViewAllowedScroll = swipeContainer.allowingScroll(true) && !swipeContainer.isScrolling;
+                lastWebViewAllowedScroll = pages[0] == null || pages[0].swipeContainer.allowingScroll(true) && !pages[0].swipeContainer.isScrolling;
 
                 if (maybeStartTracking && !startedTracking
                         && dx >= AndroidUtilities.getPixelsInCM(0.4f, true)
                         && Math.abs(dx) / 3 > dy
                         && lastWebViewAllowedScroll) {
-                    maybeStartTracking = false;
-                    startedTracking = true;
-                    startedTrackingX = (int) event.getX();
+                    prepareForMoving(event);
                 } else if (startedTracking) {
                     int width = getWidth();
-                    setBackProgress(width <= 0 ? 0f : dx / (float) width);
+                    if (movingPage && pages[0] != null) {
+                        pages[0].setTranslationX(dx);
+                        webActionBar.setTransitionProgress(width <= 0 ? 0f : clamp01(dx / (float) width));
+                        updatePageProgress();
+                    } else {
+                        setBackProgress(width <= 0 ? 0f : dx / (float) width);
+                    }
                 }
 
                 return startedTracking;
@@ -928,16 +1523,18 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
                 float velY = velocityTracker.getYVelocity();
 
                 if (!startedTracking && velX >= 3500 && velX > Math.abs(velY)) {
-                    maybeStartTracking = false;
-                    startedTracking = true;
-                    startedTrackingX = (int) event.getX();
+                    prepareForMoving(event);
                 }
                 if (startedTracking) {
                     int width = getWidth();
-                    float x = backProgress * width;
+                    float x = movingPage && pages[0] != null ? pages[0].getX() : backProgress * width;
                     final boolean backAnimation = (x < width * 0.3f && (velX < 2500 || velX < velY)) || !lastWebViewAllowedScroll;
                     float distToMove = backAnimation ? x : (width - x);
-                    finishBackGesture(backAnimation, distToMove, width);
+                    if (movingPage) {
+                        finishMovingPageGesture(backAnimation, distToMove, width);
+                    } else {
+                        finishBackGesture(backAnimation, distToMove, width);
+                    }
                 } else {
                     maybeStartTracking = false;
                     startedTracking = false;
@@ -984,6 +1581,42 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
             });
             closeAnimationInProgress = true;
             backAnimator.start();
+        }
+
+        private void finishMovingPageGesture(boolean backAnimation, float distToMove, int width) {
+            if (pageSwitchAnimation != null) {
+                pageSwitchAnimation.cancel();
+            }
+            PageLayout currentPage = pages[0];
+            PageLayout previousPage = pages[1];
+            if (currentPage == null || previousPage == null) {
+                return;
+            }
+            pageSwitchAnimation = new AnimatorSet();
+            pageSwitchAnimation.playTogether(ObjectAnimator.ofFloat(currentPage, View.TRANSLATION_X, backAnimation ? 0 : width));
+            int duration = width <= 0 ? 250 : Math.max((int) (420.0f / width * distToMove), 250);
+            pageSwitchAnimation.setDuration(duration);
+            pageSwitchAnimation.setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT);
+            pageSwitchAnimation.addListener(new AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(Animator animation) {
+                    if (!backAnimation) {
+                        finishPageBack(pagesStack.size() - 2, currentPage, previousPage);
+                    } else {
+                        previousPage.cleanup();
+                        previousPage.setVisibility(View.GONE);
+                        currentPage.setTranslationX(0f);
+                        webActionBar.setTransitionProgress(0f);
+                        movingPage = false;
+                        startedTracking = false;
+                        closeAnimationInProgress = false;
+                        pageSwitchAnimation = null;
+                        updatePageProgress();
+                    }
+                }
+            });
+            closeAnimationInProgress = true;
+            pageSwitchAnimation.start();
         }
 
         @Override
@@ -1070,6 +1703,14 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
                 return true;
             }
             return super.dispatchTouchEvent(ev);
+        }
+
+        @Override
+        public boolean dispatchKeyEventPreIme(KeyEvent event) {
+            if (event != null && event.getKeyCode() == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP && webActionBar.hideKeyboardIfInputFocused()) {
+                return true;
+            }
+            return super.dispatchKeyEventPreIme(event);
         }
 
         @Override

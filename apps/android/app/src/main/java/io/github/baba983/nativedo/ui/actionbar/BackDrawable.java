@@ -5,7 +5,7 @@
 // HOST-WIRING:
 //   - AndroidUtilities import rewritten to NativeDo.
 // OMITTED:
-//   - Unused Telegram debug paint/accessors outside the current ActionBar path.
+//   - Unused Telegram debug paint and setRotated() outside the current ActionBar path.
 /*
  * This file is part of NativeDo.
  *
@@ -16,7 +16,7 @@
  * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/BackDrawable.java
  *
  * NativeDo milestone slice: keeps the back/close drawable drawing and rotation behavior;
- * omits unused Telegram debug paint and accessors.
+ * omits unused Telegram debug paint and setRotated().
  *
  * Copyright (C) Telegram FZ-LLC
  * Copyright (C) 2026 NativeDo contributors
@@ -55,6 +55,10 @@ public class BackDrawable extends Drawable {
     private int rotatedColor = 0xff757575;
     private float animationTime = 300.0f;
     private int arrowRotation;
+
+    public float getRotation() {
+        return finalRotation;
+    }
 
     public BackDrawable(boolean close) {
         super();
@@ -124,7 +128,7 @@ public class BackDrawable extends Drawable {
         paint.setColor(ColorUtils.blendARGB(color, rotatedColor, currentRotation));
 
         canvas.save();
-        canvas.translate(getIntrinsicWidth() / 2f, getIntrinsicHeight() / 2f);
+        canvas.translate(getIntrinsicWidth() / 2, getIntrinsicHeight() / 2);
         if (arrowRotation != 0) {
             canvas.rotate(arrowRotation);
         }
@@ -139,8 +143,9 @@ public class BackDrawable extends Drawable {
         float startYDiff = AndroidUtilities.dp(-0.25f);
         float endYDiff = AndroidUtilities.dp(AndroidUtilities.lerp(7f, 8f, rotation)) - (paint.getStrokeWidth() / 4f) * (1f - rotation);
         float startXDiff = AndroidUtilities.dp(AndroidUtilities.lerp(-7f - 0.25f, 0f, rotation));
-        canvas.drawLine(startXDiff, -startYDiff, 0, -endYDiff, paint);
-        canvas.drawLine(startXDiff, startYDiff, 0, endYDiff, paint);
+        float endXDiff = 0;
+        canvas.drawLine(startXDiff, -startYDiff, endXDiff, -endYDiff, paint);
+        canvas.drawLine(startXDiff, startYDiff, endXDiff, endYDiff, paint);
         canvas.restore();
     }
 

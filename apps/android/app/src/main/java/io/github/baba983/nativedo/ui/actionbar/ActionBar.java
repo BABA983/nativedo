@@ -6,6 +6,8 @@
 //   - Telegram Theme/AndroidUtilities/LayoutHelper imports rewritten to NativeDo.
 // ADAPTED:
 //   - Keeps the title, back button, menu creation, status-bar height, and menu click callback surface used by NativeDo.
+//   - Exposes the back button view to WebActionBar so Telegram's browser back-history long press can be wired without
+//     replacing the ActionBar slice.
 // OMITTED:
 //   - Telegram search, action mode, overlays, subtitle/status widgets, and broader menu/action surfaces.
 /*
@@ -106,6 +108,10 @@ public class ActionBar extends FrameLayout {
 
     public ActionBarMenuOnItemClick getActionBarMenuOnItemClick() {
         return actionBarMenuOnItemClick;
+    }
+
+    protected ImageView getBackButtonImageView() {
+        return backButtonImageView;
     }
 
     public ActionBarMenu createMenu() {

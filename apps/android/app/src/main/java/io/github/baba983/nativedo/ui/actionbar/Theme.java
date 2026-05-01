@@ -8,6 +8,8 @@
 //   - Uses NativeDo day/night theme state, selector drawables, and theme delegates.
 //   - Maps Telegram Instant View/browser surface keys to white/black browser chrome instead of
 //     NativeDo's parchment content background.
+//   - Keeps getColor(ResourcesProvider), multAlpha(), and createCircleDrawable() helpers needed
+//     by ItemOptions/WebActionBar slices while still resolving through NativeDo theme state.
 // OMITTED:
 //   - Telegram wallpaper, remote theme loading, theme editor, ThemeDescription system, and account/global theme plumbing.
 /*
@@ -44,6 +46,7 @@ import android.graphics.ColorFilter;
 import android.graphics.Paint;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.RippleDrawable;
@@ -251,6 +254,24 @@ public final class Theme {
         return getDefaultColor(key);
     }
 
+    public static int getColor(int key, ResourcesProvider resourcesProvider) {
+        if (resourcesProvider != null) {
+            Integer color = resourcesProvider.getColorOrNull(key);
+            if (color != null) {
+                return color;
+            }
+        }
+        return getColor(key);
+    }
+
+    public static int multAlpha(int color, float multiply) {
+        if (multiply == 1f) {
+            return color;
+        }
+        int alpha = Math.max(0, Math.min(0xFF, (int) (Color.alpha(color) * multiply)));
+        return (color & 0x00ffffff) | (alpha << 24);
+    }
+
     public static int getDefaultColor(int key) {
         if (key < 0 || key >= defaultColors.length) {
             return 0xffff0000;
@@ -299,6 +320,46 @@ public final class Theme {
 
     public static RippleDrawable getSelectorDrawable(boolean whiteBackground) {
         return createSelectorDrawable(getColor(whiteBackground ? key_actionBarDefaultSelector : key_listSelector));
+    }
+
+    public static Drawable createCircleDrawable(int size, int color) {
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        paint.setColor(color);
+        return new Drawable() {
+            private final RectF rect = new RectF();
+
+            @Override
+            public void draw(Canvas canvas) {
+                Rect bounds = getBounds();
+                rect.set(bounds);
+                canvas.drawOval(rect, paint);
+            }
+
+            @Override
+            public void setAlpha(int alpha) {
+                paint.setAlpha(alpha);
+            }
+
+            @Override
+            public void setColorFilter(ColorFilter colorFilter) {
+                paint.setColorFilter(colorFilter);
+            }
+
+            @Override
+            public int getOpacity() {
+                return PixelFormat.TRANSPARENT;
+            }
+
+            @Override
+            public int getIntrinsicWidth() {
+                return size;
+            }
+
+            @Override
+            public int getIntrinsicHeight() {
+                return size;
+            }
+        };
     }
 
     public static void addThemeDelegate(ThemeDelegate delegate) {

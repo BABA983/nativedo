@@ -4,8 +4,10 @@
 // SUBSYSTEMS: layout-helper=L1
 // HOST-WIRING:
 //   - AndroidUtilities.dp import rewritten to NativeDo.
+// ADAPTED:
+//   - Keeps the LinearLayout helper overload currently needed by ItemOptions.
 // OMITTED:
-//   - Helper overloads for LinearLayout, RelativeLayout, RecyclerView, ScrollView, and other ViewGroup types not used by current ports.
+//   - Helper overloads for RelativeLayout, RecyclerView, ScrollView, and other ViewGroup types not used by current ports.
 /*
  * This file is part of NativeDo.
  *
@@ -15,8 +17,9 @@
  * Source reference:
  * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/ui/Components/LayoutHelper.java
  *
- * NativeDo milestone slice: keeps FrameLayout helpers used by the navigation shell;
- * omits Telegram helper overloads for out-of-scope ViewGroup types.
+ * NativeDo milestone slice: keeps FrameLayout helpers used by the navigation shell and
+ * the LinearLayout helper used by ItemOptions; omits helper overloads for out-of-scope
+ * ViewGroup types.
  *
  * Copyright (C) Telegram FZ-LLC
  * Copyright (C) 2026 NativeDo contributors
@@ -30,6 +33,7 @@
 package io.github.baba983.nativedo.ui.components;
 
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
 
 import io.github.baba983.nativedo.core.AndroidUtilities;
 
@@ -60,5 +64,9 @@ public final class LayoutHelper {
 
     public static FrameLayout.LayoutParams createFrame(float width, float height, int gravity) {
         return new FrameLayout.LayoutParams(getSize(width), getSize(height), gravity);
+    }
+
+    public static LinearLayout.LayoutParams createLinear(int width, int height) {
+        return new LinearLayout.LayoutParams(getSize(width), getSize(height));
     }
 }

@@ -1,7 +1,7 @@
 // UPSTREAM-LEVEL: L2
 // UPSTREAM-PATH:  org/telegram/ui/web/WebActionBar.java
 // UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: browser-actionbar=L2, address-animation=L0, progress-animation=L1, scroll-progress=L1, title-swap=L1, popup-menu=L1, adaptive-color=L1, scrubber-gesture=L0
+// SUBSYSTEMS: browser-actionbar=L2, address-animation=L0, progress-animation=L1, scroll-progress=L1, title-swap=L1, popup-menu=L1, adaptive-color=L1, scrubber-gesture=L0, back-history=L1
 // HOST-WIRING:
 //   - Extends NativeDo's current ActionBar slice so ActionBarLayout can host it unchanged.
 //   - Uses NativeDo strings, Theme keys, and existing ActionBarMenu popup support.
@@ -13,9 +13,8 @@
 //   - Replaces the placeholder line with NativeDo's LineProgressView (smooth 200ms EASE_OUT_QUINT chase).
 //   - Ports the upstream action-bar reading progress background fill driven by
 //     ArticleViewer.updatePages() -> WebActionBar.setProgress(index, pageProgress).
-//   - Adds Title[2] slots + titleProgress cross-slide (360ms EASE_OUT_QUINT) for navigation
-//     transitions, in lieu of the upstream AnimatedTextDrawable per-character animation
-//     (kept as a follow-up).
+//   - Keeps Telegram's Title[2] slot swap + titleProgress transition geometry for page
+//     navigation, using the NativeDo AnimatedTextDrawable slice from upstream.
 //   - Adds upstream WebActionBar.setColors(int, boolean) adaptive color path: animated
 //     blendARGB(fromBackgroundColor -> backgroundColor), derives
 //     textColor / iconColor / addressBackgroundColor / addressTextColor from the page
@@ -28,6 +27,8 @@
 //     does not expose those upstream LinearLayouts. Constants kept verbatim:
 //     0.8 * ViewConfiguration.getLongPressTimeout() press window and
 //     (x - pressX) / (0.8 * getWidth()) normalized delta.
+//   - Exposes upstream-style setBackButton / backButton long-click surface so BrowserSheet can
+//     port ArticleViewer's WebView/page-stack history menu without replacing NativeDo ActionBar.
 // OMITTED:
 //   - Search field full theming pass, Instant View, bookmarks/history/settings state,
 //     bottom action bar mode, and Telegram item-options menu icons. Forward button still
@@ -63,6 +64,7 @@ import android.graphics.Path;
 import android.graphics.PixelFormat;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.text.InputType;
@@ -79,7 +81,6 @@ import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
-import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -92,6 +93,7 @@ import io.github.baba983.nativedo.ui.actionbar.ActionBarMenu;
 import io.github.baba983.nativedo.ui.actionbar.ActionBarMenuItem;
 import io.github.baba983.nativedo.ui.actionbar.BackDrawable;
 import io.github.baba983.nativedo.ui.actionbar.Theme;
+import io.github.baba983.nativedo.ui.components.AnimatedTextDrawable;
 import io.github.baba983.nativedo.ui.components.CubicBezierInterpolator;
 import io.github.baba983.nativedo.ui.components.LayoutHelper;
 import io.github.baba983.nativedo.ui.components.LineProgressView;
@@ -133,6 +135,8 @@ public class WebActionBar extends ActionBar {
     private final BackDrawable backButtonDrawable;
     private final FrameLayout titleContainer;
     private final Title[] titles = new Title[2];
+    private final Rect currentTitleClipBounds = new Rect();
+    private final Rect nextTitleClipBounds = new Rect();
     private final EditText addressEditText;
     private final LineProgressView progressView;
     private final float[] progress = new float[2];
@@ -145,13 +149,13 @@ public class WebActionBar extends ActionBar {
     private ValueAnimator addressAnimator;
 
     private float titleProgress;
-    private ValueAnimator titleAnimator;
 
     private boolean searching;
     private float searchingProgress;
     private final EditText searchEditText;
     private final ImageView searchClearButton;
     private ValueAnimator searchAnimator;
+    private boolean backButtonShown;
 
     private final Paint addressBackgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint addressRoundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -364,78 +368,91 @@ public class WebActionBar extends ActionBar {
         titles[0].setSubtitleText(value == null ? "" : value);
     }
 
+    public void setTitle(int i, CharSequence title, CharSequence subtitle) {
+        titles[i].setTitleText(title == null ? "" : title, false);
+        titles[i].setSubtitleText(subtitle == null ? "" : subtitle, false);
+        if (i == 0) {
+            currentTitle = titles[i].getTitleText().toString();
+            currentUrl = titles[i].getSubtitleText().toString();
+        }
+    }
+
     public void setCurrentUrl(String url) {
         currentUrl = url == null ? "" : url;
         setSubtitle(currentUrl);
     }
 
     /**
-     * Updates the off-screen slot used by the next {@link #swap(boolean)} animation.
+     * Updates the off-screen slot used by the next page transition.
      */
     public void setNextTitle(CharSequence value, CharSequence subtitle) {
-        titles[1].setTitleText(value == null ? "" : value);
-        titles[1].setSubtitleText(subtitle == null ? "" : subtitle);
+        titles[1].setTitleText(value == null ? "" : value, false);
+        titles[1].setSubtitleText(subtitle == null ? "" : subtitle, false);
     }
 
     /**
-     * Cross-slides the off-screen slot in over 360ms (EASE_OUT_QUINT) and swaps the slot indices
-     * once the animation settles, mirroring upstream WebActionBar.swap().
+     * Mirrors upstream WebActionBar.swap(): page motion drives titleProgress separately.
      */
-    public void swap(boolean animated) {
-        if (titleAnimator != null) {
-            titleAnimator.cancel();
-            titleAnimator = null;
-        }
-        currentTitle = titles[1].getTitleText().toString();
-        currentUrl = titles[1].getSubtitleText().toString();
-        titles[1].setVisibility(VISIBLE);
-        if (!animated) {
-            titleProgress = 1f;
-            applyTitleProgress();
-            commitSwap();
-            return;
-        }
-        titleAnimator = ValueAnimator.ofFloat(titleProgress, 1f);
-        titleAnimator.addUpdateListener(animation -> {
-            titleProgress = (float) animation.getAnimatedValue();
-            applyTitleProgress();
-        });
-        titleAnimator.addListener(new AnimatorListenerAdapter() {
-            @Override
-            public void onAnimationEnd(Animator animation) {
-                titleProgress = 1f;
-                applyTitleProgress();
-                commitSwap();
-            }
-        });
-        titleAnimator.setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT);
-        titleAnimator.setDuration(360);
-        titleAnimator.start();
+    public void swap() {
+        Title title = titles[0];
+        titles[0] = titles[1];
+        titles[1] = title;
+        titles[0].setVisibility(VISIBLE);
+        titles[1].setVisibility(titleProgress > 0f ? VISIBLE : GONE);
+
+        float progressValue = progress[0];
+        progress[0] = progress[1];
+        progress[1] = progressValue;
+
+        currentTitle = titles[0].getTitleText().toString();
+        currentUrl = titles[0].getSubtitleText().toString();
+        invalidate();
+    }
+
+    public void setTransitionProgress(float progress) {
+        titleProgress = clamp01(progress);
+        titles[0].setVisibility(VISIBLE);
+        titles[1].setVisibility(titleProgress > 0f ? VISIBLE : GONE);
+        applyTitleProgress();
+        invalidate();
+    }
+
+    public void finishTransition() {
+        swap();
+        setTransitionProgress(0f);
     }
 
     private void applyTitleProgress() {
-        float p = Math.max(0f, Math.min(1f, titleProgress));
-        int width = titleContainer.getWidth();
-        // Slot 0 slides slightly left and fades out; slot 1 slides in from the right.
-        titles[0].setTranslationX(-AndroidUtilities.dp(12) * p);
-        titles[0].setAlpha(1f - p);
-        titles[1].setTranslationX(width <= 0 ? AndroidUtilities.dp(12) * (1f - p) : (width * 0.18f) * (1f - p));
-        titles[1].setAlpha(p);
-    }
+        float p = clamp01(titleProgress);
+        int width = getWidth();
+        float leftPadding = width * p - AndroidUtilities.dp(54 - 24) * clamp01(2f * p);
+        float pivotY = titleContainer.getHeight() / 2f;
+        int currentClipRight = Math.max(0, Math.round(titleContainer.getWidth() - leftPadding));
+        currentTitleClipBounds.set(0, 0, currentClipRight, titleContainer.getHeight());
+        titles[0].setClipBounds(currentTitleClipBounds);
 
-    private void commitSwap() {
-        // After the slide finishes, slot[1] becomes the resting slot.
-        Title tmp = titles[0];
-        titles[0] = titles[1];
-        titles[1] = tmp;
-        titleProgress = 0f;
-        titles[0].setTranslationX(0f);
-        titles[0].setAlpha(1f);
-        titles[1].setVisibility(GONE);
-        titles[1].setTranslationX(0f);
-        titles[1].setAlpha(0f);
-        titles[1].setTitleText("");
-        titles[1].setSubtitleText("");
+        titles[0].setPivotX(0f);
+        titles[0].setPivotY(pivotY);
+        titles[0].setTranslationX(leftPadding);
+        float currentScale = AndroidUtilities.lerp(1f, .5f, p);
+        titles[0].setScaleX(currentScale);
+        titles[0].setScaleY(currentScale);
+        titles[0].setAlpha((1f - p) * (1f - searchingProgress));
+
+        titles[1].setPivotX(0f);
+        titles[1].setPivotY(pivotY);
+        float nextTranslation = -AndroidUtilities.dp(12) * (1f - p);
+        titles[1].setTranslationX(nextTranslation);
+        int nextClipRight = Math.max(0, Math.round(width * p - titleContainer.getLeft() - nextTranslation));
+        nextTitleClipBounds.set(0, 0, nextClipRight, titleContainer.getHeight());
+        titles[1].setClipBounds(nextTitleClipBounds);
+        float nextScale = AndroidUtilities.lerp(.5f, 1f, p);
+        titles[1].setScaleX(nextScale);
+        titles[1].setScaleY(nextScale);
+        titles[1].setAlpha(p * (1f - searchingProgress) * (1f - addressingProgress));
+        if (p > 0f) {
+            titles[1].bringToFront();
+        }
     }
 
     public void setLoadingProgress(int progress, boolean visible) {
@@ -564,7 +581,7 @@ public class WebActionBar extends ActionBar {
             searchAnimator.cancel();
         }
         searching = show;
-        backButtonDrawable.setRotation(show ? 0f : 1f, animated);
+        backButtonDrawable.setRotation(backButtonShown || show ? 0f : 1f, animated);
         if (show) {
             searchEditText.setVisibility(VISIBLE);
             if (addressing) {
@@ -643,6 +660,33 @@ public class WebActionBar extends ActionBar {
         return searching;
     }
 
+    public void setBackButton(boolean show) {
+        backButtonShown = show;
+        if (!isSearching() && !isAddressing()) {
+            backButtonDrawable.setRotation(backButtonShown ? 0f : 1f, true);
+        }
+    }
+
+    public void setBackButtonCached(boolean show) {
+        backButtonShown = show;
+    }
+
+    public boolean isBackButton() {
+        return backButtonShown;
+    }
+
+    public void setBackButtonRotation(float rotation, boolean animated) {
+        backButtonDrawable.setRotation(rotation, animated);
+    }
+
+    public float getBackButtonRotation() {
+        return backButtonDrawable.getRotation();
+    }
+
+    public void setOnBackButtonLongClickListener(View.OnLongClickListener listener) {
+        getBackButtonImageView().setOnLongClickListener(listener);
+    }
+
     public void showAddress(String url, boolean animated) {
         addressEditText.setText(url == null ? "" : url);
         addressEditText.selectAll();
@@ -657,7 +701,7 @@ public class WebActionBar extends ActionBar {
             addressAnimator.cancel();
         }
         addressing = show;
-        backButtonDrawable.setRotation(show ? 0f : 1f, animated);
+        backButtonDrawable.setRotation(backButtonShown || show ? 0f : 1f, animated);
         updateAddressColors();
         if (animated) {
             if (show) {
@@ -707,9 +751,7 @@ public class WebActionBar extends ActionBar {
         }
         pendingAddressKeyboard = () -> {
             pendingAddressKeyboard = null;
-            if (addressing) {
-                updateAddressKeyboard();
-            }
+            updateAddressKeyboard();
         };
         postDelayed(pendingAddressKeyboard, addressing ? 100 : 0);
     }
@@ -737,6 +779,31 @@ public class WebActionBar extends ActionBar {
                 inputMethodManager.hideSoftInputFromWindow(addressEditText.getWindowToken(), 0);
             }
         }
+    }
+
+    public void hideKeyboard() {
+        if (searching) {
+            searchEditText.clearFocus();
+            AndroidUtilities.hideKeyboard(searchEditText);
+        }
+        if (addressing) {
+            addressEditText.clearFocus();
+            AndroidUtilities.hideKeyboard(addressEditText);
+        }
+    }
+
+    public boolean hideKeyboardIfInputFocused() {
+        if (searchEditText.isFocused()) {
+            searchEditText.clearFocus();
+            AndroidUtilities.hideKeyboard(searchEditText);
+            return true;
+        }
+        if (addressEditText.isFocused()) {
+            addressEditText.clearFocus();
+            AndroidUtilities.hideKeyboard(addressEditText);
+            return true;
+        }
+        return false;
     }
 
     private void onAddressingProgress(float progress) {
@@ -830,7 +897,7 @@ public class WebActionBar extends ActionBar {
         int topInset = AndroidUtilities.statusBarHeight;
         int barHeight = AndroidUtilities.dp(56);
         int menuWidth = menu == null ? 0 : menu.getMeasuredWidth();
-        int left = AndroidUtilities.dp(72);
+        int left = AndroidUtilities.dp(54);
         int right = AndroidUtilities.dp(12) + menuWidth;
         int titleWidth = Math.max(0, width - left - right);
 
@@ -862,7 +929,7 @@ public class WebActionBar extends ActionBar {
         super.onLayout(changed, left, top, right, bottom);
         int topInset = AndroidUtilities.statusBarHeight;
         int menuWidth = menu == null ? 0 : menu.getMeasuredWidth();
-        int titleLeft = AndroidUtilities.dp(72);
+        int titleLeft = AndroidUtilities.dp(54);
         int titleRight = getMeasuredWidth() - menuWidth - AndroidUtilities.dp(12);
         titleContainer.layout(titleLeft, topInset, titleRight, topInset + AndroidUtilities.dp(56));
 
@@ -929,67 +996,94 @@ public class WebActionBar extends ActionBar {
         }
     }
 
-    /**
-     * Single title/subtitle slot. Two of these layered inside titleContainer give us the cross-slide
-     * swap upstream achieves with its painted titles[] + AnimatedTextDrawable; that fancier per-glyph
-     * animation can replace this slot later without changing the public swap() API.
-     */
-    private static class Title extends FrameLayout {
+    private static class Title extends View {
 
-        private final TextView titleView;
-        private final TextView subtitleView;
+        private final AnimatedTextDrawable titleDrawable = new AnimatedTextDrawable(true, true, true);
+        private final AnimatedTextDrawable subtitleDrawable = new AnimatedTextDrawable(true, true, true);
+        private int titleColor = Theme.getColor(Theme.key_actionBarDefaultTitle);
+        private int subtitleColor = Theme.getColor(Theme.key_actionBarDefaultSubtitle);
 
         Title(Context context) {
             super(context);
 
-            titleView = new TextView(context);
-            titleView.setSingleLine(true);
-            titleView.setEllipsize(TextUtils.TruncateAt.END);
-            titleView.setTypeface(titleView.getTypeface(), android.graphics.Typeface.BOLD);
-            titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
-            titleView.setTextColor(Theme.getColor(Theme.key_actionBarDefaultTitle));
-            FrameLayout.LayoutParams titleLp = new FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    AndroidUtilities.dp(25),
-                    Gravity.TOP | Gravity.START);
-            titleLp.topMargin = AndroidUtilities.dp(5);
-            addView(titleView, titleLp);
+            titleDrawable.ignoreRTL = true;
+            titleDrawable.setTextSize(AndroidUtilities.dp(18.33f));
+            titleDrawable.setScaleProperty(.6f);
+            titleDrawable.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
+            titleDrawable.setEllipsizeByGradient(false);
+            titleDrawable.setCallback(this);
+            titleDrawable.setOverrideFullWidth(9999999);
+            titleDrawable.setTextColor(titleColor);
 
-            subtitleView = new TextView(context);
-            subtitleView.setSingleLine(true);
-            subtitleView.setEllipsize(TextUtils.TruncateAt.END);
-            subtitleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
-            subtitleView.setTextColor(Theme.getColor(Theme.key_actionBarDefaultSubtitle));
-            FrameLayout.LayoutParams subtitleLp = new FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    AndroidUtilities.dp(19),
-                    Gravity.TOP | Gravity.START);
-            subtitleLp.topMargin = AndroidUtilities.dp(30);
-            addView(subtitleView, subtitleLp);
+            subtitleDrawable.ignoreRTL = true;
+            subtitleDrawable.setTextSize(AndroidUtilities.dp(14));
+            subtitleDrawable.setEllipsizeByGradient(false);
+            subtitleDrawable.setCallback(this);
+            subtitleDrawable.setOverrideFullWidth(9999999);
+            subtitleDrawable.setTextColor(subtitleColor);
         }
 
         void setTitleText(CharSequence value) {
-            titleView.setText(value);
+            setTitleText(value, true);
+        }
+
+        void setTitleText(CharSequence value, boolean animated) {
+            titleDrawable.setText(value, animated);
         }
 
         void setSubtitleText(CharSequence value) {
-            subtitleView.setText(value);
+            setSubtitleText(value, false);
+        }
+
+        void setSubtitleText(CharSequence value, boolean animated) {
+            subtitleDrawable.setText(value, animated);
         }
 
         void setTitleTextColor(int color) {
-            titleView.setTextColor(color);
+            titleColor = color;
+            titleDrawable.setTextColor(color);
         }
 
         void setSubtitleTextColor(int color) {
-            subtitleView.setTextColor(color);
+            subtitleColor = color;
+            subtitleDrawable.setTextColor(color);
         }
 
         CharSequence getTitleText() {
-            return titleView.getText() == null ? "" : titleView.getText();
+            return titleDrawable.getText() == null ? "" : titleDrawable.getText();
         }
 
         CharSequence getSubtitleText() {
-            return subtitleView.getText() == null ? "" : subtitleView.getText();
+            return subtitleDrawable.getText() == null ? "" : subtitleDrawable.getText();
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            int w = getWidth();
+            int h = getHeight();
+            float both = titleDrawable.isNotEmpty() * subtitleDrawable.isNotEmpty();
+
+            canvas.save();
+            canvas.translate(0, -AndroidUtilities.dp(1));
+            canvas.translate(0, -AndroidUtilities.dp(4) * both);
+            float titleScale = AndroidUtilities.lerp(1f, .86f, both);
+            canvas.scale(titleScale, titleScale, 0, 0);
+            titleDrawable.setBounds(0, 0, w, h);
+            titleDrawable.draw(canvas);
+            canvas.restore();
+
+            canvas.save();
+            canvas.translate(0, -AndroidUtilities.dp(1) + AndroidUtilities.dp(14) * both - AndroidUtilities.dp(4) * (1f - both));
+            float subtitleScale = AndroidUtilities.lerp(1.15f, .9f, both);
+            canvas.scale(subtitleScale, subtitleScale, 0, 0);
+            subtitleDrawable.setBounds(0, 0, w, h);
+            subtitleDrawable.draw(canvas);
+            canvas.restore();
+        }
+
+        @Override
+        protected boolean verifyDrawable(@NonNull Drawable who) {
+            return who == titleDrawable || who == subtitleDrawable || super.verifyDrawable(who);
         }
     }
 
