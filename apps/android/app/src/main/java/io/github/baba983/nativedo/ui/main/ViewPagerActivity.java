@@ -1,15 +1,19 @@
-// UPSTREAM-LEVEL: L1
-// UPSTREAM-PATH:  org/telegram/ui/ViewPagerActivity.java
+// PORT-MODE: Exact Component Port
+// UPSTREAM-SCOPE: org/telegram/ui/ViewPagerActivity.java
 // UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: lifecycle-orchestration=L1, host-fragment-adapter=L2
+// EXACT-SUBSYSTEMS: lifecycle-orchestration
 // HOST-WIRING:
 //   - Telegram ActionBar/BaseFragment imports -> NativeDo actionbar package.
 //   - ViewPagerFixed.Adapter binds NativeDo BaseFragment views into FrameLayout page containers.
 //   - Insets dispatch is kept in the upstream shape so MainTabs and Compose page fragments receive
 //     the post-bottom-tabs insets from ActionBarLayout.
+// ADAPTED-BACKEND:
+//   - None.
+// ADAPTED-PRODUCT:
+//   - Keeps the host-fragment adapter surface required by NativeDo's current MainTabs pages.
 // OMITTED:
 //   - getThemeDescriptions / theme-description collection - Telegram's animated theme editor is out of scope.
-//   - fragmentVisibility factors / system-bar color orchestration - current milestone uses one status-bar style.
+//   - fragmentVisibility factors - current milestone does not port Telegram's full visibility interpolation model.
 //   - aggressive fragment-cache eviction across non-current pages - only Home/Profile are in scope and can stay resident.
 //   - setParentLayout / setInPreviewMode / setVisibleDialog forwarding - only current visible fragment forwarding is needed.
 //   - onConfigurationChanged forwarding to all cached fragments - same fixed two-tab scope.
@@ -46,6 +50,7 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
 import io.github.baba983.nativedo.ui.actionbar.ActionBar;
+import io.github.baba983.nativedo.ui.actionbar.ActionBarLayout;
 import io.github.baba983.nativedo.ui.actionbar.BaseFragment;
 import io.github.baba983.nativedo.ui.components.LayoutHelper;
 import io.github.baba983.nativedo.ui.components.ViewPagerFixed;
@@ -185,6 +190,7 @@ public abstract class ViewPagerActivity extends BaseFragment {
                 }
             }
         }
+        requestParentSystemBarsUpdate();
         return WindowInsetsCompat.CONSUMED;
     }
 
@@ -196,6 +202,7 @@ public abstract class ViewPagerActivity extends BaseFragment {
         if (fragment != null) {
             fragment.onResume();
         }
+        requestParentSystemBarsUpdate();
     }
 
     @Override
@@ -206,6 +213,7 @@ public abstract class ViewPagerActivity extends BaseFragment {
         }
         resumed = false;
         super.onPause();
+        requestParentSystemBarsUpdate();
     }
 
     protected BaseFragment getCurrentVisibleFragment() {
@@ -214,6 +222,37 @@ public abstract class ViewPagerActivity extends BaseFragment {
         }
         FragmentState state = fragmentsArr.get(viewPager.getCurrentPosition());
         return state == null ? null : state.fragment;
+    }
+
+    @Override
+    public BaseFragment.AttachedSheet getLastSheet() {
+        BaseFragment fragment = getCurrentVisibleFragment();
+        BaseFragment.AttachedSheet sheet = fragment != null ? fragment.getLastSheet() : null;
+        return sheet != null ? sheet : super.getLastSheet();
+    }
+
+    @Override
+    public boolean hasShownSheet() {
+        BaseFragment fragment = getCurrentVisibleFragment();
+        return super.hasShownSheet() || fragment != null && fragment.hasShownSheet();
+    }
+
+    @Override
+    public boolean hasShownFullyVisibleSheet() {
+        BaseFragment fragment = getCurrentVisibleFragment();
+        return super.hasShownFullyVisibleSheet() || fragment != null && fragment.hasShownFullyVisibleSheet();
+    }
+
+    @Override
+    public boolean isLightStatusBar() {
+        BaseFragment fragment = getCurrentVisibleFragment();
+        return fragment != null && fragment.getFragmentView() != null ? fragment.isLightStatusBar() : super.isLightStatusBar();
+    }
+
+    @Override
+    public int getNavigationBarColor() {
+        BaseFragment fragment = getCurrentVisibleFragment();
+        return fragment != null && fragment.getFragmentView() != null ? fragment.getNavigationBarColor() : super.getNavigationBarColor();
     }
 
     protected void putFragmentAtPosition(int position, BaseFragment fragment) {
@@ -240,11 +279,18 @@ public abstract class ViewPagerActivity extends BaseFragment {
         if (newState != null) {
             newState.fragment.onResume();
         }
+        requestParentSystemBarsUpdate();
     }
 
     private static void removeFromParent(View view) {
         if (view != null && view.getParent() instanceof ViewGroup) {
             ((ViewGroup) view.getParent()).removeView(view);
+        }
+    }
+
+    private void requestParentSystemBarsUpdate() {
+        if (parentLayout instanceof ActionBarLayout) {
+            ((ActionBarLayout) parentLayout).updateSystemBars();
         }
     }
 

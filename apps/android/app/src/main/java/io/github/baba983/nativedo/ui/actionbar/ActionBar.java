@@ -1,13 +1,17 @@
-// UPSTREAM-LEVEL: L1
-// UPSTREAM-PATH:  org/telegram/ui/ActionBar/ActionBar.java
+// PORT-MODE: Exact Component Port
+// UPSTREAM-SCOPE: org/telegram/ui/ActionBar/ActionBar.java
 // UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: action-bar=L1, custom-layout=L1, theme/resource-mapping=L2
+// EXACT-SUBSYSTEMS: action-bar layout, custom-layout
 // HOST-WIRING:
 //   - Telegram Theme/AndroidUtilities/LayoutHelper imports rewritten to NativeDo.
-// ADAPTED:
+// ADAPTED-BACKEND:
+//   - None.
+// ADAPTED-PRODUCT:
 //   - Keeps the title, back button, menu creation, status-bar height, and menu click callback surface used by NativeDo.
 //   - Exposes the back button view to WebActionBar so Telegram's browser back-history long press can be wired without
 //     replacing the ActionBar slice.
+//   - Adds the small styling surface NativeDo's browser-derived white pages need: title/icon color overrides,
+//     back-button image setter, and optional bottom shadow toggle.
 // OMITTED:
 //   - Telegram search, action mode, overlays, subtitle/status widgets, and broader menu/action surfaces.
 /*
@@ -64,8 +68,10 @@ public class ActionBar extends FrameLayout {
     public ActionBarMenu menu;
     public int itemsColor;
     public int itemsBackgroundColor;
+    private int titleColor;
     private ActionBarMenuOnItemClick actionBarMenuOnItemClick;
     private boolean occupyStatusBar = true;
+    private boolean castShadows = SharedConfig.drawActionBarShadow;
 
     public ActionBar(Context context) {
         super(context);
@@ -102,6 +108,10 @@ public class ActionBar extends FrameLayout {
         applyBackButtonColor(drawable);
     }
 
+    public void setBackButtonImage(int resId) {
+        setBackButtonDrawable(resId == 0 ? null : getContext().getResources().getDrawable(resId));
+    }
+
     public void setActionBarMenuOnItemClick(ActionBarMenuOnItemClick listener) {
         actionBarMenuOnItemClick = listener;
     }
@@ -127,7 +137,8 @@ public class ActionBar extends FrameLayout {
         setBackgroundColor(Theme.getColor(Theme.key_actionBarDefault));
         itemsColor = Theme.getColor(Theme.key_actionBarDefaultIcon);
         itemsBackgroundColor = Theme.getColor(Theme.key_actionBarDefaultSelector);
-        titleTextView.setTextColor(Theme.getColor(Theme.key_actionBarDefaultTitle));
+        titleColor = Theme.getColor(Theme.key_actionBarDefaultTitle);
+        titleTextView.setTextColor(titleColor);
         backButtonImageView.setBackground(Theme.createSelectorDrawable(itemsBackgroundColor));
         applyBackButtonColor(backButtonImageView.getDrawable());
         if (menu != null) {
@@ -138,6 +149,37 @@ public class ActionBar extends FrameLayout {
             menu.redrawPopup(Theme.getColor(Theme.key_actionBarDefaultSubmenuBackground));
         }
         invalidate();
+    }
+
+    public void setItemsColor(int color, boolean isActionMode) {
+        itemsColor = color;
+        applyBackButtonColor(backButtonImageView.getDrawable());
+        if (menu != null) {
+            menu.updateItemsColor();
+        }
+        invalidate();
+    }
+
+    public void setItemsBackgroundColor(int color, boolean isActionMode) {
+        itemsBackgroundColor = color;
+        backButtonImageView.setBackground(Theme.createSelectorDrawable(itemsBackgroundColor));
+        if (menu != null) {
+            menu.updateItemsBackgroundColor();
+        }
+        invalidate();
+    }
+
+    public void setTitleColor(int color) {
+        titleColor = color;
+        titleTextView.setTextColor(color);
+        invalidate();
+    }
+
+    public void setCastShadows(boolean value) {
+        if (castShadows != value) {
+            castShadows = value;
+            invalidate();
+        }
     }
 
     public boolean shouldAddToContainer() {
@@ -153,6 +195,9 @@ public class ActionBar extends FrameLayout {
 
     public int getCurrentActionBarHeight() {
         return AndroidUtilities.dp(56) + (occupyStatusBar ? AndroidUtilities.statusBarHeight : 0);
+    }
+
+    public void setHeight(int height) {
     }
 
     @Override
@@ -208,8 +253,7 @@ public class ActionBar extends FrameLayout {
     @Override
     protected void onDraw(@NonNull Canvas canvas) {
         super.onDraw(canvas);
-        if (SharedConfig.drawActionBarShadow) {
-            canvas.drawColor(Color.TRANSPARENT);
+        if (castShadows) {
             canvas.save();
             canvas.clipRect(0, getHeight() - 1, getWidth(), getHeight());
             canvas.drawColor(Color.parseColor("#1F000000"));

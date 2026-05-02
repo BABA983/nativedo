@@ -1,12 +1,15 @@
-// UPSTREAM-LEVEL: L2
-// UPSTREAM-PATH:  org/telegram/messenger/AndroidUtilities.java
+// PORT-MODE: Exact Component Port
+// UPSTREAM-SCOPE: org/telegram/messenger/AndroidUtilities.java
 // UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: host-utility=L2, display-metrics=L2, animation=L0
+// EXACT-SUBSYSTEMS: display-metrics, animation-helper
 // HOST-WIRING:
 //   - Uses AndroidX WindowCompat for NativeDo edge-to-edge status bar control.
-// ADAPTED:
+// ADAPTED-BACKEND:
+//   - None.
+// ADAPTED-PRODUCT:
 //   - Keeps only display metrics, dp conversion, keyboard, status-bar, cascade, and UI-thread helpers used by current ports.
 //   - Adds Telegram's applySpring animator helper for copied interaction animations.
+//   - Adds navigation-bar appearance wiring used by NativeDo browser-derived white pages.
 //   - Adds software blur snapshot helpers for BottomSheetTabsOverlay because NativeDo does not
 //     ship Telegram's native Utilities.stackBlurBitmap pipeline.
 // OMITTED:
@@ -42,6 +45,7 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.ColorMatrix;
+import android.os.Build;
 import android.graphics.Point;
 import android.os.Handler;
 import android.os.Looper;
@@ -241,6 +245,14 @@ public final class AndroidUtilities {
         if (window.getStatusBarColor() != statusBarColor) {
             window.setStatusBarColor(statusBarColor);
         }
+    }
+
+    public static void setLightNavigationBar(Window window, boolean enable) {
+        if (window == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return;
+        }
+        View decorView = window.getDecorView();
+        WindowCompat.getInsetsController(window, decorView).setAppearanceLightNavigationBars(enable);
     }
 
     private static void stackBlurBitmap(Bitmap bitmap, int radius) {

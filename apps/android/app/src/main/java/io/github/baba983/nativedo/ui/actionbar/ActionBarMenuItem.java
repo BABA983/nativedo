@@ -1,14 +1,18 @@
-// UPSTREAM-LEVEL: L1
-// UPSTREAM-PATH:  org/telegram/ui/ActionBar/ActionBarMenuItem.java
+// PORT-MODE: Exact Component Port
+// UPSTREAM-SCOPE: org/telegram/ui/ActionBar/ActionBarMenuItem.java
 // UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: actionbar-menu=L1, popup-menu=L1, theme/resource-mapping=L2
+// EXACT-SUBSYSTEMS: actionbar-menu, popup-menu
 // HOST-WIRING:
 //   - Popup background/resource lookups use NativeDo R and Theme.
-// ADAPTED:
+// ADAPTED-BACKEND:
+//   - None.
+// ADAPTED-PRODUCT:
 //   - Adds setSubItemVisible so NativeDo's simple persistent popup layout can mirror Telegram
 //     WebActionBar's conditional ItemOptions rows.
+//   - Keeps a minimal Telegram-shaped search-field surface for browser history/bookmarks without
+//     porting filters, captions, Lottie, or animated ActionBar visibility interpolation.
 // OMITTED:
-//   - Telegram search field, filters, Lottie, action mode, complex popup rows, and drag/reorder menu behavior.
+//   - Telegram filters, Lottie, action mode, complex popup rows, and drag/reorder menu behavior.
 /*
  * This file is part of NativeDo.
  *
@@ -19,8 +23,8 @@
  * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarMenuItem.java
  *
  * NativeDo milestone slice: keeps icon/text menu items, simple submenu items,
- * popup positioning, and parent menu click forwarding; omits Telegram search,
- * filters, lottie, action mode, and complex popup rows.
+ * popup positioning, parent menu click forwarding, and a minimal search field;
+ * omits Telegram filters, lottie, action mode, and complex popup rows.
  *
  * Copyright (C) Telegram FZ-LLC
  * Copyright (C) 2026 NativeDo contributors
@@ -37,12 +41,16 @@ import android.content.Context;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.drawable.Drawable;
+import android.text.Editable;
 import android.text.TextUtils;
+import android.text.TextWatcher;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.view.inputmethod.InputMethodManager;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -56,6 +64,20 @@ import io.github.baba983.nativedo.ui.components.LayoutHelper;
 
 public class ActionBarMenuItem extends FrameLayout {
 
+    public static class ActionBarMenuItemSearchListener {
+        public void onSearchExpand() {
+        }
+
+        public void onSearchCollapse() {
+        }
+
+        public void onTextChanged(EditText editText) {
+        }
+
+        public void onSearchPressed(EditText editText) {
+        }
+    }
+
     protected ImageView iconView;
     protected TextView textView;
     private final ActionBarMenu parentMenu;
@@ -63,6 +85,10 @@ public class ActionBarMenuItem extends FrameLayout {
     private ActionBarPopupWindow popupWindow;
     private int popupItemsColor;
     private int popupItemsSelectorColor;
+    private boolean isSearchField;
+    private FrameLayout searchContainer;
+    private EditText searchField;
+    private ActionBarMenuItemSearchListener searchListener;
 
     public ActionBarMenuItem(Context context, ActionBarMenu menu, int backgroundColor, int iconColor) {
         this(context, menu, backgroundColor, iconColor, false);
@@ -120,6 +146,75 @@ public class ActionBarMenuItem extends FrameLayout {
 
     public boolean hasSubMenu() {
         return popupLayout != null && popupLayout.getChildCount() > 0;
+    }
+
+    public ActionBarMenuItem setIsSearchField(boolean value) {
+        isSearchField = value;
+        return this;
+    }
+
+    public ActionBarMenuItem setActionBarMenuItemSearchListener(ActionBarMenuItemSearchListener listener) {
+        searchListener = listener;
+        return this;
+    }
+
+    public EditText getSearchField() {
+        checkCreateSearchField();
+        return searchField;
+    }
+
+    public void setSearchFieldHint(CharSequence hint) {
+        checkCreateSearchField();
+        if (searchField != null) {
+            searchField.setHint(hint);
+        }
+        setContentDescription(hint);
+    }
+
+    public boolean isSearchFieldVisible() {
+        return searchContainer != null && searchContainer.getVisibility() == VISIBLE;
+    }
+
+    public void openSearch(boolean openKeyboard) {
+        checkCreateSearchField();
+        if (searchContainer == null || searchContainer.getVisibility() == VISIBLE) {
+            return;
+        }
+        setSearchLayoutExpanded(true);
+        searchContainer.setVisibility(VISIBLE);
+        if (iconView != null) {
+            iconView.setVisibility(GONE);
+        }
+        searchField.setText("");
+        searchField.requestFocus();
+        if (openKeyboard) {
+            InputMethodManager inputMethodManager = searchField.getContext().getSystemService(InputMethodManager.class);
+            if (inputMethodManager != null) {
+                inputMethodManager.showSoftInput(searchField, InputMethodManager.SHOW_IMPLICIT);
+            }
+        }
+        if (searchListener != null) {
+            searchListener.onSearchExpand();
+        }
+    }
+
+    public void closeSearch(boolean hideKeyboard) {
+        if (searchContainer == null || searchContainer.getVisibility() != VISIBLE) {
+            return;
+        }
+        if (hideKeyboard) {
+            AndroidUtilities.hideKeyboard(searchField);
+        }
+        searchField.clearFocus();
+        searchField.setText("");
+        searchContainer.setVisibility(GONE);
+        if (iconView != null) {
+            iconView.setVisibility(VISIBLE);
+        }
+        setSearchLayoutExpanded(false);
+        if (searchListener != null) {
+            searchListener.onSearchCollapse();
+        }
     }
 
     public void toggleSubMenu() {
@@ -185,6 +280,17 @@ public class ActionBarMenuItem extends FrameLayout {
         }
     }
 
+    public void setSubItemEnabled(int id, boolean enabled) {
+        if (popupLayout == null) {
+            return;
+        }
+        View view = popupLayout.findViewWithTag(id);
+        if (view != null) {
+            view.setEnabled(enabled);
+            view.setAlpha(enabled ? 1f : 0.5f);
+        }
+    }
+
     public void setIconColor(int color) {
         if (iconView != null) {
             iconView.setColorFilter(new PorterDuffColorFilter(color, PorterDuff.Mode.MULTIPLY));
@@ -225,6 +331,73 @@ public class ActionBarMenuItem extends FrameLayout {
 
     public View getIconView() {
         return iconView;
+    }
+
+    private void checkCreateSearchField() {
+        if (!isSearchField || searchContainer != null) {
+            return;
+        }
+        searchContainer = new FrameLayout(getContext());
+        searchContainer.setVisibility(GONE);
+        searchContainer.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        searchField = new EditText(getContext());
+        searchField.setSingleLine(true);
+        searchField.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+        searchField.setHintTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+        searchField.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 18);
+        searchField.setBackground(null);
+        searchField.setPadding(AndroidUtilities.dp(8), 0, AndroidUtilities.dp(16), 0);
+        searchField.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                if (searchListener != null) {
+                    searchListener.onTextChanged(searchField);
+                }
+            }
+        });
+        searchField.setOnEditorActionListener((v, actionId, event) -> {
+            if (searchListener != null) {
+                searchListener.onSearchPressed(searchField);
+            }
+            return false;
+        });
+        searchContainer.addView(searchField, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.START));
+        addView(searchContainer, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.START));
+    }
+
+    private void setSearchLayoutExpanded(boolean expanded) {
+        if (parentMenu == null) {
+            return;
+        }
+        ViewGroup.LayoutParams itemLayoutParams = getLayoutParams();
+        if (itemLayoutParams instanceof LinearLayout.LayoutParams) {
+            itemLayoutParams.width = expanded ? getSearchExpandedWidth() : AndroidUtilities.dp(48);
+            setLayoutParams(itemLayoutParams);
+        }
+        ViewGroup.LayoutParams menuLayoutParams = parentMenu.getLayoutParams();
+        if (menuLayoutParams != null) {
+            menuLayoutParams.width = expanded ? getSearchExpandedWidth() : LayoutHelper.WRAP_CONTENT;
+            parentMenu.setLayoutParams(menuLayoutParams);
+        }
+        if (parentMenu.parentActionBar != null) {
+            parentMenu.parentActionBar.requestLayout();
+        }
+    }
+
+    private int getSearchExpandedWidth() {
+        int width = parentMenu != null && parentMenu.parentActionBar != null ? parentMenu.parentActionBar.getMeasuredWidth() : 0;
+        if (width <= 0) {
+            width = AndroidUtilities.displaySize.x;
+        }
+        return Math.max(AndroidUtilities.dp(48), width - AndroidUtilities.dp(66));
     }
 
     private void createPopupLayout() {

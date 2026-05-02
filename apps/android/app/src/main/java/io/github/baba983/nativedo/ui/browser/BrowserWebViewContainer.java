@@ -1,12 +1,15 @@
-// UPSTREAM-LEVEL: L1
-// UPSTREAM-PATH:  org/telegram/ui/web/BotWebViewContainer.java; org/telegram/ui/WebviewActivity.java; res/raw/webview_ext.js
+// PORT-MODE: Feature Workflow Port
+// WORKFLOW-MAP: docs/telegram-port/browser.md
+// UPSTREAM-SCOPE: org/telegram/ui/web/BotWebViewContainer.java; org/telegram/ui/WebviewActivity.java; res/raw/webview_ext.js
 // UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: webview-settings=L1, webview-lifecycle=L1, theme/resource-mapping=L2, color-bridge=L1, gesture-allow-scroll=L0, scroll-progress=L1, cached-web=L1
 // HOST-WIRING:
 //   - Telegram ApplicationLoader/FileLog/LocaleController/Browser helpers replaced with Android framework APIs.
 //   - NativeDo strings and Theme keys are used for progress/download user feedback.
 //   - Uses Telegram ArticleViewer browser background keys for the WebView host surface.
-// ADAPTED:
+// ADAPTED-BACKEND:
+//   - Generates Instant View through Telegram's saveWebArchive + hidden reader WebView chain, then
+//     hands the upstream `instant.js` content tree to NativeDo's native renderer.
+// ADAPTED-PRODUCT:
 //   - Keeps the non-bot WebView settings/client subset needed by NativeDo's first browser slice.
 //   - Delegates loading progress drawing to WebActionBar so the browser has Telegram's single
 //     action-bar progress line instead of a second WebView-container line.
@@ -24,7 +27,7 @@
 //   - Adds the minimal preserve/replace WebView surface used by ArticleViewer.CachedWeb
 //     detach/attach, keeping WebView history and state while pages[0]/pages[1] swap.
 // OMITTED:
-//   - Bot bridge, Telegram WebViewProxy, TON proxying, payments, age verification, history serialization,
+//   - Bot bridge, Telegram WebViewProxy, TON proxying, payments, age verification,
 //     popup sheets, permissions UI, JS dialogs, and Telegram-specific dangerous URL handling.
 /*
  * This file is part of NativeDo.
@@ -58,6 +61,7 @@ import android.net.http.SslError;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.TextUtils;
 import android.view.PixelCopy;
 import android.view.Surface;
 import android.view.View;
@@ -66,6 +70,7 @@ import android.webkit.JavascriptInterface;
 import android.webkit.SslErrorHandler;
 import android.webkit.WebBackForwardList;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
@@ -76,8 +81,11 @@ import android.widget.Toast;
 import androidx.annotation.Nullable;
 
 import org.json.JSONArray;
+import org.json.JSONObject;
 
+import java.io.ByteArrayInputStream;
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -103,17 +111,37 @@ public class BrowserWebViewContainer extends FrameLayout {
         default void onWebBackgroundChanged(boolean actionBarColor, int color) {}
 
         default void onWebViewScrolled(int dx, int dy) {}
+
+        default void onInstantViewChanged(boolean available) {}
+
+        default void onInstantViewLoadingChanged(boolean loading) {}
+
+        default void onHistoryChanged(boolean available) {}
+    }
+
+    public interface InstantViewCallback {
+        void onResult(@Nullable String json);
     }
 
     private final Delegate delegate;
     private final BrowserWebViewProxy webViewProxy = new BrowserWebViewProxy();
+    private final ReaderInstantViewBridge readerInstantViewBridge = new ReaderInstantViewBridge();
     private BrowserWebView webView;
     private String currentUrl;
     private String browserExtensionScript;
+    private String instantViewScript;
+    private String openCollapsedScript;
     private Bitmap currentFavicon;
     private int currentProgress;
     private boolean keyboardFocusable;
     private boolean wasFocusable;
+    private String currentInstantViewJson;
+    private boolean instantViewLoading;
+    private InstantViewCallback instantViewCallback;
+    private String pendingInstantViewRequestUrl;
+    private FrameLayout instantViewReaderContainer;
+    private WebView instantViewReaderWebView;
+    private File instantViewArchiveFile;
 
     private int searchIndex;
     private int searchCount;
@@ -198,6 +226,13 @@ public class BrowserWebViewContainer extends FrameLayout {
                 notifyProgress(10);
                 super.onPageStarted(view, url, favicon);
                 setInjectedJS(false);
+                cleanupInstantViewReader();
+                currentInstantViewJson = null;
+                pendingInstantViewRequestUrl = null;
+                if (delegate != null) {
+                    delegate.onInstantViewChanged(false);
+                }
+                setInstantViewLoading(true);
             }
 
             @Override
@@ -213,6 +248,11 @@ public class BrowserWebViewContainer extends FrameLayout {
                 notifyProgress(100);
                 injectBrowserExtension();
                 super.onPageFinished(view, url);
+                saveCurrentPageToHistory();
+                if (delegate != null) {
+                    delegate.onHistoryChanged(!BrowserStorage.getHistory(getContext()).isEmpty());
+                }
+                generateInstantView(null);
             }
 
             @Override
@@ -232,11 +272,13 @@ public class BrowserWebViewContainer extends FrameLayout {
                 if (delegate != null && title != null && title.trim().length() > 0) {
                     delegate.onTitleChanged(title);
                 }
+                saveCurrentPageToHistory();
             }
 
             @Override
             public void onReceivedIcon(WebView view, Bitmap icon) {
                 currentFavicon = icon;
+                saveCurrentPageToHistory();
             }
         });
 
@@ -265,13 +307,18 @@ public class BrowserWebViewContainer extends FrameLayout {
         return super.drawChild(canvas, child, drawingTime);
     }
 
-    public void loadUrl(String url) {
+    public boolean loadUrl(String url) {
         if (webView == null) {
             setupWebView();
+        }
+        if (shouldOpenHttpOutside(url)) {
+            openExternal(Uri.parse(url));
+            return false;
         }
         currentUrl = url;
         webView.loadUrl(url);
         notifyUrlChanged();
+        return true;
     }
 
     public void reload() {
@@ -370,6 +417,7 @@ public class BrowserWebViewContainer extends FrameLayout {
     }
 
     public void destroyWebView() {
+        cleanupInstantViewReader();
         if (webView == null) {
             return;
         }
@@ -382,6 +430,7 @@ public class BrowserWebViewContainer extends FrameLayout {
 
     @Nullable
     public WebView preserveWebView() {
+        cleanupInstantViewReader();
         if (webView == null) {
             return null;
         }
@@ -457,6 +506,15 @@ public class BrowserWebViewContainer extends FrameLayout {
 
     public int getProgress() {
         return currentProgress;
+    }
+
+    @Nullable
+    public String getInstantViewJson() {
+        return currentInstantViewJson;
+    }
+
+    public boolean isInstantViewLoading() {
+        return instantViewLoading;
     }
 
     public float getScrollProgress() {
@@ -564,6 +622,51 @@ public class BrowserWebViewContainer extends FrameLayout {
         return browserExtensionScript;
     }
 
+    public void generateInstantView(@Nullable InstantViewCallback callback) {
+        instantViewCallback = callback;
+        cleanupInstantViewReader();
+        if (webView == null || TextUtils.isEmpty(currentUrl)) {
+            handleInstantViewResult("");
+            return;
+        }
+        pendingInstantViewRequestUrl = currentUrl;
+        setInstantViewLoading(true);
+        captureInstantViewArchive(webView, currentUrl);
+    }
+
+    private String readInstantViewScript() {
+        if (instantViewScript != null) {
+            return instantViewScript;
+        }
+        StringBuilder builder = new StringBuilder();
+        builder.append(readRawScript(R.raw.app_browser_instant_view_dompurify)).append('\n');
+        builder.append(readRawScript(R.raw.app_browser_instant_view_readability)).append('\n');
+        builder.append(readRawScript(R.raw.app_browser_instant_view_readerable)).append('\n');
+        builder.append(readRawScript(R.raw.app_browser_instant_view_runtime)).append('\n');
+        instantViewScript = builder.toString().replace("$DEBUG$", "false");
+        return instantViewScript;
+    }
+
+    private String readOpenCollapsedScript(boolean open) {
+        if (openCollapsedScript == null) {
+            openCollapsedScript = readRawScript(R.raw.app_browser_open_collapsed);
+        }
+        return openCollapsedScript.replace("$OPEN$", open ? "true" : "false");
+    }
+
+    private String readRawScript(int resId) {
+        StringBuilder builder = new StringBuilder();
+        try (InputStream stream = getResources().openRawResource(resId);
+             BufferedReader reader = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                builder.append(line).append('\n');
+            }
+        } catch (Exception ignored) {
+        }
+        return builder.toString();
+    }
+
     private void setInjectedJS(boolean injected) {
         if (getParent() instanceof WebViewSwipeContainer) {
             ((WebViewSwipeContainer) getParent()).injectedJS = injected;
@@ -629,10 +732,24 @@ public class BrowserWebViewContainer extends FrameLayout {
             return false;
         }
         String scheme = uri.getScheme();
-        if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme) || "about".equalsIgnoreCase(scheme)) {
+        if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) {
+            if (shouldOpenHttpOutside(uri.toString())) {
+                return openExternal(uri);
+            }
+            return false;
+        }
+        if ("about".equalsIgnoreCase(scheme)) {
             return false;
         }
         return openExternal(uri);
+    }
+
+    private boolean shouldOpenHttpOutside(@Nullable String url) {
+        if (TextUtils.isEmpty(url)) {
+            return false;
+        }
+        return !BrowserStorage.openExternalLinksInApp(getContext())
+                || BrowserStorage.isRestricted(getContext(), url);
     }
 
     private boolean openExternal(Uri uri) {
@@ -662,6 +779,202 @@ public class BrowserWebViewContainer extends FrameLayout {
         }
     }
 
+    private void saveCurrentPageToHistory() {
+        if (TextUtils.isEmpty(currentUrl) || "about:blank".equals(currentUrl)) {
+            return;
+        }
+        BrowserStorage.pushHistory(getContext(), currentUrl, getTitle(), currentFavicon);
+    }
+
+    private void captureInstantViewArchive(BrowserWebView sourceWebView, String requestUrl) {
+        if (sourceWebView == null) {
+            handleInstantViewResult("");
+            return;
+        }
+        final File archiveFile;
+        try {
+            archiveFile = File.createTempFile("browser_instant_view_", ".mht", getContext().getCacheDir());
+        } catch (Exception ignored) {
+            handleInstantViewResult("");
+            return;
+        }
+        sourceWebView.evaluateJavascript(readOpenCollapsedScript(true), value ->
+                sourceWebView.saveWebArchive(archiveFile.getAbsolutePath(), false, filename -> {
+                    sourceWebView.evaluateJS(readOpenCollapsedScript(false));
+                    MHTML archive = null;
+                    try {
+                        archive = new MHTML(archiveFile);
+                    } catch (Exception ignored) {
+                        archive = null;
+                    }
+                    if (archive == null || archive.entries.isEmpty()) {
+                        archiveFile.delete();
+                        handleInstantViewResult("");
+                        return;
+                    }
+                    startInstantViewReader(requestUrl, archive, archiveFile);
+                })
+        );
+    }
+
+    private void startInstantViewReader(String requestUrl, MHTML archive, File archiveFile) {
+        cleanupInstantViewReader();
+        instantViewArchiveFile = archiveFile;
+        instantViewReaderContainer = new FrameLayout(getContext()) {
+            @Override
+            protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
+                return false;
+            }
+
+            @Override
+            public boolean onTouchEvent(android.view.MotionEvent event) {
+                return false;
+            }
+
+            @Override
+            public boolean dispatchTouchEvent(android.view.MotionEvent ev) {
+                return false;
+            }
+
+            @Override
+            protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+                super.onMeasure(
+                        MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(500), MeasureSpec.EXACTLY),
+                        MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(500), MeasureSpec.EXACTLY)
+                );
+            }
+        };
+        addView(instantViewReaderContainer, LayoutHelper.createFrame(1, 1));
+
+        WebView readerWebView = new WebView(getContext());
+        instantViewReaderWebView = readerWebView;
+        WebSettings settings = readerWebView.getSettings();
+        settings.setAllowContentAccess(false);
+        settings.setDatabaseEnabled(false);
+        settings.setAllowFileAccess(false);
+        settings.setJavaScriptEnabled(true);
+        settings.setSaveFormData(false);
+        settings.setGeolocationEnabled(false);
+        settings.setDomStorageEnabled(false);
+        settings.setAllowFileAccessFromFileURLs(false);
+        settings.setAllowUniversalAccessFromFileURLs(false);
+        readerWebView.removeJavascriptInterface("Instant");
+        readerWebView.addJavascriptInterface(readerInstantViewBridge, "Instant");
+        readerWebView.setWebViewClient(new WebViewClient() {
+            private boolean firstLoad = true;
+
+            @Nullable
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                return interceptInstantViewRequest(archive, request == null || request.getUrl() == null ? null : request.getUrl().toString());
+            }
+
+            @SuppressWarnings("deprecation")
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, String url) {
+                return interceptInstantViewRequest(archive, url);
+            }
+
+            @Nullable
+            private WebResourceResponse interceptInstantViewRequest(MHTML instantArchive, @Nullable String url) {
+                if (firstLoad) {
+                    firstLoad = false;
+                    String html = "<script>\n" + readInstantViewScript() + "\n</script>";
+                    return new WebResourceResponse("text/html", "UTF-8",
+                            new ByteArrayInputStream(html.getBytes(StandardCharsets.UTF_8)));
+                }
+                MHTML.Entry entry = null;
+                String mime = "text/html";
+                if (url != null && url.endsWith("/index.html")) {
+                    entry = instantArchive.entries.get(0);
+                } else if (url != null) {
+                    entry = instantArchive.entriesByLocation.get(url);
+                    if (entry != null) {
+                        mime = entry.getType();
+                    }
+                }
+                if (entry == null) {
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+                        return new WebResourceResponse(mime, "UTF-8", null);
+                    }
+                    return new WebResourceResponse("text/plain", "utf-8", 404, "Not Found", null, null);
+                }
+                if (!"text/html".equalsIgnoreCase(mime) && !"text/css".equalsIgnoreCase(mime)) {
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+                        return new WebResourceResponse(mime, "UTF-8", null);
+                    }
+                    return new WebResourceResponse("text/plain", "utf-8", 404, "Not Found", null, null);
+                }
+                try {
+                    return new WebResourceResponse(mime, null, entry.getInputStream());
+                } catch (Exception ignored) {
+                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+                        return new WebResourceResponse(mime, "UTF-8", null);
+                    }
+                    return new WebResourceResponse("text/plain", "utf-8", 503, "Server Error", null, null);
+                }
+            }
+        });
+        instantViewReaderContainer.addView(readerWebView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        readerWebView.loadUrl(requestUrl);
+    }
+
+    private void cleanupInstantViewReader() {
+        if (instantViewReaderWebView != null) {
+            instantViewReaderWebView.stopLoading();
+            instantViewReaderWebView.removeJavascriptInterface("Instant");
+            instantViewReaderWebView.destroy();
+            instantViewReaderWebView = null;
+        }
+        if (instantViewReaderContainer != null) {
+            removeView(instantViewReaderContainer);
+            instantViewReaderContainer = null;
+        }
+        if (instantViewArchiveFile != null) {
+            instantViewArchiveFile.delete();
+            instantViewArchiveFile = null;
+        }
+    }
+
+    private void handleInstantViewResult(@Nullable String json) {
+        cleanupInstantViewReader();
+        boolean urlMatches = TextUtils.equals(currentUrl, pendingInstantViewRequestUrl);
+        pendingInstantViewRequestUrl = null;
+        if (!urlMatches && instantViewCallback == null) {
+            setInstantViewLoading(false);
+            return;
+        }
+        String normalized = json;
+        if ("null".equals(normalized)) {
+            normalized = null;
+        }
+        currentInstantViewJson = TextUtils.isEmpty(normalized) ? null : normalized;
+        if (currentInstantViewJson != null) {
+            // Make this URL→json mapping discoverable for in-document Instant View link
+            // navigation (BrowserInstantViewFragment.openLinkOrInstantView).
+            BrowserInstantViewFragment.cacheInstantViewJson(currentUrl, currentInstantViewJson);
+        }
+        setInstantViewLoading(false);
+        if (delegate != null) {
+            delegate.onInstantViewChanged(!TextUtils.isEmpty(currentInstantViewJson));
+        }
+        if (instantViewCallback != null) {
+            InstantViewCallback callback = instantViewCallback;
+            instantViewCallback = null;
+            callback.onResult(currentInstantViewJson);
+        }
+    }
+
+    private void setInstantViewLoading(boolean loading) {
+        if (instantViewLoading == loading) {
+            return;
+        }
+        instantViewLoading = loading;
+        if (delegate != null) {
+            delegate.onInstantViewLoadingChanged(loading);
+        }
+    }
+
     private final class BrowserWebViewProxy {
         @JavascriptInterface
         public void postEvent(String type, String data) {
@@ -671,6 +984,13 @@ public class BrowserWebViewContainer extends FrameLayout {
         @JavascriptInterface
         public void postEvent(String type) {
             postEvent(type, "");
+        }
+    }
+
+    private final class ReaderInstantViewBridge {
+        @JavascriptInterface
+        public void done(String result) {
+            AndroidUtilities.runOnUIThread(() -> handleInstantViewResult(result));
         }
     }
 

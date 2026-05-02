@@ -1,16 +1,15 @@
-// UPSTREAM-LEVEL: L2
-// UPSTREAM-PATH:  org/telegram/messenger/browser/Browser.java; org/telegram/ui/ArticleViewer.java; org/telegram/ui/WebviewActivity.java
+// PORT-MODE: Feature Workflow Port
+// WORKFLOW-MAP: docs/telegram-port/browser.md
+// UPSTREAM-SCOPE: org/telegram/messenger/browser/Browser.java; org/telegram/ui/ArticleViewer.java; org/telegram/ui/WebviewActivity.java
 // UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: browser-entry=L2, bottom-up-animation=L0, webview-lifecycle=L1, adaptive-color=L2, scroll-progress=L2, scrubber-wiring=L2
 // HOST-WIRING:
 //   - NativeDo Profile dev URL entry presents this fragment through ActionBarLayout.
 //   - Uses NativeDo WebActionBar and BrowserWebViewContainer instead of Telegram ArticleViewer pages.
-// ADAPTED:
+// ADAPTED-PRODUCT:
 //   - Temporary full-screen BaseFragment host uses Telegram ArticleViewer.Sheet open/dismiss durations
 //     until the real attached-sheet/collapsed-tabs subsystem is ported.
 // OMITTED:
-//   - Telegram ArticleViewer pages stack, collapsed tabs, overlay previews, bookmarks, history, search,
-//     Instant View, and Telegram account/chat integrations.
+//   - Telegram ArticleViewer pages stack, collapsed tabs, overlay previews, and Telegram account/chat integrations.
 /*
  * This file is part of NativeDo.
  *
@@ -36,6 +35,7 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.net.Uri;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -138,6 +138,8 @@ public class BrowserFragment extends BaseFragment {
         webActionBar.setBackgroundColor(getBrowserActionBarColor());
         webActionBar.setTitle(titleFromUrl(initialUrl));
         webActionBar.setCurrentUrl(initialUrl);
+        webActionBar.setCanMinimize(false);
+        updateBrowserMenuState(initialUrl);
 
         FrameLayout root = rootView = new FrameLayout(context);
         root.setBackgroundColor(getBrowserBackgroundColor());
@@ -152,9 +154,11 @@ public class BrowserFragment extends BaseFragment {
             @Override
             public void onUrlChanged(String url, boolean canGoBack, boolean canGoForward) {
                 webActionBar.setCurrentUrl(url);
+                webActionBar.setForwardAvailable(canGoForward);
                 if (webActionBar.getTitle() == null || webActionBar.getTitle().length() == 0) {
                     webActionBar.setTitle(titleFromUrl(url));
                 }
+                updateBrowserMenuState(url);
             }
 
             @Override
@@ -170,6 +174,21 @@ public class BrowserFragment extends BaseFragment {
             @Override
             public void onWebBackgroundChanged(boolean actionBarColor, int color) {
                 setWebBackgroundColor(actionBarColor, color);
+            }
+
+            @Override
+            public void onInstantViewChanged(boolean available) {
+                updateInstantViewMenuState();
+            }
+
+            @Override
+            public void onInstantViewLoadingChanged(boolean loading) {
+                updateInstantViewMenuState();
+            }
+
+            @Override
+            public void onHistoryChanged(boolean available) {
+                webActionBar.setHistoryAvailable(available);
             }
         });
         root.addView(webViewContainer, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
@@ -192,12 +211,23 @@ public class BrowserFragment extends BaseFragment {
         addressPanel = new BrowserAddressPanel(context);
         root.addView(addressPanel, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.START));
 
-        webViewContainer.loadUrl(initialUrl);
+        if (!webViewContainer.loadUrl(initialUrl)) {
+            root.post(() -> {
+                if (closing) {
+                    return;
+                }
+                closing = true;
+                finishFragment();
+            });
+        }
         return root;
     }
 
     @Override
     public boolean onBackPressed() {
+        if (!super.onBackPressed()) {
+            return false;
+        }
         handleBrowserBack();
         return false;
     }
@@ -266,12 +296,25 @@ public class BrowserFragment extends BaseFragment {
         }
         if (id == WebActionBar.MENU_REFRESH) {
             webViewContainer.reload();
+        } else if (id == WebActionBar.MENU_FORWARD) {
+            webViewContainer.goForward();
         } else if (id == WebActionBar.MENU_OPEN_EXTERNAL) {
             webViewContainer.openCurrentUrlExternal();
         } else if (id == WebActionBar.MENU_COPY_LINK) {
             copyCurrentLink();
         } else if (id == WebActionBar.MENU_SEARCH) {
             webActionBar.showSearch(true, true);
+        } else if (id == WebActionBar.MENU_BOOKMARK) {
+            toggleBookmark();
+        } else if (id == WebActionBar.MENU_HISTORY) {
+            BrowserFeatureSheet.showHistory(this, BrowserListFragment.Mode.HISTORY, this::loadBrowserUrl);
+        } else if (id == WebActionBar.MENU_BOOKMARKS) {
+            BrowserFeatureSheet.showHistory(this, BrowserListFragment.Mode.BOOKMARKS, this::loadBrowserUrl);
+        } else if (id == WebActionBar.MENU_SETTINGS) {
+            BrowserFeatureSheet.showSettings(this, this::loadBrowserUrl, () -> updateBrowserMenuState(
+                    webViewContainer == null ? null : webViewContainer.getCurrentUrl()));
+        } else if (id == WebActionBar.MENU_INSTANT_VIEW) {
+            openInstantView();
         }
     }
 
@@ -307,9 +350,18 @@ public class BrowserFragment extends BaseFragment {
         if (url == null || webViewContainer == null) {
             return;
         }
-        webActionBar.setCurrentUrl(url);
-        webActionBar.setTitle(titleFromUrl(url));
-        webViewContainer.loadUrl(url);
+        loadBrowserUrl(url);
+    }
+
+    private void loadBrowserUrl(String url) {
+        if (TextUtils.isEmpty(url) || webViewContainer == null) {
+            return;
+        }
+        if (webViewContainer.loadUrl(url)) {
+            webActionBar.setCurrentUrl(url);
+            webActionBar.setTitle(titleFromUrl(url));
+            updateBrowserMenuState(url);
+        }
     }
 
     private void updatePageProgress() {
@@ -359,7 +411,10 @@ public class BrowserFragment extends BaseFragment {
             return uri.toString();
         }
         Uri httpsUri = Uri.parse("https://" + trimmed);
-        return httpsUri.getHost() == null || httpsUri.getHost().trim().isEmpty() ? null : httpsUri.toString();
+        if (httpsUri.getHost() != null && !httpsUri.getHost().trim().isEmpty()) {
+            return httpsUri.toString();
+        }
+        return BrowserStorage.buildSearchUrl(getContext(), trimmed);
     }
 
     private String titleFromUrl(String url) {
@@ -377,5 +432,45 @@ public class BrowserFragment extends BaseFragment {
 
     private static float clamp01(float value) {
         return Math.max(0f, Math.min(1f, value));
+    }
+
+    private void toggleBookmark() {
+        if (webViewContainer == null) {
+            return;
+        }
+        String url = webViewContainer.getCurrentUrl();
+        if (TextUtils.isEmpty(url)) {
+            return;
+        }
+        boolean saved = BrowserStorage.toggleBookmark(getContext(), url, webViewContainer.getTitle(), webViewContainer.getFavicon());
+        webActionBar.setBookmarkSaved(saved);
+        Toast.makeText(getContext(),
+                saved ? R.string.app_browser_bookmark_saved_message : R.string.app_browser_bookmark_removed_message,
+                Toast.LENGTH_SHORT).show();
+    }
+
+    private void openInstantView() {
+        if (webViewContainer == null) {
+            return;
+        }
+        String json = webViewContainer.getInstantViewJson();
+        if (TextUtils.isEmpty(json)) {
+            Toast.makeText(getContext(), R.string.app_browser_instant_view_unavailable, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        presentFragment(new BrowserInstantViewFragment(webViewContainer.getCurrentUrl(), json));
+    }
+
+    private void updateBrowserMenuState(String url) {
+        webActionBar.setBookmarkSaved(BrowserStorage.isBookmarked(getContext(), url));
+        webActionBar.setHistoryAvailable(!BrowserStorage.getHistory(getContext()).isEmpty());
+        webActionBar.setForwardAvailable(webViewContainer != null && webViewContainer.canGoForward());
+        updateInstantViewMenuState();
+    }
+
+    private void updateInstantViewMenuState() {
+        boolean available = webViewContainer != null && !TextUtils.isEmpty(webViewContainer.getInstantViewJson());
+        boolean loading = webViewContainer != null && webViewContainer.isInstantViewLoading();
+        webActionBar.setInstantViewAvailable(available || loading, available);
     }
 }

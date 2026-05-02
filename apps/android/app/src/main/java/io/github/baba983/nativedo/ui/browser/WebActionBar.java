@@ -1,15 +1,17 @@
-// UPSTREAM-LEVEL: L2
-// UPSTREAM-PATH:  org/telegram/ui/web/WebActionBar.java
+// PORT-MODE: Feature Workflow Port
+// WORKFLOW-MAP: docs/telegram-port/browser.md
+// UPSTREAM-SCOPE: org/telegram/ui/web/WebActionBar.java
 // UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: browser-actionbar=L2, address-animation=L0, progress-animation=L1, scroll-progress=L1, title-swap=L1, popup-menu=L1, adaptive-color=L1, scrubber-gesture=L0, back-history=L1
+// EXACT-SUBSYSTEMS: address-animation, scrubber-gesture
 // HOST-WIRING:
 //   - Extends NativeDo's current ActionBar slice so ActionBarLayout can host it unchanged.
 //   - Uses NativeDo strings, Theme keys, and existing ActionBarMenu popup support.
-// ADAPTED:
+// ADAPTED-PRODUCT:
 //   - Keeps Telegram WebActionBar's title/subtitle, address mode, progress, and menu shape.
 //   - Address animation uses upstream 360ms EASE_OUT_QUINT.
-//   - Keeps Telegram's sheet-browser toolbar semantics: the right toolbar arrow collapses to tabs;
-//     NativeDo omits forward from both the action bar and overflow for http browser parity.
+//   - Keeps Telegram's sheet-browser toolbar semantics: the right toolbar arrow collapses to tabs.
+//   - Keeps Telegram's overflow forward entry and Instant View enabled/disabled state while still
+//     omitting the separate right-toolbar forward button.
 //   - Replaces the placeholder line with NativeDo's LineProgressView (smooth 200ms EASE_OUT_QUINT chase).
 //   - Ports the upstream action-bar reading progress background fill driven by
 //     ArticleViewer.updatePages() -> WebActionBar.setProgress(index, pageProgress).
@@ -29,10 +31,10 @@
 //     (x - pressX) / (0.8 * getWidth()) normalized delta.
 //   - Exposes upstream-style setBackButton / backButton long-click surface so BrowserSheet can
 //     port ArticleViewer's WebView/page-stack history menu without replacing NativeDo ActionBar.
+//   - Adds NativeDo menu state bridging for Instant View, bookmarks, history, and settings while
+//     keeping Telegram's overflow entry order.
 // OMITTED:
-//   - Search field full theming pass, Instant View, bookmarks/history/settings state,
-//     bottom action bar mode, and Telegram item-options menu icons. Forward button still
-//     omitted from both the action bar and overflow for http browser parity.
+//   - Bottom action bar mode, Telegram item-options menu icons, and the separate toolbar forward button.
 /*
  * This file is part of NativeDo.
  *
@@ -130,6 +132,13 @@ public class WebActionBar extends ActionBar {
     public static final int MENU_COPY_LINK = 3;
     public static final int MENU_MINIMIZE = 5;
     public static final int MENU_SEARCH = 6;
+    public static final int MENU_INSTANT_VIEW = 7;
+    public static final int MENU_BOOKMARK = 8;
+    public static final int MENU_BOOKMARKS = 9;
+    public static final int MENU_HISTORY = 10;
+    public static final int MENU_SETTINGS = 11;
+    public static final int MENU_FORWARD = 12;
+    public static final int MENU_FONT_SIZE = 13;
 
     private final Delegate delegate;
     private final BackDrawable backButtonDrawable;
@@ -156,12 +165,23 @@ public class WebActionBar extends ActionBar {
     private final ImageView searchClearButton;
     private ValueAnimator searchAnimator;
     private boolean backButtonShown;
+    private ActionBarMenuItem minimizeItem;
+    private ActionBarMenuItem moreItem;
+    private boolean bookmarkSaved;
+    private boolean instantViewAvailable;
+    private boolean instantViewEnabled;
+    private boolean historyAvailable;
+    private boolean forwardAvailable;
+    private boolean fontSizeAvailable;
 
     private final Paint addressBackgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint addressRoundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint backgroundFillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF addressRect = new RectF();
     private int addressBackgroundColor;
     private int addressTextColor;
+    private int currentHeight = AndroidUtilities.dp(56);
+    private float currentScale = 1f;
 
     // Upstream-style adaptive color state (WebActionBar.java L74-82, L466-470).
     private boolean adaptiveColorSet;
@@ -318,14 +338,26 @@ public class WebActionBar extends ActionBar {
         addView(searchClearButton, LayoutHelper.createFrame(54, 56, Gravity.BOTTOM | Gravity.RIGHT));
 
         ActionBarMenu menu = createMenu();
-        ActionBarMenuItem minimizeItem = menu.addItem(MENU_MINIMIZE, new CollapseDrawable());
+        minimizeItem = menu.addItem(MENU_MINIMIZE, new CollapseDrawable());
         minimizeItem.setContentDescription(context.getString(R.string.app_browser_minimize));
-        ActionBarMenuItem moreItem = menu.addItem(0, new MoreDrawable());
+        moreItem = menu.addItem(0, new MoreDrawable());
         moreItem.setContentDescription(context.getString(R.string.app_browser_more_actions));
+        moreItem.setOnClickListener(v -> {
+            onOpenedMenu();
+            moreItem.toggleSubMenu();
+        });
         moreItem.addSubItem(MENU_OPEN_EXTERNAL, context.getString(R.string.app_browser_open_in_browser));
         moreItem.addSubItem(MENU_REFRESH, context.getString(R.string.app_browser_refresh));
         moreItem.addSubItem(MENU_COPY_LINK, context.getString(R.string.app_browser_copy_link));
         moreItem.addSubItem(MENU_SEARCH, context.getString(R.string.app_browser_search));
+        moreItem.addSubItem(MENU_FORWARD, context.getString(R.string.app_browser_forward));
+        moreItem.addSubItem(MENU_INSTANT_VIEW, context.getString(R.string.app_browser_instant_view));
+        moreItem.addSubItem(MENU_FONT_SIZE, context.getString(R.string.app_browser_font_size));
+        moreItem.addSubItem(MENU_BOOKMARK, context.getString(R.string.app_browser_add_bookmark));
+        moreItem.addSubItem(MENU_HISTORY, context.getString(R.string.app_browser_history));
+        moreItem.addSubItem(MENU_BOOKMARKS, context.getString(R.string.app_browser_bookmarks));
+        moreItem.addSubItem(MENU_SETTINGS, context.getString(R.string.app_browser_settings));
+        updateMenuState();
 
         setActionBarMenuOnItemClick(new ActionBarMenuOnItemClick() {
             @Override
@@ -426,7 +458,7 @@ public class WebActionBar extends ActionBar {
         float p = clamp01(titleProgress);
         int width = getWidth();
         float leftPadding = width * p - AndroidUtilities.dp(54 - 24) * clamp01(2f * p);
-        float pivotY = titleContainer.getHeight() / 2f;
+        float pivotY = currentHeight / 2f;
         int currentClipRight = Math.max(0, Math.round(titleContainer.getWidth() - leftPadding));
         currentTitleClipBounds.set(0, 0, currentClipRight, titleContainer.getHeight());
         titles[0].setClipBounds(currentTitleClipBounds);
@@ -458,6 +490,45 @@ public class WebActionBar extends ActionBar {
     public void setLoadingProgress(int progress, boolean visible) {
         int clamped = Math.max(0, Math.min(100, progress));
         progressView.setProgress(clamped / 100f, true);
+    }
+
+    protected void onOpenedMenu() {
+    }
+
+    @Override
+    public void setHeight(int height) {
+        int clamped = Math.max(AndroidUtilities.dp(24), Math.min(AndroidUtilities.dp(56), height));
+        if (currentHeight == clamped) {
+            return;
+        }
+        currentHeight = clamped;
+        currentScale = (float) Math.pow(currentHeight / (float) AndroidUtilities.dp(56), 0.5f);
+        if (menu != null) {
+            menu.setPivotX(menu.getMeasuredWidth());
+            menu.setPivotY(0f);
+            menu.setScaleX(currentScale);
+            menu.setScaleY(currentScale);
+            menu.setTranslationX(-AndroidUtilities.dp(42) * (1f - currentScale));
+            menu.setTranslationY(-AndroidUtilities.dp(12) * (1f - currentScale));
+        }
+        getBackButtonImageView().setPivotX(0f);
+        getBackButtonImageView().setPivotY(0f);
+        getBackButtonImageView().setScaleX(currentScale);
+        getBackButtonImageView().setScaleY(currentScale);
+        getBackButtonImageView().setTranslationX(AndroidUtilities.dp(42) * (1f - currentScale));
+        getBackButtonImageView().setTranslationY(-AndroidUtilities.dp(12) * (1f - currentScale));
+        progressView.setTranslationY(0);
+        titleContainer.requestLayout();
+        titleContainer.invalidate();
+        titles[0].invalidate();
+        titles[1].invalidate();
+        requestLayout();
+        invalidate();
+    }
+
+    @Override
+    public int getCurrentActionBarHeight() {
+        return AndroidUtilities.statusBarHeight + currentHeight;
     }
 
     public void setProgress(float progress) {
@@ -495,7 +566,7 @@ public class WebActionBar extends ActionBar {
             currentTextColor = ColorUtils.blendARGB(Color.BLACK, Color.WHITE, dark);
             currentIconColor = multAlpha(currentTextColor, .55f);
 
-            super.setBackgroundColor(backgroundColor);
+            super.setBackgroundColor(Color.TRANSPARENT);
             int progressBackgroundColor = ColorUtils.compositeColors(multAlpha(currentTextColor, AndroidUtilities.lerp(.07f, .2f, dark)), backgroundColor);
             for (Paint paint : progressBackgroundPaint) {
                 paint.setColor(progressBackgroundColor);
@@ -567,6 +638,14 @@ public class WebActionBar extends ActionBar {
 
     public boolean isAddressing() {
         return addressing;
+    }
+
+    public void setCurrentUrlWithoutSubtitle(String url) {
+        currentUrl = url == null ? "" : url;
+    }
+
+    public String getCurrentUrl() {
+        return currentUrl;
     }
 
     public void closeAddress(boolean animated) {
@@ -685,6 +764,56 @@ public class WebActionBar extends ActionBar {
 
     public void setOnBackButtonLongClickListener(View.OnLongClickListener listener) {
         getBackButtonImageView().setOnLongClickListener(listener);
+    }
+
+    public void setCanMinimize(boolean canMinimize) {
+        if (minimizeItem != null) {
+            minimizeItem.setVisibility(canMinimize ? VISIBLE : GONE);
+        }
+    }
+
+    public void setBookmarkSaved(boolean saved) {
+        bookmarkSaved = saved;
+        updateMenuState();
+    }
+
+    public void setInstantViewAvailable(boolean available) {
+        setInstantViewAvailable(available, available);
+    }
+
+    public void setInstantViewAvailable(boolean available, boolean enabled) {
+        instantViewAvailable = available;
+        instantViewEnabled = available && enabled;
+        updateMenuState();
+    }
+
+    public void setHistoryAvailable(boolean available) {
+        historyAvailable = available;
+        updateMenuState();
+    }
+
+    public void setForwardAvailable(boolean available) {
+        forwardAvailable = available;
+        updateMenuState();
+    }
+
+    public void setFontSizeAvailable(boolean available) {
+        fontSizeAvailable = available;
+        updateMenuState();
+    }
+
+    private void updateMenuState() {
+        if (moreItem == null) {
+            return;
+        }
+        moreItem.setSubItemText(MENU_BOOKMARK, getContext().getString(bookmarkSaved
+                ? R.string.app_browser_remove_bookmark
+                : R.string.app_browser_add_bookmark));
+        moreItem.setSubItemVisible(MENU_FORWARD, forwardAvailable);
+        moreItem.setSubItemVisible(MENU_INSTANT_VIEW, instantViewAvailable);
+        moreItem.setSubItemEnabled(MENU_INSTANT_VIEW, instantViewEnabled);
+        moreItem.setSubItemVisible(MENU_HISTORY, historyAvailable);
+        moreItem.setSubItemVisible(MENU_FONT_SIZE, fontSizeAvailable);
     }
 
     public void showAddress(String url, boolean animated) {
@@ -845,32 +974,37 @@ public class WebActionBar extends ActionBar {
 
     @Override
     protected void dispatchDraw(Canvas canvas) {
+        int topInset = AndroidUtilities.statusBarHeight;
+        int barTop = topInset;
+        int barBottom = topInset + currentHeight;
+        int backgroundBottom = barBottom;
+        backgroundFillPaint.setColor(adaptiveColorSet ? currentBackgroundColor : Theme.getColor(Theme.key_iv_background));
+        canvas.drawRect(0, 0, getWidth(), backgroundBottom, backgroundFillPaint);
+
         float l = getWidth() * titleProgress;
         if (titleProgress > 0f && progress[1] > 0f) {
             int wasAlpha = progressBackgroundPaint[1].getAlpha();
             progressBackgroundPaint[1].setAlpha((int) (wasAlpha * (1f - searchingProgress) * (1f - addressingProgress)));
-            canvas.drawRect(0, 0, progress[1] * getWidth(), getHeight(), progressBackgroundPaint[1]);
+            canvas.drawRect(0, 0, progress[1] * getWidth(), backgroundBottom, progressBackgroundPaint[1]);
             progressBackgroundPaint[1].setAlpha(wasAlpha);
         }
         if (progress[0] > 0f) {
             int wasAlpha = progressBackgroundPaint[0].getAlpha();
             progressBackgroundPaint[0].setAlpha((int) ((1f - clamp01(titleProgress * 4)) * wasAlpha * (1f - searchingProgress) * (1f - addressingProgress)));
-            canvas.drawRect(l, 0, l + progress[0] * getWidth(), getHeight(), progressBackgroundPaint[0]);
+            canvas.drawRect(l, 0, l + progress[0] * getWidth(), backgroundBottom, progressBackgroundPaint[0]);
             progressBackgroundPaint[0].setAlpha(wasAlpha);
         }
         if (addressingProgress > 0) {
             int wasAlpha = addressBackgroundPaint.getAlpha();
             addressBackgroundPaint.setAlpha((int) (wasAlpha * addressingProgress));
-            canvas.drawRect(0, 0, getWidth(), getHeight(), addressBackgroundPaint);
+            canvas.drawRect(0, 0, getWidth(), backgroundBottom, addressBackgroundPaint);
             addressBackgroundPaint.setAlpha(wasAlpha);
 
-            int topInset = AndroidUtilities.statusBarHeight;
-            int barHeight = AndroidUtilities.dp(56);
             int menuWidth = menu == null ? 0 : menu.getMeasuredWidth();
             float rightEdge = getWidth() - menuWidth - AndroidUtilities.dp(12);
 
             float h = AndroidUtilities.dp(42);
-            float cx = (topInset + topInset + barHeight) / 2f;
+            float cx = (barTop + barBottom) / 2f;
             addressRect.set(
                     AndroidUtilities.dp(6),
                     cx - h / 2f,
@@ -883,7 +1017,10 @@ public class WebActionBar extends ActionBar {
             addressRoundPaint.setAlpha(wasAlpha);
         }
 
+        canvas.save();
+        canvas.clipRect(0, barTop, getWidth(), barBottom);
         super.dispatchDraw(canvas);
+        canvas.restore();
     }
 
     private static float clamp01(float value) {
@@ -895,7 +1032,7 @@ public class WebActionBar extends ActionBar {
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
         int width = MeasureSpec.getSize(widthMeasureSpec);
         int topInset = AndroidUtilities.statusBarHeight;
-        int barHeight = AndroidUtilities.dp(56);
+        int barHeight = currentHeight;
         int menuWidth = menu == null ? 0 : menu.getMeasuredWidth();
         int left = AndroidUtilities.dp(54);
         int right = AndroidUtilities.dp(12) + menuWidth;
@@ -931,14 +1068,20 @@ public class WebActionBar extends ActionBar {
         int menuWidth = menu == null ? 0 : menu.getMeasuredWidth();
         int titleLeft = AndroidUtilities.dp(54);
         int titleRight = getMeasuredWidth() - menuWidth - AndroidUtilities.dp(12);
-        titleContainer.layout(titleLeft, topInset, titleRight, topInset + AndroidUtilities.dp(56));
+        titleContainer.layout(titleLeft, topInset, titleRight, topInset + currentHeight);
 
         int addressLeft = AndroidUtilities.dp(48);
         int addressTop = topInset + AndroidUtilities.dp(7);
         addressEditText.layout(addressLeft, addressTop, getMeasuredWidth() - AndroidUtilities.dp(12), addressTop + AndroidUtilities.dp(42));
         progressView.layout(0, getMeasuredHeight() - AndroidUtilities.dp(2), getMeasuredWidth(), getMeasuredHeight());
-        searchEditText.layout(AndroidUtilities.dp(64), topInset, getMeasuredWidth() - AndroidUtilities.dp(64) - AndroidUtilities.dp(54), topInset + AndroidUtilities.dp(56));
-        searchClearButton.layout(getMeasuredWidth() - AndroidUtilities.dp(54), topInset, getMeasuredWidth(), topInset + AndroidUtilities.dp(56));
+        searchEditText.layout(AndroidUtilities.dp(64), topInset, getMeasuredWidth() - AndroidUtilities.dp(64) - AndroidUtilities.dp(54), topInset + currentHeight);
+        searchClearButton.layout(getMeasuredWidth() - AndroidUtilities.dp(54), topInset, getMeasuredWidth(), topInset + currentHeight);
+        if (titleProgress > 0f) {
+            applyTitleProgress();
+        } else {
+            titles[0].setClipBounds(null);
+            titles[1].setClipBounds(null);
+        }
     }
 
     /**
@@ -996,7 +1139,7 @@ public class WebActionBar extends ActionBar {
         }
     }
 
-    private static class Title extends View {
+    private final class Title extends View {
 
         private final AnimatedTextDrawable titleDrawable = new AnimatedTextDrawable(true, true, true);
         private final AnimatedTextDrawable subtitleDrawable = new AnimatedTextDrawable(true, true, true);
@@ -1060,21 +1203,22 @@ public class WebActionBar extends ActionBar {
         @Override
         protected void onDraw(Canvas canvas) {
             int w = getWidth();
-            int h = getHeight();
+            int h = currentHeight;
             float both = titleDrawable.isNotEmpty() * subtitleDrawable.isNotEmpty();
 
             canvas.save();
             canvas.translate(0, -AndroidUtilities.dp(1));
+            canvas.translate(0, h * .82f * (1f - currentScale));
             canvas.translate(0, -AndroidUtilities.dp(4) * both);
-            float titleScale = AndroidUtilities.lerp(1f, .86f, both);
+            float titleScale = currentScale * AndroidUtilities.lerp(1f, .86f, both);
             canvas.scale(titleScale, titleScale, 0, 0);
             titleDrawable.setBounds(0, 0, w, h);
             titleDrawable.draw(canvas);
             canvas.restore();
 
             canvas.save();
-            canvas.translate(0, -AndroidUtilities.dp(1) + AndroidUtilities.dp(14) * both - AndroidUtilities.dp(4) * (1f - both));
-            float subtitleScale = AndroidUtilities.lerp(1.15f, .9f, both);
+            canvas.translate(0, -AndroidUtilities.dp(1) + h * .82f * (1f - currentScale) * both + AndroidUtilities.dp(14) * both - AndroidUtilities.dp(4) * (1f - both));
+            float subtitleScale = currentScale * AndroidUtilities.lerp(1.15f, .9f, both);
             canvas.scale(subtitleScale, subtitleScale, 0, 0);
             subtitleDrawable.setBounds(0, 0, w, h);
             subtitleDrawable.draw(canvas);

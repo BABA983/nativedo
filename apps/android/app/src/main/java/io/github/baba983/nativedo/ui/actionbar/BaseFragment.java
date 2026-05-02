@@ -1,12 +1,15 @@
-// UPSTREAM-LEVEL: L1
-// UPSTREAM-PATH:  org/telegram/ui/ActionBar/BaseFragment.java
+// PORT-MODE: Exact Component Port
+// UPSTREAM-SCOPE: org/telegram/ui/ActionBar/BaseFragment.java
 // UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: lifecycle-orchestration=L1, navigation-contract=L1
+// EXACT-SUBSYSTEMS: lifecycle-orchestration, navigation-contract
 // HOST-WIRING:
 //   - NativeDo fragments use this as the bridge between View-system navigation and Compose content.
-// ADAPTED:
+// ADAPTED-BACKEND:
+//   - None.
+// ADAPTED-PRODUCT:
 //   - Automatically creates a minimal NativeDo ActionBar when attached to an INavigationLayout.
 //   - Keeps the AttachedSheet stack surface needed by NativeDo browser sheets.
+//   - Exposes showAsSheet(...) for Telegram browser subfeatures through NativeDo's attached-sheet host.
 //   - Keeps Telegram's edge-to-edge method surface so ActionBarLayout/ViewPagerActivity can route insets.
 // OMITTED:
 //   - Telegram dialogs, themes, menus, stories, arguments, and account/activity plumbing.
@@ -42,6 +45,8 @@ import android.view.ViewGroup;
 import androidx.core.view.WindowInsetsCompat;
 
 import java.util.ArrayList;
+
+import io.github.baba983.nativedo.core.AndroidUtilities;
 
 public abstract class BaseFragment {
 
@@ -86,6 +91,13 @@ public abstract class BaseFragment {
     public interface AttachedSheetWindow {
     }
 
+    public static class BottomSheetParams {
+        public boolean transitionFromLeft;
+        public Runnable onDismiss;
+        public Runnable onPreFinished;
+        public Runnable onOpenAnimationFinished;
+    }
+
     public View createView(Context context) {
         return null;
     }
@@ -110,11 +122,29 @@ public abstract class BaseFragment {
     public void finishFragment() {
         if (parentLayout != null) {
             if (parentLayout instanceof ActionBarLayout) {
-                ((ActionBarLayout) parentLayout).handleBackPressed();
+                ActionBarLayout layout = (ActionBarLayout) parentLayout;
+                if (!layout.handleBackPressed()) {
+                    layout.dismissRootSheet();
+                }
             } else {
                 parentLayout.closeLastFragment(true);
             }
         }
+    }
+
+    public INavigationLayout[] showAsSheet(BaseFragment fragment) {
+        return showAsSheet(fragment, null);
+    }
+
+    public INavigationLayout[] showAsSheet(BaseFragment fragment, BottomSheetParams params) {
+        if (fragment == null || getContext() == null) {
+            return null;
+        }
+        ActionBarSheet sheet = new ActionBarSheet(this, fragment, params);
+        if (!sheet.show()) {
+            return null;
+        }
+        return new INavigationLayout[] { sheet.getActionBarLayout() };
     }
 
     public boolean onBackPressed() {
@@ -135,6 +165,31 @@ public abstract class BaseFragment {
 
     public boolean isSupportEdgeToEdge() {
         return false;
+    }
+
+    public boolean isLightStatusBar() {
+        if (sheetsStack != null) {
+            for (int i = sheetsStack.size() - 1; i >= 0; i--) {
+                AttachedSheet sheet = sheetsStack.get(i);
+                if (sheet.attachedToParent() && sheet.isShown()) {
+                    return sheet.isAttachedLightStatusBar();
+                }
+            }
+        }
+        return AndroidUtilities.computePerceivedBrightness(Theme.getColor(Theme.key_actionBarDefault)) > .721f;
+    }
+
+    public int getNavigationBarColor() {
+        int color = Theme.getColor(Theme.key_windowBackgroundGray);
+        if (sheetsStack != null) {
+            for (int i = 0; i < sheetsStack.size(); i++) {
+                AttachedSheet sheet = sheetsStack.get(i);
+                if (sheet.attachedToParent()) {
+                    color = sheet.getNavigationBarColor(color);
+                }
+            }
+        }
+        return color;
     }
 
     public WindowInsetsCompat onInsetsInternal(View view, WindowInsetsCompat insets) {
@@ -243,6 +298,13 @@ public abstract class BaseFragment {
         for (int i = 0; i < sheetsStack.size(); i++) {
             AttachedSheet sheet = sheetsStack.get(i);
             sheet.setLastVisible(i == sheetsStack.size() - 1 && sheet.isShown());
+        }
+        notifyParentSystemBarsChanged();
+    }
+
+    public void notifyParentSystemBarsChanged() {
+        if (parentLayout instanceof ActionBarLayout) {
+            ((ActionBarLayout) parentLayout).updateSystemBars();
         }
     }
 }

@@ -1,156 +1,138 @@
 # AGENTS.md
 
-Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
-
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
-
-## 1. Think Before Coding
-
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
-
-Before implementing:
-
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
-
-## 2. Simplicity First
-
-**Minimum code that solves the problem. Nothing speculative.**
-
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
-
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
-
-## 3. Surgical Changes
-
-**Touch only what you must. Clean up only your own mess.**
-
-When editing existing code:
-
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it - don't delete it.
-
-When your changes create orphans:
-
-- Remove imports/variables/functions that YOUR changes made unused.
-- Don't remove pre-existing dead code unless asked.
-
-The test: Every changed line should trace directly to the user's request.
-
-## 4. Goal-Driven Execution
-
-**Define success criteria. Loop until verified.**
-
-Transform tasks into verifiable goals:
-
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
-
-For multi-step tasks, state a brief plan:
-
-```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
-```
-
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
-
----
-
-**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
 
 ## Hard Rules For Telegram-Derived Code
 
-Telegram-derived code is a vendored upstream slice with NativeDo adapters around it. The goal is not byte-for-byte copying everywhere; the goal is that every local difference from Telegram is intentional, visible, and reviewable.
+Telegram-derived work is not always a file-level slice. Some work is an exact component port; some is a complete feature workflow whose backend must be adapted to NativeDo. The goal is that every local difference from Telegram is intentional, visible, and reviewable, and that a feature cannot be declared done just because one upstream slice was copied.
 
-When adding or repairing Telegram-derived code, open the upstream file or upstream diff first. Do not recreate behavior from memory or write code that is merely "inspired by Telegram".
+When adding or repairing Telegram-derived behavior, open the upstream file, upstream diff, or upstream workflow first. Do not recreate behavior from memory or write code that is merely "inspired by Telegram" while claiming Telegram parity.
 
 Local differences from upstream are allowed only in these buckets:
 
 - **HOST-WIRING:** package/import/resource/theme/navigation glue required to compile inside NativeDo.
-- **ADAPTED:** intentional NativeDo product difference. Keep the upstream symbol name when practical and record the reason.
+- **ADAPTED-BACKEND:** Telegram backend/storage/account dependencies replaced by NativeDo equivalents while keeping the user-visible workflow aligned.
+- **ADAPTED-PRODUCT:** intentional NativeDo product difference. Keep the upstream symbol name when practical and record the reason.
 - **OMITTED:** whole upstream subsystem removed because it is out of scope. Record the removed block and reason.
+- **PARITY-BLOCKER:** missing dependency or host capability that prevents the Telegram workflow from being matched.
 
-Unknown drift is not allowed. If behavior feels different from Telegram, compare against upstream before patching by guesswork. If a product-specific change is needed, record it as `ADAPTED` or put it in an L2 adapter.
+Unknown drift is not allowed. If behavior feels different from Telegram, compare against upstream before patching by guesswork. If a product-specific change is needed, record it as `ADAPTED-BACKEND` or `ADAPTED-PRODUCT`.
 
-### Port Levels
+### Port Modes
 
-Every Telegram-derived file MUST declare its port level.
+Every new Telegram-derived change MUST choose a primary port mode before implementation.
 
-| Level | Use it for | Rule |
+| Mode | Use it for | Rule |
 |---|---|---|
-| **L0 - Verbatim Core** | Touch, gesture, animation, scroll, recycling, and interaction constants. | Kept code matches upstream except `HOST-WIRING`. Do not change branches, method shapes, magic numbers, durations, thresholds, or interpolators. |
-| **L1 - Faithful Slice** | Upstream files where NativeDo only needs part of the class. | Kept code stays upstream-shaped. Whole out-of-scope subsystems may be `OMITTED`; intentional product differences must be `ADAPTED`. |
-| **L2 - Bridged Adapter** | Glue from Telegram-derived views into NativeDo screens, ViewModels, Compose, resources, or product constraints. | NativeDo idioms are allowed. Put product-specific decisions here when practical instead of editing L0/L1 code. |
-| **L3 - Native** | Pure NativeDo code, Discourse logic, repositories, app-specific UI. | No upstream preservation contract. Do not claim Telegram-derived behavior unless it is L0/L1/L2. |
+| **Exact Component Port** | Independent Telegram UI/interaction components: touch handlers, animation helpers, measured/drawn cells, recycler pools, path/canvas drawables. | Keep method shape, key fields, branch structure, constants, thresholds, durations, interpolators, measurement formulas, and recycler behavior aligned with upstream. Allowed changes are `HOST-WIRING` and recorded whole-subsystem omissions. No "looks close enough" rewrites. |
+| **Feature Workflow Port** | Complete user-visible Telegram features: browser instant view, settings, bookmarks, history, media viewer flows, profile sheets, or any workflow spanning screens/storage/navigation. | Write a Telegram Workflow Map before implementation. Match the user-visible path first, then adapt NativeDo backend/host boundaries explicitly. A copied slice is not completion proof. |
+| **Native Feature** | Pure NativeDo behavior, Discourse/linux.do logic, repositories, app-specific UI. | No upstream preservation contract. Do not claim Telegram parity. Do not add Telegram/GPL port headers just because the design was loosely inspired by Telegram. |
 
-### Subsystem Classes — Forced Minimum Levels
+Existing files with legacy `UPSTREAM-LEVEL: L0/L1/L2/L3` headers do not need bulk migration. When a task touches one of those files, update the header only if it is directly relevant to the change.
 
-When a Telegram-derived file participates in any of these subsystems, the kept code in that subsystem must use at least the listed level, regardless of file-level declaration. A file may be L1 overall while specific subsystems inside it are L0.
+### Forced Exact Components
 
-| Subsystem | Forced minimum | Examples |
+When Telegram-derived work touches any of these subsystems, that subsystem MUST be handled as an `Exact Component Port`, even when it lives inside a larger `Feature Workflow Port`.
+
+| Subsystem | Requirement | Examples |
 |---|---|---|
-| Touch / gesture arbitration | **L0** | `ViewPagerFixed.onTouchEventInternal`, `BottomSheet`, `RecyclerListView` swipe |
-| Animation curves, durations, interpolators | **L0** | `distanceInfluenceForSnapDuration`, quintic-out interpolator, `clamp(150, 600)` snap duration |
-| List / view recycling pools | **L0** | `viewsByType`, `updateViewForIndex` swap logic |
-| Edge tolerances and magic numbers in interaction code | **L0** | `< 1px` snap, `touchSlop = 0.3 cm`, `velX >= 3000` thresholds |
-| Custom Path / Canvas drawing | L1 | `GlassTabView.dispatchDraw`, ActionBar back button |
-| Lifecycle orchestration | L1 | `ViewPagerActivity.onPageSelected` evict/resume |
-| Theme / resource mapping | L2 | `Theme.key_*` constants |
-| Discourse / linux.do business logic | L3 | login, CSRF, bootstrap parse, repository |
+| Touch / gesture arbitration | Exact Component Port | `ViewPagerFixed.onTouchEventInternal`, `BottomSheet`, `RecyclerListView` swipe |
+| Animation curves, durations, interpolators | Exact Component Port | `distanceInfluenceForSnapDuration`, quintic-out interpolator, `clamp(150, 600)` snap duration |
+| List / view recycling pools | Exact Component Port | `viewsByType`, `updateViewForIndex` swap logic |
+| Edge tolerances and magic numbers in interaction code | Exact Component Port | `< 1px` snap, `touchSlop = 0.3 cm`, `velX >= 3000` thresholds |
+| Measurement and layout formulas copied from Telegram | Exact Component Port | instant-view list indentation, cell height formulas, custom measure branches |
+| Custom Path / Canvas drawing | Exact Component Port | `GlassTabView.dispatchDraw`, ActionBar back button, list bullets/numbers |
+| Theme / resource mapping | Host wiring or Native Feature | `Theme.key_*` constants |
+| Discourse / linux.do business logic | Native Feature | login, CSRF, bootstrap parse, repository |
 
-### File Header (Required for L0/L1)
+### Exact Component Header
 
-Every L0 and L1 file MUST include port metadata above or inside the copyright banner:
+Every new or touched Exact Component Port should include port metadata above or inside the copyright banner:
 
 ```
-// UPSTREAM-LEVEL: L0 | L1
-// UPSTREAM-PATH:  org/telegram/ui/Components/ViewPagerFixed.java
+// PORT-MODE: Exact Component Port
+// UPSTREAM-SCOPE: org/telegram/ui/Components/ViewPagerFixed.java
 // UPSTREAM-COMMIT: <40-char sha or "master@<YYYY-MM-DD>">
-// SUBSYSTEMS: gesture=L0, animation=L0, custom-layout=L1
+// EXACT-SUBSYSTEMS: gesture, animation, measurement
 // HOST-WIRING:
 //   - Theme.ResourcesProvider -> Theme.getColor(Theme.key_*)
-// ADAPTED:
+// ADAPTED-BACKEND:
+//   - None.
+// ADAPTED-PRODUCT:
 //   - MAIN_TABS_MIN_CONTENT_WIDTH = 160dp - NativeDo currently has fixed Home/Profile tabs.
 // OMITTED:
 //   - drag-reorder (ItemTouchHelper path) - out of scope until multi-tab editing ships.
 ```
 
-L2 files SHOULD have an abbreviated header (`UPSTREAM-LEVEL: L2`, `UPSTREAM-PATH:`, free-form notes). L3 files do not need this header.
+### Feature Workflow Map
+
+Every Feature Workflow Port MUST write a Telegram Workflow Map before implementation. Large features should use `docs/telegram-port/<feature>.md`; small features may put the map in the main file header. The map must cover the complete upstream workflow, even when the current task implements only one phase.
+
+Use this structure:
+
+```md
+# Telegram Workflow Map: <Feature>
+
+1. Upstream scope:
+2. Entry points:
+3. Screens/fragments/sheets:
+4. Menus/actions:
+5. State transitions:
+6. Storage/backend dependencies:
+7. Navigation/back behavior:
+8. Unsupported or adapted dependencies:
+
+Current task scope:
+- In scope:
+- Deferred:
+- Parity blockers:
+```
+
+Rules for the map:
+
+- Fill all 8 sections before coding. If a section does not apply, write `None` and explain why.
+- `Upstream scope` must name the Telegram files/classes/methods that define the workflow.
+- `Storage/backend dependencies` must separate Telegram backend behavior from NativeDo replacements.
+- `Unsupported or adapted dependencies` must label each difference as `HOST-WIRING`, `ADAPTED-BACKEND`, `ADAPTED-PRODUCT`, `OMITTED`, or `PARITY-BLOCKER`.
+- If a `PARITY-BLOCKER` affects the requested scope, stop implementation and report the blocker plus options. Continue only when the blocker does not affect the explicit current scope.
+- Phased work is allowed, but the phase must be marked under `In scope` / `Deferred` / `Parity blockers`. Do not declare the whole Telegram feature complete unless the full map is implemented or explicitly omitted.
+
+Examples:
+
+- Browser Instant View, Browser Settings, Bookmarks, and History are `Feature Workflow Port` work.
+- `WebViewSwipeContainer`, Telegram cell measurement/drawing, path/canvas icons, animation interpolators, and recycler-pool logic are `Exact Component Port` work.
+- A Feature Workflow Port may and often should contain Exact Component Ports for its gesture, animation, measurement, drawing, or recycling pieces.
 
 ### When You Find Something Missing
 
-If a previously shipped slice dropped behavior that affects feel, compare against upstream first. For L0 subsystems, re-align the kept code to upstream instead of patching by guesswork. For intentional NativeDo differences, record the difference as `ADAPTED`.
+If a previously shipped slice dropped behavior that affects feel or workflow parity, compare against upstream first. For forced exact subsystems, re-align the kept code to upstream instead of patching by guesswork. For Feature Workflow Port gaps, update the Workflow Map before coding more.
 
 ### Workflow
 
-When asked to add a Telegram-derived file or modify one:
+When asked to add or modify Telegram-derived behavior:
 
-1. Identify touched subsystems and their minimum level.
-2. Open the upstream file or upstream diff before editing.
-3. Keep L0/L1 code upstream-shaped; prefer L2 adapters for NativeDo-specific behavior.
-4. Record every local difference as `HOST-WIRING`, `ADAPTED`, or `OMITTED`.
-5. Verify retained method names, parameter lists, key fields, and interaction constants against upstream.
+1. Choose `Exact Component Port`, `Feature Workflow Port`, or `Native Feature`.
+2. Open the upstream source before editing. For feature work, write the Workflow Map first.
+3. Identify any forced exact subsystems and keep them upstream-shaped.
+4. Record every local difference as `HOST-WIRING`, `ADAPTED-BACKEND`, `ADAPTED-PRODUCT`, `OMITTED`, or `PARITY-BLOCKER`.
+5. Verify retained method names, parameter lists, key fields, interaction constants, measurement formulas, and workflow states against upstream.
 6. Build (`./apps/android/gradlew -p apps/android :app:assembleDebug --quiet`) and exercise touch/gesture-related tests if applicable.
 
 ### Mechanical Self-Check Before Declaring Done
 
-For an L0 or L1 file, summarize the upstream comparison in the final response or commit message:
+For an Exact Component Port, summarize the upstream comparison in the final response or commit message:
 
 - Upstream path and commit/date checked.
-- Local differences added or changed under `HOST-WIRING`, `ADAPTED`, or `OMITTED`.
-- L0 interaction constants checked, for example `dp(10)`, `0.3f`, `>= 3000`, `clamp(150, 600)`, `< 1`.
+- Local differences added or changed under `HOST-WIRING`, `ADAPTED-BACKEND`, `ADAPTED-PRODUCT`, or `OMITTED`.
+- Interaction constants checked, for example `dp(10)`, `0.3f`, `>= 3000`, `clamp(150, 600)`, `< 1`.
 - Any unexpected divergence was fixed or explicitly escalated before declaring done.
+
+For a Feature Workflow Port, summarize:
+
+- Workflow Map path or header location.
+- Upstream workflow scope checked.
+- Current phase `In scope` / `Deferred` / `Parity blockers`.
+- Backend/storage differences labeled as `ADAPTED-BACKEND`.
+- Any Exact Component Ports inside the feature and their upstream comparison.
 
 ## Build, Lint, And Test
 

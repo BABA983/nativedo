@@ -1,14 +1,16 @@
-// UPSTREAM-LEVEL: L1
-// UPSTREAM-PATH:  org/telegram/ui/ActionBar/ActionBarLayout.java
+// PORT-MODE: Exact Component Port
+// UPSTREAM-SCOPE: org/telegram/ui/ActionBar/ActionBarLayout.java
 // UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: navigation-stack=L1, gesture=L0, animation=L0, lifecycle-orchestration=L1, bottom-tabs-insets=L1
+// EXACT-SUBSYSTEMS: navigation-stack, gesture, animation, lifecycle-orchestration, bottom-tabs-insets
 // HOST-WIRING:
 //   - Telegram BaseFragment/Theme/LayoutHelper/AndroidUtilities imports rewritten to NativeDo.
 //   - NativeDo MainActivity forwards Android predictive-back callbacks into this layout.
 //   - BottomSheetTabsOverlay is hosted inside this layout, so bottom-tabs clipping skips that overlay.
 //   - Bottom-tabs keyboard visibility is derived from WindowInsetsCompat.Type.ime() because
 //     NativeDo's simplified ActionBarLayout omits Telegram's measureKeyboardHeight path.
-// ADAPTED:
+// ADAPTED-BACKEND:
+//   - None.
+// ADAPTED-PRODUCT:
 //   - Keeps a single-stack container model for NativeDo fragments only.
 //   - Uses direct Activity finish fallback instead of Telegram LaunchActivity/parentActivity orchestration.
 //   - Hosts NativeDo's BottomSheetTabs and BottomSheetTabsOverlay without Telegram LaunchActivity wiring.
@@ -66,6 +68,7 @@ import android.view.VelocityTracker;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewGroup.MarginLayoutParams;
+import android.view.Window;
 import android.view.WindowInsets;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
@@ -156,6 +159,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
     private WindowInsetsCompat lastWindowInsetsCompat;
     private boolean isKeyboardVisible;
     private boolean withShadow;
+    private Runnable rootDismissRunnable;
     private final DecelerateInterpolator decelerateInterpolator = new DecelerateInterpolator(1.5f);
 
     public ActionBarLayout(Context context) {
@@ -207,6 +211,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
             containerView.removeAllViews();
             attachView(fragment);
             fragment.onResume();
+            updateSystemBars();
         }
         return true;
     }
@@ -273,6 +278,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
             containerView.removeAllViews();
             attachView(fragment);
             fragment.onResume();
+            updateSystemBars();
             return true;
         }
 
@@ -291,6 +297,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
 
         oldFragment = currentFragment;
         newFragment = fragment;
+        updateSystemBars();
         startLayoutAnimation(true, true);
         return true;
     }
@@ -324,6 +331,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
 
         oldFragment = currentFragment;
         newFragment = fragment;
+        updateSystemBars();
         startBottomOpenAnimation();
         return true;
     }
@@ -862,6 +870,18 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
         return fragmentsStack.isEmpty() ? null : fragmentsStack.get(fragmentsStack.size() - 1);
     }
 
+    void setRootDismissRunnable(Runnable rootDismissRunnable) {
+        this.rootDismissRunnable = rootDismissRunnable;
+    }
+
+    public boolean dismissRootSheet() {
+        if (rootDismissRunnable == null) {
+            return false;
+        }
+        rootDismissRunnable.run();
+        return true;
+    }
+
     @Override
     public int getBottomTabsHeight(boolean animated) {
         return bottomSheetTabs == null ? 0 : bottomSheetTabs.getHeight(animated);
@@ -889,6 +909,14 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
                 lp.bottomMargin = systemInsets.bottom;
                 child.requestLayout();
             }
+            return;
+        }
+        if (child instanceof BaseFragment.AttachedSheetWindow) {
+            if (lp.bottomMargin != 0) {
+                lp.bottomMargin = 0;
+                child.requestLayout();
+            }
+            ViewCompat.dispatchApplyWindowInsets(child, insets);
             return;
         }
         if (child instanceof LayoutContainer) {
@@ -946,6 +974,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
     @Override
     public void didSetNewTheme() {
         updateShellBackgroundColor();
+        updateSystemBars();
     }
 
     private void updateShellBackgroundColor() {
@@ -953,6 +982,25 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
         setBackgroundColor(shellColor);
         if (bottomSheetTabs != null) {
             bottomSheetTabs.setNavigationBarColor(shellColor, false);
+        }
+    }
+
+    public void updateSystemBars() {
+        if (!(getContext() instanceof Activity)) {
+            return;
+        }
+        Window window = ((Activity) getContext()).getWindow();
+        if (window == null) {
+            return;
+        }
+        BaseFragment fragment = getLastFragment();
+        boolean lightStatusBar = fragment == null || fragment.isLightStatusBar();
+        boolean forceTransparentStatusBar = fragment != null && fragment.hasShownSheet();
+        int navigationBarColor = fragment == null ? Theme.getColor(Theme.key_windowBackgroundGray) : fragment.getNavigationBarColor();
+        AndroidUtilities.setLightStatusBar(window, lightStatusBar, forceTransparentStatusBar);
+        AndroidUtilities.setLightNavigationBar(window, AndroidUtilities.computePerceivedBrightness(navigationBarColor) >= .721f);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && window.getNavigationBarColor() != navigationBarColor) {
+            window.setNavigationBarColor(navigationBarColor);
         }
     }
 
@@ -1035,6 +1083,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
         oldFragment = null;
         newFragment = null;
         animationInProgress = false;
+        updateSystemBars();
     }
 
     private void onSlideAnimationEnd(boolean backAnimation) {
@@ -1068,6 +1117,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
         predictiveBackInProgress = false;
         predictiveBackHasProgress = false;
         layoutToIgnore = null;
+        updateSystemBars();
     }
 
     private void attachView(BaseFragment fragment) {
