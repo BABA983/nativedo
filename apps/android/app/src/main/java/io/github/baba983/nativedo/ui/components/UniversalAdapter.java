@@ -109,7 +109,10 @@ public class UniversalAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
     @Override
     public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
         View view;
-        switch (viewType) {
+        UItem.ViewFactory factory = findFactoryForViewType(viewType);
+        if (factory != null) {
+            view = factory.createView(context);
+        } else switch (viewType) {
             case VIEW_TYPE_HEADER:
                 view = new UniversalCells.SectionCell(context, true);
                 break;
@@ -159,6 +162,11 @@ public class UniversalAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
             return;
         }
         boolean divider = hasDivider(position);
+        if (item.factory != null) {
+            item.factory.bindView(holder.itemView, item, divider, this);
+            bindClickListeners(holder, item);
+            return;
+        }
         switch (holder.getItemViewType()) {
             case VIEW_TYPE_HEADER:
             case VIEW_TYPE_GRAY_SECTION:
@@ -253,6 +261,17 @@ public class UniversalAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
         return item != null && !item.hideDivider && nextItem != null && isShadow(nextItem.viewType) == isShadow(item.viewType);
     }
 
+    @Nullable
+    private UItem.ViewFactory findFactoryForViewType(int viewType) {
+        for (int i = 0; i < items.size(); i++) {
+            UItem item = items.get(i);
+            if (item != null && item.factory != null && item.viewType == viewType) {
+                return item.factory;
+            }
+        }
+        return null;
+    }
+
     public static boolean isShadow(int viewType) {
         return viewType == VIEW_TYPE_SHADOW || viewType == VIEW_TYPE_GRAY_SECTION;
     }
@@ -260,6 +279,11 @@ public class UniversalAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
     private boolean isSameItem(UItem oldItem, UItem newItem) {
         if (oldItem.viewType != newItem.viewType) {
             return false;
+        }
+        if (oldItem.factory != null || newItem.factory != null) {
+            return oldItem.id == newItem.id
+                    && TextUtils.equals(oldItem.text, newItem.text)
+                    && TextUtils.equals(oldItem.textValue, newItem.textValue);
         }
         if (oldItem.id != 0 || newItem.id != 0) {
             if (oldItem.id != newItem.id) {
@@ -290,6 +314,10 @@ public class UniversalAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
 
     public boolean isEnabled(RecyclerView.ViewHolder holder) {
         int viewType = holder.getItemViewType();
+        UItem item = getItem(holder.getBindingAdapterPosition());
+        if (item != null && item.factory != null) {
+            return item.factory.isEnabled(item);
+        }
         return viewType == VIEW_TYPE_TEXT
                 || viewType == VIEW_TYPE_CHECK
                 || viewType == VIEW_TYPE_RADIO

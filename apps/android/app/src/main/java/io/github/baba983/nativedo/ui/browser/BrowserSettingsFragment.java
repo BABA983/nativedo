@@ -4,12 +4,20 @@
 // UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
 // HOST-WIRING:
 //   - Uses NativeDo BrowserStorage, dialogs, and BaseFragment.showAsSheet navigation callbacks.
+//   - Cookie/cache directory walks run on a single-threaded Executor instead of Telegram
+//     Utilities.globalQueue, then post back to the UI via AndroidUtilities.runOnUIThread.
 // ADAPTED-BACKEND:
 //   - Restricted domains and browser preferences are stored locally in BrowserStorage.
+//   - Restricted-domain rows are enriched with sitename/favicon from BrowserMetadataCache
+//     (SharedPreferences JSON) instead of Telegram WebMetadataCache file serialization.
 // ADAPTED-PRODUCT:
 //   - Keeps Telegram browser settings grouping through UniversalFragment/UItem/UniversalAdapter.
+//   - Mirrors WebBrowserSettings.fillItems sizing/counter contract: cookie/cache rows show
+//     formatted sizes (Formatter.formatShortFileSize) and the Clear History row shows a
+//     pluralized page count (R.plurals.app_browser_settings_history_pages, modeled on
+//     formatPluralStringComma("BrowserSettingsHistoryPages", ...)).
 // OMITTED:
-//   - Telegram custom tabs choice, sync, debug cells, account-wide notifications, WebMetadataCache, and Saved Messages bookmark entry.
+//   - Telegram custom tabs choice, sync, debug cells, account-wide notifications, hidden metadata retrieval, and Saved Messages bookmark entry.
 /*
  * This file is part of NativeDo.
  *
@@ -30,6 +38,7 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.text.InputType;
 import android.text.TextUtils;
+import android.text.format.Formatter;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
@@ -49,6 +58,8 @@ import androidx.core.graphics.ColorUtils;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import io.github.baba983.nativedo.R;
 import io.github.baba983.nativedo.core.AndroidUtilities;
@@ -75,6 +86,12 @@ class BrowserSettingsFragment extends UniversalFragment {
 
     private final BrowserFeatureSheet.UrlLoader urlLoader;
 
+    private static final ExecutorService SIZE_EXECUTOR = Executors.newSingleThreadExecutor();
+
+    private long cacheSize = -1L;
+    private long cookiesSize = -1L;
+    private boolean sizesLoading;
+
     BrowserSettingsFragment(BrowserFeatureSheet.UrlLoader urlLoader) {
         this.urlLoader = urlLoader;
     }
@@ -100,8 +117,20 @@ class BrowserSettingsFragment extends UniversalFragment {
             return;
         }
 
-        items.add(UItem.asButton(BUTTON_CLEAR_COOKIES, android.R.drawable.ic_menu_close_clear_cancel, context.getString(R.string.app_browser_settings_clear_cookies_title)));
-        items.add(UItem.asButton(BUTTON_CLEAR_CACHE, android.R.drawable.ic_menu_manage, context.getString(R.string.app_browser_settings_clear_cache_title)));
+        ensureSizesLoaded();
+
+        items.add(UItem.asButton(
+                BUTTON_CLEAR_COOKIES,
+                android.R.drawable.ic_menu_close_clear_cancel,
+                context.getString(R.string.app_browser_settings_clear_cookies_title),
+                cookiesSize > 0 ? Formatter.formatShortFileSize(context, cookiesSize) : ""
+        ));
+        items.add(UItem.asButton(
+                BUTTON_CLEAR_CACHE,
+                android.R.drawable.ic_menu_manage,
+                context.getString(R.string.app_browser_settings_clear_cache_title),
+                cacheSize > 0 ? Formatter.formatShortFileSize(context, cacheSize) : ""
+        ));
         items.add(UItem.asShadow(context.getString(R.string.app_browser_settings_cookies_cache_subtitle)));
 
         int historySize = BrowserStorage.getHistory(context).size();
@@ -111,7 +140,7 @@ class BrowserSettingsFragment extends UniversalFragment {
                     BUTTON_CLEAR_HISTORY,
                     android.R.drawable.ic_menu_delete,
                     context.getString(R.string.app_browser_settings_clear_history_title),
-                    context.getString(R.string.app_browser_settings_history_count, historySize)
+                    context.getResources().getQuantityString(R.plurals.app_browser_settings_history_pages, historySize, historySize)
             ));
             items.add(UItem.asShadow(null));
         }
@@ -127,7 +156,19 @@ class BrowserSettingsFragment extends UniversalFragment {
         for (String domain : domains) {
             ArrayList<String> rowDomains = new ArrayList<>();
             rowDomains.add(domain);
-            items.add(UItem.asWebsite(BUTTON_DOMAIN, "", rowDomains, null));
+            BrowserMetadataCache.Metadata meta = BrowserMetadataCache.get(context, domain);
+            CharSequence title;
+            android.graphics.Bitmap favicon;
+            if (meta != null) {
+                title = !TextUtils.isEmpty(meta.siteName)
+                        ? meta.siteName
+                        : (TextUtils.isEmpty(meta.title) ? "" : meta.title);
+                favicon = meta.favicon;
+            } else {
+                title = "";
+                favicon = null;
+            }
+            items.add(UItem.asWebsite(BUTTON_DOMAIN, title, rowDomains, favicon));
         }
         if (!domains.isEmpty()) {
             items.add(UItem.asButton(BUTTON_CLEAR_LIST, android.R.drawable.ic_menu_delete, context.getString(R.string.app_browser_settings_clear_list)).red());
@@ -141,6 +182,82 @@ class BrowserSettingsFragment extends UniversalFragment {
                 labelForEngine(BrowserStorage.getSearchEngine(context))
         ));
         items.add(UItem.asShadow(context.getString(R.string.app_browser_settings_search_engine_subtitle)));
+    }
+
+    /**
+     * Mirrors WebBrowserSettings.loadSizes(): walks WebView cookie/cache directories on a
+     * background thread so the Settings rows can render real sizes via Formatter.formatShortFileSize.
+     * Telegram uses Utilities.globalQueue + AndroidUtilities.runOnUIThread; NativeDo uses a single
+     * Executor + AndroidUtilities.runOnUIThread.
+     */
+    private void ensureSizesLoaded() {
+        if (sizesLoading || cacheSize >= 0L) {
+            return;
+        }
+        Context context = getContext();
+        if (context == null) {
+            return;
+        }
+        sizesLoading = true;
+        Context appContext = context.getApplicationContext();
+        SIZE_EXECUTOR.execute(() -> {
+            long localCacheSize = 0L;
+            File webviewDb = appContext.getDatabasePath("webview.db");
+            if (webviewDb != null && webviewDb.exists()) {
+                localCacheSize += webviewDb.length();
+            }
+            File webviewCacheDb = appContext.getDatabasePath("webviewCache.db");
+            if (webviewCacheDb != null && webviewCacheDb.exists()) {
+                localCacheSize += webviewCacheDb.length();
+            }
+            File appWebview = new File(appContext.getApplicationInfo().dataDir, "app_webview");
+            if (appWebview.exists()) {
+                localCacheSize += getDirectorySize(appWebview, false);
+            }
+            File webViewCache = new File(appContext.getApplicationInfo().dataDir, "cache/WebView");
+            if (webViewCache.exists()) {
+                localCacheSize += getDirectorySize(webViewCache, null);
+            }
+
+            long localCookiesSize = 0L;
+            if (appWebview.exists()) {
+                localCookiesSize += getDirectorySize(appWebview, true);
+            }
+
+            final long finalCacheSize = localCacheSize;
+            final long finalCookiesSize = localCookiesSize;
+            AndroidUtilities.runOnUIThread(() -> {
+                sizesLoading = false;
+                cacheSize = finalCacheSize;
+                cookiesSize = finalCookiesSize;
+                updateRows();
+            });
+        });
+    }
+
+    /**
+     * Mirrors WebBrowserSettings.getDirectorySize(File, Boolean): cookies==null counts every file,
+     * cookies==true keeps only files whose name starts with "Cookies", cookies==false skips them.
+     */
+    private static long getDirectorySize(@Nullable File dir, @Nullable Boolean cookies) {
+        if (dir == null || !dir.exists()) {
+            return 0L;
+        }
+        long size = 0L;
+        if (dir.isDirectory()) {
+            File[] files = dir.listFiles();
+            if (files != null) {
+                for (File child : files) {
+                    size += getDirectorySize(child, cookies);
+                }
+            }
+        } else {
+            if (cookies != null && cookies != dir.getName().startsWith("Cookies")) {
+                return size;
+            }
+            size += dir.length();
+        }
+        return size;
     }
 
     @Override
@@ -175,6 +292,7 @@ class BrowserSettingsFragment extends UniversalFragment {
                         context.getString(R.string.app_browser_settings_clear_action),
                         () -> {
                             clearCookies();
+                            invalidateSizes();
                             updateRows();
                         }
                 );
@@ -186,6 +304,7 @@ class BrowserSettingsFragment extends UniversalFragment {
                         context.getString(R.string.app_browser_settings_clear_action),
                         () -> {
                             clearCache();
+                            invalidateSizes();
                             updateRows();
                         }
                 );
@@ -228,6 +347,12 @@ class BrowserSettingsFragment extends UniversalFragment {
         }
     }
 
+    private void invalidateSizes() {
+        cacheSize = -1L;
+        cookiesSize = -1L;
+        sizesLoading = false;
+    }
+
     private void openHistory() {
         final BrowserListFragment[] fragment = new BrowserListFragment[1];
         fragment[0] = new BrowserListFragment(BrowserListFragment.Mode.HISTORY, entry -> {
@@ -247,16 +372,7 @@ class BrowserSettingsFragment extends UniversalFragment {
     }
 
     private String labelForEngine(BrowserStorage.SearchEngine engine) {
-        Context context = getContext();
-        switch (engine) {
-            case LINUX_DO:
-                return context.getString(R.string.app_browser_settings_search_engine_linux_do);
-            case BING:
-                return context.getString(R.string.app_browser_settings_search_engine_bing);
-            case GOOGLE:
-            default:
-                return context.getString(R.string.app_browser_settings_search_engine_google);
-        }
+        return engine.name;
     }
 
     private void clearCookies() {
@@ -264,6 +380,14 @@ class BrowserSettingsFragment extends UniversalFragment {
             CookieManager cookieManager = CookieManager.getInstance();
             cookieManager.removeAllCookies(null);
             cookieManager.flush();
+        } catch (Exception ignored) {
+        }
+        try {
+            Context context = getContext();
+            if (context != null) {
+                File dir = new File(context.getApplicationInfo().dataDir, "app_webview");
+                deleteDirectory(dir, true);
+            }
         } catch (Exception ignored) {
         }
     }
@@ -280,17 +404,18 @@ class BrowserSettingsFragment extends UniversalFragment {
         }
         try {
             File dir = new File(context.getApplicationInfo().dataDir, "app_webview");
-            deleteDirectory(dir);
+            deleteDirectory(dir, false);
         } catch (Exception ignored) {
         }
         try {
             File dir = new File(context.getApplicationInfo().dataDir, "cache/WebView");
-            deleteDirectory(dir);
+            deleteDirectory(dir, null);
         } catch (Exception ignored) {
         }
+        BrowserMetadataCache.clear(context);
     }
 
-    private void deleteDirectory(@Nullable File file) {
+    private void deleteDirectory(@Nullable File file, @Nullable Boolean cookies) {
         if (file == null || !file.exists()) {
             return;
         }
@@ -298,9 +423,17 @@ class BrowserSettingsFragment extends UniversalFragment {
             File[] children = file.listFiles();
             if (children != null) {
                 for (File child : children) {
-                    deleteDirectory(child);
+                    deleteDirectory(child, cookies);
                 }
             }
+            File[] remaining = file.listFiles();
+            if (remaining == null || remaining.length == 0) {
+                file.delete();
+            }
+            return;
+        }
+        if (cookies != null && cookies != file.getName().startsWith("Cookies")) {
+            return;
         }
         file.delete();
     }

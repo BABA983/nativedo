@@ -110,6 +110,8 @@ public class BrowserWebViewContainer extends FrameLayout {
 
         default void onWebBackgroundChanged(boolean actionBarColor, int color) {}
 
+        default void onWebSiteNameChanged(@Nullable String siteName) {}
+
         default void onWebViewScrolled(int dx, int dy) {}
 
         default void onInstantViewChanged(boolean available) {}
@@ -132,6 +134,9 @@ public class BrowserWebViewContainer extends FrameLayout {
     private String instantViewScript;
     private String openCollapsedScript;
     private Bitmap currentFavicon;
+    private String currentSiteName;
+    private int currentActionBarColor;
+    private int currentBackgroundColor;
     private int currentProgress;
     private boolean keyboardFocusable;
     private boolean wasFocusable;
@@ -228,6 +233,10 @@ public class BrowserWebViewContainer extends FrameLayout {
                 setInjectedJS(false);
                 cleanupInstantViewReader();
                 currentInstantViewJson = null;
+                currentSiteName = null;
+                currentFavicon = favicon;
+                currentActionBarColor = 0;
+                currentBackgroundColor = 0;
                 pendingInstantViewRequestUrl = null;
                 if (delegate != null) {
                     delegate.onInstantViewChanged(false);
@@ -272,12 +281,14 @@ public class BrowserWebViewContainer extends FrameLayout {
                 if (delegate != null && title != null && title.trim().length() > 0) {
                     delegate.onTitleChanged(title);
                 }
+                saveCurrentMetadata();
                 saveCurrentPageToHistory();
             }
 
             @Override
             public void onReceivedIcon(WebView view, Bitmap icon) {
                 currentFavicon = icon;
+                saveCurrentMetadata();
                 saveCurrentPageToHistory();
             }
         });
@@ -461,6 +472,7 @@ public class BrowserWebViewContainer extends FrameLayout {
         currentUrl = webView.getUrl();
         currentProgress = webView.getProgress();
         currentFavicon = webView.getFavicon();
+        currentSiteName = null;
         notifyUrlChanged();
         notifyProgress(currentProgress);
     }
@@ -684,10 +696,28 @@ public class BrowserWebViewContainer extends FrameLayout {
                         (int) Math.round(jsonArray.optDouble(1)),
                         (int) Math.round(jsonArray.optDouble(2))
                 );
+                if (isActionBarColor) {
+                    currentActionBarColor = color;
+                } else {
+                    currentBackgroundColor = color;
+                }
+                saveCurrentMetadata();
                 if (delegate != null) {
                     delegate.onWebBackgroundChanged(isActionBarColor, color);
                 }
             } catch (Exception ignored) {
+            }
+        } else if ("siteName".equals(type)) {
+            currentSiteName = TextUtils.isEmpty(data) ? null : data;
+            saveCurrentMetadata();
+            if (delegate != null) {
+                delegate.onWebSiteNameChanged(currentSiteName);
+            }
+        } else if ("siteNameEmpty".equals(type)) {
+            currentSiteName = "";
+            saveCurrentMetadata();
+            if (delegate != null) {
+                delegate.onWebSiteNameChanged(null);
             }
         } else if ("allowScroll".equals(type)) {
             boolean x = true;
@@ -784,6 +814,21 @@ public class BrowserWebViewContainer extends FrameLayout {
             return;
         }
         BrowserStorage.pushHistory(getContext(), currentUrl, getTitle(), currentFavicon);
+    }
+
+    private void saveCurrentMetadata() {
+        if (TextUtils.isEmpty(currentUrl) || "about:blank".equals(currentUrl)) {
+            return;
+        }
+        BrowserMetadataCache.save(
+                getContext(),
+                currentUrl,
+                getTitle(),
+                currentSiteName,
+                currentFavicon,
+                currentActionBarColor,
+                currentBackgroundColor
+        );
     }
 
     private void captureInstantViewArchive(BrowserWebView sourceWebView, String requestUrl) {

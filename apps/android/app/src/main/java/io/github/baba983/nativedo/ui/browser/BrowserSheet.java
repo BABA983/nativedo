@@ -210,6 +210,13 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
             }
 
             @Override
+            public void onAddressInputChanged(String text) {
+                if (addressPanel != null) {
+                    addressPanel.setInput(text);
+                }
+            }
+
+            @Override
             public void onTitleClicked() {
                 if (webActionBar.isAddressing()) return;
                 CharSequence titleCs = webActionBar.getTitle();
@@ -223,7 +230,16 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
                         url == null ? "" : url,
                         favicon,
                         () -> {
-                            webActionBar.showAddress(url == null ? "" : url, true);
+                            webActionBar.setAddressText(url == null ? "" : url, false);
+                        },
+                        query -> {
+                            webActionBar.showAddress(false, true);
+                            loadAddressValue(query);
+                        },
+                        query -> webActionBar.setAddressText(query, false),
+                        urlToOpen -> {
+                            webActionBar.showAddress(false, true);
+                            loadBrowserUrl(urlToOpen);
                         },
                         v -> {
                             webActionBar.showAddress(false, true);
@@ -689,6 +705,8 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
             openCurrentPageExternal(page);
         } else if (id == WebActionBar.MENU_COPY_LINK) {
             copyCurrentLink();
+        } else if (id == WebActionBar.MENU_SHARE) {
+            shareCurrentPage(page);
         } else if (id == WebActionBar.MENU_MINIMIZE) {
             dismiss(true);
         } else if (id == WebActionBar.MENU_SEARCH) {
@@ -1168,6 +1186,7 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
         if (Patterns.WEB_URL.matcher(trimmed).matches()) {
             return "https://" + trimmed;
         }
+        BrowserStorage.pushRecentSearch(windowView.getContext(), trimmed);
         return BrowserStorage.buildSearchUrl(windowView.getContext(), trimmed);
     }
 
@@ -2271,6 +2290,37 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
         }
         try {
             windowView.getContext().startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(url)));
+        } catch (Exception ignored) {
+        }
+    }
+
+    /**
+     * NativeDo addition: send the current page URL through the system share sheet. Telegram's
+     * WebActionBar overflow does not include a Share row (Telegram routes share through its own
+     * forward action), so this lives in BrowserSheet as an ADAPTED-PRODUCT entry. Tracked in the
+     * WebActionBar header block under MENU_SHARE.
+     */
+    private void shareCurrentPage(PageLayout page) {
+        if (page == null) {
+            return;
+        }
+        String url = page.isWeb() ? page.webViewContainer.getCurrentUrl() : page.getSubtitle();
+        if (TextUtils.isEmpty(url)) {
+            return;
+        }
+        Context context = windowView.getContext();
+        try {
+            android.content.Intent send = new android.content.Intent(android.content.Intent.ACTION_SEND);
+            send.setType("text/plain");
+            send.putExtra(android.content.Intent.EXTRA_TEXT, url);
+            CharSequence titleCs = page.isWeb() ? webActionBar.getTitle() : null;
+            if (!TextUtils.isEmpty(titleCs)) {
+                send.putExtra(android.content.Intent.EXTRA_SUBJECT, titleCs.toString());
+            }
+            android.content.Intent chooser = android.content.Intent.createChooser(
+                    send, context.getString(R.string.app_browser_share));
+            chooser.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK);
+            context.startActivity(chooser);
         } catch (Exception ignored) {
         }
     }

@@ -11,6 +11,7 @@
 package io.github.baba983.nativedo.ui.components;
 
 import android.graphics.Bitmap;
+import android.content.Context;
 import android.view.View;
 
 import androidx.annotation.Nullable;
@@ -36,9 +37,22 @@ public class UItem {
     @Nullable public Object object2;
     public long longValue;
     public int spanCount = MAX_SPAN_COUNT;
+    @Nullable public ViewFactory factory;
 
     public UItem(int viewType) {
         this.viewType = viewType;
+    }
+
+    public interface ViewFactory {
+        int getViewType();
+
+        View createView(Context context);
+
+        void bindView(View view, UItem item, boolean divider, UniversalAdapter adapter);
+
+        default boolean isEnabled(UItem item) {
+            return true;
+        }
     }
 
     public UItem setChecked(boolean checked) {
@@ -148,6 +162,12 @@ public class UItem {
     public static UItem asCustom(View view) {
         UItem item = new UItem(UniversalAdapter.VIEW_TYPE_CUSTOM);
         item.view = view;
+        return item;
+    }
+
+    public static UItem ofFactory(ViewFactory factory) {
+        UItem item = new UItem(factory.getViewType());
+        item.factory = factory;
         return item;
     }
 }

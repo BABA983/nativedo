@@ -33,6 +33,9 @@
 //     port ArticleViewer's WebView/page-stack history menu without replacing NativeDo ActionBar.
 //   - Adds NativeDo menu state bridging for Instant View, bookmarks, history, and settings while
 //     keeping Telegram's overflow entry order.
+//   - Adds a NativeDo Share entry (MENU_SHARE) at the top of the overflow menu. Telegram exposes
+//     forward/share via its own action-bar shell rather than a WebActionBar overflow row, so the
+//     entry is a NativeDo addition that fans out to Intent.ACTION_SEND in the host fragment.
 // OMITTED:
 //   - Bottom action bar mode, Telegram item-options menu icons, and the separate toolbar forward button.
 /*
@@ -139,6 +142,7 @@ public class WebActionBar extends ActionBar {
     public static final int MENU_SETTINGS = 11;
     public static final int MENU_FORWARD = 12;
     public static final int MENU_FONT_SIZE = 13;
+    public static final int MENU_SHARE = 14;
 
     private final Delegate delegate;
     private final BackDrawable backButtonDrawable;
@@ -346,6 +350,7 @@ public class WebActionBar extends ActionBar {
             onOpenedMenu();
             moreItem.toggleSubMenu();
         });
+        moreItem.addSubItem(MENU_SHARE, context.getString(R.string.app_browser_share));
         moreItem.addSubItem(MENU_OPEN_EXTERNAL, context.getString(R.string.app_browser_open_in_browser));
         moreItem.addSubItem(MENU_REFRESH, context.getString(R.string.app_browser_refresh));
         moreItem.addSubItem(MENU_COPY_LINK, context.getString(R.string.app_browser_copy_link));
@@ -820,6 +825,16 @@ public class WebActionBar extends ActionBar {
         addressEditText.setText(url == null ? "" : url);
         addressEditText.selectAll();
         showAddress(true, animated);
+    }
+
+    public void setAddressText(String value, boolean selectAll) {
+        addressEditText.setText(value == null ? "" : value);
+        if (selectAll) {
+            addressEditText.selectAll();
+        } else {
+            addressEditText.setSelection(addressEditText.getText().length());
+        }
+        updateAddressKeyboard();
     }
 
     public void showAddress(boolean show, boolean animated) {

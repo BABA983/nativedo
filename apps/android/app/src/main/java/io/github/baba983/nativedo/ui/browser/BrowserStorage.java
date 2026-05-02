@@ -1,6 +1,6 @@
 // PORT-MODE: Feature Workflow Port
 // WORKFLOW-MAP: docs/telegram-port/browser.md
-// UPSTREAM-SCOPE: org/telegram/ui/web/BrowserHistory.java; org/telegram/ui/web/BookmarksFragment.java; org/telegram/ui/web/WebBrowserSettings.java
+// UPSTREAM-SCOPE: org/telegram/ui/web/BrowserHistory.java; org/telegram/ui/web/BookmarksFragment.java; org/telegram/ui/web/WebBrowserSettings.java; org/telegram/ui/web/SearchEngine.java; org/telegram/ui/web/AddressBarList.java
 // UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
 // HOST-WIRING:
 //   - Persists browser feature state from NativeDo's browser package.
@@ -8,9 +8,10 @@
 //   - Uses Android SharedPreferences instead of Telegram FileLoader/SerializedData/Saved Messages.
 //   - Keeps Telegram-style local browser history semantics with id/url/title/favicon/time metadata.
 //   - Replaces Telegram Saved Messages-backed bookmarks with explicit NativeDo local bookmark storage.
+//   - Stores Telegram-style recent address searches and search-engine selection locally.
 //   - Stores browser settings needed by the current NativeDo browser slice.
 // OMITTED:
-//   - Telegram account-scoped history/bookmark sync, WebMetadataCache, and restricted-domain counters.
+//   - Telegram account-scoped history/bookmark sync and restricted-domain counters.
 /*
  * This file is part of NativeDo.
  *
@@ -47,9 +48,9 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
+import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -60,10 +61,12 @@ final class BrowserStorage {
     private static final String KEY_HISTORY = "history";
     private static final String KEY_BOOKMARKS = "bookmarks";
     private static final String KEY_SEARCH_ENGINE = "search_engine";
+    private static final String KEY_RECENT_SEARCHES = "recent_searches";
     private static final String KEY_OPEN_IN_APP = "open_in_app";
     private static final String KEY_RESTRICTED_DOMAINS = "restricted_domains";
     private static final String KEY_INSTANT_VIEW_FONT_SCALE = "instant_view_font_scale";
     private static final int MAX_HISTORY_ENTRIES = 200;
+    private static final int MAX_RECENT_SEARCHES = 20;
 
     static final float[] INSTANT_VIEW_FONT_SCALES = new float[] { 0.85f, 1.0f, 1.15f, 1.30f };
 
@@ -92,14 +95,54 @@ final class BrowserStorage {
     }
 
     enum SearchEngine {
-        LINUX_DO("linux_do"),
-        GOOGLE("google"),
-        BING("bing");
+        GOOGLE(
+                "google",
+                "Google",
+                "https://www.google.com/search?q=",
+                "https://suggestqueries.google.com/complete/search?client=chrome&q=",
+                "https://policies.google.com/privacy"
+        ),
+        DUCKDUCKGO(
+                "duckduckgo",
+                "DuckDuckGo",
+                "https://duckduckgo.com/?q=",
+                "https://duckduckgo.com/ac/?q=",
+                "https://duckduckgo.com/privacy"
+        ),
+        BING(
+                "bing",
+                "Bing",
+                "https://www.bing.com/search?q=",
+                "https://api.bing.com/osjson.aspx?query=",
+                "https://privacy.microsoft.com/en-us/privacystatement"
+        ),
+        YAHOO(
+                "yahoo",
+                "Yahoo",
+                "https://search.yahoo.com/search?p=",
+                "https://sugg.search.yahoo.net/sg/?output=json&nresults=10&command=",
+                "https://legal.yahoo.com/us/en/yahoo/privacy/index.html"
+        ),
+        BRAVE(
+                "brave",
+                "Brave Search",
+                "https://search.brave.com/search?q=",
+                "https://search.brave.com/api/suggest?q=",
+                "https://search.brave.com/help/privacy-policy"
+        );
 
         final String value;
+        final String name;
+        final String searchUrl;
+        final String autocompleteUrl;
+        final String privacyPolicyUrl;
 
-        SearchEngine(String value) {
+        SearchEngine(String value, String name, String searchUrl, String autocompleteUrl, String privacyPolicyUrl) {
             this.value = value;
+            this.name = name;
+            this.searchUrl = searchUrl;
+            this.autocompleteUrl = autocompleteUrl;
+            this.privacyPolicyUrl = privacyPolicyUrl;
         }
 
         static SearchEngine fromValue(@Nullable String value) {
@@ -109,6 +152,56 @@ final class BrowserStorage {
                 }
             }
             return GOOGLE;
+        }
+
+        String buildSearchUrl(String query) {
+            return searchUrl + encodeQuery(query);
+        }
+
+        String buildAutocompleteUrl(String query) {
+            return autocompleteUrl + encodeQuery(query);
+        }
+
+        ArrayList<String> extractSuggestions(String json) {
+            ArrayList<String> result = new ArrayList<>();
+            if (TextUtils.isEmpty(json)) {
+                return result;
+            }
+            try {
+                JSONArray array = new JSONArray(json);
+                JSONArray suggestions = array.getJSONArray(1);
+                for (int i = 0; i < suggestions.length(); i++) {
+                    String value = suggestions.optString(i);
+                    if (!TextUtils.isEmpty(value)) {
+                        result.add(value);
+                    }
+                }
+                return result;
+            } catch (Exception ignored) {
+            }
+            try {
+                JSONObject object = new JSONObject(json);
+                JSONArray suggestions = object.getJSONObject("gossip").getJSONArray("results");
+                for (int i = 0; i < suggestions.length(); i++) {
+                    String value = suggestions.getJSONObject(i).optString("key");
+                    if (!TextUtils.isEmpty(value)) {
+                        result.add(value);
+                    }
+                }
+                return result;
+            } catch (Exception ignored) {
+            }
+            try {
+                JSONArray array = new JSONArray(json);
+                for (int i = 0; i < array.length(); i++) {
+                    String value = array.getJSONObject(i).optString("phrase");
+                    if (!TextUtils.isEmpty(value)) {
+                        result.add(value);
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+            return result;
         }
     }
 
@@ -214,6 +307,56 @@ final class BrowserStorage {
             return;
         }
         prefs(context).edit().putString(KEY_SEARCH_ENGINE, engine.value).apply();
+    }
+
+    static ArrayList<String> getRecentSearches(Context context) {
+        ArrayList<String> result = new ArrayList<>();
+        if (context == null) {
+            return result;
+        }
+        String json = prefs(context).getString(KEY_RECENT_SEARCHES, null);
+        if (TextUtils.isEmpty(json)) {
+            return result;
+        }
+        try {
+            JSONArray array = new JSONArray(json);
+            for (int i = 0; i < array.length(); i++) {
+                String value = array.optString(i);
+                if (!TextUtils.isEmpty(value)) {
+                    result.add(value);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return result;
+    }
+
+    static void pushRecentSearch(Context context, String query) {
+        if (context == null || TextUtils.isEmpty(query)) {
+            return;
+        }
+        String normalized = query.trim();
+        if (TextUtils.isEmpty(normalized)) {
+            return;
+        }
+        ArrayList<String> searches = getRecentSearches(context);
+        for (int i = searches.size() - 1; i >= 0; i--) {
+            if (normalized.equalsIgnoreCase(searches.get(i))) {
+                searches.remove(i);
+            }
+        }
+        searches.add(0, normalized);
+        while (searches.size() > MAX_RECENT_SEARCHES) {
+            searches.remove(searches.size() - 1);
+        }
+        writeRecentSearches(context, searches);
+    }
+
+    static void clearRecentSearches(Context context) {
+        if (context == null) {
+            return;
+        }
+        prefs(context).edit().remove(KEY_RECENT_SEARCHES).apply();
     }
 
     static boolean openExternalLinksInApp(Context context) {
@@ -347,17 +490,7 @@ final class BrowserStorage {
     }
 
     static String buildSearchUrl(Context context, String query) {
-        SearchEngine engine = getSearchEngine(context);
-        String encoded = Uri.encode(query == null ? "" : query);
-        switch (engine) {
-            case LINUX_DO:
-                return "https://linux.do/search?q=" + encoded;
-            case BING:
-                return "https://www.bing.com/search?q=" + encoded;
-            case GOOGLE:
-            default:
-                return "https://www.google.com/search?q=" + encoded;
-        }
+        return getSearchEngine(context).buildSearchUrl(query);
     }
 
     private static SharedPreferences prefs(Context context) {
@@ -440,8 +573,29 @@ final class BrowserStorage {
         }
     }
 
+    private static void writeRecentSearches(Context context, ArrayList<String> searches) {
+        if (context == null) {
+            return;
+        }
+        JSONArray array = new JSONArray();
+        for (String search : searches) {
+            if (!TextUtils.isEmpty(search)) {
+                array.put(search);
+            }
+        }
+        prefs(context).edit().putString(KEY_RECENT_SEARCHES, array.toString()).apply();
+    }
+
+    private static String encodeQuery(@Nullable String query) {
+        try {
+            return URLEncoder.encode(query == null ? "" : query, "UTF-8");
+        } catch (Exception ignored) {
+            return Uri.encode(query == null ? "" : query);
+        }
+    }
+
     @Nullable
-    private static String encodeBitmap(@Nullable Bitmap bitmap) {
+    static String encodeBitmap(@Nullable Bitmap bitmap) {
         if (bitmap == null) {
             return null;
         }
@@ -455,7 +609,7 @@ final class BrowserStorage {
     }
 
     @Nullable
-    private static Bitmap decodeBitmap(@Nullable String value) {
+    static Bitmap decodeBitmap(@Nullable String value) {
         if (TextUtils.isEmpty(value)) {
             return null;
         }

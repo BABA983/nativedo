@@ -36,6 +36,7 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.net.Uri;
 import android.text.TextUtils;
+import android.util.Patterns;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -105,6 +106,13 @@ public class BrowserFragment extends BaseFragment {
             }
 
             @Override
+            public void onAddressInputChanged(String text) {
+                if (addressPanel != null) {
+                    addressPanel.setInput(text);
+                }
+            }
+
+            @Override
             public void onTitleClicked() {
                 if (webActionBar.isAddressing()) return;
                 CharSequence titleCs = webActionBar.getTitle();
@@ -116,7 +124,16 @@ public class BrowserFragment extends BaseFragment {
                         title,
                         url == null ? "" : url,
                         favicon,
-                        () -> webActionBar.showAddress(url == null ? "" : url, true),
+                        () -> webActionBar.setAddressText(url == null ? "" : url, false),
+                        query -> {
+                            webActionBar.showAddress(false, true);
+                            loadAddressValue(query);
+                        },
+                        query -> webActionBar.setAddressText(query, false),
+                        urlToOpen -> {
+                            webActionBar.showAddress(false, true);
+                            loadBrowserUrl(urlToOpen);
+                        },
                         v -> {
                             webActionBar.showAddress(false, true);
                             copyCurrentLink();
@@ -302,6 +319,8 @@ public class BrowserFragment extends BaseFragment {
             webViewContainer.openCurrentUrlExternal();
         } else if (id == WebActionBar.MENU_COPY_LINK) {
             copyCurrentLink();
+        } else if (id == WebActionBar.MENU_SHARE) {
+            shareCurrentPage();
         } else if (id == WebActionBar.MENU_SEARCH) {
             webActionBar.showSearch(true, true);
         } else if (id == WebActionBar.MENU_BOOKMARK) {
@@ -342,6 +361,31 @@ public class BrowserFragment extends BaseFragment {
         if (clipboardManager != null) {
             clipboardManager.setPrimaryClip(ClipData.newPlainText("link", url));
             Toast.makeText(context, R.string.app_browser_link_copied, Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /**
+     * NativeDo-only Share entry; mirrors BrowserSheet.shareCurrentPage. See WebActionBar
+     * MENU_SHARE header note for the ADAPTED-PRODUCT rationale.
+     */
+    private void shareCurrentPage() {
+        String url = webViewContainer == null ? null : webViewContainer.getCurrentUrl();
+        if (TextUtils.isEmpty(url)) {
+            return;
+        }
+        Context context = webViewContainer.getContext();
+        try {
+            android.content.Intent send = new android.content.Intent(android.content.Intent.ACTION_SEND);
+            send.setType("text/plain");
+            send.putExtra(android.content.Intent.EXTRA_TEXT, url);
+            CharSequence titleCs = webActionBar == null ? null : webActionBar.getTitle();
+            if (!TextUtils.isEmpty(titleCs)) {
+                send.putExtra(android.content.Intent.EXTRA_SUBJECT, titleCs.toString());
+            }
+            android.content.Intent chooser = android.content.Intent.createChooser(
+                    send, context.getString(R.string.app_browser_share));
+            context.startActivity(chooser);
+        } catch (Exception ignored) {
         }
     }
 
@@ -407,13 +451,16 @@ public class BrowserFragment extends BaseFragment {
         }
         Uri uri = Uri.parse(trimmed);
         String scheme = uri.getScheme() == null ? null : uri.getScheme().toLowerCase();
-        if (("http".equals(scheme) || "https".equals(scheme)) && uri.getHost() != null && !uri.getHost().trim().isEmpty()) {
+        if ("javascript".equals(scheme)) {
+            return null;
+        }
+        if (scheme != null) {
             return uri.toString();
         }
-        Uri httpsUri = Uri.parse("https://" + trimmed);
-        if (httpsUri.getHost() != null && !httpsUri.getHost().trim().isEmpty()) {
-            return httpsUri.toString();
+        if (Patterns.WEB_URL.matcher(trimmed).matches()) {
+            return "https://" + trimmed;
         }
+        BrowserStorage.pushRecentSearch(getContext(), trimmed);
         return BrowserStorage.buildSearchUrl(getContext(), trimmed);
     }
 

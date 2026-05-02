@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+    Mirrors Telegram WebBrowserSettings BrowserSettingsHistoryPages plural row, used for the
+    "Clear History" entry to render "1 page" / "5 pages" with proper plural rules.
+    -->
+    <plurals name="app_browser_settings_history_pages">
+        <item quantity="one">%d page</item>
+        <item quantity="other">%d pages</item>
+    </plurals>
+</resources>

@@ -97,9 +97,7 @@
     <string name="app_browser_settings_external_open_mode_system">System browser</string>
     <string name="app_browser_settings_search_engine_title">Search engine</string>
     <string name="app_browser_settings_search_engine_subtitle">Choose which search engine handles address-bar search queries.</string>
-    <string name="app_browser_settings_search_engine_linux_do">linux.do</string>
-    <string name="app_browser_settings_search_engine_google">Google</string>
-    <string name="app_browser_settings_search_engine_bing">Bing</string>
+    <string name="app_browser_address_recent_clear">Clear</string>
     <string name="app_browser_settings_restricted_domains_title">Never open in app</string>
     <string name="app_browser_settings_restricted_domains_subtitle">Keep selected domains out of the in-app browser.</string>
     <string name="app_browser_settings_restricted_domains_count">%d domains</string>
