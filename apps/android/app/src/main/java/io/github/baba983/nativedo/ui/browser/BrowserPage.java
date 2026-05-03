@@ -8,10 +8,15 @@
 //   - Parses NativeDo's generated `instant.js` content tree into a Telegram-shaped local Page/PageBlock subset.
 //   - Resolves relative URLs against the generated page URL because NativeDo's native renderer
 //     fetches images and links directly instead of Telegram's cached-page media loader.
+//   - Represents Telegram RichText subclasses as local text spans/entities so NativeDo's renderer can
+//     keep using Android TextView/StaticLayout until exact ArticleViewer rich-text cells are ported.
+// ADAPTED-PRODUCT:
+//   - Phase 2 media/embed/gallery blocks keep Telegram-shaped model names, but render through
+//     NativeDo cards or expanded image sequences until Telegram player/WebView/gallery internals are ported.
 // OMITTED:
 //   - Telegram TLObject serialization, remote web-page fields, media ids, and page-level RTL/view counters.
 // PARITY-BLOCKER:
-//   - Telegram media families not represented here are unsupported until parser/model/host support exists.
+//   - Exact Telegram media/file loader fields and player/embed behavior are not represented here.
 /*
  * This file is part of NativeDo.
  *
@@ -38,6 +43,8 @@ import java.net.URI;
 import java.util.ArrayList;
 
 final class BrowserPage {
+
+    private static final char INLINE_IMAGE_PLACEHOLDER = '\uFFFC';
 
     final String url;
     final String title;
@@ -104,11 +111,21 @@ final class BrowserPage {
 
     private static void appendPageBlock(ArrayList<PageBlock> blocks, JSONObject object, @Nullable String baseUrl) {
         String tag = object.optString("tag").toLowerCase();
+        if (shouldIgnoreBlock(tag)) {
+            return;
+        }
+        String anchorName = parseAnchorName(object);
+        if (!isEmpty(anchorName)) {
+            blocks.add(new PageBlockAnchor(anchorName));
+        }
         if ("p".equals(tag)) {
             RichText text = parseRichTextObject(object, baseUrl);
+            ArrayList<PageBlock> mediaBlocks = collectInlineMediaBlocks(object.optJSONArray("content"), baseUrl);
+            text = mediaBlocks.isEmpty() ? text : stripInlineImages(text);
             if (!isEmpty(text.text)) {
                 blocks.add(new PageBlockParagraph(text));
             }
+            blocks.addAll(mediaBlocks);
             return;
         }
         if ("h1".equals(tag) || "h2".equals(tag)) {
@@ -125,12 +142,25 @@ final class BrowserPage {
             }
             return;
         }
+        if ("footer".equals(tag)) {
+            RichText text = parseRichTextObject(object, baseUrl);
+            ArrayList<PageBlock> mediaBlocks = collectInlineMediaBlocks(object.optJSONArray("content"), baseUrl);
+            text = mediaBlocks.isEmpty() ? text : stripInlineImages(text);
+            if (!isEmpty(text.text)) {
+                blocks.add(new PageBlockFooter(text));
+            }
+            blocks.addAll(mediaBlocks);
+            return;
+        }
         if ("blockquote".equals(tag)) {
             RichText text = parseRichTextObject(object, baseUrl);
+            ArrayList<PageBlock> mediaBlocks = collectInlineMediaBlocks(object.optJSONArray("content"), baseUrl);
+            text = mediaBlocks.isEmpty() ? text : stripInlineImages(text);
             if (!isEmpty(text.text)) {
                 blocks.add(new PageBlockBlockquote(addEntity(text, "italic"), emptyRichText()));
-                return;
             }
+            blocks.addAll(mediaBlocks);
+            return;
         }
         if ("pre".equals(tag)) {
             RichText text = parseRichTextArray(object.optJSONArray("content"), baseUrl);
@@ -147,11 +177,48 @@ final class BrowserPage {
             return;
         }
         if ("figure".equals(tag) || "picture".equals(tag)) {
-            PageBlockPhoto imageBlock = parseFigureBlock(object, baseUrl);
-            if (imageBlock != null) {
-                blocks.add(imageBlock);
+            PageBlock mediaBlock = parseFigureBlock(object, baseUrl);
+            if (mediaBlock != null) {
+                blocks.add(mediaBlock);
                 return;
             }
+        }
+        if ("iframe".equals(tag) || "embed".equals(tag) || "object".equals(tag)) {
+            blocks.add(parseEmbedBlock(object, baseUrl, emptyRichText(), emptyRichText()));
+            return;
+        }
+        if ("video".equals(tag)) {
+            blocks.add(parseVideoBlock(object, baseUrl, emptyRichText(), emptyRichText()));
+            return;
+        }
+        if ("audio".equals(tag)) {
+            blocks.add(parseAudioBlock(object, baseUrl, emptyRichText(), emptyRichText()));
+            return;
+        }
+        if ("canvas".equals(tag)) {
+            blocks.add(parseUnsupportedBlock(object, baseUrl));
+            return;
+        }
+        if ("cover".equals(tag)) {
+            PageBlock coverBlock = parseCoverBlock(object, baseUrl);
+            if (coverBlock != null) {
+                blocks.add(coverBlock);
+            }
+            return;
+        }
+        if ("slideshow".equals(tag) || "gallery".equals(tag)) {
+            PageBlockSlideshow slideshow = parseSlideshowBlock(object, baseUrl);
+            if (slideshow != null) {
+                blocks.add(slideshow);
+            }
+            return;
+        }
+        if ("collage".equals(tag)) {
+            PageBlockCollage collage = parseCollageBlock(object, baseUrl);
+            if (collage != null) {
+                blocks.add(collage);
+            }
+            return;
         }
         if ("table".equals(tag)) {
             PageBlockTable tableBlock = parseTableBlock(object, baseUrl);
@@ -202,9 +269,12 @@ final class BrowserPage {
                 || "kbd".equals(tag)
                 || "u".equals(tag)) {
             RichText text = parseRichTextObject(object, baseUrl);
+            ArrayList<PageBlock> mediaBlocks = collectInlineMediaBlocks(object.optJSONArray("content"), baseUrl);
+            text = mediaBlocks.isEmpty() ? text : stripInlineImages(text);
             if (!isEmpty(text.text)) {
                 blocks.add(new PageBlockParagraph(text));
             }
+            blocks.addAll(mediaBlocks);
             return;
         }
 
@@ -235,8 +305,17 @@ final class BrowserPage {
                 JSONArray itemContent = item.optJSONArray("content");
                 if (isInlineContent(itemContent)) {
                     RichText text = parseRichTextArray(itemContent, baseUrl);
-                    if (!isEmpty(text.text)) {
+                    ArrayList<PageBlock> mediaBlocks = collectInlineMediaBlocks(itemContent, baseUrl);
+                    if (mediaBlocks.isEmpty() && !isEmpty(text.text)) {
                         items.add(new PageListItemText(text));
+                    } else if (!mediaBlocks.isEmpty()) {
+                        ArrayList<PageBlock> blocks = new ArrayList<>();
+                        RichText stripped = stripInlineImages(text);
+                        if (!isEmpty(stripped.text)) {
+                            blocks.add(new PageBlockParagraph(stripped));
+                        }
+                        blocks.addAll(mediaBlocks);
+                        items.add(new PageListItemBlocks(blocks));
                     }
                 } else {
                     ArrayList<PageBlock> blocks = parsePageBlocks(itemContent, baseUrl);
@@ -268,8 +347,17 @@ final class BrowserPage {
                 JSONArray itemContent = item.optJSONArray("content");
                 if (isInlineContent(itemContent)) {
                     RichText text = parseRichTextArray(itemContent, baseUrl);
-                    if (!isEmpty(text.text)) {
+                    ArrayList<PageBlock> mediaBlocks = collectInlineMediaBlocks(itemContent, baseUrl);
+                    if (mediaBlocks.isEmpty() && !isEmpty(text.text)) {
                         items.add(new PageListOrderedItemText(num, text));
+                    } else if (!mediaBlocks.isEmpty()) {
+                        ArrayList<PageBlock> blocks = new ArrayList<>();
+                        RichText stripped = stripInlineImages(text);
+                        if (!isEmpty(stripped.text)) {
+                            blocks.add(new PageBlockParagraph(stripped));
+                        }
+                        blocks.addAll(mediaBlocks);
+                        items.add(new PageListOrderedItemBlocks(num, blocks));
                     }
                 } else {
                     ArrayList<PageBlock> blocks = parsePageBlocks(itemContent, baseUrl);
@@ -296,64 +384,223 @@ final class BrowserPage {
             for (int i = 0; i < content.length(); i++) {
                 Object child = content.opt(i);
                 if (child instanceof JSONObject && "summary".equalsIgnoreCase(((JSONObject) child).optString("tag")) && isEmpty(title.text)) {
-                    title = parseRichTextArray(((JSONObject) child).optJSONArray("content"), baseUrl);
+                    title = parseRichTextObject((JSONObject) child, baseUrl);
                 } else {
                     remainder.put(child);
                 }
             }
         }
-        if (isEmpty(title.text)) {
+        ArrayList<PageBlock> blocks = parsePageBlocks(remainder, baseUrl);
+        if (isEmpty(title.text) && blocks.isEmpty()) {
             return null;
         }
-        return new PageBlockDetails(object.has("open"), title, parsePageBlocks(remainder, baseUrl));
+        return new PageBlockDetails(object.has("open"), title, blocks);
     }
 
     @Nullable
-    private static PageBlockPhoto parseFigureBlock(JSONObject figure, @Nullable String baseUrl) {
+    private static PageBlock parseFigureBlock(JSONObject figure, @Nullable String baseUrl) {
         JSONArray content = figure.optJSONArray("content");
         if (content == null) {
             return null;
         }
         RichText caption = null;
         RichText credit = null;
-        PageBlockPhoto imageBlock = null;
+        ArrayList<PageBlock> mediaBlocks = new ArrayList<>();
+        ArrayList<String> sourceUrls = collectSourceUrls(content, baseUrl);
         for (int i = 0; i < content.length(); i++) {
             JSONObject child = content.optJSONObject(i);
             if (child == null) {
                 continue;
             }
             String tag = child.optString("tag").toLowerCase();
-            if ("figcaption".equals(tag) || "caption".equals(tag)) {
+            if ("figcaption".equals(tag) || "figurecaption".equals(tag) || "caption".equals(tag)) {
                 caption = parseRichTextArray(child.optJSONArray("content"), baseUrl);
-            } else if ("img".equals(tag) || "picture".equals(tag)) {
-                imageBlock = parseImageLikeBlock(child, baseUrl, null, null);
+            } else if (!"source".equals(tag)) {
+                collectMediaBlocks(mediaBlocks, child, baseUrl);
             }
         }
-        if (imageBlock == null) {
-            imageBlock = parseImageLikeBlock(figure, baseUrl, null, null);
+        if (mediaBlocks.isEmpty()) {
+            PageBlockPhoto imageBlock = parseImageLikeBlock(figure, baseUrl, caption, credit);
+            if (imageBlock != null) {
+                return imageBlock;
+            }
         }
-        if (imageBlock == null) {
+        if (mediaBlocks.isEmpty()) {
             return null;
         }
-        return new PageBlockPhoto(
-                imageBlock.url,
-                imageBlock.width,
-                imageBlock.height,
-                imageBlock.alt,
-                caption != null ? caption : imageBlock.caption,
-                credit != null ? credit : imageBlock.credit
+        if (mediaBlocks.size() == 1 && mediaBlocks.get(0) instanceof PageBlockPhoto && !sourceUrls.isEmpty()) {
+            mediaBlocks.set(0, withAdditionalPhotoUrls((PageBlockPhoto) mediaBlocks.get(0), sourceUrls));
+        }
+        if (mediaBlocks.size() == 1) {
+            return withCaption(mediaBlocks.get(0), caption, credit);
+        }
+        return new PageBlockCollage(mediaBlocks, caption != null ? caption : emptyRichText(), credit != null ? credit : emptyRichText());
+    }
+
+    private static void collectMediaBlocks(ArrayList<PageBlock> blocks, JSONObject object, @Nullable String baseUrl) {
+        PageBlock media = parseMediaBlock(object, baseUrl, emptyRichText(), emptyRichText());
+        if (media != null) {
+            blocks.add(media);
+            return;
+        }
+        JSONArray content = object.optJSONArray("content");
+        if (content == null) {
+            return;
+        }
+        for (int i = 0; i < content.length(); i++) {
+            JSONObject child = content.optJSONObject(i);
+            if (child != null) {
+                collectMediaBlocks(blocks, child, baseUrl);
+            }
+        }
+    }
+
+    private static ArrayList<PageBlock> collectInlineMediaBlocks(@Nullable JSONArray content, @Nullable String baseUrl) {
+        ArrayList<PageBlock> mediaBlocks = new ArrayList<>();
+        if (content == null) {
+            return mediaBlocks;
+        }
+        for (int i = 0; i < content.length(); i++) {
+            JSONObject child = content.optJSONObject(i);
+            if (child != null) {
+                collectMediaBlocks(mediaBlocks, child, baseUrl);
+            }
+        }
+        return mediaBlocks;
+    }
+
+    @Nullable
+    private static PageBlock parseMediaBlock(JSONObject object, @Nullable String baseUrl, RichText caption, RichText credit) {
+        String tag = object.optString("tag").toLowerCase();
+        if ("img".equals(tag) || "picture".equals(tag)) {
+            return parseImageLikeBlock(object, baseUrl, caption, credit);
+        }
+        if ("iframe".equals(tag) || "embed".equals(tag) || "object".equals(tag)) {
+            return parseEmbedBlock(object, baseUrl, caption, credit);
+        }
+        if ("video".equals(tag)) {
+            return parseVideoBlock(object, baseUrl, caption, credit);
+        }
+        if ("audio".equals(tag)) {
+            return parseAudioBlock(object, baseUrl, caption, credit);
+        }
+        if ("canvas".equals(tag)) {
+            return parseUnsupportedBlock(object, baseUrl);
+        }
+        return null;
+    }
+
+    private static PageBlock withCaption(PageBlock block, @Nullable RichText caption, @Nullable RichText credit) {
+        RichText nextCaption = caption == null ? emptyRichText() : caption;
+        RichText nextCredit = credit == null ? emptyRichText() : credit;
+        if (block instanceof PageBlockPhoto) {
+            PageBlockPhoto photo = (PageBlockPhoto) block;
+            if (caption == null || isEmpty(caption.text)) {
+                nextCaption = photo.caption;
+            }
+            if (credit == null || isEmpty(credit.text)) {
+                nextCredit = photo.credit;
+            }
+            return new PageBlockPhoto(photo.url, photo.width, photo.height, photo.alt, nextCaption, nextCredit, photo.urls);
+        }
+        if (block instanceof PageBlockEmbed) {
+            PageBlockEmbed embed = (PageBlockEmbed) block;
+            return new PageBlockEmbed(embed.url, embed.html, embed.width, embed.height, embed.fullWidth, embed.allowScrolling, embed.title, nextCaption, nextCredit);
+        }
+        if (block instanceof PageBlockVideo) {
+            PageBlockVideo video = (PageBlockVideo) block;
+            return new PageBlockVideo(video.url, video.posterUrl, video.width, video.height, video.autoplay, video.loop, nextCaption, nextCredit);
+        }
+        if (block instanceof PageBlockAudio) {
+            PageBlockAudio audio = (PageBlockAudio) block;
+            return new PageBlockAudio(audio.url, audio.title, nextCaption, nextCredit);
+        }
+        return block;
+    }
+
+    private static PageBlockEmbed parseEmbedBlock(JSONObject object, @Nullable String baseUrl, RichText caption, RichText credit) {
+        String url = resolveUrl(baseUrl, firstNonEmpty(object.optString("src"), object.optString("data"), object.optString("href")));
+        String html = emptyToNull(object.optString("html"));
+        String title = emptyToNull(firstNonEmpty(object.optString("title"), object.optString("aria-label"), object.optString("name")));
+        int width = parsePositiveInt(object.optString("width"), 0);
+        int height = parsePositiveInt(object.optString("height"), 0);
+        boolean fullWidth = object.has("full-width") || object.has("data-full-width");
+        boolean allowScrolling = !"no".equalsIgnoreCase(object.optString("scrolling"));
+        return new PageBlockEmbed(url, html, width, height, fullWidth, allowScrolling, title, caption, credit);
+    }
+
+    private static PageBlockVideo parseVideoBlock(JSONObject object, @Nullable String baseUrl, RichText caption, RichText credit) {
+        String url = resolveUrl(baseUrl, firstNonEmpty(object.optString("src"), firstSourceUrl(object.optJSONArray("content"))));
+        String posterUrl = resolveUrl(baseUrl, object.optString("poster"));
+        int width = parsePositiveInt(object.optString("width"), 0);
+        int height = parsePositiveInt(object.optString("height"), 0);
+        RichText text = parseRichTextObject(object, baseUrl);
+        RichText nextCaption = !isEmpty(caption.text) ? caption : text;
+        return new PageBlockVideo(url, posterUrl, width, height, object.has("autoplay"), object.has("loop"), nextCaption, credit);
+    }
+
+    private static PageBlockAudio parseAudioBlock(JSONObject object, @Nullable String baseUrl, RichText caption, RichText credit) {
+        String url = resolveUrl(baseUrl, firstNonEmpty(object.optString("src"), firstSourceUrl(object.optJSONArray("content"))));
+        RichText text = parseRichTextObject(object, baseUrl);
+        String title = emptyToNull(firstNonEmpty(object.optString("title"), object.optString("aria-label"), text.text));
+        return new PageBlockAudio(url, title, caption, credit);
+    }
+
+    private static PageBlockUnsupported parseUnsupportedBlock(JSONObject object, @Nullable String baseUrl) {
+        return new PageBlockUnsupported(
+                emptyToNull(object.optString("tag")),
+                emptyToNull(firstNonEmpty(object.optString("title"), object.optString("aria-label"))),
+                resolveUrl(baseUrl, firstNonEmpty(object.optString("src"), object.optString("data"), object.optString("href")))
         );
     }
 
     @Nullable
+    private static PageBlock parseCoverBlock(JSONObject object, @Nullable String baseUrl) {
+        ArrayList<PageBlock> blocks = parsePageBlocks(object.optJSONArray("content"), baseUrl);
+        if (blocks.isEmpty()) {
+            PageBlock media = parseMediaBlock(object, baseUrl, emptyRichText(), emptyRichText());
+            return media == null ? null : new PageBlockCover(media);
+        }
+        return new PageBlockCover(blocks.get(0));
+    }
+
+    @Nullable
+    private static PageBlockSlideshow parseSlideshowBlock(JSONObject object, @Nullable String baseUrl) {
+        ArrayList<PageBlock> items = new ArrayList<>();
+        collectCollectionItems(items, object.optJSONArray("content"), baseUrl);
+        return items.isEmpty() ? null : new PageBlockSlideshow(items, emptyRichText(), emptyRichText());
+    }
+
+    @Nullable
+    private static PageBlockCollage parseCollageBlock(JSONObject object, @Nullable String baseUrl) {
+        ArrayList<PageBlock> items = new ArrayList<>();
+        collectCollectionItems(items, object.optJSONArray("content"), baseUrl);
+        return items.isEmpty() ? null : new PageBlockCollage(items, emptyRichText(), emptyRichText());
+    }
+
+    private static void collectCollectionItems(ArrayList<PageBlock> items, @Nullable JSONArray content, @Nullable String baseUrl) {
+        if (content == null) {
+            return;
+        }
+        for (int i = 0; i < content.length(); i++) {
+            JSONObject child = content.optJSONObject(i);
+            if (child == null) {
+                continue;
+            }
+            PageBlock media = parseMediaBlock(child, baseUrl, emptyRichText(), emptyRichText());
+            if (media != null) {
+                items.add(media);
+            } else {
+                collectCollectionItems(items, child.optJSONArray("content"), baseUrl);
+            }
+        }
+    }
+
+    @Nullable
     private static PageBlockPhoto parseImageLikeBlock(JSONObject object, @Nullable String baseUrl, @Nullable RichText caption, @Nullable RichText credit) {
-        String url = resolveUrl(baseUrl, firstNonEmpty(
-                object.optString("src"),
-                firstUrlFromSrcSet(object.optString("srcset")),
-                object.optString("data-src"),
-                object.optString("poster")
-        ));
-        if (isEmpty(url)) {
+        ArrayList<String> sourceUrls = collectSourceUrls(object.optJSONArray("content"), baseUrl);
+        ArrayList<String> urls = imageUrls(object, baseUrl, sourceUrls);
+        if (urls.isEmpty()) {
             JSONArray content = object.optJSONArray("content");
             if (content != null) {
                 for (int i = 0; i < content.length(); i++) {
@@ -363,19 +610,31 @@ final class BrowserPage {
                     }
                     PageBlockPhoto nested = parseImageLikeBlock(child, baseUrl, caption, credit);
                     if (nested != null) {
-                        return nested;
+                        return sourceUrls.isEmpty() ? nested : withAdditionalPhotoUrls(nested, sourceUrls);
                     }
                 }
             }
             return null;
         }
+        String url = urls.get(0);
+        int width = Math.max(0, parsePositiveInt(object.optString("width"), 0));
+        int height = Math.max(0, parsePositiveInt(object.optString("height"), 0));
+        if (width == 0) {
+            width = height;
+        }
+        if (height == 0) {
+            height = width;
+        }
+        String alt = emptyToNull(object.optString("alt"));
+        RichText resolvedCaption = caption != null && !isEmpty(caption.text) ? caption : (alt == null ? emptyRichText() : new RichText(alt, new ArrayList<>()));
         return new PageBlockPhoto(
                 url,
-                Math.max(0, parsePositiveInt(object.optString("width"), 0)),
-                Math.max(0, parsePositiveInt(object.optString("height"), 0)),
-                emptyToNull(object.optString("alt")),
-                caption != null ? caption : emptyRichText(),
-                credit != null ? credit : emptyRichText()
+                width,
+                height,
+                alt,
+                resolvedCaption,
+                credit != null ? credit : emptyRichText(),
+                urls
         );
     }
 
@@ -387,11 +646,15 @@ final class BrowserPage {
             return null;
         }
         RichText title = emptyRichText();
+        String attributeTitle = object.optString("title");
+        if (!isEmpty(attributeTitle)) {
+            title = new RichText(attributeTitle, new ArrayList<>());
+        }
         JSONArray content = object.optJSONArray("content");
         if (content != null) {
             for (int i = 0; i < content.length(); i++) {
                 JSONObject child = content.optJSONObject(i);
-                if (child != null && "caption".equalsIgnoreCase(child.optString("tag"))) {
+                if (isEmpty(title.text) && child != null && "caption".equalsIgnoreCase(child.optString("tag"))) {
                     title = parseRichTextArray(child.optJSONArray("content"), baseUrl);
                     break;
                 }
@@ -434,7 +697,10 @@ final class BrowserPage {
                                 "th".equals(cellTag),
                                 Math.max(1, parsePositiveInt(cellObject.optString("colspan"), 1)),
                                 Math.max(1, parsePositiveInt(cellObject.optString("rowspan"), 1)),
-                                cellObject.has("xcenter") ? "center" : normalizeAlign(cellObject.optString("align")),
+                                "end".equals(normalizeAlign(cellObject.optString("align"))),
+                                cellObject.has("xcenter") || "center".equals(normalizeAlign(cellObject.optString("align"))),
+                                cellObject.has("ycenter") || "middle".equalsIgnoreCase(cellObject.optString("valign")),
+                                "bottom".equalsIgnoreCase(cellObject.optString("valign")),
                                 text
                         ));
                     }
@@ -470,13 +736,20 @@ final class BrowserPage {
         return trimRichText(new RichText(builder.toString(), entities, centered[0]));
     }
 
-    private static void appendRichTextArray(StringBuilder builder, ArrayList<Entity> entities, JSONArray array, @Nullable String baseUrl, boolean[] centered) {
+    private static void appendRichTextArray(StringBuilder builder, ArrayList<Entity> entities, @Nullable JSONArray array, @Nullable String baseUrl, boolean[] centered) {
+        if (array == null) {
+            return;
+        }
         for (int i = 0; i < array.length(); i++) {
             Object item = array.opt(i);
             if (item instanceof String) {
                 builder.append((String) item);
             } else if (item instanceof JSONObject) {
-                appendRichTextObject(builder, entities, (JSONObject) item, baseUrl, centered);
+                JSONObject object = (JSONObject) item;
+                if ("p".equalsIgnoreCase(object.optString("tag")) && builder.length() > 0 && builder.charAt(builder.length() - 1) != '\n') {
+                    builder.append('\n');
+                }
+                appendRichTextObject(builder, entities, object, baseUrl, centered);
             }
         }
     }
@@ -491,6 +764,39 @@ final class BrowserPage {
             return;
         }
         if ("img".equals(tag)) {
+            String url = firstImageUrl(object, baseUrl);
+            String alt = emptyToNull(object.optString("alt"));
+            if (isEmpty(url)) {
+                if (alt != null) {
+                    builder.append(alt);
+                }
+                return;
+            }
+            if (builder.length() > 0 && !Character.isWhitespace(builder.charAt(builder.length() - 1))) {
+                builder.append(' ');
+            }
+            int start = builder.length();
+            int width = Math.max(0, parsePositiveInt(object.optString("width"), 0));
+            int height = Math.max(0, parsePositiveInt(object.optString("height"), 0));
+            if (width == 0) {
+                width = height;
+            }
+            if (height == 0) {
+                height = width;
+            }
+            builder.append(INLINE_IMAGE_PLACEHOLDER);
+            entities.add(new Entity(
+                    "image",
+                    start,
+                    builder.length(),
+                    url,
+                    width,
+                    height,
+                    alt
+            ));
+            return;
+        }
+        if ("source".equals(tag) || "track".equals(tag)) {
             String alt = emptyToNull(object.optString("alt"));
             if (alt != null) {
                 builder.append(alt);
@@ -502,14 +808,17 @@ final class BrowserPage {
         appendRichTextArray(builder, entities, object.optJSONArray("content"), baseUrl, centered);
         int end = builder.length();
 
-        if ("p".equals(tag) && end > start && (end == 0 || builder.charAt(end - 1) != '\n')) {
-            builder.append('\n');
-            end = builder.length();
-        }
+        String anchorName = parseAnchorName(object);
         if (start >= end) {
+            if (!isEmpty(anchorName)) {
+                entities.add(new Entity("anchor", start, end, anchorName));
+            }
             return;
         }
 
+        if (!isEmpty(anchorName)) {
+            entities.add(new Entity("anchor", start, end, anchorName));
+        }
         if ("strong".equals(tag) || "b".equals(tag) || object.has("bold")) {
             entities.add(new Entity("bold", start, end, null));
         }
@@ -541,15 +850,24 @@ final class BrowserPage {
             entities.add(new Entity("kbd", start, end, null));
         }
         if ("a".equals(tag)) {
-            String href = resolveUrl(baseUrl, object.optString("href"));
+            String href = object.optString("href");
             if (!isEmpty(href)) {
-                entities.add(new Entity("link", start, end, href));
+                if (href.startsWith("tel:")) {
+                    entities.add(new Entity("phone", start, end, href));
+                } else if (href.startsWith("mailto:")) {
+                    entities.add(new Entity("email", start, end, href));
+                } else {
+                    entities.add(new Entity("link", start, end, resolveUrl(baseUrl, href)));
+                }
             }
         }
     }
 
     private static RichText trimRichText(RichText richText) {
         if (richText == null || isEmpty(richText.text)) {
+            if (richText != null && hasAnchorEntity(richText.entities)) {
+                return richText;
+            }
             return emptyRichText();
         }
         String text = richText.text;
@@ -569,11 +887,49 @@ final class BrowserPage {
             Entity entity = richText.entities.get(i);
             int entityStart = Math.max(0, entity.start - start);
             int entityEnd = Math.min(end - start, Math.max(0, entity.end - start));
-            if (entityStart < entityEnd) {
-                entities.add(new Entity(entity.type, entityStart, entityEnd, entity.url));
+            if (entityStart < entityEnd || "anchor".equals(entity.type) && entityStart == entityEnd) {
+                entities.add(new Entity(entity.type, entityStart, entityEnd, entity.url, entity.width, entity.height, entity.alt));
             }
         }
         return new RichText(text.substring(start, end), entities, richText.centered);
+    }
+
+    private static boolean hasAnchorEntity(ArrayList<Entity> entities) {
+        for (int i = 0; i < entities.size(); i++) {
+            if ("anchor".equals(entities.get(i).type)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static RichText stripInlineImages(RichText richText) {
+        if (richText == null || isEmpty(richText.text)) {
+            return emptyRichText();
+        }
+        String text = richText.text;
+        int[] offsets = new int[text.length() + 1];
+        StringBuilder builder = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            offsets[i] = builder.length();
+            if (text.charAt(i) != INLINE_IMAGE_PLACEHOLDER) {
+                builder.append(text.charAt(i));
+            }
+        }
+        offsets[text.length()] = builder.length();
+        ArrayList<Entity> entities = new ArrayList<>();
+        for (int i = 0; i < richText.entities.size(); i++) {
+            Entity entity = richText.entities.get(i);
+            if ("image".equals(entity.type)) {
+                continue;
+            }
+            int start = offsets[Math.max(0, Math.min(offsets.length - 1, entity.start))];
+            int end = offsets[Math.max(0, Math.min(offsets.length - 1, entity.end))];
+            if (start < end || "anchor".equals(entity.type) && start == end) {
+                entities.add(new Entity(entity.type, start, end, entity.url, entity.width, entity.height, entity.alt));
+            }
+        }
+        return trimRichText(new RichText(builder.toString(), entities, richText.centered));
     }
 
     private static RichText addEntity(RichText richText, String type) {
@@ -637,6 +993,7 @@ final class BrowserPage {
             if ("b".equals(tag)
                     || "strong".equals(tag)
                     || "span".equals(tag)
+                    || "div".equals(tag)
                     || "img".equals(tag)
                     || "i".equals(tag)
                     || "em".equals(tag)
@@ -660,6 +1017,76 @@ final class BrowserPage {
             return false;
         }
         return true;
+    }
+
+    @Nullable
+    private static String firstSourceUrl(@Nullable JSONArray content) {
+        if (content == null) {
+            return null;
+        }
+        for (int i = 0; i < content.length(); i++) {
+            JSONObject child = content.optJSONObject(i);
+            if (child == null) {
+                continue;
+            }
+            String tag = child.optString("tag").toLowerCase();
+            if ("source".equals(tag)) {
+                String src = firstNonEmpty(child.optString("src"), firstUrlFromSrcSet(child.optString("srcset")));
+                if (!isEmpty(src)) {
+                    return src;
+                }
+            }
+            String nested = firstSourceUrl(child.optJSONArray("content"));
+            if (!isEmpty(nested)) {
+                return nested;
+            }
+        }
+        return null;
+    }
+
+    private static ArrayList<String> collectSourceUrls(@Nullable JSONArray content, @Nullable String baseUrl) {
+        ArrayList<String> urls = new ArrayList<>();
+        if (content == null) {
+            return urls;
+        }
+        for (int i = 0; i < content.length(); i++) {
+            JSONObject child = content.optJSONObject(i);
+            if (child == null) {
+                continue;
+            }
+            String tag = child.optString("tag").toLowerCase();
+            if ("source".equals(tag)) {
+                addImageUrl(urls, baseUrl, child.optString("src"));
+                addImageUrl(urls, baseUrl, child.optString("data-src"));
+                addImageUrl(urls, baseUrl, child.optString("data-original"));
+                addImageUrl(urls, baseUrl, child.optString("data-lazy-src"));
+                addUrls(urls, urlsFromSrcSet(child.optString("srcset"), baseUrl));
+                addUrls(urls, urlsFromSrcSet(child.optString("data-srcset"), baseUrl));
+            }
+            addUrls(urls, collectSourceUrls(child.optJSONArray("content"), baseUrl));
+        }
+        return urls;
+    }
+
+    @Nullable
+    private static String parseAnchorName(JSONObject object) {
+        return emptyToNull(firstNonEmpty(object.optString("id"), object.optString("name")));
+    }
+
+    private static boolean shouldIgnoreBlock(String tag) {
+        return "script".equals(tag)
+                || "style".equals(tag)
+                || "noscript".equals(tag)
+                || "template".equals(tag)
+                || "nav".equals(tag)
+                || "form".equals(tag)
+                || "input".equals(tag)
+                || "button".equals(tag)
+                || "select".equals(tag)
+                || "option".equals(tag)
+                || "source".equals(tag)
+                || "track".equals(tag)
+                || "svg".equals(tag);
     }
 
     private static int parsePositiveInt(@Nullable String value, int fallback) {
@@ -689,6 +1116,43 @@ final class BrowserPage {
     }
 
     @Nullable
+    private static String firstImageUrl(JSONObject object, @Nullable String baseUrl) {
+        ArrayList<String> urls = imageUrls(object, baseUrl, null);
+        return urls.isEmpty() ? null : urls.get(0);
+    }
+
+    private static ArrayList<String> imageUrls(JSONObject object, @Nullable String baseUrl, @Nullable ArrayList<String> sourceUrls) {
+        ArrayList<String> urls = new ArrayList<>();
+        addImageUrl(urls, baseUrl, object.optString("src"));
+        addUrls(urls, urlsFromSrcSet(object.optString("srcset"), baseUrl));
+        addImageUrl(urls, baseUrl, object.optString("data-src"));
+        addImageUrl(urls, baseUrl, object.optString("data-original"));
+        addImageUrl(urls, baseUrl, object.optString("data-lazy-src"));
+        addUrls(urls, urlsFromSrcSet(object.optString("data-srcset"), baseUrl));
+        if (sourceUrls != null) {
+            addUrls(urls, sourceUrls);
+        }
+        addImageUrl(urls, baseUrl, object.optString("poster"));
+        return urls;
+    }
+
+    private static void addImageUrl(ArrayList<String> target, @Nullable String baseUrl, @Nullable String url) {
+        String resolved = resolveUrl(baseUrl, url);
+        if (isEmpty(resolved)) {
+            return;
+        }
+        try {
+            String scheme = URI.create(resolved).getScheme();
+            if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
+                return;
+            }
+        } catch (Exception ignored) {
+            return;
+        }
+        addUrl(target, resolved);
+    }
+
+    @Nullable
     private static String firstUrlFromSrcSet(@Nullable String srcset) {
         if (isEmpty(srcset)) {
             return null;
@@ -705,6 +1169,44 @@ final class BrowserPage {
             }
         }
         return null;
+    }
+
+    private static ArrayList<String> urlsFromSrcSet(@Nullable String srcset, @Nullable String baseUrl) {
+        ArrayList<String> urls = new ArrayList<>();
+        if (isEmpty(srcset)) {
+            return urls;
+        }
+        String[] sets = srcset.split(",");
+        for (String set : sets) {
+            String trimmed = set.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            String[] parts = trimmed.split("\\s+");
+            if (parts.length > 0) {
+                addImageUrl(urls, baseUrl, parts[0]);
+            }
+        }
+        return urls;
+    }
+
+    private static PageBlockPhoto withAdditionalPhotoUrls(PageBlockPhoto photo, ArrayList<String> urls) {
+        ArrayList<String> merged = new ArrayList<>(photo.urls);
+        addUrls(merged, urls);
+        return new PageBlockPhoto(photo.url, photo.width, photo.height, photo.alt, photo.caption, photo.credit, merged);
+    }
+
+    private static void addUrls(ArrayList<String> target, ArrayList<String> urls) {
+        for (int i = 0; i < urls.size(); i++) {
+            addUrl(target, urls.get(i));
+        }
+    }
+
+    private static void addUrl(ArrayList<String> target, @Nullable String url) {
+        if (isEmpty(url) || target.contains(url)) {
+            return;
+        }
+        target.add(url);
     }
 
     @Nullable
@@ -944,6 +1446,22 @@ final class BrowserPage {
     static final class PageBlockDivider extends PageBlock {
     }
 
+    static final class PageBlockAnchor extends PageBlock {
+        final String name;
+
+        PageBlockAnchor(String name) {
+            this.name = name;
+        }
+    }
+
+    static final class PageBlockFooter extends PageBlock {
+        final RichText text;
+
+        PageBlockFooter(RichText text) {
+            this.text = text;
+        }
+    }
+
     static final class PageBlockDetails extends PageBlock {
         boolean open;
         final RichText title;
@@ -967,6 +1485,7 @@ final class BrowserPage {
 
     static final class PageBlockPhoto extends PageBlock {
         final String url;
+        final ArrayList<String> urls;
         int width;
         int height;
         final String alt;
@@ -974,12 +1493,122 @@ final class BrowserPage {
         final RichText credit;
 
         PageBlockPhoto(String url, int width, int height, String alt, RichText caption, RichText credit) {
+            this(url, width, height, alt, caption, credit, null);
+        }
+
+        PageBlockPhoto(String url, int width, int height, String alt, RichText caption, RichText credit, @Nullable ArrayList<String> urls) {
             this.url = url;
+            this.urls = urls == null ? new ArrayList<>() : new ArrayList<>(urls);
+            addUrl(this.urls, url);
             this.width = width;
             this.height = height;
             this.alt = alt;
             this.caption = caption;
             this.credit = credit;
+        }
+    }
+
+    static final class PageBlockCover extends PageBlock {
+        final PageBlock block;
+
+        PageBlockCover(PageBlock block) {
+            this.block = block;
+        }
+    }
+
+    static final class PageBlockEmbed extends PageBlock {
+        final String url;
+        final String html;
+        final int width;
+        final int height;
+        final boolean fullWidth;
+        final boolean allowScrolling;
+        final String title;
+        final RichText caption;
+        final RichText credit;
+
+        PageBlockEmbed(String url, String html, int width, int height, boolean fullWidth, boolean allowScrolling, String title, RichText caption, RichText credit) {
+            this.url = url;
+            this.html = html;
+            this.width = width;
+            this.height = height;
+            this.fullWidth = fullWidth;
+            this.allowScrolling = allowScrolling;
+            this.title = title;
+            this.caption = caption;
+            this.credit = credit;
+        }
+    }
+
+    static final class PageBlockVideo extends PageBlock {
+        final String url;
+        final String posterUrl;
+        final int width;
+        final int height;
+        final boolean autoplay;
+        final boolean loop;
+        final RichText caption;
+        final RichText credit;
+
+        PageBlockVideo(String url, String posterUrl, int width, int height, boolean autoplay, boolean loop, RichText caption, RichText credit) {
+            this.url = url;
+            this.posterUrl = posterUrl;
+            this.width = width;
+            this.height = height;
+            this.autoplay = autoplay;
+            this.loop = loop;
+            this.caption = caption;
+            this.credit = credit;
+        }
+    }
+
+    static final class PageBlockAudio extends PageBlock {
+        final String url;
+        final String title;
+        final RichText caption;
+        final RichText credit;
+
+        PageBlockAudio(String url, String title, RichText caption, RichText credit) {
+            this.url = url;
+            this.title = title;
+            this.caption = caption;
+            this.credit = credit;
+        }
+    }
+
+    static final class PageBlockSlideshow extends PageBlock {
+        final ArrayList<PageBlock> items;
+        final RichText caption;
+        final RichText credit;
+
+        PageBlockSlideshow(ArrayList<PageBlock> items, RichText caption, RichText credit) {
+            this.items = items;
+            this.caption = caption;
+            this.credit = credit;
+        }
+    }
+
+    static final class PageBlockCollage extends PageBlock {
+        final ArrayList<PageBlock> items;
+        final RichText caption;
+        final RichText credit;
+
+        PageBlockCollage(ArrayList<PageBlock> items, RichText caption, RichText credit) {
+            this.items = items;
+            this.caption = caption;
+            this.credit = credit;
+        }
+    }
+
+    static final class PageBlockUnsupported extends PageBlock {
+        final String tag;
+        final String title;
+        final String url;
+
+        PageBlockUnsupported(String tag, String title, String url) {
+            this.tag = tag;
+            this.title = title;
+            this.url = url;
         }
     }
 
@@ -1009,14 +1638,20 @@ final class BrowserPage {
         final boolean header;
         final int colspan;
         final int rowspan;
-        final String align;
+        final boolean alignRight;
+        final boolean alignCenter;
+        final boolean valignMiddle;
+        final boolean valignBottom;
         final RichText text;
 
-        PageTableCell(boolean header, int colspan, int rowspan, String align, RichText text) {
+        PageTableCell(boolean header, int colspan, int rowspan, boolean alignRight, boolean alignCenter, boolean valignMiddle, boolean valignBottom, RichText text) {
             this.header = header;
             this.colspan = colspan;
             this.rowspan = rowspan;
-            this.align = align;
+            this.alignRight = alignRight;
+            this.alignCenter = alignCenter;
+            this.valignMiddle = valignMiddle;
+            this.valignBottom = valignBottom;
             this.text = text;
         }
     }
@@ -1042,12 +1677,22 @@ final class BrowserPage {
         final int start;
         final int end;
         final String url;
+        final int width;
+        final int height;
+        final String alt;
 
         Entity(String type, int start, int end, String url) {
+            this(type, start, end, url, 0, 0, null);
+        }
+
+        Entity(String type, int start, int end, String url, int width, int height, String alt) {
             this.type = type;
             this.start = start;
             this.end = end;
             this.url = url;
+            this.width = width;
+            this.height = height;
+            this.alt = alt;
         }
     }
 }

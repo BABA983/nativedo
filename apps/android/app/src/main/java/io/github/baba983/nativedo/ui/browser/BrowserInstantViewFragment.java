@@ -16,8 +16,11 @@
 // OMITTED:
 //   - Full TLRPC.WebPage/cached_page classes, remote getWebPage fallback, Telegram file/image loader,
 //     and ArticleViewer's full TextSelectionHelper integration.
+// EXACT-SUBSYSTEMS:
+//   - ArticleViewer.BlockTableCell / Components.TableLayout measurement and drawing.
+//   - ArticleViewer.BlockDetailsCell measurement, drawing, and row collapse updates.
 // PARITY-BLOCKER:
-//   - Exact ArticleViewer table/details cell geometry is not fully ported in this phase.
+//   - Full TextSelectionHelper drawing/selection overlays remain omitted from local ArticleViewer cells.
 /*
  * This file is part of NativeDo.
  *
@@ -44,7 +47,6 @@ import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -69,6 +71,7 @@ import android.text.method.LinkMovementMethod;
 import android.text.style.BackgroundColorSpan;
 import android.text.style.ClickableSpan;
 import android.text.style.RelativeSizeSpan;
+import android.text.style.ReplacementSpan;
 import android.text.style.StrikethroughSpan;
 import android.text.style.StyleSpan;
 import android.text.style.SubscriptSpan;
@@ -80,6 +83,8 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.DecelerateInterpolator;
+import android.webkit.CookieManager;
+import android.webkit.WebSettings;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
@@ -101,6 +106,8 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -115,21 +122,28 @@ class BrowserInstantViewFragment extends BaseFragment {
     private static final int ROW_PARAGRAPH = 0;
     private static final int ROW_HEADER = 1;
     private static final int ROW_DIVIDER = 2;
+    private static final int ROW_EMBED = 3;
     private static final int ROW_SUBTITLE = 4;
+    private static final int ROW_VIDEO = 5;
     private static final int ROW_PULLQUOTE = 6;
     private static final int ROW_BLOCKQUOTE = 7;
+    private static final int ROW_SLIDESHOW = 8;
     private static final int ROW_PHOTO = 9;
     private static final int ROW_AUTHOR_DATE = 10;
     private static final int ROW_TITLE = 11;
     private static final int ROW_LIST_ITEM = 12;
+    private static final int ROW_FOOTER = 13;
     private static final int ROW_CODE = 14;
     private static final int ROW_SUBHEADER = 15;
+    private static final int ROW_COLLAGE = 17;
+    private static final int ROW_AUDIO = 19;
     private static final int ROW_KICKER = 20;
     private static final int ROW_ORDERED_LIST_ITEM = 21;
     private static final int ROW_DETAILS = 24;
     private static final int ROW_TABLE = 25;
     private static final int ROW_DETAILS_BOTTOM = 27;
     private static final int ROW_SOURCE = 29;
+    private static final int ROW_UNSUPPORTED = 30;
     private static final int ROW_SHEET_PADDING = Integer.MAX_VALUE - 1;
 
     private static final ExecutorService IMAGE_EXECUTOR = Executors.newFixedThreadPool(3);
@@ -155,6 +169,15 @@ class BrowserInstantViewFragment extends BaseFragment {
         INSTANT_VIEW_JSON_CACHE.put(url, json);
     }
 
+    static void cacheInstantImage(@Nullable String url, @Nullable Bitmap bitmap) {
+        if (TextUtils.isEmpty(url) || bitmap == null) {
+            return;
+        }
+        synchronized (IMAGE_CACHE) {
+            IMAGE_CACHE.put(url, bitmap);
+        }
+    }
+
     @Nullable
     static String getCachedInstantViewJson(@Nullable String url) {
         if (TextUtils.isEmpty(url)) {
@@ -168,6 +191,7 @@ class BrowserInstantViewFragment extends BaseFragment {
     private final ArrayList<BrowserPage.PageBlock> blocks = new ArrayList<>();
     private final ArrayList<BrowserPage.PageBlock> localBlocks = new ArrayList<>();
     private final ArrayList<BrowserPage.PageBlockPhoto> photoBlocks = new ArrayList<>();
+    private final HashMap<String, Integer> anchors = new HashMap<>();
     private BrowserPage cachedPage;
 
     private RecyclerView recyclerView;
@@ -386,6 +410,7 @@ class BrowserInstantViewFragment extends BaseFragment {
         blocks.clear();
         localBlocks.clear();
         photoBlocks.clear();
+        anchors.clear();
         try {
             if (cachedPage == null) {
                 cachedPage = BrowserPage.parse(json);
@@ -442,7 +467,15 @@ class BrowserInstantViewFragment extends BaseFragment {
             block = ((BrowserPage.PageBlockDetailsChild) block).block;
         }
         BrowserPage.PageBlock effectiveBlock = getLastNonListPageBlock(block);
+        if (effectiveBlock instanceof BrowserPage.PageBlockAnchor) {
+            BrowserPage.PageBlockAnchor anchor = (BrowserPage.PageBlockAnchor) effectiveBlock;
+            if (!TextUtils.isEmpty(anchor.name)) {
+                anchors.put(anchor.name.toLowerCase(Locale.US), blocks.size());
+            }
+            return;
+        }
         addPhotoBlock(effectiveBlock);
+        collectAnchors(effectiveBlock, blocks.size());
         if (!(effectiveBlock instanceof BrowserPage.PageBlockList || effectiveBlock instanceof BrowserPage.PageBlockOrderedList)) {
             blocks.add(originalBlock);
         }
@@ -583,8 +616,134 @@ class BrowserInstantViewFragment extends BaseFragment {
     }
 
     private void addPhotoBlock(@Nullable BrowserPage.PageBlock block) {
-        if (block instanceof BrowserPage.PageBlockPhoto) {
-            photoBlocks.add((BrowserPage.PageBlockPhoto) block);
+        BrowserPage.PageBlock unwrapped = unwrapRenderableBlock(block);
+        if (unwrapped instanceof BrowserPage.PageBlockPhoto) {
+            photoBlocks.add((BrowserPage.PageBlockPhoto) unwrapped);
+        } else if (unwrapped instanceof BrowserPage.PageBlockSlideshow) {
+            BrowserPage.PageBlockSlideshow slideshow = (BrowserPage.PageBlockSlideshow) unwrapped;
+            for (int i = 0; i < slideshow.items.size(); i++) {
+                addPhotoBlock(slideshow.items.get(i));
+            }
+        } else if (unwrapped instanceof BrowserPage.PageBlockCollage) {
+            BrowserPage.PageBlockCollage collage = (BrowserPage.PageBlockCollage) unwrapped;
+            for (int i = 0; i < collage.items.size(); i++) {
+                addPhotoBlock(collage.items.get(i));
+            }
+        }
+    }
+
+    private void collectAnchors(@Nullable BrowserPage.PageBlock block, int row) {
+        block = unwrapRenderableBlock(block);
+        if (block instanceof BrowserPage.PageBlockParagraph) {
+            collectAnchors(((BrowserPage.PageBlockParagraph) block).text, row);
+        } else if (block instanceof BrowserPage.PageBlockHeader) {
+            collectAnchors(((BrowserPage.PageBlockHeader) block).text, row);
+        } else if (block instanceof BrowserPage.PageBlockSubheader) {
+            collectAnchors(((BrowserPage.PageBlockSubheader) block).text, row);
+        } else if (block instanceof BrowserPage.PageBlockSubtitle) {
+            collectAnchors(((BrowserPage.PageBlockSubtitle) block).text, row);
+        } else if (block instanceof BrowserPage.PageBlockFooter) {
+            collectAnchors(((BrowserPage.PageBlockFooter) block).text, row);
+        } else if (block instanceof BrowserPage.PageBlockBlockquote) {
+            BrowserPage.PageBlockBlockquote quote = (BrowserPage.PageBlockBlockquote) block;
+            collectAnchors(quote.text, row);
+            collectAnchors(quote.caption, row);
+        } else if (block instanceof BrowserPage.PageBlockPullquote) {
+            BrowserPage.PageBlockPullquote quote = (BrowserPage.PageBlockPullquote) block;
+            collectAnchors(quote.text, row);
+            collectAnchors(quote.caption, row);
+        } else if (block instanceof BrowserPage.PageBlockPhoto) {
+            BrowserPage.PageBlockPhoto photo = (BrowserPage.PageBlockPhoto) block;
+            collectAnchors(photo.caption, row);
+            collectAnchors(photo.credit, row);
+        } else if (block instanceof BrowserPage.PageBlockEmbed) {
+            BrowserPage.PageBlockEmbed embed = (BrowserPage.PageBlockEmbed) block;
+            collectAnchors(embed.caption, row);
+            collectAnchors(embed.credit, row);
+        } else if (block instanceof BrowserPage.PageBlockVideo) {
+            BrowserPage.PageBlockVideo video = (BrowserPage.PageBlockVideo) block;
+            collectAnchors(video.caption, row);
+            collectAnchors(video.credit, row);
+        } else if (block instanceof BrowserPage.PageBlockAudio) {
+            BrowserPage.PageBlockAudio audio = (BrowserPage.PageBlockAudio) block;
+            collectAnchors(audio.caption, row);
+            collectAnchors(audio.credit, row);
+        } else if (block instanceof BrowserPage.PageBlockTable) {
+            BrowserPage.PageBlockTable table = (BrowserPage.PageBlockTable) block;
+            collectAnchors(table.title, row);
+            for (int i = 0; i < table.rows.size(); i++) {
+                BrowserPage.PageTableRow tableRow = table.rows.get(i);
+                for (int j = 0; j < tableRow.cells.size(); j++) {
+                    collectAnchors(tableRow.cells.get(j).text, row);
+                }
+            }
+        } else if (block instanceof BrowserPage.PageBlockDetails) {
+            collectAnchors(((BrowserPage.PageBlockDetails) block).title, row);
+        } else if (block instanceof BrowserPage.PageBlockList) {
+            BrowserPage.PageBlockList list = (BrowserPage.PageBlockList) block;
+            for (int i = 0; i < list.items.size(); i++) {
+                BrowserPage.PageListItem item = list.items.get(i);
+                if (item instanceof BrowserPage.PageListItemText) {
+                    collectAnchors(((BrowserPage.PageListItemText) item).text, row);
+                } else if (item instanceof BrowserPage.PageListItemBlocks) {
+                    collectAnchors(((BrowserPage.PageListItemBlocks) item).blocks, row);
+                }
+            }
+        } else if (block instanceof BrowserPage.PageBlockOrderedList) {
+            BrowserPage.PageBlockOrderedList list = (BrowserPage.PageBlockOrderedList) block;
+            for (int i = 0; i < list.items.size(); i++) {
+                BrowserPage.PageListOrderedItem item = list.items.get(i);
+                if (item instanceof BrowserPage.PageListOrderedItemText) {
+                    collectAnchors(((BrowserPage.PageListOrderedItemText) item).text, row);
+                } else if (item instanceof BrowserPage.PageListOrderedItemBlocks) {
+                    collectAnchors(((BrowserPage.PageListOrderedItemBlocks) item).blocks, row);
+                }
+            }
+        } else if (block instanceof BrowserPage.PageBlockListItem) {
+            BrowserPage.PageBlockListItem item = (BrowserPage.PageBlockListItem) block;
+            collectAnchors(item.textItem, row);
+            collectAnchors(item.blockItem, row);
+        } else if (block instanceof BrowserPage.PageBlockOrderedListItem) {
+            BrowserPage.PageBlockOrderedListItem item = (BrowserPage.PageBlockOrderedListItem) block;
+            collectAnchors(item.textItem, row);
+            collectAnchors(item.blockItem, row);
+        }
+    }
+
+    private void collectAnchors(@Nullable ArrayList<BrowserPage.PageBlock> blocks, int row) {
+        if (blocks == null) {
+            return;
+        }
+        for (int i = 0; i < blocks.size(); i++) {
+            collectAnchors(blocks.get(i), row);
+        }
+    }
+
+    private void collectAnchors(@Nullable BrowserPage.RichText richText, int row) {
+        if (richText == null) {
+            return;
+        }
+        for (int i = 0; i < richText.entities.size(); i++) {
+            BrowserPage.Entity entity = richText.entities.get(i);
+            if ("anchor".equals(entity.type) && !TextUtils.isEmpty(entity.url)) {
+                anchors.put(entity.url.toLowerCase(Locale.US), row);
+            }
+        }
+    }
+
+    @Nullable
+    private BrowserPage.PageBlock unwrapRenderableBlock(@Nullable BrowserPage.PageBlock block) {
+        BrowserPage.PageBlock current = block;
+        while (true) {
+            if (current instanceof BrowserPage.PageBlockDetailsChild) {
+                current = ((BrowserPage.PageBlockDetailsChild) current).block;
+                continue;
+            }
+            if (current instanceof BrowserPage.PageBlockCover) {
+                current = ((BrowserPage.PageBlockCover) current).block;
+                continue;
+            }
+            return current;
         }
     }
 
@@ -815,16 +974,6 @@ class BrowserInstantViewFragment extends BaseFragment {
 
     private int measureBlockHeight(@Nullable BrowserPage.PageBlock block, int widthSpec, int heightSpec, boolean first) {
         int width = View.MeasureSpec.getSize(widthSpec);
-        if (block instanceof BrowserPage.PageBlockPhoto) {
-            BrowserPage.PageBlockPhoto photo = (BrowserPage.PageBlockPhoto) block;
-            if (photo.cachedHeight > 0) {
-                return photo.cachedHeight;
-            }
-            if (photo.width > 0 && photo.height > 0) {
-                return Math.max(AndroidUtilities.dp(48), Math.round(width * (photo.height / (float) photo.width)));
-            }
-            return AndroidUtilities.dp(240);
-        }
         int viewType = getTypeForBlock(block);
         if (recyclerView == null || viewType < 0) {
             return AndroidUtilities.dp(64);
@@ -904,6 +1053,9 @@ class BrowserInstantViewFragment extends BaseFragment {
         if (TextUtils.isEmpty(url)) {
             return;
         }
+        if (scrollToAnchorFromUrl(url)) {
+            return;
+        }
         if (TextUtils.equals(url, sourceUrl)) {
             // Avoid opening the same article on top of itself.
             return;
@@ -920,6 +1072,42 @@ class BrowserInstantViewFragment extends BaseFragment {
             }
         }
         openExternal(url);
+    }
+
+    private boolean scrollToAnchorFromUrl(@NonNull String url) {
+        Uri uri = Uri.parse(url);
+        String fragment = uri.getFragment();
+        if (TextUtils.isEmpty(fragment)) {
+            return false;
+        }
+        String targetBase = stripFragment(url);
+        String sourceBase = stripFragment(getArticleUrl());
+        String fallbackBase = stripFragment(sourceUrl);
+        if (!TextUtils.equals(targetBase, sourceBase) && !TextUtils.equals(targetBase, fallbackBase)) {
+            return false;
+        }
+        Integer row = anchors.get(fragment.toLowerCase(Locale.US));
+        if (row == null || recyclerView == null) {
+            return false;
+        }
+        RecyclerView.LayoutManager layoutManager = recyclerView.getLayoutManager();
+        if (layoutManager instanceof LinearLayoutManager) {
+            int position = row + (halfSheetPadding ? 1 : 0);
+            int offset = Math.max(AndroidUtilities.dp(8), currentHeaderHeight + AndroidUtilities.dp(8));
+            ((LinearLayoutManager) layoutManager).scrollToPositionWithOffset(position, offset);
+            updateReadingProgress();
+            return true;
+        }
+        return false;
+    }
+
+    @Nullable
+    private String stripFragment(@Nullable String url) {
+        if (TextUtils.isEmpty(url)) {
+            return url;
+        }
+        int index = url.indexOf('#');
+        return index < 0 ? url : url.substring(0, index);
     }
 
     private float scaledSp(float baseDp) {
@@ -1066,17 +1254,30 @@ class BrowserInstantViewFragment extends BaseFragment {
         });
     }
 
-    private void openImageViewer(@Nullable Bitmap initial, @Nullable String url) {
+    private void openImageViewer(@Nullable Bitmap initial, @Nullable String url, @Nullable View sourceView) {
         if (contentRoot == null) {
             return;
         }
         if (activePhotoViewer != null) {
             return;
         }
+        RectF sourceRect = null;
+        if (sourceView != null && sourceView.getWidth() > 0 && sourceView.getHeight() > 0) {
+            int[] sourceLocation = new int[2];
+            int[] rootLocation = new int[2];
+            sourceView.getLocationOnScreen(sourceLocation);
+            contentRoot.getLocationOnScreen(rootLocation);
+            sourceRect = new RectF(
+                    sourceLocation[0] - rootLocation[0],
+                    sourceLocation[1] - rootLocation[1],
+                    sourceLocation[0] - rootLocation[0] + sourceView.getWidth(),
+                    sourceLocation[1] - rootLocation[1] + sourceView.getHeight()
+            );
+        }
         BrowserInstantPhotoViewer viewer = new BrowserInstantPhotoViewer(contentRoot.getContext());
         viewer.setOnDismissListener(() -> activePhotoViewer = null);
         contentRoot.addView(viewer, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
-        viewer.show(initial, url);
+        viewer.show(initial, url, sourceRect);
         activePhotoViewer = viewer;
     }
 
@@ -1126,7 +1327,9 @@ class BrowserInstantViewFragment extends BaseFragment {
             } else if ("kbd".equals(entity.type)) {
                 builder.setSpan(new TypefaceSpan("monospace"), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 builder.setSpan(new BackgroundColorSpan(codeColor), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            } else if ("link".equals(entity.type) && !TextUtils.isEmpty(entity.url)) {
+            } else if ("image".equals(entity.type)) {
+                builder.setSpan(new InlineImagePlaceholderSpan(entity.width, entity.height), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            } else if (("link".equals(entity.type) || "phone".equals(entity.type) || "email".equals(entity.type)) && !TextUtils.isEmpty(entity.url)) {
                 builder.setSpan(new ClickableSpan() {
                     @Override
                     public void onClick(@NonNull View widget) {
@@ -1142,6 +1345,55 @@ class BrowserInstantViewFragment extends BaseFragment {
             }
         }
         return builder;
+    }
+
+    private final class InlineImagePlaceholderSpan extends ReplacementSpan {
+        private final int width;
+        private final int height;
+
+        InlineImagePlaceholderSpan(int width, int height) {
+            int maxWidth = AndroidUtilities.dp(72);
+            int maxHeight = AndroidUtilities.dp(48);
+            int imageWidth = width > 0 ? AndroidUtilities.dp(width) : AndroidUtilities.dp(18);
+            int imageHeight = height > 0 ? AndroidUtilities.dp(height) : AndroidUtilities.dp(18);
+            if (imageWidth > maxWidth) {
+                float scale = maxWidth / (float) imageWidth;
+                imageWidth = maxWidth;
+                imageHeight = Math.max(AndroidUtilities.dp(12), Math.round(imageHeight * scale));
+            }
+            if (imageHeight > maxHeight) {
+                float scale = maxHeight / (float) imageHeight;
+                imageHeight = maxHeight;
+                imageWidth = Math.max(AndroidUtilities.dp(12), Math.round(imageWidth * scale));
+            }
+            this.width = Math.max(AndroidUtilities.dp(18), imageWidth);
+            this.height = Math.max(AndroidUtilities.dp(18), imageHeight);
+        }
+
+        @Override
+        public int getSize(@NonNull Paint paint, CharSequence text, int start, int end, @Nullable Paint.FontMetricsInt fm) {
+            if (fm != null) {
+                fm.ascent = -height;
+                fm.descent = 0;
+                fm.top = fm.ascent;
+                fm.bottom = 0;
+            }
+            return width + AndroidUtilities.dp(2);
+        }
+
+        @Override
+        public void draw(@NonNull Canvas canvas, CharSequence text, int start, int end, float x, int top, int y, int bottom, @NonNull Paint paint) {
+            Paint.Style oldStyle = paint.getStyle();
+            int oldColor = paint.getColor();
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(Theme.multAlpha(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText), .14f));
+            float rectTop = y - height;
+            canvas.drawRoundRect(x, rectTop, x + width, y, AndroidUtilities.dp(3), AndroidUtilities.dp(3), paint);
+            paint.setColor(Theme.multAlpha(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText), .35f));
+            canvas.drawCircle(x + width / 2f, rectTop + height / 2f, Math.min(width, height) / 5f, paint);
+            paint.setColor(oldColor);
+            paint.setStyle(oldStyle);
+        }
     }
 
     private CharSequence flattenBlocks(@Nullable ArrayList<BrowserPage.PageBlock> blocks) {
@@ -1163,6 +1415,7 @@ class BrowserInstantViewFragment extends BaseFragment {
     }
 
     private CharSequence flattenBlock(@Nullable BrowserPage.PageBlock block) {
+        block = unwrapRenderableBlock(block);
         if (block instanceof BrowserPage.PageBlockParagraph) {
             return buildRichText(((BrowserPage.PageBlockParagraph) block).text);
         }
@@ -1194,6 +1447,9 @@ class BrowserInstantViewFragment extends BaseFragment {
         }
         if (block instanceof BrowserPage.PageBlockPreformatted) {
             return ((BrowserPage.PageBlockPreformatted) block).text == null ? "" : ((BrowserPage.PageBlockPreformatted) block).text;
+        }
+        if (block instanceof BrowserPage.PageBlockFooter) {
+            return buildRichText(((BrowserPage.PageBlockFooter) block).text);
         }
         if (block instanceof BrowserPage.PageBlockList) {
             BrowserPage.PageBlockList list = (BrowserPage.PageBlockList) block;
@@ -1271,7 +1527,32 @@ class BrowserInstantViewFragment extends BaseFragment {
             }
             return builder;
         }
+        if (block instanceof BrowserPage.PageBlockEmbed) {
+            BrowserPage.PageBlockEmbed embed = (BrowserPage.PageBlockEmbed) block;
+            return TextUtils.isEmpty(embed.title) ? getStringSafe(R.string.app_browser_reader_embed) : embed.title;
+        }
+        if (block instanceof BrowserPage.PageBlockVideo) {
+            return getStringSafe(R.string.app_browser_reader_video);
+        }
+        if (block instanceof BrowserPage.PageBlockAudio) {
+            BrowserPage.PageBlockAudio audio = (BrowserPage.PageBlockAudio) block;
+            return TextUtils.isEmpty(audio.title) ? getStringSafe(R.string.app_browser_reader_audio) : audio.title;
+        }
+        if (block instanceof BrowserPage.PageBlockSlideshow) {
+            return flattenBlocks(((BrowserPage.PageBlockSlideshow) block).items);
+        }
+        if (block instanceof BrowserPage.PageBlockCollage) {
+            return flattenBlocks(((BrowserPage.PageBlockCollage) block).items);
+        }
+        if (block instanceof BrowserPage.PageBlockUnsupported) {
+            return getStringSafe(R.string.app_browser_reader_unsupported);
+        }
         return "";
+    }
+
+    private String getStringSafe(int resId) {
+        Context context = getContext();
+        return context == null ? "" : context.getString(resId);
     }
 
     private void applyText(@NonNull TextView textView, @Nullable CharSequence text) {
@@ -1361,7 +1642,7 @@ class BrowserInstantViewFragment extends BaseFragment {
         return spans.length == 0 ? null : spans[0];
     }
 
-    private final class DrawingText {
+    final class DrawingText {
         private final StaticLayout layout;
         int x;
         int y;
@@ -1371,6 +1652,10 @@ class BrowserInstantViewFragment extends BaseFragment {
         }
 
         void draw(Canvas canvas) {
+            layout.draw(canvas);
+        }
+
+        void draw(Canvas canvas, View view) {
             layout.draw(canvas);
         }
 
@@ -1388,6 +1673,10 @@ class BrowserInstantViewFragment extends BaseFragment {
 
         float getLineWidth(int line) {
             return layout.getLineWidth(line);
+        }
+
+        float getLineLeft(int line) {
+            return layout.getLineLeft(line);
         }
 
         int getHeight() {
@@ -1427,6 +1716,15 @@ class BrowserInstantViewFragment extends BaseFragment {
         if (viewType == ROW_PHOTO) {
             return new ImageBlockCell(context);
         }
+        if (viewType == ROW_EMBED || viewType == ROW_VIDEO || viewType == ROW_AUDIO || viewType == ROW_UNSUPPORTED) {
+            return new MediaBlockCell(context);
+        }
+        if (viewType == ROW_SLIDESHOW || viewType == ROW_COLLAGE) {
+            return new GalleryBlockCell(context);
+        }
+        if (viewType == ROW_FOOTER) {
+            return new FooterCell(context);
+        }
         if (viewType == ROW_PULLQUOTE || viewType == ROW_BLOCKQUOTE) {
             return new QuoteCell(context);
         }
@@ -1455,6 +1753,7 @@ class BrowserInstantViewFragment extends BaseFragment {
     }
 
     private int getTypeForBlock(@Nullable BrowserPage.PageBlock block) {
+        block = unwrapRenderableBlock(block);
         if (block instanceof BrowserPage.PageBlockParagraph) {
             return ROW_PARAGRAPH;
         }
@@ -1464,14 +1763,23 @@ class BrowserInstantViewFragment extends BaseFragment {
         if (block instanceof BrowserPage.PageBlockDivider) {
             return ROW_DIVIDER;
         }
+        if (block instanceof BrowserPage.PageBlockEmbed) {
+            return ROW_EMBED;
+        }
         if (block instanceof BrowserPage.PageBlockSubtitle) {
             return ROW_SUBTITLE;
+        }
+        if (block instanceof BrowserPage.PageBlockVideo) {
+            return ROW_VIDEO;
         }
         if (block instanceof BrowserPage.PageBlockPullquote) {
             return ROW_PULLQUOTE;
         }
         if (block instanceof BrowserPage.PageBlockBlockquote) {
             return ROW_BLOCKQUOTE;
+        }
+        if (block instanceof BrowserPage.PageBlockSlideshow) {
+            return ROW_SLIDESHOW;
         }
         if (block instanceof BrowserPage.PageBlockPhoto) {
             return ROW_PHOTO;
@@ -1485,6 +1793,9 @@ class BrowserInstantViewFragment extends BaseFragment {
         if (block instanceof BrowserPage.PageBlockListItem) {
             return ROW_LIST_ITEM;
         }
+        if (block instanceof BrowserPage.PageBlockFooter) {
+            return ROW_FOOTER;
+        }
         if (block instanceof BrowserPage.PageBlockPreformatted) {
             return ROW_CODE;
         }
@@ -1493,6 +1804,12 @@ class BrowserInstantViewFragment extends BaseFragment {
         }
         if (block instanceof BrowserPage.PageBlockKicker) {
             return ROW_KICKER;
+        }
+        if (block instanceof BrowserPage.PageBlockCollage) {
+            return ROW_COLLAGE;
+        }
+        if (block instanceof BrowserPage.PageBlockAudio) {
+            return ROW_AUDIO;
         }
         if (block instanceof BrowserPage.PageBlockOrderedListItem) {
             return ROW_ORDERED_LIST_ITEM;
@@ -1509,17 +1826,14 @@ class BrowserInstantViewFragment extends BaseFragment {
         if (block instanceof BrowserPage.PageBlockSource) {
             return ROW_SOURCE;
         }
-        if (block instanceof BrowserPage.PageBlockDetailsChild) {
-            return getTypeForBlock(((BrowserPage.PageBlockDetailsChild) block).block);
+        if (block instanceof BrowserPage.PageBlockUnsupported) {
+            return ROW_UNSUPPORTED;
         }
         return -1;
     }
 
     private void bindBlockToView(@NonNull View view, @Nullable BrowserPage.PageBlock originalBlock, boolean compact, boolean first) {
-        BrowserPage.PageBlock block = originalBlock;
-        if (block instanceof BrowserPage.PageBlockDetailsChild) {
-            block = ((BrowserPage.PageBlockDetailsChild) block).block;
-        }
+        BrowserPage.PageBlock block = unwrapRenderableBlock(originalBlock);
         if (view instanceof KickerCell && block instanceof BrowserPage.PageBlockKicker) {
             ((KickerCell) view).bind(((BrowserPage.PageBlockKicker) block).text, first);
         } else if (view instanceof TitleCell && block instanceof BrowserPage.PageBlockTitle) {
@@ -1538,6 +1852,16 @@ class BrowserInstantViewFragment extends BaseFragment {
             ((ParagraphBlockCell) view).bind((BrowserPage.PageBlockParagraph) block, compact);
         } else if (view instanceof ImageBlockCell && block instanceof BrowserPage.PageBlockPhoto) {
             ((ImageBlockCell) view).bind((BrowserPage.PageBlockPhoto) block, first, compact);
+        } else if (view instanceof MediaBlockCell
+                && (block instanceof BrowserPage.PageBlockEmbed
+                || block instanceof BrowserPage.PageBlockVideo
+                || block instanceof BrowserPage.PageBlockAudio
+                || block instanceof BrowserPage.PageBlockUnsupported)) {
+            ((MediaBlockCell) view).bind(block, compact);
+        } else if (view instanceof GalleryBlockCell && (block instanceof BrowserPage.PageBlockSlideshow || block instanceof BrowserPage.PageBlockCollage)) {
+            ((GalleryBlockCell) view).bind(block, compact);
+        } else if (view instanceof FooterCell && block instanceof BrowserPage.PageBlockFooter) {
+            ((FooterCell) view).bind((BrowserPage.PageBlockFooter) block, compact);
         } else if (view instanceof QuoteCell && (block instanceof BrowserPage.PageBlockPullquote || block instanceof BrowserPage.PageBlockBlockquote)) {
             ((QuoteCell) view).bind(block, compact);
         } else if (view instanceof BlockListItemCell && block instanceof BrowserPage.PageBlockListItem) {
@@ -1554,64 +1878,180 @@ class BrowserInstantViewFragment extends BaseFragment {
     }
 
     private void loadImage(@NonNull ImageView imageView, @Nullable String url, @Nullable Runnable onLoaded) {
-        imageView.setTag(url);
-        if (TextUtils.isEmpty(url)) {
+        ArrayList<String> urls = new ArrayList<>();
+        addImageUrlCandidate(urls, url);
+        loadImage(imageView, urls, onLoaded);
+    }
+
+    private void loadImage(@NonNull ImageView imageView, @NonNull BrowserPage.PageBlockPhoto photo, @Nullable Runnable onLoaded) {
+        ArrayList<String> urls = new ArrayList<>();
+        for (int i = 0; i < photo.urls.size(); i++) {
+            addImageUrlCandidate(urls, photo.urls.get(i));
+        }
+        addImageUrlCandidate(urls, photo.url);
+        loadImage(imageView, urls, onLoaded);
+    }
+
+    private void loadImage(@NonNull ImageView imageView, @NonNull ArrayList<String> urls, @Nullable Runnable onLoaded) {
+        String requestKey = TextUtils.join("\n", urls);
+        imageView.setTag(requestKey);
+        if (urls.isEmpty()) {
             imageView.setImageDrawable(null);
             imageView.setVisibility(View.GONE);
             return;
         }
         imageView.setVisibility(View.VISIBLE);
-        Bitmap cached = IMAGE_CACHE.get(url);
-        if (cached != null) {
-            imageView.setImageBitmap(cached);
-            if (onLoaded != null) {
-                onLoaded.run();
-            }
-            return;
-        }
-        imageView.setImageDrawable(null);
-        IMAGE_EXECUTOR.execute(() -> {
-            Bitmap bitmap = null;
-            HttpURLConnection connection = null;
-            InputStream stream = null;
-            try {
-                connection = (HttpURLConnection) new URL(url).openConnection();
-                connection.setConnectTimeout(8000);
-                connection.setReadTimeout(8000);
-                connection.setInstanceFollowRedirects(true);
-                stream = connection.getInputStream();
-                bitmap = BitmapFactory.decodeStream(stream);
-                if (bitmap != null) {
-                    IMAGE_CACHE.put(url, bitmap);
-                }
-            } catch (Exception ignored) {
-                bitmap = null;
-            } finally {
-                try {
-                    if (stream != null) {
-                        stream.close();
+        synchronized (IMAGE_CACHE) {
+            for (int i = 0; i < urls.size(); i++) {
+                String url = urls.get(i);
+                Bitmap cached = IMAGE_CACHE.get(url);
+                if (cached != null) {
+                    imageView.setTag(url);
+                    imageView.setImageBitmap(cached);
+                    if (onLoaded != null) {
+                        onLoaded.run();
                     }
-                } catch (Exception ignored) {
-                }
-                if (connection != null) {
-                    connection.disconnect();
-                }
-            }
-            Bitmap finalBitmap = bitmap;
-            MAIN_HANDLER.post(() -> {
-                if (!TextUtils.equals(url, (CharSequence) imageView.getTag())) {
                     return;
                 }
-                if (finalBitmap != null) {
-                    imageView.setImageBitmap(finalBitmap);
+            }
+        }
+        imageView.setImageDrawable(null);
+        String userAgent = defaultUserAgent(imageView.getContext());
+        String referer = getArticleUrl();
+        IMAGE_EXECUTOR.execute(() -> {
+            LoadedImage loadedImage = null;
+            for (int i = 0; i < urls.size(); i++) {
+                String url = urls.get(i);
+                Bitmap bitmap = loadBitmap(url, userAgent, referer);
+                if (bitmap != null) {
+                    synchronized (IMAGE_CACHE) {
+                        IMAGE_CACHE.put(url, bitmap);
+                    }
+                    loadedImage = new LoadedImage(url, bitmap);
+                    break;
+                }
+            }
+            LoadedImage finalLoadedImage = loadedImage;
+            MAIN_HANDLER.post(() -> {
+                if (!requestKey.equals(imageView.getTag())) {
+                    return;
+                }
+                if (finalLoadedImage != null) {
+                    imageView.setTag(finalLoadedImage.url);
+                    imageView.setImageBitmap(finalLoadedImage.bitmap);
                     if (onLoaded != null) {
                         onLoaded.run();
                     }
                 } else {
-                    imageView.setVisibility(View.GONE);
+                    imageView.setImageDrawable(null);
                 }
             });
         });
+    }
+
+    private Bitmap loadBitmap(@NonNull String url, @Nullable String userAgent, @Nullable String referer) {
+        HttpURLConnection connection = null;
+        InputStream stream = null;
+        try {
+            connection = (HttpURLConnection) new URL(url).openConnection();
+            connection.setConnectTimeout(8000);
+            connection.setReadTimeout(8000);
+            connection.setInstanceFollowRedirects(true);
+            if (!TextUtils.isEmpty(userAgent)) {
+                connection.setRequestProperty("User-Agent", userAgent);
+            }
+            if (!TextUtils.isEmpty(referer)) {
+                connection.setRequestProperty("Referer", referer);
+            }
+            connection.setRequestProperty("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8");
+            String cookie = CookieManager.getInstance().getCookie(url);
+            if (!TextUtils.isEmpty(cookie)) {
+                connection.setRequestProperty("Cookie", cookie);
+            }
+            int responseCode = connection.getResponseCode();
+            if (responseCode >= 400) {
+                return null;
+            }
+            stream = connection.getInputStream();
+            return BrowserImageDecoder.decode(stream, connection.getContentType());
+        } catch (Exception ignored) {
+            return null;
+        } finally {
+            try {
+                if (stream != null) {
+                    stream.close();
+                }
+            } catch (Exception ignored) {
+            }
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    private void addImageUrlCandidate(@NonNull ArrayList<String> urls, @Nullable String url) {
+        if (TextUtils.isEmpty(url) || urls.contains(url)) {
+            return;
+        }
+        Uri uri = Uri.parse(url);
+        String scheme = uri.getScheme();
+        if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) {
+            urls.add(url);
+        }
+    }
+
+    private PhotoImageSize photoImageSize(@NonNull BrowserPage.PageBlockPhoto block, int width) {
+        int photoX;
+        int photoWidth = Math.max(1, width);
+        if (block.level > 0) {
+            photoX = AndroidUtilities.dp(14 * block.level) + AndroidUtilities.dp(18);
+            photoWidth = Math.max(1, photoWidth - photoX - AndroidUtilities.dp(18));
+        } else {
+            photoX = 0;
+        }
+        int imageWidth = block.width > 0 && block.height > 0 ? block.width : 16;
+        int imageHeight = block.width > 0 && block.height > 0 ? block.height : 9;
+        float scale = photoWidth / (float) imageWidth;
+        int photoHeight = Math.max(1, (int) (scale * imageHeight));
+        int maxHeight = (int) ((Math.max(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y) - AndroidUtilities.dp(56)) * 0.9f);
+        if (photoHeight > maxHeight) {
+            photoHeight = Math.max(1, maxHeight);
+            scale = photoHeight / (float) imageHeight;
+            photoWidth = Math.max(1, (int) (scale * imageWidth));
+            photoX += (width - photoX - photoWidth) / 2;
+        }
+        return new PhotoImageSize(photoX, photoWidth, photoHeight);
+    }
+
+    private static final class PhotoImageSize {
+        final int x;
+        final int width;
+        final int height;
+
+        PhotoImageSize(int x, int width, int height) {
+            this.x = x;
+            this.width = width;
+            this.height = height;
+        }
+    }
+
+    @Nullable
+    private String defaultUserAgent(@NonNull Context context) {
+        try {
+            return WebSettings.getDefaultUserAgent(context);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private static final class LoadedImage {
+        final String url;
+        final Bitmap bitmap;
+
+        LoadedImage(String url, Bitmap bitmap) {
+            this.url = url;
+            this.bitmap = bitmap;
+        }
     }
 
     private final class InstantAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
@@ -1798,6 +2238,19 @@ class BrowserInstantViewFragment extends BaseFragment {
             bindText(buildRichText(block.text), false, 14,
                     Theme.getColor(Theme.key_windowBackgroundWhiteBlueText), Typeface.DEFAULT,
                     AndroidUtilities.dp(18), AndroidUtilities.dp(8), AndroidUtilities.dp(18), AndroidUtilities.dp(8));
+        }
+    }
+
+    private final class FooterCell extends ArticleTextCell {
+        FooterCell(Context context) {
+            super(context);
+        }
+
+        void bind(@NonNull BrowserPage.PageBlockFooter block, boolean compact) {
+            int horizontalPadding = compact ? 0 : AndroidUtilities.dp(18);
+            bindText(buildRichText(block.text), block.text.centered, 14,
+                    Theme.getColor(Theme.key_windowBackgroundWhiteGrayText), Typeface.DEFAULT,
+                    horizontalPadding, AndroidUtilities.dp(8), horizontalPadding, AndroidUtilities.dp(8));
         }
     }
 
@@ -2279,6 +2732,9 @@ class BrowserInstantViewFragment extends BaseFragment {
         private final TextView captionView;
         private final TextView creditView;
         private final LinearLayout.LayoutParams imageParams;
+        private BrowserPage.PageBlockPhoto currentBlock;
+        private boolean currentFirst;
+        private boolean compact;
 
         ImageBlockCell(Context context) {
             super(context);
@@ -2316,12 +2772,20 @@ class BrowserInstantViewFragment extends BaseFragment {
         }
 
         void bind(BrowserPage.PageBlockPhoto block, boolean hero, boolean compact) {
-            imageParams.leftMargin = compact ? AndroidUtilities.dp(18) : 0;
-            imageParams.rightMargin = compact ? AndroidUtilities.dp(18) : 0;
-            imageView.setLayoutParams(imageParams);
-            imageView.setAspectRatio(block.width, block.height);
+            currentBlock = block;
+            currentFirst = hero;
+            this.compact = compact;
+            int textHorizontalPadding = compact ? 0 : AndroidUtilities.dp(18);
+            LinearLayout.LayoutParams captionParams = (LinearLayout.LayoutParams) captionView.getLayoutParams();
+            captionParams.leftMargin = textHorizontalPadding;
+            captionParams.rightMargin = textHorizontalPadding;
+            captionView.setLayoutParams(captionParams);
+            LinearLayout.LayoutParams creditParams = (LinearLayout.LayoutParams) creditView.getLayoutParams();
+            creditParams.leftMargin = textHorizontalPadding;
+            creditParams.rightMargin = textHorizontalPadding;
+            creditView.setLayoutParams(creditParams);
             if (!measuringContentHeight) {
-                loadImage(imageView, block.url, () -> {
+                loadImage(imageView, block, () -> {
                     Drawable drawable = imageView.getDrawable();
                     if (drawable == null || block.width > 0 && block.height > 0) {
                         return;
@@ -2331,7 +2795,7 @@ class BrowserInstantViewFragment extends BaseFragment {
                     if (width > 0 && height > 0) {
                         block.width = width;
                         block.height = height;
-                        imageView.setAspectRatio(width, height);
+                        requestLayout();
                         resetCachedHeights();
                     }
                 });
@@ -2345,10 +2809,15 @@ class BrowserInstantViewFragment extends BaseFragment {
                 imageView.setOnClickListener(v -> {
                     Bitmap initial = null;
                     Drawable drawable = imageView.getDrawable();
+                    String openUrl = imageUrl;
+                    Object tag = imageView.getTag();
+                    if (tag instanceof String && block.urls.contains(tag)) {
+                        openUrl = (String) tag;
+                    }
                     if (drawable instanceof BitmapDrawable) {
                         initial = ((BitmapDrawable) drawable).getBitmap();
                     }
-                    openImageViewer(initial, imageUrl);
+                    openImageViewer(initial, openUrl, imageView);
                 });
             }
             CharSequence caption = buildRichText(block.caption);
@@ -2359,32 +2828,239 @@ class BrowserInstantViewFragment extends BaseFragment {
             creditView.setVisibility(TextUtils.isEmpty(credit) ? GONE : VISIBLE);
             applyText(creditView, credit, block.credit.centered);
         }
+
+        @Override
+        protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+            int width = MeasureSpec.getSize(widthMeasureSpec);
+            if (currentBlock != null) {
+                PhotoImageSize imageSize = photoImageSize(currentBlock, width);
+                imageParams.width = imageSize.width;
+                imageParams.height = imageSize.height;
+                imageParams.leftMargin = imageSize.x;
+                imageParams.rightMargin = Math.max(0, width - imageSize.x - imageSize.width);
+                imageParams.topMargin = currentFirst || compact || currentBlock.level > 0 ? 0 : AndroidUtilities.dp(8);
+                imageView.setAspectRatio(imageSize.width, imageSize.height);
+                imageView.setLayoutParams(imageParams);
+            }
+            super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+        }
     }
 
-    private final class TableBlockCell extends LinearLayout {
+    private final class MediaBlockCell extends LinearLayout {
+        private final LinearLayout cardView;
+        private final RoundedImageView posterView;
         private final TextView titleView;
-        private final HorizontalScrollView scrollView;
-        private final LinearLayout.LayoutParams scrollParams;
-        private final TableContentLayout tableLayout;
+        private final TextView subtitleView;
+        private final TextView captionView;
+        private final TextView creditView;
+        private final GradientDrawable cardBackground;
 
-        TableBlockCell(Context context) {
+        MediaBlockCell(Context context) {
             super(context);
             setOrientation(VERTICAL);
             setBackgroundColor(Theme.getColor(Theme.key_iv_background));
-            setPadding(0, 0, 0, AndroidUtilities.dp(8));
+            setPadding(AndroidUtilities.dp(18), AndroidUtilities.dp(8), AndroidUtilities.dp(18), AndroidUtilities.dp(8));
+
+            cardBackground = new GradientDrawable();
+            cardBackground.setColor(Theme.multAlpha(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText), .07f));
+            cardBackground.setStroke(AndroidUtilities.dp(1), Theme.multAlpha(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText), .18f));
+            cardBackground.setCornerRadius(AndroidUtilities.dp(6));
+
+            cardView = new LinearLayout(context);
+            cardView.setOrientation(VERTICAL);
+            cardView.setPadding(AndroidUtilities.dp(12), AndroidUtilities.dp(12), AndroidUtilities.dp(12), AndroidUtilities.dp(12));
+            cardView.setBackground(cardBackground);
+            addView(cardView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
+            posterView = new RoundedImageView(context);
+            posterView.setBackgroundColor(Theme.multAlpha(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText), .1f));
+            cardView.addView(posterView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
             titleView = new TextView(context);
             titleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
             titleView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, scaledSp(15));
-            titleView.setLineSpacing(AndroidUtilities.dp(4), 1.0f);
-            titleView.setPadding(AndroidUtilities.dp(18), 0, AndroidUtilities.dp(18), AndroidUtilities.dp(8));
-            addView(titleView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+            titleView.setTypeface(Typeface.DEFAULT_BOLD);
+            titleView.setSingleLine(false);
+            titleView.setLineSpacing(AndroidUtilities.dp(3), 1.0f);
+            cardView.addView(titleView, topMargin(LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT), 8));
+
+            subtitleView = new TextView(context);
+            subtitleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+            subtitleView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, scaledSp(13));
+            subtitleView.setSingleLine(false);
+            subtitleView.setLineSpacing(AndroidUtilities.dp(3), 1.0f);
+            cardView.addView(subtitleView, topMargin(LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT), 4));
+
+            captionView = new TextView(context);
+            captionView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+            captionView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, scaledSp(14));
+            captionView.setLineSpacing(AndroidUtilities.dp(4), 1.0f);
+            addView(captionView, topMargin(LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT), 8));
+
+            creditView = new TextView(context);
+            creditView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+            creditView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, scaledSp(12));
+            creditView.setLineSpacing(AndroidUtilities.dp(4), 1.0f);
+            addView(creditView, topMargin(LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT), 4));
+        }
+
+        void bind(@NonNull BrowserPage.PageBlock block, boolean compact) {
+            setPadding(compact ? 0 : AndroidUtilities.dp(18), AndroidUtilities.dp(8), compact ? 0 : AndroidUtilities.dp(18), AndroidUtilities.dp(8));
+            String url = null;
+            String poster = null;
+            int width = 0;
+            int height = 0;
+            CharSequence title;
+            CharSequence caption = "";
+            CharSequence credit = "";
+            if (block instanceof BrowserPage.PageBlockEmbed) {
+                BrowserPage.PageBlockEmbed embed = (BrowserPage.PageBlockEmbed) block;
+                url = embed.url;
+                width = embed.width;
+                height = embed.height;
+                title = TextUtils.isEmpty(embed.title) ? getStringSafe(R.string.app_browser_reader_embed) : embed.title;
+                caption = buildRichText(embed.caption);
+                credit = buildRichText(embed.credit);
+            } else if (block instanceof BrowserPage.PageBlockVideo) {
+                BrowserPage.PageBlockVideo video = (BrowserPage.PageBlockVideo) block;
+                url = video.url;
+                poster = video.posterUrl;
+                width = video.width;
+                height = video.height;
+                title = getStringSafe(R.string.app_browser_reader_video);
+                caption = buildRichText(video.caption);
+                credit = buildRichText(video.credit);
+            } else if (block instanceof BrowserPage.PageBlockAudio) {
+                BrowserPage.PageBlockAudio audio = (BrowserPage.PageBlockAudio) block;
+                url = audio.url;
+                title = TextUtils.isEmpty(audio.title) ? getStringSafe(R.string.app_browser_reader_audio) : audio.title;
+                caption = buildRichText(audio.caption);
+                credit = buildRichText(audio.credit);
+            } else {
+                BrowserPage.PageBlockUnsupported unsupported = (BrowserPage.PageBlockUnsupported) block;
+                url = unsupported.url;
+                title = TextUtils.isEmpty(unsupported.title) ? getStringSafe(R.string.app_browser_reader_unsupported) : unsupported.title;
+            }
+
+            boolean hasPoster = !TextUtils.isEmpty(poster);
+            posterView.setVisibility(hasPoster ? VISIBLE : GONE);
+            if (hasPoster) {
+                posterView.setAspectRatio(width > 0 && height > 0 ? width : 16, width > 0 && height > 0 ? height : 9);
+                if (!measuringContentHeight) {
+                    loadImage(posterView, poster, null);
+                }
+            } else {
+                posterView.setImageDrawable(null);
+            }
+
+            titleView.setText(title);
+            String subtitle = displayHost(url);
+            subtitleView.setVisibility(TextUtils.isEmpty(subtitle) ? GONE : VISIBLE);
+            subtitleView.setText(subtitle);
+
+            String openUrl = url;
+            cardView.setClickable(!TextUtils.isEmpty(openUrl));
+            cardView.setOnClickListener(TextUtils.isEmpty(openUrl) ? null : v -> openExternal(openUrl));
+
+            captionView.setVisibility(TextUtils.isEmpty(caption) ? GONE : VISIBLE);
+            applyText(captionView, caption);
+            creditView.setVisibility(TextUtils.isEmpty(credit) ? GONE : VISIBLE);
+            applyText(creditView, credit);
+        }
+    }
+
+    private final class GalleryBlockCell extends LinearLayout {
+        private final LinearLayout itemsLayout;
+        private final TextView captionView;
+        private final TextView creditView;
+
+        GalleryBlockCell(Context context) {
+            super(context);
+            setOrientation(VERTICAL);
+            setBackgroundColor(Theme.getColor(Theme.key_iv_background));
+
+            itemsLayout = new LinearLayout(context);
+            itemsLayout.setOrientation(VERTICAL);
+            addView(itemsLayout, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
+            captionView = new TextView(context);
+            captionView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+            captionView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, scaledSp(14));
+            captionView.setLineSpacing(AndroidUtilities.dp(4), 1.0f);
+            LinearLayout.LayoutParams captionParams = topMargin(LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT), 8);
+            captionParams.leftMargin = AndroidUtilities.dp(18);
+            captionParams.rightMargin = AndroidUtilities.dp(18);
+            addView(captionView, captionParams);
+
+            creditView = new TextView(context);
+            creditView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+            creditView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, scaledSp(12));
+            creditView.setLineSpacing(AndroidUtilities.dp(4), 1.0f);
+            LinearLayout.LayoutParams creditParams = topMargin(LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT), 4);
+            creditParams.leftMargin = AndroidUtilities.dp(18);
+            creditParams.rightMargin = AndroidUtilities.dp(18);
+            creditParams.bottomMargin = AndroidUtilities.dp(8);
+            addView(creditView, creditParams);
+        }
+
+        void bind(@NonNull BrowserPage.PageBlock block, boolean compact) {
+            itemsLayout.removeAllViews();
+            ArrayList<BrowserPage.PageBlock> items;
+            BrowserPage.RichText caption;
+            BrowserPage.RichText credit;
+            if (block instanceof BrowserPage.PageBlockSlideshow) {
+                BrowserPage.PageBlockSlideshow slideshow = (BrowserPage.PageBlockSlideshow) block;
+                items = slideshow.items;
+                caption = slideshow.caption;
+                credit = slideshow.credit;
+            } else {
+                BrowserPage.PageBlockCollage collage = (BrowserPage.PageBlockCollage) block;
+                items = collage.items;
+                caption = collage.caption;
+                credit = collage.credit;
+            }
+            appendBlockViews(itemsLayout, items, compact);
+            CharSequence captionText = buildRichText(caption);
+            captionView.setVisibility(TextUtils.isEmpty(captionText) ? GONE : VISIBLE);
+            applyText(captionView, captionText, caption.centered);
+            CharSequence creditText = buildRichText(credit);
+            creditView.setVisibility(TextUtils.isEmpty(creditText) ? GONE : VISIBLE);
+            applyText(creditView, creditText, credit.centered);
+        }
+    }
+
+    @Nullable
+    private String displayHost(@Nullable String url) {
+        if (TextUtils.isEmpty(url)) {
+            return null;
+        }
+        try {
+            Uri uri = Uri.parse(url);
+            return uri.getHost();
+        } catch (Exception ignored) {
+            return url;
+        }
+    }
+
+    private final class TableBlockCell extends ViewGroup {
+        @Nullable private BrowserPage.PageBlockTable currentBlock;
+        @Nullable private DrawingText titleLayout;
+        private final HorizontalScrollView scrollView;
+        private final BrowserInstantTableLayout tableLayout;
+        private int listX;
+        private int listY;
+        private int textX;
+        private int textY;
+
+        TableBlockCell(Context context) {
+            super(context);
+            setBackgroundColor(Theme.getColor(Theme.key_iv_background));
 
             scrollView = new HorizontalScrollView(context) {
                 @Override
                 public boolean onInterceptTouchEvent(android.view.MotionEvent ev) {
                     boolean intercept = super.onInterceptTouchEvent(ev);
-                    if (tableLayout.getMeasuredWidth() > getMeasuredWidth() - getPaddingLeft() - getPaddingRight() && intercept) {
+                    if (tableLayout.getMeasuredWidth() > getMeasuredWidth() - AndroidUtilities.dp(36) && intercept) {
                         requestDisallowInterceptTouchEvent(true);
                     }
                     return intercept;
@@ -2392,7 +3068,7 @@ class BrowserInstantViewFragment extends BaseFragment {
 
                 @Override
                 public boolean onTouchEvent(android.view.MotionEvent ev) {
-                    if (tableLayout.getMeasuredWidth() <= getMeasuredWidth() - getPaddingLeft() - getPaddingRight()) {
+                    if (tableLayout.getMeasuredWidth() <= getMeasuredWidth() - AndroidUtilities.dp(36)) {
                         return false;
                     }
                     return super.onTouchEvent(ev);
@@ -2400,11 +3076,9 @@ class BrowserInstantViewFragment extends BaseFragment {
 
                 @Override
                 protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-                    int viewportWidth = Math.max(0, MeasureSpec.getSize(widthMeasureSpec) - getPaddingLeft() - getPaddingRight());
-                    tableLayout.setViewportWidth(viewportWidth);
                     tableLayout.measure(
-                            MeasureSpec.makeMeasureSpec(viewportWidth, MeasureSpec.UNSPECIFIED),
-                            MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
+                            MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(widthMeasureSpec) - getPaddingLeft() - getPaddingRight(), MeasureSpec.UNSPECIFIED),
+                            heightMeasureSpec
                     );
                     setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), tableLayout.getMeasuredHeight());
                 }
@@ -2412,441 +3086,196 @@ class BrowserInstantViewFragment extends BaseFragment {
             scrollView.setHorizontalScrollBarEnabled(false);
             scrollView.setClipToPadding(false);
             scrollView.setPadding(AndroidUtilities.dp(18), 0, AndroidUtilities.dp(18), 0);
-            scrollParams = LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT);
-            addView(scrollView, scrollParams);
+            addView(scrollView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
-            tableLayout = new TableContentLayout(context);
+            tableLayout = new BrowserInstantTableLayout(context, new BrowserInstantTableLayout.TableLayoutDelegate() {
+                @Override
+                public DrawingText createTextLayout(BrowserPage.PageTableCell cell, int maxWidth) {
+                    return createDrawingText(buildRichText(cell.text), tableTextPaint(), maxWidth, tableAlignment(cell));
+                }
+
+                @Override
+                public Paint getLinePaint() {
+                    return tableLinePaint();
+                }
+
+                @Override
+                public Paint getHalfLinePaint() {
+                    return tableHalfLinePaint();
+                }
+
+                @Override
+                public Paint getHeaderPaint() {
+                    return tableHeaderPaint();
+                }
+
+                @Override
+                public Paint getStripPaint() {
+                    return tableStripPaint();
+                }
+
+                @Override
+                public void onLayoutChild(DrawingText text, int x, int y) {
+                }
+            });
+            tableLayout.setOrientation(BrowserInstantTableLayout.HORIZONTAL);
+            tableLayout.setRowOrderPreserved(true);
             scrollView.addView(tableLayout, new ViewGroup.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        }
-
-        void bind(BrowserPage.PageBlockTable block) {
-            CharSequence title = buildRichText(block.title);
-            boolean hasTitle = !TextUtils.isEmpty(title);
-            titleView.setVisibility(hasTitle ? VISIBLE : GONE);
-            if (hasTitle) {
-                applyText(titleView, title, true);
-            }
-            scrollParams.topMargin = hasTitle ? 0 : AndroidUtilities.dp(8);
-            scrollView.setLayoutParams(scrollParams);
-            tableLayout.bind(block);
-            requestLayout();
-        }
-    }
-
-    private final class TableContentLayout extends ViewGroup {
-        private final ArrayList<TableEntry> entries = new ArrayList<>();
-        private final Paint linePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint halfLinePaint = new Paint();
-        private final Paint headerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint stripPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Path backgroundPath = new Path();
-        private final RectF rect = new RectF();
-        private final float[] radii = new float[8];
-        private final int cellPaddingHorizontal = AndroidUtilities.dp(8);
-        private final int cellPaddingVertical = AndroidUtilities.dp(7);
-        private final int cornerRadius = AndroidUtilities.dp(3);
-
-        private BrowserPage.PageBlockTable currentBlock;
-        private boolean drawLines;
-        private boolean striped;
-        private int viewportWidth;
-        private int columnCount;
-        private int rowCount;
-        private int[] columnWidths = new int[0];
-        private int[] rowHeights = new int[0];
-        private int[] columnOffsets = new int[0];
-        private int[] rowOffsets = new int[0];
-
-        TableContentLayout(Context context) {
-            super(context);
             setWillNotDraw(false);
-            linePaint.setStyle(Paint.Style.STROKE);
-            linePaint.setStrokeWidth(AndroidUtilities.dp(1));
-            halfLinePaint.setStyle(Paint.Style.STROKE);
-            halfLinePaint.setStrokeWidth(AndroidUtilities.dp(1) / 2.0f);
-        }
-
-        void setViewportWidth(int viewportWidth) {
-            this.viewportWidth = viewportWidth;
         }
 
         void bind(BrowserPage.PageBlockTable block) {
             currentBlock = block;
-            drawLines = block.bordered;
-            striped = block.striped;
-            rebuildEntries();
+            tableLayout.removeAllChildrens();
+            tableLayout.setDrawLines(block.bordered);
+            tableLayout.setStriped(block.striped);
+            tableLayout.setRtl(false);
+            int maxCols = 0;
+            if (!block.rows.isEmpty()) {
+                BrowserPage.PageTableRow row = block.rows.get(0);
+                for (int i = 0; i < row.cells.size(); i++) {
+                    maxCols += Math.max(1, row.cells.get(i).colspan);
+                }
+            }
+            for (int rowIndex = 0; rowIndex < block.rows.size(); rowIndex++) {
+                int cols = 0;
+                BrowserPage.PageTableRow row = block.rows.get(rowIndex);
+                for (int cellIndex = 0; cellIndex < row.cells.size(); cellIndex++) {
+                    BrowserPage.PageTableCell cell = row.cells.get(cellIndex);
+                    int colspan = Math.max(1, cell.colspan);
+                    tableLayout.addChild(cell, cols, rowIndex, colspan);
+                    cols += colspan;
+                }
+            }
+            tableLayout.setColumnCount(maxCols);
             requestLayout();
         }
 
-        private void rebuildEntries() {
-            removeAllViews();
-            entries.clear();
-            columnCount = 0;
-            rowCount = currentBlock == null ? 0 : currentBlock.rows.size();
-            if (currentBlock == null) {
-                return;
-            }
-            for (int rowIndex = 0; rowIndex < currentBlock.rows.size(); rowIndex++) {
-                int count = 0;
-                ArrayList<BrowserPage.PageTableCell> cells = currentBlock.rows.get(rowIndex).cells;
-                for (int cellIndex = 0; cellIndex < cells.size(); cellIndex++) {
-                    count += Math.max(1, cells.get(cellIndex).colspan);
-                }
-                columnCount = Math.max(columnCount, count);
-            }
-            columnCount = Math.max(1, columnCount);
-            rowCount = Math.max(1, rowCount);
-
-            boolean[][] occupied = new boolean[rowCount][columnCount];
-            for (int rowIndex = 0; rowIndex < currentBlock.rows.size(); rowIndex++) {
-                int columnIndex = 0;
-                ArrayList<BrowserPage.PageTableCell> cells = currentBlock.rows.get(rowIndex).cells;
-                for (int cellIndex = 0; cellIndex < cells.size(); cellIndex++) {
-                    BrowserPage.PageTableCell cell = cells.get(cellIndex);
-                    while (columnIndex < columnCount && occupied[rowIndex][columnIndex]) {
-                        columnIndex++;
-                    }
-                    if (columnIndex >= columnCount) {
-                        break;
-                    }
-                    int colspan = Math.min(Math.max(1, cell.colspan), columnCount - columnIndex);
-                    int rowspan = Math.min(Math.max(1, cell.rowspan), rowCount - rowIndex);
-                    TextView cellView = new TextView(getContext());
-                    cellView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
-                    cellView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, scaledSp(15));
-                    cellView.setLineSpacing(AndroidUtilities.dp(4), 1.0f);
-                    cellView.setTypeface(Typeface.DEFAULT);
-                    cellView.setIncludeFontPadding(false);
-                    cellView.setPadding(cellPaddingHorizontal, cellPaddingVertical, cellPaddingHorizontal, cellPaddingVertical);
-                    cellView.setGravity(resolveGravity(cell.align) | Gravity.TOP);
-                    cellView.setTextAlignment(resolveTextAlignment(cell.align));
-                    applyText(cellView, buildRichText(cell.text));
-                    TableEntry entry = new TableEntry(cell, cellView, rowIndex, columnIndex, rowspan, colspan);
-                    entries.add(entry);
-                    addView(cellView);
-                    for (int r = rowIndex; r < rowIndex + rowspan; r++) {
-                        for (int c = columnIndex; c < columnIndex + colspan; c++) {
-                            occupied[r][c] = true;
-                        }
-                    }
-                    columnIndex += colspan;
+        @Override
+        public boolean onTouchEvent(MotionEvent event) {
+            for (int i = 0; i < tableLayout.getChildCount(); i++) {
+                BrowserInstantTableLayout.Child child = tableLayout.getChildAt(i);
+                if (child != null && child.textLayout != null
+                        && handleDrawingTextTouch(event, child.textLayout, scrollView.getPaddingLeft() - scrollView.getScrollX() + listX + child.getTextX(), listY + child.getTextY())) {
+                    return true;
                 }
             }
+            return titleLayout != null && handleDrawingTextTouch(event, titleLayout, textX, textY) || super.onTouchEvent(event);
         }
 
         @Override
         protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-            if (entries.isEmpty()) {
-                setMeasuredDimension(0, 0);
-                return;
-            }
-
-            updatePaints();
-
-            columnWidths = new int[columnCount];
-            rowHeights = new int[rowCount];
-            int availableWidth = viewportWidth > 0 ? viewportWidth : MeasureSpec.getSize(widthMeasureSpec);
-            int maxCellTextWidth = columnCount == 2
-                    ? Math.max(AndroidUtilities.dp(40), availableWidth / 2 - cellPaddingHorizontal * 4)
-                    : Math.max(AndroidUtilities.dp(40), (int) (availableWidth / 1.5f));
-
-            for (int i = 0; i < entries.size(); i++) {
-                TableEntry entry = entries.get(i);
-                int width = Math.max(
-                        AndroidUtilities.dp(40),
-                        maxCellTextWidth * Math.max(1, entry.columnSpan) + cellPaddingHorizontal * 2
-                );
-                entry.view.measure(
-                        MeasureSpec.makeMeasureSpec(width, MeasureSpec.AT_MOST),
+            int width = MeasureSpec.getSize(widthMeasureSpec);
+            int height = 0;
+            if (currentBlock != null) {
+                listX = 0;
+                textX = AndroidUtilities.dp(18);
+                int textWidth = width - AndroidUtilities.dp(36);
+                titleLayout = createDrawingText(buildRichText(currentBlock.title), tableTextPaint(), textWidth, Layout.Alignment.ALIGN_CENTER);
+                if (titleLayout != null) {
+                    textY = 0;
+                    height += titleLayout.getHeight() + AndroidUtilities.dp(8);
+                    listY = height;
+                    titleLayout.x = textX;
+                    titleLayout.y = textY;
+                } else {
+                    listY = AndroidUtilities.dp(8);
+                }
+                scrollView.measure(
+                        MeasureSpec.makeMeasureSpec(width - listX, MeasureSpec.EXACTLY),
                         MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
                 );
-                entry.desiredWidth = entry.view.getMeasuredWidth();
-                entry.desiredHeight = entry.view.getMeasuredHeight();
-                if (entry.columnSpan == 1) {
-                    columnWidths[entry.column] = Math.max(columnWidths[entry.column], entry.desiredWidth);
+                height += scrollView.getMeasuredHeight() + AndroidUtilities.dp(8);
+            } else {
+                height = 1;
+                titleLayout = null;
+            }
+            setMeasuredDimension(width, height);
+            updateChildTextPositions();
+        }
+
+        private void updateChildTextPositions() {
+            for (int i = 0; i < tableLayout.getChildCount(); i++) {
+                BrowserInstantTableLayout.Child child = tableLayout.getChildAt(i);
+                if (child != null && child.textLayout != null) {
+                    child.textLayout.x = child.getTextX() + listX + AndroidUtilities.dp(18) - scrollView.getScrollX();
+                    child.textLayout.y = child.getTextY() + listY;
                 }
             }
-
-            for (int i = 0; i < entries.size(); i++) {
-                TableEntry entry = entries.get(i);
-                int currentWidth = sum(columnWidths, entry.column, entry.columnSpan);
-                if (currentWidth < entry.desiredWidth) {
-                    distribute(columnWidths, entry.column, entry.columnSpan, entry.desiredWidth - currentWidth);
-                }
-            }
-
-            int contentWidth = sum(columnWidths, 0, columnCount);
-            if (contentWidth < availableWidth) {
-                distribute(columnWidths, 0, columnCount, availableWidth - contentWidth);
-            }
-
-            for (int i = 0; i < entries.size(); i++) {
-                TableEntry entry = entries.get(i);
-                int outerWidth = sum(columnWidths, entry.column, entry.columnSpan);
-                entry.view.measure(
-                        MeasureSpec.makeMeasureSpec(Math.max(outerWidth, AndroidUtilities.dp(40)), MeasureSpec.EXACTLY),
-                        MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
-                );
-                entry.desiredHeight = entry.view.getMeasuredHeight();
-                if (entry.rowSpan == 1) {
-                    rowHeights[entry.row] = Math.max(rowHeights[entry.row], entry.desiredHeight);
-                }
-            }
-
-            for (int i = 0; i < entries.size(); i++) {
-                TableEntry entry = entries.get(i);
-                int currentHeight = sum(rowHeights, entry.row, entry.rowSpan);
-                if (currentHeight < entry.desiredHeight) {
-                    distribute(rowHeights, entry.row, entry.rowSpan, entry.desiredHeight - currentHeight);
-                }
-            }
-
-            columnOffsets = buildOffsets(columnWidths);
-            rowOffsets = buildOffsets(rowHeights);
-            setMeasuredDimension(columnOffsets[columnCount], rowOffsets[rowCount]);
         }
 
         @Override
         protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
-            for (int i = 0; i < entries.size(); i++) {
-                TableEntry entry = entries.get(i);
-                int cellLeft = columnOffsets[entry.column];
-                int cellTop = rowOffsets[entry.row];
-                int cellRight = columnOffsets[entry.column + entry.columnSpan];
-                int cellBottom = rowOffsets[entry.row + entry.rowSpan];
-                entry.left = cellLeft;
-                entry.top = cellTop;
-                entry.right = cellRight;
-                entry.bottom = cellBottom;
-                entry.view.layout(cellLeft, cellTop, cellRight, cellBottom);
-            }
+            scrollView.layout(listX, listY, listX + scrollView.getMeasuredWidth(), listY + scrollView.getMeasuredHeight());
         }
 
         @Override
-        protected void dispatchDraw(Canvas canvas) {
-            drawCellBackgrounds(canvas);
-            super.dispatchDraw(canvas);
-            drawCellLines(canvas);
-        }
-
-        private int sum(int[] values, int start, int span) {
-            int total = 0;
-            for (int i = start; i < Math.min(values.length, start + span); i++) {
-                total += values[i];
-            }
-            return total;
-        }
-
-        private void distribute(int[] values, int start, int span, int extra) {
-            if (span <= 0) {
+        protected void onDraw(Canvas canvas) {
+            if (currentBlock == null || titleLayout == null) {
                 return;
             }
-            int base = extra / span;
-            int remainder = extra % span;
-            for (int i = start; i < Math.min(values.length, start + span); i++) {
-                values[i] += base + (remainder > 0 ? 1 : 0);
-                if (remainder > 0) {
-                    remainder--;
-                }
-            }
-        }
-
-        private int[] buildOffsets(int[] values) {
-            int[] offsets = new int[values.length + 1];
-            for (int i = 0; i < values.length; i++) {
-                offsets[i + 1] = offsets[i] + values[i];
-            }
-            return offsets;
-        }
-
-        private void updatePaints() {
-            int lineColor = getTableLineColor();
-            linePaint.setColor(lineColor);
-            halfLinePaint.setColor(lineColor);
-            headerPaint.setColor(getTableFillColor(true, false));
-            stripPaint.setColor(getTableFillColor(false, true));
-        }
-
-        private void drawCellBackgrounds(Canvas canvas) {
-            for (int i = 0; i < entries.size(); i++) {
-                TableEntry entry = entries.get(i);
-                boolean fillHeader = entry.cell.header;
-                boolean fillStrip = striped && !fillHeader && entry.row % 2 == 0;
-                if (!fillHeader && !fillStrip) {
-                    continue;
-                }
-                Paint fillPaint = fillHeader ? headerPaint : stripPaint;
-                boolean topLeft = entry.left == 0 && entry.top == 0;
-                boolean topRight = entry.right == getMeasuredWidth() && entry.top == 0;
-                boolean bottomRight = entry.right == getMeasuredWidth() && entry.bottom == getMeasuredHeight();
-                boolean bottomLeft = entry.left == 0 && entry.bottom == getMeasuredHeight();
-                if (!topLeft && !topRight && !bottomRight && !bottomLeft) {
-                    canvas.drawRect(entry.left, entry.top, entry.right, entry.bottom, fillPaint);
-                    continue;
-                }
-                radii[0] = radii[1] = topLeft ? cornerRadius : 0;
-                radii[2] = radii[3] = topRight ? cornerRadius : 0;
-                radii[4] = radii[5] = bottomRight ? cornerRadius : 0;
-                radii[6] = radii[7] = bottomLeft ? cornerRadius : 0;
-                rect.set(entry.left, entry.top, entry.right, entry.bottom);
-                backgroundPath.reset();
-                backgroundPath.addRoundRect(rect, radii, Path.Direction.CW);
-                canvas.drawPath(backgroundPath, fillPaint);
-            }
-        }
-
-        private void drawCellLines(Canvas canvas) {
-            if (!drawLines) {
-                return;
-            }
-            float strokeWidth = linePaint.getStrokeWidth();
-            float halfStrokeWidth = halfLinePaint.getStrokeWidth();
-            for (int i = 0; i < entries.size(); i++) {
-                TableEntry entry = entries.get(i);
-                int x = entry.left;
-                int y = entry.top;
-                int width = entry.right - entry.left;
-                int height = entry.bottom - entry.top;
-                boolean isLastX = entry.right == getMeasuredWidth();
-                boolean isLastY = entry.bottom == getMeasuredHeight();
-
-                float start;
-                float end;
-                if (x == 0) {
-                    start = y;
-                    end = y + height;
-                    if (y == 0) {
-                        start += cornerRadius;
-                    }
-                    if (end == getMeasuredHeight()) {
-                        end -= cornerRadius;
-                    }
-                    canvas.drawLine(x + strokeWidth, start, x + strokeWidth, end, linePaint);
-                } else {
-                    canvas.drawLine(x - halfStrokeWidth, y, x - halfStrokeWidth, y + height, halfLinePaint);
-                }
-                if (y == 0) {
-                    start = x;
-                    end = x + width;
-                    if (x == 0) {
-                        start += cornerRadius;
-                    }
-                    if (end == getMeasuredWidth()) {
-                        end -= cornerRadius;
-                    }
-                    canvas.drawLine(start, y + strokeWidth, end, y + strokeWidth, linePaint);
-                } else {
-                    canvas.drawLine(x, y - halfStrokeWidth, x + width, y - halfStrokeWidth, halfLinePaint);
-                }
-
-                if (isLastX && y == 0) {
-                    start = y + cornerRadius;
-                } else {
-                    start = y - strokeWidth;
-                }
-                if (isLastX && isLastY) {
-                    end = y + height - cornerRadius;
-                } else {
-                    end = y + height - strokeWidth;
-                }
-                canvas.drawLine(x + width - strokeWidth, start, x + width - strokeWidth, end, linePaint);
-
-                if (x == 0 && isLastY) {
-                    start = x + cornerRadius;
-                } else {
-                    start = x - strokeWidth;
-                }
-                if (isLastX && isLastY) {
-                    end = x + width - cornerRadius;
-                } else {
-                    end = x + width - strokeWidth;
-                }
-                canvas.drawLine(start, y + height - strokeWidth, end, y + height - strokeWidth, linePaint);
-
-                if (x == 0 && y == 0) {
-                    rect.set(x + strokeWidth, y + strokeWidth, x + strokeWidth + cornerRadius * 2f, y + strokeWidth + cornerRadius * 2f);
-                    canvas.drawArc(rect, -180, 90, false, linePaint);
-                }
-                if (isLastX && y == 0) {
-                    rect.set(x + width - strokeWidth - cornerRadius * 2f, y + strokeWidth, x + width - strokeWidth, y + strokeWidth + cornerRadius * 2f);
-                    canvas.drawArc(rect, 0, -90, false, linePaint);
-                }
-                if (x == 0 && isLastY) {
-                    rect.set(x + strokeWidth, y + height - strokeWidth - cornerRadius * 2f, x + strokeWidth + cornerRadius * 2f, y + height - strokeWidth);
-                    canvas.drawArc(rect, 180, -90, false, linePaint);
-                }
-                if (isLastX && isLastY) {
-                    rect.set(x + width - strokeWidth - cornerRadius * 2f, y + height - strokeWidth - cornerRadius * 2f, x + width - strokeWidth, y + height - strokeWidth);
-                    canvas.drawArc(rect, 0, 90, false, linePaint);
-                }
-            }
+            canvas.save();
+            canvas.translate(textX, textY);
+            titleLayout.draw(canvas);
+            canvas.restore();
         }
     }
 
-    private static final class TableEntry {
-        final BrowserPage.PageTableCell cell;
-        final TextView view;
-        final int row;
-        final int column;
-        final int rowSpan;
-        final int columnSpan;
-        int desiredWidth;
-        int desiredHeight;
-        int left;
-        int top;
-        int right;
-        int bottom;
-
-        TableEntry(BrowserPage.PageTableCell cell, TextView view, int row, int column, int rowSpan, int columnSpan) {
-            this.cell = cell;
-            this.view = view;
-            this.row = row;
-            this.column = column;
-            this.rowSpan = rowSpan;
-            this.columnSpan = columnSpan;
-        }
+    private Paint tableLinePaint() {
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(AndroidUtilities.dp(1));
+        paint.setColor(Theme.getColor(Theme.key_divider));
+        return paint;
     }
 
-    private int resolveGravity(@Nullable String align) {
-        if ("center".equals(align)) {
-            return Gravity.CENTER_HORIZONTAL;
-        }
-        if ("end".equals(align)) {
-            return Gravity.END;
-        }
-        return Gravity.START;
+    private Paint tableHalfLinePaint() {
+        Paint paint = new Paint();
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(AndroidUtilities.dp(1) / 2.0f);
+        paint.setColor(Theme.getColor(Theme.key_divider));
+        return paint;
     }
 
-    private int resolveTextAlignment(@Nullable String align) {
-        if ("center".equals(align)) {
-            return View.TEXT_ALIGNMENT_CENTER;
-        }
-        if ("end".equals(align)) {
-            return View.TEXT_ALIGNMENT_VIEW_END;
-        }
-        return View.TEXT_ALIGNMENT_VIEW_START;
-    }
-
-    private int getTableLineColor() {
-        return Theme.getColor(Theme.key_divider);
-    }
-
-    private int getTableFillColor(boolean header, boolean striped) {
+    private Paint tableHeaderPaint() {
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         int base = Theme.getColor(Theme.key_telegram_color);
-        if (header) {
-            return Color.argb(34, Color.red(base), Color.green(base), Color.blue(base));
-        }
-        if (striped) {
-            return Color.argb(20, Color.red(base), Color.green(base), Color.blue(base));
-        }
-        return Theme.getColor(Theme.key_iv_background);
+        paint.setColor(Color.argb(34, Color.red(base), Color.green(base), Color.blue(base)));
+        return paint;
     }
 
-    private final class DetailsCell extends FrameLayout {
+    private Paint tableStripPaint() {
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        int base = Theme.getColor(Theme.key_telegram_color);
+        paint.setColor(Color.argb(20, Color.red(base), Color.green(base), Color.blue(base)));
+        return paint;
+    }
+
+    private TextPaint tableTextPaint() {
+        TextPaint paint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+        paint.setColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+        paint.setTypeface(Typeface.DEFAULT);
+        paint.setTextSize(AndroidUtilities.dpf2(scaledSp(15)));
+        return paint;
+    }
+
+    private Layout.Alignment tableAlignment(@NonNull BrowserPage.PageTableCell cell) {
+        if (cell.alignRight) {
+            return Layout.Alignment.ALIGN_OPPOSITE;
+        }
+        if (cell.alignCenter) {
+            return Layout.Alignment.ALIGN_CENTER;
+        }
+        return Layout.Alignment.ALIGN_NORMAL;
+    }
+
+    private final class DetailsCell extends View implements Drawable.Callback {
         private BrowserPage.PageBlockDetails currentBlock;
         private final AnimatedArrowDrawable arrowDrawable;
-        private final TextView summaryView;
         private final Paint dividerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        @Nullable private DrawingText textLayout;
+        private int textX = AndroidUtilities.dp(44 + 6);
+        private int textY = AndroidUtilities.dp(11) + 1;
 
         DetailsCell(Context context) {
             super(context);
@@ -2854,52 +3283,57 @@ class BrowserInstantViewFragment extends BaseFragment {
             setBackgroundColor(Theme.getColor(Theme.key_iv_background));
             dividerPaint.setColor(Theme.getColor(Theme.key_divider));
             arrowDrawable = new AnimatedArrowDrawable(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText), true);
-
-            summaryView = new TextView(context);
-            summaryView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
-            summaryView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, scaledSp(15));
-            summaryView.setLineSpacing(AndroidUtilities.dp(4), 1.0f);
-            summaryView.setIncludeFontPadding(false);
-            addView(summaryView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.START));
             setOnClickListener(v -> toggle());
         }
 
         void bind(BrowserPage.PageBlockDetails block) {
             currentBlock = block;
-            applyText(summaryView, buildRichText(block.title));
+            arrowDrawable.setCallback(this);
             updateExpandedState();
+            requestLayout();
         }
 
         @Override
         protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
             int width = MeasureSpec.getSize(widthMeasureSpec);
-            summaryView.measure(
-                    MeasureSpec.makeMeasureSpec(Math.max(0, width - AndroidUtilities.dp(36 + 16)), MeasureSpec.EXACTLY),
-                    MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED)
-            );
-            int height = Math.max(AndroidUtilities.dp(39), AndroidUtilities.dp(21) + summaryView.getMeasuredHeight()) + 1;
-            setMeasuredDimension(width, height);
+            int height = AndroidUtilities.dp(39);
+            textLayout = null;
+            if (currentBlock != null) {
+                textLayout = createDrawingText(buildRichText(currentBlock.title), detailsTextPaint(), width - AndroidUtilities.dp(36 + 16), Layout.Alignment.ALIGN_NORMAL);
+                if (textLayout != null) {
+                    height = Math.max(height, AndroidUtilities.dp(21) + textLayout.getHeight());
+                    textY = (textLayout.getHeight() + AndroidUtilities.dp(21) - textLayout.getHeight()) / 2;
+                    textLayout.x = textX;
+                    textLayout.y = textY;
+                }
+            }
+            setMeasuredDimension(width, height + 1);
         }
 
         @Override
-        protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
-            int textTop = (AndroidUtilities.dp(21) + summaryView.getMeasuredHeight() - summaryView.getMeasuredHeight()) / 2;
-            summaryView.layout(
-                    AndroidUtilities.dp(50),
-                    textTop,
-                    AndroidUtilities.dp(50) + summaryView.getMeasuredWidth(),
-                    textTop + summaryView.getMeasuredHeight()
-            );
+        public boolean onTouchEvent(MotionEvent event) {
+            if (textLayout != null && handleDrawingTextTouch(event, textLayout, textX, textY)) {
+                return true;
+            }
+            return super.onTouchEvent(event);
         }
 
         @Override
         protected void onDraw(Canvas canvas) {
-            super.onDraw(canvas);
+            if (currentBlock == null) {
+                return;
+            }
             canvas.save();
             int top = (getMeasuredHeight() - AndroidUtilities.dp(13) - 1) / 2;
             canvas.translate(AndroidUtilities.dp(18), top);
             arrowDrawable.draw(canvas);
             canvas.restore();
+            if (textLayout != null) {
+                canvas.save();
+                canvas.translate(textX, textY);
+                textLayout.draw(canvas);
+                canvas.restore();
+            }
             int y = getMeasuredHeight() - 1;
             canvas.drawLine(0, y, getMeasuredWidth(), y, dividerPaint);
         }
@@ -2908,14 +3342,52 @@ class BrowserInstantViewFragment extends BaseFragment {
             if (currentBlock == null || currentBlock.blocks.isEmpty()) {
                 return;
             }
+            int position = adapterPositionForDetailsRow();
+            int oldCount = localBlocks.size();
             currentBlock.open = !currentBlock.open;
             updateRows();
+            int newCount = localBlocks.size();
+            int changeCount = Math.abs(newCount - oldCount);
             resetCachedHeights();
+            arrowDrawable.setAnimationProgressAnimated(currentBlock.open ? 0f : 1f);
+            invalidate();
             if (instantAdapter != null) {
-                instantAdapter.notifyDataSetChanged();
+                if (position >= 0 && changeCount != 0) {
+                    if (currentBlock.open) {
+                        instantAdapter.notifyItemRangeInserted(position + 1, changeCount);
+                    } else {
+                        instantAdapter.notifyItemRangeRemoved(position + 1, changeCount);
+                    }
+                } else {
+                    instantAdapter.notifyDataSetChanged();
+                }
             }
             updateEmptyState();
             updateReadingProgress();
+        }
+
+        private int adapterPositionForDetailsRow() {
+            if (recyclerView != null) {
+                View row = this;
+                while (true) {
+                    if (row.getParent() == recyclerView) {
+                        int position = recyclerView.getChildAdapterPosition(row);
+                        if (position != RecyclerView.NO_POSITION) {
+                            return position;
+                        }
+                        break;
+                    }
+                    if (!(row.getParent() instanceof View)) {
+                        break;
+                    }
+                    row = (View) row.getParent();
+                }
+            }
+            int position = localBlocks.indexOf(currentBlock);
+            if (position < 0) {
+                position = localBlocks.indexOf(unwrapRenderableBlock(currentBlock));
+            }
+            return halfSheetPadding && position >= 0 ? position + 1 : position;
         }
 
         private void updateExpandedState() {
@@ -2924,6 +3396,19 @@ class BrowserInstantViewFragment extends BaseFragment {
             float target = currentBlock != null && currentBlock.open ? 0f : 1f;
             arrowDrawable.setAnimationProgress(target);
             invalidate();
+        }
+
+        @Override
+        public void invalidateDrawable(@NonNull Drawable who) {
+            invalidate();
+        }
+
+        @Override
+        public void scheduleDrawable(@NonNull Drawable who, @NonNull Runnable what, long when) {
+        }
+
+        @Override
+        public void unscheduleDrawable(@NonNull Drawable who, @NonNull Runnable what) {
         }
     }
 
@@ -2937,12 +3422,12 @@ class BrowserInstantViewFragment extends BaseFragment {
 
         @Override
         protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-            setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), AndroidUtilities.dp(5));
+            setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), 1 + AndroidUtilities.dp(4));
         }
 
         @Override
         protected void onDraw(Canvas canvas) {
-            canvas.drawRect(0, 0, getMeasuredWidth(), 1, paint);
+            canvas.drawLine(0, 0, getMeasuredWidth(), 0, paint);
         }
     }
 
@@ -2977,6 +3462,15 @@ class BrowserInstantViewFragment extends BaseFragment {
             invalidateSelf();
         }
 
+        void setAnimationProgressAnimated(float progress) {
+            if (animateToProgress == progress) {
+                return;
+            }
+            animateToProgress = progress;
+            lastUpdateTime = SystemClock.elapsedRealtime();
+            invalidateSelf();
+        }
+
         private void checkAnimation() {
             if (animateToProgress == animProgress) {
                 return;
@@ -3006,6 +3500,10 @@ class BrowserInstantViewFragment extends BaseFragment {
                 path.moveTo(AndroidUtilities.dp(3), AndroidUtilities.dp(6) - AndroidUtilities.dp(2) * p);
                 path.lineTo(AndroidUtilities.dp(8), AndroidUtilities.dp(6) + AndroidUtilities.dp(2) * p);
                 path.lineTo(AndroidUtilities.dp(13), AndroidUtilities.dp(6) - AndroidUtilities.dp(2) * p);
+            } else {
+                path.moveTo(AndroidUtilities.dp(4.5f), AndroidUtilities.dp(12) - AndroidUtilities.dp(4) * p);
+                path.lineTo(AndroidUtilities.dp(13), AndroidUtilities.dp(12) + AndroidUtilities.dp(4) * p);
+                path.lineTo(AndroidUtilities.dp(21.5f), AndroidUtilities.dp(12) - AndroidUtilities.dp(4) * p);
             }
         }
 
@@ -3020,7 +3518,25 @@ class BrowserInstantViewFragment extends BaseFragment {
 
         @Override
         public int getOpacity() {
-            return PixelFormat.TRANSLUCENT;
+            return PixelFormat.TRANSPARENT;
         }
+
+        @Override
+        public int getIntrinsicWidth() {
+            return AndroidUtilities.dp(26);
+        }
+
+        @Override
+        public int getIntrinsicHeight() {
+            return AndroidUtilities.dp(26);
+        }
+    }
+
+    private TextPaint detailsTextPaint() {
+        TextPaint paint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+        paint.setColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+        paint.setTypeface(Typeface.DEFAULT);
+        paint.setTextSize(AndroidUtilities.dpf2(scaledSp(15)));
+        return paint;
     }
 }

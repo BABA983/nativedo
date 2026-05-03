@@ -15,7 +15,7 @@
    - `org/telegram/ui/Components/UniversalAdapter.java`
    - `org/telegram/ui/Components/UItem.java`
    - `org/telegram/ui/PhotoViewer.java`
-   - `org/telegram/ui/Components/PinchToZoomHelper.java`
+   - `org/telegram/ui/PinchToZoomHelper.java`
 
 2. Entry points:
    - Browser sheet more-menu actions for Instant View, Settings, History, Bookmarks, bookmark toggle, open external, copy link, and font size.
@@ -72,13 +72,11 @@
 
 8. Unsupported or adapted dependencies:
    - `HOST-WIRING`: NativeDo package/import/resource/theme mapping, AndroidX `RecyclerView`, local `ActionBarLayout`, local `BaseFragment.AttachedSheet`, and `ActionBarSheet` as the current `showAsSheet(...)` host.
-   - `ADAPTED-BACKEND`: `BrowserStorage` replaces Telegram history/bookmark/settings/recent-search backends; `BrowserMetadataCache` replaces Telegram metadata file serialization; generated Instant View JSON replaces `TLRPC.WebPage.cached_page`.
-   - `ADAPTED-PRODUCT`: Local Instant View renderer supports only the block families modeled by `BrowserPage`; Settings exposes only NativeDo-supported browser settings (cookie/cache rows render Formatter.formatShortFileSize, Clear History uses a pluralized page-count string, restricted-domain rows pull sitename/favicon from `BrowserMetadataCache`); WebActionBar overflow adds a NativeDo Share entry that fans out to `Intent.ACTION_SEND`; `BrowserInstantPhotoViewer` is a single-image NativeDo overlay and does not claim Telegram `PhotoViewer` parity.
-   - `OMITTED`: Telegram `BottomSheet` Dialog internals, account-scoped bookmark sync, Saved Messages bookmark navigation, hidden WebView metadata retrieval for unopened URLs, remote web-page fallback, full media/file loader integration, action mode, bulk selection, separate toolbar forward button (forward stays in the overflow menu only), custom tabs, debug settings, bottom action bar, browser multi-page stack.
-   - `PARITY-BLOCKER`: Exact Telegram Instant View table measurement is not fully ported; current table renderer is a NativeDo implementation that consumes `PageBlockTable` but must not be declared exact parity.
-   - `PARITY-BLOCKER`: Exact Telegram details animation/selection behavior is not fully ported; current details rows follow Telegram's adapter expansion/filtering path.
-   - `PARITY-BLOCKER`: Exact Telegram `PhotoViewer` / `PinchToZoomHelper` gesture physics is not ported; current image viewer is a NativeDo single-image overlay.
-   - `PARITY-BLOCKER`: Telegram media families not represented by `BrowserPage` are unsupported until parser/model/host support exists.
+   - `ADAPTED-BACKEND`: `BrowserStorage` replaces Telegram history/bookmark/settings/recent-search backends; `BrowserMetadataCache` replaces Telegram metadata file serialization; generated Instant View JSON replaces `TLRPC.WebPage.cached_page`; Telegram `RichText` subclasses are represented by local `RichText` text/entities instead of TLObject instances.
+   - `ADAPTED-PRODUCT`: Local Instant View renderer supports only the block families modeled by `BrowserPage`; Phase 2 adds Telegram-shaped `PageBlockUnsupported`, `PageBlockAnchor`, `PageBlockFooter`, `PageBlockEmbed`, `PageBlockVideo`, `PageBlockAudio`, `PageBlockCover`, `PageBlockSlideshow`, and `PageBlockCollage` models, but media/embed rows render as readable cards or expanded image sequences instead of Telegram's inline WebView/player/gallery internals; Phase 3 aligns parser coverage for Telegram rich-text tags, phone/email/link/anchor spans, inline image entities, and `figure source/srcset` alternatives, while paragraph/list/blockquote inline images are promoted to photo blocks until exact `TL_textImage` rendering is ported; Settings exposes only NativeDo-supported browser settings (cookie/cache rows render Formatter.formatShortFileSize, Clear History uses a pluralized page-count string, restricted-domain rows pull sitename/favicon from `BrowserMetadataCache`); WebActionBar overflow adds a NativeDo Share entry that fans out to `Intent.ACTION_SEND`; `BrowserInstantPhotoViewer` ports Telegram PhotoViewer/PinchToZoom gesture constants and transform math into NativeDo's single-image Instant View overlay.
+   - `OMITTED`: Telegram `BottomSheet` Dialog internals, account-scoped bookmark sync, Saved Messages bookmark navigation, hidden WebView metadata retrieval for unopened URLs, remote web-page fallback, full media/file loader integration, inline embed WebView playback, audio/video player controls, exact slideshow/collage paging, global `PhotoViewerProvider`/`ImageReceiver`/pageBlocksAdapter media backend, action mode, bulk selection, separate toolbar forward button (forward stays in the overflow menu only), custom tabs, debug settings, bottom action bar, browser multi-page stack.
+   - `PARITY-BLOCKER`: Full Telegram `PhotoViewer` backend is not ported; current image viewer ports the gesture/animation/measurement core into a NativeDo single-image overlay.
+   - `PARITY-BLOCKER`: Exact Telegram media/embed/player/gallery behavior is not fully ported; current Phase 2 rows keep content visible and openable without claiming exact `ArticleViewer` parity.
 
 Current task scope:
 - In scope:
@@ -90,13 +88,18 @@ Current task scope:
   - Port the AddressBarList workflow for current page card, suggestions, recent searches, query insert, URL/query execution, and local bookmark rows.
   - Add a NativeDo `BrowserMetadataCache` backend for metadata-backed bookmark rows using live WebView title/favicon/siteName/color events.
   - Move Instant View model/adapter toward Telegram-shaped `PageBlock` rows for title/header/subheader/paragraph, quotes, list/ordered list, details, table, photo, preformatted, and divider.
-  - Mark current table/details geometry and photo-viewer gestures as current-phase adaptations/blockers rather than exact Telegram parity.
+  - Add Phase 2 Instant View content coverage for unsupported placeholders, anchors, footer text, embeds, video/audio cards, cover blocks, and slideshow/collage image sequences.
+  - Add Phase 3 Instant View parser alignment for Telegram `parseRichText(...)` families: bold/italic/strike/fixed/marked/sub/sup/link/phone/email/anchor/inline image, list inline detection, table cell rich text, details summary/body rich text, empty anchor preservation, blockquote inline media, and `figure source/srcset` photo alternatives.
+  - Port Phase 3 exact-component cores: `ArticleViewer.BlockTableCell`/`TableLayout` table drawing and measurement, `BlockDetailsCell` expand/collapse drawing and row updates, and `PhotoViewer`/`PinchToZoomHelper` single-image gesture physics.
+  - Mark Phase 3 inline rich-image rendering as `ADAPTED-PRODUCT`: parser preserves the entity, but current text renderer uses a placeholder span in rich-text surfaces and promotes paragraph/list/blockquote images to visible photo blocks.
+  - Mark Phase 2 media/embed/gallery rows as `ADAPTED-PRODUCT`: content is visible and openable, but inline WebView, player, and gallery gesture internals remain deferred.
   - Keep current staged behavior intact while making port boundaries reviewable.
 - Deferred:
   - Exact `ArticleViewer.BlockListItemCell` and `BlockOrderedListItemCell` text-selection internals.
-  - Exact Telegram `PhotoViewer` / `PinchToZoomHelper` gesture and animation behavior.
-  - Hidden WebView metadata retrieval for unopened URLs, share, forward button, full action mode, multi-page browser stack, nested scroll dismiss, and bottom action bar.
+  - Exact Telegram `TL_textImage` inline image rendering through ArticleViewer image receiver spans.
+  - Full Telegram `PhotoViewerProvider` / `ImageReceiver` / pageBlocksAdapter backend for multi-media Instant View galleries.
+  - Inline `BlockEmbedCell` WebView, `BlockVideoCell` player, `BlockAudioCell` player, exact `BlockSlideshowCell` pager, exact `BlockCollageCell` grouped layout, hidden WebView metadata retrieval for unopened URLs, full action mode, multi-page browser stack, nested scroll dismiss, and bottom action bar.
 - Parity blockers:
-  - Local Instant View parser/model does not expose all Telegram cached-page media families.
-  - Current table/details renderers are not exact Telegram cells.
-  - Current image viewer does not match Telegram PhotoViewer gesture physics.
+  - Local Instant View parser/model now exposes the Phase 2 media families, but generated readability JSON still cannot represent every Telegram cached-page/media backend field.
+  - Full Telegram PhotoViewer backend is still omitted even though the single-image gesture core is ported.
+  - Current media/embed/gallery rows do not match Telegram's inline player, WebView, or gesture physics.

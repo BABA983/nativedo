@@ -62,6 +62,10 @@
     <string name="app_browser_instant_view_image_close">Close image</string>
     <string name="app_browser_reader_by_author">by %1$s</string>
     <string name="app_browser_reader_date_by_author">%1$s by %2$s</string>
+    <string name="app_browser_reader_embed">Embedded content</string>
+    <string name="app_browser_reader_video">Video</string>
+    <string name="app_browser_reader_audio">Audio</string>
+    <string name="app_browser_reader_unsupported">Unsupported content</string>
     <string name="app_browser_bookmarks">Bookmarks</string>
     <string name="app_browser_settings">Settings</string>
     <string name="app_browser_minimize">Minimize</string>

@@ -79,6 +79,8 @@ import android.widget.FrameLayout;
 import android.widget.Toast;
 
 import androidx.annotation.Nullable;
+import androidx.annotation.NonNull;
+import androidx.annotation.WorkerThread;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -89,6 +91,8 @@ import java.io.File;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import io.github.baba983.nativedo.R;
 import io.github.baba983.nativedo.core.AndroidUtilities;
@@ -147,6 +151,7 @@ public class BrowserWebViewContainer extends FrameLayout {
     private FrameLayout instantViewReaderContainer;
     private WebView instantViewReaderWebView;
     private File instantViewArchiveFile;
+    private static final ExecutorService INSTANT_IMAGE_EXECUTOR = Executors.newSingleThreadExecutor();
 
     private int searchIndex;
     private int searchCount;
@@ -982,22 +987,40 @@ public class BrowserWebViewContainer extends FrameLayout {
     }
 
     private void handleInstantViewResult(@Nullable String json) {
-        cleanupInstantViewReader();
-        boolean urlMatches = TextUtils.equals(currentUrl, pendingInstantViewRequestUrl);
+        File archiveFile = instantViewArchiveFile;
+        instantViewArchiveFile = null;
+        cleanupInstantViewReaderShell();
+        String requestUrl = pendingInstantViewRequestUrl;
+        boolean urlMatches = TextUtils.equals(currentUrl, requestUrl);
         pendingInstantViewRequestUrl = null;
         if (!urlMatches && instantViewCallback == null) {
             setInstantViewLoading(false);
+            if (archiveFile != null) {
+                archiveFile.delete();
+            }
             return;
         }
-        String normalized = json;
-        if ("null".equals(normalized)) {
-            normalized = null;
+        String normalized = "null".equals(json) ? null : json;
+        if (archiveFile != null && !TextUtils.isEmpty(normalized)) {
+            cacheInstantImagesAsync(archiveFile, () -> finishInstantViewResult(requestUrl, normalized));
+        } else {
+            if (archiveFile != null) {
+                archiveFile.delete();
+            }
+            finishInstantViewResult(requestUrl, normalized);
         }
-        currentInstantViewJson = TextUtils.isEmpty(normalized) ? null : normalized;
+    }
+
+    private void finishInstantViewResult(@Nullable String url, @Nullable String json) {
+        if (!TextUtils.equals(currentUrl, url) && instantViewCallback == null) {
+            setInstantViewLoading(false);
+            return;
+        }
+        currentInstantViewJson = TextUtils.isEmpty(json) ? null : json;
         if (currentInstantViewJson != null) {
             // Make this URL→json mapping discoverable for in-document Instant View link
             // navigation (BrowserInstantViewFragment.openLinkOrInstantView).
-            BrowserInstantViewFragment.cacheInstantViewJson(currentUrl, currentInstantViewJson);
+            BrowserInstantViewFragment.cacheInstantViewJson(url, currentInstantViewJson);
         }
         setInstantViewLoading(false);
         if (delegate != null) {
@@ -1017,6 +1040,51 @@ public class BrowserWebViewContainer extends FrameLayout {
         instantViewLoading = loading;
         if (delegate != null) {
             delegate.onInstantViewLoadingChanged(loading);
+        }
+    }
+
+    private void cleanupInstantViewReaderShell() {
+        if (instantViewReaderWebView != null) {
+            instantViewReaderWebView.stopLoading();
+            instantViewReaderWebView.removeJavascriptInterface("Instant");
+            instantViewReaderWebView.destroy();
+            instantViewReaderWebView = null;
+        }
+        if (instantViewReaderContainer != null) {
+            removeView(instantViewReaderContainer);
+            instantViewReaderContainer = null;
+        }
+    }
+
+    private void cacheInstantImagesAsync(@NonNull File archiveFile, @Nullable Runnable callback) {
+        INSTANT_IMAGE_EXECUTOR.execute(() -> {
+            cacheInstantImages(archiveFile);
+            if (callback != null) {
+                AndroidUtilities.runOnUIThread(callback);
+            }
+        });
+    }
+
+    @WorkerThread
+    private void cacheInstantImages(@NonNull File archiveFile) {
+        try {
+            MHTML archive = new MHTML(archiveFile);
+            for (int i = 0; i < archive.entries.size(); i++) {
+                MHTML.Entry entry = archive.entries.get(i);
+                String location = entry.getLocation();
+                String type = entry.getType();
+                if (TextUtils.isEmpty(location) || TextUtils.isEmpty(type) || !type.toLowerCase().startsWith("image/")) {
+                    continue;
+                }
+                try (InputStream stream = entry.getInputStream()) {
+                    Bitmap bitmap = BrowserImageDecoder.decode(stream, type);
+                    BrowserInstantViewFragment.cacheInstantImage(location, bitmap);
+                } catch (Exception ignored) {
+                }
+            }
+        } catch (Exception ignored) {
+        } finally {
+            archiveFile.delete();
         }
     }
 
