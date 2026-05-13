@@ -21,6 +21,8 @@
 //   - Dispatches bottom-tabs margins through Telegram's LayoutContainer edge-to-edge branch while
 //     keeping NativeDo's single-stack fragment attachment.
 //   - Uses Telegram's browser white/black shell background behind NativeDo's parchment content theme.
+//   - Calls BaseFragment.onFragmentDestroy() when NativeDo fragments are removed so feature ViewModels
+//     do not outlive the Telegram-derived stack entry.
 // OMITTED:
 //   - Drawer, previews, dialogs, story layers, multi-window branches, BottomSheetTabDialog, and Telegram delegate surfaces.
 /*
@@ -272,6 +274,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
         fragmentsStack.add(fragment);
         if (removeLast) {
             fragmentsStack.remove(currentFragment);
+            currentFragment.onFragmentDestroy();
         }
 
         if (forceWithoutAnimation || getWidth() == 0) {
@@ -829,6 +832,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
                 if (fragmentsStack.size() >= 2 && oldFragment != null) {
                     fragmentsStack.remove(fragmentsStack.size() - 1);
                     oldFragment.onPause();
+                    oldFragment.onFragmentDestroy();
                 }
                 containerView.removeAllViews();
                 containerView.setTranslationY(0.0f);
@@ -1068,6 +1072,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
             if (oldFragment != null && fragmentsStack.size() > 1) {
                 fragmentsStack.remove(fragmentsStack.size() - 1);
                 oldFragment.onPause();
+                oldFragment.onFragmentDestroy();
             }
             containerViewBack.removeAllViews();
             containerViewBack.setAlpha(1.0f);
@@ -1092,6 +1097,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
                 BaseFragment currentFragment = fragmentsStack.remove(fragmentsStack.size() - 1);
                 BaseFragment previousFragment = fragmentsStack.get(fragmentsStack.size() - 1);
                 currentFragment.onPause();
+                currentFragment.onFragmentDestroy();
 
                 LayoutContainer temp = containerView;
                 containerView = containerViewBack;
@@ -1140,9 +1146,21 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
             actionBarHeight = actionBar.getCurrentActionBarHeight();
         }
 
+        FrameLayout wrapper = new FrameLayout(getContext());
+        wrapper.addView(contentView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.START));
+        // setPhotoViewerScaleView(wrapper) is used by hosts as PlaceProviderObject.parentView
+        // (= clip target). The wrapper is positioned topMargin=actionBarHeight below
+        // the ActionBar, so its getLocationInWindow correctly excludes the ActionBar
+        // strip from the morph view's clip — preventing the closing image from
+        // painting over the host ActionBar (user complaint #2).
+        // For host zoom (PlaceProviderObject.parentScaleView) the host should instead
+        // pass the LayoutContainer / fragment chrome that includes the ActionBar so
+        // the ActionBar visually follows the open/close zoom (user complaint #3).
+        fragment.setPhotoViewerScaleView(wrapper);
+
         FrameLayout.LayoutParams contentLayoutParams = LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.START);
         contentLayoutParams.topMargin = actionBarHeight;
-        container.addView(contentView, contentLayoutParams);
+        container.addView(wrapper, contentLayoutParams);
         if (container instanceof LayoutContainer) {
             ((LayoutContainer) container).setShouldHandleBottomInsets(fragment.isSupportEdgeToEdge());
         }

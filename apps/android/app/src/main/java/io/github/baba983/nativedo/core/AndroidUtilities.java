@@ -45,6 +45,8 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.ColorMatrix;
+import android.graphics.Matrix;
+import android.graphics.RectF;
 import android.os.Build;
 import android.graphics.Point;
 import android.os.Handler;
@@ -155,6 +157,67 @@ public final class AndroidUtilities {
         final float waveDuration = 1f / count * Math.min(waveLength, count);
         final float waveOffset = position / count * (1f - waveDuration);
         return Math.max(0f, Math.min(1f, (fullAnimationT - waveOffset) / waveDuration));
+    }
+
+    public static void setRectToRect(Matrix matrix, RectF src, RectF dst, int rotation, int invert, boolean translate) {
+        float sx;
+        float sy;
+        boolean xLarger = false;
+        if (rotation == 90 || rotation == 270) {
+            sx = dst.height() / src.width();
+            sy = dst.width() / src.height();
+        } else {
+            sx = dst.width() / src.width();
+            sy = dst.height() / src.height();
+        }
+        if (sx < sy) {
+            sx = sy;
+            xLarger = true;
+        } else {
+            sy = sx;
+        }
+        if (translate) {
+            matrix.setTranslate(dst.left, dst.top);
+        }
+        if (rotation == 90) {
+            matrix.preRotate(90);
+            if (invert == 1) {
+                matrix.preScale(-1, 1);
+            } else if (invert == 2) {
+                matrix.preScale(1, -1);
+            }
+            matrix.preTranslate(0, -dst.width());
+        } else if (rotation == 180) {
+            matrix.preRotate(180);
+            if (invert == 1) {
+                matrix.preScale(-1, 1);
+            } else if (invert == 2) {
+                matrix.preScale(1, -1);
+            }
+            matrix.preTranslate(-dst.width(), -dst.height());
+        } else if (rotation == 270) {
+            matrix.preRotate(270);
+            if (invert == 1) {
+                matrix.preScale(-1, 1);
+            } else if (invert == 2) {
+                matrix.preScale(1, -1);
+            }
+            matrix.preTranslate(-dst.height(), 0);
+        } else if (invert == 1) {
+            matrix.preScale(-1, 1);
+            matrix.preTranslate(-dst.width(), 0);
+        } else if (invert == 2) {
+            matrix.preScale(1, -1);
+            matrix.preTranslate(0, -dst.height());
+        }
+
+        if (xLarger) {
+            matrix.preTranslate((dst.width() - src.width() * sx) / 2, 0);
+        } else {
+            matrix.preTranslate(0, (dst.height() - src.height() * sy) / 2);
+        }
+        matrix.preScale(sx, sy);
+        matrix.preTranslate(-src.left, -src.top);
     }
 
     public static void applySpring(Animator animator, double stiffness, double damping) {

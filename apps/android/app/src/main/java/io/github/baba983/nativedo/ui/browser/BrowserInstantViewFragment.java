@@ -44,13 +44,16 @@ package io.github.baba983.nativedo.ui.browser;
 import android.animation.ValueAnimator;
 import android.content.ClipData;
 import android.content.ClipboardManager;
+import android.app.Activity;
 import android.content.Context;
+import android.content.ContextWrapper;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.ColorFilter;
@@ -102,9 +105,6 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import android.graphics.drawable.BitmapDrawable;
 
-import java.io.InputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Locale;
@@ -113,9 +113,12 @@ import java.util.concurrent.Executors;
 
 import io.github.baba983.nativedo.R;
 import io.github.baba983.nativedo.core.AndroidUtilities;
+import io.github.baba983.nativedo.core.ImageReceiver;
+import io.github.baba983.nativedo.core.ImageLoader;
 import io.github.baba983.nativedo.ui.actionbar.BaseFragment;
 import io.github.baba983.nativedo.ui.actionbar.Theme;
 import io.github.baba983.nativedo.ui.components.LayoutHelper;
+import io.github.baba983.nativedo.ui.photo.PhotoViewer;
 
 class BrowserInstantViewFragment extends BaseFragment {
 
@@ -148,12 +151,6 @@ class BrowserInstantViewFragment extends BaseFragment {
 
     private static final ExecutorService IMAGE_EXECUTOR = Executors.newFixedThreadPool(3);
     private static final Handler MAIN_HANDLER = new Handler(Looper.getMainLooper());
-    private static final LruCache<String, Bitmap> IMAGE_CACHE = new LruCache<String, Bitmap>(8 * 1024 * 1024) {
-        @Override
-        protected int sizeOf(@NonNull String key, @NonNull Bitmap value) {
-            return value.getByteCount();
-        }
-    };
 
     /**
      * URL → JSON cache for in-document instant-view links. When a link inside an instant view
@@ -173,9 +170,7 @@ class BrowserInstantViewFragment extends BaseFragment {
         if (TextUtils.isEmpty(url) || bitmap == null) {
             return;
         }
-        synchronized (IMAGE_CACHE) {
-            IMAGE_CACHE.put(url, bitmap);
-        }
+        ImageLoader.put(url, bitmap);
     }
 
     @Nullable
@@ -209,7 +204,7 @@ class BrowserInstantViewFragment extends BaseFragment {
     private boolean halfSheetPadding;
     private float fontScale = 1.0f;
     private float readingProgress;
-    @Nullable private BrowserInstantPhotoViewer activePhotoViewer;
+    @Nullable private PhotoViewer activePhotoViewer;
 
     interface Delegate {
         void onBackPressed();
@@ -1261,24 +1256,177 @@ class BrowserInstantViewFragment extends BaseFragment {
         if (activePhotoViewer != null) {
             return;
         }
-        RectF sourceRect = null;
-        if (sourceView != null && sourceView.getWidth() > 0 && sourceView.getHeight() > 0) {
-            int[] sourceLocation = new int[2];
-            int[] rootLocation = new int[2];
-            sourceView.getLocationOnScreen(sourceLocation);
-            contentRoot.getLocationOnScreen(rootLocation);
-            sourceRect = new RectF(
-                    sourceLocation[0] - rootLocation[0],
-                    sourceLocation[1] - rootLocation[1],
-                    sourceLocation[0] - rootLocation[0] + sourceView.getWidth(),
-                    sourceLocation[1] - rootLocation[1] + sourceView.getHeight()
-            );
+        if (url == null || url.length() == 0) {
+            return;
         }
-        BrowserInstantPhotoViewer viewer = new BrowserInstantPhotoViewer(contentRoot.getContext());
+        final View finalSourceView = sourceView;
+        // photoViewerWrapper is the clip-only target (positioned BELOW the host
+        // ActionBar, so the morph view's clipTop excludes the ActionBar strip);
+        // photoViewerScaleHost is the zoom target (the LayoutContainer that holds
+        // both the ActionBar and the wrapper, so the ActionBar follows the open/
+        // close zoom). See PhotoViewer.PlaceProviderObject doc comments for the
+        // Telegram parity rationale (PhotoViewer.java:19533-19560).
+        final View photoViewerWrapper = getPhotoViewerScaleView() != null ? getPhotoViewerScaleView() : contentRoot;
+        final View photoViewerScaleHost = photoViewerWrapper.getParent() instanceof View
+                ? (View) photoViewerWrapper.getParent()
+                : photoViewerWrapper;
+        // Telegram-shaped entry point: bind the singleton to this Activity, then call
+        // openPhoto on the singleton. attachToDecor() is now folded into openPhoto.
+        Activity hostActivity = findHostActivity(contentRoot.getContext());
+        if (hostActivity == null) {
+            return;
+        }
+        PhotoViewer.setParentActivity(hostActivity);
+        PhotoViewer viewer = PhotoViewer.getInstance();
         viewer.setOnDismissListener(() -> activePhotoViewer = null);
-        contentRoot.addView(viewer, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
-        viewer.show(initial, url, sourceRect);
+        ArrayList<PhotoViewer.PhotoEntry> entries = buildPhotoEntries(url);
+        int currentIndex = findPhotoEntry(entries, url);
+        if (currentIndex < 0) {
+            entries.add(new PhotoViewer.PhotoEntry(url));
+            currentIndex = entries.size() - 1;
+        }
+        viewer.openPhoto(entries, currentIndex, new PhotoViewer.EmptyPhotoViewerProvider() {
+            @Nullable
+            @Override
+            public PhotoViewer.PlaceProviderObject getPlaceForPhoto(int index, @NonNull PhotoViewer.PhotoEntry entry, boolean needPreview, boolean closing) {
+                PhotoViewer.PlaceProviderObject object = new PhotoViewer.PlaceProviderObject();
+                object.parentView = photoViewerWrapper;
+                object.parentScaleView = photoViewerScaleHost;
+                boolean isSource = TextUtils.equals(entry.url, url);
+                if (isSource && finalSourceView != null && finalSourceView.getWidth() > 0 && finalSourceView.getHeight() > 0) {
+                    int[] sourceLocation = new int[2];
+                    finalSourceView.getLocationInWindow(sourceLocation);
+                    RectF sourceRect = new RectF(
+                            sourceLocation[0],
+                            sourceLocation[1],
+                            sourceLocation[0] + finalSourceView.getWidth(),
+                            sourceLocation[1] + finalSourceView.getHeight()
+                    );
+                    object.sourceView = finalSourceView;
+                    object.viewRect = sourceRect;
+                    RectF imageDrawRect = sourceImageRectInWindow(finalSourceView, sourceRect);
+                    object.imageDrawRect = imageDrawRect != null ? imageDrawRect : sourceRect;
+                    object.viewX = sourceLocation[0];
+                    object.viewY = sourceLocation[1];
+                    if (finalSourceView instanceof RoundedImageView) {
+                        object.imageReceiver = ((RoundedImageView) finalSourceView).imageReceiver;
+                        Rect visible = new Rect();
+                        if (finalSourceView.getGlobalVisibleRect(visible)) {
+                            object.visibleRect = new RectF(visible);
+                        }
+                    }
+                }
+                Bitmap cached = getCachedInstantImage(entry.url);
+                object.thumb = cached != null ? cached : (isSource ? initial : null);
+                object.index = index;
+                return object;
+            }
+
+            @Override
+            public CharSequence getTitleFor(int index, @NonNull PhotoViewer.PhotoEntry entry) {
+                return null;
+            }
+
+            @Override
+            public CharSequence getSubtitleFor(int index, @NonNull PhotoViewer.PhotoEntry entry) {
+                return entry.url;
+            }
+        });
+        // attachToDecor() is now folded into PhotoViewer.openPhoto() to match
+        // Telegram's API surface. No separate attach step needed.
         activePhotoViewer = viewer;
+    }
+
+    @Nullable
+    private static Activity findHostActivity(@Nullable Context context) {
+        Context ctx = context;
+        while (ctx instanceof ContextWrapper) {
+            if (ctx instanceof Activity) {
+                return (Activity) ctx;
+            }
+            ctx = ((ContextWrapper) ctx).getBaseContext();
+        }
+        return null;
+    }
+
+    @Nullable
+    private static RectF sourceImageRectInWindow(@Nullable View sourceView, @NonNull RectF sourceViewRect) {
+        if (!(sourceView instanceof ImageView)) {
+            return null;
+        }
+        ImageView imageView = (ImageView) sourceView;
+        Bitmap bitmap;
+        if (imageView instanceof RoundedImageView) {
+            bitmap = ((RoundedImageView) imageView).getBitmap();
+        } else if (imageView.getDrawable() instanceof BitmapDrawable) {
+            bitmap = ((BitmapDrawable) imageView.getDrawable()).getBitmap();
+        } else {
+            return null;
+        }
+        if (bitmap == null || bitmap.getWidth() <= 0 || bitmap.getHeight() <= 0
+                || imageView.getWidth() <= 0 || imageView.getHeight() <= 0) {
+            return null;
+        }
+        float scale = Math.min(
+                imageView.getWidth() / (float) bitmap.getWidth(),
+                imageView.getHeight() / (float) bitmap.getHeight());
+        float drawnWidth = bitmap.getWidth() * scale;
+        float drawnHeight = bitmap.getHeight() * scale;
+        float left = sourceViewRect.left + (imageView.getWidth() - drawnWidth) / 2f;
+        float top = sourceViewRect.top + (imageView.getHeight() - drawnHeight) / 2f;
+        return new RectF(left, top, left + drawnWidth, top + drawnHeight);
+    }
+
+    @NonNull
+    private ArrayList<PhotoViewer.PhotoEntry> buildPhotoEntries(@NonNull String currentUrl) {
+        ArrayList<PhotoViewer.PhotoEntry> entries = new ArrayList<>();
+        for (int i = 0; i < photoBlocks.size(); i++) {
+            String entryUrl = choosePhotoEntryUrl(photoBlocks.get(i), currentUrl);
+            if (!TextUtils.isEmpty(entryUrl) && findPhotoEntry(entries, entryUrl) < 0) {
+                entries.add(new PhotoViewer.PhotoEntry(entryUrl));
+            }
+        }
+        return entries;
+    }
+
+    @Nullable
+    private String choosePhotoEntryUrl(@NonNull BrowserPage.PageBlockPhoto block, @NonNull String currentUrl) {
+        if (TextUtils.equals(currentUrl, block.url) || block.urls.contains(currentUrl)) {
+            return currentUrl;
+        }
+        for (int i = 0; i < block.urls.size(); i++) {
+            String candidate = block.urls.get(i);
+            if (!TextUtils.isEmpty(candidate) && getCachedInstantImage(candidate) != null) {
+                return candidate;
+            }
+        }
+        if (!TextUtils.isEmpty(block.url)) {
+            return block.url;
+        }
+        for (int i = 0; i < block.urls.size(); i++) {
+            String candidate = block.urls.get(i);
+            if (!TextUtils.isEmpty(candidate)) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private int findPhotoEntry(@NonNull ArrayList<PhotoViewer.PhotoEntry> entries, @NonNull String url) {
+        for (int i = 0; i < entries.size(); i++) {
+            if (TextUtils.equals(entries.get(i).url, url)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    @Nullable
+    private Bitmap getCachedInstantImage(@Nullable String url) {
+        if (TextUtils.isEmpty(url)) {
+            return null;
+        }
+        return ImageLoader.get(url);
     }
 
     @Override
@@ -1897,36 +2045,38 @@ class BrowserInstantViewFragment extends BaseFragment {
         imageView.setTag(requestKey);
         if (urls.isEmpty()) {
             imageView.setImageDrawable(null);
+            if (imageView instanceof RoundedImageView) {
+                ((RoundedImageView) imageView).imageReceiver.setImageBitmap(null);
+            }
             imageView.setVisibility(View.GONE);
             return;
         }
         imageView.setVisibility(View.VISIBLE);
-        synchronized (IMAGE_CACHE) {
-            for (int i = 0; i < urls.size(); i++) {
-                String url = urls.get(i);
-                Bitmap cached = IMAGE_CACHE.get(url);
-                if (cached != null) {
-                    imageView.setTag(url);
-                    imageView.setImageBitmap(cached);
-                    if (onLoaded != null) {
-                        onLoaded.run();
-                    }
-                    return;
+        for (int i = 0; i < urls.size(); i++) {
+            String url = urls.get(i);
+            Bitmap cached = ImageLoader.get(url);
+            if (cached != null) {
+                imageView.setTag(url);
+                imageView.setImageBitmap(cached);
+                if (imageView instanceof RoundedImageView) {
+                    ((RoundedImageView) imageView).imageReceiver.setImageBitmap(cached);
                 }
+                if (onLoaded != null) {
+                    onLoaded.run();
+                }
+                return;
             }
         }
         imageView.setImageDrawable(null);
-        String userAgent = defaultUserAgent(imageView.getContext());
-        String referer = getArticleUrl();
+        if (imageView instanceof RoundedImageView) {
+            ((RoundedImageView) imageView).imageReceiver.setImageBitmap(null);
+        }
         IMAGE_EXECUTOR.execute(() -> {
             LoadedImage loadedImage = null;
             for (int i = 0; i < urls.size(); i++) {
                 String url = urls.get(i);
-                Bitmap bitmap = loadBitmap(url, userAgent, referer);
+                Bitmap bitmap = ImageLoader.load(url);
                 if (bitmap != null) {
-                    synchronized (IMAGE_CACHE) {
-                        IMAGE_CACHE.put(url, bitmap);
-                    }
                     loadedImage = new LoadedImage(url, bitmap);
                     break;
                 }
@@ -1939,54 +2089,20 @@ class BrowserInstantViewFragment extends BaseFragment {
                 if (finalLoadedImage != null) {
                     imageView.setTag(finalLoadedImage.url);
                     imageView.setImageBitmap(finalLoadedImage.bitmap);
+                    if (imageView instanceof RoundedImageView) {
+                        ((RoundedImageView) imageView).imageReceiver.setImageBitmap(finalLoadedImage.bitmap);
+                    }
                     if (onLoaded != null) {
                         onLoaded.run();
                     }
                 } else {
                     imageView.setImageDrawable(null);
+                    if (imageView instanceof RoundedImageView) {
+                        ((RoundedImageView) imageView).imageReceiver.setImageBitmap(null);
+                    }
                 }
             });
         });
-    }
-
-    private Bitmap loadBitmap(@NonNull String url, @Nullable String userAgent, @Nullable String referer) {
-        HttpURLConnection connection = null;
-        InputStream stream = null;
-        try {
-            connection = (HttpURLConnection) new URL(url).openConnection();
-            connection.setConnectTimeout(8000);
-            connection.setReadTimeout(8000);
-            connection.setInstanceFollowRedirects(true);
-            if (!TextUtils.isEmpty(userAgent)) {
-                connection.setRequestProperty("User-Agent", userAgent);
-            }
-            if (!TextUtils.isEmpty(referer)) {
-                connection.setRequestProperty("Referer", referer);
-            }
-            connection.setRequestProperty("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8");
-            String cookie = CookieManager.getInstance().getCookie(url);
-            if (!TextUtils.isEmpty(cookie)) {
-                connection.setRequestProperty("Cookie", cookie);
-            }
-            int responseCode = connection.getResponseCode();
-            if (responseCode >= 400) {
-                return null;
-            }
-            stream = connection.getInputStream();
-            return BrowserImageDecoder.decode(stream, connection.getContentType());
-        } catch (Exception ignored) {
-            return null;
-        } finally {
-            try {
-                if (stream != null) {
-                    stream.close();
-                }
-            } catch (Exception ignored) {
-            }
-            if (connection != null) {
-                connection.disconnect();
-            }
-        }
     }
 
     private void addImageUrlCandidate(@NonNull ArrayList<String> urls, @Nullable String url) {
@@ -2102,16 +2218,14 @@ class BrowserInstantViewFragment extends BaseFragment {
     }
 
     private final class RoundedImageView extends androidx.appcompat.widget.AppCompatImageView {
-        private final Path clipPath = new Path();
-        private final RectF rect = new RectF();
-        private float radius;
+        final ImageReceiver imageReceiver = new ImageReceiver(this);
         private int aspectWidth;
         private int aspectHeight;
 
         RoundedImageView(Context context) {
             super(context);
-            radius = 0;
-            setScaleType(ScaleType.FIT_CENTER);
+            imageReceiver.setScaleType(ImageReceiver.ScaleType.FIT_CENTER);
+            imageReceiver.setRoundRadius(0);
         }
 
         void setAspectRatio(int width, int height) {
@@ -2128,17 +2242,30 @@ class BrowserInstantViewFragment extends BaseFragment {
         @Override
         protected void onSizeChanged(int w, int h, int oldw, int oldh) {
             super.onSizeChanged(w, h, oldw, oldh);
-            rect.set(0, 0, w, h);
-            clipPath.rewind();
-            clipPath.addRoundRect(rect, radius, radius, Path.Direction.CW);
+            imageReceiver.setImageCoords(0, 0, w, h);
+        }
+
+        @Override
+        public void setImageBitmap(Bitmap bm) {
+            super.setImageDrawable(null);
+            imageReceiver.setImageBitmap(bm);
+        }
+
+        @Nullable
+        Bitmap getBitmap() {
+            return imageReceiver.getBitmap();
+        }
+
+        @Override
+        public void setImageDrawable(@Nullable Drawable drawable) {
+            Bitmap bitmap = drawable instanceof BitmapDrawable ? ((BitmapDrawable) drawable).getBitmap() : null;
+            super.setImageDrawable(null);
+            imageReceiver.setImageBitmap(bitmap);
         }
 
         @Override
         protected void onDraw(Canvas canvas) {
-            canvas.save();
-            canvas.clipPath(clipPath);
-            super.onDraw(canvas);
-            canvas.restore();
+            imageReceiver.draw(canvas);
         }
 
         @Override
@@ -2786,12 +2913,12 @@ class BrowserInstantViewFragment extends BaseFragment {
             creditView.setLayoutParams(creditParams);
             if (!measuringContentHeight) {
                 loadImage(imageView, block, () -> {
-                    Drawable drawable = imageView.getDrawable();
-                    if (drawable == null || block.width > 0 && block.height > 0) {
+                    Bitmap loadedBitmap = imageView.getBitmap();
+                    if (loadedBitmap == null || block.width > 0 && block.height > 0) {
                         return;
                     }
-                    int width = drawable.getIntrinsicWidth();
-                    int height = drawable.getIntrinsicHeight();
+                    int width = loadedBitmap.getWidth();
+                    int height = loadedBitmap.getHeight();
                     if (width > 0 && height > 0) {
                         block.width = width;
                         block.height = height;
@@ -2807,15 +2934,11 @@ class BrowserInstantViewFragment extends BaseFragment {
             } else {
                 imageView.setClickable(true);
                 imageView.setOnClickListener(v -> {
-                    Bitmap initial = null;
-                    Drawable drawable = imageView.getDrawable();
+                    Bitmap initial = imageView.getBitmap();
                     String openUrl = imageUrl;
                     Object tag = imageView.getTag();
                     if (tag instanceof String && block.urls.contains(tag)) {
                         openUrl = (String) tag;
-                    }
-                    if (drawable instanceof BitmapDrawable) {
-                        initial = ((BitmapDrawable) drawable).getBitmap();
                     }
                     openImageViewer(initial, openUrl, imageView);
                 });
@@ -2951,6 +3074,7 @@ class BrowserInstantViewFragment extends BaseFragment {
                 }
             } else {
                 posterView.setImageDrawable(null);
+                posterView.imageReceiver.setImageBitmap(null);
             }
 
             titleView.setText(title);

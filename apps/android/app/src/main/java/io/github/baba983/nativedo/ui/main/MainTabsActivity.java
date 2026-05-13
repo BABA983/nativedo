@@ -87,7 +87,7 @@ public class MainTabsActivity extends ViewPagerActivity implements Theme.ThemeDe
         super.createView(context);
         contentView.setClipChildren(false);
         contentView.setClipToPadding(false);
-        contentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        contentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
 
         tabsView = new MainTabsLayout(context);
         tabsView.setClipChildren(false);
@@ -281,7 +281,7 @@ public class MainTabsActivity extends ViewPagerActivity implements Theme.ThemeDe
     @Override
     public void didSetNewTheme() {
         if (contentView != null) {
-            contentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+            contentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
         }
         if (tabsViewBackground != null) {
             tabsViewBackground.updateColors();
@@ -428,7 +428,7 @@ public class MainTabsActivity extends ViewPagerActivity implements Theme.ThemeDe
         }
 
         void updateColors() {
-            lastColor = Theme.getColor(Theme.key_windowBackgroundWhite);
+            lastColor = Theme.getColor(Theme.key_windowBackgroundGray);
             shader = null;
             invalidate();
         }

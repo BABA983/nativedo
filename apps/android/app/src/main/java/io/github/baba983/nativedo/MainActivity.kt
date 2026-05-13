@@ -10,9 +10,12 @@ import android.window.OnBackInvokedDispatcher
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.lifecycleScope
 import io.github.baba983.nativedo.core.AndroidUtilities
 import io.github.baba983.nativedo.ui.actionbar.ActionBarLayout
 import io.github.baba983.nativedo.ui.main.MainTabsActivity
+import io.github.baba983.nativedo.ui.photo.PhotoViewer
+import kotlinx.coroutines.launch
 
 private const val LAZY_START = 0.015f
 
@@ -33,6 +36,9 @@ class MainActivity : ComponentActivity() {
             addFragmentToStack(mainTabsActivity)
         }
         setContentView(actionBarLayout)
+        lifecycleScope.launch {
+            (applicationContext as NativeDoApp).appContainer.sessionCoordinator.start()
+        }
         registerBackCallbacks()
     }
 
@@ -50,6 +56,13 @@ class MainActivity : ComponentActivity() {
             onBackInvokedCallback?.let {
                 onBackInvokedDispatcher.unregisterOnBackInvokedCallback(it)
             }
+        }
+        if (::actionBarLayout.isInitialized) {
+            val fragments = actionBarLayout.fragmentStack
+            for (index in fragments.size - 1 downTo 0) {
+                fragments[index].onFragmentDestroy()
+            }
+            fragments.clear()
         }
         super.onDestroy()
     }
@@ -73,6 +86,9 @@ class MainActivity : ComponentActivity() {
                     }
 
                     val progress = backEvent.progress
+                    if (PhotoViewer.hasActiveViewer()) {
+                        return
+                    }
                     if (!predictiveBackStarted && progress > LAZY_START) {
                         if (!actionBarLayout.canStartPredictiveBack()) {
                             return
@@ -90,11 +106,17 @@ class MainActivity : ComponentActivity() {
                 override fun onBackCancelled() {
                     started = false
                     invoked = false
+                    if (PhotoViewer.hasActiveViewer()) {
+                        return
+                    }
                     actionBarLayout.onBackCancelled()
                 }
 
                 override fun onBackInvoked() {
                     invoked = true
+                    if (PhotoViewer.handleActiveBack()) {
+                        return
+                    }
                     if (actionBarLayout.canHandleBack()) {
                         actionBarLayout.onBackInvoked()
                     } else if (!mainTabsActivity.handleBackPressed()) {
@@ -109,7 +131,7 @@ class MainActivity : ComponentActivity() {
             )
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val callback = OnBackInvokedCallback {
-                if (!actionBarLayout.handleBackPressed() && !mainTabsActivity.handleBackPressed()) {
+                if (!PhotoViewer.handleActiveBack() && !actionBarLayout.handleBackPressed() && !mainTabsActivity.handleBackPressed()) {
                     finish()
                 }
             }
@@ -123,7 +145,7 @@ class MainActivity : ComponentActivity() {
                 this,
                 object : OnBackPressedCallback(true) {
                     override fun handleOnBackPressed() {
-                        if (!actionBarLayout.handleBackPressed() && !mainTabsActivity.handleBackPressed()) {
+                        if (!PhotoViewer.handleActiveBack() && !actionBarLayout.handleBackPressed() && !mainTabsActivity.handleBackPressed()) {
                             finish()
                         }
                     }

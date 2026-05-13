@@ -9,11 +9,14 @@ import android.graphics.Paint
 import android.graphics.PixelFormat
 import android.graphics.drawable.Drawable
 import android.view.View
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.lifecycle.ViewModelProvider
 import io.github.baba983.nativedo.R
+import io.github.baba983.nativedo.NativeDoApp
 import io.github.baba983.nativedo.core.AndroidUtilities
+import io.github.baba983.nativedo.feature.home.data.HomeRepository
+import io.github.baba983.nativedo.feature.home.ui.HomeViewModel
 import io.github.baba983.nativedo.ui.actionbar.ActionBar
 import io.github.baba983.nativedo.ui.actionbar.BaseFragment
 import io.github.baba983.nativedo.ui.actionbar.Theme
@@ -22,11 +25,20 @@ import io.github.baba983.nativedo.ui.main.MainTabsActivity
 private const val MENU_SWITCH_THEME = 1
 
 class TopicListFragment : BaseFragment() {
+    private lateinit var viewModel: HomeViewModel
 
     override fun createView(context: Context): View {
         actionBar.setTitle(context.getString(R.string.screen_topic_list))
         actionBar.setBackButtonDrawable(null)
         applyCurrentTheme(context)
+        val appContainer = (context.applicationContext as NativeDoApp).appContainer
+        viewModel = ViewModelProvider(
+            this,
+            HomeViewModelFactory(
+                repository = HomeRepository(appContainer.discourseApiClient),
+                categoryStore = appContainer.categoryStore,
+            ),
+        )[HomeViewModel::class.java]
         fun themeModeText(): String {
             val id = if (Theme.isCurrentThemeDark()) R.string.theme_mode_day else R.string.theme_mode_night
             return context.getString(id)
@@ -52,15 +64,15 @@ class TopicListFragment : BaseFragment() {
         return ComposeView(context).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
             setContent {
-                MaterialTheme {
-                    TopicListScreen(
-                        topics = MockTopics.all,
-                        mainTabsContentPadding = MainTabsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS,
-                        onTopicClick = { topic ->
-                            presentFragment(TopicDetailFragment(topic.id))
-                        },
-                    )
-                }
+                TopicListScreen(
+                    viewModel = viewModel,
+                    baseUrl = appContainer.baseUrl,
+                    mainTabsContentPadding = MainTabsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS,
+                    onTopicClick = { topic ->
+                        viewModel.markTopicSeen(topic.id)
+                        presentFragment(TopicDetailFragment(topic.id, topic.title))
+                    },
+                )
             }
         }
     }
@@ -73,6 +85,24 @@ class TopicListFragment : BaseFragment() {
         (context as? Activity)?.let {
             AndroidUtilities.setLightStatusBar(it.window, !Theme.isCurrentThemeDark())
         }
+    }
+
+    override fun getNavigationBarColor(): Int {
+        return Theme.getColor(Theme.key_windowBackgroundGray)
+    }
+
+    override fun isSupportEdgeToEdge(): Boolean {
+        return true
+    }
+}
+
+private class HomeViewModelFactory(
+    private val repository: HomeRepository,
+    private val categoryStore: io.github.baba983.nativedo.core.storage.CategoryStore,
+) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+        return HomeViewModel(repository = repository, categoryStore = categoryStore) as T
     }
 }
 

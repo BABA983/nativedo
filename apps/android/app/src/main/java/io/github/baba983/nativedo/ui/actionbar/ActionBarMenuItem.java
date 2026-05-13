@@ -85,6 +85,7 @@ public class ActionBarMenuItem extends FrameLayout {
     private ActionBarPopupWindow popupWindow;
     private int popupItemsColor;
     private int popupItemsSelectorColor;
+    private int popupBackgroundColor;
     private boolean isSearchField;
     private FrameLayout searchContainer;
     private EditText searchField;
@@ -99,6 +100,7 @@ public class ActionBarMenuItem extends FrameLayout {
         parentMenu = menu;
         popupItemsColor = Theme.getColor(Theme.key_actionBarDefaultSubmenuItem);
         popupItemsSelectorColor = Theme.getColor(Theme.key_listSelector);
+        popupBackgroundColor = Theme.getColor(Theme.key_actionBarDefaultSubmenuBackground);
         if (backgroundColor != 0) {
             setBackground(Theme.createSelectorDrawable(backgroundColor));
         }
@@ -142,6 +144,23 @@ public class ActionBarMenuItem extends FrameLayout {
             }
         });
         return textView;
+    }
+
+    public ActionBarMenuSubItem addSubItem(int id, Drawable iconDrawable, CharSequence text) {
+        createPopupLayout();
+        ActionBarMenuSubItem item = new ActionBarMenuSubItem(getContext(), false, false, null);
+        item.setTag(id);
+        item.setTextAndIcon(text, 0, iconDrawable);
+        popupLayout.addView(item, new LinearLayout.LayoutParams(LayoutHelper.MATCH_PARENT, AndroidUtilities.dp(48)));
+        item.setOnClickListener(view -> {
+            if (popupWindow != null && popupWindow.isShowing()) {
+                popupWindow.dismiss();
+            }
+            if (parentMenu != null) {
+                parentMenu.onItemClick((Integer) view.getTag());
+            }
+        });
+        return item;
     }
 
     public boolean hasSubMenu() {
@@ -310,6 +329,13 @@ public class ActionBarMenuItem extends FrameLayout {
             View view = popupLayout.getChildAt(i);
             if (view instanceof TextView) {
                 ((TextView) view).setTextColor(color);
+            } else if (view instanceof ActionBarMenuSubItem) {
+                ActionBarMenuSubItem item = (ActionBarMenuSubItem) view;
+                if (icon) {
+                    item.setIconColor(color);
+                } else {
+                    item.setTextColor(color);
+                }
             }
         }
     }
@@ -326,6 +352,7 @@ public class ActionBarMenuItem extends FrameLayout {
     }
 
     public void redrawPopup(int color) {
+        popupBackgroundColor = color;
         updatePopupBackground();
     }
 
@@ -415,7 +442,7 @@ public class ActionBarMenuItem extends FrameLayout {
         Drawable background = ContextCompat.getDrawable(getContext(), R.drawable.popup_fixed_alert4);
         if (background != null) {
             background = background.mutate();
-            background.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_actionBarDefaultSubmenuBackground), PorterDuff.Mode.MULTIPLY));
+            background.setColorFilter(new PorterDuffColorFilter(popupBackgroundColor, PorterDuff.Mode.MULTIPLY));
             background.setAlpha(255);
             popupLayout.setBackgroundDrawable(background);
         }

@@ -1,11 +1,12 @@
-// UPSTREAM-LEVEL: L2
-// UPSTREAM-PATH:  org/telegram/messenger/FileLog.java
+// PORT-MODE: Exact Component Port (public API surface)
+// UPSTREAM-SCOPE: org/telegram/messenger/FileLog.java
 // UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: compile-shim=L2, logging=L2
 // HOST-WIRING:
-//   - Routes Telegram-derived error logging to Android Log with the NativeDo tag.
+//   - All logging delegates to android.util.Log with the "NativeDo" tag.
+//   - No file-backed pipeline, log rotation, or network logging.
 // OMITTED:
-//   - Telegram file logging pipeline, log rotation, network logging, and debug toggles.
+//   - Disk log files, rotation, Gson-serialised structured logging, TL request logging,
+//     DispatchQueue-backed async writes, and debug toggles.
 /*
  * This file is part of NativeDo.
  *
@@ -14,9 +15,6 @@
  *
  * Source reference:
  * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/messenger/FileLog.java
- *
- * NativeDo milestone slice: compile-only logging shim for Telegram-derived code;
- * omits Telegram's file logging pipeline.
  *
  * Copyright (C) Telegram FZ-LLC
  * Copyright (C) 2026 NativeDo contributors
@@ -31,12 +29,68 @@ package io.github.baba983.nativedo.core;
 
 import android.util.Log;
 
+/**
+ * Telegram-shaped logging singleton. The public API mirrors
+ * {@code org/telegram/messenger/FileLog} so ported code compiles unchanged;
+ * all calls delegate to {@link android.util.Log} with the {@code "NativeDo"} tag.
+ */
 public final class FileLog {
+
+    private static final String TAG = "NativeDo";
+
+    private static volatile FileLog Instance;
 
     private FileLog() {
     }
 
-    public static void e(Throwable throwable) {
-        Log.e("NativeDo", "Telegram-derived failure", throwable);
+    /** Singleton accessor — matches upstream {@code FileLog.getInstance()}. */
+    public static FileLog getInstance() {
+        FileLog localInstance = Instance;
+        if (localInstance == null) {
+            synchronized (FileLog.class) {
+                localInstance = Instance;
+                if (localInstance == null) {
+                    Instance = localInstance = new FileLog();
+                }
+            }
+        }
+        return localInstance;
+    }
+
+    // ── Public API matching upstream shape ─────────────────────────────
+
+    /** Upstream: {@code FileLog.e(String message)} */
+    @SuppressWarnings("unused")
+    public static void e(final String message) {
+        Log.e(TAG, message);
+    }
+
+    /** Upstream: {@code FileLog.e(Throwable e)} */
+    public static void e(final Throwable e) {
+        Log.e(TAG, "Telegram-derived failure", e);
+    }
+
+    /** Upstream: {@code FileLog.e(String message, Throwable e)} */
+    @SuppressWarnings("unused")
+    public static void e(final String message, final Throwable e) {
+        Log.e(TAG, message, e);
+    }
+
+    /** Upstream: {@code FileLog.d(String message)} */
+    @SuppressWarnings("unused")
+    public static void d(final String message) {
+        Log.d(TAG, message);
+    }
+
+    /** Upstream: {@code FileLog.w(String message)} */
+    @SuppressWarnings("unused")
+    public static void w(final String message) {
+        Log.w(TAG, message);
+    }
+
+    /** Upstream: {@code FileLog.fatal(Throwable e, boolean keepStacktraceInFile)} */
+    @SuppressWarnings("unused")
+    public static void fatal(final Throwable e, final boolean keepStacktraceInFile) {
+        Log.wtf(TAG, "Fatal", e);
     }
 }

@@ -4,6 +4,7 @@
 // EXACT-SUBSYSTEMS: lifecycle-orchestration, navigation-contract
 // HOST-WIRING:
 //   - NativeDo fragments use this as the bridge between View-system navigation and Compose content.
+//   - Implements AndroidX ViewModelStoreOwner so NativeDo feature pages can keep state in BaseFragment.
 // ADAPTED-BACKEND:
 //   - None.
 // ADAPTED-PRODUCT:
@@ -11,6 +12,7 @@
 //   - Keeps the AttachedSheet stack surface needed by NativeDo browser sheets.
 //   - Exposes showAsSheet(...) for Telegram browser subfeatures through NativeDo's attached-sheet host.
 //   - Keeps Telegram's edge-to-edge method surface so ActionBarLayout/ViewPagerActivity can route insets.
+//   - Adds onFragmentDestroy() to clear NativeDo ViewModels and attached sheets when local fragments leave the stack.
 // OMITTED:
 //   - Telegram dialogs, themes, menus, stories, arguments, and account/activity plumbing.
 /*
@@ -42,18 +44,23 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 
+import androidx.annotation.NonNull;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.lifecycle.ViewModelStore;
+import androidx.lifecycle.ViewModelStoreOwner;
 
 import java.util.ArrayList;
 
 import io.github.baba983.nativedo.core.AndroidUtilities;
 
-public abstract class BaseFragment {
+public abstract class BaseFragment implements ViewModelStoreOwner {
 
     protected View fragmentView;
+    protected View photoViewerScaleView;
     protected INavigationLayout parentLayout;
     protected ActionBar actionBar;
     public ArrayList<AttachedSheet> sheetsStack;
+    private final ViewModelStore viewModelStore = new ViewModelStore();
 
     public interface AttachedSheet {
         View getWindowView();
@@ -205,12 +212,31 @@ public abstract class BaseFragment {
     public void onResume() {
     }
 
+    public void onFragmentDestroy() {
+        clearSheets();
+        viewModelStore.clear();
+    }
+
+    @NonNull
+    @Override
+    public ViewModelStore getViewModelStore() {
+        return viewModelStore;
+    }
+
     public ActionBar getActionBar() {
         return actionBar;
     }
 
     public View getFragmentView() {
         return fragmentView;
+    }
+
+    public View getPhotoViewerScaleView() {
+        return photoViewerScaleView != null ? photoViewerScaleView : fragmentView;
+    }
+
+    public void setPhotoViewerScaleView(View view) {
+        photoViewerScaleView = view;
     }
 
     public void setFragmentView(View fragmentView) {

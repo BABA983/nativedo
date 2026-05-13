@@ -19,7 +19,7 @@ import com.caverock.androidsvg.SVG;
 import java.io.InputStream;
 import java.util.Locale;
 
-final class BrowserImageDecoder {
+public final class BrowserImageDecoder {
 
     private static final int DEFAULT_SVG_SIZE = 512;
 
@@ -27,12 +27,12 @@ final class BrowserImageDecoder {
     }
 
     @Nullable
-    static Bitmap decode(@NonNull InputStream stream, @Nullable String contentType) {
+    public static Bitmap decode(@NonNull InputStream stream, @Nullable String contentType) {
         return decode(stream, contentType, DEFAULT_SVG_SIZE, DEFAULT_SVG_SIZE);
     }
 
     @Nullable
-    static Bitmap decode(@NonNull InputStream stream, @Nullable String contentType, int fallbackWidth, int fallbackHeight) {
+    public static Bitmap decode(@NonNull InputStream stream, @Nullable String contentType, int fallbackWidth, int fallbackHeight) {
         if (isSvg(contentType)) {
             return decodeSvg(stream, fallbackWidth, fallbackHeight);
         }

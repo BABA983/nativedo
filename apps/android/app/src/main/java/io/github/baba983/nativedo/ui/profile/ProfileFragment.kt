@@ -17,32 +17,77 @@ import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.graphics.ColorUtils
+import androidx.lifecycle.ViewModelProvider
 import io.github.baba983.nativedo.R
+import io.github.baba983.nativedo.NativeDoApp
 import io.github.baba983.nativedo.core.AndroidUtilities
+import io.github.baba983.nativedo.feature.profile.data.ProfileRepository
+import io.github.baba983.nativedo.feature.profile.ui.ProfileViewModel
 import io.github.baba983.nativedo.ui.actionbar.BaseFragment
 import io.github.baba983.nativedo.ui.actionbar.Theme
+import io.github.baba983.nativedo.ui.auth.LoginWebViewFragment
 import io.github.baba983.nativedo.ui.browser.BrowserSheet
+import io.github.baba983.nativedo.ui.topic.TopicDetailFragment
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 class ProfileFragment : BaseFragment() {
+    private val fragmentScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private lateinit var viewModel: ProfileViewModel
 
     override fun createView(context: Context): View {
         actionBar.setTitle(context.getString(R.string.tab_profile))
         actionBar.setBackButtonDrawable(null)
+        val appContainer = (context.applicationContext as NativeDoApp).appContainer
+        viewModel = ViewModelProvider(
+            this,
+            ProfileViewModelFactory(
+                repository = ProfileRepository(appContainer.discourseApiClient),
+            ),
+        )[ProfileViewModel::class.java]
 
         return ComposeView(context).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
             setContent {
-                MaterialTheme {
-                    ProfileScreen(
-                        onDevToolClick = { showDevUrlDialog(context) },
-                    )
+                val sessionState by appContainer.sessionCoordinator.sessionState.collectAsState()
+                val profileState by viewModel.uiState.collectAsState()
+                LaunchedEffect(sessionState) {
+                    viewModel.onSessionStateChanged(sessionState)
                 }
+                ProfileScreen(
+                    sessionState = sessionState,
+                    profileState = profileState,
+                    baseUrl = appContainer.baseUrl,
+                    cookieStore = appContainer.cookieStore,
+                    onLoginClick = {
+                        presentFragment(LoginWebViewFragment())
+                    },
+                    onLogoutClick = {
+                        fragmentScope.launch {
+                            appContainer.cookieSyncBridge.clear()
+                            appContainer.sessionCoordinator.onLogout()
+                        }
+                    },
+                    onRetryProfileClick = viewModel::retry,
+                    onDevToolClick = { showDevUrlDialog(context) },
+                    onTopicDevToolClick = { showDevTopicUrlDialog(context) },
+                )
             }
         }
+    }
+
+    override fun onFragmentDestroy() {
+        fragmentScope.cancel()
+        super.onFragmentDestroy()
     }
 
     private fun showDevUrlDialog(context: Context) {
@@ -175,6 +220,136 @@ class ProfileFragment : BaseFragment() {
         input.requestFocus()
     }
 
+    private fun showDevTopicUrlDialog(context: Context) {
+        val dialog = Dialog(context)
+        dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
+
+        val input = EditText(context).apply {
+            hint = context.getString(R.string.profile_topic_dev_url_hint)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            imeOptions = EditorInfo.IME_ACTION_GO
+            setSingleLine(true)
+            setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText))
+            setHintTextColor(ColorUtils.setAlphaComponent(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText), 180))
+            textSize = 16f
+            background = roundedDrawable(
+                color = Theme.getColor(Theme.key_windowBackgroundGray),
+                radiusDp = 12f,
+                strokeColor = ColorUtils.setAlphaComponent(Theme.getColor(Theme.key_divider), 210),
+                strokeDp = 1f,
+            )
+            setPadding(AndroidUtilities.dp(14f), 0, AndroidUtilities.dp(14f), 0)
+        }
+
+        fun submit() {
+            val topicId = parseLinuxDoTopicId(input.text.toString())
+            if (topicId == null) {
+                input.error = context.getString(R.string.profile_topic_dev_url_invalid)
+            } else {
+                dialog.dismiss()
+                presentFragment(TopicDetailFragment(topicId))
+            }
+        }
+
+        val content = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(
+                AndroidUtilities.dp(22f),
+                AndroidUtilities.dp(20f),
+                AndroidUtilities.dp(22f),
+                AndroidUtilities.dp(8f),
+            )
+            background = roundedDrawable(
+                color = Theme.getColor(Theme.key_windowBackgroundWhite),
+                radiusDp = 22f,
+            )
+            elevation = AndroidUtilities.dpf2(14f)
+        }
+
+        content.addView(
+            TextView(context).apply {
+                setText(R.string.profile_topic_dev_url_title)
+                setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+                typeface = Typeface.DEFAULT_BOLD
+            },
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+
+        content.addView(
+            TextView(context).apply {
+                setText(R.string.profile_topic_dev_url_message)
+                setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText))
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                setLineSpacing(AndroidUtilities.dpf2(2f), 1f)
+            },
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ).apply {
+                topMargin = AndroidUtilities.dp(8f)
+            },
+        )
+
+        content.addView(
+            input,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                AndroidUtilities.dp(50f),
+            ).apply {
+                topMargin = AndroidUtilities.dp(18f)
+            },
+        )
+
+        content.addView(
+            LinearLayout(context).apply {
+                gravity = Gravity.END or Gravity.CENTER_VERTICAL
+                addView(
+                    createDialogButton(context, context.getString(android.R.string.cancel), false) {
+                        dialog.dismiss()
+                    },
+                )
+                addView(
+                    createDialogButton(context, context.getString(R.string.profile_topic_dev_url_open), true) {
+                        submit()
+                    },
+                )
+            },
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                AndroidUtilities.dp(56f),
+            ).apply {
+                topMargin = AndroidUtilities.dp(8f)
+            },
+        )
+
+        input.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_GO) {
+                submit()
+                true
+            } else {
+                false
+            }
+        }
+
+        dialog.setContentView(content)
+        dialog.show()
+        dialog.window?.apply {
+            setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
+            setDimAmount(0.42f)
+            addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE or WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
+            setLayout(
+                minOf(context.resources.displayMetrics.widthPixels - AndroidUtilities.dp(48f), AndroidUtilities.dp(336f)),
+                WindowManager.LayoutParams.WRAP_CONTENT,
+            )
+        }
+        input.requestFocus()
+    }
+
     private fun normalizeHttpUrl(value: String): String? {
         val trimmed = value.trim()
         if (trimmed.isEmpty()) {
@@ -186,6 +361,23 @@ class ProfileFragment : BaseFragment() {
             return uri.toString()
         }
         return null
+    }
+
+    private fun parseLinuxDoTopicId(value: String): Long? {
+        val url = normalizeHttpUrl(value) ?: return null
+        val uri = Uri.parse(url)
+        val host = uri.host?.lowercase()?.removePrefix("www.") ?: return null
+        if (host != "linux.do") {
+            return null
+        }
+        val segments = uri.pathSegments
+        val topicMarkerIndex = segments.indexOf("t")
+        if (topicMarkerIndex < 0) {
+            return null
+        }
+        return segments
+            .drop(topicMarkerIndex + 1)
+            .firstNotNullOfOrNull { segment -> segment.toLongOrNull() }
     }
 
     private fun openBrowser(url: String) {
@@ -237,5 +429,14 @@ class ProfileFragment : BaseFragment() {
                 setStroke(AndroidUtilities.dp(strokeDp), strokeColor)
             }
         }
+    }
+}
+
+private class ProfileViewModelFactory(
+    private val repository: ProfileRepository,
+) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+        return ProfileViewModel(repository = repository) as T
     }
 }

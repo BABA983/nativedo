@@ -7,6 +7,8 @@
 //   - ViewPagerFixed.Adapter binds NativeDo BaseFragment views into FrameLayout page containers.
 //   - Insets dispatch is kept in the upstream shape so MainTabs and Compose page fragments receive
 //     the post-bottom-tabs insets from ActionBarLayout.
+//   - Clears NativeDo cached page fragments from onFragmentDestroy() so page ViewModels stop with
+//     the root Telegram-derived host.
 // ADAPTED-BACKEND:
 //   - None.
 // ADAPTED-PRODUCT:
@@ -214,6 +216,18 @@ public abstract class ViewPagerActivity extends BaseFragment {
         resumed = false;
         super.onPause();
         requestParentSystemBarsUpdate();
+    }
+
+    @Override
+    public void onFragmentDestroy() {
+        super.onFragmentDestroy();
+        for (int i = 0, count = fragmentsArr.size(); i < count; i++) {
+            FragmentState state = fragmentsArr.valueAt(i);
+            if (state != null) {
+                state.fragment.onFragmentDestroy();
+            }
+        }
+        fragmentsArr.clear();
     }
 
     protected BaseFragment getCurrentVisibleFragment() {
