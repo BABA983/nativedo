@@ -49,6 +49,7 @@ public class AnimatedFloat {
     private long transitionDelay = 0;
     private TimeInterpolator interpolator;
     private View parentToInvalidate;
+    private Runnable invalidateCallback;
     private boolean firstSet = true;
 
     public AnimatedFloat() {
@@ -56,6 +57,16 @@ public class AnimatedFloat {
 
     public AnimatedFloat(View parentToInvalidate) {
         this.parentToInvalidate = parentToInvalidate;
+    }
+
+    /** ADAPTED: Runnable-based invalidate callback (used by Drawables that have no parent View). */
+    public AnimatedFloat(float initialValue, Runnable invalidateCallback, long transitionDelay, long transitionDuration, TimeInterpolator interpolator) {
+        this.invalidateCallback = invalidateCallback;
+        this.transitionDelay = transitionDelay;
+        this.transitionDuration = transitionDuration;
+        this.interpolator = interpolator;
+        this.currentValue = this.fromValue = this.targetValue = initialValue;
+        this.firstSet = false;
     }
 
     public AnimatedFloat(View parentToInvalidate, long transitionDuration, TimeInterpolator interpolator) {
@@ -96,13 +107,27 @@ public class AnimatedFloat {
         return set(mustBe ? 1f : 0f);
     }
 
+    /** ADAPTED: 2-arg set with optional skip-animation flag, matches upstream AnimatedFloat.set(float, boolean). */
+    public float set(float mustBe, boolean immediate) {
+        if (immediate) {
+            force(mustBe);
+            return mustBe;
+        }
+        return set(mustBe);
+    }
+
     public float get() {
         if (firstSet) {
             return currentValue;
         }
         currentValue = computeCurrent();
-        if (parentToInvalidate != null && currentValue != targetValue) {
-            parentToInvalidate.invalidate();
+        if (currentValue != targetValue) {
+            if (parentToInvalidate != null) {
+                parentToInvalidate.invalidate();
+            }
+            if (invalidateCallback != null) {
+                invalidateCallback.run();
+            }
         }
         return currentValue;
     }

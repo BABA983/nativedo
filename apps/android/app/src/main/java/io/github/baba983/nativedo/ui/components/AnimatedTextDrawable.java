@@ -692,6 +692,16 @@ public class AnimatedTextDrawable extends Drawable {
         this.includeFontPadding = includeFontPadding;
     }
 
+    /** ADAPTED: setRightPadding stub for AnimatedTextView compatibility. */
+    public void setRightPadding(float rightPadding) {
+        // No-op stub
+    }
+
+    /** ADAPTED: getRightPadding stub for AnimatedTextView compatibility. */
+    public float getRightPadding() {
+        return 0f;
+    }
+
     @Override
     public void setAlpha(int alpha) {
         this.alpha = alpha;

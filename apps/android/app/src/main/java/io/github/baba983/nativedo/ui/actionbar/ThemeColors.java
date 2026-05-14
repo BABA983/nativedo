@@ -67,6 +67,11 @@ public final class ThemeColors {
         defaultColors[key_iv_background] = 0xffffffff;
         defaultColors[key_iv_backgroundGray] = 0xfff0f0f0;
         defaultColors[key_iv_navigationBackground] = 0xffffffff;
+        defaultColors[key_graySection] = 0xfff1f1f3;
+        defaultColors[key_graySectionText] = 0xff82868a;
+        defaultColors[key_windowBackgroundWhiteBlueHeader] = 0xff4092cd;
+        defaultColors[key_windowBackgroundGrayShadow] = 0xffd9d9d9;
+        defaultColors[key_dialogBackground] = 0xffffffff;
         return defaultColors;
     }
 }

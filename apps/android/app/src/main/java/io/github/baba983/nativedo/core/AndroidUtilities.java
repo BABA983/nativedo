@@ -54,10 +54,15 @@ import android.os.Looper;
 import android.util.DisplayMetrics;
 import android.view.View;
 import android.view.Window;
+import android.view.animation.DecelerateInterpolator;
 import android.view.animation.Interpolator;
 import android.view.inputmethod.InputMethodManager;
 
 import androidx.core.view.WindowCompat;
+
+import android.graphics.Typeface;
+
+import java.util.HashMap;
 
 import io.github.baba983.nativedo.ui.actionbar.Theme;
 
@@ -70,6 +75,11 @@ public final class AndroidUtilities {
     public static int statusBarHeight;
     public static int navigationBarHeight;
     public static boolean makingGlobalBlurBitmap;
+
+    /** Shared temporary RectF for drawing operations. Matches upstream AndroidUtilities.rectTmp. */
+    public static final RectF rectTmp = new RectF();
+    /** Shared temporary RectF (second instance). Matches upstream AndroidUtilities.rectTmp2. */
+    public static final RectF rectTmp2 = new RectF();
     private static final Handler mainHandler = new Handler(Looper.getMainLooper());
     private static float xdpi;
     private static float ydpi;
@@ -98,12 +108,32 @@ public final class AndroidUtilities {
         return value == 0 ? 0 : (int) Math.ceil(density * value);
     }
 
+    /**
+     * Rounded density-pixel conversion. Matches upstream {@code AndroidUtilities.dpr}.
+     * Used by some Telegram-derived components for fractional dp positioning.
+     */
+    public static int dpr(float value) {
+        return value == 0 ? 0 : Math.round(density * value);
+    }
+
     public static float dpf2(float value) {
         return density * value;
     }
 
     public static float distance(float x1, float y1, float x2, float y2) {
         return (float) Math.sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
+    }
+
+    /** ADAPTED: 4-arg RectF lerp variant matches upstream AndroidUtilities.lerp. */
+    public static void lerp(RectF a, RectF b, float f, RectF to) {
+        if (to != null && a != null && b != null) {
+            to.set(
+                a.left + (b.left - a.left) * f,
+                a.top + (b.top - a.top) * f,
+                a.right + (b.right - a.right) * f,
+                a.bottom + (b.bottom - a.bottom) * f
+            );
+        }
     }
 
     public static float lerp(float from, float to, float progress) {
@@ -524,5 +554,98 @@ public final class AndroidUtilities {
 
     private static int clamp(int value, int min, int max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    // ── Telegram-shaped helpers required by ported components ──────────
+
+    private static Boolean isTabletValue;
+
+    /**
+     * Returns {@code true} on screens ≥ 600dp shortest side.
+     * Matches upstream {@code AndroidUtilities.isTablet()}.
+     */
+    public static boolean isTablet() {
+        if (isTabletValue == null) {
+            isTabletValue = Math.min(displaySize.x, displaySize.y) >= dp(600);
+        }
+        return isTabletValue;
+    }
+
+    private static Typeface typefaceBold;
+
+    /**
+     * Returns a bold typeface. Matches upstream {@code AndroidUtilities.bold()}.
+     * Caches the result so repeated calls are cheap.
+     */
+    public static Typeface bold() {
+        if (typefaceBold == null) {
+            typefaceBold = Typeface.create(Typeface.DEFAULT, Typeface.BOLD);
+        }
+        return typefaceBold;
+    }
+
+    private static Typeface typefaceMedium;
+
+    /**
+     * Returns a medium typeface. Matches upstream {@code AndroidUtilities.medium()}.
+     * Falls back to bold on Android versions without a distinct medium weight.
+     */
+    public static Typeface medium() {
+        if (typefaceMedium == null) {
+            typefaceMedium = Typeface.create(Typeface.DEFAULT, Typeface.BOLD);
+        }
+        return typefaceMedium;
+    }
+
+    /**
+     * Returns a typeface with the given style. Matches upstream
+     * {@code AndroidUtilities.getTypeface(String)} for the common case.
+     */
+    public static Typeface getTypeface(String fontName) {
+        return Typeface.DEFAULT;
+    }
+
+    /**
+     * Returns {@code true} when the device is in right-to-left layout.
+     * NativeDo does not support RTL; always returns {@code false}.
+     * Matches upstream {@code AndroidUtilities.isRTL} field.
+     */
+    public static boolean isRTL = false;
+
+    /**
+     * Unpacks the first int from a long packed with {@code packA/B}.
+     * Matches upstream {@code AndroidUtilities.unpackA(long)}.
+     */
+    public static int unpackA(long v) {
+        return (int) (v >> 32);
+    }
+
+    /**
+     * Unpacks the second int from a long packed with {@code packA/B}.
+     * Matches upstream {@code AndroidUtilities.unpackB(long)}.
+     */
+    public static int unpackB(long v) {
+        return (int) v;
+    }
+
+    /**
+     * Packs two ints into a long. Matches upstream {@code AndroidUtilities.packIntPair(int, int)}.
+     */
+    public static long packIntPair(int a, int b) {
+        return ((long) a << 32) | (b & 0xFFFFFFFFL);
+    }
+
+    /** Shared decelerate interpolator. Matches upstream AndroidUtilities.decelerateInterpolator. */
+    public static final DecelerateInterpolator decelerateInterpolator = new DecelerateInterpolator();
+
+    /** Shared accelerate interpolator. Matches upstream AndroidUtilities.accelerateInterpolator. */
+    public static final android.view.animation.AccelerateInterpolator accelerateInterpolator = new android.view.animation.AccelerateInterpolator();
+
+    /** ADAPTED: simple ViewGroup forEach helper (subset of upstream AndroidUtilities.forEachViews). */
+    public static void forEachViews(android.view.ViewGroup container, java.util.function.Consumer<View> action) {
+        if (container == null || action == null) return;
+        for (int i = 0, n = container.getChildCount(); i < n; i++) {
+            action.accept(container.getChildAt(i));
+        }
     }
 }

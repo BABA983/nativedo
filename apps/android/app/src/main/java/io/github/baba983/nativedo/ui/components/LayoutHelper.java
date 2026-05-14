@@ -66,6 +66,15 @@ public final class LayoutHelper {
         return new FrameLayout.LayoutParams(getSize(width), getSize(height), gravity);
     }
 
+    public static FrameLayout.LayoutParams createFrame(float width, float height, int gravity, float leftMargin, float topMargin, float rightMargin, float bottomMargin) {
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(getSize(width), getSize(height), gravity);
+        params.leftMargin = AndroidUtilities.dp(leftMargin);
+        params.topMargin = AndroidUtilities.dp(topMargin);
+        params.rightMargin = AndroidUtilities.dp(rightMargin);
+        params.bottomMargin = AndroidUtilities.dp(bottomMargin);
+        return params;
+    }
+
     public static LinearLayout.LayoutParams createLinear(int width, int height) {
         return new LinearLayout.LayoutParams(getSize(width), getSize(height));
     }

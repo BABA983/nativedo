@@ -4,6 +4,10 @@
     <string name="action_back">Back</string>
     <string name="action_more_options">More options</string>
     <string name="screen_topic_list">linux.do</string>
+    <string name="home_tab_latest">Latest</string>
+    <string name="home_tab_new">New</string>
+    <string name="home_tab_top">Top</string>
+    <string name="search_topics_hint">Search topics</string>
     <string name="tab_home">Home</string>
     <string name="tab_search">Search</string>
     <string name="tab_profile">Profile</string>

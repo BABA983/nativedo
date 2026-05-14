@@ -1,24 +1,19 @@
-// UPSTREAM-LEVEL: L2
-// UPSTREAM-PATH:  org/telegram/messenger/SharedConfig.java
+// PORT-MODE: Native Feature
+// UPSTREAM-SCOPE: org/telegram/messenger/SharedConfig.java
 // UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: compile-shim=L2, config-flag=L2
 // HOST-WIRING:
-//   - Keeps flags read by the current ActionBar/browser slices.
+//   - None.
+// ADAPTED-BACKEND:
+//   - All methods return safe defaults; NativeDo does not persist Telegram preferences.
 // OMITTED:
-//   - Telegram persisted shared configuration and unrelated feature flags.
+//   - Telegram's full preference system, proxy config, passcode, etc.
 /*
  * This file is part of NativeDo.
  *
- * Derived in part from Telegram for Android's
- * org/telegram/messenger/SharedConfig.java.
+ * Provides a compile-compatible shim for Telegram's SharedConfig so that
+ * ported UI code can call SharedConfig.animationsEnabled() and
+ * SharedConfig.shadowsInSections without pulling in Telegram's preference system.
  *
- * Source reference:
- * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/messenger/SharedConfig.java
- *
- * NativeDo milestone slice: keeps only flags read by the current ActionBar slice;
- * omits Telegram's persisted shared configuration.
- *
- * Copyright (C) Telegram FZ-LLC
  * Copyright (C) 2026 NativeDo contributors
  *
  * This program is free software: you can redistribute it and/or modify
@@ -29,11 +24,34 @@
  */
 package io.github.baba983.nativedo.core;
 
+/**
+ * Minimal shim matching Telegram's {@code SharedConfig} API surface.
+ * Returns safe defaults for animation and UI feature flags.
+ */
 public final class SharedConfig {
-
-    public static boolean drawActionBarShadow = true;
-    public static boolean adaptableColorInBrowser = true;
 
     private SharedConfig() {
     }
+
+    /** Matches upstream {@code SharedConfig.animationsEnabled()}. */
+    public static boolean animationsEnabled() {
+        return true;
+    }
+
+    /** Matches upstream {@code SharedConfig.shadowsInSections}. */
+    public static boolean shadowsInSections = true;
+
+    /** Matches upstream {@code SharedConfig.useThreeLinesLayout}. */
+    public static boolean useThreeLinesLayout = true;
+
+    /** Matches upstream {@code SharedConfig.deviceIsLow}. */
+    public static boolean deviceIsLow() {
+        return false;
+    }
+
+    /** Matches upstream {@code SharedConfig.adaptableColorInBrowser}. */
+    public static boolean adaptableColorInBrowser = false;
+
+    public static boolean drawActionBarShadow = true;
+
 }

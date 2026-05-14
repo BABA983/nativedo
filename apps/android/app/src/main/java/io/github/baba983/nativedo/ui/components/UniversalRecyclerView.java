@@ -3,7 +3,7 @@
 // UPSTREAM-SCOPE: org/telegram/ui/Components/UniversalRecyclerView.java
 // UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
 // HOST-WIRING:
-//   - Uses AndroidX RecyclerView and NativeDo BaseFragment.
+//   - Now extends RecyclerListView (Telegram's real list) instead of AndroidX RecyclerView.
 // ADAPTED-PRODUCT:
 //   - Keeps Telegram's listView.adapter/layoutManager surface for UniversalFragment users.
 // OMITTED:
@@ -15,11 +15,10 @@ import android.content.Context;
 import androidx.annotation.Nullable;
 import androidx.recyclerview.widget.DefaultItemAnimator;
 import androidx.recyclerview.widget.LinearLayoutManager;
-import androidx.recyclerview.widget.RecyclerView;
 
 import io.github.baba983.nativedo.ui.actionbar.BaseFragment;
 
-public class UniversalRecyclerView extends RecyclerView {
+public class UniversalRecyclerView extends RecyclerListView {
 
     public LinearLayoutManager layoutManager;
     public final UniversalAdapter adapter;

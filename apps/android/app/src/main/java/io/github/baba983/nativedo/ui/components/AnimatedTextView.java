@@ -6,6 +6,11 @@
 //     class of AnimatedTextView. AnimatedTextView provides the View-host surface
 //     that AnimatedTextView provides in upstream, using our AnimatedTextDrawable as
 //     the rendering delegate.
+// ADAPTED-BACKEND:
+//   - Constructor signature matches upstream: (Context, boolean, boolean, boolean)
+//   - setText(CharSequence, boolean) overload added for GraySectionCell/HeaderCell compatibility.
+// OMITTED:
+//   - AnimatedEmojiSpan, gradient ellipsize, color animation helpers.
 /*
  * This file is part of NativeDo.
  *
@@ -30,10 +35,12 @@ package io.github.baba983.nativedo.ui.components;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
+import android.view.animation.Interpolator;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -42,19 +49,23 @@ import androidx.annotation.Nullable;
  * A lightweight {@code View} that hosts a single {@link AnimatedTextDrawable} as its
  * rendering delegate, matching the surface that Telegram's {@code AnimatedTextView}
  * provides for title/subtitle text in action-bar chrome.
+ *
+ * Not final so that ported code can subclass it (e.g. GraySectionCell).
  */
-public final class AnimatedTextView extends View implements Drawable.Callback {
+public class AnimatedTextView extends View implements Drawable.Callback {
 
     private final AnimatedTextDrawable textDrawable;
     private CharSequence text = "";
+    private boolean first = true;
 
     public AnimatedTextView(@NonNull Context context) {
-        this(context, new AnimatedTextDrawable(false, true, true));
+        this(context, false, false, false);
     }
 
-    public AnimatedTextView(@NonNull Context context, @NonNull AnimatedTextDrawable delegate) {
+    /** Matches upstream constructor: (Context, splitByWords, preserveIndex, startFromEnd). */
+    public AnimatedTextView(@NonNull Context context, boolean splitByWords, boolean preserveIndex, boolean startFromEnd) {
         super(context);
-        textDrawable = delegate;
+        textDrawable = new AnimatedTextDrawable(splitByWords, preserveIndex, startFromEnd);
         textDrawable.setCallback(this);
         textDrawable.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
         textDrawable.setAnimationProperties(.4f, 0, 320, CubicBezierInterpolator.EASE_OUT_QUINT);
@@ -64,34 +75,91 @@ public final class AnimatedTextView extends View implements Drawable.Callback {
         textDrawable.setTextColor(color);
     }
 
-    public void setTextSize(float sp) {
-        textDrawable.setTextSize(TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_SP,
-                sp,
-                getResources().getDisplayMetrics()
-        ));
+    public void setTextSize(float px) {
+        textDrawable.setTextSize(px);
+    }
+
+    public void setTypeface(Typeface typeface) {
+        textDrawable.setTypeface(typeface);
+    }
+
+    public void setGravity(int gravity) {
+        textDrawable.setGravity(gravity);
+    }
+
+    public void setAnimationProperties(float moveAmplitude, long startDelay, long duration, Interpolator interpolator) {
+        textDrawable.setAnimationProperties(moveAmplitude, startDelay, duration, interpolator);
+    }
+
+    public void setText(@Nullable CharSequence value) {
+        setText(value, true, true);
+    }
+
+    public void setText(@Nullable CharSequence value, boolean animated) {
+        setText(value, animated, true);
     }
 
     public void setText(@Nullable CharSequence value, boolean animated, boolean moveDown) {
+        animated = !first && animated;
+        first = false;
         text = value == null ? "" : value;
+        textDrawable.setBounds(getPaddingLeft(), getPaddingTop(), getWidth() - getPaddingRight(), getHeight() - getPaddingBottom());
         textDrawable.setText(text, animated, moveDown);
         invalidate();
     }
 
+    public CharSequence getText() {
+        return textDrawable.getText();
+    }
+
+    public AnimatedTextDrawable getDrawable() {
+        return textDrawable;
+    }
+
+    public void setAllowCancel(boolean allow) {
+        textDrawable.setAllowCancel(allow);
+    }
+
+    public void setOnWidthUpdatedListener(Runnable listener) {
+        textDrawable.setOnWidthUpdatedListener(listener);
+    }
+
+    public void setIncludeFontPadding(boolean includeFontPadding) {
+        textDrawable.setIncludeFontPadding(includeFontPadding);
+    }
+
+    public void setRightPadding(float rightPadding) {
+        textDrawable.setRightPadding(rightPadding);
+    }
+
+    public void setEllipsizeByGradient(boolean enabled) {
+        textDrawable.setEllipsizeByGradient(enabled);
+    }
+
+    public void cancelAnimation() {
+        textDrawable.cancelAnimation();
+    }
+
+    public boolean isAnimating() {
+        return textDrawable.isAnimating();
+    }
+
     @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
-        textDrawable.setBounds(0, 0, w, h);
-        textDrawable.setOverrideFullWidth(w);
+        textDrawable.setBounds(getPaddingLeft(), getPaddingTop(), w - getPaddingRight(), h - getPaddingBottom());
+        textDrawable.setOverrideFullWidth(w - getPaddingLeft() - getPaddingRight());
         textDrawable.setText(text, false);
     }
 
     @Override
     protected void onDraw(@NonNull Canvas canvas) {
+        textDrawable.setBounds(getPaddingLeft(), getPaddingTop(), getMeasuredWidth() - getPaddingRight(), getMeasuredHeight() - getPaddingBottom());
         textDrawable.draw(canvas);
     }
 
     @Override
     public void invalidateDrawable(@NonNull Drawable who) {
+        super.invalidateDrawable(who);
         invalidate();
     }
 
