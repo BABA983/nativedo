@@ -95,10 +95,10 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import io.github.baba983.nativedo.R;
-import io.github.baba983.nativedo.core.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
 import io.github.baba983.nativedo.ui.actionbar.Theme;
 import io.github.baba983.nativedo.ui.components.LayoutHelper;
-
+import io.github.baba983.nativedo.telegram.messenger.BrowserImageDecoder;
 public class BrowserWebViewContainer extends FrameLayout {
 
     public interface PreviewCallback {

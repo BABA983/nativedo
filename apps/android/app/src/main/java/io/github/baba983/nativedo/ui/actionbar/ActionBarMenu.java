@@ -36,7 +36,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
 
-import io.github.baba983.nativedo.core.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
 
 public class ActionBarMenu extends LinearLayout {
 

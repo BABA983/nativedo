@@ -11,7 +11,7 @@ import android.graphics.drawable.Drawable
 import android.util.AttributeSet
 import androidx.appcompat.widget.AppCompatImageView
 import coil3.transition.CrossfadeDrawable
-import io.github.baba983.nativedo.core.ImageReceiver
+import io.github.baba983.nativedo.telegram.messenger.ImageReceiver
 
 /**
  * ImageView-compatible source cell that draws through [ImageReceiver].

@@ -41,7 +41,7 @@
  */
 package io.github.baba983.nativedo.ui.cells;
 
-import static io.github.baba983.nativedo.core.AndroidUtilities.dp;
+import static io.github.baba983.nativedo.telegram.messenger.AndroidUtilities.dp;
 
 import android.content.Context;
 import android.graphics.Bitmap;
@@ -62,8 +62,8 @@ import android.view.View;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-import io.github.baba983.nativedo.core.AndroidUtilities;
-import io.github.baba983.nativedo.core.CoilBridge;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.CoilBridge;
 import io.github.baba983.nativedo.core.model.CategorySummary;
 import io.github.baba983.nativedo.core.model.TopicSummary;
 import io.github.baba983.nativedo.ui.actionbar.Theme;

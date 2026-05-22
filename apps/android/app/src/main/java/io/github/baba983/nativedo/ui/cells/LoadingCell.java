@@ -28,7 +28,7 @@ import android.content.Context;
 import android.view.Gravity;
 import android.widget.FrameLayout;
 
-import io.github.baba983.nativedo.core.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
 import io.github.baba983.nativedo.ui.components.LayoutHelper;
 import io.github.baba983.nativedo.ui.components.RadialProgressView;
 

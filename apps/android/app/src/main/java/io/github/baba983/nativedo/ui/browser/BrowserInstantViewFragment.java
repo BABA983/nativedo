@@ -112,13 +112,13 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import io.github.baba983.nativedo.R;
-import io.github.baba983.nativedo.core.AndroidUtilities;
-import io.github.baba983.nativedo.core.ImageReceiver;
-import io.github.baba983.nativedo.core.ImageLoader;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.ImageReceiver;
+import io.github.baba983.nativedo.telegram.messenger.ImageLoader;
 import io.github.baba983.nativedo.ui.actionbar.BaseFragment;
 import io.github.baba983.nativedo.ui.actionbar.Theme;
 import io.github.baba983.nativedo.ui.components.LayoutHelper;
-import io.github.baba983.nativedo.ui.photo.PhotoViewer;
+import io.github.baba983.nativedo.telegram.ui.PhotoViewer;
 
 class BrowserInstantViewFragment extends BaseFragment {
 

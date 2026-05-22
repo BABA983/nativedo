@@ -51,7 +51,7 @@ import android.widget.TextView;
 import androidx.core.content.ContextCompat;
 
 import io.github.baba983.nativedo.R;
-import io.github.baba983.nativedo.core.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
 import io.github.baba983.nativedo.ui.actionbar.Theme;
 import io.github.baba983.nativedo.ui.components.CubicBezierInterpolator;
 import io.github.baba983.nativedo.ui.components.LayoutHelper;

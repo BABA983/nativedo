@@ -16,7 +16,7 @@ import android.view.ViewGroup;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
-import io.github.baba983.nativedo.core.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
 import io.github.baba983.nativedo.core.model.CategorySummary;
 import io.github.baba983.nativedo.core.model.TopicSummary;
 import io.github.baba983.nativedo.ui.cells.EmptyCell;
@@ -59,7 +59,7 @@ public class TopicListAdapter extends RecyclerListView.SelectionAdapter {
         this.categories = categories;
         this.showLoadingFooter = showLoadingFooter;
         this.showInitialLoading = showInitialLoading;
-        notifyDataSetChangedCompat();
+        notifyDataSetChanged();
     }
 
     @Override

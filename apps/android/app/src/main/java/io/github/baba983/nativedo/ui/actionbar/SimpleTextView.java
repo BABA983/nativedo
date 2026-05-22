@@ -35,7 +35,7 @@ import android.view.Gravity;
 
 import androidx.appcompat.widget.AppCompatTextView;
 
-import io.github.baba983.nativedo.core.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
 
 public class SimpleTextView extends AppCompatTextView {
 

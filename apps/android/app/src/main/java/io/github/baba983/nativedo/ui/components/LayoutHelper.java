@@ -35,7 +35,7 @@ package io.github.baba983.nativedo.ui.components;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 
-import io.github.baba983.nativedo.core.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
 
 @SuppressWarnings({"WeakerAccess"})
 public final class LayoutHelper {

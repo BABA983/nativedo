@@ -1,6 +1,6 @@
 package io.github.baba983.nativedo.ui.components;
 
-import static io.github.baba983.nativedo.core.AndroidUtilities.lerp;
+import static io.github.baba983.nativedo.telegram.messenger.AndroidUtilities.lerp;
 
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -18,7 +18,7 @@ import androidx.annotation.Nullable;
 
 // HOST-WIRING: com.google.zxing.common.detector.MathUtils.distance inlined below as Math.hypot.
 
-import io.github.baba983.nativedo.core.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;

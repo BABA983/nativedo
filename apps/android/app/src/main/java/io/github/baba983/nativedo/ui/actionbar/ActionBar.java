@@ -52,8 +52,8 @@ import android.widget.ImageView;
 import androidx.annotation.NonNull;
 
 import io.github.baba983.nativedo.R;
-import io.github.baba983.nativedo.core.AndroidUtilities;
-import io.github.baba983.nativedo.core.SharedConfig;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.SharedConfig;
 import io.github.baba983.nativedo.ui.components.LayoutHelper;
 
 public class ActionBar extends FrameLayout {

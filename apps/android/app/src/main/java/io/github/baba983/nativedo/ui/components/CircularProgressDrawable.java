@@ -14,7 +14,7 @@ import androidx.annotation.Nullable;
 //              (NativeDo doesn't depend on androidx.interpolator; PathInterpolator with the FastOutSlowIn cubic is equivalent on minSdk 28+).
 import android.view.animation.PathInterpolator;
 
-import io.github.baba983.nativedo.core.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
 
 public class CircularProgressDrawable extends Drawable {
 

@@ -51,7 +51,7 @@ import androidx.annotation.Nullable;
 import java.text.DateFormat;
 import java.util.ArrayList;
 
-import io.github.baba983.nativedo.core.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
 import io.github.baba983.nativedo.ui.actionbar.Theme;
 
 public final class UniversalCells {

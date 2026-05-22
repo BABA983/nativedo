@@ -3,7 +3,7 @@
 //   - Decodes image bitmaps from WebView archive or network streams for the browser feature.
 //   - Handles SVG images through androidsvg so Instant View can render vector images instead of
 //     dropping them as empty placeholders.
-package io.github.baba983.nativedo.ui.browser;
+package io.github.baba983.nativedo.telegram.messenger;
 
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;

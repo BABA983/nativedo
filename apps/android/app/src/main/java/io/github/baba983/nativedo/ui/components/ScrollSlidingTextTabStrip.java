@@ -8,9 +8,9 @@
 
 package io.github.baba983.nativedo.ui.components;
 
-import static io.github.baba983.nativedo.core.AndroidUtilities.dp;
-import static io.github.baba983.nativedo.core.AndroidUtilities.dpr;
-import static io.github.baba983.nativedo.core.AndroidUtilities.lerp;
+import static io.github.baba983.nativedo.telegram.messenger.AndroidUtilities.dp;
+import static io.github.baba983.nativedo.telegram.messenger.AndroidUtilities.dpr;
+import static io.github.baba983.nativedo.telegram.messenger.AndroidUtilities.lerp;
 
 import android.animation.LayoutTransition;
 import android.animation.ValueAnimator;
@@ -42,10 +42,10 @@ import android.widget.TextView;
 import androidx.annotation.Keep;
 import androidx.annotation.NonNull;
 
-import io.github.baba983.nativedo.core.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
 // OMITTED: org.telegram.messenger.Emoji (NativeDo has no Emoji subsystem; raw CharSequence used).
-import io.github.baba983.nativedo.core.FileLog;
-import io.github.baba983.nativedo.core.NotificationCenter;
+import io.github.baba983.nativedo.telegram.messenger.FileLog;
+import io.github.baba983.nativedo.telegram.messenger.NotificationCenter;
 import io.github.baba983.nativedo.ui.actionbar.Theme;
 import io.github.baba983.nativedo.ui.components.blur3.drawable.BlurredBackgroundDrawable;
 // OMITTED: org.telegram.ui.Stories.recorder.HintView2 (replaced by Paint.measureText below).

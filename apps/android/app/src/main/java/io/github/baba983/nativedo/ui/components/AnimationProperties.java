@@ -36,8 +36,8 @@ import android.graphics.drawable.ShapeDrawable;
 import android.util.Property;
 import android.view.animation.OvershootInterpolator;
 
-import io.github.baba983.nativedo.core.ImageReceiver;
-import io.github.baba983.nativedo.ui.photo.PhotoViewer;
+import io.github.baba983.nativedo.telegram.messenger.ImageReceiver;
+import io.github.baba983.nativedo.telegram.ui.PhotoViewer;
 
 public class AnimationProperties {
 

@@ -9,7 +9,7 @@
 // Derived from Telegram for Android's GroupedPhotosListView.java.
 // Copyright (C) Telegram FZ-LLC / NativeDo contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
-package io.github.baba983.nativedo.ui.photo;
+package io.github.baba983.nativedo.telegram.ui;
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
@@ -28,9 +28,9 @@ import androidx.annotation.Nullable;
 
 import java.util.ArrayList;
 
-import io.github.baba983.nativedo.core.AndroidUtilities;
-import io.github.baba983.nativedo.core.ImageLoader;
-import io.github.baba983.nativedo.core.ImageReceiver;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.ImageLoader;
+import io.github.baba983.nativedo.telegram.messenger.ImageReceiver;
 import io.github.baba983.nativedo.ui.components.CubicBezierInterpolator;
 
 public class GroupedPhotosListView extends View implements GestureDetector.OnGestureListener {

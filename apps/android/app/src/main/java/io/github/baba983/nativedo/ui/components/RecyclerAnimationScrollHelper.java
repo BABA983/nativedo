@@ -24,8 +24,8 @@ import android.view.View;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
-import io.github.baba983.nativedo.core.BuildVars;
-import io.github.baba983.nativedo.core.MessagesController;
+import io.github.baba983.nativedo.telegram.messenger.BuildVars;
+import io.github.baba983.nativedo.telegram.messenger.MessagesController;
 import io.github.baba983.nativedo.ui.cells.ChatMessageCell;
 
 import java.util.ArrayList;

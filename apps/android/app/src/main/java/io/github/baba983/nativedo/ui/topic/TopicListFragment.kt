@@ -34,7 +34,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import io.github.baba983.nativedo.NativeDoApp
 import io.github.baba983.nativedo.R
-import io.github.baba983.nativedo.core.AndroidUtilities
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities
 import io.github.baba983.nativedo.feature.home.data.HomeRepository
 import io.github.baba983.nativedo.feature.home.ui.HomeFeedTab
 import io.github.baba983.nativedo.feature.home.ui.HomeViewModel
@@ -129,7 +129,7 @@ class TopicListFragment : BaseFragment() {
                         applyCurrentTheme(context)
                         actionBar.menu?.getItem(0)?.setSubItemText(MENU_SWITCH_THEME, themeModeText())
                         searchStateDrawable?.setColor(Theme.getColor(Theme.key_actionBarDefaultIcon))
-                        adapter?.notifyDataSetChangedCompat()
+                        adapter?.notifyDataSetChanged()
                         tabStrip?.let {
                             it.setBackgroundColor(Theme.getColor(Theme.key_actionBarDefault))
                             it.invalidate()
@@ -166,7 +166,7 @@ class TopicListFragment : BaseFragment() {
         // List below the tab strip.
         val list = RecyclerListView(context)
         list.layoutManager = LinearLayoutManager(context)
-        val adapter = TopicListAdapter(context, baseUrl = appContainer.baseUrl)
+        val adapter = TopicListAdapter(context, appContainer.baseUrl)
         list.adapter = adapter
         list.setOnItemClickListener { view, position ->
             val cell = view as? TopicCell ?: return@setOnItemClickListener
@@ -188,10 +188,10 @@ class TopicListFragment : BaseFragment() {
         root.addView(
             list,
             LayoutHelper.createFrame(
-                LayoutHelper.MATCH_PARENT,
-                LayoutHelper.MATCH_PARENT,
+                LayoutHelper.MATCH_PARENT.toFloat(),
+                LayoutHelper.MATCH_PARENT.toFloat(),
                 Gravity.TOP,
-                0, 44, 0, 0,
+                0f, 44f, 0f, 0f,
             ),
         )
         listView = list
@@ -205,10 +205,10 @@ class TopicListFragment : BaseFragment() {
                 strip.setInitialTabId(currentTabId)
                 // Push data into adapter.
                 adapter.submit(
-                    topics = state.items,
-                    categories = state.categories,
-                    showLoadingFooter = state.isLoadingMore || state.hasMore && state.items.isNotEmpty(),
-                    showInitialLoading = state.isLoading && state.items.isEmpty(),
+                    state.items,
+                    state.categories,
+                    state.isLoadingMore || state.hasMore && state.items.isNotEmpty(),
+                    state.isLoading && state.items.isEmpty(),
                 )
             }
         }

@@ -38,7 +38,7 @@
  */
 package io.github.baba983.nativedo.ui.components;
 
-import static io.github.baba983.nativedo.core.AndroidUtilities.dp;
+import static io.github.baba983.nativedo.telegram.messenger.AndroidUtilities.dp;
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
@@ -59,8 +59,8 @@ import androidx.annotation.NonNull;
 
 import java.util.ArrayList;
 
-import io.github.baba983.nativedo.core.AndroidUtilities;
-import io.github.baba983.nativedo.core.AnimationNotificationsLocker;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.AnimationNotificationsLocker;
 import io.github.baba983.nativedo.ui.actionbar.Theme;
 
 public class ViewPagerFixed extends FrameLayout {

@@ -5,7 +5,7 @@
 // ADAPTED-BACKEND:
 //   - Replaces Telegram FileLoader/ImageLoader with NativeDo authenticated OkHttp
 //     plus app-cache files while keeping a single memory/thumbnail cache surface.
-package io.github.baba983.nativedo.core;
+package io.github.baba983.nativedo.telegram.messenger;
 
 import android.graphics.Bitmap;
 import android.util.LruCache;
@@ -28,7 +28,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import io.github.baba983.nativedo.NativeDoApp;
-import io.github.baba983.nativedo.ui.browser.BrowserImageDecoder;
+import io.github.baba983.nativedo.telegram.messenger.BrowserImageDecoder;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;

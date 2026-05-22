@@ -39,7 +39,7 @@ import android.view.animation.DecelerateInterpolator;
 
 import androidx.core.graphics.ColorUtils;
 
-import io.github.baba983.nativedo.core.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
 
 public class BackDrawable extends Drawable {
 

@@ -120,8 +120,8 @@ import androidx.core.view.ViewCompat;
 import java.util.ArrayList;
 
 import io.github.baba983.nativedo.R;
-import io.github.baba983.nativedo.core.AndroidUtilities;
-import io.github.baba983.nativedo.core.SharedConfig;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.SharedConfig;
 import io.github.baba983.nativedo.ui.actionbar.ActionBarMenuSubItem;
 import io.github.baba983.nativedo.ui.actionbar.ActionBarLayout;
 import io.github.baba983.nativedo.ui.actionbar.BaseFragment;

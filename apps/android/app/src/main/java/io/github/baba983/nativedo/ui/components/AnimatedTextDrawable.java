@@ -44,7 +44,7 @@ import androidx.annotation.Nullable;
 
 import java.util.ArrayList;
 
-import io.github.baba983.nativedo.core.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
 
 public class AnimatedTextDrawable extends Drawable {
 

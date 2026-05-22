@@ -29,7 +29,7 @@ import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.view.View;
 
-import io.github.baba983.nativedo.core.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
 import io.github.baba983.nativedo.R;
 import io.github.baba983.nativedo.ui.actionbar.Theme;
 import io.github.baba983.nativedo.ui.components.CombinedDrawable;

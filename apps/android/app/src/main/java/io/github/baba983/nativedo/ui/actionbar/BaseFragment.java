@@ -51,7 +51,7 @@ import androidx.lifecycle.ViewModelStoreOwner;
 
 import java.util.ArrayList;
 
-import io.github.baba983.nativedo.core.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
 
 public abstract class BaseFragment implements ViewModelStoreOwner {
 

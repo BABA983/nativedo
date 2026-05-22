@@ -12,7 +12,7 @@
  * Copyright (C) 2026 NativeDo contributors
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
-package io.github.baba983.nativedo.core;
+package io.github.baba983.nativedo.telegram.messenger;
 
 import android.content.SharedPreferences;
 

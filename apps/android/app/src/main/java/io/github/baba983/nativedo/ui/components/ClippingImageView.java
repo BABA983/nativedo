@@ -46,9 +46,9 @@ import androidx.annotation.Keep;
 
 import java.util.Arrays;
 
-import io.github.baba983.nativedo.core.AndroidUtilities;
-import io.github.baba983.nativedo.core.FileLog;
-import io.github.baba983.nativedo.core.ImageReceiver;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.FileLog;
+import io.github.baba983.nativedo.telegram.messenger.ImageReceiver;
 
 public class ClippingImageView extends View {
 

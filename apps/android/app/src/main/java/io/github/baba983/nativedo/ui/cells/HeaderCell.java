@@ -38,7 +38,7 @@ import android.widget.TextView;
 
 import androidx.core.view.ViewCompat;
 
-import io.github.baba983.nativedo.core.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
 import io.github.baba983.nativedo.ui.actionbar.SimpleTextView;
 import io.github.baba983.nativedo.ui.actionbar.Theme;
 import io.github.baba983.nativedo.ui.components.AnimatedTextView;

@@ -53,7 +53,7 @@ import androidx.core.graphics.ColorUtils;
 import androidx.core.view.WindowInsetsCompat;
 
 import io.github.baba983.nativedo.R;
-import io.github.baba983.nativedo.core.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
 import io.github.baba983.nativedo.ui.actionbar.ActionBar;
 import io.github.baba983.nativedo.ui.actionbar.BaseFragment;
 import io.github.baba983.nativedo.ui.actionbar.Theme;

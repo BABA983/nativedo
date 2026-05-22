@@ -13,7 +13,7 @@
 
 package io.github.baba983.nativedo.ui.components;
 
-import static io.github.baba983.nativedo.core.AndroidUtilities.dp;
+import static io.github.baba983.nativedo.telegram.messenger.AndroidUtilities.dp;
 
 import android.content.Context;
 import android.graphics.Canvas;
@@ -26,10 +26,10 @@ import android.os.SystemClock;
 import android.text.TextPaint;
 import android.view.View;
 
-import io.github.baba983.nativedo.core.AndroidUtilities;
-import io.github.baba983.nativedo.core.LocaleController;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.LocaleController;
 import io.github.baba983.nativedo.R;
-import io.github.baba983.nativedo.core.SharedConfig;
+import io.github.baba983.nativedo.telegram.messenger.SharedConfig;
 import io.github.baba983.nativedo.ui.actionbar.Theme;
 
 import java.util.Random;

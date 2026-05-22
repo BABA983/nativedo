@@ -60,8 +60,8 @@ import androidx.core.view.ViewCompat;
 import java.util.ArrayList;
 import java.util.HashSet;
 
-import io.github.baba983.nativedo.core.AndroidUtilities;
-import io.github.baba983.nativedo.core.FileLog;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.FileLog;
 import io.github.baba983.nativedo.ui.browser.BrowserSheet;
 import io.github.baba983.nativedo.ui.components.AnimatedFloat;
 import io.github.baba983.nativedo.ui.components.CubicBezierInterpolator;

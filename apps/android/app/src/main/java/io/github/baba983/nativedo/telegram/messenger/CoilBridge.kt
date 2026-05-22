@@ -3,7 +3,7 @@
 //   - Bridges Java-side call sites (ImageLoader.loadAsync, PhotoViewer slot loader)
 //     into Coil's SingletonImageLoader so the post body / GroupedPhotosListView strip /
 //     PhotoViewer fullscreen share a single decoded-bitmap cache.
-package io.github.baba983.nativedo.core
+package io.github.baba983.nativedo.telegram.messenger
 
 import android.content.Context
 import android.graphics.Bitmap

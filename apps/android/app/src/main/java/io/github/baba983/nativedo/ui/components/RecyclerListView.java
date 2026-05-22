@@ -29,9 +29,9 @@
 
 package io.github.baba983.nativedo.ui.components;
 
-import static io.github.baba983.nativedo.core.AndroidUtilities.dp;
-import static io.github.baba983.nativedo.core.AndroidUtilities.dpf2;
-import static io.github.baba983.nativedo.core.AndroidUtilities.lerp;
+import static io.github.baba983.nativedo.telegram.messenger.AndroidUtilities.dp;
+import static io.github.baba983.nativedo.telegram.messenger.AndroidUtilities.dpf2;
+import static io.github.baba983.nativedo.telegram.messenger.AndroidUtilities.lerp;
 import static io.github.baba983.nativedo.ui.actionbar.Theme.multAlpha;
 
 import android.animation.Animator;
@@ -83,15 +83,15 @@ import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
-import io.github.baba983.nativedo.core.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
 import io.github.baba983.nativedo.core.BuildConfig;
-import io.github.baba983.nativedo.core.FileLog;
-import io.github.baba983.nativedo.core.GenericProvider;
-import io.github.baba983.nativedo.core.LocaleController;
-import io.github.baba983.nativedo.core.NotificationCenter;
+import io.github.baba983.nativedo.telegram.messenger.FileLog;
+import io.github.baba983.nativedo.telegram.messenger.GenericProvider;
+import io.github.baba983.nativedo.telegram.messenger.LocaleController;
+import io.github.baba983.nativedo.telegram.messenger.NotificationCenter;
 import io.github.baba983.nativedo.R;
-import io.github.baba983.nativedo.core.SharedConfig;
-import io.github.baba983.nativedo.core.Utilities;
+import io.github.baba983.nativedo.telegram.messenger.SharedConfig;
+import io.github.baba983.nativedo.telegram.messenger.Utilities;
 import io.github.baba983.nativedo.ui.actionbar.Theme;
 import io.github.baba983.nativedo.ui.cells.ChatActionCell;
 import io.github.baba983.nativedo.ui.cells.ChatMessageCell;

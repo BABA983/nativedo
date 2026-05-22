@@ -52,7 +52,7 @@ import androidx.core.content.ContextCompat;
 import androidx.core.graphics.ColorUtils;
 
 import io.github.baba983.nativedo.R;
-import io.github.baba983.nativedo.core.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
 import io.github.baba983.nativedo.ui.actionbar.ActionBarMenuSubItem;
 import io.github.baba983.nativedo.ui.actionbar.ActionBarPopupWindow;
 import io.github.baba983.nativedo.ui.actionbar.Theme;

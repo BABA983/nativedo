@@ -1,4 +1,4 @@
-package io.github.baba983.nativedo.core;
+package io.github.baba983.nativedo.telegram.messenger;
 
 /**
  * General-purpose callback interfaces and utility methods matching the public

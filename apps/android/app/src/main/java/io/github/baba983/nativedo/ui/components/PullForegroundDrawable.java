@@ -23,8 +23,8 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.graphics.ColorUtils;
 
-import io.github.baba983.nativedo.core.AndroidUtilities;
-import io.github.baba983.nativedo.core.ApplicationLoader;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.ApplicationLoader;
 import io.github.baba983.nativedo.R;
 import io.github.baba983.nativedo.ui.actionbar.Theme;
 // OMITTED: org.telegram.ui.Stories.recorder.HintView2 (replaced by simple width/2 fallback below).

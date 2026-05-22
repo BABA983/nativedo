@@ -82,7 +82,7 @@ import androidx.core.view.WindowInsetsCompat;
 import java.util.ArrayList;
 import java.util.List;
 
-import io.github.baba983.nativedo.core.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
 import io.github.baba983.nativedo.ui.components.CubicBezierInterpolator;
 import io.github.baba983.nativedo.ui.components.LayoutHelper;
 

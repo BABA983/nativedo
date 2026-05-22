@@ -11,10 +11,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.lifecycleScope
-import io.github.baba983.nativedo.core.AndroidUtilities
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities
 import io.github.baba983.nativedo.ui.actionbar.ActionBarLayout
 import io.github.baba983.nativedo.ui.main.MainTabsActivity
-import io.github.baba983.nativedo.ui.photo.PhotoViewer
+import io.github.baba983.nativedo.telegram.ui.PhotoViewer
 import kotlinx.coroutines.launch
 
 private const val LAZY_START = 0.015f

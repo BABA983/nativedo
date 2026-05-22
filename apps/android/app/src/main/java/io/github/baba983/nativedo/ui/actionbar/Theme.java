@@ -56,7 +56,7 @@ import android.util.SparseIntArray;
 import java.util.ArrayList;
 import java.util.HashMap;
 
-import io.github.baba983.nativedo.core.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
 
 public final class Theme {
 

@@ -16,7 +16,7 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.ViewModelProvider
 import io.github.baba983.nativedo.NativeDoApp
-import io.github.baba983.nativedo.core.AndroidUtilities
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities
 import io.github.baba983.nativedo.core.ui.GalleryImage
 import io.github.baba983.nativedo.core.ui.RoundedImageView
 import io.github.baba983.nativedo.feature.topic.data.TopicRepository
@@ -25,9 +25,9 @@ import io.github.baba983.nativedo.ui.actionbar.BackDrawable
 import io.github.baba983.nativedo.ui.actionbar.BaseFragment
 import io.github.baba983.nativedo.ui.actionbar.Theme
 import io.github.baba983.nativedo.ui.browser.BrowserSheet
-import io.github.baba983.nativedo.ui.photo.PhotoViewer
-import io.github.baba983.nativedo.ui.photo.PhotoViewer.PhotoEntry
-import io.github.baba983.nativedo.ui.photo.PhotoViewer.PlaceProviderObject
+import io.github.baba983.nativedo.telegram.ui.PhotoViewer
+import io.github.baba983.nativedo.telegram.ui.PhotoViewer.PhotoEntry
+import io.github.baba983.nativedo.telegram.ui.PhotoViewer.PlaceProviderObject
 
 class TopicDetailFragment(
     private val topicId: Long,

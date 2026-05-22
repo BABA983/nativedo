@@ -37,7 +37,7 @@ import android.widget.FrameLayout;
 
 import androidx.core.graphics.ColorUtils;
 
-import io.github.baba983.nativedo.core.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
 import io.github.baba983.nativedo.ui.components.CubicBezierInterpolator;
 import io.github.baba983.nativedo.ui.components.LayoutHelper;
 

@@ -46,7 +46,7 @@ import android.widget.Toast;
 import androidx.core.graphics.ColorUtils;
 
 import io.github.baba983.nativedo.R;
-import io.github.baba983.nativedo.core.SharedConfig;
+import io.github.baba983.nativedo.telegram.messenger.SharedConfig;
 import io.github.baba983.nativedo.ui.actionbar.ActionBarLayout;
 import io.github.baba983.nativedo.ui.actionbar.BaseFragment;
 import io.github.baba983.nativedo.ui.actionbar.Theme;

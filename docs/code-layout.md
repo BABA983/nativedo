@@ -178,6 +178,89 @@ When you `git mv` a vendored file between directories (e.g.,
 If a vendored file existed without a manifest entry, **add it in the same
 commit as the move** — see AGENTS.md rule 1.
 
+## Dependency direction
+
+Packages may only depend on packages **below** them in this stack.
+An arrow from A → B means "A may import B":
+
+```
+┌──────────────────────────┐
+│ feature/ (ViewModel, Repository) │  Kotlin, NativeDo
+└─────────────┬────────────┘
+              │
+              ▼
+┌──────────────────────────┐
+│ ui/ (façades, NativeDo UI) │  Kotlin/Java, NativeDo
+│   avatar/, profile/, …     │  NO GPL header
+└─────────────┬────────────┘
+              │
+              ▼
+┌──────────────────────────┐
+│ core/ (NativeDo utilities) │  Kotlin/Java, NativeDo
+│   model, network, session   │  NO GPL header
+│   storage, di, ui           │
+└─────────────┬────────────┘
+              │
+              ▼
+┌──────────────────────────┐
+│ telegram/ (vendored)       │  Java only, GPL header
+│   messenger/ tgnet/ ui/    │  mirrors upstream paths
+└─────────────┬────────────┘
+              │
+              ▼
+┌──────────────────────────┐
+│ java.* / android.* /       │  system libs
+│ androidx.*                 │
+└──────────────────────────┘
+```
+
+**Hard rule: `telegram/**` MUST NOT import any NativeDo package
+(`core.*`, `feature.*`, `ui.*`).** The only allowed imports are:
+
+- `java.*`, `android.*`, `androidx.*`
+- Other `io.github.baba983.nativedo.telegram.*` classes
+- Vendored SPI interfaces defined inside `telegram/` itself
+
+### Why this matters
+
+1. **Re-sync safety** — when you `cp` a new upstream version into
+   `telegram/`, any NativeDo import you added gets wiped out. If
+   the rule is violated, the next sync silently breaks.
+2. **No circular deps** — `core/` uses `telegram/Utilities`; if
+   `telegram/Utilities` also used `core/SomeHelper`, you'd have
+   a cycle.
+3. **GPL boundary** — `telegram/` is GPL-2.0+ derivative. If it
+   imports NativeDo-original code, the boundary blurs and
+   license audit gets harder.
+
+### When telegram/ needs NativeDo data
+
+| Need | Pattern | Example |
+|---|---|---|
+| Data from Discourse | Define SPI interface inside `telegram/`; implement in `core/` or `ui/` | `telegram.bridge.UserResolver` → `core.discourse.DiscourseUserResolver` |
+| Callback to business logic | Use vendored callback mechanism; NativeDo implements the interface | `PhotoViewerProvider`, `PageBlocksAdapter` |
+| Network stack | Keep vendored code's own HTTP path; don't cross-reference NativeDo's | `ImageLoader` uses its own OkHttp, not `core.network.*` |
+| Replace a vendored implementation | Write a façade in `ui/`; business code calls façade only | `ui/photo/NativeDoPhotoViewer` wraps `telegram.ui.PhotoViewer` |
+
+### Known placement debt
+
+The following directories contain Telegram-derived code that lives
+under `ui/` instead of `telegram/ui/`. Moving them fixes all current
+vendor-isolation violations at once. Track progress here:
+
+- [ ] `ui/actionbar/` → `telegram/ui/ActionBar/` (16 files)
+- [ ] `ui/components/` → `telegram/ui/Components/` (32 files)
+- [ ] `ui/cells/` → `telegram/ui/Cells/` (9 files)
+
+Once moved, the `telegram/ → ui/` violations below disappear
+automatically. Until then, `scripts/vendor-isolation-check.sh`
+reports them as known-exceptions.
+
+### Enforcement
+
+Run `scripts/vendor-isolation-check.sh` before each commit that
+touches `telegram/`. CI should also run it.
+
 ## Anti-patterns to avoid
 
 - Two copies of the same vendored file (e.g., `core/ImageLoader.java` AND

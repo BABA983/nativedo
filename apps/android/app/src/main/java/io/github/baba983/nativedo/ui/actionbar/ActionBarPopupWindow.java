@@ -45,7 +45,7 @@ import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
 
-import io.github.baba983.nativedo.core.AndroidUtilities;
+import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
 
 public class ActionBarPopupWindow extends PopupWindow {
 
