@@ -1,138 +1,79 @@
 # AGENTS.md
 
+## Telegram-Derived Code
 
-## Hard Rules For Telegram-Derived Code
+Some files under `apps/android/app/src/main/java/io/github/baba983/nativedo/` are
+vendored from [Telegram for Android](https://github.com/DrKLO/Telegram). We don't
+merge upstream back, but every file's origin and current delta must be discoverable.
 
-Telegram-derived work is not always a file-level slice. Some work is an exact component port; some is a complete feature workflow whose backend must be adapted to NativeDo. The goal is that every local difference from Telegram is intentional, visible, and reviewable, and that a feature cannot be declared done just because one upstream slice was copied.
+### Where the truth lives
 
-When adding or repairing Telegram-derived behavior, open the upstream file, upstream diff, or upstream workflow first. Do not recreate behavior from memory or write code that is merely "inspired by Telegram" while claiming Telegram parity.
+- **`vendor-manifest.json`** — single source of truth per file: upstream path,
+  vendored commit, whether the local file differs from upstream, and which
+  subsystems must stay upstream-shaped (`forced_exact`).
+- **`VENDOR.md`** — workflow (setup, diff, status, re-sync, pin bump).
+- **`docs/code-layout.md`** — directory layout, language choice (Java vs
+  Kotlin), façade/Bridge pattern, stub-vs-throw policy. Read this before
+  moving files between directories or starting a new façade.
+- **`scripts/vendor-diff.sh <local-path>`** — diff a vendored file against the
+  pinned upstream blob. Run this before editing a vendored file.
+- **`scripts/vendor-status.sh`** — lint manifest `modified` flags against reality.
 
-Local differences from upstream are allowed only in these buckets:
+A file is _vendored_ only when Telegram source was copied, split out, or
+substantially adapted. Files written from scratch are NativeDo code even if they
+follow Telegram-like patterns. Do not add manifest entries, port-mode headers,
+or origin comments unless actual Telegram source was copied or substantially
+adapted.
 
-- **HOST-WIRING:** package/import/resource/theme/navigation glue required to compile inside NativeDo.
-- **ADAPTED-BACKEND:** Telegram backend/storage/account dependencies replaced by NativeDo equivalents while keeping the user-visible workflow aligned.
-- **ADAPTED-PRODUCT:** intentional NativeDo product difference. Keep the upstream symbol name when practical and record the reason.
-- **OMITTED:** whole upstream subsystem removed because it is out of scope. Record the removed block and reason.
-- **PARITY-BLOCKER:** missing dependency or host capability that prevents the Telegram workflow from being matched.
+### Rules
 
-Unknown drift is not allowed. If behavior feels different from Telegram, compare against upstream before patching by guesswork. If a product-specific change is needed, record it as `ADAPTED-BACKEND` or `ADAPTED-PRODUCT`.
+1. **A copied or substantially adapted Telegram file without a manifest entry is
+   a bug.** Add the entry in the same commit that copies or derives the file.
+2. **Before modifying a vendored file**, run `scripts/vendor-diff.sh <path>` so you
+   see what's already been changed locally. Don't rewrite from memory.
+3. **Respect `forced_exact`.** If a manifest entry lists `gesture`, `animation`,
+   `measurement`, `drawing`, or `recycling`, keep that subsystem's method shape,
+   constants (`dp(10)`, `0.3f`, `>= 3000`, `clamp(150, 600)`, `< 1px` snap), and
+   branch structure aligned with upstream. These break in non-obvious ways when
+   "looks close enough" rewrites slip in.
+4. **`port_mode = exact`** — upstream fidelity is the goal. Drift only for host
+   wiring (package, imports, `Theme.getColor(Theme.key_*)`, Resources).
+5. **`port_mode = native`** — we've already diverged and don't claim Telegram
+   parity. Any `forced_exact` subsystem still applies.
+6. **Adapting backend deps** (Telegram messaging APIs → Discourse/linux.do) is
+   expected. If the divergence is non-obvious, leave a one-line `notes` entry in
+   the manifest.
+7. **Adding a new vendored file**: copy upstream → fix package/imports → add
+   manifest entry → run `scripts/vendor-status.sh` → commit source + manifest
+   together. If the code is written from scratch, do not add a manifest entry.
+8. **License headers on copied files stay.** That's how compliance works.
 
-### Port Modes
+### Host wiring
 
-Every new Telegram-derived change MUST choose a primary port mode before implementation.
+For `port_mode = exact`, these changes are expected and still count as
+`modified: true` when the local file differs byte-for-byte from upstream:
 
-| Mode | Use it for | Rule |
-|---|---|---|
-| **Exact Component Port** | Independent Telegram UI/interaction components: touch handlers, animation helpers, measured/drawn cells, recycler pools, path/canvas drawables. | Keep method shape, key fields, branch structure, constants, thresholds, durations, interpolators, measurement formulas, and recycler behavior aligned with upstream. Allowed changes are `HOST-WIRING` and recorded whole-subsystem omissions. No "looks close enough" rewrites. |
-| **Feature Workflow Port** | Complete user-visible Telegram features: browser instant view, settings, bookmarks, history, media viewer flows, profile sheets, or any workflow spanning screens/storage/navigation. | Write a Telegram Workflow Map before implementation. Match the user-visible path first, then adapt NativeDo backend/host boundaries explicitly. A copied slice is not completion proof. |
-| **Native Feature** | Pure NativeDo behavior, Discourse/linux.do logic, repositories, app-specific UI. | No upstream preservation contract. Do not claim Telegram parity. Do not add Telegram/GPL port headers just because the design was loosely inspired by Telegram. |
+- package and import rewrites into `io.github.baba983.nativedo.*`
+- AndroidX or project-local type substitutions needed to compile
+- resource and theme-key rewrites (`R.*`, `Theme.getColor(Theme.key_*)`)
+- constructor or callback glue needed to attach the component to NativeDo
 
-Existing files with legacy `UPSTREAM-LEVEL: L0/L1/L2/L3` headers do not need bulk migration. When a task touches one of those files, update the header only if it is directly relevant to the change.
+Host wiring must not rewrite the branch structure, constants, measurement,
+drawing, gesture, animation, or recycling behavior of a `forced_exact` subsystem.
 
-### Forced Exact Components
+### When something feels off
 
-When Telegram-derived work touches any of these subsystems, that subsystem MUST be handled as an `Exact Component Port`, even when it lives inside a larger `Feature Workflow Port`.
+If a Telegram-derived component's interaction, animation, or measurement feels
+wrong, **read the upstream file before patching**:
 
-| Subsystem | Requirement | Examples |
-|---|---|---|
-| Touch / gesture arbitration | Exact Component Port | `ViewPagerFixed.onTouchEventInternal`, `BottomSheet`, `RecyclerListView` swipe |
-| Animation curves, durations, interpolators | Exact Component Port | `distanceInfluenceForSnapDuration`, quintic-out interpolator, `clamp(150, 600)` snap duration |
-| List / view recycling pools | Exact Component Port | `viewsByType`, `updateViewForIndex` swap logic |
-| Edge tolerances and magic numbers in interaction code | Exact Component Port | `< 1px` snap, `touchSlop = 0.3 cm`, `velX >= 3000` thresholds |
-| Measurement and layout formulas copied from Telegram | Exact Component Port | instant-view list indentation, cell height formulas, custom measure branches |
-| Custom Path / Canvas drawing | Exact Component Port | `GlassTabView.dispatchDraw`, ActionBar back button, list bullets/numbers |
-| Theme / resource mapping | Host wiring or Native Feature | `Theme.key_*` constants |
-| Discourse / linux.do business logic | Native Feature | login, CSRF, bootstrap parse, repository |
-
-### Exact Component Header
-
-Every new or touched Exact Component Port should include port metadata above or inside the copyright banner:
-
-```
-// PORT-MODE: Exact Component Port
-// UPSTREAM-SCOPE: org/telegram/ui/Components/ViewPagerFixed.java
-// UPSTREAM-COMMIT: <40-char sha or "master@<YYYY-MM-DD>">
-// EXACT-SUBSYSTEMS: gesture, animation, measurement
-// HOST-WIRING:
-//   - Theme.ResourcesProvider -> Theme.getColor(Theme.key_*)
-// ADAPTED-BACKEND:
-//   - None.
-// ADAPTED-PRODUCT:
-//   - MAIN_TABS_MIN_CONTENT_WIDTH = 160dp - NativeDo currently has fixed Home/Profile tabs.
-// OMITTED:
-//   - drag-reorder (ItemTouchHelper path) - out of scope until multi-tab editing ships.
-```
-
-### Feature Workflow Map
-
-Every Feature Workflow Port MUST write a Telegram Workflow Map before implementation. Large features should use `docs/telegram-port/<feature>.md`; small features may put the map in the main file header. The map must cover the complete upstream workflow, even when the current task implements only one phase.
-
-Use this structure:
-
-```md
-# Telegram Workflow Map: <Feature>
-
-1. Upstream scope:
-2. Entry points:
-3. Screens/fragments/sheets:
-4. Menus/actions:
-5. State transitions:
-6. Storage/backend dependencies:
-7. Navigation/back behavior:
-8. Unsupported or adapted dependencies:
-
-Current task scope:
-- In scope:
-- Deferred:
-- Parity blockers:
+```bash
+scripts/vendor-diff.sh ui/components/RecyclerListView.java
+# or directly:
+git -C vendor/telegram-android show <pinned_commit>:TMessagesProj/src/main/java/<path>
 ```
 
-Rules for the map:
-
-- Fill all 8 sections before coding. If a section does not apply, write `None` and explain why.
-- `Upstream scope` must name the Telegram files/classes/methods that define the workflow.
-- `Storage/backend dependencies` must separate Telegram backend behavior from NativeDo replacements.
-- `Unsupported or adapted dependencies` must label each difference as `HOST-WIRING`, `ADAPTED-BACKEND`, `ADAPTED-PRODUCT`, `OMITTED`, or `PARITY-BLOCKER`.
-- If a `PARITY-BLOCKER` affects the requested scope, stop implementation and report the blocker plus options. Continue only when the blocker does not affect the explicit current scope.
-- Phased work is allowed, but the phase must be marked under `In scope` / `Deferred` / `Parity blockers`. Do not declare the whole Telegram feature complete unless the full map is implemented or explicitly omitted.
-
-Examples:
-
-- Browser Instant View, Browser Settings, Bookmarks, and History are `Feature Workflow Port` work.
-- `WebViewSwipeContainer`, Telegram cell measurement/drawing, path/canvas icons, animation interpolators, and recycler-pool logic are `Exact Component Port` work.
-- A Feature Workflow Port may and often should contain Exact Component Ports for its gesture, animation, measurement, drawing, or recycling pieces.
-
-### When You Find Something Missing
-
-If a previously shipped slice dropped behavior that affects feel or workflow parity, compare against upstream first. For forced exact subsystems, re-align the kept code to upstream instead of patching by guesswork. For Feature Workflow Port gaps, update the Workflow Map before coding more.
-
-### Workflow
-
-When asked to add or modify Telegram-derived behavior:
-
-1. Choose `Exact Component Port`, `Feature Workflow Port`, or `Native Feature`.
-2. Open the upstream source before editing. For feature work, write the Workflow Map first.
-3. Identify any forced exact subsystems and keep them upstream-shaped.
-4. Record every local difference as `HOST-WIRING`, `ADAPTED-BACKEND`, `ADAPTED-PRODUCT`, `OMITTED`, or `PARITY-BLOCKER`.
-5. Verify retained method names, parameter lists, key fields, interaction constants, measurement formulas, and workflow states against upstream.
-6. Build (`./apps/android/gradlew -p apps/android :app:assembleDebug --quiet`) and exercise touch/gesture-related tests if applicable.
-
-### Mechanical Self-Check Before Declaring Done
-
-For an Exact Component Port, summarize the upstream comparison in the final response or commit message:
-
-- Upstream path and commit/date checked.
-- Local differences added or changed under `HOST-WIRING`, `ADAPTED-BACKEND`, `ADAPTED-PRODUCT`, or `OMITTED`.
-- Interaction constants checked, for example `dp(10)`, `0.3f`, `>= 3000`, `clamp(150, 600)`, `< 1`.
-- Any unexpected divergence was fixed or explicitly escalated before declaring done.
-
-For a Feature Workflow Port, summarize:
-
-- Workflow Map path or header location.
-- Upstream workflow scope checked.
-- Current phase `In scope` / `Deferred` / `Parity blockers`.
-- Backend/storage differences labeled as `ADAPTED-BACKEND`.
-- Any Exact Component Ports inside the feature and their upstream comparison.
+Re-align to upstream if the drift was unintentional. Don't "fix" gesture/animation/
+measurement code by guessing.
 
 ## Build, Lint, And Test
 
@@ -144,7 +85,7 @@ For a Feature Workflow Port, summarize:
 
 ## Project reference
 
-- `/Users/baba/Documents/workspace_github/Telegram` — primary reference for UI components, animations, gesture interactions (swipe, long-press, pull-to-refresh), navigation transitions, and list performance patterns.
+- `./vendor/telegram-android` — primary reference for UI components, animations, gesture interactions (swipe, long-press, pull-to-refresh), navigation transitions, and list performance patterns.
 - `/Users/baba/Documents/workspace_github/stripe-android` — modern Android SDK reference for architecture and code patterns.
 - `/Users/baba/Documents/workspace_github/fluxdo` — reference for linux.do-specific Discourse features and flows.
 - <https://docs.discourse.org/> — canonical Discourse API documentation.
@@ -153,12 +94,25 @@ For a Feature Workflow Port, summarize:
 
 - This repository builds a native client for `https://linux.do/`, not a generic Discourse SDK.
 - Android is the active implementation target under `apps/android`; `apps/ios` is reserved for future parity work.
+- `v1` should prioritize reading, search, profile, login, and session recovery before expanding into posting or other write-heavy flows.
+- Do not add AI-assisted posting, replying, or other content generation features unless the user explicitly asks for them.
 
 ## Source Of Truth
 
 - Start with `README.md` for the current project layout and local run commands.
+- Treat `docs/superpowers/specs/2026-03-31-linuxdo-native-client-design.md` as the main product and architecture brief.
+- Treat `docs/superpowers/specs/2026-04-01-nativedo-liquid-glass-theme-design.md` as the main UI/theme direction.
 - Treat `contracts/discourse/*.md` as the canonical reference for endpoints, models, and auth/session flow.
 - Treat `fixtures/discourse/*` as the sample payloads that should stay aligned with the contracts.
+
+## Android Architecture
+
+- Keep the Android implementation in a single app module unless the user explicitly asks for module splitting.
+- Maintain the existing package boundaries: `core/`, `feature/`, `navigation/`, and `ui/theme`.
+- Prefer manual dependency wiring through `AppContainer`; do not introduce Hilt, Koin, or another DI framework without a clear user request or a concrete scaling problem.
+- Prefer `ViewModel + StateFlow<UiState>` for screen state and keep UI state production out of composables when the logic is non-trivial.
+- Use explicit names such as `Repository`, `UseCase`, `Store`, `Coordinator`, and `Provider`; avoid catch-all names like `Manager` when a narrower term exists.
+- When adding a new feature, keep obvious one-screen factories local, but move long-lived dependencies into `AppContainer` once they are shared across screens.
 
 ## Network And Auth
 
@@ -167,3 +121,48 @@ For a Feature Workflow Port, summarize:
 - Session-sensitive changes must account for `_t`, `_forum_session`, `cf_clearance`, bootstrap HTML parsing, and `/session/csrf`.
 - If you change auth, cookies, CSRF, or endpoint semantics, update the matching files in `contracts/discourse/` and `fixtures/discourse/` in the same task when appropriate.
 - Cloudflare handling should favor a reliable WebView fallback over brittle native workarounds.
+
+## UI And Theme
+
+- Keep using `NativeDoTheme`, `NativeDoThemeExtras`, and the existing semantic color model instead of scattering raw colors through features.
+- Avoid Material 3 component styles (Button, Card, TopAppBar, etc.); build custom composables whose look, animation, and interaction patterns reference the Telegram Android codebase (`/Users/baba/Documents/workspace_github/Telegram`). Material icons may be used as placeholders.
+- Preserve support for `System`, `Light`, and `Dark` theme modes unless the user asks to simplify them.
+- When editing Compose UI, preserve the current design direction: glass surfaces are reserved for chrome elements (tab bars, navigation bars, overlays); content areas and list items use standard opaque styling.
+
+## Build, Lint, And Test
+
+- Do not run gradlew commands in parallel; add `--quiet` when possible.
+- **All unit tests:** `./apps/android/gradlew -p apps/android :app:testDebugUnitTest --quiet`
+- **Single test class:** `./apps/android/gradlew -p apps/android :app:testDebugUnitTest --tests 'io.github.baba983.nativedo.feature.home.ui.HomeViewModelTest' --quiet`
+- **Assemble (runtime/resource changes):** `./apps/android/gradlew -p apps/android :app:assembleDebug --quiet`
+- For docs-only changes, verification can be limited to checking the edited Markdown for accuracy and consistency.
+
+## Code Style
+
+- Kotlin, JVM 17, compileSdk 35, minSdk 28. Compose UI (custom components, not M3 widgets).
+- Trailing commas on multi-line parameter/argument lists. No wildcard imports.
+- Sealed interfaces for UI state variants (`sealed interface HomeUiState`); data classes for state snapshots.
+- Networking: Retrofit + OkHttp + kotlinx.serialization (not Gson/Moshi). Images: Coil 3. HTML parsing: Jsoup.
+- Test deps: JUnit 4, Truth assertions, MockWebServer, Turbine for Flow, Robolectric for Android framework.
+<!-- TRELLIS:START -->
+# Trellis Instructions
+
+These instructions are for AI assistants working in this project.
+
+Use the `/trellis:start` command when starting a new session to:
+- Initialize your developer identity
+- Understand current project context
+- Read relevant guidelines
+
+Use `@/.trellis/` to learn:
+- Development workflow (`workflow.md`)
+- Project structure guidelines (`spec/`)
+- Developer workspace (`workspace/`)
+
+If you're using Codex, project-scoped helpers may also live in:
+- `.agents/skills/` for reusable Trellis skills
+- `.codex/agents/` for optional custom subagents
+
+Keep this managed block so 'trellis update' can refresh the instructions.
+
+<!-- TRELLIS:END -->

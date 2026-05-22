@@ -15,20 +15,12 @@ TELEGRAM_DIR="apps/android/app/src/main/java/io/github/baba983/nativedo/telegram
 # e.g. "telegram/messenger/AndroidUtilities.java:ui.actionbar.Theme"
 KNOWN_EXCEPTIONS=(
   "AndroidUtilities.java:ui.actionbar.Theme"
-  "GroupedPhotosListView.java:ui.components.CubicBezierInterpolator"
   "PhotoViewer.java:core.ui.RoundedImageView"
   "PhotoViewer.java:ui.actionbar.ActionBar"
   "PhotoViewer.java:ui.actionbar.ActionBarMenu"
   "PhotoViewer.java:ui.actionbar.ActionBarMenuItem"
   "PhotoViewer.java:ui.actionbar.ActionBarMenuSubItem"
   "PhotoViewer.java:ui.actionbar.BackDrawable"
-  "PhotoViewer.java:ui.components.AnimatedTextDrawable"
-  "PhotoViewer.java:ui.components.AnimationProperties"
-  "PhotoViewer.java:ui.components.ClippingImageView"
-  "PhotoViewer.java:ui.components.CubicBezierInterpolator"
-  "PhotoViewer.java:ui.components.GestureDetector2"
-  "PhotoViewer.java:ui.components.LayoutHelper"
-  "PhotoViewer.java:ui.components.SizeNotifierFrameLayout"
 )
 
 if [ ! -d "$TELEGRAM_DIR" ]; then
