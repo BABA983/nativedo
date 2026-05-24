@@ -1,9 +1,12 @@
 # Vendored Code
 
 This project vendors selected source files from
-[Telegram for Android](https://github.com/DrKLO/Telegram) into our
-own package namespace under
-`apps/android/app/src/main/java/io/github/baba983/nativedo/`.
+[Telegram for Android](https://github.com/DrKLO/Telegram) into a standalone
+Gradle module, **`:telegram`**, located at
+`apps/android/telegram/src/main/java/org/telegram/...`. A smaller, second
+class of Telegram-derived code lives in `:app` as **native ports** that mirror
+upstream component shape but bind to NativeDo data models (see
+[`docs/code-layout.md`](docs/code-layout.md)).
 
 Telegram for Android is licensed under **GPL-2.0-or-later**. Vendoring its
 source makes this app a derivative work of Telegram — the whole app is therefore
@@ -13,7 +16,7 @@ files, and don't strip the GPL notice when modifying them.
 We do **not** merge upstream changes automatically. Vendored files
 may be modified locally; the rules for *what kind of changes are allowed*
 live in `AGENTS.md` (Telegram-Derived Code → Rules). This file describes
-only *what version we vendored* and *how to inspect it*.
+*what version we vendored* and *how to inspect it*.
 
 ## Source of truth
 
@@ -21,9 +24,10 @@ only *what version we vendored* and *how to inspect it*.
 - Pinned commit: see `vendor-manifest.json` (`upstream.pinned_commit`)
 - Pristine working copy: `vendor/telegram-android/` (read-only, do not edit)
 
-The pristine copy is set up by `scripts/setup-vendor.sh` and is **not**
-committed to this repo (`vendor/telegram-android/` is gitignored). The
-pin in `vendor-manifest.json` is the single source of truth.
+The pristine copy is a manual `git clone` (or worktree) of the upstream repo
+checked out at `upstream.pinned_commit`. It is **not** committed to this repo
+(`vendor/telegram-android/` is gitignored). The pin in `vendor-manifest.json`
+is the single source of truth.
 
 ## Manifest
 
@@ -34,46 +38,79 @@ manifest is the single source of truth for:
 - which upstream file each one came from
 - whether the local file differs byte-for-byte from upstream
 - which commit it was vendored from
+- which subsystems (gesture / animation / measurement / drawing / recycling)
+  must stay upstream-shaped (`forced_exact`)
+- whether the port is `exact` or `native` (see AGENTS.md)
 
 Only copied, split-out, or substantially adapted Telegram source is vendored.
-NativeDo code written from scratch does not belong in the manifest, even when it
-uses Telegram-like UI or architecture patterns. A copied or substantially
-adapted Telegram file without a manifest entry is a bug — please add the entry.
+NativeDo code written from scratch does not belong in the manifest, even when
+it uses Telegram-like UI or architecture patterns. A copied or substantially
+adapted Telegram file without a manifest entry is a bug — please add the
+entry.
+
+### Where paths point
+
+`local_root` is `apps/android/`. A `local` field always reads relative to
+that:
+
+- `telegram/src/main/java/org/telegram/...` — file in the `:telegram` module
+  (most common; package stays `org.telegram.*`)
+- `app/src/main/java/io/github/baba983/nativedo/...` — native port in `:app`
+  (package is `io.github.baba983.nativedo.*`)
 
 ## Common tasks
 
 ```bash
-# One-time setup (also works to refresh after a pin bump)
-./scripts/setup-vendor.sh
+# Verify :telegram does not import io.github.baba983.nativedo.*
+scripts/vendor-isolation-check.sh
 
-# Diff one vendored file against its pinned upstream
-./scripts/vendor-diff.sh ui/components/RecyclerListView.java
-
-# Lint: report manifest entries whose `modified` field is wrong,
-# or source/resource files that don't exist locally / upstream
-./scripts/vendor-status.sh
-
-# Lint with diff sizes for every modified file
-./scripts/vendor-status.sh --verbose
+# Bulk-copy missing vendored classes that javac is complaining about.
+# Reads a javac error log and copies referenced upstream files into
+# :telegram with no package rewrite. Reads vendor/telegram-android/ as source.
+./apps/android/gradlew -p apps/android :telegram:compileDebugJavaWithJavac \
+    --quiet > /tmp/javac-out.log 2>&1 || true
+scripts/auto-vendor-copy.sh /tmp/javac-out.log
 ```
 
-`vendor-status.sh` exits non-zero on any DRIFT / MISSING line — you can
-wire it into a pre-commit hook later if the noise is worth it.
+> **TODO (tooling)**: previously documented helpers `setup-vendor.sh`,
+> `vendor-diff.sh`, and `vendor-status.sh` do not exist yet. Until they
+> land, use `git -C vendor/telegram-android show <pinned_commit>:<upstream-path>`
+> to inspect a vendored file's pristine upstream form, and inspect the
+> manifest by hand or with `jq`.
+
+### Inspecting a vendored file against upstream
+
+```bash
+# Compare the local copy against the pinned upstream form
+COMMIT=$(jq -r .upstream.pinned_commit vendor-manifest.json)
+LOCAL=apps/android/telegram/src/main/java/org/telegram/ui/Components/RecyclerListView.java
+UPSTREAM=TMessagesProj/src/main/java/org/telegram/ui/Components/RecyclerListView.java
+diff -u <(git -C vendor/telegram-android show "$COMMIT:$UPSTREAM") "$LOCAL"
+```
+
+If you do this often, wrap it in `scripts/vendor-diff.sh <local-path>`
+(not yet written).
 
 ## Adding a new vendored file
 
 1. Confirm the file copies, splits out, or substantially adapts Telegram source.
    If it is written from scratch, stop here: it is NativeDo code and should not
    get a manifest entry.
-2. Copy the upstream file into the right local path under `local_root`.
-3. Adjust package, imports, and host wiring (see `AGENTS.md`
-   `Host wiring`).
-4. Add an entry to `vendor-manifest.json`. Set `vendored_at` to the
-   commit you copied from (usually `upstream.pinned_commit`).
-5. Run `./scripts/vendor-status.sh` and confirm there is no DRIFT line
-   for the new entry. If package/import/host wiring made the file differ
-   from upstream, set `modified` to `true` even when behavior stayed exact.
-6. Commit the source file and the manifest change together.
+2. For files going into `:telegram`: `cp` the upstream file into the same
+   relative path under `apps/android/telegram/src/main/java/org/telegram/`.
+   Package stays `org.telegram.*`; no `sed` rewrite needed.
+3. For native ports going into `:app`: copy into the appropriate
+   `io.github.baba983.nativedo.*` location, rewrite package and imports,
+   bind to NativeDo models.
+4. Adjust imports and host wiring (see `AGENTS.md` → Host wiring).
+5. Add an entry to `vendor-manifest.json`. Set `vendored_at` to the commit
+   you copied from (usually `upstream.pinned_commit`). For files copied
+   byte-identical from upstream, `modified: false`. For files that needed
+   any import drop, theme-key rewrite, or constructor glue, `modified: true`.
+6. Run `scripts/vendor-isolation-check.sh` and confirm no violations.
+7. `./apps/android/gradlew -p apps/android :telegram:compileDebugJavaWithJavac
+   --quiet` (and `:app:assembleDebug` if app code is affected).
+8. Commit the source file and the manifest change together.
 
 ## Re-syncing one file to a newer upstream
 
@@ -121,12 +158,12 @@ Per-file fields:
 | `local` | Path under `local_root` (the file you actually compile). |
 | `upstream` | Path under `upstream_root` in the Telegram repo. |
 | `vendored_at` | Commit SHA in the Telegram repo this copy came from. |
-| `modified` | `true` if the local file differs byte-for-byte from `vendored_at`. Package/import/host wiring counts. Lint enforced. |
+| `modified` | `true` if the local file differs byte-for-byte from `vendored_at`. Package/import/host wiring counts. |
 | `port_mode` | `exact` or `native`. Mirrors `AGENTS.md`. |
 | `forced_exact` | Optional list. Subset of `gesture`, `animation`, `measurement`, `drawing`, `recycling`. Mirrors `AGENTS.md`. |
 | `notes` | Optional. String or array of strings. |
 | `stuck_reason` | Optional. Why this file is intentionally pinned to an older `vendored_at` than `upstream.pinned_commit`. |
 
-Resource entries under `resources` are also linted. Each entry lists copied
-resource basenames, the upstream resource directory, the local directory glob,
-and the commit they were copied from.
+Resource entries under `resources` (if/when added) follow the same shape but
+list copied resource basenames, the upstream resource directory, the local
+directory glob, and the commit they were copied from.

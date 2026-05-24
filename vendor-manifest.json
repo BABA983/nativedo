@@ -5,6 +5,10 @@
     "NativeDo code written from scratch is not listed, even if it follows Telegram-like patterns.",
     "See VENDOR.md for the workflow.",
     "",
+    "Telegram-shaped vendored files live in :telegram module (package stays org.telegram.*).",
+    "Native ports adapted to NativeDo data models live in :app (package io.github.baba983.nativedo.*).",
+    "Each 'local' path is relative to 'local_root' (apps/android/).",
+    "",
     "port_mode mirrors AGENTS.md (Telegram-Derived Code -> Rules):",
     "  exact     - upstream fidelity is the goal. Drift only for host wiring.",
     "  native    - we've already diverged and don't claim Telegram parity.",
@@ -23,33 +27,33 @@
     "pinned_commit": "009e97356",
     "pinned_date": "2026-04-06"
   },
-  "local_root": "apps/android/app/src/main/java/io/github/baba983/nativedo",
+  "local_root": "apps/android/",
   "upstream_root": "TMessagesProj/src/main/java",
   "files": [
     {
       "_comment": "core",
-      "local": "core/AndroidUtilities.java",
+      "local": "telegram/src/main/java/org/telegram/messenger/AndroidUtilities.java",
       "upstream": "org/telegram/messenger/AndroidUtilities.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "exact"
     },
     {
-      "local": "core/BuildVars.java",
+      "local": "telegram/src/main/java/org/telegram/messenger/BuildVars.java",
       "upstream": "org/telegram/messenger/BuildVars.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "core/LocaleController.java",
+      "local": "telegram/src/main/java/org/telegram/messenger/LocaleController.java",
       "upstream": "org/telegram/messenger/LocaleController.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "exact"
     },
     {
-      "local": "core/MessagesController.java",
+      "local": "telegram/src/main/java/org/telegram/messenger/MessagesController.java",
       "upstream": "org/telegram/messenger/MessagesController.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -60,21 +64,21 @@
       ]
     },
     {
-      "local": "core/SharedConfig.java",
+      "local": "telegram/src/main/java/org/telegram/messenger/SharedConfig.java",
       "upstream": "org/telegram/messenger/SharedConfig.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "exact"
     },
     {
-      "local": "core/Utilities.java",
+      "local": "telegram/src/main/java/org/telegram/messenger/Utilities.java",
       "upstream": "org/telegram/messenger/Utilities.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "exact"
     },
     {
-      "local": "telegram/messenger/FileLoader.java",
+      "local": "telegram/src/main/java/org/telegram/messenger/FileLoader.java",
       "upstream": "org/telegram/messenger/FileLoader.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -82,14 +86,14 @@
     },
     {
       "_comment": "actionbar",
-      "local": "ui/actionbar/Theme.java",
+      "local": "telegram/src/main/java/org/telegram/ui/ActionBar/Theme.java",
       "upstream": "org/telegram/ui/ActionBar/Theme.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "exact"
     },
     {
-      "local": "ui/actionbar/ThemeColors.java",
+      "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ThemeColors.java",
       "upstream": "org/telegram/ui/ActionBar/ThemeColors.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -97,7 +101,7 @@
     },
     {
       "_comment": "cells",
-      "local": "ui/cells/ChatActionCell.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Cells/ChatActionCell.java",
       "upstream": "org/telegram/ui/Cells/ChatActionCell.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -108,7 +112,7 @@
       ]
     },
     {
-      "local": "ui/cells/ChatMessageCell.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java",
       "upstream": "org/telegram/ui/Cells/ChatMessageCell.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -119,49 +123,49 @@
       ]
     },
     {
-      "local": "ui/cells/EmptyCell.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Cells/EmptyCell.java",
       "upstream": "org/telegram/ui/Cells/EmptyCell.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "exact"
     },
     {
-      "local": "ui/cells/GraySectionCell.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Cells/GraySectionCell.java",
       "upstream": "org/telegram/ui/Cells/GraySectionCell.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "exact"
     },
     {
-      "local": "ui/cells/HeaderCell.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Cells/HeaderCell.java",
       "upstream": "org/telegram/ui/Cells/HeaderCell.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "exact"
     },
     {
-      "local": "ui/cells/LoadingCell.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Cells/LoadingCell.java",
       "upstream": "org/telegram/ui/Cells/LoadingCell.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "exact"
     },
     {
-      "local": "ui/cells/ShadowSectionCell.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Cells/ShadowSectionCell.java",
       "upstream": "org/telegram/ui/Cells/ShadowSectionCell.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "exact"
     },
     {
-      "local": "ui/cells/TextInfoPrivacyCell.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Cells/TextInfoPrivacyCell.java",
       "upstream": "org/telegram/ui/Cells/TextInfoPrivacyCell.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "exact"
     },
     {
-      "local": "ui/cells/TopicCell.java",
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicCell.java",
       "upstream": "org/telegram/ui/Cells/DialogCell.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -177,22 +181,7 @@
       ]
     },
     {
-      "local": "ui/cells/OpPostCell.java",
-      "upstream": "org/telegram/ui/ArticleViewer.java",
-      "vendored_at": "009e97356",
-      "modified": true,
-      "port_mode": "native",
-      "forced_exact": [
-        "measurement",
-        "drawing"
-      ],
-      "notes": [
-        "Discourse OP renderer derived from ArticleViewer block cells.",
-        "Backend is adapted: cooked HTML -> CookedPostBlock instead of TLRPC.PageBlock."
-      ]
-    },
-    {
-      "local": "ui/cells/ReplyPostCell.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java",
       "upstream": "org/telegram/ui/Cells/ChatMessageCell.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -201,7 +190,7 @@
     },
     {
       "_comment": "components",
-      "local": "ui/components/AnimatedFloat.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/AnimatedFloat.java",
       "upstream": "org/telegram/ui/Components/AnimatedFloat.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -211,7 +200,7 @@
       ]
     },
     {
-      "local": "ui/components/AnimatedTextDrawable.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/AnimatedTextView.java",
       "upstream": "org/telegram/ui/Components/AnimatedTextView.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -222,7 +211,7 @@
       ]
     },
     {
-      "local": "ui/components/AnimatedTextView.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/AnimatedTextView.java",
       "upstream": "org/telegram/ui/Components/AnimatedTextView.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -232,7 +221,7 @@
       ]
     },
     {
-      "local": "ui/components/CircularProgressDrawable.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/CircularProgressDrawable.java",
       "upstream": "org/telegram/ui/Components/CircularProgressDrawable.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -243,7 +232,7 @@
       ]
     },
     {
-      "local": "ui/components/AvatarDrawable.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/AvatarDrawable.java",
       "upstream": "org/telegram/ui/Components/AvatarDrawable.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -254,7 +243,7 @@
       ]
     },
     {
-      "local": "ui/components/CombinedDrawable.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/CombinedDrawable.java",
       "upstream": "org/telegram/ui/Components/CombinedDrawable.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -264,7 +253,7 @@
       ]
     },
     {
-      "local": "ui/components/EmptyStubSpan.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/EmptyStubSpan.java",
       "upstream": "org/telegram/ui/Components/EmptyStubSpan.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -274,7 +263,7 @@
       ]
     },
     {
-      "local": "ui/components/FlickerLoadingView.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/FlickerLoadingView.java",
       "upstream": "org/telegram/ui/Components/FlickerLoadingView.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -285,7 +274,7 @@
       ]
     },
     {
-      "local": "ui/components/GestureDetectorFixDoubleTap.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/GestureDetectorFixDoubleTap.java",
       "upstream": "org/telegram/ui/Components/GestureDetectorFixDoubleTap.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -295,7 +284,7 @@
       ]
     },
     {
-      "local": "ui/components/LayoutHelper.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/LayoutHelper.java",
       "upstream": "org/telegram/ui/Components/LayoutHelper.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -305,7 +294,7 @@
       ]
     },
     {
-      "local": "ui/components/PullForegroundDrawable.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/PullForegroundDrawable.java",
       "upstream": "org/telegram/ui/Components/PullForegroundDrawable.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -316,7 +305,7 @@
       ]
     },
     {
-      "local": "ui/components/RadialProgressView.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/RadialProgressView.java",
       "upstream": "org/telegram/ui/Components/RadialProgressView.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -327,7 +316,7 @@
       ]
     },
     {
-      "local": "ui/components/RecyclerAnimationScrollHelper.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/RecyclerAnimationScrollHelper.java",
       "upstream": "org/telegram/ui/Components/RecyclerAnimationScrollHelper.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -338,7 +327,7 @@
       ]
     },
     {
-      "local": "ui/components/RecyclerItemsEnterAnimator.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/RecyclerItemsEnterAnimator.java",
       "upstream": "org/telegram/ui/Components/RecyclerItemsEnterAnimator.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -349,7 +338,7 @@
       ]
     },
     {
-      "local": "ui/components/RecyclerListView.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/RecyclerListView.java",
       "upstream": "org/telegram/ui/Components/RecyclerListView.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -360,7 +349,7 @@
       ]
     },
     {
-      "local": "ui/components/ScrollSlidingTextTabStrip.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/ScrollSlidingTextTabStrip.java",
       "upstream": "org/telegram/ui/Components/ScrollSlidingTextTabStrip.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -372,7 +361,7 @@
       ]
     },
     {
-      "local": "ui/components/SearchStateDrawable.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/SearchStateDrawable.java",
       "upstream": "org/telegram/ui/Components/SearchStateDrawable.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -383,7 +372,7 @@
       ]
     },
     {
-      "local": "ui/components/Shaker.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/Shaker.java",
       "upstream": "org/telegram/ui/Components/Shaker.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -393,7 +382,7 @@
       ]
     },
     {
-      "local": "ui/components/UniversalRecyclerView.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/UniversalRecyclerView.java",
       "upstream": "org/telegram/ui/Components/UniversalRecyclerView.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -404,35 +393,35 @@
     },
     {
       "_comment": "high-confidence coverage backfill",
-      "local": "core/AnimationNotificationsLocker.java",
+      "local": "telegram/src/main/java/org/telegram/messenger/AnimationNotificationsLocker.java",
       "upstream": "org/telegram/messenger/AnimationNotificationsLocker.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "core/ApplicationLoader.java",
+      "local": "telegram/src/main/java/org/telegram/messenger/ApplicationLoader.java",
       "upstream": "org/telegram/messenger/ApplicationLoader.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "core/FileLog.java",
+      "local": "telegram/src/main/java/org/telegram/messenger/FileLog.java",
       "upstream": "org/telegram/messenger/FileLog.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "core/GenericProvider.java",
+      "local": "telegram/src/main/java/org/telegram/messenger/GenericProvider.java",
       "upstream": "org/telegram/messenger/GenericProvider.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "core/LruCache.java",
+      "local": "telegram/src/main/java/org/telegram/messenger/LruCache.java",
       "upstream": "org/telegram/messenger/LruCache.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -443,267 +432,246 @@
       ]
     },
     {
-      "local": "core/ImageLoader.java",
+      "local": "telegram/src/main/java/org/telegram/messenger/ImageLoader.java",
       "upstream": "org/telegram/messenger/ImageLoader.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "core/ImageReceiver.java",
+      "local": "telegram/src/main/java/org/telegram/messenger/ImageReceiver.java",
       "upstream": "org/telegram/messenger/ImageReceiver.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "core/NotificationCenter.java",
+      "local": "telegram/src/main/java/org/telegram/messenger/NotificationCenter.java",
       "upstream": "org/telegram/messenger/NotificationCenter.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/GradientClip.java",
+      "local": "telegram/src/main/java/org/telegram/ui/GradientClip.java",
       "upstream": "org/telegram/ui/GradientClip.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/actionbar/ActionBar.java",
+      "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBar.java",
       "upstream": "org/telegram/ui/ActionBar/ActionBar.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/actionbar/ActionBarLayout.java",
+      "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java",
       "upstream": "org/telegram/ui/ActionBar/ActionBarLayout.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/actionbar/ActionBarMenu.java",
+      "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarMenu.java",
       "upstream": "org/telegram/ui/ActionBar/ActionBarMenu.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/actionbar/ActionBarMenuItem.java",
+      "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarMenuItem.java",
       "upstream": "org/telegram/ui/ActionBar/ActionBarMenuItem.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/actionbar/ActionBarMenuSubItem.java",
+      "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarMenuSubItem.java",
       "upstream": "org/telegram/ui/ActionBar/ActionBarMenuSubItem.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/actionbar/ActionBarPopupWindow.java",
+      "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarPopupWindow.java",
       "upstream": "org/telegram/ui/ActionBar/ActionBarPopupWindow.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/actionbar/BackDrawable.java",
+      "local": "telegram/src/main/java/org/telegram/ui/ActionBar/BackDrawable.java",
       "upstream": "org/telegram/ui/ActionBar/BackDrawable.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/actionbar/BaseFragment.java",
+      "local": "telegram/src/main/java/org/telegram/ui/ActionBar/BaseFragment.java",
       "upstream": "org/telegram/ui/ActionBar/BaseFragment.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/actionbar/BottomSheetTabs.java",
+      "local": "telegram/src/main/java/org/telegram/ui/ActionBar/BottomSheetTabs.java",
       "upstream": "org/telegram/ui/ActionBar/BottomSheetTabs.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/actionbar/BottomSheetTabsOverlay.java",
+      "local": "telegram/src/main/java/org/telegram/ui/ActionBar/BottomSheetTabsOverlay.java",
       "upstream": "org/telegram/ui/ActionBar/BottomSheetTabsOverlay.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/actionbar/DrawerLayoutContainer.java",
+      "local": "telegram/src/main/java/org/telegram/ui/ActionBar/DrawerLayoutContainer.java",
       "upstream": "org/telegram/ui/ActionBar/DrawerLayoutContainer.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/actionbar/INavigationLayout.java",
+      "local": "telegram/src/main/java/org/telegram/ui/ActionBar/INavigationLayout.java",
       "upstream": "org/telegram/ui/ActionBar/INavigationLayout.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/actionbar/SimpleTextView.java",
+      "local": "telegram/src/main/java/org/telegram/ui/ActionBar/SimpleTextView.java",
       "upstream": "org/telegram/ui/ActionBar/SimpleTextView.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/browser/MHTML.java",
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/browser/MHTML.java",
       "upstream": "org/telegram/ui/web/MHTML.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/browser/WebActionBar.java",
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/browser/WebActionBar.java",
       "upstream": "org/telegram/ui/web/WebActionBar.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/components/AnimationProperties.java",
-      "upstream": "org/telegram/ui/Components/AnimationProperties.java",
-      "vendored_at": "009e97356",
-      "modified": true,
-      "port_mode": "native"
-    },
-    {
-      "local": "ui/components/ClippingImageView.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/ClippingImageView.java",
       "upstream": "org/telegram/ui/Components/ClippingImageView.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/components/CubicBezierInterpolator.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/CubicBezierInterpolator.java",
       "upstream": "org/telegram/ui/Components/CubicBezierInterpolator.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/components/GestureDetector2.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/GestureDetector2.java",
       "upstream": "org/telegram/ui/Components/GestureDetector2.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/components/ItemOptions.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/ItemOptions.java",
       "upstream": "org/telegram/ui/Components/ItemOptions.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/components/LineProgressView.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/LineProgressView.java",
       "upstream": "org/telegram/ui/Components/LineProgressView.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/components/SimpleFloatPropertyCompat.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/SimpleFloatPropertyCompat.java",
       "upstream": "org/telegram/ui/Components/SimpleFloatPropertyCompat.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/components/SizeNotifierFrameLayout.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/SizeNotifierFrameLayout.java",
       "upstream": "org/telegram/ui/Components/SizeNotifierFrameLayout.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/components/UItem.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/UItem.java",
       "upstream": "org/telegram/ui/Components/UItem.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/components/UniversalAdapter.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/UniversalAdapter.java",
       "upstream": "org/telegram/ui/Components/UniversalAdapter.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/components/UniversalFragment.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/UniversalFragment.java",
       "upstream": "org/telegram/ui/Components/UniversalFragment.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/components/ViewPagerFixed.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/ViewPagerFixed.java",
       "upstream": "org/telegram/ui/Components/ViewPagerFixed.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/components/blur3/drawable/BlurredBackgroundDrawable.java",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/drawable/BlurredBackgroundDrawable.java",
       "upstream": "org/telegram/ui/Components/blur3/drawable/BlurredBackgroundDrawable.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/main/GlassTabView.java",
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/main/GlassTabView.java",
       "upstream": "org/telegram/ui/Components/glass/GlassTabView.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/main/MainTabsActivity.java",
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/main/MainTabsActivity.java",
       "upstream": "org/telegram/ui/MainTabsActivity.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/main/MainTabsLayout.java",
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/main/MainTabsLayout.java",
       "upstream": "org/telegram/ui/MainTabsLayout.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
     },
     {
-      "local": "ui/main/ViewPagerActivity.java",
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/main/ViewPagerActivity.java",
       "upstream": "org/telegram/ui/ViewPagerActivity.java",
-      "vendored_at": "009e97356",
-      "modified": true,
-      "port_mode": "native"
-    },
-    {
-      "local": "ui/photo/GroupedPhotosListView.java",
-      "upstream": "org/telegram/ui/Components/GroupedPhotosListView.java",
-      "vendored_at": "009e97356",
-      "modified": true,
-      "port_mode": "native"
-    },
-    {
-      "local": "ui/photo/PhotoViewer.java",
-      "upstream": "org/telegram/ui/PhotoViewer.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
