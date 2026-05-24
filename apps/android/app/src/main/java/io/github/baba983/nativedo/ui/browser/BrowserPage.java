@@ -1,20 +1,4 @@
-// PORT-MODE: Feature Workflow Port
-// WORKFLOW-MAP: docs/telegram-port/browser.md
-// UPSTREAM-SCOPE: org/telegram/ui/web/WebInstantView.java; org/telegram/tgnet/TLRPC.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// HOST-WIRING:
-//   - Uses org.json and plain Java model objects inside NativeDo's browser package.
-// ADAPTED-BACKEND:
-//   - Parses NativeDo's generated `instant.js` content tree into a Telegram-shaped local Page/PageBlock subset.
-//   - Resolves relative URLs against the generated page URL because NativeDo's native renderer
-//     fetches images and links directly instead of Telegram's cached-page media loader.
-//   - Represents Telegram RichText subclasses as local text spans/entities so NativeDo's renderer can
-//     keep using Android TextView/StaticLayout until exact ArticleViewer rich-text cells are ported.
-// ADAPTED-PRODUCT:
-//   - Phase 2 media/embed/gallery blocks keep Telegram-shaped model names, but render through
-//     NativeDo cards or expanded image sequences until Telegram player/WebView/gallery internals are ported.
-// OMITTED:
-//   - Telegram TLObject serialization, remote web-page fields, media ids, and page-level RTL/view counters.
+// PARITY-BLOCKER:
 // PARITY-BLOCKER:
 //   - Exact Telegram media/file loader fields and player/embed behavior are not represented here.
 /*

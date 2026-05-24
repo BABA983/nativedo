@@ -16,7 +16,6 @@ import androidx.annotation.IntDef;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
-// HOST-WIRING: com.google.zxing.common.detector.MathUtils.distance inlined below as Math.hypot.
 
 import org.telegram.messenger.AndroidUtilities;
 

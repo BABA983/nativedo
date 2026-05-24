@@ -1,13 +1,3 @@
-// UPSTREAM-LEVEL: L1
-// UPSTREAM-PATH:  org/telegram/ui/ActionBar/ActionBarMenuSubItem.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: popup-menu-row=L1
-// HOST-WIRING:
-//   - AndroidUtilities/LayoutHelper/Theme imports rewritten to NativeDo.
-//   - AnimatedEmojiSpan/RLottieImageView replaced with TextView/ImageView for the current slice.
-// OMITTED:
-//   - Check rows, animated icons, BackupImageView, RTL specialization, swipe-back hooks,
-//     accessibility checkbox metadata, and multiline/premium helpers not used by BrowserSheet history.
 /*
  * This file is part of NativeDo.
  *

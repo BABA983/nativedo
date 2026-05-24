@@ -1,17 +1,3 @@
-// PORT-MODE: Feature Workflow Port
-// WORKFLOW-MAP: docs/telegram-port/browser.md
-// UPSTREAM-SCOPE: org/telegram/ui/web/HistoryFragment.java; org/telegram/ui/web/BookmarksFragment.java; org/telegram/ui/Components/UniversalFragment.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// HOST-WIRING:
-//   - Uses NativeDo BrowserStorage and BaseFragment.showAsSheet navigation callbacks.
-// ADAPTED-BACKEND:
-//   - Reads local BrowserStorage entries instead of Telegram BrowserHistory/Saved Messages metadata.
-// ADAPTED-PRODUCT:
-//   - Reuses one UniversalFragment shell for both history and bookmarks.
-//   - Keeps Telegram-style search title/menu behavior with NativeDo ActionBarMenuItem.
-//   - Uses Java Unicode normalization for translit-safe matching because Telegram LocaleController is not ported.
-// OMITTED:
-//   - Telegram action mode, bulk selection, Saved Messages bookmark navigation, and remote metadata.
 /*
  * This file is part of NativeDo.
  *

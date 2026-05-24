@@ -1,22 +1,3 @@
-// UPSTREAM-LEVEL: L1
-// UPSTREAM-PATH:  org/telegram/ui/Components/ItemOptions.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: popup-menu=L1, dim-scrim=L1, popup-animation=L0
-// HOST-WIRING:
-//   - Telegram imports/resources rewritten to NativeDo.
-//   - Uses NativeDo's existing ActionBarPopupWindow L1 slice for popup rendering.
-// ADAPTED:
-//   - Keeps only the menu shape used by ArticleViewer back-history:
-//     makeOptions(container, scrimView), add(), getLast(), setScrimViewBackground(),
-//     setBackgroundColor(), updateColors(), setOnDismiss(), show(), dismiss().
-//   - Keeps upstream non-moving scrim drawing: the cloned scrimView is drawn at full alpha
-//     while the dim background animates, avoiding a semi-transparent duplicate over the
-//     original back button.
-//   - Ports upstream OnPreDraw invalidation for the scrim clone so animated drawables inside
-//     the scrimView (BackDrawable rotation) keep repainting while options are shown.
-// OMITTED:
-//   - Swipe-back nested menus, blur, profile/account rows, premium helpers, custom positioning
-//     variants, moving scrim, Telegram resource-provider overrides beyond the constructor shape.
 /*
  * This file is part of NativeDo.
  *

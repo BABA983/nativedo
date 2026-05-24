@@ -1,14 +1,3 @@
-// UPSTREAM-LEVEL: L1
-// UPSTREAM-PATH:  org/telegram/ui/Components/AnimatedTextView.java - AnimatedTextDrawable
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: text-animation=L1, title-morph=L1
-// HOST-WIRING:
-//   - AndroidUtilities and CubicBezierInterpolator imports rewritten to NativeDo.
-// ADAPTED:
-//   - Extracts only AnimatedTextDrawable for WebActionBar title/subtitle morphing.
-// OMITTED:
-//   - AnimatedEmojiSpan drawing, gradient ellipsize, color animation helpers, and the
-//     outer AnimatedTextView widget are outside the current browser action-bar title slice.
 /*
  * This file is part of NativeDo.
  *

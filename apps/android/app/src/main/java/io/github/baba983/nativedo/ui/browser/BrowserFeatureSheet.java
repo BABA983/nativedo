@@ -1,13 +1,3 @@
-// PORT-MODE: Feature Workflow Port
-// WORKFLOW-MAP: docs/telegram-port/browser.md
-// UPSTREAM-SCOPE: org/telegram/ui/ArticleViewer.java; org/telegram/ui/ActionBar/BaseFragment.java; org/telegram/ui/web/HistoryFragment.java; org/telegram/ui/web/BookmarksFragment.java; org/telegram/ui/web/WebBrowserSettings.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// HOST-WIRING:
-//   - Uses NativeDo BaseFragment.showAsSheet(...) to mirror Telegram's browser subfeature entry points.
-// ADAPTED-BACKEND:
-//   - NativeDo URL loading callbacks replace Telegram ArticleViewer page loaders.
-// OMITTED:
-//   - Telegram Saved Messages bookmark navigation and full BottomSheet Dialog internals.
 /*
  * This file is part of NativeDo.
  *

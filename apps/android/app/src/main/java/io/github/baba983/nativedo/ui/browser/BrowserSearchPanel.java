@@ -1,17 +1,3 @@
-// UPSTREAM-LEVEL: L1
-// UPSTREAM-PATH:  org/telegram/ui/ArticleViewer.java — searchPanel
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: custom-drawing=L1, animation=L0, keyboard-tracking=L1
-// HOST-WIRING:
-//   - Standalone FrameLayout attached to BrowserSheet.containerView / BrowserFragment root.
-//   - Uses Telegram's msg_go_up.png, msg_go_down.png, and compose_panel_shadow.png drawables.
-//   - Keyboard height is tracked via ViewTreeObserver to match upstream keyboard-panel coupling.
-// ADAPTED:
-//   - Keeps upstream searchPanel height (51dp), buttons (48x48dp), count text style (15sp bold),
-//     and 320ms EASE_OUT_QUINT show/hide animation.
-//   - Uses programmatic background paint instead of Theme.chat_composeBackgroundPaint.
-// OMITTED:
-//   - KeyboardNotifier with AdjustPanLayoutHelper integration (uses simpler onGlobalLayout tracking).
 /*
  * This file is part of NativeDo.
  *

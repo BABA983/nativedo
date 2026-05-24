@@ -1,15 +1,3 @@
-// PORT-MODE: Feature Workflow Port
-// WORKFLOW-MAP: docs/telegram-port/browser.md
-// UPSTREAM-SCOPE: org/telegram/ui/web/AddressBarList.java; org/telegram/ui/web/SearchEngine.java; org/telegram/ui/web/WebMetadataCache.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// EXACT-SUBSYSTEMS: clip-reveal
-// HOST-WIRING:
-//   - Standalone FrameLayout attached to BrowserSheet.containerView / BrowserFragment root.
-//   - Uses NativeDo Theme, BrowserStorage, and BrowserMetadataCache instead of Telegram account resources.
-// ADAPTED-BACKEND:
-//   - Recent searches, bookmarks, search engines, and metadata are NativeDo local storage.
-// OMITTED:
-//   - Saved Messages bookmark backend, remote bookmark pagination, and hidden WebView metadata retrieval.
 /*
  * This file is part of NativeDo.
  *

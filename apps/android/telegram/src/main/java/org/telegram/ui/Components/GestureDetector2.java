@@ -1,15 +1,3 @@
-// PORT-MODE: Exact Component Port
-// UPSTREAM-SCOPE: org/telegram/ui/Components/GestureDetector2.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// EXACT-SUBSYSTEMS: gesture detection, double-tap timing, fling velocity, long-press dispatch
-// HOST-WIRING:
-//   - Package relocated to org.telegram.ui.Components.
-// ADAPTED-BACKEND:
-//   - None.
-// ADAPTED-PRODUCT:
-//   - None.
-// OMITTED:
-//   - None.
 /*
  * Copyright (C) 2008 The Android Open Source Project
  *

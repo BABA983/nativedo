@@ -1,9 +1,3 @@
-// UPSTREAM-LEVEL: L0
-// UPSTREAM-PATH:  org/telegram/ui/Components/SimpleFloatPropertyCompat.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: animation-property=L0
-// HOST-WIRING:
-//   - Package changed from org.telegram.ui.Components to NativeDo components.
 /*
  * This file is part of NativeDo.
  *

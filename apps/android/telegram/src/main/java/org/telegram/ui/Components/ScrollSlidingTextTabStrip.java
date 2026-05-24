@@ -43,12 +43,10 @@ import androidx.annotation.Keep;
 import androidx.annotation.NonNull;
 
 import org.telegram.messenger.AndroidUtilities;
-// OMITTED: org.telegram.messenger.Emoji (NativeDo has no Emoji subsystem; raw CharSequence used).
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
-// OMITTED: org.telegram.ui.Stories.recorder.HintView2 (replaced by Paint.measureText below).
 
 import java.util.ArrayList;
 

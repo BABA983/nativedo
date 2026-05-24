@@ -1,24 +1,4 @@
-// PORT-MODE: Feature Workflow Port
-// WORKFLOW-MAP: docs/telegram-port/browser.md
-// UPSTREAM-SCOPE: org/telegram/ui/web/WebInstantView.java; org/telegram/ui/ArticleViewer.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// HOST-WIRING:
-//   - Uses NativeDo BaseFragment and AndroidX RecyclerView instead of Telegram's full ArticleViewer shell.
-// ADAPTED-BACKEND:
-//   - Renders NativeDo generated instant-view JSON through BrowserPage instead of
-//     Telegram TLRPC.WebPage.cached_page / remote getWebPage.
-// ADAPTED-PRODUCT:
-//   - Supports the block families currently emitted by BrowserPage.
-//   - Ports list item text and marker measurement/drawing through StaticLayout inside the local
-//     BrowserPage model instead of Telegram's full DrawingText/TextSelectionHelper stack.
-//   - Keeps ArticleViewer half-sheet article padding row and reading-progress math inside the
-//     NativeDo RecyclerView adapter so BrowserSheet can use Telegram's sheet drag geometry.
-// OMITTED:
-//   - Full TLRPC.WebPage/cached_page classes, remote getWebPage fallback, Telegram file/image loader,
-//     and ArticleViewer's full TextSelectionHelper integration.
-// EXACT-SUBSYSTEMS:
-//   - ArticleViewer.BlockTableCell / Components.TableLayout measurement and drawing.
-//   - ArticleViewer.BlockDetailsCell measurement, drawing, and row collapse updates.
+// PARITY-BLOCKER:
 // PARITY-BLOCKER:
 //   - Full TextSelectionHelper drawing/selection overlays remain omitted from local ArticleViewer cells.
 /*

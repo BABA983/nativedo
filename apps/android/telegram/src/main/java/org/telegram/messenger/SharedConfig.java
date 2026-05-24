@@ -1,12 +1,3 @@
-// PORT-MODE: Native Feature
-// UPSTREAM-SCOPE: org/telegram/messenger/SharedConfig.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// HOST-WIRING:
-//   - None.
-// ADAPTED-BACKEND:
-//   - All methods return safe defaults; NativeDo does not persist Telegram preferences.
-// OMITTED:
-//   - Telegram's full preference system, proxy config, passcode, etc.
 /*
  * This file is part of NativeDo.
  *

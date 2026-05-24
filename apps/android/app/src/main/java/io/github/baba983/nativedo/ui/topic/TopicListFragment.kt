@@ -1,19 +1,3 @@
-// PORT-MODE: Feature Workflow Port
-// UPSTREAM-SCOPE: org/telegram/ui/DialogsActivity.java (createView, ActionBar search wiring)
-// UPSTREAM-COMMIT: master@2026-05-13
-// HOST-WIRING:
-//   - Uses NativeDo's ScrollSlidingTextTabStrip / RecyclerListView / TopicCell ports.
-//   - HomeViewModel state drives the adapter on a MainScope() that ends with onFragmentDestroy.
-// ADAPTED-BACKEND:
-//   - HomeRepository (Discourse JSON) replaces MessagesController/dialogsByTab.
-//   - Tabs: Latest / New / Top (Discourse) instead of Telegram Folders.
-// ADAPTED-PRODUCT:
-//   - Overflow theme-toggle preserved for the milestone build.
-// OMITTED:
-//   - Archive folder header, hidden chats reveal animation, drag-reorder,
-//     pull-to-refresh hookup (PullForegroundDrawable is ported but not yet bound to a
-//     virtual archive cell; refresh happens through tab re-selection and load-more for now),
-//     speed dial, fab, search results screen (search field expansion only).
 package io.github.baba983.nativedo.ui.topic
 
 import android.app.Activity

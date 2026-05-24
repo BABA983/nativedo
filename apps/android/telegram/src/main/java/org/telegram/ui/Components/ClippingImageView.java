@@ -1,16 +1,3 @@
-// PORT-MODE: Exact Component Port
-// UPSTREAM-SCOPE: org/telegram/ui/Components/ClippingImageView.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// EXACT-SUBSYSTEMS: animation progress transport, clip rect math, bitmap matrix mapping, rounded draw path.
-// HOST-WIRING:
-//   - Package relocated to org.telegram.ui.Components.
-//   - ImageReceiver.BitmapHolder comes from a local compile shim.
-// ADAPTED-BACKEND:
-//   - None.
-// ADAPTED-PRODUCT:
-//   - None.
-// OMITTED:
-//   - None.
 /*
  * This file is part of NativeDo.
  *

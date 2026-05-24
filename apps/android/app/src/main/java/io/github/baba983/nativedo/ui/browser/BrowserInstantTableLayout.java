@@ -32,11 +32,6 @@ import static android.view.View.MeasureSpec.makeMeasureSpec;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
 
-// PORT-MODE: Exact Component Port
-// UPSTREAM-SCOPE: org/telegram/ui/Components/TableLayout.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// EXACT-SUBSYSTEMS: measurement, drawing
-// HOST-WIRING:
 //   - TLRPC.TL_pageTableCell -> BrowserPage.PageTableCell.
 //   - ArticleViewer.DrawingText -> BrowserInstantViewFragment.DrawingText.
 //   - TextSelectionHelper selection overlay calls are omitted; layout positions are still reported.

@@ -1,18 +1,3 @@
-// PORT-MODE: Exact Component Port
-// UPSTREAM-SCOPE: org/telegram/ui/Components/RecyclerAnimationScrollHelper.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// EXACT-SUBSYSTEMS: animation
-// HOST-WIRING:
-//   - org.telegram.messenger.* -> io.github.baba983.nativedo.core.*
-//   - org.telegram.ui.Cells.ChatMessageCell -> org.telegram.ui.Cells.ChatMessageCell (stub)
-// ADAPTED-BACKEND:
-//   - MessagesController.getGlobalMainSettings() delegates to NativeDo ApplicationLoader.
-//   - BuildVars.DEBUG_PRIVATE_VERSION always false.
-// ADAPTED-PRODUCT:
-//   - None.
-// OMITTED:
-//   - None.
-
 package org.telegram.ui.Components;
 
 import android.animation.Animator;

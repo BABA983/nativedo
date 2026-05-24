@@ -1,11 +1,3 @@
-// UPSTREAM-LEVEL: L2
-// UPSTREAM-PATH:  org/telegram/ui/ActionBar/SimpleTextView.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: title-view=L2
-// ADAPTED:
-//   - Uses AppCompatTextView for the single-line ActionBar title role.
-// OMITTED:
-//   - Telegram custom View text layout, drawable callbacks, manual measuring, and custom drawing.
 /*
  * This file is part of NativeDo.
  *

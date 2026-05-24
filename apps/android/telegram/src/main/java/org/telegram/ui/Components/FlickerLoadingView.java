@@ -1,16 +1,3 @@
-// PORT-MODE: Exact Component Port
-// UPSTREAM-SCOPE: org/telegram/ui/Components/FlickerLoadingView.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// EXACT-SUBSYSTEMS: drawing, animation
-// HOST-WIRING:
-//   - org.telegram.messenger.* -> io.github.baba983.nativedo.core.*
-// ADAPTED-BACKEND:
-//   - SharedConfig.animationsEnabled() always returns true.
-// ADAPTED-PRODUCT:
-//   - None.
-// OMITTED:
-//   - None.
-
 package org.telegram.ui.Components;
 
 import static org.telegram.messenger.AndroidUtilities.dp;

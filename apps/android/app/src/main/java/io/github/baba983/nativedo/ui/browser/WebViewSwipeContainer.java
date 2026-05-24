@@ -1,20 +1,3 @@
-// UPSTREAM-LEVEL: L0
-// UPSTREAM-PATH:  org/telegram/ui/bots/ChatAttachAlertBotWebViewLayout.java (inner class WebViewSwipeContainer)
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: gesture=L0, animation=L0, touch-slop=L0, spring-physics=L0, swipe-dismiss=L0
-// HOST-WIRING:
-//   - Package/imports rewritten to NativeDo.
-//   - BotWebViewContainer.MyWebView replaced with android.webkit.WebView.
-//   - injectedJS field added locally (default false) — standard browser WebViews don't inject JS.
-//   - Bulletin.getVisibleBulletin() position update removed (no Bulletin in NativeDo).
-//   - ActionBar.getCurrentActionBarHeight() default uses NativeDo ActionBar instance method.
-// ADAPTED:
-//   - Keeps all L0 constants: 650dp/s fling-down, 700dp/s fling-up, 1200dp/s fullsize threshold,
-//     60dp cap, 64dp sticky range (portrait), 8dp sticky range (landscape), 1200 stiffness,
-//     1400 stiffness, DAMPING_RATIO_NO_BOUNCY, 200dp/250ms distance/time thresholds.
-// OMITTED:
-//   - RenderNode capture for blur/preview (not needed for NativeDo's first browser slice).
-//   - FileLog error logging.
 /*
  * This file is part of NativeDo.
  *

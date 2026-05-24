@@ -1,15 +1,3 @@
-// PORT-MODE: Feature Workflow Port
-// WORKFLOW-MAP: docs/telegram-port/browser.md
-// UPSTREAM-SCOPE: org/telegram/ui/web/AddressBarList.java; org/telegram/ui/web/WebBrowserSettings.java; org/telegram/ui/Cells/TextCell.java; org/telegram/ui/Cells/RadioColorCell.java; org/telegram/ui/Cells/HeaderCell.java; org/telegram/ui/Cells/GraySectionCell.java; org/telegram/ui/Cells/TextInfoPrivacyCell.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// HOST-WIRING:
-//   - Uses NativeDo Theme/AndroidUtilities primitives and local View classes.
-// ADAPTED-PRODUCT:
-//   - Ports Telegram browser/settings cell geometry without pulling BackupImageView,
-//     CombinedDrawable, animated emoji, RadioButton, or WebMetadataCache.
-//   - Uses local letter/favicon and more-menu drawables for NativeDo storage rows.
-// OMITTED:
-//   - Action mode checkboxes, animated emoji, RLottie icons, metadata fetching, and Telegram diff adapter hooks.
 /*
  * This file is part of NativeDo.
  *

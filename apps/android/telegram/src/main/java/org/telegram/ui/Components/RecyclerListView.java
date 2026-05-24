@@ -1,24 +1,3 @@
-// PORT-MODE: Exact Component Port
-// UPSTREAM-SCOPE: org/telegram/ui/Components/RecyclerListView.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// EXACT-SUBSYSTEMS: gesture, animation, drawing (selector), recycling
-// HOST-WIRING:
-//   - org.telegram.messenger.* -> io.github.baba983.nativedo.core.*
-//   - org.telegram.ui.ActionBar.Theme -> org.telegram.ui.ActionBar.Theme
-//   - org.telegram.ui.Cells.* -> org.telegram.ui.Cells.*
-// ADAPTED-BACKEND:
-//   - LocaleController stubbed to NativeDo res/strings; isRTL hard-coded false.
-//   - SharedConfig.animationsEnabled() always returns true; shadowsInSections always true.
-//   - BuildConfig.DEBUG_PRIVATE_VERSION always false.
-// ADAPTED-PRODUCT:
-//   - None.
-// OMITTED:
-//   - IBlur3Capture / blur3 system (blur3 out of scope).
-//   - FiltersSetupActivity.HintInnerCell (out of scope).
-//   - FastScroll blur drawables (blurredCircleDrawable, blurredTagDrawable, applyBlurDrawables, fillDrawablesRect).
-//   - capture() and captureCalculateHash() methods on RecyclerListView and ListSectionsDecoration.
-//   - canCaptureSectionsDecorator field and setter.
-
 /*
  * This is the source code of Telegram for Android v. 5.x.x
  * It is licensed under GNU GPL v. 2 or later.
@@ -98,12 +77,6 @@ import org.telegram.ui.Cells.ChatMessageCell;
 import org.telegram.ui.Cells.GraySectionCell;
 import org.telegram.ui.Cells.ShadowSectionCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
-// OMITTED: import BlurredBackgroundDrawableViewFactory (blur3 out of scope)
-// OMITTED: import IBlur3Capture (blur3 out of scope)
-// OMITTED: import IBlur3Hash (blur3 out of scope)
-// OMITTED: import BlurredBackgroundDrawable (blur3 out of scope)
-// OMITTED: import BlurredBackgroundProvider (blur3 out of scope)
-// OMITTED: import FiltersSetupActivity (out of scope)
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;

@@ -1,11 +1,3 @@
-// UPSTREAM-LEVEL: L1
-// UPSTREAM-PATH:  org/telegram/ui/ActionBar/ActionBarPopupWindow.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: popup-menu=L1, animation=L0
-// HOST-WIRING:
-//   - AndroidUtilities import rewritten to NativeDo.
-// OMITTED:
-//   - Swipe-back popup layouts, gap views, dimming, custom dismiss animations, and Telegram window edge cases.
 /*
  * This file is part of NativeDo.
  *

@@ -1,11 +1,3 @@
-// UPSTREAM-LEVEL: L1
-// UPSTREAM-PATH:  org/telegram/ui/ActionBar/ActionBarMenu.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: actionbar-menu=L1
-// HOST-WIRING:
-//   - Parent ActionBar click dispatch wired to NativeDo ActionBar.
-// OMITTED:
-//   - Telegram search, filters, lazy items, action mode, and advanced menu surfaces.
 /*
  * This file is part of NativeDo.
  *

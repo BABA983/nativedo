@@ -1,16 +1,3 @@
-// PORT-MODE: Feature Workflow Port / HOST-WIRING
-// UPSTREAM-SCOPE: org/telegram/messenger/ApplicationLoader.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// HOST-WIRING:
-//   - Non-Application utility class (NativeDoApp is already the Application subclass).
-//     Stores static references initialized from NativeDoApp.onCreate().
-//   - Network type detection, push provider, location/maps providers, GCM, and
-//     Telegram-specific service initialization are OMITTED.
-// ADAPTED-BACKEND:
-//   - Single-account; no multi-account support needed.
-// OMITTED:
-//   - Full Telegram Application lifecycle (attachBaseContext, onCreate, postInitApplication,
-//     network callbacks, foreground detection, push services, VoIP, billing, etc.).
 /*
  * This file is part of NativeDo.
  *

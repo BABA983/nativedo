@@ -1,14 +1,3 @@
-// PORT-MODE: Native Feature
-// UPSTREAM-SCOPE: org/telegram/messenger/LocaleController.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// HOST-WIRING:
-//   - None.
-// ADAPTED-BACKEND:
-//   - Replaces Telegram's full i18n system with direct Android res/strings lookups.
-//   - isRTL is hard-coded to false; NativeDo does not support RTL layouts.
-// OMITTED:
-//   - Telegram's locale switching, plural rules, remote language packs,
-//     LocaleInfo, and the full string key registry.
 /*
  * This file is part of NativeDo.
  *

@@ -1,12 +1,5 @@
-// UPSTREAM-LEVEL: L1
-// UPSTREAM-PATH:  res/raw/webview_ext.js
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: gesture-allow-scroll=L0, color-extraction=L1
-// HOST-WIRING:
 //   - $DEBUG$ is replaced with false by BrowserWebViewContainer before injection.
-// ADAPTED:
 //   - None.
-// OMITTED:
 //   - None.
 /*
  *  Telegram-Android browser extension

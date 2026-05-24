@@ -1,17 +1,3 @@
-// UPSTREAM-LEVEL: L2
-// UPSTREAM-PATH:  org/telegram/ui/ActionBar/Theme.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: theme/resource-mapping=L2
-// HOST-WIRING:
-//   - Preserves Telegram theme key names used by copied UI code.
-// ADAPTED:
-//   - Uses NativeDo day/night theme state, selector drawables, and theme delegates.
-//   - Maps Telegram Instant View/browser surface keys to white/black browser chrome instead of
-//     NativeDo's parchment content background.
-//   - Keeps getColor(ResourcesProvider), multAlpha(), and createCircleDrawable() helpers needed
-//     by ItemOptions/WebActionBar slices while still resolving through NativeDo theme state.
-// OMITTED:
-//   - Telegram wallpaper, remote theme loading, theme editor, ThemeDescription system, and account/global theme plumbing.
 /*
  * This file is part of NativeDo.
  *

@@ -1,18 +1,3 @@
-// UPSTREAM-LEVEL: L2
-// UPSTREAM-PATH:  org/telegram/ui/Components/LineProgressView.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: progress-animation=L1, custom-drawing=L1
-// HOST-WIRING:
-//   - Uses NativeDo's AnimatedFloat + CubicBezierInterpolator for value smoothing.
-// ADAPTED:
-//   - Keeps Telegram LineProgressView's API (setProgressColor / setBackColor /
-//     setProgress(value, animated) / getCurrentProgress) so WebActionBar can swap in
-//     without further wiring.
-//   - Internal smoothing uses AnimatedFloat (200ms EASE_OUT_QUINT) instead of upstream's
-//     hand-rolled lastUpdateTime ticker; the visible behaviour (smooth chase + fade-out
-//     on completion) matches.
-// OMITTED:
-//   - Indeterminate sweep mode and progress2 secondary fill, not required for the browser path.
 /*
  * This file is part of NativeDo.
  *

@@ -27,8 +27,6 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.R;
 import org.telegram.ui.ActionBar.Theme;
-// OMITTED: org.telegram.ui.Stories.recorder.HintView2 (replaced by simple width/2 fallback below).
-// OMITTED: org.telegram.ui.TopicsFragment (NativeDo has no topic-list cell type; isTopic = false).
 
 public class PullForegroundDrawable {
 

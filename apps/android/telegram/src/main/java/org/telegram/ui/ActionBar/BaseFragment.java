@@ -1,20 +1,3 @@
-// PORT-MODE: Exact Component Port
-// UPSTREAM-SCOPE: org/telegram/ui/ActionBar/BaseFragment.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// EXACT-SUBSYSTEMS: lifecycle-orchestration, navigation-contract
-// HOST-WIRING:
-//   - NativeDo fragments use this as the bridge between View-system navigation and Compose content.
-//   - Implements AndroidX ViewModelStoreOwner so NativeDo feature pages can keep state in BaseFragment.
-// ADAPTED-BACKEND:
-//   - None.
-// ADAPTED-PRODUCT:
-//   - Automatically creates a minimal NativeDo ActionBar when attached to an INavigationLayout.
-//   - Keeps the AttachedSheet stack surface needed by NativeDo browser sheets.
-//   - Exposes showAsSheet(...) for Telegram browser subfeatures through NativeDo's attached-sheet host.
-//   - Keeps Telegram's edge-to-edge method surface so ActionBarLayout/ViewPagerActivity can route insets.
-//   - Adds onFragmentDestroy() to clear NativeDo ViewModels and attached sheets when local fragments leave the stack.
-// OMITTED:
-//   - Telegram dialogs, themes, menus, stories, arguments, and account/activity plumbing.
 /*
  * This file is part of NativeDo.
  *

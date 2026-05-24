@@ -1,11 +1,3 @@
-// UPSTREAM-LEVEL: L1
-// UPSTREAM-PATH:  org/telegram/ui/ActionBar/BackDrawable.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: custom-drawing=L1, animation=L0
-// HOST-WIRING:
-//   - AndroidUtilities import rewritten to NativeDo.
-// OMITTED:
-//   - Unused Telegram debug paint and setRotated() outside the current ActionBar path.
 /*
  * This file is part of NativeDo.
  *

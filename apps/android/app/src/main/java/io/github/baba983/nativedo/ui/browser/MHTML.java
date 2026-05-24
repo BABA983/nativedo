@@ -1,13 +1,3 @@
-// PORT-MODE: Feature Workflow Port
-// WORKFLOW-MAP: docs/telegram-port/browser.md
-// UPSTREAM-SCOPE: org/telegram/ui/web/MHTML.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// HOST-WIRING:
-//   - Ported into NativeDo browser package unchanged in behavior.
-// ADAPTED-BACKEND:
-//   - None.
-// OMITTED:
-//   - None.
 /*
  * This file is part of NativeDo.
  *

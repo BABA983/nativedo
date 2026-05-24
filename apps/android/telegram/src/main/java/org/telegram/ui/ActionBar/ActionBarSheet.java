@@ -1,15 +1,3 @@
-// PORT-MODE: Feature Workflow Port
-// WORKFLOW-MAP: docs/telegram-port/browser.md
-// UPSTREAM-SCOPE: org/telegram/ui/ActionBar/BaseFragment.java#showAsSheet; org/telegram/ui/ActionBar/BottomSheet.java#transitionFromRight
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// EXACT-SUBSYSTEMS: transitionFromRight-animation
-// HOST-WIRING:
-//   - Hosts the sheet as a NativeDo BaseFragment.AttachedSheet child of ActionBarLayout instead of an Android Dialog.
-//   - Uses NativeDo ActionBarLayout as the nested sheet navigation stack.
-// ADAPTED-PRODUCT:
-//   - Keeps Telegram's transitionFromRight-style 48dp + alpha motion for browser feature sheets.
-// OMITTED:
-//   - Telegram BottomSheet Dialog window, nested-scroll dismissal, background padding, and navigation-bar drawing internals.
 /*
  * This file is part of NativeDo.
  *

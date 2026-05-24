@@ -1,12 +1,3 @@
-// PORT-MODE: Native Feature
-// UPSTREAM-SCOPE: org/telegram/ui/Adapters/DialogsAdapter.java (viewType pattern reference)
-// HOST-WIRING:
-//   - Wraps NativeDo's TopicCell, FlickerLoadingView, EmptyCell into a
-//     RecyclerListView.SelectionAdapter compatible with the ported list view.
-// ADAPTED-BACKEND:
-//   - Reads from io.github.baba983.nativedo.feature.home.ui.HomeUiState (TopicSummary list).
-// OMITTED:
-//   - Telegram archive/folder header, user-status row, contacts row, hints row.
 package io.github.baba983.nativedo.ui.topic;
 
 import android.content.Context;

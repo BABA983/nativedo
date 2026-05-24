@@ -1,15 +1,3 @@
-// PORT-MODE: Feature Workflow Port
-// WORKFLOW-MAP: docs/telegram-port/browser.md
-// UPSTREAM-SCOPE: org/telegram/ui/Components/UniversalAdapter.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// HOST-WIRING:
-//   - Uses AndroidX RecyclerView instead of Telegram RecyclerListView/AdapterWithDiffUtils.
-// ADAPTED-PRODUCT:
-//   - Keeps Telegram's UniversalAdapter item flow, callback shape, and core view-type constants
-//     while binding only NativeDo's currently ported browser/settings cells.
-//   - Uses notifyDataSetChanged for updates until more upstream cell families are needed.
-// OMITTED:
-//   - Telegram dialog/user/business/statistics/check/switch factories, diff payloads, and drag reorder.
 package org.telegram.ui.Components;
 
 import android.content.Context;

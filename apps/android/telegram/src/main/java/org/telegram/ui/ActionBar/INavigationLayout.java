@@ -1,12 +1,3 @@
-// UPSTREAM-LEVEL: L1
-// UPSTREAM-PATH:  org/telegram/ui/ActionBar/INavigationLayout.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: navigation-contract=L1
-// ADAPTED:
-//   - Keeps only present, stack, close, and NavigationParams API used by this shell.
-//   - Keeps Telegram's bottom-tabs height surface so NativeDo tab hosts can follow browser-tab motion.
-// OMITTED:
-//   - Telegram delegate, preview menu, sheet navigation, theme animation, and broader launch surfaces.
 /*
  * This file is part of NativeDo.
  *

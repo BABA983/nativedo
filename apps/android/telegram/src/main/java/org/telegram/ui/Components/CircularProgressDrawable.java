@@ -10,7 +10,6 @@ import android.os.SystemClock;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-// HOST-WIRING: androidx.interpolator.FastOutSlowInInterpolator -> android.view.animation.PathInterpolator(0.4, 0, 0.2, 1)
 //              (NativeDo doesn't depend on androidx.interpolator; PathInterpolator with the FastOutSlowIn cubic is equivalent on minSdk 28+).
 import android.view.animation.PathInterpolator;
 

@@ -1,34 +1,3 @@
-// PORT-MODE: Feature Workflow Port
-// WORKFLOW-MAP: docs/telegram-port/browser.md
-// UPSTREAM-SCOPE: org/telegram/ui/web/BotWebViewContainer.java; org/telegram/ui/WebviewActivity.java; res/raw/webview_ext.js
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// HOST-WIRING:
-//   - Telegram ApplicationLoader/FileLog/LocaleController/Browser helpers replaced with Android framework APIs.
-//   - NativeDo strings and Theme keys are used for progress/download user feedback.
-//   - Uses Telegram ArticleViewer browser background keys for the WebView host surface.
-// ADAPTED-BACKEND:
-//   - Generates Instant View through Telegram's saveWebArchive + hidden reader WebView chain, then
-//     hands the upstream `instant.js` content tree to NativeDo's native renderer.
-// ADAPTED-PRODUCT:
-//   - Keeps the non-bot WebView settings/client subset needed by NativeDo's first browser slice.
-//   - Delegates loading progress drawing to WebActionBar so the browser has Telegram's single
-//     action-bar progress line instead of a second WebView-container line.
-//   - Keeps Telegram's setKeyboardFocusable(lastVisible) surface so sheet-to-tab collapse can
-//     drop WebView focus before the overlay starts drawing the proxy sheet.
-//   - Ports the upstream tg:theme-accent / theme-color / body backgroundColor JS bridge from
-//     res/raw/webview_ext.js. NativeDo registers TelegramWebviewProxy for the same postEvent
-//     color and allowScroll event shapes.
-//     Color events are decoded the same way as upstream's onWebEventReceived (BotWebViewContainer
-//     L1216-1240) and forwarded as Delegate.onWebBackgroundChanged.
-//   - Mirrors upstream MyWebView.getScrollProgress / setScrollProgress (BotWebViewContainer
-//     L4934-4944) from a small WebView subclass so computeVerticalScrollRange/Extent stay exact.
-//   - Exposes MyWebView.onScrollChanged as Delegate.onWebViewScrolled so BrowserSheet can mirror
-//     ArticleViewer.updatePages() and redraw action-bar reading progress.
-//   - Adds the minimal preserve/replace WebView surface used by ArticleViewer.CachedWeb
-//     detach/attach, keeping WebView history and state while pages[0]/pages[1] swap.
-// OMITTED:
-//   - Bot bridge, Telegram WebViewProxy, TON proxying, payments, age verification,
-//     popup sheets, permissions UI, JS dialogs, and Telegram-specific dangerous URL handling.
 /*
  * This file is part of NativeDo.
  *

@@ -1,17 +1,3 @@
-// PORT-MODE: Feature Workflow Port
-// WORKFLOW-MAP: docs/telegram-port/browser.md
-// UPSTREAM-SCOPE: org/telegram/ui/web/BrowserHistory.java; org/telegram/ui/web/BookmarksFragment.java; org/telegram/ui/web/WebBrowserSettings.java; org/telegram/ui/web/SearchEngine.java; org/telegram/ui/web/AddressBarList.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// HOST-WIRING:
-//   - Persists browser feature state from NativeDo's browser package.
-// ADAPTED-BACKEND:
-//   - Uses Android SharedPreferences instead of Telegram FileLoader/SerializedData/Saved Messages.
-//   - Keeps Telegram-style local browser history semantics with id/url/title/favicon/time metadata.
-//   - Replaces Telegram Saved Messages-backed bookmarks with explicit NativeDo local bookmark storage.
-//   - Stores Telegram-style recent address searches and search-engine selection locally.
-//   - Stores browser settings needed by the current NativeDo browser slice.
-// OMITTED:
-//   - Telegram account-scoped history/bookmark sync and restricted-domain counters.
 /*
  * This file is part of NativeDo.
  *

@@ -1,17 +1,3 @@
-// UPSTREAM-LEVEL: L2
-// UPSTREAM-PATH:  org/telegram/ui/MainTabsActivity.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: bridged-adapter=L2, theme/resource-mapping=L2, tabs-visibility-animation=L0
-// HOST-WIRING:
-//   - Bridges Telegram-derived ViewPagerFixed/MainTabsLayout/GlassTabView to TopicListFragment/ProfileFragment.
-//   - Telegram Theme / resource lookups -> NativeDo Theme and R resources.
-//   - blur3 background/fade drawables -> local TabsBackgroundDrawable and BottomFadeView.
-// ADAPTED:
-//   - TABS_COUNT = 2 and positions are Home/Profile only; upstream uses chats/contacts/calls-or-settings/profile.
-//   - MAIN_TABS_MIN_CONTENT_WIDTH = 160dp; upstream tab wrapper is sized for a wider dynamic tab set.
-// OMITTED:
-//   - Account switching, contacts/calls/settings tabs, unread counters, app-update layout, blur3 render-node capture,
-//     RLottie icons, and expanded browser tab overlay containers - deferred until those milestones exist.
 /*
  * This file is part of NativeDo.
  *

@@ -1,17 +1,3 @@
-// UPSTREAM-LEVEL: L1
-// UPSTREAM-PATH:  org/telegram/ui/MainTabsLayout.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: custom-layout=L1
-// HOST-WIRING:
-//   - AnimatedLinearLayout -> LinearLayout; NativeDo does not use ListAnimator visibility holders.
-//   - isViewVisible(...) -> child.getVisibility() != GONE.
-// ADAPTED:
-//   - minTotalWidthForTabs uses 160dp instead of upstream 320dp because NativeDo currently has fixed Home/Profile tabs.
-//   - Zero-visible-child guard is kept for this standalone LinearLayout host before tabs are attached.
-// OMITTED:
-//   - AnimatedLinearLayout / ListAnimator animated add/remove tab set - fixed Home/Profile tabs do not add/remove at runtime.
-//   - tabsLeftPos / calculateTotalSizesAfterMeasure bookkeeping - tied to the omitted AnimatedLinearLayout host.
-//   - Tab-add-from-overflow popup wiring - overflow tabs are out of scope until multi-tab editing ships.
 /*
  * This file is part of NativeDo.
  *

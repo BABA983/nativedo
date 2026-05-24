@@ -1,26 +1,3 @@
-// PORT-MODE: Native Feature
-// UPSTREAM-SCOPE: org/telegram/ui/Cells/DialogCell.java (measurement / drawing primitives only)
-// UPSTREAM-COMMIT: master@2026-05-13
-// EXACT-SUBSYSTEMS: measurement (heightDefault, messagePaddingStart, BADGE_*),
-//                   drawing (selector + circle avatar + StaticLayout name/message + count pill + pinned dot)
-// HOST-WIRING:
-//   - Coil avatar load via NativeDo CoilBridge (Telegram uses ImageReceiver/FileLoader pipeline).
-//   - Theme.ResourcesProvider -> Theme.getColor(Theme.key_*).
-// ADAPTED-BACKEND:
-//   - TLRPC.Dialog / MessageObject / MessagesController -> io.github.baba983.nativedo.core.model.TopicSummary.
-//   - Time formatting via java.time.Instant + DateUtils (Discourse ISO-8601 strings),
-//     not LocaleController.formatDateAudio.
-//   - Category color tag (Discourse) replaces Telegram archive folder color.
-// ADAPTED-PRODUCT:
-//   - Renders a Discourse category color bar to the left of the avatar instead of the
-//     archive/folder pill.
-//   - "Last poster" username drawn alongside the date instead of the dialog "fromName".
-// OMITTED:
-//   - Forum topic icon (forum/icon-name composing), forwards, drafts, draft hint,
-//     reactions row, stories ring, secret-chat lock, scam/verified/fake icons,
-//     mute/unmute icon, swipe-to-archive overlay, recyclable thumb images,
-//     animated emoji name spans, message preview thumbs, mentions/reactions
-//     secondary badges, online dot, drag-reorder.
 /*
  * This file is part of NativeDo.
  *

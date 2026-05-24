@@ -1,15 +1,3 @@
-// PORT-MODE: Feature Workflow Port
-// WORKFLOW-MAP: docs/telegram-port/browser.md
-// UPSTREAM-SCOPE: org/telegram/messenger/browser/Browser.java; org/telegram/ui/ArticleViewer.java; org/telegram/ui/WebviewActivity.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// HOST-WIRING:
-//   - NativeDo Profile dev URL entry presents this fragment through ActionBarLayout.
-//   - Uses NativeDo WebActionBar and BrowserWebViewContainer instead of Telegram ArticleViewer pages.
-// ADAPTED-PRODUCT:
-//   - Temporary full-screen BaseFragment host uses Telegram ArticleViewer.Sheet open/dismiss durations
-//     until the real attached-sheet/collapsed-tabs subsystem is ported.
-// OMITTED:
-//   - Telegram ArticleViewer pages stack, collapsed tabs, overlay previews, and Telegram account/chat integrations.
 /*
  * This file is part of NativeDo.
  *

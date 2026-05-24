@@ -1,13 +1,3 @@
-// PORT-MODE: Feature Workflow Port
-// WORKFLOW-MAP: docs/telegram-port/browser.md
-// UPSTREAM-SCOPE: org/telegram/ui/Components/UniversalRecyclerView.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// HOST-WIRING:
-//   - Now extends RecyclerListView (Telegram's real list) instead of AndroidX RecyclerView.
-// ADAPTED-PRODUCT:
-//   - Keeps Telegram's listView.adapter/layoutManager surface for UniversalFragment users.
-// OMITTED:
-//   - Grid spans, ItemTouchHelper drag reorder, section drawing, and RecyclerListView-specific listeners.
 package org.telegram.ui.Components;
 
 import android.content.Context;

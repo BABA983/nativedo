@@ -1,16 +1,3 @@
-// PORT-MODE: Exact Component Port
-// UPSTREAM-SCOPE: org/telegram/ui/Components/AnimatedTextView.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// HOST-WIRING:
-//   - NativeDo's AnimatedTextDrawable is a standalone class rather than an inner
-//     class of AnimatedTextView. AnimatedTextView provides the View-host surface
-//     that AnimatedTextView provides in upstream, using our AnimatedTextDrawable as
-//     the rendering delegate.
-// ADAPTED-BACKEND:
-//   - Constructor signature matches upstream: (Context, boolean, boolean, boolean)
-//   - setText(CharSequence, boolean) overload added for GraySectionCell/HeaderCell compatibility.
-// OMITTED:
-//   - AnimatedEmojiSpan, gradient ellipsize, color animation helpers.
 /*
  * This file is part of NativeDo.
  *

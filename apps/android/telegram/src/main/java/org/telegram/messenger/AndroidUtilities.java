@@ -1,19 +1,3 @@
-// PORT-MODE: Exact Component Port
-// UPSTREAM-SCOPE: org/telegram/messenger/AndroidUtilities.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// EXACT-SUBSYSTEMS: display-metrics, animation-helper
-// HOST-WIRING:
-//   - Uses AndroidX WindowCompat for NativeDo edge-to-edge status bar control.
-// ADAPTED-BACKEND:
-//   - None.
-// ADAPTED-PRODUCT:
-//   - Keeps only display metrics, dp conversion, keyboard, status-bar, cascade, and UI-thread helpers used by current ports.
-//   - Adds Telegram's applySpring animator helper for copied interaction animations.
-//   - Adds navigation-bar appearance wiring used by NativeDo browser-derived white pages.
-//   - Adds software blur snapshot helpers for BottomSheetTabsOverlay because NativeDo does not
-//     ship Telegram's native Utilities.stackBlurBitmap pipeline.
-// OMITTED:
-//   - Telegram app-wide utilities, account state, media/cache helpers, and broad UI helpers outside the current navigation shell.
 /*
  * This file is part of NativeDo.
  *

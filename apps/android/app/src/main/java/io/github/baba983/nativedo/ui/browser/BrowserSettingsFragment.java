@@ -1,23 +1,3 @@
-// PORT-MODE: Feature Workflow Port
-// WORKFLOW-MAP: docs/telegram-port/browser.md
-// UPSTREAM-SCOPE: org/telegram/ui/web/WebBrowserSettings.java; org/telegram/ui/Components/UniversalFragment.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// HOST-WIRING:
-//   - Uses NativeDo BrowserStorage, dialogs, and BaseFragment.showAsSheet navigation callbacks.
-//   - Cookie/cache directory walks run on a single-threaded Executor instead of Telegram
-//     Utilities.globalQueue, then post back to the UI via AndroidUtilities.runOnUIThread.
-// ADAPTED-BACKEND:
-//   - Restricted domains and browser preferences are stored locally in BrowserStorage.
-//   - Restricted-domain rows are enriched with sitename/favicon from BrowserMetadataCache
-//     (SharedPreferences JSON) instead of Telegram WebMetadataCache file serialization.
-// ADAPTED-PRODUCT:
-//   - Keeps Telegram browser settings grouping through UniversalFragment/UItem/UniversalAdapter.
-//   - Mirrors WebBrowserSettings.fillItems sizing/counter contract: cookie/cache rows show
-//     formatted sizes (Formatter.formatShortFileSize) and the Clear History row shows a
-//     pluralized page count (R.plurals.app_browser_settings_history_pages, modeled on
-//     formatPluralStringComma("BrowserSettingsHistoryPages", ...)).
-// OMITTED:
-//   - Telegram custom tabs choice, sync, debug cells, account-wide notifications, hidden metadata retrieval, and Saved Messages bookmark entry.
 /*
  * This file is part of NativeDo.
  *

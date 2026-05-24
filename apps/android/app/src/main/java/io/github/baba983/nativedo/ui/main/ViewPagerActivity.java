@@ -1,25 +1,3 @@
-// PORT-MODE: Exact Component Port
-// UPSTREAM-SCOPE: org/telegram/ui/ViewPagerActivity.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// EXACT-SUBSYSTEMS: lifecycle-orchestration
-// HOST-WIRING:
-//   - Telegram ActionBar/BaseFragment imports -> NativeDo actionbar package.
-//   - ViewPagerFixed.Adapter binds NativeDo BaseFragment views into FrameLayout page containers.
-//   - Insets dispatch is kept in the upstream shape so MainTabs and Compose page fragments receive
-//     the post-bottom-tabs insets from ActionBarLayout.
-//   - Clears NativeDo cached page fragments from onFragmentDestroy() so page ViewModels stop with
-//     the root Telegram-derived host.
-// ADAPTED-BACKEND:
-//   - None.
-// ADAPTED-PRODUCT:
-//   - Keeps the host-fragment adapter surface required by NativeDo's current MainTabs pages.
-// OMITTED:
-//   - getThemeDescriptions / theme-description collection - Telegram's animated theme editor is out of scope.
-//   - fragmentVisibility factors - current milestone does not port Telegram's full visibility interpolation model.
-//   - aggressive fragment-cache eviction across non-current pages - only Home/Profile are in scope and can stay resident.
-//   - setParentLayout / setInPreviewMode / setVisibleDialog forwarding - only current visible fragment forwarding is needed.
-//   - onConfigurationChanged forwarding to all cached fragments - same fixed two-tab scope.
-//   - drag-reorder tab editing - TabsView-tied and out of scope.
 /*
  * This file is part of NativeDo.
  *

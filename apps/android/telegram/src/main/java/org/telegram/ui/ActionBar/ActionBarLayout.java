@@ -1,30 +1,3 @@
-// PORT-MODE: Exact Component Port
-// UPSTREAM-SCOPE: org/telegram/ui/ActionBar/ActionBarLayout.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// EXACT-SUBSYSTEMS: navigation-stack, gesture, animation, lifecycle-orchestration, bottom-tabs-insets
-// HOST-WIRING:
-//   - Telegram BaseFragment/Theme/LayoutHelper/AndroidUtilities imports rewritten to NativeDo.
-//   - NativeDo MainActivity forwards Android predictive-back callbacks into this layout.
-//   - BottomSheetTabsOverlay is hosted inside this layout, so bottom-tabs clipping skips that overlay.
-//   - Bottom-tabs keyboard visibility is derived from WindowInsetsCompat.Type.ime() because
-//     NativeDo's simplified ActionBarLayout omits Telegram's measureKeyboardHeight path.
-// ADAPTED-BACKEND:
-//   - None.
-// ADAPTED-PRODUCT:
-//   - Keeps a single-stack container model for NativeDo fragments only.
-//   - Uses direct Activity finish fallback instead of Telegram LaunchActivity/parentActivity orchestration.
-//   - Hosts NativeDo's BottomSheetTabs and BottomSheetTabsOverlay without Telegram LaunchActivity wiring.
-//   - Keeps BottomSheetTabs behind fragment containers like upstream; only the locally hosted overlay
-//     is raised above containers during navigation swaps.
-//   - Draw-compensates LayoutContainer by the difference between target and animated bottom-tabs
-//     heights because NativeDo has no separate Telegram sheetContainer/updateLayout host.
-//   - Dispatches bottom-tabs margins through Telegram's LayoutContainer edge-to-edge branch while
-//     keeping NativeDo's single-stack fragment attachment.
-//   - Uses Telegram's browser white/black shell background behind NativeDo's parchment content theme.
-//   - Calls BaseFragment.onFragmentDestroy() when NativeDo fragments are removed so feature ViewModels
-//     do not outlive the Telegram-derived stack entry.
-// OMITTED:
-//   - Drawer, previews, dialogs, story layers, multi-window branches, BottomSheetTabDialog, and Telegram delegate surfaces.
 /*
  * This file is part of NativeDo.
  *

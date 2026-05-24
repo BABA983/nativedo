@@ -1,19 +1,3 @@
-// PORT-MODE: Exact Component Port
-// UPSTREAM-SCOPE: org/telegram/ui/ActionBar/ActionBar.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// EXACT-SUBSYSTEMS: action-bar layout, custom-layout
-// HOST-WIRING:
-//   - Telegram Theme/AndroidUtilities/LayoutHelper imports rewritten to NativeDo.
-// ADAPTED-BACKEND:
-//   - None.
-// ADAPTED-PRODUCT:
-//   - Keeps the title, back button, menu creation, status-bar height, and menu click callback surface used by NativeDo.
-//   - Exposes the back button view to WebActionBar so Telegram's browser back-history long press can be wired without
-//     replacing the ActionBar slice.
-//   - Adds the small styling surface NativeDo's browser-derived white pages need: title/icon color overrides,
-//     back-button image setter, and optional bottom shadow toggle.
-// OMITTED:
-//   - Telegram search, action mode, overlays, subtitle/status widgets, and broader menu/action surfaces.
 /*
  * This file is part of NativeDo.
  *

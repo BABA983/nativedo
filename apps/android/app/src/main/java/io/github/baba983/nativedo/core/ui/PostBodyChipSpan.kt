@@ -1,4 +1,4 @@
-// PORT-MODE: Native Feature
+// SCOPE: Discourse-specific inline chip rendering for @mentions and #hashtags.
 // SCOPE: Discourse-specific inline chip rendering for @mentions and #hashtags.
 //        Telegram instant view does not have a direct analogue (it would render
 //        these as plain styled text via TextPaintUrlSpan); the chip pill is a

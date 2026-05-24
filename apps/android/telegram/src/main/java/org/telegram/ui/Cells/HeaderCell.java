@@ -1,19 +1,3 @@
-// PORT-MODE: Exact Component Port
-// UPSTREAM-SCOPE: org/telegram/ui/Cells/HeaderCell.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// EXACT-SUBSYSTEMS: measurement, drawing
-// HOST-WIRING:
-//   - org.telegram.messenger.* -> io.github.baba983.nativedo.core.*
-//   - org.telegram.ui.ActionBar.Theme -> org.telegram.ui.ActionBar.Theme
-//   - org.telegram.ui.Components.* -> org.telegram.ui.Components.*
-// ADAPTED-BACKEND:
-//   - LocaleController.isRTL hard-coded false.
-// ADAPTED-PRODUCT:
-//   - None.
-// OMITTED:
-//   - getThemeDescriptions() (NativeDo not using ThemeDescription system).
-//   - AnimatedEmojiSpan (out of scope).
-
 /*
  * This is the source code of Telegram for Android v. 5.x.x.
  * It is licensed under GNU GPL v. 2 or later.

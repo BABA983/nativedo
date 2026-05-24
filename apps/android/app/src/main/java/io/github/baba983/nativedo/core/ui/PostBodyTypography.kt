@@ -1,18 +1,3 @@
-// PORT-MODE: Exact Component Port
-// UPSTREAM-SCOPE: org/telegram/ui/ArticleViewer.java#getTextPaint
-// UPSTREAM-COMMIT: master@2026-05-08
-// EXACT-SUBSYSTEMS: typography sizing
-// HOST-WIRING:
-//   - Telegram dp(int) sizes -> Compose sp/dp via TextUnit constants.
-// ADAPTED-BACKEND:
-//   - None.
-// ADAPTED-PRODUCT:
-//   - h4-h6 step-down to 15.sp (Telegram instant view does not distinguish below
-//     subheader, but Discourse posts often nest deeper headings inside <details>).
-// OMITTED:
-//   - SharedConfig.ivFontSize +/- adjustment (no global font size setting in NativeDo yet).
-//   - Serif typefaces for headings (Telegram bundles mw_bold.ttf; we fall back to
-//     system default until we wire fonts).
 package io.github.baba983.nativedo.core.ui
 
 import androidx.compose.ui.unit.dp

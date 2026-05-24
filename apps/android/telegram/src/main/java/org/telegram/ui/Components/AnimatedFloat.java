@@ -1,16 +1,3 @@
-// UPSTREAM-LEVEL: L2
-// UPSTREAM-PATH:  org/telegram/ui/Components/AnimatedFloat.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: animation-helper=L2
-// HOST-WIRING:
-//   - Imports CubicBezierInterpolator from NativeDo's components package.
-// ADAPTED:
-//   - Keeps the public API surface (set, get, force, setDuration, setDelay) used by
-//     LineProgressView and WebActionBar; reimplements the internal time-based easing
-//     using a from/target/start triple instead of upstream's transitionProgress field.
-// OMITTED:
-//   - Multi-arg overloads, Runnable invalidate target, getValue/getTransitionProgress*,
-//     getTargetValue/setParent helpers not yet referenced by NativeDo.
 /*
  * This file is part of NativeDo.
  *

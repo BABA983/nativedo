@@ -1,12 +1,3 @@
-// PORT-MODE: Native Feature
-// UPSTREAM-SCOPE: org/telegram/messenger/MessagesController.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// HOST-WIRING:
-//   - None.
-// ADAPTED-BACKEND:
-//   - getGlobalMainSettings() returns a default SharedPreferences that always returns defaults.
-// OMITTED:
-//   - Telegram's full MessagesController (message processing, dialog management, etc.).
 /*
  * Stub for compile compatibility.
  * Copyright (C) 2026 NativeDo contributors

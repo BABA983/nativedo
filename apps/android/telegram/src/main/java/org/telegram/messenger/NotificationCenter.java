@@ -1,12 +1,3 @@
-// PORT-MODE: Exact Component Port
-// UPSTREAM-SCOPE: org/telegram/messenger/NotificationCenter.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// HOST-WIRING:
-//   - Single-account: getInstance(num) returns the same singleton as getGlobalInstance().
-//   - Notification constants are added on demand as ported subsystems need them.
-// OMITTED:
-//   - Telegram-specific event IDs (stickers, payments, bots, calls, VoIP, stories, billing,
-//     premium, passcode, etc.) until the corresponding subsystem is ported.
 /*
  * This file is part of NativeDo.
  *

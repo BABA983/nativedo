@@ -1,13 +1,3 @@
-// PORT-MODE: Feature Workflow Port
-// WORKFLOW-MAP: docs/telegram-port/browser.md
-// UPSTREAM-SCOPE: org/telegram/ui/web/WebMetadataCache.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// HOST-WIRING:
-//   - Uses SharedPreferences JSON instead of Telegram FileLoader/TLObject serialization.
-// ADAPTED-BACKEND:
-//   - Stores NativeDo browser metadata by domain for address/history/bookmark/restricted-domain rows.
-// OMITTED:
-//   - Hidden WebView favicon/sitename retrieval; live BrowserWebViewContainer metadata is saved instead.
 /*
  * This file is part of NativeDo.
  *

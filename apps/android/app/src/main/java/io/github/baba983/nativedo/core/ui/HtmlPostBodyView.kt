@@ -1,32 +1,3 @@
-// PORT-MODE: Exact Component Port
-// UPSTREAM-SCOPE: org/telegram/ui/ArticleViewer.java
-//   - getTextPaint (block typography sizes)
-//   - BlockBlockquoteCell / quoteLinePaint (left-bar quote rendering)
-//   - BlockListItemCell / BlockOrderedListItemCell (hanging-indent list layout)
-//   - BlockPreformattedCell (horizontally-scrolling code block)
-// UPSTREAM-COMMIT: master@2026-05-08
-// EXACT-SUBSYSTEMS: typography, quote left bar, list bullet column, code scroll
-// HOST-WIRING:
-//   - Telegram custom-drawn TextLayout cells -> Compose Text + AndroidView(TextView).
-//   - Telegram TLRPC PageBlock model -> Jsoup-parsed CookedPostBlock.
-//   - Theme.key_chat_inReplyLine (Telegram) -> Theme.key_windowBackgroundWhiteBlueText
-//     (NativeDo's link/accent blue; closest available equivalent).
-// ADAPTED-BACKEND:
-//   - Discourse "cooked" HTML is parsed locally with Jsoup; Telegram instant view
-//     consumes a typed RichText tree from the server.
-// ADAPTED-PRODUCT:
-//   - Headings render with system bold (no serif font bundle yet).
-//   - Quote block keeps a faint background tint for legibility on white cards
-//     (Telegram instant view uses a flat background; ADAPTED-PRODUCT to preserve
-//     contrast inside our PostSummaryCard which is already on a white surface).
-//   - Discourse poll, onebox, spoiler, table, and collage blocks render as local
-//     lightweight cards instead of Telegram's typed cached-page cells.
-// OMITTED:
-//   - Pull-quote, kicker, footer, related-articles, embed-post cells, exact
-//     BlockTableCell span measurement, exact BlockCollageCell row packing, and
-//     authenticated poll voting.
-//   - Text selection helper (TextSelectionHelper) - selection currently relies on
-//     the embedded TextView default selection handles.
 package io.github.baba983.nativedo.core.ui
 
 import android.graphics.RectF
@@ -1197,7 +1168,6 @@ internal fun parseCookedPostBody(html: String, baseUrl: String): List<CookedPost
     }
 }
 
-// ADAPTED-PRODUCT: Telegram TL_pageBlockCollage delivers a typed list of photo
 // blocks from the server. Discourse cooked HTML emits them as adjacent <p> /
 // .lightbox-wrapper images, so we coalesce 2+ adjacent Image blocks into a
 // Collage and let the renderer lay them out as a 2-column grid.
@@ -1235,7 +1205,6 @@ private fun coalesceImagesIntoCollage(blocks: List<CookedPostBlock>): List<Cooke
 // which GroupedPhotosListView uses to populate its 55x42dp strip cells instead
 // of downloading the full original.
 //
-// ADAPTED-BACKEND: Telegram carries separate thumb PhotoSizes inside a MessageObject.
 // NativeDo carries them as a parallel String here.
 data class GalleryImage(val url: String, val thumbUrl: String?, val widthPx: Int = 0, val heightPx: Int = 0)
 

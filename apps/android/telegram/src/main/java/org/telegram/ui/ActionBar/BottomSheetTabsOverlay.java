@@ -1,24 +1,3 @@
-// UPSTREAM-LEVEL: L1
-// UPSTREAM-PATH:  org/telegram/ui/ActionBar/BottomSheetTabsOverlay.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: touch=L0, animation=L0, preview-drawing=L1
-// HOST-WIRING:
-//   - Hosted directly by NativeDo ActionBarLayout instead of Telegram LaunchActivity.
-//   - Uses NativeDo BottomSheetTabs.WebTabData and TabDrawable.
-//   - Manages visibility locally because NativeDo hosts the overlay inside ActionBarLayout.
-//   - Consumes touch during sheet morph animations because NativeDo hosts the overlay as an
-//     ActionBarLayout sibling instead of routing tabs through Telegram's sheet window.
-//   - Clears the local sheet morph animator after completion so NativeDo's reused BrowserSheet is
-//     not released again by a stale listener on the next collapse.
-// ADAPTED:
-//   - Blur snapshot uses NativeDo's AndroidUtilities.makeBlurBitmap() software helper because
-//     NativeDo does not ship Telegram's native Utilities.stackBlurBitmap/global-view pipeline.
-//   - WebView preview capture is delegated to NativeDo BrowserWebViewContainer.
-//   - Close-all button keeps Paint/TextPaint rendering because NativeDo does not ship Telegram's
-//     Text helper and selector round-rect drawable path.
-// OMITTED:
-//   - BottomSheetTabDialog, tablet dialog mode, RenderNode preview-node capture,
-//     bot fields, and drag/reorder.
 /*
  * This file is part of NativeDo.
  *

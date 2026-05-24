@@ -1,12 +1,3 @@
-// PORT-MODE: Exact Component Port (public API surface)
-// UPSTREAM-SCOPE: org/telegram/messenger/FileLog.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// HOST-WIRING:
-//   - All logging delegates to android.util.Log with the "NativeDo" tag.
-//   - No file-backed pipeline, log rotation, or network logging.
-// OMITTED:
-//   - Disk log files, rotation, Gson-serialised structured logging, TL request logging,
-//     DispatchQueue-backed async writes, and debug toggles.
 /*
  * This file is part of NativeDo.
  *

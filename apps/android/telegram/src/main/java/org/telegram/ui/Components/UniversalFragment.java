@@ -1,13 +1,3 @@
-// PORT-MODE: Feature Workflow Port
-// WORKFLOW-MAP: docs/telegram-port/browser.md
-// UPSTREAM-SCOPE: org/telegram/ui/Components/UniversalFragment.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// HOST-WIRING:
-//   - Uses NativeDo BaseFragment/ActionBar and plain FrameLayout instead of Telegram SizeNotifierFrameLayout.
-// ADAPTED-PRODUCT:
-//   - Applies the white Telegram browser/settings page action-bar styling used by current NativeDo browser sheets.
-// OMITTED:
-//   - Telegram resource providers, AdjustPan helpers, account plumbing, and broader navigation integrations.
 package org.telegram.ui.Components;
 
 import android.content.Context;

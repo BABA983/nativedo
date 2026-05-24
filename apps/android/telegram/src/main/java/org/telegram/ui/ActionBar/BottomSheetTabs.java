@@ -1,19 +1,3 @@
-// UPSTREAM-LEVEL: L1
-// UPSTREAM-PATH:  org/telegram/ui/ActionBar/BottomSheetTabs.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: custom-drawing=L1, touch=L0, animation=L0, tab-state=L1
-// HOST-WIRING:
-//   - Telegram LaunchActivity/account/bot opening is replaced with NativeDo ActionBarLayout + BrowserSheet.
-//   - Telegram Theme/Text helpers are mapped to NativeDo Theme and TextPaint.
-//   - AdjustPanLayoutHelper.keyboardInterpolator is inlined from ChatListItemAnimator.DEFAULT_INTERPOLATOR.
-// ADAPTED:
-//   - Uses one NativeDo browser tab list instead of Telegram per-account tab maps.
-//   - Uses NativeDo BottomSheetTabsOverlay for multi-tab expansion.
-//   - Uses Telegram's browser white/black shell background instead of NativeDo's parchment theme color.
-//   - Stores a NativeDo WebView bitmap snapshot in WebTabData instead of Telegram RenderNode capture.
-// OMITTED:
-//   - Bot web apps, ArticleViewer page stacks, account switching, tab dialogs, close confirmation,
-//     sensors, drag/reorder, and Telegram Text/Emoji replacement.
 /*
  * This file is part of NativeDo.
  *

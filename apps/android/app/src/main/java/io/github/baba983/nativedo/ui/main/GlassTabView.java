@@ -1,19 +1,3 @@
-// UPSTREAM-LEVEL: L1
-// UPSTREAM-PATH:  org/telegram/ui/Components/glass/GlassTabView.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: custom-drawing=L1, animation=L0, theme/resource-mapping=L2
-// HOST-WIRING:
-//   - Theme.ResourcesProvider / Telegram resource lookups -> Theme.getColor(...) and NativeDo R resources.
-//   - RLottieImageView host -> ImageView with NativeDo vector drawables for the fixed tab set.
-// ADAPTED:
-//   - BoolAnimator / FactorAnimator -> local ValueAnimator fields while preserving 320ms selected and 380ms counter durations.
-//   - AnimatedTextDrawable counter -> local Paint/TextPaint drawing for the current basic counter.
-//   - createMainTab(...) accepts TabIcon mapped to Home/Profile drawables.
-// OMITTED:
-//   - RLottie / animated icon variants - richer Telegram iconography is out of scope for the current 2-tab set.
-//   - Avatar / profile-image rendering for "me" tab - ProfileFragment owns profile content.
-//   - Long-press / drag-handle visuals - drag-reorder is out of scope.
-//   - Premium-only / badge variants beyond the basic counter - not in the current Discourse model.
 /*
  * This file is part of NativeDo.
  *

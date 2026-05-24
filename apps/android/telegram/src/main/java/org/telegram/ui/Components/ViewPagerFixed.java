@@ -1,19 +1,3 @@
-// UPSTREAM-LEVEL: L1
-// UPSTREAM-PATH:  org/telegram/ui/Components/ViewPagerFixed.java
-// UPSTREAM-COMMIT: d2be1ad5966b4606c49010bcb6312fc8256bba35
-// SUBSYSTEMS: gesture=L0, animation=L0, list-recycling=L0, tab-strip=L1
-// HOST-WIRING:
-//   - Theme.ResourcesProvider is kept as a compile shim; colors come from NativeDo Theme.
-//   - AnimationNotificationsLocker -> no-op NativeDo shim.
-//   - Utilities.clamp / MathUtils.clamp -> local clamp helper with equivalent callsite behavior.
-// ADAPTED:
-//   - getAvailableTranslationX() returns getMeasuredWidth(); upstream ViewPagerActivity applies the same measured-width override for this host.
-// OMITTED:
-//   - TabsView (nested RecyclerView-based tabs strip, about 1200 lines) - replaced by MainTabsLayout/GlassTabView; tabsView stays null.
-//   - createTabsView / fillTabs / addMoreTabs - TabsView-tied; revisit when multi-tab editing ships.
-//   - rebuild(boolean) / clearViews() - TabsView-tied.
-//   - drawForBlur / findRecyclerView - depends on Telegram RecyclerListView and blur capture; revisit when blur is in scope.
-//   - cancelTouches() - public API not currently used by NativeDo hosts.
 /*
  * This file is part of NativeDo.
  *
