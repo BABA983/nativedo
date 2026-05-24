@@ -20,7 +20,7 @@
  */
 package io.github.baba983.nativedo.ui.browser;
 
-import io.github.baba983.nativedo.ui.actionbar.BaseFragment;
+import org.telegram.ui.ActionBar.BaseFragment;
 
 final class BrowserFeatureSheet {
 

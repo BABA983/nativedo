@@ -112,13 +112,15 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import io.github.baba983.nativedo.R;
-import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
-import io.github.baba983.nativedo.telegram.messenger.ImageReceiver;
-import io.github.baba983.nativedo.telegram.messenger.ImageLoader;
-import io.github.baba983.nativedo.ui.actionbar.BaseFragment;
-import io.github.baba983.nativedo.ui.actionbar.Theme;
-import io.github.baba983.nativedo.ui.components.LayoutHelper;
-import io.github.baba983.nativedo.telegram.ui.PhotoViewer;
+import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.ImageReceiver;
+// TODO(photoviewer): re-enable when telegram/messenger/ImageLoader compiles.
+// import org.telegram.messenger.ImageLoader;
+import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.LayoutHelper;
+// TODO(photoviewer): re-enable when telegram/ui/PhotoViewer can compile.
+// import org.telegram.ui.PhotoViewer;
 
 class BrowserInstantViewFragment extends BaseFragment {
 
@@ -170,7 +172,7 @@ class BrowserInstantViewFragment extends BaseFragment {
         if (TextUtils.isEmpty(url) || bitmap == null) {
             return;
         }
-        ImageLoader.put(url, bitmap);
+        // TODO(photoviewer): ImageLoader.put(url, bitmap);
     }
 
     @Nullable
@@ -204,7 +206,7 @@ class BrowserInstantViewFragment extends BaseFragment {
     private boolean halfSheetPadding;
     private float fontScale = 1.0f;
     private float readingProgress;
-    @Nullable private PhotoViewer activePhotoViewer;
+    // TODO(photoviewer): @Nullable private PhotoViewer activePhotoViewer;
 
     interface Delegate {
         void onBackPressed();
@@ -1250,91 +1252,9 @@ class BrowserInstantViewFragment extends BaseFragment {
     }
 
     private void openImageViewer(@Nullable Bitmap initial, @Nullable String url, @Nullable View sourceView) {
-        if (contentRoot == null) {
-            return;
-        }
-        if (activePhotoViewer != null) {
-            return;
-        }
-        if (url == null || url.length() == 0) {
-            return;
-        }
-        final View finalSourceView = sourceView;
-        // photoViewerWrapper is the clip-only target (positioned BELOW the host
-        // ActionBar, so the morph view's clipTop excludes the ActionBar strip);
-        // photoViewerScaleHost is the zoom target (the LayoutContainer that holds
-        // both the ActionBar and the wrapper, so the ActionBar follows the open/
-        // close zoom). See PhotoViewer.PlaceProviderObject doc comments for the
-        // Telegram parity rationale (PhotoViewer.java:19533-19560).
-        final View photoViewerWrapper = getPhotoViewerScaleView() != null ? getPhotoViewerScaleView() : contentRoot;
-        final View photoViewerScaleHost = photoViewerWrapper.getParent() instanceof View
-                ? (View) photoViewerWrapper.getParent()
-                : photoViewerWrapper;
-        // Telegram-shaped entry point: bind the singleton to this Activity, then call
-        // openPhoto on the singleton. attachToDecor() is now folded into openPhoto.
-        Activity hostActivity = findHostActivity(contentRoot.getContext());
-        if (hostActivity == null) {
-            return;
-        }
-        PhotoViewer.setParentActivity(hostActivity);
-        PhotoViewer viewer = PhotoViewer.getInstance();
-        viewer.setOnDismissListener(() -> activePhotoViewer = null);
-        ArrayList<PhotoViewer.PhotoEntry> entries = buildPhotoEntries(url);
-        int currentIndex = findPhotoEntry(entries, url);
-        if (currentIndex < 0) {
-            entries.add(new PhotoViewer.PhotoEntry(url));
-            currentIndex = entries.size() - 1;
-        }
-        viewer.openPhoto(entries, currentIndex, new PhotoViewer.EmptyPhotoViewerProvider() {
-            @Nullable
-            @Override
-            public PhotoViewer.PlaceProviderObject getPlaceForPhoto(int index, @NonNull PhotoViewer.PhotoEntry entry, boolean needPreview, boolean closing) {
-                PhotoViewer.PlaceProviderObject object = new PhotoViewer.PlaceProviderObject();
-                object.parentView = photoViewerWrapper;
-                object.parentScaleView = photoViewerScaleHost;
-                boolean isSource = TextUtils.equals(entry.url, url);
-                if (isSource && finalSourceView != null && finalSourceView.getWidth() > 0 && finalSourceView.getHeight() > 0) {
-                    int[] sourceLocation = new int[2];
-                    finalSourceView.getLocationInWindow(sourceLocation);
-                    RectF sourceRect = new RectF(
-                            sourceLocation[0],
-                            sourceLocation[1],
-                            sourceLocation[0] + finalSourceView.getWidth(),
-                            sourceLocation[1] + finalSourceView.getHeight()
-                    );
-                    object.sourceView = finalSourceView;
-                    object.viewRect = sourceRect;
-                    RectF imageDrawRect = sourceImageRectInWindow(finalSourceView, sourceRect);
-                    object.imageDrawRect = imageDrawRect != null ? imageDrawRect : sourceRect;
-                    object.viewX = sourceLocation[0];
-                    object.viewY = sourceLocation[1];
-                    if (finalSourceView instanceof RoundedImageView) {
-                        object.imageReceiver = ((RoundedImageView) finalSourceView).imageReceiver;
-                        Rect visible = new Rect();
-                        if (finalSourceView.getGlobalVisibleRect(visible)) {
-                            object.visibleRect = new RectF(visible);
-                        }
-                    }
-                }
-                Bitmap cached = getCachedInstantImage(entry.url);
-                object.thumb = cached != null ? cached : (isSource ? initial : null);
-                object.index = index;
-                return object;
-            }
-
-            @Override
-            public CharSequence getTitleFor(int index, @NonNull PhotoViewer.PhotoEntry entry) {
-                return null;
-            }
-
-            @Override
-            public CharSequence getSubtitleFor(int index, @NonNull PhotoViewer.PhotoEntry entry) {
-                return entry.url;
-            }
-        });
-        // attachToDecor() is now folded into PhotoViewer.openPhoto() to match
-        // Telegram's API surface. No separate attach step needed.
-        activePhotoViewer = viewer;
+        // TODO(photoviewer): wire PhotoViewer.getInstance().openPhoto(...) once
+        // telegram/ui/PhotoViewer compiles. Body intentionally a no-op so :app
+        // can build while we backfill the telegram/ dependency graph.
     }
 
     @Nullable
@@ -1349,6 +1269,7 @@ class BrowserInstantViewFragment extends BaseFragment {
         return null;
     }
 
+    @SuppressWarnings("unused")
     @Nullable
     private static RectF sourceImageRectInWindow(@Nullable View sourceView, @NonNull RectF sourceViewRect) {
         if (!(sourceView instanceof ImageView)) {
@@ -1377,17 +1298,8 @@ class BrowserInstantViewFragment extends BaseFragment {
         return new RectF(left, top, left + drawnWidth, top + drawnHeight);
     }
 
-    @NonNull
-    private ArrayList<PhotoViewer.PhotoEntry> buildPhotoEntries(@NonNull String currentUrl) {
-        ArrayList<PhotoViewer.PhotoEntry> entries = new ArrayList<>();
-        for (int i = 0; i < photoBlocks.size(); i++) {
-            String entryUrl = choosePhotoEntryUrl(photoBlocks.get(i), currentUrl);
-            if (!TextUtils.isEmpty(entryUrl) && findPhotoEntry(entries, entryUrl) < 0) {
-                entries.add(new PhotoViewer.PhotoEntry(entryUrl));
-            }
-        }
-        return entries;
-    }
+    // TODO(photoviewer): private ArrayList<PhotoViewer.PhotoEntry> buildPhotoEntries(...)
+    // TODO(photoviewer): private int findPhotoEntry(ArrayList<PhotoViewer.PhotoEntry>, String)
 
     @Nullable
     private String choosePhotoEntryUrl(@NonNull BrowserPage.PageBlockPhoto block, @NonNull String currentUrl) {
@@ -1412,28 +1324,15 @@ class BrowserInstantViewFragment extends BaseFragment {
         return null;
     }
 
-    private int findPhotoEntry(@NonNull ArrayList<PhotoViewer.PhotoEntry> entries, @NonNull String url) {
-        for (int i = 0; i < entries.size(); i++) {
-            if (TextUtils.equals(entries.get(i).url, url)) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
     @Nullable
     private Bitmap getCachedInstantImage(@Nullable String url) {
-        if (TextUtils.isEmpty(url)) {
-            return null;
-        }
-        return ImageLoader.get(url);
+        // TODO(photoviewer): re-enable ImageLoader.get(url) once telegram/messenger/ImageLoader compiles.
+        return null;
     }
 
     @Override
     public boolean onBackPressed() {
-        if (activePhotoViewer != null && activePhotoViewer.handleBackPressed()) {
-            return false;
-        }
+        // TODO(photoviewer): re-add activePhotoViewer guard.
         return super.onBackPressed();
     }
 
@@ -2046,7 +1945,7 @@ class BrowserInstantViewFragment extends BaseFragment {
         if (urls.isEmpty()) {
             imageView.setImageDrawable(null);
             if (imageView instanceof RoundedImageView) {
-                ((RoundedImageView) imageView).imageReceiver.setImageBitmap(null);
+                ((RoundedImageView) imageView).imageReceiver.setImageBitmap((Bitmap) null);
             }
             imageView.setVisibility(View.GONE);
             return;
@@ -2054,7 +1953,7 @@ class BrowserInstantViewFragment extends BaseFragment {
         imageView.setVisibility(View.VISIBLE);
         for (int i = 0; i < urls.size(); i++) {
             String url = urls.get(i);
-            Bitmap cached = ImageLoader.get(url);
+            Bitmap cached = null; // TODO(photoviewer): ImageLoader.get(url);
             if (cached != null) {
                 imageView.setTag(url);
                 imageView.setImageBitmap(cached);
@@ -2069,13 +1968,13 @@ class BrowserInstantViewFragment extends BaseFragment {
         }
         imageView.setImageDrawable(null);
         if (imageView instanceof RoundedImageView) {
-            ((RoundedImageView) imageView).imageReceiver.setImageBitmap(null);
+            ((RoundedImageView) imageView).imageReceiver.setImageBitmap((Bitmap) null);
         }
         IMAGE_EXECUTOR.execute(() -> {
             LoadedImage loadedImage = null;
             for (int i = 0; i < urls.size(); i++) {
                 String url = urls.get(i);
-                Bitmap bitmap = ImageLoader.load(url);
+                Bitmap bitmap = null; // TODO(photoviewer): ImageLoader.load(url);
                 if (bitmap != null) {
                     loadedImage = new LoadedImage(url, bitmap);
                     break;
@@ -2098,7 +1997,7 @@ class BrowserInstantViewFragment extends BaseFragment {
                 } else {
                     imageView.setImageDrawable(null);
                     if (imageView instanceof RoundedImageView) {
-                        ((RoundedImageView) imageView).imageReceiver.setImageBitmap(null);
+                        ((RoundedImageView) imageView).imageReceiver.setImageBitmap((Bitmap) null);
                     }
                 }
             });
@@ -3074,7 +2973,7 @@ class BrowserInstantViewFragment extends BaseFragment {
                 }
             } else {
                 posterView.setImageDrawable(null);
-                posterView.imageReceiver.setImageBitmap(null);
+                posterView.imageReceiver.setImageBitmap((Bitmap) null);
             }
 
             titleView.setText(title);

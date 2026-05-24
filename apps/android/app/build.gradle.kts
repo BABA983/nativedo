@@ -27,6 +27,14 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Matches upstream Telegram BUILD_HOST_IS_WINDOWS (used by Utilities to
+        // pick a different number-parsing regex on Windows-built APKs).
+        buildConfigField(
+            "boolean",
+            "BUILD_HOST_IS_WINDOWS",
+            System.getProperty("os.name").lowercase().contains("windows").toString(),
+        )
     }
 
     buildTypes {
@@ -65,6 +73,8 @@ kotlin {
 }
 
 dependencies {
+    implementation(project(":telegram"))
+
     implementation(platform(libs.androidx.compose.bom))
 
     implementation(libs.androidx.appcompat)

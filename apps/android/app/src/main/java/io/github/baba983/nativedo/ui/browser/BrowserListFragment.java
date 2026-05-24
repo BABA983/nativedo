@@ -43,15 +43,15 @@ import java.util.Calendar;
 import java.util.Locale;
 
 import io.github.baba983.nativedo.R;
-import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
-import io.github.baba983.nativedo.ui.actionbar.ActionBar;
-import io.github.baba983.nativedo.ui.actionbar.ActionBarMenu;
-import io.github.baba983.nativedo.ui.actionbar.ActionBarMenuItem;
-import io.github.baba983.nativedo.ui.actionbar.Theme;
-import io.github.baba983.nativedo.ui.components.LayoutHelper;
-import io.github.baba983.nativedo.ui.components.UItem;
-import io.github.baba983.nativedo.ui.components.UniversalAdapter;
-import io.github.baba983.nativedo.ui.components.UniversalFragment;
+import org.telegram.messenger.AndroidUtilities;
+import org.telegram.ui.ActionBar.ActionBar;
+import org.telegram.ui.ActionBar.ActionBarMenu;
+import org.telegram.ui.ActionBar.ActionBarMenuItem;
+import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.Components.UItem;
+import org.telegram.ui.Components.UniversalAdapter;
+import org.telegram.ui.Components.UniversalFragment;
 
 class BrowserListFragment extends UniversalFragment {
 

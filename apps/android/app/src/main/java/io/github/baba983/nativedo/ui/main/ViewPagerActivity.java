@@ -51,11 +51,11 @@ import android.widget.FrameLayout;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
-import io.github.baba983.nativedo.ui.actionbar.ActionBar;
-import io.github.baba983.nativedo.ui.actionbar.ActionBarLayout;
-import io.github.baba983.nativedo.ui.actionbar.BaseFragment;
-import io.github.baba983.nativedo.ui.components.LayoutHelper;
-import io.github.baba983.nativedo.ui.components.ViewPagerFixed;
+import org.telegram.ui.ActionBar.ActionBar;
+import org.telegram.ui.ActionBar.ActionBarLayout;
+import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.Components.ViewPagerFixed;
 
 public abstract class ViewPagerActivity extends BaseFragment {
 

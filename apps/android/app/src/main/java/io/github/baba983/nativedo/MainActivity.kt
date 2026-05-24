@@ -11,10 +11,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.lifecycleScope
-import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities
-import io.github.baba983.nativedo.ui.actionbar.ActionBarLayout
+import org.telegram.messenger.AndroidUtilities
+import org.telegram.ui.ActionBar.ActionBarLayout
 import io.github.baba983.nativedo.ui.main.MainTabsActivity
-import io.github.baba983.nativedo.telegram.ui.PhotoViewer
+// TODO(photoviewer): re-enable when telegram/ui/PhotoViewer can compile.
+// import org.telegram.ui.PhotoViewer
 import kotlinx.coroutines.launch
 
 private const val LAZY_START = 0.015f
@@ -86,9 +87,7 @@ class MainActivity : ComponentActivity() {
                     }
 
                     val progress = backEvent.progress
-                    if (PhotoViewer.hasActiveViewer()) {
-                        return
-                    }
+                    // TODO(photoviewer): if (PhotoViewer.hasActiveViewer()) return
                     if (!predictiveBackStarted && progress > LAZY_START) {
                         if (!actionBarLayout.canStartPredictiveBack()) {
                             return
@@ -106,17 +105,13 @@ class MainActivity : ComponentActivity() {
                 override fun onBackCancelled() {
                     started = false
                     invoked = false
-                    if (PhotoViewer.hasActiveViewer()) {
-                        return
-                    }
+                    // TODO(photoviewer): if (PhotoViewer.hasActiveViewer()) return
                     actionBarLayout.onBackCancelled()
                 }
 
                 override fun onBackInvoked() {
                     invoked = true
-                    if (PhotoViewer.handleActiveBack()) {
-                        return
-                    }
+                    // TODO(photoviewer): if (PhotoViewer.handleActiveBack()) return
                     if (actionBarLayout.canHandleBack()) {
                         actionBarLayout.onBackInvoked()
                     } else if (!mainTabsActivity.handleBackPressed()) {
@@ -131,7 +126,8 @@ class MainActivity : ComponentActivity() {
             )
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val callback = OnBackInvokedCallback {
-                if (!PhotoViewer.handleActiveBack() && !actionBarLayout.handleBackPressed() && !mainTabsActivity.handleBackPressed()) {
+                // TODO(photoviewer): re-add PhotoViewer.handleActiveBack() guard.
+                if (!actionBarLayout.handleBackPressed() && !mainTabsActivity.handleBackPressed()) {
                     finish()
                 }
             }
@@ -145,7 +141,8 @@ class MainActivity : ComponentActivity() {
                 this,
                 object : OnBackPressedCallback(true) {
                     override fun handleOnBackPressed() {
-                        if (!PhotoViewer.handleActiveBack() && !actionBarLayout.handleBackPressed() && !mainTabsActivity.handleBackPressed()) {
+                        // TODO(photoviewer): re-add PhotoViewer.handleActiveBack() guard.
+                        if (!actionBarLayout.handleBackPressed() && !mainTabsActivity.handleBackPressed()) {
                             finish()
                         }
                     }

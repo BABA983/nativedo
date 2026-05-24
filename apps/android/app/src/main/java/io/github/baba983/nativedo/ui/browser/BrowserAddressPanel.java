@@ -66,12 +66,12 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import io.github.baba983.nativedo.R;
-import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
-import io.github.baba983.nativedo.ui.actionbar.Theme;
-import io.github.baba983.nativedo.ui.components.LayoutHelper;
-import io.github.baba983.nativedo.ui.components.UItem;
-import io.github.baba983.nativedo.ui.components.UniversalAdapter;
-import io.github.baba983.nativedo.ui.components.UniversalRecyclerView;
+import org.telegram.messenger.AndroidUtilities;
+import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.Components.UItem;
+import org.telegram.ui.Components.UniversalAdapter;
+import org.telegram.ui.Components.UniversalRecyclerView;
 
 public class BrowserAddressPanel extends FrameLayout {
 

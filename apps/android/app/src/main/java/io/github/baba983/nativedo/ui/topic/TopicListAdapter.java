@@ -16,13 +16,13 @@ import android.view.ViewGroup;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
-import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.AndroidUtilities;
 import io.github.baba983.nativedo.core.model.CategorySummary;
 import io.github.baba983.nativedo.core.model.TopicSummary;
-import io.github.baba983.nativedo.ui.cells.EmptyCell;
-import io.github.baba983.nativedo.ui.cells.TopicCell;
-import io.github.baba983.nativedo.ui.components.FlickerLoadingView;
-import io.github.baba983.nativedo.ui.components.RecyclerListView;
+import org.telegram.ui.Cells.EmptyCell;
+import io.github.baba983.nativedo.ui.topic.TopicCell;
+import org.telegram.ui.Components.FlickerLoadingView;
+import org.telegram.ui.Components.RecyclerListView;
 
 import java.util.Collections;
 import java.util.List;

@@ -1,7 +1,5 @@
-// PORT-MODE: Native Feature
-// HOST-WIRING:
-//   - View wrapper around NativeDo's minimal ImageReceiver so PhotoViewer source
-//     providers can use ImageReceiver-shaped geometry, visibility, bitmap, and radius.
+// NativeDo: thin ImageView wrapper around upstream ImageReceiver.
+// Keeps AppCompatImageView so Coil's load() extension works.
 package io.github.baba983.nativedo.core.ui
 
 import android.content.Context
@@ -10,8 +8,7 @@ import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.util.AttributeSet
 import androidx.appcompat.widget.AppCompatImageView
-import coil3.transition.CrossfadeDrawable
-import io.github.baba983.nativedo.telegram.messenger.ImageReceiver
+import org.telegram.messenger.ImageReceiver
 
 /**
  * ImageView-compatible source cell that draws through [ImageReceiver].
@@ -32,7 +29,7 @@ class RoundedImageView @JvmOverloads constructor(
         set(value) {
             if (field != value) {
                 field = value
-                imageReceiver.setRoundRadius(value)
+                imageReceiver.setRoundRadius(value.toInt())
                 invalidate()
             }
         }
@@ -50,31 +47,22 @@ class RoundedImageView @JvmOverloads constructor(
     private fun extractBitmap(drawable: Drawable?): android.graphics.Bitmap? = when (drawable) {
         null -> null
         is BitmapDrawable -> drawable.bitmap
-        is CrossfadeDrawable -> (drawable.end as? BitmapDrawable)?.bitmap
-            ?: (drawable.start as? BitmapDrawable)?.bitmap
+        is coil3.transition.CrossfadeDrawable -> {
+            // After the crossfade completes, pull the final bitmap.
+            extractBitmap(drawable.end)
+        }
         else -> null
     }
 
     val bitmap: android.graphics.Bitmap?
         get() = imageReceiver.bitmap
 
-    override fun setScaleType(scaleType: ScaleType?) {
-        super.setScaleType(scaleType)
-        imageReceiver.setScaleType(
-            if (scaleType == ScaleType.CENTER_CROP) {
-                ImageReceiver.ScaleType.CENTER_CROP
-            } else {
-                ImageReceiver.ScaleType.FIT_CENTER
-            },
-        )
-    }
-
-    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        super.onSizeChanged(w, h, oldw, oldh)
-        imageReceiver.setImageCoords(0f, 0f, w.toFloat(), h.toFloat())
-    }
-
     override fun onDraw(canvas: Canvas) {
-        imageReceiver.draw(canvas)
+        if (imageReceiver.hasBitmapImage()) {
+            imageReceiver.setImageCoords(0f, 0f, width.toFloat(), height.toFloat())
+            imageReceiver.draw(canvas)
+        } else {
+            super.onDraw(canvas)
+        }
     }
 }

@@ -21,5 +21,6 @@ captures/
 .codex/
 .pi/
 .claude/
+.openclaude/
 .agents/
 skills-lock.json

@@ -55,7 +55,7 @@ import io.github.baba983.nativedo.core.ui.UserAvatar
 import io.github.baba983.nativedo.core.ui.compactCount
 import io.github.baba983.nativedo.feature.home.ui.HomeFeedTab
 import io.github.baba983.nativedo.feature.home.ui.HomeViewModel
-import io.github.baba983.nativedo.ui.actionbar.Theme
+import org.telegram.ui.ActionBar.Theme
 import io.github.baba983.nativedo.ui.actionbar.rememberThemeRevision
 import io.github.baba983.nativedo.ui.actionbar.themedColor
 import java.time.Duration

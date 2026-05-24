@@ -57,10 +57,10 @@ import androidx.annotation.StringRes;
 import androidx.core.graphics.ColorUtils;
 
 import io.github.baba983.nativedo.R;
-import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
-import io.github.baba983.nativedo.ui.actionbar.Theme;
-import io.github.baba983.nativedo.ui.components.CubicBezierInterpolator;
-import io.github.baba983.nativedo.ui.components.LayoutHelper;
+import org.telegram.messenger.AndroidUtilities;
+import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.CubicBezierInterpolator;
+import org.telegram.ui.Components.LayoutHelper;
 
 public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab {
 

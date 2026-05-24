@@ -55,7 +55,7 @@ import io.github.baba983.nativedo.core.storage.CookieStore
 import io.github.baba983.nativedo.core.ui.GalleryImage
 import io.github.baba983.nativedo.core.ui.UserAvatar
 import io.github.baba983.nativedo.core.ui.htmlToPreviewText
-import io.github.baba983.nativedo.ui.actionbar.Theme
+import org.telegram.ui.ActionBar.Theme
 import io.github.baba983.nativedo.ui.actionbar.rememberThemeRevision
 import io.github.baba983.nativedo.ui.actionbar.themedColor
 import java.time.OffsetDateTime

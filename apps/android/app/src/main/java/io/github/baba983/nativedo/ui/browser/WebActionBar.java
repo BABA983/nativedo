@@ -92,16 +92,16 @@ import androidx.annotation.Nullable;
 import androidx.core.graphics.ColorUtils;
 
 import io.github.baba983.nativedo.R;
-import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
-import io.github.baba983.nativedo.ui.actionbar.ActionBar;
-import io.github.baba983.nativedo.ui.actionbar.ActionBarMenu;
-import io.github.baba983.nativedo.ui.actionbar.ActionBarMenuItem;
-import io.github.baba983.nativedo.ui.actionbar.BackDrawable;
-import io.github.baba983.nativedo.ui.actionbar.Theme;
-import io.github.baba983.nativedo.ui.components.AnimatedTextDrawable;
-import io.github.baba983.nativedo.ui.components.CubicBezierInterpolator;
-import io.github.baba983.nativedo.ui.components.LayoutHelper;
-import io.github.baba983.nativedo.ui.components.LineProgressView;
+import org.telegram.messenger.AndroidUtilities;
+import org.telegram.ui.ActionBar.ActionBar;
+import org.telegram.ui.ActionBar.ActionBarMenu;
+import org.telegram.ui.ActionBar.ActionBarMenuItem;
+import org.telegram.ui.ActionBar.BackDrawable;
+import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.AnimatedTextDrawable;
+import org.telegram.ui.Components.CubicBezierInterpolator;
+import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.Components.LineProgressView;
 
 public class WebActionBar extends ActionBar {
 

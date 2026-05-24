@@ -17,7 +17,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.AndroidUtilities;
 
 import static android.view.Gravity.AXIS_PULL_AFTER;
 import static android.view.Gravity.AXIS_PULL_BEFORE;

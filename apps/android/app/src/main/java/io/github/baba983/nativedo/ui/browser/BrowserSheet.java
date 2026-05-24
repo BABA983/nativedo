@@ -120,20 +120,20 @@ import androidx.core.view.ViewCompat;
 import java.util.ArrayList;
 
 import io.github.baba983.nativedo.R;
-import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
-import io.github.baba983.nativedo.telegram.messenger.SharedConfig;
-import io.github.baba983.nativedo.ui.actionbar.ActionBarMenuSubItem;
-import io.github.baba983.nativedo.ui.actionbar.ActionBarLayout;
-import io.github.baba983.nativedo.ui.actionbar.BaseFragment;
-import io.github.baba983.nativedo.ui.actionbar.BottomSheetTabs;
-import io.github.baba983.nativedo.ui.actionbar.BottomSheetTabsOverlay;
-import io.github.baba983.nativedo.ui.actionbar.Theme;
-import io.github.baba983.nativedo.ui.components.ItemOptions;
-import io.github.baba983.nativedo.ui.components.AnimatedFloat;
-import io.github.baba983.nativedo.ui.components.CubicBezierInterpolator;
-import io.github.baba983.nativedo.ui.components.LayoutHelper;
+import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.SharedConfig;
+import org.telegram.ui.ActionBar.ActionBarMenuSubItem;
+import org.telegram.ui.ActionBar.ActionBarLayout;
+import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.ActionBar.BottomSheetTabs;
+import org.telegram.ui.ActionBar.BottomSheetTabsOverlay;
+import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.ItemOptions;
+import org.telegram.ui.Components.AnimatedFloat;
+import org.telegram.ui.Components.CubicBezierInterpolator;
+import org.telegram.ui.Components.LayoutHelper;
 
-public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabsOverlay.Sheet {
+public class BrowserSheet extends org.telegram.ui.ActionBar.BrowserSheet implements BottomSheetTabsOverlay.Sheet {
 
     private BaseFragment fragment;
     private final WindowView windowView;
@@ -314,6 +314,7 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
         animateOpen(true, true, null);
     }
 
+    @Override
     public void attachInternal(BaseFragment fragment) {
         if (fragment == null) {
             return;
@@ -426,6 +427,7 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
         pagesStack.clear();
     }
 
+    @Override
     public void destroyFromTabs() {
         release();
         destroy();
@@ -500,6 +502,7 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
         }
     }
 
+    @Override
     public void reset() {
         dismissing = false;
         dismissingIntoTabs = false;
@@ -544,6 +547,7 @@ public class BrowserSheet implements BaseFragment.AttachedSheet, BottomSheetTabs
         windowView.requestLayout();
     }
 
+    @Override
     public void animateOpen(boolean open, boolean animated, Runnable callback) {
         if (openAnimator != null) {
             openAnimator.cancel();

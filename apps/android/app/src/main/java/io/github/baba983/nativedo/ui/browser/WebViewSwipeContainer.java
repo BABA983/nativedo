@@ -52,11 +52,11 @@ import androidx.dynamicanimation.animation.FloatValueHolder;
 import androidx.dynamicanimation.animation.SpringAnimation;
 import androidx.dynamicanimation.animation.SpringForce;
 
-import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
-import io.github.baba983.nativedo.telegram.messenger.GenericProvider;
-import io.github.baba983.nativedo.ui.components.SimpleFloatPropertyCompat;
+import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.GenericProvider;
+import org.telegram.ui.Components.SimpleFloatPropertyCompat;
 
-import static io.github.baba983.nativedo.telegram.messenger.AndroidUtilities.dp;
+import static org.telegram.messenger.AndroidUtilities.dp;
 
 public class WebViewSwipeContainer extends FrameLayout {
 

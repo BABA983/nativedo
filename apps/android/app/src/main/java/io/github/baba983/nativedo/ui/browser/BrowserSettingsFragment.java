@@ -62,15 +62,15 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import io.github.baba983.nativedo.R;
-import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities;
-import io.github.baba983.nativedo.ui.actionbar.ActionBarLayout;
-import io.github.baba983.nativedo.ui.actionbar.Theme;
-import io.github.baba983.nativedo.ui.components.ItemOptions;
-import io.github.baba983.nativedo.ui.components.LayoutHelper;
-import io.github.baba983.nativedo.ui.components.UItem;
-import io.github.baba983.nativedo.ui.components.UniversalAdapter;
-import io.github.baba983.nativedo.ui.components.UniversalCells;
-import io.github.baba983.nativedo.ui.components.UniversalFragment;
+import org.telegram.messenger.AndroidUtilities;
+import org.telegram.ui.ActionBar.ActionBarLayout;
+import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.ItemOptions;
+import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.Components.UItem;
+import org.telegram.ui.Components.UniversalAdapter;
+import org.telegram.ui.Components.UniversalCells;
+import org.telegram.ui.Components.UniversalFragment;
 
 class BrowserSettingsFragment extends UniversalFragment {
 

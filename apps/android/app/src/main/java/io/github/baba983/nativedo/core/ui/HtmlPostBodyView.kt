@@ -87,7 +87,7 @@ import coil3.request.ImageRequest
 import coil3.request.allowHardware
 import coil3.request.crossfade
 import io.github.baba983.nativedo.core.storage.CookieStore
-import io.github.baba983.nativedo.ui.actionbar.Theme
+import org.telegram.ui.ActionBar.Theme
 import io.github.baba983.nativedo.ui.actionbar.rememberThemeRevision
 import io.github.baba983.nativedo.ui.actionbar.themedColor
 import okhttp3.HttpUrl.Companion.toHttpUrl

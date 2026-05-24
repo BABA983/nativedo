@@ -26,11 +26,11 @@ import androidx.core.graphics.ColorUtils
 import androidx.lifecycle.ViewModelProvider
 import io.github.baba983.nativedo.R
 import io.github.baba983.nativedo.NativeDoApp
-import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities
+import org.telegram.messenger.AndroidUtilities
 import io.github.baba983.nativedo.feature.profile.data.ProfileRepository
 import io.github.baba983.nativedo.feature.profile.ui.ProfileViewModel
-import io.github.baba983.nativedo.ui.actionbar.BaseFragment
-import io.github.baba983.nativedo.ui.actionbar.Theme
+import org.telegram.ui.ActionBar.BaseFragment
+import org.telegram.ui.ActionBar.Theme
 import io.github.baba983.nativedo.ui.auth.LoginWebViewFragment
 import io.github.baba983.nativedo.ui.browser.BrowserSheet
 import io.github.baba983.nativedo.ui.topic.TopicDetailFragment

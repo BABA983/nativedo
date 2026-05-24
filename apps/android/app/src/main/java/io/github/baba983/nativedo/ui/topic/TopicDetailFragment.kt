@@ -16,25 +16,26 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.ViewModelProvider
 import io.github.baba983.nativedo.NativeDoApp
-import io.github.baba983.nativedo.telegram.messenger.AndroidUtilities
+import org.telegram.messenger.AndroidUtilities
 import io.github.baba983.nativedo.core.ui.GalleryImage
 import io.github.baba983.nativedo.core.ui.RoundedImageView
 import io.github.baba983.nativedo.feature.topic.data.TopicRepository
 import io.github.baba983.nativedo.feature.topic.ui.TopicViewModel
-import io.github.baba983.nativedo.ui.actionbar.BackDrawable
-import io.github.baba983.nativedo.ui.actionbar.BaseFragment
-import io.github.baba983.nativedo.ui.actionbar.Theme
+import org.telegram.ui.ActionBar.BackDrawable
+import org.telegram.ui.ActionBar.BaseFragment
+import org.telegram.ui.ActionBar.Theme
 import io.github.baba983.nativedo.ui.browser.BrowserSheet
-import io.github.baba983.nativedo.telegram.ui.PhotoViewer
-import io.github.baba983.nativedo.telegram.ui.PhotoViewer.PhotoEntry
-import io.github.baba983.nativedo.telegram.ui.PhotoViewer.PlaceProviderObject
+// TODO(photoviewer): re-enable when telegram/ui/PhotoViewer can compile.
+// import org.telegram.ui.PhotoViewer
+// import org.telegram.ui.PhotoViewer.PhotoEntry
+// import org.telegram.ui.PhotoViewer.PlaceProviderObject
 
 class TopicDetailFragment(
     private val topicId: Long,
     private val initialTitle: String? = null,
 ) : BaseFragment() {
     private lateinit var viewModel: TopicViewModel
-    private var activePhotoViewer: PhotoViewer? = null
+    // TODO(photoviewer): private var activePhotoViewer: PhotoViewer? = null
 
     override fun createView(context: Context): View {
         actionBar.setBackButtonDrawable(BackDrawable(false))
@@ -120,11 +121,7 @@ class TopicDetailFragment(
     }
 
     override fun onBackPressed(): Boolean {
-        activePhotoViewer?.let { viewer ->
-            if (viewer.handleBackPressed()) {
-                return false
-            }
-        }
+        // TODO(photoviewer): re-add activePhotoViewer?.handleBackPressed() guard.
         return super.onBackPressed()
     }
 
@@ -137,134 +134,23 @@ class TopicDetailFragment(
         sourceBoundsProvider: (String) -> RectF?,
         setHiddenImageUrl: (String?) -> Unit,
     ) {
-        val root = fragmentView as? android.view.ViewGroup ?: return
-        if (activePhotoViewer != null) {
-            return
-        }
-        val sourceRadius = AndroidUtilities.dp(14f).toFloat()
-        // Telegram-shaped entry point: bind the singleton to this Activity, then call
-        // openPhoto on the singleton. attachToDecor() is now folded into openPhoto.
-        val activity = findHostActivity(root.context) ?: return
-        PhotoViewer.setParentActivity(activity)
-        val viewer = PhotoViewer.getInstance()
-        viewer.setOnDismissListener {
-            setHiddenImageUrl(null)
-            activePhotoViewer = null
-        }
-        val entries = buildPhotoEntries(url, galleryImages)
-        val currentIndex = entries.indexOfFirst { it.url == url }.coerceAtLeast(0)
-        val opened = viewer.openPhoto(entries, currentIndex, object : PhotoViewer.EmptyPhotoViewerProvider() {
-            override fun getPlaceForPhoto(index: Int, entry: PhotoEntry, needPreview: Boolean, closing: Boolean): PlaceProviderObject? {
-                // Prefer a real Android View over cached Compose bounds. When
-                // closePhoto temporarily resets the host zoom (scale→1.0), the View's
-                // getLocationInWindow returns un-zoomed coordinates — but the cached
-                // imageBoundsByUrl still has zoomed coordinates from Compose's
-                // onGloballyPositioned (which reported under the active zoom). Using
-                // zoomed bounds as drawRegion with un-zoomed parentClipRect produces
-                // the "shrink too small then snap back" artifact on non-tapped images.
-                val sourceView = if (entry.url == url) tappedSourceView else imageViewByUrl[entry.url]
-                val hasLiveView = sourceView != null && sourceView.width > 0 && sourceView.height > 0
-
-                val liveSourceRect = if (hasLiveView) {
-                    sourceViewRectInWindow(sourceView!!)
-                } else {
-                    null
-                }
-                val cachedSourceRect = sourceBoundsProvider(entry.url)
-                val sourceViewRect = liveSourceRect ?: cachedSourceRect ?: return null
-                val sourceImageRect = if (hasLiveView) {
-                    sourceImageRectInWindow(sourceView, sourceViewRect) ?: sourceViewRect
-                } else {
-                    sourceViewRect
-                }
-                var receiverViewX = sourceViewRect.left
-                var receiverViewY = sourceViewRect.top
-                var receiverScale = 1f
-                var sourceVisibleRect: RectF? = null
-                val sourceImageReceiverHandle = if (hasLiveView && sourceView is RoundedImageView) {
-                    val location = IntArray(2)
-                    sourceView.getLocationInWindow(location)
-                    receiverViewX = location[0].toFloat()
-                    receiverViewY = location[1].toFloat()
-                    val visible = Rect()
-                    if (sourceView.getGlobalVisibleRect(visible)) {
-                        sourceVisibleRect = RectF(visible)
-                    }
-                    sourceView.imageReceiver
-                } else {
-                    null
-                }
-                // Telegram parity (PhotoViewer.java:19533-19560): two roles must
-                // be split.
-                //   parentView  → clip target. The wrapper sits topMargin=
-                //                 actionBarHeight BELOW the host ActionBar, so its
-                //                 getLocationInWindow() correctly excludes the
-                //                 ActionBar strip from the morph view's clip.
-                //   parentScaleView → host zoom target. Must include the ActionBar
-                //                 so the ActionBar visually follows the open/close
-                //                 zoom along with the content. The natural choice
-                //                 is the wrapper's parent (= ActionBarLayout's
-                //                 LayoutContainer that holds both ActionBar and
-                //                 wrapper as siblings).
-                val photoViewerWrapper = getPhotoViewerScaleView()
-                val photoViewerScaleHost = (photoViewerWrapper?.parent as? View) ?: photoViewerWrapper
-                // Capture the clip boundary (parentView's visible area in window
-                // coords) NOW, while the host zoom is temporarily reset to 1.0 by
-                // closePhoto (see PhotoViewer.java:1502-1510). If we leave
-                // parentClipRect null, setupAnimatingImageView reads
-                // parentView.getLocationInWindow AFTER the zoom is restored, getting
-                // zoomed coords that don't match the un-zoomed drawRegion/viewRect —
-                // this caused two bugs: (1) ActionBar overlay (clipParentTop was
-                // lower than drawRegion.top → clipTop=0), (2) over-shrink (clipBottom
-                // was ~100px too large due to zoomed parentView bottom).
-                val clipRect = if (photoViewerWrapper != null) {
-                    val wrapperLoc = IntArray(2)
-                    photoViewerWrapper.getLocationInWindow(wrapperLoc)
-                    RectF(
-                        wrapperLoc[0].toFloat(),
-                        wrapperLoc[1].toFloat(),
-                        (wrapperLoc[0] + photoViewerWrapper.width).toFloat(),
-                        (wrapperLoc[1] + photoViewerWrapper.height).toFloat(),
-                    )
-                } else {
-                    null
-                }
-                return PlaceProviderObject().apply {
-                    parentView = photoViewerWrapper
-                    parentClipRect = clipRect
-                    parentScaleView = photoViewerScaleHost
-                    viewRect = RectF(sourceViewRect)
-                    imageDrawRect = RectF(sourceImageRect)
-                    visibleRect = sourceVisibleRect?.let(::RectF)
-                    viewX = receiverViewX
-                    viewY = receiverViewY
-                    scale = receiverScale
-                    thumb = if (entry.url == url) initialThumb else null
-                    radius = sourceRadius
-                    this.index = index
-                    // Wire the real Android View for any image that has one (not just
-                    // the initially tapped image). sourceView enables synchronous
-                    // setVisibility and lets PhotoViewer borrow the view's bitmap.
-                    if (hasLiveView) {
-                        this.sourceView = sourceView
-                        if (sourceImageReceiverHandle != null) {
-                            imageReceiver = sourceImageReceiverHandle
-                        }
-                    } else {
-                        sourceImageReceiver = PhotoViewer.SourceImageReceiver { visible, _ ->
-                            setHiddenImageUrl(if (visible) null else entry.url)
-                        }
-                    }
-                }
-            }
-        })
-        if (!opened) {
-            setHiddenImageUrl(null)
-            return
-        }
-        // attachToDecor() is now folded into PhotoViewer.openPhoto() to match
-        // Telegram's API surface. No separate attach step needed.
-        activePhotoViewer = viewer
+        // TODO(photoviewer): wire PhotoViewer.getInstance().openPhoto(...) once
+        // telegram/ui/PhotoViewer compiles. Body intentionally a no-op so :app
+        // can build while we backfill the telegram/ dependency graph.
+        @Suppress("UNUSED_PARAMETER", "UNUSED_VARIABLE")
+        val ignored = listOf<Any?>(
+            url,
+            galleryImages,
+            initialThumb,
+            tappedSourceView,
+            imageViewByUrl,
+            sourceBoundsProvider,
+            setHiddenImageUrl,
+            findHostActivity(fragmentView?.context ?: return),
+            getPhotoViewerScaleView(),
+            AndroidUtilities.dp(14f),
+        )
+        setHiddenImageUrl(null)
     }
 
     private fun findHostActivity(context: Context): android.app.Activity? {
@@ -276,6 +162,7 @@ class TopicDetailFragment(
         return null
     }
 
+    @Suppress("unused")
     private fun sourceViewRectInWindow(sourceView: View): RectF {
         val location = IntArray(2)
         sourceView.getLocationInWindow(location)
@@ -287,6 +174,7 @@ class TopicDetailFragment(
         )
     }
 
+    @Suppress("unused")
     private fun sourceImageRectInWindow(sourceView: View?, sourceViewRect: RectF): RectF? {
         val imageView = sourceView as? ImageView ?: return null
         val bitmap = if (imageView is RoundedImageView) {
@@ -308,18 +196,8 @@ class TopicDetailFragment(
         return RectF(left, top, left + drawnWidth, top + drawnHeight)
     }
 
-    private fun buildPhotoEntries(url: String, galleryImages: List<GalleryImage>): List<PhotoEntry> {
-        val entries = linkedMapOf<String, PhotoEntry>()
-        galleryImages.forEach { image ->
-            if (image.url.isNotEmpty()) {
-                entries[image.url] = PhotoEntry(image.url, image.thumbUrl, image.widthPx, image.heightPx)
-            }
-        }
-        if (url.isNotEmpty() && !entries.containsKey(url)) {
-            entries[url] = PhotoEntry(url)
-        }
-        return entries.values.toList()
-    }
+    // TODO(photoviewer): private fun buildPhotoEntries(...) returned List<PhotoEntry>.
+    // Re-add when PhotoViewer.PhotoEntry is back on the classpath.
 
     override fun getNavigationBarColor(): Int {
         return Theme.getColor(Theme.key_windowBackgroundGray)

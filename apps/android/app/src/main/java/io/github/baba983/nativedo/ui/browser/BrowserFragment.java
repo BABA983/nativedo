@@ -46,11 +46,11 @@ import android.widget.Toast;
 import androidx.core.graphics.ColorUtils;
 
 import io.github.baba983.nativedo.R;
-import io.github.baba983.nativedo.telegram.messenger.SharedConfig;
-import io.github.baba983.nativedo.ui.actionbar.ActionBarLayout;
-import io.github.baba983.nativedo.ui.actionbar.BaseFragment;
-import io.github.baba983.nativedo.ui.actionbar.Theme;
-import io.github.baba983.nativedo.ui.components.LayoutHelper;
+import org.telegram.messenger.SharedConfig;
+import org.telegram.ui.ActionBar.ActionBarLayout;
+import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.LayoutHelper;
 
 public class BrowserFragment extends BaseFragment {
 
