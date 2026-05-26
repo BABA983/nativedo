@@ -37,12 +37,17 @@ import android.graphics.RectF;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.RippleDrawable;
+import android.text.TextPaint;
 import android.util.SparseIntArray;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffColorFilter;
+
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.R;
 
 public final class Theme {
 
@@ -194,6 +199,34 @@ public final class Theme {
     public static final int key_chats_actionBackground = colorsCount++;
     public static final int key_avatar_text = colorsCount++;
 
+    // Avatar background palette — mirrors upstream Theme.keys_avatar_background /
+    // keys_avatar_background2. Order: Red, Orange, Violet, Green, Cyan, Blue, Pink.
+    public static final int key_avatar_backgroundRed = colorsCount++;
+    public static final int key_avatar_backgroundOrange = colorsCount++;
+    public static final int key_avatar_backgroundViolet = colorsCount++;
+    public static final int key_avatar_backgroundGreen = colorsCount++;
+    public static final int key_avatar_backgroundCyan = colorsCount++;
+    public static final int key_avatar_backgroundBlue = colorsCount++;
+    public static final int key_avatar_backgroundPink = colorsCount++;
+    public static final int key_avatar_background2Red = colorsCount++;
+    public static final int key_avatar_background2Orange = colorsCount++;
+    public static final int key_avatar_background2Violet = colorsCount++;
+    public static final int key_avatar_background2Green = colorsCount++;
+    public static final int key_avatar_background2Cyan = colorsCount++;
+    public static final int key_avatar_background2Blue = colorsCount++;
+    public static final int key_avatar_background2Pink = colorsCount++;
+
+    public static final int[] keys_avatar_background = {
+            key_avatar_backgroundRed, key_avatar_backgroundOrange, key_avatar_backgroundViolet,
+            key_avatar_backgroundGreen, key_avatar_backgroundCyan, key_avatar_backgroundBlue,
+            key_avatar_backgroundPink
+    };
+    public static final int[] keys_avatar_background2 = {
+            key_avatar_background2Red, key_avatar_background2Orange, key_avatar_background2Violet,
+            key_avatar_background2Green, key_avatar_background2Cyan, key_avatar_background2Blue,
+            key_avatar_background2Pink
+    };
+
     public static final class ThemeInfo {
         public String name;
         public SparseIntArray colors = new SparseIntArray();
@@ -229,6 +262,28 @@ public final class Theme {
     private static final int[] defaultColors = ThemeColors.createDefaultColors();
     private static final Paint maskPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
+    /** Mirrors upstream {@code Theme.avatar_backgroundPaint} — shared paint AvatarDrawable draws into. */
+    public static final Paint avatar_backgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+    // Shared paint pool for cell-level views (TopicCell etc). Naming mirrors
+    // upstream Theme.dialogs_*Paint so call sites stay aligned. Text size and
+    // typeface are configured once in init(); colors are refreshed on every
+    // applyThemeInternal() so theme switches re-tint the pool atomically.
+    public static final TextPaint dialogs_namePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+    public static final TextPaint dialogs_messagePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+    public static final TextPaint dialogs_timePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+    public static final TextPaint dialogs_countTextPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+    public static final Paint dialogs_countPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    /** Muted counter background (gray pill for muted chats). */
+    public static final Paint dialogs_countGrayPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    public static final Paint dialogs_pinnedPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    /** Pinned row background overlay — mirrors upstream DialogCell key_chats_pinnedOverlay. */
+    public static final Paint dialogs_pinnedBgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    /** Small pin icon drawn next to time on pinned rows — mirrors upstream dialogs_pinnedDrawable2. */
+    public static Drawable dialogs_pinnedDrawable2;
+    /** NativeDo extension: bottom hairline separator paint shared across list cells. */
+    public static final Paint dialogs_dividerPaint = new Paint();
+
     private static Context applicationContext;
     private static ThemeInfo currentTheme;
     private static ThemeInfo currentNightTheme;
@@ -256,6 +311,9 @@ public final class Theme {
             return;
         }
         applicationContext = context.getApplicationContext();
+        createDialogsResources();
+        // Load vendored pin icon — mirrors upstream Theme.createDialogsResources().
+        dialogs_pinnedDrawable2 = context.getResources().getDrawable(R.drawable.msg_pin_mini).mutate();
         SharedPreferences preferences = applicationContext.getSharedPreferences(THEME_CONFIG, Activity.MODE_PRIVATE);
         ThemeInfo themeInfo = themesDict.get(preferences.getString(THEME_CONFIG_ACTIVE, defaultTheme.getKey()));
         if (themeInfo == null) {
@@ -263,7 +321,56 @@ public final class Theme {
         }
         if (themeInfo != currentTheme) {
             applyTheme(themeInfo, false, themeInfo == currentNightTheme);
+        } else {
+            // Same theme — still need to push current colors into the shared
+            // paint pool now that text sizes / typefaces have been set.
+            applyDialogsColors();
         }
+    }
+
+    /**
+     * Configure the shared dialogs paint pool. Sizes depend on
+     * {@link AndroidUtilities#density} so this must run after
+     * {@code AndroidUtilities.init()}. Color is set separately in
+     * {@link #applyDialogsColors()} since it follows the active theme.
+     */
+    private static void createDialogsResources() {
+        dialogs_namePaint.setTextSize(AndroidUtilities.dp(16));
+        dialogs_namePaint.setTypeface(AndroidUtilities.bold());
+        dialogs_messagePaint.setTextSize(AndroidUtilities.dp(14));
+        dialogs_timePaint.setTextSize(AndroidUtilities.dp(13));
+        dialogs_countTextPaint.setTextSize(AndroidUtilities.dp(13));
+        dialogs_countTextPaint.setTypeface(AndroidUtilities.bold());
+    }
+
+    /** Simplified port of upstream setDrawableColor — handles ShapeDrawable and falls through to PorterDuff. */
+    public static void setDrawableColor(Drawable drawable, int color) {
+        if (drawable == null) {
+            return;
+        }
+        if (drawable instanceof android.graphics.drawable.ShapeDrawable) {
+            ((android.graphics.drawable.ShapeDrawable) drawable).getPaint().setColor(color);
+        } else {
+            drawable.setColorFilter(new PorterDuffColorFilter(color, PorterDuff.Mode.MULTIPLY));
+        }
+    }
+
+    /** Port of upstream setDrawableColorByKey. */
+    public static void setDrawableColorByKey(Drawable drawable, int key) {
+        setDrawableColor(drawable, getColor(key));
+    }
+
+    private static void applyDialogsColors() {
+        dialogs_namePaint.setColor(getColor(key_chats_name));
+        dialogs_messagePaint.setColor(getColor(key_chats_message));
+        dialogs_timePaint.setColor(getColor(key_chats_date));
+        dialogs_countTextPaint.setColor(getColor(key_chats_unreadCounterText));
+        dialogs_countPaint.setColor(getColor(key_chats_unreadCounter));
+        dialogs_countGrayPaint.setColor(getColor(key_chats_unreadCounterMuted));
+        dialogs_pinnedPaint.setColor(getColor(key_chats_pinnedIcon));
+        dialogs_pinnedBgPaint.setColor(getColor(key_chats_pinnedOverlay));
+        setDrawableColorByKey(dialogs_pinnedDrawable2, key_chats_pinnedIcon);
+        dialogs_dividerPaint.setColor(getColor(key_divider));
     }
 
     public static ThemeInfo getTheme(String key) {
@@ -443,12 +550,15 @@ public final class Theme {
     }
 
     public static RippleDrawable getSelectorDrawable(boolean whiteBackground) {
-        return createSelectorDrawable(getColor(whiteBackground ? key_actionBarDefaultSelector : key_listSelector));
+        return createSelectorDrawable(
+            getColor(whiteBackground ? key_actionBarDefaultSelector : key_listSelector),
+            RIPPLE_MASK_ALL
+        );
     }
 
     /** ADAPTED: getSelectorDrawable by color key for RecyclerListView. */
     public static Drawable getSelectorDrawable(int color, boolean whiteBackground) {
-        return createSelectorDrawable(color);
+        return createSelectorDrawable(color, RIPPLE_MASK_ALL);
     }
 
     /** ADAPTED: createRadSelectorDrawable for RecyclerListView rounded selectors. */
@@ -593,6 +703,7 @@ public final class Theme {
             currentColors.put(colors.keyAt(i), colors.valueAt(i));
         }
         themeGeneration++;
+        applyDialogsColors();
     }
 
     private static void notifyThemeChanged() {
@@ -660,6 +771,23 @@ public final class Theme {
         themeInfo.colors.put(key_chats_unreadCounterMuted, 0xffbcbeb1);
         themeInfo.colors.put(key_chats_actionBackground, 0xff1e7755);
         themeInfo.colors.put(key_avatar_text, 0xffffffff);
+
+        // Avatar palette — matches upstream Theme defaults so monogram avatars
+        // look identical across NativeDo and Telegram screenshots.
+        themeInfo.colors.put(key_avatar_backgroundRed, 0xffFF845E);
+        themeInfo.colors.put(key_avatar_backgroundOrange, 0xffFEBB5B);
+        themeInfo.colors.put(key_avatar_backgroundViolet, 0xffB694F9);
+        themeInfo.colors.put(key_avatar_backgroundGreen, 0xff9AD164);
+        themeInfo.colors.put(key_avatar_backgroundCyan, 0xff5BCBE3);
+        themeInfo.colors.put(key_avatar_backgroundBlue, 0xff5CAFFA);
+        themeInfo.colors.put(key_avatar_backgroundPink, 0xffFF8AAC);
+        themeInfo.colors.put(key_avatar_background2Red, 0xffD45246);
+        themeInfo.colors.put(key_avatar_background2Orange, 0xffF68136);
+        themeInfo.colors.put(key_avatar_background2Violet, 0xff6C61DF);
+        themeInfo.colors.put(key_avatar_background2Green, 0xff46BA43);
+        themeInfo.colors.put(key_avatar_background2Cyan, 0xff359AD4);
+        themeInfo.colors.put(key_avatar_background2Blue, 0xff408ACF);
+        themeInfo.colors.put(key_avatar_background2Pink, 0xffD95574);
         return themeInfo;
     }
 
@@ -726,6 +854,24 @@ public final class Theme {
         themeInfo.colors.put(key_chats_unreadCounterMuted, 0xff464a52);
         themeInfo.colors.put(key_chats_actionBackground, -10177041);
         themeInfo.colors.put(key_avatar_text, 0xffffffff);
+
+        // Avatar palette — share the light palette since both gradient stops
+        // already sit comfortably under white monogram text. Matches upstream
+        // dark-blue.attheme behavior (only Red/Orange override; rest fall back).
+        themeInfo.colors.put(key_avatar_backgroundRed, 0xffFF845E);
+        themeInfo.colors.put(key_avatar_backgroundOrange, 0xffFEBB5B);
+        themeInfo.colors.put(key_avatar_backgroundViolet, 0xffB694F9);
+        themeInfo.colors.put(key_avatar_backgroundGreen, 0xff9AD164);
+        themeInfo.colors.put(key_avatar_backgroundCyan, 0xff5BCBE3);
+        themeInfo.colors.put(key_avatar_backgroundBlue, 0xff5CAFFA);
+        themeInfo.colors.put(key_avatar_backgroundPink, 0xffFF8AAC);
+        themeInfo.colors.put(key_avatar_background2Red, 0xffD45246);
+        themeInfo.colors.put(key_avatar_background2Orange, 0xffF68136);
+        themeInfo.colors.put(key_avatar_background2Violet, 0xff6C61DF);
+        themeInfo.colors.put(key_avatar_background2Green, 0xff46BA43);
+        themeInfo.colors.put(key_avatar_background2Cyan, 0xff359AD4);
+        themeInfo.colors.put(key_avatar_background2Blue, 0xff408ACF);
+        themeInfo.colors.put(key_avatar_background2Pink, 0xffD95574);
         return themeInfo;
     }
 }

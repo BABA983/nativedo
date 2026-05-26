@@ -29,6 +29,7 @@ import org.telegram.ui.ActionBar.Theme
 import io.github.baba983.nativedo.ui.topic.TopicCell
 import org.telegram.ui.Components.LayoutHelper
 import org.telegram.ui.Components.RecyclerListView
+import org.telegram.ui.Components.DialogsItemAnimator
 import org.telegram.ui.Components.ScrollSlidingTextTabStrip
 import org.telegram.ui.Components.SearchStateDrawable
 import kotlinx.coroutines.CoroutineScope
@@ -150,6 +151,7 @@ class TopicListFragment : BaseFragment() {
         // List below the tab strip.
         val list = RecyclerListView(context)
         list.layoutManager = LinearLayoutManager(context)
+        list.itemAnimator = DialogsItemAnimator(list)
         val adapter = TopicListAdapter(context, appContainer.baseUrl)
         list.adapter = adapter
         list.setOnItemClickListener { view, position ->

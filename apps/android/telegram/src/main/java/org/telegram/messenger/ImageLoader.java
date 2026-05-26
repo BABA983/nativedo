@@ -254,6 +254,27 @@ public class ImageLoader {
             InputStream httpConnectionStream = null;
             boolean done = false;
 
+            // Host-app downloader takes over the entire transfer when registered.
+            // See HttpImageTask.doInBackground for rationale.
+            HttpImageDownloader downloader = getHttpImageDownloader();
+            if (!isCancelled() && downloader != null) {
+                try {
+                    boolean ok = downloader.download(
+                        url,
+                        tempFile,
+                        this::reportProgress,
+                        this::isCancelled
+                    );
+                    if (ok) {
+                        return true;
+                    }
+                } catch (Throwable e) {
+                    FileLog.e(e);
+                    canRetry = false;
+                    return false;
+                }
+            }
+
             URLConnection httpConnection = null;
             try {
                 URL downloadUrl = new URL(url);
@@ -551,6 +572,35 @@ public class ImageLoader {
         protected Boolean doInBackground(Void... voids) {
             InputStream httpConnectionStream = null;
             boolean done = false;
+
+            // Host-app downloader takes over the entire transfer when registered.
+            // This keeps product-specific concerns (auth cookies, Cloudflare
+            // clearance, UA pinning, Referer) out of vendored Telegram code.
+            HttpImageDownloader downloader = getHttpImageDownloader();
+            if (!isCancelled() && downloader != null) {
+                final String location = overrideUrl != null ? overrideUrl : cacheImage.imageLocation.path;
+                try {
+                    boolean ok = downloader.download(
+                        location,
+                        cacheImage.tempFilePath,
+                        this::reportProgress,
+                        this::isCancelled
+                    );
+                    if (ok) {
+                        if (cacheImage.tempFilePath != null) {
+                            if (!cacheImage.tempFilePath.renameTo(cacheImage.finalFilePath)) {
+                                cacheImage.finalFilePath = cacheImage.tempFilePath;
+                            }
+                        }
+                        return true;
+                    }
+                    // Downloader chose to defer — fall through to upstream path.
+                } catch (Throwable e) {
+                    FileLog.e(e);
+                    canRetry = false;
+                    return false;
+                }
+            }
 
             if (!isCancelled()) {
                 try {
@@ -2040,6 +2090,53 @@ public class ImageLoader {
     }
 
     private static volatile ImageLoader Instance = null;
+
+    /**
+     * Host-app SPI for downloading HTTP images. When registered, ImageLoader's
+     * {@code HttpFileTask} and {@code HttpImageTask} delegate the actual transfer
+     * to this downloader instead of going through their own {@link HttpURLConnection}.
+     *
+     * <p>The host app's downloader is expected to handle product-specific concerns
+     * like authentication cookies, Cloudflare clearance, User-Agent pinning, and
+     * any required Referer/Origin headers. ImageLoader does not pass that
+     * knowledge across the module boundary.
+     *
+     * <p>If no downloader is registered, both tasks fall back to upstream's
+     * {@link HttpURLConnection} code path verbatim.
+     */
+    public interface HttpImageDownloader {
+        interface ProgressListener {
+            void onProgress(long loaded, long total);
+        }
+        interface CancelSignal {
+            boolean isCancelled();
+        }
+
+        /**
+         * Stream the contents of {@code url} into {@code dest}. The destination
+         * file is opened/closed by the implementation. Implementations should
+         * poll {@code cancelSignal} between reads so cancellation is responsive,
+         * and call {@code progress} as bytes arrive (matching upstream
+         * {@code reportProgress} cadence).
+         *
+         * @return true if the file was fully written; false to fall back to the
+         *         upstream {@link HttpURLConnection} path.
+         */
+        boolean download(String url,
+                         File dest,
+                         ProgressListener progress,
+                         CancelSignal cancelSignal) throws Exception;
+    }
+
+    private static volatile HttpImageDownloader httpImageDownloader;
+
+    public static void setHttpImageDownloader(HttpImageDownloader downloader) {
+        httpImageDownloader = downloader;
+    }
+
+    public static HttpImageDownloader getHttpImageDownloader() {
+        return httpImageDownloader;
+    }
 
     public static ImageLoader getInstance() {
         ImageLoader localInstance = Instance;

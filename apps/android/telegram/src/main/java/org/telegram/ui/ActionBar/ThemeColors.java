@@ -63,6 +63,59 @@ public final class ThemeColors {
         defaultColors[key_windowBackgroundWhiteBlueHeader] = 0xff4092cd;
         defaultColors[key_windowBackgroundGrayShadow] = 0xffd9d9d9;
         defaultColors[key_dialogBackground] = 0xffffffff;
+
+        // ActionBar action-mode + tab strip
+        defaultColors[key_actionBarActionModeDefaultSelector] = 0xffe2e2e2;
+        defaultColors[key_actionBarTabActiveText] = 0xff1e7755;
+        defaultColors[key_actionBarTabLine] = 0xff1e7755;
+        defaultColors[key_actionBarTabSelector] = 0x14000000;
+        defaultColors[key_actionBarTabUnactiveText] = 0xff6b6f63;
+
+        // Chat composer / panel
+        defaultColors[key_chat_messagePanelBackground] = 0xffffffff;
+        defaultColors[key_chat_messagePanelShadow] = 0xff000000;
+
+        // Settings / fast scroll / progress
+        defaultColors[key_settings_listSelector] = 0xffe8e8d8;
+        defaultColors[key_fastScrollActive] = 0xff999999;
+        defaultColors[key_fastScrollInactive] = 0xffc4c4c4;
+        defaultColors[key_fastScrollText] = 0xffffffff;
+        defaultColors[key_progressCircle] = 0xff1e7755;
+
+        // Pull-to-refresh / archive
+        defaultColors[key_avatar_backgroundArchivedHidden] = 0xffc6c9ce;
+        defaultColors[key_chats_archivePullDownBackground] = 0xffc6c9ce;
+        defaultColors[key_chats_archivePullDownBackgroundActive] = 0xff66a9e0;
+
+        // DialogCell / TopicCell — text, badge, pinned dot, action background.
+        defaultColors[key_chats_name] = 0xff20251f;
+        defaultColors[key_chats_nameMessage] = 0xff1e7755;
+        defaultColors[key_chats_message] = 0xff6b6f63;
+        defaultColors[key_chats_date] = 0xff95968a;
+        defaultColors[key_chats_pinnedIcon] = 0xff95968a;
+        defaultColors[key_chats_pinnedOverlay] = 0xfff0eee5;
+        defaultColors[key_chats_unreadCounter] = 0xff1e7755;
+        defaultColors[key_chats_unreadCounterText] = 0xffffffff;
+        defaultColors[key_chats_unreadCounterMuted] = 0xffbcbeb1;
+        defaultColors[key_chats_actionBackground] = 0xff1e7755;
+
+        // Avatar palette defaults — matches upstream
+        // ThemeColors.defaultColors[key_avatar_background*].
+        defaultColors[key_avatar_backgroundRed] = 0xffFF845E;
+        defaultColors[key_avatar_background2Red] = 0xffD45246;
+        defaultColors[key_avatar_backgroundOrange] = 0xffFEBB5B;
+        defaultColors[key_avatar_background2Orange] = 0xffF68136;
+        defaultColors[key_avatar_backgroundViolet] = 0xffB694F9;
+        defaultColors[key_avatar_background2Violet] = 0xff6C61DF;
+        defaultColors[key_avatar_backgroundGreen] = 0xff9AD164;
+        defaultColors[key_avatar_background2Green] = 0xff46BA43;
+        defaultColors[key_avatar_backgroundCyan] = 0xff5BCBE3;
+        defaultColors[key_avatar_background2Cyan] = 0xff359AD4;
+        defaultColors[key_avatar_backgroundBlue] = 0xff5CAFFA;
+        defaultColors[key_avatar_background2Blue] = 0xff408ACF;
+        defaultColors[key_avatar_backgroundPink] = 0xffFF8AAC;
+        defaultColors[key_avatar_background2Pink] = 0xffD95574;
+        defaultColors[key_avatar_text] = 0xffffffff;
         return defaultColors;
     }
 }

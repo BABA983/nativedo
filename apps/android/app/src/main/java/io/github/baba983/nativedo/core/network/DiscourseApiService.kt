@@ -112,6 +112,8 @@ data class TopicDto(
     @SerialName("reply_count")
     val replyCount: Int = 0,
     val views: Int = 0,
+    @SerialName("like_count")
+    val likeCount: Int = 0,
     @SerialName("last_posted_at")
     val lastPostedAt: String = "",
     @SerialName("category_id")
@@ -119,8 +121,13 @@ data class TopicDto(
     @SerialName("last_poster_username")
     val lastPosterUsername: String? = null,
     val pinned: Boolean = false,
+    @SerialName("pinned_globally")
+    val pinnedGlobally: Boolean = false,
+    @SerialName("is_hot")
+    val isHot: Boolean = false,
     @Serializable(with = TopicTagListSerializer::class)
     val tags: List<String> = emptyList(),
+    val excerpt: String = "",
     val posters: List<PosterDto> = emptyList(),
     @SerialName("unread_posts")
     val unreadPosts: Int = 0,
@@ -479,11 +486,15 @@ private fun TopicDto.toTopicSummary(
         slug = slug,
         replyCount = replyCount,
         viewCount = views,
+        likeCount = likeCount,
         lastPostedAt = lastPostedAt,
         categoryId = categoryId,
         lastPosterUsername = lastPosterUsername.orEmpty().ifBlank { recentPosterUser?.username.orEmpty() },
-        isPinned = pinned,
+        isPinned = pinned || pinnedGlobally,
+        isPinnedGlobally = pinnedGlobally,
+        isHot = isHot,
         tags = tags,
+        excerpt = excerpt,
         unreadCount = if (notificationLevel != null && notificationLevel >= 2) unreadPosts else 0,
         isUnseen = unseen,
         isMuted = notificationLevel == 0,

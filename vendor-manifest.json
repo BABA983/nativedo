@@ -177,7 +177,13 @@
       "notes": [
         "Repurposed DialogCell for Discourse topics. Native Feature, but",
         "measurement and drawing subsystems are still upstream-shaped per",
-        "AGENTS.md forced-exact rules."
+        "AGENTS.md forced-exact rules.",
+        "MovableCell SPI implemented for DialogsItemAnimator: setMoving/setClipProgress/",
+        "setTopClip/setBottomClip + clipRect in onDraw mirror DialogCell upstream.",
+        "SDK 24 clipRect fallback (drawRect with windowBackgroundWhite) intentionally omitted.",
+        "Discourse additions over DialogCell: is_hot badge, like_count in message preview,",
+        "tag pills row, excerpt-based message preview, pinned background overlay,",
+        "muted-counter gray pill. Row height expands for tags row."
       ]
     },
     {
@@ -237,7 +243,20 @@
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native",
-      "notes": "Monogram-only subset: no TLRPC peer colors, deleted-user icon, archive icon, or forum icon. Color palette and drawing shape match upstream.",
+      "notes": [
+        "Structurally vendored AVATAR_TYPE_NORMAL path. Preserves upstream namePaint",
+        "config, StaticLayout layout, dp(50) scale ratio, gradient shader caching,",
+        "canvas save/translate/scale order, and drawCircle/drawRoundRect branch.",
+        "Removed: all non-NORMAL avatar types and Theme.avatarDrawables icons,",
+        "drawDeleted, customIconDrawable, isProfile, archivedAvatarProgress,",
+        "rotate45Background, hasAdvancedGradient/GradientTools, needApplyColorAccent,",
+        "Emoji.parseEmojis/replaceEmoji, all TLRPC setInfo overloads, setPeerColor,",
+        "getNameColorNameForId, getProfile*ForId, getButton*/getIcon*ForId, and the",
+        "Theme.ResourcesProvider parameter (NativeDo Theme.getColor takes no provider).",
+        "Palette and background paint now go through Theme: Theme.keys_avatar_background[]",
+        "and Theme.avatar_backgroundPaint match upstream wiring exactly.",
+        "Added setRoundRadius(int[]) overload for legacy call sites; first element wins."
+      ],
       "forced_exact": [
         "drawing"
       ]
@@ -436,7 +455,14 @@
       "upstream": "org/telegram/messenger/ImageLoader.java",
       "vendored_at": "009e97356",
       "modified": true,
-      "port_mode": "native"
+      "port_mode": "native",
+      "notes": [
+        "Adds HttpImageDownloader SPI: when the host app registers a downloader,",
+        "HttpFileTask and HttpImageTask delegate the transfer to it; otherwise the",
+        "upstream HttpURLConnection path runs verbatim. Lets :app handle product",
+        "concerns (auth cookies, Cloudflare clearance, UA, Referer) via OkHttp",
+        "interceptors without leaking that knowledge into vendored code."
+      ]
     },
     {
       "local": "telegram/src/main/java/org/telegram/messenger/ImageReceiver.java",
@@ -593,6 +619,33 @@
       "port_mode": "native"
     },
     {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/DialogsItemAnimator.java",
+      "upstream": "org/telegram/ui/Components/DialogsItemAnimator.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "exact",
+      "forced_exact": ["animation"],
+      "notes": [
+        "DialogCell type abstracted to MovableCell SPI interface (host wiring).",
+        "androidx SimpleItemAnimator signatures used: animateRemove(holder), animateMove(holder,4ints),",
+        "animateChange(o,n,4ints) — upstream's ItemHolderInfo overloads come from Telegram's forked",
+        "RecyclerView and are not available here. listenToAnimationUpdates() dropped.",
+        "DialogsAdapter.LastEmptyView and DialogsEmptyCell branches removed (types not present in NativeDo).",
+        "Animation params (durations, interpolator, ObjectAnimator targets) untouched per forced_exact."
+      ]
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/AnimationProperties.java",
+      "upstream": "org/telegram/ui/Components/AnimationProperties.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "exact",
+      "notes": [
+        "CLIP_DIALOG_CELL_PROGRESS retyped Property<DialogCell,Float> -> Property<MovableCell,Float>.",
+        "PHOTO_VIEWER_ANIMATION_VALUE Property removed (PhotoViewer not in :telegram)."
+      ]
+    },
+    {
       "local": "telegram/src/main/java/org/telegram/ui/Components/LineProgressView.java",
       "upstream": "org/telegram/ui/Components/LineProgressView.java",
       "vendored_at": "009e97356",
@@ -691,6 +744,16 @@
       "upstream_dir": "TMessagesProj/src/main/res",
       "local_glob": "apps/android/app/src/main/res/drawable-*",
       "vendored_at": "009e97356"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "msg_pin_mini.png"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356",
+      "notes": "Pin icon for pinned topic rows in TopicListScreen; loaded by Theme.createDialogsResources()."
     },
     {
       "kind": "drawable",
