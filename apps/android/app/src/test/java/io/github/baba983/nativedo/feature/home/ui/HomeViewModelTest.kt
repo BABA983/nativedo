@@ -61,6 +61,31 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun switchingBackToLoadedFeedUsesCachedTabState() = runTest {
+        val repository = FakeHomeRepository(
+            HomeFeedTab.Latest to 0 to page(topicIds = listOf(101L), nextPage = 1),
+            HomeFeedTab.New to 0 to page(topicIds = listOf(202L), nextPage = null),
+        )
+        viewModel = HomeViewModel(repository)
+        viewModel.awaitState { state -> !state.isLoading && state.items.isNotEmpty() }
+
+        viewModel.onFeedSelected(HomeFeedTab.New)
+        viewModel.awaitState { state ->
+            state.selectedTab == HomeFeedTab.New && !state.isLoading && state.items.map { it.id } == listOf(202L)
+        }
+
+        viewModel.onFeedSelected(HomeFeedTab.Latest)
+
+        val state = viewModel.awaitState { state -> state.selectedTab == HomeFeedTab.Latest }
+        assertThat(state.items.map { it.id }).containsExactly(101L)
+        assertThat(state.feedState(HomeFeedTab.New).items.map { it.id }).containsExactly(202L)
+        assertThat(repository.requests).containsExactly(
+            HomeFeedTab.Latest to 0,
+            HomeFeedTab.New to 0,
+        ).inOrder()
+    }
+
+    @Test
     fun loadNextPageAppendsDistinctTopics() = runTest {
         val repository = FakeHomeRepository(
             HomeFeedTab.Latest to 0 to page(topicIds = listOf(101L), nextPage = 1),

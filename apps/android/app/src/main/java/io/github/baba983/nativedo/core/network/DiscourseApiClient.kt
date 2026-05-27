@@ -3,6 +3,7 @@ package io.github.baba983.nativedo.core.network
 import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.PostReactionUsersGroup
 import io.github.baba983.nativedo.core.model.CategorySummary
+import io.github.baba983.nativedo.core.model.SearchResult
 import io.github.baba983.nativedo.core.model.TopicDetail
 import io.github.baba983.nativedo.core.model.TopicListPage
 import io.github.baba983.nativedo.core.model.UserProfile
@@ -41,6 +42,9 @@ class DiscourseApiClient(
 
     suspend fun fetchTopPage(page: Int): TopicListPage =
         service.topTopics(page).toModel()
+
+    suspend fun search(query: String, page: Int = 0): SearchResult =
+        service.search(query = query, page = page).toModel()
 
     suspend fun fetchCategories(): List<CategorySummary> =
         service.site().toModel()

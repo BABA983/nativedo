@@ -56,6 +56,7 @@ public class ActionBar extends FrameLayout {
     private ActionBarMenuOnItemClick actionBarMenuOnItemClick;
     private boolean occupyStatusBar = true;
     private boolean castShadows = SharedConfig.drawActionBarShadow;
+    private boolean addToContainer = true;
 
     public ActionBar(Context context) {
         super(context);
@@ -159,15 +160,19 @@ public class ActionBar extends FrameLayout {
         invalidate();
     }
 
+    public boolean shouldAddToContainer() {
+        return addToContainer;
+    }
+
+    public void setAddToContainer(boolean value) {
+        addToContainer = value;
+    }
+
     public void setCastShadows(boolean value) {
         if (castShadows != value) {
             castShadows = value;
             invalidate();
         }
-    }
-
-    public boolean shouldAddToContainer() {
-        return true;
     }
 
     public void setOccupyStatusBar(boolean value) {
@@ -211,6 +216,19 @@ public class ActionBar extends FrameLayout {
             MeasureSpec.makeMeasureSpec(Math.max(0, width - titleLeft - menuWidth - AndroidUtilities.dp(16)), MeasureSpec.EXACTLY),
             MeasureSpec.makeMeasureSpec(barHeight, MeasureSpec.EXACTLY)
         );
+        for (int i = 0; i < getChildCount(); i++) {
+            View child = getChildAt(i);
+            if (child == backButtonImageView || child == titleTextView || child == menu || child.getVisibility() == GONE) {
+                continue;
+            }
+            measureChildWithMargins(
+                child,
+                MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+                0,
+                MeasureSpec.makeMeasureSpec(barHeight, MeasureSpec.EXACTLY),
+                0
+            );
+        }
     }
 
     @Override
@@ -232,6 +250,13 @@ public class ActionBar extends FrameLayout {
             titleLeft + titleTextView.getMeasuredWidth(),
             topInset + barHeight
         );
+        for (int i = 0; i < getChildCount(); i++) {
+            View child = getChildAt(i);
+            if (child == backButtonImageView || child == titleTextView || child == menu || child.getVisibility() == GONE) {
+                continue;
+            }
+            child.layout(0, topInset, getMeasuredWidth(), topInset + barHeight);
+        }
     }
 
     @Override

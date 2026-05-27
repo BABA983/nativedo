@@ -45,6 +45,20 @@ class DiscourseApiClientTest {
     }
 
     @Test
+    fun parsesSearchFixture() = runTest {
+        server.enqueue(jsonResponse(fixture("discourse/search.json")))
+
+        val result = client.search(query = "NativeDo", page = 0)
+
+        assertThat(result.topics.map { it.id }).containsExactly(202L, 101L).inOrder()
+        assertThat(result.topics.first().title).isEqualTo("How to configure the 5.5 model")
+        assertThat(result.topics.last().authorUsername).isEqualTo("baba")
+        assertThat(result.users.single().username).isEqualTo("baba")
+        assertThat(result.hasMore).isTrue()
+        assertThat(server.takeRequest().path).isEqualTo("/search.json?q=NativeDo&page=0")
+    }
+
+    @Test
     fun fetchCategoriesMapsNestedCategoryMetadata() = runTest {
         server.enqueue(jsonResponse(fixture("discourse/site.json")))
 

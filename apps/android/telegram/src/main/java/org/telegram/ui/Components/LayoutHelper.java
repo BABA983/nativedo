@@ -68,4 +68,13 @@ public final class LayoutHelper {
     public static LinearLayout.LayoutParams createLinear(int width, int height) {
         return new LinearLayout.LayoutParams(getSize(width), getSize(height));
     }
+
+    public static LinearLayout.LayoutParams createLinear(int width, int height, float weight, float leftMargin, float topMargin, float rightMargin, float bottomMargin) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(getSize(width), getSize(height), weight);
+        params.leftMargin = AndroidUtilities.dp(leftMargin);
+        params.topMargin = AndroidUtilities.dp(topMargin);
+        params.rightMargin = AndroidUtilities.dp(rightMargin);
+        params.bottomMargin = AndroidUtilities.dp(bottomMargin);
+        return params;
+    }
 }

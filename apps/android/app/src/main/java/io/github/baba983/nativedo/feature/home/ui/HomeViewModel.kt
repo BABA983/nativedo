@@ -22,7 +22,13 @@ class HomeViewModel(
     }
 
     fun onFeedSelected(tab: HomeFeedTab) {
-        if (tab != _uiState.value.selectedTab) {
+        val state = _uiState.value
+        if (tab == state.selectedTab) {
+            return
+        }
+        _uiState.value = state.copy(selectedTab = tab)
+        val feed = state.feedState(tab)
+        if (feed.items.isEmpty() && !feed.isLoading && feed.errorMessage == null) {
             refresh(tab, initial = true)
         }
     }
@@ -30,12 +36,16 @@ class HomeViewModel(
     fun markTopicSeen(topicId: Long) {
         val state = _uiState.value
         _uiState.value = state.copy(
-            items = state.items.map { topic ->
-                if (topic.id == topicId && (topic.isUnseen || topic.unreadCount > 0)) {
-                    topic.copy(isUnseen = false, unreadCount = 0)
-                } else {
-                    topic
-                }
+            feeds = state.feeds.mapValues { (_, feed) ->
+                feed.copy(
+                    items = feed.items.map { topic ->
+                        if (topic.id == topicId && (topic.isUnseen || topic.unreadCount > 0)) {
+                            topic.copy(isUnseen = false, unreadCount = 0)
+                        } else {
+                            topic
+                        }
+                    },
+                )
             },
         )
     }
@@ -46,36 +56,38 @@ class HomeViewModel(
 
     fun loadNextPage() {
         val state = _uiState.value
-        val nextPage = state.nextPage ?: return
-        if (state.isLoading || state.isRefreshing || state.isLoadingMore || !state.hasMore) {
+        val selectedTab = state.selectedTab
+        val feed = state.feedState(selectedTab)
+        val nextPage = feed.nextPage ?: return
+        if (feed.isLoading || feed.isRefreshing || feed.isLoadingMore || !feed.hasMore) {
             return
         }
 
         viewModelScope.launch {
-            _uiState.value = state.copy(
-                isLoadingMore = true,
-                loadMoreErrorMessage = null,
-            )
-            repository.load(state.selectedTab, nextPage).fold(
+            _uiState.value = state.updateFeed(selectedTab) { currentFeed ->
+                currentFeed.copy(
+                    isLoadingMore = true,
+                    loadMoreErrorMessage = null,
+                )
+            }
+            repository.load(selectedTab, nextPage).fold(
                 onSuccess = { page ->
-                    if (_uiState.value.selectedTab != state.selectedTab) {
-                        return@fold
+                    _uiState.value = _uiState.value.updateFeed(selectedTab) { currentFeed ->
+                        currentFeed.copy(
+                            items = (currentFeed.items + page.items).distinctBy { it.id },
+                            isLoadingMore = false,
+                            hasMore = page.hasMore,
+                            nextPage = page.nextPage,
+                        )
                     }
-                    _uiState.value = _uiState.value.copy(
-                        items = (_uiState.value.items + page.items).distinctBy { it.id },
-                        isLoadingMore = false,
-                        hasMore = page.hasMore,
-                        nextPage = page.nextPage,
-                    )
                 },
                 onFailure = { error ->
-                    if (_uiState.value.selectedTab != state.selectedTab) {
-                        return@fold
+                    _uiState.value = _uiState.value.updateFeed(selectedTab) { currentFeed ->
+                        currentFeed.copy(
+                            isLoadingMore = false,
+                            loadMoreErrorMessage = error.readableMessage(),
+                        )
                     }
-                    _uiState.value = _uiState.value.copy(
-                        isLoadingMore = false,
-                        loadMoreErrorMessage = error.readableMessage(),
-                    )
                 },
             )
         }
@@ -84,39 +96,40 @@ class HomeViewModel(
     private fun refresh(tab: HomeFeedTab, initial: Boolean) {
         viewModelScope.launch {
             val currentState = _uiState.value
-            _uiState.value = currentState.copy(
-                selectedTab = tab,
-                items = if (initial) emptyList() else currentState.items,
-                isLoading = initial,
-                isRefreshing = !initial,
-                isLoadingMore = false,
-                hasMore = if (initial) false else currentState.hasMore,
-                nextPage = if (initial) null else currentState.nextPage,
-                errorMessage = null,
-                loadMoreErrorMessage = null,
-            )
+            _uiState.value = currentState
+                .copy(selectedTab = tab)
+                .updateFeed(tab) { feed ->
+                    feed.copy(
+                        items = if (initial) emptyList() else feed.items,
+                        isLoading = initial,
+                        isRefreshing = !initial,
+                        isLoadingMore = false,
+                        hasMore = if (initial) false else feed.hasMore,
+                        nextPage = if (initial) null else feed.nextPage,
+                        errorMessage = null,
+                        loadMoreErrorMessage = null,
+                    )
+                }
             repository.load(tab, page = 0).fold(
                 onSuccess = { page ->
-                    if (_uiState.value.selectedTab != tab) {
-                        return@fold
+                    _uiState.value = _uiState.value.updateFeed(tab) { feed ->
+                        feed.copy(
+                            items = page.items,
+                            isLoading = false,
+                            isRefreshing = false,
+                            hasMore = page.hasMore,
+                            nextPage = page.nextPage,
+                        )
                     }
-                    _uiState.value = _uiState.value.copy(
-                        items = page.items,
-                        isLoading = false,
-                        isRefreshing = false,
-                        hasMore = page.hasMore,
-                        nextPage = page.nextPage,
-                    )
                 },
                 onFailure = { error ->
-                    if (_uiState.value.selectedTab != tab) {
-                        return@fold
+                    _uiState.value = _uiState.value.updateFeed(tab) { feed ->
+                        feed.copy(
+                            isLoading = false,
+                            isRefreshing = false,
+                            errorMessage = error.readableMessage(),
+                        )
                     }
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        isRefreshing = false,
-                        errorMessage = error.readableMessage(),
-                    )
                 },
             )
         }
@@ -131,6 +144,11 @@ class HomeViewModel(
         }
     }
 }
+
+private fun HomeUiState.updateFeed(
+    tab: HomeFeedTab,
+    transform: (HomeFeedState) -> HomeFeedState,
+): HomeUiState = copy(feeds = feeds + (tab to transform(feedState(tab))))
 
 internal fun Throwable.readableMessage(): String =
     message?.takeIf(String::isNotBlank) ?: javaClass.simpleName

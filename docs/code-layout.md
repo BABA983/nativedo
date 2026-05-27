@@ -24,12 +24,12 @@ apps/android/
 │       │   ├── home/
 │       │   ├── topic/
 │       │   └── profile/
-│       └── ui/                         ← NativeDo-original views, Compose
-│           │                             screens, and *native ports* of
+│       └── ui/                         ← NativeDo-original views and
+│           │                             *native ports* of
 │           │                             Telegram-derived widgets that bind
 │           │                             to NativeDo data models.
 │           ├── topic/                  ← TopicCell (native port of DialogCell),
-│           │                             TopicListScreen.kt, etc.
+│           │                             TopicListFragment.kt, etc.
 │           ├── main/                   ← Custom ActionBar + tab host.
 │           ├── browser/                ← WebView-based session login,
 │           │                             Cloudflare fallback.

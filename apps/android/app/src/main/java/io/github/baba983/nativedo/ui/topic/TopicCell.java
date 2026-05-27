@@ -73,6 +73,13 @@ import java.util.Map;
  */
 public class TopicCell extends View implements MovableCell, Theme.Colorable {
 
+    public static final int MASK_UNREAD = 1;
+    public static final int MASK_REPLY_COUNT = 1 << 1;
+    public static final int MASK_LAST_POSTED = 1 << 2;
+    public static final int MASK_PINNED = 1 << 3;
+    public static final int MASK_MUTED = 1 << 4;
+    public static final int MASK_FULL = 1 << 5;
+
     // ===== Layout constants (mirror DialogCell) =====
     public int heightDefault = 70;
     public int avatarStart = 11;
@@ -145,6 +152,7 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
     private final ImageReceiver avatarImage;
     private final AvatarDrawable avatarDrawable;
     private Drawable pinnedDrawable;
+    private String avatarTemplate;
 
     public TopicCell(@NonNull Context context) {
         super(context);
@@ -171,16 +179,102 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
     }
 
     public void setTopic(@NonNull TopicSummary topic, @NonNull String baseUrl) {
+        TopicSummary previousTopic = this.topic;
         this.topic = topic;
         resolveCategory();
         loadAvatar(baseUrl);
-        lastWidth = 0;
-        requestLayout();
+        if (previousTopic == null || previousTopic.getId() != topic.getId() || !sameTextLayoutInputs(previousTopic, topic)) {
+            lastWidth = 0;
+            requestLayout();
+        } else {
+            int width = getMeasuredWidth();
+            if (width > 0) {
+                lastWidth = width;
+                buildLayout(width);
+            }
+        }
+        invalidate();
+    }
+
+    public void setTopic(@NonNull TopicSummary topic, @NonNull String baseUrl, int payloadMask) {
+        update(topic, payloadMask, baseUrl);
+    }
+
+    public void update(@NonNull TopicSummary topic, int mask) {
+        update(topic, mask, null);
+    }
+
+    private void update(@NonNull TopicSummary topic, int mask, @Nullable String baseUrl) {
+        TopicSummary previousTopic = this.topic;
+        if (previousTopic == null || previousTopic.getId() != topic.getId() || mask == 0) {
+            if (baseUrl != null) {
+                setTopic(topic, baseUrl);
+            } else {
+                this.topic = topic;
+                lastWidth = 0;
+                requestLayout();
+                invalidate();
+            }
+            return;
+        }
+
+        this.topic = topic;
+        resolveCategory();
+
+        if (baseUrl != null && avatarChanged(previousTopic, topic)) {
+            loadAvatar(baseUrl);
+        }
+
+        int width = getMeasuredWidth();
+        if ((mask & MASK_FULL) != 0 || !sameTextLayoutInputs(previousTopic, topic)) {
+            if (width > 0) {
+                lastWidth = width;
+                buildLayout(width);
+            } else {
+                lastWidth = 0;
+                requestLayout();
+            }
+            invalidate();
+            return;
+        }
+
+        if (width > 0) {
+            lastWidth = width;
+            if ((mask & (MASK_LAST_POSTED | MASK_PINNED)) != 0) {
+                buildTimeLayout(width);
+                buildNameLayout(width);
+            }
+            if ((mask & (MASK_UNREAD | MASK_REPLY_COUNT | MASK_MUTED)) != 0) {
+                buildCountLayout(width);
+                buildActivityLayout(width);
+            }
+        } else {
+            lastWidth = 0;
+            requestLayout();
+        }
         invalidate();
     }
 
     public @Nullable TopicSummary getTopic() {
         return topic;
+    }
+
+    private static boolean avatarChanged(@NonNull TopicSummary oldTopic, @NonNull TopicSummary newTopic) {
+        return !equals(oldTopic.getAuthorUsername(), newTopic.getAuthorUsername()) ||
+            !equals(oldTopic.getAuthorAvatarTemplate(), newTopic.getAuthorAvatarTemplate());
+    }
+
+    private static boolean sameTextLayoutInputs(@NonNull TopicSummary oldTopic, @NonNull TopicSummary newTopic) {
+        return equals(oldTopic.getTitle(), newTopic.getTitle()) &&
+            equals(oldTopic.getLastPosterUsername(), newTopic.getLastPosterUsername()) &&
+            equals(oldTopic.getCategoryId(), newTopic.getCategoryId()) &&
+            equals(oldTopic.getTags(), newTopic.getTags()) &&
+            oldTopic.isPinned() == newTopic.isPinned() &&
+            oldTopic.isHot() == newTopic.isHot();
+    }
+
+    private static boolean equals(@Nullable Object a, @Nullable Object b) {
+        return a == b || (a != null && a.equals(b));
     }
 
     private void resolveCategory() {
@@ -222,6 +316,10 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
         avatarImage.setImageCoords(dp(avatarStart), dp(9), avatarSize, avatarSize);
 
         String template = topic.getAuthorAvatarTemplate();
+        if (equals(avatarTemplate, template)) {
+            return;
+        }
+        avatarTemplate = template;
         if (template == null || template.isEmpty()) {
             avatarImage.setImage(null, null, avatarDrawable, null, topic, 0);
             return;
@@ -243,12 +341,22 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
     }
 
     private void buildLayout(int width) {
-        drawPin = topic.isPinned();
+        buildAvatarLayout();
+        buildTimeLayout(width);
+        buildCountLayout(width);
+        buildNameLayout(width);
+        buildActivityLayout(width);
+    }
 
+    private void buildAvatarLayout() {
         // ===== Avatar =====
         avatarTop = dp(9);
         avatarLeft = dp(avatarStart);
         avatarRect.set(avatarLeft, avatarTop, avatarLeft + dp(52), avatarTop + dp(52));
+    }
+
+    private void buildTimeLayout(int width) {
+        drawPin = topic.isPinned();
 
         // ===== Pin bubble (left of time, mirrors DialogCell pinnedDrawable2) =====
 
@@ -261,7 +369,9 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
         timeLeft = width - dp(15) - timeWidth - (int) pinOffset;
         timeLayout = new StaticLayout(timeText, Theme.dialogs_timePaint, Math.max(0, timeWidth + dp(2)),
             Layout.Alignment.ALIGN_NORMAL, 1f, 0f, false);
+    }
 
+    private void buildCountLayout(int width) {
         // ===== Row 2 right: reply count or unread badge =====
         int unread = topic.getUnreadCount();
         int replies = topic.getReplyCount();
@@ -289,10 +399,13 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
             drawCount = false;
             countIsHot = false;
         }
+    }
 
+    private void buildNameLayout(int width) {
         // ===== Row 1: Title (left, ends before time+pin area) =====
         nameLeft = dp(messagePaddingStart + 4);
         // Pinned: time + pin bubble together occupy more right-side space.
+        float pinOffset = drawPin ? dp(20) : 0;
         int timeInset = timeWidth > 0 ? timeWidth + dp(24) + (int) pinOffset : dp(16);
         nameWidth = width - nameLeft - timeInset;
         if (nameWidth < dp(20)) nameWidth = dp(20);
@@ -301,7 +414,9 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
             Theme.dialogs_namePaint, nameWidth, TextUtils.TruncateAt.END);
         nameLayout = new StaticLayout(ellipsizedName, Theme.dialogs_namePaint, nameWidth,
             Layout.Alignment.ALIGN_NORMAL, 1f, 0f, false);
+    }
 
+    private void buildActivityLayout(int width) {
         // ===== Row 2 vertical position =====
         row2Top = dp(39);
 

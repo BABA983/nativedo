@@ -31,9 +31,11 @@ import android.text.TextUtils;
 import android.text.TextWatcher;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.FrameLayout;
@@ -45,6 +47,8 @@ import androidx.core.content.ContextCompat;
 
 import org.telegram.messenger.R;
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.ui.Adapters.FiltersView;
+import org.telegram.ui.Components.CloseProgressDrawable2;
 import org.telegram.ui.Components.LayoutHelper;
 
 public class ActionBarMenuItem extends FrameLayout {
@@ -74,6 +78,7 @@ public class ActionBarMenuItem extends FrameLayout {
     private boolean isSearchField;
     private FrameLayout searchContainer;
     private EditText searchField;
+    private ImageView clearButton;
     private ActionBarMenuItemSearchListener searchListener;
 
     public ActionBarMenuItem(Context context, ActionBarMenu menu, int backgroundColor, int iconColor) {
@@ -186,10 +191,12 @@ public class ActionBarMenuItem extends FrameLayout {
         }
         setSearchLayoutExpanded(true);
         searchContainer.setVisibility(VISIBLE);
+        searchContainer.setAlpha(1f);
         if (iconView != null) {
             iconView.setVisibility(GONE);
         }
         searchField.setText("");
+        updateClearButton(false);
         searchField.requestFocus();
         if (openKeyboard) {
             InputMethodManager inputMethodManager = searchField.getContext().getSystemService(InputMethodManager.class);
@@ -211,6 +218,7 @@ public class ActionBarMenuItem extends FrameLayout {
         }
         searchField.clearFocus();
         searchField.setText("");
+        updateClearButton(false);
         searchContainer.setVisibility(GONE);
         if (iconView != null) {
             iconView.setVisibility(VISIBLE);
@@ -330,6 +338,7 @@ public class ActionBarMenuItem extends FrameLayout {
         if (textView != null) {
             textView.setTextColor(color);
         }
+        updateSearchFieldColors();
     }
 
     public void setPopupItemsColor(int color, boolean icon) {
@@ -369,8 +378,83 @@ public class ActionBarMenuItem extends FrameLayout {
         updatePopupBackground();
     }
 
-    public View getIconView() {
+    public ImageView getIconView() {
         return iconView;
+    }
+
+    /** Minimal Telegram search filter chip used by FragmentSearchField. */
+    public static class SearchFilterView extends FrameLayout {
+        private final Theme.ResourcesProvider resourcesProvider;
+        private final ImageView iconView;
+        private final TextView textView;
+        private FiltersView.MediaFilterData filter;
+        private boolean selectedForDelete;
+        private boolean expanded;
+
+        public SearchFilterView(Context context, Theme.ResourcesProvider resourcesProvider, boolean removable) {
+            super(context);
+            this.resourcesProvider = resourcesProvider;
+            setWillNotDraw(false);
+            setPadding(AndroidUtilities.dp(10), 0, AndroidUtilities.dp(10), 0);
+
+            iconView = new ImageView(context);
+            iconView.setScaleType(ImageView.ScaleType.CENTER);
+            addView(iconView, LayoutHelper.createFrame(20, 20, Gravity.CENTER_VERTICAL | Gravity.LEFT));
+
+            textView = new TextView(context);
+            textView.setSingleLine(true);
+            textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+            textView.setGravity(Gravity.CENTER_VERTICAL);
+            addView(textView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.MATCH_PARENT, Gravity.CENTER_VERTICAL | Gravity.LEFT, 26, 0, 0, 0));
+            updateColors();
+        }
+
+        public void setData(FiltersView.MediaFilterData filter) {
+            this.filter = filter;
+            textView.setText(filter != null ? filter.getTitle() : null);
+            if (filter != null && filter.iconResFilled != 0) {
+                iconView.setImageResource(filter.iconResFilled);
+                iconView.setVisibility(VISIBLE);
+            } else {
+                iconView.setVisibility(GONE);
+            }
+            requestLayout();
+        }
+
+        public FiltersView.MediaFilterData getFilter() {
+            return filter;
+        }
+
+        public void setExpanded(boolean expanded) {
+            this.expanded = expanded;
+            selectedForDelete = false;
+            updateColors();
+        }
+
+        public boolean isSelectedForDelete() {
+            return selectedForDelete;
+        }
+
+        public void setSelectedForDelete(boolean selectedForDelete) {
+            this.selectedForDelete = selectedForDelete;
+            updateColors();
+        }
+
+        public void updateColors() {
+            int textColor = Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider);
+            int selectorColor = Theme.getColor(Theme.key_listSelector, resourcesProvider);
+            textView.setTextColor(textColor);
+            iconView.setColorFilter(new PorterDuffColorFilter(Theme.multAlpha(textColor, 0.65f), PorterDuff.Mode.MULTIPLY));
+            int backgroundColor = Theme.multAlpha(textColor, selectedForDelete ? 0.16f : expanded ? 0.12f : 0.08f);
+            setBackground(Theme.createSimpleSelectorRoundRectDrawable(AndroidUtilities.dp(16), backgroundColor, selectorColor, backgroundColor));
+        }
+    }
+
+    /** Reaction-specific chip shell; NativeDo does not render reaction artwork yet. */
+    public static class ReactionFilterView extends SearchFilterView {
+        public ReactionFilterView(Context context, Theme.ResourcesProvider resourcesProvider, boolean removable) {
+            super(context, resourcesProvider, removable);
+        }
     }
 
     private void checkCreateSearchField() {
@@ -379,14 +463,15 @@ public class ActionBarMenuItem extends FrameLayout {
         }
         searchContainer = new FrameLayout(getContext());
         searchContainer.setVisibility(GONE);
-        searchContainer.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        searchContainer.setClipChildren(false);
         searchField = new EditText(getContext());
         searchField.setSingleLine(true);
-        searchField.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
-        searchField.setHintTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
         searchField.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 18);
         searchField.setBackground(null);
-        searchField.setPadding(AndroidUtilities.dp(8), 0, AndroidUtilities.dp(16), 0);
+        searchField.setPadding(0, 0, 0, 0);
+        searchField.setImeOptions(EditorInfo.IME_FLAG_NO_FULLSCREEN | EditorInfo.IME_ACTION_SEARCH);
+        searchField.setInputType(searchField.getInputType() | EditorInfo.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        updateSearchFieldColors();
         searchField.addTextChangedListener(new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {
@@ -401,16 +486,94 @@ public class ActionBarMenuItem extends FrameLayout {
                 if (searchListener != null) {
                     searchListener.onTextChanged(searchField);
                 }
+                updateClearButton(true);
             }
         });
         searchField.setOnEditorActionListener((v, actionId, event) -> {
-            if (searchListener != null) {
+            if (searchListener != null && (actionId == EditorInfo.IME_ACTION_SEARCH ||
+                event != null && event.getAction() == KeyEvent.ACTION_UP && event.getKeyCode() == KeyEvent.KEYCODE_ENTER)) {
                 searchListener.onSearchPressed(searchField);
             }
             return false;
         });
-        searchContainer.addView(searchField, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.START));
+        searchContainer.addView(searchField, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 36, Gravity.CENTER_VERTICAL | Gravity.START, 6, 0, 48, 0));
+        clearButton = new ImageView(getContext());
+        clearButton.setImageDrawable(new CloseProgressDrawable2() {
+            @Override
+            protected int getCurrentColor() {
+                return parentMenu != null && parentMenu.parentActionBar != null
+                    ? parentMenu.parentActionBar.itemsColor
+                    : Theme.getColor(Theme.key_actionBarDefaultIcon);
+            }
+        });
+        clearButton.setBackground(Theme.createSelectorDrawable(
+            parentMenu != null && parentMenu.parentActionBar != null
+                ? parentMenu.parentActionBar.itemsBackgroundColor
+                : Theme.getColor(Theme.key_actionBarDefaultSelector),
+            Theme.RIPPLE_MASK_CIRCLE_20DP));
+        clearButton.setScaleType(ImageView.ScaleType.CENTER);
+        clearButton.setVisibility(INVISIBLE);
+        clearButton.setAlpha(0f);
+        clearButton.setRotation(45f);
+        clearButton.setScaleX(0f);
+        clearButton.setScaleY(0f);
+        clearButton.setOnClickListener(v -> {
+            searchField.setText("");
+            searchField.requestFocus();
+            InputMethodManager inputMethodManager = searchField.getContext().getSystemService(InputMethodManager.class);
+            if (inputMethodManager != null) {
+                inputMethodManager.showSoftInput(searchField, InputMethodManager.SHOW_IMPLICIT);
+            }
+        });
+        searchContainer.addView(clearButton, LayoutHelper.createFrame(48, LayoutHelper.MATCH_PARENT, Gravity.CENTER_VERTICAL | Gravity.RIGHT));
         addView(searchContainer, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.START));
+    }
+
+    private void updateSearchFieldColors() {
+        if (searchField == null) {
+            return;
+        }
+        searchField.setTextColor(Theme.getColor(Theme.key_actionBarDefaultTitle));
+        searchField.setHintTextColor(Theme.getColor(Theme.key_actionBarDefaultIcon));
+    }
+
+    private void updateClearButton(boolean animated) {
+        if (clearButton == null || searchField == null) {
+            return;
+        }
+        boolean visible = !TextUtils.isEmpty(searchField.getText());
+        if (visible == (clearButton.getTag() != null)) {
+            return;
+        }
+        clearButton.setTag(visible ? 1 : null);
+        clearButton.animate().cancel();
+        if (visible) {
+            clearButton.setVisibility(VISIBLE);
+        }
+        float alpha = visible ? 1f : 0f;
+        float rotation = visible ? 0f : 45f;
+        float scale = visible ? 1f : 0f;
+        if (animated) {
+            clearButton.animate()
+                .alpha(alpha)
+                .rotation(rotation)
+                .scaleX(scale)
+                .scaleY(scale)
+                .setDuration(180)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator())
+                .withEndAction(() -> {
+                    if (!visible) {
+                        clearButton.setVisibility(INVISIBLE);
+                    }
+                })
+                .start();
+        } else {
+            clearButton.setAlpha(alpha);
+            clearButton.setRotation(rotation);
+            clearButton.setScaleX(scale);
+            clearButton.setScaleY(scale);
+            clearButton.setVisibility(visible ? VISIBLE : INVISIBLE);
+        }
     }
 
     private void setSearchLayoutExpanded(boolean expanded) {

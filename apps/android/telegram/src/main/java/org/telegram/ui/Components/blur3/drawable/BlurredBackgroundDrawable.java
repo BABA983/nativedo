@@ -14,6 +14,7 @@ import androidx.annotation.Nullable;
  * actual blur rendering is not used in v1.
  */
 public class BlurredBackgroundDrawable extends Drawable {
+    private int alpha = 255;
 
     @Override
     public void draw(@NonNull Canvas canvas) {
@@ -22,6 +23,12 @@ public class BlurredBackgroundDrawable extends Drawable {
 
     @Override
     public void setAlpha(int alpha) {
+        this.alpha = alpha;
+    }
+
+    @Override
+    public int getAlpha() {
+        return alpha;
     }
 
     @Override
@@ -38,4 +45,10 @@ public class BlurredBackgroundDrawable extends Drawable {
 
     /** V1 stub for ScrollSlidingTextTabStrip compatibility. */
     public void setShadowAlpha(float alpha) {}
+
+    /** V1 stub for FragmentSearchField compatibility. */
+    public void setPadding(int padding) {}
+
+    /** V1 stub for FragmentSearchField compatibility. */
+    public void updateColors() {}
 }

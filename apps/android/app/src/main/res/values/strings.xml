@@ -8,6 +8,11 @@
     <string name="home_tab_new">New</string>
     <string name="home_tab_top">Top</string>
     <string name="search_topics_hint">Search topics</string>
+    <string name="search_filter_topics">Topics</string>
+    <string name="search_filter_posts">Posts</string>
+    <string name="search_filter_users">Users</string>
+    <string name="topic_list_pull_refresh">Pull to refresh topics</string>
+    <string name="topic_list_release_refresh">Release to refresh topics</string>
     <string name="tab_home">Home</string>
     <string name="tab_search">Search</string>
     <string name="tab_profile">Profile</string>

@@ -196,6 +196,43 @@
     },
     {
       "_comment": "components",
+      "local": "telegram/src/main/java/org/telegram/ui/Adapters/FiltersView.java",
+      "upstream": "org/telegram/ui/Adapters/FiltersView.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Minimal MediaFilterData shell for FragmentSearchField; list UI omitted until filters are wired."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/FragmentSearchField.java",
+      "upstream": "org/telegram/ui/Components/FragmentSearchField.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "exact",
+      "forced_exact": [
+        "animation",
+        "measurement",
+        "drawing"
+      ],
+      "notes": "Host-wired for NativeDo resources and Rect clip conversion; filter chips keep upstream API with minimal stubs."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/EditTextBoldCursor.java",
+      "upstream": "org/telegram/ui/Components/EditTextBoldCursor.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Minimal EditText compatibility surface required by FragmentSearchField."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/FragmentFloatingButton.java",
+      "upstream": "org/telegram/ui/Components/FragmentFloatingButton.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Minimal animated visibility helper required by FragmentSearchField."
+    },
+    {
       "local": "telegram/src/main/java/org/telegram/ui/Components/AnimatedFloat.java",
       "upstream": "org/telegram/ui/Components/AnimatedFloat.java",
       "vendored_at": "009e97356",
@@ -753,7 +790,18 @@
       "upstream_dir": "TMessagesProj/src/main/res",
       "local_glob": "apps/android/telegram/src/main/res/drawable-*",
       "vendored_at": "009e97356",
-      "notes": "Pin icon for pinned topic rows in TopicListScreen; loaded by Theme.createDialogsResources()."
+      "notes": "Pin icon for pinned topic rows in TopicCell; loaded by Theme.createDialogsResources()."
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "outline_search_1_24.xml",
+        "miniplayer_close.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/drawable",
+      "local_glob": "apps/android/telegram/src/main/res/drawable",
+      "vendored_at": "009e97356",
+      "notes": "FragmentSearchField icons; miniplayer_close substitutes Telegram's density PNG with a vector close glyph."
     },
     {
       "kind": "drawable",

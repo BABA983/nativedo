@@ -1,0 +1,40 @@
+{
+  "posts": [
+    {
+      "id": 9001,
+      "topic_id": 101,
+      "topic_title": "Welcome to NativeDo Android",
+      "username": "baba",
+      "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png",
+      "created_at": "2026-03-31T09:05:00.000Z",
+      "blurb": "NativeDo Android search result excerpt",
+      "like_count": 12,
+      "category_id": 6
+    }
+  ],
+  "topics": [
+    {
+      "id": 202,
+      "title": "How to configure the 5.5 model",
+      "slug": "how-to-configure-the-5-5-model",
+      "reply_count": 4,
+      "views": 88,
+      "like_count": 6,
+      "last_posted_at": "2026-03-31T08:30:00.000Z",
+      "last_poster_username": "searcher",
+      "category_id": 2,
+      "tags": ["ai", "llm"]
+    }
+  ],
+  "users": [
+    {
+      "username": "baba",
+      "name": "Baba",
+      "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png"
+    }
+  ],
+  "grouped_search_result": {
+    "more_posts": true,
+    "more_topics": false
+  }
+}

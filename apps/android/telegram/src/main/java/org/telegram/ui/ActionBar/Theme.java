@@ -112,6 +112,10 @@ public final class Theme {
         default Paint getPaint(String paintKey) {
             return Theme.getThemePaint(paintKey);
         }
+
+        default boolean isDark() {
+            return Theme.isCurrentThemeDark();
+        }
     }
 
     public static final int RIPPLE_MASK_CIRCLE_20DP = 1;
@@ -136,6 +140,7 @@ public final class Theme {
     public static final int key_player_progressCachedBackground = colorsCount++;
     public static final int key_text_RedBold = colorsCount++;
     public static final int key_text_RedRegular = colorsCount++;
+    public static final int key_groupcreate_cursor = colorsCount++;
 
     public static final int key_windowBackgroundWhite = colorsCount++;
     public static final int key_windowBackgroundGray = colorsCount++;
@@ -629,6 +634,27 @@ public final class Theme {
                 rect.set(getBounds());
                 canvas.drawRoundRect(rect, radius, radius, paint);
             }
+            @Override public void setAlpha(int alpha) { paint.setAlpha(alpha); }
+            @Override public void setColorFilter(ColorFilter colorFilter) { paint.setColorFilter(colorFilter); }
+            @Override public int getOpacity() { return PixelFormat.TRANSPARENT; }
+        };
+    }
+
+    /** ADAPTED: lightweight shadowed rounded rect used by FragmentSearchField section background. */
+    public static Drawable createRoundRectDrawableShadowed(int radius, int color) {
+        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        paint.setColor(color);
+        paint.setShadowLayer(AndroidUtilities.dpf2(1.5f), 0, AndroidUtilities.dp(1), 0x26000000);
+        return new Drawable() {
+            private final RectF rect = new RectF();
+
+            @Override
+            public void draw(Canvas canvas) {
+                rect.set(getBounds());
+                rect.inset(AndroidUtilities.dp(1), AndroidUtilities.dp(1));
+                canvas.drawRoundRect(rect, radius, radius, paint);
+            }
+
             @Override public void setAlpha(int alpha) { paint.setAlpha(alpha); }
             @Override public void setColorFilter(ColorFilter colorFilter) { paint.setColorFilter(colorFilter); }
             @Override public int getOpacity() { return PixelFormat.TRANSPARENT; }

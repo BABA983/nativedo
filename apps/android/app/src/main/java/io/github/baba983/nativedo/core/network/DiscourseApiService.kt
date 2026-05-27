@@ -5,6 +5,8 @@ import io.github.baba983.nativedo.core.model.PostReaction
 import io.github.baba983.nativedo.core.model.PostReactionUser
 import io.github.baba983.nativedo.core.model.PostReactionUsersGroup
 import io.github.baba983.nativedo.core.model.CategorySummary
+import io.github.baba983.nativedo.core.model.SearchResult
+import io.github.baba983.nativedo.core.model.SearchUserSummary
 import io.github.baba983.nativedo.core.model.TopicDetail
 import io.github.baba983.nativedo.core.model.TopicListPage
 import io.github.baba983.nativedo.core.model.TopicSummary
@@ -44,6 +46,12 @@ interface DiscourseApiService {
 
     @GET("top.json")
     suspend fun topTopics(@Query("page") page: Int): TopicListResponseDto
+
+    @GET("search.json")
+    suspend fun search(
+        @Query("q") query: String,
+        @Query("page") page: Int,
+    ): SearchResponseDto
 
     @GET("site.json")
     suspend fun site(): SiteResponseDto
@@ -105,7 +113,9 @@ data class TopicListDto(
 @Serializable
 data class TopicDto(
     val id: Long,
-    val title: String,
+    val title: String = "",
+    @SerialName("fancy_title")
+    val fancyTitle: String = "",
     @SerialName("image_url")
     val imageUrl: String? = null,
     val slug: String = "",
@@ -134,6 +144,50 @@ data class TopicDto(
     val unseen: Boolean = false,
     @SerialName("notification_level")
     val notificationLevel: Int? = null,
+)
+
+@Serializable
+data class SearchResponseDto(
+    val topics: List<TopicDto> = emptyList(),
+    val posts: List<SearchPostDto> = emptyList(),
+    val users: List<SearchUserDto> = emptyList(),
+    @SerialName("grouped_search_result")
+    val groupedSearchResult: GroupedSearchResultDto? = null,
+)
+
+@Serializable
+data class GroupedSearchResultDto(
+    @SerialName("more_posts")
+    val morePosts: Boolean = false,
+    @SerialName("more_topics")
+    val moreTopics: Boolean = false,
+)
+
+@Serializable
+data class SearchPostDto(
+    val id: Long,
+    @SerialName("topic_id")
+    val topicId: Long,
+    @SerialName("topic_title")
+    val topicTitle: String = "",
+    val username: String = "",
+    @SerialName("avatar_template")
+    val avatarTemplate: String = "",
+    @SerialName("created_at")
+    val createdAt: String = "",
+    val blurb: String = "",
+    @SerialName("like_count")
+    val likeCount: Int = 0,
+    @SerialName("category_id")
+    val categoryId: Int? = null,
+)
+
+@Serializable
+data class SearchUserDto(
+    val username: String = "",
+    val name: String = "",
+    @SerialName("avatar_template")
+    val avatarTemplate: String = "",
 )
 
 @Serializable
@@ -379,6 +433,29 @@ internal fun TopicListResponseDto.toModel(): TopicListPage = TopicListPage(
     moreTopicsUrl = topicList.moreTopicsUrl,
 )
 
+internal fun SearchResponseDto.toModel(): SearchResult {
+    val topicHits = topics.map { topic ->
+        topic.toTopicSummary(usersById = emptyMap())
+    }
+    val postTopicHits = posts
+        .filter { post -> topicHits.none { topic -> topic.id == post.topicId } }
+        .map { post -> post.toTopicSummary() }
+    return SearchResult(
+        topics = topicHits,
+        posts = postTopicHits,
+        users = users.mapNotNull { user ->
+            user.username.takeIf(String::isNotBlank)?.let { username ->
+                SearchUserSummary(
+                    username = username,
+                    name = user.name,
+                    avatarTemplate = user.avatarTemplate,
+                )
+            }
+        },
+        hasMore = groupedSearchResult?.let { result -> result.moreTopics || result.morePosts } ?: false,
+    )
+}
+
 internal fun SiteResponseDto.toModel(): List<CategorySummary> = (
     categories.takeIf { it.isNotEmpty() } ?: categoryList?.categories.orEmpty()
     ).flatMap { category ->
@@ -479,7 +556,7 @@ private fun TopicDto.toTopicSummary(
 
     return TopicSummary(
         id = id,
-        title = title,
+        title = title.ifBlank { fancyTitle },
         authorUsername = posterUser?.username.orEmpty(),
         authorAvatarTemplate = posterUser?.avatarTemplate.orEmpty(),
         imageUrl = imageUrl,
@@ -500,6 +577,18 @@ private fun TopicDto.toTopicSummary(
         isMuted = notificationLevel == 0,
     )
 }
+
+private fun SearchPostDto.toTopicSummary(): TopicSummary = TopicSummary(
+    id = topicId,
+    title = topicTitle,
+    authorUsername = username,
+    authorAvatarTemplate = avatarTemplate,
+    likeCount = likeCount,
+    lastPostedAt = createdAt,
+    categoryId = categoryId,
+    lastPosterUsername = username,
+    excerpt = blurb,
+)
 
 private fun SiteCategoryDto.flattenedModels(): List<CategorySummary> {
     return buildList {
