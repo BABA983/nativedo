@@ -34,6 +34,9 @@ import android.widget.FrameLayout;
 import android.widget.ImageView;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.core.graphics.ColorUtils;
+import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.R;
 import org.telegram.messenger.AndroidUtilities;
@@ -57,6 +60,13 @@ public class ActionBar extends FrameLayout {
     private boolean occupyStatusBar = true;
     private boolean castShadows = SharedConfig.drawActionBarShadow;
     private boolean addToContainer = true;
+    private RecyclerView adaptiveBackgroundListView;
+    private final RecyclerView.OnScrollListener adaptiveBackgroundScrollListener = new RecyclerView.OnScrollListener() {
+        @Override
+        public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
+            updateAdaptiveBackground();
+        }
+    };
 
     public ActionBar(Context context) {
         super(context);
@@ -74,7 +84,7 @@ public class ActionBar extends FrameLayout {
         addView(backButtonImageView, LayoutHelper.createFrame(54, 56, Gravity.START | Gravity.TOP));
 
         titleTextView = new SimpleTextView(context);
-        titleTextView.setTypeface(titleTextView.getTypeface(), android.graphics.Typeface.BOLD);
+        titleTextView.setTypeface(android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD));
         addView(titleTextView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 56, Gravity.TOP | Gravity.START));
         applyTheme();
     }
@@ -119,7 +129,6 @@ public class ActionBar extends FrameLayout {
     }
 
     public void applyTheme() {
-        setBackgroundColor(Theme.getColor(Theme.key_actionBarDefault));
         itemsColor = Theme.getColor(Theme.key_actionBarDefaultIcon);
         itemsBackgroundColor = Theme.getColor(Theme.key_actionBarDefaultSelector);
         titleColor = Theme.getColor(Theme.key_actionBarDefaultTitle);
@@ -133,7 +142,7 @@ public class ActionBar extends FrameLayout {
             menu.setPopupItemsSelectorColor(Theme.getColor(Theme.key_listSelector));
             menu.redrawPopup(Theme.getColor(Theme.key_actionBarDefaultSubmenuBackground));
         }
-        invalidate();
+        updateAdaptiveBackground();
     }
 
     public void setItemsColor(int color, boolean isActionMode) {
@@ -160,6 +169,32 @@ public class ActionBar extends FrameLayout {
         invalidate();
     }
 
+    public void setAdaptiveBackground(@Nullable RecyclerView listView) {
+        if (adaptiveBackgroundListView == listView) {
+            return;
+        }
+        if (adaptiveBackgroundListView != null) {
+            adaptiveBackgroundListView.removeOnScrollListener(adaptiveBackgroundScrollListener);
+        }
+        adaptiveBackgroundListView = listView;
+        if (adaptiveBackgroundListView != null) {
+            adaptiveBackgroundListView.addOnScrollListener(adaptiveBackgroundScrollListener);
+        }
+        updateAdaptiveBackground();
+    }
+
+    private void updateAdaptiveBackground() {
+        if (adaptiveBackgroundListView == null) {
+            setBackgroundColor(Theme.getColor(Theme.key_actionBarDefault));
+            setCastShadows(SharedConfig.drawActionBarShadow);
+            return;
+        }
+        int scrollOffset = adaptiveBackgroundListView.computeVerticalScrollOffset();
+        float progress = Math.min(1f, scrollOffset / (float) AndroidUtilities.dp(24));
+        setBackgroundColor(ColorUtils.setAlphaComponent(Theme.getColor(Theme.key_actionBarDefault), (int) (255 * progress)));
+        setCastShadows(progress > 0.98f && SharedConfig.drawActionBarShadow);
+    }
+
     public boolean shouldAddToContainer() {
         return addToContainer;
     }
@@ -182,8 +217,24 @@ public class ActionBar extends FrameLayout {
         }
     }
 
+    private boolean clipContent;
+
+    public void setClipContent(boolean value) {
+        clipContent = value;
+    }
+
     public int getCurrentActionBarHeight() {
         return AndroidUtilities.dp(56) + (occupyStatusBar ? AndroidUtilities.statusBarHeight : 0);
+    }
+
+    public static int getCurrentActionBarHeightStatic() {
+        if (AndroidUtilities.isTablet()) {
+            return AndroidUtilities.dp(64);
+        } else if (AndroidUtilities.displaySize.x > AndroidUtilities.displaySize.y) {
+            return AndroidUtilities.dp(48);
+        } else {
+            return AndroidUtilities.dp(56);
+        }
     }
 
     public void setHeight(int height) {

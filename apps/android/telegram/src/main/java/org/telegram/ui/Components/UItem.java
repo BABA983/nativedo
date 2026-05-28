@@ -149,6 +149,42 @@ public class UItem {
         return item;
     }
 
+    public static UItem asSetting(int id, int iconResId, CharSequence title, @Nullable CharSequence subtitle, @Nullable CharSequence value) {
+        UItem item = new UItem(UniversalAdapter.VIEW_TYPE_SETTING);
+        item.id = id;
+        item.iconResId = iconResId;
+        item.text = title;
+        item.subtext = subtitle;
+        item.textValue = value;
+        return item;
+    }
+
+    public static UItem asInfo(CharSequence title, @Nullable CharSequence text) {
+        return asInfo(0, title, text, null);
+    }
+
+    public static UItem asInfo(int id, CharSequence title, @Nullable CharSequence text, @Nullable CharSequence action) {
+        UItem item = new UItem(UniversalAdapter.VIEW_TYPE_INFO);
+        item.id = id;
+        item.text = title;
+        item.subtext = text;
+        item.textValue = action;
+        return item;
+    }
+
+    public static UItem asSpace(int height) {
+        UItem item = new UItem(UniversalAdapter.VIEW_TYPE_SPACE);
+        item.longValue = height;
+        return item;
+    }
+
+    public static UItem asSpace(int tag, int height) {
+        UItem item = new UItem(UniversalAdapter.VIEW_TYPE_SPACE);
+        item.id = tag;
+        item.longValue = height;
+        return item;
+    }
+
     public static UItem asCustom(View view) {
         UItem item = new UItem(UniversalAdapter.VIEW_TYPE_CUSTOM);
         item.view = view;

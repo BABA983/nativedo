@@ -8,6 +8,16 @@
     "flair_name": "Battery",
     "flair_url": "battery-quarter",
     "flair_bg_color": "001122",
-    "flair_color": "abcdef"
+    "flair_color": "abcdef",
+    "trust_level": 3,
+    "title": "活跃用户",
+    "badge_count": 7,
+    "time_read": 285035,
+    "recent_time_read": 162657,
+    "created_at": "2024-05-26T04:10:34.200Z",
+    "last_seen_at": "2026-05-28T06:00:20.612Z",
+    "profile_view_count": 97,
+    "admin": false,
+    "moderator": false
   }
 }

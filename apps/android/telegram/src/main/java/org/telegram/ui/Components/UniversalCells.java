@@ -478,6 +478,200 @@ public final class UniversalCells {
         }
     }
 
+    public static final class SettingCell extends FrameLayout {
+        private final ImageView iconView;
+        private final TextView titleView;
+        private final TextView subtitleView;
+        private final TextView valueView;
+        private final TextView arrowView;
+        private final Paint dividerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private boolean needDivider;
+        private boolean subtitleVisible;
+        private boolean valueVisible;
+        private int leftPadding = 21;
+
+        public SettingCell(Context context) {
+            super(context);
+            setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+            setForeground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_settings_listSelector), Theme.RIPPLE_MASK_ALL));
+            setWillNotDraw(false);
+
+            iconView = new ImageView(context);
+            iconView.setScaleType(ImageView.ScaleType.CENTER);
+            iconView.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText), PorterDuff.Mode.MULTIPLY));
+            addView(iconView);
+
+            titleView = new TextView(context);
+            titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+            titleView.setSingleLine(true);
+            titleView.setEllipsize(TextUtils.TruncateAt.END);
+            titleView.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
+            addView(titleView);
+
+            subtitleView = new TextView(context);
+            subtitleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+            subtitleView.setSingleLine(true);
+            subtitleView.setEllipsize(TextUtils.TruncateAt.END);
+            subtitleView.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
+            addView(subtitleView);
+
+            valueView = new TextView(context);
+            valueView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+            valueView.setSingleLine(true);
+            valueView.setEllipsize(TextUtils.TruncateAt.END);
+            valueView.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+            addView(valueView);
+
+            arrowView = new TextView(context);
+            arrowView.setText(">");
+            arrowView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 24);
+            arrowView.setGravity(Gravity.CENTER);
+            addView(arrowView);
+
+            dividerPaint.setColor(Theme.getColor(Theme.key_divider));
+        }
+
+        public void bind(@Nullable CharSequence title, @Nullable CharSequence subtitle, @Nullable CharSequence value, int iconResId, boolean red, boolean accent, boolean divider) {
+            titleView.setText(title);
+            titleView.setTextColor(red ? 0xffd14b45 : Theme.getColor(accent ? Theme.key_windowBackgroundWhiteBlueText : Theme.key_windowBackgroundWhiteBlackText));
+            subtitleVisible = !TextUtils.isEmpty(subtitle);
+            subtitleView.setText(subtitle);
+            subtitleView.setVisibility(subtitleVisible ? VISIBLE : GONE);
+            valueVisible = !TextUtils.isEmpty(value);
+            valueView.setText(value);
+            valueView.setVisibility(valueVisible ? VISIBLE : GONE);
+            iconView.setVisibility(iconResId == 0 ? GONE : VISIBLE);
+            if (iconResId != 0) {
+                iconView.setImageResource(iconResId);
+            }
+            leftPadding = iconResId == 0 ? 21 : 71;
+            needDivider = divider;
+            updateColors();
+            requestLayout();
+            invalidate();
+        }
+
+        private void updateColors() {
+            setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+            subtitleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+            valueView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+            arrowView.setTextColor(Theme.multAlpha(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), .35f));
+            dividerPaint.setColor(Theme.getColor(Theme.key_divider));
+        }
+
+        @Override
+        protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+            int width = MeasureSpec.getSize(widthMeasureSpec);
+            int height = AndroidUtilities.dp(subtitleVisible ? 64 : 50);
+            int rightPadding = valueVisible ? 154 : 54;
+            int textWidth = Math.max(0, width - AndroidUtilities.dp(leftPadding + rightPadding));
+            titleView.measure(MeasureSpec.makeMeasureSpec(textWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(22), MeasureSpec.EXACTLY));
+            subtitleView.measure(MeasureSpec.makeMeasureSpec(textWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(20), MeasureSpec.EXACTLY));
+            valueView.measure(MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(120), MeasureSpec.AT_MOST), MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
+            arrowView.measure(MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(32), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
+            iconView.measure(MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(48), MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(50), MeasureSpec.EXACTLY));
+            setMeasuredDimension(width, height);
+        }
+
+        @Override
+        protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+            int height = bottom - top;
+            int textLeft = AndroidUtilities.dp(leftPadding);
+            if (subtitleVisible) {
+                titleView.layout(textLeft, AndroidUtilities.dp(11), textLeft + titleView.getMeasuredWidth(), AndroidUtilities.dp(33));
+                subtitleView.layout(textLeft, AndroidUtilities.dp(34), textLeft + subtitleView.getMeasuredWidth(), AndroidUtilities.dp(54));
+            } else {
+                int titleTop = (height - titleView.getMeasuredHeight()) / 2;
+                titleView.layout(textLeft, titleTop, textLeft + titleView.getMeasuredWidth(), titleTop + titleView.getMeasuredHeight());
+                subtitleView.layout(textLeft, titleTop, textLeft, titleTop);
+            }
+            int arrowLeft = getMeasuredWidth() - AndroidUtilities.dp(35);
+            arrowView.layout(arrowLeft, 0, arrowLeft + arrowView.getMeasuredWidth(), height);
+            int valueLeft = arrowLeft - AndroidUtilities.dp(8) - valueView.getMeasuredWidth();
+            valueView.layout(valueLeft, 0, valueLeft + valueView.getMeasuredWidth(), height);
+            iconView.layout(0, (height - iconView.getMeasuredHeight()) / 2, iconView.getMeasuredWidth(), (height + iconView.getMeasuredHeight()) / 2);
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            if (needDivider) {
+                canvas.drawRect(AndroidUtilities.dp(iconView.getVisibility() == VISIBLE ? 68 : 21), getMeasuredHeight() - 1, getMeasuredWidth(), getMeasuredHeight(), dividerPaint);
+            }
+        }
+    }
+
+    public static final class InfoCell extends LinearLayout {
+        private final TextView titleView;
+        private final TextView textView;
+        private final TextView actionView;
+
+        public InfoCell(Context context) {
+            super(context);
+            setOrientation(VERTICAL);
+            setPadding(AndroidUtilities.dp(20), AndroidUtilities.dp(15), AndroidUtilities.dp(20), AndroidUtilities.dp(15));
+            setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+
+            titleView = new TextView(context);
+            titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+            titleView.setTypeface(Typeface.DEFAULT_BOLD);
+            titleView.setGravity(Gravity.LEFT);
+            addView(titleView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
+            textView = new TextView(context);
+            textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+            textView.setGravity(Gravity.LEFT);
+            textView.setLineSpacing(AndroidUtilities.dp(1), 1.0f);
+            LinearLayout.LayoutParams textLp = LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT);
+            textLp.topMargin = AndroidUtilities.dp(5);
+            addView(textView, textLp);
+
+            actionView = new TextView(context);
+            actionView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+            actionView.setTypeface(Typeface.DEFAULT_BOLD);
+            actionView.setGravity(Gravity.CENTER);
+            actionView.setMinHeight(AndroidUtilities.dp(40));
+            LinearLayout.LayoutParams actionLp = LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 40);
+            actionLp.topMargin = AndroidUtilities.dp(8);
+            addView(actionView, actionLp);
+        }
+
+        public void bind(@Nullable CharSequence title, @Nullable CharSequence text, @Nullable CharSequence action, boolean red, boolean accent) {
+            titleView.setText(title);
+            titleView.setTextColor(red ? 0xffd14b45 : Theme.getColor(accent ? Theme.key_windowBackgroundWhiteBlueText : Theme.key_windowBackgroundWhiteBlackText));
+            textView.setText(text);
+            textView.setVisibility(TextUtils.isEmpty(text) ? GONE : VISIBLE);
+            textView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+            actionView.setText(action);
+            actionView.setVisibility(TextUtils.isEmpty(action) ? GONE : VISIBLE);
+            actionView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText));
+            setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        }
+    }
+
+    public static final class SpaceCell extends FrameLayout {
+        private int height;
+
+        public SpaceCell(Context context) {
+            super(context);
+            setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+        }
+
+        public void bind(int height) {
+            this.height = height;
+            setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+            requestLayout();
+        }
+
+        @Override
+        protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+            super.onMeasure(
+                    MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.EXACTLY),
+                    MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
+            );
+        }
+    }
+
     public static final class WebsiteCell extends FrameLayout {
         private final ImageView imageView;
         private final TextView titleView;

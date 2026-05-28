@@ -125,6 +125,61 @@ public final class AndroidUtilities {
         return from + (to - from) * progress;
     }
 
+    public static int lerp(int a, int b, float f) {
+        return (int) (a + f * (b - a));
+    }
+
+    public static float lerp(float a, float b, float c, float middle, float f) {
+        if (f < middle) return lerp(a, b, f / middle);
+        return lerp(b, c, (f - middle) / (1.0f - middle));
+    }
+
+    public static float ilerp(int x, int a, int b) {
+        return (float) (x - a) / (b - a);
+    }
+
+    public static float ilerp(float x, float a, float b) {
+        return (x - a) / (b - a);
+    }
+
+    /** 3-point interpolation: at t=-1 returns atMinusOne, t=0 returns atZero, t=1 returns atPlusOne. */
+    public static float lerp3(float atMinusOne, float atZero, float atPlusOne, float t) {
+        if (t <= 0) {
+            return atZero + (atMinusOne - atZero) * -t;
+        } else {
+            return atZero + (atPlusOne - atZero) * t;
+        }
+    }
+
+    /** 3-point color interpolation matching upstream AndroidUtilities.lerpColor3. */
+    public static int lerpColor3(int atMinusOne, int atZero, int atPlusOne, float t) {
+        float r, g, b, a;
+        if (t <= 0) {
+            float p = -t;
+            r = Color.red(atZero) + (Color.red(atMinusOne) - Color.red(atZero)) * p;
+            g = Color.green(atZero) + (Color.green(atMinusOne) - Color.green(atZero)) * p;
+            b = Color.blue(atZero) + (Color.blue(atMinusOne) - Color.blue(atZero)) * p;
+            a = Color.alpha(atZero) + (Color.alpha(atMinusOne) - Color.alpha(atZero)) * p;
+        } else {
+            float p = t;
+            r = Color.red(atZero) + (Color.red(atPlusOne) - Color.red(atZero)) * p;
+            g = Color.green(atZero) + (Color.green(atPlusOne) - Color.green(atZero)) * p;
+            b = Color.blue(atZero) + (Color.blue(atPlusOne) - Color.blue(atZero)) * p;
+            a = Color.alpha(atZero) + (Color.alpha(atPlusOne) - Color.alpha(atZero)) * p;
+        }
+        return Color.argb(
+            Math.max(0, Math.min(255, Math.round(a))),
+            Math.max(0, Math.min(255, Math.round(r))),
+            Math.max(0, Math.min(255, Math.round(g))),
+            Math.max(0, Math.min(255, Math.round(b)))
+        );
+    }
+
+    /** Set RectF in dp units, matching upstream AndroidUtilities.setRectD. */
+    public static void setRectD(RectF rect, float left, float top, float right, float bottom) {
+        rect.set(dpf2(left), dpf2(top), dpf2(right), dpf2(bottom));
+    }
+
     public static float computePerceivedBrightness(int color) {
         return (android.graphics.Color.red(color) * 0.2126f + android.graphics.Color.green(color) * 0.7152f + android.graphics.Color.blue(color) * 0.0722f) / 255f;
     }
@@ -554,6 +609,12 @@ public final class AndroidUtilities {
             isTabletValue = Math.min(displaySize.x, displaySize.y) >= dp(600);
         }
         return isTabletValue;
+    }
+
+    public static int getStatusBarHeight(Context context) {
+        if (context == null) return 0;
+        int resourceId = context.getResources().getIdentifier("status_bar_height", "dimen", "android");
+        return resourceId > 0 ? context.getResources().getDimensionPixelSize(resourceId) : 0;
     }
 
     private static Typeface typefaceBold;

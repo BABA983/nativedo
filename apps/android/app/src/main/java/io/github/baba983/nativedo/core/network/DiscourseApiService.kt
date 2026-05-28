@@ -397,6 +397,23 @@ data class UserDto(
     val flairBgColor: String? = null,
     @SerialName("flair_color")
     val flairColor: String? = null,
+    @SerialName("trust_level")
+    val trustLevel: Int = 0,
+    val title: String? = null,
+    @SerialName("badge_count")
+    val badgeCount: Int = 0,
+    @SerialName("time_read")
+    val timeRead: Int = 0,
+    @SerialName("recent_time_read")
+    val recentTimeRead: Int = 0,
+    @SerialName("created_at")
+    val createdAt: String? = null,
+    @SerialName("last_seen_at")
+    val lastSeenAt: String? = null,
+    @SerialName("profile_view_count")
+    val profileViewCount: Int = 0,
+    val admin: Boolean = false,
+    val moderator: Boolean = false,
 )
 
 @Serializable
@@ -495,6 +512,16 @@ internal fun UserProfileResponseDto.toModel(): UserProfile = UserProfile(
     flairUrl = user.flairUrl.orEmpty(),
     flairBgColor = user.flairBgColor.orEmpty(),
     flairColor = user.flairColor.orEmpty(),
+    trustLevel = user.trustLevel,
+    title = user.title.orEmpty(),
+    badgeCount = user.badgeCount,
+    timeRead = user.timeRead,
+    recentTimeRead = user.recentTimeRead,
+    createdAt = user.createdAt.orEmpty(),
+    lastSeenAt = user.lastSeenAt.orEmpty(),
+    profileViewCount = user.profileViewCount,
+    admin = user.admin,
+    moderator = user.moderator,
 )
 
 internal fun PostDto.toModel(

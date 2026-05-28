@@ -157,6 +157,10 @@ public abstract class BaseFragment implements ViewModelStoreOwner {
         return false;
     }
 
+    public boolean drawEdgeNavigationBar() {
+        return true;
+    }
+
     public boolean isLightStatusBar() {
         if (sheetsStack != null) {
             for (int i = sheetsStack.size() - 1; i >= 0; i--) {

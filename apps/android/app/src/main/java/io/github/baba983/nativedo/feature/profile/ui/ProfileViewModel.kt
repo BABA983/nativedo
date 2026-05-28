@@ -1,6 +1,9 @@
 package io.github.baba983.nativedo.feature.profile.ui
 
+import androidx.lifecycle.LiveData
+import androidx.lifecycle.MediatorLiveData
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.asLiveData
 import androidx.lifecycle.viewModelScope
 import io.github.baba983.nativedo.core.session.AppSessionState
 import io.github.baba983.nativedo.feature.home.ui.readableMessage
@@ -35,6 +38,9 @@ class ProfileViewModel(
     fun retry() {
         currentUsername?.let(::load)
     }
+
+    // Java-interop bridge: expose profile state as LiveData for Java Fragments
+    fun getStateLiveData(): LiveData<ProfileUiState> = uiState.asLiveData()
 
     private fun load(username: String) {
         viewModelScope.launch {

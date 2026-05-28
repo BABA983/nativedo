@@ -165,6 +165,45 @@
       "port_mode": "exact"
     },
     {
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/profile/ProfileDetailCell.java",
+      "upstream": "org/telegram/ui/Cells/TextDetailCell.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": [
+        "DEPRECATED: superseded by telegram module TextDetailCell.",
+        "ProfileFragment now uses org.telegram.ui.Cells.TextDetailCell directly.",
+        "Simplified: plain TextView instead of SpoilersTextView/LinksTextView.",
+        "Includes Factory inner class for UItem integration."
+      ]
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Cells/TextDetailCell.java",
+      "upstream": "org/telegram/ui/Cells/TextDetailCell.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "exact",
+      "notes": [
+        "Simplified port: plain TextView instead of SpoilersTextView/LinksTextView.",
+        "No rightValueTextView, no imageView, no LinkSpanDrawable.",
+        "Factory uses UItem.ViewFactory interface matching NativeDo's UniversalAdapter."
+      ]
+    },
+    {
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/profile/ProfileFragment.kt",
+      "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/ProfileActivity.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "forced_exact": [
+        "measurement",
+        "drawing",
+        "gesture",
+        "animation"
+      ],
+      "notes": "NativeDo profile keeps ProfileActivity-style collapsible header, avatar gooey effect, avatar click expansion, title/subtitle layout, and release snap while binding to linux.do session/profile data."
+    },
+    {
       "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicCell.java",
       "upstream": "org/telegram/ui/Cells/DialogCell.java",
       "vendored_at": "009e97356",
@@ -621,11 +660,51 @@
       "port_mode": "native"
     },
     {
-      "local": "app/src/main/java/io/github/baba983/nativedo/ui/browser/WebActionBar.java",
+      "local": "telegram/src/main/java/org/telegram/ui/web/WebActionBar.java",
       "upstream": "org/telegram/ui/web/WebActionBar.java",
       "vendored_at": "009e97356",
       "modified": true,
-      "port_mode": "native"
+      "port_mode": "native",
+      "notes": "Moved to :telegram as the first browser UI core component; app keeps a thin compatibility wrapper."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/web/AddressBarList.java",
+      "upstream": "org/telegram/ui/web/AddressBarList.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "forced_exact": [
+        "measurement",
+        "drawing",
+        "recycling"
+      ],
+      "notes": "NativeDo storage and metadata stay in :app and are injected through AddressBarList.DataSource."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/web/WebViewSwipeContainer.java",
+      "upstream": "org/telegram/ui/bots/ChatAttachAlertBotWebViewLayout.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "forced_exact": [
+        "gesture",
+        "animation"
+      ],
+      "notes": "Moved the browser WebView swipe/dismiss spring container to :telegram; app keeps a thin compatibility wrapper."
+    },
+    {
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/browser/BrowserSheet.java",
+      "upstream": "org/telegram/ui/ArticleViewer.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "forced_exact": [
+        "gesture",
+        "animation",
+        "measurement",
+        "drawing"
+      ],
+      "notes": "NativeDo browser sheet derived from ArticleViewer.Sheet/PageLayout/WindowView and bound to Discourse browser storage, WebView, and Instant View."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ClippingImageView.java",
@@ -661,7 +740,9 @@
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "exact",
-      "forced_exact": ["animation"],
+      "forced_exact": [
+        "animation"
+      ],
       "notes": [
         "DialogCell type abstracted to MovableCell SPI interface (host wiring).",
         "androidx SimpleItemAnimator signatures used: animateRemove(holder), animateMove(holder,4ints),",
@@ -709,6 +790,14 @@
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/UniversalCells.java",
+      "upstream": "org/telegram/ui/Components/UniversalAdapter.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Small NativeDo universal cells derived from Telegram settings/browser list cell patterns rather than a one-to-one upstream file copy."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/UniversalAdapter.java",
@@ -765,6 +854,24 @@
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/ProfileGooeyView.java",
+      "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/Components/ProfileGooeyView.java",
+      "port_mode": "exact",
+      "forced_exact": [
+        "drawing"
+      ],
+      "modified": false,
+      "notes": "Vendored for ProfileActivity-style gooey/waterdrop absorption effect"
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/messenger/NotchInfoUtils.java",
+      "upstream_path": "TMessagesProj/src/main/java/org/telegram/messenger/NotchInfoUtils.java",
+      "port_mode": "exact",
+      "forced_exact": [],
+      "modified": false,
+      "notes": "Vendored as dependency of ProfileGooeyView"
     }
   ],
   "resources": [

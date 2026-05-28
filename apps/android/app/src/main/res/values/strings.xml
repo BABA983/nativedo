@@ -3,6 +3,7 @@
     <string name="app_name">NativeDo</string>
     <string name="action_back">Back</string>
     <string name="action_more_options">More options</string>
+    <string name="action_retry">Retry</string>
     <string name="screen_topic_list">linux.do</string>
     <string name="home_tab_latest">Latest</string>
     <string name="home_tab_new">New</string>
@@ -13,6 +14,13 @@
     <string name="search_filter_users">Users</string>
     <string name="topic_list_pull_refresh">Pull to refresh topics</string>
     <string name="topic_list_release_refresh">Release to refresh topics</string>
+    <string name="topic_list_empty_title">No topics yet</string>
+    <string name="topic_list_empty_message">Pull to refresh or switch to another feed.</string>
+    <string name="topic_list_error_title">Couldn’t load topics</string>
+    <string name="topic_list_load_more_error">Couldn’t load more topics.</string>
+    <string name="search_topics_empty_title">No matching topics</string>
+    <string name="search_topics_empty_message">Try a different keyword.</string>
+    <string name="search_topics_error_title">Search failed</string>
     <string name="tab_home">Home</string>
     <string name="tab_search">Search</string>
     <string name="tab_profile">Profile</string>
@@ -30,6 +38,7 @@
     <string name="profile_session_expired_subtitle">Sign in again to continue using account features.</string>
     <string name="profile_logout_action">Log out</string>
     <string name="profile_about_title">About</string>
+    <string name="profile_username_label">Username</string>
     <string name="profile_load_error_title">Couldn’t load profile</string>
     <string name="profile_load_error_subtitle">Please try again in a moment.</string>
     <string name="login_webview_title">Sign in</string>

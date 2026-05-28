@@ -16,7 +16,9 @@ import androidx.recyclerview.widget.RecyclerView;
 import java.util.ArrayList;
 import java.util.Objects;
 
-public class UniversalAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+import org.telegram.ui.ActionBar.Theme;
+
+public class UniversalAdapter extends RecyclerListView.SelectionAdapter {
 
     public static final int VIEW_TYPE_CUSTOM = -1;
     public static final int VIEW_TYPE_HEADER = 0;
@@ -27,6 +29,9 @@ public class UniversalAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
     public static final int VIEW_TYPE_GRAY_SECTION = 31;
     public static final int VIEW_TYPE_BOOKMARK = 1000;
     public static final int VIEW_TYPE_WEBSITE = 1001;
+    public static final int VIEW_TYPE_SETTING = 1002;
+    public static final int VIEW_TYPE_INFO = 1003;
+    public static final int VIEW_TYPE_SPACE = 1004;
 
     private final Context context;
     private final UniversalListCallbacks.Fill fillItems;
@@ -35,6 +40,11 @@ public class UniversalAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
     private final ArrayList<UItem> items = new ArrayList<>();
     private float lastTouchX;
     private float lastTouchY;
+    private boolean applyBackground = true;
+
+    public void setApplyBackground(boolean value) {
+        applyBackground = value;
+    }
 
     public UniversalAdapter(
             Context context,
@@ -106,6 +116,7 @@ public class UniversalAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
                 break;
             case VIEW_TYPE_GRAY_SECTION:
                 view = new UniversalCells.SectionCell(context, false);
+                view.setTag(RecyclerListView.TAG_NOT_SECTION);
                 break;
             case VIEW_TYPE_TEXT:
                 view = new UniversalCells.TextCell(context);
@@ -122,6 +133,16 @@ public class UniversalAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
             case VIEW_TYPE_WEBSITE:
                 view = new UniversalCells.WebsiteCell(context);
                 break;
+            case VIEW_TYPE_SETTING:
+                view = new UniversalCells.SettingCell(context);
+                break;
+            case VIEW_TYPE_INFO:
+                view = new UniversalCells.InfoCell(context);
+                break;
+            case VIEW_TYPE_SPACE:
+                view = new UniversalCells.SpaceCell(context);
+                view.setTag(RecyclerListView.TAG_NOT_SECTION);
+                break;
             case VIEW_TYPE_CUSTOM:
                 view = new FrameLayout(context) {
                     @Override
@@ -136,7 +157,11 @@ public class UniversalAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
             case VIEW_TYPE_SHADOW:
             default:
                 view = new UniversalCells.ShadowInfoCell(context);
+                view.setTag(RecyclerListView.TAG_NOT_SECTION);
                 break;
+        }
+        if (applyBackground && shouldApplyBackground(viewType)) {
+            view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
         }
         return new RecyclerView.ViewHolder(view) {
         };
@@ -149,6 +174,7 @@ public class UniversalAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
         if (item == null) {
             return;
         }
+        holder.itemView.setId(item.id);
         boolean divider = hasDivider(position);
         if (item.factory != null) {
             item.factory.bindView(holder.itemView, item, divider, this);
@@ -190,6 +216,15 @@ public class UniversalAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
                         item.object instanceof Bitmap ? (Bitmap) item.object : null,
                         divider
                 );
+                break;
+            case VIEW_TYPE_SETTING:
+                ((UniversalCells.SettingCell) holder.itemView).bind(item.text, item.subtext, item.textValue, item.iconResId, item.red, item.accent, divider);
+                break;
+            case VIEW_TYPE_INFO:
+                ((UniversalCells.InfoCell) holder.itemView).bind(item.text, item.subtext, item.textValue, item.red, item.accent);
+                break;
+            case VIEW_TYPE_SPACE:
+                ((UniversalCells.SpaceCell) holder.itemView).bind((int) item.longValue);
                 break;
             case VIEW_TYPE_CUSTOM:
                 bindCustomView((FrameLayout) holder.itemView, item.view);
@@ -261,7 +296,7 @@ public class UniversalAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
     }
 
     public static boolean isShadow(int viewType) {
-        return viewType == VIEW_TYPE_SHADOW || viewType == VIEW_TYPE_GRAY_SECTION;
+        return viewType == VIEW_TYPE_SHADOW || viewType == VIEW_TYPE_GRAY_SECTION || viewType == VIEW_TYPE_SPACE;
     }
 
     private boolean isSameItem(UItem oldItem, UItem newItem) {
@@ -310,7 +345,9 @@ public class UniversalAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
                 || viewType == VIEW_TYPE_CHECK
                 || viewType == VIEW_TYPE_RADIO
                 || viewType == VIEW_TYPE_BOOKMARK
-                || viewType == VIEW_TYPE_WEBSITE;
+                || viewType == VIEW_TYPE_WEBSITE
+                || viewType == VIEW_TYPE_SETTING
+                || (viewType == VIEW_TYPE_INFO && item.id != 0);
     }
 
     @Nullable
@@ -334,5 +371,21 @@ public class UniversalAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
     @Override
     public int getItemCount() {
         return items.size();
+    }
+
+    public boolean shouldApplyBackground(int viewType) {
+        if (!applyBackground) return false;
+        if (viewType >= 1000) return true; // custom factory types
+        switch (viewType) {
+            case VIEW_TYPE_HEADER:
+            case VIEW_TYPE_TEXT:
+            case VIEW_TYPE_CHECK:
+            case VIEW_TYPE_RADIO:
+            case VIEW_TYPE_SETTING:
+            case VIEW_TYPE_INFO:
+                return true;
+            default:
+                return false;
+        }
     }
 }
