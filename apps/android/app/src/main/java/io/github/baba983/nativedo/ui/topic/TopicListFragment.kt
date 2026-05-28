@@ -652,10 +652,34 @@ class TopicListFragment : BaseFragment(), FactorAnimator.Target, Theme.ThemeDele
             if (!isActiveSearchQuery(normalizedQuery)) return@launch
             result.fold(
                 onSuccess = { searchResult ->
-                    searchAdapter?.submit(searchResult.topics, viewModel.uiState.value.categories, false, false)
+                    searchAdapter?.submit(
+                        searchResult.topics,
+                        viewModel.uiState.value.categories,
+                        false,
+                        false,
+                        getContext()?.getString(R.string.search_topics_empty_title),
+                        getContext()?.getString(R.string.search_topics_empty_message),
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                    )
                 },
-                onFailure = {
-                    searchAdapter?.submit(emptyList(), viewModel.uiState.value.categories, false, false)
+                onFailure = { error ->
+                    searchAdapter?.submit(
+                        emptyList(),
+                        viewModel.uiState.value.categories,
+                        false,
+                        false,
+                        null,
+                        null,
+                        getContext()?.getString(R.string.search_topics_error_title),
+                        error.message ?: error.javaClass.simpleName,
+                        null,
+                        { submitSearchQuery(normalizedQuery) },
+                        null,
+                    )
                 },
             )
             searchStateDrawable?.setIconState(SearchStateDrawable.State.STATE_SEARCH, true)
@@ -980,7 +1004,20 @@ class TopicListFragment : BaseFragment(), FactorAnimator.Target, Theme.ThemeDele
         fun submit(feed: HomeFeedState, categories: Map<Int, CategorySummary>) {
             pullRefreshLayout.currentFeed = feed
             val previousTopicCount = lastTopicCount
-            adapter.submit(feed.items, categories, feed.isLoadingMore || feed.hasMore && feed.items.isNotEmpty(), feed.isLoading && feed.items.isEmpty())
+            val context = getContext()
+            adapter.submit(
+                feed.items,
+                categories,
+                feed.isLoadingMore && feed.loadMoreErrorMessage == null,
+                feed.isLoading && feed.items.isEmpty(),
+                if (feed.isEmpty) context?.getString(R.string.topic_list_empty_title) else null,
+                if (feed.isEmpty) context?.getString(R.string.topic_list_empty_message) else null,
+                if (feed.errorMessage != null) context?.getString(R.string.topic_list_error_title) else null,
+                feed.errorMessage,
+                feed.loadMoreErrorMessage?.let { message -> context?.getString(R.string.topic_list_load_more_error) ?: message },
+                viewModel::retrySelectedFeed,
+                viewModel::loadNextPage,
+            )
             lastTopicCount = feed.items.size
             if (previousTopicCount > 0 && feed.items.size > previousTopicCount && !feed.isLoading) listView.post { itemsEnterAnimator.showItemsAnimated(previousTopicCount) }
             restoreScrollPositionIfNeeded()

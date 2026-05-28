@@ -54,6 +54,11 @@ class HomeViewModel(
         refresh(_uiState.value.selectedTab, initial = false)
     }
 
+    fun retrySelectedFeed() {
+        val state = _uiState.value
+        refresh(state.selectedTab, initial = state.currentFeed.items.isEmpty())
+    }
+
     fun loadNextPage() {
         val state = _uiState.value
         val selectedTab = state.selectedTab
