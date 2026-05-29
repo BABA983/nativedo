@@ -33,6 +33,7 @@ import android.graphics.Rect;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.view.View;
+import android.view.KeyEvent;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
@@ -51,6 +52,7 @@ public class ActionBarPopupWindow extends PopupWindow {
         private Drawable backgroundDrawable;
         private final Rect backgroundPaddings = new Rect();
         private final Rect backgroundRect = new Rect();
+        private OnDispatchKeyEventListener dispatchKeyEventListener;
 
         public ActionBarPopupWindowLayout(android.content.Context context) {
             super(context);
@@ -100,6 +102,24 @@ public class ActionBarPopupWindow extends PopupWindow {
         }
 
         public void scrollToTop() {
+        }
+
+        public void setAnimationEnabled(boolean enabled) {
+        }
+
+        public void setShownFromBottom(boolean shownFromBottom) {
+        }
+
+        public void setDispatchKeyEventListener(OnDispatchKeyEventListener listener) {
+            dispatchKeyEventListener = listener;
+        }
+
+        @Override
+        public boolean dispatchKeyEvent(KeyEvent event) {
+            if (dispatchKeyEventListener != null) {
+                dispatchKeyEventListener.onDispatchKeyEvent(event);
+            }
+            return super.dispatchKeyEvent(event);
         }
 
         @Override
@@ -197,6 +217,13 @@ public class ActionBarPopupWindow extends PopupWindow {
 
     public void dismiss(boolean animated) {
         dismiss();
+    }
+
+    public void setAnimationEnabled(boolean enabled) {
+    }
+
+    public interface OnDispatchKeyEventListener {
+        void onDispatchKeyEvent(KeyEvent event);
     }
 
     private ActionBarPopupWindowLayout findPopupLayout() {

@@ -458,7 +458,7 @@ internal fun SearchResponseDto.toModel(): SearchResult {
         .filter { post -> topicHits.none { topic -> topic.id == post.topicId } }
         .map { post -> post.toTopicSummary() }
     return SearchResult(
-        topics = topicHits,
+        topics = topicHits + postTopicHits,
         posts = postTopicHits,
         users = users.mapNotNull { user ->
             user.username.takeIf(String::isNotBlank)?.let { username ->

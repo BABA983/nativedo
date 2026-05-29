@@ -38,6 +38,7 @@ public class HintView2 extends View {
     public HintView2 setTextColor(int color) { return this; }
     public HintView2 setCloseButton(boolean enabled) { return this; }
     public HintView2 setIcon(int resId) { return this; }
+    public static float measureCorrectly(String text, android.text.TextPaint paint) { return text == null || paint == null ? 0 : paint.measureText(text); }
     public HintView2 setDuration(long ms) { return this; }
     public HintView2 setHideByTouch(boolean h) { return this; }
     public HintView2 setOnHiddenListener(Runnable r) { return this; }

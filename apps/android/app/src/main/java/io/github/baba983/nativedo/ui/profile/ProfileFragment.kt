@@ -402,7 +402,7 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
 
     private fun getStatusBarHeight(): Int = AndroidUtilities.getStatusBarHeight(context)
 
-    private fun getActionBarHeight(): Int = ActionBar.getCurrentActionBarHeightStatic()
+    private fun getActionBarHeight(): Int = ActionBar.getCurrentActionBarHeight()
 
     private fun getHeaderTopOffset(): Int = getStatusBarHeight() + getActionBarHeight()
 
@@ -1068,7 +1068,7 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
         }
 
         override fun onDraw(canvas: Canvas) {
-            val actionBarHeight = ActionBar.getCurrentActionBarHeightStatic()
+            val actionBarHeight = ActionBar.getCurrentActionBarHeight()
             val statusBarHeight = if (!AndroidUtilities.isTablet()) AndroidUtilities.statusBarHeight else 0
             val h = (statusBarHeight + actionBarHeight + extraHeight).toInt()
             val topColor = ColorUtils.blendARGB(

@@ -36,7 +36,9 @@ import android.graphics.PorterDuffColorFilter;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
+import android.text.Editable;
 import android.text.TextUtils;
+import android.text.TextWatcher;
 import android.util.Patterns;
 import android.view.Gravity;
 import android.view.KeyEvent;
@@ -65,21 +67,26 @@ import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.BottomSheetTabs;
 import org.telegram.ui.ActionBar.BottomSheetTabsOverlay;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.ArticleViewer;
 import org.telegram.ui.Components.ItemOptions;
 import org.telegram.ui.Components.AnimatedFloat;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.bots.ChatAttachAlertBotWebViewLayout.WebViewSwipeContainer;
+import org.telegram.ui.web.AddressBarList;
+import org.telegram.ui.web.HistoryFragment;
+import org.telegram.ui.web.WebInstantView;
 
 public class BrowserSheet extends org.telegram.ui.ActionBar.BrowserSheet implements BottomSheetTabsOverlay.Sheet {
 
     private BaseFragment fragment;
     private final WindowView windowView;
     private final FrameLayout containerView;
-    private final WebActionBar webActionBar;
+    private final org.telegram.ui.web.WebActionBar webActionBar;
     private final PageLayout[] pages = new PageLayout[2];
     private final ArrayList<CachedPage> pagesStack = new ArrayList<>();
     private final BrowserSearchPanel searchPanel;
-    private final BrowserAddressPanel addressPanel;
+    private final AddressBarList addressPanel;
     private final String initialUrl;
     private final boolean initialLoadHandledInApp;
 
@@ -111,94 +118,92 @@ public class BrowserSheet extends org.telegram.ui.ActionBar.BrowserSheet impleme
         containerView.setClipToPadding(false);
         windowView.addView(containerView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.START));
 
-        webActionBar = new WebActionBar(context, new WebActionBar.Delegate() {
+        webActionBar = new org.telegram.ui.web.WebActionBar(context, null) {
             @Override
-            public void onBackPressed() {
-                onAttachedBackPressed();
-            }
-
-            @Override
-            public void onAddressSubmitted(String value) {
-                loadAddressValue(value);
-            }
-
-            @Override
-            public void onMenuItem(int id) {
-                handleMenuItem(id);
-            }
-
-            @Override
-            public void onSearchUpdated(String text) {
+            protected void onSearchUpdated(String text) {
                 processSearch(text);
             }
 
             @Override
-            public void onAddressingProgress(float progress) {
+            protected void onAddressingProgress(float progress) {
+                super.onAddressingProgress(progress);
                 if (addressPanel != null) {
                     addressPanel.setOpenProgress(progress);
                 }
             }
 
             @Override
-            public void onAddressColorsChanged(int backgroundColor, int textColor) {
+            protected void onAddressColorsChanged(int backgroundColor, int textColor) {
                 if (addressPanel != null) {
                     addressPanel.setColors(backgroundColor, textColor);
                 }
             }
 
             @Override
-            public void onAddressInputChanged(String text) {
+            public void showAddress(boolean show, boolean animated) {
+                super.showAddress(show, animated);
                 if (addressPanel != null) {
-                    addressPanel.setInput(text);
+                    addressPanel.setOpened(show);
                 }
             }
 
             @Override
-            public void onTitleClicked() {
-                if (webActionBar.isAddressing()) return;
-                CharSequence titleCs = webActionBar.getTitle();
-                String title = titleCs == null ? "" : titleCs.toString();
-                PageLayout page = pages[0];
-                String url = page == null ? null : page.getSubtitle();
-                Bitmap favicon = page == null ? null : page.getFavicon();
-                if (addressPanel != null) {
-                    addressPanel.setCurrent(
-                        title,
-                        url == null ? "" : url,
-                        favicon,
-                        () -> {
-                            webActionBar.setAddressText(url == null ? "" : url, false);
-                        },
-                        query -> {
-                            webActionBar.showAddress(false, true);
-                            loadAddressValue(query);
-                        },
-                        query -> webActionBar.setAddressText(query, false),
-                        urlToOpen -> {
-                            webActionBar.showAddress(false, true);
-                            loadBrowserUrl(urlToOpen);
-                        },
-                        v -> {
-                            webActionBar.showAddress(false, true);
-                            copyCurrentLink();
-                        }
-                    );
-                }
-                webActionBar.showAddress("", true);
-            }
-
-            @Override
-            public void onScrolledProgress(float delta) {
+            protected void onScrolledProgress(float delta) {
                 if (pages[0] != null) {
                     pages[0].addProgress(delta);
                 }
                 windowView.invalidate();
             }
+
+            @Override
+            protected WebInstantView.Loader getInstantViewLoader() {
+                return null;
+            }
+
+            @Override
+            protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+                super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+                if (addressPanel != null) {
+                    ViewGroup.LayoutParams lp = addressPanel.getLayoutParams();
+                    if (lp instanceof ViewGroup.MarginLayoutParams) {
+                        ((ViewGroup.MarginLayoutParams) lp).topMargin = getMeasuredHeight();
+                    }
+                }
+            }
+        };
+        webActionBar.occupyStatusBar(true);
+        webActionBar.setOnClickListener(v -> {
+            if (webActionBar.longClicked) {
+                return;
+            }
+            showAddressPanel();
         });
+        webActionBar.addressEditText.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                if (addressPanel != null && webActionBar.isAddressing()) {
+                    addressPanel.setInput(s == null ? null : s.toString());
+                }
+            }
+        });
+        webActionBar.backButton.setOnClickListener(v -> onAttachedBackPressed());
+        webActionBar.backButton.setOnLongClickListener(this::showBackHistoryMenu);
+        webActionBar.forwardButton.setOnClickListener(v -> dismiss(true));
+        webActionBar.setMenuListener(this::handleMenuItem);
         webActionBar.setColors(getActionBarColor(), false);
-        webActionBar.setTitle(titleFromUrl(initialUrl));
-        webActionBar.setCurrentUrl(initialUrl);
-        webActionBar.setOnBackButtonLongClickListener(this::showBackHistoryMenu);
+        webActionBar.setMenuColors(getBackgroundColor());
+        webActionBar.setIsTonsite(false);
+        webActionBar.setTitle(titleFromUrl(initialUrl), false);
+        webActionBar.setSubtitle(initialUrl, false);
+        webActionBar.setMenuType(ArticleViewer.PageLayout.TYPE_WEB);
 
         pages[0] = new PageLayout(context);
         pages[1] = new PageLayout(context);
@@ -206,13 +211,13 @@ public class BrowserSheet extends org.telegram.ui.ActionBar.BrowserSheet impleme
         pagesStack.add(new CachedWeb(initialUrl));
         initialLoadHandledInApp = pages[0].setPage(pagesStack.get(0));
 
-        int actionBarHeight = webActionBar.getCurrentActionBarHeight();
+        int actionBarHeight = getActionBarHeight();
         FrameLayout.LayoutParams contentLayoutParams = LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.START);
         containerView.addView(pages[1], contentLayoutParams);
         containerView.addView(pages[0], new FrameLayout.LayoutParams(contentLayoutParams));
-        containerView.addView(webActionBar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, actionBarHeight, Gravity.TOP | Gravity.START));
+        containerView.addView(webActionBar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.START));
 
-        addressPanel = new BrowserAddressPanel(context);
+        addressPanel = new AddressBarList(context);
         FrameLayout.LayoutParams addressPanelLp = LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.START);
         addressPanelLp.topMargin = actionBarHeight;
         containerView.addView(addressPanel, addressPanelLp);
@@ -387,7 +392,7 @@ public class BrowserSheet extends org.telegram.ui.ActionBar.BrowserSheet impleme
             return true;
         }
         if (webActionBar.isAddressing()) {
-            webActionBar.closeAddress(true);
+            webActionBar.showAddress(false, true);
             return true;
         }
         if (pagesStack.size() <= 1 && pages[0] != null && pages[0].hasBackButton()) {
@@ -580,7 +585,61 @@ public class BrowserSheet extends org.telegram.ui.ActionBar.BrowserSheet impleme
     }
 
     private int getActionBarHeight() {
-        return webActionBar.getMeasuredHeight() > 0 ? webActionBar.getMeasuredHeight() : webActionBar.getCurrentActionBarHeight();
+        return webActionBar.getMeasuredHeight() > 0 ? webActionBar.getMeasuredHeight() : webActionBar.topPadding() + AndroidUtilities.dp(56);
+    }
+
+    private void showAddressPanel() {
+        if (webActionBar.isAddressing()) {
+            return;
+        }
+        PageLayout page = pages[0];
+        if (page == null || !page.isWeb()) {
+            return;
+        }
+        String title = webActionBar.getTitle();
+        String url = page.getSubtitle();
+        Bitmap favicon = page.getFavicon();
+        if (addressPanel != null) {
+            addressPanel.setCurrent(
+                    favicon,
+                    TextUtils.isEmpty(title) ? titleFromUrl(url) : title,
+                    TextUtils.isEmpty(url) ? "about:blank" : url,
+                    () -> setAddressText(TextUtils.isEmpty(url) ? "about:blank" : url),
+                    query -> {
+                        webActionBar.showAddress(false, true);
+                        loadAddressValue(query);
+                    },
+                    this::setAddressText,
+                    urlToOpen -> {
+                        webActionBar.showAddress(false, true);
+                        loadBrowserUrl(urlToOpen);
+                    },
+                    v -> {
+                        webActionBar.showAddress(false, true);
+                        copyCurrentLink();
+                    }
+            );
+        }
+        webActionBar.showAddress("", this::loadAddressValue);
+    }
+
+    private void setAddressText(String value) {
+        webActionBar.addressEditText.setText(value == null ? "" : value);
+        webActionBar.addressEditText.setSelection(webActionBar.addressEditText.getText().length());
+        AndroidUtilities.showKeyboard(webActionBar.addressEditText);
+    }
+
+    private void setLoadingProgress(int progress, boolean visible) {
+        int clamped = Math.max(0, Math.min(100, progress));
+        webActionBar.lineProgressView.setProgress(visible ? clamped / 100f : 1f, true);
+    }
+
+    private boolean hideActionBarKeyboardIfInputFocused() {
+        if (webActionBar.searchEditText.hasFocus() || webActionBar.addressEditText.hasFocus()) {
+            webActionBar.hideKeyboard();
+            return true;
+        }
+        return false;
     }
 
     private void updateSwipeContainerOffset() {
@@ -638,33 +697,37 @@ public class BrowserSheet extends org.telegram.ui.ActionBar.BrowserSheet impleme
         if (page == null) {
             return;
         }
-        if (id == WebActionBar.MENU_REFRESH && page.isWeb()) {
+        if (id == org.telegram.ui.web.WebActionBar.reload_item && page.isWeb()) {
             page.webViewContainer.reload();
-        } else if (id == WebActionBar.MENU_FORWARD && page.isWeb()) {
+        } else if (id == org.telegram.ui.web.WebActionBar.forward_item && page.isWeb()) {
             page.webViewContainer.goForward();
-        } else if (id == WebActionBar.MENU_OPEN_EXTERNAL) {
+        } else if (id == org.telegram.ui.web.WebActionBar.open_item) {
             openCurrentPageExternal(page);
-        } else if (id == WebActionBar.MENU_COPY_LINK) {
-            copyCurrentLink();
-        } else if (id == WebActionBar.MENU_SHARE) {
+        } else if (id == org.telegram.ui.web.WebActionBar.share_item) {
             shareCurrentPage(page);
-        } else if (id == WebActionBar.MENU_MINIMIZE) {
-            dismiss(true);
-        } else if (id == WebActionBar.MENU_SEARCH) {
+        } else if (id == org.telegram.ui.web.WebActionBar.search_item) {
             webActionBar.showSearch(true, true);
-        } else if (id == WebActionBar.MENU_BOOKMARK) {
+        } else if (id == org.telegram.ui.web.WebActionBar.bookmark_item) {
             toggleBookmark(page);
-        } else if (id == WebActionBar.MENU_HISTORY) {
-            BrowserFeatureSheet.showHistory(fragment, BrowserListFragment.Mode.HISTORY, this::loadBrowserUrl);
-        } else if (id == WebActionBar.MENU_BOOKMARKS) {
+        } else if (id == org.telegram.ui.web.WebActionBar.history_item) {
+            BaseFragment.BottomSheetParams params = new BaseFragment.BottomSheetParams();
+            params.transitionFromLeft = true;
+            fragment.showAsSheet(new HistoryFragment(null, entry -> {
+                if (entry != null) {
+                    loadBrowserUrl(entry.url);
+                }
+            }), params);
+        } else if (id == org.telegram.ui.web.WebActionBar.bookmarks_item) {
             BrowserFeatureSheet.showHistory(fragment, BrowserListFragment.Mode.BOOKMARKS, this::loadBrowserUrl);
-        } else if (id == WebActionBar.MENU_SETTINGS) {
-            BrowserFeatureSheet.showSettings(fragment, this::loadBrowserUrl, () -> updateBrowserMenuState(
-                    pages[0] == null ? null : pages[0].webViewContainer.getCurrentUrl()));
-        } else if (id == WebActionBar.MENU_INSTANT_VIEW && page.isWeb()) {
+        } else if (id == org.telegram.ui.web.WebActionBar.settings_item) {
+            if (page.isArticle()) {
+                page.openArticleFontSizeDialog();
+            } else {
+                BrowserFeatureSheet.showSettings(fragment, this::loadBrowserUrl, () -> updateBrowserMenuState(
+                        pages[0] == null ? null : pages[0].webViewContainer.getCurrentUrl()));
+            }
+        } else if (id == org.telegram.ui.web.WebActionBar.instant_item && page.isWeb()) {
             openInstantView(page);
-        } else if (id == WebActionBar.MENU_FONT_SIZE && page.isArticle()) {
-            page.openArticleFontSizeDialog();
         }
     }
 
@@ -735,10 +798,11 @@ public class BrowserSheet extends org.telegram.ui.ActionBar.BrowserSheet impleme
             webActionBar.setTransitionProgress(page1Alpha);
             if (!webActionBar.isAddressing() && !webActionBar.isSearching()) {
                 float backButton = AndroidUtilities.lerp(pagesStack.size() > 1 ? 1f : 0f, pagesStack.size() > 2 ? 1f : 0f, page1Alpha);
-                webActionBar.setBackButtonRotation(1f - backButton, false);
+                webActionBar.backButtonDrawable.setRotation(1f - backButton, false);
                 webActionBar.setBackButtonCached(backButton > .5f);
             }
             webActionBar.setColors(ColorUtils.blendARGB(pages[0].getActionBarColor(), pages[1].getActionBarColor(), page1Alpha), false);
+            webActionBar.setMenuColors(ColorUtils.blendARGB(pages[0].getBackgroundColor(), pages[1].getBackgroundColor(), page1Alpha));
         }
         windowView.invalidate();
     }
@@ -815,8 +879,8 @@ public class BrowserSheet extends org.telegram.ui.ActionBar.BrowserSheet impleme
             return;
         }
         if (page.webViewContainer.loadUrl(url)) {
-            webActionBar.setCurrentUrl(url);
-            webActionBar.setTitle(titleFromUrl(url));
+            webActionBar.setSubtitle(url, true);
+            webActionBar.setTitle(titleFromUrl(url), true);
             updateBrowserMenuState(url);
         }
     }
@@ -944,7 +1008,8 @@ public class BrowserSheet extends org.telegram.ui.ActionBar.BrowserSheet impleme
         }
         pages[0] = previousPage;
         pages[1] = currentPage;
-        webActionBar.finishTransition();
+        webActionBar.swap();
+        webActionBar.setTransitionProgress(0f);
         pageSwitchAnimation = null;
         windowView.openingPage = false;
         windowView.movingPage = false;
@@ -962,20 +1027,20 @@ public class BrowserSheet extends org.telegram.ui.ActionBar.BrowserSheet impleme
         if (pages[1] != null) {
             pages[1].setLastVisible(false);
         }
-        webActionBar.setCurrentUrlWithoutSubtitle(page.getSubtitle());
-        webActionBar.setTitle(page.getTitle());
-        webActionBar.setSubtitle(page.getSubtitleForDisplay());
+        webActionBar.setTitle(page.getTitle(), true);
+        webActionBar.setSubtitle(page.getSubtitleForDisplay(), true);
         webActionBar.setColors(page.getActionBarColor(), true);
+        webActionBar.setMenuColors(page.getBackgroundColor());
+        webActionBar.setIsTonsite(false);
         webActionBar.setBackButton(pagesStack.size() > 1);
-        webActionBar.setLoadingProgress(page.getLoadingProgress(), page.isWeb() && page.getLoadingProgress() < 100);
+        setLoadingProgress(page.getLoadingProgress(), page.isWeb() && page.getLoadingProgress() < 100);
         updateBrowserMenuState(page.getSubtitle());
-        webActionBar.setForwardAvailable(page.isWeb() && page.webViewContainer.canGoForward());
         updateInstantViewMenuState(page);
-        webActionBar.setFontSizeAvailable(page.isArticle());
         if (!page.isArticle()) {
             currentHeaderHeight = AndroidUtilities.dp(56);
         }
         webActionBar.setHeight(page.isArticle() ? currentHeaderHeight : AndroidUtilities.dp(56));
+        webActionBar.setMenuType(page.isArticle() ? ArticleViewer.PageLayout.TYPE_ARTICLE : ArticleViewer.PageLayout.TYPE_WEB);
         updatePageProgress();
     }
 
@@ -983,8 +1048,10 @@ public class BrowserSheet extends org.telegram.ui.ActionBar.BrowserSheet impleme
         if (pages[0] == null || pages[1] == null) {
             return;
         }
-        webActionBar.setTitle(0, pages[0].getTitle(), pages[0].getSubtitleForDisplay());
-        webActionBar.setTitle(1, pages[1].getTitle(), pages[1].getSubtitleForDisplay());
+        webActionBar.setTitle(0, pages[0].getTitle(), false);
+        webActionBar.setSubtitle(0, pages[0].getSubtitleForDisplay(), false);
+        webActionBar.setTitle(1, pages[1].getTitle(), false);
+        webActionBar.setSubtitle(1, pages[1].getSubtitleForDisplay(), false);
     }
 
     private void bringPageToFront(PageLayout page) {
@@ -1032,13 +1099,13 @@ public class BrowserSheet extends org.telegram.ui.ActionBar.BrowserSheet impleme
         if (historyOptions != null && historyOptions.isShown()) {
             historyOptions.dismiss(false);
         }
-        float wasRotation = webActionBar.getBackButtonRotation();
-        webActionBar.setBackButtonRotation(0f, true);
-        options.setScrimViewBackground(Theme.createCircleDrawable(AndroidUtilities.dp(40), webActionBar.getBackgroundColorAdaptive()));
+        float wasRotation = webActionBar.backButtonDrawable.getRotation();
+        webActionBar.backButtonDrawable.setRotation(0f, true);
+        options.setScrimViewBackground(Theme.createCircleDrawable(AndroidUtilities.dp(40), webActionBar.getBackgroundColor()));
         options.setBackgroundColor(backgroundColor);
         options.updateColors();
         options.setOnDismiss(() -> {
-            webActionBar.setBackButtonRotation(wasRotation, true);
+            webActionBar.backButtonDrawable.setRotation(wasRotation, true);
             historyOptions = null;
         });
         historyOptions = options;
@@ -1127,7 +1194,7 @@ public class BrowserSheet extends org.telegram.ui.ActionBar.BrowserSheet impleme
         if (Patterns.WEB_URL.matcher(trimmed).matches()) {
             return "https://" + trimmed;
         }
-        BrowserStorage.pushRecentSearch(windowView.getContext(), trimmed);
+        AddressBarList.pushRecentSearch(windowView.getContext(), trimmed);
         return BrowserStorage.buildSearchUrl(windowView.getContext(), trimmed);
     }
 
@@ -1176,7 +1243,7 @@ public class BrowserSheet extends org.telegram.ui.ActionBar.BrowserSheet impleme
                 public void onTitleChanged(String title) {
                     updatePage();
                     if (isWeb() && PageLayout.this == pages[0] && !dismissing && title != null && title.trim().length() > 0) {
-                        webActionBar.setTitle(title);
+                        webActionBar.setTitle(title, true);
                     }
                 }
 
@@ -1186,11 +1253,9 @@ public class BrowserSheet extends org.telegram.ui.ActionBar.BrowserSheet impleme
                     updatePage();
                     if (isWeb() && PageLayout.this == pages[0] && !webActionBar.isAddressing() && !webActionBar.isSearching() && !windowView.movingPage && !windowView.openingPage) {
                         updateBrowserMenuState(url);
-                        webActionBar.setCurrentUrl(url);
-                        webActionBar.setSubtitle(url);
-                        webActionBar.setForwardAvailable(canGoForward);
+                        webActionBar.setSubtitle(url, true);
                         if (webActionBar.getTitle() == null || webActionBar.getTitle().length() == 0) {
-                            webActionBar.setTitle(titleFromUrl(url));
+                            webActionBar.setTitle(titleFromUrl(url), true);
                         }
                         if (pagesStack.size() > 1) {
                             webActionBar.setBackButton(true);
@@ -1203,7 +1268,7 @@ public class BrowserSheet extends org.telegram.ui.ActionBar.BrowserSheet impleme
                 @Override
                 public void onProgressChanged(int progress, boolean visible) {
                     if (PageLayout.this == pages[0]) {
-                        webActionBar.setLoadingProgress(progress, visible);
+                        setLoadingProgress(progress, visible);
                     }
                 }
 
@@ -1237,9 +1302,6 @@ public class BrowserSheet extends org.telegram.ui.ActionBar.BrowserSheet impleme
 
                 @Override
                 public void onHistoryChanged(boolean available) {
-                    if (PageLayout.this == pages[0]) {
-                        webActionBar.setHistoryAvailable(available);
-                    }
                 }
             });
 
@@ -1400,6 +1462,9 @@ public class BrowserSheet extends org.telegram.ui.ActionBar.BrowserSheet impleme
                 webBackgroundColor = blendOver(Color.WHITE, color);
                 if (SharedConfig.adaptableColorInBrowser) {
                     webViewContainer.setBrowserBackgroundColor(webBackgroundColor);
+                    if (PageLayout.this == pages[0]) {
+                        webActionBar.setMenuColors(webBackgroundColor);
+                    }
                 }
             }
             updatePage();
@@ -1773,7 +1838,8 @@ public class BrowserSheet extends org.telegram.ui.ActionBar.BrowserSheet impleme
                 previousPage.setAlpha(1f);
                 previousPage.setTranslationX(0f);
                 sendPageToBack(previousPage);
-                webActionBar.setNextTitle(previousPage.getTitle(), previousPage.getSubtitleForDisplay());
+                webActionBar.setTitle(1, previousPage.getTitle(), false);
+                webActionBar.setSubtitle(1, previousPage.getSubtitleForDisplay(), false);
                 webActionBar.setTransitionProgress(0f);
             } else {
                 movingPage = false;
@@ -2075,7 +2141,7 @@ public class BrowserSheet extends org.telegram.ui.ActionBar.BrowserSheet impleme
 
         @Override
         public boolean dispatchKeyEventPreIme(KeyEvent event) {
-            if (event != null && event.getKeyCode() == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP && webActionBar.hideKeyboardIfInputFocused()) {
+            if (event != null && event.getKeyCode() == KeyEvent.KEYCODE_BACK && event.getAction() == KeyEvent.ACTION_UP && hideActionBarKeyboardIfInputFocused()) {
                 return true;
             }
             return super.dispatchKeyEventPreIme(event);
@@ -2185,7 +2251,6 @@ public class BrowserSheet extends org.telegram.ui.ActionBar.BrowserSheet impleme
             return;
         }
         boolean saved = BrowserStorage.toggleBookmark(windowView.getContext(), url, page.getTitle(), page.getFavicon());
-        webActionBar.setBookmarkSaved(saved);
         Toast.makeText(windowView.getContext(),
                 saved ? R.string.app_browser_bookmark_saved_message : R.string.app_browser_bookmark_removed_message,
                 Toast.LENGTH_SHORT).show();
@@ -2204,14 +2269,15 @@ public class BrowserSheet extends org.telegram.ui.ActionBar.BrowserSheet impleme
     }
 
     private void updateBrowserMenuState(String url) {
-        webActionBar.setBookmarkSaved(BrowserStorage.isBookmarked(windowView.getContext(), url));
-        webActionBar.setHistoryAvailable(!BrowserStorage.getHistory(windowView.getContext()).isEmpty());
+        PageLayout page = pages[0];
+        webActionBar.setMenuColors(page != null ? page.getBackgroundColor() : Theme.getColor(Theme.key_iv_background));
+        webActionBar.setIsTonsite(false);
+        webActionBar.setHasForward(page != null && page.isWeb() && page.webViewContainer.canGoForward());
+        webActionBar.setIsLoaded(page == null || !page.isWeb() || page.webViewContainer.getProgress() >= 100);
+        webActionBar.forwardButtonDrawable.setState(false);
     }
 
     private void updateInstantViewMenuState(PageLayout page) {
-        boolean available = page != null && page.isWeb() && !TextUtils.isEmpty(page.webViewContainer.getInstantViewJson());
-        boolean loading = page != null && page.isWeb() && page.webViewContainer.isInstantViewLoading();
-        webActionBar.setInstantViewAvailable(available || loading, available);
     }
 
     private void openCurrentPageExternal(PageLayout page) {
@@ -2235,12 +2301,6 @@ public class BrowserSheet extends org.telegram.ui.ActionBar.BrowserSheet impleme
         }
     }
 
-    /**
-     * NativeDo addition: send the current page URL through the system share sheet. Telegram's
-     * WebActionBar overflow does not include a Share row (Telegram routes share through its own
-     * forward action), so this lives in BrowserSheet as an ADAPTED-PRODUCT entry. Tracked in the
-     * WebActionBar header block under MENU_SHARE.
-     */
     private void shareCurrentPage(PageLayout page) {
         if (page == null) {
             return;

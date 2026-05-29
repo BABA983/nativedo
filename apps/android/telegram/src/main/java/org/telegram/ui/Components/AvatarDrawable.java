@@ -126,6 +126,10 @@ public class AvatarDrawable extends Drawable {
         getAvatarSymbols(name, null, stringBuilder);
     }
 
+    public void setInfo(long id, String firstName, String lastName) {
+        setInfo(id, firstName);
+    }
+
     public void setText(String text) {
         invalidateTextLayout = true;
         getAvatarSymbols(text, null, stringBuilder);

@@ -17,6 +17,13 @@ import org.telegram.tgnet.TLRPC;
  * NativeDo loads images on demand only; the controller is a no-op singleton.
  */
 public class DownloadController {
+    public interface FileDownloadProgressListener {
+        default int getObserverTag() { return 0; }
+        default void onFailedDownload(String fileName, boolean canceled) {}
+        default void onSuccessDownload(String fileName) {}
+        default void onProgressDownload(String fileName, long downloadedSize, long totalSize) {}
+        default void onProgressUpload(String fileName, long uploadedSize, long totalSize, boolean isEncrypted) {}
+    }
 
     public static final int AUTODOWNLOAD_TYPE_PHOTO = 1;
     public static final int AUTODOWNLOAD_TYPE_VIDEO = 2;
@@ -83,4 +90,9 @@ public class DownloadController {
     public java.util.ArrayList<MessageObject> getRecentDownloadingFiles() {
         return recentDownloadingFiles;
     }
+
+    public static int generateObserverTag() { return 0; }
+    public int getCurrentDownloadMask() { return 0; }
+    public void addLoadingFileObserver(String fileName, Object parentObject, FileDownloadProgressListener listener) {}
+    public void removeLoadingFileObserver(FileDownloadProgressListener listener) {}
 }

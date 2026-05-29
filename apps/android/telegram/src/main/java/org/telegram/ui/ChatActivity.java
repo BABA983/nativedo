@@ -10,6 +10,8 @@ package org.telegram.ui;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.BaseFragment;
 
+import android.os.Bundle;
+
 /**
  * NativeDo stub of org.telegram.ui.ChatActivity.
  * Upstream is the chat screen (~25k lines). NativeDo only needs the type
@@ -20,6 +22,16 @@ public class ChatActivity extends BaseFragment {
     public Object chatInfo;
     public TLRPC.Chat currentChat;
     public TLRPC.User currentUser;
+
+    public ChatActivity() {
+    }
+
+    public ChatActivity(Bundle args) {
+    }
+
+    public static ChatActivity of(long dialogId, int messageId) {
+        return new ChatActivity();
+    }
 
     public TLRPC.User getCurrentUser() {
         return currentUser;

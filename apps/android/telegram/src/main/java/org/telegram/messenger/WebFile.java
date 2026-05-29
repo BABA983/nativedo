@@ -9,6 +9,7 @@
 package org.telegram.messenger;
 
 import org.telegram.tgnet.TLObject;
+import org.telegram.tgnet.TLRPC;
 
 /**
  * NativeDo-trimmed stub of org.telegram.messenger.WebFile.
@@ -24,4 +25,8 @@ public class WebFile extends TLObject {
     public String mime_type;
     public org.telegram.tgnet.TLRPC.InputWebFileLocation location;
     public boolean noproxy;
+
+    public static WebFile createWithGeoPoint(TLRPC.GeoPoint point, int w, int h, int zoom, int scale) {
+        return new WebFile();
+    }
 }

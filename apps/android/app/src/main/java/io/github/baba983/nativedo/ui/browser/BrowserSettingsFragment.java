@@ -51,6 +51,8 @@ import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
 import org.telegram.ui.Components.UniversalCells;
 import org.telegram.ui.Components.UniversalFragment;
+import org.telegram.ui.web.RestrictedDomainsList;
+import org.telegram.ui.web.SearchEngine;
 
 class BrowserSettingsFragment extends UniversalFragment {
 
@@ -126,7 +128,7 @@ class BrowserSettingsFragment extends UniversalFragment {
         }
 
         items.add(UItem.asHeader(context.getString(R.string.app_browser_settings_restricted_domains_title)));
-        ArrayList<String> domains = BrowserStorage.getRestrictedDomains(context);
+        ArrayList<String> domains = RestrictedDomainsList.getInstance().getRestrictedDomainsList();
         items.add(UItem.asButton(
                 BUTTON_ADD_DOMAIN,
                 android.R.drawable.ic_input_add,
@@ -293,13 +295,13 @@ class BrowserSettingsFragment extends UniversalFragment {
                 showAddDomainDialog();
                 break;
             case BUTTON_CLEAR_LIST:
-                BrowserStorage.clearRestrictedDomains(context);
+                RestrictedDomainsList.getInstance().clearRestrictedDomains();
                 updateRows();
                 break;
             case BUTTON_DOMAIN:
                 String domain = item.textValue == null ? null : item.textValue.toString();
                 showDomainOptions(view, TextUtils.isEmpty(domain) ? null : () -> {
-                    BrowserStorage.removeRestrictedDomain(context, domain);
+                    RestrictedDomainsList.getInstance().removeRestrictedDomain(domain);
                     updateRows();
                 });
                 break;
@@ -351,7 +353,7 @@ class BrowserSettingsFragment extends UniversalFragment {
         }
     }
 
-    private String labelForEngine(BrowserStorage.SearchEngine engine) {
+    private String labelForEngine(SearchEngine engine) {
         return engine.name;
     }
 
@@ -466,12 +468,12 @@ class BrowserSettingsFragment extends UniversalFragment {
 
         buttons.addView(createDialogButton(context, context.getString(android.R.string.cancel), false, dialog::dismiss));
         buttons.addView(createDialogButton(context, context.getString(R.string.app_browser_address_submit), true, () -> {
-            String domain = BrowserStorage.normalizeRestrictedDomain(input.getText().toString());
+            String domain = RestrictedDomainsList.normalizeRestrictedDomain(input.getText().toString());
             if (TextUtils.isEmpty(domain)) {
                 input.setError(context.getString(R.string.app_browser_settings_add_restricted_domain_invalid));
                 return;
             }
-            BrowserStorage.addRestrictedDomain(context, domain);
+            RestrictedDomainsList.getInstance().addRestrictedDomain(domain);
             dialog.dismiss();
             updateRows();
         }));
@@ -595,10 +597,10 @@ class BrowserSettingsFragment extends UniversalFragment {
         titleView.setPadding(AndroidUtilities.dp(22), 0, AndroidUtilities.dp(22), AndroidUtilities.dp(8));
         content.addView(titleView, new LinearLayout.LayoutParams(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
-        BrowserStorage.SearchEngine current = BrowserStorage.getSearchEngine(context);
-        BrowserStorage.SearchEngine[] engines = BrowserStorage.SearchEngine.values();
+        SearchEngine current = BrowserStorage.getSearchEngine(context);
+        SearchEngine[] engines = BrowserStorage.getSearchEngines();
         for (int i = 0; i < engines.length; i++) {
-            BrowserStorage.SearchEngine engine = engines[i];
+            SearchEngine engine = engines[i];
             UniversalCells.RadioCell cell = new UniversalCells.RadioCell(context);
             cell.bind(labelForEngine(engine), null, engine == current, i != engines.length - 1);
             cell.setOnClickListener(v -> {

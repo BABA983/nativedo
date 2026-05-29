@@ -35,4 +35,18 @@ public class EditTextBoldCursor extends EditText {
             getTextCursorDrawable().setTint(color);
         }
     }
+
+    public void setHandlesColor(int color) {
+    }
+
+    public void setHintColor(int color) {
+        setHintTextColor(color);
+    }
+
+    public void setHintText(CharSequence hint) {
+        setHint(hint);
+    }
+
+    public void setLineColors(int color, int activeColor, int errorColor) {
+    }
 }

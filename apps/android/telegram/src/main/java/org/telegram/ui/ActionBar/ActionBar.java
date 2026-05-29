@@ -53,6 +53,8 @@ public class ActionBar extends FrameLayout {
     private final ImageView backButtonImageView;
     private final SimpleTextView titleTextView;
     public ActionBarMenu menu;
+    private ActionBarMenu actionMode;
+    private boolean actionModeVisible;
     public int itemsColor;
     public int itemsBackgroundColor;
     private int titleColor;
@@ -163,6 +165,37 @@ public class ActionBar extends FrameLayout {
         invalidate();
     }
 
+    public void setActionModeColor(int color) {
+    }
+
+    public ActionBarMenu createActionMode() {
+        if (actionMode != null) {
+            return actionMode;
+        }
+        actionMode = new ActionBarMenu(getContext(), this);
+        actionMode.setVisibility(GONE);
+        addView(actionMode, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.RIGHT));
+        return actionMode;
+    }
+
+    public boolean isActionModeShowed() {
+        return actionModeVisible;
+    }
+
+    public void showActionMode() {
+        actionModeVisible = true;
+        if (actionMode != null) {
+            actionMode.setVisibility(VISIBLE);
+        }
+    }
+
+    public void hideActionMode() {
+        actionModeVisible = false;
+        if (actionMode != null) {
+            actionMode.setVisibility(GONE);
+        }
+    }
+
     public void setTitleColor(int color) {
         titleColor = color;
         titleTextView.setTextColor(color);
@@ -217,17 +250,17 @@ public class ActionBar extends FrameLayout {
         }
     }
 
+    public boolean getOccupyStatusBar() {
+        return occupyStatusBar;
+    }
+
     private boolean clipContent;
 
     public void setClipContent(boolean value) {
         clipContent = value;
     }
 
-    public int getCurrentActionBarHeight() {
-        return AndroidUtilities.dp(56) + (occupyStatusBar ? AndroidUtilities.statusBarHeight : 0);
-    }
-
-    public static int getCurrentActionBarHeightStatic() {
+    public static int getCurrentActionBarHeight() {
         if (AndroidUtilities.isTablet()) {
             return AndroidUtilities.dp(64);
         } else if (AndroidUtilities.displaySize.x > AndroidUtilities.displaySize.y) {
@@ -244,7 +277,7 @@ public class ActionBar extends FrameLayout {
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         int width = MeasureSpec.getSize(widthMeasureSpec);
         int topInset = occupyStatusBar ? AndroidUtilities.statusBarHeight : 0;
-        int barHeight = AndroidUtilities.dp(56);
+        int barHeight = getCurrentActionBarHeight();
         int totalHeight = topInset + barHeight;
         setMeasuredDimension(width, totalHeight);
 
@@ -285,7 +318,7 @@ public class ActionBar extends FrameLayout {
     @Override
     protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
         int topInset = occupyStatusBar ? AndroidUtilities.statusBarHeight : 0;
-        int barHeight = AndroidUtilities.dp(56);
+        int barHeight = getCurrentActionBarHeight();
         int buttonSize = AndroidUtilities.dp(54);
         backButtonImageView.layout(0, topInset, buttonSize, topInset + barHeight);
 

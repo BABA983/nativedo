@@ -49,6 +49,7 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.ui.Adapters.FiltersView;
 import org.telegram.ui.Components.CloseProgressDrawable2;
+import org.telegram.ui.Components.EditTextBoldCursor;
 import org.telegram.ui.Components.LayoutHelper;
 
 public class ActionBarMenuItem extends FrameLayout {
@@ -77,7 +78,7 @@ public class ActionBarMenuItem extends FrameLayout {
     private int popupBackgroundColor;
     private boolean isSearchField;
     private FrameLayout searchContainer;
-    private EditText searchField;
+    private EditTextBoldCursor searchField;
     private ImageView clearButton;
     private ActionBarMenuItemSearchListener searchListener;
 
@@ -167,7 +168,7 @@ public class ActionBarMenuItem extends FrameLayout {
         return this;
     }
 
-    public EditText getSearchField() {
+    public EditTextBoldCursor getSearchField() {
         checkCreateSearchField();
         return searchField;
     }
@@ -464,7 +465,7 @@ public class ActionBarMenuItem extends FrameLayout {
         searchContainer = new FrameLayout(getContext());
         searchContainer.setVisibility(GONE);
         searchContainer.setClipChildren(false);
-        searchField = new EditText(getContext());
+        searchField = new EditTextBoldCursor(getContext());
         searchField.setSingleLine(true);
         searchField.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 18);
         searchField.setBackground(null);

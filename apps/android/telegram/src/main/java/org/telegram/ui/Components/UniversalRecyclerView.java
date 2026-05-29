@@ -42,4 +42,16 @@ public class UniversalRecyclerView extends RecyclerListView {
         itemAnimator.setChangeDuration(350);
         setItemAnimator(itemAnimator);
     }
+
+    public UniversalRecyclerView(
+            Context context,
+            int currentAccount,
+            int classGuid,
+            UniversalListCallbacks.Fill fillItems,
+            @Nullable UniversalListCallbacks.Click onClick,
+            @Nullable UniversalListCallbacks.LongClick onLongClick,
+            @Nullable org.telegram.ui.ActionBar.Theme.ResourcesProvider resourcesProvider
+    ) {
+        this(context, fillItems, onClick, onLongClick);
+    }
 }

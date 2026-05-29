@@ -9,6 +9,9 @@ import java.util.ArrayList;
  */
 public class TLRPC {
 
+    public static final int MESSAGE_FLAG_HAS_FROM_ID = 0x00000100;
+    public static final int MESSAGE_FLAG_HAS_MEDIA = 0x00000200;
+
     public static class TL_fileLocationToBeDeprecated extends FileLocation {
     }
 
@@ -166,8 +169,10 @@ public class TLRPC {
     }
 
     public static class Message extends TLObject {
+        public int flags;
         public long id;
         public long dialog_id;
+        public String message;
         public MessageMedia media;
         public MessageAction action;
         public Peer from_id;
@@ -182,14 +187,31 @@ public class TLRPC {
         public int ttl;
         public long random_id;
         public java.util.ArrayList<Object> restriction_reason = new java.util.ArrayList<>();
-        public java.util.ArrayList<Object> entities = new java.util.ArrayList<>();
+        public java.util.ArrayList<MessageEntity> entities = new java.util.ArrayList<>();
         public Object suggested_post;
         public boolean scheduled;
         public int date;
     }
 
+    public static class TL_message extends Message {
+        public boolean out;
+    }
+
     public static class MessageAction extends TLObject {
         public Photo photo;
+    }
+
+    public static class TL_messageActionChatAddUser extends MessageAction {
+        public ArrayList<Long> users = new ArrayList<>();
+    }
+
+    public static class MessageEntity extends TLObject {
+        public int offset;
+        public int length;
+        public String url;
+    }
+
+    public static class TL_messageEntityUrl extends MessageEntity {
     }
 
     public static class Peer extends TLObject {
@@ -217,10 +239,17 @@ public class TLRPC {
         public boolean premium;
     }
 
+    public static class TL_user extends User {
+    }
+
     public static class Chat extends TLObject {
         public long id;
         public long access_hash;
         public String title;
+        public String username;
+        public boolean left;
+        public boolean kicked;
+        public boolean min;
         public ChatPhoto photo;
     }
 
@@ -262,6 +291,11 @@ public class TLRPC {
     }
 
     public static class TL_inputPeerEmpty extends InputPeer {
+    }
+
+    public static class InputChannel extends TLObject {
+        public long channel_id;
+        public long access_hash;
     }
 
     public static class InputStickerSet extends TLObject {
@@ -356,6 +390,9 @@ public class TLRPC {
     public static class InputEncryptedFile extends TLObject {
     }
 
+    public static class InputInvoice extends TLObject {
+    }
+
     public static class WebDocument {
         public String url;
         public int size;
@@ -377,6 +414,7 @@ public class TLRPC {
     }
 
     public static class MessageMedia extends TLObject {
+        public int flags;
         public Photo photo;
         public Document document;
         public WebPage webpage;
@@ -419,18 +457,267 @@ public class TLRPC {
     }
 
     public static class PageBlock extends TLObject {
+        public int level;
+        public boolean bottom;
+        public int mid;
+        public long groupId;
+        public int cachedWidth;
+        public int cachedHeight;
+        public PhotoSize thumb;
+        public Object thumbObject;
+        public RichText title;
+        public RichText text;
+        public RichText subtitle;
+        public TL_pageCaption caption;
         public Photo photo;
         public Document document;
         public String url;
-        public String caption;
+        public String html;
+        public long poster_photo_id;
+        public String author;
+        public int date;
+        public int w;
+        public int h;
+        public long photo_id;
+        public long video_id;
+        public long audio_id;
+        public long channel_id;
+        public GeoPoint geo;
+        public int zoom;
+        public PageBlock block;
+        public ArrayList<PageBlock> blocks = new ArrayList<>();
+        public boolean first;
+    }
+
+    public static class TL_pageBlockUnsupported extends PageBlock {
+    }
+
+    public static class TL_pageBlockTitle extends PageBlock {
+    }
+
+    public static class TL_pageBlockSubtitle extends PageBlock {
+    }
+
+    public static class TL_pageBlockAuthorDate extends PageBlock {
+        public RichText author;
+        public int published_date;
+    }
+
+    public static class TL_pageBlockHeader extends PageBlock {
+    }
+
+    public static class TL_pageBlockSubheader extends PageBlock {
+    }
+
+    public static class TL_pageBlockKicker extends PageBlock {
+    }
+
+    public static class TL_pageBlockParagraph extends PageBlock {
+    }
+
+    public static class TL_pageBlockPreformatted extends PageBlock {
+        public String language;
+    }
+
+    public static class TL_pageBlockFooter extends PageBlock {
+    }
+
+    public static class TL_pageBlockDivider extends PageBlock {
+    }
+
+    public static class TL_pageBlockAnchor extends PageBlock {
+        public String name;
+    }
+
+    public static class TL_pageBlockBlockquote extends PageBlock {
+        public RichText caption;
+    }
+
+    public static class TL_pageBlockPullquote extends PageBlock {
+        public RichText caption;
+    }
+
+    public static class TL_pageBlockCover extends PageBlock {
+        public PageBlock cover;
+    }
+
+    public static class TL_pageBlockEmbed extends PageBlock {
+        public boolean full_width;
+        public boolean allow_scrolling;
+    }
+
+    public static class TL_pageBlockEmbedPost extends PageBlock {
+        public String webpage_id;
+        public long author_photo_id;
+        public ArrayList<PageBlock> blocks = new ArrayList<>();
+    }
+
+    public static class TL_pageBlockCollage extends PageBlock {
+        public ArrayList<PageBlock> items = new ArrayList<>();
+    }
+
+    public static class TL_pageBlockSlideshow extends PageBlock {
+        public ArrayList<PageBlock> items = new ArrayList<>();
+    }
+
+    public static class TL_pageBlockChannel extends PageBlock {
+        public Chat channel;
+    }
+
+    public static class TL_pageBlockAudio extends PageBlock {
+    }
+
+    public static class TL_pageBlockMap extends PageBlock {
+    }
+
+    public static class TL_pageBlockDetails extends PageBlock {
+        public boolean open;
+        public ArrayList<PageBlock> blocks = new ArrayList<>();
+    }
+
+    public static class TL_pageBlockTable extends PageBlock {
+        public boolean bordered;
+        public boolean striped;
+        public ArrayList<TL_pageTableRow> rows = new ArrayList<>();
+    }
+
+    public static class TL_pageBlockRelatedArticles extends PageBlock {
+        public RichText title;
+        public ArrayList<TL_pageRelatedArticle> articles = new ArrayList<>();
+    }
+
+    public static class TL_pageBlockList extends PageBlock {
+        public ArrayList<PageListItem> items = new ArrayList<>();
+        public boolean ordered;
+    }
+
+    public static class TL_pageBlockOrderedList extends PageBlock {
+        public ArrayList<PageListOrderedItem> items = new ArrayList<>();
     }
 
     public static class TL_pageBlockPhoto extends PageBlock {
-        public long photo_id;
     }
 
     public static class TL_pageBlockVideo extends PageBlock {
-        public long video_id;
+    }
+
+    public static class TL_pageCaption extends TLObject {
+        public RichText text;
+        public RichText credit;
+    }
+
+    public static class PageListItem extends TLObject {
+        public RichText text;
+        public ArrayList<PageBlock> blocks = new ArrayList<>();
+    }
+
+    public static class TL_pageListItemText extends PageListItem {
+    }
+
+    public static class TL_pageListItemBlocks extends PageListItem {
+    }
+
+    public static class PageListOrderedItem extends TLObject {
+        public String num;
+        public RichText text;
+        public ArrayList<PageBlock> blocks = new ArrayList<>();
+    }
+
+    public static class TL_pageListOrderedItemText extends PageListOrderedItem {
+    }
+
+    public static class TL_pageListOrderedItemBlocks extends PageListOrderedItem {
+    }
+
+    public static class TL_pageTableRow extends TLObject {
+        public ArrayList<TL_pageTableCell> cells = new ArrayList<>();
+    }
+
+    public static class TL_pageTableCell extends TLObject {
+        public int flags;
+        public boolean header;
+        public boolean align_center;
+        public boolean align_right;
+        public boolean valign_middle;
+        public boolean valign_bottom;
+        public int colspan = 1;
+        public int rowspan = 1;
+        public RichText text;
+    }
+
+    public static class TL_pageRelatedArticle extends TLObject {
+        public String url;
+        public long webpage_id;
+        public long photo_id;
+        public String title;
+        public String description;
+        public Photo photo;
+        public String author;
+        public int published_date;
+    }
+
+    public static class RichText extends TLObject {
+        public String url;
+        public long webpage_id;
+        public String email;
+        public RichText text;
+        public ArrayList<RichText> texts = new ArrayList<>();
+        public RichText parentRichText;
+    }
+
+    public static class TL_textEmpty extends RichText {
+    }
+
+    public static class TL_textPlain extends RichText {
+        public String text;
+    }
+
+    public static class TL_textBold extends RichText {
+    }
+
+    public static class TL_textItalic extends RichText {
+    }
+
+    public static class TL_textUnderline extends RichText {
+    }
+
+    public static class TL_textStrike extends RichText {
+    }
+
+    public static class TL_textFixed extends RichText {
+    }
+
+    public static class TL_textUrl extends RichText {
+    }
+
+    public static class TL_textEmail extends RichText {
+    }
+
+    public static class TL_textConcat extends RichText {
+    }
+
+    public static class TL_textSubscript extends RichText {
+    }
+
+    public static class TL_textSuperscript extends RichText {
+    }
+
+    public static class TL_textMarked extends RichText {
+    }
+
+    public static class TL_textPhone extends RichText {
+        public String phone;
+    }
+
+    public static class TL_textImage extends RichText {
+        public long photo_id;
+        public long document_id;
+        public int w;
+        public int h;
+    }
+
+    public static class TL_textAnchor extends RichText {
+        public String name;
     }
 
     public static class TL_messageExtendedMediaPreview extends MessageExtendedMedia {
@@ -443,6 +730,7 @@ public class TLRPC {
     }
 
     public static class WebPage extends TLObject {
+        public int flags;
         public long id;
         public String url;
         public String display_url;
@@ -450,8 +738,56 @@ public class TLRPC {
         public String site_name;
         public String title;
         public String description;
+        public String author;
         public Photo photo;
         public Document document;
+        public Page cached_page;
+        public String embed_url;
+        public String embed_type;
+        public int embed_width;
+        public int embed_height;
+        public int duration;
+        public int hash;
+        public int date;
+        public ArrayList<WebPageAttribute> attributes = new ArrayList<>();
+    }
+
+    public static class TL_webPage extends WebPage {
+    }
+
+    public static class TL_webPageNotModified extends WebPage {
+        public int cached_page_views;
+    }
+
+    public static class WebPageAttribute extends TLObject {
+    }
+
+    public static class Page extends TLObject {
+        public int flags;
+        public String url;
+        public boolean part;
+        public boolean rtl;
+        public boolean web;
+        public ArrayList<PageBlock> blocks = new ArrayList<>();
+        public ArrayList<Photo> photos = new ArrayList<>();
+        public ArrayList<Document> documents = new ArrayList<>();
+        public ArrayList<Page> cached_pages = new ArrayList<>();
+        public int views;
+    }
+
+    public static class TL_page extends Page {
+    }
+
+    public static class TL_pagePart_layer82 extends TL_page {
+    }
+
+    public static class TL_null extends TLObject {
+        public static final int constructor = 0x56730bcc;
+    }
+
+    public static class GeoPoint extends TLObject {
+        public double lat;
+        public double _long;
     }
 
     public static class StickerSet extends TLObject {
@@ -500,5 +836,53 @@ public class TLRPC {
         public int h;
         public int zoom;
         public int scale;
+    }
+
+    public static class Update extends TLObject {
+    }
+
+    public static class TL_updateNewChannelMessage extends Update {
+        public Message message;
+        public int pts;
+        public int pts_count;
+    }
+
+    public static class Updates extends TLObject {
+        public ArrayList<Update> updates = new ArrayList<>();
+        public ArrayList<User> users = new ArrayList<>();
+        public ArrayList<Chat> chats = new ArrayList<>();
+        public int date;
+        public int seq;
+    }
+
+    public static class TL_contacts_resolveUsername extends TLObject {
+        public String username;
+    }
+
+    public static class TL_contacts_resolvedPeer extends TLObject {
+        public Peer peer;
+        public ArrayList<User> users = new ArrayList<>();
+        public ArrayList<Chat> chats = new ArrayList<>();
+    }
+
+    public static class TL_channels_joinChannel extends TLObject {
+        public InputPeer channel;
+    }
+
+    public static class TL_messages_getWebPage extends TLObject {
+        public String url;
+        public int hash;
+    }
+
+    public static class TL_messages_webPage extends TLObject {
+        public WebPage webpage;
+        public ArrayList<User> users = new ArrayList<>();
+        public ArrayList<Chat> chats = new ArrayList<>();
+    }
+
+    public static class TL_messages_messages extends TLObject {
+        public ArrayList<Message> messages = new ArrayList<>();
+        public ArrayList<User> users = new ArrayList<>();
+        public ArrayList<Chat> chats = new ArrayList<>();
     }
 }

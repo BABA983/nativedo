@@ -62,6 +62,10 @@ public class DialogsItemAnimator extends SimpleItemAnimator {
         this.listView = listView;
     }
 
+    @Override
+    public void listenToAnimationUpdates(Runnable listener) {
+    }
+
     private static class ChangeInfo {
         public ViewHolder oldHolder, newHolder;
         public int fromX, fromY, toX, toY;

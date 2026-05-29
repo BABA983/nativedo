@@ -9,6 +9,9 @@ package org.telegram.messenger;
 
 import java.util.HashMap;
 
+import android.net.Uri;
+import org.telegram.tgnet.TLRPC;
+
 /**
  * NativeDo stub of org.telegram.messenger.FileStreamLoadOperation.
  * Upstream streams MTProto file content to ExoPlayer. NativeDo doesn't stream
@@ -23,5 +26,16 @@ public class FileStreamLoadOperation implements FileLoadOperationStream {
 
     @Override
     public void newDataAvailable() {
+    }
+
+    public static int getStreamPrioriy(TLRPC.Document document) {
+        return 0;
+    }
+
+    public static void setPriorityForDocument(TLRPC.Document document, int priority) {
+    }
+
+    public static Uri prepareUri(int currentAccount, TLRPC.Document document, TLRPC.WebPage webPage) {
+        return Uri.EMPTY;
     }
 }

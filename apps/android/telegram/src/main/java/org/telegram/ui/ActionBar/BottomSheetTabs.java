@@ -51,6 +51,13 @@ import org.telegram.ui.Components.AnimatedFloat;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 
 public class BottomSheetTabs extends FrameLayout {
+    public static String urlWithoutFragment(String url) {
+        if (url == null) {
+            return null;
+        }
+        int index = url.indexOf('#');
+        return index >= 0 ? url.substring(0, index) : url;
+    }
 
     private final Paint backgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     public boolean drawTabs = true;
@@ -481,13 +488,22 @@ public class BottomSheetTabs extends FrameLayout {
         relayoutListeners.remove(relayout);
     }
 
+    public boolean tryRemoveTabWith(Object owner) {
+        return false;
+    }
+
     public static class WebTabData {
         public BrowserSheet browserSheet;
+        public Object articleViewer;
         public String title;
         public String startUrl;
         public String currentUrl;
+        public String lastUrl;
+        public org.telegram.ui.web.BotWebViewContainer.MyWebView webView;
+        public Object proxy;
         public Bitmap favicon;
         public Bitmap previewBitmap;
+        public View view2;
         public float articleProgress;
         public int viewWidth;
         public int viewHeight;
@@ -495,6 +511,7 @@ public class BottomSheetTabs extends FrameLayout {
         public int actionBarColor;
         public int backgroundColor;
         public boolean themeIsDark;
+        public boolean overrideActionBarColor;
 
         public void destroy() {
             try {

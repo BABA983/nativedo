@@ -274,7 +274,7 @@ class BrowserInstantViewFragment extends BaseFragment {
         webActionBar.setColors(Theme.getColor(Theme.key_windowBackgroundWhite), false);
         currentHeaderHeight = AndroidUtilities.dp(56);
         webActionBar.setHeight(currentHeaderHeight);
-        int actionBarHeight = webActionBar.getCurrentActionBarHeight();
+        int actionBarHeight = webActionBar.getCurrentTotalHeight();
 
         fontScale = BrowserStorage.getInstantViewFontScale(context);
 

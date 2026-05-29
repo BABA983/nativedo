@@ -61,6 +61,13 @@ public class AnimatedFloat {
         this.firstSet = false;
     }
 
+    public AnimatedFloat(Runnable invalidateCallback, long transitionDelay, long transitionDuration, TimeInterpolator interpolator) {
+        this.invalidateCallback = invalidateCallback;
+        this.transitionDelay = transitionDelay;
+        this.transitionDuration = transitionDuration;
+        this.interpolator = interpolator;
+    }
+
     public AnimatedFloat(View parentToInvalidate, long transitionDuration, TimeInterpolator interpolator) {
         this.parentToInvalidate = parentToInvalidate;
         this.transitionDuration = transitionDuration;

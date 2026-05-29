@@ -40,6 +40,15 @@ public class SendMessagesHelper {
     public void cleanup() {
     }
 
+    public static class SendMessageParams {
+        public static SendMessageParams of(String text, long dialogId) {
+            return new SendMessageParams();
+        }
+    }
+
+    public void sendMessage(SendMessageParams params) {
+    }
+
     public static android.graphics.Bitmap createVideoThumbnail(String filePath, int kind) {
         return null;
     }

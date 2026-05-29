@@ -80,4 +80,8 @@ public class SvgHelper {
     public static android.graphics.Bitmap getBitmap(java.io.File file, int width, int height, boolean white) {
         return null;
     }
+
+    public static android.graphics.Bitmap getBitmap(java.io.InputStream stream, int width, int height, boolean white) {
+        return null;
+    }
 }

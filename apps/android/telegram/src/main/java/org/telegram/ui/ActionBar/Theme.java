@@ -34,6 +34,7 @@ import android.graphics.Path;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.RippleDrawable;
@@ -141,6 +142,36 @@ public final class Theme {
     public static final int key_text_RedBold = colorsCount++;
     public static final int key_text_RedRegular = colorsCount++;
     public static final int key_groupcreate_cursor = colorsCount++;
+    public static final int key_groupcreate_hintText = colorsCount++;
+    public static final int key_windowBackgroundWhiteLinkSelection = colorsCount++;
+    public static final int key_windowBackgroundWhiteLinkText = colorsCount++;
+    public static final int key_windowBackgroundWhiteValueText = colorsCount++;
+    public static final int key_windowBackgroundWhiteInputField = colorsCount++;
+    public static final int key_windowBackgroundWhiteInputFieldActivated = colorsCount++;
+    public static final int key_chat_linkSelectBackground = colorsCount++;
+    public static final int key_chat_inReplyLine = colorsCount++;
+    public static final int key_chat_inAudioSeekbar = colorsCount++;
+    public static final int key_chat_inAudioSeekbarFill = colorsCount++;
+    public static final int key_chat_inAudioSeekbarSelected = colorsCount++;
+    public static final int key_chat_inAudioCacheSeekbar = colorsCount++;
+    public static final int key_chat_inFileProgress = colorsCount++;
+    public static final int key_chat_inLoader = colorsCount++;
+    public static final int key_chat_inLoaderSelected = colorsCount++;
+    public static final int key_chat_inMediaIcon = colorsCount++;
+    public static final int key_chat_inMediaIconSelected = colorsCount++;
+    public static final int key_chat_inLocationBackground = colorsCount++;
+    public static final int key_switchTrack = colorsCount++;
+    public static final int key_dialogTextBlack = colorsCount++;
+    public static final int key_dialogRadioBackground = colorsCount++;
+    public static final int key_dialogRadioBackgroundChecked = colorsCount++;
+    public static final int key_contextProgressInner1 = colorsCount++;
+    public static final int key_contextProgressOuter1 = colorsCount++;
+    public static final int key_contextProgressInner2 = colorsCount++;
+    public static final int key_contextProgressOuter2 = colorsCount++;
+    public static final int key_contextProgressInner3 = colorsCount++;
+    public static final int key_contextProgressOuter3 = colorsCount++;
+    public static final int key_contextProgressInner4 = colorsCount++;
+    public static final int key_contextProgressOuter4 = colorsCount++;
 
     public static final int key_windowBackgroundWhite = colorsCount++;
     public static final int key_windowBackgroundGray = colorsCount++;
@@ -166,12 +197,15 @@ public final class Theme {
     public static final int key_iv_background = colorsCount++;
     public static final int key_iv_backgroundGray = colorsCount++;
     public static final int key_iv_navigationBackground = colorsCount++;
+    public static final int key_iv_ab_progress = colorsCount++;
     public static final int key_actionBarActionModeDefaultSelector = colorsCount++;
+    public static final int key_actionBarActionModeDefaultIcon = colorsCount++;
     public static final int key_chat_messagePanelBackground = colorsCount++;
     public static final int key_chat_messagePanelShadow = colorsCount++;
     public static final int key_graySection = colorsCount++;
     public static final int key_graySectionText = colorsCount++;
     public static final int key_windowBackgroundWhiteBlueHeader = colorsCount++;
+    public static final int key_windowBackgroundWhiteGrayIcon = colorsCount++;
     public static final int key_windowBackgroundGrayShadow = colorsCount++;
     public static final int key_dialogBackground = colorsCount++;
     public static final int key_fastScrollInactive = colorsCount++;
@@ -179,6 +213,16 @@ public final class Theme {
     public static final int key_fastScrollText = colorsCount++;
     public static final int key_settings_listSelector = colorsCount++;
     public static final int key_progressCircle = colorsCount++;
+    public static final int key_switchTrackChecked = colorsCount++;
+    public static final int key_switch2Track = colorsCount++;
+    public static final int key_checkboxCheck = colorsCount++;
+    public static final int key_radioBackground = colorsCount++;
+    public static final int key_player_time = colorsCount++;
+    public static final int key_windowBackgroundChecked = colorsCount++;
+    public static final int key_windowBackgroundUnchecked = colorsCount++;
+
+    public static final int ACTION_BAR_WHITE_SELECTOR_COLOR = 0x40ffffff;
+    public static final Paint dividerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     // ScrollSlidingTextTabStrip keys.
     public static final int key_actionBarTabLine = colorsCount++;
@@ -288,6 +332,18 @@ public final class Theme {
     public static Drawable dialogs_pinnedDrawable2;
     /** NativeDo extension: bottom hairline separator paint shared across list cells. */
     public static final Paint dialogs_dividerPaint = new Paint();
+    public static final Paint checkboxSquare_eraserPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    public static final Paint chat_docBackPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    public static final TextPaint chat_audioTitlePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+    public static Drawable chat_composeShadowDrawable;
+    public static final Paint chat_composeBackgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    public static final Drawable[] chat_locationDrawable = new Drawable[] { new ColorDrawable(Color.TRANSPARENT) };
+
+    public static class MessageDrawable extends ColorDrawable {
+        public MessageDrawable() {
+            super(Color.TRANSPARENT);
+        }
+    }
 
     private static Context applicationContext;
     private static ThemeInfo currentTheme;
@@ -454,6 +510,18 @@ public final class Theme {
         return getColor(key);
     }
 
+    public static int getColor(int key, ResourcesProvider resourcesProvider, boolean[] isDefault) {
+        return getColor(key, resourcesProvider);
+    }
+
+    public static int getColor(int key, ResourcesProvider resourcesProvider, boolean isDefault) {
+        return getColor(key, resourcesProvider);
+    }
+
+    public static int blendOver(int color, int overlay) {
+        return androidx.core.graphics.ColorUtils.compositeColors(overlay, color);
+    }
+
     /** ADAPTED: NativeDo has no animated color blending; alias to getColor. */
     public static int getNonAnimatedColor(int key) {
         return getColor(key);
@@ -592,6 +660,10 @@ public final class Theme {
         return new RippleDrawable(ColorStateList.valueOf(color), null, maskDrawable);
     }
 
+    public static Drawable createRadSelectorDrawable(int color, int rippleColor, int topRadius, int bottomRadius) {
+        return createRadSelectorDrawable(rippleColor == 0 ? color : rippleColor, topRadius, bottomRadius);
+    }
+
     /** ADAPTED: createSimpleSelectorRoundRectDrawable for RecyclerListView. */
     public static Drawable createSimpleSelectorRoundRectDrawable(int radius, int color, int selectorColor, int backgroundColor) {
         Drawable maskDrawable = new Drawable() {
@@ -709,6 +781,25 @@ public final class Theme {
                 return size;
             }
         };
+    }
+
+    public static Drawable getThemedDrawable(Context context, int resId, int key) {
+        if (context == null || resId == 0) {
+            return new ColorDrawable(getColor(key));
+        }
+        try {
+            Drawable drawable = context.getResources().getDrawable(resId).mutate();
+            setDrawableColor(drawable, getColor(key));
+            return drawable;
+        } catch (Exception e) {
+            return new ColorDrawable(getColor(key));
+        }
+    }
+
+    public static void setCombinedDrawableColor(org.telegram.ui.Components.CombinedDrawable drawable, int color, boolean isIcon) {
+        if (drawable != null) {
+            drawable.setColorFilter(new PorterDuffColorFilter(color, PorterDuff.Mode.MULTIPLY));
+        }
     }
 
     public static void addThemeDelegate(ThemeDelegate delegate) {

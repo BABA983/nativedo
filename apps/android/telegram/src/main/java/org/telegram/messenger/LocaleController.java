@@ -17,6 +17,9 @@ package org.telegram.messenger;
 
 import android.content.Context;
 
+import java.text.SimpleDateFormat;
+import java.util.Locale;
+
 /**
  * Minimal shim matching Telegram's {@code LocaleController} API surface.
  * Ported code calls {@code LocaleController.isRTL} and
@@ -69,6 +72,41 @@ public final class LocaleController {
         }
     }
 
+    public static String getString(String key) {
+        if (applicationContext == null) {
+            return "LOC_ERR:" + key;
+        }
+        try {
+            int resId = applicationContext.getResources().getIdentifier(key, "string", applicationContext.getPackageName());
+            return resId == 0 ? "LOC_ERR:" + key : applicationContext.getString(resId);
+        } catch (Exception e) {
+            return "LOC_ERR:" + key;
+        }
+    }
+
+    public static String getString(int resId) {
+        if (applicationContext == null) {
+            return "";
+        }
+        try {
+            return applicationContext.getString(resId);
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    public static String formatPluralStringComma(String key, int quantity) {
+        return formatPluralString(key, quantity);
+    }
+
+    public static String formatPluralStringComma(String key, int quantity, char separator) {
+        return formatPluralString(key, quantity);
+    }
+
+    public static String getPluralString(String key, int quantity) {
+        return formatPluralString(key, quantity);
+    }
+
     /**
      * Returns the formatted string for the given resource ID.
      * Matches upstream {@code LocaleController.formatString(String key, int resId, Object... args)}.
@@ -82,6 +120,33 @@ public final class LocaleController {
         } catch (Exception e) {
             return key;
         }
+    }
+
+    public static String formatString(int resId, Object... args) {
+        if (applicationContext == null) {
+            return "";
+        }
+        try {
+            return applicationContext.getString(resId, args);
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    public static LocaleController getInstance() {
+        return new LocaleController();
+    }
+
+    public SimpleDateFormat getChatFullDate() {
+        return new SimpleDateFormat("MMM d, yyyy", Locale.US);
+    }
+
+    public SimpleDateFormat getFormatterDay() {
+        return new SimpleDateFormat("MMM d", Locale.US);
+    }
+
+    public static String formatDateChat(long value) {
+        return new SimpleDateFormat("MMM d, yyyy", Locale.US).format(value * 1000L);
     }
 
     /**

@@ -94,10 +94,78 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
                 ActionBarLayout.this.invalidate();
             }
         }
+
+        @Override
+        protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+            int width = MeasureSpec.getSize(widthMeasureSpec);
+            int height = MeasureSpec.getSize(heightMeasureSpec);
+            int actionBarHeight = 0;
+
+            for (int i = 0, count = getChildCount(); i < count; i++) {
+                View child = getChildAt(i);
+                if (child instanceof ActionBar && child.getVisibility() != GONE) {
+                    child.measure(
+                            MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+                            MeasureSpec.makeMeasureSpec(height, MeasureSpec.UNSPECIFIED)
+                    );
+                    actionBarHeight = child.getMeasuredHeight();
+                    break;
+                }
+            }
+
+            for (int i = 0, count = getChildCount(); i < count; i++) {
+                View child = getChildAt(i);
+                if (!(child instanceof ActionBar)) {
+                    if (child.getTag(0xFF112233) != null || child.getFitsSystemWindows() || child instanceof BaseFragment.AttachedSheetWindow) {
+                        measureChildWithMargins(child, widthMeasureSpec, 0, heightMeasureSpec, 0);
+                    } else {
+                        measureChildWithMargins(child, widthMeasureSpec, 0, heightMeasureSpec, actionBarHeight);
+                    }
+                }
+            }
+
+            setMeasuredDimension(width, height);
+        }
+
+        @Override
+        protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+            int actionBarHeight = 0;
+            for (int i = 0, count = getChildCount(); i < count; i++) {
+                View child = getChildAt(i);
+                if (child instanceof ActionBar && child.getVisibility() != GONE) {
+                    actionBarHeight = child.getMeasuredHeight();
+                    child.layout(0, 0, child.getMeasuredWidth(), actionBarHeight);
+                    break;
+                }
+            }
+
+            for (int i = 0, count = getChildCount(); i < count; i++) {
+                View child = getChildAt(i);
+                if (!(child instanceof ActionBar) && child.getVisibility() != GONE) {
+                    FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) child.getLayoutParams();
+                    if (child.getTag(0xFF112233) != null || child.getFitsSystemWindows() || child instanceof BaseFragment.AttachedSheetWindow) {
+                        child.layout(
+                                lp.leftMargin,
+                                lp.topMargin,
+                                lp.leftMargin + child.getMeasuredWidth(),
+                                lp.topMargin + child.getMeasuredHeight()
+                        );
+                    } else {
+                        child.layout(
+                                lp.leftMargin,
+                                lp.topMargin + actionBarHeight,
+                                lp.leftMargin + child.getMeasuredWidth(),
+                                lp.topMargin + actionBarHeight + child.getMeasuredHeight()
+                        );
+                    }
+                }
+            }
+        }
     }
 
     private LayoutContainer containerViewBack;
-    private LayoutContainer containerView;
+    public LayoutContainer containerView;
+    public View sheetContainer;
     private BottomSheetTabs bottomSheetTabs;
     private BottomSheetTabs.ClipTools bottomSheetTabsClip;
     private BottomSheetTabsOverlay bottomSheetTabsOverlay;
@@ -155,6 +223,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
 
         containerView = new LayoutContainer(context);
         addView(containerView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.START));
+        sheetContainer = containerView;
 
         bottomSheetTabsOverlay = new BottomSheetTabsOverlay(context);
         bottomSheetTabsOverlay.setTabsView(bottomSheetTabs);
@@ -1112,17 +1181,15 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
         }
         removeFromParent(contentView);
 
-        int actionBarHeight = 0;
         ActionBar actionBar = fragment.getActionBar();
         if (actionBar != null && actionBar.shouldAddToContainer()) {
             removeFromParent(actionBar);
-            actionBarHeight = actionBar.getCurrentActionBarHeight();
         }
 
         FrameLayout wrapper = new FrameLayout(getContext());
         wrapper.addView(contentView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.START));
         // setPhotoViewerScaleView(wrapper) is used by hosts as PlaceProviderObject.parentView
-        // (= clip target). The wrapper is positioned topMargin=actionBarHeight below
+        // (= clip target). LayoutContainer positions the wrapper below
         // the ActionBar, so its getLocationInWindow correctly excludes the ActionBar
         // strip from the morph view's clip — preventing the closing image from
         // painting over the host ActionBar (user complaint #2).
@@ -1132,13 +1199,12 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
         fragment.setPhotoViewerScaleView(wrapper);
 
         FrameLayout.LayoutParams contentLayoutParams = LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.START);
-        contentLayoutParams.topMargin = actionBarHeight;
         container.addView(wrapper, contentLayoutParams);
         if (container instanceof LayoutContainer) {
             ((LayoutContainer) container).setShouldHandleBottomInsets(fragment.isSupportEdgeToEdge());
         }
         if (actionBar != null && actionBar.shouldAddToContainer()) {
-            container.addView(actionBar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, actionBarHeight, Gravity.TOP | Gravity.START));
+            container.addView(actionBar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP | Gravity.START));
         }
     }
 

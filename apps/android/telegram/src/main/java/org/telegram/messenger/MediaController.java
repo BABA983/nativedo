@@ -71,6 +71,13 @@ public class MediaController {
         return false;
     }
 
+    public void seekToProgress(MessageObject messageObject, float progress) {
+    }
+
+    public boolean setPlaylist(java.util.ArrayList<MessageObject> messages, MessageObject current, int position, boolean loadMusic, Object playlistGlobalSearchParams) {
+        return false;
+    }
+
     public boolean lockOrientation(int orientation) {
         return false;
     }

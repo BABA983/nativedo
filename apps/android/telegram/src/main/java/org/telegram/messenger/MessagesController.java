@@ -7,6 +7,7 @@ package org.telegram.messenger;
 
 import android.content.SharedPreferences;
 
+import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 
 /**
@@ -68,6 +69,26 @@ public final class MessagesController {
         return null;
     }
 
+    public TLObject getUserOrChat(String username) {
+        return null;
+    }
+
+    public void openByUserName(String username, org.telegram.ui.ActionBar.BaseFragment fragment, int type) {
+    }
+
+    public static TLRPC.InputPeer getInputChannel(TLRPC.Chat chat) {
+        return new TLRPC.TL_inputPeerChannel();
+    }
+
+    public void processUpdates(TLRPC.Updates updates, boolean fromQueue) {
+    }
+
+    public void generateJoinMessage(long chatId, boolean force) {
+    }
+
+    public void loadFullChat(long chatId, int classGuid, boolean force) {
+    }
+
     public TLRPC.InputPeer getInputPeer(long id) {
         return null;
     }
@@ -76,6 +97,15 @@ public final class MessagesController {
     }
 
     public void putChat(TLRPC.Chat chat, boolean fromCache) {
+    }
+
+    public void putUsers(java.util.ArrayList<TLRPC.User> users, boolean fromCache) {
+    }
+
+    public void putChats(java.util.ArrayList<TLRPC.Chat> chats, boolean fromCache) {
+    }
+
+    public void deleteMessages(java.util.ArrayList<Integer> ids, Object scheduled, Object updates, long dialogId, int topicId, boolean revoke, int mode) {
     }
 
     public boolean shouldEncryptPhotoOrVideo(int account, TLRPC.Message message) {

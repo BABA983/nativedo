@@ -11,6 +11,8 @@ import android.graphics.Canvas;
 import android.graphics.ColorFilter;
 import android.graphics.PixelFormat;
 import android.graphics.drawable.Drawable;
+import android.text.SpannableStringBuilder;
+import android.text.TextPaint;
 
 /**
  * NativeDo stub of org.telegram.messenger.Emoji helpers.
@@ -32,5 +34,16 @@ public final class Emoji {
 
     public static boolean isValidEmoji(CharSequence code) {
         return false;
+    }
+
+    public static CharSequence replaceEmoji(CharSequence text, TextPaint.FontMetricsInt fontMetrics, boolean createNew) {
+        return text;
+    }
+
+    public static CharSequence replaceEmoji(CharSequence text, TextPaint.FontMetricsInt fontMetrics, boolean createNew, Object emojiOnly, int alignment) {
+        return text;
+    }
+
+    public static void replaceEmoji(SpannableStringBuilder builder, TextPaint.FontMetricsInt fontMetrics, boolean createNew) {
     }
 }

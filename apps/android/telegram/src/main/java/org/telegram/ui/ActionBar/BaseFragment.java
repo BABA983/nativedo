@@ -22,6 +22,7 @@
 package org.telegram.ui.ActionBar;
 
 import android.app.Dialog;
+import android.app.Activity;
 import android.content.Context;
 import android.view.MotionEvent;
 import android.view.View;
@@ -35,6 +36,7 @@ import androidx.lifecycle.ViewModelStoreOwner;
 import java.util.ArrayList;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.UserConfig;
 
 public abstract class BaseFragment implements ViewModelStoreOwner {
 
@@ -42,6 +44,7 @@ public abstract class BaseFragment implements ViewModelStoreOwner {
     protected View photoViewerScaleView;
     protected INavigationLayout parentLayout;
     protected ActionBar actionBar;
+    protected int currentAccount = UserConfig.selectedAccount;
     public ArrayList<AttachedSheet> sheetsStack;
     private final ViewModelStore viewModelStore = new ViewModelStore();
 
@@ -74,6 +77,10 @@ public abstract class BaseFragment implements ViewModelStoreOwner {
 
         void setOnDismissListener(Runnable onDismiss);
 
+        default org.telegram.ui.Components.BulletinFactory getBulletinFactory() {
+            return null;
+        }
+
         default void setLastVisible(boolean lastVisible) {
         }
     }
@@ -90,6 +97,10 @@ public abstract class BaseFragment implements ViewModelStoreOwner {
 
     public View createView(Context context) {
         return null;
+    }
+
+    public boolean onFragmentCreate() {
+        return true;
     }
 
     public void setParentLayout(INavigationLayout layout) {
@@ -241,6 +252,27 @@ public abstract class BaseFragment implements ViewModelStoreOwner {
         return fragmentView == null ? null : fragmentView.getContext();
     }
 
+    public Activity getParentActivity() {
+        Context context = getContext();
+        return context instanceof Activity ? (Activity) context : null;
+    }
+
+    public int getCurrentAccount() {
+        return currentAccount;
+    }
+
+    public ViewGroup getLayoutContainer() {
+        return parentLayout instanceof ViewGroup ? (ViewGroup) parentLayout : null;
+    }
+
+    public Theme.ResourcesProvider getResourceProvider() {
+        return null;
+    }
+
+    public int getThemedColor(int key) {
+        return Theme.getColor(key, getResourceProvider());
+    }
+
     public AttachedSheet getLastSheet() {
         if (sheetsStack == null || sheetsStack.isEmpty()) {
             return null;
@@ -319,5 +351,12 @@ public abstract class BaseFragment implements ViewModelStoreOwner {
         if (parentLayout instanceof ActionBarLayout) {
             ((ActionBarLayout) parentLayout).updateSystemBars();
         }
+    }
+
+    public boolean showDialog(Dialog dialog) {
+        if (dialog != null) {
+            dialog.show();
+        }
+        return true;
     }
 }

@@ -70,6 +70,9 @@ public class ConnectionsManager {
     public void cancelRequest(int token, boolean notifyServer) {
     }
 
+    public void cancelRequestsForGuid(int guid) {
+    }
+
     public interface RequestDelegate {
         void run(TLObject response, TL_error error);
     }

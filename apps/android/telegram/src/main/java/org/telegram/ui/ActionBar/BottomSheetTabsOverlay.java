@@ -61,15 +61,26 @@ public class BottomSheetTabsOverlay extends View {
 
         BottomSheetTabs.WebTabData saveState();
 
-        void capturePreviewBitmap(BottomSheetTabs.WebTabData tab, Runnable whenDone);
+        default void capturePreviewBitmap(BottomSheetTabs.WebTabData tab, Runnable whenDone) { if (whenDone != null) whenDone.run(); }
 
         void release();
+
+        default boolean restoreState(BaseFragment fragment, BottomSheetTabs.WebTabData tab) { return false; }
+        default boolean setDialog(BottomSheetTabDialog dialog) { return false; }
+        default boolean hadDialog() { return false; }
+        default int getNavigationBarColor(int color) { return color; }
+        default void dismiss(boolean tabs) {}
+        default boolean isFullSize() { return true; }
+        default boolean attachedToParent() { return false; }
 
         default void setLastVisible(boolean lastVisible) {
         }
     }
 
     public interface SheetView {
+        android.content.Context getContext();
+        boolean post(Runnable runnable);
+
         void setDrawingFromOverlay(boolean value);
 
         RectF getRect();

@@ -65,8 +65,16 @@ import java.util.concurrent.Executors;
 
 import io.github.baba983.nativedo.R;
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.Utilities;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.bots.ChatAttachAlertBotWebViewLayout.WebViewSwipeContainer;
+import org.telegram.ui.web.BrowserHistory;
+import org.telegram.ui.web.BotWebViewContainer;
+import org.telegram.ui.web.MHTML;
+import org.telegram.ui.web.RestrictedDomainsList;
+import org.telegram.ui.web.WebMetadataCache;
+import org.telegram.messenger.browser.Browser;
 import io.github.baba983.nativedo.ui.browser.BrowserImageDecoder;
 public class BrowserWebViewContainer extends FrameLayout {
 
@@ -120,6 +128,7 @@ public class BrowserWebViewContainer extends FrameLayout {
     private FrameLayout instantViewReaderContainer;
     private WebView instantViewReaderWebView;
     private File instantViewArchiveFile;
+    private BrowserHistory.Entry currentHistoryEntry;
     private static final ExecutorService INSTANT_IMAGE_EXECUTOR = Executors.newSingleThreadExecutor();
 
     private int searchIndex;
@@ -201,6 +210,7 @@ public class BrowserWebViewContainer extends FrameLayout {
             @Override
             public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
                 currentUrl = url;
+                currentHistoryEntry = null;
                 notifyUrlChanged();
                 notifyProgress(10);
                 super.onPageStarted(view, url, favicon);
@@ -233,7 +243,7 @@ public class BrowserWebViewContainer extends FrameLayout {
                 super.onPageFinished(view, url);
                 saveCurrentPageToHistory();
                 if (delegate != null) {
-                    delegate.onHistoryChanged(!BrowserStorage.getHistory(getContext()).isEmpty());
+                    delegate.onHistoryChanged(!BrowserHistory.getHistory().isEmpty());
                 }
                 generateInstantView(null);
             }
@@ -655,7 +665,10 @@ public class BrowserWebViewContainer extends FrameLayout {
 
     private void setInjectedJS(boolean injected) {
         if (getParent() instanceof WebViewSwipeContainer) {
-            ((WebViewSwipeContainer) getParent()).injectedJS = injected;
+            WebViewSwipeContainer swipe = (WebViewSwipeContainer) getParent();
+            if (swipe.getWebView() instanceof BotWebViewContainer.MyWebView) {
+                ((BotWebViewContainer.MyWebView) swipe.getWebView()).injectedJS = injected;
+            }
         }
     }
 
@@ -753,19 +766,11 @@ public class BrowserWebViewContainer extends FrameLayout {
             return false;
         }
         return !BrowserStorage.openExternalLinksInApp(getContext())
-                || BrowserStorage.isRestricted(getContext(), url);
+                || RestrictedDomainsList.getInstance().isRestrictedUrl(url);
     }
 
     private boolean openExternal(Uri uri) {
-        try {
-            Intent intent = new Intent(Intent.ACTION_VIEW, uri);
-            intent.putExtra(android.provider.Browser.EXTRA_CREATE_NEW_TAB, true);
-            intent.putExtra(android.provider.Browser.EXTRA_APPLICATION_ID, getContext().getPackageName());
-            getContext().startActivity(intent);
-            return true;
-        } catch (Exception ignored) {
-            return false;
-        }
+        return Browser.openInExternalBrowser(getContext(), uri.toString(), true);
     }
 
     private void notifyProgress(int progress) {
@@ -788,6 +793,19 @@ public class BrowserWebViewContainer extends FrameLayout {
             return;
         }
         BrowserStorage.pushHistory(getContext(), currentUrl, getTitle(), currentFavicon);
+        WebMetadataCache.WebMetadata meta = buildCurrentMetadata();
+        if (meta == null) {
+            return;
+        }
+        WebMetadataCache.getInstance().save(meta);
+        if (currentHistoryEntry == null || !TextUtils.equals(currentHistoryEntry.url, currentUrl)) {
+            currentHistoryEntry = new BrowserHistory.Entry();
+            currentHistoryEntry.id = Utilities.fastRandom.nextLong();
+            currentHistoryEntry.time = System.currentTimeMillis();
+            currentHistoryEntry.url = currentUrl;
+        }
+        currentHistoryEntry.meta = meta;
+        BrowserHistory.pushHistory(currentHistoryEntry);
     }
 
     private void saveCurrentMetadata() {
@@ -803,6 +821,25 @@ public class BrowserWebViewContainer extends FrameLayout {
                 currentActionBarColor,
                 currentBackgroundColor
         );
+        WebMetadataCache.WebMetadata meta = buildCurrentMetadata();
+        if (meta != null) {
+            WebMetadataCache.getInstance().save(meta);
+        }
+    }
+
+    @Nullable
+    private WebMetadataCache.WebMetadata buildCurrentMetadata() {
+        WebMetadataCache.WebMetadata metadata = new WebMetadataCache.WebMetadata();
+        metadata.domain = AndroidUtilities.getHostAuthority(currentUrl, true);
+        if (TextUtils.isEmpty(metadata.domain)) {
+            return null;
+        }
+        metadata.title = getTitle();
+        metadata.sitename = currentSiteName;
+        metadata.favicon = currentFavicon;
+        metadata.actionBarColor = currentActionBarColor;
+        metadata.backgroundColor = currentBackgroundColor;
+        return metadata;
     }
 
     private void captureInstantViewArchive(BrowserWebView sourceWebView, String requestUrl) {

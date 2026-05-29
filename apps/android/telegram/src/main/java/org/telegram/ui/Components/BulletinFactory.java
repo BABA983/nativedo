@@ -50,6 +50,18 @@ public final class BulletinFactory {
         return new Bulletin();
     }
 
+    public Bulletin createSimpleBulletin(int iconRawId, CharSequence text, int type) {
+        return new Bulletin();
+    }
+
+    public Bulletin createCopyLinkBulletin() {
+        return new Bulletin();
+    }
+
+    public Bulletin createCopyBulletin(String text) {
+        return new Bulletin();
+    }
+
     public Bulletin createErrorBulletin(CharSequence text) {
         return new Bulletin();
     }

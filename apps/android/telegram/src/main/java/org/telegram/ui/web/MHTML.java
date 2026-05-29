@@ -1,18 +1,4 @@
-/*
- * This file is part of NativeDo.
- *
- * Derived in part from Telegram for Android's
- * org/telegram/ui/web/MHTML.java.
- *
- * Source reference:
- * https://github.com/DrKLO/Telegram
- *
- * Copyright (C) Telegram FZ-LLC
- * Copyright (C) 2026 NativeDo contributors
- *
- * SPDX-License-Identifier: GPL-2.0-or-later
- */
-package io.github.baba983.nativedo.ui.browser;
+package org.telegram.ui.web;
 
 import android.util.Base64;
 import android.util.Base64InputStream;
@@ -29,25 +15,25 @@ import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.HashMap;
 
-final class MHTML {
+public class MHTML {
 
-    final File file;
-    final HashMap<String, HeaderValue> headers = new HashMap<>();
-    final String boundary;
+    public final File file;
+    public final HashMap<String, HeaderValue> headers = new HashMap<>();
+    public final String boundary;
 
-    final ArrayList<Entry> entries = new ArrayList<>();
-    final HashMap<String, Entry> entriesByLocation = new HashMap<>();
+    public final ArrayList<Entry> entries = new ArrayList<>();
+    public final HashMap<String, Entry> entriesByLocation = new HashMap<>();
     private final long[] filePos = new long[1];
 
-    MHTML(File file) throws IOException {
+    public MHTML(File file) throws FileNotFoundException, IOException {
         this.file = file;
 
-        FileInputStream fileInputStream = new FileInputStream(file);
-        BufferedReader reader = new BufferedReader(new InputStreamReader(fileInputStream));
+        final FileInputStream fileInputStream = new FileInputStream(file);
+        final BufferedReader reader = new BufferedReader(new InputStreamReader(fileInputStream));
 
-        headers.putAll(parseHeaders(reader));
-        boundary = HeaderValue.getProp(headers.get("content-type"), "boundary");
-        if (boundary != null) {
+        this.headers.putAll(parseHeaders(reader));
+        this.boundary = HeaderValue.getProp(headers.get("content-type"), "boundary");
+        if (this.boundary != null) {
             parseEntries(reader, fileInputStream);
         }
 
@@ -57,12 +43,12 @@ final class MHTML {
     private void parseEntries(BufferedReader reader, FileInputStream stream) throws IOException {
         String line;
         Entry currentEntry = null;
-        final int boundaryLength = 2 + boundary.length();
+        final int boundarylen = 2 + boundary.length();
         while ((line = reader.readLine()) != null) {
-            filePos[0] += line.getBytes().length + 2;
-            if (line.length() == boundaryLength && line.substring(2).equals(boundary)) {
+            filePos[0] += line.getBytes().length + 2; // 2 = CRLF, TODO(@dkaraush): support proper offset calc
+            if (line.length() == boundarylen && line.substring(2).equals(boundary)) {
                 if (currentEntry != null) {
-                    currentEntry.end = filePos[0] - boundaryLength - 2;
+                    currentEntry.end = filePos[0] - boundarylen - 2;
                     entries.add(currentEntry);
                     entriesByLocation.put(currentEntry.getLocation(), currentEntry);
                 }
@@ -79,12 +65,12 @@ final class MHTML {
     }
 
     private HashMap<String, HeaderValue> parseHeaders(BufferedReader reader) throws IOException {
-        HashMap<String, HeaderValue> parsedHeaders = new HashMap<>();
+        final HashMap<String, HeaderValue> headers = new HashMap<>();
         String line;
         String currentHeader = null;
         StringBuilder currentValue = null;
         while ((line = reader.readLine()) != null) {
-            filePos[0] += line.getBytes().length + 2;
+            filePos[0] += line.getBytes().length + 2; // 2 = CRLF, TODO(@dkaraush): support proper offset calc
             line = line.trim();
             if (line.isEmpty()) {
                 break;
@@ -93,7 +79,7 @@ final class MHTML {
             if (currentHeader != null && currentValue != null) {
                 currentValue.append(line);
                 if (!line.endsWith(";")) {
-                    appendHeader(currentHeader, currentValue.toString(), parsedHeaders);
+                    appendHeader(currentHeader, currentValue.toString(), headers);
                     currentHeader = null;
                     currentValue = null;
                 }
@@ -103,31 +89,29 @@ final class MHTML {
                     continue;
                 }
 
-                String name = line.substring(0, index).trim();
-                String value = line.substring(index + 1).trim();
+                final String name = line.substring(0, index).trim();
+                final String value = line.substring(index + 1).trim();
                 if (value.endsWith(";")) {
                     currentHeader = name;
                     currentValue = new StringBuilder();
                     currentValue.append(value);
                 } else {
-                    appendHeader(name, value, parsedHeaders);
+                    appendHeader(name, value, headers);
                 }
             }
         }
         if (currentHeader != null && currentValue != null) {
-            appendHeader(currentHeader, currentValue.toString(), parsedHeaders);
+            appendHeader(currentHeader, currentValue.toString(), headers);
         }
-        return parsedHeaders;
+        return headers;
     }
 
-    private static void appendHeader(String nameString, String valueString, HashMap<String, HeaderValue> headers) {
-        HeaderValue headerValue = new HeaderValue();
-        String[] parts = valueString.split(";(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)");
+    private static void appendHeader(String nameString, String valueString, final HashMap<String, HeaderValue> headers) {
+        final HeaderValue headerValue = new HeaderValue();
+        final String[] parts = valueString.split(";(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)");
         for (int i = 0; i < parts.length; ++i) {
-            String part = parts[i].trim();
-            if (part.isEmpty()) {
-                continue;
-            }
+            final String part = parts[i].trim();
+            if (part.isEmpty()) continue;
             int index = part.indexOf('=');
             if (i == 0 || index < 0) {
                 headerValue.value = part;
@@ -135,45 +119,42 @@ final class MHTML {
             }
             String name = part.substring(0, index).trim();
             String value = part.substring(index + 1).trim();
-            if (value.length() >= 2 && value.charAt(0) == '"' && value.charAt(value.length() - 1) == '"') {
+            if (value.length() >= 2 && value.charAt(0) == '"' && value.charAt(value.length() - 1) == '"')
                 value = value.substring(1, value.length() - 1);
-            }
             headerValue.props.put(name, value);
         }
         headers.put(nameString.trim().toLowerCase(), headerValue);
     }
 
-    static final class Entry {
-        final HashMap<String, HeaderValue> headers = new HashMap<>();
+    public static class Entry {
+        public final HashMap<String, HeaderValue> headers = new HashMap<>();
 
-        File file;
-        long start;
-        long end;
+        public File file;
+        public long start, end;
 
-        private Entry() {
-        }
+        private Entry() {}
 
-        String getType() {
+        public String getType() {
             return HeaderValue.getValue(headers.get("content-type"));
         }
 
-        String getLocation() {
+        public String getLocation() {
             return HeaderValue.getValue(headers.get("content-location"));
         }
 
-        String getTransferEncoding() {
+        public String getTransferEncoding() {
             return HeaderValue.getValue(headers.get("content-transfer-encoding"));
         }
 
-        String getId() {
+        public String getId() {
             return HeaderValue.getValue(headers.get("content-id"));
         }
 
-        InputStream getRawInputStream() throws IOException {
+        public InputStream getRawInputStream() throws IOException {
             return new BoundedInputStream(file, start, end);
         }
 
-        InputStream getInputStream() throws IOException {
+        public InputStream getInputStream() throws IOException {
             InputStream stream = new BufferedInputStream(getRawInputStream());
             if ("base64".equals(getTransferEncoding())) {
                 return new Base64InputStream(stream, Base64.DEFAULT);
@@ -183,27 +164,42 @@ final class MHTML {
                 return stream;
             }
         }
-    }
 
-    static final class HeaderValue {
-        String value;
-        final HashMap<String, String> props = new HashMap<>();
-
-        private HeaderValue() {
-        }
-
-        static String getValue(HeaderValue headerValue) {
-            return headerValue == null ? null : headerValue.value;
-        }
-
-        static String getProp(HeaderValue headerValue, String name) {
-            return headerValue == null ? null : headerValue.props.get(name);
+        public String getData() throws IOException {
+            final InputStream inputStream = getInputStream();
+            StringBuilder stringBuilder = new StringBuilder();
+            String line;
+            try (BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(inputStream), 8192 * 4)) {
+                while ((line = bufferedReader.readLine()) != null) {
+                    stringBuilder.append(line);
+                    stringBuilder.append(System.lineSeparator());
+                }
+            }
+            inputStream.close();
+            return stringBuilder.toString();
         }
     }
 
-    static final class QuotedPrintableInputStream extends FilterInputStream {
+    public static class HeaderValue {
+        public String value;
+        public final HashMap<String, String> props = new HashMap<>();
 
-        QuotedPrintableInputStream(InputStream stream) {
+        private HeaderValue() {}
+
+        public static String getValue(HeaderValue headerValue) {
+            if (headerValue == null) return null;
+            return headerValue.value;
+        }
+
+        public static String getProp(HeaderValue headerValue, String name) {
+            if (headerValue == null) return null;
+            return headerValue.props.get(name);
+        }
+    }
+
+    public static class QuotedPrintableInputStream extends FilterInputStream {
+
+        public QuotedPrintableInputStream(InputStream stream) {
             super(stream);
         }
 
@@ -233,7 +229,10 @@ final class MHTML {
             for (int i = 0; i < len; i++) {
                 int c = read();
                 if (c == -1) {
-                    return bytesRead == 0 ? -1 : bytesRead;
+                    if (bytesRead == 0) {
+                        return -1; // End of stream
+                    }
+                    break; // Partial read
                 }
                 b[off + i] = (byte) c;
                 bytesRead++;
@@ -258,10 +257,11 @@ final class MHTML {
         }
     }
 
-    static final class BoundedInputStream extends FileInputStream {
+    public static class BoundedInputStream extends FileInputStream {
         private final long endOffset;
+        private long bytesRead = 0;
 
-        BoundedInputStream(File file, long startOffset, long endOffset) throws IOException {
+        public BoundedInputStream(File file, long startOffset, long endOffset) throws FileNotFoundException, IOException {
             super(file);
             this.endOffset = endOffset;
             if (startOffset > 0) {
@@ -292,4 +292,5 @@ final class MHTML {
             return super.read(b, off, len);
         }
     }
+
 }

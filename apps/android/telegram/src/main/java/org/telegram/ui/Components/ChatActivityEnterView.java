@@ -27,6 +27,9 @@ public class ChatActivityEnterView extends FrameLayout {
     public void hidePopup(boolean byBackButton) {
     }
 
+    public void hidePopup(boolean byBackButton, boolean animated) {
+    }
+
     public void onResume() {
     }
 

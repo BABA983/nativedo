@@ -47,4 +47,10 @@ public final class MediaDataController {
     public static TLRPC.InputStickerSet getInputStickerSet(TLRPC.Document document) {
         return null;
     }
+
+    public void setPlaceholderImage(org.telegram.ui.Components.BackupImageView imageView, String packName, String emoji, String size) {
+    }
+
+    public void loadMedia(long dialogId, int count, int maxId, int minDate, int type, int fromCache, int classGuid, int requestIndex, int queryId, Object delegate, String query) {
+    }
 }

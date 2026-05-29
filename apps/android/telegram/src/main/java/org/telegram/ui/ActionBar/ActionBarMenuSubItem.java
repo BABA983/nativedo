@@ -91,6 +91,10 @@ public class ActionBarMenuSubItem extends FrameLayout {
         }
     }
 
+    public void setTextAndIcon(CharSequence text, int icon) {
+        setTextAndIcon(text, icon, null);
+    }
+
     public ActionBarMenuSubItem setColors(int textColor, int iconColor) {
         setTextColor(textColor);
         setIconColor(iconColor);

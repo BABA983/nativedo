@@ -29,6 +29,7 @@ import android.widget.FrameLayout;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
+import org.telegram.messenger.AndroidUtilities;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarLayout;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -136,7 +137,7 @@ public abstract class ViewPagerActivity extends BaseFragment {
                 ActionBar actionBar = fragment.getActionBar();
                 if (actionBar != null && actionBar.shouldAddToContainer()) {
                     removeFromParent(actionBar);
-                    actionBarHeight = actionBar.getCurrentActionBarHeight();
+                    actionBarHeight = ActionBar.getCurrentActionBarHeight() + (actionBar.getOccupyStatusBar() ? AndroidUtilities.statusBarHeight : 0);
                 }
 
                 FrameLayout.LayoutParams contentLayoutParams = LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.START);

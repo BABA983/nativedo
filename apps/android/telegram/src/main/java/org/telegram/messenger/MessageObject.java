@@ -35,6 +35,10 @@ public class MessageObject {
     public static final int TYPE_STORY = 23;
     public static final int TYPE_ROUND_VIDEO = 5;
     public static final int TYPE_VOICE = 2;
+    public static final int POSITION_FLAG_LEFT = 1;
+    public static final int POSITION_FLAG_RIGHT = 2;
+    public static final int POSITION_FLAG_TOP = 4;
+    public static final int POSITION_FLAG_BOTTOM = 8;
 
     public int currentAccount;
     public int type;
@@ -60,6 +64,51 @@ public class MessageObject {
     public TLRPC.MessageMedia sponsoredMedia;
     public String sponsoredButtonText;
     public java.util.ArrayList<Object> entities = new java.util.ArrayList<>();
+    public CharSequence caption;
+    public CharSequence messageText;
+    public CharSequence youtubeDescription;
+    public boolean scheduled;
+    public float audioProgress;
+    public int audioProgressSec;
+    public int audioPlayerDuration;
+
+    public MessageObject() {
+    }
+
+    public MessageObject(int account, TLRPC.Message message, boolean generateLayout, boolean checkMediaExists) {
+        currentAccount = account;
+        messageOwner = message;
+    }
+
+    public static class GroupedMessagePosition {
+        public byte flags;
+        public int minX;
+        public int maxX;
+        public int minY;
+        public int maxY;
+        public float pw;
+        public float ph;
+        public float left;
+        public float top;
+        public float right;
+        public float bottom;
+        public float aspectRatio;
+        public float[] siblingHeights;
+        public int leftSpanOffset;
+        public int spanSize;
+        public boolean edge;
+        public boolean last;
+
+        public void set(int minX, int maxX, int minY, int maxY, int w, float h, int flags) {
+            this.minX = minX;
+            this.maxX = maxX;
+            this.minY = minY;
+            this.maxY = maxY;
+            this.pw = w;
+            this.ph = h;
+            this.flags = (byte) flags;
+        }
+    }
 
     public TLRPC.Document getDocument() {
         return null;
@@ -70,6 +119,14 @@ public class MessageObject {
     }
 
     public boolean isVideo() {
+        return false;
+    }
+
+    public boolean isYouTubeVideo() {
+        return false;
+    }
+
+    public boolean isOut() {
         return false;
     }
 
@@ -85,8 +142,8 @@ public class MessageObject {
         return false;
     }
 
-    public long getId() {
-        return 0L;
+    public int getId() {
+        return 0;
     }
 
     public long getDialogId() {
@@ -205,12 +262,23 @@ public class MessageObject {
         return false;
     }
 
+    public static void addUrlsByPattern(boolean isOut, CharSequence charSequence, boolean botCommands, int patternType, int duration, boolean check) {
+    }
+
     public long getSize() {
         return 0L;
     }
 
     public int getDuration() {
         return 0;
+    }
+
+    public String getMusicTitle(boolean unknown) {
+        return "";
+    }
+
+    public String getMusicAuthor(boolean unknown) {
+        return "";
     }
 
     public void checkMediaExistance() {

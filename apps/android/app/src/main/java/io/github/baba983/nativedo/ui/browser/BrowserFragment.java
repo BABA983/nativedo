@@ -34,11 +34,17 @@ import android.widget.Toast;
 import androidx.core.graphics.ColorUtils;
 
 import io.github.baba983.nativedo.R;
+
+import org.json.JSONObject;
 import org.telegram.messenger.SharedConfig;
+import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBarLayout;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.ArticleViewer;
 import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.web.AddressBarList;
+import org.telegram.ui.web.WebInstantView;
 
 public class BrowserFragment extends BaseFragment {
 
@@ -46,7 +52,7 @@ public class BrowserFragment extends BaseFragment {
     private BrowserWebViewContainer webViewContainer;
     private WebActionBar webActionBar;
     private BrowserSearchPanel searchPanel;
-    private BrowserAddressPanel addressPanel;
+    private AddressBarList addressPanel;
     private FrameLayout rootView;
     private boolean closing;
     private int webActionBarColor = Theme.getColor(Theme.key_iv_background);
@@ -109,9 +115,9 @@ public class BrowserFragment extends BaseFragment {
                 android.graphics.Bitmap favicon = webViewContainer.getFavicon();
                 if (addressPanel != null) {
                     addressPanel.setCurrent(
+                        favicon,
                         title,
                         url == null ? "" : url,
-                        favicon,
                         () -> webActionBar.setAddressText(url == null ? "" : url, false),
                         query -> {
                             webActionBar.showAddress(false, true);
@@ -213,7 +219,7 @@ public class BrowserFragment extends BaseFragment {
         root.addView(searchPanel, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 51, Gravity.BOTTOM | Gravity.START));
         searchPanel.attachKeyboardTracking(root);
 
-        addressPanel = new BrowserAddressPanel(context);
+        addressPanel = new AddressBarList(context);
         root.addView(addressPanel, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.START));
 
         if (!webViewContainer.loadUrl(initialUrl)) {
@@ -448,7 +454,7 @@ public class BrowserFragment extends BaseFragment {
         if (Patterns.WEB_URL.matcher(trimmed).matches()) {
             return "https://" + trimmed;
         }
-        BrowserStorage.pushRecentSearch(getContext(), trimmed);
+        AddressBarList.pushRecentSearch(getContext(), trimmed);
         return BrowserStorage.buildSearchUrl(getContext(), trimmed);
     }
 
@@ -493,7 +499,15 @@ public class BrowserFragment extends BaseFragment {
             Toast.makeText(getContext(), R.string.app_browser_instant_view_unavailable, Toast.LENGTH_SHORT).show();
             return;
         }
-        presentFragment(new BrowserInstantViewFragment(webViewContainer.getCurrentUrl(), json));
+        String url = webViewContainer.getCurrentUrl();
+        try {
+            TLRPC.TL_webPage webPage = new WebInstantView().parseJSON(url, new JSONObject(json));
+            if (!ArticleViewer.makeSheet(this).open(webPage, url)) {
+                Toast.makeText(getContext(), R.string.app_browser_instant_view_unavailable, Toast.LENGTH_SHORT).show();
+            }
+        } catch (Exception e) {
+            Toast.makeText(getContext(), R.string.app_browser_instant_view_unavailable, Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void updateBrowserMenuState(String url) {

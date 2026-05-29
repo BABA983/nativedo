@@ -48,6 +48,10 @@ public class ActionBarMenu extends LinearLayout {
         return addItem(id, icon, null, parentActionBar.itemsBackgroundColor, null, AndroidUtilities.dp(48), null);
     }
 
+    public ActionBarMenuItem addItem(int id, int icon, org.telegram.ui.ActionBar.Theme.ResourcesProvider resourcesProvider) {
+        return addItem(id, icon, null, parentActionBar.itemsBackgroundColor, null, AndroidUtilities.dp(48), null);
+    }
+
     public ActionBarMenuItem addItemWithWidth(int id, int icon, int width, CharSequence title) {
         return addItem(id, icon, null, parentActionBar.itemsBackgroundColor, null, width, title);
     }
@@ -85,6 +89,10 @@ public class ActionBarMenu extends LinearLayout {
         if (listener != null) {
             listener.onItemClick(id);
         }
+    }
+
+    public void addView(View view, LinearLayout.LayoutParams params) {
+        super.addView(view, params);
     }
 
     public void hideAllPopupMenus() {

@@ -11,6 +11,7 @@ import org.telegram.messenger.ImageReceiver;
  * Methods added for BackupImageView compatibility.
  */
 public class AnimatedEmojiDrawable extends Drawable {
+    public static final int CACHE_TYPE_MESSAGES = 0;
 
     /** V1 stub: no-op for BackupImageView. */
     public void addView(Object view) {}

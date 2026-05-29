@@ -42,8 +42,33 @@ public final class SharedConfig {
 
     /** Matches upstream {@code SharedConfig.adaptableColorInBrowser}. */
     public static boolean adaptableColorInBrowser = false;
+    public static boolean inappBrowser = false;
+    public static boolean onlyLocalInstantView = false;
+    public static boolean customTabs = false;
+    public static int searchEngineType = 0;
+    public static int ivFontSize = 16;
 
     public static boolean drawActionBarShadow = true;
+
+    public static void toggleBrowserAdaptableColors() {
+        adaptableColorInBrowser = !adaptableColorInBrowser;
+    }
+
+    public static void toggleLocalInstantView() {
+        onlyLocalInstantView = !onlyLocalInstantView;
+    }
+
+    public static void toggleInappBrowser() {
+        inappBrowser = !inappBrowser;
+    }
+
+    public static void toggleCustomTabs(boolean enabled) {
+        customTabs = enabled;
+    }
+
+    public static void setSearchEngineType(int type) {
+        searchEngineType = type;
+    }
 
     /** Matches upstream {@code SharedConfig.PERFORMANCE_CLASS_LOW / AVERAGE / HIGH}. */
     public static final int PERFORMANCE_CLASS_LOW = 0;

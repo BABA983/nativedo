@@ -76,6 +76,9 @@ public final class NotificationCenter {
     public static final int messagesDeleted = totalEvents++;
     public static final int dialogDeleted = totalEvents++;
     public static final int replaceMessagesObjects = totalEvents++;
+    public static final int dialogsNeedReload = totalEvents++;
+    public static final int bookmarkAdded = totalEvents++;
+    public static final int articleClosed = totalEvents++;
 
     // Media
     public static final int mediaDidLoad = totalEvents++;
@@ -85,6 +88,11 @@ public final class NotificationCenter {
 
     // User
     public static final int mainUserInfoChanged = totalEvents++;
+    public static final int webViewResolved = totalEvents++;
+    public static final int messagePlayingDidStart = totalEvents++;
+    public static final int messagePlayingDidReset = totalEvents++;
+    public static final int messagePlayingPlayStateChanged = totalEvents++;
+    public static final int messagePlayingProgressDidChanged = totalEvents++;
 
     // Emoji / sticker (compile-only until ported)
     public static final int emojiLoaded = totalEvents++;

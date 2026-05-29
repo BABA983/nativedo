@@ -24,7 +24,9 @@
 package org.telegram.messenger;
 
 import android.animation.Animator;
+import android.app.Activity;
 import android.content.Context;
+import android.content.ContextWrapper;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -33,16 +35,19 @@ import android.graphics.Matrix;
 import android.graphics.RectF;
 import android.os.Build;
 import android.graphics.Point;
+import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.DisplayMetrics;
 import android.view.View;
 import android.view.Window;
+import android.widget.HorizontalScrollView;
 import android.view.animation.DecelerateInterpolator;
 import android.view.animation.Interpolator;
 import android.view.inputmethod.InputMethodManager;
 
 import androidx.core.view.WindowCompat;
+import androidx.viewpager.widget.ViewPager;
 
 import android.graphics.Typeface;
 
@@ -59,6 +64,7 @@ public final class AndroidUtilities {
     public static int statusBarHeight;
     public static int navigationBarHeight;
     public static boolean makingGlobalBlurBitmap;
+    public static final String STICKERS_PLACEHOLDER_PACK_NAME = "Placeholders";
 
     /** Shared temporary RectF for drawing operations. Matches upstream AndroidUtilities.rectTmp. */
     public static final RectF rectTmp = new RectF();
@@ -388,6 +394,34 @@ public final class AndroidUtilities {
         WindowCompat.getInsetsController(window, decorView).setAppearanceLightNavigationBars(enable);
     }
 
+    public static void setLightNavigationBar(android.app.Dialog dialog, boolean enable) {
+        if (dialog != null && dialog.getWindow() != null) {
+            setLightNavigationBar(dialog.getWindow(), enable);
+        }
+    }
+
+    public static void setLightStatusBar(View view, boolean enable) {
+    }
+
+    public static void setLightNavigationBar(View view, boolean enable) {
+    }
+
+    public static CharSequence replaceSingleTag(String text, Runnable action) {
+        return text;
+    }
+
+    public static void setScrollViewEdgeEffectColor(HorizontalScrollView scrollView, int color) {
+    }
+
+    public static void setViewPagerEdgeEffectColor(ViewPager viewPager, int color) {
+    }
+
+    public static void setNavigationBarColor(android.app.Dialog dialog, int color) {
+        if (dialog != null && dialog.getWindow() != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            dialog.getWindow().setNavigationBarColor(color);
+        }
+    }
+
     private static void stackBlurBitmap(Bitmap bitmap, int radius) {
         if (bitmap == null || radius < 1) {
             return;
@@ -686,6 +720,7 @@ public final class AndroidUtilities {
 
     /** Shared accelerate interpolator. Matches upstream AndroidUtilities.accelerateInterpolator. */
     public static final android.view.animation.AccelerateInterpolator accelerateInterpolator = new android.view.animation.AccelerateInterpolator();
+    public static final String TYPEFACE_ROBOTO_MEDIUM = "fonts/rmedium.ttf";
 
     public static int screenRefreshRate = 60;
 
@@ -706,6 +741,25 @@ public final class AndroidUtilities {
     /** Stub of upstream {@code AndroidUtilities.getPatternSideColor}. */
     public static int getPatternSideColor(int color) {
         return 0xFFFFFFFF;
+    }
+
+    public static int getOffsetColor(int color1, int color2, float progress, float alpha) {
+        int blended = androidx.core.graphics.ColorUtils.blendARGB(color1, color2, progress);
+        return androidx.core.graphics.ColorUtils.setAlphaComponent(blended, Math.round(Color.alpha(blended) * alpha));
+    }
+
+    public static int blendOver(int foreground, int background) {
+        return androidx.core.graphics.ColorUtils.compositeColors(foreground, background);
+    }
+
+    public static void vibrateCursor(View view) {
+        if (view != null) {
+            view.performHapticFeedback(android.view.HapticFeedbackConstants.TEXT_HANDLE_MOVE);
+        }
+    }
+
+    public static boolean hasDialogOnTop(org.telegram.ui.ActionBar.BaseFragment fragment) {
+        return false;
     }
 
     /** Stub of upstream {@code AndroidUtilities.createEmptyFile}. */
@@ -1001,5 +1055,119 @@ public final class AndroidUtilities {
         } catch (Exception ignore) {
             return src.getBytes();
         }
+    }
+
+    public static String readRes(int resId) {
+        if (ApplicationLoader.applicationContext == null) {
+            return "";
+        }
+        try (java.io.InputStream inputStream = ApplicationLoader.applicationContext.getResources().openRawResource(resId);
+             java.util.Scanner scanner = new java.util.Scanner(inputStream).useDelimiter("\\A")) {
+            return scanner.hasNext() ? scanner.next() : "";
+        } catch (Exception e) {
+            FileLog.e(e);
+            return "";
+        }
+    }
+
+    public static Activity findActivity(Context context) {
+        while (context instanceof ContextWrapper) {
+            if (context instanceof Activity) {
+                return (Activity) context;
+            }
+            context = ((ContextWrapper) context).getBaseContext();
+        }
+        return null;
+    }
+
+    public static String getHostAuthority(String url, boolean removeWww) {
+        if (url == null) {
+            return "";
+        }
+        String host = "";
+        try {
+            host = Uri.parse(url).getHost();
+        } catch (Exception ignore) {
+        }
+        if (host == null) {
+            return "";
+        }
+        host = host.toLowerCase(java.util.Locale.US);
+        if (removeWww && host.startsWith("www.")) {
+            host = host.substring(4);
+        }
+        return host;
+    }
+
+    public static String replaceTags(String value) {
+        return value == null ? "" : value;
+    }
+
+    public static boolean isPunctuationCharacter(char c) {
+        return c == ' ' || c == '\n' || c == '.' || c == ',' || c == ':' || c == ';' || c == '!' || c == '?';
+    }
+
+    public static boolean isRTL(CharSequence value) {
+        if (value == null || value.length() == 0) {
+            return false;
+        }
+        byte direction = Character.getDirectionality(value.charAt(0));
+        return direction == Character.DIRECTIONALITY_RIGHT_TO_LEFT
+                || direction == Character.DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC
+                || direction == Character.DIRECTIONALITY_RIGHT_TO_LEFT_EMBEDDING
+                || direction == Character.DIRECTIONALITY_RIGHT_TO_LEFT_OVERRIDE;
+    }
+
+    public static boolean showKeyboard(View view) {
+        if (view == null) {
+            return false;
+        }
+        InputMethodManager imm = view.getContext().getSystemService(InputMethodManager.class);
+        if (imm != null) {
+            imm.showSoftInput(view, InputMethodManager.SHOW_IMPLICIT);
+            return true;
+        }
+        return false;
+    }
+
+    public static void updateViewShow(View view, boolean show, boolean scale, boolean animated) {
+        if (view == null) {
+            return;
+        }
+        view.setVisibility(show ? View.VISIBLE : View.GONE);
+        view.setAlpha(show ? 1f : 0f);
+        if (scale) {
+            view.setScaleX(show ? 1f : .8f);
+            view.setScaleY(show ? 1f : .8f);
+        }
+    }
+
+    public static CharSequence highlightText(CharSequence text, String query, Theme.ResourcesProvider resourcesProvider) {
+        return text;
+    }
+
+    public static String translitSafe(String value) {
+        return value == null ? "" : value;
+    }
+
+    public static CharSequence replaceNewLines(CharSequence value) {
+        return value == null ? "" : value.toString().replace('\n', ' ');
+    }
+
+    public static void shakeView(View view) {
+    }
+
+    public static String formapMapUrl(int account, double lat, double lon, int width, int height, boolean marker, int zoom, int scale) {
+        return "";
+    }
+
+    public static int dp2(int value) {
+        return dp(value);
+    }
+
+    public static void getBitmapFromSurface(android.view.Surface surface, android.graphics.Bitmap bitmap) {
+    }
+
+    public static void getBitmapFromSurface(android.view.SurfaceView surfaceView, android.graphics.Bitmap bitmap) {
     }
 }

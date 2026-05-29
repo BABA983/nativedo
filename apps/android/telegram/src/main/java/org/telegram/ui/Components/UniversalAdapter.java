@@ -32,6 +32,7 @@ public class UniversalAdapter extends RecyclerListView.SelectionAdapter {
     public static final int VIEW_TYPE_SETTING = 1002;
     public static final int VIEW_TYPE_INFO = 1003;
     public static final int VIEW_TYPE_SPACE = 1004;
+    public static final int VIEW_TYPE_FLICKER = 1005;
 
     private final Context context;
     private final UniversalListCallbacks.Fill fillItems;
@@ -143,6 +144,9 @@ public class UniversalAdapter extends RecyclerListView.SelectionAdapter {
                 view = new UniversalCells.SpaceCell(context);
                 view.setTag(RecyclerListView.TAG_NOT_SECTION);
                 break;
+            case VIEW_TYPE_FLICKER:
+                view = new FlickerLoadingView(context);
+                break;
             case VIEW_TYPE_CUSTOM:
                 view = new FrameLayout(context) {
                     @Override
@@ -225,6 +229,9 @@ public class UniversalAdapter extends RecyclerListView.SelectionAdapter {
                 break;
             case VIEW_TYPE_SPACE:
                 ((UniversalCells.SpaceCell) holder.itemView).bind((int) item.longValue);
+                break;
+            case VIEW_TYPE_FLICKER:
+                ((FlickerLoadingView) holder.itemView).setViewType(item.intValue);
                 break;
             case VIEW_TYPE_CUSTOM:
                 bindCustomView((FrameLayout) holder.itemView, item.view);

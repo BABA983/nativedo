@@ -1,0 +1,5 @@
+<resources>
+    <style name="PopupContextAnimation" />
+    <style name="TransparentDialog" parent="@android:style/Theme.Translucent.NoTitleBar" />
+    <style name="DialogNoAnimation" />
+</resources>

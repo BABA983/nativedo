@@ -34,12 +34,10 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
-import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Locale;
+
+import org.telegram.ui.web.SearchEngine;
 
 final class BrowserStorage {
 
@@ -49,7 +47,6 @@ final class BrowserStorage {
     private static final String KEY_SEARCH_ENGINE = "search_engine";
     private static final String KEY_RECENT_SEARCHES = "recent_searches";
     private static final String KEY_OPEN_IN_APP = "open_in_app";
-    private static final String KEY_RESTRICTED_DOMAINS = "restricted_domains";
     private static final String KEY_INSTANT_VIEW_FONT_SCALE = "instant_view_font_scale";
     private static final int MAX_HISTORY_ENTRIES = 200;
     private static final int MAX_RECENT_SEARCHES = 20;
@@ -80,116 +77,17 @@ final class BrowserStorage {
         }
     }
 
-    enum SearchEngine {
-        GOOGLE(
-                "google",
-                "Google",
-                "https://www.google.com/search?q=",
-                "https://suggestqueries.google.com/complete/search?client=chrome&q=",
-                "https://policies.google.com/privacy"
-        ),
-        DUCKDUCKGO(
-                "duckduckgo",
-                "DuckDuckGo",
-                "https://duckduckgo.com/?q=",
-                "https://duckduckgo.com/ac/?q=",
-                "https://duckduckgo.com/privacy"
-        ),
-        BING(
-                "bing",
-                "Bing",
-                "https://www.bing.com/search?q=",
-                "https://api.bing.com/osjson.aspx?query=",
-                "https://privacy.microsoft.com/en-us/privacystatement"
-        ),
-        YAHOO(
-                "yahoo",
-                "Yahoo",
-                "https://search.yahoo.com/search?p=",
-                "https://sugg.search.yahoo.net/sg/?output=json&nresults=10&command=",
-                "https://legal.yahoo.com/us/en/yahoo/privacy/index.html"
-        ),
-        BRAVE(
-                "brave",
-                "Brave Search",
-                "https://search.brave.com/search?q=",
-                "https://search.brave.com/api/suggest?q=",
-                "https://search.brave.com/help/privacy-policy"
-        );
+    /** Predefined search engines for NativeDo. Uses upstream {@link SearchEngine} data class. */
+    static final SearchEngine GOOGLE = new SearchEngine("Google", "https://www.google.com/search?q=", "https://suggestqueries.google.com/complete/search?client=chrome&q=", "https://policies.google.com/privacy");
+    static final SearchEngine DUCKDUCKGO = new SearchEngine("DuckDuckGo", "https://duckduckgo.com/?q=", "https://duckduckgo.com/ac/?q=", "https://duckduckgo.com/privacy");
+    static final SearchEngine BING = new SearchEngine("Bing", "https://www.bing.com/search?q=", "https://api.bing.com/osjson.aspx?query=", "https://privacy.microsoft.com/en-us/privacystatement");
+    static final SearchEngine YAHOO = new SearchEngine("Yahoo", "https://search.yahoo.com/search?p=", "https://sugg.search.yahoo.net/sg/?output=json&nresults=10&command=", "https://legal.yahoo.com/us/en/yahoo/privacy/index.html");
+    static final SearchEngine BRAVE = new SearchEngine("Brave Search", "https://search.brave.com/search?q=", "https://search.brave.com/api/suggest?q=", "https://search.brave.com/help/privacy-policy");
 
-        final String value;
-        final String name;
-        final String searchUrl;
-        final String autocompleteUrl;
-        final String privacyPolicyUrl;
+    private static final SearchEngine[] NATIVEDO_ENGINES = { GOOGLE, DUCKDUCKGO, BING, YAHOO, BRAVE };
 
-        SearchEngine(String value, String name, String searchUrl, String autocompleteUrl, String privacyPolicyUrl) {
-            this.value = value;
-            this.name = name;
-            this.searchUrl = searchUrl;
-            this.autocompleteUrl = autocompleteUrl;
-            this.privacyPolicyUrl = privacyPolicyUrl;
-        }
-
-        static SearchEngine fromValue(@Nullable String value) {
-            for (SearchEngine engine : values()) {
-                if (engine.value.equals(value)) {
-                    return engine;
-                }
-            }
-            return GOOGLE;
-        }
-
-        String buildSearchUrl(String query) {
-            return searchUrl + encodeQuery(query);
-        }
-
-        String buildAutocompleteUrl(String query) {
-            return autocompleteUrl + encodeQuery(query);
-        }
-
-        ArrayList<String> extractSuggestions(String json) {
-            ArrayList<String> result = new ArrayList<>();
-            if (TextUtils.isEmpty(json)) {
-                return result;
-            }
-            try {
-                JSONArray array = new JSONArray(json);
-                JSONArray suggestions = array.getJSONArray(1);
-                for (int i = 0; i < suggestions.length(); i++) {
-                    String value = suggestions.optString(i);
-                    if (!TextUtils.isEmpty(value)) {
-                        result.add(value);
-                    }
-                }
-                return result;
-            } catch (Exception ignored) {
-            }
-            try {
-                JSONObject object = new JSONObject(json);
-                JSONArray suggestions = object.getJSONObject("gossip").getJSONArray("results");
-                for (int i = 0; i < suggestions.length(); i++) {
-                    String value = suggestions.getJSONObject(i).optString("key");
-                    if (!TextUtils.isEmpty(value)) {
-                        result.add(value);
-                    }
-                }
-                return result;
-            } catch (Exception ignored) {
-            }
-            try {
-                JSONArray array = new JSONArray(json);
-                for (int i = 0; i < array.length(); i++) {
-                    String value = array.getJSONObject(i).optString("phrase");
-                    if (!TextUtils.isEmpty(value)) {
-                        result.add(value);
-                    }
-                }
-            } catch (Exception ignored) {
-            }
-            return result;
-        }
-    }
+    /** Engine key stored in preferences; matches the index in {@link #NATIVEDO_ENGINES}. */
+    private static final String KEY_SEARCH_ENGINE_INDEX = "search_engine_index";
 
     private BrowserStorage() {
     }
@@ -285,14 +183,38 @@ final class BrowserStorage {
     }
 
     static SearchEngine getSearchEngine(Context context) {
-        return SearchEngine.fromValue(prefs(context).getString(KEY_SEARCH_ENGINE, SearchEngine.GOOGLE.value));
+        // Migrate from old string-based pref to index-based pref
+        SharedPreferences p = prefs(context);
+        if (p.contains(KEY_SEARCH_ENGINE) && !p.contains(KEY_SEARCH_ENGINE_INDEX)) {
+            String oldValue = p.getString(KEY_SEARCH_ENGINE, null);
+            int index = 0;
+            String[] oldKeys = {"google", "duckduckgo", "bing", "yahoo", "brave"};
+            for (int i = 0; i < oldKeys.length; i++) {
+                if (oldKeys[i].equals(oldValue)) {
+                    index = i;
+                    break;
+                }
+            }
+            p.edit().putInt(KEY_SEARCH_ENGINE_INDEX, index).remove(KEY_SEARCH_ENGINE).apply();
+        }
+        int index = p.getInt(KEY_SEARCH_ENGINE_INDEX, 0);
+        return NATIVEDO_ENGINES[Math.max(0, Math.min(index, NATIVEDO_ENGINES.length - 1))];
     }
 
     static void setSearchEngine(Context context, SearchEngine engine) {
         if (context == null || engine == null) {
             return;
         }
-        prefs(context).edit().putString(KEY_SEARCH_ENGINE, engine.value).apply();
+        for (int i = 0; i < NATIVEDO_ENGINES.length; i++) {
+            if (NATIVEDO_ENGINES[i] == engine) {
+                prefs(context).edit().putInt(KEY_SEARCH_ENGINE_INDEX, i).apply();
+                return;
+            }
+        }
+    }
+
+    static SearchEngine[] getSearchEngines() {
+        return NATIVEDO_ENGINES;
     }
 
     static ArrayList<String> getRecentSearches(Context context) {
@@ -356,86 +278,6 @@ final class BrowserStorage {
         prefs(context).edit().putBoolean(KEY_OPEN_IN_APP, value).apply();
     }
 
-    static ArrayList<String> getRestrictedDomains(Context context) {
-        return new ArrayList<>(readRestrictedDomains(context));
-    }
-
-    static void addRestrictedDomain(Context context, String domain) {
-        String normalized = normalizeRestrictedDomain(domain);
-        if (context == null || TextUtils.isEmpty(normalized)) {
-            return;
-        }
-        LinkedHashSet<String> domains = readRestrictedDomains(context);
-        domains.add(normalized);
-        prefs(context).edit().putStringSet(KEY_RESTRICTED_DOMAINS, domains).apply();
-    }
-
-    static void removeRestrictedDomain(Context context, String domain) {
-        String normalized = normalizeRestrictedDomain(domain);
-        if (context == null || TextUtils.isEmpty(normalized)) {
-            return;
-        }
-        LinkedHashSet<String> domains = readRestrictedDomains(context);
-        domains.remove(normalized);
-        prefs(context).edit().putStringSet(KEY_RESTRICTED_DOMAINS, domains).apply();
-    }
-
-    static void clearRestrictedDomains(Context context) {
-        if (context == null) {
-            return;
-        }
-        prefs(context).edit().remove(KEY_RESTRICTED_DOMAINS).apply();
-    }
-
-    static boolean isRestricted(Context context, String url) {
-        String host = hostOf(url);
-        if (TextUtils.isEmpty(host)) {
-            return false;
-        }
-        List<String> domains = getRestrictedDomains(context);
-        for (String domain : domains) {
-            if (host.equals(domain) || host.endsWith("." + domain)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    static String normalizeRestrictedDomain(String value) {
-        String text = value == null ? "" : value.trim();
-        if (TextUtils.isEmpty(text)) {
-            return "";
-        }
-        try {
-            Uri uri = Uri.parse(text);
-            if (uri.getHost() == null) {
-                uri = Uri.parse("https://" + text);
-            }
-            String host = uri.getHost();
-            if (TextUtils.isEmpty(host)) {
-                return "";
-            }
-            host = host.toLowerCase(Locale.ROOT);
-            return host.startsWith("www.") ? host.substring(4) : host;
-        } catch (Exception ignored) {
-            return "";
-        }
-    }
-
-    private static LinkedHashSet<String> readRestrictedDomains(Context context) {
-        LinkedHashSet<String> domains = new LinkedHashSet<>();
-        if (context == null) {
-            return domains;
-        }
-        for (String domain : prefs(context).getStringSet(KEY_RESTRICTED_DOMAINS, Collections.emptySet())) {
-            String normalized = normalizeRestrictedDomain(domain);
-            if (!TextUtils.isEmpty(normalized)) {
-                domains.add(normalized);
-            }
-        }
-        return domains;
-    }
-
     static float getInstantViewFontScale(Context context) {
         if (context == null) {
             return 1.0f;
@@ -476,7 +318,7 @@ final class BrowserStorage {
     }
 
     static String buildSearchUrl(Context context, String query) {
-        return getSearchEngine(context).buildSearchUrl(query);
+        return getSearchEngine(context).getSearchURL(query);
     }
 
     private static SharedPreferences prefs(Context context) {
@@ -570,14 +412,6 @@ final class BrowserStorage {
             }
         }
         prefs(context).edit().putString(KEY_RECENT_SEARCHES, array.toString()).apply();
-    }
-
-    private static String encodeQuery(@Nullable String query) {
-        try {
-            return URLEncoder.encode(query == null ? "" : query, "UTF-8");
-        } catch (Exception ignored) {
-            return Uri.encode(query == null ? "" : query);
-        }
     }
 
     @Nullable

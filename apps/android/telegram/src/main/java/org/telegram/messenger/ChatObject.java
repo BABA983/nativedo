@@ -35,4 +35,8 @@ public final class ChatObject {
     public static boolean isPublic(TLRPC.Chat chat) {
         return false;
     }
+
+    public static String getPublicUsername(TLRPC.Chat chat) {
+        return chat == null ? null : chat.username;
+    }
 }

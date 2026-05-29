@@ -1,4 +1,5 @@
 {
+  "_inflight": "Browser/IV rollup — see docs/browser-iv-rollup-plan.md",
   "_comment": [
     "Single source of truth for files vendored from Telegram for Android.",
     "Only copied, split-out, or substantially adapted Telegram source belongs here.",
@@ -69,6 +70,14 @@
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "exact"
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/messenger/browser/Browser.java",
+      "upstream": "org/telegram/messenger/browser/Browser.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Browser URL dispatch adapted for NativeDo: real openInExternalBrowser/openInExternalApp/hasAppToOpen/IDN_toUnicode/getBrowserPackageName/isBrowserPackageName/replace/replaceHostname; CustomTabs and Telegram-specific routing (isInternalUri/openInTelegramBrowser/openAsInternalIntent/Telegraph/Tonsite) kept as no-op stubs."
     },
     {
       "local": "telegram/src/main/java/org/telegram/messenger/Utilities.java",
@@ -277,7 +286,8 @@
       "forced_exact": [
         "animation",
         "drawing"
-      ]
+      ],
+      "notes": "Copied upstream AnimatedTextView; local delta removes unused Checker Framework imports unavailable in the Android module."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/CircularProgressDrawable.java",
@@ -638,6 +648,14 @@
       "port_mode": "exact"
     },
     {
+      "local": "telegram/src/main/java/org/telegram/tgnet/TLRPC.java",
+      "upstream": "org/telegram/tgnet/TLRPC.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Minimal NativeDo TLRPC surface extended with PageBlock, RichText, WebPage/Page, and IV request/response shells."
+    },
+    {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ButtonBounce.java",
       "upstream": "org/telegram/ui/Components/ButtonBounce.java",
       "vendored_at": "009e97356",
@@ -813,35 +831,117 @@
       "port_mode": "native"
     },
     {
-      "local": "app/src/main/java/io/github/baba983/nativedo/ui/browser/MHTML.java",
+      "local": "telegram/src/main/java/org/telegram/ui/web/WebInstantView.java",
+      "upstream": "org/telegram/ui/web/WebInstantView.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact"
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/web/BrowserHistory.java",
+      "upstream": "org/telegram/ui/web/BrowserHistory.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact"
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/web/WebMetadataCache.java",
+      "upstream": "org/telegram/ui/web/WebMetadataCache.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact"
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/web/SearchEngine.java",
+      "upstream": "org/telegram/ui/web/SearchEngine.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact"
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/web/RestrictedDomainsList.java",
+      "upstream": "org/telegram/ui/web/RestrictedDomainsList.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact"
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/web/HttpGetTask.java",
+      "upstream": "org/telegram/ui/web/HttpGetTask.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact"
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/web/HttpGetBitmapTask.java",
+      "upstream": "org/telegram/ui/web/HttpGetBitmapTask.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact"
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/web/HttpGetFileTask.java",
+      "upstream": "org/telegram/ui/web/HttpGetFileTask.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact"
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/web/HttpPostTask.java",
+      "upstream": "org/telegram/ui/web/HttpPostTask.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact"
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/web/MHTML.java",
       "upstream": "org/telegram/ui/web/MHTML.java",
       "vendored_at": "009e97356",
-      "modified": true,
-      "port_mode": "native"
+      "modified": false,
+      "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/WebActionBar.java",
       "upstream": "org/telegram/ui/web/WebActionBar.java",
       "vendored_at": "009e97356",
-      "modified": true,
-      "port_mode": "native",
-      "notes": "Moved to :telegram as the first browser UI core component; app keeps a thin compatibility wrapper."
+      "modified": false,
+      "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/AddressBarList.java",
       "upstream": "org/telegram/ui/web/AddressBarList.java",
       "vendored_at": "009e97356",
-      "modified": true,
-      "port_mode": "native",
+      "modified": false,
+      "port_mode": "exact",
       "forced_exact": [
         "measurement",
         "drawing",
         "recycling"
-      ],
-      "notes": "NativeDo storage and metadata stay in :app and are injected through AddressBarList.DataSource."
+      ]
     },
     {
-      "local": "telegram/src/main/java/org/telegram/ui/web/WebViewSwipeContainer.java",
+      "local": "telegram/src/main/java/org/telegram/ui/web/WebBrowserSettings.java",
+      "upstream": "org/telegram/ui/web/WebBrowserSettings.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact"
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/web/HistoryFragment.java",
+      "upstream": "org/telegram/ui/web/HistoryFragment.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact"
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/web/BookmarksFragment.java",
+      "upstream": "org/telegram/ui/web/BookmarksFragment.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact"
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/bots/ChatAttachAlertBotWebViewLayout.java",
       "upstream": "org/telegram/ui/bots/ChatAttachAlertBotWebViewLayout.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -850,7 +950,21 @@
         "gesture",
         "animation"
       ],
-      "notes": "Moved the browser WebView swipe/dismiss spring container to :telegram; app keeps a thin compatibility wrapper."
+      "notes": "Outer class (bot WebView attachment layout) stripped to a stub; inner classes WebViewSwipeContainer and WebProgressView preserved in upstream structure. Host wiring: setWebView accepts base WebView (works with both MyWebView and standard WebView), allowingScroll uses instanceof MyWebView check for injectedJS, topActionBarOffsetY default uses ActionBar.getCurrentActionBarHeight(), Bulletin.getVisibleBulletin() returns null (no-op path)."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/ActionBar/OKLCH.java",
+      "upstream": "org/telegram/ui/ActionBar/OKLCH.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact"
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/NumberTextView.java",
+      "upstream": "org/telegram/ui/Components/NumberTextView.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact"
     },
     {
       "local": "app/src/main/java/io/github/baba983/nativedo/ui/browser/BrowserSheet.java",

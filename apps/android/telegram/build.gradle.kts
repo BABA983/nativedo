@@ -45,4 +45,8 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.recyclerview)
     implementation(libs.androidx.dynamicanimation)
+    implementation(libs.jsoup)
+
+    testImplementation(libs.junit4)
+    testImplementation("org.json:json:20240303")
 }

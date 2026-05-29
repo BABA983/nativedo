@@ -23,6 +23,9 @@ public class AlertDialog extends Dialog {
     public void setTitle(CharSequence title) {}
     public void setProgress(int progress) {}
     public void setCanCancel(boolean cancel) {}
+    public void showDelayed(int delay) {}
+    public void dismissUnless(int delay) { dismiss(); }
+    public void setDismissDialogByButtons(boolean value) {}
 
     public static class Builder {
         public Builder(Context context) {}
@@ -41,6 +44,8 @@ public class AlertDialog extends Dialog {
         public Builder setIcon(Drawable icon) { return this; }
         public Builder setItems(CharSequence[] items, int[] icons, DialogInterface.OnClickListener listener) { return this; }
         public Builder setItems(CharSequence[] items, DialogInterface.OnClickListener listener) { return this; }
+        public Builder makeRed(int button) { return this; }
+        public Builder setWidth(int width) { return this; }
         public AlertDialog create() {
             return new AlertDialog(null, 0);
         }

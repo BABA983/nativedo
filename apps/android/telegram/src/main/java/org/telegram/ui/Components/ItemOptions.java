@@ -62,6 +62,13 @@ public class ItemOptions {
     private ViewTreeObserver.OnPreDrawListener preDrawListener;
     private boolean dismissAnimated = true;
     private int dimAlpha;
+    private float translateX;
+    private float translateY;
+    private int minWidth;
+    private int textColor;
+    private int iconColor;
+    private int selectorColor;
+    private int gapColor;
 
     private ItemOptions(ViewGroup container, Theme.ResourcesProvider resourcesProvider, View scrimView) {
         this.container = container;
@@ -70,6 +77,10 @@ public class ItemOptions {
         this.scrimView = scrimView;
         this.dimAlpha = AndroidUtilities.computePerceivedBrightness(Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider)) > .705f ? 0x66 : 0x33;
         this.layout = new ActionBarPopupWindow.ActionBarPopupWindowLayout(context);
+        this.textColor = Theme.getColor(Theme.key_actionBarDefaultSubmenuItem, resourcesProvider);
+        this.iconColor = Theme.getColor(Theme.key_actionBarDefaultSubmenuItemIcon, resourcesProvider);
+        this.selectorColor = Theme.multAlpha(textColor, .12f);
+        this.gapColor = Theme.getColor(Theme.key_actionBarDefaultSubmenuSeparator, resourcesProvider);
         Drawable background = ContextCompat.getDrawable(context, R.drawable.popup_fixed_alert4);
         if (background != null) {
             layout.setBackgroundDrawable(background.mutate());
@@ -79,9 +90,9 @@ public class ItemOptions {
     public ItemOptions add(CharSequence text, Runnable onClickListener) {
         ActionBarMenuSubItem subItem = new ActionBarMenuSubItem(context, false, false, resourcesProvider);
         subItem.setPadding(AndroidUtilities.dp(18), 0, AndroidUtilities.dp(18), 0);
-        subItem.setText(text);
-        subItem.setColors(Theme.getColor(Theme.key_actionBarDefaultSubmenuItem, resourcesProvider), Theme.getColor(Theme.key_actionBarDefaultSubmenuItemIcon, resourcesProvider));
-        subItem.setSelectorColor(Theme.multAlpha(Theme.getColor(Theme.key_actionBarDefaultSubmenuItem, resourcesProvider), .12f));
+        subItem.setTextAndIcon(text, 0);
+        subItem.setColors(textColor, iconColor);
+        subItem.setSelectorColor(selectorColor);
         subItem.setOnClickListener(view -> {
             if (onClickListener != null) {
                 onClickListener.run();
@@ -89,6 +100,73 @@ public class ItemOptions {
             dismiss();
         });
         layout.addView(subItem, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        return this;
+    }
+
+    public ItemOptions add(int iconResId, CharSequence text, Runnable onClickListener) {
+        add(text, onClickListener);
+        ActionBarMenuSubItem item = getLast();
+        if (item != null) {
+            item.setTextAndIcon(text, iconResId);
+        }
+        return this;
+    }
+
+    public ItemOptions addGap() {
+        View gap = new View(context);
+        gap.setBackgroundColor(gapColor);
+        layout.addView(gap, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 1, 0, 6, 0, 6));
+        return this;
+    }
+
+    public ItemOptions setDimAlpha(int dimAlpha) {
+        this.dimAlpha = dimAlpha;
+        return this;
+    }
+
+    public ItemOptions setColors(int textColor, int iconColor) {
+        this.textColor = textColor;
+        this.iconColor = iconColor;
+        for (int i = 0; i < layout.getItemsCount(); i++) {
+            View child = layout.getItemAt(i);
+            if (child instanceof ActionBarMenuSubItem) {
+                ((ActionBarMenuSubItem) child).setColors(textColor, iconColor);
+            }
+        }
+        return this;
+    }
+
+    public ItemOptions translate(int x, int y) {
+        translateX = x;
+        translateY = y;
+        return this;
+    }
+
+    public ItemOptions setMinWidth(int width) {
+        minWidth = width;
+        layout.setMinimumWidth(AndroidUtilities.dp(width));
+        return this;
+    }
+
+    public ItemOptions setSelectorColor(int color) {
+        selectorColor = color;
+        for (int i = 0; i < layout.getItemsCount(); i++) {
+            View child = layout.getItemAt(i);
+            if (child instanceof ActionBarMenuSubItem) {
+                ((ActionBarMenuSubItem) child).setSelectorColor(color);
+            }
+        }
+        return this;
+    }
+
+    public ItemOptions setGapBackgroundColor(int color) {
+        gapColor = color;
+        for (int i = 0; i < layout.getItemsCount(); i++) {
+            View child = layout.getItemAt(i);
+            if (!(child instanceof ActionBarMenuSubItem)) {
+                child.setBackgroundColor(color);
+            }
+        }
         return this;
     }
 
@@ -137,8 +215,16 @@ public class ItemOptions {
                 View.MeasureSpec.makeMeasureSpec(container.getMeasuredWidth(), View.MeasureSpec.AT_MOST),
                 View.MeasureSpec.makeMeasureSpec(container.getMeasuredHeight(), View.MeasureSpec.AT_MOST)
         );
+        if (minWidth > 0 && layout.getMeasuredWidth() < AndroidUtilities.dp(minWidth)) {
+            layout.measure(
+                    View.MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(minWidth), View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(container.getMeasuredHeight(), View.MeasureSpec.AT_MOST)
+            );
+        }
         int x = (int) (container.getX() + point[0] + scrimViewBounds.width() - (layout.getMeasuredWidth() - layout.getPaddingRight()));
         int y = (int) (point[1] + scrimViewBounds.height() + container.getY());
+        x += translateX;
+        y += translateY;
         if (y + layout.getMeasuredHeight() + AndroidUtilities.dp(16) > AndroidUtilities.displaySize.y) {
             y = (int) (point[1] - layout.getMeasuredHeight() + container.getY());
         }
