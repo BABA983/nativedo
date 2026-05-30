@@ -17,6 +17,7 @@ import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.lifecycle.ViewModelProvider
 import io.github.baba983.nativedo.NativeDoApp
 import org.telegram.messenger.AndroidUtilities
+import org.telegram.messenger.browser.Browser
 import io.github.baba983.nativedo.core.ui.GalleryImage
 import io.github.baba983.nativedo.core.ui.RoundedImageView
 import io.github.baba983.nativedo.feature.topic.data.TopicRepository
@@ -24,7 +25,6 @@ import io.github.baba983.nativedo.feature.topic.ui.TopicViewModel
 import org.telegram.ui.ActionBar.BackDrawable
 import org.telegram.ui.ActionBar.BaseFragment
 import org.telegram.ui.ActionBar.Theme
-import io.github.baba983.nativedo.ui.browser.BrowserSheet
 // TODO(photoviewer): re-enable when telegram/ui/PhotoViewer can compile.
 // import org.telegram.ui.PhotoViewer
 // import org.telegram.ui.PhotoViewer.PhotoEntry
@@ -71,9 +71,7 @@ class TopicDetailFragment(
                             presentFragment(TopicDetailFragment(nextTopicId))
                         },
                         onOpenLink = { url ->
-                            val sheet = BrowserSheet(this@TopicDetailFragment, url)
-                            addSheet(sheet)
-                            sheet.show()
+                            Browser.openUrl(context, url)
                         },
                         onImageBoundsChanged = { imageUrl, bounds ->
                             if (bounds == null) {

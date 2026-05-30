@@ -13,6 +13,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.lifecycleScope
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.ui.ActionBar.ActionBarLayout
+import org.telegram.ui.LaunchActivity
 import io.github.baba983.nativedo.ui.main.MainTabsActivity
 // TODO(photoviewer): re-enable when telegram/ui/PhotoViewer can compile.
 // import org.telegram.ui.PhotoViewer
@@ -30,6 +31,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AndroidUtilities.init(this)
+        LaunchActivity.instance = LaunchActivity()
         enableEdgeToEdge()
 
         mainTabsActivity = MainTabsActivity()
@@ -65,6 +67,7 @@ class MainActivity : ComponentActivity() {
             }
             fragments.clear()
         }
+        LaunchActivity.instance = null
         super.onDestroy()
     }
 

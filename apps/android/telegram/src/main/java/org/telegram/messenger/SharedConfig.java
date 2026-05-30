@@ -15,6 +15,8 @@
  */
 package org.telegram.messenger;
 
+import android.content.SharedPreferences;
+
 /**
  * Minimal shim matching Telegram's {@code SharedConfig} API surface.
  * Returns safe defaults for animation and UI feature flags.
@@ -42,32 +44,62 @@ public final class SharedConfig {
 
     /** Matches upstream {@code SharedConfig.adaptableColorInBrowser}. */
     public static boolean adaptableColorInBrowser = false;
-    public static boolean inappBrowser = false;
+    public static boolean inappBrowser = true;
     public static boolean onlyLocalInstantView = false;
-    public static boolean customTabs = false;
+    public static boolean customTabs = true;
     public static int searchEngineType = 0;
     public static int ivFontSize = 16;
 
     public static boolean drawActionBarShadow = true;
 
+    private static boolean browserConfigLoaded;
+
+    public static void loadBrowserConfig() {
+        SharedPreferences preferences = MessagesController.getGlobalMainSettings();
+        searchEngineType = preferences.getInt("searchEngineType", 0);
+        customTabs = preferences.getBoolean("custom_tabs", true);
+        inappBrowser = preferences.getBoolean("inapp_browser", true);
+        adaptableColorInBrowser = preferences.getBoolean("adaptableBrowser", false);
+        onlyLocalInstantView = preferences.getBoolean("onlyLocalInstantView", false);
+        ivFontSize = preferences.getInt("iv_font_size", 16);
+        browserConfigLoaded = true;
+    }
+
+    private static SharedPreferences browserPreferences() {
+        if (!browserConfigLoaded) {
+            loadBrowserConfig();
+        }
+        return MessagesController.getGlobalMainSettings();
+    }
+
     public static void toggleBrowserAdaptableColors() {
         adaptableColorInBrowser = !adaptableColorInBrowser;
+        browserPreferences().edit().putBoolean("adaptableBrowser", adaptableColorInBrowser).apply();
     }
 
     public static void toggleLocalInstantView() {
         onlyLocalInstantView = !onlyLocalInstantView;
+        browserPreferences().edit().putBoolean("onlyLocalInstantView", onlyLocalInstantView).apply();
     }
 
     public static void toggleInappBrowser() {
         inappBrowser = !inappBrowser;
+        browserPreferences().edit().putBoolean("inapp_browser", inappBrowser).apply();
     }
 
     public static void toggleCustomTabs(boolean enabled) {
         customTabs = enabled;
+        browserPreferences().edit().putBoolean("custom_tabs", customTabs).apply();
     }
 
     public static void setSearchEngineType(int type) {
         searchEngineType = type;
+        browserPreferences().edit().putInt("searchEngineType", searchEngineType).apply();
+    }
+
+    public static void setIvFontSize(int size) {
+        ivFontSize = size;
+        browserPreferences().edit().putInt("iv_font_size", ivFontSize).apply();
     }
 
     /** Matches upstream {@code SharedConfig.PERFORMANCE_CLASS_LOW / AVERAGE / HIGH}. */

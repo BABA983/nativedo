@@ -375,6 +375,7 @@ public final class Theme {
         createDialogsResources();
         // Load vendored pin icon — mirrors upstream Theme.createDialogsResources().
         dialogs_pinnedDrawable2 = context.getResources().getDrawable(R.drawable.msg_pin_mini).mutate();
+        chat_composeShadowDrawable = context.getResources().getDrawable(R.drawable.compose_panel_shadow).mutate();
         SharedPreferences preferences = applicationContext.getSharedPreferences(THEME_CONFIG, Activity.MODE_PRIVATE);
         ThemeInfo themeInfo = themesDict.get(preferences.getString(THEME_CONFIG_ACTIVE, defaultTheme.getKey()));
         if (themeInfo == null) {
@@ -431,6 +432,8 @@ public final class Theme {
         dialogs_pinnedPaint.setColor(getColor(key_chats_pinnedIcon));
         dialogs_pinnedBgPaint.setColor(getColor(key_chats_pinnedOverlay));
         setDrawableColorByKey(dialogs_pinnedDrawable2, key_chats_pinnedIcon);
+        setDrawableColorByKey(chat_composeShadowDrawable, key_chat_messagePanelShadow);
+        chat_composeBackgroundPaint.setColor(getColor(key_chat_messagePanelBackground));
         dialogs_dividerPaint.setColor(getColor(key_divider));
     }
 
@@ -851,6 +854,7 @@ public final class Theme {
         themeInfo.colors.put(key_iv_background, 0xffffffff);
         themeInfo.colors.put(key_iv_backgroundGray, 0xfff0f0f0);
         themeInfo.colors.put(key_iv_navigationBackground, 0xffffffff);
+        themeInfo.colors.put(key_iv_ab_progress, 0xff1e7755);
         themeInfo.colors.put(key_actionBarActionModeDefaultSelector, 0xffe2e2e2);
         themeInfo.colors.put(key_chat_messagePanelBackground, 0xffffffff);
         themeInfo.colors.put(key_chat_messagePanelShadow, 0xff000000);
@@ -934,6 +938,7 @@ public final class Theme {
         themeInfo.colors.put(key_iv_background, 0xff000000);
         themeInfo.colors.put(key_iv_backgroundGray, 0xff1f1f1f);
         themeInfo.colors.put(key_iv_navigationBackground, 0xff000000);
+        themeInfo.colors.put(key_iv_ab_progress, -10177041);
         themeInfo.colors.put(key_actionBarActionModeDefaultSelector, 0xff3a3a3a);
         themeInfo.colors.put(key_chat_messagePanelBackground, 0xff1c1c1e);
         themeInfo.colors.put(key_chat_messagePanelShadow, 0xff000000);

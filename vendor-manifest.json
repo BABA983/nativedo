@@ -77,7 +77,7 @@
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native",
-      "notes": "Browser URL dispatch adapted for NativeDo: real openInExternalBrowser/openInExternalApp/hasAppToOpen/IDN_toUnicode/getBrowserPackageName/isBrowserPackageName/replace/replaceHostname; CustomTabs and Telegram-specific routing (isInternalUri/openInTelegramBrowser/openAsInternalIntent/Telegraph/Tonsite) kept as no-op stubs."
+      "notes": "Browser URL dispatch adapted for NativeDo: real openInExternalBrowser/openInExternalApp/hasAppToOpen/IDN_toUnicode/getBrowserPackageName/isBrowserPackageName/replace/replaceHostname; openInTelegramBrowser uses the current LaunchActivity/BaseFragment ArticleViewer sheet; CustomTabs and Telegram-specific internal routing (isInternalUri/openAsInternalIntent/Telegraph/Tonsite) remain no-op stubs."
     },
     {
       "local": "telegram/src/main/java/org/telegram/messenger/Utilities.java",
@@ -100,6 +100,14 @@
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "exact"
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/ArticleViewer.java",
+      "upstream": "org/telegram/ui/ArticleViewer.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "exact",
+      "notes": "Host wiring only: ArticleViewer.Sheet restore/capture/dismiss fallback adapted for NativeDo ActionBarLayout/BottomSheetTabs lifecycle; drawing/gesture/measurement/animation bodies remain upstream-shaped."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ThemeColors.java",
@@ -653,7 +661,7 @@
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native",
-      "notes": "Minimal NativeDo TLRPC surface extended with PageBlock, RichText, WebPage/Page, and IV request/response shells."
+      "notes": "Minimal NativeDo TLRPC surface extended with PageBlock, RichText, WebPage/Page, BotApp, and IV request/response shells."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ButtonBounce.java",
@@ -800,7 +808,8 @@
       "upstream": "org/telegram/ui/ActionBar/BottomSheetTabs.java",
       "vendored_at": "009e97356",
       "modified": true,
-      "port_mode": "native"
+      "port_mode": "native",
+      "notes": "NativeDo keeps a BrowserSheet bridge while restoring upstream WebTabData.props for Browser/WebView tab state migration."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/BottomSheetTabsOverlay.java",
@@ -904,8 +913,17 @@
       "local": "telegram/src/main/java/org/telegram/ui/web/WebActionBar.java",
       "upstream": "org/telegram/ui/web/WebActionBar.java",
       "vendored_at": "009e97356",
-      "modified": false,
-      "port_mode": "exact"
+      "modified": true,
+      "port_mode": "exact",
+      "notes": "Host wiring: call onOpenedMenu before showing ItemOptions so ArticleViewer can settle scroll/header state."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/web/BotWebViewContainer.java",
+      "upstream": "org/telegram/ui/web/BotWebViewContainer.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Minimal native WebView host for ArticleViewer URL loading; WebViewProxy/getProxy, MyWebView.setContainers/evaluateJS/opener, basic webview_ext/webview_share/webview_app_ext injection, low-risk URL/title/favicon/history metadata state, find-in-page search state with destroyed-WebView guards, and preserve/replace WebView rebinds now mirror the upstream API surface, while Telegram bot WebApp event handling remains stubbed."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/AddressBarList.java",
@@ -951,6 +969,22 @@
         "animation"
       ],
       "notes": "Outer class (bot WebView attachment layout) stripped to a stub; inner classes WebViewSwipeContainer and WebProgressView preserved in upstream structure. Host wiring: setWebView accepts base WebView (works with both MyWebView and standard WebView), allowingScroll uses instanceof MyWebView check for injectedJS, topActionBarOffsetY default uses ActionBar.getCurrentActionBarHeight(), Bulletin.getVisibleBulletin() returns null (no-op path)."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/bots/BotWebViewAttachedSheet.java",
+      "upstream": "org/telegram/ui/bots/BotWebViewAttachedSheet.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Minimal WebViewType constants/annotation shell required by WebViewRequestProps; full attached sheet UI remains deferred."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/bots/WebViewRequestProps.java",
+      "upstream": "org/telegram/ui/bots/WebViewRequestProps.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Browser tab/WebView request state holder used by upstream BottomSheetTabs and BotWebViewContainer."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/OKLCH.java",
@@ -1172,6 +1206,32 @@
       "local_glob": "apps/android/telegram/src/main/res/drawable-*",
       "vendored_at": "009e97356",
       "notes": "Pin icon for pinned topic rows in TopicCell; loaded by Theme.createDialogsResources()."
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "menu_browser_refresh.png",
+        "menu_browser_search.png",
+        "menu_browser_bookmark.png",
+        "menu_browser_arrowup.png",
+        "mini_browser_iv.png",
+        "bot_webview.png"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356",
+      "notes": "Browser/WebActionBar and BotWebView icons copied before migrating more Browser infrastructure."
+    },
+    {
+      "kind": "raw",
+      "files": [
+        "webview_app_ext.js",
+        "webview_share.js"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/raw",
+      "local_glob": "apps/android/telegram/src/main/res/raw",
+      "vendored_at": "009e97356",
+      "notes": "Browser WebView JavaScript extension resources."
     },
     {
       "kind": "drawable",

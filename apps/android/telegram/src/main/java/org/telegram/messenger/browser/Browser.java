@@ -21,6 +21,8 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.SharedConfig;
+import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.LaunchActivity;
 
 import java.net.IDN;
 import java.util.List;
@@ -82,12 +84,14 @@ public class Browser {
             return;
         }
         String browserPackage = getBrowserPackageName(browser);
+        boolean isHttpOrHttps = false;
         try {
             String scheme = uri.getScheme() != null ? uri.getScheme().toLowerCase() : "";
             if (scheme != null && scheme.contains(".")) {
                 return;
             }
-            if ("http".equals(scheme) || "https".equals(scheme)) {
+            isHttpOrHttps = "http".equals(scheme) || "https".equals(scheme);
+            if (isHttpOrHttps) {
                 try {
                     uri = uri.normalizeScheme();
                 } catch (Exception e) {
@@ -97,8 +101,14 @@ public class Browser {
         } catch (Exception e) {
             FileLog.e(e);
         }
-        // NativeDo is a browser app; no internal-uri routing, no CustomTabs, no in-app browser.
-        // Always open externally.
+        if (isHttpOrHttps && allowInAppBrowser && SharedConfig.inappBrowser && TextUtils.isEmpty(browserPackage)) {
+            Progress progress = inCaseLoading != null ? inCaseLoading : new Progress();
+            if (openInTelegramBrowser(context instanceof Activity ? (Activity) context : null, uri.toString(), progress)) {
+                return;
+            }
+        }
+        // NativeDo keeps CustomTabs and Telegram internal routing deferred. If the
+        // Telegram in-app browser cannot handle the URL, fall back to ACTION_VIEW.
         try {
             openInExternalBrowser(context, uri.toString(), allowIntent, browserPackage);
         } catch (Exception e) {
@@ -204,9 +214,14 @@ public class Browser {
         return false;
     }
 
-    /** Telegram-specific: open in Telegram's in-app browser. No-op for NativeDo. */
+    /** Telegram-style in-app browser entry backed by the current NativeDo ActionBarLayout. */
     public static boolean openInTelegramBrowser(Activity activity, String url, Object progress) {
-        return false;
+        BaseFragment fragment = LaunchActivity.getSafeLastFragment();
+        if (fragment == null || TextUtils.isEmpty(url)) {
+            return false;
+        }
+        Progress browserProgress = progress instanceof Progress ? (Progress) progress : null;
+        return fragment.createArticleViewer(false).open(url, browserProgress);
     }
 
     /** Telegram-specific: route URL through LaunchActivity as internal intent. No-op for NativeDo. */

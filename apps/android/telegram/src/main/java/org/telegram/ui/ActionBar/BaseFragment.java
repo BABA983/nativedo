@@ -37,6 +37,7 @@ import java.util.ArrayList;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.UserConfig;
+import org.telegram.ui.ArticleViewer;
 
 public abstract class BaseFragment implements ViewModelStoreOwner {
 
@@ -316,6 +317,31 @@ public abstract class BaseFragment implements ViewModelStoreOwner {
         }
         sheetsStack.add(sheet);
         updateSheetsVisibility();
+    }
+
+    public ArticleViewer createArticleViewer(boolean forceRecreate) {
+        if (sheetsStack == null) {
+            sheetsStack = new ArrayList<>();
+        }
+        if (!forceRecreate) {
+            AttachedSheet lastSheet = getLastSheet();
+            if (lastSheet instanceof ArticleViewer.Sheet && lastSheet.isShown()) {
+                return ((ArticleViewer.Sheet) lastSheet).getArticleViewer();
+            }
+            if (parentLayout instanceof ActionBarLayout) {
+                BaseFragment lastFragment = ((ActionBarLayout) parentLayout).getLastFragment();
+                if (lastFragment != null && lastFragment != this) {
+                    AttachedSheet sheet = lastFragment.getLastSheet();
+                    if (sheet instanceof ArticleViewer.Sheet && sheet.isShown()) {
+                        return ((ArticleViewer.Sheet) sheet).getArticleViewer();
+                    }
+                }
+            }
+        }
+        ArticleViewer articleViewer = ArticleViewer.makeSheet(this);
+        addSheet(articleViewer.sheet);
+        BottomSheetTabDialog.checkSheet(articleViewer.sheet);
+        return articleViewer;
     }
 
     public void removeSheet(AttachedSheet sheet) {

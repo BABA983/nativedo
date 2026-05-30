@@ -1,33 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <item name="ic_ab_other" type="drawable">@drawable/menu_copy</item>
-    <item name="msg_openin" type="drawable">@drawable/menu_copy</item>
-    <item name="msg_search" type="drawable">@drawable/menu_copy</item>
-    <item name="msg_share" type="drawable">@drawable/menu_copy</item>
-    <item name="msg_settings_old" type="drawable">@drawable/menu_copy</item>
     <item name="msg_arrow_forward" type="drawable">@drawable/msg_go_down</item>
     <item name="menu_instant_view" type="drawable">@drawable/msg_instant</item>
-    <item name="msg_reset" type="drawable">@drawable/menu_copy</item>
-    <item name="msg_saved" type="drawable">@drawable/menu_copy</item>
-    <item name="menu_views_recent" type="drawable">@drawable/menu_copy</item>
-    <item name="menu_browser_bookmarks" type="drawable">@drawable/menu_copy</item>
-    <item name="ic_close_white" type="drawable">@drawable/menu_copy</item>
-    <item name="warning_sign" type="drawable">@drawable/menu_copy</item>
-    <item name="msg_copy" type="drawable">@drawable/menu_copy</item>
-    <item name="msg_language" type="drawable">@drawable/menu_copy</item>
-    <item name="menu_clear_recent" type="drawable">@drawable/menu_copy</item>
-    <item name="menu_browser_arrowup" type="drawable">@drawable/msg_go_up</item>
-    <item name="msg_clear_recent" type="drawable">@drawable/menu_copy</item>
     <item name="arrow_more" type="drawable">@drawable/msg_go_down</item>
     <item name="attach_arrow_right" type="drawable">@drawable/msg_go_down</item>
-    <item name="poll_add_circle" type="drawable">@drawable/menu_copy</item>
-    <item name="poll_add_plus" type="drawable">@drawable/menu_copy</item>
-    <item name="menu_clear_cookies" type="drawable">@drawable/menu_copy</item>
-    <item name="menu_clear_cache" type="drawable">@drawable/menu_copy</item>
-    <item name="msg_clearcache" type="drawable">@drawable/menu_copy</item>
-    <item name="msg_message" type="drawable">@drawable/menu_copy</item>
-    <item name="msg_delete" type="drawable">@drawable/menu_copy</item>
-    <item name="outline_header_search" type="drawable">@drawable/menu_copy</item>
     <item name="ic_ab_back" type="drawable">@drawable/msg_go_down</item>
-    <item name="menu_delete_old" type="drawable">@drawable/menu_copy</item>
 </resources>

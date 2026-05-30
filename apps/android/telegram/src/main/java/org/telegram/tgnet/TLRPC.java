@@ -762,6 +762,10 @@ public class TLRPC {
     public static class WebPageAttribute extends TLObject {
     }
 
+    public static class BotApp extends TLObject {
+        public long id;
+    }
+
     public static class Page extends TLObject {
         public int flags;
         public String url;

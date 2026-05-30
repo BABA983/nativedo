@@ -46,7 +46,9 @@ import java.util.HashSet;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLog;
+import org.telegram.ui.ArticleViewer;
 import org.telegram.ui.ActionBar.BrowserSheet;
+import org.telegram.ui.bots.WebViewRequestProps;
 import org.telegram.ui.Components.AnimatedFloat;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 
@@ -100,19 +102,35 @@ public class BottomSheetTabs extends FrameLayout {
     }
 
     public void openTab(WebTabData tab) {
-        if (tab == null || tab.browserSheet == null) {
+        if (tab == null) {
             return;
         }
         BaseFragment fragment = actionBarLayout.getLastFragment();
         if (fragment == null) {
             return;
         }
-        BrowserSheet sheet = tab.browserSheet;
-        fragment.addSheet(sheet);
-        sheet.reset();
-        sheet.attachInternal(fragment);
-        sheet.animateOpen(true, true, null);
-        removeTab(tab, false);
+        if (tab.browserSheet != null) {
+            BrowserSheet sheet = tab.browserSheet;
+            fragment.addSheet(sheet);
+            sheet.reset();
+            sheet.attachInternal(fragment);
+            sheet.animateOpen(true, true, null);
+            removeTab(tab, false);
+            return;
+        }
+        if (tab.articleViewer instanceof ArticleViewer) {
+            ArticleViewer articleViewer = (ArticleViewer) tab.articleViewer;
+            if (articleViewer.sheet == null) {
+                return;
+            }
+            BottomSheetTabDialog.checkSheet(articleViewer.sheet);
+            fragment.addSheet(articleViewer.sheet);
+            articleViewer.sheet.reset();
+            articleViewer.setParentActivity(fragment.getParentActivity(), fragment);
+            articleViewer.sheet.attachInternal(fragment);
+            articleViewer.sheet.animateOpen(true, true, null);
+            removeTab(tab, false);
+        }
     }
 
     public boolean isExpanded() {
@@ -489,11 +507,19 @@ public class BottomSheetTabs extends FrameLayout {
     }
 
     public boolean tryRemoveTabWith(Object owner) {
+        for (int i = 0; i < tabs.size(); i++) {
+            WebTabData tab = tabs.get(i);
+            if (tab != null && tab.articleViewer == owner) {
+                removeTab(tab, true);
+                return true;
+            }
+        }
         return false;
     }
 
     public static class WebTabData {
         public BrowserSheet browserSheet;
+        public WebViewRequestProps props;
         public Object articleViewer;
         public String title;
         public String startUrl;
@@ -519,6 +545,10 @@ public class BottomSheetTabs extends FrameLayout {
                     browserSheet.destroyFromTabs();
                     browserSheet = null;
                 }
+                if (articleViewer instanceof ArticleViewer) {
+                    ((ArticleViewer) articleViewer).destroy();
+                }
+                articleViewer = null;
             } catch (Exception e) {
                 FileLog.e(e);
             }

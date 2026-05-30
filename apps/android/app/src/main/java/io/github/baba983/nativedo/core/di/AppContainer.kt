@@ -5,6 +5,8 @@ import coil3.ImageLoader
 import coil3.gif.AnimatedImageDecoder
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.svg.SvgDecoder
+import coil3.intercept.Interceptor
+import coil3.request.allowHardware
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import io.github.baba983.nativedo.core.network.DiscourseApiClient
 import io.github.baba983.nativedo.core.network.DiscourseApiService
@@ -107,6 +109,12 @@ class AppContainer(
                         },
                     ),
                 )
+                add(Interceptor { chain ->
+                    val request = chain.request.newBuilder()
+                        .allowHardware(false)
+                        .build()
+                    chain.withRequest(request).proceed()
+                })
             }
             .build()
     }

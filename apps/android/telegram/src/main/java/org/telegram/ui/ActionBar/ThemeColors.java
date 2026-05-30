@@ -58,6 +58,7 @@ public final class ThemeColors {
         defaultColors[key_iv_background] = 0xffffffff;
         defaultColors[key_iv_backgroundGray] = 0xfff0f0f0;
         defaultColors[key_iv_navigationBackground] = 0xffffffff;
+        defaultColors[key_iv_ab_progress] = TELEGRAM_COLOR;
         defaultColors[key_graySection] = 0xfff1f1f3;
         defaultColors[key_graySectionText] = 0xff82868a;
         defaultColors[key_windowBackgroundWhiteBlueHeader] = 0xff4092cd;

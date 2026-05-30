@@ -65,7 +65,6 @@ import io.github.baba983.nativedo.feature.profile.data.ProfileRepository
 import io.github.baba983.nativedo.feature.profile.ui.ProfileUiState
 import io.github.baba983.nativedo.feature.profile.ui.ProfileViewModel
 import io.github.baba983.nativedo.ui.auth.LoginWebViewFragment
-import io.github.baba983.nativedo.ui.browser.BrowserSheet
 import io.github.baba983.nativedo.ui.main.MainTabsActivity
 import io.github.baba983.nativedo.ui.topic.TopicDetailFragment
 import java.util.ArrayList
@@ -78,6 +77,7 @@ import kotlinx.coroutines.launch
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ImageReceiver
 import org.telegram.messenger.Utilities
+import org.telegram.messenger.browser.Browser
 import org.telegram.ui.ActionBar.ActionBar
 import org.telegram.ui.ActionBar.BackDrawable
 import org.telegram.ui.ActionBar.BaseFragment
@@ -1251,9 +1251,8 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
     }
 
     private fun openBrowser(url: String) {
-        val sheet = BrowserSheet(this, url)
-        addSheet(sheet)
-        sheet.show()
+        val context = getContext() ?: return
+        Browser.openUrl(context, url)
     }
 
     private inner class UrlInputDialog(

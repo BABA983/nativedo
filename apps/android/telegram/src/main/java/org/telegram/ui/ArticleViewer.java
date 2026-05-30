@@ -232,6 +232,7 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
 
     public final boolean isSheet;
     public final ArticleViewer.Sheet sheet;
+    private boolean destroyed;
 
     public ArticleViewer() {
         this.isSheet = false;
@@ -13821,6 +13822,24 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
         }
 
         @Override
+        public void capturePreviewBitmap(BottomSheetTabs.WebTabData tab, Runnable whenDone) {
+            try {
+                View view = pages[0];
+                if (view != null && view.getWidth() > 0 && view.getHeight() > 0) {
+                    Bitmap bitmap = Bitmap.createBitmap(view.getWidth(), view.getHeight(), Bitmap.Config.RGB_565);
+                    Canvas canvas = new Canvas(bitmap);
+                    view.draw(canvas);
+                    tab.previewBitmap = bitmap;
+                }
+            } catch (Throwable ignore) {
+                tab.previewBitmap = null;
+            }
+            if (whenDone != null) {
+                whenDone.run();
+            }
+        }
+
+        @Override
         public boolean isShown() {
             return !dismissing && !released && openProgress > 0.5f && windowView != null && windowView.isAttachedToWindow() && windowView.isVisible() && backProgress < 1f;
         }
@@ -13873,19 +13892,32 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
             dismissing = true;
             dismissingIntoTabs = tabs;
             if (tabs) {
-                LaunchActivity.instance.getBottomSheetTabsOverlay().dismissSheet(this);
-            } else {
-                animateDismiss(true, true, () -> {
-                    release();
-                    destroy();
-                });
+                BottomSheetTabsOverlay overlay = null;
+                if (fragment != null && fragment.getParentLayout() instanceof ActionBarLayout) {
+                    overlay = ((ActionBarLayout) fragment.getParentLayout()).getBottomSheetTabsOverlay();
+                } else if (LaunchActivity.instance != null) {
+                    overlay = LaunchActivity.instance.getBottomSheetTabsOverlay();
+                }
+                if (overlay != null && overlay.dismissSheet(this)) {
+                    checkNavColor();
+                    checkFullyVisible();
+                    return;
+                }
             }
+            dismissingIntoTabs = false;
+            animateDismiss(true, true, () -> {
+                release();
+                destroy();
+            });
             checkNavColor();
             checkFullyVisible();
         }
 
         @Override
         public void release() {
+            if (released) {
+                return;
+            }
             released = true;
             if (pages[0] != null && pages[0].swipeBack) {
                 pages[0].swipeContainer.setSwipeOffsetY(-pages[0].swipeContainer.offsetY + pages[0].swipeContainer.topActionBarOffsetY);
@@ -14569,6 +14601,10 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
     }
 
     public void destroy() {
+        if (destroyed) {
+            return;
+        }
+        destroyed = true;
         for (int i = 0; i < pagesStack.size(); ++i) {
             Object obj = pagesStack.get(i);
             if (obj instanceof CachedWeb) {

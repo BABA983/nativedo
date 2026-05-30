@@ -16,10 +16,9 @@ import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.PorterDuff;
-import android.graphics.PorterDuffColorFilter;
-import android.graphics.RectF;
+import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -53,7 +52,9 @@ public class ItemOptions {
     private final Theme.ResourcesProvider resourcesProvider;
     private final View scrimView;
     private final ActionBarPopupWindow.ActionBarPopupWindowLayout layout;
-    private final float[] point = new float[2];
+    private final int[] rootLocation = new int[2];
+    private final int[] anchorLocation = new int[2];
+    private final Rect visibleFrame = new Rect();
     private Drawable scrimViewBackground;
     private ActionBarPopupWindow actionBarPopupWindow;
     private Runnable dismissListener;
@@ -90,6 +91,9 @@ public class ItemOptions {
     public ItemOptions add(CharSequence text, Runnable onClickListener) {
         ActionBarMenuSubItem subItem = new ActionBarMenuSubItem(context, false, false, resourcesProvider);
         subItem.setPadding(AndroidUtilities.dp(18), 0, AndroidUtilities.dp(18), 0);
+        if (minWidth > 0) {
+            subItem.setMinimumWidth(AndroidUtilities.dp(minWidth));
+        }
         subItem.setTextAndIcon(text, 0);
         subItem.setColors(textColor, iconColor);
         subItem.setSelectorColor(selectorColor);
@@ -144,7 +148,7 @@ public class ItemOptions {
 
     public ItemOptions setMinWidth(int width) {
         minWidth = width;
-        layout.setMinimumWidth(AndroidUtilities.dp(width));
+        updateItemMinimumWidths();
         return this;
     }
 
@@ -170,6 +174,19 @@ public class ItemOptions {
         return this;
     }
 
+    private void updateItemMinimumWidths() {
+        if (minWidth <= 0) {
+            return;
+        }
+        int minimumWidth = AndroidUtilities.dp(minWidth);
+        for (int i = 0; i < layout.getItemsCount(); i++) {
+            View child = layout.getItemAt(i);
+            if (child instanceof ActionBarMenuSubItem) {
+                child.setMinimumWidth(minimumWidth);
+            }
+        }
+    }
+
     public ActionBarMenuSubItem getLast() {
         if (layout.getItemsCount() <= 0) {
             return null;
@@ -188,12 +205,10 @@ public class ItemOptions {
     }
 
     public ItemOptions setBackgroundColor(int color) {
-        Drawable background = ContextCompat.getDrawable(context, R.drawable.popup_fixed_alert4);
-        if (background != null) {
-            background = background.mutate();
-            background.setColorFilter(new PorterDuffColorFilter(color, PorterDuff.Mode.MULTIPLY));
-            layout.setBackgroundDrawable(background);
-        }
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(color);
+        background.setCornerRadius(AndroidUtilities.dp(6));
+        layout.setBackgroundDrawable(background);
         return this;
     }
 
@@ -209,53 +224,66 @@ public class ItemOptions {
         if (actionBarPopupWindow != null || getItemsCount() <= 0) {
             return this;
         }
-        getPointOnScreen(scrimView, container, point);
-        RectF scrimViewBounds = new RectF(0, 0, scrimView.getMeasuredWidth(), scrimView.getMeasuredHeight());
         layout.measure(
                 View.MeasureSpec.makeMeasureSpec(container.getMeasuredWidth(), View.MeasureSpec.AT_MOST),
                 View.MeasureSpec.makeMeasureSpec(container.getMeasuredHeight(), View.MeasureSpec.AT_MOST)
         );
-        if (minWidth > 0 && layout.getMeasuredWidth() < AndroidUtilities.dp(minWidth)) {
-            layout.measure(
-                    View.MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(minWidth), View.MeasureSpec.EXACTLY),
-                    View.MeasureSpec.makeMeasureSpec(container.getMeasuredHeight(), View.MeasureSpec.AT_MOST)
-            );
+        View rootView = container.getRootView();
+        if (!(rootView instanceof ViewGroup)) {
+            rootView = container;
         }
-        int x = (int) (container.getX() + point[0] + scrimViewBounds.width() - (layout.getMeasuredWidth() - layout.getPaddingRight()));
-        int y = (int) (point[1] + scrimViewBounds.height() + container.getY());
-        x += translateX;
-        y += translateY;
-        if (y + layout.getMeasuredHeight() + AndroidUtilities.dp(16) > AndroidUtilities.displaySize.y) {
-            y = (int) (point[1] - layout.getMeasuredHeight() + container.getY());
+        rootView.getLocationInWindow(rootLocation);
+        scrimView.getLocationInWindow(anchorLocation);
+        rootView.getWindowVisibleDisplayFrame(visibleFrame);
+        if (visibleFrame.isEmpty()) {
+            visibleFrame.set(0, 0, rootView.getWidth(), rootView.getHeight());
+        } else {
+            visibleFrame.offset(-rootLocation[0], -rootLocation[1]);
         }
+        int anchorLeft = anchorLocation[0] - rootLocation[0];
+        int anchorTop = anchorLocation[1] - rootLocation[1];
+        int anchorRight = anchorLeft + scrimView.getMeasuredWidth();
+        int anchorBottom = anchorTop + scrimView.getMeasuredHeight();
+        int x = anchorRight - (layout.getMeasuredWidth() - layout.getPaddingRight()) + (int) translateX;
+        int y = anchorBottom + (int) translateY;
+        int bottom = Math.min(visibleFrame.bottom, rootView.getHeight()) - AndroidUtilities.dp(8);
+        if (y + layout.getMeasuredHeight() > bottom) {
+            y = anchorTop - layout.getMeasuredHeight() + (int) translateY;
+        }
+        int left = visibleFrame.left + AndroidUtilities.dp(8);
+        int right = Math.min(visibleFrame.right, rootView.getWidth()) - AndroidUtilities.dp(8);
+        x = Math.max(left, Math.min(x, right - layout.getMeasuredWidth()));
+        y = Math.max(visibleFrame.top + AndroidUtilities.dp(8), y);
 
-        dimView = new DimView(context);
-        preDrawListener = () -> {
-            if (dimView != null) {
-                dimView.invalidate();
-            }
-            return true;
-        };
-        container.getViewTreeObserver().addOnPreDrawListener(preDrawListener);
-        container.addView(dimView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
-        dimView.setProgress(0f);
-        dimAnimator = ValueAnimator.ofFloat(0f, 1f);
-        dimAnimator.addUpdateListener(animation -> {
-            if (dimView != null) {
-                dimView.setProgress((float) animation.getAnimatedValue());
-            }
-        });
-        dimAnimator.addListener(new AnimatorListenerAdapter() {
-            @Override
-            public void onAnimationEnd(Animator animation) {
+        if (dimAlpha > 0) {
+            dimView = new DimView(context);
+            preDrawListener = () -> {
                 if (dimView != null) {
-                    dimView.setProgress(1f);
+                    dimView.invalidate();
                 }
-                dimAnimator = null;
-            }
-        });
-        dimAnimator.setDuration(150);
-        dimAnimator.start();
+                return true;
+            };
+            container.getViewTreeObserver().addOnPreDrawListener(preDrawListener);
+            container.addView(dimView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+            dimView.setProgress(0f);
+            dimAnimator = ValueAnimator.ofFloat(0f, 1f);
+            dimAnimator.addUpdateListener(animation -> {
+                if (dimView != null) {
+                    dimView.setProgress((float) animation.getAnimatedValue());
+                }
+            });
+            dimAnimator.addListener(new AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(Animator animation) {
+                    if (dimView != null) {
+                        dimView.setProgress(1f);
+                    }
+                    dimAnimator = null;
+                }
+            });
+            dimAnimator.setDuration(150);
+            dimAnimator.start();
+        }
 
         actionBarPopupWindow = new ActionBarPopupWindow(layout, LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT) {
             @Override
@@ -275,7 +303,7 @@ public class ItemOptions {
         });
         actionBarPopupWindow.setInputMethodMode(ActionBarPopupWindow.INPUT_METHOD_NOT_NEEDED);
         actionBarPopupWindow.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED);
-        actionBarPopupWindow.showAtLocation(container, Gravity.NO_GRAVITY, x, y);
+        actionBarPopupWindow.showAtLocation(rootView, Gravity.NO_GRAVITY, x, y);
         actionBarPopupWindow.startAnimation();
         return this;
     }

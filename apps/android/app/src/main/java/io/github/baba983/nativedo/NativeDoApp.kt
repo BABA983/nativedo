@@ -8,6 +8,8 @@ import okhttp3.Request
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.messenger.ImageLoader as TelegramImageLoader
+import org.telegram.messenger.LocaleController
+import org.telegram.messenger.SharedConfig
 import io.github.baba983.nativedo.core.di.AppContainer
 import org.telegram.ui.ActionBar.Theme
 import java.io.File
@@ -19,6 +21,8 @@ class NativeDoApp : Application(), SingletonImageLoader.Factory {
     override fun onCreate() {
         super.onCreate()
         ApplicationLoader.init(this)
+        SharedConfig.loadBrowserConfig()
+        LocaleController.init(this)
         AndroidUtilities.init(this)
         Theme.init(this)
 
