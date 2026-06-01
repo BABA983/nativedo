@@ -1,14 +1,3 @@
-/*
- * This file is part of NativeDo.
- *
- * Derived in part from Telegram for Android's
- * org/telegram/ui/ActionBar/ActionBarMenuSubItem.java.
- *
- * Copyright (C) Telegram FZ-LLC
- * Copyright (C) 2026 NativeDo contributors
- *
- * SPDX-License-Identifier: GPL-2.0-or-later
- */
 package org.telegram.ui.ActionBar;
 
 import android.content.Context;
@@ -23,6 +12,7 @@ import android.widget.ImageView;
 import android.widget.TextView;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.LocaleController;
 import org.telegram.ui.Components.LayoutHelper;
 
 public class ActionBarMenuSubItem extends FrameLayout {
@@ -33,6 +23,15 @@ public class ActionBarMenuSubItem extends FrameLayout {
     private int textColor;
     private int iconColor;
     private int selectorColor;
+    private int iconResId;
+
+    // Rounded selector state — mirrors upstream ActionBarMenuSubItem.
+    private boolean top, bottom;
+    private int selectorRad = 6;
+
+    // Account/chat selector decoration (no CheckBox2 in NativeDo): checkView stays null.
+    public boolean checkViewLeft = LocaleController.isRTL;
+    public android.view.View checkView;
 
     public ActionBarMenuSubItem(Context context, boolean top, boolean bottom, Theme.ResourcesProvider resourcesProvider) {
         super(context);
@@ -76,19 +75,26 @@ public class ActionBarMenuSubItem extends FrameLayout {
     public void setTextAndIcon(CharSequence text, int icon, Drawable iconDrawable) {
         textView.setText(text);
         if (iconDrawable != null) {
+            iconResId = 0;
             imageView.setColorFilter(null);
             imageView.setImageDrawable(iconDrawable);
             imageView.setVisibility(VISIBLE);
             textView.setPadding(AndroidUtilities.dp(43), 0, 0, 0);
         } else if (icon != 0) {
+            iconResId = icon;
             imageView.setColorFilter(new PorterDuffColorFilter(iconColor, PorterDuff.Mode.MULTIPLY));
             imageView.setImageResource(icon);
             imageView.setVisibility(VISIBLE);
             textView.setPadding(AndroidUtilities.dp(43), 0, 0, 0);
         } else {
+            iconResId = 0;
             imageView.setVisibility(INVISIBLE);
             textView.setPadding(0, 0, 0, 0);
         }
+    }
+
+    public int getIconResId() {
+        return iconResId;
     }
 
     public void setTextAndIcon(CharSequence text, int icon) {
@@ -145,7 +151,26 @@ public class ActionBarMenuSubItem extends FrameLayout {
         updateBackground();
     }
 
+    public void updateSelectorBackground(boolean top, boolean bottom) {
+        if (this.top == top && this.bottom == bottom) {
+            return;
+        }
+        this.top = top;
+        this.bottom = bottom;
+        updateBackground();
+    }
+
+    public void updateSelectorBackground(boolean top, boolean bottom, int selectorRad) {
+        if (this.top == top && this.bottom == bottom && this.selectorRad == selectorRad) {
+            return;
+        }
+        this.top = top;
+        this.bottom = bottom;
+        this.selectorRad = selectorRad;
+        updateBackground();
+    }
+
     public void updateBackground() {
-        setBackground(Theme.createSelectorDrawable(selectorColor, Theme.RIPPLE_MASK_ALL));
+        setBackground(Theme.createRadSelectorDrawable(selectorColor, top ? selectorRad : 0, bottom ? selectorRad : 0));
     }
 }

@@ -27,6 +27,9 @@ import androidx.core.graphics.ColorUtils;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLog;
+import org.telegram.messenger.UserObject;
+import org.telegram.tgnet.TLObject;
+import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.Theme;
 
 public class AvatarDrawable extends Drawable {
@@ -128,6 +131,27 @@ public class AvatarDrawable extends Drawable {
 
     public void setInfo(long id, String firstName, String lastName) {
         setInfo(id, firstName);
+    }
+
+    /**
+     * NativeDo adaptation of upstream {@code setInfo(TLObject)} — derives the
+     * palette seed and monogram from a User or Chat. Other TLObject subtypes
+     * are ignored (avatar stays at the last set state).
+     */
+    public void setInfo(TLObject object) {
+        if (object instanceof TLRPC.User) {
+            TLRPC.User u = (TLRPC.User) object;
+            setInfo(u.id, UserObject.getUserName(u));
+        } else if (object instanceof TLRPC.Chat) {
+            TLRPC.Chat c = (TLRPC.Chat) object;
+            setInfo(c.id, c.title);
+        }
+    }
+
+    public void setInfo(TLRPC.User user) {
+        if (user != null) {
+            setInfo(user.id, UserObject.getUserName(user));
+        }
     }
 
     public void setText(String text) {

@@ -328,14 +328,19 @@ public class WebInstantView {
             return;
         }
 
-        Context context = LaunchActivity.instance;
-        if (context == null) context = ApplicationLoader.applicationContext;
-
-        final Activity activity = AndroidUtilities.findActivity(context);
+        // NativeDo: LaunchActivity is a non-window stub Context; resolve the real host
+        // Activity (MainActivity) via the root ActionBarLayout so the offscreen extraction
+        // WebView gets a real Context and a real content view to attach to.
+        Activity activity = LaunchActivity.getActionBarLayoutActivity();
+        if (activity == null) {
+            Context fallback = LaunchActivity.instance != null ? LaunchActivity.instance : ApplicationLoader.applicationContext;
+            activity = AndroidUtilities.findActivity(fallback);
+        }
         if (activity == null) {
             whenDone.run(null);
             return;
         }
+        final Context context = activity;
         final View rootView = activity.findViewById(android.R.id.content).getRootView();
         if (!(rootView instanceof ViewGroup)) {
             whenDone.run(null);

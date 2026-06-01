@@ -147,6 +147,9 @@ public final class SharedConfig {
     public static boolean noiseSupression = true;
     public static boolean noStatusBar = false;
     public static boolean forceRtmpStream = false;
+
+    /** Matches upstream {@code SharedConfig.useNewBlur} — used by BaseCell caching. */
+    public static boolean useNewBlur = true;
     public static int chatBubbles = 0;
     public static int distanceSystemType = 0;
 

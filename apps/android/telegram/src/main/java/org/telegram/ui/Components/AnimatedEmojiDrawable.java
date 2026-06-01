@@ -41,4 +41,19 @@ public class AnimatedEmojiDrawable extends Drawable {
     public int getOpacity() {
         return android.graphics.PixelFormat.TRANSLUCENT;
     }
+
+    /**
+     * Stub of upstream SwapAnimatedEmojiDrawable.
+     * SimpleTextView uses {@code instanceof} checks against this type to
+     * determine right-drawable outside padding. The stub satisfies the type
+     * check without any drawing behaviour.
+     */
+    public static class SwapAnimatedEmojiDrawable extends Drawable {
+        public SwapAnimatedEmojiDrawable(android.view.View parent, int size, boolean invalidateParent, int cacheType) {}
+        public SwapAnimatedEmojiDrawable(android.view.View parent, int size, int cacheType) {}
+        @Override public void draw(android.graphics.Canvas canvas) {}
+        @Override public void setAlpha(int alpha) {}
+        @Override public void setColorFilter(android.graphics.ColorFilter colorFilter) {}
+        @Override public int getOpacity() { return android.graphics.PixelFormat.TRANSLUCENT; }
+    }
 }

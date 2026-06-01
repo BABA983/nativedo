@@ -1,20 +1,9 @@
 /*
- * This file is part of NativeDo.
+ * This is the source code of Telegram for Android v. 5.x.x.
+ * It is licensed under GNU GPL v. 2 or later.
+ * You should have received a copy of the license in this archive (see LICENSE).
  *
- * Derived in part from Telegram for Android's
- * org/telegram/messenger/ApplicationLoader.java.
- *
- * Source reference:
- * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java
- *
- * Copyright (C) Telegram FZ-LLC
- * Copyright (C) 2026 NativeDo contributors
- *
- * This program is free software: you can redistribute it and/or modify
- * it under terms of GNU General Public License version 2 or later as published by
- * the Free Software Foundation.
- *
- * SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright Nikolai Kudashov, 2013-2018.
  */
 package org.telegram.messenger;
 
@@ -60,6 +49,16 @@ public final class ApplicationLoader {
 
     /** Stub of upstream {@code ApplicationLoader.isRoaming()}. */
     public static boolean isRoaming() {
+        return false;
+    }
+
+    /**
+     * Host wiring for upstream {@code ApplicationLoader.isAndroidTestEnvironment()}.
+     * Upstream delegates to the application loader instance to short-circuit
+     * {@code SvgHelper.doPath()} under instrumentation; NativeDo always runs in a
+     * real runtime, so this returns {@code false}.
+     */
+    public static boolean isAndroidTestEnvironment() {
         return false;
     }
 

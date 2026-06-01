@@ -35,9 +35,12 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         mainTabsActivity = MainTabsActivity()
-        actionBarLayout = ActionBarLayout(this).apply {
-            addFragmentToStack(mainTabsActivity)
-        }
+        actionBarLayout = ActionBarLayout(this)
+        // Register the root layout as the global last-fragment provider. Browser sheets
+        // (bookmarks/history/settings) resolve their host via LaunchActivity.getSafeLastFragment(),
+        // so the global must stay pinned to the root and never be overwritten by a sheet's layout.
+        LaunchActivity.setActionBarLayout(actionBarLayout)
+        actionBarLayout.addFragmentToStack(mainTabsActivity)
         setContentView(actionBarLayout)
         lifecycleScope.launch {
             (applicationContext as NativeDoApp).appContainer.sessionCoordinator.start()

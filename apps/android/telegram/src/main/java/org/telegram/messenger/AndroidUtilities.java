@@ -1,29 +1,14 @@
 /*
- * This file is part of NativeDo.
+ * This is the source code of Telegram for Android v. 5.x.x.
+ * It is licensed under GNU GPL v. 2 or later.
+ * You should have received a copy of the license in this archive (see LICENSE).
  *
- * Derived in part from Telegram for Android's
- * org/telegram/messenger/AndroidUtilities.java.
- *
- * Source reference:
- * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/messenger/AndroidUtilities.java
- *
- * NativeDo milestone slice: keeps display metrics, dp conversion, keyboard hiding,
- * status-bar appearance, cascade animation, and UI-thread helpers used by the
- * navigation shell; uses WindowCompat for the AndroidX edge-to-edge host and
- * omits Telegram app-wide utilities.
- *
- * Copyright (C) Telegram FZ-LLC
- * Copyright (C) 2026 NativeDo contributors
- *
- * This program is free software: you can redistribute it and/or modify
- * it under terms of GNU General Public License version 2 or later as published by
- * the Free Software Foundation.
- *
- * SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright Nikolai Kudashov, 2013-2018.
  */
 package org.telegram.messenger;
 
 import android.animation.Animator;
+import android.animation.ObjectAnimator;
 import android.app.Activity;
 import android.content.Context;
 import android.content.ContextWrapper;
@@ -38,8 +23,12 @@ import android.graphics.Point;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.SpannableStringBuilder;
+import android.text.TextUtils;
+import android.text.style.ForegroundColorSpan;
 import android.util.DisplayMetrics;
 import android.view.View;
+import android.view.MotionEvent;
 import android.view.Window;
 import android.widget.HorizontalScrollView;
 import android.view.animation.DecelerateInterpolator;
@@ -709,9 +698,9 @@ public final class AndroidUtilities {
     }
 
     /**
-     * Packs two ints into a long. Matches upstream {@code AndroidUtilities.packIntPair(int, int)}.
+     * Packs two ints into a long.
      */
-    public static long packIntPair(int a, int b) {
+    public static long pack(int a, int b) {
         return ((long) a << 32) | (b & 0xFFFFFFFFL);
     }
 
@@ -1143,7 +1132,23 @@ public final class AndroidUtilities {
     }
 
     public static CharSequence highlightText(CharSequence text, String query, Theme.ResourcesProvider resourcesProvider) {
-        return text;
+        if (TextUtils.isEmpty(query) || TextUtils.isEmpty(text)) {
+            return null;
+        }
+        String source = text.toString().toLowerCase();
+        String needle = query.toLowerCase();
+        SpannableStringBuilder builder = SpannableStringBuilder.valueOf(text);
+        int index = source.indexOf(needle);
+        while (index >= 0) {
+            builder.setSpan(
+                new ForegroundColorSpan(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText4, resourcesProvider)),
+                index,
+                Math.min(index + needle.length(), text.length()),
+                0
+            );
+            index = source.indexOf(needle, index + 1);
+        }
+        return builder;
     }
 
     public static String translitSafe(String value) {
@@ -1169,5 +1174,35 @@ public final class AndroidUtilities {
     }
 
     public static void getBitmapFromSurface(android.view.SurfaceView surfaceView, android.graphics.Bitmap bitmap) {
+    }
+
+    /** Matches upstream {@code AndroidUtilities.emptyMotionEvent()} — a cancelled, zeroed event. */
+    public static MotionEvent emptyMotionEvent() {
+        return MotionEvent.obtain(0, 0, MotionEvent.ACTION_CANCEL, 0, 0, 0);
+    }
+
+    /**
+     * NativeDo adaptation of upstream {@code shakeViewSpring(View, float)} —
+     * upstream uses androidx SpringAnimation plus id tags; this is an equivalent
+     * translationX wobble that avoids new id resources for a non-core path.
+     */
+    public static void shakeViewSpring(View view, float shiftDp) {
+        if (view == null) {
+            return;
+        }
+        final float t = view.getTranslationX();
+        final int shift = dp(shiftDp);
+        ObjectAnimator a = ObjectAnimator.ofFloat(view, View.TRANSLATION_X, t, t + shift, t - shift, t + shift * 0.6f, t - shift * 0.6f, t);
+        a.setDuration(300);
+        a.start();
+    }
+
+    /**
+     * NativeDo adaptation of upstream {@code replaceArrows} — upstream replaces
+     * arrow glyphs with ColoredImageSpan-backed icons; the icon drawable and
+     * multi-char replace helper are absent locally, so this passes text through.
+     */
+    public static CharSequence replaceArrows(CharSequence text, boolean link, int translateX, int translateY) {
+        return text;
     }
 }

@@ -9,6 +9,8 @@ public class AnimatedEmojiSpan {
     public static class EmojiGroupedSpans {
         public void release() {}
         public void replaceFontMetrics(android.graphics.Paint.FontMetricsInt fontMetricsInt) {}
+        /** Stub — upstream clears cached glyph positions before re-drawing. */
+        public void clearPositions() {}
     }
 
     public static EmojiGroupedSpans update(int cacheType, View parent, EmojiGroupedSpans drawables, Layout layout) {

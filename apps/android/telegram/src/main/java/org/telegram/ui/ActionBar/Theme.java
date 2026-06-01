@@ -1,24 +1,9 @@
 /*
- * This file is part of NativeDo.
+ * This is the source code of Telegram for Android v. 5.x.x.
+ * It is licensed under GNU GPL v. 2 or later.
+ * You should have received a copy of the license in this archive (see LICENSE).
  *
- * Derived in part from Telegram for Android's
- * org/telegram/ui/ActionBar/Theme.java.
- *
- * Source reference:
- * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/Theme.java
- *
- * NativeDo milestone slice: keeps Telegram theme key names, current theme state,
- * color lookup, selector drawable helpers, and apply-theme notification; omits
- * Telegram wallpaper, remote theme, theme editor, and ThemeDescription systems.
- *
- * Copyright (C) Telegram FZ-LLC
- * Copyright (C) 2026 NativeDo contributors
- *
- * This program is free software: you can redistribute it and/or modify
- * it under terms of GNU General Public License version 2 or later as published by
- * the Free Software Foundation.
- *
- * SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright Nikolai Kudashov, 2013-2018.
  */
 package org.telegram.ui.ActionBar;
 
@@ -51,6 +36,10 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.R;
 
 public final class Theme {
+
+    // Upstream debug paint, used by DrawingInBackgroundThreadDrawable's
+    // BuildVars.DEBUG_PRIVATE_VERSION error branch. Copied verbatim from upstream.
+    public static Paint DEBUG_RED = new Paint(); static { DEBUG_RED.setColor(0xffff0000); }
 
     public interface ThemeDelegate {
         void didSetNewTheme();
@@ -124,46 +113,139 @@ public final class Theme {
     /** ADAPTED: rounded-rect ripple mask used by ScrollSlidingTextTabStrip selector. */
     public static final int RIPPLE_MASK_ROUNDRECT_6DP = 7;
 
+
     public static int colorsCount;
 
-    // Additional Theme keys referenced by ported UI code (defined just after colorsCount so forward refs work).
-    public static final int key_featuredStickers_addButton = colorsCount++;
-    public static final int key_featuredStickers_addButtonPressed = colorsCount++;
-    public static final int key_featuredStickers_buttonText = colorsCount++;
-    public static final int key_featuredStickers_buttonProgress = colorsCount++;
-    public static final int key_buttonNeutral = colorsCount++;
-    public static final int key_buttonNeutralText = colorsCount++;
-    public static final int key_chat_editMediaButton = colorsCount++;
-    public static final int key_chat_messagePanelIcons = colorsCount++;
-    public static final int key_chat_messagePanelText = colorsCount++;
-    public static final int key_player_progress = colorsCount++;
-    public static final int key_player_progressBackground = colorsCount++;
-    public static final int key_player_progressCachedBackground = colorsCount++;
-    public static final int key_text_RedBold = colorsCount++;
-    public static final int key_text_RedRegular = colorsCount++;
-    public static final int key_groupcreate_cursor = colorsCount++;
-    public static final int key_groupcreate_hintText = colorsCount++;
-    public static final int key_windowBackgroundWhiteLinkSelection = colorsCount++;
-    public static final int key_windowBackgroundWhiteLinkText = colorsCount++;
-    public static final int key_windowBackgroundWhiteValueText = colorsCount++;
-    public static final int key_windowBackgroundWhiteInputField = colorsCount++;
-    public static final int key_windowBackgroundWhiteInputFieldActivated = colorsCount++;
-    public static final int key_chat_linkSelectBackground = colorsCount++;
-    public static final int key_chat_inReplyLine = colorsCount++;
-    public static final int key_chat_inAudioSeekbar = colorsCount++;
-    public static final int key_chat_inAudioSeekbarFill = colorsCount++;
-    public static final int key_chat_inAudioSeekbarSelected = colorsCount++;
-    public static final int key_chat_inAudioCacheSeekbar = colorsCount++;
-    public static final int key_chat_inFileProgress = colorsCount++;
-    public static final int key_chat_inLoader = colorsCount++;
-    public static final int key_chat_inLoaderSelected = colorsCount++;
-    public static final int key_chat_inMediaIcon = colorsCount++;
-    public static final int key_chat_inMediaIconSelected = colorsCount++;
-    public static final int key_chat_inLocationBackground = colorsCount++;
-    public static final int key_switchTrack = colorsCount++;
+    public static final int key_wallpaperFileOffset = colorsCount++;
+    public static final int key_dialogBackground = colorsCount++;
+    public static final int key_dialogBackgroundGray = colorsCount++;
     public static final int key_dialogTextBlack = colorsCount++;
+    public static final int key_dialogTextLink = colorsCount++;
+    public static final int key_dialogLinkSelection = colorsCount++;
+    public static final int key_dialogTextBlue = colorsCount++;
+    public static final int key_dialogTextBlue2 = colorsCount++;
+    public static final int key_dialogTextBlue4 = colorsCount++;
+    public static final int key_dialogTextGray = colorsCount++;
+    public static final int key_dialogTextGray2 = colorsCount++;
+    public static final int key_dialogTextGray3 = colorsCount++;
+    public static final int key_dialogTextGray4 = colorsCount++;
+    public static final int key_dialogTextHint = colorsCount++;
+    public static final int key_dialogInputField = colorsCount++;
+    public static final int key_dialogInputFieldActivated = colorsCount++;
+    public static final int key_dialogCheckboxSquareBackground = colorsCount++;
+    public static final int key_dialogCheckboxSquareCheck = colorsCount++;
+    public static final int key_dialogCheckboxSquareUnchecked = colorsCount++;
+    public static final int key_dialogCheckboxSquareDisabled = colorsCount++;
+    public static final int key_dialogScrollGlow = colorsCount++;
+    public static final int key_dialogRoundCheckBox = colorsCount++;
+    public static final int key_dialogRoundCheckBoxCheck = colorsCount++;
     public static final int key_dialogRadioBackground = colorsCount++;
     public static final int key_dialogRadioBackgroundChecked = colorsCount++;
+    public static final int key_dialogLineProgress = colorsCount++;
+    public static final int key_dialogLineProgressBackground = colorsCount++;
+    public static final int key_dialogButton = colorsCount++;
+    public static final int key_dialogButtonSelector = colorsCount++;
+    public static final int key_dialogIcon = colorsCount++;
+    public static final int key_dialogGrayLine = colorsCount++;
+    public static final int key_dialogTopBackground = colorsCount++;
+    public static final int key_dialog_inlineProgressBackground = colorsCount++;
+    public static final int key_dialog_inlineProgress = colorsCount++;
+    public static final int key_dialogSearchBackground = colorsCount++;
+    public static final int key_dialogSearchHint = colorsCount++;
+    public static final int key_dialogSearchIcon = colorsCount++;
+    public static final int key_dialogSearchText = colorsCount++;
+    public static final int key_dialogFloatingButton = colorsCount++;
+    public static final int key_dialogFloatingButtonPressed = colorsCount++;
+    public static final int key_dialogFloatingIcon = colorsCount++;
+    public static final int key_dialogShadowLine = colorsCount++;
+    public static final int key_dialogEmptyImage = colorsCount++;
+    public static final int key_dialogEmptyText = colorsCount++;
+    public static final int key_dialogSwipeRemove = colorsCount++;
+    public static final int key_dialogReactionMentionBackground = colorsCount++;
+    public static final int key_dialogCardShadow = colorsCount++;
+    public static final int key_dialogGiftsBackground = colorsCount++;
+    public static final int key_dialogGiftsTabText = colorsCount++;
+
+    public static final int key_windowBackgroundWhite = colorsCount++;
+    public static final int key_windowBackgroundUnchecked = colorsCount++;
+    public static final int key_windowBackgroundChecked = colorsCount++;
+    public static final int key_windowBackgroundCheckText = colorsCount++;
+    public static final int key_progressCircle = colorsCount++;
+    public static final int key_listSelector = colorsCount++;
+    public static final int key_settings_listSelector = colorsCount++;
+    public static final int key_windowBackgroundWhiteInputField = colorsCount++;
+    public static final int key_windowBackgroundWhiteInputFieldActivated = colorsCount++;
+    public static final int key_windowBackgroundWhiteGrayIcon = colorsCount++;
+    public static final int key_windowBackgroundWhiteBlueText = colorsCount++;
+    public static final int key_windowBackgroundWhiteBlueText2 = colorsCount++;
+    public static final int key_windowBackgroundWhiteBlueText3 = colorsCount++;
+    public static final int key_windowBackgroundWhiteBlueText4 = colorsCount++;
+    public static final int key_windowBackgroundWhiteBlueText5 = colorsCount++;
+    public static final int key_windowBackgroundWhiteBlueText6 = colorsCount++;
+    public static final int key_windowBackgroundWhiteBlueText7 = colorsCount++;
+    public static final int key_windowBackgroundWhiteBlueButton = colorsCount++;
+    public static final int key_windowBackgroundWhiteBlueIcon = colorsCount++;
+    public static final int key_windowBackgroundWhiteGreenText = colorsCount++;
+    public static final int key_windowBackgroundWhiteGreenText2 = colorsCount++;
+    public static final int key_windowBackgroundWhiteGrayText = colorsCount++;
+    public static final int key_windowBackgroundWhiteGrayText2 = colorsCount++;
+    public static final int key_windowBackgroundWhiteGrayText3 = colorsCount++;
+    public static final int key_windowBackgroundWhiteGrayText4 = colorsCount++;
+    public static final int key_windowBackgroundWhiteGrayText5 = colorsCount++;
+    public static final int key_windowBackgroundWhiteGrayText6 = colorsCount++;
+    public static final int key_windowBackgroundWhiteGrayText7 = colorsCount++;
+    public static final int key_windowBackgroundWhiteGrayText8 = colorsCount++;
+    public static final int key_windowBackgroundWhiteBlackText = colorsCount++;
+    public static final int key_windowBackgroundWhiteHintText = colorsCount++;
+    public static final int key_windowBackgroundWhiteValueText = colorsCount++;
+    public static final int key_windowBackgroundWhiteLinkText = colorsCount++;
+    public static final int key_windowBackgroundWhiteLinkSelection = colorsCount++;
+    public static final int key_windowBackgroundWhiteBlueHeader = colorsCount++;
+    public static final int key_switchTrack = colorsCount++;
+    public static final int key_switchTrackChecked = colorsCount++;
+    public static final int key_switchTrackBlue = colorsCount++;
+    public static final int key_switchTrackBlueChecked = colorsCount++;
+    public static final int key_switchTrackBlueThumb = colorsCount++;
+    public static final int key_switchTrackBlueThumbChecked = colorsCount++;
+    public static final int key_switchTrackBlueSelector = colorsCount++;
+    public static final int key_switchTrackBlueSelectorChecked = colorsCount++;
+    public static final int key_switch2Track = colorsCount++;
+    public static final int key_switch2TrackChecked = colorsCount++;
+    public static final int key_checkboxSquareBackground = colorsCount++;
+    public static final int key_checkboxSquareCheck = colorsCount++;
+    public static final int key_checkboxSquareUnchecked = colorsCount++;
+    public static final int key_checkboxSquareDisabled = colorsCount++;
+    public static final int key_windowBackgroundGray = colorsCount++;
+    public static final int key_windowBackgroundGrayShadow = colorsCount++;
+    public static final int key_emptyListPlaceholder = colorsCount++;
+    public static final int key_divider = colorsCount++;
+    public static final int key_graySection = colorsCount++;
+    public static final int key_graySectionText = colorsCount++;
+    public static final int key_radioBackground = colorsCount++;
+    public static final int key_radioBackgroundChecked = colorsCount++;
+    public static final int key_checkbox = colorsCount++;
+    public static final int key_checkboxDisabled = colorsCount++;
+    public static final int key_checkboxCheck = colorsCount++;
+    public static final int key_fastScrollActive = colorsCount++;
+    public static final int key_fastScrollInactive = colorsCount++;
+    public static final int key_fastScrollText = colorsCount++;
+    public static final int key_pollCreateIcons = colorsCount++;
+
+    public static final int key_text_RedRegular = colorsCount++;
+    public static final int key_text_RedBold = colorsCount++;
+    public static final int key_fill_RedNormal = colorsCount++;
+    public static final int key_fill_RedDark = colorsCount++;
+
+    public static final int key_inappPlayerPerformer = colorsCount++;
+    public static final int key_inappPlayerTitle = colorsCount++;
+    public static final int key_inappPlayerBackground = colorsCount++;
+    public static final int key_inappPlayerPlayPause = colorsCount++;
+    public static final int key_inappPlayerClose = colorsCount++;
+
+    public static final int key_returnToCallBackground = colorsCount++;
+    public static final int key_returnToCallMutedBackground = colorsCount++;
+    public static final int key_returnToCallText = colorsCount++;
+
     public static final int key_contextProgressInner1 = colorsCount++;
     public static final int key_contextProgressOuter1 = colorsCount++;
     public static final int key_contextProgressInner2 = colorsCount++;
@@ -173,83 +255,11 @@ public final class Theme {
     public static final int key_contextProgressInner4 = colorsCount++;
     public static final int key_contextProgressOuter4 = colorsCount++;
 
-    public static final int key_windowBackgroundWhite = colorsCount++;
-    public static final int key_windowBackgroundGray = colorsCount++;
-    public static final int key_windowBackgroundWhiteBlackText = colorsCount++;
-    public static final int key_windowBackgroundWhiteGrayText = colorsCount++;
-    public static final int key_windowBackgroundWhiteGrayText2 = colorsCount++;
-    public static final int key_windowBackgroundWhiteBlueText = colorsCount++;
-    public static final int key_divider = colorsCount++;
-    public static final int key_listSelector = colorsCount++;
-    public static final int key_actionBarDefault = colorsCount++;
-    public static final int key_actionBarDefaultSelector = colorsCount++;
-    public static final int key_actionBarDefaultIcon = colorsCount++;
-    public static final int key_actionBarDefaultTitle = colorsCount++;
-    public static final int key_actionBarDefaultSubtitle = colorsCount++;
-    public static final int key_actionBarDefaultSubmenuItem = colorsCount++;
-    public static final int key_actionBarDefaultSubmenuItemIcon = colorsCount++;
-    public static final int key_actionBarDefaultSubmenuBackground = colorsCount++;
-    public static final int key_actionBarDefaultSubmenuSeparator = colorsCount++;
-    public static final int key_glass_tabSelected = colorsCount++;
-    public static final int key_glass_tabSelectedText = colorsCount++;
-    public static final int key_glass_tabUnselected = colorsCount++;
-    public static final int key_telegram_color = colorsCount++;
-    public static final int key_iv_background = colorsCount++;
-    public static final int key_iv_backgroundGray = colorsCount++;
-    public static final int key_iv_navigationBackground = colorsCount++;
-    public static final int key_iv_ab_progress = colorsCount++;
-    public static final int key_actionBarActionModeDefaultSelector = colorsCount++;
-    public static final int key_actionBarActionModeDefaultIcon = colorsCount++;
-    public static final int key_chat_messagePanelBackground = colorsCount++;
-    public static final int key_chat_messagePanelShadow = colorsCount++;
-    public static final int key_graySection = colorsCount++;
-    public static final int key_graySectionText = colorsCount++;
-    public static final int key_windowBackgroundWhiteBlueHeader = colorsCount++;
-    public static final int key_windowBackgroundWhiteGrayIcon = colorsCount++;
-    public static final int key_windowBackgroundGrayShadow = colorsCount++;
-    public static final int key_dialogBackground = colorsCount++;
-    public static final int key_fastScrollInactive = colorsCount++;
-    public static final int key_fastScrollActive = colorsCount++;
-    public static final int key_fastScrollText = colorsCount++;
-    public static final int key_settings_listSelector = colorsCount++;
-    public static final int key_progressCircle = colorsCount++;
-    public static final int key_switchTrackChecked = colorsCount++;
-    public static final int key_switch2Track = colorsCount++;
-    public static final int key_checkboxCheck = colorsCount++;
-    public static final int key_radioBackground = colorsCount++;
-    public static final int key_player_time = colorsCount++;
-    public static final int key_windowBackgroundChecked = colorsCount++;
-    public static final int key_windowBackgroundUnchecked = colorsCount++;
-
-    public static final int ACTION_BAR_WHITE_SELECTOR_COLOR = 0x40ffffff;
-    public static final Paint dividerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-
-    // ScrollSlidingTextTabStrip keys.
-    public static final int key_actionBarTabLine = colorsCount++;
-    public static final int key_actionBarTabActiveText = colorsCount++;
-    public static final int key_actionBarTabUnactiveText = colorsCount++;
-    public static final int key_actionBarTabSelector = colorsCount++;
-
-    // PullForegroundDrawable keys.
-    public static final int key_chats_archivePullDownBackground = colorsCount++;
-    public static final int key_chats_archivePullDownBackgroundActive = colorsCount++;
-    public static final int key_avatar_backgroundArchivedHidden = colorsCount++;
-
-    // DialogCell / TopicCell keys.
-    public static final int key_chats_name = colorsCount++;
-    public static final int key_chats_nameMessage = colorsCount++;
-    public static final int key_chats_message = colorsCount++;
-    public static final int key_chats_date = colorsCount++;
-    public static final int key_chats_pinnedIcon = colorsCount++;
-    public static final int key_chats_pinnedOverlay = colorsCount++;
-    public static final int key_chats_unreadCounter = colorsCount++;
-    public static final int key_chats_unreadCounterText = colorsCount++;
-    public static final int key_chats_unreadCounterMuted = colorsCount++;
-    public static final int key_chats_actionBackground = colorsCount++;
     public static final int key_avatar_text = colorsCount++;
-
-    // Avatar background palette — mirrors upstream Theme.keys_avatar_background /
-    // keys_avatar_background2. Order: Red, Orange, Violet, Green, Cyan, Blue, Pink.
+    public static final int key_avatar_backgroundSaved = colorsCount++;
+    public static final int key_avatar_background2Saved = colorsCount++;
+    public static final int key_avatar_backgroundArchived = colorsCount++;
+    public static final int key_avatar_backgroundArchivedHidden = colorsCount++;
     public static final int key_avatar_backgroundRed = colorsCount++;
     public static final int key_avatar_backgroundOrange = colorsCount++;
     public static final int key_avatar_backgroundViolet = colorsCount++;
@@ -264,17 +274,695 @@ public final class Theme {
     public static final int key_avatar_background2Cyan = colorsCount++;
     public static final int key_avatar_background2Blue = colorsCount++;
     public static final int key_avatar_background2Pink = colorsCount++;
+    public static final int key_avatar_backgroundGray = colorsCount++;
 
-    public static final int[] keys_avatar_background = {
-            key_avatar_backgroundRed, key_avatar_backgroundOrange, key_avatar_backgroundViolet,
-            key_avatar_backgroundGreen, key_avatar_backgroundCyan, key_avatar_backgroundBlue,
-            key_avatar_backgroundPink
-    };
-    public static final int[] keys_avatar_background2 = {
-            key_avatar_background2Red, key_avatar_background2Orange, key_avatar_background2Violet,
-            key_avatar_background2Green, key_avatar_background2Cyan, key_avatar_background2Blue,
-            key_avatar_background2Pink
-    };
+    public static final int key_avatar_backgroundInProfileBlue = colorsCount++;
+    public static final int key_avatar_backgroundActionBarBlue = colorsCount++;
+    public static final int key_avatar_actionBarSelectorBlue = colorsCount++;
+    public static final int key_avatar_actionBarIconBlue = colorsCount++;
+    public static final int key_avatar_subtitleInProfileBlue = colorsCount++;
+
+    public static final int key_avatar_nameInMessageRed = colorsCount++;
+    public static final int key_avatar_nameInMessageOrange = colorsCount++;
+    public static final int key_avatar_nameInMessageViolet = colorsCount++;
+    public static final int key_avatar_nameInMessageGreen = colorsCount++;
+    public static final int key_avatar_nameInMessageCyan = colorsCount++;
+    public static final int key_avatar_nameInMessageBlue = colorsCount++;
+    public static final int key_avatar_nameInMessagePink = colorsCount++;
+
+    public static int[] keys_avatar_background = {key_avatar_backgroundRed, key_avatar_backgroundOrange, key_avatar_backgroundViolet, key_avatar_backgroundGreen, key_avatar_backgroundCyan, key_avatar_backgroundBlue, key_avatar_backgroundPink};
+    public static int[] keys_avatar_background2 = {key_avatar_background2Red, key_avatar_background2Orange, key_avatar_background2Violet, key_avatar_background2Green, key_avatar_background2Cyan, key_avatar_background2Blue, key_avatar_background2Pink};
+    public static int[] keys_avatar_nameInMessage = {key_avatar_nameInMessageRed, key_avatar_nameInMessageOrange, key_avatar_nameInMessageViolet, key_avatar_nameInMessageGreen, key_avatar_nameInMessageCyan, key_avatar_nameInMessageBlue, key_avatar_nameInMessagePink};
+
+    public static final int key_actionBarDefault = colorsCount++;
+    public static final int key_actionBarDefaultSelector = colorsCount++;
+    public static final int key_actionBarWhiteSelector = colorsCount++;
+    public static final int key_actionBarDefaultIcon = colorsCount++;
+    public static final int key_actionBarActionModeDefault = colorsCount++;
+    public static final int key_actionBarActionModeDefaultTop = colorsCount++;
+    public static final int key_actionBarActionModeDefaultIcon = colorsCount++;
+    public static final int key_actionBarActionModeDefaultSelector = colorsCount++;
+    public static final int key_actionBarDefaultTitle = colorsCount++;
+    public static final int key_actionBarDefaultSubtitle = colorsCount++;
+    public static final int key_actionBarDefaultSearch = colorsCount++;
+    public static final int key_actionBarDefaultSearchPlaceholder = colorsCount++;
+    public static final int key_actionBarDefaultSubmenuItem = colorsCount++;
+    public static final int key_actionBarDefaultSubmenuItemIcon = colorsCount++;
+    public static final int key_actionBarDefaultSubmenuBackground = colorsCount++;
+    public static final int key_actionBarDefaultSubmenuSeparator = colorsCount++;
+    public static final int key_actionBarTabActiveText = colorsCount++;
+    public static final int key_actionBarTabUnactiveText = colorsCount++;
+    public static final int key_actionBarTabLine = colorsCount++;
+    public static final int key_actionBarTabSelector = colorsCount++;
+    public static final int key_actionBarDefaultArchived = colorsCount++;
+    public static final int key_actionBarDefaultArchivedSelector = colorsCount++;
+    public static final int key_actionBarDefaultArchivedIcon = colorsCount++;
+    public static final int key_actionBarDefaultArchivedTitle = colorsCount++;
+    public static final int key_actionBarDefaultArchivedSearch = colorsCount++;
+    public static final int key_actionBarDefaultArchivedSearchPlaceholder = colorsCount++;
+
+    public static final int key_actionBarBrowser = colorsCount++;
+
+    public static final int key_chats_onlineCircle = colorsCount++;
+    public static final int key_chats_unreadCounter = colorsCount++;
+    public static final int key_chats_unreadCounterMuted = colorsCount++;
+    public static final int key_chats_unreadCounterText = colorsCount++;
+    public static final int key_chats_name = colorsCount++;
+    public static final int key_chats_nameArchived = colorsCount++;
+    public static final int key_chats_secretName = colorsCount++;
+    public static final int key_chats_secretIcon = colorsCount++;
+    public static final int key_chats_pinnedIcon = colorsCount++;
+    public static final int key_chats_archiveBackground = colorsCount++;
+    public static final int key_chats_archivePinBackground = colorsCount++;
+    public static final int key_chats_archiveIcon = colorsCount++;
+    public static final int key_chats_archiveText = colorsCount++;
+    public static final int key_chats_message = colorsCount++;
+    public static final int key_chats_messageArchived = colorsCount++;
+    public static final int key_chats_message_threeLines = colorsCount++;
+    public static final int key_chats_draft = colorsCount++;
+    public static final int key_chats_nameMessage = colorsCount++;
+    public static final int key_chats_nameMessageArchived = colorsCount++;
+    public static final int key_chats_nameMessage_threeLines = colorsCount++;
+    public static final int key_chats_nameMessageArchived_threeLines = colorsCount++;
+    public static final int key_chats_attachMessage = colorsCount++;
+    public static final int key_chats_actionMessage = colorsCount++;
+    public static final int key_chats_date = colorsCount++;
+    public static final int key_chats_date_bold = colorsCount++;
+    public static final int key_chats_pinnedOverlay = colorsCount++;
+    public static final int key_chats_tabletSelectedOverlay = colorsCount++;
+    public static final int key_chats_sentCheck = colorsCount++;
+    public static final int key_chats_sentReadCheck = colorsCount++;
+    public static final int key_chats_sentClock = colorsCount++;
+    public static final int key_chats_sentError = colorsCount++;
+    public static final int key_chats_sentErrorIcon = colorsCount++;
+    public static final int key_chats_verifiedBackground = colorsCount++;
+    public static final int key_chats_verifiedCheck = colorsCount++;
+    public static final int key_chats_muteIcon = colorsCount++;
+    public static final int key_chats_mentionIcon = colorsCount++;
+    public static final int key_chats_menuTopShadow = colorsCount++;
+    public static final int key_chats_menuTopShadowCats = colorsCount++;
+    public static final int key_chats_menuBackground = colorsCount++;
+    public static final int key_chats_menuItemText = colorsCount++;
+    public static final int key_chats_menuItemCheck = colorsCount++;
+    public static final int key_chats_menuItemIcon = colorsCount++;
+    public static final int key_chats_menuName = colorsCount++;
+    public static final int key_chats_menuPhone = colorsCount++;
+    public static final int key_chats_menuPhoneCats = colorsCount++;
+    public static final int key_chats_menuTopBackgroundCats = colorsCount++;
+    public static final int key_chats_menuTopBackground = colorsCount++;
+    public static final int key_chats_actionIcon = colorsCount++;
+    public static final int key_chats_actionBackground = colorsCount++;
+    public static final int key_chats_actionPressedBackground = colorsCount++;
+    public static final int key_chats_archivePullDownBackground = colorsCount++;
+    public static final int key_chats_archivePullDownBackgroundActive = colorsCount++;
+    public static final int key_chats_tabUnreadActiveBackground = colorsCount++;
+    public static final int key_chats_tabUnreadUnactiveBackground = colorsCount++;
+
+    public static final int key_chat_attachCheckBoxCheck = colorsCount++;
+    public static final int key_chat_attachCheckBoxBackground = colorsCount++;
+    public static final int key_chat_attachPhotoBackground = colorsCount++;
+    public static final int key_chat_attachActiveTab = colorsCount++;
+    public static final int key_chat_attachUnactiveTab = colorsCount++;
+    public static final int key_chat_attachPermissionImage = colorsCount++;
+    public static final int key_chat_attachPermissionMark = colorsCount++;
+    public static final int key_chat_attachPermissionText = colorsCount++;
+    public static final int key_chat_attachEmptyImage = colorsCount++;
+
+    public static final int key_chat_inPollCorrectAnswer = colorsCount++;
+    public static final int key_chat_outPollCorrectAnswer = colorsCount++;
+    public static final int key_chat_inPollWrongAnswer = colorsCount++;
+    public static final int key_chat_outPollWrongAnswer = colorsCount++;
+
+    public static final int key_chat_attachIcon = colorsCount++;
+    public static final int key_chat_attachGalleryBackground = colorsCount++;   //
+    public static final int key_chat_attachAudioBackground = colorsCount++; //
+    public static final int key_chat_attachContactBackground = colorsCount++;   //
+    public static final int key_chat_attachContactText = colorsCount++; //
+    public static final int key_chat_attachLocationBackground = colorsCount++;  //
+    public static final int key_chat_attachPollBackground = colorsCount++;  //
+
+    public static final int key_chat_status = colorsCount++;
+    public static final int key_chat_inGreenCall = colorsCount++;
+    public static final int key_chat_inBubble = colorsCount++;
+    public static final int key_chat_inBubbleSelectedOverlay = colorsCount++;
+    public static final int key_chat_inBubbleShadow = colorsCount++;
+
+    public static final int key_actionBarActionModeReaction = colorsCount++;
+    public static final int key_actionBarActionModeReactionText = colorsCount++;
+    public static final int key_actionBarActionModeReactionDot = colorsCount++;
+
+    public static final int key_buttonNeutral = colorsCount++;
+    public static final int key_buttonNeutralText = colorsCount++;
+
+    //my messages bubbles
+    public static final int myMessagesBubblesStartIndex = colorsCount;
+    public static final int key_chat_outBubble = colorsCount++;
+    public static final int key_chat_outBubbleSelected = colorsCount++;
+    public static final int key_chat_outBubbleShadow = colorsCount++;
+    public static final int key_chat_outBubbleGradient1 = colorsCount++;
+    public static final int key_chat_outBubbleGradient2 = colorsCount++;
+    public static final int key_chat_outBubbleGradient3 = colorsCount++;
+    public static final int myMessagesBubblesEndIndex = colorsCount;
+
+    //my messages
+    public static final int myMessagesStartIndex = colorsCount;
+    public static final int key_chat_outGreenCall = colorsCount++;
+    public static final int key_chat_outSentCheck = colorsCount++;
+    public static final int key_chat_outSentCheckSelected = colorsCount++;
+    public static final int key_chat_outSentCheckRead = colorsCount++;
+    public static final int key_chat_outSentCheckReadSelected = colorsCount++;
+    public static final int key_chat_outSentClock = colorsCount++;
+    public static final int key_chat_outSentClockSelected = colorsCount++;
+    public static final int key_chat_outMediaIcon = colorsCount++;
+    public static final int key_chat_outMediaIconSelected = colorsCount++;
+    public static final int key_chat_outViews = colorsCount++;
+    public static final int key_chat_outViewsSelected = colorsCount++;
+    public static final int key_chat_outMenu = colorsCount++;
+    public static final int key_chat_outMenuSelected = colorsCount++;
+    public static final int key_chat_outInstant = colorsCount++;
+    public static final int key_chat_outInstantSelected = colorsCount++;
+    public static final int key_chat_outPreviewInstantText = colorsCount++;
+    public static final int key_chat_outForwardedNameText = colorsCount++;
+    public static final int key_chat_outViaBotNameText = colorsCount++;
+    public static final int key_chat_outReplyLine = colorsCount++;
+    public static final int key_chat_outReplyLine2 = colorsCount++;
+    public static final int key_chat_outReplyNameText = colorsCount++;
+    public static final int key_chat_outReplyMessageText = colorsCount++;
+    public static final int key_chat_outReplyMediaMessageText = colorsCount++;
+    public static final int key_chat_outReplyMediaMessageSelectedText = colorsCount++;
+    public static final int key_chat_outPreviewLine = colorsCount++;
+    public static final int key_chat_outSiteNameText = colorsCount++;
+    public static final int key_chat_outContactNameText = colorsCount++;
+    public static final int key_chat_outContactPhoneText = colorsCount++;
+    public static final int key_chat_outContactPhoneSelectedText = colorsCount++;
+    public static final int key_chat_outAudioPerformerText = colorsCount++;
+    public static final int key_chat_outAudioPerformerSelectedText = colorsCount++;
+    public static final int key_chat_outTimeSelectedText = colorsCount++;
+    public static final int key_chat_outAdminText = colorsCount++;
+    public static final int key_chat_outAdminSelectedText = colorsCount++;
+    public static final int key_chat_outAudioProgress = colorsCount++;
+    public static final int key_chat_outAudioSelectedProgress = colorsCount++;
+    public static final int key_chat_outTimeText = colorsCount++;
+    public static final int key_chat_outAudioTitleText = colorsCount++;
+    public static final int key_chat_outAudioDurationText = colorsCount++;
+    public static final int key_chat_outAudioDurationSelectedText = colorsCount++;
+    public static final int key_chat_outAudioSeekbar = colorsCount++;
+    public static final int key_chat_outAudioCacheSeekbar = colorsCount++;
+    public static final int key_chat_outAudioSeekbarSelected = colorsCount++;
+    public static final int key_chat_outAudioSeekbarFill = colorsCount++;
+    public static final int key_chat_outVoiceSeekbar = colorsCount++;
+    public static final int key_chat_outVoiceSeekbarSelected = colorsCount++;
+    public static final int key_chat_outVoiceSeekbarFill = colorsCount++;
+    public static final int key_chat_outFileProgress = colorsCount++;
+    public static final int key_chat_outFileProgressSelected = colorsCount++;
+    public static final int key_chat_outFileNameText = colorsCount++;
+    public static final int key_chat_outFileInfoText = colorsCount++;
+    public static final int key_chat_outFileInfoSelectedText = colorsCount++;
+    public static final int key_chat_outFileBackground = colorsCount++;
+    public static final int key_chat_outFileBackgroundSelected = colorsCount++;
+    public static final int key_chat_outVenueInfoText = colorsCount++;
+    public static final int key_chat_outVenueInfoSelectedText = colorsCount++;
+    public static final int key_chat_outLinkSelectBackground = colorsCount++;
+    public static final int key_chat_outLoader = colorsCount++;
+    public static final int key_chat_outLoaderSelected = colorsCount++;
+    public static final int key_chat_outLocationIcon = colorsCount++;
+    public static final int key_chat_outContactBackground = colorsCount++;
+    public static final int key_chat_outContactIcon = colorsCount++;
+    public static final int key_chat_outReactionButtonBackground = colorsCount++;
+    public static final int myMessagesEndIndex = colorsCount;
+
+    public static final int myMessages2StartIndex = colorsCount;
+    public static final int key_chat_outTextSelectionHighlight = colorsCount++;
+    public static final int key_chat_outTextSelectionCursor = colorsCount++;
+    public static final int key_chat_outBubbleLocationPlaceholder = colorsCount++;
+    public static final int key_chat_outBubbleSelectedOverlay = colorsCount++;
+    public static final int key_chat_outPsaNameText = colorsCount++;
+    public static final int key_chat_outBubbleGradientAnimated = colorsCount++;
+    public static final int key_chat_outBubbleGradientSelectedOverlay = colorsCount++;
+    public static final int myMessages2EndIndex = colorsCount;
+
+    public static final int key_chat_inBubbleSelected = colorsCount++;
+    public static final int key_chat_messageTextIn = colorsCount++;
+    public static final int key_chat_messageTextOut = colorsCount++;
+    public static final int key_chat_messageLinkIn = colorsCount++;
+    public static final int key_chat_messageLinkOut = colorsCount++;
+    public static final int key_chat_serviceText = colorsCount++;
+    public static final int key_chat_serviceLink = colorsCount++;
+    public static final int key_chat_serviceIcon = colorsCount++;
+    public static final int key_chat_serviceBackground = colorsCount++;
+    public static final int key_chat_serviceBackgroundSelected = colorsCount++;
+    public static final int key_chat_serviceBackgroundSelector = colorsCount++;
+    public static final int key_chat_muteIcon = colorsCount++;
+    public static final int key_chat_lockIcon = colorsCount++;
+    public static final int key_chat_inSentClock = colorsCount++;
+    public static final int key_chat_inSentClockSelected = colorsCount++;
+    public static final int key_chat_mediaSentCheck = colorsCount++;
+    public static final int key_chat_mediaSentClock = colorsCount++;
+    public static final int key_chat_inMediaIcon = colorsCount++;
+    public static final int key_chat_inMediaIconSelected = colorsCount++;
+
+    public static final int key_chat_mediaTimeBackground = colorsCount++;
+    public static final int key_chat_inViews = colorsCount++;
+    public static final int key_chat_inViewsSelected = colorsCount++;
+    public static final int key_chat_mediaViews = colorsCount++;
+    public static final int key_chat_inMenu = colorsCount++;
+    public static final int key_chat_inMenuSelected = colorsCount++;
+    public static final int key_chat_mediaMenu = colorsCount++;
+    public static final int key_chat_inInstant = colorsCount++;
+    public static final int key_chat_inInstantSelected = colorsCount++;
+    public static final int key_chat_sentError = colorsCount++;
+    public static final int key_chat_sentErrorIcon = colorsCount++;
+    public static final int key_chat_selectedBackground = colorsCount++;
+    public static final int key_chat_previewDurationText = colorsCount++;
+    public static final int key_chat_previewGameText = colorsCount++;
+    public static final int key_chat_inPreviewInstantText = colorsCount++;
+    public static final int key_chat_secretTimeText = colorsCount++;
+    public static final int key_chat_stickerNameText = colorsCount++;
+    public static final int key_chat_botButtonText = colorsCount++;
+    public static final int key_chat_inForwardedNameText = colorsCount++;
+    public static final int key_chat_inPsaNameText = colorsCount++;
+    public static final int key_chat_inViaBotNameText = colorsCount++;
+    public static final int key_chat_stickerViaBotNameText = colorsCount++;
+    public static final int key_chat_inQuote = colorsCount++;
+    public static final int key_chat_outQuote = colorsCount++;
+    public static final int key_chat_inReplyLine = colorsCount++;
+    public static final int key_chat_stickerReplyLine = colorsCount++;
+    public static final int key_chat_inReplyNameText = colorsCount++;
+    public static final int key_chat_stickerReplyNameText = colorsCount++;
+    public static final int key_chat_inReplyMessageText = colorsCount++;
+    public static final int key_chat_inReplyMediaMessageText = colorsCount++;
+    public static final int key_chat_inReplyMediaMessageSelectedText = colorsCount++;
+    public static final int key_chat_stickerReplyMessageText = colorsCount++;
+    public static final int key_chat_inPreviewLine = colorsCount++;
+    public static final int key_chat_inSiteNameText = colorsCount++;
+    public static final int key_chat_inContactNameText = colorsCount++;
+    public static final int key_chat_inContactPhoneText = colorsCount++;
+    public static final int key_chat_inContactPhoneSelectedText = colorsCount++;
+    public static final int key_chat_mediaProgress = colorsCount++;
+    public static final int key_chat_inAudioProgress = colorsCount++;
+    public static final int key_chat_inAudioSelectedProgress = colorsCount++;
+    public static final int key_chat_mediaTimeText = colorsCount++;
+    public static final int key_chat_inAdminText = colorsCount++;
+    public static final int key_chat_inAdminSelectedText = colorsCount++;
+    public static final int key_chat_inTimeText = colorsCount++;
+    public static final int key_chat_inTimeSelectedText = colorsCount++;
+    public static final int key_chat_inAudioPerformerText = colorsCount++;
+    public static final int key_chat_inAudioPerformerSelectedText = colorsCount++;
+    public static final int key_chat_inAudioTitleText = colorsCount++;
+    public static final int key_chat_inAudioDurationText = colorsCount++;
+    public static final int key_chat_inAudioDurationSelectedText = colorsCount++;
+    public static final int key_chat_inAudioSeekbar = colorsCount++;
+    public static final int key_chat_inAudioCacheSeekbar = colorsCount++;
+    public static final int key_chat_inAudioSeekbarSelected = colorsCount++;
+    public static final int key_chat_inAudioSeekbarFill = colorsCount++;
+    public static final int key_chat_inVoiceSeekbar = colorsCount++;
+    public static final int key_chat_inVoiceSeekbarSelected = colorsCount++;
+    public static final int key_chat_inVoiceSeekbarFill = colorsCount++;
+    public static final int key_chat_inFileProgress = colorsCount++;
+    public static final int key_chat_inFileProgressSelected = colorsCount++;
+    public static final int key_chat_inFileNameText = colorsCount++;
+    public static final int key_chat_inFileInfoText = colorsCount++;
+    public static final int key_chat_inFileInfoSelectedText = colorsCount++;
+    public static final int key_chat_inFileBackground = colorsCount++;
+    public static final int key_chat_inFileBackgroundSelected = colorsCount++;
+    public static final int key_chat_inVenueInfoText = colorsCount++;
+    public static final int key_chat_inVenueInfoSelectedText = colorsCount++;
+    public static final int key_chat_mediaInfoText = colorsCount++;
+    public static final int key_chat_linkSelectBackground = colorsCount++;
+    public static final int key_chat_textSelectBackground = colorsCount++;
+    public static final int key_chat_wallpaper = colorsCount++;
+    public static final int key_chat_wallpaper_gradient_to1 = colorsCount++;
+    public static final int key_chat_wallpaper_gradient_to2 = colorsCount++;
+    public static final int key_chat_wallpaper_gradient_to3 = colorsCount++;
+    public static final int key_chat_wallpaper_gradient_rotation = colorsCount++;
+    public static final int key_chat_messagePanelBackground = colorsCount++;
+    public static final int key_chat_messagePanelShadow = colorsCount++;
+    public static final int key_chat_messagePanelText = colorsCount++;
+    public static final int key_chat_messagePanelHint = colorsCount++;
+    public static final int key_chat_messagePanelCursor = colorsCount++;
+    public static final int key_chat_messagePanelIcons = colorsCount++;
+    public static final int key_chat_messagePanelSend = colorsCount++;
+    public static final int key_chat_messagePanelVoiceLock = colorsCount++;
+    public static final int key_chat_messagePanelVoiceLockBackground = colorsCount++;
+    public static final int key_chat_messagePanelVoiceLockShadow = colorsCount++;
+    public static final int key_chat_topPanelBackground = colorsCount++;
+    public static final int key_chat_topPanelClose = colorsCount++;
+    public static final int key_chat_topPanelLine = colorsCount++;
+    public static final int key_chat_topPanelTitle = colorsCount++;
+    public static final int key_chat_topPanelMessage = colorsCount++;
+    public static final int key_chat_addContact = colorsCount++;
+    public static final int key_chat_inLoader = colorsCount++;
+    public static final int key_chat_inLoaderSelected = colorsCount++;
+    public static final int key_chat_inLoaderPhoto = colorsCount++;
+    public static final int key_chat_mediaLoaderPhoto = colorsCount++;
+    public static final int key_chat_mediaLoaderPhotoSelected = colorsCount++;
+    public static final int key_chat_mediaLoaderPhotoIcon = colorsCount++;
+    public static final int key_chat_mediaLoaderPhotoIconSelected = colorsCount++;
+    public static final int key_chat_inLocationBackground = colorsCount++;
+    public static final int key_chat_inLocationIcon = colorsCount++;
+    public static final int key_chat_inContactBackground = colorsCount++;
+    public static final int key_chat_inContactIcon = colorsCount++;
+    public static final int key_chat_replyPanelIcons = colorsCount++;
+    public static final int key_chat_replyPanelClose = colorsCount++;
+    public static final int key_chat_replyPanelName = colorsCount++;
+    public static final int key_chat_replyPanelLine = colorsCount++;
+    public static final int key_chat_searchPanelIcons = colorsCount++;
+    public static final int key_chat_searchPanelText = colorsCount++;
+    public static final int key_chat_secretChatStatusText = colorsCount++;
+    public static final int key_chat_fieldOverlayText = colorsCount++;
+    public static final int key_chat_stickersHintPanel = colorsCount++;
+    public static final int key_chat_botSwitchToInlineText = colorsCount++;
+    public static final int key_chat_unreadMessagesStartArrowIcon = colorsCount++;
+    public static final int key_chat_unreadMessagesStartText = colorsCount++;
+    public static final int key_chat_unreadMessagesStartBackground = colorsCount++;
+    public static final int key_chat_inlineResultIcon = colorsCount++;
+    public static final int key_chat_emojiPanelBackground = colorsCount++;
+    public static final int key_chat_emojiSearchBackground = colorsCount++;
+    public static final int key_chat_emojiSearchIcon = colorsCount++;
+    public static final int key_chat_emojiPanelShadowLine = colorsCount++;
+    public static final int key_chat_emojiPanelEmptyText = colorsCount++;
+    public static final int key_chat_emojiPanelIcon = colorsCount++;
+    public static final int key_chat_emojiBottomPanelIcon = colorsCount++;
+    public static final int key_chat_emojiPanelIconSelected = colorsCount++;
+    public static final int key_chat_emojiPanelStickerPackSelector = colorsCount++;
+    public static final int key_chat_emojiPanelStickerPackSelectorLine = colorsCount++;
+    public static final int key_chat_emojiPanelBackspace = colorsCount++;
+    public static final int key_chat_emojiPanelTrendingTitle = colorsCount++;
+    public static final int key_chat_emojiPanelStickerSetName = colorsCount++;
+    public static final int key_chat_emojiPanelStickerSetNameHighlight = colorsCount++;
+    public static final int key_chat_emojiPanelStickerSetNameIcon = colorsCount++;
+    public static final int key_chat_emojiPanelTrendingDescription = colorsCount++;
+    public static final int key_chat_botKeyboardButtonText = colorsCount++;
+    public static final int key_chat_botKeyboardButtonBackground = colorsCount++;
+    public static final int key_chat_botKeyboardButtonBackgroundPressed = colorsCount++;
+    public static final int key_chat_emojiPanelNewTrending = colorsCount++;
+    public static final int key_chat_messagePanelVoicePressed = colorsCount++;
+    public static final int key_chat_messagePanelVoiceBackground = colorsCount++;
+    public static final int key_chat_messagePanelVoiceDelete = colorsCount++;
+    public static final int key_chat_messagePanelVoiceDuration = colorsCount++;
+    public static final int key_chat_recordedVoicePlayPause = colorsCount++;
+    public static final int key_chat_recordedVoiceProgress = colorsCount++;
+    public static final int key_chat_recordedVoiceProgressInner = colorsCount++;
+    public static final int key_chat_recordedVoiceDot = colorsCount++;
+    public static final int key_chat_recordedVoiceBackground = colorsCount++;
+    public static final int key_chat_recordedVoiceDarkerBackground = colorsCount++;
+    public static final int key_chat_recordVoiceCancel = colorsCount++;
+    public static final int key_chat_recordTime = colorsCount++;
+    public static final int key_chat_messagePanelCancelInlineBot = colorsCount++;
+    public static final int key_chat_gifSaveHintText = colorsCount++;
+    public static final int key_chat_gifSaveHintBackground = colorsCount++;
+    public static final int key_chat_goDownButton = colorsCount++;
+    public static final int key_chat_goDownButtonCounter = colorsCount++;
+    public static final int key_chat_goDownButtonCounterBackground = colorsCount++;
+    public static final int key_chat_inTextSelectionHighlight = colorsCount++;
+    public static final int key_chat_TextSelectionCursor = colorsCount++;
+    public static final int key_chat_inBubbleLocationPlaceholder = colorsCount++;
+    public static final int key_chat_BlurAlpha = colorsCount++;
+    public static final int key_chat_BlurAlphaSlow = colorsCount++;
+    public static final int key_chat_editMediaButton = colorsCount++;
+
+    public static final int key_voipgroup_listSelector = colorsCount++;
+    public static final int key_voipgroup_inviteMembersBackground = colorsCount++;
+    public static final int key_voipgroup_actionBar = colorsCount++;
+    public static final int key_voipgroup_actionBarItems = colorsCount++;
+    public static final int key_voipgroup_actionBarItemsSelector = colorsCount++;
+    public static final int key_voipgroup_actionBarUnscrolled = colorsCount++;
+    public static final int key_voipgroup_listViewBackgroundUnscrolled = colorsCount++;
+    public static final int key_voipgroup_lastSeenTextUnscrolled = colorsCount++;
+    public static final int key_voipgroup_mutedIconUnscrolled = colorsCount++;
+    public static final int key_voipgroup_nameText = colorsCount++;
+    public static final int key_voipgroup_lastSeenText = colorsCount++;
+    public static final int key_voipgroup_listeningText = colorsCount++;
+    public static final int key_voipgroup_speakingText = colorsCount++;
+    public static final int key_voipgroup_mutedIcon = colorsCount++;
+    public static final int key_voipgroup_mutedByAdminIcon = colorsCount++;
+    public static final int key_voipgroup_listViewBackground = colorsCount++;
+    public static final int key_voipgroup_dialogBackground = colorsCount++;
+    public static final int key_voipgroup_leaveCallMenu = colorsCount++;
+    public static final int key_voipgroup_checkMenu = colorsCount++;
+    public static final int key_voipgroup_soundButton = colorsCount++;
+    public static final int key_voipgroup_soundButtonActive = colorsCount++;
+    public static final int key_voipgroup_soundButtonActiveScrolled = colorsCount++;
+    public static final int key_voipgroup_soundButton2 = colorsCount++;
+    public static final int key_voipgroup_soundButtonActive2 = colorsCount++;
+    public static final int key_voipgroup_soundButtonActive2Scrolled = colorsCount++;
+    public static final int key_voipgroup_leaveButton = colorsCount++;
+    public static final int key_voipgroup_leaveButtonScrolled = colorsCount++;
+    public static final int key_voipgroup_muteButton = colorsCount++;
+    public static final int key_voipgroup_muteButton2 = colorsCount++;
+    public static final int key_voipgroup_muteButton3 = colorsCount++;
+    public static final int key_voipgroup_unmuteButton = colorsCount++;
+    public static final int key_voipgroup_unmuteButton2 = colorsCount++;
+    public static final int key_voipgroup_disabledButton = colorsCount++;
+    public static final int key_voipgroup_rtmpButton = colorsCount++;
+    public static final int key_voipgroup_disabledButtonActive = colorsCount++;
+    public static final int key_voipgroup_disabledButtonActiveScrolled = colorsCount++;
+    public static final int key_voipgroup_connectingProgress = colorsCount++;
+    public static final int key_voipgroup_scrollUp = colorsCount++;
+    public static final int key_voipgroup_searchPlaceholder = colorsCount++;
+    public static final int key_voipgroup_searchBackground = colorsCount++;
+    public static final int key_voipgroup_searchText = colorsCount++;
+    public static final int key_voipgroup_overlayGreen1 = colorsCount++;
+    public static final int key_voipgroup_overlayGreen2 = colorsCount++;
+    public static final int key_voipgroup_overlayBlue1 = colorsCount++;
+    public static final int key_voipgroup_overlayBlue2 = colorsCount++;
+    public static final int key_voipgroup_topPanelGreen1 = colorsCount++;
+    public static final int key_voipgroup_topPanelGreen2 = colorsCount++;
+    public static final int key_voipgroup_topPanelBlue1 = colorsCount++;
+    public static final int key_voipgroup_topPanelBlue2 = colorsCount++;
+    public static final int key_voipgroup_topPanelGray = colorsCount++;
+    public static final int key_voipgroup_overlayAlertGradientMuted = colorsCount++;
+    public static final int key_voipgroup_overlayAlertGradientMuted2 = colorsCount++;
+    public static final int key_voipgroup_overlayAlertGradientUnmuted = colorsCount++;
+    public static final int key_voipgroup_overlayAlertGradientUnmuted2 = colorsCount++;
+    public static final int key_voipgroup_overlayAlertMutedByAdmin = colorsCount++;
+    public static final int key_voipgroup_overlayAlertMutedByAdmin2 = colorsCount++;
+    public static final int key_voipgroup_mutedByAdminGradient = colorsCount++;
+    public static final int key_voipgroup_mutedByAdminGradient2 = colorsCount++;
+    public static final int key_voipgroup_mutedByAdminGradient3 = colorsCount++;
+    public static final int key_voipgroup_mutedByAdminMuteButton = colorsCount++;
+    public static final int key_voipgroup_mutedByAdminMuteButtonDisabled = colorsCount++;
+    public static final int key_voipgroup_windowBackgroundWhiteInputField = colorsCount++;
+    public static final int key_voipgroup_windowBackgroundWhiteInputFieldActivated = colorsCount++;
+
+    public static final int key_table_background = colorsCount++;
+    public static final int key_table_border = colorsCount++;
+
+    public static final int key_passport_authorizeBackground = colorsCount++;
+    public static final int key_passport_authorizeBackgroundSelected = colorsCount++;
+    public static final int key_passport_authorizeText = colorsCount++;
+
+    public static final int key_profile_creatorIcon = colorsCount++;
+    public static final int key_profile_title = colorsCount++;
+    public static final int key_profile_actionIcon = colorsCount++;
+    public static final int key_profile_actionBackground = colorsCount++;
+    public static final int key_profile_actionPressedBackground = colorsCount++;
+    public static final int key_profile_verifiedBackground = colorsCount++;
+    public static final int key_profile_verifiedCheck = colorsCount++;
+    public static final int key_profile_status = colorsCount++;
+    public static final int key_chat_tagAdmin = colorsCount++;
+    public static final int key_chat_tagCreator = colorsCount++;
+
+    public static final int key_profile_tabText = colorsCount++;
+    public static final int key_profile_tabSelectedText = colorsCount++;
+    public static final int key_profile_tabSelectedLine = colorsCount++;
+    public static final int key_profile_tabSelector = colorsCount++;
+
+    public static final int key_sharedMedia_startStopLoadIcon = colorsCount++;
+    public static final int key_sharedMedia_linkPlaceholder = colorsCount++;
+    public static final int key_sharedMedia_linkPlaceholderText = colorsCount++;
+    public static final int key_sharedMedia_photoPlaceholder = colorsCount++;
+
+    public static final int key_featuredStickers_addedIcon = colorsCount++;
+    public static final int key_featuredStickers_buttonProgress = colorsCount++;
+    public static final int key_featuredStickers_addButton = colorsCount++;
+    public static final int key_featuredStickers_addButton2 = colorsCount++;
+    public static final int key_featuredStickers_addButtonPressed = colorsCount++;
+    public static final int key_featuredStickers_removeButtonText = colorsCount++;
+    public static final int key_featuredStickers_buttonText = colorsCount++;
+    public static final int key_featuredStickers_unread = colorsCount++;
+
+    public static final int key_stickers_menu = colorsCount++;
+    public static final int key_stickers_menuSelector = colorsCount++;
+
+    public static final int key_changephoneinfo_image2 = colorsCount++;
+
+    public static final int key_groupcreate_hintText = colorsCount++;
+    public static final int key_groupcreate_cursor = colorsCount++;
+    public static final int key_groupcreate_sectionShadow = colorsCount++;
+    public static final int key_groupcreate_sectionText = colorsCount++;
+    public static final int key_groupcreate_spanText = colorsCount++;
+    public static final int key_groupcreate_spanBackground = colorsCount++;
+    public static final int key_groupcreate_spanDelete = colorsCount++;
+
+    public static final int key_contacts_inviteBackground = colorsCount++;
+    public static final int key_contacts_inviteText = colorsCount++;
+
+    public static final int key_login_progressInner = colorsCount++;
+    public static final int key_login_progressOuter = colorsCount++;
+
+    public static final int key_picker_enabledButton = colorsCount++;
+    public static final int key_picker_disabledButton = colorsCount++;
+    public static final int key_picker_badge = colorsCount++;
+    public static final int key_picker_badgeText = colorsCount++;
+
+    public static final int key_location_sendLocationBackground = colorsCount++;
+    public static final int key_location_sendLocationIcon = colorsCount++;
+    public static final int key_location_sendLocationText = colorsCount++;
+    public static final int key_location_sendLiveLocationBackground = colorsCount++;
+    public static final int key_location_sendLiveLocationIcon = colorsCount++;
+    public static final int key_location_sendLiveLocationText = colorsCount++;
+    public static final int key_location_liveLocationProgress = colorsCount++;
+    public static final int key_location_placeLocationBackground = colorsCount++;
+    public static final int key_location_actionIcon = colorsCount++;
+    public static final int key_location_actionActiveIcon = colorsCount++;
+    public static final int key_location_actionBackground = colorsCount++;
+    public static final int key_location_actionPressedBackground = colorsCount++;
+
+    public static final int key_dialog_liveLocationProgress = colorsCount++;
+
+    public static final int key_files_folderIcon = colorsCount++;
+    public static final int key_files_folderIconBackground = colorsCount++;
+    public static final int key_files_iconText = colorsCount++;
+
+    public static final int key_sessions_devicesImage = colorsCount++;
+
+    public static final int key_calls_callReceivedGreenIcon = colorsCount++;
+    public static final int key_calls_callReceivedRedIcon = colorsCount++;
+
+    public static final int key_undo_background = colorsCount++;
+    public static final int key_undo_cancelColor = colorsCount++;
+    public static final int key_undo_infoColor = colorsCount++;
+
+    public static final int key_sheet_scrollUp = colorsCount++;
+    public static final int key_sheet_other = colorsCount++;
+    public static final int key_bot_loadingIcon = colorsCount++;
+    public static final int key_gift_ribbon = colorsCount++;
+    public static final int key_gift_ribbon_soldout = colorsCount++;
+
+    public static final int key_player_actionBarSelector = colorsCount++;
+    public static final int key_player_actionBarTitle = colorsCount++;
+    public static final int key_player_actionBarSubtitle = colorsCount++;
+    public static final int key_player_actionBarItems = colorsCount++;
+    public static final int key_player_background = colorsCount++;
+    public static final int key_player_time = colorsCount++;
+    public static final int key_player_progressBackground = colorsCount++;
+    public static final int key_player_progressCachedBackground = colorsCount++;
+    public static final int key_player_progress = colorsCount++;
+    public static final int key_player_button = colorsCount++;
+    public static final int key_player_buttonActive = colorsCount++;
+
+    public static final int key_statisticChartSignature = colorsCount++;
+    public static final int key_statisticChartSignatureAlpha = colorsCount++;
+    public static final int key_statisticChartHintLine = colorsCount++;
+    public static final int key_statisticChartActiveLine = colorsCount++;
+    public static final int key_statisticChartInactivePickerChart = colorsCount++;
+    public static final int key_statisticChartActivePickerChart = colorsCount++;
+    public static final int key_statisticChartRipple = colorsCount++;
+    public static final int key_statisticChartBackZoomColor = colorsCount++;
+    public static final int key_statisticChartChevronColor = colorsCount++;
+    public static final int key_statisticChartLine_blue = colorsCount++;
+    public static final int key_statisticChartLine_green = colorsCount++;
+    public static final int key_statisticChartLine_red = colorsCount++;
+    public static final int key_statisticChartLine_golden = colorsCount++;
+    public static final int key_statisticChartLine_lightblue = colorsCount++;
+    public static final int key_statisticChartLine_lightgreen = colorsCount++;
+    public static final int key_statisticChartLine_orange = colorsCount++;
+    public static final int key_statisticChartLine_indigo = colorsCount++;
+    public static final int key_statisticChartLine_purple = colorsCount++;
+    public static final int key_statisticChartLine_cyan = colorsCount++;
+    public static final int key_statisticChartLineEmpty = colorsCount++;
+
+    public static final int key_color_lightblue = colorsCount++;
+    public static final int key_color_blue = colorsCount++;
+    public static final int key_color_green = colorsCount++;
+    public static final int key_color_lightgreen = colorsCount++;
+    public static final int key_color_red = colorsCount++;
+    public static final int key_color_orange = colorsCount++;
+    public static final int key_color_yellow = colorsCount++;
+    public static final int key_color_purple = colorsCount++;
+    public static final int key_color_cyan = colorsCount++;
+    public static final int[] keys_colors = {key_color_lightblue, key_color_blue, key_color_green, key_color_lightgreen, key_color_red, key_color_orange, key_color_yellow, key_color_purple, key_color_cyan};
+
+    public static final int key_chat_inReactionButtonBackground = colorsCount++;
+    public static final int key_chat_outReactionButtonText = colorsCount++;
+    public static final int key_chat_inReactionButtonText = colorsCount++;
+    public static final int key_chat_inReactionButtonTextSelected = colorsCount++;
+    public static final int key_chat_outReactionButtonTextSelected = colorsCount++;
+    public static final int key_chat_reactionServiceButtonBackgroundSelected = colorsCount++;
+    public static final int key_chat_reactionServiceButtonTextSelected = colorsCount++;
+    public static final int key_reactionStarSelector = colorsCount++;
+
+    public static final int key_premiumGradient0 = colorsCount++;
+    public static final int key_premiumGradient1 = colorsCount++;
+    public static final int key_premiumGradient2 = colorsCount++;
+    public static final int key_premiumGradient3 = colorsCount++;
+    public static final int key_premiumGradient4 = colorsCount++;
+    public static final int key_premiumGradientBackground1 = colorsCount++;
+    public static final int key_premiumGradientBackground2 = colorsCount++;
+    public static final int key_premiumGradientBackground3 = colorsCount++;
+    public static final int key_premiumGradientBackground4 = colorsCount++;
+    public static final int key_premiumGradientBackgroundOverlay = colorsCount++;
+    public static final int key_premiumStartSmallStarsColor = colorsCount++;
+    public static final int key_premiumStarGradient1 = colorsCount++;
+    public static final int key_premiumStarGradient2 = colorsCount++;
+    public static final int key_premiumCoinGradient1 = colorsCount++;
+    public static final int key_premiumCoinGradient2 = colorsCount++;
+    public static final int key_premiumStartSmallStarsColor2 = colorsCount++;
+    public static final int key_premiumGradientBottomSheet1 = colorsCount++;
+    public static final int key_premiumGradientBottomSheet2 = colorsCount++;
+    public static final int key_premiumGradientBottomSheet3 = colorsCount++;
+    public static final int key_topics_unreadCounter = colorsCount++;
+    public static final int key_topics_unreadCounterMuted = colorsCount++;
+    public static final int key_starsGradient1 = colorsCount++;
+    public static final int key_starsGradient2 = colorsCount++;
+
+    public static final int key_stories_circle1 = colorsCount++;
+    public static final int key_stories_circle2 = colorsCount++;
+    public static final int key_stories_circle_dialog1 = colorsCount++;
+    public static final int key_stories_circle_dialog2 = colorsCount++;
+    public static final int key_stories_circle_closeFriends1 = colorsCount++;
+    public static final int key_stories_circle_closeFriends2 = colorsCount++;
+    public static final int key_stories_circle_live1 = colorsCount++;
+    public static final int key_stories_circle_live2 = colorsCount++;
+
+    public static final int key_chat_inCodeBackground = colorsCount++;
+    public static final int key_chat_outCodeBackground = colorsCount++;
+    public static final int key_code_keyword = colorsCount++;
+    public static final int key_code_operator = colorsCount++;
+    public static final int key_code_constant = colorsCount++;
+    public static final int key_code_string = colorsCount++;
+    public static final int key_code_number = colorsCount++;
+    public static final int key_code_comment = colorsCount++;
+    public static final int key_code_function = colorsCount++;
+
+    public static final int key_iv_background = colorsCount++;
+    public static final int key_iv_backgroundGray = colorsCount++;
+    public static final int key_iv_ab_progress = colorsCount++;
+    public static final int key_iv_navigationBackground = colorsCount++;
+
+    public static final int key_share_linkText = colorsCount++;
+    public static final int key_share_linkBackground = colorsCount++;
+    public static final int key_share_icon = colorsCount++;
+
+    public static final int key_glass_defaultIcon = colorsCount++;
+    public static final int key_glass_defaultText = colorsCount++;
+    public static final int key_glass_targetMainTabs = colorsCount++;
+    public static final int key_glass_targetMainTopPanel = colorsCount++;
+    public static final int key_glass_tabSelected = colorsCount++;
+    public static final int key_glass_tabSelectedText = colorsCount++;
+    public static final int key_glass_tabUnselected = colorsCount++;
+
+    public static final int key_botKeyboard_button_primary = colorsCount++;
+    public static final int key_botKeyboard_button_danger = colorsCount++;
+    public static final int key_botKeyboard_button_success = colorsCount++;
+
+    public static final int key_telegram_color_dialogsLogo = colorsCount++;
+    public static final int key_telegram_color = colorsCount++;
+    public static final int key_telegram_color_text = colorsCount++;
+
+    public static final int ACTION_BAR_WHITE_SELECTOR_COLOR = 0x40ffffff;
+    public static final Paint dividerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     public static final class ThemeInfo {
         public String name;
@@ -325,6 +1013,16 @@ public final class Theme {
     public static final Paint dialogs_countPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     /** Muted counter background (gray pill for muted chats). */
     public static final Paint dialogs_countGrayPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+    /** Returns the color used for service-message chrome. Mirrors upstream Theme.getServiceMessageColor(). */
+    public static int getServiceMessageColor() {
+        return getColor(key_chat_serviceBackground);
+    }
+
+    /** Xfermode-clear paint used to punch holes through composited layers. Mirrors upstream Theme.PAINT_CLEAR. */
+    public static final Paint PAINT_CLEAR = new Paint(Paint.ANTI_ALIAS_FLAG); static {
+        PAINT_CLEAR.setXfermode(new android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.CLEAR));
+    }
     public static final Paint dialogs_pinnedPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     /** Pinned row background overlay — mirrors upstream DialogCell key_chats_pinnedOverlay. */
     public static final Paint dialogs_pinnedBgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -343,6 +1041,17 @@ public final class Theme {
         public MessageDrawable() {
             super(Color.TRANSPARENT);
         }
+
+        // Minimal host-wiring surface for the vendored CheckBoxBase. The local
+        // never sets a MessageDrawable on a CheckBox (no setBackgroundDrawable call
+        // sites in :telegram), so the gradient path is dead code; these methods
+        // exist only to satisfy the API. Mirrors upstream MessageDrawable API.
+
+        public boolean hasGradient() { return false; }
+        public android.graphics.Shader getGradientShader() { return null; }
+        public android.graphics.Matrix getMatrix() { return null; }
+        public void applyMatrixScale() { /* no-op: no gradient support */ }
+        public int getTopY() { return 0; }
     }
 
     private static Context applicationContext;
@@ -786,6 +1495,45 @@ public final class Theme {
         };
     }
 
+    public static Drawable createOutlineCircleDrawable(int size, int color, int strokeWidth) {
+        final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        paint.setStyle(Paint.Style.STROKE);
+        paint.setStrokeWidth(strokeWidth);
+        paint.setColor(color);
+        return new Drawable() {
+            @Override
+            public void draw(Canvas canvas) {
+                final Rect b = getBounds();
+                canvas.drawCircle(b.centerX(), b.centerY(), size / 2.0f, paint);
+            }
+
+            @Override
+            public void setAlpha(int alpha) {
+                paint.setAlpha(alpha);
+            }
+
+            @Override
+            public void setColorFilter(ColorFilter colorFilter) {
+                paint.setColorFilter(colorFilter);
+            }
+
+            @Override
+            public int getOpacity() {
+                return PixelFormat.TRANSPARENT;
+            }
+
+            @Override
+            public int getIntrinsicWidth() {
+                return size + strokeWidth;
+            }
+
+            @Override
+            public int getIntrinsicHeight() {
+                return size + strokeWidth;
+            }
+        };
+    }
+
     public static Drawable getThemedDrawable(Context context, int resId, int key) {
         if (context == null || resId == 0) {
             return new ColorDrawable(getColor(key));
@@ -909,6 +1657,11 @@ public final class Theme {
         themeInfo.colors.put(key_avatar_background2Cyan, 0xff359AD4);
         themeInfo.colors.put(key_avatar_background2Blue, 0xff408ACF);
         themeInfo.colors.put(key_avatar_background2Pink, 0xffD95574);
+
+        // TableLayout
+        themeInfo.colors.put(key_table_background, 0xfff5f4ed);
+        themeInfo.colors.put(key_table_border, 0xffdfdace);
+
         return themeInfo;
     }
 
@@ -994,6 +1747,11 @@ public final class Theme {
         themeInfo.colors.put(key_avatar_background2Cyan, 0xff359AD4);
         themeInfo.colors.put(key_avatar_background2Blue, 0xff408ACF);
         themeInfo.colors.put(key_avatar_background2Pink, 0xffD95574);
+
+        // TableLayout
+        themeInfo.colors.put(key_table_background, -15393241);
+        themeInfo.colors.put(key_table_border, -1795162112);
+
         return themeInfo;
     }
 }

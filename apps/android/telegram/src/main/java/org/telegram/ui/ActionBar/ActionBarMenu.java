@@ -1,24 +1,9 @@
 /*
- * This file is part of NativeDo.
+ * This is the source code of Telegram for Android v. 5.x.x.
+ * It is licensed under GNU GPL v. 2 or later.
+ * You should have received a copy of the license in this archive (see LICENSE).
  *
- * Derived in part from Telegram for Android's
- * org/telegram/ui/ActionBar/ActionBarMenu.java.
- *
- * Source reference:
- * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarMenu.java
- *
- * NativeDo milestone slice: keeps horizontal menu item creation, submenu toggling,
- * and parent ActionBar click dispatch; omits Telegram search, filters, lazy items,
- * and action mode.
- *
- * Copyright (C) Telegram FZ-LLC
- * Copyright (C) 2026 NativeDo contributors
- *
- * This program is free software: you can redistribute it and/or modify
- * it under terms of GNU General Public License version 2 or later as published by
- * the Free Software Foundation.
- *
- * SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright Nikolai Kudashov, 2013-2018.
  */
 package org.telegram.ui.ActionBar;
 
@@ -41,23 +26,23 @@ public class ActionBarMenu extends LinearLayout {
     }
 
     public ActionBarMenuItem addItem(int id, Drawable drawable) {
-        return addItem(id, 0, null, parentActionBar.itemsBackgroundColor, drawable, AndroidUtilities.dp(48), null);
+        return addItem(id, 0, null, parentActionBar.getItemsBackgroundColor(this), drawable, AndroidUtilities.dp(48), null);
     }
 
     public ActionBarMenuItem addItem(int id, int icon) {
-        return addItem(id, icon, null, parentActionBar.itemsBackgroundColor, null, AndroidUtilities.dp(48), null);
+        return addItem(id, icon, null, parentActionBar.getItemsBackgroundColor(this), null, AndroidUtilities.dp(48), null);
     }
 
     public ActionBarMenuItem addItem(int id, int icon, org.telegram.ui.ActionBar.Theme.ResourcesProvider resourcesProvider) {
-        return addItem(id, icon, null, parentActionBar.itemsBackgroundColor, null, AndroidUtilities.dp(48), null);
+        return addItem(id, icon, null, parentActionBar.getItemsBackgroundColor(this), null, AndroidUtilities.dp(48), null);
     }
 
     public ActionBarMenuItem addItemWithWidth(int id, int icon, int width, CharSequence title) {
-        return addItem(id, icon, null, parentActionBar.itemsBackgroundColor, null, width, title);
+        return addItem(id, icon, null, parentActionBar.getItemsBackgroundColor(this), null, width, title);
     }
 
     public ActionBarMenuItem addItem(int id, int icon, CharSequence text, int backgroundColor, Drawable drawable, int width, CharSequence title) {
-        ActionBarMenuItem menuItem = new ActionBarMenuItem(getContext(), this, backgroundColor, parentActionBar.itemsColor, text != null);
+        ActionBarMenuItem menuItem = new ActionBarMenuItem(getContext(), this, backgroundColor, parentActionBar.getItemsColor(this), text != null);
         menuItem.setTag(id);
         if (text != null) {
             menuItem.textView.setText(text);
@@ -74,6 +59,8 @@ public class ActionBarMenu extends LinearLayout {
             ActionBarMenuItem item = (ActionBarMenuItem) view;
             if (item.hasSubMenu()) {
                 item.toggleSubMenu();
+            } else if (item.isSearchField()) {
+                item.openSearch(true);
             } else {
                 onItemClick((Integer) view.getTag());
             }
@@ -88,6 +75,57 @@ public class ActionBarMenu extends LinearLayout {
         ActionBar.ActionBarMenuOnItemClick listener = parentActionBar.getActionBarMenuOnItemClick();
         if (listener != null) {
             listener.onItemClick(id);
+        }
+    }
+
+    public void closeSearchField(boolean closeKeyboard) {
+        int count = getChildCount();
+        for (int i = 0; i < count; i++) {
+            View view = getChildAt(i);
+            if (view instanceof ActionBarMenuItem) {
+                ActionBarMenuItem item = (ActionBarMenuItem) view;
+                if (item.isSearchField() && item.isSearchFieldVisible()) {
+                    parentActionBar.onSearchFieldVisibilityChanged(false);
+                    item.toggleSearch(closeKeyboard);
+                    break;
+                }
+            }
+        }
+    }
+
+    public int getItemsMeasuredWidth(boolean ignoreAlpha) {
+        int width = 0;
+        int count = getChildCount();
+        for (int i = 0; i < count; i++) {
+            View view = getChildAt(i);
+            if (!ignoreAlpha && (view.getAlpha() == 0 || view.getVisibility() != VISIBLE)) {
+                continue;
+            }
+            if (view instanceof ActionBarMenuItem) {
+                width += view.getMeasuredWidth();
+            }
+        }
+        return width;
+    }
+
+    public boolean searchFieldVisible() {
+        int count = getChildCount();
+        for (int i = 0; i < count; i++) {
+            View view = getChildAt(i);
+            if (view instanceof ActionBarMenuItem && ((ActionBarMenuItem) view).isSearchFieldVisible()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public void translateXItems(float offset) {
+        int count = getChildCount();
+        for (int i = 0; i < count; i++) {
+            View view = getChildAt(i);
+            if (view instanceof ActionBarMenuItem) {
+                ((ActionBarMenuItem) view).setTransitionOffset(offset);
+            }
         }
     }
 
@@ -115,7 +153,7 @@ public class ActionBarMenu extends LinearLayout {
         for (int i = 0; i < count; i++) {
             View view = getChildAt(i);
             if (view instanceof ActionBarMenuItem) {
-                view.setBackground(Theme.createSelectorDrawable(parentActionBar.itemsBackgroundColor));
+                view.setBackground(Theme.createSelectorDrawable(parentActionBar.getItemsBackgroundColor(this)));
             }
         }
     }
@@ -125,7 +163,7 @@ public class ActionBarMenu extends LinearLayout {
         for (int i = 0; i < count; i++) {
             View view = getChildAt(i);
             if (view instanceof ActionBarMenuItem) {
-                ((ActionBarMenuItem) view).setIconColor(parentActionBar.itemsColor);
+                ((ActionBarMenuItem) view).setIconColor(parentActionBar.getItemsColor(this));
             }
         }
     }

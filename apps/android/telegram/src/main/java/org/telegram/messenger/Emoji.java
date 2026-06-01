@@ -22,6 +22,9 @@ import android.text.TextPaint;
  */
 public final class Emoji {
 
+    /** Upstream flag toggled by SimpleTextView during emoji drawing. */
+    public static boolean emojiDrawingUseAlpha = true;
+
     private Emoji() {
     }
 

@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <item name="msg_arrow_forward" type="drawable">@drawable/msg_go_down</item>
-    <item name="menu_instant_view" type="drawable">@drawable/msg_instant</item>
-    <item name="arrow_more" type="drawable">@drawable/msg_go_down</item>
-    <item name="attach_arrow_right" type="drawable">@drawable/msg_go_down</item>
-    <item name="ic_ab_back" type="drawable">@drawable/msg_go_down</item>
-</resources>

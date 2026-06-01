@@ -41,7 +41,15 @@ public abstract class UniversalFragment extends BaseFragment {
         FrameLayout contentView = new FrameLayout(context);
         contentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
 
-        listView = new UniversalRecyclerView(this, this::fillItems, this::onClick, this::onLongClick) {
+        listView = new UniversalRecyclerView(
+            context,
+            currentAccount,
+            0,
+            this::fillItems,
+            this::onClick,
+            this::onLongClick,
+            getResourceProvider()
+        ) {
             @Override
             protected void onMeasure(int widthSpec, int heightSpec) {
                 super.onMeasure(widthSpec, heightSpec);

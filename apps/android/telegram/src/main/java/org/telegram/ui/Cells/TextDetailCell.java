@@ -1,24 +1,9 @@
 /*
- * This file is part of NativeDo.
+ * This is the source code of Telegram for Android v. 5.x.x.
+ * It is licensed under GNU GPL v. 2 or later.
+ * You should have received a copy of the license in this archive (see LICENSE).
  *
- * Derived in part from Telegram for Android's
- * org/telegram/ui/Cells/TextDetailCell.java.
- *
- * Source reference:
- * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/ui/Cells/TextDetailCell.java
- *
- * Written from scratch for NativeDo's LinuxDo profile page.
- * Host wiring: package stays org.telegram.ui.Cells, but simplified to
- * plain TextViews instead of SpoilersTextView/LinksTextView for native Discourse.
- *
- * Copyright (C) Telegram FZ-LLC
- * Copyright (C) 2026 NativeDo contributors
- *
- * This program is free software: you can redistribute it and/or modify
- * it under terms of GNU General Public License version 2 or later as published by
- * the Free Software Foundation.
- *
- * SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright Nikolai Kudashov, 2013-2018.
  */
 package org.telegram.ui.Cells;
 
@@ -123,32 +108,27 @@ public class TextDetailCell extends FrameLayout {
         dividerPaint.setColor(Theme.getColor(Theme.key_divider));
     }
 
-    public static final class Factory implements UItem.ViewFactory {
-        private static final Factory INSTANCE = new Factory();
+    public static final class Factory extends UItem.UItemFactory<TextDetailCell> {
+        static { setup(new Factory()); }
 
         @Override
-        public int getViewType() {
-            return VIEW_TYPE;
-        }
-
-        @Override
-        public View createView(Context context) {
+        public TextDetailCell createView(Context context, org.telegram.ui.Components.RecyclerListView listView, int currentAccount, int classGuid, Theme.ResourcesProvider resourcesProvider) {
             return new TextDetailCell(context);
         }
 
         @Override
-        public void bindView(View view, UItem item, boolean divider, UniversalAdapter adapter) {
+        public void bindView(View view, UItem item, boolean divider, UniversalAdapter adapter, org.telegram.ui.Components.UniversalRecyclerView listView) {
             ((TextDetailCell) view).setTextAndValue(item.text, item.subtext, divider);
             ((TextDetailCell) view).updateColors();
         }
 
         @Override
-        public boolean isEnabled(UItem item) {
+        public boolean isClickable() {
             return false;
         }
 
         public static UItem of(int id, CharSequence title, CharSequence value) {
-            final UItem uItem = UItem.ofFactory(INSTANCE);
+            final UItem uItem = UItem.ofFactory(Factory.class);
             uItem.id = id;
             uItem.text = title;
             uItem.subtext = value;

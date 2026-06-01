@@ -212,10 +212,11 @@ public class AddressBarList extends FrameLayout {
         if (bookmarksList != null && !bookmarksList.links.isEmpty()) {
             items.add(UItem.asGraySection(getString(R.string.WebSectionBookmarks)));
             for (int i = 0; i < bookmarksList.links.size(); ++i) {
-                final MessageObject msg = bookmarksList.links.get(i);
-                final String url = getLink(msg);
-                if (TextUtils.isEmpty(url)) continue;
-                items.add(BookmarkView.Factory.as(msg, true));
+                final BrowserHistory.Entry entry = bookmarksList.links.get(i);
+                if (entry == null || TextUtils.isEmpty(entry.url)) continue;
+                final UItem bookmarkItem = BookmarkView.Factory.as(entry, null);
+                bookmarkItem.accent = true;
+                items.add(bookmarkItem);
             }
             if (!bookmarksList.endReached) {
                 items.add(UItem.asFlicker(items.size(), FlickerLoadingView.BROWSER_BOOKMARK));
@@ -259,7 +260,7 @@ public class AddressBarList extends FrameLayout {
         } else if (item.instanceOf(BookmarkView.Factory.class)) {
             if (onURLClick != null) {
                 try {
-                    onURLClick.run(getLink((MessageObject) item.object2));
+                    onURLClick.run(((BrowserHistory.Entry) item.object2).url);
                 } catch (Exception e) {
                     FileLog.e(e);
                 }
@@ -802,15 +803,21 @@ public class AddressBarList extends FrameLayout {
         }
 
 
-        public void set(BrowserHistory.Entry entry, String query, boolean divider) {
+        public void set(BrowserHistory.Entry entry, String query, boolean checked, boolean divider) {
             updateColors();
             if (entry == null) return;
             final String url = entry.url;
             final WebMetadataCache.WebMetadata meta = entry.meta;
+            final String domain = AndroidUtilities.getHostAuthority(url, true);
+            final WebMetadataCache.WebMetadata cachedMeta = TextUtils.isEmpty(domain) ? null : WebMetadataCache.getInstance().get(domain);
             if (meta != null && !TextUtils.isEmpty(meta.title)) {
                 textView.setText(meta.title);
+            } else if (cachedMeta != null && !TextUtils.isEmpty(cachedMeta.title)) {
+                textView.setText(cachedMeta.title);
             } else if (meta != null && !TextUtils.isEmpty(meta.sitename)) {
                 textView.setText(meta.sitename);
+            } else if (cachedMeta != null && !TextUtils.isEmpty(cachedMeta.sitename)) {
+                textView.setText(cachedMeta.sitename);
             } else {
                 try {
                     String[] segments = Uri.parse(url).getHost().split("\\.");
@@ -820,8 +827,10 @@ public class AddressBarList extends FrameLayout {
                     textView.setText("");
                 }
             }
-            if (meta != null && meta.favicon != null) {
-                iconView.setImageBitmap(meta.favicon);
+            iconView.clearImage();
+            final Bitmap favicon = meta != null && meta.favicon != null ? meta.favicon : cachedMeta != null ? cachedMeta.favicon : null;
+            if (favicon != null) {
+                iconView.setImageBitmap(favicon);
             } else {
                 final String s = textView.getText() == null ? "" : textView.getText().toString();
                 final BreakIterator bi = BreakIterator.getCharacterInstance();
@@ -869,7 +878,7 @@ public class AddressBarList extends FrameLayout {
             textView.setText(Emoji.replaceEmoji(textView.getText(), textView.getPaint().getFontMetricsInt(), false));
             subtextView.setText(Emoji.replaceEmoji(subtextView.getText(), subtextView.getPaint().getFontMetricsInt(), false));
             timeView.setText(LocaleController.getInstance().getFormatterDay().format(entry.time));
-            checkBox.setChecked(false, false);
+            checkBox.setChecked(checked, false);
             textLayoutParams.rightMargin = dp(70);
             textLayout.setLayoutParams(textLayoutParams);
             setWillNotDraw(!(needDivider = divider));
@@ -911,7 +920,7 @@ public class AddressBarList extends FrameLayout {
                 if (item.object2 instanceof MessageObject) {
                     cell.set((MessageObject) (item.object2), item.accent, item.subtext == null ? null : item.subtext.toString(), item.checked, divider);
                 } else if (item.object2 instanceof BrowserHistory.Entry) {
-                    cell.set((BrowserHistory.Entry) (item.object2), item.subtext == null ? null : item.subtext.toString(), divider);
+                    cell.set((BrowserHistory.Entry) (item.object2), item.subtext == null ? null : item.subtext.toString(), item.checked, divider);
                 }
             }
 
@@ -957,7 +966,7 @@ public class AddressBarList extends FrameLayout {
 
             @Override
             public boolean contentsEquals(UItem a, UItem b) {
-                return a.object2 == b.object2 && TextUtils.equals(a.subtext, b.subtext);
+                return a.object2 == b.object2 && TextUtils.equals(a.subtext, b.subtext) && a.checked == b.checked;
             }
         }
 
@@ -1061,12 +1070,14 @@ public class AddressBarList extends FrameLayout {
 
     public static class BookmarksList implements NotificationCenter.NotificationCenterDelegate {
 
-        public final ArrayList<MessageObject> links = new ArrayList<MessageObject>();
+        // NativeDo: bookmarks are backed by the local WebBookmarks store (a .dat
+        // file), not Telegram Saved-Messages over MTProto. Entries reuse
+        // BrowserHistory.Entry so the existing BookmarkView overload renders them.
+        public final ArrayList<BrowserHistory.Entry> links = new ArrayList<BrowserHistory.Entry>();
 
         private final int currentAccount;
         private final Runnable whenUpdated;
         private final String query;
-        private int guid = ConnectionsManager.generateClassGuid();
 
         public BookmarksList(int currentAccount, Runnable whenUpdated) {
             this(currentAccount, null, whenUpdated);
@@ -1083,25 +1094,21 @@ public class AddressBarList extends FrameLayout {
         public void attach() {
             if (attached) return;
             attached = true;
-            NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.mediaDidLoad);
             NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.bookmarkAdded);
-            if (TextUtils.isEmpty(query)) {
-                load();
-            }
+            load();
         }
 
         public void detach() {
             if (!attached) return;
             attached = false;
-            NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.mediaDidLoad);
             NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.bookmarkAdded);
-            ConnectionsManager.getInstance(currentAccount).cancelRequestsForGuid(guid);
             loading = false;
         }
 
-        public void delete(ArrayList<Integer> ids) {
+        public void delete(ArrayList<Long> ids) {
+            WebBookmarks.getInstance(currentAccount).remove(ids);
             for (int i = 0; i < links.size(); ++i) {
-                if (ids.contains(links.get(i).getId())) {
+                if (ids.contains(links.get(i).id)) {
                     links.remove(i);
                     i--;
                 }
@@ -1112,28 +1119,52 @@ public class AddressBarList extends FrameLayout {
         public void load() {
             if (loading || endReached) return;
             loading = true;
-            final long selfId = UserConfig.getInstance(currentAccount).getClientUserId();
-            int min_id = Integer.MAX_VALUE;
-            for (int i = 0; i < links.size(); ++i) {
-                min_id = Math.min(min_id, links.get(i).getId());
-            }
-            MediaDataController.getInstance(currentAccount).loadMedia(selfId, links.isEmpty() ? 30 : 50, min_id == Integer.MAX_VALUE ? 0 : min_id, 0, MediaDataController.MEDIA_URL, 0, 1, guid, 0, null, query);
+            // getAll() invokes the callback on the UI loop once the local store has
+            // loaded (deferred, never inline), so a single path populates links and
+            // whenUpdated() never runs before this fragment's listView exists.
+            WebBookmarks.getInstance(currentAccount).getAll(loaded -> {
+                loading = false;
+                endReached = true;
+                links.clear();
+                for (int i = 0; i < loaded.size(); ++i) {
+                    final BrowserHistory.Entry entry = loaded.get(i);
+                    if (entry == null || TextUtils.isEmpty(entry.url)) continue;
+                    if (!TextUtils.isEmpty(query) && !matchesQuery(entry, query)) continue;
+                    links.add(entry);
+                }
+                whenUpdated.run();
+            });
+        }
+
+        private static boolean matchesQuery(BrowserHistory.Entry entry, String query) {
+            if (entry == null) return false;
+            final String title = entry.meta != null ? entry.meta.title : null;
+            final String sitename = entry.meta != null ? entry.meta.sitename : null;
+            final String domain = entry.meta != null ? entry.meta.domain : AndroidUtilities.getHostAuthority(entry.url, true);
+            return BookmarksFragment.matches(domain, query)
+                || BookmarksFragment.matches(sitename, query)
+                || BookmarksFragment.matches(title, query)
+                || BookmarksFragment.matches(entry.url, query);
         }
 
         @Override
         public void didReceivedNotification(int id, int account, Object... args) {
-            if (id == NotificationCenter.mediaDidLoad) {
-                int guid = (Integer) args[3];
-                if (guid == this.guid) {
-                    loading = false;
-                    final ArrayList<MessageObject> msgs = (ArrayList<MessageObject>) args[2];
-                    endReached = ((Boolean) args[5]);
-                    links.addAll(msgs);
+            if (id == NotificationCenter.bookmarkAdded) {
+                if (account != currentAccount) return;
+                final BrowserHistory.Entry entry = (BrowserHistory.Entry) args[0];
+                if (entry == null) return;
+                for (int i = 0; i < links.size(); ++i) {
+                    if (links.get(i).id == entry.id) {
+                        links.remove(i);
+                        break;
+                    }
+                }
+                if (TextUtils.isEmpty(query) || matchesQuery(entry, query)) {
+                    links.add(0, entry);
+                }
+                if (whenUpdated != null) {
                     whenUpdated.run();
                 }
-            } else if (id == NotificationCenter.bookmarkAdded) {
-                MessageObject msg = (MessageObject) args[0];
-                links.add(0, msg);
             }
         }
     }

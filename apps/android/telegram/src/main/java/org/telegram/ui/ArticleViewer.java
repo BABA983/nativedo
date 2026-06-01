@@ -212,6 +212,7 @@ import org.telegram.ui.web.HistoryFragment;
 import org.telegram.ui.web.RestrictedDomainsList;
 import org.telegram.ui.web.SearchEngine;
 import org.telegram.ui.web.WebActionBar;
+import org.telegram.ui.web.WebBookmarks;
 import org.telegram.ui.web.WebBrowserSettings;
 import org.telegram.ui.web.WebInstantView;
 
@@ -4327,39 +4328,30 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
                 showDialog(new ShareAlert(parentActivity, null, url, false, url, false, AndroidUtilities.computePerceivedBrightness(actionBar.getBackgroundColor()) < .721f ? new DarkThemeResourceProvider() : null));
             } else if (id == WebActionBar.bookmark_item) {
                 String url;
+                String title;
                 final FrameLayout container;
                 if (pages[0].isWeb()) {
                     if (pages[0].getWebView() == null) return;
                     url = pages[0].getWebView().getUrl();
+                    title = pages[0].getWebView().getTitle();
                     container = pages[0].webViewContainer;
                 } else {
                     if (pages[0].adapter.currentPage == null) return;
                     url = pages[0].adapter.currentPage.url;
+                    title = pages[0].adapter.currentPage.site_name != null ? pages[0].adapter.currentPage.site_name : pages[0].adapter.currentPage.title;
                     container = pages[0];
                 }
                 url = BotWebViewContainer.magic2tonsite(url);
-                final long selfId = UserConfig.getInstance(currentAccount).getClientUserId();
-                SendMessagesHelper.getInstance(currentAccount).sendMessage(SendMessagesHelper.SendMessageParams.of(url, selfId));
-                TLRPC.TL_message msg = new TLRPC.TL_message();
-                msg.peer_id = new TLRPC.TL_peerUser();
-                msg.peer_id.user_id = selfId;
-                msg.from_id = new TLRPC.TL_peerUser();
-                msg.from_id.user_id = selfId;
-                msg.message = url;
-                msg.media = new TLRPC.TL_messageMediaWebPage();
-                msg.media.webpage = new TLRPC.TL_webPage();
-                msg.media.webpage.url = url;
-                msg.media.webpage.display_url = url;
-                NotificationCenter.getInstance(currentAccount).postNotificationName(NotificationCenter.bookmarkAdded, new MessageObject(currentAccount, msg, false, false));
+                // NativeDo: persist to the local WebBookmarks store instead of Telegram
+                // Saved-Messages over MTProto (the SendMessagesHelper path is a stub).
+                WebBookmarks.getInstance(currentAccount).add(url, title);
                 BulletinFactory.of(container, getResourcesProvider()).createSimpleBulletin(R.raw.saved_messages, AndroidUtilities.replaceSingleTag(LocaleController.getString(R.string.WebBookmarkedToast), () -> {
                     if (sheet != null) {
                         sheet.dismiss(true);
                     }
                     BaseFragment lastFragment = LaunchActivity.getSafeLastFragment();
                     if (lastFragment != null) {
-                        Bundle args = new Bundle();
-                        args.putLong("user_id", selfId);
-                        lastFragment.presentFragment(new ChatActivity(args));
+                        lastFragment.showAsSheet(new BookmarksFragment(sheet == null ? null : () -> sheet.dismiss(true), ArticleViewer.this::openBookmark), new BaseFragment.BottomSheetParams());
                     }
                 })).show(true);
             } else if (id == WebActionBar.bookmarks_item) {
@@ -13139,6 +13131,26 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
                 public void onSetSettingsButtonVisible(boolean visible) {
 
                 }
+
+                @Override
+                public boolean onShowFileChooser(WebView webView, android.webkit.ValueCallback<android.net.Uri[]> filePathCallback, android.webkit.WebChromeClient.FileChooserParams fileChooserParams) {
+                    if (parentActivity == null) {
+                        return false;
+                    }
+                    if (filePathCallback != null) {
+                        openFileChooser(filePathCallback, fileChooserParams);
+                        return true;
+                    }
+                    return false;
+                }
+
+                @Override
+                public void onDownloadStart(String url, String userAgent, String contentDisposition, String mimetype, long contentLength) {
+                    if (parentActivity == null) {
+                        return;
+                    }
+                    handleDownload(url, userAgent, contentDisposition, mimetype, contentLength);
+                }
             });
             webViewContainer.setWebViewScrollListener(new BotWebViewContainer.WebViewScrollListener() {
                 @Override
@@ -14621,6 +14633,70 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
         }
         pagesStack.clear();
         destroyArticleViewer();
+    }
+
+    private android.webkit.ValueCallback<android.net.Uri[]> filePathCallback;
+
+    private void openFileChooser(android.webkit.ValueCallback<android.net.Uri[]> callback, android.webkit.WebChromeClient.FileChooserParams params) {
+        if (filePathCallback != null) {
+            filePathCallback.onReceiveValue(null);
+        }
+        filePathCallback = callback;
+
+        try {
+            Intent intent = params.createIntent();
+            if (parentActivity != null) {
+                parentActivity.startActivityForResult(intent, 5000);
+            }
+        } catch (Exception e) {
+            FileLog.e(e);
+            if (filePathCallback != null) {
+                filePathCallback.onReceiveValue(null);
+                filePathCallback = null;
+            }
+        }
+    }
+
+    public void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == 5000 && filePathCallback != null) {
+            android.net.Uri[] results = null;
+            if (resultCode == Activity.RESULT_OK && data != null) {
+                String dataString = data.getDataString();
+                if (dataString != null) {
+                    results = new android.net.Uri[]{android.net.Uri.parse(dataString)};
+                }
+            }
+            filePathCallback.onReceiveValue(results);
+            filePathCallback = null;
+        }
+    }
+
+    private void handleDownload(String url, String userAgent, String contentDisposition, String mimetype, long contentLength) {
+        if (parentActivity == null) {
+            return;
+        }
+
+        try {
+            String filename = android.webkit.URLUtil.guessFileName(url, contentDisposition, mimetype);
+
+            android.app.DownloadManager.Request request = new android.app.DownloadManager.Request(android.net.Uri.parse(url));
+            request.setMimeType(mimetype);
+            request.addRequestHeader("User-Agent", userAgent);
+            request.setDescription(getString(R.string.Loading));
+            request.setTitle(filename);
+            request.allowScanningByMediaScanner();
+            request.setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+            request.setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, filename);
+
+            android.app.DownloadManager dm = (android.app.DownloadManager) parentActivity.getSystemService(Context.DOWNLOAD_SERVICE);
+            if (dm != null) {
+                dm.enqueue(request);
+                Toast.makeText(parentActivity, getString(R.string.Loading), Toast.LENGTH_SHORT).show();
+            }
+        } catch (Exception e) {
+            FileLog.e(e);
+            Toast.makeText(parentActivity, getString(R.string.ErrorOccurred), Toast.LENGTH_SHORT).show();
+        }
     }
 
 }

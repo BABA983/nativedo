@@ -51,6 +51,8 @@ public class BotWebViewContainer extends FrameLayout {
         default void onSetupSecondaryButton(boolean isVisible, boolean isActive, String text, long emojiId, int color, int textColor, boolean isProgressVisible, boolean hasShineEffect, String position) {}
         default void onSetBackButtonVisible(boolean visible) {}
         default void onSetSettingsButtonVisible(boolean visible) {}
+        default boolean onShowFileChooser(WebView webView, android.webkit.ValueCallback<android.net.Uri[]> filePathCallback, WebChromeClient.FileChooserParams fileChooserParams) { return false; }
+        default void onDownloadStart(String url, String userAgent, String contentDisposition, String mimetype, long contentLength) {}
     }
 
     public interface WebViewScrollListener {
@@ -88,6 +90,7 @@ public class BotWebViewContainer extends FrameLayout {
         super(context);
         this.bot = allow;
         setBackgroundColor(backgroundColor);
+        setFocusable(false);
     }
 
     public void setOpener(MyWebView webView) {
@@ -161,6 +164,9 @@ public class BotWebViewContainer extends FrameLayout {
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             settings.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            settings.setForceDark(WebSettings.FORCE_DARK_AUTO);
         }
         settings.setMediaPlaybackRequiresUserGesture(false);
 
@@ -259,6 +265,20 @@ public class BotWebViewContainer extends FrameLayout {
                 webView.setFavicon(icon);
                 webView.saveHistory(bot);
                 onFaviconChanged(icon);
+            }
+
+            @Override
+            public boolean onShowFileChooser(WebView webView, android.webkit.ValueCallback<android.net.Uri[]> filePathCallback, FileChooserParams fileChooserParams) {
+                if (delegate != null) {
+                    return delegate.onShowFileChooser(webView, filePathCallback, fileChooserParams);
+                }
+                return false;
+            }
+        });
+
+        view.setDownloadListener((url, userAgent, contentDisposition, mimetype, contentLength) -> {
+            if (delegate != null) {
+                delegate.onDownloadStart(url, userAgent, contentDisposition, mimetype, contentLength);
             }
         });
     }
@@ -370,7 +390,35 @@ public class BotWebViewContainer extends FrameLayout {
     }
     public void invalidateViewPortHeight() {}
     public void invalidateViewPortHeight(boolean animated) {}
-    public void setKeyboardFocusable(boolean focusable) {}
+    private boolean keyboardFocusable;
+    private boolean wasFocusable;
+    private boolean isPageLoaded;
+    private void updateKeyboardFocusable() {
+        final boolean focusable = keyboardFocusable && isPageLoaded && false;
+        if (wasFocusable != focusable) {
+            if (!focusable) {
+                setDescendantFocusability(FOCUS_BLOCK_DESCENDANTS);
+                BotWebViewContainer.this.setFocusable(false);
+                if (webView != null) {
+                    webView.setDescendantFocusability(FOCUS_BLOCK_DESCENDANTS);
+                    webView.clearFocus();
+                }
+                AndroidUtilities.hideKeyboard(this);
+            } else {
+                setDescendantFocusability(FOCUS_BEFORE_DESCENDANTS);
+                BotWebViewContainer.this.setFocusable(true);
+                if (webView != null) {
+                    webView.setDescendantFocusability(FOCUS_BEFORE_DESCENDANTS);
+                }
+            }
+        }
+        wasFocusable = focusable;
+    }
+
+    public void setKeyboardFocusable(boolean focusable) {
+        keyboardFocusable = focusable;
+        updateKeyboardFocusable();
+    }
     public static String magic2tonsite(String url) { return url; }
     public static boolean isTonsite(String url) { return false; }
 
@@ -417,6 +465,26 @@ public class BotWebViewContainer extends FrameLayout {
                 if (listener != null) {
                     listener.run();
                 }
+            });
+
+            setOnLongClickListener(v -> {
+                HitTestResult result = getHitTestResult();
+                if (result == null) return false;
+
+                if (result.getType() == HitTestResult.SRC_ANCHOR_TYPE) {
+                    final String url = result.getExtra();
+                    if (url != null) {
+                        showLinkContextMenu(url);
+                        return true;
+                    }
+                } else if (result.getType() == HitTestResult.IMAGE_TYPE) {
+                    final String imageUrl = result.getExtra();
+                    if (imageUrl != null) {
+                        showImageContextMenu(imageUrl);
+                        return true;
+                    }
+                }
+                return false;
             });
         }
 
@@ -652,6 +720,48 @@ public class BotWebViewContainer extends FrameLayout {
             if (webViewScrollListener != null) {
                 webViewScrollListener.onWebViewScrolled(this, l - oldl, t - oldt);
             }
+        }
+
+        private void showLinkContextMenu(String url) {
+            AndroidUtilities.runOnUIThread(() -> {
+                if (getContext() == null) return;
+
+                org.telegram.ui.ActionBar.AlertDialog.Builder builder = new org.telegram.ui.ActionBar.AlertDialog.Builder(getContext());
+                builder.setTitle(url);
+                builder.setItems(new CharSequence[]{
+                        org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.Open),
+                        org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.Copy)
+                }, (dialog, which) -> {
+                    if (which == 0) {
+                        loadUrl(url);
+                    } else if (which == 1) {
+                        AndroidUtilities.addToClipboard(url);
+                    }
+                });
+                builder.show();
+            });
+        }
+
+        private void showImageContextMenu(String imageUrl) {
+            AndroidUtilities.runOnUIThread(() -> {
+                if (getContext() == null) return;
+
+                org.telegram.ui.ActionBar.AlertDialog.Builder builder = new org.telegram.ui.ActionBar.AlertDialog.Builder(getContext());
+                builder.setTitle(imageUrl);
+                builder.setItems(new CharSequence[]{
+                        org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.AccActionDownload),
+                        org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.CopyLink)
+                }, (dialog, which) -> {
+                    if (which == 0) {
+                        if (botWebViewContainer != null && botWebViewContainer.delegate != null) {
+                            botWebViewContainer.delegate.onDownloadStart(imageUrl, null, null, "image/*", 0);
+                        }
+                    } else if (which == 1) {
+                        AndroidUtilities.addToClipboard(imageUrl);
+                    }
+                });
+                builder.show();
+            });
         }
     }
 }

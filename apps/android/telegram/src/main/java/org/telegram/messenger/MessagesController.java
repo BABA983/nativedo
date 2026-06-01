@@ -73,6 +73,10 @@ public final class MessagesController {
         return null;
     }
 
+    public TLObject getUserOrChat(long dialogId) {
+        return dialogId > 0 ? getUser(dialogId) : getChat(-dialogId);
+    }
+
     public void openByUserName(String username, org.telegram.ui.ActionBar.BaseFragment fragment, int type) {
     }
 

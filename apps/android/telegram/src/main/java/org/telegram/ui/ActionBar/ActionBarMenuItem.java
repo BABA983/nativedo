@@ -1,27 +1,16 @@
 /*
- * This file is part of NativeDo.
+ * This is the source code of Telegram for Android v. 5.x.x.
+ * It is licensed under GNU GPL v. 2 or later.
+ * You should have received a copy of the license in this archive (see LICENSE).
  *
- * Derived in part from Telegram for Android's
- * org/telegram/ui/ActionBar/ActionBarMenuItem.java.
- *
- * Source reference:
- * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarMenuItem.java
- *
- * NativeDo milestone slice: keeps icon/text menu items, simple submenu items,
- * popup positioning, parent menu click forwarding, and a minimal search field;
- * omits Telegram filters, lottie, action mode, and complex popup rows.
- *
- * Copyright (C) Telegram FZ-LLC
- * Copyright (C) 2026 NativeDo contributors
- *
- * This program is free software: you can redistribute it and/or modify
- * it under terms of GNU General Public License version 2 or later as published by
- * the Free Software Foundation.
- *
- * SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright Nikolai Kudashov, 2013-2018.
  */
 package org.telegram.ui.ActionBar;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.AnimatorSet;
+import android.animation.ObjectAnimator;
 import android.content.Context;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
@@ -52,6 +41,8 @@ import org.telegram.ui.Components.CloseProgressDrawable2;
 import org.telegram.ui.Components.EditTextBoldCursor;
 import org.telegram.ui.Components.LayoutHelper;
 
+import java.util.ArrayList;
+
 public class ActionBarMenuItem extends FrameLayout {
 
     public static class ActionBarMenuItemSearchListener {
@@ -81,6 +72,8 @@ public class ActionBarMenuItem extends FrameLayout {
     private EditTextBoldCursor searchField;
     private ImageView clearButton;
     private ActionBarMenuItemSearchListener searchListener;
+    private AnimatorSet searchContainerAnimator;
+    private float transitionOffset;
 
     public ActionBarMenuItem(Context context, ActionBarMenu menu, int backgroundColor, int iconColor) {
         this(context, menu, backgroundColor, iconColor, false);
@@ -110,6 +103,11 @@ public class ActionBarMenuItem extends FrameLayout {
             }
             addView(iconView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
         }
+    }
+
+    @Override
+    public void setTranslationX(float translationX) {
+        super.setTranslationX(translationX + transitionOffset);
     }
 
     public TextView addSubItem(int id, CharSequence text) {
@@ -185,48 +183,116 @@ public class ActionBarMenuItem extends FrameLayout {
         return searchContainer != null && searchContainer.getVisibility() == VISIBLE;
     }
 
+    public boolean isSearchField() {
+        return isSearchField;
+    }
+
     public void openSearch(boolean openKeyboard) {
         checkCreateSearchField();
-        if (searchContainer == null || searchContainer.getVisibility() == VISIBLE) {
+        if (searchContainer == null || searchContainer.getVisibility() == VISIBLE || parentMenu == null) {
             return;
         }
-        setSearchLayoutExpanded(true);
-        searchContainer.setVisibility(VISIBLE);
-        searchContainer.setAlpha(1f);
-        if (iconView != null) {
-            iconView.setVisibility(GONE);
-        }
-        searchField.setText("");
-        updateClearButton(false);
-        searchField.requestFocus();
-        if (openKeyboard) {
-            InputMethodManager inputMethodManager = searchField.getContext().getSystemService(InputMethodManager.class);
-            if (inputMethodManager != null) {
-                inputMethodManager.showSoftInput(searchField, InputMethodManager.SHOW_IMPLICIT);
-            }
-        }
-        if (searchListener != null) {
-            searchListener.onSearchExpand();
-        }
+        parentMenu.parentActionBar.onSearchFieldVisibilityChanged(toggleSearch(openKeyboard));
     }
 
     public void closeSearch(boolean hideKeyboard) {
         if (searchContainer == null || searchContainer.getVisibility() != VISIBLE) {
             return;
         }
-        if (hideKeyboard) {
-            AndroidUtilities.hideKeyboard(searchField);
+        if (parentMenu != null && parentMenu.parentActionBar != null) {
+            parentMenu.parentActionBar.onSearchFieldVisibilityChanged(false);
         }
-        searchField.clearFocus();
-        searchField.setText("");
-        updateClearButton(false);
-        searchContainer.setVisibility(GONE);
-        if (iconView != null) {
-            iconView.setVisibility(VISIBLE);
+        toggleSearch(hideKeyboard);
+    }
+
+    public boolean toggleSearch(boolean openKeyboard) {
+        checkCreateSearchField();
+        if (searchContainer == null || parentMenu == null) {
+            return false;
         }
-        setSearchLayoutExpanded(false);
-        if (searchListener != null) {
-            searchListener.onSearchCollapse();
+        ArrayList<View> menuIcons = new ArrayList<>();
+        for (int i = 0; i < parentMenu.getChildCount(); i++) {
+            View view = parentMenu.getChildAt(i);
+            if (view instanceof ActionBarMenuItem) {
+                View icon = ((ActionBarMenuItem) view).getIconView();
+                if (icon != null) {
+                    menuIcons.add(icon);
+                }
+            }
+        }
+
+        if (searchContainer.getTag() != null) {
+            searchContainer.setTag(null);
+            if (searchContainerAnimator != null) {
+                searchContainerAnimator.removeAllListeners();
+                searchContainerAnimator.cancel();
+            }
+            searchContainerAnimator = new AnimatorSet();
+            searchContainerAnimator.playTogether(ObjectAnimator.ofFloat(searchContainer, View.ALPHA, searchContainer.getAlpha(), 0f));
+            for (int i = 0; i < menuIcons.size(); i++) {
+                menuIcons.get(i).setAlpha(0f);
+                searchContainerAnimator.playTogether(ObjectAnimator.ofFloat(menuIcons.get(i), View.ALPHA, menuIcons.get(i).getAlpha(), 1f));
+            }
+            searchContainerAnimator.setDuration(150);
+            searchContainerAnimator.addListener(new AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(Animator animation) {
+                    searchContainer.setAlpha(0f);
+                    for (int i = 0; i < menuIcons.size(); i++) {
+                        menuIcons.get(i).setAlpha(1f);
+                    }
+                    searchContainer.setVisibility(GONE);
+                }
+            });
+            searchContainerAnimator.start();
+
+            searchField.clearFocus();
+            updateClearButton(false);
+            setVisibility(VISIBLE);
+            if (searchListener != null) {
+                searchListener.onSearchCollapse();
+            }
+            if (openKeyboard) {
+                AndroidUtilities.hideKeyboard(searchField);
+            }
+            parentMenu.requestLayout();
+            requestLayout();
+            return false;
+        } else {
+            searchContainer.setVisibility(VISIBLE);
+            searchContainer.setAlpha(0f);
+            if (searchContainerAnimator != null) {
+                searchContainerAnimator.removeAllListeners();
+                searchContainerAnimator.cancel();
+            }
+            searchContainerAnimator = new AnimatorSet();
+            searchContainerAnimator.playTogether(ObjectAnimator.ofFloat(searchContainer, View.ALPHA, searchContainer.getAlpha(), 1f));
+            for (int i = 0; i < menuIcons.size(); i++) {
+                searchContainerAnimator.playTogether(ObjectAnimator.ofFloat(menuIcons.get(i), View.ALPHA, menuIcons.get(i).getAlpha(), 0f));
+            }
+            searchContainerAnimator.setDuration(150);
+            searchContainerAnimator.addListener(new AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(Animator animation) {
+                    searchContainer.setAlpha(1f);
+                    for (int i = 0; i < menuIcons.size(); i++) {
+                        menuIcons.get(i).setAlpha(0f);
+                    }
+                }
+            });
+            searchContainerAnimator.start();
+            setVisibility(GONE);
+            searchField.setText("");
+            updateClearButton(false);
+            searchField.requestFocus();
+            if (openKeyboard) {
+                AndroidUtilities.showKeyboard(searchField);
+            }
+            searchContainer.setTag(1);
+            if (searchListener != null) {
+                searchListener.onSearchExpand();
+            }
+            return true;
         }
     }
 
@@ -383,6 +449,15 @@ public class ActionBarMenuItem extends FrameLayout {
         return iconView;
     }
 
+    public FrameLayout getSearchContainer() {
+        return searchContainer;
+    }
+
+    public void setTransitionOffset(float offset) {
+        transitionOffset = offset;
+        setTranslationX(0);
+    }
+
     /** Minimal Telegram search filter chip used by FragmentSearchField. */
     public static class SearchFilterView extends FrameLayout {
         private final Theme.ResourcesProvider resourcesProvider;
@@ -527,7 +602,9 @@ public class ActionBarMenuItem extends FrameLayout {
             }
         });
         searchContainer.addView(clearButton, LayoutHelper.createFrame(48, LayoutHelper.MATCH_PARENT, Gravity.CENTER_VERTICAL | Gravity.RIGHT));
-        addView(searchContainer, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.START));
+        if (parentMenu != null) {
+            parentMenu.addView(searchContainer, 0, LayoutHelper.createLinear(0, LayoutHelper.MATCH_PARENT, 1.0f, 6, 0, 0, 0));
+        }
     }
 
     private void updateSearchFieldColors() {
@@ -575,33 +652,6 @@ public class ActionBarMenuItem extends FrameLayout {
             clearButton.setScaleY(scale);
             clearButton.setVisibility(visible ? VISIBLE : INVISIBLE);
         }
-    }
-
-    private void setSearchLayoutExpanded(boolean expanded) {
-        if (parentMenu == null) {
-            return;
-        }
-        ViewGroup.LayoutParams itemLayoutParams = getLayoutParams();
-        if (itemLayoutParams instanceof LinearLayout.LayoutParams) {
-            itemLayoutParams.width = expanded ? getSearchExpandedWidth() : AndroidUtilities.dp(48);
-            setLayoutParams(itemLayoutParams);
-        }
-        ViewGroup.LayoutParams menuLayoutParams = parentMenu.getLayoutParams();
-        if (menuLayoutParams != null) {
-            menuLayoutParams.width = expanded ? getSearchExpandedWidth() : LayoutHelper.WRAP_CONTENT;
-            parentMenu.setLayoutParams(menuLayoutParams);
-        }
-        if (parentMenu.parentActionBar != null) {
-            parentMenu.parentActionBar.requestLayout();
-        }
-    }
-
-    private int getSearchExpandedWidth() {
-        int width = parentMenu != null && parentMenu.parentActionBar != null ? parentMenu.parentActionBar.getMeasuredWidth() : 0;
-        if (width <= 0) {
-            width = AndroidUtilities.displaySize.x;
-        }
-        return Math.max(AndroidUtilities.dp(48), width - AndroidUtilities.dp(66));
     }
 
     private void createPopupLayout() {

@@ -1,24 +1,3 @@
-/*
- * This file is part of NativeDo.
- *
- * Derived in part from Telegram for Android's
- * org/telegram/ui/ActionBar/INavigationLayout.java.
- *
- * Source reference:
- * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/INavigationLayout.java
- *
- * NativeDo milestone slice: keeps NavigationParams-backed present, stack, and close API
- * used by this shell; omits Telegram delegate, preview menu, and sheet navigation surface.
- *
- * Copyright (C) Telegram FZ-LLC
- * Copyright (C) 2026 NativeDo contributors
- *
- * This program is free software: you can redistribute it and/or modify
- * it under terms of GNU General Public License version 2 or later as published by
- * the Free Software Foundation.
- *
- * SPDX-License-Identifier: GPL-2.0-or-later
- */
 package org.telegram.ui.ActionBar;
 
 import java.util.List;
@@ -47,6 +26,10 @@ public interface INavigationLayout {
 
     default int getBottomTabsHeight(boolean animated) {
         return 0;
+    }
+
+    default android.widget.FrameLayout getOverlayContainerView() {
+        return null;
     }
 
     class NavigationParams {

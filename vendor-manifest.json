@@ -37,7 +37,8 @@
       "upstream": "org/telegram/messenger/AndroidUtilities.java",
       "vendored_at": "009e97356",
       "modified": true,
-      "port_mode": "exact"
+      "port_mode": "exact",
+      "notes": "Browser/menu helpers added for ItemOptions: emptyMotionEvent() copied verbatim from upstream; shakeViewSpring(View,float) is a simplified ObjectAnimator wobble (upstream SpringAnimation + shake id resources not ported) and replaceArrows(...) is a pass-through — both intentionally diverge from upstream and only feed chat/profile call sites the browser menu never reaches."
     },
     {
       "local": "telegram/src/main/java/org/telegram/messenger/BuildVars.java",
@@ -60,8 +61,11 @@
       "modified": true,
       "port_mode": "native",
       "notes": [
-        "Heavily adapted for the Discourse data model. Symbol name kept",
-        "to minimise diff churn but very little upstream behaviour remains."
+        "Compile shim, not a port: no Telegram source copied. The local file is a minimal",
+        "stub (~150 lines) that matches the upstream public API surface used by ported",
+        "animation code. Real behaviour is provided by NativeDo. Kept in the manifest so the",
+        "upstream path stays discoverable for diffs and to make the shim-vs-port distinction",
+        "explicit. Do not treat as vendored; no upstream field/method shapes are preserved."
       ]
     },
     {
@@ -69,7 +73,14 @@
       "upstream": "org/telegram/messenger/SharedConfig.java",
       "vendored_at": "009e97356",
       "modified": true,
-      "port_mode": "exact"
+      "port_mode": "native",
+      "notes": [
+        "Compile shim, not a port: no Telegram source copied. The local file is a minimal",
+        "stub (~160 lines) that returns safe defaults for SharedConfig.animationsEnabled()",
+        "and SharedConfig.shadowsInSections (the only entry points used by ported UI). The",
+        "previous 'port_mode: exact' was wrong — diff is ~1900 lines, not 0. Kept in the",
+        "manifest so the upstream path stays discoverable; do not treat as vendored."
+      ]
     },
     {
       "local": "telegram/src/main/java/org/telegram/messenger/browser/Browser.java",
@@ -94,12 +105,24 @@
       "port_mode": "native"
     },
     {
+      "local": "telegram/src/main/java/org/telegram/messenger/SvgHelper.java",
+      "upstream": "org/telegram/messenger/SvgHelper.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "exact",
+      "forced_exact": [
+        "drawing"
+      ],
+      "notes": "Real SAX SVG parser; getBitmap(InputStream) drives Instant View SVG. Copied verbatim from upstream (keeps the Larva Labs / Apache-2.0 header); replaces an 87-line compile stub whose getBitmap(...) returned null and rendered IV SVGs blank. Host-wiring only: none required beyond the verbatim copy (all deps present in :telegram). Real deps DrawingInBackgroundThreadDrawable and wallpaper/WallpaperGiftPatternPosition were vendored verbatim alongside it."
+    },
+    {
       "_comment": "actionbar",
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/Theme.java",
       "upstream": "org/telegram/ui/ActionBar/Theme.java",
       "vendored_at": "009e97356",
       "modified": true,
-      "port_mode": "exact"
+      "port_mode": "exact",
+      "notes": "Host-wired for the vendored CheckBoxBase: added Theme.getServiceMessageColor() and Theme.PAINT_CLEAR as one-line pass-throughs to upstream namesakes, and 5 no-op stubs on the local Theme.MessageDrawable (hasGradient/getGradientShader/getMatrix/applyMatrixScale/getTopY) — local never sets a MessageDrawable on a CheckBox, so the gradient path is dead code; the stubs exist to satisfy the CheckBoxBase API. Other bodies remain native as the previous manifest described."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/ArticleViewer.java",
@@ -107,7 +130,7 @@
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "exact",
-      "notes": "Host wiring only: ArticleViewer.Sheet restore/capture/dismiss fallback adapted for NativeDo ActionBarLayout/BottomSheetTabs lifecycle; drawing/gesture/measurement/animation bodies remain upstream-shaped."
+      "notes": "Host wiring only: ArticleViewer.Sheet restore/capture/dismiss fallback adapted for NativeDo ActionBarLayout/BottomSheetTabs lifecycle; drawing/gesture/measurement/animation bodies remain upstream-shaped. WebActionBar.bookmark_item now persists to the local WebBookmarks store (org.telegram.ui.web.WebBookmarks) instead of SendMessagesHelper.sendMessage to Saved-Messages; the bookmarked toast opens BookmarksFragment instead of the Telegram Saved-Messages ChatActivity."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ThemeColors.java",
@@ -118,6 +141,14 @@
     },
     {
       "_comment": "cells",
+      "local": "telegram/src/main/java/org/telegram/ui/Cells/BaseCell.java",
+      "upstream": "org/telegram/ui/Cells/BaseCell.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Copied verbatim. Base class for all Telegram cells; provides RippleDrawableSafe (used by Switch), setDrawableBounds helpers, long-press detection, and RenderNode caching. All deps (SizeNotifierFrameLayout.IViewWithInvalidateCallback, SharedConfig) present in :telegram."
+    },
+    {
       "local": "telegram/src/main/java/org/telegram/ui/Cells/ChatActionCell.java",
       "upstream": "org/telegram/ui/Cells/ChatActionCell.java",
       "vendored_at": "009e97356",
@@ -161,12 +192,36 @@
       "port_mode": "exact"
     },
     {
+      "local": "telegram/src/main/java/org/telegram/ui/Cells/RadioColorCell.java",
+      "upstream": "org/telegram/ui/Cells/RadioColorCell.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Verbatim upstream. Used by the WebBrowserSettings search-engine picker dialog (and other radio dialogs). Deps RadioButton/LayoutHelper/Theme/AndroidUtilities/LocaleController are all vendored. Replaces an earlier hand-rolled subset that used android.widget.RadioButton and a no-op setCheckColor."
+    },
+    {
       "local": "telegram/src/main/java/org/telegram/ui/Cells/TextInfoPrivacyCell.java",
       "upstream": "org/telegram/ui/Cells/TextInfoPrivacyCell.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native",
-      "notes": "Compile-only stub; upstream LinksTextView/LinkSpanDrawable behavior not ported."
+      "notes": "Faithful subset used by UniversalAdapter VIEW_TYPE_SHADOW: keeps upstream setText (double-newline AbsoluteSizeSpan), setFixedSize/getFixedSize, onMeasure fixedSize -1/0/n branches, top/bottom padding, getText/getTextView/setTextGravity/setEnabled. OMITTED: LinkSpanDrawable.LinksTextView (tappable links / emoji) replaced by a plain TextView, so getTextView returns TextView not LinksTextView; key_windowBackgroundWhiteGrayText4 -> key_windowBackgroundWhiteGrayText (key not in local Theme)."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Cells/TextCell.java",
+      "upstream": "org/telegram/ui/Cells/TextCell.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Faithful subset used by UniversalAdapter VIEW_TYPE_TEXT and cast in WebBrowserSettings.onClick. Keeps upstream public API the adapter/fragments call: setText/setTextAndIcon(res|Drawable)/setTextAndValue/setTextAndValueAndIcon(res|Drawable)/setValue/setColors(icon,text)/getTextView/getImageView, plus the static applyNewSpan. Rendering (icon + title + subtitle + right value, dp(50)/dp(64) height, 68/20 divider inset) ported from the NativeDo UniversalCells.TextCell layout rather than upstream's SimpleTextView/AnimatedTextView path. OMITTED: Switch checkbox, RLottieImageView/RLottieDrawable animation, AnimatedEmojiDrawable sticker values, loading shimmer, SettingsActivity colorful-icon background, FilterCreateActivity.NewSpan (applyNewSpan is pass-through), spoilers value view, RTL mirroring."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Cells/TextCheckCell.java",
+      "upstream": "org/telegram/ui/Cells/TextCheckCell.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Faithful subset used by UniversalAdapter VIEW_TYPE_CHECK and cast in WebBrowserSettings.onClick. Keeps upstream public API the adapter/fragments call: itemId field, setTextAndCheck/setChecked/isChecked/setDivider/setDrawCheckRipple/setHeight/setTypeface/setColors/setEnabled(boolean,List<Animator>), and the setBackgroundColorAnimated radial reveal (CubicBezierInterpolator.EASE_OUT, 240ms, ANIMATION_PROGRESS property, lastTouchX-anchored circle) used by the in-app-browser toggle. OMITTED: org.telegram.ui.Components.Switch (available but intentionally replaced by a plain track+thumb SwitchView using key_switchTrack/key_switchTrackChecked; AvatarSpan, RLottieImageView colorful icon, valueTextView multiline/value rows, setBackgroundColorAnimatedReverse, Switch.setOverrideColor crossfade, RTL mirroring."
     },
     {
       "local": "app/src/main/java/io/github/baba983/nativedo/ui/profile/ProfileDetailCell.java",
@@ -186,12 +241,8 @@
       "upstream": "org/telegram/ui/Cells/TextDetailCell.java",
       "vendored_at": "009e97356",
       "modified": true,
-      "port_mode": "exact",
-      "notes": [
-        "Simplified port: plain TextView instead of SpoilersTextView/LinksTextView.",
-        "No rightValueTextView, no imageView, no LinkSpanDrawable.",
-        "Factory uses UItem.ViewFactory interface matching NativeDo's UniversalAdapter."
-      ]
+      "port_mode": "native",
+      "notes": "NativeDo subset for the linux.do profile page (no chat / story tappable-link use). Replaces upstream SpoilersTextView/LinkSpanDrawable.LinksTextView with plain TextView and drops the imageView decoration, right-value row, emoji parser, multiline constructors, link long-press / hit-test, and accessibility contentDescription builder. KEPT (still upstream-shaped): setTextAndValue(text, value, divider) 3-arg overload, onMeasure fixed dp(60) + divider, onDraw divider line at dp(20) inset using Theme.getColor(key_divider), and the static UItemFactory inner class bind path. ADDED locally: VIEW_TYPE = 10_002 constant and Factory.isClickable() returning false. OMITTED vs upstream: setTextAndValue(text, value, value2, divider) 4-arg overload, setImage / setImage(d, desc) / hasImage / getImageView / setImageClickListener, setTextWithEmojiAndValue, setContentDescriptionValueFirst, processColor / overrideColor hooks, onTouchEvent link hit-testing, onInitializeAccessibilityNodeInfo, and the 4-arg constructor variants. Padding is 17dp (textView marginLeft/Right, no horizPadding ctor) instead of upstream's 23dp. The previous 'port_mode: exact' was wrong — diff is 276->153 lines with public API trimmed, not zero drift."
     },
     {
       "local": "app/src/main/java/io/github/baba983/nativedo/ui/profile/ProfileFragment.kt",
@@ -239,6 +290,18 @@
     },
     {
       "_comment": "components",
+      "local": "telegram/src/main/java/org/telegram/ui/Components/Switch.java",
+      "upstream": "org/telegram/ui/Components/Switch.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "drawing",
+        "animation"
+      ],
+      "notes": "Copied verbatim. Custom toggle switch with BoolAnimator, BaseCell.RippleDrawableSafe, and themed track/thumb drawing. All deps (AndroidUtilities, Theme, BoolAnimator, BaseCell, CubicBezierInterpolator) present in :telegram."
+    },
+    {
       "local": "telegram/src/main/java/org/telegram/ui/Adapters/FiltersView.java",
       "upstream": "org/telegram/ui/Adapters/FiltersView.java",
       "vendored_at": "009e97356",
@@ -258,6 +321,18 @@
         "drawing"
       ],
       "notes": "Host-wired for NativeDo resources and Rect clip conversion; filter chips keep upstream API with minimal stubs."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/DrawingInBackgroundThreadDrawable.java",
+      "upstream": "org/telegram/ui/Components/DrawingInBackgroundThreadDrawable.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "drawing",
+        "animation"
+      ],
+      "notes": "Copied verbatim. Vendored as a dependency of SvgHelper.SvgDrawable (THREAD_COUNT array sizing + background draw thread). All deps already present in :telegram."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/EditTextBoldCursor.java",
@@ -664,6 +739,18 @@
       "notes": "Minimal NativeDo TLRPC surface extended with PageBlock, RichText, WebPage/Page, BotApp, and IV request/response shells."
     },
     {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/CheckBox2.java",
+      "upstream": "org/telegram/ui/Components/CheckBox2.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "drawing",
+        "animation"
+      ],
+      "notes": "Copied verbatim. Thin wrapper over the vendored CheckBoxBase (the previous NativeDo inline rewrite was 206 lines against the upstream 153-line wrapper; merging required vendoring CheckBoxBase too). Drawing/animation bodies live in CheckBoxBase; this class only forwards. Deps (CubicBezierInterpolator, GenericProvider, AndroidUtilities, Theme.ResourcesProvider) are vendored."
+    },
+    {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ButtonBounce.java",
       "upstream": "org/telegram/ui/Components/ButtonBounce.java",
       "vendored_at": "009e97356",
@@ -759,7 +846,8 @@
       "upstream": "org/telegram/ui/ActionBar/ActionBarLayout.java",
       "vendored_at": "009e97356",
       "modified": true,
-      "port_mode": "native"
+      "port_mode": "native",
+      "notes": "Single-arg constructor (no upstream main flag) and does NOT self-register as the LaunchActivity global. MainActivity pins the root layout via LaunchActivity.setActionBarLayout(root) so sheet-owned ActionBarLayouts (ActionBarSheet) never clobber the global last-fragment / bottom-tabs provider."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarMenu.java",
@@ -787,7 +875,40 @@
       "upstream": "org/telegram/ui/ActionBar/ActionBarPopupWindow.java",
       "vendored_at": "009e97356",
       "modified": true,
-      "port_mode": "native"
+      "port_mode": "native",
+      "notes": "Full ActionBarPopupWindow + ActionBarPopupWindowLayout. Imports ViewOutlineProviderImpl mirroring upstream's import region but never references it in-body (rounded corners use the 9-patch background + clipPath in dispatchDraw). startAnimation/dispatchDraw/setBackScaleY animation+drawing constants kept upstream-shaped; the onItemShown() child-animation callback is commented out (not present on the NativeDo ActionBarMenuSubItem)."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/PopupSwipeBackLayout.java",
+      "upstream": "org/telegram/ui/Components/PopupSwipeBackLayout.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "exact",
+      "forced_exact": [
+        "gesture",
+        "animation"
+      ],
+      "notes": "Submenu swipe-back layout used by ActionBarPopupWindow. Host wiring only: optional ActionBarMenuSlider import and its isDisallowedView instanceof branch removed (class not vendored); swipe gesture (onScroll/onFling thresholds: velocityX>=600, /6000f) and transition animation (DURATION=300, CubicBezierInterpolator, 240ms height) bodies remain upstream-shaped."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/messenger/utils/ViewOutlineProviderImpl.java",
+      "upstream": "org/telegram/messenger/utils/ViewOutlineProviderImpl.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Outline provider helpers copied verbatim from upstream. ActionBarPopupWindow imports it mirroring upstream's import region, but the popup body does not reference it (rounded corners come from the 9-patch background + clipPath in dispatchDraw); retained to satisfy the mirrored import and stay byte-aligned with upstream."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/TableLayout.java",
+      "upstream": "org/telegram/ui/Components/TableLayout.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "measurement",
+        "drawing"
+      ],
+      "notes": "Full upstream table grid (Axis/Spec column-row solving, onMeasure/onLayout/onDraw, getTextX/getTextY, addChild cell text-layout via TableLayoutDelegate). Copied verbatim; delegates text layout to ArticleViewer.DrawingText and selection to TextSelectionHelper.ArticleTextSelectionHelper. Replaces an earlier 50-line compile stub that rendered Instant View tables blank."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/BackDrawable.java",
@@ -837,14 +958,16 @@
       "upstream": "org/telegram/ui/ActionBar/SimpleTextView.java",
       "vendored_at": "009e97356",
       "modified": true,
-      "port_mode": "native"
+      "port_mode": "exact",
+      "notes": "Replaced 309-line native port with full upstream 1346-line copy. Host wiring: DialogCell.FixedWidthSpan replaced with standalone FixedWidthSpan. SpoilerEffect is a no-op stub."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/WebInstantView.java",
       "upstream": "org/telegram/ui/web/WebInstantView.java",
       "vendored_at": "009e97356",
-      "modified": false,
-      "port_mode": "exact"
+      "modified": true,
+      "port_mode": "exact",
+      "notes": "Host wiring only: readHTML resolves the offscreen extraction WebView's host Activity/Context via LaunchActivity.getActionBarLayoutActivity() (real MainActivity) instead of the non-window LaunchActivity.instance stub; without this the local Instant View page never builds and the IV menu item stays disabled. Animation/parsing/measurement bodies remain upstream-shaped."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/BrowserHistory.java",
@@ -857,8 +980,9 @@
       "local": "telegram/src/main/java/org/telegram/ui/web/WebMetadataCache.java",
       "upstream": "org/telegram/ui/web/WebMetadataCache.java",
       "vendored_at": "009e97356",
-      "modified": false,
-      "port_mode": "exact"
+      "modified": true,
+      "port_mode": "exact",
+      "notes": "Host wiring only: retrieveFaviconAndSitename resolves the offscreen capture WebView's host Activity/Context via LaunchActivity.getActionBarLayoutActivity() (real MainActivity) instead of the non-window LaunchActivity.instance stub (same fix as WebInstantView.readHTML)."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/SearchEngine.java",
@@ -923,19 +1047,20 @@
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native",
-      "notes": "Minimal native WebView host for ArticleViewer URL loading; WebViewProxy/getProxy, MyWebView.setContainers/evaluateJS/opener, basic webview_ext/webview_share/webview_app_ext injection, low-risk URL/title/favicon/history metadata state, find-in-page search state with destroyed-WebView guards, and preserve/replace WebView rebinds now mirror the upstream API surface, while Telegram bot WebApp event handling remains stubbed."
+      "notes": "Minimal native WebView host for ArticleViewer URL loading; WebViewProxy/getProxy, MyWebView.setContainers/evaluateJS/opener, basic webview_ext/webview_share/webview_app_ext injection, low-risk URL/title/favicon/history metadata state, find-in-page search state with destroyed-WebView guards, and preserve/replace WebView rebinds mirror the upstream API surface (resetWebView() clears the field like upstream so a preserved WebView is owned solely by ArticleViewer.CachedWeb; re-attachment is replaceWebView's job in attach(); the WebViewClient/WebChromeClient page-load/title/icon callbacks null-guard that field since a preserved WebView can still fire callbacks after it is cleared), while Telegram bot WebApp event handling remains stubbed."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/AddressBarList.java",
       "upstream": "org/telegram/ui/web/AddressBarList.java",
       "vendored_at": "009e97356",
-      "modified": false,
+      "modified": true,
       "port_mode": "exact",
       "forced_exact": [
         "measurement",
         "drawing",
         "recycling"
-      ]
+      ],
+      "notes": "Backend adapted: BookmarksList now reads from the local WebBookmarks store (BrowserHistory.Entry items) instead of MediaDataController.loadMedia over MTProto; links list retyped MessageObject -> BrowserHistory.Entry; BookmarkView.set(BrowserHistory.Entry,...) gained withArrow/checked params. BookmarksList.load() uses a single WebBookmarks.getAll(callback) population path (callback always fires, synchronously when already loaded) to avoid the prior dual sync/async branch race. Rendering/measurement/drawing unchanged."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/WebBrowserSettings.java",
@@ -955,8 +1080,9 @@
       "local": "telegram/src/main/java/org/telegram/ui/web/BookmarksFragment.java",
       "upstream": "org/telegram/ui/web/BookmarksFragment.java",
       "vendored_at": "009e97356",
-      "modified": false,
-      "port_mode": "exact"
+      "modified": true,
+      "port_mode": "exact",
+      "notes": "Backend adapted: list/selection retyped MessageObject -> BrowserHistory.Entry over the local WebBookmarks store; multi-select delete removes from WebBookmarks instead of MessagesController.deleteMessages (a Telegram stub); 'go to message' (Saved-Messages ChatActivity) is a no-op with its action-mode item hidden. Layout unchanged."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/bots/ChatAttachAlertBotWebViewLayout.java",
@@ -1040,7 +1166,8 @@
       "upstream": "org/telegram/ui/Components/ItemOptions.java",
       "vendored_at": "009e97356",
       "modified": true,
-      "port_mode": "native"
+      "port_mode": "native",
+      "notes": "Browser three-dot menu host (used by WebActionBar). Chat/profile-only decorations commented out for the :telegram subset: blur3 scrim (scrimBlur3SourceBitmap/Blur3Utils/BlurredBackground*/BlurredBackgroundProviderImpl/ScrimOptions), UserCell/ProfileActivity/SharedPhotoVideoCell2 scrim branches, HintView2.cutInFancyHalf — dim/scrim fall back to drawColor + generic scrimView draw. Core menu API (add/addText/addGap/addView/show/setGravity/translate/setupRadialSelectors) preserved. DimView rectTmp2 is RectF locally vs upstream Rect (host-wiring type difference; default setBounds path)."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/DialogsItemAnimator.java",
@@ -1112,7 +1239,8 @@
       "upstream": "org/telegram/ui/Components/UniversalAdapter.java",
       "vendored_at": "009e97356",
       "modified": true,
-      "port_mode": "native"
+      "port_mode": "native",
+      "notes": "Small NativeDo UniversalAdapter (no listView/dialog/sections/reorder/chart surface). The 5 built-in view types now create and bind the real upstream cells exactly as upstream does, so fragment casts succeed and styling matches Telegram: VIEW_TYPE_HEADER -> HeaderCell.setText; VIEW_TYPE_GRAY_SECTION -> GraySectionCell.setText/setRightText (non-section variant; this adapter has no listView.hasSections()); VIEW_TYPE_TEXT -> TextCell.setText/setTextAndIcon/setTextAndValue(AndIcon) + accent/red/default setColors; VIEW_TYPE_CHECK -> TextCheckCell.setTextAndCheck/itemId/setChecked (setDrawCheckRipple(true) at create, since asRippleCheck collapses to VIEW_TYPE_CHECK locally); VIEW_TYPE_SHADOW -> TextInfoPrivacyCell.setFixedSize/setText + greydivider* background via Theme.getThemedDrawable. The custom/factory view types (UItemFactory, BookmarkCell, WebsiteCell, SettingCell, InfoCell, SpaceCell, RadioCell, flicker, space) still use UniversalCells. OMITTED vs upstream shadow bind: asCenterShadow centered-text (HintView2.cutInFancyHalf), listView.hasSections() clearing, field_carret_empty no-neighbour placeholder (resource not vendored -> transparent), dialog-mode layering."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/UniversalFragment.java",
@@ -1180,6 +1308,74 @@
       "forced_exact": [],
       "modified": false,
       "notes": "Vendored as dependency of ProfileGooeyView"
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/messenger/wallpaper/WallpaperGiftPatternPosition.java",
+      "upstream": "org/telegram/messenger/wallpaper/WallpaperGiftPatternPosition.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Copied verbatim. Vendored as a dependency of the real SvgHelper SAX parser (gift-pattern <rect> element handling and the SvgResult.getGiftPatternPositions() return type). All deps already present in :telegram."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Cells/DialogRadioCell.java",
+      "upstream": "org/telegram/ui/Cells/DialogRadioCell.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Copied verbatim. Used by the WebBrowserSettings search-engine picker dialog (and other radio dialogs). All deps (RadioButton, LayoutHelper, Theme, AndroidUtilities, LocaleController) are vendored."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/ExtendedGridLayoutManager.java",
+      "upstream": "org/telegram/ui/Components/ExtendedGridLayoutManager.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Copied verbatim. Replaces the upstream RecyclerListView.ExtendedGridLayoutManager that the local RecyclerListView stub doesn't expose."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/ListView/AdapterWithDiffUtils.java",
+      "upstream": "org/telegram/ui/Components/ListView/AdapterWithDiffUtils.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Copied verbatim. Required by UniversalAdapter; not vendored previously because no adapter had been copied in."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Cells/TextSettingsCell.java",
+      "upstream": "org/telegram/ui/Cells/TextSettingsCell.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Verbatim upstream except RLottieImageView replaced with android.widget.ImageView (RLottie is not vendored). Used by UniversalAdapter VIEW_TYPE_TEXT_SETTINGS. Deps (BackupImageView, CubicBezierInterpolator, LayoutHelper) are vendored."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/CheckBoxSquare.java",
+      "upstream": "org/telegram/ui/Cells/CheckBoxSquare.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Upstream CheckBoxSquare (Components/, 193 lines) uses a bitmap-cached drawBitmap/drawCanvas path. Replaced with a Path/RectF stroke-based draw (86 lines) because the upstream approach depends on CheckBoxSquare/Theme.bitmap-resource machinery that the local Theme doesn't expose. Public API (setChecked/checked/colors/key paths) is preserved."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Cells/FixedWidthSpan.java",
+      "upstream": "org/telegram/ui/Cells/DialogCell.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "FixedWidthSpan extracted from upstream DialogCell.FixedWidthSpan inner class to a top-level class. ReplacementSpan that reserves a fixed pixel width, used by SimpleTextView's replaceTextWithDrawable. Implementation byte-identical to the original inner class."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/CheckBoxBase.java",
+      "upstream": "org/telegram/ui/Components/CheckBoxBase.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "drawing",
+        "animation"
+      ],
+      "notes": "Copied verbatim. Drawing/animation helper that upstream CheckBox2 delegates to. Required for the CheckBox2 vendoring below; the previous NativeDo inline rewrite dropped cutCheck, MessageDrawable, setNum, setDuration, setResourcesProvider, and the iconDrawable path. Deps (CubicBezierInterpolator.EASE_OUT, ColorUtils.blendARGB, LocaleController, GenericProvider, AndroidUtilities.dp/lerp) are all vendored."
     }
   ],
   "resources": [
@@ -1252,6 +1448,41 @@
       "upstream_dir": "TMessagesProj/src/main/res/drawable",
       "local_glob": "apps/android/app/src/main/res/drawable",
       "vendored_at": "009e97356"
+    },
+    {
+      "_comment": "Browser/AddressBar icons copied from upstream alongside the WebActionBar/UniversalCells browser work.",
+      "kind": "drawable",
+      "files": [
+        "arrow_more.png",
+        "attach_arrow_right.png",
+        "ic_ab_back.png",
+        "menu_instant_view.png",
+        "msg_arrow_forward.png"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356",
+      "notes": "WebActionBar (arrow_more, ic_ab_back, menu_instant_view, msg_arrow_forward) and AddressBarList attach row (attach_arrow_right) icons. All byte-identical to upstream across mdpi/hdpi/xhdpi/xxhdpi."
+    },
+    {
+      "kind": "anim",
+      "files": [
+        "popup_context_in.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/anim",
+      "local_glob": "apps/android/telegram/src/main/res/anim",
+      "vendored_at": "009e97356",
+      "notes": "Context-menu enter animation referenced by ActionBarPopupWindowLayout. Verbatim from upstream (only difference: local file has a trailing newline)."
+    },
+    {
+      "kind": "values",
+      "files": [
+        "ids.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/values",
+      "local_glob": "apps/android/telegram/src/main/res/values",
+      "vendored_at": "009e97356",
+      "notes": "Tag IDs needed by ActionBarPopupWindow (width_tag, object_tag, fit_width_tag). Subset of upstream ids.xml — only the entries the vendored ActionBarPopupWindow references locally; chat/menu/acc-action IDs upstream that NativeDo doesn't use are omitted."
     }
   ]
 }

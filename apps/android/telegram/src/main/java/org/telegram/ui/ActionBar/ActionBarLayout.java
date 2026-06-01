@@ -1,25 +1,9 @@
 /*
- * This file is part of NativeDo.
+ * This is the source code of Telegram for Android v. 5.x.x.
+ * It is licensed under GNU GPL v. 2 or later.
+ * You should have received a copy of the license in this archive (see LICENSE).
  *
- * Derived in part from Telegram for Android's
- * org/telegram/ui/ActionBar/ActionBarLayout.java.
- *
- * Source reference:
- * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java
- *
- * NativeDo milestone slice: keeps Telegram's single-stack container choreography,
- * NavigationParams-backed push/pop frame animation, edge swipe-back, predictive-back wiring,
- * attached-sheet stack host, collapsed browser tabs, and expanded tabs overlay; omits drawer,
- * previews, dialogs, story layers, BottomSheetTabDialog, and multi-window branches.
- *
- * Copyright (C) Telegram FZ-LLC
- * Copyright (C) 2026 NativeDo contributors
- *
- * This program is free software: you can redistribute it and/or modify
- * it under terms of GNU General Public License version 2 or later as published by
- * the Free Software Foundation.
- *
- * SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright Nikolai Kudashov, 2013-2018.
  */
 package org.telegram.ui.ActionBar;
 
@@ -58,7 +42,6 @@ import java.util.List;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.LayoutHelper;
-import org.telegram.ui.LaunchActivity;
 
 public class ActionBarLayout extends FrameLayout implements INavigationLayout, Theme.ThemeDelegate {
 
@@ -208,7 +191,8 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
 
     public ActionBarLayout(Context context) {
         super(context);
-        LaunchActivity.setActionBarLayout(this);
+        // Root layout is registered as the global by MainActivity. Sheets (ActionBarSheet)
+        // create their own ActionBarLayout and must NOT clobber LaunchActivity.actionBarLayout.
         AndroidUtilities.init(context);
         setClipChildren(false);
         setClipToPadding(false);

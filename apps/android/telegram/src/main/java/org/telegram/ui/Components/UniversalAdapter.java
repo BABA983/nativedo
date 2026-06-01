@@ -1,288 +1,459 @@
 package org.telegram.ui.Components;
 
+import static org.telegram.messenger.AndroidUtilities.dp;
+
 import android.content.Context;
-import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.LayerDrawable;
 import android.text.TextUtils;
-import android.view.MotionEvent;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
 import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
-import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.RecyclerView;
 
-import java.util.ArrayList;
-import java.util.Objects;
-
+import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.R;
+import org.telegram.messenger.Utilities;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Cells.CheckBoxCell;
+import org.telegram.ui.Cells.DialogRadioCell;
+import org.telegram.ui.Cells.GraySectionCell;
+import org.telegram.ui.Cells.HeaderCell;
+import org.telegram.ui.Cells.TextCell;
+import org.telegram.ui.Cells.TextCheckCell;
+import org.telegram.ui.Cells.TextInfoPrivacyCell;
+import org.telegram.ui.Cells.TextSettingsCell;
+import org.telegram.ui.Components.ListView.AdapterWithDiffUtils;
 
-public class UniversalAdapter extends RecyclerListView.SelectionAdapter {
+import java.util.ArrayList;
 
+import me.vkryl.core.BitwiseUtils;
+
+public class UniversalAdapter extends AdapterWithDiffUtils {
+
+    public static final int VIEW_TYPE_CUSTOM_SHADOW = -4;
+    public static final int VIEW_TYPE_FULLSCREEN_CUSTOM = -3;
+    public static final int VIEW_TYPE_FULLY_CUSTOM = -2;
     public static final int VIEW_TYPE_CUSTOM = -1;
+
     public static final int VIEW_TYPE_HEADER = 0;
+    public static final int VIEW_TYPE_BLACK_HEADER = 1;
+    public static final int VIEW_TYPE_TOPVIEW = 2;
+
     public static final int VIEW_TYPE_TEXT = 3;
     public static final int VIEW_TYPE_CHECK = 4;
+    public static final int VIEW_TYPE_TEXT_CHECK = 5;
+    public static final int VIEW_TYPE_ICON_TEXT_CHECK = 6;
     public static final int VIEW_TYPE_SHADOW = 7;
+    public static final int VIEW_TYPE_LARGE_SHADOW = 8;
+    public static final int VIEW_TYPE_CHECKRIPPLE = 9;
     public static final int VIEW_TYPE_RADIO = 10;
+    public static final int VIEW_TYPE_FILTER_CHAT = 11;
+    public static final int VIEW_TYPE_FILTER_CHAT_CHECK = 12;
+    public static final int VIEW_TYPE_USER_ADD = 13;
+    public static final int VIEW_TYPE_SLIDE = 14;
+    public static final int VIEW_TYPE_INTSLIDE = 15;
+    public static final int VIEW_TYPE_QUICK_REPLY = 16;
+    public static final int VIEW_TYPE_LARGE_QUICK_REPLY = 17;
+
+    public static final int VIEW_TYPE_CHART_LINEAR = 18;
+    public static final int VIEW_TYPE_CHART_DOUBLE_LINEAR = 19;
+    public static final int VIEW_TYPE_CHART_STACK_BAR = 20;
+    public static final int VIEW_TYPE_CHART_BAR = 21;
+    public static final int VIEW_TYPE_CHART_STACK_LINEAR = 22;
+    public static final int VIEW_TYPE_CHART_LINEAR_BAR = 23;
+
+    public static final int VIEW_TYPE_PROCEED_OVERVIEW = 24;
+    public static final int VIEW_TYPE_TRANSACTION = 25;
+
+    public static final int VIEW_TYPE_LARGE_HEADER = 26;
+    public static final int VIEW_TYPE_RADIO_USER = 27;
+    public static final int VIEW_TYPE_SPACE = 28;
+
+    public static final int VIEW_TYPE_BUSINESS_LINK = 29;
+
+    public static final int VIEW_TYPE_RIGHT_ICON_TEXT = 30;
+
     public static final int VIEW_TYPE_GRAY_SECTION = 31;
-    public static final int VIEW_TYPE_BOOKMARK = 1000;
-    public static final int VIEW_TYPE_WEBSITE = 1001;
-    public static final int VIEW_TYPE_SETTING = 1002;
-    public static final int VIEW_TYPE_INFO = 1003;
-    public static final int VIEW_TYPE_SPACE = 1004;
-    public static final int VIEW_TYPE_FLICKER = 1005;
+    public static final int VIEW_TYPE_PROFILE_CELL = 32;
+    public static final int VIEW_TYPE_SEARCH_MESSAGE = 33;
+    public static final int VIEW_TYPE_FLICKER = 34;
+    public static final int VIEW_TYPE_ROUND_CHECKBOX = 35;
+    public static final int VIEW_TYPE_USER_GROUP_CHECKBOX = 36;
+    public static final int VIEW_TYPE_USER_CHECKBOX = 37;
+    public static final int VIEW_TYPE_SHADOW_COLLAPSE_BUTTON = 38;
+    public static final int VIEW_TYPE_SWITCH = 39;
+    public static final int VIEW_TYPE_EXPANDABLE_SWITCH = 40;
+    public static final int VIEW_TYPE_ROUND_GROUP_CHECKBOX = 41;
+    public static final int VIEW_TYPE_ANIMATED_HEADER = 42;
+    public static final int VIEW_TYPE_TEXT_SETTINGS = 43;
 
+    protected final RecyclerListView listView;
     private final Context context;
-    private final UniversalListCallbacks.Fill fillItems;
-    @Nullable private final UniversalListCallbacks.Click onClick;
-    @Nullable private final UniversalListCallbacks.LongClick onLongClick;
-    private final ArrayList<UItem> items = new ArrayList<>();
-    private float lastTouchX;
-    private float lastTouchY;
+    public final int currentAccount;
+    private final int classGuid;
+    private final boolean dialog;
     private boolean applyBackground = true;
+    protected Utilities.Callback2<ArrayList<UItem>, UniversalAdapter> fillItems;
+    private final Theme.ResourcesProvider resourcesProvider;
 
-    public void setApplyBackground(boolean value) {
-        applyBackground = value;
+    private final ArrayList<UItem> oldItems = new ArrayList<>();
+    private final ArrayList<UItem> items = new ArrayList<>();
+
+    public UniversalAdapter(
+        RecyclerListView listView,
+        Context context,
+        int currentAccount,
+        int classGuid,
+        Utilities.Callback2<ArrayList<UItem>, UniversalAdapter> fillItems,
+        Theme.ResourcesProvider resourcesProvider
+    ) {
+        this(listView, context, currentAccount, classGuid, false, fillItems, resourcesProvider);
     }
 
     public UniversalAdapter(
-            Context context,
-            UniversalListCallbacks.Fill fillItems,
-            @Nullable UniversalListCallbacks.Click onClick,
-            @Nullable UniversalListCallbacks.LongClick onLongClick
+        RecyclerListView listView,
+        Context context,
+        int currentAccount,
+        int classGuid,
+        boolean dialog,
+        Utilities.Callback2<ArrayList<UItem>, UniversalAdapter> fillItems,
+        Theme.ResourcesProvider resourcesProvider
     ) {
+        super();
+        this.listView = listView;
         this.context = context;
+        this.currentAccount = currentAccount;
+        this.classGuid = classGuid;
+        this.dialog = dialog;
         this.fillItems = fillItems;
-        this.onClick = onClick;
-        this.onLongClick = onLongClick;
+        this.resourcesProvider = resourcesProvider;
         update(false);
     }
 
-    public void update(boolean animated) {
-        ArrayList<UItem> oldItems = new ArrayList<>(items);
-        ArrayList<UItem> newItems = new ArrayList<>();
-        if (fillItems != null) {
-            fillItems.run(newItems, this);
-        }
-        if (!animated || items.isEmpty()) {
-            items.clear();
-            items.addAll(newItems);
-            notifyDataSetChanged();
-            return;
-        }
-        DiffUtil.DiffResult diffResult = DiffUtil.calculateDiff(new DiffUtil.Callback() {
-            @Override
-            public int getOldListSize() {
-                return oldItems.size();
-            }
-
-            @Override
-            public int getNewListSize() {
-                return newItems.size();
-            }
-
-            @Override
-            public boolean areItemsTheSame(int oldItemPosition, int newItemPosition) {
-                return isSameItem(oldItems.get(oldItemPosition), newItems.get(newItemPosition));
-            }
-
-            @Override
-            public boolean areContentsTheSame(int oldItemPosition, int newItemPosition) {
-                return isSameContent(oldItems.get(oldItemPosition), newItems.get(newItemPosition));
-            }
-        }, false);
-        items.clear();
-        items.addAll(newItems);
-        diffResult.dispatchUpdatesTo(this);
+    public void setApplyBackground(boolean applyBackground) {
+        this.applyBackground = applyBackground;
     }
 
-    @Override
-    public int getItemViewType(int position) {
-        UItem item = getItem(position);
-        return item == null ? VIEW_TYPE_SHADOW : item.viewType;
+    private static class Section {
+        public int start, end;
+        public boolean contains(int position) {
+            return position >= start && position <= end;
+        }
+    }
+    public int itemsOffset = 0;
+    private final ArrayList<Section> whiteSections = new ArrayList<>();
+    private final ArrayList<Section> reorderSections = new ArrayList<>();
+    private Section currentWhiteSection, currentReorderSection;
+    public void whiteSectionStart() {
+        currentWhiteSection = new Section();
+        currentWhiteSection.start = itemsOffset + items.size();
+        currentWhiteSection.end = -1;
+        whiteSections.add(currentWhiteSection);
+    }
+    public void whiteSectionEnd() {
+        if (currentWhiteSection != null) {
+            currentWhiteSection.end = Math.max(0, itemsOffset + items.size() - 1);
+            currentWhiteSection = null;
+        }
+    }
+
+    public int reorderSectionStart() {
+        currentReorderSection = new Section();
+        currentReorderSection.start = items.size();
+        currentReorderSection.end = -1;
+        reorderSections.add(currentReorderSection);
+        return reorderSections.size() - 1;
+    }
+    public void reorderSectionEnd() {
+        if (currentReorderSection != null) {
+            currentReorderSection.end = Math.max(0, items.size() - 1);
+        }
+    }
+
+    private void updateReorderSections() {
+        if (listView == null) return;
+        if (listView.forcedSections == null) listView.forcedSections = new ArrayList<>();
+        else listView.forcedSections.clear();
+
+        for (Section section : whiteSections) {
+            listView.forcedSections.add(AndroidUtilities.pack(section.start, section.end));
+        }
+    }
+
+    public boolean isReorderItem(int position) {
+        return getReorderSectionId(position) >= 0;
+    }
+    public int getReorderSectionId(int position) {
+        for (int i = 0; i < reorderSections.size(); ++i) {
+            if (reorderSections.get(i).contains(position))
+                return i;
+        }
+        return -1;
+    }
+
+    private int orderChangedId;
+    private boolean orderChanged;
+    public void swapElements(int fromPosition, int toPosition) {
+        if (onReordered == null) return;
+        int fromPositionReorderId = getReorderSectionId(fromPosition);
+        int toPositionReorderId = getReorderSectionId(toPosition);
+        if (fromPositionReorderId < 0 || fromPositionReorderId != toPositionReorderId) {
+            return;
+        }
+        UItem fromItem = items.get(fromPosition);
+        UItem toItem = items.get(toPosition);
+        boolean fromItemHadDivider = hasDivider(fromPosition);
+        boolean toItemHadDivider = hasDivider(toPosition);
+        items.set(fromPosition, toItem);
+        items.set(toPosition, fromItem);
+        notifyItemMoved(fromPosition, toPosition);
+        if (hasDivider(toPosition) != fromItemHadDivider) {
+            notifyItemChanged(toPosition, 3);
+        }
+        if (hasDivider(fromPosition) != toItemHadDivider) {
+            notifyItemChanged(fromPosition, 3);
+        }
+        if (orderChanged && orderChangedId != fromPositionReorderId) {
+            callReorder(orderChangedId);
+        }
+        orderChanged = true;
+        orderChangedId = fromPositionReorderId;
+    }
+
+    private void callReorder(int id) {
+        if (id < 0 || id >= reorderSections.size()) return;
+        Section section = reorderSections.get(id);
+        onReordered.run(id, new ArrayList(items.subList(section.start, section.end + 1)));
+        orderChanged = false;
+    }
+
+    public void reorderDone() {
+        if (orderChanged) {
+            callReorder(orderChangedId);
+        }
+    }
+
+    private Utilities.Callback2<Integer, ArrayList<UItem>> onReordered;
+    public void listenReorder(Utilities.Callback2<Integer, ArrayList<UItem>> onReordered) {
+        this.onReordered = onReordered;
+    }
+
+    private boolean allowReorder;
+    public void updateReorder(boolean allowReorder) {
+        this.allowReorder = allowReorder;
+    }
+
+    public void drawWhiteSections(Canvas canvas, RecyclerListView listView) {
+        for (int i = 0; i < whiteSections.size(); ++i) {
+            Section section = whiteSections.get(i);
+            if (section.end < 0) continue;
+            listView.drawSectionBackground(canvas, section.start, section.end, getThemedColor(dialog ? Theme.key_dialogBackground : Theme.key_windowBackgroundWhite));
+        }
+    }
+
+    public void update(boolean animated) {
+        if (listView != null && listView.isComputingLayout()) {
+            listView.post(() -> updateInternal(animated));
+        } else {
+            updateInternal(animated);
+        }
+    }
+
+    private void updateInternal(boolean animated) {
+        if (listView != null && listView.isComputingLayout())
+            return;
+        oldItems.clear();
+        oldItems.addAll(items);
+        items.clear();
+        currentWhiteSection = null;
+        whiteSections.clear();
+        reorderSections.clear();
+        if (fillItems != null) {
+            fillItems.run(items, this);
+            updateReorderSections();
+            if (animated) {
+                setItems(oldItems, items);
+            } else {
+                notifyDataSetChanged();
+            }
+        }
+    }
+
+    public void updateWithoutNotify() {
+        oldItems.clear();
+        oldItems.addAll(items);
+        items.clear();
+        whiteSections.clear();
+        reorderSections.clear();
+        if (fillItems != null) {
+            fillItems.run(items, this);
+        }
+        updateReorderSections();
+    }
+
+    public boolean shouldApplyBackground(int viewType) {
+        if (!applyBackground) return false;
+        if (viewType >= UItem.factoryViewTypeStartsWith) {
+            return true;
+        }
+        switch (viewType) {
+            case VIEW_TYPE_HEADER:
+            case VIEW_TYPE_ANIMATED_HEADER:
+            case VIEW_TYPE_BLACK_HEADER:
+            case VIEW_TYPE_TEXT:
+            case VIEW_TYPE_CHECK:
+            case VIEW_TYPE_CHECKRIPPLE:
+            case VIEW_TYPE_RADIO:
+            case VIEW_TYPE_FULLSCREEN_CUSTOM:
+            case VIEW_TYPE_FILTER_CHAT:
+            case VIEW_TYPE_FILTER_CHAT_CHECK:
+            case VIEW_TYPE_SPACE:
+            case VIEW_TYPE_FLICKER:
+            case VIEW_TYPE_ROUND_CHECKBOX:
+            case VIEW_TYPE_ROUND_GROUP_CHECKBOX:
+            case VIEW_TYPE_USER_GROUP_CHECKBOX:
+            case VIEW_TYPE_TEXT_SETTINGS:
+                return true;
+        }
+        return false;
     }
 
     @NonNull
     @Override
     public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
         View view;
-        UItem.ViewFactory factory = findFactoryForViewType(viewType);
-        if (factory != null) {
-            view = factory.createView(context);
+        final int key_background = dialog ? Theme.key_dialogBackground : Theme.key_windowBackgroundWhite;
+        if (viewType >= UItem.factoryViewTypeStartsWith) {
+            UItem.ViewFactory factory = UItem.findFactory(viewType);
+            if (factory != null) {
+                if (factory instanceof UItem.UItemFactory) {
+                    view = ((UItem.UItemFactory<?>) factory).createView(context, listView, currentAccount, classGuid, resourcesProvider);
+                } else {
+                    view = factory.createView(context);
+                }
+            } else {
+                view = new View(context);
+            }
         } else switch (viewType) {
             case VIEW_TYPE_HEADER:
-                view = new UniversalCells.SectionCell(context, true);
+                if (dialog) {
+                    view = new HeaderCell(context, Theme.key_windowBackgroundWhiteBlueHeader, 21, 15, 0, false, resourcesProvider);
+                } else {
+                    view = new HeaderCell(context, resourcesProvider);
+                }
                 break;
-            case VIEW_TYPE_GRAY_SECTION:
-                view = new UniversalCells.SectionCell(context, false);
-                view.setTag(RecyclerListView.TAG_NOT_SECTION);
+            case VIEW_TYPE_ANIMATED_HEADER:
+                view = new HeaderCell(context, Theme.key_windowBackgroundWhiteBlueHeader, 21, 15, 0, false, true, resourcesProvider);
+                break;
+            case VIEW_TYPE_TEXT_SETTINGS:
+                view = new TextSettingsCell(context, resourcesProvider);
+                break;
+            case VIEW_TYPE_BLACK_HEADER:
+                view = new HeaderCell(context, Theme.key_windowBackgroundWhiteBlackText, 17, 15, false, resourcesProvider);
+                break;
+            case VIEW_TYPE_LARGE_HEADER:
+                HeaderCell headerCell = new HeaderCell(context, Theme.key_windowBackgroundWhiteBlackText, 23, 20, 0, false, resourcesProvider);
+                headerCell.setTextSize(20);
+                view = headerCell;
                 break;
             case VIEW_TYPE_TEXT:
-                view = new UniversalCells.TextCell(context);
+                view = new TextCell(context, resourcesProvider);
                 break;
             case VIEW_TYPE_CHECK:
-                view = new UniversalCells.CheckCell(context);
+            case VIEW_TYPE_CHECKRIPPLE:
+                TextCheckCell cell = new TextCheckCell(context, resourcesProvider);
+                if (viewType == VIEW_TYPE_CHECKRIPPLE) {
+                    cell.setDrawCheckRipple(true);
+                    cell.setColors(Theme.key_windowBackgroundCheckText, Theme.key_switchTrackBlue, Theme.key_switchTrackBlueChecked, Theme.key_switchTrackBlueThumb, Theme.key_switchTrackBlueThumbChecked);
+                    cell.setTypeface(AndroidUtilities.bold());
+                    cell.setHeight(56);
+                }
+                view = cell;
                 break;
             case VIEW_TYPE_RADIO:
-                view = new UniversalCells.RadioCell(context);
-                break;
-            case VIEW_TYPE_BOOKMARK:
-                view = new UniversalCells.BookmarkCell(context);
-                break;
-            case VIEW_TYPE_WEBSITE:
-                view = new UniversalCells.WebsiteCell(context);
-                break;
-            case VIEW_TYPE_SETTING:
-                view = new UniversalCells.SettingCell(context);
-                break;
-            case VIEW_TYPE_INFO:
-                view = new UniversalCells.InfoCell(context);
-                break;
-            case VIEW_TYPE_SPACE:
-                view = new UniversalCells.SpaceCell(context);
-                view.setTag(RecyclerListView.TAG_NOT_SECTION);
-                break;
-            case VIEW_TYPE_FLICKER:
-                view = new FlickerLoadingView(context);
+                view = new DialogRadioCell(context);
                 break;
             case VIEW_TYPE_CUSTOM:
+            case VIEW_TYPE_CUSTOM_SHADOW:
                 view = new FrameLayout(context) {
                     @Override
                     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-                        super.onMeasure(
-                                MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.EXACTLY),
-                                heightMeasureSpec
-                        );
+                        super.onMeasure(MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.EXACTLY), heightMeasureSpec);
+                    }
+                };
+                if (viewType == VIEW_TYPE_CUSTOM_SHADOW) {
+                    view.setTag(RecyclerListView.TAG_NOT_SECTION);
+                }
+                break;
+            case VIEW_TYPE_FULLY_CUSTOM:
+                view = new FrameLayout(context) {
+                    @Override
+                    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+                        widthMeasureSpec = MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.EXACTLY);
+                        measureChildren(widthMeasureSpec, heightMeasureSpec);
+                        int height = 0;
+                        for (int i = 0; i < getChildCount(); ++i) {
+                            View child = getChildAt(i);
+                            height = Math.max(height, child.getMeasuredHeight());
+                        }
+                        super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY));
                     }
                 };
                 break;
-            case VIEW_TYPE_SHADOW:
+            case VIEW_TYPE_FULLSCREEN_CUSTOM:
+                view = new FullscreenCustomFrameLayout(context);
+                break;
+            case VIEW_TYPE_SPACE:
+                view = new SpaceView(context);
+                break;
+            case VIEW_TYPE_GRAY_SECTION:
+                if (listView != null && listView.hasSections()) {
+                    view = new GraySectionCell(context, 28, resourcesProvider);
+                    ((GraySectionCell) view).setNoBackground(true);
+                } else {
+                    view = new GraySectionCell(context, resourcesProvider);
+                }
+                break;
+            case VIEW_TYPE_FLICKER:
+                FlickerLoadingView flickerLoadingView = new FlickerLoadingView(context, resourcesProvider);
+                flickerLoadingView.setIsSingleCell(true);
+                view = flickerLoadingView;
+                break;
             default:
-                view = new UniversalCells.ShadowInfoCell(context);
-                view.setTag(RecyclerListView.TAG_NOT_SECTION);
+            case VIEW_TYPE_SHADOW:
+            case VIEW_TYPE_LARGE_SHADOW:
+                view = new TextInfoPrivacyCell(context, resourcesProvider);
+                break;
+            case VIEW_TYPE_ROUND_CHECKBOX:
+            case VIEW_TYPE_ROUND_GROUP_CHECKBOX:
+            case VIEW_TYPE_USER_GROUP_CHECKBOX:
+                int checkBoxType = viewType == VIEW_TYPE_USER_GROUP_CHECKBOX
+                    ? CheckBoxCell.TYPE_CHECK_BOX_USER_GROUP
+                    : viewType == VIEW_TYPE_ROUND_GROUP_CHECKBOX
+                        ? CheckBoxCell.TYPE_CHECK_BOX_ROUND_GROUP
+                        : CheckBoxCell.TYPE_CHECK_BOX_ROUND;
+                CheckBoxCell checkBoxCell = new CheckBoxCell(context, checkBoxType, 21, true, resourcesProvider);
+                checkBoxCell.getCheckBoxRound().setColor(Theme.key_switch2TrackChecked, Theme.key_radioBackground, Theme.key_checkboxCheck);
+                view = checkBoxCell;
                 break;
         }
-        if (applyBackground && shouldApplyBackground(viewType)) {
-            view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        if (shouldApplyBackground(viewType)) {
+            view.setBackgroundColor(getThemedColor(key_background));
         }
-        return new RecyclerView.ViewHolder(view) {
-        };
+        return new RecyclerListView.Holder(view);
     }
 
     @Override
-    @SuppressWarnings("unchecked")
-    public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
+    public int getItemViewType(int position) {
         UItem item = getItem(position);
-        if (item == null) {
-            return;
-        }
-        holder.itemView.setId(item.id);
-        boolean divider = hasDivider(position);
-        if (item.factory != null) {
-            item.factory.bindView(holder.itemView, item, divider, this);
-            bindClickListeners(holder, item);
-            return;
-        }
-        switch (holder.getItemViewType()) {
-            case VIEW_TYPE_HEADER:
-            case VIEW_TYPE_GRAY_SECTION:
-                ((UniversalCells.SectionCell) holder.itemView).setText(item.text);
-                break;
-            case VIEW_TYPE_TEXT:
-                ((UniversalCells.TextCell) holder.itemView).bind(item.text, item.subtext, item.textValue, item.iconResId, item.red, item.accent, divider);
-                break;
-            case VIEW_TYPE_CHECK:
-                ((UniversalCells.CheckCell) holder.itemView).bind(item.text, item.checked, divider);
-                break;
-            case VIEW_TYPE_RADIO:
-                ((UniversalCells.RadioCell) holder.itemView).bind(item.text, item.textValue, item.checked, divider);
-                break;
-            case VIEW_TYPE_BOOKMARK:
-                ((UniversalCells.BookmarkCell) holder.itemView).bind(
-                        item.text,
-                        item.subtext,
-                        item.object instanceof Bitmap ? (Bitmap) item.object : null,
-                        item.checked,
-                        item.longValue,
-                        divider
-                );
-                break;
-            case VIEW_TYPE_WEBSITE:
-                ArrayList<String> domains = item.object2 instanceof ArrayList ? (ArrayList<String>) item.object2 : new ArrayList<>();
-                if (domains.isEmpty() && !TextUtils.isEmpty(item.text)) {
-                    domains.add(item.text.toString());
-                }
-                ((UniversalCells.WebsiteCell) holder.itemView).bind(
-                        item.text,
-                        domains,
-                        item.object instanceof Bitmap ? (Bitmap) item.object : null,
-                        divider
-                );
-                break;
-            case VIEW_TYPE_SETTING:
-                ((UniversalCells.SettingCell) holder.itemView).bind(item.text, item.subtext, item.textValue, item.iconResId, item.red, item.accent, divider);
-                break;
-            case VIEW_TYPE_INFO:
-                ((UniversalCells.InfoCell) holder.itemView).bind(item.text, item.subtext, item.textValue, item.red, item.accent);
-                break;
-            case VIEW_TYPE_SPACE:
-                ((UniversalCells.SpaceCell) holder.itemView).bind((int) item.longValue);
-                break;
-            case VIEW_TYPE_FLICKER:
-                ((FlickerLoadingView) holder.itemView).setViewType(item.intValue);
-                break;
-            case VIEW_TYPE_CUSTOM:
-                bindCustomView((FrameLayout) holder.itemView, item.view);
-                break;
-            case VIEW_TYPE_SHADOW:
-            default:
-                ((UniversalCells.ShadowInfoCell) holder.itemView).setText(item.text);
-                break;
-        }
-        bindClickListeners(holder, item);
-    }
-
-    private void bindCustomView(FrameLayout container, @Nullable View view) {
-        container.removeAllViews();
-        if (view == null) {
-            return;
-        }
-        if (view.getParent() instanceof ViewGroup) {
-            ((ViewGroup) view.getParent()).removeView(view);
-        }
-        container.addView(view, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-    }
-
-    private void bindClickListeners(RecyclerView.ViewHolder holder, UItem item) {
-        if (!isEnabled(holder)) {
-            holder.itemView.setOnTouchListener(null);
-            holder.itemView.setOnClickListener(null);
-            holder.itemView.setOnLongClickListener(null);
-            return;
-        }
-        holder.itemView.setOnTouchListener((view, event) -> {
-            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
-                lastTouchX = event.getX();
-                lastTouchY = event.getY();
-            }
-            return false;
-        });
-        holder.itemView.setOnClickListener(onClick == null ? null : view -> {
-            int position = holder.getBindingAdapterPosition();
-            if (position != RecyclerView.NO_POSITION) {
-                UItem currentItem = getItem(position);
-                if (currentItem != null) {
-                    onClick.run(currentItem, view, position, lastTouchX, lastTouchY);
-                }
-            }
-        });
-        holder.itemView.setOnLongClickListener(onLongClick == null ? null : view -> {
-            int position = holder.getBindingAdapterPosition();
-            UItem currentItem = getItem(position);
-            return position != RecyclerView.NO_POSITION && currentItem != null && onLongClick.run(currentItem, view, position, lastTouchX, lastTouchY);
-        });
+        if (item == null) return 0;
+        return item.viewType;
     }
 
     private boolean hasDivider(int position) {
@@ -291,82 +462,319 @@ public class UniversalAdapter extends RecyclerListView.SelectionAdapter {
         return item != null && !item.hideDivider && nextItem != null && isShadow(nextItem.viewType) == isShadow(item.viewType);
     }
 
-    @Nullable
-    private UItem.ViewFactory findFactoryForViewType(int viewType) {
-        for (int i = 0; i < items.size(); i++) {
-            UItem item = items.get(i);
-            if (item != null && item.factory != null && item.viewType == viewType) {
-                return item.factory;
+    public static boolean isShadow(int viewType) {
+        if (viewType >= UItem.factoryViewTypeStartsWith) {
+            UItem.ViewFactory factory = UItem.findFactory(viewType);
+            return factory instanceof UItem.UItemFactory && ((UItem.UItemFactory<?>) factory).isShadow();
+        }
+        return (
+            viewType == VIEW_TYPE_SHADOW ||
+            viewType == VIEW_TYPE_LARGE_SHADOW ||
+            viewType == VIEW_TYPE_SHADOW_COLLAPSE_BUTTON ||
+            viewType == VIEW_TYPE_GRAY_SECTION ||
+            viewType == VIEW_TYPE_CUSTOM_SHADOW ||
+            viewType == VIEW_TYPE_SPACE ||
+            viewType == VIEW_TYPE_TOPVIEW ||
+            viewType == VIEW_TYPE_FULLY_CUSTOM
+        );
+    }
+
+    @Override
+    public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
+        UItem item = getItem(position);
+        UItem nextItem = getItem(position + 1);
+        UItem prevItem = getItem(position - 1);
+        if (item == null) return;
+        final int viewType = holder.getItemViewType();
+        final boolean divider = hasDivider(position);
+        updateColors(holder);
+        if (viewType >= UItem.factoryViewTypeStartsWith) {
+            UItem.ViewFactory factory = item.factory != null ? item.factory : UItem.findFactory(viewType);
+            if (factory != null) {
+                if (factory instanceof UItem.UItemFactory) {
+                    ((UItem.UItemFactory<?>) factory).bindView(holder.itemView, item, divider, this, listView instanceof UniversalRecyclerView ? (UniversalRecyclerView) listView : null);
+                } else {
+                    factory.bindView(holder.itemView, item, divider, this);
+                }
+            }
+        } else switch (viewType) {
+            case VIEW_TYPE_HEADER:
+            case VIEW_TYPE_BLACK_HEADER:
+            case VIEW_TYPE_LARGE_HEADER:
+                ((HeaderCell) holder.itemView).setText(item.text);
+                break;
+            case VIEW_TYPE_ANIMATED_HEADER:
+                HeaderCell animatedHeaderCell = (HeaderCell) holder.itemView;
+                animatedHeaderCell.setText(item.animatedText, animatedHeaderCell.id == item.id);
+                animatedHeaderCell.id = item.id;
+                break;
+            case VIEW_TYPE_TEXT_SETTINGS:
+                final TextSettingsCell settingsCell = (TextSettingsCell) holder.itemView;
+                settingsCell.getValueBackupImageView().setImageDrawable(null);
+                if (item.text != null) {
+                    if (item.subtext != null) {
+                        settingsCell.setTextAndValue(item.text, item.subtext, divider);
+                    } else {
+                        settingsCell.setText(item.text, divider);
+                    }
+                }
+                settingsCell.setIcon(item.iconResId);
+                break;
+            case VIEW_TYPE_TEXT:
+                TextCell cell = (TextCell) holder.itemView;
+                if (TextUtils.isEmpty(item.textValue)) {
+                    if (item.object instanceof Drawable) {
+                        cell.setTextAndIcon(item.text, (Drawable) item.object, divider);
+                    } else if (item.iconResId == 0) {
+                        cell.setText(item.text, divider);
+                    } else {
+                        cell.setTextAndIcon(item.text, item.iconResId, divider);
+                    }
+                } else {
+                    if (item.object instanceof Drawable) {
+                        cell.setTextAndValueAndIcon(item.text, item.textValue, (Drawable) item.object, divider);
+                    } else if (item.iconResId == 0) {
+                        cell.setTextAndValue(item.text, item.textValue, divider);
+                    } else {
+                        cell.setTextAndValueAndIcon(item.text, item.textValue, item.iconResId, divider);
+                    }
+                }
+                if (item.accent) {
+                    cell.setColors(Theme.key_windowBackgroundWhiteBlueText4, Theme.key_windowBackgroundWhiteBlueText4);
+                } else if (item.red) {
+                    cell.setColors(Theme.key_text_RedBold, Theme.key_text_RedRegular);
+                } else {
+                    cell.setColors(Theme.key_windowBackgroundWhiteGrayIcon, Theme.key_windowBackgroundWhiteBlackText);
+                }
+                break;
+            case VIEW_TYPE_CHECK:
+            case VIEW_TYPE_CHECKRIPPLE:
+                TextCheckCell checkCell = (TextCheckCell) holder.itemView;
+                if (checkCell.itemId == item.id) {
+                    checkCell.setChecked(item.checked);
+                }
+                checkCell.setEnabled(item.enabled, null);
+                checkCell.setTextAndCheck(item.text, item.checked, divider);
+                checkCell.itemId = item.id;
+                if (viewType == VIEW_TYPE_CHECKRIPPLE) {
+                    holder.itemView.setBackgroundColor(Theme.getColor(item.checked ? Theme.key_windowBackgroundChecked : Theme.key_windowBackgroundUnchecked));
+                }
+                break;
+            case VIEW_TYPE_RADIO:
+                DialogRadioCell radioCell = (DialogRadioCell) holder.itemView;
+                if (radioCell.itemId == item.id) {
+                    radioCell.setChecked(item.checked, true);
+                    radioCell.setEnabled(item.enabled, true);
+                } else {
+                    radioCell.setEnabled(item.enabled, false);
+                }
+                if (TextUtils.isEmpty(item.textValue)) {
+                    radioCell.setText(item.text, item.checked, divider);
+                } else {
+                    radioCell.setTextAndValue(item.text, item.textValue, item.checked, divider);
+                }
+                radioCell.itemId = item.id;
+                break;
+            case VIEW_TYPE_SHADOW:
+            case VIEW_TYPE_LARGE_SHADOW:
+                View cell3 = null;
+                TextInfoPrivacyCell cell2 = (TextInfoPrivacyCell) holder.itemView;
+                if (TextUtils.isEmpty(item.text)) {
+                    cell2.setFixedSize(viewType == VIEW_TYPE_LARGE_SHADOW ? 220 : 12);
+                    cell2.setText("");
+                } else {
+                    cell2.setFixedSize(0);
+                    cell2.setText(item.text);
+                }
+                if (item.accent) { // asCenterShadow
+                    cell2.setTextGravity(Gravity.CENTER);
+                    cell2.getTextView().setMaxWidth(AndroidUtilities.displaySize.x - dp(60));
+                    cell2.getTextView().setPadding(0, dp(17), 0, dp(17));
+                } else {
+                    cell2.setTextGravity(Gravity.START);
+                    cell2.getTextView().setMinWidth(0);
+                    cell2.getTextView().setMaxWidth(AndroidUtilities.displaySize.x);
+                    cell2.getTextView().setPadding(0, dp(10), 0, dp(17));
+                }
+                cell3 = cell2;
+                final boolean prev = prevItem != null && !isShadow(prevItem.viewType);
+                final boolean next = nextItem != null && !isShadow(nextItem.viewType);
+                if (listView.hasSections()) {
+                    cell3.setBackground(null);
+                } else {
+                    int drawable;
+                    if (prev && next) {
+                        drawable = R.drawable.greydivider;
+                    } else if (prev) {
+                        drawable = R.drawable.greydivider_bottom;
+                    } else if (next) {
+                        drawable = R.drawable.greydivider_top;
+                    } else {
+                        drawable = 0;
+                    }
+                    Drawable shadowDrawable = Theme.getThemedDrawable(context, drawable, Theme.key_windowBackgroundGrayShadow);
+                    if (dialog) {
+                        cell3.setBackground(new LayerDrawable(new Drawable[]{
+                                new ColorDrawable(getThemedColor(Theme.key_dialogBackgroundGray)),
+                                shadowDrawable
+                        }));
+                    } else {
+                        cell3.setBackground(shadowDrawable);
+                    }
+                }
+                break;
+            case VIEW_TYPE_CUSTOM:
+            case VIEW_TYPE_CUSTOM_SHADOW:
+            case VIEW_TYPE_FULLY_CUSTOM:
+                FrameLayout frameLayout = (FrameLayout) holder.itemView;
+                if (frameLayout.getChildCount() != (item.view == null ? 0 : 1) || frameLayout.getChildAt(0) != item.view) {
+                    frameLayout.removeAllViews();
+                    if (item.view != null) {
+                        AndroidUtilities.removeFromParent(item.view);
+                        FrameLayout.LayoutParams lp;
+                        if (viewType == VIEW_TYPE_CUSTOM || viewType == VIEW_TYPE_CUSTOM_SHADOW) {
+                            lp = LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, item.intValue);
+                        } else {
+                            lp = LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT);
+                        }
+                        frameLayout.addView(item.view, lp);
+                    }
+                }
+                break;
+            case VIEW_TYPE_FULLSCREEN_CUSTOM:
+                FullscreenCustomFrameLayout frameLayout2 = (FullscreenCustomFrameLayout) holder.itemView;
+                frameLayout2.setMinusHeight(item.intValue);
+                frameLayout2.setMinusPadding(BitwiseUtils.hasFlag(item.flags, 1));
+                if (frameLayout2.getChildCount() != (item.view == null ? 0 : 1) || frameLayout2.getChildAt(0) != item.view) {
+                    frameLayout2.removeAllViews();
+                    if (item.view != null) {
+                        AndroidUtilities.removeFromParent(item.view);
+                        frameLayout2.addView(item.view, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+                    }
+                }
+                break;
+            case VIEW_TYPE_SPACE:
+                if (item.transparent) {
+                    holder.itemView.setBackgroundColor(0x00000000);
+                } else if (item.iconResId != 0) {
+                    holder.itemView.setBackgroundColor(item.iconResId);
+                }
+                holder.itemView.setId(item.id);
+                ((SpaceView) holder.itemView).setHeight(item.intValue);
+                break;
+            case VIEW_TYPE_GRAY_SECTION:
+                GraySectionCell sectionCell = (GraySectionCell) holder.itemView;
+                if (TextUtils.equals(sectionCell.getText(), item.text)) {
+                    sectionCell.setRightText(item.subtext, true, item.clickCallback);
+                } else {
+                    sectionCell.setText(item.text, item.subtext, item.clickCallback);
+                }
+                break;
+            case VIEW_TYPE_FLICKER:
+                FlickerLoadingView flickerLoadingView = (FlickerLoadingView) holder.itemView;
+                flickerLoadingView.setViewType(item.intValue);
+                break;
+            case VIEW_TYPE_ROUND_CHECKBOX:
+            case VIEW_TYPE_ROUND_GROUP_CHECKBOX:
+            case VIEW_TYPE_USER_GROUP_CHECKBOX:
+                CheckBoxCell checkBoxCell = (CheckBoxCell) holder.itemView;
+                checkBoxCell.setPad(item.pad);
+                checkBoxCell.setText(item.text, "", item.checked, divider, checkBoxCell.itemId == item.id);
+                checkBoxCell.itemId = item.id;
+                if (viewType == VIEW_TYPE_USER_GROUP_CHECKBOX || viewType == VIEW_TYPE_ROUND_GROUP_CHECKBOX) {
+                    checkBoxCell.setCollapseButton(item.collapsed, item.animatedText, item.clickCallback);
+                }
+                break;
+        }
+        if (item.bind != null) {
+            item.bind.run(holder.itemView);
+        }
+    }
+
+    private View findViewByItemObject(Object object) {
+        int position = -1;
+        for (int i = 0; i < getItemCount(); ++i) {
+            UItem item = getItem(i);
+            if (item != null && item.object == object) {
+                position = i;
+                break;
+            }
+        }
+        if (position == RecyclerListView.NO_POSITION) {
+            return null;
+        }
+        for (int i = 0; i < listView.getChildCount(); ++i) {
+            View child = listView.getChildAt(i);
+            int childPosition = listView.getChildAdapterPosition(child);
+            if (childPosition != RecyclerListView.NO_POSITION && childPosition == position) {
+                return child;
             }
         }
         return null;
     }
 
-    public static boolean isShadow(int viewType) {
-        return viewType == VIEW_TYPE_SHADOW || viewType == VIEW_TYPE_GRAY_SECTION || viewType == VIEW_TYPE_SPACE;
+    @Override
+    public void onViewAttachedToWindow(@NonNull RecyclerView.ViewHolder holder) {
+        updateReorder(holder, allowReorder);
+        updateColors(holder);
     }
 
-    private boolean isSameItem(UItem oldItem, UItem newItem) {
-        if (oldItem.viewType != newItem.viewType) {
-            return false;
-        }
-        if (oldItem.factory != null || newItem.factory != null) {
-            return oldItem.id == newItem.id
-                    && TextUtils.equals(oldItem.text, newItem.text)
-                    && TextUtils.equals(oldItem.textValue, newItem.textValue);
-        }
-        if (oldItem.id != 0 || newItem.id != 0) {
-            if (oldItem.id != newItem.id) {
-                return false;
+    private void updateColors(RecyclerView.ViewHolder holder) {
+        if (holder.itemView instanceof Theme.Colorable) {
+            ((Theme.Colorable) holder.itemView).updateColors();
+            if (shouldApplyBackground(holder.getItemViewType())) {
+                final int key_background = dialog ? Theme.key_dialogBackground : Theme.key_windowBackgroundWhite;
+                holder.itemView.setBackgroundColor(getThemedColor(key_background));
             }
-            if (oldItem.viewType == VIEW_TYPE_WEBSITE) {
-                return TextUtils.equals(oldItem.textValue, newItem.textValue);
-            }
-            return true;
         }
-        return TextUtils.equals(oldItem.text, newItem.text) && Objects.equals(oldItem.object2, newItem.object2);
     }
 
-    private boolean isSameContent(UItem oldItem, UItem newItem) {
-        return oldItem.id == newItem.id
-                && oldItem.checked == newItem.checked
-                && oldItem.accent == newItem.accent
-                && oldItem.red == newItem.red
-                && oldItem.hideDivider == newItem.hideDivider
-                && oldItem.iconResId == newItem.iconResId
-                && oldItem.longValue == newItem.longValue
-                && TextUtils.equals(oldItem.text, newItem.text)
-                && TextUtils.equals(oldItem.subtext, newItem.subtext)
-                && TextUtils.equals(oldItem.textValue, newItem.textValue)
-                && Objects.equals(oldItem.object, newItem.object)
-                && Objects.equals(oldItem.object2, newItem.object2);
+    public void updateReorder(RecyclerView.ViewHolder holder, boolean allowReorder) {
+        if (holder == null) return;
+        final int viewType = holder.getItemViewType();
+        if (viewType >= UItem.factoryViewTypeStartsWith) {
+            UItem.ViewFactory factory = UItem.findFactory(viewType);
+            if (factory instanceof UItem.UItemFactory) {
+                ((UItem.UItemFactory<?>) factory).attachedView(listView, holder.itemView, getItem(holder.getAdapterPosition()));
+            }
+        }
     }
 
+    @Override
+    public int getItemCount() {
+        return items.size();
+    }
+
+    @Override
     public boolean isEnabled(RecyclerView.ViewHolder holder) {
-        int viewType = holder.getItemViewType();
-        UItem item = getItem(holder.getBindingAdapterPosition());
-        if (item != null && item.factory != null) {
-            return item.factory.isEnabled(item);
+        final int viewType = holder.getItemViewType();
+        UItem item = getItem(holder.getAdapterPosition());
+        final boolean clickable;
+        if (viewType >= UItem.factoryViewTypeStartsWith) {
+            UItem.ViewFactory factory = item != null && item.factory != null ? item.factory : UItem.findFactory(viewType);
+            clickable = factory == null || factory.isEnabled(item);
+        } else {
+            clickable = (
+                viewType == VIEW_TYPE_TEXT ||
+                viewType == VIEW_TYPE_CHECK ||
+                viewType == VIEW_TYPE_RADIO ||
+                viewType == VIEW_TYPE_FILTER_CHAT ||
+                viewType == VIEW_TYPE_FILTER_CHAT_CHECK ||
+                viewType == VIEW_TYPE_ROUND_CHECKBOX ||
+                viewType == VIEW_TYPE_USER_GROUP_CHECKBOX ||
+                viewType == VIEW_TYPE_ROUND_GROUP_CHECKBOX
+            );
         }
-        return viewType == VIEW_TYPE_TEXT
-                || viewType == VIEW_TYPE_CHECK
-                || viewType == VIEW_TYPE_RADIO
-                || viewType == VIEW_TYPE_BOOKMARK
-                || viewType == VIEW_TYPE_WEBSITE
-                || viewType == VIEW_TYPE_SETTING
-                || (viewType == VIEW_TYPE_INFO && item.id != 0);
+        return clickable && (item == null || item.enabled);
     }
 
-    @Nullable
     public UItem getItem(int position) {
-        if (position < 0 || position >= items.size()) {
-            return null;
-        }
+        if (position < 0 || position >= items.size()) return null;
         return items.get(position);
     }
 
     public UItem findItem(int itemId) {
-        for (int i = 0; i < items.size(); i++) {
+        for (int i = 0; i < items.size(); ++i) {
             UItem item = items.get(i);
             if (item != null && item.id == itemId) {
                 return item;
@@ -375,24 +783,87 @@ public class UniversalAdapter extends RecyclerListView.SelectionAdapter {
         return null;
     }
 
-    @Override
-    public int getItemCount() {
-        return items.size();
+    protected int getThemedColor(int key) {
+        return Theme.getColor(key, resourcesProvider);
     }
 
-    public boolean shouldApplyBackground(int viewType) {
-        if (!applyBackground) return false;
-        if (viewType >= 1000) return true; // custom factory types
-        switch (viewType) {
-            case VIEW_TYPE_HEADER:
-            case VIEW_TYPE_TEXT:
-            case VIEW_TYPE_CHECK:
-            case VIEW_TYPE_RADIO:
-            case VIEW_TYPE_SETTING:
-            case VIEW_TYPE_INFO:
-                return true;
-            default:
-                return false;
+
+    private static class FullscreenCustomFrameLayout extends FrameLayout {
+        private int minusHeight = 0;
+        private boolean minusPadding;
+
+        public FullscreenCustomFrameLayout(Context context) {
+            super(context);
+        }
+        @Override
+        protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+            int minusHeight = this.minusHeight;
+            View parent = null;
+            if (getParent() instanceof View) {
+                parent = (View) getParent();
+            }
+
+            if (minusPadding && parent != null) {
+                minusHeight += parent.getPaddingTop();
+                minusHeight += parent.getPaddingBottom();
+            }
+
+            if (parent != null && parent.getMeasuredHeight() > 0) {
+                super.onMeasure(
+                    MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.EXACTLY),
+                    MeasureSpec.makeMeasureSpec(parent.getMeasuredHeight() - minusHeight, MeasureSpec.EXACTLY)
+                );
+            } else if (MeasureSpec.getMode(heightMeasureSpec) != MeasureSpec.UNSPECIFIED) {
+                super.onMeasure(
+                    MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.EXACTLY),
+                    MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(heightMeasureSpec) - minusHeight, MeasureSpec.EXACTLY)
+                );
+            } else {
+                int maxHeight = View.MeasureSpec.getSize(heightMeasureSpec);
+                widthMeasureSpec = View.MeasureSpec.makeMeasureSpec(View.MeasureSpec.getSize(widthMeasureSpec), View.MeasureSpec.EXACTLY);
+                measureChildren(widthMeasureSpec, heightMeasureSpec);
+                int height = 0;
+                for (int i = 0; i < getChildCount(); ++i) {
+                    View child = getChildAt(i);
+                    height = Math.max(height, child.getMeasuredHeight());
+                }
+                if (maxHeight > 0) {
+                    maxHeight -= minusHeight;
+                    height = Math.min(height, maxHeight);
+                }
+                super.onMeasure(widthMeasureSpec, View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY));
+            }
+        }
+
+        public void setMinusHeight(int minusHeight) {
+            this.minusHeight = minusHeight;
+        }
+
+        public void setMinusPadding(boolean minusPadding) {
+            this.minusPadding = minusPadding;
+        }
+    }
+
+    public static class SpaceView extends View {
+
+        private int height;
+        public SpaceView(Context context) {
+            super(context);
+            setTag(RecyclerListView.TAG_NOT_SECTION);
+        }
+
+        public void setHeight(int height) {
+            if (this.height == height) return;
+            this.height = height;
+            requestLayout();
+        }
+
+        @Override
+        protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+            super.onMeasure(
+                MeasureSpec.makeMeasureSpec(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
+            );
         }
     }
 }

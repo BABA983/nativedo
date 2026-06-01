@@ -52,4 +52,8 @@ public final class UserObject {
     public static boolean isAnonymous(TLRPC.User user) {
         return false;
     }
+
+    public static boolean isBot(TLRPC.User user) {
+        return false;
+    }
 }

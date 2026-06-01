@@ -59,72 +59,32 @@ public class BookmarksFragment extends UniversalFragment {
     private String query;
 
     private NumberTextView selectedCount;
-    public HashSet<Integer> selected = new HashSet<>();
+    public HashSet<Long> selected = new HashSet<>();
 
-    public boolean isSelected(MessageObject msg) {
-        return msg != null && selected.contains(msg.getId());
+    public boolean isSelected(BrowserHistory.Entry entry) {
+        return entry != null && selected.contains(entry.id);
     }
 
-    public void setSelected(MessageObject msg, boolean select) {
-        if (msg == null) return;
+    public void setSelected(BrowserHistory.Entry entry, boolean select) {
+        if (entry == null) return;
         if (select) {
-            selected.add(msg.getId());
+            selected.add(entry.id);
         } else {
-            selected.remove(msg.getId());
+            selected.remove(entry.id);
         }
     }
 
     public void deleteSelectedMessages() {
-        final HashSet<String> selectedLinks = new HashSet<>();
-        final ArrayList<MessageObject> messageObjects = new ArrayList<MessageObject>();
-        final HashSet<Integer> ids = new HashSet<>();
-        for (int id : selected) {
-            MessageObject msg = null;
-            for (MessageObject m : list.links) {
-                if (m != null && m.getId() == id) {
-                    msg = m;
-                    break;
-                }
-            }
-            if (searchList != null && msg == null) {
-                for (MessageObject m : searchList.links) {
-                    if (m != null && m.getId() == id) {
-                        msg = m;
-                        break;
-                    }
-                }
-            }
-            if (msg != null) {
-                messageObjects.add(msg);
-                ids.add(msg.getId());
-                selectedLinks.add(getLink(msg));
-            }
-        }
-//        for (String link : selectedLinks) {
-//            for (MessageObject m : list.links) {
-//                if (m != null && !selected.contains(m.getId()) && TextUtils.equals(getLink(m), link)) {
-//                    messageObjects.add(m);
-//                    ids.add(m.getId());
-//                }
-//            }
-//            if (searchList != null) {
-//                for (MessageObject m : searchList.links) {
-//                    if (m != null && !selected.contains(m.getId()) && TextUtils.equals(getLink(m), link)) {
-//                        messageObjects.add(m);
-//                        ids.add(m.getId());
-//                    }
-//                }
-//            }
-//        }
+        final HashSet<Long> ids = new HashSet<>(selected);
         new AlertDialog.Builder(getContext(), getResourceProvider())
             .setTitle(formatPluralString("DeleteOptionsTitle", ids.size()))
             .setMessage(getString(ids.size() == 1 ? "AreYouSureUnsaveSingleMessage" : "AreYouSureUnsaveFewMessages"))
             .setPositiveButton(getString(R.string.Delete), (di, w) -> {
-                final long selfId = UserConfig.getInstance(currentAccount).getClientUserId();
-                MessagesController.getInstance(currentAccount).deleteMessages(new ArrayList<>(ids), null, null, selfId, 0, true, 0);
-                list.delete(new ArrayList<>(ids));
+                final ArrayList<Long> idList = new ArrayList<>(ids);
+                WebBookmarks.getInstance(currentAccount).remove(idList);
+                list.delete(idList);
                 if (searchList != null) {
-                    searchList.delete(new ArrayList<>(ids));
+                    searchList.delete(idList);
                 }
                 selected.clear();
                 actionBar.hideActionMode();
@@ -136,19 +96,9 @@ public class BookmarksFragment extends UniversalFragment {
     }
 
     public void gotoMessage() {
-        if (selected.size() != 1) return;
-        final long selfId = UserConfig.getInstance(currentAccount).getClientUserId();
-        final int id = selected.iterator().next();
-        finishFragment();
-        if (closeToTabs != null) {
-            closeToTabs.run();
-        }
-        AndroidUtilities.runOnUIThread(() -> {
-            BaseFragment fragment = LaunchActivity.getSafeLastFragment();
-            if (fragment != null) {
-                fragment.presentFragment(ChatActivity.of(selfId, id));
-            }
-        }, 80);
+        // NativeDo: the upstream "go to message" jumps to the Saved-Messages
+        // ChatActivity, which is Telegram-only and has no local-bookmark analog.
+        // Treated as a no-op so it cannot crash; the menu item is hidden below.
     }
 
     public BookmarksFragment(Runnable closeToTabs, Utilities.Callback<String> whenClicked) {
@@ -202,6 +152,9 @@ public class BookmarksFragment extends UniversalFragment {
         actionMode.addView(selectedCount, LayoutHelper.createLinear(0, LayoutHelper.MATCH_PARENT, 1.0f, 65, 0, 0, 0));
 
         gotoItem = actionMode.addItemWithWidth(R.id.menu_link, R.drawable.msg_message, AndroidUtilities.dp(54), getString(R.string.AccDescrGoToMessage));
+        // NativeDo: "go to message" targets the Telegram Saved-Messages chat,
+        // which has no local-bookmark equivalent; hide it.
+        gotoItem.setVisibility(View.GONE);
         actionMode.addItemWithWidth(R.id.menu_delete, R.drawable.msg_delete, AndroidUtilities.dp(54), getString(R.string.Delete));
 
         searchItem = actionBar.createMenu().addItem(0, R.drawable.outline_header_search, getResourceProvider()).setIsSearchField(true).setActionBarMenuItemSearchListener(new ActionBarMenuItem.ActionBarMenuItemSearchListener() {
@@ -312,13 +265,12 @@ public class BookmarksFragment extends UniversalFragment {
     protected void fillItems(ArrayList<UItem> items, UniversalAdapter adapter) {
         addedUrls.clear();
         if (TextUtils.isEmpty(query)) {
-            for (MessageObject msg : list.links) {
-                final String url = getLink(msg);
+            for (BrowserHistory.Entry entry : list.links) {
+                final String url = entry == null ? null : entry.url;
                 if (TextUtils.isEmpty(url)) continue;
                 if (url.startsWith("#") || url.startsWith("$") || url.startsWith("@")) continue;
-//                if (addedUrls.contains(url)) continue;
                 addedUrls.add(url);
-                items.add(AddressBarList.BookmarkView.Factory.as(msg, false).setChecked(isSelected(msg)));
+                items.add(AddressBarList.BookmarkView.Factory.as(entry, null).setChecked(isSelected(entry)));
             }
             if (!list.endReached) {
                 items.add(UItem.asFlicker(items.size(), FlickerLoadingView.BROWSER_BOOKMARK));
@@ -326,29 +278,21 @@ public class BookmarksFragment extends UniversalFragment {
                 items.add(UItem.asFlicker(items.size(), FlickerLoadingView.BROWSER_BOOKMARK));
             }
         } else {
-            for (MessageObject msg : list.links) {
-                final String url = getLink(msg);
+            for (BrowserHistory.Entry entry : list.links) {
+                final String url = entry == null ? null : entry.url;
                 if (TextUtils.isEmpty(url)) continue;
                 if (url.startsWith("#") || url.startsWith("$") || url.startsWith("@")) continue;
-//                if (addedUrls.contains(url)) continue;
+                if (!matchesEntry(entry, query)) continue;
                 addedUrls.add(url);
-                final String domain = AndroidUtilities.getHostAuthority(url, true);
-                final WebMetadataCache.WebMetadata meta = WebMetadataCache.getInstance().get(domain);
-                final TLRPC.WebPage webpage = msg != null && msg.messageOwner != null && msg.messageOwner.media != null ? msg.messageOwner.media.webpage : null;
-                final String sitename = webpage != null && !TextUtils.isEmpty(webpage.site_name) ? webpage.site_name : (meta == null || TextUtils.isEmpty(meta.sitename) ? null : meta.sitename);
-                final String title = webpage != null && !TextUtils.isEmpty(webpage.title) ? webpage.title : null;
-                if (!matches(domain, query) && !matches(sitename, query) && !matches(title, query)) {
-                    continue;
-                }
-                items.add(AddressBarList.BookmarkView.Factory.as(msg, false, query).setChecked(isSelected(msg)));
+                items.add(AddressBarList.BookmarkView.Factory.as(entry, query).setChecked(isSelected(entry)));
             }
-            for (MessageObject msg : searchList.links) {
-                final String url = getLink(msg);
+            for (BrowserHistory.Entry entry : searchList.links) {
+                final String url = entry == null ? null : entry.url;
                 if (TextUtils.isEmpty(url)) continue;
                 if (url.startsWith("#") || url.startsWith("$") || url.startsWith("@")) continue;
-//                if (addedUrls.contains(url)) continue;
+                if (addedUrls.contains(url)) continue;
                 addedUrls.add(url);
-                items.add(AddressBarList.BookmarkView.Factory.as(msg, false, query).setChecked(isSelected(msg)));
+                items.add(AddressBarList.BookmarkView.Factory.as(entry, query).setChecked(isSelected(entry)));
             }
             if (!searchList.endReached) {
                 items.add(UItem.asFlicker(items.size(), FlickerLoadingView.BROWSER_BOOKMARK));
@@ -371,6 +315,14 @@ public class BookmarksFragment extends UniversalFragment {
         return (tsrc.startsWith(tq) || tsrc.contains(" " + tq) || tsrc.contains("." + tq));
     }
 
+    private static boolean matchesEntry(BrowserHistory.Entry entry, String query) {
+        if (entry == null) return false;
+        final String title = entry.meta != null ? entry.meta.title : null;
+        final String sitename = entry.meta != null ? entry.meta.sitename : null;
+        final String domain = entry.meta != null ? entry.meta.domain : AndroidUtilities.getHostAuthority(entry.url, true);
+        return matches(domain, query) || matches(sitename, query) || matches(title, query) || matches(entry.url, query);
+    }
+
     @Override
     protected void onClick(UItem item, View view, int position, float x, float y) {
         if (item.instanceOf(AddressBarList.BookmarkView.Factory.class)) {
@@ -378,19 +330,19 @@ public class BookmarksFragment extends UniversalFragment {
                 clickSelect(item, view);
             } else {
                 finishFragment();
-                whenClicked.run(getLink((MessageObject) item.object2));
+                whenClicked.run(((BrowserHistory.Entry) item.object2).url);
             }
         }
     }
 
     public void clickSelect(UItem item, View view) {
         AddressBarList.BookmarkView cell = (AddressBarList.BookmarkView) view;
-        MessageObject msg = (MessageObject) item.object2;
-        if (isSelected(msg)) {
-            setSelected(msg, false);
+        BrowserHistory.Entry entry = (BrowserHistory.Entry) item.object2;
+        if (isSelected(entry)) {
+            setSelected(entry, false);
             cell.setChecked(false);
         } else {
-            setSelected(msg, true);
+            setSelected(entry, true);
             cell.setChecked(true);
         }
         selectedCount.setNumber(selected.size(), true);
@@ -399,7 +351,6 @@ public class BookmarksFragment extends UniversalFragment {
         } else {
             actionBar.showActionMode();
         }
-        AndroidUtilities.updateViewShow(gotoItem, selected.size() == 1, true, true);
     }
 
     @Override
