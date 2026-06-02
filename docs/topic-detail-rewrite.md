@@ -53,10 +53,10 @@ TopicDetailFragment (BaseFragment, no ComposeView)
     ├── ActionBar
     ├── RecyclerListView (vertical, LinearLayoutManager)
     │   └── TopicAdapter (RecyclerListView.SelectionAdapter)
-    │       ├── HEADER : TopicHeaderCell   (title + tags + category)
+    │       ├── HEADER : TopicHeaderCell   (title + date line + load progress + tags)
     │       ├── POSTS  : TopicPostCell     (one per floor, BaseCell, drawn)
     │       └── FOOTER : TopicFooterCell   (loading / retry / end-of-list)
-    ├── PullForegroundDrawable             (same path as TopicListFragment)
+    ├── PullForegroundDrawable             (replicated pattern, ~80 LOC, see Phase 6)
     └── (later) ReplyEnterView / JumpToBottomFAB / FloatingDateView
 ```
 
@@ -104,9 +104,13 @@ io.github.baba983.nativedo
 │   ├── CookedPostBlock.kt              ← moved from HtmlPostBodyView.kt
 │   ├── CookedPostBodyParser.kt         ← parseCookedPostBody + helpers (Jsoup only)
 │   ├── GalleryImage.kt                 ← moved
-│   ├── PostImageUrlResolver.kt         ← resolvePostImageUrl, cookedGalleryImages
+│   └── PostImageUrlResolver.kt         ← resolvePostImageUrl, cookedGalleryImages
+│
+├── feature.topic.ui
 │   └── TopicReplyTargetResolver.kt     ← reply-target shaping migrated from
-│                                          TopicPostMeta.kt (NOT deleted)
+│                                          TopicPostMeta.kt (file renamed, NOT
+│                                          moved to core.html — depends on
+│                                          htmlToPreviewText, which is UI-layer)
 │
 └── ui.topic
     ├── TopicDetailFragment.kt          ← rewritten, no ComposeView
@@ -139,7 +143,7 @@ Only after the parity checklist (Phase 6) passes:
 - `feature/topic/ui/TopicDetailContent.kt`
 - `feature/topic/ui/TopicDetailSkeleton.kt`
 - `feature/topic/ui/TopicPostCell.kt`  (Compose)
-- `feature/topic/ui/TopicPostMeta.kt`  (logic migrated to `core.html.TopicReplyTargetResolver`)
+- `feature/topic/ui/TopicPostMeta.kt`  (logic migrated to `feature.topic.ui.TopicReplyTargetResolver`)
 - `ui/topic/TopicDetailScreen.kt`
 - `core/ui/HtmlPostBodyView.kt`  (after parser extraction)
 - `core/ui/PostBodyTypography.kt`, `PostBodyInternalLinks.kt`,
@@ -208,8 +212,9 @@ Pure refactor, no behavior change. Compose path keeps compiling.
       will replace them, not move them.
 - [ ] Update all callers (`HtmlPostBodyView.kt`, `TopicPostCell.kt`,
       `TopicDetailContent.kt`) to import from `core.html`.
-- [ ] `parseCookedPostBody` visibility: `internal` → `public` (it crosses
-      module boundary now).
+- [ ] Keep `internal` visibility — `:app` is a single Gradle module, so
+      Kotlin module visibility still covers all of
+      `io.github.baba983.nativedo.*`.
 
 **Validate:** `:app:testDebugUnitTest` + `:app:assembleDebug` both green;
 app launches and topic detail still renders identically.
@@ -236,7 +241,7 @@ every text-bearing block will reuse.
       heading / mono / quote), accent + chip colors, `ImageReceiver` pool,
       `PostBodyDelegate`.
 - [ ] Define `PostBodyDelegate`: `onLinkClick(url)`, `onTopicClick(id)`,
-      `onUserClick(username)`.
+      `onUserClick(username)`. Phase 2 will add `onLinkLongPress(url)`.
 - [ ] Implement `PostBodyTextBuilder`. Returns:
   ```kotlin
   class BuiltText(
@@ -244,20 +249,26 @@ every text-bearing block will reuse.
       val pendingImages: List<PendingInlineImage>,
       val links: List<LinkRegion>,
   ) {
-      fun attach(host: View, cookieStore: CookieStore): Handle
+      fun attach(host: View): Handle
   }
   ```
-  Inline images are `DrawableSpan`s backed by `ImageReceiver`; `attach()`
-  starts the loads and arranges for `host.invalidate()` on each frame.
-  **No `TextView.tag` dependency.** Port the span-building logic from
-  `buildInlinePostBodyText` / `PostBodyChipSpan` / `PostBodyInternalLinks`.
+  Inline images are `DrawableSpan`s backed by `ImageReceiver` (constructed
+  with `host` as parent view); `attach()` calls `setImage(...)` on each one
+  and arranges for `host.invalidate()` on frame updates. **No `TextView.tag`
+  dependency. No `cookieStore` parameter** — `NativeDoImageDownloader`
+  already injects cookies at the OkHttp layer, so the inline-image pipeline
+  becomes a strict subset of `ImageReceiver`'s normal path. This deletes
+  the private `OkHttpClient` in `InlineTextImages.kt` as a side effect.
+  Port the span-building logic from `buildInlinePostBodyText` /
+  `PostBodyChipSpan` / `PostBodyInternalLinks`.
 - [ ] Implement `ParagraphBlock`, `HeadingBlock`, `RuleBlock`. Each owns a
       `StaticLayout` + (optional) `BuiltText.Handle`.
-- [ ] Build a dev-only `TopicBodyHarnessFragment`: a `RecyclerListView` of
-      paragraph-only rows fed from a hand-picked fixture under
-      [`fixtures/discourse/`](../fixtures/discourse/). Entry point gated on
-      `BuildConfig.DEBUG` — **not** wired into `TopicListFragment`'s real
-      menu. Easy to delete in Phase 6.
+- [ ] Build a dev-only `TopicBodyHarnessFragment` **extending
+      `org.telegram.ui.ActionBar.BaseFragment`** (not Compose-hosted): a
+      `RecyclerListView` of paragraph-only rows fed from a hand-picked
+      fixture under [`fixtures/discourse/`](../fixtures/discourse/). Entry
+      point gated on `BuildConfig.DEBUG` — **not** wired into
+      `TopicListFragment`'s real menu. Easy to delete in Phase 6.
 - [ ] Unit tests on `PostBodyTextBuilder` for chip / link / inline-image
       span emission.
 
@@ -271,8 +282,8 @@ No selection in this phase.
 - [ ] `LinkPath` + `LinkSpanDrawable` ripple on tap. Hit-test via
       `BuiltText.links` regions inside `ParagraphBlock.onTouch`.
 - [ ] Wire delegate routes for `URLSpan`, `@user` chips, `#topic` links.
-- [ ] Long-press on a link → `delegate.onLinkLongPress(url)` (Phase 6 may
-      wire a context menu).
+- [ ] Extend `PostBodyDelegate` with `onLinkLongPress(url)`. Long-press on
+      a link calls it; Phase 6 may wire a context menu.
 - [ ] **Selection is deferred to Phase 7.** `ArticleTextSelectionHelper` in
       `:telegram` is a no-op stub today — fixing that is its own port.
 
@@ -284,12 +295,15 @@ unintended selection mode.
 Image pipeline goes through `ImageReceiver` (cookie auth already handled —
 see "Image loading" above).
 
-- [ ] `ImageBlock` — single `ImageReceiver`, supports source rect for image
-      viewer hand-off via
-      `delegate.onImagePress(url, gallery, sourceBounds, hostView)`.
-      Reuses the existing `openImageViewer(...)` stub in `TopicDetailFragment`.
+- [ ] `ImageBlock` — single `ImageReceiver`. Exposes
+      `fun imageBoundsInCell(): RectF` returning the block-local rect of the
+      drawn image. `TopicPostCell.onTouch` resolves that into window
+      coordinates (`getLocationInWindow` + cell origin + block offset)
+      before calling `delegate.didPressImage(url, gallery, sourceBoundsInWindow,
+      hostView)`. Reuses the existing `openImageViewer(...)` stub in
+      `TopicDetailFragment`.
 - [ ] `CollageBlock` — grid of `ImageReceiver`s, mirroring `BlockCollageCell`
-      measurement.
+      measurement. Same `imageBoundsInCell(index)` pattern per tile.
 - [ ] `OneboxBlock` — thumbnail `ImageReceiver` + title `StaticLayout` +
       description `StaticLayout`.
 
@@ -300,7 +314,14 @@ load through OkHttp + cookies; tapping fires the image viewer stub.
 
 Ported one type per commit. Each ships independently:
 
-- [ ] `QuoteBlock` (with collapsed → expanded fetch flow)
+- [ ] `QuoteBlock` (collapsed → expanded fetch flow).
+      **Expanded state lives on the block instance** (`var expanded: Boolean`
+      + cached fetched HTML). The cell-level layout cache in Phase 5
+      preserves block instances across rebind, so expand state survives
+      scroll-recycle (matches user expectation; the current Compose
+      `remember{}` loses it). Cache eviction or `Post.editCount` /
+      `updatedAt` change rebuilds the block from scratch — expected, since
+      the quoted content may have changed.
 - [ ] `CodeBlock` (monospace, horizontal scroll on the block, no highlight)
 - [ ] `ListBlock` (ordered / unordered, nested)
 - [ ] `TableBlock` (port `TableLayout` from `:telegram`)
@@ -331,12 +352,18 @@ style and to keep cell-bind hot paths simple.
       `didLongPressPost`, `didExpandQuote`.
 - [ ] **Cell-level layout cache.** Key:
       `(post.id, post.updatedAt, post.editCount, widthPx)`.
-      Caches `(List<PostBodyBlock>, totalHeightPx)`. `onViewRecycled` only
-      detaches the current cell's `ImageReceiver`s — it does not invalidate
-      the cache. Without this, fling re-Jsoup-parses every frame.
+      Caches `(List<PostBodyBlock>, totalHeightPx)` — the actual block
+      **instances**, not just their inputs. This is what lets
+      `QuoteBlock.expanded` / `SpoilerBlock.revealed` survive scroll-recycle.
+      `onViewRecycled` only detaches the current cell's `ImageReceiver`s; it
+      does not invalidate the cache. LRU bound at 64 entries to cap memory
+      on long topics. Cache lives at the adapter level (survives cell
+      recycle) and is cleared on `onDestroyView`. Without this, fling
+      re-Jsoup-parses + re-builds StaticLayouts every frame.
 - [ ] Reactions strip: NativeDo-original chip layout. Reads `post.reactions`
       / `post.currentUserReaction`. Draws emoji via `ImageReceiver` from
-      `emojiCatalog`.
+      `emojiCatalog`. Emoji URLs go through the same
+      `NativeDoImageDownloader` bridge, so cookies are handled for free.
 
 **Validate:** harness swaps from "paragraph rows" to "full cell rows"
 rendering real `Post` fixtures end-to-end.
@@ -369,8 +396,16 @@ checklist below.**
   `updatedAt` alone misses optimistic reaction updates.
 - [ ] Pagination via `RecyclerListView.OnScrollListener` (same threshold
       logic as `TopicListFragment`).
-- [ ] Pull-to-refresh: reuse `TopicListFragment`'s `PullForegroundDrawable`
-      wiring.
+- [ ] `recyclerListView.itemAnimator = null`. Canvas-drawn cells animate
+      via `AnimatedFloat` themselves; the default `DefaultItemAnimator`
+      cross-fade looks broken on `BaseCell`. Revisit if a real
+      add/remove animation is needed later (use `DialogsItemAnimator` as
+      `TopicListFragment` does, or write a custom one).
+- [ ] Pull-to-refresh: replicate the `PullForegroundDrawable` pattern from
+      [`TopicListFragment`](../apps/android/app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicListFragment.kt)
+      lines ~857–933 (custom header view + manual `OnScrollListener` glue,
+      ~80 LOC). It is a pattern to replicate per-fragment, not a piece of
+      code to drop in.
 - [ ] `viewModel.uiState` collected via `lifecycleScope` +
       `Flow.collectLatest` → `TopicAdapter.submitList(...)`.
 - [ ] Collapsed title: scroll listener detects first-post out-of-frame →
@@ -378,8 +413,10 @@ checklist below.**
 - [ ] Image viewer hand-off: `TopicPostCellDelegate.didPressImage` →
       existing `openImageViewer(...)` stub.
 - [ ] Migrate `TopicPostMeta.kt` reply-target shaping into
-      `core.html.TopicReplyTargetResolver` (pure functions). Do **not**
-      delete `TopicPostMeta.kt` until the new module compiles and is wired.
+      `feature.topic.ui.TopicReplyTargetResolver` (pure functions, same
+      package as today). It depends on `htmlToPreviewText` from `core.ui`,
+      so it stays UI-layer — **not** `core.html`. Do **not** delete
+      `TopicPostMeta.kt` until the new file compiles and is wired.
 - [ ] Extend `TopicViewModel`:
   - `fun toggleReaction(postId: Long, reactionId: String)` — calls
     `discourseApiClient.toggleReaction`, applies `Post.toggledReaction`
