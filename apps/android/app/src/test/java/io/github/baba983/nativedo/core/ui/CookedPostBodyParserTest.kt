@@ -1,10 +1,11 @@
 package io.github.baba983.nativedo.core.ui
 
-import androidx.compose.ui.unit.dp
 import com.google.common.truth.Truth.assertThat
+import io.github.baba983.nativedo.core.html.CookedPostBlock
+import io.github.baba983.nativedo.core.html.parseCookedPostBody
 import org.junit.Test
 
-class HtmlPostBodyViewTest {
+class CookedPostBodyParserTest {
     private val baseUrl = "https://linux.do/"
 
     @Test
@@ -46,6 +47,8 @@ class HtmlPostBodyViewTest {
         val quote = blocks.filterIsInstance<CookedPostBlock.Quote>().first()
         assertThat(quote.title).contains("Please keep discussions constructive")
         assertThat(quote.html).contains("moderation team")
+        assertThat(quote.sourceTopicId).isEqualTo(424242L)
+        assertThat(quote.sourcePostNumber).isEqualTo(1)
         val image = blocks.filterIsInstance<CookedPostBlock.Image>().single()
         assertThat(image.src)
             .contains("https://cdn.example.dev/optimized/sample-image_2_690x254.png")
@@ -95,19 +98,6 @@ class HtmlPostBodyViewTest {
         assertThat(blocks.filterIsInstance<CookedPostBlock.Quote>()).isEmpty()
         assertThat(blocks.filterIsInstance<CookedPostBlock.Code>().single().code)
             .contains("    println")
-    }
-
-    @Test
-    fun calculatePostImageSize_keepsTallImagesAtIntrinsicScaleWhenTheyFit() {
-        val size = calculatePostImageSize(
-            availableWidth = 690.dp,
-            intrinsicWidthPx = 690,
-            intrinsicHeightPx = 1840,
-            maxHeight = 480.dp,
-        )
-
-        assertThat(size.width).isEqualTo(690.dp)
-        assertThat(size.height).isEqualTo(1840.dp)
     }
 
     private fun resourceText(path: String): String {

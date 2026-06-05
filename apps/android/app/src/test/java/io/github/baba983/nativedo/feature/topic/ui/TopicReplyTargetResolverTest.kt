@@ -6,7 +6,7 @@ import java.time.Instant
 import java.time.ZoneId
 import org.junit.Test
 
-class TopicPostMetaTest {
+class TopicReplyTargetResolverTest {
     @Test
     fun topicPostRole_marksFirstPostAsOriginalPoster() {
         assertThat(topicPostRole(0)).isEqualTo(TopicPostRole.OriginalPoster)

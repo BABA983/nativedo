@@ -41,7 +41,7 @@ public class ActionBar extends FrameLayout {
         }
     }
 
-    private final ImageView backButtonImageView;
+    public final ImageView backButtonImageView;
     private final SimpleTextView titleTextView;
     public ActionBarMenu menu;
     private ActionBarMenu actionMode;
@@ -131,6 +131,14 @@ public class ActionBar extends FrameLayout {
 
     protected ImageView getBackButtonImageView() {
         return backButtonImageView;
+    }
+
+    public SimpleTextView getTitleTextView() {
+        return titleTextView;
+    }
+
+    public void setTitleAnimated(CharSequence value, boolean crossfade, int duration, org.telegram.ui.Components.CubicBezierInterpolator interpolator) {
+        setTitle(value);
     }
 
     public ActionBarMenu createMenu() {

@@ -59,16 +59,39 @@ internal fun topicPostUsernameLabel(username: String): String = "@$username"
 
 internal fun topicPostUsesAnimatedTitle(title: String): Boolean = title.trim() in setOf("种子用户", "破界者")
 
-internal fun topicReplyTargetsByPostNumber(
-    posts: List<Post>,
-    leadingItemsCount: Int = TOPIC_STATIC_ITEMS_BEFORE_POSTS,
-): Map<Int, TopicReplyTarget> = buildMap {
-    posts.forEachIndexed { index, post ->
-        post.postNumber?.let { postNumber ->
-            put(
-                postNumber,
-                TopicReplyTarget(
-                    itemIndex = index + leadingItemsCount,
+internal object TopicReplyTargetResolver {
+    fun replyTargetsByPostNumber(
+        posts: List<Post>,
+        leadingItemsCount: Int = TOPIC_STATIC_ITEMS_BEFORE_POSTS,
+    ): Map<Int, TopicReplyTarget> = buildMap {
+        posts.forEachIndexed { index, post ->
+            post.postNumber?.let { postNumber ->
+                put(
+                    postNumber,
+                    TopicReplyTarget(
+                        itemIndex = index + leadingItemsCount,
+                        postId = post.id,
+                        postNumber = post.postNumber,
+                        authorUsername = post.authorUsername,
+                        authorDisplayName = post.authorDisplayName,
+                        authorAvatarTemplate = post.authorAvatarTemplate,
+                        authorAnimatedAvatarUrl = post.authorAnimatedAvatarUrl,
+                        createdAt = post.createdAt,
+                        cookedHtml = post.cookedHtml,
+                    ),
+                )
+            }
+        }
+    }
+
+    fun replySheetEntriesByPostNumber(
+        posts: List<Post>,
+    ): Map<Int, List<TopicReplySheetItem>> = posts
+        .filter { it.replyToPostNumber != null }
+        .groupBy { requireNotNull(it.replyToPostNumber) }
+        .mapValues { (_, replies) ->
+            replies.map { post ->
+                TopicReplySheetItem(
                     postId = post.id,
                     postNumber = post.postNumber,
                     authorUsername = post.authorUsername,
@@ -76,32 +99,23 @@ internal fun topicReplyTargetsByPostNumber(
                     authorAvatarTemplate = post.authorAvatarTemplate,
                     authorAnimatedAvatarUrl = post.authorAnimatedAvatarUrl,
                     createdAt = post.createdAt,
-                    cookedHtml = post.cookedHtml,
-                ),
-            )
+                    previewText = post.cookedHtml.htmlToPreviewText(),
+                )
+            }
         }
-    }
 }
+
+internal fun topicReplyTargetsByPostNumber(
+    posts: List<Post>,
+    leadingItemsCount: Int = TOPIC_STATIC_ITEMS_BEFORE_POSTS,
+): Map<Int, TopicReplyTarget> = TopicReplyTargetResolver.replyTargetsByPostNumber(
+    posts = posts,
+    leadingItemsCount = leadingItemsCount,
+)
 
 internal fun topicReplySheetEntriesByPostNumber(
     posts: List<Post>,
-): Map<Int, List<TopicReplySheetItem>> = posts
-    .filter { it.replyToPostNumber != null }
-    .groupBy { requireNotNull(it.replyToPostNumber) }
-    .mapValues { (_, replies) ->
-        replies.map { post ->
-            TopicReplySheetItem(
-                postId = post.id,
-                postNumber = post.postNumber,
-                authorUsername = post.authorUsername,
-                authorDisplayName = post.authorDisplayName,
-                authorAvatarTemplate = post.authorAvatarTemplate,
-                authorAnimatedAvatarUrl = post.authorAnimatedAvatarUrl,
-                createdAt = post.createdAt,
-                previewText = post.cookedHtml.htmlToPreviewText(),
-            )
-        }
-    }
+): Map<Int, List<TopicReplySheetItem>> = TopicReplyTargetResolver.replySheetEntriesByPostNumber(posts)
 
 internal fun topicPostMetaLabel(
     index: Int,

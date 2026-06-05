@@ -12,8 +12,10 @@ import android.os.Looper
 import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.style.ImageSpan
+import io.github.baba983.nativedo.core.html.resolvePostImageUrl
 import io.github.baba983.nativedo.core.network.addImageRequestHeaders
 import io.github.baba983.nativedo.core.storage.CookieStore
+import org.telegram.messenger.ImageReceiver
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlin.math.abs
@@ -236,6 +238,7 @@ internal class DeferredInlineImageDrawable(
         color = 0x335D6A7A
     }
     private var bitmap: Bitmap? = null
+    private var imageReceiver: ImageReceiver? = null
 
     init {
         setBounds(0, 0, max(1, widthPx), max(1, heightPx))
@@ -243,6 +246,7 @@ internal class DeferredInlineImageDrawable(
 
     fun setBitmap(bitmap: Bitmap) {
         this.bitmap = bitmap
+        imageReceiver = null
         val targetBounds = bounds
         val maxWidth = max(1, targetBounds.width())
         val maxHeight = max(1, targetBounds.height())
@@ -256,7 +260,23 @@ internal class DeferredInlineImageDrawable(
         invalidateSelf()
     }
 
+    fun setImageReceiver(receiver: ImageReceiver?) {
+        imageReceiver = receiver
+        bitmap = null
+        invalidateSelf()
+    }
+
     override fun draw(canvas: Canvas) {
+        imageReceiver?.let { receiver ->
+            receiver.setImageCoords(
+                bounds.left.toFloat(),
+                bounds.top.toFloat(),
+                bounds.width().toFloat(),
+                bounds.height().toFloat(),
+            )
+            receiver.draw(canvas)
+            return
+        }
         val bitmap = bitmap
         if (bitmap == null) {
             canvas.drawRoundRect(

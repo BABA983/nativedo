@@ -76,6 +76,8 @@ internal fun buildPostBodyText(
             }
         } ?: return@forEach
 
+        val resolvedUrl = baseUrl.toHttpUrlOrNull()
+            ?.resolve(span.url)?.toString() ?: span.url
         val chipStyle = when (destination) {
             is PostBodyInternalDestination.User -> ChipStyle.Mention
             is PostBodyInternalDestination.Hashtag -> ChipStyle.Hashtag
@@ -85,6 +87,7 @@ internal fun buildPostBodyText(
         replaceUrlSpan(
             builder = builder,
             span = span,
+            resolvedUrl = resolvedUrl,
             onClick = onClick,
             chipStyle = chipStyle,
             accentColor = accentColor,
@@ -144,9 +147,28 @@ private fun parseTopicDestination(
     )
 }
 
+internal class PostBodyClickableSpan(
+    val resolvedUrl: String,
+    val clickAction: () -> Unit,
+    private val emphasizeBold: Boolean,
+) : ClickableSpan() {
+    override fun onClick(widget: View) {
+        clickAction()
+    }
+
+    override fun updateDrawState(ds: TextPaint) {
+        super.updateDrawState(ds)
+        ds.isUnderlineText = false
+        if (emphasizeBold) {
+            ds.typeface = android.graphics.Typeface.create(ds.typeface, android.graphics.Typeface.BOLD)
+        }
+    }
+}
+
 private fun replaceUrlSpan(
     builder: SpannableStringBuilder,
     span: URLSpan,
+    resolvedUrl: String,
     onClick: () -> Unit,
     chipStyle: ChipStyle,
     @ColorInt accentColor: Int,
@@ -158,19 +180,11 @@ private fun replaceUrlSpan(
     builder.removeSpan(span)
     val emphasizeBold = chipStyle == ChipStyle.Mention && chipBackgroundColor == 0
     builder.setSpan(
-        object : ClickableSpan() {
-            override fun onClick(widget: View) {
-                onClick()
-            }
-
-            override fun updateDrawState(ds: TextPaint) {
-                super.updateDrawState(ds)
-                ds.isUnderlineText = false
-                if (emphasizeBold) {
-                    ds.typeface = android.graphics.Typeface.create(ds.typeface, android.graphics.Typeface.BOLD)
-                }
-            }
-        },
+        PostBodyClickableSpan(
+            resolvedUrl = resolvedUrl,
+            clickAction = onClick,
+            emphasizeBold = emphasizeBold,
+        ),
         start,
         end,
         flags,

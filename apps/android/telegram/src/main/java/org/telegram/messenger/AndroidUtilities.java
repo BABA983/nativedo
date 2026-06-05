@@ -1176,6 +1176,28 @@ public final class AndroidUtilities {
     public static void getBitmapFromSurface(android.view.SurfaceView surfaceView, android.graphics.Bitmap bitmap) {
     }
 
+    public static int getViewInset(View view) {
+        return 0;
+    }
+
+    public static float getNavigationBarThirdButtonsFactor(int navBarHeight) {
+        return 0f;
+    }
+
+    public static boolean isSafeToShow(Context context) {
+        if (context == null) {
+            return false;
+        }
+        while (context instanceof ContextWrapper) {
+            if (context instanceof Activity) {
+                Activity activity = (Activity) context;
+                return !activity.isFinishing() && (Build.VERSION.SDK_INT < 17 || !activity.isDestroyed());
+            }
+            context = ((ContextWrapper) context).getBaseContext();
+        }
+        return true;
+    }
+
     /** Matches upstream {@code AndroidUtilities.emptyMotionEvent()} — a cancelled, zeroed event. */
     public static MotionEvent emptyMotionEvent() {
         return MotionEvent.obtain(0, 0, MotionEvent.ACTION_CANCEL, 0, 0, 0);

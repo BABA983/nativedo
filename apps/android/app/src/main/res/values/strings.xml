@@ -14,6 +14,8 @@
     <string name="search_filter_users">Users</string>
     <string name="topic_list_pull_refresh">Pull to refresh topics</string>
     <string name="topic_list_release_refresh">Release to refresh topics</string>
+    <string name="topic_detail_pull_refresh">Pull to refresh replies</string>
+    <string name="topic_detail_release_refresh">Release to refresh replies</string>
     <string name="topic_list_empty_title">No topics yet</string>
     <string name="topic_list_empty_message">Pull to refresh or switch to another feed.</string>
     <string name="topic_list_error_title">Couldn’t load topics</string>

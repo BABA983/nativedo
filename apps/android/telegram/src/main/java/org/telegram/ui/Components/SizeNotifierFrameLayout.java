@@ -26,4 +26,14 @@ public class SizeNotifierFrameLayout extends FrameLayout {
         super(context);
         setFitsSystemWindows(false);
     }
+
+    public int measureKeyboardHeight() {
+        return 0;
+    }
+
+    public void setBottomClip(int value) {
+    }
+
+    public void notifyHeightChanged() {
+    }
 }

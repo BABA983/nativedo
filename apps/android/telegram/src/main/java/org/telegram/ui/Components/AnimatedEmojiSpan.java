@@ -3,8 +3,16 @@ package org.telegram.ui.Components;
 
 import android.text.Layout;
 import android.view.View;
+import android.widget.TextView;
+import android.content.Context;
 
 public class AnimatedEmojiSpan {
+
+    public static class TextViewEmojis extends TextView {
+        public TextViewEmojis(Context context) {
+            super(context);
+        }
+    }
 
     public static class EmojiGroupedSpans {
         public void release() {}

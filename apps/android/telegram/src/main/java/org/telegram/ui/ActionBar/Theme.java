@@ -40,6 +40,7 @@ public final class Theme {
     // Upstream debug paint, used by DrawingInBackgroundThreadDrawable's
     // BuildVars.DEBUG_PRIVATE_VERSION error branch. Copied verbatim from upstream.
     public static Paint DEBUG_RED = new Paint(); static { DEBUG_RED.setColor(0xffff0000); }
+    public static Paint dialogs_onlineCirclePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     public interface ThemeDelegate {
         void didSetNewTheme();
@@ -76,6 +77,18 @@ public final class Theme {
      */
     public interface Colorable {
         void updateColors();
+    }
+
+    public static final class AdaptiveRipple {
+        private AdaptiveRipple() {
+        }
+
+        public static Drawable filledRect(int color, float radiusDp) {
+            android.graphics.drawable.GradientDrawable background = new android.graphics.drawable.GradientDrawable();
+            background.setColor(color);
+            background.setCornerRadius(AndroidUtilities.dp(radiusDp));
+            return background;
+        }
     }
 
     /**
@@ -1337,6 +1350,13 @@ public final class Theme {
     public static RippleDrawable getSelectorDrawable(boolean whiteBackground) {
         return createSelectorDrawable(
             getColor(whiteBackground ? key_actionBarDefaultSelector : key_listSelector),
+            RIPPLE_MASK_ALL
+        );
+    }
+
+    public static RippleDrawable getSelectorDrawable(boolean whiteBackground, ResourcesProvider resourcesProvider) {
+        return createSelectorDrawable(
+            getColor(whiteBackground ? key_actionBarDefaultSelector : key_listSelector, resourcesProvider),
             RIPPLE_MASK_ALL
         );
     }

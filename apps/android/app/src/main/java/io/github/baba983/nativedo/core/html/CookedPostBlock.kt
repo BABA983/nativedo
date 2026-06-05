@@ -1,0 +1,62 @@
+package io.github.baba983.nativedo.core.html
+
+internal sealed interface CookedPostBlock {
+    data class Text(val html: String) : CookedPostBlock
+    data class Heading(val level: Int, val html: String) : CookedPostBlock
+    data class Quote(
+        val title: String?,
+        val html: String,
+        val sourceTopicId: Long? = null,
+        val sourcePostNumber: Int? = null,
+    ) : CookedPostBlock
+    data class Code(val code: String) : CookedPostBlock
+    data class ListItems(val ordered: Boolean, val items: List<String>) : CookedPostBlock
+    data class Image(
+        val src: String,
+        val alt: String,
+        val href: String?,
+        val widthPx: Int = 0,
+        val heightPx: Int = 0,
+    ) : CookedPostBlock {
+        val aspectRatio: Float? = widthPx
+            .takeIf { it > 0 }
+            ?.let { width ->
+                heightPx.takeIf { it > 0 }?.let { height -> width.toFloat() / height.toFloat() }
+            }
+    }
+
+    data class Collage(val images: List<Image>) : CookedPostBlock
+
+    data class Onebox(
+        val href: String,
+        val domain: String?,
+        val siteIconUrl: String?,
+        val thumbnailUrl: String?,
+        val title: String,
+        val description: String?,
+    ) : CookedPostBlock
+
+    data class Table(
+        val headers: List<String>,
+        val rows: List<List<String>>,
+    ) : CookedPostBlock
+
+    data class Poll(
+        val name: String?,
+        val type: String?,
+        val status: String?,
+        val voters: Int?,
+        val options: List<String>,
+    ) : CookedPostBlock
+
+    data class Spoiler(val html: String) : CookedPostBlock
+
+    data object Rule : CookedPostBlock
+}
+
+data class GalleryImage(
+    val url: String,
+    val thumbUrl: String?,
+    val widthPx: Int = 0,
+    val heightPx: Int = 0,
+)

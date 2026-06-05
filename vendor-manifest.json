@@ -38,7 +38,7 @@
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "exact",
-      "notes": "Browser/menu helpers added for ItemOptions: emptyMotionEvent() copied verbatim from upstream; shakeViewSpring(View,float) is a simplified ObjectAnimator wobble (upstream SpringAnimation + shake id resources not ported) and replaceArrows(...) is a pass-through — both intentionally diverge from upstream and only feed chat/profile call sites the browser menu never reaches."
+      "notes": "Browser/menu helpers added for ItemOptions: emptyMotionEvent() copied verbatim from upstream; shakeViewSpring(View,float) is a simplified ObjectAnimator wobble (upstream SpringAnimation + shake id resources not ported) and replaceArrows(...) is a pass-through. BottomSheet support surface added for the exact upstream sheet copy: getViewInset(View) and getNavigationBarThirdButtonsFactor(int) are local safe defaults; isSafeToShow(Context) mirrors the upstream Activity finishing/destroyed guard."
     },
     {
       "local": "telegram/src/main/java/org/telegram/messenger/BuildVars.java",
@@ -122,7 +122,21 @@
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "exact",
-      "notes": "Host-wired for the vendored CheckBoxBase: added Theme.getServiceMessageColor() and Theme.PAINT_CLEAR as one-line pass-throughs to upstream namesakes, and 5 no-op stubs on the local Theme.MessageDrawable (hasGradient/getGradientShader/getMatrix/applyMatrixScale/getTopY) — local never sets a MessageDrawable on a CheckBox, so the gradient path is dead code; the stubs exist to satisfy the CheckBoxBase API. Other bodies remain native as the previous manifest described."
+      "notes": "Host-wired for the vendored CheckBoxBase: added Theme.getServiceMessageColor() and Theme.PAINT_CLEAR as one-line pass-throughs to upstream namesakes, and 5 no-op stubs on the local Theme.MessageDrawable (hasGradient/getGradientShader/getMatrix/applyMatrixScale/getTopY). BottomSheet support surface added for the exact upstream sheet copy: dialogs_onlineCirclePaint, AdaptiveRipple.filledRect(...), and getSelectorDrawable(boolean, ResourcesProvider). Other bodies remain native as the previous manifest described."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/ActionBar/BottomSheet.java",
+      "upstream": "org/telegram/ui/ActionBar/BottomSheet.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "gesture",
+        "animation",
+        "measurement",
+        "drawing"
+      ],
+      "notes": "Copied verbatim from pinned upstream. Replaces the earlier NativeDo Dialog-backed subset so sheet container layout, dim/back drawable, swipe-dismiss physics, keyboard/status/navigation-bar handling, and nested ActionBar behavior stay upstream-shaped."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/ArticleViewer.java",
@@ -208,6 +222,18 @@
       "notes": "Faithful subset used by UniversalAdapter VIEW_TYPE_SHADOW: keeps upstream setText (double-newline AbsoluteSizeSpan), setFixedSize/getFixedSize, onMeasure fixedSize -1/0/n branches, top/bottom padding, getText/getTextView/setTextGravity/setEnabled. OMITTED: LinkSpanDrawable.LinksTextView (tappable links / emoji) replaced by a plain TextView, so getTextView returns TextView not LinksTextView; key_windowBackgroundWhiteGrayText4 -> key_windowBackgroundWhiteGrayText (key not in local Theme)."
     },
     {
+      "local": "telegram/src/main/java/org/telegram/ui/Cells/TextSelectionHelper.java",
+      "upstream": "org/telegram/ui/Cells/TextSelectionHelper.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "forced_exact": [
+        "drawing",
+        "gesture"
+      ],
+      "notes": "Trimmed ArticleTextSelectionHelper port for NativeDo topic detail: preserves Telegram's ArticleSelectableView/TextLayoutBlock/ArticleTextSelectionHelper API shape, long-press selection entry, touch-coordinate word selection, Layout.getSelectionPath highlight drawing, floating ActionMode copy/select-all actions, and copy-to-clipboard callback path. OMITTED for now: draggable selection handles, magnifier, translate action, multi-cell drag selection, RecyclerView auto-scroll, and full upstream TextSelectionOverlay chrome. Replaces a no-op compile stub."
+    },
+    {
       "local": "telegram/src/main/java/org/telegram/ui/Cells/TextCell.java",
       "upstream": "org/telegram/ui/Cells/TextCell.java",
       "vendored_at": "009e97356",
@@ -279,6 +305,156 @@
         "tag pills row, excerpt-based message preview, pinned background overlay,",
         "muted-counter gray pill. Row height expands for tags row."
       ]
+    },
+    {
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicPostCell.kt",
+      "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "forced_exact": [
+        "measurement",
+        "drawing",
+        "gesture"
+      ],
+      "notes": "NativeDo topic-detail post cell: BaseCell shell, avatar/header/body/reaction/reply drawing, long-press, and hit-testing are shaped after ChatMessageCell while binding to Discourse Post and PostBodyBlock models. Body block geometry also follows ArticleViewer block-cell patterns."
+    },
+    {
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicHeaderCell.kt",
+      "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "forced_exact": [
+        "measurement"
+      ],
+      "notes": "NativeDo topic header row with Telegram/ArticleViewer-style title + metadata spacing; binds Discourse topic title, counts, and tags."
+    },
+    {
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicFooterCell.kt",
+      "upstream": "org/telegram/ui/Cells/TextInfoPrivacyCell.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "forced_exact": [
+        "measurement"
+      ],
+      "notes": "Small centered topic footer/retry row following Telegram footer cell spacing while using NativeDo retry/end/empty text."
+    },
+    {
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/TextLayoutBlock.kt",
+      "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "forced_exact": [
+        "measurement",
+        "drawing",
+        "gesture"
+      ],
+      "notes": "Shared NativeDo StaticLayout block base derived from ArticleViewer text block measurement/drawing and link hit-testing concepts; uses NativeDo PostBodyTextBuilder and delegate routing."
+    },
+    {
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ParagraphBlock.kt",
+      "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "forced_exact": [
+        "measurement",
+        "drawing"
+      ],
+      "notes": "NativeDo paragraph block corresponding to ArticleViewer.BlockParagraphCell, backed by TextLayoutBlock."
+    },
+    {
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/HeadingBlock.kt",
+      "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "forced_exact": [
+        "measurement",
+        "drawing"
+      ],
+      "notes": "NativeDo heading block corresponding to ArticleViewer header/subheader cells with local Discourse heading levels."
+    },
+    {
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/RuleBlock.kt",
+      "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "forced_exact": [
+        "measurement",
+        "drawing"
+      ],
+      "notes": "NativeDo divider block corresponding to ArticleViewer.BlockDividerCell."
+    },
+    {
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ImageBlock.kt",
+      "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "forced_exact": [
+        "measurement",
+        "drawing",
+        "gesture"
+      ],
+      "notes": "NativeDo image block corresponding to ArticleViewer.BlockPhotoCell; uses Discourse image URLs and ImageReceiver instead of Telegram page media models."
+    },
+    {
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/CollageBlock.kt",
+      "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "NativeDo collage block corresponding to ArticleViewer.BlockCollageCell; uses Telegram grouped-media-style aspect-ratio row geometry with Discourse lightbox groups and ImageReceiver tiles. Not a full BlockCollageCell.GroupedMessages port yet."
+    },
+    {
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/OneboxBlock.kt",
+      "upstream": "org/telegram/ui/Cells/ChatMessageCell.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "forced_exact": [
+        "measurement",
+        "drawing",
+        "gesture"
+      ],
+      "notes": "NativeDo Discourse onebox card using ChatMessageCell link-preview measurement/drawing/hit-region ideas without importing MessageObject or TLRPC.WebPage."
+    },
+    {
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/QuoteBlock.kt",
+      "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "NativeDo quote block inspired by ArticleViewer.BlockBlockquoteCell text/bar layout, but intentionally keeps a Discourse-style rounded expandable quote card routed through TopicViewModel; full ArticleViewer drawing parity is not claimed."
+    },
+    {
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/CodeBlock.kt",
+      "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "NativeDo preformatted code block corresponding to ArticleViewer.BlockPreformattedCell; no syntax highlighting, horizontal scrolling retained inside the canvas-drawn block with parent-intercept handoff instead of an actual HorizontalScrollView child."
+    },
+    {
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ListBlock.kt",
+      "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "NativeDo ordered/unordered list block corresponding to ArticleViewer list item block cells; keeps Telegram-style measured marker column, first-item top padding, and marker/text spacing, but nested block-item parity is not claimed."
+    },
+    {
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/TableBlock.kt",
+      "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "NativeDo lightweight table block derived from ArticleViewer.BlockTableCell/TableLayout geometry concepts. Full upstream TableLayout parity is intentionally not claimed yet."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java",
@@ -371,6 +547,81 @@
         "drawing"
       ],
       "notes": "Copied upstream AnimatedTextView; local delta removes unused Checker Framework imports unavailable in the Android module."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/AnimatedEmojiSpan.java",
+      "upstream": "org/telegram/ui/Components/AnimatedEmojiSpan.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Compile-only stub for animated emoji API surfaces used by ported UI. Added TextViewEmojis as a plain TextView subclass for BottomSheetWithRecyclerListView title/header checks; no animated emoji rendering is ported here."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/Bulletin.java",
+      "upstream": "org/telegram/ui/Components/Bulletin.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Compile-only Bulletin shell. BottomSheet support API added for hideAfterBottomSheet, Delegate registration, isShowing(), and hide(long); all behavior remains no-op because NativeDo topic sheets do not show Telegram bulletins."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/BottomSheetWithRecyclerListView.java",
+      "upstream": "org/telegram/ui/Components/BottomSheetWithRecyclerListView.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "gesture",
+        "animation",
+        "measurement",
+        "drawing",
+        "recycling"
+      ],
+      "notes": "Copied verbatim from pinned upstream. NativeDo topic sheets now subclass the upstream container and only provide app-owned adapter rows/content."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/messenger/camera/CameraView.java",
+      "upstream": "org/telegram/messenger/camera/CameraView.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Compile-only stub for BottomSheet instanceof CameraView checks; no camera behavior ported."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ThemeDescription.java",
+      "upstream": "org/telegram/ui/ActionBar/ThemeDescription.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Compile-only stub for BottomSheetWithRecyclerListView theme-description API; no theme description behavior ported."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/EditTextEmoji.java",
+      "upstream": "org/telegram/ui/Components/EditTextEmoji.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Compile-only stub for BottomSheetWithRecyclerListView keyboard/emoji hooks; returns safe defaults because topic sheets do not host Telegram's emoji composer."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/EmojiView.java",
+      "upstream": "org/telegram/ui/Components/EmojiView.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Compile-only View stub for BottomSheetWithRecyclerListView emoji-popup type checks; no emoji picker behavior ported."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/NestedSizeNotifierLayout.java",
+      "upstream": "org/telegram/ui/Components/NestedSizeNotifierLayout.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "exact",
+      "forced_exact": [
+        "gesture",
+        "measurement"
+      ],
+      "notes": "Copied from upstream as a BottomSheetWithRecyclerListView dependency. Host wiring only: removed CachedMediaLayout import/branch because that class is not vendored; nested-scroll handoff and maxTop measurement structure remain upstream-shaped."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/CircularProgressDrawable.java",
@@ -839,7 +1090,8 @@
       "upstream": "org/telegram/ui/ActionBar/ActionBar.java",
       "vendored_at": "009e97356",
       "modified": true,
-      "port_mode": "native"
+      "port_mode": "native",
+      "notes": "NativeDo ActionBar subset. BottomSheetWithRecyclerListView support surface added: backButtonImageView is public, getTitleTextView(), and setTitleAnimated(...) delegates to setTitle because local ActionBar title animation is not ported."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java",
@@ -1217,7 +1469,8 @@
       "upstream": "org/telegram/ui/Components/SizeNotifierFrameLayout.java",
       "vendored_at": "009e97356",
       "modified": true,
-      "port_mode": "native"
+      "port_mode": "native",
+      "notes": "NativeDo SizeNotifierFrameLayout subset. BottomSheet support methods measureKeyboardHeight(), setBottomClip(int), and notifyHeightChanged() are compile-safe no-ops/defaults; full Telegram keyboard notifier behavior is not ported."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/UItem.java",
@@ -1463,6 +1716,18 @@
       "local_glob": "apps/android/telegram/src/main/res/drawable-*",
       "vendored_at": "009e97356",
       "notes": "WebActionBar (arrow_more, ic_ab_back, menu_instant_view, msg_arrow_forward) and AddressBarList attach row (attach_arrow_right) icons. All byte-identical to upstream across mdpi/hdpi/xhdpi/xxhdpi."
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "checkbig.png",
+        "header_shadow.png",
+        "sheet_shadow_round.9.png"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356",
+      "notes": "BottomSheet and BottomSheetWithRecyclerListView drawables copied byte-identical from upstream across mdpi/hdpi/xhdpi/xxhdpi."
     },
     {
       "kind": "anim",

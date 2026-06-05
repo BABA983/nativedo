@@ -63,7 +63,7 @@ internal fun Post.defaultReactionFallback(
     )
 }
 
-internal fun Post.toggledReaction(
+fun Post.toggledReaction(
     reactionId: String,
     emojiCatalog: Map<String, String>,
 ): Post {

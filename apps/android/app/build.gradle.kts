@@ -19,6 +19,7 @@ android {
     compileSdk = 35
 
     sourceSets["test"].resources.srcDir("../../../fixtures")
+    sourceSets["debug"].assets.srcDir("../../../fixtures")
 
     defaultConfig {
         applicationId = "io.github.baba983.nativedo"

@@ -35,7 +35,13 @@ import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
+import android.text.Html
 import android.text.InputType
+import android.text.SpannableStringBuilder
+import android.text.TextPaint
+import android.text.method.LinkMovementMethod
+import android.text.style.ClickableSpan
+import android.text.style.URLSpan
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
@@ -60,7 +66,7 @@ import io.github.baba983.nativedo.NativeDoApp
 import io.github.baba983.nativedo.R
 import io.github.baba983.nativedo.core.di.AppContainer
 import io.github.baba983.nativedo.core.session.AppSessionState
-import io.github.baba983.nativedo.core.ui.HtmlPostBodyView
+import io.github.baba983.nativedo.core.ui.normalizeInlineHtml
 import io.github.baba983.nativedo.feature.profile.data.ProfileRepository
 import io.github.baba983.nativedo.feature.profile.ui.ProfileUiState
 import io.github.baba983.nativedo.feature.profile.ui.ProfileViewModel
@@ -1143,7 +1149,7 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
         }
     }
 
-    // --- Bio cell (ComposeView-based) ---
+    // --- Bio cell ---
 
     private inner class BioFactory : UItem.ViewFactory {
         override fun getViewType(): Int = VIEW_TYPE_BIO
@@ -1154,40 +1160,61 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
         override fun isEnabled(item: UItem): Boolean = false
     }
 
-    private inner class BioCell(context: Context) : LinearLayout(context), Theme.Colorable {
-        private val composeView = androidx.compose.ui.platform.ComposeView(context)
+    private inner class BioCell(context: Context) : FrameLayout(context), Theme.Colorable {
+        private val textView = TextView(context).apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15f)
+            setLineSpacing(AndroidUtilities.dp(2f).toFloat(), 1.0f)
+            movementMethod = LinkMovementMethod.getInstance()
+            highlightColor = ColorUtils.setAlphaComponent(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText), 42)
+            linksClickable = true
+        }
         private var currentBio: String? = null
 
         init {
-            orientation = VERTICAL
             setPadding(
                 AndroidUtilities.dp(20f),
                 AndroidUtilities.dp(12f),
                 AndroidUtilities.dp(20f),
                 AndroidUtilities.dp(16f),
             )
-            addView(composeView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-            composeView.setViewCompositionStrategy(
-                androidx.compose.ui.platform.ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool
-            )
+            addView(textView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT))
         }
 
         fun bind(bio: String) {
             if (currentBio != bio) {
                 currentBio = bio
-                composeView.setContent {
-                    HtmlPostBodyView(
-                        html = bio,
-                        cookieStore = appContainer.cookieStore,
-                        baseUrl = appContainer.baseUrl,
-                    )
-                }
+                textView.text = buildBioText(bio)
             }
             updateColors()
         }
 
         override fun updateColors() {
             background = sectionBackground()
+            textView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText))
+            textView.setLinkTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText))
+        }
+
+        private fun buildBioText(bio: String): CharSequence {
+            val parsed = Html.fromHtml(normalizeInlineHtml(bio), Html.FROM_HTML_MODE_COMPACT)
+            val text = SpannableStringBuilder(parsed)
+            text.getSpans(0, text.length, URLSpan::class.java).forEach { span ->
+                val start = text.getSpanStart(span)
+                val end = text.getSpanEnd(span)
+                val flags = text.getSpanFlags(span)
+                val url = span.url
+                text.removeSpan(span)
+                text.setSpan(object : ClickableSpan() {
+                    override fun onClick(widget: View) {
+                        Browser.openUrl(parentActivity ?: return, url)
+                    }
+
+                    override fun updateDrawState(ds: TextPaint) {
+                        super.updateDrawState(ds)
+                        ds.color = Theme.getColor(Theme.key_windowBackgroundWhiteBlueText)
+                    }
+                }, start, end, flags)
+            }
+            return text
         }
     }
 
