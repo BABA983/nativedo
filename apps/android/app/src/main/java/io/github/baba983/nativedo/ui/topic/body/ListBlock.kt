@@ -113,7 +113,19 @@ internal class ListBlock(
 
     override fun fillTextLayoutBlocks(blocks: ArrayList<TextSelectionHelper.TextLayoutBlock>, x: Int, y: Int) {
         itemBlocks.forEachIndexed { index, item ->
+            val before = blocks.size
             item.fillTextLayoutBlocks(blocks, x + markerColumnWidth, y + itemTops[index])
+            val prefix = if (block.ordered) "${index + 1}." else "•"
+            for (i in before until blocks.size) {
+                val current = blocks[i]
+                blocks[i] = PostSelectionLayoutBlock(
+                    layout = current.layout,
+                    x = current.x,
+                    y = current.y,
+                    row = current.row,
+                    prefix = prefix,
+                )
+            }
         }
     }
 

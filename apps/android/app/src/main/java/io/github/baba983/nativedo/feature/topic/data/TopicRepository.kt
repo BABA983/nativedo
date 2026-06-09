@@ -31,4 +31,8 @@ open class TopicRepository protected constructor() {
     open suspend fun toggleReaction(postId: Long, reactionId: String): Result<Unit> = runCatching {
         client.toggleReaction(postId = postId, reactionId = reactionId)
     }
+
+    open suspend fun votePoll(postId: Long, pollName: String, optionId: String): Result<Unit> = runCatching {
+        client.votePoll(postId = postId, pollName = pollName, optionId = optionId)
+    }
 }

@@ -7,16 +7,18 @@ import androidx.annotation.ColorInt
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.ui.ActionBar.Theme
 
-internal class PostBodyBuildContext(
+internal class PostBodyBuildContext @JvmOverloads constructor(
     val host: View,
     val baseUrl: String,
     val delegate: PostBodyDelegate,
+    val hiddenImageUrlProvider: () -> String? = { null },
     val imagePool: PostBodyImagePool = PostBodyImagePool(host),
     @ColorInt val textColor: Int,
     @ColorInt val secondaryTextColor: Int,
     @ColorInt val accentColor: Int,
     @ColorInt val chipBackgroundColor: Int,
     @ColorInt val dividerColor: Int,
+    val selectionGeometryInvalidator: () -> Unit = { host.invalidate() },
 ) {
     @ColorInt val subtleBackgroundColor: Int = Theme.multAlpha(secondaryTextColor, 0.10f)
     @ColorInt val mediaPlaceholderColor: Int = Theme.multAlpha(secondaryTextColor, 0.12f)

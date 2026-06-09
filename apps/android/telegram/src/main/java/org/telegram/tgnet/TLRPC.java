@@ -464,7 +464,7 @@ public class TLRPC {
         public int cachedWidth;
         public int cachedHeight;
         public PhotoSize thumb;
-        public Object thumbObject;
+        public TLObject thumbObject;
         public RichText title;
         public RichText text;
         public RichText subtitle;

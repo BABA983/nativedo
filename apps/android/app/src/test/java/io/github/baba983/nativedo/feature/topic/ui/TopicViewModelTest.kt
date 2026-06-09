@@ -185,7 +185,7 @@ class TopicViewModelTest {
         val quotePost = post(id = 2001L, postNumber = 9).copy(cookedHtml = "<p>quoted</p>")
         val repository = FakeTopicRepository(
             detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L)),
-            quotePost = Result.success(quotePost),
+            postByNumber = Result.success(quotePost),
         )
         viewModel = TopicViewModel(repository = repository, topicId = 101L)
         viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
@@ -194,6 +194,24 @@ class TopicViewModelTest {
 
         assertThat(result.getOrThrow()).isEqualTo("<p>quoted</p>")
         assertThat(repository.loadPostByNumberRequests).containsExactly(101L to 9)
+    }
+
+    @Test
+    fun onPollOptionSelectedVotesAndRefreshesPost() = runTest {
+        val refreshedPost = post(id = 1001L, postNumber = 1).copy(cookedHtml = "<p>updated poll</p>")
+        val repository = FakeTopicRepository(
+            detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L)),
+            postByNumber = Result.success(refreshedPost),
+        )
+        viewModel = TopicViewModel(repository = repository, topicId = 101L)
+        viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
+
+        viewModel.onPollOptionSelected(postId = 1001L, postNumber = 1, pollName = "frontend", optionId = "option-a")
+        runCurrent()
+
+        assertThat(repository.votePollRequests).containsExactly(Triple(1001L, "frontend", "option-a"))
+        assertThat(repository.loadPostByNumberRequests).containsExactly(101L to 1)
+        assertThat(viewModel.uiState.value.posts.single().cookedHtml).isEqualTo("<p>updated poll</p>")
     }
 
     @Test
@@ -237,15 +255,17 @@ class TopicViewModelTest {
     private class FakeTopicRepository(
         private val detail: Result<TopicDetail>,
         private val posts: Result<List<Post>> = Result.success(emptyList()),
-        private val quotePost: Result<Post> = Result.failure(IllegalStateException("quote not configured")),
+        private val postByNumber: Result<Post> = Result.failure(IllegalStateException("post not configured")),
         private val reactionUsers: Result<List<PostReactionUsersGroup>> = Result.success(emptyList()),
         private val toggleReactionResult: Result<Unit> = Result.success(Unit),
+        private val votePollResult: Result<Unit> = Result.success(Unit),
     ) : TopicRepository() {
         val loadRequests = mutableListOf<Long>()
         val loadPostRequests = mutableListOf<Pair<Long, List<Long>>>()
         val loadPostByNumberRequests = mutableListOf<Pair<Long, Int>>()
         val reactionUsersRequests = mutableListOf<Long>()
         val toggleReactionRequests = mutableListOf<Pair<Long, String>>()
+        val votePollRequests = mutableListOf<Triple<Long, String, String>>()
 
         override suspend fun load(topicId: Long): Result<TopicDetail> {
             loadRequests += topicId
@@ -259,7 +279,7 @@ class TopicViewModelTest {
 
         override suspend fun loadPostByNumber(topicId: Long, postNumber: Int): Result<Post> {
             loadPostByNumberRequests += topicId to postNumber
-            return quotePost
+            return postByNumber
         }
 
         override suspend fun loadReactionUsers(postId: Long): Result<List<PostReactionUsersGroup>> {
@@ -270,6 +290,11 @@ class TopicViewModelTest {
         override suspend fun toggleReaction(postId: Long, reactionId: String): Result<Unit> {
             toggleReactionRequests += postId to reactionId
             return toggleReactionResult
+        }
+
+        override suspend fun votePoll(postId: Long, pollName: String, optionId: String): Result<Unit> {
+            votePollRequests += Triple(postId, pollName, optionId)
+            return votePollResult
         }
     }
 

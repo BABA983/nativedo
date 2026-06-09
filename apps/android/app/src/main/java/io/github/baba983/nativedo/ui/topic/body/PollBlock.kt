@@ -10,8 +10,10 @@ import android.text.TextPaint
 import android.view.MotionEvent
 import io.github.baba983.nativedo.core.html.CookedPostBlock
 import org.telegram.messenger.AndroidUtilities
+import org.telegram.ui.Cells.TextSelectionHelper
 import org.telegram.ui.Components.AnimatedFloat
 import org.telegram.ui.Components.CubicBezierInterpolator
+import java.util.ArrayList
 
 internal class PollBlock(
     private val block: CookedPostBlock.Poll,
@@ -20,6 +22,7 @@ internal class PollBlock(
     private val stateIndex: Int = -1,
 ) : PostBodyBlock {
     private data class OptionLayout(
+        val option: CookedPostBlock.PollOption,
         val text: StaticLayout,
         val percent: StaticLayout,
         val rect: RectF,
@@ -62,7 +65,7 @@ internal class PollBlock(
     private var footerLayout: StaticLayout? = null
     private var measuredHeight = 0
     private var contentWidth = 0
-    private var selectedOption = state?.selectedPollOptionsByIndex?.get(stateIndex) ?: -1
+    private var pressedOption = -1
     private var percentAnimations: List<AnimatedFloat> = emptyList()
 
     override fun measure(maxWidthPx: Int): Int {
@@ -78,8 +81,8 @@ internal class PollBlock(
         titleLayout = layout(title, titlePaint, titleWidth, maxLines = 2)
         statusLayout = statusText?.let { layout(it, statusPaint, statusWidth.coerceAtLeast(AndroidUtilities.dp(40f)), maxLines = 1) }
         var y = padding + maxOf(titleLayout?.height ?: 0, statusLayout?.height ?: 0) + spacing
-        val options = block.options.ifEmpty { listOf("暂无选项") }
-        val percents = optionPercents(options.size)
+        val options = block.options.ifEmpty { listOf(CookedPostBlock.PollOption(id = null, label = "暂无选项")) }
+        val percents = optionPercents(options)
         if (percentAnimations.size != options.size) {
             percentAnimations = List(options.size) {
                 AnimatedFloat(0f, context.host, 0, 220, CubicBezierInterpolator.EASE_OUT_QUINT)
@@ -87,10 +90,11 @@ internal class PollBlock(
         }
         optionLayouts = options.mapIndexed { index, option ->
             val percent = percents[index]
-            val text = layout(option, optionTextPaint, contentWidth - AndroidUtilities.dp(72f), maxLines = 3)
+            val text = layout(option.label, optionTextPaint, contentWidth - AndroidUtilities.dp(72f), maxLines = 3)
             val percentLayout = layout("${(percent * 100).toInt()}%", footerPaint, AndroidUtilities.dp(42f), maxLines = 1)
             val optionHeight = maxOf(text.height, AndroidUtilities.dp(24f)) + AndroidUtilities.dp(14f)
             OptionLayout(
+                option = option,
                 text = text,
                 percent = percentLayout,
                 rect = RectF(textLeft.toFloat(), y.toFloat(), (textLeft + contentWidth).toFloat(), (y + optionHeight).toFloat()),
@@ -133,12 +137,15 @@ internal class PollBlock(
             canvas.restore()
         }
         optionLayouts.forEachIndexed { index, option ->
-            val selected = index == selectedOption
+            val selected = option.option.selected || state?.selectedPollOptionsByIndex?.get(stateIndex) == index
             val radius = AndroidUtilities.dp(6f).toFloat()
             val bar = RectF(option.rect)
             val animatedPercent = percentAnimations.getOrNull(index)?.set(option.percentValue) ?: option.percentValue
             bar.right = bar.left + option.rect.width() * animatedPercent
             canvas.drawRoundRect(bar, radius, radius, if (selected) selectedBarPaint else barPaint)
+            if (pressedOption == index) {
+                canvas.drawRoundRect(option.rect, radius, radius, selectedBarPaint)
+            }
 
             val cy = option.rect.centerY()
             val cx = option.rect.left + AndroidUtilities.dp(12f)
@@ -171,28 +178,73 @@ internal class PollBlock(
         }
     }
 
-    override fun onTouch(event: MotionEvent, localX: Float, localY: Float): Boolean {
-        val index = optionLayouts.indexOfFirst { it.rect.contains(localX, localY) }
-        if (index < 0) return false
-        if (event.actionMasked == MotionEvent.ACTION_UP) {
-            selectedOption = if (selectedOption == index) -1 else index
-            if (selectedOption >= 0) {
-                state?.selectedPollOptionsByIndex?.put(stateIndex, selectedOption)
-            } else {
-                state?.selectedPollOptionsByIndex?.remove(stateIndex)
-            }
-            context.host.invalidate()
+    override fun fillTextLayoutBlocks(blocks: ArrayList<TextSelectionHelper.TextLayoutBlock>, x: Int, y: Int) {
+        val padding = AndroidUtilities.dp(12f)
+        val textLeft = textLeft()
+        titleLayout?.let { layout ->
+            blocks.add(PostSelectionLayoutBlock(layout, x + textLeft, y + padding))
         }
-        return event.actionMasked == MotionEvent.ACTION_DOWN || event.actionMasked == MotionEvent.ACTION_UP
+        statusLayout?.let { layout ->
+            blocks.add(PostSelectionLayoutBlock(layout, x + textLeft + contentWidth - layout.width, y + padding))
+        }
+        optionLayouts.forEachIndexed { index, option ->
+            val row = index + 1
+            blocks.add(PostSelectionLayoutBlock(option.text, x + option.rect.left.toInt() + AndroidUtilities.dp(30f), y + option.rect.top.toInt() + AndroidUtilities.dp(7f), row = row))
+            blocks.add(PostSelectionLayoutBlock(option.percent, x + option.rect.right.toInt() - option.percent.width, y + option.rect.top.toInt() + AndroidUtilities.dp(7f), row = row))
+        }
+        footerLayout?.let { layout ->
+            blocks.add(PostSelectionLayoutBlock(layout, x + textLeft, y + measuredHeight - padding - layout.height))
+        }
     }
 
-    private fun optionPercents(optionCount: Int): List<Float> {
-        if (optionCount <= 0) return emptyList()
-        val selected = selectedOption.takeIf { it in 0 until optionCount }
-        if (selected != null) {
-            return List(optionCount) { index -> if (index == selected) 1f else 0f }
+    override fun onTouch(event: MotionEvent, localX: Float, localY: Float): Boolean {
+        val index = optionLayouts.indexOfFirst { it.rect.contains(localX, localY) }
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                if (index < 0) return false
+                pressedOption = index
+                context.host.invalidate()
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (pressedOption >= 0 && pressedOption != index) {
+                    pressedOption = -1
+                    context.host.invalidate()
+                }
+                return pressedOption >= 0
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                val releasedIndex = pressedOption
+                val wasPressed = releasedIndex >= 0
+                pressedOption = -1
+                if (wasPressed) {
+                    context.host.invalidate()
+                }
+                if (event.actionMasked == MotionEvent.ACTION_UP && wasPressed && releasedIndex == index) {
+                    val option = optionLayouts.getOrNull(releasedIndex)?.option
+                    val pollName = block.name
+                    val optionId = option?.id
+                    if (!pollName.isNullOrBlank() && !optionId.isNullOrBlank() && block.status != "closed") {
+                        state?.selectedPollOptionsByIndex?.set(stateIndex, releasedIndex)
+                        context.delegate.onPollOptionSelected(pollName, optionId)
+                    }
+                }
+                return wasPressed
+            }
         }
-        return List(optionCount) { 0f }
+        return false
+    }
+
+    private fun optionPercents(options: List<CookedPostBlock.PollOption>): List<Float> {
+        if (options.isEmpty()) return emptyList()
+        if (options.any { it.percent != null }) {
+            return options.map { it.percent ?: 0f }
+        }
+        val voteTotal = options.mapNotNull { it.votes }.sum().takeIf { it > 0 } ?: block.voters?.takeIf { it > 0 }
+        if (voteTotal != null) {
+            return options.map { option -> option.votes?.let { (it.toFloat() / voteTotal).coerceIn(0f, 1f) } ?: 0f }
+        }
+        return List(options.size) { 0f }
     }
 
     private fun textLeft(): Int = AndroidUtilities.dp(18f + 14f)

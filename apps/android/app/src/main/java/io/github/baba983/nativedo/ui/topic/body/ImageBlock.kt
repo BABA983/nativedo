@@ -20,6 +20,8 @@ import io.github.baba983.nativedo.core.html.GalleryImage
 import io.github.baba983.nativedo.core.html.resolvePostImageUrl
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ImageReceiver
+import org.telegram.ui.Cells.TextSelectionHelper
+import java.util.ArrayList
 import kotlin.math.roundToInt
 
 internal class ImageBlock(
@@ -65,10 +67,13 @@ internal class ImageBlock(
     }
 
     override fun draw(canvas: Canvas, parentWidth: Int) {
+        val hidden = context.hiddenImageUrlProvider() == targetUrl
         canvas.drawRoundRect(imageRect, AndroidUtilities.dp(14f).toFloat(), AndroidUtilities.dp(14f).toFloat(), placeholderPaint)
-        receiver.setBounds(imageRect)
-        receiver.draw(canvas)
-        if (pressed) {
+        if (!hidden) {
+            receiver.setBounds(imageRect)
+            receiver.draw(canvas)
+        }
+        if (pressed && !hidden) {
             canvas.drawRoundRect(imageRect, AndroidUtilities.dp(14f).toFloat(), AndroidUtilities.dp(14f).toFloat(), pressedPaint)
         }
         captionLayout?.let { layout ->
@@ -98,8 +103,12 @@ internal class ImageBlock(
             context.delegate.onImageClick(
                 url = targetUrl,
                 gallery = gallery,
-                sourceBoundsInWindow = imageBoundsInCell(),
+                sourceBoundsInBlock = imageBoundsInCell(),
                 hostView = context.host,
+                sourceBoundsProvider = { imageUrl -> if (imageUrl == targetUrl) imageBoundsInCell() else null },
+                sourceImageReceiverProvider = { imageUrl -> if (imageUrl == targetUrl) receiver else null },
+                sourceBitmapProvider = { imageUrl -> if (imageUrl == targetUrl) receiver.getBitmapSafe() else null },
+                sourceRadiusProvider = { imageUrl -> if (imageUrl == targetUrl) receiver.getRoundRadius(true).copyOf() else null },
             )
             return true
         }
@@ -109,6 +118,19 @@ internal class ImageBlock(
             return true
         }
         return pressed
+    }
+
+    override fun fillTextLayoutBlocks(blocks: ArrayList<TextSelectionHelper.TextLayoutBlock>, x: Int, y: Int) {
+        val layout = captionLayout ?: return
+        blocks.add(PostSelectionLayoutBlock(layout, x, y + imageRect.bottom.toInt() + AndroidUtilities.dp(6f)))
+    }
+
+    override fun imageBoundsInBlock(imageUrl: String): RectF? {
+        return if (imageUrl == targetUrl) imageBoundsInCell() else null
+    }
+
+    override fun imageReceiverForUrl(imageUrl: String): ImageReceiver? {
+        return if (imageUrl == targetUrl) receiver else null
     }
 
     override fun onAttachedToWindow() {

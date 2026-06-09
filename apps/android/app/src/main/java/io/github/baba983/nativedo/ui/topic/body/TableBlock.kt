@@ -18,6 +18,8 @@ import android.view.MotionEvent
 import android.view.ViewConfiguration
 import io.github.baba983.nativedo.core.html.CookedPostBlock
 import org.telegram.messenger.AndroidUtilities
+import org.telegram.ui.Cells.TextSelectionHelper
+import java.util.ArrayList
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -67,16 +69,21 @@ internal class TableBlock(
             clipRect.setEmpty()
             return measuredHeight
         }
-        val minColumnWidth = AndroidUtilities.dp(96f)
         val horizontalPadding = AndroidUtilities.dp(12f)
         val verticalPadding = AndroidUtilities.dp(8f)
-        columnWidths = IntArray(columnCount) { minColumnWidth }
+        val minColumnWidth = AndroidUtilities.dp(72f)
+        val maxColumnWidth = AndroidUtilities.dp(240f)
+        val desiredColumnWidths = IntArray(columnCount) { minColumnWidth }
+        val minimumColumnWidths = IntArray(columnCount) { minColumnWidth }
         rows.forEach { row ->
             row.forEachIndexed { column, text ->
-                val width = bodyPaint.measureText(text).roundToInt() + horizontalPadding * 2
-                columnWidths[column] = maxOf(columnWidths[column], width.coerceAtMost(AndroidUtilities.dp(180f)))
+                val desired = bodyPaint.measureText(text).roundToInt() + horizontalPadding * 2
+                val longestWord = text.split(Regex("\\s+")).maxOfOrNull { bodyPaint.measureText(it).roundToInt() } ?: 0
+                desiredColumnWidths[column] = maxOf(desiredColumnWidths[column], desired.coerceIn(minColumnWidth, maxColumnWidth))
+                minimumColumnWidths[column] = maxOf(minimumColumnWidths[column], (longestWord + horizontalPadding * 2).coerceIn(minColumnWidth, maxColumnWidth))
             }
         }
+        columnWidths = distributeColumnWidths(minimumColumnWidths, desiredColumnWidths, viewportWidth)
         columnLefts = IntArray(columnCount)
         var x = 0
         columnWidths.forEachIndexed { index, width ->
@@ -157,15 +164,27 @@ internal class TableBlock(
             MotionEvent.ACTION_MOVE -> {
                 val dx = localX - downX
                 val dy = localY - downY
-                if (!dragging && abs(dx) > touchSlop && abs(dx) > abs(dy)) {
-                    dragging = true
-                    setParentInterceptBlocked(true)
+                val movedX = abs(dx)
+                val movedY = abs(dy)
+                if (!dragging && (movedX > touchSlop || movedY > touchSlop)) {
+                    if (movedX > movedY) {
+                        dragging = true
+                        setParentInterceptBlocked(true)
+                    } else {
+                        setParentInterceptBlocked(false)
+                        return false
+                    }
                 }
                 if (dragging) {
                     val delta = lastX - localX
-                    scrollX = (scrollX + delta).coerceIn(0f, maxScroll().toFloat())
+                    val nextScrollX = (scrollX + delta).coerceIn(0f, maxScroll().toFloat())
                     lastX = localX
-                    context.host.invalidate()
+                    if (nextScrollX != scrollX) {
+                        scrollX = nextScrollX
+                        context.selectionGeometryInvalidator()
+                    } else {
+                        context.host.invalidate()
+                    }
                     return true
                 }
             }
@@ -203,5 +222,51 @@ internal class TableBlock(
 
     private fun setParentInterceptBlocked(blocked: Boolean) {
         context.host.parent?.requestDisallowInterceptTouchEvent(blocked)
+    }
+
+    override fun fillTextLayoutBlocks(blocks: ArrayList<TextSelectionHelper.TextLayoutBlock>, x: Int, y: Int) {
+        val horizontalPadding = AndroidUtilities.dp(12f)
+        val verticalPadding = AndroidUtilities.dp(8f)
+        cellLayouts.forEach { cell ->
+            blocks.add(TableSelectionBlock(
+                layout = cell.layout,
+                x = x + columnLefts[cell.column] + horizontalPadding - scrollX.roundToInt(),
+                y = y + rowTops[cell.row] + verticalPadding,
+                row = cell.row + 1,
+            ))
+        }
+    }
+
+    private fun distributeColumnWidths(minimumWidths: IntArray, desiredWidths: IntArray, targetWidth: Int): IntArray {
+        val widths = desiredWidths.copyOf()
+        val desiredTotal = widths.sum()
+        if (desiredTotal >= targetWidth) {
+            return widths
+        }
+        val minimumTotal = minimumWidths.sum()
+        if (minimumTotal >= targetWidth) {
+            return minimumWidths
+        }
+        var remaining = targetWidth - desiredTotal
+        var index = 0
+        while (remaining > 0 && widths.isNotEmpty()) {
+            widths[index % widths.size] += 1
+            index++
+            remaining--
+        }
+        return widths
+    }
+
+    private class TableSelectionBlock(
+        private val layout: StaticLayout,
+        private val x: Int,
+        private val y: Int,
+        private val row: Int,
+    ) : TextSelectionHelper.TextLayoutBlock {
+        override fun getLayout(): StaticLayout = layout
+        override fun getX(): Int = x
+        override fun getY(): Int = y
+        override fun getRow(): Int = row
+        override fun getPrefix(): CharSequence? = null
     }
 }

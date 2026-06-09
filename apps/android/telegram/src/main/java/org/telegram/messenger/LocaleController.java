@@ -53,6 +53,10 @@ public final class LocaleController {
         return sb.toString();
     }
 
+    public static String formatDuration(int duration) {
+        return AndroidUtilities.formatShortDuration(duration);
+    }
+
     public static void init(Context context) {
         applicationContext = context.getApplicationContext();
     }
@@ -135,6 +139,18 @@ public final class LocaleController {
 
     public static LocaleController getInstance() {
         return new LocaleController();
+    }
+
+    public LocaleInfo getCurrentLocaleInfo() {
+        return new LocaleInfo(Locale.getDefault().getLanguage());
+    }
+
+    public static final class LocaleInfo {
+        public final String shortName;
+
+        public LocaleInfo(String shortName) {
+            this.shortName = shortName == null ? "en" : shortName;
+        }
     }
 
     public SimpleDateFormat getChatFullDate() {

@@ -11,11 +11,11 @@ package io.github.baba983.nativedo.ui.topic.cell
 import android.content.Context
 import android.view.Gravity
 import android.view.View
-import android.widget.TextView
+import androidx.appcompat.widget.AppCompatTextView
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.ui.ActionBar.Theme
 
-internal class TopicFooterCell(context: Context) : TextView(context), Theme.Colorable {
+internal class TopicFooterCell(context: Context) : AppCompatTextView(context), Theme.Colorable {
     init {
         setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText))
         textSize = 14f

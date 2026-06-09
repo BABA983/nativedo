@@ -111,6 +111,9 @@ internal class QuoteBlock(
     }
 
     override fun fillTextLayoutBlocks(blocks: ArrayList<TextSelectionHelper.TextLayoutBlock>, x: Int, y: Int) {
+        titleLayout?.let { layout ->
+            blocks.add(PostSelectionLayoutBlock(layout, x + textLeft, y + AndroidUtilities.dp(8f)))
+        }
         bodyBlock.fillTextLayoutBlocks(blocks, x + textLeft, y + bodyTop)
     }
 

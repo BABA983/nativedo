@@ -22,6 +22,8 @@ import io.github.baba983.nativedo.core.html.GalleryImage
 import io.github.baba983.nativedo.core.html.resolvePostImageUrl
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ImageReceiver
+import org.telegram.ui.Cells.TextSelectionHelper
+import java.util.ArrayList
 
 internal class OneboxBlock(
     private val block: CookedPostBlock.Onebox,
@@ -168,17 +170,26 @@ internal class OneboxBlock(
             receiver.draw(canvas)
         }
         thumbnailReceiver?.let { receiver ->
-            layout.thumbnailBounds?.let { bounds ->
+            val bounds = layout.thumbnailBounds
+            if (bounds != null && context.hiddenImageUrlProvider() != thumbnailUrl) {
                 canvas.drawRoundRect(bounds, AndroidUtilities.dp(8f).toFloat(), AndroidUtilities.dp(8f).toFloat(), placeholderPaint)
                 receiver.setBounds(bounds)
+                receiver.draw(canvas)
             }
-            receiver.draw(canvas)
         }
         layout.domainLayout?.draw(canvas)
         layout.titleLayout.draw(canvas)
         layout.descriptionLayout?.draw(canvas)
         canvas.drawRoundRect(layout.openButtonBounds, AndroidUtilities.dp(6f).toFloat(), AndroidUtilities.dp(6f).toFloat(), buttonPaint)
         layout.openButtonLayout.draw(canvas)
+    }
+
+    override fun fillTextLayoutBlocks(blocks: ArrayList<TextSelectionHelper.TextLayoutBlock>, x: Int, y: Int) {
+        val layout = previewLayout ?: return
+        layout.domainLayout?.let { block -> blocks.add(block.asSelectionBlock(x, y)) }
+        blocks.add(layout.titleLayout.asSelectionBlock(x, y))
+        layout.descriptionLayout?.let { block -> blocks.add(block.asSelectionBlock(x, y)) }
+        blocks.add(layout.openButtonLayout.asSelectionBlock(x, y))
     }
 
     override fun onTouch(event: MotionEvent, localX: Float, localY: Float): Boolean {
@@ -196,8 +207,12 @@ internal class OneboxBlock(
                     OneboxHitTarget.Thumbnail -> context.delegate.onImageClick(
                         url = thumbnailUrl ?: resolvedHref,
                         gallery = thumbnailUrl?.let { listOf(GalleryImage(url = it, thumbUrl = it)) }.orEmpty(),
-                        sourceBoundsInWindow = layout.thumbnailBounds?.let(::RectF),
+                        sourceBoundsInBlock = layout.thumbnailBounds?.let(::RectF),
                         hostView = context.host,
+                        sourceBoundsProvider = { imageUrl -> if (imageUrl == thumbnailUrl) layout.thumbnailBounds?.let(::RectF) else null },
+                        sourceImageReceiverProvider = { imageUrl -> if (imageUrl == thumbnailUrl) thumbnailReceiver else null },
+                        sourceBitmapProvider = { imageUrl -> if (imageUrl == thumbnailUrl) thumbnailReceiver?.getBitmapSafe() else null },
+                        sourceRadiusProvider = { imageUrl -> if (imageUrl == thumbnailUrl) thumbnailReceiver?.getRoundRadius(true)?.copyOf() else null },
                     )
                     OneboxHitTarget.Card,
                     OneboxHitTarget.Description,
@@ -223,6 +238,14 @@ internal class OneboxBlock(
         thumbnailReceiver?.onDetachedFromWindow()
     }
 
+    override fun imageBoundsInBlock(imageUrl: String): RectF? {
+        return if (imageUrl == thumbnailUrl) previewLayout?.thumbnailBounds?.let(::RectF) else null
+    }
+
+    override fun imageReceiverForUrl(imageUrl: String): ImageReceiver? {
+        return if (imageUrl == thumbnailUrl) thumbnailReceiver else null
+    }
+
     private fun textPaint(color: Int, sizeSp: Float): TextPaint {
         return TextPaint(TextPaint.ANTI_ALIAS_FLAG).apply {
             this.color = color
@@ -245,5 +268,9 @@ internal class OneboxBlock(
         canvas.translate(x, y)
         layout.draw(canvas)
         canvas.restore()
+    }
+
+    private fun PositionedLayout.asSelectionBlock(parentX: Int, parentY: Int): TextSelectionHelper.TextLayoutBlock {
+        return PostSelectionLayoutBlock(layout, parentX + x.toInt(), parentY + y.toInt())
     }
 }

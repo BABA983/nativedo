@@ -26,10 +26,13 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.ResponseBody
+import retrofit2.http.Field
+import retrofit2.http.FormUrlEncoded
 import retrofit2.http.GET
 import retrofit2.http.Header
 import retrofit2.http.Headers
 import retrofit2.http.Path
+import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Query
 
@@ -80,6 +83,15 @@ interface DiscourseApiService {
     suspend fun toggleReaction(
         @Path("id") postId: Long,
         @Path("reaction") reactionId: String,
+        @Header("X-CSRF-Token") csrfToken: String,
+    ): ResponseBody
+
+    @FormUrlEncoded
+    @POST("polls/vote")
+    suspend fun votePoll(
+        @Field("post_id") postId: Long,
+        @Field("poll_name") pollName: String,
+        @Field("options[]") optionIds: List<String>,
         @Header("X-CSRF-Token") csrfToken: String,
     ): ResponseBody
 

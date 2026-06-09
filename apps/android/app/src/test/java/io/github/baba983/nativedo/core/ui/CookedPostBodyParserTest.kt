@@ -71,6 +71,44 @@ class CookedPostBodyParserTest {
     }
 
     @Test
+    fun parseCookedPostBody_preservesPollResultState() {
+        val html = """
+            <div class="poll" data-poll-name="frontend" data-poll-status="open" data-poll-type="regular">
+              <div class="poll-container">
+                <ul>
+                  <li data-poll-option-id="option-a" class="chosen">
+                    <span class="poll-option-label">Tool A</span>
+                    <span class="poll-option-votes">7 votes</span>
+                    <span class="poll-option-percent">70%</span>
+                  </li>
+                  <li data-poll-option-id="option-b">
+                    <span class="poll-option-label">Tool B</span>
+                    <span class="poll-option-votes">3 votes</span>
+                    <span class="poll-option-percent">30%</span>
+                  </li>
+                </ul>
+              </div>
+              <div class="poll-info"><div class="poll-info_counts"><div class="poll-info_counts-count"><span class="info-number">10</span></div></div></div>
+            </div>
+        """.trimIndent()
+
+        val poll = parseCookedPostBody(html, baseUrl)
+            .filterIsInstance<CookedPostBlock.Poll>()
+            .single()
+
+        assertThat(poll.name).isEqualTo("frontend")
+        assertThat(poll.status).isEqualTo("open")
+        assertThat(poll.type).isEqualTo("regular")
+        assertThat(poll.voters).isEqualTo(10)
+        assertThat(poll.options.map { it.id }).containsExactly("option-a", "option-b").inOrder()
+        assertThat(poll.options.map { it.label }).containsExactly("Tool A", "Tool B").inOrder()
+        assertThat(poll.options.map { it.votes }).containsExactly(7, 3).inOrder()
+        assertThat(poll.options.map { it.percent }).containsExactly(0.7f, 0.3f).inOrder()
+        assertThat(poll.options.first().selected).isTrue()
+        assertThat(poll.options.last().selected).isFalse()
+    }
+
+    @Test
     fun prepareInlineContent_extractsEmojiInlineImage() {
         val prepared = prepareInlineContent("""<p>Hello <img src="/images/emoji/twemoji/wave.png" class="emoji" title=":wave:" alt=":wave:"></p>""")
 

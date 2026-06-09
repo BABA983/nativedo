@@ -4,10 +4,8 @@ import android.animation.ValueAnimator
 import android.content.Context
 import android.content.DialogInterface
 import android.graphics.Canvas
-import android.graphics.Bitmap
 import android.graphics.Paint
 import android.graphics.RectF
-import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.GradientDrawable
 import android.view.MotionEvent
 import android.view.Gravity
@@ -17,6 +15,7 @@ import android.view.ViewGroup
 import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.TextView
+import androidx.appcompat.widget.AppCompatTextView
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -29,7 +28,6 @@ import io.github.baba983.nativedo.core.html.resolvePostImageUrl
 import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.PostReaction
 import io.github.baba983.nativedo.core.model.PostReactionUser
-import io.github.baba983.nativedo.core.ui.RoundedImageView
 import io.github.baba983.nativedo.core.ui.resolveAvatarUrl
 import io.github.baba983.nativedo.feature.topic.data.TopicRepository
 import io.github.baba983.nativedo.feature.topic.ui.TopicReplySheetItem
@@ -51,11 +49,14 @@ import kotlinx.coroutines.launch
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ImageLocation
 import org.telegram.messenger.ImageReceiver
+import org.telegram.messenger.MessageObject
 import org.telegram.messenger.browser.Browser
+import org.telegram.tgnet.TLRPC
 import org.telegram.ui.ActionBar.BackDrawable
 import org.telegram.ui.ActionBar.BaseFragment
 import org.telegram.ui.ActionBar.BottomSheet
 import org.telegram.ui.ActionBar.Theme
+import org.telegram.ui.PhotoViewer
 import org.telegram.ui.Cells.TextSelectionHelper
 import org.telegram.ui.Cells.LoadingCell
 import org.telegram.ui.Components.AvatarDrawable
@@ -65,6 +66,7 @@ import org.telegram.ui.Components.LayoutHelper
 import org.telegram.ui.Components.PullForegroundDrawable
 import org.telegram.ui.Components.RecyclerListView
 import org.telegram.ui.Components.SizeNotifierFrameLayout
+import java.net.URLEncoder
 
 class TopicDetailFragment(
     private val topicId: Long,
@@ -105,6 +107,17 @@ class TopicDetailFragment(
             setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite))
         }
         textSelectionHelper.setParentView(root)
+        textSelectionHelper.setOnTranslate { text, _, toLang, onAlertDismiss ->
+            parentActivity?.let { activity ->
+                val encoded = URLEncoder.encode(text.toString(), Charsets.UTF_8.name())
+                val targetLanguage = toLang?.takeIf { it.isNotBlank() } ?: "zh-CN"
+                Browser.openUrl(activity, "https://translate.google.com/?sl=auto&tl=$targetLanguage&op=translate&text=$encoded")
+            }
+            onAlertDismiss.run()
+        }
+        textSelectionHelper.setOnQuote { text ->
+            AndroidUtilities.addToClipboard(text.lines().joinToString("\n") { line -> "> $line" })
+        }
         root.addView(actionBar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT))
 
         adapter = TopicDetailAdapter(context)
@@ -116,6 +129,7 @@ class TopicDetailFragment(
             adapter = this@TopicDetailFragment.adapter
             addOnScrollListener(object : RecyclerView.OnScrollListener() {
                 override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                    textSelectionHelper.onParentScrolled()
                     updateCollapsedTitle()
                     if (dy <= 0) return
                     val manager = recyclerView.layoutManager as? LinearLayoutManager ?: return
@@ -125,6 +139,7 @@ class TopicDetailFragment(
                 }
             })
         }
+        textSelectionHelper.setRecyclerView(listView)
         pullRefreshLayout = PullRefreshLayout(
             context = context,
             listView = listView,
@@ -132,6 +147,10 @@ class TopicDetailFragment(
         )
         root.addView(
             pullRefreshLayout,
+            LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT.toFloat(), Gravity.TOP, 0f, 0f, 0f, 0f),
+        )
+        root.addView(
+            textSelectionHelper.getOverlayView(context),
             LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT.toFloat(), Gravity.TOP, 0f, 0f, 0f, 0f),
         )
         actionBar.bringToFront()
@@ -152,7 +171,9 @@ class TopicDetailFragment(
     }
 
     override fun onFragmentDestroy() {
+        textSelectionHelper.destroy()
         collectorScope.cancel()
+        PhotoViewer.getInstance().closePhoto(false, false)
         reactionUsersSheet?.dismiss()
         reactionUsersSheet = null
         reactionPickerSheet?.dismiss()
@@ -180,27 +201,97 @@ class TopicDetailFragment(
     }
 
     private fun openImageViewer(
+        post: Post,
         url: String,
         galleryImages: List<GalleryImage>,
-        initialThumb: Bitmap?,
         tappedSourceView: View?,
-        imageViewByUrl: Map<String, View>,
         sourceBoundsProvider: (String) -> RectF?,
-        setHiddenImageUrl: (String?) -> Unit,
+        sourceImageReceiverProvider: (String) -> ImageReceiver?,
+        sourceBitmapProvider: (String) -> ImageReceiver.BitmapHolder?,
+        sourceRadiusProvider: (String) -> IntArray?,
     ) {
-        @Suppress("UNUSED_PARAMETER", "UNUSED_VARIABLE")
-        val ignored = listOf<Any?>(
-            url,
-            galleryImages,
-            initialThumb,
-            tappedSourceView,
-            imageViewByUrl,
-            sourceBoundsProvider,
-            setHiddenImageUrl,
-            getPhotoViewerScaleView(),
-            AndroidUtilities.dp(14f),
-        )
-        setHiddenImageUrl(null)
+        val urls = galleryImages.map { it.url }.ifEmpty { listOf(url) }
+        val sourceCell = tappedSourceView as? TopicPostCell
+        val setHiddenImageUrl: (String?) -> Unit = { hiddenUrl -> sourceCell?.setHiddenImageUrl(hiddenUrl) }
+        val viewer = PhotoViewer.getInstance()
+        viewer.setParentActivity(this)
+        val provider = object : PhotoViewer.EmptyPhotoViewerProvider() {
+            private fun sourceBitmap(imageUrl: String): ImageReceiver.BitmapHolder? {
+                return sourceCell?.imageBitmapForUrl(imageUrl) ?: sourceBitmapProvider(imageUrl)
+            }
+
+            override fun getPlaceForPhoto(
+                messageObject: MessageObject?,
+                fileLocation: TLRPC.FileLocation?,
+                index: Int,
+                needPreview: Boolean,
+                closing: Boolean,
+            ): PhotoViewer.PlaceProviderObject? {
+                val imageUrl = urls.getOrNull(index) ?: return null
+                val cellPlace = sourceCell?.getPlaceForPhoto(imageUrl, needPreview, closing)
+                if (cellPlace != null) {
+                    return cellPlace
+                }
+                val bounds = sourceBoundsProvider(imageUrl) ?: return null
+                val imageReceiver = sourceImageReceiverProvider(imageUrl)
+                return PhotoViewer.PlaceProviderObject().apply {
+                    viewX = (bounds.left - (imageReceiver?.imageX ?: 0f)).toInt()
+                    viewY = (bounds.top - (imageReceiver?.imageY ?: 0f)).toInt()
+                    viewWidth = (imageReceiver?.imageWidth ?: bounds.width()).toInt()
+                    viewHeight = (imageReceiver?.imageHeight ?: bounds.height()).toInt()
+                    parentView = tappedSourceView ?: getPhotoViewerScaleView()
+                    this.imageReceiver = imageReceiver
+                    thumb = if (needPreview) sourceBitmapProvider(imageUrl) else null
+                    radius = if (needPreview) sourceRadiusProvider(imageUrl) else null
+                }
+            }
+
+            override fun getThumbForPhoto(
+                messageObject: MessageObject?,
+                fileLocation: TLRPC.FileLocation?,
+                index: Int,
+            ): ImageReceiver.BitmapHolder? {
+                val imageUrl = urls.getOrNull(index) ?: return null
+                return sourceBitmap(imageUrl)
+            }
+
+            override fun willSwitchFromPhoto(
+                messageObject: MessageObject?,
+                fileLocation: TLRPC.FileLocation?,
+                index: Int,
+            ) {
+                setHiddenImageUrl(null)
+            }
+
+            override fun onPhotoChanged(photoIndex: Int) {
+                setHiddenImageUrl(urls.getOrNull(photoIndex))
+            }
+
+            override fun onClose() {
+                setHiddenImageUrl(null)
+            }
+        }
+        var selectedIndex = 0
+        val viewerTitle = topicPostDisplayName(post.authorDisplayName, post.authorUsername).ifBlank { topicTitle }
+        val viewerSubtitle = topicPostTimeLabel(post.createdAt)
+        val opened = if (galleryImages.isNotEmpty()) {
+            val items = galleryImages.map { image ->
+                PhotoViewer.UrlPhotoItem(image.url, image.thumbUrl, image.widthPx, image.heightPx, image.caption, viewerTitle, viewerSubtitle)
+            }
+            selectedIndex = items.indexOfFirst { it.url == url }.coerceAtLeast(0)
+            viewer.openPhotoItems(items, selectedIndex, provider)
+        } else {
+            val items = urls.map { imageUrl ->
+                PhotoViewer.UrlPhotoItem(imageUrl, null, 0, 0, null, viewerTitle, viewerSubtitle)
+            }
+            selectedIndex = items.indexOfFirst { it.url == url }.coerceAtLeast(0)
+            viewer.openPhotoItems(items, selectedIndex, provider)
+        }
+        if (!opened) {
+            setHiddenImageUrl(null)
+        } else {
+            setHiddenImageUrl(urls.getOrNull(selectedIndex))
+        }
     }
 
     private fun updateReactionUsersSheet(context: Context, state: TopicUiState) {
@@ -283,27 +374,6 @@ class TopicDetailFragment(
         viewModel.consumeJumpEvent(event.nonce)
     }
 
-    private fun sourceImageRectInWindow(sourceView: View?, sourceViewRect: RectF): RectF? {
-        val imageView = sourceView as? android.widget.ImageView ?: return null
-        val bitmap = if (imageView is RoundedImageView) {
-            imageView.bitmap
-        } else {
-            (imageView.drawable as? BitmapDrawable)?.bitmap
-        } ?: return null
-        if (bitmap.width <= 0 || bitmap.height <= 0 || imageView.width <= 0 || imageView.height <= 0) {
-            return null
-        }
-        val scale = minOf(
-            imageView.width.toFloat() / bitmap.width.toFloat(),
-            imageView.height.toFloat() / bitmap.height.toFloat(),
-        )
-        val drawnWidth = bitmap.width * scale
-        val drawnHeight = bitmap.height * scale
-        val left = sourceViewRect.left + (imageView.width - drawnWidth) / 2f
-        val top = sourceViewRect.top + (imageView.height - drawnHeight) / 2f
-        return RectF(left, top, left + drawnWidth, top + drawnHeight)
-    }
-
     override fun getNavigationBarColor(): Int {
         return Theme.getColor(Theme.key_windowBackgroundGray)
     }
@@ -339,7 +409,8 @@ class TopicDetailFragment(
         data class PostRow(
             val post: Post,
             val replyCount: Int,
-            val replyLabels: List<String>,
+            val replyParticipants: List<Post>,
+            val jumpHighlightNonce: Int,
         ) : TopicDetailRow {
             override val stableId: Long = post.id
         }
@@ -482,19 +553,21 @@ class TopicDetailFragment(
                         PostBodyBlockState()
                     }
                     (holder.itemView as TopicPostCell).setPost(
-                        post = post,
-                        prev = rows.take(position).lastOrNull { it is TopicDetailRow.PostRow }?.let { (it as TopicDetailRow.PostRow).post },
-                        next = rows.drop(position + 1).firstOrNull { it is TopicDetailRow.PostRow }?.let { (it as TopicDetailRow.PostRow).post },
-                        isFirst = rows.take(position).none { it is TopicDetailRow.PostRow },
-                        isLast = rows.drop(position + 1).none { it is TopicDetailRow.PostRow },
-                        currentTopicId = topicId,
-                        baseUrl = baseUrl,
-                        localPostsByNumber = localPostsByNumber,
-                        emojiCatalog = emojiCatalog,
-                        replyCount = row.replyCount,
-                        recentReplyParticipantLabels = row.replyLabels,
-                        parsedBlocks = parsedBlocks,
-                        blockState = blockState,
+                        post,
+                        rows.take(position).lastOrNull { it is TopicDetailRow.PostRow }?.let { (it as TopicDetailRow.PostRow).post },
+                        rows.drop(position + 1).firstOrNull { it is TopicDetailRow.PostRow }?.let { (it as TopicDetailRow.PostRow).post },
+                        rows.take(position).none { it is TopicDetailRow.PostRow },
+                        rows.drop(position + 1).none { it is TopicDetailRow.PostRow },
+                        topicId,
+                        baseUrl,
+                        localPostsByNumber,
+                        emojiCatalog,
+                        row.replyCount,
+                        row.replyParticipants,
+                        parsedBlocks,
+                        blockState,
+                        row.jumpHighlightNonce,
+                        { viewModel.clearJumpHighlight(row.jumpHighlightNonce) },
                     )
                 }
             }
@@ -523,7 +596,11 @@ class TopicDetailFragment(
                 rows += TopicDetailRow.PostRow(
                     post = post,
                     replyCount = replies.size,
-                    replyLabels = replies.map { it.authorUsername },
+                    replyParticipants = replies,
+                    jumpHighlightNonce = state.jumpHighlight
+                        ?.takeIf { highlight -> highlight.postId == post.id }
+                        ?.nonce
+                        ?: 0,
                 )
             }
             if (state.isLoadingMore) {
@@ -565,7 +642,10 @@ class TopicDetailFragment(
                 is TopicDetailRow.PostRow -> listOf(
                     postDiffKey(row.post),
                     row.replyCount,
-                    row.replyLabels,
+                    row.replyParticipants.map { reply ->
+                        listOf(reply.id, reply.authorUsername, reply.authorDisplayName, reply.authorAvatarTemplate, reply.authorAnimatedAvatarUrl)
+                    },
+                    row.jumpHighlightNonce,
                 )
             }
         }
@@ -626,15 +706,30 @@ class TopicDetailFragment(
             }
         }
 
-        override fun didPressImage(url: String, gallery: List<GalleryImage>, sourceBoundsInWindow: RectF?, hostView: View) {
+        override fun didPressPollOption(post: Post, pollName: String, optionId: String) {
+            viewModel.onPollOptionSelected(post.id, post.postNumber, pollName, optionId)
+        }
+
+        override fun didPressImage(
+            post: Post,
+            url: String,
+            gallery: List<GalleryImage>,
+            sourceBoundsInWindow: RectF?,
+            hostView: View,
+            sourceBoundsProvider: (String) -> RectF?,
+            sourceImageReceiverProvider: (String) -> ImageReceiver?,
+            sourceBitmapProvider: (String) -> ImageReceiver.BitmapHolder?,
+            sourceRadiusProvider: (String) -> IntArray?,
+        ) {
             openImageViewer(
+                post = post,
                 url = url,
                 galleryImages = gallery,
-                initialThumb = null,
                 tappedSourceView = hostView,
-                imageViewByUrl = emptyMap(),
-                sourceBoundsProvider = { imageUrl -> if (imageUrl == url) sourceBoundsInWindow else null },
-                setHiddenImageUrl = {},
+                sourceBoundsProvider = { imageUrl -> sourceBoundsProvider(imageUrl) ?: if (imageUrl == url) sourceBoundsInWindow else null },
+                sourceImageReceiverProvider = sourceImageReceiverProvider,
+                sourceBitmapProvider = sourceBitmapProvider,
+                sourceRadiusProvider = sourceRadiusProvider,
             )
         }
     }
@@ -1533,7 +1628,7 @@ class TopicDetailFragment(
             }
         }
 
-        private class ReplySheetHeaderView(context: Context) : TextView(context) {
+        private class ReplySheetHeaderView(context: Context) : AppCompatTextView(context) {
             init {
                 setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText))
                 textSize = 20f
@@ -1749,7 +1844,7 @@ class TopicDetailFragment(
             }
         }
 
-        private class PickerHeaderView(context: Context) : TextView(context) {
+        private class PickerHeaderView(context: Context) : AppCompatTextView(context) {
             init {
                 text = "Choose reaction"
                 setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText))

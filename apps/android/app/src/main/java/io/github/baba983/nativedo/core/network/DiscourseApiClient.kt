@@ -85,6 +85,17 @@ class DiscourseApiClient(
             ).close()
         }
 
+    suspend fun votePoll(postId: Long, pollName: String, optionId: String) =
+        runWithSessionBoundary {
+            val csrfToken = service.csrf().csrf
+            service.votePoll(
+                postId = postId,
+                pollName = pollName,
+                optionIds = listOf(optionId),
+                csrfToken = csrfToken,
+            ).close()
+        }
+
     suspend fun fetchProfile(username: String): UserProfile =
         runWithSessionBoundary {
             service.profile(username).toModel()

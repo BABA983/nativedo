@@ -41,12 +41,20 @@ internal sealed interface CookedPostBlock {
         val rows: List<List<String>>,
     ) : CookedPostBlock
 
+    data class PollOption(
+        val id: String?,
+        val label: String,
+        val votes: Int? = null,
+        val percent: Float? = null,
+        val selected: Boolean = false,
+    )
+
     data class Poll(
         val name: String?,
         val type: String?,
         val status: String?,
         val voters: Int?,
-        val options: List<String>,
+        val options: List<PollOption>,
     ) : CookedPostBlock
 
     data class Spoiler(val html: String) : CookedPostBlock
@@ -59,4 +67,5 @@ data class GalleryImage(
     val thumbUrl: String?,
     val widthPx: Int = 0,
     val heightPx: Int = 0,
+    val caption: String? = null,
 )

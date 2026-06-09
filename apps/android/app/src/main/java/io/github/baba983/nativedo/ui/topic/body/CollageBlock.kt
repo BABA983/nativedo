@@ -153,10 +153,13 @@ internal class CollageBlock(
 
     override fun draw(canvas: Canvas, parentWidth: Int) {
         tiles.forEachIndexed { index, tile ->
-            canvas.drawRoundRect(tile.rect, AndroidUtilities.dp(8f).toFloat(), AndroidUtilities.dp(8f).toFloat(), placeholderPaint)
-            tile.receiver.setBounds(tile.rect)
-            tile.receiver.draw(canvas)
-            if (index == pressedTileIndex) {
+            val hidden = context.hiddenImageUrlProvider() == tile.targetUrl
+            if (!hidden) {
+                canvas.drawRoundRect(tile.rect, AndroidUtilities.dp(8f).toFloat(), AndroidUtilities.dp(8f).toFloat(), placeholderPaint)
+                tile.receiver.setBounds(tile.rect)
+                tile.receiver.draw(canvas)
+            }
+            if (index == pressedTileIndex && !hidden) {
                 canvas.drawRoundRect(tile.rect, AndroidUtilities.dp(8f).toFloat(), AndroidUtilities.dp(8f).toFloat(), pressedPaint)
             }
         }
@@ -183,8 +186,12 @@ internal class CollageBlock(
             context.delegate.onImageClick(
                 url = tile.targetUrl,
                 gallery = gallery,
-                sourceBoundsInWindow = RectF(tile.rect),
+                sourceBoundsInBlock = RectF(tile.rect),
                 hostView = context.host,
+                sourceBoundsProvider = { imageUrl -> tileBoundsInCell(imageUrl) },
+                sourceImageReceiverProvider = { imageUrl -> tiles.firstOrNull { it.targetUrl == imageUrl }?.receiver },
+                sourceBitmapProvider = { imageUrl -> tiles.firstOrNull { it.targetUrl == imageUrl }?.receiver?.getBitmapSafe() },
+                sourceRadiusProvider = { imageUrl -> tiles.firstOrNull { it.targetUrl == imageUrl }?.receiver?.getRoundRadius(true)?.copyOf() },
             )
             return true
         }
@@ -205,6 +212,18 @@ internal class CollageBlock(
     }
 
     fun imageBoundsInCell(index: Int): RectF? = tiles.getOrNull(index)?.rect?.let(::RectF)
+
+    override fun imageBoundsInBlock(imageUrl: String): RectF? {
+        return tileBoundsInCell(imageUrl)
+    }
+
+    override fun imageReceiverForUrl(imageUrl: String): ImageReceiver? {
+        return tiles.firstOrNull { it.targetUrl == imageUrl }?.receiver
+    }
+
+    private fun tileBoundsInCell(imageUrl: String): RectF? {
+        return tiles.firstOrNull { tile -> tile.targetUrl == imageUrl }?.rect?.let(::RectF)
+    }
 
     private fun Tile.aspectRatio(): Float = image.aspectRatio?.coerceIn(0.45f, 2.4f) ?: 1f
 

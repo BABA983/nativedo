@@ -80,6 +80,11 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
         }
 
         @Override
+        protected boolean drawChild(Canvas canvas, View child, long drawingTime) {
+            return allowDrawContent && super.drawChild(canvas, child, drawingTime);
+        }
+
+        @Override
         protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
             int width = MeasureSpec.getSize(widthMeasureSpec);
             int height = MeasureSpec.getSize(heightMeasureSpec);
@@ -186,6 +191,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
     private WindowInsetsCompat lastWindowInsetsCompat;
     private boolean isKeyboardVisible;
     private boolean withShadow;
+    private boolean allowDrawContent = true;
     private Runnable rootDismissRunnable;
     private final DecelerateInterpolator decelerateInterpolator = new DecelerateInterpolator(1.5f);
 
@@ -670,6 +676,15 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
         }
         canvas.restoreToCount(restoreCount);
         return result;
+    }
+
+    public void setAllowDrawContent(boolean value) {
+        if (allowDrawContent != value) {
+            allowDrawContent = value;
+            containerView.invalidate();
+            containerViewBack.invalidate();
+            invalidate();
+        }
     }
 
     public void setInnerTranslationX(float value) {

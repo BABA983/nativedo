@@ -38,7 +38,7 @@
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "exact",
-      "notes": "Browser/menu helpers added for ItemOptions: emptyMotionEvent() copied verbatim from upstream; shakeViewSpring(View,float) is a simplified ObjectAnimator wobble (upstream SpringAnimation + shake id resources not ported) and replaceArrows(...) is a pass-through. BottomSheet support surface added for the exact upstream sheet copy: getViewInset(View) and getNavigationBarThirdButtonsFactor(int) are local safe defaults; isSafeToShow(Context) mirrors the upstream Activity finishing/destroyed guard."
+      "notes": "Browser/menu helpers added for ItemOptions: emptyMotionEvent() copied verbatim from upstream; shakeViewSpring(View,float) is a simplified ObjectAnimator wobble (upstream SpringAnimation + shake id resources not ported) and replaceArrows(...) is a pass-through. BottomSheet support surface added for the exact upstream sheet copy: getViewInset(View) and getNavigationBarThirdButtonsFactor(int) are local safe defaults; isSafeToShow(Context) mirrors the upstream Activity finishing/destroyed guard. updateViewVisibilityAnimated(...) now calls the upstream boolean HideViewAfterAnimation constructor."
     },
     {
       "local": "telegram/src/main/java/org/telegram/messenger/BuildVars.java",
@@ -52,7 +52,8 @@
       "upstream": "org/telegram/messenger/LocaleController.java",
       "vendored_at": "009e97356",
       "modified": true,
-      "port_mode": "exact"
+      "port_mode": "native",
+      "notes": "NativeDo locale shim for vendored UI: exposes isRTL, getString/formatString/plural/date helpers, formatDuration(int), and a minimal getCurrentLocaleInfo().shortName surface used by PhotoViewer's upstream-shaped PhotoCountView and PhotoPickerPhotoCell accessibility text. Full Telegram locale loading and account-specific i18n pipeline are not ported."
     },
     {
       "local": "telegram/src/main/java/org/telegram/messenger/MessagesController.java",
@@ -121,8 +122,8 @@
       "upstream": "org/telegram/ui/ActionBar/Theme.java",
       "vendored_at": "009e97356",
       "modified": true,
-      "port_mode": "exact",
-      "notes": "Host-wired for the vendored CheckBoxBase: added Theme.getServiceMessageColor() and Theme.PAINT_CLEAR as one-line pass-throughs to upstream namesakes, and 5 no-op stubs on the local Theme.MessageDrawable (hasGradient/getGradientShader/getMatrix/applyMatrixScale/getTopY). BottomSheet support surface added for the exact upstream sheet copy: dialogs_onlineCirclePaint, AdaptiveRipple.filledRect(...), and getSelectorDrawable(boolean, ResourcesProvider). Other bodies remain native as the previous manifest described."
+      "port_mode": "native",
+      "notes": "NativeDo Theme subset for vendored UI. Host-wired for CheckBoxBase/BottomSheet/PhotoViewer: added Theme.getServiceMessageColor(), Theme.PAINT_CLEAR, ACTION_BAR_PHOTO_VIEWER_COLOR, ACTION_BAR_PICKER_SELECTOR_COLOR, ACTION_BAR_AUDIO_SELECTOR_COLOR, dialogs_onlineCirclePaint, playPauseAnimator bootstrap, MediaActionDrawable chat_filePath/chat_updatePath/chat_flameIcon/chat_gifIcon bootstrap, AdaptiveRipple.filledRect(...), getSelectorDrawable(boolean, ResourcesProvider), and local safe defaults on MessageDrawable. Full Telegram theme/color-animation pipeline remains unported."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/BottomSheet.java",
@@ -145,6 +146,93 @@
       "modified": true,
       "port_mode": "exact",
       "notes": "Host wiring only: ArticleViewer.Sheet restore/capture/dismiss fallback adapted for NativeDo ActionBarLayout/BottomSheetTabs lifecycle; drawing/gesture/measurement/animation bodies remain upstream-shaped. WebActionBar.bookmark_item now persists to the local WebBookmarks store (org.telegram.ui.web.WebBookmarks) instead of SendMessagesHelper.sendMessage to Saved-Messages; the bookmarked toast opens BookmarksFragment instead of the Telegram Saved-Messages ChatActivity."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/PhotoViewer.java",
+      "upstream": "org/telegram/ui/PhotoViewer.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "NativeDo topic-detail/ArticleViewer image viewer port: keeps upstream singleton, PageBlocksAdapter, EmptyPhotoViewerProvider, PlaceProviderObject, setParentActivity, openPhoto, closePhoto, and video-player access API shape while keeping URL fallback for Discourse images and preserving Telegram ImageLocation/full-size/thumb/parentObject/progress-key/PageBlock metadata when PageBlocksAdapter supplies TLRPC media. Replaces Telegram's full message/media/editor/stories viewer with an ImageReceiver-backed fullscreen gallery, but the interaction engine is now upstream-shaped for core photo behavior: the PageBlocksAdapter entry path now preserves URL item caption and width/height metadata instead of collapsing blocks to plain URLs, builds UrlPhotoItem from Telegram media ImageLocation where available, maps the selected index after filtering invalid blocks, keeps the active PageBlocksAdapter for the viewer session, calls updateSlideshowCell(currentPageBlock) during initial image setup and index switches like upstream ArticleViewer/PhotoViewer, exposes EmptyPhotoViewerProvider.willSwitchFromPhoto(...) and calls it before currentIndex changes so NativeDo cells can unhide the previous source before onPhotoChanged hides the new source, exposes EmptyPhotoViewerProvider.getThumbForPhoto(...) like upstream and uses it as a ClippingImageView animation bitmap fallback when the PlaceProviderObject/source ImageReceiver cannot provide a usable holder, left/center/right ImageReceivers preload adjacent media using Telegram ImageLocation/thumb data with URL fallback, set crossfadeAlpha=2 like upstream, share an upstream-shaped delegate so side-image loads also refresh bounds, center image loading is raised to FileLoader.PRIORITY_HIGH, horizontal swipes draw side images and switch index after slide animation, velocity and distance thresholds trigger next/previous, GroupedPhotosListView.setMoveProgress is synchronized during drag, side-image page reveal now mirrors Telegram's asymmetric drawing treatment by scaling/fading the right image in when moving to next and scaling/fading the center image down when exposing the previous image, and grouped PageBlock galleries with nonzero groupId now route through GroupedPhotosListView's upstream PageBlock grouping branch while ordinary URL galleries continue using the full ImageLocation strip. Double-tap zoom targets 3.0x, pinch/pan use min/max bounds with elastic edge resistance and release settle, edge-tap page navigation uses upstream GestureDetector2 onDown/onUp pressed-state timing and canDoubleTap suppression so side taps do not get swallowed by zoom gestures, base-scale vertical drag-to-dismiss fades the BackgroundDrawable and springs back or closes by threshold/velocity, tap toggles counter/close/bottom-strip chrome through upstream GestureDetector2, and the focusable windowView intercepts Back through dispatchKeyEvent/dispatchKeyEventPreIme to close the overlay like upstream. Container structure now mirrors the upstream layering more closely with a WindowManager overlay, BackgroundDrawable on windowView, SizeNotifierFrameLayoutPhoto/FrameLayoutDrawer-style photo drawing container, overlay chrome, PhotoViewerActionBarContainer title/subtitle layer, upstream ACTION_BAR_PHOTO_VIEWER_COLOR top bar, upstream-shaped ActionBarMenu more button backed by URL-only share/copy/open actions, upstream-shaped bottomLayout container retained for future picker/editor chrome but hidden for ordinary URL photo viewing so it does not leave a non-Telegram empty 48dp black bar, WindowManager-level navigationBar scrim sibling, GroupedPhotosListView with upstream dp(10) top padding, read-only CaptionTextViewSwitcher plus upstream-shaped CaptionScrollView/NestedScrollView caption layer, and a separate ClippingImageView for place-backed open/close transitions. Opening/closing uses the NativeDo provider bridge for URL-keyed source bounds/source ImageReceiver/source bitmap holders, radius metadata, thumbUrl placeholders, WindowManager overlay host flags, and per-gallery-image provider handoff; source-backed transitions now consume ImageReceiver drawRegion/imageX/imageY orientation and clipping values for Telegram-style ClippingImageView animation and fade chrome without the no-source toolbar/bottom slide translation, no-source open fallback now fades the whole container/background/chrome in like Telegram's object-null pre-draw path instead of fading only the center image, and no-source close fallback now follows Telegram's container scale-to-0.9 plus alpha/background fade instead of sliding the photo off-screen. Control chrome overlays the full-container fitted photo instead of shrinking the image viewport, and core fit/zoom/page/drag-dismiss thresholds now route through upstream-shaped getContainerViewWidth/getContainerViewHeight helpers; PhotoCountView now mirrors upstream's AnimatedFloat show progress, ACTION_BAR_PHOTO_VIEWER_COLOR background, locale-aware 'of' center text, RTL number ordering, and AnimatedTextDrawable left/right number transitions; loading indicators now use Telegram's three-slot PhotoProgressView structure (center/right/left) with circle_big/cancel_big/load_big drawables, arc/progress interpolation, state alpha transitions, side-image scale/alpha coupling during page reveal, and NotificationCenter/ImageLoader file progress events keyed by Telegram attach file names or URL fallback while still omitting Telegram's full FileLoader cancel/download state menu and video state machine; top chrome uses Telegram-style SimpleTextView title buffering plus AnimatedTextView subtitle/right-padding animation without the upstream emoji NotificationCenter observer, and captions now use Telegram's read-only switcher/scrollView coupling, dynamic top-margin calculation, fading-edge background drawing, nested-scroll overscroll consumption, and SpringAnimation settle without the upstream edit/translate/keyboard/text-selection pipeline."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/GroupedPhotosListView.java",
+      "upstream": "org/telegram/ui/Components/GroupedPhotosListView.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "gesture",
+        "animation",
+        "measurement",
+        "drawing"
+      ],
+      "notes": "PhotoViewer bottom grouped-photo strip copied verbatim from upstream and fed by NativeDo UrlPhotoItem/ImageLocation data through PhotoViewer's delegate."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/BackupImageView.java",
+      "upstream": "org/telegram/ui/Components/BackupImageView.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Telegram image-view wrapper used by vendored cells and viewer-related UI. NativeDo keeps ImageReceiver-backed loading/drawing API but stubs BackupImageView.blurText because the upstream Text helper is not ported."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/TextPaintImageReceiverSpan.java",
+      "upstream": "org/telegram/ui/Components/TextPaintImageReceiverSpan.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Inline ImageReceiver span used by Telegram rich text / instant-view image rendering. Copied verbatim."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Cells/PhotoEditToolCell.java",
+      "upstream": "org/telegram/ui/Cells/PhotoEditToolCell.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Photo/editor support cell copied verbatim from upstream; kept for PhotoViewer/photo-picker API surface compatibility."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Cells/PhotoPickerPhotoCell.java",
+      "upstream": "org/telegram/ui/Cells/PhotoPickerPhotoCell.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "measurement",
+        "drawing",
+        "animation"
+      ],
+      "notes": "Photo picker grid cell copied verbatim from upstream to replace the former NativeDo stub; retained as PhotoViewer/photo-picker/editor support infrastructure."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/PhotoEditorSeekBar.java",
+      "upstream": "org/telegram/ui/Components/PhotoEditorSeekBar.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Photo editor seek bar copied verbatim from upstream and used by PhotoEditToolCell."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/PickerBottomLayoutViewer.java",
+      "upstream": "org/telegram/ui/Components/PickerBottomLayoutViewer.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "measurement",
+        "drawing"
+      ],
+      "notes": "PhotoViewer/photo-picker bottom action bar copied verbatim from upstream. Replaces an 18-line compile stub and uses upstream photobadge/bluecounter drawables plus picker/audio selector colors."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/messenger/video/VideoPlayerHolderBase.java",
+      "upstream": "org/telegram/messenger/video/VideoPlayerHolderBase.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Background video-player holder copied verbatim from upstream; retained for ArticleViewer/PhotoViewer-facing video API compatibility."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ThemeColors.java",
@@ -231,7 +319,30 @@
         "drawing",
         "gesture"
       ],
-      "notes": "Trimmed ArticleTextSelectionHelper port for NativeDo topic detail: preserves Telegram's ArticleSelectableView/TextLayoutBlock/ArticleTextSelectionHelper API shape, long-press selection entry, touch-coordinate word selection, Layout.getSelectionPath highlight drawing, floating ActionMode copy/select-all actions, and copy-to-clipboard callback path. OMITTED for now: draggable selection handles, magnifier, translate action, multi-cell drag selection, RecyclerView auto-scroll, and full upstream TextSelectionOverlay chrome. Replaces a no-op compile stub."
+      "notes": "NativeDo ArticleTextSelectionHelper port for topic detail: preserves Telegram's ArticleSelectableView/TextLayoutBlock/ArticleTextSelectionHelper API shape, and now keeps an upstream-shaped generic TextSelectionHelper<Cell extends SelectableView> core for selection state / layout hooks / overlay contracts. Includes long-press selection entry, touch-coordinate word selection with one-touch drag continuation after long press, rounded CornerPath selection geometry, ScalablePath line-rect shaping, handle-edge clipping, Telegram-style line-bottom handle anchoring with RTL-aware left/right silhouette switching and overshoot scale-in animation, FloatingActionMode/FloatingToolbar copy/quote/select-all/translate actions with Android/Telegram resource labels and Telegram-style dynamic action visibility, current-locale translate target propagation without copying Telegram's ML Kit source-language detection, copy-to-clipboard callback path, draggable start/end handles with Telegram-style finger-to-endpoint moving offsets, word-boundary snap while dragging, start/end role flip when crossing endpoints, row-aware closest-layout hit testing for table/poll-style same-line text blocks, overlay chrome with upstream-style short-tap/slop guarded empty-area cancel, Android Magnifier support, cursor haptic feedback while dragging, multi-cell drag selection, RecyclerView edge auto-scroll, and selectable visible text from image captions, CodeBlock, OneboxBlock, PollBlock, and TableBlock. Replaces a no-op compile stub."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/ActionBar/FloatingActionMode.java",
+      "upstream": "org/telegram/ui/ActionBar/FloatingActionMode.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "forced_exact": [
+        "gesture"
+      ],
+      "notes": "Compact NativeDo bridge for topic text selection: keeps upstream ActionMode.Callback2 + FloatingToolbar contract, invalidateContentRect/updateViewLocationInWindow/hide/finish lifecycle shape, and now mirrors Telegram's FloatingToolbarVisibilityHelper states for hide requests, moving content rects, out-of-bounds content, and window-focus changes. Still omits NotificationCenter account-scoped reactions and full display/window metric machinery."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/ActionBar/FloatingToolbar.java",
+      "upstream": "org/telegram/ui/ActionBar/FloatingToolbar.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "forced_exact": [
+        "measurement",
+        "drawing"
+      ],
+      "notes": "NativeDo text-selection toolbar: keeps upstream setMenu/setOnMenuItemClickListener/setContentRect/show/updateLayout/hide/dismiss API used by FloatingActionMode, and now mirrors Telegram's main-panel plus overflow-panel interaction with PopupWindow positioning, show/open animations, 48dp action rows, 12dp rounded toolbar background, localized back-row overflow panel chrome, label-measured overflow width, animated-vector overflow/back arrows from upstream resources, and layout-change relayout while showing. Still omits upstream blur, premium-lock, suggested-width machinery, and full touchable-region plumbing."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Cells/TextCell.java",
@@ -307,7 +418,7 @@
       ]
     },
     {
-      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicPostCell.kt",
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicPostCell.java",
       "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -317,7 +428,7 @@
         "drawing",
         "gesture"
       ],
-      "notes": "NativeDo topic-detail post cell: BaseCell shell, avatar/header/body/reaction/reply drawing, long-press, and hit-testing are shaped after ChatMessageCell while binding to Discourse Post and PostBodyBlock models. Body block geometry also follows ArticleViewer block-cell patterns."
+      "notes": "NativeDo topic-detail post cell: BaseCell shell, avatar/header/body/reaction/reply drawing, long-press, and hit-testing are shaped after ChatMessageCell while binding to Discourse Post and PostBodyBlock models. Reply footer interaction now follows ChatMessageCell commentButtonRect/checkCommentButtonMotionEvent shape for rect hit testing, selector hotspot updates, click sound, and state clearing; the reply footer avatar stack now follows Telegram comment-button geometry (24dp avatars, first avatar +2dp, subsequent +17dp) and draws reply authors through ImageReceiver with AvatarDrawable initials fallback. Body block geometry also follows ArticleViewer block-cell patterns. Image taps now map block-local image bounds to window rects and pass URL-keyed source-bounds/source-receiver/source-bitmap/source-radius providers through the delegate so PhotoViewer can animate close back to the current visible gallery image, including images reached by horizontal swiping after the initial tap. Long-press selection now starts before CodeBlock/OneboxBlock/PollBlock/TableBlock consume ACTION_DOWN, cancels the active block press once selection mode starts, and forwards the still-active touch stream to TextSelectionHelper so Telegram-style one-touch drag selection continues until finger-up."
     },
     {
       "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicHeaderCell.kt",
@@ -401,7 +512,7 @@
         "drawing",
         "gesture"
       ],
-      "notes": "NativeDo image block corresponding to ArticleViewer.BlockPhotoCell; uses Discourse image URLs and ImageReceiver instead of Telegram page media models."
+      "notes": "NativeDo image block corresponding to ArticleViewer.BlockPhotoCell; uses Discourse image URLs and ImageReceiver instead of Telegram page media models. Captions are exposed to TextSelectionHelper, and image taps expose URL-keyed source bounds/ImageReceiver/radius for PhotoViewer hand-off."
     },
     {
       "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/CollageBlock.kt",
@@ -409,7 +520,7 @@
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo collage block corresponding to ArticleViewer.BlockCollageCell; uses Telegram grouped-media-style aspect-ratio row geometry with Discourse lightbox groups and ImageReceiver tiles. Not a full BlockCollageCell.GroupedMessages port yet."
+      "notes": "NativeDo collage block corresponding to ArticleViewer.BlockCollageCell; uses Telegram grouped-media-style aspect-ratio row geometry with Discourse lightbox groups and ImageReceiver tiles. Each tile now exposes URL-keyed source bounds/ImageReceiver/radius for PhotoViewer hand-off. Not a full BlockCollageCell.GroupedMessages port yet."
     },
     {
       "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/OneboxBlock.kt",
@@ -422,7 +533,7 @@
         "drawing",
         "gesture"
       ],
-      "notes": "NativeDo Discourse onebox card using ChatMessageCell link-preview measurement/drawing/hit-region ideas without importing MessageObject or TLRPC.WebPage."
+      "notes": "NativeDo Discourse onebox card using ChatMessageCell link-preview measurement/drawing/hit-region ideas without importing MessageObject or TLRPC.WebPage. Text layouts are exposed to TextSelectionHelper, and thumbnail taps expose URL-keyed source bounds/ImageReceiver/radius for PhotoViewer hand-off."
     },
     {
       "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/QuoteBlock.kt",
@@ -430,7 +541,7 @@
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo quote block inspired by ArticleViewer.BlockBlockquoteCell text/bar layout, but intentionally keeps a Discourse-style rounded expandable quote card routed through TopicViewModel; full ArticleViewer drawing parity is not claimed."
+      "notes": "NativeDo quote block derived from ArticleViewer.BlockBlockquoteCell text/bar layout: keeps the upstream 18dp left line, 2dp line width, 14dp text inset, 8dp vertical spacing, separate title/body StaticLayouts, link hit-testing, and now exposes both title and body layouts to TextSelectionHelper. Backend expansion remains NativeDo-specific and routes Discourse data-topic/data-post through TopicViewModel."
     },
     {
       "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/CodeBlock.kt",
@@ -438,7 +549,7 @@
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo preformatted code block corresponding to ArticleViewer.BlockPreformattedCell; no syntax highlighting, horizontal scrolling retained inside the canvas-drawn block with parent-intercept handoff instead of an actual HorizontalScrollView child."
+      "notes": "NativeDo preformatted code block corresponding to ArticleViewer.BlockPreformattedCell; keeps upstream-shaped rectangular background band from y=dp(8) to height-dp(8), 16dp horizontal text margin, 12dp child vertical margin plus 8dp scroll padding, and horizontal scrolling inside the canvas-drawn block with parent-intercept handoff instead of an actual HorizontalScrollView child. Syntax highlighting remains intentionally omitted per topic-detail plan."
     },
     {
       "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ListBlock.kt",
@@ -446,7 +557,7 @@
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo ordered/unordered list block corresponding to ArticleViewer list item block cells; keeps Telegram-style measured marker column, first-item top padding, and marker/text spacing, but nested block-item parity is not claimed."
+      "notes": "NativeDo ordered/unordered list block corresponding to ArticleViewer list item block cells; keeps Telegram-style measured marker column, first-item top padding, marker/text spacing, and now exposes ordered/unordered markers as TextSelectionHelper copy prefixes so selected list text preserves the visible bullet/number. Nested block-item parity is not claimed."
     },
     {
       "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/TableBlock.kt",
@@ -454,7 +565,20 @@
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo lightweight table block derived from ArticleViewer.BlockTableCell/TableLayout geometry concepts. Full upstream TableLayout parity is intentionally not claimed yet."
+      "notes": "NativeDo table block derived from ArticleViewer.BlockTableCell/TableLayout geometry concepts: uses intrinsic per-column width measurement, horizontal overflow scrolling, grid drawing, and exposes table cell StaticLayouts to TextSelectionHelper. Full upstream TL_pageTableCell colspan/rowspan TableLayout parity is not claimed."
+    },
+    {
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/SpoilerBlock.kt",
+      "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/Components/spoilers/SpoilersTextView.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "forced_exact": [
+        "animation",
+        "drawing",
+        "gesture"
+      ],
+      "notes": "NativeDo spoiler block derived from Telegram SpoilersTextView/SpoilerEffect reveal model: concealed text is drawn as line-bounded masks with deterministic particle noise and tap-origin ripple reveal. Does not port SpoilerEffect2 media/GL, shader bitmap factory, or TextStyleSpan marker parsing."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java",
@@ -667,6 +791,66 @@
       "forced_exact": [
         "drawing"
       ]
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/MediaActionDrawable.java",
+      "upstream": "org/telegram/ui/Components/MediaActionDrawable.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "animation",
+        "drawing"
+      ],
+      "notes": "Replaces the earlier NativeDo empty draw stub with the upstream media-action drawable used by RadialProgress2 and PhotoViewer/media button infrastructure."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/RadialProgress2.java",
+      "upstream": "org/telegram/ui/Components/RadialProgress2.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "animation",
+        "drawing"
+      ],
+      "notes": "Copied verbatim from pinned upstream; now backed by upstream MediaActionDrawable instead of the former empty draw stub."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/PlayPauseDrawable.java",
+      "upstream": "org/telegram/ui/Components/PlayPauseDrawable.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "animation",
+        "drawing"
+      ],
+      "notes": "Copied verbatim from pinned upstream for PhotoViewer PhotoProgressView/play-pause visual state infrastructure. Theme.playPauseAnimator remains a NativeDo shim until the full Telegram theme animator bootstrap is ported."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/PathAnimator.java",
+      "upstream": "org/telegram/ui/Components/PathAnimator.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "animation",
+        "drawing"
+      ],
+      "notes": "Copied verbatim from pinned upstream as PlayPauseDrawable support infrastructure."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/VideoForwardDrawable.java",
+      "upstream": "org/telegram/ui/Components/VideoForwardDrawable.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "animation",
+        "drawing"
+      ],
+      "notes": "Copied verbatim from pinned upstream for PhotoViewer video double-tap seek feedback infrastructure."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/EmptyStubSpan.java",
@@ -1065,11 +1249,60 @@
       "port_mode": "exact"
     },
     {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/MarqueeTextView.java",
+      "upstream": "org/telegram/ui/Components/MarqueeTextView.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "animation",
+        "drawing"
+      ],
+      "notes": "Copied verbatim from pinned upstream as SeekBarView timestamp label/marquee support."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/AudioPlayerAlert.java",
+      "upstream": "org/telegram/ui/Components/AudioPlayerAlert.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "forced_exact": [
+        "animation",
+        "drawing"
+      ],
+      "notes": "NativeDo shim containing only upstream AudioPlayerAlert.ClippingTextViewSwitcher for SeekBarView. The full Telegram audio-player sheet, playlist, cast, and message/download business remain unported."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/SeekBarView.java",
+      "upstream": "org/telegram/ui/Components/SeekBarView.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "gesture",
+        "animation",
+        "measurement",
+        "drawing"
+      ],
+      "notes": "Replaces the earlier 26-line NativeDo progress-only stub with upstream seekbar behavior used by ArticleViewer and future PhotoViewer audio/video controls."
+    },
+    {
       "local": "telegram/src/main/java/org/telegram/ui/Components/VideoTimelinePlayView.java",
       "upstream": "org/telegram/ui/Components/VideoTimelinePlayView.java",
       "vendored_at": "009e97356",
       "modified": false,
       "port_mode": "exact"
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/HideViewAfterAnimation.java",
+      "upstream": "org/telegram/ui/Components/HideViewAfterAnimation.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "animation"
+      ],
+      "notes": "Tiny animator listener copied verbatim from upstream so shared visibility animations use Telegram's goneOnHide semantics."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ViewHelper.java",
@@ -1091,7 +1324,7 @@
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo ActionBar subset. BottomSheetWithRecyclerListView support surface added: backButtonImageView is public, getTitleTextView(), and setTitleAnimated(...) delegates to setTitle because local ActionBar title animation is not ported."
+      "notes": "NativeDo ActionBar subset. BottomSheetWithRecyclerListView support surface added: backButtonImageView is public, getTitleTextView(), and setTitleAnimated(...) delegates to setTitle because local ActionBar title animation is not ported. PhotoViewer overlay-title host wiring added: custom overlay children now measure/layout across status+bar height so title/subtitle are not clipped, and setOverlayTitleAnimation()/setSubtitleColor() retain upstream API state for PhotoViewer callers."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java",
@@ -1113,7 +1346,8 @@
       "upstream": "org/telegram/ui/ActionBar/ActionBarMenuItem.java",
       "vendored_at": "009e97356",
       "modified": true,
-      "port_mode": "native"
+      "port_mode": "native",
+      "notes": "NativeDo ActionBarMenuItem subset with upstream-shaped PhotoViewer popup menu behavior: disables platform PopupWindow window animations so ActionBarPopupWindow drives open/close timing, enables outside touch/clipping, supports menu X/Y offsets, resets popup scroll before showing, accounts for item translation when anchoring, and applies ActionBarMenuSubItem selector colors through setSelectorColor()."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarMenuSubItem.java",
@@ -1410,8 +1644,12 @@
       "local": "telegram/src/main/java/org/telegram/ui/Components/GestureDetector2.java",
       "upstream": "org/telegram/ui/Components/GestureDetector2.java",
       "vendored_at": "009e97356",
-      "modified": true,
-      "port_mode": "native"
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "gesture"
+      ],
+      "notes": "Copied verbatim from pinned upstream and now used by PhotoViewer tap/double-tap handling."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ItemOptions.java",
@@ -1447,7 +1685,7 @@
       "port_mode": "exact",
       "notes": [
         "CLIP_DIALOG_CELL_PROGRESS retyped Property<DialogCell,Float> -> Property<MovableCell,Float>.",
-        "PHOTO_VIEWER_ANIMATION_VALUE Property removed (PhotoViewer not in :telegram)."
+        "PHOTO_VIEWER_ANIMATION_VALUE Property remains removed; NativeDo's PhotoViewer port does not expose the upstream movable-cell animation Property."
       ]
     },
     {
@@ -1470,7 +1708,18 @@
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo SizeNotifierFrameLayout subset. BottomSheet support methods measureKeyboardHeight(), setBottomClip(int), and notifyHeightChanged() are compile-safe no-ops/defaults; full Telegram keyboard notifier behavior is not ported."
+      "notes": "NativeDo SizeNotifierFrameLayout subset. Keeps upstream-facing delegate/delegates, getKeyboardHeight(), measureKeyboardHeight(), setBottomClip(int), and notifyHeightChanged() API used by BottomSheet and SizeNotifierFrameLayoutPhoto. Full Telegram blur/wallpaper/chat-background machinery remains unported."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/SizeNotifierFrameLayoutPhoto.java",
+      "upstream": "org/telegram/ui/Components/SizeNotifierFrameLayoutPhoto.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "forced_exact": [
+        "measurement"
+      ],
+      "notes": "PhotoViewer container infrastructure copied from upstream and host-wired to the local SizeNotifierFrameLayout subset. Keyboard/window measurement branch structure is preserved, with null/without-window guards for the NativeDo WindowManager overlay host."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/UItem.java",
@@ -1649,6 +1898,51 @@
     {
       "kind": "drawable",
       "files": [
+        "circle_big.png",
+        "cancel_big.png",
+        "load_big.png"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356",
+      "notes": "PhotoViewer progress/loading backgrounds copied byte-identical from upstream across mdpi/hdpi/xhdpi/xxhdpi."
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "filled_fire.png",
+        "msg_round_gif_m.png"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356",
+      "notes": "MediaActionDrawable icon assets copied byte-identical from upstream across mdpi/hdpi/xhdpi/xxhdpi."
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "photobadge.9.png",
+        "bluecounter.9.png"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356",
+      "notes": "PickerBottomLayoutViewer badge backgrounds copied byte-identical from upstream across mdpi/hdpi/xhdpi/xxhdpi."
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "ic_video.png",
+        "nophotos.9.png"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356",
+      "notes": "PhotoPickerPhotoCell video badge and empty thumbnail assets copied byte-identical from upstream across mdpi/hdpi/xhdpi/xxhdpi."
+    },
+    {
+      "kind": "drawable",
+      "files": [
         "msg_pin_mini.png"
       ],
       "upstream_dir": "TMessagesProj/src/main/res",
@@ -1738,6 +2032,58 @@
       "local_glob": "apps/android/telegram/src/main/res/anim",
       "vendored_at": "009e97356",
       "notes": "Context-menu enter animation referenced by ActionBarPopupWindowLayout. Verbatim from upstream (only difference: local file has a trailing newline)."
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "ft_avd_toarrow.xml",
+        "ft_avd_tooverflow.xml",
+        "ft_avd_toarrow_animation.xml",
+        "ft_avd_tooverflow_animation.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/drawable",
+      "local_glob": "apps/android/telegram/src/main/res/drawable",
+      "vendored_at": "009e97356",
+      "notes": "Animated-vector overflow/back toolbar chrome used by the NativeDo FloatingToolbar text-selection port. Copied verbatim from upstream."
+    },
+    {
+      "kind": "anim",
+      "files": [
+        "ft_avd_toarrow_rectangle_path_5_animation.xml",
+        "ft_avd_toarrow_rectangle_4_animation.xml",
+        "ft_avd_toarrow_rectangle_2_pivot_0_animation.xml",
+        "ft_avd_toarrow_rectangle_path_6_animation.xml",
+        "ft_avd_toarrow_rectangle_3_pivot_0_animation.xml",
+        "ft_avd_toarrow_rectangle_1_pivot_0_animation.xml",
+        "ft_avd_toarrow_rectangle_6_animation.xml",
+        "ft_avd_toarrow_rectangle_5_animation.xml",
+        "ft_avd_toarrow_rectangle_path_4_animation.xml",
+        "ft_avd_tooverflow_rectangle_path_1_animation.xml",
+        "ft_avd_tooverflow_rectangle_path_2_animation.xml",
+        "ft_avd_tooverflow_rectangle_2_animation.xml",
+        "ft_avd_tooverflow_rectangle_1_animation.xml",
+        "ft_avd_tooverflow_rectangle_3_animation.xml",
+        "ft_avd_tooverflow_rectangle_path_3_animation.xml",
+        "ft_avd_tooverflow_rectangle_3_pivot_animation.xml",
+        "ft_avd_tooverflow_rectangle_2_pivot_animation.xml",
+        "ft_avd_tooverflow_rectangle_1_pivot_animation.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/anim",
+      "local_glob": "apps/android/telegram/src/main/res/anim",
+      "vendored_at": "009e97356",
+      "notes": "Animated-vector target animations for FloatingToolbar overflow/back arrows. Copied verbatim from upstream."
+    },
+    {
+      "kind": "interpolator",
+      "files": [
+        "ft_avd_toarrow_animation_interpolator_1.xml",
+        "ft_avd_toarrow_animation_interpolator_2.xml",
+        "ft_avd_toarrow_animation_interpolator_5.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/interpolator",
+      "local_glob": "apps/android/telegram/src/main/res/interpolator",
+      "vendored_at": "009e97356",
+      "notes": "Path interpolators referenced by upstream FloatingToolbar animated-vector resources. Copied verbatim from upstream."
     },
     {
       "kind": "values",

@@ -62,6 +62,7 @@ internal fun cookedGalleryImages(blocks: List<CookedPostBlock>, baseUrl: String)
                 thumbUrl = thumbUrl,
                 widthPx = image.widthPx,
                 heightPx = image.heightPx,
+                caption = image.alt.trim().takeIf { it.isNotEmpty() },
             )
         }
     }
@@ -163,8 +164,20 @@ private fun parsePollElement(element: Element): CookedPostBlock.Poll {
         ?.trim()
         ?.toIntOrNull()
     val options = element.select(".poll-container li[data-poll-option-id]")
-        .map { it.text().trim() }
-        .filter { it.isNotEmpty() }
+        .mapNotNull { option ->
+            val label = option.selectFirst(".poll-option-label")?.text()
+                ?: option.ownText().takeIf { it.isNotBlank() }
+                ?: option.text()
+            label.trim().takeIf { it.isNotEmpty() }?.let { text ->
+                CookedPostBlock.PollOption(
+                    id = option.attr("data-poll-option-id").takeIf { it.isNotBlank() },
+                    label = text,
+                    votes = option.selectFirst(".votes, .poll-option-votes, .info-number")?.text()?.pollNumber(),
+                    percent = option.selectFirst(".percentage, .percent, .poll-option-percent")?.text()?.pollPercent(),
+                    selected = option.hasClass("chosen") || option.hasClass("selected") || option.selectFirst(".chosen, .selected") != null,
+                )
+            }
+        }
     return CookedPostBlock.Poll(
         name = name,
         type = type,
@@ -172,6 +185,13 @@ private fun parsePollElement(element: Element): CookedPostBlock.Poll {
         voters = voters,
         options = options,
     )
+}
+
+private fun String.pollNumber(): Int? = filter { it.isDigit() }.toIntOrNull()
+
+private fun String.pollPercent(): Float? {
+    val value = replace('%', ' ').trim().toFloatOrNull() ?: return null
+    return (value / 100f).coerceIn(0f, 1f)
 }
 
 private fun parseTableElement(element: Element): List<CookedPostBlock> {

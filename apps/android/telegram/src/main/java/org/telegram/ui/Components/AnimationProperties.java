@@ -8,6 +8,7 @@ import android.util.Property;
 import android.view.animation.OvershootInterpolator;
 
 import org.telegram.messenger.ImageReceiver;
+import org.telegram.ui.PhotoViewer;
 
 public class AnimationProperties {
 
@@ -112,6 +113,18 @@ public class AnimationProperties {
         @Override
         public Float get(ClippingImageView object) {
             return object.getAnimationProgress();
+        }
+    };
+
+    public static final Property<PhotoViewer, Float> PHOTO_VIEWER_ANIMATION_VALUE = new FloatProperty<PhotoViewer>("animationValue") {
+        @Override
+        public void setValue(PhotoViewer object, float value) {
+            object.setAnimationValue(value);
+        }
+
+        @Override
+        public Float get(PhotoViewer object) {
+            return object.getAnimationValue();
         }
     };
 

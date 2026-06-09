@@ -183,6 +183,16 @@ class TopicViewModel(
             .map { post -> post.cookedHtml }
     }
 
+    fun onPollOptionSelected(postId: Long, postNumber: Int?, pollName: String, optionId: String) {
+        viewModelScope.launch {
+            repository.votePoll(postId = postId, pollName = pollName, optionId = optionId).onSuccess {
+                if (postNumber != null) {
+                    repository.loadPostByNumber(topicId = topicId, postNumber = postNumber).onSuccess(::replacePostById)
+                }
+            }
+        }
+    }
+
     fun requestJumpToReplyTarget(postNumber: Int) {
         val target = TopicReplyTargetResolver.replyTargetsByPostNumber(_uiState.value.posts)[postNumber] ?: return
         jumpNonce += 1

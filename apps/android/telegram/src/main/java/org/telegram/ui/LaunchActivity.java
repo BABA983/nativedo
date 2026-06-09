@@ -60,7 +60,11 @@ public class LaunchActivity extends Activity {
     }
 
     public static class DrawerLayoutContainer {
-        public void setAllowDrawContent(boolean value) {}
+        public void setAllowDrawContent(boolean value) {
+            if (actionBarLayout != null) {
+                actionBarLayout.setAllowDrawContent(value);
+            }
+        }
     }
 
     public static boolean checkFreeDiscSpaceStatic(int type) {

@@ -48,8 +48,8 @@ public class MessageObject {
     public Object lastGeoWebFileSet;
     public Object lastGeoWebFileLoaded;
     public TLRPC.Message messageOwner;
-    public Object photoThumbsObject;
-    public Object photoThumbsObject2;
+    public TLObject photoThumbsObject;
+    public TLObject photoThumbsObject2;
     public java.util.ArrayList<TLRPC.PhotoSize> photoThumbs;
     public java.util.ArrayList<TLRPC.PhotoSize> photoThumbs2;
     public TLRPC.Document emojiAnimatedSticker;
@@ -150,6 +150,10 @@ public class MessageObject {
         return 0L;
     }
 
+    public long getGroupIdForUse() {
+        return messageOwner != null ? messageOwner.grouped_id : 0L;
+    }
+
     public String getFileName() {
         return null;
     }
@@ -184,6 +188,10 @@ public class MessageObject {
 
     public static boolean isVideoDocument(TLRPC.Document document) {
         return false;
+    }
+
+    public static boolean isDocumentHasThumb(TLRPC.Document document) {
+        return document != null && document.thumbs != null && !document.thumbs.isEmpty();
     }
 
     public static boolean isVideoSticker(TLRPC.Document document) {

@@ -15,6 +15,8 @@ import android.text.StaticLayout
 import android.view.MotionEvent
 import android.view.ViewConfiguration
 import org.telegram.messenger.AndroidUtilities
+import org.telegram.ui.Cells.TextSelectionHelper
+import java.util.ArrayList
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -39,7 +41,7 @@ internal class CodeBlock(
 
     override fun measure(maxWidthPx: Int): Int {
         viewportWidth = maxWidthPx.coerceAtLeast(AndroidUtilities.dp(120f))
-        val horizontalPadding = AndroidUtilities.dp(12f)
+        val horizontalPadding = AndroidUtilities.dp(16f)
         val source = code.ifBlank { " " }
         val longestLineWidth = source.lineSequence()
             .map { line -> context.monoPaint.measureText(line).roundToInt() }
@@ -51,7 +53,7 @@ internal class CodeBlock(
             .setLineSpacing(0f, 1.15f)
             .setIncludePad(false)
             .build()
-        measuredHeight = (layout?.height ?: 0) + AndroidUtilities.dp(20f)
+        measuredHeight = (layout?.height ?: 0) + AndroidUtilities.dp(40f)
         clipRect.set(0f, 0f, viewportWidth.toFloat(), measuredHeight.toFloat())
         scrollX = scrollX.coerceIn(0f, maxScroll().toFloat())
         return measuredHeight
@@ -59,13 +61,17 @@ internal class CodeBlock(
 
     override fun draw(canvas: Canvas, parentWidth: Int) {
         val currentLayout = layout ?: return
-        val radius = AndroidUtilities.dp(10f).toFloat()
-        canvas.drawRoundRect(clipRect, radius, radius, backgroundPaint)
+        canvas.drawRect(0f, AndroidUtilities.dp(8f).toFloat(), viewportWidth.toFloat(), (measuredHeight - AndroidUtilities.dp(8f)).toFloat(), backgroundPaint)
         val saveCount = canvas.save()
         canvas.clipRect(clipRect)
-        canvas.translate(AndroidUtilities.dp(12f) - scrollX, AndroidUtilities.dp(10f).toFloat())
+        canvas.translate(AndroidUtilities.dp(16f) - scrollX, AndroidUtilities.dp(20f).toFloat())
         currentLayout.draw(canvas)
         canvas.restoreToCount(saveCount)
+    }
+
+    override fun fillTextLayoutBlocks(blocks: ArrayList<TextSelectionHelper.TextLayoutBlock>, x: Int, y: Int) {
+        val currentLayout = layout ?: return
+        blocks.add(PostSelectionLayoutBlock(currentLayout, x + AndroidUtilities.dp(16f) - scrollX.roundToInt(), y + AndroidUtilities.dp(20f)))
     }
 
     override fun onTouch(event: MotionEvent, localX: Float, localY: Float): Boolean {
@@ -87,15 +93,27 @@ internal class CodeBlock(
             MotionEvent.ACTION_MOVE -> {
                 val dx = localX - downX
                 val dy = localY - downY
-                if (!dragging && abs(dx) > touchSlop && abs(dx) > abs(dy)) {
-                    dragging = true
-                    setParentInterceptBlocked(true)
+                val movedX = abs(dx)
+                val movedY = abs(dy)
+                if (!dragging && (movedX > touchSlop || movedY > touchSlop)) {
+                    if (movedX > movedY) {
+                        dragging = true
+                        setParentInterceptBlocked(true)
+                    } else {
+                        setParentInterceptBlocked(false)
+                        return false
+                    }
                 }
                 if (dragging) {
                     val delta = lastX - localX
-                    scrollX = (scrollX + delta).coerceIn(0f, maxScroll().toFloat())
+                    val nextScrollX = (scrollX + delta).coerceIn(0f, maxScroll().toFloat())
                     lastX = localX
-                    context.host.invalidate()
+                    if (nextScrollX != scrollX) {
+                        scrollX = nextScrollX
+                        context.selectionGeometryInvalidator()
+                    } else {
+                        context.host.invalidate()
+                    }
                     return true
                 }
             }

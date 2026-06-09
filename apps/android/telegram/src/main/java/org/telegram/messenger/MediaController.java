@@ -192,6 +192,8 @@ public class MediaController {
         public int ttl;
         public boolean isLivePhoto;
         public CharSequence caption;
+        public TLRPC.PhotoSize thumbPhotoSize;
+        public TLRPC.PhotoSize photoSize;
         public TLRPC.Document document;
         public TLRPC.Photo photo;
     }

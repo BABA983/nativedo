@@ -59,6 +59,8 @@ public class ActionBar extends FrameLayout {
     private boolean occupyStatusBar = true;
     private boolean castShadows = SharedConfig.drawActionBarShadow;
     private boolean addToContainer = true;
+    private boolean overlayTitleAnimation;
+    private int subtitleColor;
     private RecyclerView adaptiveBackgroundListView;
     private final RecyclerView.OnScrollListener adaptiveBackgroundScrollListener = new RecyclerView.OnScrollListener() {
         @Override
@@ -135,6 +137,22 @@ public class ActionBar extends FrameLayout {
 
     public SimpleTextView getTitleTextView() {
         return titleTextView;
+    }
+
+    public void setOverlayTitleAnimation(boolean value) {
+        overlayTitleAnimation = value;
+    }
+
+    public boolean getOverlayTitleAnimation() {
+        return overlayTitleAnimation;
+    }
+
+    public void setSubtitleColor(int color) {
+        subtitleColor = color;
+    }
+
+    public int getSubtitleColor() {
+        return subtitleColor;
     }
 
     public void setTitleAnimated(CharSequence value, boolean crossfade, int duration, org.telegram.ui.Components.CubicBezierInterpolator interpolator) {
@@ -458,7 +476,7 @@ public class ActionBar extends FrameLayout {
                 child,
                 MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
                 0,
-                MeasureSpec.makeMeasureSpec(barHeight, MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(totalHeight, MeasureSpec.EXACTLY),
                 0
             );
         }
@@ -489,7 +507,7 @@ public class ActionBar extends FrameLayout {
             if (child == backButtonImageView || child == titleTextView || child == menu || child.getVisibility() == GONE) {
                 continue;
             }
-            child.layout(0, topInset, getMeasuredWidth(), topInset + barHeight);
+            child.layout(0, 0, getMeasuredWidth(), getMeasuredHeight());
         }
     }
 

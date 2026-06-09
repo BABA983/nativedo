@@ -15,8 +15,7 @@ import org.telegram.messenger.AndroidUtilities
 import org.telegram.ui.ActionBar.ActionBarLayout
 import org.telegram.ui.LaunchActivity
 import io.github.baba983.nativedo.ui.main.MainTabsActivity
-// TODO(photoviewer): re-enable when telegram/ui/PhotoViewer can compile.
-// import org.telegram.ui.PhotoViewer
+import org.telegram.ui.PhotoViewer
 import kotlinx.coroutines.launch
 
 private const val LAZY_START = 0.015f
@@ -51,6 +50,12 @@ class MainActivity : ComponentActivity() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         AndroidUtilities.init(this)
+        PhotoViewer.getInstance().onConfigurationChanged(newConfig)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        PhotoViewer.getInstance().onResume()
     }
 
     override fun onDestroy() {
@@ -70,6 +75,7 @@ class MainActivity : ComponentActivity() {
             }
             fragments.clear()
         }
+        PhotoViewer.getInstance().destroyPhotoViewer()
         LaunchActivity.instance = null
         super.onDestroy()
     }
@@ -93,7 +99,7 @@ class MainActivity : ComponentActivity() {
                     }
 
                     val progress = backEvent.progress
-                    // TODO(photoviewer): if (PhotoViewer.hasActiveViewer()) return
+                    if (PhotoViewer.getInstance().isVisibleOrAnimating()) return
                     if (!predictiveBackStarted && progress > LAZY_START) {
                         if (!actionBarLayout.canStartPredictiveBack()) {
                             return
@@ -111,13 +117,13 @@ class MainActivity : ComponentActivity() {
                 override fun onBackCancelled() {
                     started = false
                     invoked = false
-                    // TODO(photoviewer): if (PhotoViewer.hasActiveViewer()) return
+                    if (PhotoViewer.getInstance().isVisibleOrAnimating()) return
                     actionBarLayout.onBackCancelled()
                 }
 
                 override fun onBackInvoked() {
                     invoked = true
-                    // TODO(photoviewer): if (PhotoViewer.handleActiveBack()) return
+                    if (handlePhotoViewerBack()) return
                     if (actionBarLayout.canHandleBack()) {
                         actionBarLayout.onBackInvoked()
                     } else if (!mainTabsActivity.handleBackPressed()) {
@@ -127,19 +133,19 @@ class MainActivity : ComponentActivity() {
             }
             onBackAnimationCallback = callback
             onBackInvokedDispatcher.registerOnBackInvokedCallback(
-                OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                OnBackInvokedDispatcher.PRIORITY_OVERLAY,
                 callback,
             )
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             val callback = OnBackInvokedCallback {
-                // TODO(photoviewer): re-add PhotoViewer.handleActiveBack() guard.
+                if (handlePhotoViewerBack()) return@OnBackInvokedCallback
                 if (!actionBarLayout.handleBackPressed() && !mainTabsActivity.handleBackPressed()) {
                     finish()
                 }
             }
             onBackInvokedCallback = callback
             onBackInvokedDispatcher.registerOnBackInvokedCallback(
-                OnBackInvokedDispatcher.PRIORITY_DEFAULT,
+                OnBackInvokedDispatcher.PRIORITY_OVERLAY,
                 callback,
             )
         } else {
@@ -147,7 +153,7 @@ class MainActivity : ComponentActivity() {
                 this,
                 object : OnBackPressedCallback(true) {
                     override fun handleOnBackPressed() {
-                        // TODO(photoviewer): re-add PhotoViewer.handleActiveBack() guard.
+                        if (handlePhotoViewerBack()) return
                         if (!actionBarLayout.handleBackPressed() && !mainTabsActivity.handleBackPressed()) {
                             finish()
                         }
@@ -155,5 +161,12 @@ class MainActivity : ComponentActivity() {
                 },
             )
         }
+    }
+
+    private fun handlePhotoViewerBack(): Boolean {
+        val photoViewer = PhotoViewer.getInstance()
+        if (!photoViewer.isVisibleOrAnimating()) return false
+        photoViewer.closePhoto(true, false)
+        return true
     }
 }

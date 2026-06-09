@@ -117,12 +117,10 @@ internal abstract class TextLayoutBlock(
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
-                val pressed = pressedLink ?: return false
+                pressedLink ?: return false
                 if (abs(localX - downX) > touchSlop || abs(localY - downY) > touchSlop) {
-                    if (findLinkAt(currentLayout, localX, yInText) != pressed) {
-                        clearPressedLink(release = false)
-                        return false
-                    }
+                    clearPressedLink(release = false)
+                    return false
                 }
                 return true
             }

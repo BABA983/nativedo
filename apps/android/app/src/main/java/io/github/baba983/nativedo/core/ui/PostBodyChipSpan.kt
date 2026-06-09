@@ -1,5 +1,4 @@
 // SCOPE: Discourse-specific inline chip rendering for @mentions and #hashtags.
-// SCOPE: Discourse-specific inline chip rendering for @mentions and #hashtags.
 //        Telegram instant view does not have a direct analogue (it would render
 //        these as plain styled text via TextPaintUrlSpan); the chip pill is a
 //        NativeDo product decision to mirror Discourse's web styling.
@@ -71,7 +70,7 @@ internal class ChipBackgroundSpan(
 
         paint.color = textColor
         paint.typeface = Typeface.create(originalTypeface, Typeface.BOLD)
-        paint.flags = originalFlags and Paint.UNDERLINE_TEXT_FLAG.inv()
+        paint.isUnderlineText = false
         canvas.drawText(text, start, end, x + horizontalPaddingPx, y.toFloat(), paint)
 
         paint.color = originalColor

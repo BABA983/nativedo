@@ -941,7 +941,7 @@ public final class AndroidUtilities {
             view.setTag(1);
         } else if (!show && view.getTag() != null) {
             view.animate().setListener(null).cancel();
-            view.animate().alpha(0).scaleY(scaleFactor).scaleX(scaleFactor).setListener(new org.telegram.ui.Components.HideViewAfterAnimation(view, goneOnHide ? View.GONE : View.INVISIBLE)).setDuration(150).setUpdateListener(onUpdate).start();
+            view.animate().alpha(0).scaleY(scaleFactor).scaleX(scaleFactor).setListener(new org.telegram.ui.Components.HideViewAfterAnimation(view, goneOnHide)).setDuration(150).setUpdateListener(onUpdate).start();
             view.setTag(null);
         }
     }
