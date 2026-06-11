@@ -22,6 +22,7 @@ import android.graphics.Paint;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
@@ -117,6 +118,46 @@ public class PhotoViewer {
     private static final float ZOOM_SCALE = 0.1f;
     private static Drawable[] progressDrawables;
 
+    private static boolean isHttpUrl(String url) {
+        return !TextUtils.isEmpty(url) && (url.startsWith("http://") || url.startsWith("https://"));
+    }
+
+    private static String httpProgressKey(String url) {
+        if (TextUtils.isEmpty(url)) {
+            return null;
+        }
+        String key = Utilities.MD5(url);
+        if (TextUtils.isEmpty(key)) {
+            return url;
+        }
+        return key + "." + ImageLoader.getHttpUrlExtension(url, "jpg");
+    }
+
+    private static String defaultProgressKey(String url) {
+        return isHttpUrl(url) ? httpProgressKey(url) : url;
+    }
+
+    private static File cacheFileForUrl(String url, String progressKey) {
+        if (TextUtils.isEmpty(url)) {
+            return null;
+        }
+        if (isHttpUrl(url)) {
+            File cacheDir = FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE);
+            if (cacheDir == null) {
+                return null;
+            }
+            return new File(cacheDir, TextUtils.isEmpty(progressKey) ? httpProgressKey(url) : progressKey);
+        }
+        if (url.startsWith("file://")) {
+            String path = Uri.parse(url).getPath();
+            return TextUtils.isEmpty(path) ? null : new File(path);
+        }
+        if (url.startsWith("/")) {
+            return new File(url);
+        }
+        return null;
+    }
+
     private BaseFragment parentFragment;
     private Activity parentActivity;
     private WindowManager.LayoutParams windowLayoutParams;
@@ -188,7 +229,12 @@ public class PhotoViewer {
         if (activity == null) {
             return;
         }
-        int uiFlags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;
+        int uiFlags = View.SYSTEM_UI_FLAG_LAYOUT_STABLE |
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION |
+                View.SYSTEM_UI_FLAG_FULLSCREEN |
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION |
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
         backgroundDrawable = new BackgroundDrawable(Color.BLACK);
         backgroundDrawable.setAlpha(0);
         windowView = new FrameLayout(activity) {
@@ -430,7 +476,7 @@ public class PhotoViewer {
         }
         currentIndex = Math.max(0, Math.min(index, imageUrls.size() - 1));
         containerView.resetImages();
-        backgroundDrawable.setAlpha(255);
+        backgroundDrawable.setAlpha(0);
         setParentAllowDrawContent(false);
         try {
             WindowManager manager = (WindowManager) activity.getSystemService(Context.WINDOW_SERVICE);
@@ -798,7 +844,7 @@ public class PhotoViewer {
             this.imageLocation = imageLocation;
             this.thumbLocation = thumbLocation;
             this.parentObject = parentObject;
-            this.progressKey = TextUtils.isEmpty(progressKey) ? url : progressKey;
+            this.progressKey = TextUtils.isEmpty(progressKey) ? defaultProgressKey(url) : progressKey;
             this.pageBlock = pageBlock;
         }
     }
@@ -1148,9 +1194,6 @@ public class PhotoViewer {
                 containerView.moving = false;
                 containerView.draggingDown = false;
                 containerView.canDragDown = false;
-                if (containerView.isActionBarVisible) {
-                    containerView.toggleActionBar(false, true);
-                }
                 containerView.hidePressedDrawables();
                 if (containerView.velocityTracker != null) {
                     containerView.velocityTracker.clear();
@@ -1273,7 +1316,12 @@ public class PhotoViewer {
                 containerView.zooming = false;
                 containerView.moving = false;
             } else if (containerView.draggingDown) {
-                if (Math.abs(containerView.dragY - ev.getY()) > containerView.getContainerViewHeight() / 6.0f) {
+                float velocity = 0f;
+                if (containerView.velocityTracker != null) {
+                    containerView.velocityTracker.computeCurrentVelocity(1000, containerView.maximumVelocity);
+                    velocity = containerView.velocityTracker.getYVelocity();
+                }
+                if (Math.abs(containerView.dragY - ev.getY()) > containerView.getContainerViewHeight() / 6.0f || Math.abs(velocity) > AndroidUtilities.dp(650f)) {
                     closePhoto(true, false);
                 } else {
                     containerView.animateTo(FrameLayoutDrawer.MIN_SCALE, 0f, 0f, false);
@@ -1353,6 +1401,7 @@ public class PhotoViewer {
         private final RectF rightImageRect = new RectF();
         private final RectF targetImageRect = new RectF();
         private final float[][] animationValues = new float[2][13];
+        private final String[] currentFileNames = new String[3];
         private final int touchSlop;
         private final int minimumVelocity;
         private final int maximumVelocity;
@@ -1412,6 +1461,7 @@ public class PhotoViewer {
             for (ImageReceiver receiver : imageReceivers) {
                 receiver.setAspectFit(true);
                 receiver.setAllowLoadingOnAttachedOnly(true);
+                receiver.setCrossfadeWithOldImage(true);
                 receiver.setCrossfadeAlpha((byte) 2);
                 receiver.setInvalidateAll(true);
             }
@@ -1513,6 +1563,9 @@ public class PhotoViewer {
                         return false;
                     }
                     if (closing || openAnimationInProgress || moving || draggingDown || scale > MIN_SCALE + 0.01f) {
+                        return true;
+                    }
+                    if (isPointInsideVisibleChrome(e.getY())) {
                         return true;
                     }
                     int edgeSide = Math.min(135, getContainerViewWidth() / 8);
@@ -1736,6 +1789,18 @@ public class PhotoViewer {
             setImageIndex(currentIndex, true, false);
         }
 
+        private boolean isPointInsideVisibleChrome(float y) {
+            if (!isActionBarVisible || chromeAlpha <= 0f) {
+                return false;
+            }
+            int topChromeHeight = ActionBar.getCurrentActionBarHeight() + AndroidUtilities.statusBarHeight + AndroidUtilities.dp(43f);
+            if (y <= topChromeHeight) {
+                return true;
+            }
+            int bottomChromeHeight = getBottomControlsHeight();
+            return bottomChromeHeight > 0 && y >= getContainerViewHeight() - bottomChromeHeight - AndroidUtilities.dp(8f);
+        }
+
         @Override
         protected void onDraw(Canvas canvas) {
             PhotoViewer.this.onDraw(canvas);
@@ -1917,8 +1982,44 @@ public class PhotoViewer {
             if (index < 0 || index >= imageUrls.size()) {
                 return null;
             }
+            return getFileName(index);
+        }
+
+        private String getFileName(int index) {
+            if (index < 0 || index >= imageUrls.size()) {
+                return null;
+            }
             UrlPhotoItem item = photoItemAt(index);
-            return item == null || TextUtils.isEmpty(item.progressKey) ? imageUrls.get(index) : item.progressKey;
+            return item == null || TextUtils.isEmpty(item.progressKey) ? defaultProgressKey(imageUrls.get(index)) : item.progressKey;
+        }
+
+        private void updateCurrentFileNames() {
+            currentFileNames[PROGRESS_CENTER_INDEX] = getFileName(currentIndex);
+            currentFileNames[PROGRESS_RIGHT_INDEX] = getFileName(currentIndex + 1);
+            currentFileNames[PROGRESS_LEFT_INDEX] = getFileName(currentIndex - 1);
+        }
+
+        private boolean fileExistsForIndex(int index) {
+            if (index < 0 || index >= imageUrls.size()) {
+                return false;
+            }
+            UrlPhotoItem item = photoItemAt(index);
+            File cacheFile = null;
+            if (item != null && item.imageLocation != null) {
+                if (item.imageLocation.photoSize != null) {
+                    cacheFile = FileLoader.getInstance(0).getPathToAttach(item.imageLocation.photoSize, true);
+                } else if (item.imageLocation.document != null) {
+                    cacheFile = FileLoader.getInstance(0).getPathToAttach(item.imageLocation.document, true);
+                } else if (item.imageLocation.location != null) {
+                    cacheFile = FileLoader.getInstance(0).getPathToAttach(item.imageLocation.location, true);
+                } else if (item.imageLocation.path != null) {
+                    cacheFile = cacheFileForUrl(item.imageLocation.path, getFileName(index));
+                }
+            }
+            if (cacheFile == null) {
+                cacheFile = cacheFileForUrl(imageUrls.get(index), getFileName(index));
+            }
+            return cacheFile != null && cacheFile.exists();
         }
 
         private int photoIndexForProgressIndex(int progressIndex) {
@@ -1946,7 +2047,7 @@ public class PhotoViewer {
                 return -1;
             }
             for (int i = 0; i < photoProgressViews.length; i++) {
-                if (progressKey.equals(progressKeyForIndex(photoIndexForProgressIndex(i)))) {
+                if (progressKey.equals(currentFileNames[i])) {
                     return i;
                 }
             }
@@ -2000,6 +2101,12 @@ public class PhotoViewer {
                 captionView.setLayoutParams(params);
             }
             captionView.setCaption(currentCaption());
+            if (captionView.getVisibility() == VISIBLE && getContainerViewWidth() > 0) {
+                captionView.measure(
+                        MeasureSpec.makeMeasureSpec(getContainerViewWidth(), MeasureSpec.EXACTLY),
+                        MeasureSpec.makeMeasureSpec(getContainerViewHeight(), MeasureSpec.AT_MOST)
+                );
+            }
         }
 
         private void setImageIndex(int index, boolean init, boolean animateCaption) {
@@ -2042,6 +2149,7 @@ public class PhotoViewer {
             scale = MIN_SCALE;
             translationX = 0f;
             translationY = 0f;
+            updateCurrentFileNames();
             setImages(previousIndex, init);
             groupedPhotosListView.fillList();
             updateSlideshowCellForCurrentPhoto();
@@ -2147,7 +2255,20 @@ public class PhotoViewer {
                 }
                 updateProgressVisibility(progressIndex);
             }
-            receiver.setImage(imageLocation, null, thumbLocation, null, url, parentObject, 0);
+            Drawable thumbDrawable = null;
+            if (receiver == centerImage) {
+                if (currentThumb == null && placeProvider != null) {
+                    currentThumb = placeProvider.getThumbForPhoto(null, null, index);
+                }
+                if (currentThumb != null && !currentThumb.isRecycled()) {
+                    if (currentThumb.drawable != null) {
+                        thumbDrawable = currentThumb.drawable;
+                    } else if (currentThumb.bitmap != null) {
+                        thumbDrawable = new BitmapDrawable(getResources(), currentThumb.bitmap);
+                    }
+                }
+            }
+            receiver.setImage(imageLocation, null, thumbLocation, null, thumbDrawable, 0, url, parentObject, 0);
         }
 
         private void updateProgressVisibility() {
@@ -2162,8 +2283,15 @@ public class PhotoViewer {
             }
             PhotoProgressView progressView = photoProgressViews[progressIndex];
             int photoIndex = photoIndexForProgressIndex(progressIndex);
-            String progressKey = progressKeyForIndex(photoIndex);
-            boolean show = !TextUtils.isEmpty(progressKey) && !photoProgressLoaded[progressIndex] && !closing;
+            String progressKey = currentFileNames[progressIndex];
+            boolean fileExists = fileExistsForIndex(photoIndex);
+            if (fileExists) {
+                photoProgressLoaded[progressIndex] = true;
+                if (progressIndex == PROGRESS_CENTER_INDEX) {
+                    centerImageLoaded = true;
+                }
+            }
+            boolean show = !TextUtils.isEmpty(progressKey) && !photoProgressLoaded[progressIndex] && !fileExists && !closing;
             progressView.setBackgroundState(show ? PROGRESS_EMPTY : PROGRESS_NONE, true, true);
             Float progress = show ? ImageLoader.getInstance().getFileProgress(progressKey) : null;
             progressView.setProgress(show && progress != null ? progress : show ? 0f : 1f, show && progress != null);
@@ -2317,6 +2445,17 @@ public class PhotoViewer {
             return AndroidUtilities.isTablet() || width <= 0 || height <= 0 || height >= width;
         }
 
+        private int getBottomControlsHeight() {
+            int bottom = shouldShowBottomLayout() ? AndroidUtilities.dp(48f) : 0;
+            if (shouldShowGroupedPhotos()) {
+                bottom += AndroidUtilities.dp(68f);
+            }
+            if (captionView.getVisibility() == VISIBLE) {
+                bottom += captionView.getMeasuredHeight();
+            }
+            return bottom;
+        }
+
         private void updateWindowBackgroundAlpha() {
             if (animationInProgress != 0 || openAnimationInProgress) {
                 return;
@@ -2344,6 +2483,7 @@ public class PhotoViewer {
         private void updateTargetImageRect() {
             updateTargetImageRectForIndex(targetImageRect, currentIndex, centerImage);
             updateMinMax(scale);
+            updateOpenClippingTargetValues();
         }
 
         private void updateTargetImageRectForIndex(RectF rect, int index, ImageReceiver receiver) {
@@ -2385,6 +2525,17 @@ public class PhotoViewer {
                 return Math.max(0.1f, Math.min(10f, place.viewWidth / (float) place.viewHeight));
             }
             return Math.max(0.1f, getContainerViewWidth() / (float) Math.max(1, getContainerViewHeight()));
+        }
+
+        private void updateOpenClippingTargetValues() {
+            if (!openAnimationInProgress || animatingImageView.getVisibility() != VISIBLE || targetImageRect.isEmpty()) {
+                return;
+            }
+            ViewGroup.LayoutParams params = animatingImageView.getLayoutParams();
+            if (params == null || params.width <= 0 || params.height <= 0) {
+                return;
+            }
+            fillClippingAnimationValues(1, null, null, params.width, params.height, false);
         }
 
         private int getContainerViewWidth() {
@@ -2449,6 +2600,7 @@ public class PhotoViewer {
             openAnimator = new AnimatorSet();
             openAnimator.playTogether(animators);
             openAnimator.setDuration(200);
+            openAnimator.setInterpolator(CubicBezierInterpolator.DEFAULT);
             animationEndRunnable = () -> {
                 animationEndRunnable = null;
                 openAnimator = null;
@@ -2579,6 +2731,7 @@ public class PhotoViewer {
             closeAnimator = new AnimatorSet();
             closeAnimator.playTogether(animators);
             closeAnimator.setDuration(200);
+            closeAnimator.setInterpolator(CubicBezierInterpolator.DEFAULT);
             animationEndRunnable = () -> {
                 animationEndRunnable = null;
                 closing = false;
@@ -2783,6 +2936,7 @@ public class PhotoViewer {
             actionBarAnimating = true;
             actionBarAnimator = ValueAnimator.ofFloat(chromeAlpha, target);
             actionBarAnimator.setDuration(200);
+            actionBarAnimator.setInterpolator(CubicBezierInterpolator.DEFAULT);
             actionBarAnimator.addUpdateListener(animation -> updateActionBarAlpha((float) animation.getAnimatedValue()));
             actionBarAnimator.addListener(new android.animation.AnimatorListenerAdapter() {
                 @Override
@@ -2861,23 +3015,15 @@ public class PhotoViewer {
         }
 
         private void goToNext() {
-            float extra = 0f;
-            if (scale != 1f) {
-                extra = (getContainerViewWidth() - centerImage.getImageWidth()) / 2f * scale;
-            }
             cancelMoveZoomAnimation();
             switchImageAfterAnimation = 1;
-            animateTo(scale, minX - getContainerViewWidth() - extra - AndroidUtilities.dp(30f) / 2f, translationY, false);
+            animateTo(MIN_SCALE, -getContainerViewWidth() - AndroidUtilities.dp(30f) / 2f, 0f, false);
         }
 
         private void goToPrev() {
-            float extra = 0f;
-            if (scale != 1f) {
-                extra = (getContainerViewWidth() - centerImage.getImageWidth()) / 2f * scale;
-            }
             cancelMoveZoomAnimation();
             switchImageAfterAnimation = 2;
-            animateTo(scale, maxX + getContainerViewWidth() + extra + AndroidUtilities.dp(30f) / 2f, translationY, false);
+            animateTo(MIN_SCALE, getContainerViewWidth() + AndroidUtilities.dp(30f) / 2f, 0f, false);
         }
 
         private void switchToNextIndex(int add, boolean init) {
@@ -2930,6 +3076,9 @@ public class PhotoViewer {
             centerImage = imageReceivers[1];
             leftImage = imageReceivers[0];
             rightImage = imageReceivers[2];
+            currentFileNames[PROGRESS_CENTER_INDEX] = null;
+            currentFileNames[PROGRESS_RIGHT_INDEX] = null;
+            currentFileNames[PROGRESS_LEFT_INDEX] = null;
             photoProgressViews[PROGRESS_CENTER_INDEX] = photoProgressViewsRaw[PROGRESS_CENTER_INDEX];
             photoProgressViews[PROGRESS_RIGHT_INDEX] = photoProgressViewsRaw[PROGRESS_RIGHT_INDEX];
             photoProgressViews[PROGRESS_LEFT_INDEX] = photoProgressViewsRaw[PROGRESS_LEFT_INDEX];
@@ -3528,18 +3677,27 @@ public class PhotoViewer {
             marginTop = ActionBar.getCurrentActionBarHeight() + AndroidUtilities.statusBarHeight;
             left.setOverrideFullWidth(width);
             right.setOverrideFullWidth(width);
-            setMeasuredDimension(width, marginTop + AndroidUtilities.dp(43f));
+            super.onMeasure(
+                    MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+                    MeasureSpec.makeMeasureSpec(marginTop + AndroidUtilities.dp(43f), MeasureSpec.EXACTLY)
+            );
         }
 
         @Override
         protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
             float show = showT.set(shown ? 1f : 0f);
             if (show <= 0f) {
                 return;
             }
             float width = left.getCurrentWidth() + centerWidth + right.getCurrentWidth() + AndroidUtilities.dp(18f);
-            float top = marginTop + AndroidUtilities.dpf2(10f) - AndroidUtilities.dp(8f) * (1f - show);
-            AndroidUtilities.rectTmp.set((getWidth() - width) / 2f, top, (getWidth() + width) / 2f, top + AndroidUtilities.dp(23f));
+            float marginTop = this.marginTop - AndroidUtilities.dp(8f) * (1f - show);
+            AndroidUtilities.rectTmp.set(
+                    (getWidth() - width) / 2f,
+                    marginTop + AndroidUtilities.dpf2(10f),
+                    (getWidth() + width) / 2f,
+                    marginTop + AndroidUtilities.dpf2(33f)
+            );
 
             int wasAlpha = backgroundPaint.getAlpha();
             backgroundPaint.setAlpha((int) (wasAlpha * show));
@@ -3547,7 +3705,7 @@ public class PhotoViewer {
             backgroundPaint.setAlpha(wasAlpha);
 
             canvas.save();
-            canvas.translate((getWidth() - width) / 2f + AndroidUtilities.dp(9f), top + AndroidUtilities.dpf2(9.5f));
+            canvas.translate((getWidth() - width) / 2f + AndroidUtilities.dp(9f), marginTop + AndroidUtilities.dp(9.5f));
             left.setBounds(0, 0, (int) left.getCurrentWidth(), AndroidUtilities.dp(23f));
             int alpha = (int) (255 * show);
             left.setAlpha(alpha);

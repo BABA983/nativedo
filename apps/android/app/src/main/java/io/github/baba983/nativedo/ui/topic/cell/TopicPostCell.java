@@ -184,6 +184,9 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
                         List<Post> recentReplyParticipants, List<CookedPostBlock> parsedBlocks,
                         PostBodyBlockState blockState, int jumpHighlightNonce, Runnable jumpHighlightFinishedCallback) {
         long oldPostId = this.post != null ? this.post.getId() : Long.MIN_VALUE;
+        if (oldPostId != post.getId()) {
+            hiddenImageUrl = null;
+        }
         this.post = post;
         this.previousPost = prev;
         this.nextPost = next;
@@ -469,6 +472,7 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
 
     @Override
     protected void onDetachedFromWindow() {
+        setHiddenImageUrl(null);
         for (PostBodyBlock block : bodyBlocks) {
             block.onDetachedFromWindow();
         }

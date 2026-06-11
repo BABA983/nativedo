@@ -34,7 +34,6 @@ internal class ImageBlock(
     private val receiver: ImageReceiver = context.imagePool.obtain("image:$targetUrl")
     private val imageRect = RectF()
     private val placeholderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = context.mediaPlaceholderColor }
-    private val pressedPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = context.pressedOverlayColor }
     private val captionPaint = TextPaint(context.quotePaint).apply {
         color = context.secondaryTextColor
         textSize = AndroidUtilities.dp(13f).toFloat()
@@ -45,15 +44,22 @@ internal class ImageBlock(
 
     init {
         receiver.setRoundRadius(AndroidUtilities.dp(14f))
+        receiver.setAspectFit(true)
         context.imagePool.setImage(receiver, imageUrl)
     }
 
     override fun measure(maxWidthPx: Int): Int {
         val width = maxWidthPx.coerceAtLeast(AndroidUtilities.dp(120f))
         val aspect = image.aspectRatio ?: 1.5f
-        val imageWidth = width
-        val imageHeight = (imageWidth / aspect).roundToInt().coerceIn(AndroidUtilities.dp(120f), AndroidUtilities.dp(480f))
-        imageRect.set(0f, 0f, imageWidth.toFloat(), imageHeight.toFloat())
+        var imageWidth = width
+        var imageHeight = (imageWidth / aspect).roundToInt()
+        val maxHeight = ((maxOf(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y) - AndroidUtilities.dp(56f)) * 0.9f).roundToInt()
+        if (imageHeight > maxHeight) {
+            imageHeight = maxHeight
+            imageWidth = (imageHeight * aspect).roundToInt().coerceAtMost(width)
+        }
+        val imageLeft = (width - imageWidth) / 2f
+        imageRect.set(imageLeft, 0f, imageLeft + imageWidth, imageHeight.toFloat())
         captionLayout = image.alt.takeIf { it.isNotBlank() }?.let { alt ->
             StaticLayout.Builder.obtain(alt, 0, alt.length, captionPaint, width)
                 .setAlignment(Layout.Alignment.ALIGN_NORMAL)
@@ -72,9 +78,6 @@ internal class ImageBlock(
         if (!hidden) {
             receiver.setBounds(imageRect)
             receiver.draw(canvas)
-        }
-        if (pressed && !hidden) {
-            canvas.drawRoundRect(imageRect, AndroidUtilities.dp(14f).toFloat(), AndroidUtilities.dp(14f).toFloat(), pressedPaint)
         }
         captionLayout?.let { layout ->
             canvas.save()

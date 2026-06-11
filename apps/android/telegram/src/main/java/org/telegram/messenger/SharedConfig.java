@@ -129,6 +129,7 @@ public final class SharedConfig {
 
     /** Matches upstream {@code SharedConfig.storageCacheDir} — empty until NativeDo wires custom SD-card storage. */
     public static String storageCacheDir = "";
+    public static int lastKeepMediaCheckTime = 0;
 
     public static int saveToGalleryFlags = 0;
     public static final int SAVE_TO_GALLERY_FLAG_PEER = 1;

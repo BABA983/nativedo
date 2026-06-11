@@ -16,6 +16,8 @@ import io.github.baba983.nativedo.core.html.GalleryImage
 import io.github.baba983.nativedo.core.html.resolvePostImageUrl
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ImageReceiver
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 internal class CollageBlock(
@@ -33,7 +35,6 @@ internal class CollageBlock(
 
     private val spacing = AndroidUtilities.dp(4f)
     private val placeholderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = context.mediaPlaceholderColor }
-    private val pressedPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = context.pressedOverlayColor }
     private val tiles = block.images.map { image ->
         val imageUrl = resolvePostImageUrl(context.baseUrl, image.src)
         val targetUrl = image.href?.let { resolvePostImageUrl(context.baseUrl, it) } ?: imageUrl
@@ -41,7 +42,12 @@ internal class CollageBlock(
             setRoundRadius(AndroidUtilities.dp(8f))
         }
         context.imagePool.setImage(receiver, imageUrl)
-        Tile(image = image, imageUrl = imageUrl, targetUrl = targetUrl, receiver = receiver)
+        Tile(
+            image = image,
+            imageUrl = imageUrl,
+            targetUrl = targetUrl,
+            receiver = receiver,
+        )
     }
     private var measuredHeight = 0
     private var pressedTileIndex = -1
@@ -72,30 +78,58 @@ internal class CollageBlock(
     private fun layoutTwo(availableWidth: Int): Int {
         val firstAspect = tiles[0].aspectRatio()
         val secondAspect = tiles[1].aspectRatio()
-        val height = ((availableWidth - spacing) / (firstAspect + secondAspect)).roundToInt()
-            .coerceIn(AndroidUtilities.dp(120f), AndroidUtilities.dp(260f))
-        val firstWidth = (height * firstAspect).roundToInt().coerceIn(AndroidUtilities.dp(80f), availableWidth - spacing - AndroidUtilities.dp(80f))
-        val secondWidth = availableWidth - spacing - firstWidth
-        tiles[0].rect.set(0f, 0f, firstWidth.toFloat(), height.toFloat())
-        tiles[1].rect.set((firstWidth + spacing).toFloat(), 0f, availableWidth.toFloat(), height.toFloat())
-        return height
+        val maxHeight = availableWidth * MAX_SIZE_HEIGHT / MAX_SIZE_WIDTH
+        val averageAspectRatio = (1f + firstAspect + secondAspect) / 2f
+        val maxAspectRatio = MAX_SIZE_WIDTH / MAX_SIZE_HEIGHT
+        val proportions = aspectKind(firstAspect).toString() + aspectKind(secondAspect)
+        return if (proportions == "ww" && averageAspectRatio > 1.4f * maxAspectRatio && firstAspect - secondAspect < 0.2f) {
+            val height = min(availableWidth / firstAspect, min(availableWidth / secondAspect, maxHeight / 2f)).roundToInt()
+                .coerceAtLeast(AndroidUtilities.dp(96f))
+            tiles[0].rect.set(0f, 0f, availableWidth.toFloat(), height.toFloat())
+            tiles[1].rect.set(0f, (height + spacing).toFloat(), availableWidth.toFloat(), (height * 2 + spacing).toFloat())
+            height * 2 + spacing
+        } else if (proportions == "ww" || proportions == "qq") {
+            val width = (availableWidth - spacing) / 2
+            val height = min(width / firstAspect, min(width / secondAspect, maxHeight)).roundToInt()
+                .coerceAtLeast(AndroidUtilities.dp(96f))
+            tiles[0].rect.set(0f, 0f, width.toFloat(), height.toFloat())
+            tiles[1].rect.set((width + spacing).toFloat(), 0f, availableWidth.toFloat(), height.toFloat())
+            height
+        } else {
+            val secondWidth = max(0.4f * availableWidth, (availableWidth / firstAspect / (1f / firstAspect + 1f / secondAspect)).roundToInt().toFloat()).roundToInt()
+                .coerceIn(AndroidUtilities.dp(80f), availableWidth - spacing - AndroidUtilities.dp(80f))
+            val firstWidth = availableWidth - spacing - secondWidth
+            val height = min(maxHeight, min(firstWidth / firstAspect, secondWidth / secondAspect)).roundToInt()
+                .coerceAtLeast(AndroidUtilities.dp(96f))
+            tiles[0].rect.set(0f, 0f, firstWidth.toFloat(), height.toFloat())
+            tiles[1].rect.set((firstWidth + spacing).toFloat(), 0f, availableWidth.toFloat(), height.toFloat())
+            height
+        }
     }
 
     private fun layoutThree(availableWidth: Int): Int {
         val firstAspect = tiles[0].aspectRatio()
+        val secondAspect = tiles[1].aspectRatio()
+        val thirdAspect = tiles[2].aspectRatio()
+        val maxHeight = availableWidth * MAX_SIZE_HEIGHT / MAX_SIZE_WIDTH
         return if (firstAspect < 0.85f) {
-            val height = AndroidUtilities.dp(260f)
-            val leftWidth = (availableWidth * 0.48f).roundToInt()
-            val rightWidth = availableWidth - spacing - leftWidth
-            val halfHeight = (height - spacing) / 2
+            val thirdHeight = min(maxHeight * 0.5f, (thirdAspect * availableWidth / (thirdAspect + secondAspect)).roundToInt().toFloat())
+            val secondHeight = maxHeight - thirdHeight
+            val rightWidth = max(AndroidUtilities.dp(80f).toFloat(), min(availableWidth * 0.5f, min(thirdHeight * thirdAspect, secondHeight * secondAspect).roundToInt().toFloat())).roundToInt()
+            val leftWidth = min(maxHeight * firstAspect + AndroidUtilities.dp(40f), (availableWidth - rightWidth - spacing).toFloat()).roundToInt()
+                .coerceAtLeast(AndroidUtilities.dp(80f))
+            val height = maxHeight.roundToInt()
+            val topRightHeight = secondHeight.roundToInt()
             tiles[0].rect.set(0f, 0f, leftWidth.toFloat(), height.toFloat())
-            tiles[1].rect.set((leftWidth + spacing).toFloat(), 0f, availableWidth.toFloat(), halfHeight.toFloat())
-            tiles[2].rect.set((leftWidth + spacing).toFloat(), (halfHeight + spacing).toFloat(), availableWidth.toFloat(), height.toFloat())
+            tiles[1].rect.set((leftWidth + spacing).toFloat(), 0f, availableWidth.toFloat(), topRightHeight.toFloat())
+            tiles[2].rect.set((leftWidth + spacing).toFloat(), (topRightHeight + spacing).toFloat(), availableWidth.toFloat(), height.toFloat())
             height
         } else {
-            val topHeight = (availableWidth / firstAspect).roundToInt().coerceIn(AndroidUtilities.dp(130f), AndroidUtilities.dp(220f))
-            val bottomHeight = AndroidUtilities.dp(120f)
+            val topHeight = min(availableWidth / firstAspect, maxHeight * 0.66f).roundToInt()
+                .coerceAtLeast(AndroidUtilities.dp(120f))
             val halfWidth = (availableWidth - spacing) / 2
+            val bottomHeight = min(maxHeight - topHeight, min(halfWidth / secondAspect, halfWidth / thirdAspect)).roundToInt()
+                .coerceAtLeast(AndroidUtilities.dp(96f))
             tiles[0].rect.set(0f, 0f, availableWidth.toFloat(), topHeight.toFloat())
             tiles[1].rect.set(0f, (topHeight + spacing).toFloat(), halfWidth.toFloat(), (topHeight + spacing + bottomHeight).toFloat())
             tiles[2].rect.set((halfWidth + spacing).toFloat(), (topHeight + spacing).toFloat(), availableWidth.toFloat(), (topHeight + spacing + bottomHeight).toFloat())
@@ -104,17 +138,38 @@ internal class CollageBlock(
     }
 
     private fun layoutFour(availableWidth: Int): Int {
-        val tileWidth = (availableWidth - spacing) / 2
-        val tileHeight = tileWidth.coerceIn(AndroidUtilities.dp(96f), AndroidUtilities.dp(190f))
-        tiles.forEachIndexed { index, tile ->
-            val row = index / 2
-            val col = index % 2
-            val left = col * (tileWidth + spacing)
-            val top = row * (tileHeight + spacing)
-            val right = if (col == 1) availableWidth else left + tileWidth
-            tile.rect.set(left.toFloat(), top.toFloat(), right.toFloat(), (top + tileHeight).toFloat())
+        val firstAspect = tiles[0].aspectRatio()
+        val maxHeight = availableWidth * MAX_SIZE_HEIGHT / MAX_SIZE_WIDTH
+        if (firstAspect > 1.2f) {
+            val topHeight = min(availableWidth / firstAspect, maxHeight * 0.66f).roundToInt()
+                .coerceAtLeast(AndroidUtilities.dp(120f))
+            var bottomHeight = (availableWidth / (tiles[1].aspectRatio() + tiles[2].aspectRatio() + tiles[3].aspectRatio())).roundToInt()
+            bottomHeight = min(maxHeight.roundToInt() - topHeight, bottomHeight).coerceAtLeast(AndroidUtilities.dp(84f))
+            val firstWidth = max(AndroidUtilities.dp(72f), min((availableWidth * 0.4f).roundToInt(), (bottomHeight * tiles[1].aspectRatio()).roundToInt()))
+            val thirdWidth = max(max(AndroidUtilities.dp(72f), (availableWidth * 0.33f).roundToInt()), (bottomHeight * tiles[3].aspectRatio()).roundToInt())
+                .coerceAtMost(availableWidth - spacing * 2 - firstWidth - AndroidUtilities.dp(72f))
+            val secondWidth = availableWidth - spacing * 2 - firstWidth - thirdWidth
+            tiles[0].rect.set(0f, 0f, availableWidth.toFloat(), topHeight.toFloat())
+            val bottomTop = topHeight + spacing
+            tiles[1].rect.set(0f, bottomTop.toFloat(), firstWidth.toFloat(), (bottomTop + bottomHeight).toFloat())
+            tiles[2].rect.set((firstWidth + spacing).toFloat(), bottomTop.toFloat(), (firstWidth + spacing + secondWidth).toFloat(), (bottomTop + bottomHeight).toFloat())
+            tiles[3].rect.set((firstWidth + spacing * 2 + secondWidth).toFloat(), bottomTop.toFloat(), availableWidth.toFloat(), (bottomTop + bottomHeight).toFloat())
+            return bottomTop + bottomHeight
         }
-        return tileHeight * 2 + spacing
+        val rightWidth = max(AndroidUtilities.dp(80f), (maxHeight / (1f / tiles[1].aspectRatio() + 1f / tiles[2].aspectRatio() + 1f / tiles[3].aspectRatio())).roundToInt())
+            .coerceAtMost((availableWidth * 0.45f).roundToInt())
+        val leftWidth = availableWidth - spacing - rightWidth
+        val height0 = min(0.33f, max(AndroidUtilities.dp(96f).toFloat(), rightWidth / tiles[1].aspectRatio()) / maxHeight)
+        val height1 = min(0.33f, max(AndroidUtilities.dp(96f).toFloat(), rightWidth / tiles[2].aspectRatio()) / maxHeight)
+        val height2 = 1f - height0 - height1
+        val firstHeight = maxHeight.roundToInt()
+        val rightHeight0 = (height0 * firstHeight).roundToInt()
+        val rightHeight1 = (height1 * firstHeight).roundToInt()
+        tiles[0].rect.set(0f, 0f, leftWidth.toFloat(), firstHeight.toFloat())
+        tiles[1].rect.set((leftWidth + spacing).toFloat(), 0f, availableWidth.toFloat(), rightHeight0.toFloat())
+        tiles[2].rect.set((leftWidth + spacing).toFloat(), (rightHeight0 + spacing).toFloat(), availableWidth.toFloat(), (rightHeight0 + spacing + rightHeight1).toFloat())
+        tiles[3].rect.set((leftWidth + spacing).toFloat(), (rightHeight0 + rightHeight1 + spacing * 2).toFloat(), availableWidth.toFloat(), firstHeight.toFloat())
+        return firstHeight
     }
 
     private fun layoutRows(availableWidth: Int): Int {
@@ -158,9 +213,6 @@ internal class CollageBlock(
                 canvas.drawRoundRect(tile.rect, AndroidUtilities.dp(8f).toFloat(), AndroidUtilities.dp(8f).toFloat(), placeholderPaint)
                 tile.receiver.setBounds(tile.rect)
                 tile.receiver.draw(canvas)
-            }
-            if (index == pressedTileIndex && !hidden) {
-                canvas.drawRoundRect(tile.rect, AndroidUtilities.dp(8f).toFloat(), AndroidUtilities.dp(8f).toFloat(), pressedPaint)
             }
         }
     }
@@ -227,7 +279,17 @@ internal class CollageBlock(
 
     private fun Tile.aspectRatio(): Float = image.aspectRatio?.coerceIn(0.45f, 2.4f) ?: 1f
 
+    private fun aspectKind(aspectRatio: Float): Char {
+        return when {
+            aspectRatio > 1.2f -> 'w'
+            aspectRatio < 0.8f -> 'n'
+            else -> 'q'
+        }
+    }
+
     private companion object {
         private const val MAX_TILES_PER_ROW = 3
+        private const val MAX_SIZE_WIDTH = 1000f
+        private const val MAX_SIZE_HEIGHT = 814f
     }
 }

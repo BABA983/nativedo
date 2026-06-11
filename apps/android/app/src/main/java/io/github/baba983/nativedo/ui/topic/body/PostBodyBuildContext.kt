@@ -22,7 +22,6 @@ internal class PostBodyBuildContext @JvmOverloads constructor(
 ) {
     @ColorInt val subtleBackgroundColor: Int = Theme.multAlpha(secondaryTextColor, 0.10f)
     @ColorInt val mediaPlaceholderColor: Int = Theme.multAlpha(secondaryTextColor, 0.12f)
-    @ColorInt val pressedOverlayColor: Int = Theme.multAlpha(accentColor, 0.12f)
     @ColorInt val cardStrokeColor: Int = Theme.multAlpha(dividerColor, 0.55f)
     @ColorInt val pollBarColor: Int = Theme.multAlpha(accentColor, 0.16f)
     @ColorInt val spoilerOverlayColor: Int = Theme.multAlpha(textColor, 0.18f)

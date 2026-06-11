@@ -7,6 +7,7 @@ import coil3.SingletonImageLoader
 import okhttp3.Request
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ApplicationLoader
+import org.telegram.messenger.AutoDeleteMediaTask
 import org.telegram.messenger.ImageLoader as TelegramImageLoader
 import org.telegram.messenger.LocaleController
 import org.telegram.messenger.SharedConfig
@@ -37,6 +38,7 @@ class NativeDoApp : Application(), SingletonImageLoader.Factory {
         // runs before any ImageReceiver call site reads it. Avoids the
         // first-frame NPE we used to paper over in FileLoader.getDirectory.
         TelegramImageLoader.getInstance()
+        AutoDeleteMediaTask.run()
     }
 
     override fun newImageLoader(context: Context): ImageLoader {

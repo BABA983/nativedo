@@ -183,8 +183,37 @@ class TopicDetailFragment(
         super.onFragmentDestroy()
     }
 
+    override fun getPhotoViewerScaleView(): View? {
+        return if (::listView.isInitialized) listView else super.getPhotoViewerScaleView()
+    }
+
     override fun onBackPressed(): Boolean {
         return super.onBackPressed()
+    }
+
+    private fun getPlaceProviderObjectParent(): View {
+        return if (::listView.isInitialized) listView else fragmentView ?: super.getPhotoViewerScaleView() ?: actionBar
+    }
+
+    private fun getPlaceProviderObjectClipTop(): Int {
+        val parentView = getPlaceProviderObjectParent()
+        val parentLocation = IntArray(2)
+        val actionBarLocation = IntArray(2)
+        parentView.getLocationInWindow(parentLocation)
+        actionBar.getLocationInWindow(actionBarLocation)
+        return (actionBarLocation[1] + actionBar.measuredHeight - parentLocation[1]).coerceAtLeast(0)
+    }
+
+    private fun getPlaceProviderObjectClipBottom(): Int {
+        val parentView = getPlaceProviderObjectParent()
+        val rootView = fragmentView ?: return 0
+        val parentLocation = IntArray(2)
+        val rootLocation = IntArray(2)
+        parentView.getLocationInWindow(parentLocation)
+        rootView.getLocationInWindow(rootLocation)
+        val parentBottom = parentLocation[1] + parentView.height
+        val rootBottom = rootLocation[1] + rootView.height
+        return (parentBottom - rootBottom).coerceAtLeast(0)
     }
 
     private fun updateCollapsedTitle() {
@@ -230,6 +259,9 @@ class TopicDetailFragment(
                 val imageUrl = urls.getOrNull(index) ?: return null
                 val cellPlace = sourceCell?.getPlaceForPhoto(imageUrl, needPreview, closing)
                 if (cellPlace != null) {
+                    cellPlace.parentView = getPlaceProviderObjectParent()
+                    cellPlace.clipTopAddition = getPlaceProviderObjectClipTop()
+                    cellPlace.clipBottomAddition = getPlaceProviderObjectClipBottom()
                     return cellPlace
                 }
                 val bounds = sourceBoundsProvider(imageUrl) ?: return null
@@ -239,10 +271,12 @@ class TopicDetailFragment(
                     viewY = (bounds.top - (imageReceiver?.imageY ?: 0f)).toInt()
                     viewWidth = (imageReceiver?.imageWidth ?: bounds.width()).toInt()
                     viewHeight = (imageReceiver?.imageHeight ?: bounds.height()).toInt()
-                    parentView = tappedSourceView ?: getPhotoViewerScaleView()
+                    parentView = getPlaceProviderObjectParent()
                     this.imageReceiver = imageReceiver
                     thumb = if (needPreview) sourceBitmapProvider(imageUrl) else null
                     radius = if (needPreview) sourceRadiusProvider(imageUrl) else null
+                    clipTopAddition = getPlaceProviderObjectClipTop()
+                    clipBottomAddition = getPlaceProviderObjectClipBottom()
                 }
             }
 
@@ -276,13 +310,19 @@ class TopicDetailFragment(
         val viewerSubtitle = topicPostTimeLabel(post.createdAt)
         val opened = if (galleryImages.isNotEmpty()) {
             val items = galleryImages.map { image ->
-                PhotoViewer.UrlPhotoItem(image.url, image.thumbUrl, image.widthPx, image.heightPx, image.caption, viewerTitle, viewerSubtitle)
+                val bounds = sourceBoundsProvider(image.url)
+                val width = image.widthPx.takeIf { it > 0 } ?: bounds?.width()?.toInt()?.coerceAtLeast(1) ?: 0
+                val height = image.heightPx.takeIf { it > 0 } ?: bounds?.height()?.toInt()?.coerceAtLeast(1) ?: 0
+                PhotoViewer.UrlPhotoItem(image.url, image.thumbUrl, width, height, image.caption, viewerTitle, viewerSubtitle)
             }
             selectedIndex = items.indexOfFirst { it.url == url }.coerceAtLeast(0)
             viewer.openPhotoItems(items, selectedIndex, provider)
         } else {
             val items = urls.map { imageUrl ->
-                PhotoViewer.UrlPhotoItem(imageUrl, null, 0, 0, null, viewerTitle, viewerSubtitle)
+                val bounds = sourceBoundsProvider(imageUrl)
+                val width = bounds?.width()?.toInt()?.coerceAtLeast(1) ?: 0
+                val height = bounds?.height()?.toInt()?.coerceAtLeast(1) ?: 0
+                PhotoViewer.UrlPhotoItem(imageUrl, null, width, height, null, viewerTitle, viewerSubtitle)
             }
             selectedIndex = items.indexOfFirst { it.url == url }.coerceAtLeast(0)
             viewer.openPhotoItems(items, selectedIndex, provider)

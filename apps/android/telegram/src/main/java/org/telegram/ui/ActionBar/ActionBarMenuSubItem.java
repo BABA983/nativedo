@@ -3,6 +3,7 @@ package org.telegram.ui.ActionBar;
 import android.content.Context;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
+import android.graphics.drawable.Animatable;
 import android.graphics.drawable.Drawable;
 import android.text.TextUtils;
 import android.util.TypedValue;
@@ -27,7 +28,7 @@ public class ActionBarMenuSubItem extends FrameLayout {
 
     // Rounded selector state — mirrors upstream ActionBarMenuSubItem.
     private boolean top, bottom;
-    private int selectorRad = 6;
+    private int selectorRad = 12;
 
     // Account/chat selector decoration (no CheckBox2 in NativeDo): checkView stays null.
     public boolean checkViewLeft = LocaleController.isRTL;
@@ -35,9 +36,11 @@ public class ActionBarMenuSubItem extends FrameLayout {
 
     public ActionBarMenuSubItem(Context context, boolean top, boolean bottom, Theme.ResourcesProvider resourcesProvider) {
         super(context);
+        this.top = top;
+        this.bottom = bottom;
         textColor = Theme.getColor(Theme.key_actionBarDefaultSubmenuItem, resourcesProvider);
         iconColor = Theme.getColor(Theme.key_actionBarDefaultSubmenuItemIcon, resourcesProvider);
-        selectorColor = Theme.multAlpha(textColor, .12f);
+        selectorColor = Theme.getColor(Theme.key_dialogButtonSelector, resourcesProvider);
         updateBackground();
         setPadding(AndroidUtilities.dp(18), 0, AndroidUtilities.dp(18), 0);
 
@@ -69,7 +72,7 @@ public class ActionBarMenuSubItem extends FrameLayout {
 
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-        super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(56), MeasureSpec.EXACTLY));
+        super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(48), MeasureSpec.EXACTLY));
     }
 
     public void setTextAndIcon(CharSequence text, int icon, Drawable iconDrawable) {
@@ -99,6 +102,13 @@ public class ActionBarMenuSubItem extends FrameLayout {
 
     public void setTextAndIcon(CharSequence text, int icon) {
         setTextAndIcon(text, icon, null);
+    }
+
+    public void onItemShown() {
+        Drawable drawable = imageView.getDrawable();
+        if (drawable instanceof Animatable) {
+            ((Animatable) drawable).start();
+        }
     }
 
     public ActionBarMenuSubItem setColors(int textColor, int iconColor) {

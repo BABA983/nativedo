@@ -150,7 +150,7 @@ public class ActionBarPopupWindow extends PopupWindow {
         }
 
         public ActionBarPopupWindowLayout(Context context, Theme.ResourcesProvider resourcesProvider) {
-            this(context, R.drawable.popup_fixed_alert4, resourcesProvider);
+            this(context, R.drawable.popup_fixed_alert2, resourcesProvider);
         }
 
         public ActionBarPopupWindowLayout(Context context, int resId, Theme.ResourcesProvider resourcesProvider) {
@@ -389,10 +389,9 @@ public class ActionBarPopupWindow extends PopupWindow {
                     public void onAnimationEnd(Animator animation) {
                         itemAnimators.remove(animatorSet);
 
-                        // onItemShown method not available in ActionBarMenuSubItem
-                        // if (child instanceof ActionBarMenuSubItem) {
-                        //     ((ActionBarMenuSubItem) child).onItemShown();
-                        // }
+                        if (child instanceof ActionBarMenuSubItem) {
+                            ((ActionBarMenuSubItem) child).onItemShown();
+                        }
                     }
                 });
                 animatorSet.setInterpolator(decelerateInterpolator);

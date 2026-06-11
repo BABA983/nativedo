@@ -1910,6 +1910,16 @@
     {
       "kind": "drawable",
       "files": [
+        "popup_fixed_alert2.9.png"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356",
+      "notes": "ActionBarPopupWindow menu background copied byte-identical from upstream across mdpi/hdpi/xhdpi/xxhdpi so popup padding, shadow, and rounded background match Telegram."
+    },
+    {
+      "kind": "drawable",
+      "files": [
         "filled_fire.png",
         "msg_round_gif_m.png"
       ],

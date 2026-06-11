@@ -685,7 +685,7 @@ public class ActionBarMenuItem extends FrameLayout {
         if (popupLayout == null) {
             return;
         }
-        Drawable background = ContextCompat.getDrawable(getContext(), R.drawable.popup_fixed_alert4);
+        Drawable background = ContextCompat.getDrawable(getContext(), R.drawable.popup_fixed_alert2);
         if (background != null) {
             background = background.mutate();
             background.setColorFilter(new PorterDuffColorFilter(popupBackgroundColor, PorterDuff.Mode.MULTIPLY));
