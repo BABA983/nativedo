@@ -22,8 +22,13 @@ import android.graphics.RectF;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
+import android.graphics.drawable.InsetDrawable;
 import android.graphics.drawable.RippleDrawable;
+import android.graphics.drawable.ShapeDrawable;
+import android.graphics.drawable.shapes.OvalShape;
+import android.graphics.drawable.shapes.RoundRectShape;
 import android.text.TextPaint;
+import android.util.StateSet;
 import android.util.SparseIntArray;
 
 import java.util.ArrayList;
@@ -34,6 +39,7 @@ import android.graphics.PorterDuffColorFilter;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.R;
+import org.telegram.ui.Cells.BaseCell;
 import org.telegram.ui.Components.PathAnimator;
 
 public final class Theme {
@@ -65,17 +71,47 @@ public final class Theme {
     public static void checkCurrentRemoteTheme(boolean force) {
     }
 
-    /** Stub of upstream {@code Theme.createInsetRoundRectDrawable}. */
-    public static android.graphics.drawable.Drawable createInsetRoundRectDrawable(int inset, int rad, int color) {
-        return new android.graphics.drawable.ColorDrawable(color);
+    public static Drawable createInsetRoundRectDrawable(int color, float radius, int inset) {
+        return createInsetRoundRectDrawable(color, radius, inset, inset);
     }
 
-    public static android.graphics.drawable.Drawable createInsetRoundRectDrawable(int inset, int radTL, int radTR, int radBR, int radBL) {
-        return new android.graphics.drawable.ColorDrawable(0);
+    public static Drawable createInsetRoundRectDrawable(int color, float radius, int insetW, int insetH) {
+        return createInsetRoundRectDrawable(color, radius, insetW, insetH, insetW, insetH);
     }
 
-    public static android.graphics.drawable.Drawable createInsetRoundRectDrawable(int inset, int rad, int color, int pressedColor) {
-        return new android.graphics.drawable.ColorDrawable(color);
+    public static Drawable createInsetRoundRectDrawable(int color, float radius, int insetL, int insetT, int insetR, int insetB) {
+        maskPaint.setColor(0xffffffff);
+        Drawable maskDrawable = new Drawable() {
+            private final RectF rectF = new RectF();
+
+            @Override
+            public void draw(Canvas canvas) {
+                rectF.set(getBounds());
+                rectF.left += insetL;
+                rectF.top += insetT;
+                rectF.right -= insetR;
+                rectF.bottom -= insetB;
+                canvas.drawRoundRect(rectF, radius, radius, maskPaint);
+            }
+
+            @Override
+            public void setAlpha(int alpha) {
+            }
+
+            @Override
+            public void setColorFilter(ColorFilter colorFilter) {
+            }
+
+            @Override
+            public int getOpacity() {
+                return PixelFormat.UNKNOWN;
+            }
+        };
+        ColorStateList colorStateList = new ColorStateList(
+                new int[][]{StateSet.WILD_CARD},
+                new int[]{color}
+        );
+        return new BaseCell.RippleDrawableSafe(colorStateList, null, maskDrawable);
     }
 
     /**
@@ -1462,23 +1498,39 @@ public final class Theme {
         return createRadSelectorDrawable(rippleColor == 0 ? color : rippleColor, topRadius, bottomRadius);
     }
 
-    /** ADAPTED: createSimpleSelectorRoundRectDrawable for RecyclerListView. */
-    public static Drawable createSimpleSelectorRoundRectDrawable(int radius, int color, int selectorColor, int backgroundColor) {
-        Drawable maskDrawable = new Drawable() {
-            private final Paint maskPaintLocal = new Paint(Paint.ANTI_ALIAS_FLAG);
-            private final RectF maskRect = new RectF();
-            @Override
-            public void draw(Canvas canvas) {
-                Rect bounds = getBounds();
-                maskPaintLocal.setColor(Color.WHITE);
-                maskRect.set(bounds);
-                canvas.drawRoundRect(maskRect, radius, radius, maskPaintLocal);
-            }
-            @Override public void setAlpha(int alpha) {}
-            @Override public void setColorFilter(ColorFilter colorFilter) {}
-            @Override public int getOpacity() { return PixelFormat.UNKNOWN; }
-        };
-        return new RippleDrawable(ColorStateList.valueOf(selectorColor), null, maskDrawable);
+    public static Drawable createSimpleSelectorRoundRectDrawable(int rad, int defaultColor, int pressedColor) {
+        return createSimpleSelectorRoundRectDrawable(rad, defaultColor, pressedColor, pressedColor);
+    }
+
+    public static Drawable createSimpleSelectorRoundRectDrawable(int rad, int defaultColor, int pressedColor, int maskColor) {
+        return createSimpleSelectorRoundRectDrawable(rad, rad, rad, rad, defaultColor, pressedColor, maskColor);
+    }
+
+    public static Drawable createSimpleSelectorRoundRectDrawable(int leftTop, int rightTop, int rightBottom, int leftBottom, int defaultColor, int pressedColor, int maskColor) {
+        return createSimpleSelectorRoundRectDrawable(new float[]{
+                leftTop, leftTop,
+                rightTop, rightTop,
+                rightBottom, rightBottom,
+                leftBottom, leftBottom
+        }, defaultColor, pressedColor, maskColor);
+    }
+
+    private static Drawable createSimpleSelectorRoundRectDrawable(float[] rad, int defaultColor, int pressedColor, int maskColor) {
+        return createSimpleSelectorRoundRectDrawable(rad, defaultColor, pressedColor, maskColor, 0);
+    }
+
+    private static Drawable createSimpleSelectorRoundRectDrawable(float[] rad, int defaultColor, int pressedColor, int maskColor, int inset) {
+        ShapeDrawable defaultDrawable = new ShapeDrawable(new RoundRectShape(rad, null, null));
+        defaultDrawable.setPadding(inset, inset, inset, inset);
+        defaultDrawable.getPaint().setColor(defaultColor);
+        ShapeDrawable pressedDrawable = new ShapeDrawable(new RoundRectShape(rad, null, null));
+        pressedDrawable.getPaint().setColor(maskColor);
+        pressedDrawable.setPadding(inset, inset, inset, inset);
+        ColorStateList colorStateList = new ColorStateList(
+                new int[][]{StateSet.WILD_CARD},
+                new int[]{pressedColor}
+        );
+        return new BaseCell.RippleDrawableSafe(colorStateList, defaultDrawable, pressedDrawable);
     }
 
     /** ADAPTED: setSelectorDrawableColor for RecyclerListView. */
@@ -1493,42 +1545,29 @@ public final class Theme {
         // No-op: mask radius changes are not critical for NativeDo's use case
     }
 
-    /** ADAPTED: createRoundRectDrawable for RecyclerListView section backgrounds. */
-    public static Drawable createRoundRectDrawable(int radius, int color) {
-        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        paint.setColor(color);
-        return new Drawable() {
-            private final RectF rect = new RectF();
-            @Override
-            public void draw(Canvas canvas) {
-                rect.set(getBounds());
-                canvas.drawRoundRect(rect, radius, radius, paint);
-            }
-            @Override public void setAlpha(int alpha) { paint.setAlpha(alpha); }
-            @Override public void setColorFilter(ColorFilter colorFilter) { paint.setColorFilter(colorFilter); }
-            @Override public int getOpacity() { return PixelFormat.TRANSPARENT; }
-        };
+    public static ShapeDrawable createRoundRectDrawable(int rad, int defaultColor) {
+        ShapeDrawable defaultDrawable = new ShapeDrawable(new RoundRectShape(new float[]{rad, rad, rad, rad, rad, rad, rad, rad}, null, null));
+        defaultDrawable.getPaint().setColor(defaultColor);
+        return defaultDrawable;
     }
 
-    /** ADAPTED: lightweight shadowed rounded rect used by FragmentSearchField section background. */
-    public static Drawable createRoundRectDrawableShadowed(int radius, int color) {
-        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        paint.setColor(color);
-        paint.setShadowLayer(AndroidUtilities.dpf2(1.5f), 0, AndroidUtilities.dp(1), 0x26000000);
-        return new Drawable() {
-            private final RectF rect = new RectF();
+    public static ShapeDrawable createRoundRectDrawable(int topLeftRad, int topRightRad, int bottomRightRad, int bottomLeftRad, int defaultColor) {
+        ShapeDrawable defaultDrawable = new ShapeDrawable(new RoundRectShape(new float[]{topLeftRad, topLeftRad, topRightRad, topRightRad, bottomRightRad, bottomRightRad, bottomLeftRad, bottomLeftRad}, null, null));
+        defaultDrawable.getPaint().setColor(defaultColor);
+        return defaultDrawable;
+    }
 
-            @Override
-            public void draw(Canvas canvas) {
-                rect.set(getBounds());
-                rect.inset(AndroidUtilities.dp(1), AndroidUtilities.dp(1));
-                canvas.drawRoundRect(rect, radius, radius, paint);
-            }
+    public static ShapeDrawable createRoundRectDrawable(int topRad, int bottomRad, int defaultColor) {
+        ShapeDrawable defaultDrawable = new ShapeDrawable(new RoundRectShape(new float[]{topRad, topRad, topRad, topRad, bottomRad, bottomRad, bottomRad, bottomRad}, null, null));
+        defaultDrawable.getPaint().setColor(defaultColor);
+        return defaultDrawable;
+    }
 
-            @Override public void setAlpha(int alpha) { paint.setAlpha(alpha); }
-            @Override public void setColorFilter(ColorFilter colorFilter) { paint.setColorFilter(colorFilter); }
-            @Override public int getOpacity() { return PixelFormat.TRANSPARENT; }
-        };
+    public static InsetDrawable createRoundRectDrawableShadowed(int rad, int defaultColor) {
+        ShapeDrawable defaultDrawable = new ShapeDrawable(new RoundRectShape(new float[]{rad, rad, rad, rad, rad, rad, rad, rad}, null, null));
+        defaultDrawable.getPaint().setColor(defaultColor);
+        defaultDrawable.getPaint().setShadowLayer(AndroidUtilities.dpf2(2), 0, AndroidUtilities.dpf2(0.33f), multAlpha(0x11000000, Color.alpha(defaultColor) / 255.0f));
+        return new InsetDrawable(defaultDrawable, AndroidUtilities.dp(3), AndroidUtilities.dp(3), AndroidUtilities.dp(3), AndroidUtilities.dp(3));
     }
 
     /** ADAPTED: getThemeDrawable stub for RecyclerListView. */
@@ -1541,44 +1580,14 @@ public final class Theme {
         return new Paint();
     }
 
-    public static Drawable createCircleDrawable(int size, int color) {
-        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        paint.setColor(color);
-        return new Drawable() {
-            private final RectF rect = new RectF();
-
-            @Override
-            public void draw(Canvas canvas) {
-                Rect bounds = getBounds();
-                rect.set(bounds);
-                canvas.drawOval(rect, paint);
-            }
-
-            @Override
-            public void setAlpha(int alpha) {
-                paint.setAlpha(alpha);
-            }
-
-            @Override
-            public void setColorFilter(ColorFilter colorFilter) {
-                paint.setColorFilter(colorFilter);
-            }
-
-            @Override
-            public int getOpacity() {
-                return PixelFormat.TRANSPARENT;
-            }
-
-            @Override
-            public int getIntrinsicWidth() {
-                return size;
-            }
-
-            @Override
-            public int getIntrinsicHeight() {
-                return size;
-            }
-        };
+    public static ShapeDrawable createCircleDrawable(int size, int color) {
+        OvalShape ovalShape = new OvalShape();
+        ovalShape.resize(size, size);
+        ShapeDrawable defaultDrawable = new ShapeDrawable(ovalShape);
+        defaultDrawable.setIntrinsicWidth(size);
+        defaultDrawable.setIntrinsicHeight(size);
+        defaultDrawable.getPaint().setColor(color);
+        return defaultDrawable;
     }
 
     public static Drawable createOutlineCircleDrawable(int size, int color, int strokeWidth) {

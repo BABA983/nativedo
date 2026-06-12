@@ -71,9 +71,12 @@ durable record.
    $(jq -r .upstream.pinned_commit vendor-manifest.json):<upstream-path>) <local-path>`.
 3. **Respect `forced_exact`.** If a manifest entry lists `gesture`, `animation`,
    `measurement`, `drawing`, or `recycling`, keep that subsystem's method shape,
-   constants (`dp(10)`, `0.3f`, `>= 3000`, `clamp(150, 600)`, `< 1px` snap), and
-   branch structure aligned with upstream. These break in non-obvious ways when
-   "looks close enough" rewrites slip in.
+   signatures (return types, parameters, overload set), constants (`dp(10)`,
+   `0.3f`, `>= 3000`, `clamp(150, 600)`, `< 1px` snap), imports/short type
+   names, and branch structure aligned with upstream. Do not replace upstream
+   imports with fully-qualified package names inside method bodies unless that
+   is unavoidable host wiring. These break in non-obvious ways when "looks
+   close enough" rewrites slip in.
 4. **`port_mode = exact`** — upstream fidelity is the goal. Drift only for host
    wiring (package, imports, `Theme.getColor(Theme.key_*)`, Resources).
 5. **`port_mode = native`** — we've already diverged and don't claim Telegram

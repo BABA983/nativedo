@@ -17,6 +17,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.ColorMatrix;
 import android.graphics.Matrix;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.os.Build;
 import android.graphics.Point;
@@ -27,20 +28,28 @@ import android.text.SpannableStringBuilder;
 import android.text.TextUtils;
 import android.text.style.ForegroundColorSpan;
 import android.util.DisplayMetrics;
+import android.util.Pair;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.MotionEvent;
 import android.view.Window;
+import android.view.WindowManager;
 import android.widget.HorizontalScrollView;
 import android.view.animation.DecelerateInterpolator;
 import android.view.animation.Interpolator;
 import android.view.inputmethod.InputMethodManager;
 
 import androidx.core.view.WindowCompat;
+import androidx.exifinterface.media.ExifInterface;
 import androidx.viewpager.widget.ViewPager;
 
 import android.graphics.Typeface;
 
+import java.io.File;
+import java.io.InputStream;
 import java.util.HashMap;
+import java.util.Locale;
+import java.util.function.Consumer;
 
 import org.telegram.ui.ActionBar.Theme;
 
@@ -104,7 +113,6 @@ public final class AndroidUtilities {
         return (float) Math.sqrt((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1));
     }
 
-    /** ADAPTED: 4-arg RectF lerp variant matches upstream AndroidUtilities.lerp. */
     public static void lerp(RectF a, RectF b, float f, RectF to) {
         if (to != null && a != null && b != null) {
             to.set(
@@ -137,40 +145,25 @@ public final class AndroidUtilities {
         return (x - a) / (b - a);
     }
 
-    /** 3-point interpolation: at t=-1 returns atMinusOne, t=0 returns atZero, t=1 returns atPlusOne. */
     public static float lerp3(float atMinusOne, float atZero, float atPlusOne, float t) {
-        if (t <= 0) {
-            return atZero + (atMinusOne - atZero) * -t;
-        } else {
-            return atZero + (atPlusOne - atZero) * t;
-        }
+        if (t < 0) return lerp(atZero, atMinusOne, -t);
+        return lerp(atZero, atPlusOne, t);
     }
 
-    /** 3-point color interpolation matching upstream AndroidUtilities.lerpColor3. */
-    public static int lerpColor3(int atMinusOne, int atZero, int atPlusOne, float t) {
-        float r, g, b, a;
-        if (t <= 0) {
-            float p = -t;
-            r = Color.red(atZero) + (Color.red(atMinusOne) - Color.red(atZero)) * p;
-            g = Color.green(atZero) + (Color.green(atMinusOne) - Color.green(atZero)) * p;
-            b = Color.blue(atZero) + (Color.blue(atMinusOne) - Color.blue(atZero)) * p;
-            a = Color.alpha(atZero) + (Color.alpha(atMinusOne) - Color.alpha(atZero)) * p;
-        } else {
-            float p = t;
-            r = Color.red(atZero) + (Color.red(atPlusOne) - Color.red(atZero)) * p;
-            g = Color.green(atZero) + (Color.green(atPlusOne) - Color.green(atZero)) * p;
-            b = Color.blue(atZero) + (Color.blue(atPlusOne) - Color.blue(atZero)) * p;
-            a = Color.alpha(atZero) + (Color.alpha(atPlusOne) - Color.alpha(atZero)) * p;
-        }
+    public static int lerpColor(int a, int b, float t) {
         return Color.argb(
-            Math.max(0, Math.min(255, Math.round(a))),
-            Math.max(0, Math.min(255, Math.round(r))),
-            Math.max(0, Math.min(255, Math.round(g))),
-            Math.max(0, Math.min(255, Math.round(b)))
+            lerp(Color.alpha(a), Color.alpha(b), t),
+            lerp(Color.red(a),   Color.red(b),   t),
+            lerp(Color.green(a), Color.green(b), t),
+            lerp(Color.blue(a),  Color.blue(b),  t)
         );
     }
 
-    /** Set RectF in dp units, matching upstream AndroidUtilities.setRectD. */
+    public static int lerpColor3(int atMinusOne, int atZero, int atPlusOne, float t) {
+        if (t < 0) return lerpColor(atZero, atMinusOne, -t);
+        return lerpColor(atZero, atPlusOne, t);
+    }
+
     public static void setRectD(RectF rect, float left, float top, float right, float bottom) {
         rect.set(dpf2(left), dpf2(top), dpf2(right), dpf2(bottom));
     }
@@ -734,19 +727,46 @@ public final class AndroidUtilities {
         return huge ? 2560 : 1280;
     }
 
-    /** Stub of upstream {@code AndroidUtilities.getPatternColor}. */
     public static int getPatternColor(int color) {
-        return 0xFFFFFFFF;
+        return getPatternColor(color, false);
     }
 
-    /** Stub of upstream {@code AndroidUtilities.getPatternSideColor}. */
+    public static int getPatternColor(int color, boolean alwaysDark) {
+        float[] hsb = new float[3];
+        Color.colorToHSV(color, hsb);
+        if (hsb[1] > 0.0f || (hsb[2] < 1.0f && hsb[2] > 0.0f)) {
+            hsb[1] = Math.min(1.0f, hsb[1] + (alwaysDark ? 0.15f : 0.05f) + 0.1f * (1.0f - hsb[1]));
+        }
+        if (alwaysDark || hsb[2] > 0.5f) {
+            hsb[2] = Math.max(0.0f, hsb[2] * 0.65f);
+        } else {
+            hsb[2] = Math.max(0.0f, Math.min(1.0f, 1.0f - hsb[2] * 0.65f));
+        }
+        return Color.HSVToColor(hsb) & (alwaysDark ? 0x99ffffff : 0x66ffffff);
+    }
+
     public static int getPatternSideColor(int color) {
-        return 0xFFFFFFFF;
+        float[] hsb = new float[3];
+        Color.colorToHSV(color, hsb);
+        hsb[1] = Math.min(1.0f, hsb[1] + 0.05f);
+        if (hsb[2] > 0.5f) {
+            hsb[2] = Math.max(0.0f, hsb[2] * 0.90f);
+        } else {
+            hsb[2] = Math.max(0.0f, hsb[2] * 0.90f);
+        }
+        return Color.HSVToColor(hsb) | 0xff000000;
     }
 
-    public static int getOffsetColor(int color1, int color2, float progress, float alpha) {
-        int blended = androidx.core.graphics.ColorUtils.blendARGB(color1, color2, progress);
-        return androidx.core.graphics.ColorUtils.setAlphaComponent(blended, Math.round(Color.alpha(blended) * alpha));
+    public static int getOffsetColor(int color1, int color2, float offset, float alpha) {
+        int rF = Color.red(color2);
+        int gF = Color.green(color2);
+        int bF = Color.blue(color2);
+        int aF = Color.alpha(color2);
+        int rS = Color.red(color1);
+        int gS = Color.green(color1);
+        int bS = Color.blue(color1);
+        int aS = Color.alpha(color1);
+        return Color.argb((int) ((aS + (aF - aS) * offset) * alpha), (int) (rS + (rF - rS) * offset), (int) (gS + (gF - gS) * offset), (int) (bS + (bF - bS) * offset));
     }
 
     public static int blendOver(int foreground, int background) {
@@ -798,9 +818,15 @@ public final class AndroidUtilities {
         }
     }
 
-    /** Stub of upstream {@code AndroidUtilities.getRealScreenSize}. */
-    public static android.graphics.Point getRealScreenSize() {
-        return new android.graphics.Point(1080, 1920);
+    public static Point getRealScreenSize() {
+        Point size = new Point();
+        try {
+            WindowManager windowManager = (WindowManager) ApplicationLoader.applicationContext.getSystemService(Context.WINDOW_SERVICE);
+            windowManager.getDefaultDisplay().getRealSize(size);
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
+        return size;
     }
 
     /** Stub of upstream {@code AndroidUtilities.roundMessageInset} — extra inset for round-video bubbles. */
@@ -834,22 +860,103 @@ public final class AndroidUtilities {
         return new java.io.File(System.getProperty("java.io.tmpdir", "/tmp"));
     }
 
-    /** Stub of upstream {@code AndroidUtilities.formatFileSize}. */
     public static String formatFileSize(long size) {
-        return formatFileSize(size, false);
+        return formatFileSize(size, false, false);
     }
 
-    /** Stub of upstream {@code AndroidUtilities.getImageOrientation}. */
-    public static android.util.Pair<Integer, Integer> getImageOrientation(java.io.InputStream is) {
-        return new android.util.Pair<>(0, 0);
+    public static String formatFileSize(long size, boolean removeZero, boolean makeShort) {
+        if (size == 0) {
+            return String.format(Locale.US, "%d KB", 0);
+        } else if (size < 1024) {
+            return String.format(Locale.US, "%d B", size);
+        } else if (size < 1024 * 1024) {
+            float value = size / 1024.0f;
+            if (removeZero && (value - (int) value) * 10 == 0) {
+                return String.format(Locale.US, "%d KB", (int) value);
+            } else {
+                return String.format(Locale.US, "%.1f KB", value);
+            }
+        } else if (size < 1000 * 1024 * 1024) {
+            float value = size / 1024.0f / 1024.0f;
+            if (removeZero && (value - (int) value) * 10 == 0) {
+                return String.format(Locale.US, "%d MB", (int) value);
+            } else {
+                return String.format(Locale.US, "%.1f MB", value);
+            }
+        } else {
+            float value = (int) (size / 1024L / 1024L) / 1000.0f;
+            if (removeZero && (value - (int) value) * 10 == 0) {
+                return String.format(Locale.US, "%d GB", (int) value);
+            } else if (makeShort) {
+                return String.format(Locale.US, "%.1f GB", value);
+            } else {
+                return String.format(Locale.US, "%.2f GB", value);
+            }
+        }
     }
 
-    public static android.util.Pair<Integer, Integer> getImageOrientation(java.io.File file) {
-        return new android.util.Pair<>(0, 0);
+    public static Pair<Integer, Integer> getImageOrientation(InputStream is) {
+        try {
+            return getImageOrientationFromExif(new ExifInterface(is));
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
+        return new Pair<>(0, 0);
     }
 
-    public static android.util.Pair<Integer, Integer> getImageOrientation(String path) {
-        return new android.util.Pair<>(0, 0);
+    public static Pair<Integer, Integer> getImageOrientation(File file) {
+        try {
+            return getImageOrientationFromExif(new ExifInterface(file));
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
+        return new Pair<>(0, 0);
+    }
+
+    public static Pair<Integer, Integer> getImageOrientation(String path) {
+        try {
+            return getImageOrientationFromExif(new ExifInterface(path));
+        } catch (Exception ignore) {
+        }
+        return new Pair<>(0, 0);
+    }
+
+    private static Pair<Integer, Integer> getImageOrientationFromExif(ExifInterface exif) {
+        try {
+            int orientation = 0, invert = 0;
+            final int exifvalue = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
+            switch (exifvalue) {
+                case ExifInterface.ORIENTATION_NORMAL:
+                    break;
+                case ExifInterface.ORIENTATION_FLIP_HORIZONTAL:
+                    invert = 1;
+                    break;
+                case ExifInterface.ORIENTATION_ROTATE_180:
+                    orientation = 180;
+                    break;
+                case ExifInterface.ORIENTATION_FLIP_VERTICAL:
+                    invert = 2;
+                    break;
+                case ExifInterface.ORIENTATION_TRANSPOSE:
+                    invert = 2;
+                    orientation = 270;
+                    break;
+                case ExifInterface.ORIENTATION_ROTATE_90:
+                    orientation = 90;
+                    break;
+                case ExifInterface.ORIENTATION_TRANSVERSE:
+                    invert = 1;
+                    orientation = 270;
+                    break;
+                case ExifInterface.ORIENTATION_ROTATE_270:
+                    orientation = 270;
+                    break;
+            }
+            return new Pair<>(orientation, invert);
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
+        return new Pair<>(0, 0);
     }
 
     public static int getAverageColor(int color1, int color2) {
@@ -945,11 +1052,15 @@ public final class AndroidUtilities {
         }
     }
 
-    /** ADAPTED: simple ViewGroup forEach helper (subset of upstream AndroidUtilities.forEachViews). */
-    public static void forEachViews(android.view.ViewGroup container, java.util.function.Consumer<View> action) {
-        if (container == null || action == null) return;
-        for (int i = 0, n = container.getChildCount(); i < n; i++) {
-            action.accept(container.getChildAt(i));
+    public static void forEachViews(View view, Consumer<View> consumer) {
+        if (view instanceof ViewGroup) {
+            ViewGroup viewGroup = (ViewGroup) view;
+            for (int i = 0; i < viewGroup.getChildCount(); i++) {
+                consumer.accept(view);
+                forEachViews(viewGroup.getChildAt(i), consumer);
+            }
+        } else {
+            consumer.accept(view);
         }
     }
 
@@ -1024,25 +1135,49 @@ public final class AndroidUtilities {
     }
 
     public static String formatShortDuration(int duration) {
-        return formatLongDuration(duration, false);
+        return formatDuration(duration, false);
     }
 
-    public static String formatLongDuration(int duration) {
-        return formatLongDuration(duration, true);
-    }
-
-    private static String formatLongDuration(int duration, boolean longFormat) {
+    public static String formatTimestamp(int duration) {
         int h = duration / 3600;
         int m = duration / 60 % 60;
         int s = duration % 60;
-        if (longFormat || h != 0) {
-            return String.format(java.util.Locale.ROOT, "%d:%02d:%02d", h, m, s);
+        String str = "";
+        if (h > 0) {
+            str += String.format(Locale.US, "%dh", h);
         }
-        return String.format(java.util.Locale.ROOT, "%d:%02d", m, s);
+        if (m > 0) {
+            str += String.format(Locale.US, h > 0 ? "%02dm" : "%dm", m);
+        }
+        str += String.format(Locale.US, h > 0 || m > 0 ? "%02ds" : "%ds", s);
+        return str;
     }
 
-    public static String formatTimestamp(int seconds) {
-        return formatShortDuration(seconds);
+    public static String formatLongDuration(int duration) {
+        return formatDuration(duration, true);
+    }
+
+    public static String formatDuration(int duration, boolean isLong) {
+        return formatDuration(duration, isLong, false);
+    }
+
+    public static String formatDuration(int duration, boolean isLong, boolean noSecondsIfHours) {
+        int h = duration / 3600;
+        int m = duration / 60 % 60;
+        int s = duration % 60;
+        if (h == 0) {
+            if (isLong) {
+                return String.format(Locale.US, "%02d:%02d", m, s);
+            } else {
+                return String.format(Locale.US, "%d:%02d", m, s);
+            }
+        } else {
+            if (noSecondsIfHours) {
+                return String.format(Locale.US, "%d:%02d", h, m);
+            } else {
+                return String.format(Locale.US, "%d:%02d:%02d", h, m, s);
+            }
+        }
     }
 
     public static void logFlagSecure() {
