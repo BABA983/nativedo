@@ -159,4 +159,8 @@ public final class SharedConfig {
         return --lastLocalIdCounter;
     }
 
+
+    public static boolean chatBlurEnabled() {
+        return true;
+    }
 }

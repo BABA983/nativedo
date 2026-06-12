@@ -41,6 +41,7 @@ public final class Theme {
     // Upstream debug paint, used by DrawingInBackgroundThreadDrawable's
     // BuildVars.DEBUG_PRIVATE_VERSION error branch. Copied verbatim from upstream.
     public static Paint DEBUG_RED = new Paint(); static { DEBUG_RED.setColor(0xffff0000); }
+    public static Paint DEBUG_GREEN_STROKE = new Paint(); static { DEBUG_GREEN_STROKE.setColor(0xff00ff00); DEBUG_GREEN_STROKE.setStrokeWidth(2); DEBUG_GREEN_STROKE.setStyle(Paint.Style.STROKE); }
     public static Paint dialogs_onlineCirclePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     public static PathAnimator playPauseAnimator;
     public static Path[] chat_filePath = new Path[2];

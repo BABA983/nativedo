@@ -23,6 +23,19 @@ public final class MessagesController {
     public int maxGroupCount = 200;
     public int maxBroadcastCount = 100;
 
+    public final BlurConfig config = new BlurConfig();
+
+    public static class BlurConfig {
+        public final ConfigBoolean disableBlurInLightTheme = new ConfigBoolean(false);
+        public final ConfigBoolean disableBlurInDarkTheme = new ConfigBoolean(false);
+
+        public static class ConfigBoolean {
+            private final boolean value;
+            public ConfigBoolean(boolean defaultValue) { this.value = defaultValue; }
+            public boolean get() { return value; }
+        }
+    }
+
     private MessagesController() {
     }
 

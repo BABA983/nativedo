@@ -1,47 +1,47 @@
-/*
- * This file is part of NativeDo.
- *
- * Compile-only shim for Telegram for Android's
- * org/telegram/messenger/AnimationNotificationsLocker.java.
- *
- * Source reference:
- * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/messenger/AnimationNotificationsLocker.java
- *
- * NativeDo slice: a no-op stub so that L0 ports of Telegram code that call
- * `notificationsLocker.lock()` / `unlock()` compile without pulling in the
- * full NotificationCenter delivery-deferral machinery. The lock is meant to
- * pause notification delivery while a UI animation runs; on this client the
- * underlying delivery system does not exist, so locking is a no-op. Replace
- * the body when (and only when) we re-introduce notification deferral.
- *
- * Copyright (C) Telegram FZ-LLC
- * Copyright (C) 2026 NativeDo contributors
- *
- * This program is free software: you can redistribute it and/or modify
- * it under terms of GNU General Public License version 2 or later as published by
- * the Free Software Foundation.
- *
- * SPDX-License-Identifier: GPL-2.0-or-later
- */
 package org.telegram.messenger;
 
 public class AnimationNotificationsLocker {
 
+    int currentAccount = UserConfig.selectedAccount;
+    int notificationsIndex = -1;
+    int globalNotificationsIndex = -1;
+
+    boolean disabled;
+
+    final int[] allowedNotifications;
+
     public AnimationNotificationsLocker() {
+        this(null);
     }
 
     public AnimationNotificationsLocker(int[] allowedNotifications) {
+        this.allowedNotifications = allowedNotifications;
     }
 
     public void lock() {
-    }
-
-    public void lock(long maxDuration) {
+        if (disabled) {
+            return;
+        }
+        int currentAccount = UserConfig.selectedAccount;
+        if (this.currentAccount != currentAccount) {
+            NotificationCenter.getInstance(currentAccount).onAnimationFinish(notificationsIndex);
+            notificationsIndex = -1;
+            this.currentAccount = currentAccount;
+        }
+        notificationsIndex = NotificationCenter.getInstance(currentAccount).setAnimationInProgress(notificationsIndex, allowedNotifications);
+        globalNotificationsIndex = NotificationCenter.getGlobalInstance().setAnimationInProgress(globalNotificationsIndex, allowedNotifications);
     }
 
     public void unlock() {
+        if (disabled) {
+            return;
+        }
+        NotificationCenter.getInstance(currentAccount).onAnimationFinish(notificationsIndex);
+        NotificationCenter.getGlobalInstance().onAnimationFinish(globalNotificationsIndex);
     }
 
-    public void unlock(long delay) {
+    public void disable() {
+        disabled = true;
     }
+
 }

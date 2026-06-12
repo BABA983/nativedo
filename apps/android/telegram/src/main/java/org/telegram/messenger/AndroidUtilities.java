@@ -225,8 +225,8 @@ public final class AndroidUtilities {
     }
 
     public static void setRectToRect(Matrix matrix, RectF src, RectF dst, int rotation, int invert, boolean translate) {
-        float sx;
-        float sy;
+        float tx, sx;
+        float ty, sy;
         boolean xLarger = false;
         if (rotation == 90 || rotation == 270) {
             sx = dst.height() / src.width();
@@ -268,21 +268,33 @@ public final class AndroidUtilities {
                 matrix.preScale(1, -1);
             }
             matrix.preTranslate(-dst.height(), 0);
-        } else if (invert == 1) {
-            matrix.preScale(-1, 1);
-            matrix.preTranslate(-dst.width(), 0);
-        } else if (invert == 2) {
-            matrix.preScale(1, -1);
-            matrix.preTranslate(0, -dst.height());
         }
 
-        if (xLarger) {
-            matrix.preTranslate((dst.width() - src.width() * sx) / 2, 0);
+        if (translate) {
+            tx = -src.left * sx;
+            ty = -src.top * sy;
         } else {
-            matrix.preTranslate(0, (dst.height() - src.height() * sy) / 2);
+            tx = dst.left - src.left * sx;
+            ty = dst.top - src.top * sy;
         }
+
+        float diff;
+        if (xLarger) {
+            diff = dst.width() - src.width() * sy;
+        } else {
+            diff = dst.height() - src.height() * sy;
+        }
+        diff = diff / 2.0f;
+        if (xLarger) {
+            tx += diff;
+        } else {
+            ty += diff;
+        }
+
         matrix.preScale(sx, sy);
-        matrix.preTranslate(-src.left, -src.top);
+        if (translate) {
+            matrix.preTranslate(tx, ty);
+        }
     }
 
     public static void applySpring(Animator animator, double stiffness, double damping) {
@@ -855,9 +867,58 @@ public final class AndroidUtilities {
     }
 
     public static void addMediaToGallery(String filePath) {
+        addMediaToGallery(filePath != null ? new java.io.File(filePath) : null);
     }
 
     public static void addMediaToGallery(java.io.File file) {
+        if (file == null || !file.exists()) {
+            return;
+        }
+        android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_MEDIA_SCANNER_SCAN_FILE);
+        intent.setData(android.net.Uri.fromFile(file));
+        if (ApplicationLoader.applicationContext != null) {
+            ApplicationLoader.applicationContext.sendBroadcast(intent);
+        }
+    }
+
+    public static String generateFileName(int type, String extension) {
+        java.util.Calendar calendar = java.util.Calendar.getInstance();
+        java.text.SimpleDateFormat sdf;
+        if (type == 0) {
+            sdf = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US);
+        } else if (type == 1) {
+            sdf = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.US);
+        } else {
+            sdf = new java.text.SimpleDateFormat("yyyyMMdd_HHmmss_SSS", java.util.Locale.US);
+        }
+        String fileName = "IMG_" + sdf.format(calendar.getTime());
+        if (!TextUtils.isEmpty(extension)) {
+            fileName += "." + extension;
+        }
+        return fileName;
+    }
+
+    @SuppressWarnings("ResultOfMethodCallIgnored")
+    public static boolean copyFile(java.io.InputStream sourceFile, java.io.OutputStream destFile) {
+        try {
+            byte[] buf = new byte[4096];
+            int len;
+            while ((len = sourceFile.read(buf)) > 0) {
+                destFile.write(buf, 0, len);
+            }
+            destFile.flush();
+            return true;
+        } catch (Exception e) {
+            FileLog.e(e);
+            return false;
+        } finally {
+            try {
+                sourceFile.close();
+            } catch (Exception ignore) {}
+            try {
+                destFile.close();
+            } catch (Exception ignore) {}
+        }
     }
 
     public static void getBitmapFromSurface(android.view.SurfaceView surfaceView, android.graphics.Bitmap bitmap, Runnable onDone) {
@@ -1226,5 +1287,31 @@ public final class AndroidUtilities {
      */
     public static CharSequence replaceArrows(CharSequence text, boolean link, int translateX, int translateY) {
         return text;
+    }
+
+    public static void adjustBrightnessColorMatrix(ColorMatrix colorMatrix, float brightness) {
+        if (colorMatrix == null) {
+            return;
+        }
+        brightness *= 255;
+        colorMatrix.postConcat(new ColorMatrix(new float[]{
+                1, 0, 0, 0, brightness,
+                0, 1, 0, 0, brightness,
+                0, 0, 1, 0, brightness,
+                0, 0, 0, 1, 0
+        }));
+    }
+
+    public static void multiplyBrightnessColorMatrix(ColorMatrix colorMatrix, float v) {
+        float[] m = colorMatrix.getArray();
+        m[0] *= v;
+        m[1] *= v;
+        m[2] *= v;
+        m[5] *= v;
+        m[6] *= v;
+        m[7] *= v;
+        m[10] *= v;
+        m[11] *= v;
+        m[12] *= v;
     }
 }

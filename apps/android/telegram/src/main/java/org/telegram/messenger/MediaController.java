@@ -8,6 +8,7 @@
 package org.telegram.messenger;
 
 import org.telegram.tgnet.TLRPC;
+import org.telegram.ui.Components.CurvesToolValue;
 
 /**
  * NativeDo stub of org.telegram.messenger.MediaController.
@@ -222,9 +223,9 @@ public class MediaController {
         public float grainValue;
         public int blurType;
         public float sharpenValue;
-        public Object curvesToolValue;
+        public CurvesToolValue curvesToolValue = new CurvesToolValue();
         public float blurExcludeSize;
-        public android.graphics.Point blurExcludePoint;
+        public org.telegram.ui.Components.Point blurExcludePoint;
         public float blurExcludeBlurSize;
         public float blurAngle;
         public float softenSkinValue;
@@ -249,6 +250,121 @@ public class MediaController {
     }
 
     public void saveFile(String fullPath, android.app.Activity activity, int type, Object name, Object mime, java.util.function.Consumer<android.net.Uri> onSaved) {
-        if (onSaved != null) onSaved.accept(null);
+        if (fullPath == null) {
+            if (onSaved != null) onSaved.accept(null);
+            return;
+        }
+        java.io.File sourceFile = new java.io.File(fullPath);
+        if (!sourceFile.exists()) {
+            if (onSaved != null) onSaved.accept(null);
+            return;
+        }
+        new Thread(() -> {
+            try {
+                android.net.Uri uri;
+                if (android.os.Build.VERSION.SDK_INT >= 29) {
+                    uri = saveFileInternal(type, sourceFile);
+                } else {
+                    uri = saveFileLegacy(type, sourceFile);
+                }
+                if (onSaved != null) {
+                    android.net.Uri finalUri = uri;
+                    AndroidUtilities.runOnUIThread(() -> onSaved.accept(finalUri));
+                }
+            } catch (Exception e) {
+                FileLog.e(e);
+                if (onSaved != null) {
+                    AndroidUtilities.runOnUIThread(() -> onSaved.accept(null));
+                }
+            }
+        }).start();
+    }
+
+    private static android.net.Uri saveFileInternal(int type, java.io.File sourceFile) {
+        try {
+            android.content.ContentValues contentValues = new android.content.ContentValues();
+            String extension = FileLoader.getFileExtension(sourceFile);
+            String mimeType = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension);
+            android.net.Uri uriToInsert;
+            int selectedType = type;
+            if ((type == 0 || type == 1) && mimeType != null) {
+                if (mimeType.startsWith("image")) selectedType = 0;
+                if (mimeType.startsWith("video")) selectedType = 1;
+            }
+            String filename = AndroidUtilities.generateFileName(selectedType, extension);
+            if (selectedType == 0) {
+                java.io.File dirDest = new java.io.File(android.os.Environment.DIRECTORY_PICTURES, "NativeDo");
+                contentValues.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, dirDest + java.io.File.separator);
+                uriToInsert = android.provider.MediaStore.Images.Media.getContentUri(android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY);
+                contentValues.put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, filename);
+            } else if (selectedType == 1) {
+                java.io.File dirDest = new java.io.File(android.os.Environment.DIRECTORY_MOVIES, "NativeDo");
+                contentValues.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, dirDest + java.io.File.separator);
+                uriToInsert = android.provider.MediaStore.Video.Media.getContentUri(android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY);
+                contentValues.put(android.provider.MediaStore.Video.Media.DISPLAY_NAME, filename);
+            } else {
+                java.io.File dirDest = new java.io.File(android.os.Environment.DIRECTORY_DOWNLOADS, "NativeDo");
+                contentValues.put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, dirDest + java.io.File.separator);
+                uriToInsert = android.provider.MediaStore.Downloads.getContentUri(android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY);
+                contentValues.put(android.provider.MediaStore.Downloads.DISPLAY_NAME, filename);
+            }
+            contentValues.put(android.provider.MediaStore.MediaColumns.MIME_TYPE, mimeType);
+            android.content.Context context = ApplicationLoader.applicationContext;
+            if (context == null) return null;
+            android.net.Uri dstUri = context.getContentResolver().insert(uriToInsert, contentValues);
+            if (dstUri != null) {
+                java.io.InputStream is = new java.io.FileInputStream(sourceFile);
+                java.io.OutputStream os = context.getContentResolver().openOutputStream(dstUri);
+                AndroidUtilities.copyFile(is, os);
+            }
+            return dstUri;
+        } catch (Exception e) {
+            FileLog.e(e);
+            return null;
+        }
+    }
+
+    @SuppressWarnings("ResultOfMethodCallIgnored")
+    private static android.net.Uri saveFileLegacy(int type, java.io.File sourceFile) {
+        try {
+            java.io.File destFile;
+            if (type == 0) {
+                destFile = new java.io.File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_PICTURES), "NativeDo");
+                destFile.mkdirs();
+                destFile = new java.io.File(destFile, AndroidUtilities.generateFileName(0, FileLoader.getFileExtension(sourceFile)));
+            } else if (type == 1) {
+                destFile = new java.io.File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_MOVIES), "NativeDo");
+                destFile.mkdirs();
+                destFile = new java.io.File(destFile, AndroidUtilities.generateFileName(1, FileLoader.getFileExtension(sourceFile)));
+            } else {
+                destFile = new java.io.File(android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS), "NativeDo");
+                destFile.mkdirs();
+                String name = sourceFile.getName();
+                destFile = new java.io.File(destFile, name);
+                int idx = name.lastIndexOf('.');
+                for (int a = 0; a < 10 && destFile.exists(); a++) {
+                    String newName = idx != -1
+                            ? name.substring(0, idx) + "(" + (a + 1) + ")" + name.substring(idx)
+                            : name + "(" + (a + 1) + ")";
+                    destFile = new java.io.File(destFile.getParentFile(), newName);
+                }
+            }
+            if (!destFile.exists()) {
+                destFile.createNewFile();
+            }
+            java.io.InputStream is = new java.io.FileInputStream(sourceFile);
+            java.io.OutputStream os = new java.io.FileOutputStream(destFile);
+            AndroidUtilities.copyFile(is, os);
+            if (type == 2) {
+                android.app.DownloadManager dm = (android.app.DownloadManager) ApplicationLoader.applicationContext.getSystemService(android.content.Context.DOWNLOAD_SERVICE);
+                dm.addCompletedDownload(destFile.getName(), destFile.getName(), false, "", destFile.getAbsolutePath(), destFile.length(), true);
+            } else {
+                AndroidUtilities.addMediaToGallery(destFile);
+            }
+            return android.net.Uri.fromFile(destFile);
+        } catch (Exception e) {
+            FileLog.e(e);
+            return null;
+        }
     }
 }

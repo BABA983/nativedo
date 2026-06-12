@@ -75,7 +75,6 @@ class TopicDetailFragment(
     private lateinit var viewModel: TopicViewModel
     private lateinit var adapter: TopicDetailAdapter
     private lateinit var listView: RecyclerListView
-    private lateinit var pullRefreshLayout: PullRefreshLayout
     private lateinit var baseUrl: String
     private val collectorScope = MainScope()
     private var reactionUsersSheet: TopicReactionUsersSheet? = null
@@ -140,17 +139,8 @@ class TopicDetailFragment(
             })
         }
         textSelectionHelper.setRecyclerView(listView)
-        pullRefreshLayout = PullRefreshLayout(
-            context = context,
-            listView = listView,
-            onRefresh = viewModel::refresh,
-        )
         root.addView(
-            pullRefreshLayout,
-            LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT.toFloat(), Gravity.TOP, 0f, 0f, 0f, 0f),
-        )
-        root.addView(
-            textSelectionHelper.getOverlayView(context),
+            listView,
             LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT.toFloat(), Gravity.TOP, 0f, 0f, 0f, 0f),
         )
         actionBar.bringToFront()
@@ -158,7 +148,6 @@ class TopicDetailFragment(
         collectorScope.launch {
             viewModel.uiState.collectLatest { state ->
                 topicTitle = state.title.ifBlank { initialTitle.orEmpty() }
-                pullRefreshLayout.isBusy = state.isLoading || state.isRefreshing
                 adapter.submit(state)
                 updateCollapsedTitle()
                 updateReactionUsersSheet(context, state)
@@ -184,7 +173,7 @@ class TopicDetailFragment(
     }
 
     override fun getPhotoViewerScaleView(): View? {
-        return if (::listView.isInitialized) listView else super.getPhotoViewerScaleView()
+        return fragmentView
     }
 
     override fun onBackPressed(): Boolean {

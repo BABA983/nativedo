@@ -53,4 +53,15 @@ public final class MediaDataController {
 
     public void loadMedia(long dialogId, int count, int maxId, int minDate, int type, int fromCache, int classGuid, int requestIndex, int queryId, Object delegate, String query) {
     }
+
+    public static long calcHash(long hash, long id) {
+        hash ^= hash >>> 21;
+        hash ^= hash << 35;
+        hash ^= hash >>> 4;
+        return hash + id;
+    }
+
+    public static long calcHash(long hash, int id) {
+        return calcHash(hash, (long) id);
+    }
 }

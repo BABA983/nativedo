@@ -12,19 +12,24 @@ import android.app.Activity;
 import android.content.Context;
 import android.graphics.Rect;
 import android.view.View;
+import android.view.WindowManager;
+import android.widget.FrameLayout;
 
 import org.telegram.messenger.AndroidUtilities;
 
 public class SizeNotifierFrameLayoutPhoto extends SizeNotifierFrameLayout {
 
     private Activity activity;
-    private final Rect rect = new Rect();
+    private Rect rect = new Rect();
     private int keyboardHeight;
+    private WindowManager windowManager;
     private boolean withoutWindow;
+    private boolean useSmoothKeyboard;
 
     public SizeNotifierFrameLayoutPhoto(Context context, Activity activity, boolean smoothKeyboard) {
         super(context);
         setActivity(activity);
+        useSmoothKeyboard = smoothKeyboard;
     }
 
     public void setActivity(Activity activity) {
@@ -43,22 +48,23 @@ public class SizeNotifierFrameLayoutPhoto extends SizeNotifierFrameLayout {
 
     @Override
     public int getKeyboardHeight() {
-        return keyboardHeight;
+       return keyboardHeight;
     }
 
     @Override
     public int measureKeyboardHeight() {
         View rootView = getRootView();
         getWindowVisibleDisplayFrame(rect);
-        if (withoutWindow || activity == null || activity.getWindow() == null) {
+        if (withoutWindow) {
             int usableViewHeight = rootView.getHeight() - (rect.top != 0 ? AndroidUtilities.statusBarHeight : 0) - AndroidUtilities.getViewInset(rootView);
-            return Math.max(0, usableViewHeight - (rect.bottom - rect.top));
+            return usableViewHeight - (rect.bottom - rect.top);
+        } else {
+            int size = activity.getWindow().getDecorView().getHeight() - AndroidUtilities.getViewInset(rootView) - rootView.getBottom();
+            if (size <= Math.max(AndroidUtilities.dp(10), AndroidUtilities.statusBarHeight)) {
+                size = 0;
+            }
+            return size;
         }
-        int size = activity.getWindow().getDecorView().getHeight() - AndroidUtilities.getViewInset(rootView) - rootView.getBottom();
-        if (size <= Math.max(AndroidUtilities.dp(10), AndroidUtilities.statusBarHeight)) {
-            size = 0;
-        }
-        return Math.max(0, size);
     }
 
     @Override
