@@ -1,21 +1,3 @@
-/*
- * This file is part of NativeDo.
- *
- * Derived in part from Telegram for Android's
- * org/telegram/ui/Components/CubicBezierInterpolator.java.
- *
- * Source reference:
- * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/ui/Components/CubicBezierInterpolator.java
- *
- * Copyright (C) Telegram FZ-LLC
- * Copyright (C) 2026 NativeDo contributors
- *
- * This program is free software: you can redistribute it and/or modify
- * it under terms of GNU General Public License version 2 or later as published by
- * the Free Software Foundation.
- *
- * SPDX-License-Identifier: GPL-2.0-or-later
- */
 package org.telegram.ui.Components;
 
 import android.graphics.PointF;
@@ -36,6 +18,8 @@ public class CubicBezierInterpolator implements Interpolator {
     public static final Interpolator Emphasized = new PathInterpolator(PathParser.createPathFromPathData("M 0,0 C 0.05, 0, 0.133333, 0.06, 0.166666, 0.4 C 0.208333, 0.82, 0.25, 1, 1, 1"));
     public static final Interpolator EmphasizedDecelerate = new PathInterpolator(0.05f, 0.7f, 0.1f, 1f);
     public static final Interpolator EmphasizedAccelerate = new PathInterpolator(0.3f, 0f, 0.8f, 0.15f);
+
+    public static final Interpolator StandardDecelerate = new PathInterpolator(0f, 0f, 0f, 1f);
 
     protected PointF start;
     protected PointF end;

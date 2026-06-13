@@ -9,8 +9,13 @@ package org.telegram.messenger;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.os.Handler;
 import android.os.Looper;
+import android.telephony.TelephonyManager;
+
+import java.io.File;
 
 /**
  * Minimal global-application-state holder matching the fields Telegram's PhotoViewer
@@ -32,23 +37,106 @@ public final class ApplicationLoader {
     /** {@code System.currentTimeMillis()} when the process started. */
     public static long startTime;
 
-    /** Stub of upstream {@code ApplicationLoader.isNetworkOnline()}. Always true on NativeDo for now. */
-    public static boolean isNetworkOnline() {
-        return true;
+    private static volatile ConnectivityManager connectivityManager;
+    private static volatile NetworkInfo currentNetworkInfo;
+    private static long lastNetworkCheck;
+
+    private static void ensureCurrentNetworkGet(boolean force) {
+        if (force || currentNetworkInfo == null) {
+            try {
+                if (connectivityManager == null) {
+                    connectivityManager = (ConnectivityManager) applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE);
+                }
+                currentNetworkInfo = connectivityManager.getActiveNetworkInfo();
+            } catch (Exception e) {
+                FileLog.e(e);
+            }
+        }
     }
 
-    /** Stub of upstream {@code ApplicationLoader.isConnectionSlow()}. */
-    public static boolean isConnectionSlow() {
+    private static void ensureCurrentNetworkGet() {
+        long now = System.currentTimeMillis();
+        ensureCurrentNetworkGet(now - lastNetworkCheck > 5000);
+        lastNetworkCheck = now;
+    }
+
+    public static boolean isNetworkOnline() {
+        try {
+            ensureCurrentNetworkGet();
+            if (currentNetworkInfo == null) {
+                return true;
+            }
+            if (currentNetworkInfo.isConnectedOrConnecting() || currentNetworkInfo.isAvailable()) {
+                return true;
+            }
+            NetworkInfo netInfo = connectivityManager.getNetworkInfo(ConnectivityManager.TYPE_MOBILE);
+            if (netInfo != null && netInfo.isConnectedOrConnecting()) {
+                return true;
+            } else {
+                netInfo = connectivityManager.getNetworkInfo(ConnectivityManager.TYPE_WIFI);
+                if (netInfo != null && netInfo.isConnectedOrConnecting()) {
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            FileLog.e(e);
+            return true;
+        }
         return false;
     }
 
-    /** Stub of upstream {@code ApplicationLoader.getCurrentNetworkType()}. */
-    public static int getCurrentNetworkType() {
-        return 0;
+    public static boolean isConnectionSlow() {
+        try {
+            ensureCurrentNetworkGet();
+            if (currentNetworkInfo != null && currentNetworkInfo.getType() == ConnectivityManager.TYPE_MOBILE) {
+                switch (currentNetworkInfo.getSubtype()) {
+                    case TelephonyManager.NETWORK_TYPE_1xRTT:
+                    case TelephonyManager.NETWORK_TYPE_CDMA:
+                    case TelephonyManager.NETWORK_TYPE_EDGE:
+                    case TelephonyManager.NETWORK_TYPE_GPRS:
+                    case TelephonyManager.NETWORK_TYPE_IDEN:
+                        return true;
+                }
+            }
+        } catch (Throwable ignore) {
+        }
+        return false;
     }
 
-    /** Stub of upstream {@code ApplicationLoader.isRoaming()}. */
+    /** Matches upstream StatsController network type constants. */
+    private static final int NETWORK_TYPE_MOBILE = 0;
+    private static final int NETWORK_TYPE_WIFI = 1;
+    private static final int NETWORK_TYPE_ROAMING = 2;
+
+    public static int getCurrentNetworkType() {
+        if (isConnectedOrConnectingToWiFi()) {
+            return NETWORK_TYPE_WIFI;
+        } else if (isRoaming()) {
+            return NETWORK_TYPE_ROAMING;
+        } else {
+            return NETWORK_TYPE_MOBILE;
+        }
+    }
+
     public static boolean isRoaming() {
+        try {
+            ensureCurrentNetworkGet();
+            return currentNetworkInfo != null && currentNetworkInfo.isRoaming();
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
+        return false;
+    }
+
+    private static boolean isConnectedOrConnectingToWiFi() {
+        try {
+            ensureCurrentNetworkGet();
+            if (currentNetworkInfo != null && currentNetworkInfo.getType() == ConnectivityManager.TYPE_WIFI) {
+                return currentNetworkInfo.isConnectedOrConnecting();
+            }
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
         return false;
     }
 
@@ -62,20 +150,18 @@ public final class ApplicationLoader {
         return false;
     }
 
-    /** Stub of upstream {@code ApplicationLoader.getFilesDirFixed}. */
-    public static java.io.File getFilesDirFixed() {
+    public static File getFilesDirFixed() {
         if (applicationContext != null) {
             return applicationContext.getFilesDir();
         }
-        return new java.io.File(System.getProperty("java.io.tmpdir", "/tmp"));
+        return new File(System.getProperty("java.io.tmpdir", "/tmp"));
     }
 
-    /** Stub of upstream {@code ApplicationLoader.getCacheDir()}. */
-    public static java.io.File getCacheDir() {
+    public static File getCacheDir() {
         if (applicationContext != null) {
             return applicationContext.getCacheDir();
         }
-        return new java.io.File(System.getProperty("java.io.tmpdir", "/tmp"));
+        return new File(System.getProperty("java.io.tmpdir", "/tmp"));
     }
 
     private ApplicationLoader() {
@@ -89,6 +175,10 @@ public final class ApplicationLoader {
         applicationContext = appContext.getApplicationContext();
         applicationHandler = new Handler(Looper.getMainLooper());
         startTime = System.currentTimeMillis();
+        FileLog.d("ApplicationLoader.init packageName=" + applicationContext.getPackageName()
+                + " networkOnline=" + isNetworkOnline()
+                + " roaming=" + isRoaming()
+                + " networkType=" + getCurrentNetworkType());
     }
 
     /**

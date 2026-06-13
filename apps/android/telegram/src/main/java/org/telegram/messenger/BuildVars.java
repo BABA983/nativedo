@@ -8,7 +8,7 @@ package org.telegram.messenger;
 public final class BuildVars {
     public static final boolean DEBUG_PRIVATE_VERSION = false;
     public static final boolean DEBUG_VERSION = false;
-    public static final boolean LOGS_ENABLED = false;
+    public static final boolean LOGS_ENABLED = true;
     public static final boolean USE_CLOUD_STRINGS = false;
     public static final boolean CHECK_UPDATES = false;
     public static final int BUILD_VERSION = 1;

@@ -1,21 +1,11 @@
 /*
- * This file is part of NativeDo.
+ * This is the source code of Telegram for Android v. 5.x.x.
+ * It is licensed under GNU GPL v. 2 or later.
+ * You should have received a copy of the license in this archive (see LICENSE).
  *
- * Derived from Telegram for Android's
- * org/telegram/ui/Components/ClippingImageView.java.
- *
- * Source reference:
- * https://github.com/DrKLO/Telegram
- *
- * Copyright (C) Telegram FZ-LLC
- * Copyright (C) 2026 NativeDo contributors
- *
- * This program is free software: you can redistribute it and/or modify
- * it under terms of GNU General Public License version 2 or later as published by
- * the Free Software Foundation.
- *
- * SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright Nikolai Kudashov, 2013-2018.
  */
+
 package org.telegram.ui.Components;
 
 import android.content.Context;
@@ -27,15 +17,14 @@ import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
 import android.graphics.Shader;
-import android.view.View;
-
 import androidx.annotation.Keep;
-
-import java.util.Arrays;
+import android.view.View;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.ImageReceiver;
+
+import java.util.Arrays;
 
 public class ClippingImageView extends View {
 
@@ -198,7 +187,7 @@ public class ClippingImageView extends View {
                 canvas.drawPath(roundPath, roundPaint);
             } else {
                 if (orientation == 90 || orientation == 270) {
-                    drawRect.set(-getHeight() / 2f, -getWidth() / 2f, getHeight() / 2f, getWidth() / 2f);
+                    drawRect.set(-getHeight() / 2, -getWidth() / 2, getHeight() / 2, getWidth() / 2);
                     matrix.setRectToRect(bitmapRect, drawRect, Matrix.ScaleToFit.FILL);
                     if (invert == 1) {
                         matrix.postScale(-1, 1);
@@ -206,9 +195,9 @@ public class ClippingImageView extends View {
                         matrix.postScale(1, -1);
                     }
                     matrix.postRotate(orientation, 0, 0);
-                    matrix.postTranslate(getWidth() / 2f, getHeight() / 2f);
+                    matrix.postTranslate(getWidth() / 2, getHeight() / 2);
                 } else if (orientation == 180) {
-                    drawRect.set(-getWidth() / 2f, -getHeight() / 2f, getWidth() / 2f, getHeight() / 2f);
+                    drawRect.set(-getWidth() / 2, -getHeight() / 2, getWidth() / 2, getHeight() / 2);
                     matrix.setRectToRect(bitmapRect, drawRect, Matrix.ScaleToFit.FILL);
                     if (invert == 1) {
                         matrix.postScale(-1, 1);
@@ -216,13 +205,13 @@ public class ClippingImageView extends View {
                         matrix.postScale(1, -1);
                     }
                     matrix.postRotate(orientation, 0, 0);
-                    matrix.postTranslate(getWidth() / 2f, getHeight() / 2f);
+                    matrix.postTranslate(getWidth() / 2, getHeight() / 2);
                 } else {
                     drawRect.set(0, 0, getWidth(), getHeight());
                     if (invert == 1) {
-                        matrix.postScale(-1, 1, getWidth() / 2f, getHeight() / 2f);
+                        matrix.postScale(-1, 1, getWidth() / 2, getHeight() / 2);
                     } else if (invert == 2) {
-                        matrix.postScale(1, -1, getWidth() / 2f, getHeight() / 2f);
+                        matrix.postScale(1, -1, getWidth() / 2, getHeight() / 2);
                     }
                     matrix.setRectToRect(bitmapRect, drawRect, Matrix.ScaleToFit.FILL);
                 }
@@ -290,12 +279,12 @@ public class ClippingImageView extends View {
 
     public float getCenterX() {
         float scaleY = getScaleY();
-        return getTranslationX() + (clipLeft / scaleY + (getWidth() - clipRight / scaleY)) / 2f * getScaleX();
+        return getTranslationX() + (clipLeft / scaleY + (getWidth() - clipRight / scaleY)) / 2 * getScaleX();
     }
 
     public float getCenterY() {
         float scaleY = getScaleY();
-        return getTranslationY() + (clipTop / scaleY + (getHeight() - clipBottom / scaleY)) / 2f * getScaleY();
+        return getTranslationY() + (clipTop / scaleY + (getHeight() - clipBottom / scaleY)) / 2 * getScaleY();
     }
 
     public void setImageBitmap(ImageReceiver.BitmapHolder bitmap) {

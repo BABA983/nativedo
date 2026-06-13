@@ -1,40 +1,44 @@
 /*
- * This file is part of NativeDo.
+ * This is the source code of Telegram for Android v. 5.x.x.
+ * It is licensed under GNU GPL v. 2 or later.
+ * You should have received a copy of the license in this archive (see LICENSE).
  *
- * Derived in part from Telegram for Android's
- * org/telegram/messenger/FileLog.java.
- *
- * Source reference:
- * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/messenger/FileLog.java
- *
- * Copyright (C) Telegram FZ-LLC
- * Copyright (C) 2026 NativeDo contributors
- *
- * This program is free software: you can redistribute it and/or modify
- * it under terms of GNU General Public License version 2 or later as published by
- * the Free Software Foundation.
- *
- * SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright Nikolai Kudashov, 2013-2018.
  */
 package org.telegram.messenger;
 
+import android.os.SystemClock;
 import android.util.Log;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.OutputStreamWriter;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 
 /**
  * Telegram-shaped logging singleton. The public API mirrors
- * {@code org/telegram/messenger/FileLog} so ported code compiles unchanged;
- * all calls delegate to {@link android.util.Log} with the {@code "NativeDo"} tag.
+ * {@code org/telegram/messenger/FileLog} so ported code compiles unchanged.
+ * Writes to both logcat and a rotating log file on disk (matching upstream behavior).
  */
 public final class FileLog {
 
-    private static final String TAG = "NativeDo";
-
+    private static final String TAG = "nativedo";
     private static volatile FileLog Instance;
+    private static final Object sync = new Object();
+
+    private DispatchQueue logQueue;
+    private OutputStreamWriter streamWriter;
+    private File currentFile;
+    private SimpleDateFormat dateFormat;
+    private SimpleDateFormat fileDateFormat;
+    private boolean initied;
+    public static boolean databaseIsMalformed;
 
     private FileLog() {
     }
 
-    /** Singleton accessor — matches upstream {@code FileLog.getInstance()}. */
     public static FileLog getInstance() {
         FileLog localInstance = Instance;
         if (localInstance == null) {
@@ -48,46 +52,177 @@ public final class FileLog {
         return localInstance;
     }
 
+    public static void ensureInitied() {
+        getInstance().init();
+    }
+
+    private void init() {
+        if (initied) {
+            return;
+        }
+        dateFormat = new SimpleDateFormat("dd_MM_yyyy_HH_mm_ss.SSS", Locale.US);
+        fileDateFormat = new SimpleDateFormat("dd_MM_yyyy_HH_mm_ss", Locale.US);
+        String date = fileDateFormat.format(System.currentTimeMillis());
+        try {
+            File dir = AndroidUtilities.getLogsDir();
+            if (dir == null) {
+                return;
+            }
+            currentFile = new File(dir, date + ".txt");
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        try {
+            logQueue = new DispatchQueue("logQueue");
+            currentFile.createNewFile();
+            FileOutputStream stream = new FileOutputStream(currentFile);
+            streamWriter = new OutputStreamWriter(stream);
+            streamWriter.write("-----start log " + date + "-----\n");
+            streamWriter.flush();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        initied = true;
+    }
+
     // ── Public API matching upstream shape ─────────────────────────────
 
-    /** Upstream: {@code FileLog.e(String message)} */
-    @SuppressWarnings("unused")
+    public static void e(final String message, final Throwable exception) {
+        if (!BuildVars.LOGS_ENABLED) {
+            return;
+        }
+        ensureInitied();
+        Log.e(TAG, message, exception);
+        if (getInstance().streamWriter != null) {
+            getInstance().logQueue.postRunnable(() -> {
+                try {
+                    getInstance().streamWriter.write(getInstance().dateFormat.format(System.currentTimeMillis()) + " E/nativedo: " + message + "\n");
+                    if (exception != null) {
+                        getInstance().streamWriter.write(exception + "\n");
+                        StackTraceElement[] stack = exception.getStackTrace();
+                        for (int a = 0; a < stack.length; a++) {
+                            getInstance().streamWriter.write("  at " + stack[a] + "\n");
+                        }
+                    }
+                    getInstance().streamWriter.flush();
+                } catch (Exception ignore) {
+                }
+            });
+        }
+    }
+
     public static void e(final String message) {
-        Log.e(TAG, message);
+        e(message, null);
     }
 
-    /** Upstream: {@code FileLog.e(Throwable e)} */
     public static void e(final Throwable e) {
-        Log.e(TAG, "Telegram-derived failure", e);
+        e(e, true);
     }
 
-    /** Upstream: {@code FileLog.e(Throwable e, boolean reportToLogcat)} */
-    @SuppressWarnings("unused")
-    public static void e(final Throwable e, final boolean reportToLogcat) {
-        Log.e(TAG, "Telegram-derived failure", e);
+    public static void e(final Throwable e, boolean logToAppCenter) {
+        if (!BuildVars.LOGS_ENABLED) {
+            return;
+        }
+        ensureInitied();
+        e.printStackTrace();
+        Log.e(TAG, "", e);
+        if (getInstance().streamWriter != null) {
+            getInstance().logQueue.postRunnable(() -> {
+                try {
+                    getInstance().streamWriter.write(getInstance().dateFormat.format(System.currentTimeMillis()) + " E/nativedo: " + e + "\n");
+                    StackTraceElement[] stack = e.getStackTrace();
+                    for (int a = 0; a < stack.length; a++) {
+                        getInstance().streamWriter.write("  at " + stack[a] + "\n");
+                    }
+                    Throwable cause = e.getCause();
+                    if (cause != null) {
+                        getInstance().streamWriter.write("Caused by: " + cause + "\n");
+                        stack = cause.getStackTrace();
+                        for (int a = 0; a < stack.length; a++) {
+                            getInstance().streamWriter.write("  at " + stack[a] + "\n");
+                        }
+                    }
+                    getInstance().streamWriter.flush();
+                } catch (Exception ignore) {
+                }
+            });
+        }
     }
 
-    /** Upstream: {@code FileLog.e(String message, Throwable e)} */
-    @SuppressWarnings("unused")
-    public static void e(final String message, final Throwable e) {
-        Log.e(TAG, message, e);
+    public static void fatal(final Throwable e) {
+        fatal(e, true);
     }
 
-    /** Upstream: {@code FileLog.d(String message)} */
-    @SuppressWarnings("unused")
-    public static void d(final String message) {
-        Log.d(TAG, message);
-    }
-
-    /** Upstream: {@code FileLog.w(String message)} */
-    @SuppressWarnings("unused")
-    public static void w(final String message) {
-        Log.w(TAG, message);
-    }
-
-    /** Upstream: {@code FileLog.fatal(Throwable e, boolean keepStacktraceInFile)} */
-    @SuppressWarnings("unused")
-    public static void fatal(final Throwable e, final boolean keepStacktraceInFile) {
+    public static void fatal(final Throwable e, boolean logToAppCenter) {
+        if (!BuildVars.LOGS_ENABLED) {
+            return;
+        }
+        ensureInitied();
         Log.wtf(TAG, "Fatal", e);
+        if (getInstance().streamWriter != null) {
+            getInstance().logQueue.postRunnable(() -> {
+                try {
+                    getInstance().streamWriter.write(getInstance().dateFormat.format(System.currentTimeMillis()) + " FATAL/nativedo: " + e + "\n");
+                    StackTraceElement[] stack = e.getStackTrace();
+                    for (int a = 0; a < stack.length; a++) {
+                        getInstance().streamWriter.write("  at " + stack[a] + "\n");
+                    }
+                    getInstance().streamWriter.flush();
+                } catch (Exception ignore) {
+                }
+            });
+        }
+    }
+
+    public static void d(final String message) {
+        if (!BuildVars.LOGS_ENABLED) {
+            return;
+        }
+        ensureInitied();
+        Log.d(TAG, message);
+        if (getInstance().streamWriter != null) {
+            getInstance().logQueue.postRunnable(() -> {
+                try {
+                    getInstance().streamWriter.write(getInstance().dateFormat.format(System.currentTimeMillis()) + " D/nativedo: " + message + "\n");
+                    getInstance().streamWriter.flush();
+                } catch (Exception ignore) {
+                }
+            });
+        }
+    }
+
+    public static void w(final String message) {
+        if (!BuildVars.LOGS_ENABLED) {
+            return;
+        }
+        ensureInitied();
+        Log.w(TAG, message);
+        if (getInstance().streamWriter != null) {
+            getInstance().logQueue.postRunnable(() -> {
+                try {
+                    getInstance().streamWriter.write(getInstance().dateFormat.format(System.currentTimeMillis()) + " W/nativedo: " + message + "\n");
+                    getInstance().streamWriter.flush();
+                } catch (Exception ignore) {
+                }
+            });
+        }
+    }
+
+    public static void cleanupLogs() {
+        File dir = AndroidUtilities.getLogsDir();
+        if (dir == null) {
+            return;
+        }
+        File[] files = dir.listFiles();
+        if (files == null) {
+            return;
+        }
+        long currentTime = System.currentTimeMillis();
+        for (int a = 0; a < files.length; a++) {
+            File file = files[a];
+            if (getInstance().currentFile != file && currentTime - file.lastModified() > 24 * 60 * 60 * 1000) {
+                file.delete();
+            }
+        }
     }
 }

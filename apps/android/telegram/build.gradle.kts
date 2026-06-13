@@ -46,6 +46,7 @@ dependencies {
     implementation(libs.androidx.recyclerview)
     implementation(libs.androidx.dynamicanimation)
     implementation(libs.jsoup)
+    implementation("androidx.exifinterface:exifinterface:1.4.1")
 
     testImplementation(libs.junit4)
     testImplementation("org.json:json:20240303")

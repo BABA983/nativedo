@@ -38,6 +38,7 @@ import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.FileLog;
 import org.telegram.messenger.R;
 import org.telegram.ui.Cells.BaseCell;
 import org.telegram.ui.Components.PathAnimator;
@@ -1139,6 +1140,7 @@ public final class Theme {
         if (context == null) {
             return;
         }
+        FileLog.d("Theme.init isDark=" + isCurrentThemeDark());
         applicationContext = context.getApplicationContext();
         createDialogsResources();
         createMediaActionResources(context);
@@ -1588,6 +1590,35 @@ public final class Theme {
         defaultDrawable.setIntrinsicHeight(size);
         defaultDrawable.getPaint().setColor(color);
         return defaultDrawable;
+    }
+
+    public static ShapeDrawable createCircleDrawable(int size, int colorTop, int colorBottom) {
+        OvalShape ovalShape = new OvalShape();
+        ovalShape.resize(size, size);
+        ShapeDrawable defaultDrawable = new ShapeDrawable(ovalShape);
+        defaultDrawable.setIntrinsicWidth(size);
+        defaultDrawable.setIntrinsicHeight(size);
+        android.graphics.LinearGradient gradient = new android.graphics.LinearGradient(
+            0, 0, 0, size,
+            colorTop, colorBottom,
+            android.graphics.Shader.TileMode.CLAMP
+        );
+        defaultDrawable.getPaint().setShader(gradient);
+        return defaultDrawable;
+    }
+
+    public static Drawable createSimpleSelectorCircleDrawable(int size, int defaultColor, int pressedColor) {
+        OvalShape ovalShape = new OvalShape();
+        ovalShape.resize(size, size);
+        ShapeDrawable defaultDrawable = new ShapeDrawable(ovalShape);
+        defaultDrawable.getPaint().setColor(defaultColor);
+        ShapeDrawable pressedDrawable = new ShapeDrawable(ovalShape);
+        pressedDrawable.getPaint().setColor(0xffffffff);
+        ColorStateList colorStateList = new ColorStateList(
+                new int[][]{StateSet.WILD_CARD},
+                new int[]{pressedColor}
+        );
+        return new BaseCell.RippleDrawableSafe(colorStateList, defaultDrawable, pressedDrawable);
     }
 
     public static Drawable createOutlineCircleDrawable(int size, int color, int strokeWidth) {
