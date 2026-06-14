@@ -172,10 +172,6 @@ class TopicDetailFragment(
         super.onFragmentDestroy()
     }
 
-    override fun getPhotoViewerScaleView(): View? {
-        return fragmentView
-    }
-
     override fun onBackPressed(): Boolean {
         return super.onBackPressed()
     }
