@@ -1,5 +1,6 @@
 package io.github.baba983.nativedo.debug
 
+import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -111,6 +112,12 @@ class PhotoViewerDebugActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         PhotoViewer.getInstance().onResume()
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        recreate()
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -274,7 +281,6 @@ class PhotoViewerDebugActivity : ComponentActivity() {
     ) {
         val urls = galleryImages.map { it.url }.ifEmpty { listOf(url) }
         val sourceCell = tappedSourceView as? TopicPostCell
-        sourceCell?.setHiddenImageUrl(url)
         val viewer = PhotoViewer.getInstance()
         viewer.setParentActivity(hostFragment)
         val provider = object : PhotoViewer.EmptyPhotoViewerProvider() {
@@ -287,7 +293,7 @@ class PhotoViewerDebugActivity : ComponentActivity() {
             ): PhotoViewer.PlaceProviderObject? {
                 val imageUrl = urls.getOrNull(photoIndex) ?: return null
                 val bounds = sourceBoundsProvider(imageUrl) ?: return null
-                val imageReceiver = if (needPreview) sourceImageReceiverProvider(imageUrl) else null
+                val imageReceiver = sourceImageReceiverProvider(imageUrl)
                 if (needPreview) {
                     lastPlaceSourceInWindow = handoffRectInWindow(bounds, imageReceiver)
                 }
@@ -310,18 +316,6 @@ class PhotoViewerDebugActivity : ComponentActivity() {
             ): ImageReceiver.BitmapHolder? {
                 val imageUrl = urls.getOrNull(index) ?: return null
                 return sourceBitmapProvider(imageUrl)
-            }
-
-            override fun onPhotoChanged(photoIndex: Int) {
-                sourceCell?.setHiddenImageUrl(urls.getOrNull(photoIndex))
-            }
-
-            override fun willSwitchFromPhoto(
-                messageObject: MessageObject?,
-                fileLocation: TLRPC.FileLocation?,
-                index: Int,
-            ) {
-                sourceCell?.setHiddenImageUrl(null)
             }
 
             override fun onClose() {
@@ -586,22 +580,25 @@ class PhotoViewerDebugActivity : ComponentActivity() {
 
     private fun viewerScale(): Float {
         val window = photoViewerWindow() ?: return -1f
-        val containerField = window.javaClass.getDeclaredField("containerView").apply { isAccessible = true }
-        val container = containerField.get(window) ?: return -1f
-        val scaleField = container.javaClass.getDeclaredField("scale").apply { isAccessible = true }
-        return scaleField.getFloat(container)
+        (reflectedField(window, "scale") as? Float)?.let { return it }
+        val container = reflectedField(window, "containerView") ?: return -1f
+        return reflectedField(container, "scale") as? Float ?: -1f
     }
 
     private fun viewerRect(fieldName: String): RectF? {
         val window = photoViewerWindow() ?: return null
-        val containerField = window.javaClass.getDeclaredField("containerView").apply { isAccessible = true }
-        val container = containerField.get(window) ?: return null
-        val rectField = runCatching {
-            container.javaClass.getDeclaredField(fieldName).apply { isAccessible = true }
-        }.getOrElse {
-            container.javaClass.getDeclaredField("centerImageRect").apply { isAccessible = true }
-        }
-        return (rectField.get(container) as? RectF)?.let(::RectF)
+        val container = reflectedField(window, "containerView")
+        val rect = reflectedField(window, fieldName) as? RectF
+            ?: container?.let { reflectedField(it, fieldName) as? RectF }
+            ?: reflectedField(window, "centerImageRect") as? RectF
+            ?: container?.let { reflectedField(it, "centerImageRect") as? RectF }
+        return rect?.let(::RectF)
+    }
+
+    private fun reflectedField(target: Any, fieldName: String): Any? {
+        return runCatching {
+            target.javaClass.getDeclaredField(fieldName).apply { isAccessible = true }.get(target)
+        }.getOrNull()
     }
 
     private fun photoViewerContainerLocationInWindow(): IntArray {

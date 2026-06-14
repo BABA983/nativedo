@@ -274,18 +274,6 @@ class TopicDetailFragment(
                 return sourceBitmap(imageUrl)
             }
 
-            override fun willSwitchFromPhoto(
-                messageObject: MessageObject?,
-                fileLocation: TLRPC.FileLocation?,
-                index: Int,
-            ) {
-                setHiddenImageUrl(null)
-            }
-
-            override fun onPhotoChanged(photoIndex: Int) {
-                setHiddenImageUrl(urls.getOrNull(photoIndex))
-            }
-
             override fun onClose() {
                 setHiddenImageUrl(null)
             }
@@ -314,8 +302,6 @@ class TopicDetailFragment(
         }
         if (!opened) {
             setHiddenImageUrl(null)
-        } else {
-            setHiddenImageUrl(urls.getOrNull(selectedIndex))
         }
     }
 

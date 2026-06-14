@@ -4,20 +4,22 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.ContextWrapper;
 
+import androidx.activity.ComponentActivity;
+
 import org.telegram.ui.ActionBar.ActionBarLayout;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.BottomSheetTabs;
 import org.telegram.ui.ActionBar.BottomSheetTabsOverlay;
+import org.telegram.ui.ActionBar.DrawerLayoutContainer;
 
 /**
- * Stub for Telegram LaunchActivity. Only checkFreeDiscSpaceStatic is referenced by FileLoader.
- * V1: instance/getBottomSheetTabs added for AdjustPanLayoutHelper compatibility.
+ * NativeDo host facade for Telegram-derived root services.
  */
-public class LaunchActivity extends Activity {
+public class LaunchActivity extends ComponentActivity {
     public static LaunchActivity instance;
     public static Runnable whenResumed;
     private static ActionBarLayout actionBarLayout;
-    public DrawerLayoutContainer drawerLayoutContainer = new DrawerLayoutContainer();
+    public DrawerLayoutContainer drawerLayoutContainer;
     public android.widget.FrameLayout sheetContainer;
 
     public static void setActionBarLayout(ActionBarLayout layout) {
@@ -38,7 +40,10 @@ public class LaunchActivity extends Activity {
     @Override
     public boolean isFinishing() {
         Activity activity = getActionBarLayoutActivity();
-        return activity == null || activity.isFinishing();
+        if (activity == null || activity == this) {
+            return super.isFinishing();
+        }
+        return activity.isFinishing();
     }
 
     public BottomSheetTabs getBottomSheetTabs() {
@@ -57,14 +62,6 @@ public class LaunchActivity extends Activity {
 
     public boolean presentFragment(BaseFragment fragment, boolean removeLast, boolean forceWithoutAnimation) {
         return actionBarLayout != null && actionBarLayout.presentFragment(fragment);
-    }
-
-    public static class DrawerLayoutContainer {
-        public void setAllowDrawContent(boolean value) {
-            if (actionBarLayout != null) {
-                actionBarLayout.setAllowDrawContent(value);
-            }
-        }
     }
 
     public static boolean checkFreeDiscSpaceStatic(int type) {

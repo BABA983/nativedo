@@ -1332,7 +1332,7 @@
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native",
-      "notes": "Single-arg constructor (no upstream main flag) and does NOT self-register as the LaunchActivity global. MainActivity pins the root layout via LaunchActivity.setActionBarLayout(root) so sheet-owned ActionBarLayouts (ActionBarSheet) never clobber the global last-fragment / bottom-tabs provider."
+      "notes": "Single-arg constructor (no upstream main flag) and does NOT self-register as the LaunchActivity global. MainActivity pins the root layout via LaunchActivity.setActionBarLayout(root) so sheet-owned ActionBarLayouts (ActionBarSheet) never clobber the global last-fragment / bottom-tabs provider. Fullscreen viewer draw-content gating stays in DrawerLayoutContainer, matching upstream ownership."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarMenu.java",
@@ -1430,7 +1430,8 @@
       "upstream": "org/telegram/ui/ActionBar/DrawerLayoutContainer.java",
       "vendored_at": "009e97356",
       "modified": true,
-      "port_mode": "native"
+      "port_mode": "native",
+      "notes": "NativeDo root keeps Telegram's allowDrawContent draw gate for fullscreen viewers while omitting drawer gestures and menu behavior."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/INavigationLayout.java",

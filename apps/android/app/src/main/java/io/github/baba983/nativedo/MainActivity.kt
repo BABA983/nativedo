@@ -3,16 +3,18 @@ package io.github.baba983.nativedo
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
+import android.view.ViewGroup
 import android.window.BackEvent
 import android.window.OnBackAnimationCallback
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
-import androidx.activity.ComponentActivity
+import android.widget.FrameLayout
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.lifecycleScope
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.ui.ActionBar.ActionBarLayout
+import org.telegram.ui.ActionBar.DrawerLayoutContainer
 import org.telegram.ui.LaunchActivity
 import io.github.baba983.nativedo.ui.main.MainTabsActivity
 import org.telegram.ui.PhotoViewer
@@ -20,7 +22,7 @@ import kotlinx.coroutines.launch
 
 private const val LAZY_START = 0.015f
 
-class MainActivity : ComponentActivity() {
+class MainActivity : LaunchActivity() {
 
     private lateinit var actionBarLayout: ActionBarLayout
     private lateinit var mainTabsActivity: MainTabsActivity
@@ -30,17 +32,37 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AndroidUtilities.init(this)
-        LaunchActivity.instance = LaunchActivity()
+        LaunchActivity.instance = this
         enableEdgeToEdge()
 
         mainTabsActivity = MainTabsActivity()
+        val rootFrameLayout = FrameLayout(this)
+        rootFrameLayout.clipChildren = false
+        rootFrameLayout.clipToPadding = false
         actionBarLayout = ActionBarLayout(this)
+        drawerLayoutContainer = DrawerLayoutContainer(this)
+        drawerLayoutContainer.clipChildren = false
+        drawerLayoutContainer.clipToPadding = false
+        drawerLayoutContainer.addView(
+            actionBarLayout,
+            ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ),
+        )
         // Register the root layout as the global last-fragment provider. Browser sheets
         // (bookmarks/history/settings) resolve their host via LaunchActivity.getSafeLastFragment(),
         // so the global must stay pinned to the root and never be overwritten by a sheet's layout.
         LaunchActivity.setActionBarLayout(actionBarLayout)
         actionBarLayout.addFragmentToStack(mainTabsActivity)
-        setContentView(actionBarLayout)
+        rootFrameLayout.addView(
+            drawerLayoutContainer,
+            ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ),
+        )
+        setContentView(rootFrameLayout)
         lifecycleScope.launch {
             (applicationContext as NativeDoApp).appContainer.sessionCoordinator.start()
         }
