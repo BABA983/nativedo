@@ -50,6 +50,7 @@ public final class Theme {
     public static Paint DEBUG_RED = new Paint(); static { DEBUG_RED.setColor(0xffff0000); }
     public static Paint DEBUG_GREEN_STROKE = new Paint(); static { DEBUG_GREEN_STROKE.setColor(0xff00ff00); DEBUG_GREEN_STROKE.setStrokeWidth(2); DEBUG_GREEN_STROKE.setStyle(Paint.Style.STROKE); }
     public static Paint dialogs_onlineCirclePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    public static TextPaint chat_msgTextPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
     public static PathAnimator playPauseAnimator;
     public static Path[] chat_filePath = new Path[2];
     public static Path[] chat_updatePath = new Path[3];
@@ -1470,29 +1471,66 @@ public final class Theme {
         return createSelectorDrawable(color, RIPPLE_MASK_ALL);
     }
 
+    public static class RippleRadMaskDrawable extends Drawable {
+        private final Paint maskPaintLocal = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Path maskPath = new Path();
+        private final float[] radii = new float[8];
+        private boolean invalidatePath = true;
+
+        public RippleRadMaskDrawable(float top, float bottom) {
+            setRadius(top, bottom);
+        }
+
+        public void setRadius(float top, float bottom) {
+            radii[0] = radii[1] = radii[2] = radii[3] = AndroidUtilities.dp(top);
+            radii[4] = radii[5] = radii[6] = radii[7] = AndroidUtilities.dp(bottom);
+            invalidatePath = true;
+            invalidateSelf();
+        }
+
+        public void setRadius(float topLeft, float topRight, float bottomRight, float bottomLeft) {
+            radii[0] = radii[1] = AndroidUtilities.dp(topLeft);
+            radii[2] = radii[3] = AndroidUtilities.dp(topRight);
+            radii[4] = radii[5] = AndroidUtilities.dp(bottomRight);
+            radii[6] = radii[7] = AndroidUtilities.dp(bottomLeft);
+            invalidatePath = true;
+            invalidateSelf();
+        }
+
+        @Override
+        protected void onBoundsChange(Rect bounds) {
+            invalidatePath = true;
+        }
+
+        @Override
+        public void draw(Canvas canvas) {
+            if (invalidatePath) {
+                invalidatePath = false;
+                maskPath.reset();
+                AndroidUtilities.rectTmp.set(getBounds());
+                maskPath.addRoundRect(AndroidUtilities.rectTmp, radii, Path.Direction.CW);
+            }
+            maskPaintLocal.setColor(Color.WHITE);
+            canvas.drawPath(maskPath, maskPaintLocal);
+        }
+
+        @Override
+        public void setAlpha(int alpha) {
+        }
+
+        @Override
+        public void setColorFilter(ColorFilter colorFilter) {
+        }
+
+        @Override
+        public int getOpacity() {
+            return PixelFormat.UNKNOWN;
+        }
+    }
+
     /** ADAPTED: createRadSelectorDrawable for RecyclerListView rounded selectors. */
     public static Drawable createRadSelectorDrawable(int color, int topRadius, int bottomRadius) {
-        Drawable maskDrawable = new Drawable() {
-            private final Paint maskPaintLocal = new Paint(Paint.ANTI_ALIAS_FLAG);
-            private final Path maskPath = new Path();
-            private final RectF maskRect = new RectF();
-            @Override
-            public void draw(Canvas canvas) {
-                Rect bounds = getBounds();
-                maskPaintLocal.setColor(Color.WHITE);
-                maskRect.set(bounds);
-                maskPath.reset();
-                float[] radii = new float[]{
-                    topRadius, topRadius, topRadius, topRadius,
-                    bottomRadius, bottomRadius, bottomRadius, bottomRadius
-                };
-                maskPath.addRoundRect(maskRect, radii, Path.Direction.CW);
-                canvas.drawPath(maskPath, maskPaintLocal);
-            }
-            @Override public void setAlpha(int alpha) {}
-            @Override public void setColorFilter(ColorFilter colorFilter) {}
-            @Override public int getOpacity() { return PixelFormat.UNKNOWN; }
-        };
+        Drawable maskDrawable = new RippleRadMaskDrawable(topRadius, bottomRadius);
         return new RippleDrawable(ColorStateList.valueOf(color), null, maskDrawable);
     }
 
@@ -1542,9 +1580,33 @@ public final class Theme {
         }
     }
 
-    /** ADAPTED: setMaskDrawableRad for RecyclerListView. */
+    /** ADAPTED: setMaskDrawableRad for RecyclerListView and link-preview selectors. */
     public static void setMaskDrawableRad(Drawable drawable, int topRad, int bottomRad) {
-        // No-op: mask radius changes are not critical for NativeDo's use case
+        if (!(drawable instanceof RippleDrawable)) {
+            return;
+        }
+        RippleDrawable rippleDrawable = (RippleDrawable) drawable;
+        for (int i = 0; i < rippleDrawable.getNumberOfLayers(); i++) {
+            Drawable layer = rippleDrawable.getDrawable(i);
+            if (layer instanceof RippleRadMaskDrawable) {
+                ((RippleRadMaskDrawable) layer).setRadius(topRad, bottomRad);
+                return;
+            }
+        }
+    }
+
+    public static void setMaskDrawableRad(Drawable drawable, float topLeftRad, float topRightRad, float bottomRightRad, float bottomLeftRad) {
+        if (!(drawable instanceof RippleDrawable)) {
+            return;
+        }
+        RippleDrawable rippleDrawable = (RippleDrawable) drawable;
+        for (int i = 0; i < rippleDrawable.getNumberOfLayers(); i++) {
+            Drawable layer = rippleDrawable.getDrawable(i);
+            if (layer instanceof RippleRadMaskDrawable) {
+                ((RippleRadMaskDrawable) layer).setRadius(topLeftRad, topRightRad, bottomRightRad, bottomLeftRad);
+                return;
+            }
+        }
     }
 
     public static ShapeDrawable createRoundRectDrawable(int rad, int defaultColor) {

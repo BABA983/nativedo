@@ -183,9 +183,9 @@ class TopicViewModel(
             .map { post -> post.cookedHtml }
     }
 
-    fun onPollOptionSelected(postId: Long, postNumber: Int?, pollName: String, optionId: String) {
+    fun onPollOptionsSelected(postId: Long, postNumber: Int?, pollName: String, optionIds: List<String>) {
         viewModelScope.launch {
-            repository.votePoll(postId = postId, pollName = pollName, optionId = optionId).onSuccess {
+            repository.votePoll(postId = postId, pollName = pollName, optionIds = optionIds).onSuccess {
                 if (postNumber != null) {
                     repository.loadPostByNumber(topicId = topicId, postNumber = postNumber).onSuccess(::replacePostById)
                 }

@@ -54,6 +54,9 @@ public class ProfileDetailCell extends FrameLayout implements Theme.Colorable {
     public ProfileDetailCell(Context context) {
         super(context);
 
+        // Mirrors upstream TextDetailCell: selector ripple for click feedback
+        setForeground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector), Theme.RIPPLE_MASK_ALL));
+
         textView = new TextView(context);
         textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
         textView.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
@@ -66,7 +69,7 @@ public class ProfileDetailCell extends FrameLayout implements Theme.Colorable {
         addView(textView, LayoutHelper.createFrame(
             LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT,
             LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT,
-            17, 8 - 2, 17, 0
+            18, 8 - 2, 18, 0
         ));
 
         valueTextView = new TextView(context);
@@ -80,7 +83,7 @@ public class ProfileDetailCell extends FrameLayout implements Theme.Colorable {
         addView(valueTextView, LayoutHelper.createFrame(
             LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT,
             LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT,
-            17, 33 - 1, 17, 10 - 6
+            18, 33 - 1, 18, 10 - 6
         ));
     }
 

@@ -23,6 +23,7 @@ import androidx.activity.OnBackPressedCallback
 import io.github.baba983.nativedo.core.html.GalleryImage
 import io.github.baba983.nativedo.core.html.parseCookedPostBody
 import io.github.baba983.nativedo.core.model.Post
+import io.github.baba983.nativedo.core.model.PostReaction
 import io.github.baba983.nativedo.ui.topic.body.PostBodyBlockState
 import io.github.baba983.nativedo.ui.topic.cell.TopicPostCell
 import io.github.baba983.nativedo.ui.topic.cell.TopicPostCellDelegate
@@ -88,8 +89,27 @@ class PhotoViewerDebugActivity : ComponentActivity() {
             },
         )
 
-        if (scenario == SCENARIO_TOPIC_CELL_TAP) {
-            setupTopicCellScenario(root, urls, index, intent.getLongExtra(EXTRA_CLOSE_AFTER_MS, 0L))
+        val topicCellFixture = when (scenario) {
+            SCENARIO_TOPIC_CELL_TAP -> TopicCellFixture.SingleImage
+            SCENARIO_TOPIC_CELL_NESTED_IMAGE_TAP -> TopicCellFixture.NestedImage
+            SCENARIO_TOPIC_CELL_COLLAGE_TAP -> TopicCellFixture.Collage
+            SCENARIO_TOPIC_CELL_ONEBOX_THUMBNAIL_TAP -> TopicCellFixture.OneboxThumbnail
+            SCENARIO_TOPIC_CELL_POLL_VOTE -> TopicCellFixture.PollVote
+            SCENARIO_TOPIC_CELL_INLINE_SPOILER_TAP -> TopicCellFixture.InlineSpoiler
+            SCENARIO_TOPIC_CELL_REPLY_FOOTER_TAP -> TopicCellFixture.ReplyFooter
+            SCENARIO_TOPIC_CELL_REACTION_TAP -> TopicCellFixture.Reaction
+            SCENARIO_TOPIC_CELL_MORE_REACTION_TAP -> TopicCellFixture.MoreReaction
+            else -> null
+        }
+        if (topicCellFixture != null) {
+            setupTopicCellScenario(
+                root,
+                urls,
+                index,
+                intent.getLongExtra(EXTRA_CLOSE_AFTER_MS, 0L),
+                fixture = topicCellFixture,
+                scenarioName = scenario ?: SCENARIO_TOPIC_CELL_TAP,
+            )
         } else {
             sourceView = SourcePreviewView(this).apply {
                 setImageUrl(urls[index])
@@ -186,13 +206,34 @@ class PhotoViewerDebugActivity : ComponentActivity() {
         setStatus("opened=$opened index=${currentPhotoIndex()} visible=${viewer.isVisibleOrAnimating()}")
     }
 
-    private fun setupTopicCellScenario(root: FrameLayout, urls: List<String>, index: Int, closeAfterMs: Long) {
+    private fun setupTopicCellScenario(root: FrameLayout, urls: List<String>, index: Int, closeAfterMs: Long, fixture: TopicCellFixture, scenarioName: String) {
         val topicUrls = urls.map { "thumb://0:$it" }
         val targetUrl = topicUrls[index]
-        val cookedHtml = """
-            <p><img src="$targetUrl" width="1600" height="1000" alt="Debug topic image"></p>
-        """.trimIndent()
+        val cookedHtml = when (fixture) {
+            TopicCellFixture.SingleImage -> """
+                <p><img src="$targetUrl" width="1600" height="1000" alt="Debug topic image"></p>
+            """.trimIndent()
+            TopicCellFixture.NestedImage -> nestedTopicCellHtml(targetUrl)
+            TopicCellFixture.Collage -> collageTopicCellHtml(topicUrls)
+            TopicCellFixture.OneboxThumbnail -> oneboxTopicCellHtml(targetUrl)
+            TopicCellFixture.PollVote -> pollTopicCellHtml()
+            TopicCellFixture.InlineSpoiler -> inlineSpoilerTopicCellHtml()
+            TopicCellFixture.ReplyFooter,
+            TopicCellFixture.Reaction,
+            TopicCellFixture.MoreReaction -> """<p>Topic cell chrome smoke fixture</p>"""
+        }
         val parsedBlocks = parseCookedPostBody(cookedHtml, DEBUG_BASE_URL)
+        val blockState = PostBodyBlockState().apply {
+            if (fixture == TopicCellFixture.NestedImage) {
+                openedDetailsByIndex.add(0)
+            }
+        }
+        var lastPollName: String? = null
+        var lastPollOptionIds: List<String> = emptyList()
+        var lastReplyPostNumber: Int? = null
+        var lastReactionId: String? = null
+        var lastMoreReactionCount: Int? = null
+        val post = debugTopicCellPost(fixture, cookedHtml, topicUrls)
         val cell = TopicPostCell(this).apply {
             setDelegate(object : TopicPostCellDelegate {
                 override fun didPressImage(
@@ -218,17 +259,30 @@ class PhotoViewerDebugActivity : ComponentActivity() {
                         sourceRadiusProvider = sourceRadiusProvider,
                     )
                 }
+
+                override fun didPressPollOptions(post: Post, pollName: String, optionIds: List<String>) {
+                    lastPollName = pollName
+                    lastPollOptionIds = optionIds
+                    Log.d(TAG, "didPressPollOptions pollName=$pollName optionIds=$optionIds")
+                }
+
+                override fun didPressReply(post: Post) {
+                    lastReplyPostNumber = post.postNumber
+                    Log.d(TAG, "didPressReply postNumber=${post.postNumber}")
+                }
+
+                override fun didPressReaction(post: Post, reaction: PostReaction) {
+                    lastReactionId = reaction.id
+                    Log.d(TAG, "didPressReaction reactionId=${reaction.id}")
+                }
+
+                override fun didPressMoreReactions(post: Post, reactions: List<PostReaction>, initialReactionId: String?) {
+                    lastMoreReactionCount = reactions.size
+                    Log.d(TAG, "didPressMoreReactions count=${reactions.size} initialReactionId=$initialReactionId")
+                }
             })
             setPost(
-                Post(
-                    id = 1L,
-                    postNumber = 1,
-                    authorUsername = "debug",
-                    authorDisplayName = "PhotoViewer Debug",
-                    createdAt = "2026-06-06T00:00:00Z",
-                    cookedHtml = cookedHtml,
-                    imageUrls = topicUrls,
-                ),
+                post,
                 null,
                 null,
                 true,
@@ -237,36 +291,203 @@ class PhotoViewerDebugActivity : ComponentActivity() {
                 DEBUG_BASE_URL,
                 emptyMap(),
                 emptyMap(),
-                0,
-                emptyList(),
+                validReactionsForFixture(fixture),
+                replyCountForFixture(fixture),
+                recentReplyParticipantsForFixture(fixture),
                 parsedBlocks,
-                PostBodyBlockState(),
+                blockState,
                 0,
                 null,
             )
         }
         root.addView(
             cell,
-            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP).apply {
+            FrameLayout.LayoutParams(topicCellDebugWidth(), FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
                 topMargin = AndroidUtilities.dp(64f)
             },
         )
         root.postDelayed({
-            val dispatched = dispatchTopicCellImageTap(cell)
-            cell.postDelayed({
-                val start = viewerRect("startImageRect")
-                val startAbs = start?.let(::RectF)?.apply {
-                    val location = photoViewerContainerLocationInWindow()
-                    offset(location[0].toFloat(), location[1].toFloat())
+            when (fixture) {
+                TopicCellFixture.SingleImage,
+                TopicCellFixture.NestedImage,
+                TopicCellFixture.Collage,
+                TopicCellFixture.OneboxThumbnail -> {
+                    val dispatched = dispatchTopicCellImageTap(cell, targetUrl)
+                    cell.postDelayed({
+                        val start = viewerRect("startImageRect")
+                        val startAbs = start?.let(::RectF)?.apply {
+                            val location = photoViewerContainerLocationInWindow()
+                            offset(location[0].toFloat(), location[1].toFloat())
+                        }
+                        val text = "scenario=$scenarioName dispatched=$dispatched currentIndex=${currentPhotoIndex()} source=${lastTopicCellSourceInWindow?.toShortString()} handoff=${lastPlaceSourceInWindow?.toShortString()} startAbs=${startAbs?.toShortString()} visible=${PhotoViewer.getInstance().isVisibleOrAnimating()}"
+                        Log.i(TAG, text)
+                        setStatus(text)
+                    }, 650L)
+                    if (closeAfterMs > 0L) {
+                        cell.postDelayed({ PhotoViewer.getInstance().closePhoto(true, false) }, closeAfterMs)
+                    }
                 }
-                val text = "scenario=$SCENARIO_TOPIC_CELL_TAP dispatched=$dispatched currentIndex=${currentPhotoIndex()} source=${lastTopicCellSourceInWindow?.toShortString()} handoff=${lastPlaceSourceInWindow?.toShortString()} startAbs=${startAbs?.toShortString()} visible=${PhotoViewer.getInstance().isVisibleOrAnimating()}"
-                Log.i(TAG, text)
-                setStatus(text)
-            }, 650L)
-            if (closeAfterMs > 0L) {
-                cell.postDelayed({ PhotoViewer.getInstance().closePhoto(true, false) }, closeAfterMs)
+                TopicCellFixture.PollVote -> {
+                    val dispatched = dispatchTopicCellPollVoteTap(cell)
+                    cell.postDelayed({
+                        val text = "scenario=$scenarioName dispatched=$dispatched pollName=$lastPollName optionIds=$lastPollOptionIds submitted=${blockState.submittedPollIndexes} selected=${blockState.selectedPollOptionIndexesByIndex}"
+                        Log.i(TAG, text)
+                        setStatus(text)
+                    }, 300L)
+                }
+                TopicCellFixture.InlineSpoiler -> {
+                    val before = blockState.revealedInlineSpoilersByKey.size
+                    val dispatched = dispatchTopicCellInlineSpoilerTap(cell)
+                    cell.postDelayed({
+                        val text = "scenario=$scenarioName dispatched=$dispatched revealedBefore=$before revealedAfter=${blockState.revealedInlineSpoilersByKey.size} revealedKeys=${blockState.revealedInlineSpoilersByKey}"
+                        Log.i(TAG, text)
+                        setStatus(text)
+                    }, 900L)
+                }
+                TopicCellFixture.ReplyFooter -> {
+                    val dispatched = dispatchTopicCellReplyFooterTap(cell)
+                    cell.postDelayed({
+                        val text = "scenario=$scenarioName dispatched=$dispatched replyPostNumber=$lastReplyPostNumber"
+                        Log.i(TAG, text)
+                        setStatus(text)
+                    }, 300L)
+                }
+                TopicCellFixture.Reaction -> {
+                    val dispatched = dispatchTopicCellReactionTap(cell, more = false)
+                    cell.postDelayed({
+                        val text = "scenario=$scenarioName dispatched=$dispatched reactionId=$lastReactionId"
+                        Log.i(TAG, text)
+                        setStatus(text)
+                    }, 300L)
+                }
+                TopicCellFixture.MoreReaction -> {
+                    val dispatched = dispatchTopicCellReactionTap(cell, more = true)
+                    cell.postDelayed({
+                        val text = "scenario=$scenarioName dispatched=$dispatched moreReactionCount=$lastMoreReactionCount"
+                        Log.i(TAG, text)
+                        setStatus(text)
+                    }, 300L)
+                }
             }
         }, 700L)
+    }
+
+    private fun debugTopicCellPost(fixture: TopicCellFixture, cookedHtml: String, topicUrls: List<String>): Post {
+        val reactions = reactionsForFixture(fixture)
+        return Post(
+            id = 1L,
+            postNumber = 1,
+            authorUsername = "debug",
+            authorDisplayName = "PhotoViewer Debug",
+            createdAt = "2026-06-06T00:00:00Z",
+            currentUserReaction = reactions.firstOrNull { it.reacted }?.id,
+            reactionUsersCount = reactions.sumOf { it.count },
+            reactions = reactions,
+            cookedHtml = cookedHtml,
+            imageUrls = topicUrls,
+        )
+    }
+
+    private fun reactionsForFixture(fixture: TopicCellFixture): List<PostReaction> {
+        return when (fixture) {
+            TopicCellFixture.Reaction -> listOf(
+                PostReaction("heart", 3, reacted = true),
+                PostReaction("rocket", 2),
+                PostReaction("eyes", 1),
+            )
+            TopicCellFixture.MoreReaction -> listOf(
+                PostReaction("heart", 5, reacted = true),
+                PostReaction("rocket", 4),
+                PostReaction("eyes", 3),
+                PostReaction("tada", 2),
+            )
+            else -> emptyList()
+        }
+    }
+
+    private fun replyCountForFixture(fixture: TopicCellFixture): Int {
+        return if (fixture == TopicCellFixture.ReplyFooter) 3 else 0
+    }
+
+    private fun recentReplyParticipantsForFixture(fixture: TopicCellFixture): List<Post> {
+        if (fixture != TopicCellFixture.ReplyFooter) {
+            return emptyList()
+        }
+        return listOf(
+            Post(id = 11L, postNumber = 2, authorUsername = "alice", authorDisplayName = "Alice", cookedHtml = "<p>Reply A</p>"),
+            Post(id = 12L, postNumber = 3, authorUsername = "bob", authorDisplayName = "Bob", cookedHtml = "<p>Reply B</p>"),
+            Post(id = 13L, postNumber = 4, authorUsername = "carol", authorDisplayName = "Carol", cookedHtml = "<p>Reply C</p>"),
+        )
+    }
+
+    private fun validReactionsForFixture(fixture: TopicCellFixture): List<String> {
+        return if (fixture == TopicCellFixture.MoreReaction) {
+            listOf("heart", "rocket", "eyes", "tada")
+        } else {
+            emptyList()
+        }
+    }
+
+    private fun nestedTopicCellHtml(targetUrl: String): String {
+        return """
+            <details open>
+              <summary>Nested media handoff</summary>
+              <ul>
+                <li>
+                  <table>
+                    <tbody>
+                      <tr>
+                        <td><img src="$targetUrl" width="1600" height="1000" alt="Nested debug image"></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </li>
+              </ul>
+            </details>
+        """.trimIndent()
+    }
+
+    private fun collageTopicCellHtml(topicUrls: List<String>): String {
+        return topicUrls.joinToString(separator = "\n") { url ->
+            """<p><img src="$url" width="1600" height="1000" alt="Debug collage image"></p>"""
+        }
+    }
+
+    private fun oneboxTopicCellHtml(targetUrl: String): String {
+        return """
+            <aside class="onebox allowlistedgeneric" data-onebox-src="https://example.dev/debug-onebox">
+              <header class="source"><a href="https://example.dev/debug-onebox">example.dev</a></header>
+              <article class="onebox-body">
+                <img class="thumbnail" src="$targetUrl" width="1600" height="1000" alt="Debug onebox thumbnail">
+                <h3><a href="https://example.dev/debug-onebox">Debug onebox thumbnail</a></h3>
+                <p>Link preview handoff smoke fixture</p>
+              </article>
+            </aside>
+        """.trimIndent()
+    }
+
+    private fun pollTopicCellHtml(): String {
+        return """
+            <div class="poll" data-poll-name="debug-poll" data-poll-status="open" data-poll-type="regular">
+              <div class="poll-container">
+                <ul>
+                  <li data-poll-option-id="option-a"><span class="poll-option-label">Option A</span></li>
+                  <li data-poll-option-id="option-b"><span class="poll-option-label">Option B</span></li>
+                </ul>
+              </div>
+            </div>
+        """.trimIndent()
+    }
+
+    private fun inlineSpoilerTopicCellHtml(): String {
+        return """<p>Visible <span class="spoiler">hidden debug text</span> tail</p>"""
+    }
+
+    private fun topicCellDebugWidth(): Int {
+        val maxWidth = resources.displayMetrics.widthPixels - AndroidUtilities.dp(48f)
+        return AndroidUtilities.dp(420f)
+            .coerceAtMost(maxWidth)
+            .coerceAtLeast(AndroidUtilities.dp(280f))
     }
 
     private fun openViewerFromTopicCell(
@@ -344,13 +565,18 @@ class PhotoViewerDebugActivity : ComponentActivity() {
         setStatus("topicCellOpened=$opened index=${currentPhotoIndex()} visible=${viewer.isVisibleOrAnimating()}")
     }
 
-    private fun dispatchTopicCellImageTap(cell: TopicPostCell): Boolean {
-        val bodyLeft = privateInt(cell, "bodyLeft")
-        val bodyWidth = privateInt(cell, "bodyWidth")
-        val blockTop = privateIntArray(cell, "blockTops").firstOrNull() ?: AndroidUtilities.dp(64f)
-        val blockHeight = privateIntArray(cell, "blockHeights").firstOrNull() ?: AndroidUtilities.dp(160f)
-        val x = bodyLeft + bodyWidth / 2f
-        val y = blockTop + (blockHeight / 2f).coerceAtMost(AndroidUtilities.dp(120f).toFloat())
+    private fun dispatchTopicCellImageTap(cell: TopicPostCell, targetUrl: String): Boolean {
+        val boundsInWindow = cell.imageBoundsInWindowForUrl(targetUrl)
+        val location = IntArray(2)
+        cell.getLocationInWindow(location)
+        val fallbackBlockLeft = privateIntArray(cell, "blockLefts").firstOrNull() ?: 0
+        val fallbackBlockWidth = privateIntArray(cell, "blockWidths").firstOrNull() ?: cell.width
+        val fallbackBlockTop = privateIntArray(cell, "blockTops").firstOrNull() ?: AndroidUtilities.dp(64f)
+        val fallbackBlockHeight = privateIntArray(cell, "blockHeights").firstOrNull() ?: AndroidUtilities.dp(160f)
+        val x = boundsInWindow?.centerX()?.minus(location[0])
+            ?: fallbackBlockLeft + fallbackBlockWidth / 2f
+        val y = boundsInWindow?.centerY()?.minus(location[1])
+            ?: fallbackBlockTop + (fallbackBlockHeight / 2f).coerceAtMost(AndroidUtilities.dp(120f).toFloat())
         val downTime = SystemClock.uptimeMillis()
         val down = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, x, y, 0)
         val up = MotionEvent.obtain(downTime, downTime + 45L, MotionEvent.ACTION_UP, x, y, 0)
@@ -359,6 +585,121 @@ class PhotoViewerDebugActivity : ComponentActivity() {
         down.recycle()
         up.recycle()
         return downHandled || upHandled
+    }
+
+    private fun dispatchTopicCellPollVoteTap(cell: TopicPostCell): Boolean {
+        val rect = firstPollSelectorRectInCell(cell)
+            ?: fallbackFirstBlockRect(cell)
+            ?: return false
+        return dispatchTapToCell(cell, rect.centerX(), rect.centerY())
+    }
+
+    private fun dispatchTopicCellInlineSpoilerTap(cell: TopicPostCell): Boolean {
+        val rect = firstInlineSpoilerRectInCell(cell)
+            ?: fallbackFirstBlockRect(cell)
+            ?: return false
+        return dispatchTapToCell(cell, rect.centerX(), rect.centerY())
+    }
+
+    private fun dispatchTopicCellReplyFooterTap(cell: TopicPostCell): Boolean {
+        val rect = replyFooterRectInCell(cell) ?: return false
+        return dispatchTapToCell(cell, rect.centerX(), rect.centerY())
+    }
+
+    private fun dispatchTopicCellReactionTap(cell: TopicPostCell, more: Boolean): Boolean {
+        val rect = reactionButtonRectInCell(cell, more) ?: return false
+        return dispatchTapToCell(cell, rect.centerX(), rect.centerY())
+    }
+
+    private fun dispatchTapToCell(cell: TopicPostCell, x: Float, y: Float): Boolean {
+        val downTime = SystemClock.uptimeMillis()
+        val down = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, x, y, 0)
+        val up = MotionEvent.obtain(downTime, downTime + 45L, MotionEvent.ACTION_UP, x, y, 0)
+        val downHandled = cell.dispatchTouchEvent(down)
+        val upHandled = cell.dispatchTouchEvent(up)
+        down.recycle()
+        up.recycle()
+        return downHandled || upHandled
+    }
+
+    private fun firstPollSelectorRectInCell(cell: TopicPostCell): RectF? {
+        val blocks = privateList(cell, "bodyBlocks")
+        val index = blocks.indexOfFirst { it.javaClass.simpleName == "PollBlock" }
+        if (index < 0) return null
+        val buttons = privateList(blocks[index], "pollButtons")
+        val selector = buttons.firstOrNull()?.let { reflectedField(it, "selectorBounds") as? RectF } ?: return null
+        return RectF(selector).apply {
+            offset(blockLeft(cell, index).toFloat(), blockTop(cell, index).toFloat())
+        }
+    }
+
+    private fun firstInlineSpoilerRectInCell(cell: TopicPostCell): RectF? {
+        val blocks = privateList(cell, "bodyBlocks")
+        val index = blocks.indexOfFirst { it.javaClass.simpleName == "ParagraphBlock" }
+        if (index < 0) return null
+        val spoilers = privateList(blocks[index], "spoilers")
+        val bounds = spoilers.firstOrNull()?.let { spoiler ->
+            runCatching { spoiler.javaClass.getMethod("getBounds").invoke(spoiler) as? android.graphics.Rect }.getOrNull()
+        } ?: return null
+        val topPadding = reflectedIntMethod(blocks[index], "topPaddingPx") ?: AndroidUtilities.dp(8f)
+        return RectF(bounds).apply {
+            offset(blockLeft(cell, index).toFloat(), blockTop(cell, index) + topPadding.toFloat())
+        }
+    }
+
+    private fun replyFooterRectInCell(cell: TopicPostCell): RectF? {
+        val chromeLeft = reflectedField(cell, "chromeLeft") as? Int ?: 0
+        val top = reflectedField(cell, "replyFooterTop") as? Int ?: return null
+        val rect = reflectedField(cell, "replyFooterSelectorRect") as? RectF
+        if (rect != null && rect.width() > 0f && rect.height() > 0f) {
+            return RectF(rect).apply {
+                offset(chromeLeft.toFloat(), top.toFloat())
+            }
+        }
+        val height = reflectedField(cell, "measuredReplyFooterHeight") as? Int ?: return null
+        if (height <= 0) return null
+        return RectF(
+            chromeLeft.toFloat(),
+            top.toFloat(),
+            (chromeLeft + AndroidUtilities.dp(120f)).toFloat().coerceAtMost(cell.width.toFloat()),
+            (top + height).toFloat(),
+        )
+    }
+
+    private fun reactionButtonRectInCell(cell: TopicPostCell, more: Boolean): RectF? {
+        val buttons = privateList(cell, "reactionButtons")
+        val button = buttons.firstOrNull { candidate ->
+            (reflectedField(candidate, "postReaction") == null) == more
+        } ?: return null
+        val chromeLeft = reflectedField(cell, "chromeLeft") as? Int ?: 0
+        val rowTop = reflectedField(cell, "reactionRowTop") as? Int ?: return null
+        val x = reflectedField(button, "x") as? Int ?: return null
+        val y = reflectedField(button, "y") as? Int ?: return null
+        val width = reflectedField(button, "width") as? Int ?: return null
+        val height = reflectedField(button, "height") as? Int ?: return null
+        if (width <= 0 || height <= 0) return null
+        return RectF(
+            (chromeLeft + x).toFloat(),
+            (rowTop + y).toFloat(),
+            (chromeLeft + x + width).toFloat(),
+            (rowTop + y + height).toFloat(),
+        )
+    }
+
+    private fun fallbackFirstBlockRect(cell: TopicPostCell): RectF? {
+        val left = privateIntArray(cell, "blockLefts").firstOrNull() ?: return null
+        val top = privateIntArray(cell, "blockTops").firstOrNull() ?: return null
+        val width = privateIntArray(cell, "blockWidths").firstOrNull() ?: return null
+        val height = privateIntArray(cell, "blockHeights").firstOrNull() ?: return null
+        return RectF(left.toFloat(), top.toFloat(), (left + width).toFloat(), (top + height).toFloat())
+    }
+
+    private fun blockLeft(cell: TopicPostCell, index: Int): Int {
+        return privateIntArray(cell, "blockLefts").getOrNull(index) ?: 0
+    }
+
+    private fun blockTop(cell: TopicPostCell, index: Int): Int {
+        return privateIntArray(cell, "blockTops").getOrNull(index) ?: 0
     }
 
     private fun handoffRectInWindow(bounds: RectF, imageReceiver: ImageReceiver?): RectF {
@@ -384,14 +725,13 @@ class PhotoViewerDebugActivity : ComponentActivity() {
         return RectF(viewX + receiverLeft, viewY + receiverTop, viewX + receiverRight, viewY + receiverBottom)
     }
 
-    private fun privateInt(target: Any, fieldName: String): Int {
-        val field = target.javaClass.getDeclaredField(fieldName).apply { isAccessible = true }
-        return field.getInt(target)
+    private fun privateIntArray(target: Any, fieldName: String): IntArray {
+        return reflectedField(target, fieldName) as IntArray
     }
 
-    private fun privateIntArray(target: Any, fieldName: String): IntArray {
-        val field = target.javaClass.getDeclaredField(fieldName).apply { isAccessible = true }
-        return field.get(target) as IntArray
+    @Suppress("UNCHECKED_CAST")
+    private fun privateList(target: Any, fieldName: String): List<Any> {
+        return reflectedField(target, fieldName) as? List<Any> ?: emptyList()
     }
 
     private fun runScenario(scenario: String?) {
@@ -590,15 +930,35 @@ class PhotoViewerDebugActivity : ComponentActivity() {
         val container = reflectedField(window, "containerView")
         val rect = reflectedField(window, fieldName) as? RectF
             ?: container?.let { reflectedField(it, fieldName) as? RectF }
-            ?: reflectedField(window, "centerImageRect") as? RectF
-            ?: container?.let { reflectedField(it, "centerImageRect") as? RectF }
         return rect?.let(::RectF)
     }
 
     private fun reflectedField(target: Any, fieldName: String): Any? {
-        return runCatching {
-            target.javaClass.getDeclaredField(fieldName).apply { isAccessible = true }.get(target)
-        }.getOrNull()
+        var current: Class<*>? = target.javaClass
+        while (current != null) {
+            val value = runCatching {
+                current.getDeclaredField(fieldName).apply { isAccessible = true }.get(target)
+            }.getOrNull()
+            if (value != null) {
+                return value
+            }
+            current = current.superclass
+        }
+        return null
+    }
+
+    private fun reflectedIntMethod(target: Any, methodName: String): Int? {
+        var current: Class<*>? = target.javaClass
+        while (current != null) {
+            val value = runCatching {
+                current.getDeclaredMethod(methodName).apply { isAccessible = true }.invoke(target) as? Int
+            }.getOrNull()
+            if (value != null) {
+                return value
+            }
+            current = current.superclass
+        }
+        return null
     }
 
     private fun photoViewerContainerLocationInWindow(): IntArray {
@@ -725,6 +1085,18 @@ class PhotoViewerDebugActivity : ComponentActivity() {
         }
     }
 
+    private enum class TopicCellFixture {
+        SingleImage,
+        NestedImage,
+        Collage,
+        OneboxThumbnail,
+        PollVote,
+        InlineSpoiler,
+        ReplyFooter,
+        Reaction,
+        MoreReaction,
+    }
+
     private companion object {
         private const val EXTRA_URLS = "urls"
         private const val EXTRA_INDEX = "index"
@@ -736,6 +1108,14 @@ class PhotoViewerDebugActivity : ComponentActivity() {
         private const val SCENARIO_PINCH_ZOOM = "pinchZoom"
         private const val SCENARIO_HANDOFF_RECT = "handoffRect"
         private const val SCENARIO_TOPIC_CELL_TAP = "topicCellTap"
+        private const val SCENARIO_TOPIC_CELL_NESTED_IMAGE_TAP = "topicCellNestedImageTap"
+        private const val SCENARIO_TOPIC_CELL_COLLAGE_TAP = "topicCellCollageTap"
+        private const val SCENARIO_TOPIC_CELL_ONEBOX_THUMBNAIL_TAP = "topicCellOneboxThumbnailTap"
+        private const val SCENARIO_TOPIC_CELL_POLL_VOTE = "topicCellPollVote"
+        private const val SCENARIO_TOPIC_CELL_INLINE_SPOILER_TAP = "topicCellInlineSpoilerTap"
+        private const val SCENARIO_TOPIC_CELL_REPLY_FOOTER_TAP = "topicCellReplyFooterTap"
+        private const val SCENARIO_TOPIC_CELL_REACTION_TAP = "topicCellReactionTap"
+        private const val SCENARIO_TOPIC_CELL_MORE_REACTION_TAP = "topicCellMoreReactionTap"
         private const val SCENARIO_BACK_CLOSE = "backClose"
         private const val DEBUG_BASE_URL = "https://linux.do/"
         private const val TAG = "PhotoViewerDebugActivity"

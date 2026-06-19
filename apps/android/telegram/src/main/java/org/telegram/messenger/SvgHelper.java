@@ -1514,7 +1514,8 @@ public class SvgHelper {
         
         @Override
         public void startElement(String namespaceURI, String localName, String qName, Attributes atts) {
-            if ("g".equals(qName) && !insideGiftRect) {
+            String tagName = localName == null || localName.length() == 0 ? qName : localName;
+            if ("g".equals(tagName) && !insideGiftRect) {
                 final String id = atts.getValue("id");
                 if ("GiftPatterns".equals(id)) {
                     insideGiftRect = true;
@@ -1523,7 +1524,7 @@ public class SvgHelper {
                 }
             } else if (insideGiftRect) {
                 insideGiftRectDepth++;
-                if ("rect".equals(qName)) {
+                if ("rect".equals(tagName)) {
                     WallpaperGiftPatternPosition position = WallpaperGiftPatternPosition.create(atts, scale);
                     if (position != null) {
                         if (insideGiftRectPositions == null) {
@@ -1536,10 +1537,10 @@ public class SvgHelper {
             }
 
 
-            if (boundsMode && !localName.equals("style")) {
+            if (boundsMode && !"style".equals(tagName)) {
                 return;
             }
-            switch (localName) {
+            switch (tagName) {
                 case "svg": {
                     Float w = getFloatAttr("width", atts);
                     Float h = getFloatAttr("height", atts);
@@ -1778,13 +1779,14 @@ public class SvgHelper {
 
         @Override
         public void endElement(String namespaceURI, String localName, String qName) {
+            String tagName = localName == null || localName.length() == 0 ? qName : localName;
             if (insideGiftRect) {
                 insideGiftRectDepth--;
                 if (insideGiftRectDepth == 0) insideGiftRect = false;
                 return;
             }
             
-            switch (localName) {
+            switch (tagName) {
                 case "style":
                     if (styles != null) {
                         String[] args = styles.toString().split("\\}");

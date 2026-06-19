@@ -185,6 +185,8 @@ data class SearchPostDto(
     val username: String = "",
     @SerialName("avatar_template")
     val avatarTemplate: String = "",
+    @SerialName("animated_avatar")
+    val animatedAvatar: String? = null,
     @SerialName("created_at")
     val createdAt: String = "",
     val blurb: String = "",
@@ -215,6 +217,8 @@ data class PosterUserDto(
     val username: String = "",
     @SerialName("avatar_template")
     val avatarTemplate: String = "",
+    @SerialName("animated_avatar")
+    val animatedAvatar: String? = null,
 )
 
 @Serializable
@@ -249,6 +253,8 @@ data class TopicListUserDto(
     val username: String = "",
     @SerialName("avatar_template")
     val avatarTemplate: String = "",
+    @SerialName("animated_avatar")
+    val animatedAvatar: String? = null,
 )
 
 @Serializable
@@ -359,6 +365,8 @@ data class PostReactionUserDto(
     val displayName: String? = null,
     @SerialName("avatar_template")
     val avatarTemplate: String = "",
+    @SerialName("animated_avatar")
+    val animatedAvatar: String? = null,
     @SerialName("can_undo")
     val canUndo: Boolean = false,
     @SerialName("created_at")
@@ -446,6 +454,7 @@ internal fun ReactionUsersResponseDto.toModel(): List<PostReactionUsersGroup> =
                     username = user.username,
                     displayName = user.displayName.orEmpty(),
                     avatarTemplate = user.avatarTemplate,
+                    animatedAvatarUrl = user.animatedAvatar.orEmpty(),
                     canUndo = user.canUndo,
                     createdAt = user.createdAt,
                 )
@@ -576,20 +585,36 @@ private fun TopicDto.toTopicSummary(
 ): TopicSummary {
     val posterUser = posters.primaryPosterOrNull()?.let { poster ->
         poster.user?.let { user ->
-            posterUser(username = user.username, avatarTemplate = user.avatarTemplate)
+            posterUser(
+                username = user.username,
+                avatarTemplate = user.avatarTemplate,
+                animatedAvatarUrl = user.animatedAvatar.orEmpty(),
+            )
         } ?: poster.userId
             ?.let(usersById::get)
             ?.let { user ->
-                posterUser(username = user.username, avatarTemplate = user.avatarTemplate)
+                posterUser(
+                    username = user.username,
+                    avatarTemplate = user.avatarTemplate,
+                    animatedAvatarUrl = user.animatedAvatar.orEmpty(),
+                )
             }
     }
     val recentPosterUser = posters.mostRecentPosterOrNull()?.let { poster ->
         poster.user?.let { user ->
-            posterUser(username = user.username, avatarTemplate = user.avatarTemplate)
+            posterUser(
+                username = user.username,
+                avatarTemplate = user.avatarTemplate,
+                animatedAvatarUrl = user.animatedAvatar.orEmpty(),
+            )
         } ?: poster.userId
             ?.let(usersById::get)
             ?.let { user ->
-                posterUser(username = user.username, avatarTemplate = user.avatarTemplate)
+                posterUser(
+                    username = user.username,
+                    avatarTemplate = user.avatarTemplate,
+                    animatedAvatarUrl = user.animatedAvatar.orEmpty(),
+                )
             }
     }
 
@@ -598,6 +623,7 @@ private fun TopicDto.toTopicSummary(
         title = title.ifBlank { fancyTitle },
         authorUsername = posterUser?.username.orEmpty(),
         authorAvatarTemplate = posterUser?.avatarTemplate.orEmpty(),
+        authorAnimatedAvatarUrl = posterUser?.animatedAvatarUrl.orEmpty(),
         imageUrl = imageUrl,
         slug = slug,
         replyCount = replyCount,
@@ -622,6 +648,7 @@ private fun SearchPostDto.toTopicSummary(): TopicSummary = TopicSummary(
     title = topicTitle,
     authorUsername = username,
     authorAvatarTemplate = avatarTemplate,
+    authorAnimatedAvatarUrl = animatedAvatar.orEmpty(),
     likeCount = likeCount,
     lastPostedAt = createdAt,
     categoryId = categoryId,
@@ -650,6 +677,7 @@ private fun SiteCategoryDto.toModel(): CategorySummary = CategorySummary(
 private data class PosterUser(
     val username: String,
     val avatarTemplate: String,
+    val animatedAvatarUrl: String,
 )
 
 private fun List<PosterDto>.primaryPosterOrNull(): PosterDto? {
@@ -667,9 +695,11 @@ private fun List<PosterDto>.mostRecentPosterOrNull(): PosterDto? {
 private fun posterUser(
     username: String,
     avatarTemplate: String,
+    animatedAvatarUrl: String,
 ): PosterUser = PosterUser(
     username = username,
     avatarTemplate = avatarTemplate,
+    animatedAvatarUrl = animatedAvatarUrl,
 )
 
 private object TopicTagListSerializer : kotlinx.serialization.KSerializer<List<String>> {

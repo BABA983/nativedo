@@ -57,6 +57,12 @@ private const val CURRENT_USERNAME_SCRIPT = """
       }
     })();
 """
+private const val DISCOURSE_ASSETS_ICONS_SCRIPT = """
+    (function() {
+      var icons = document.querySelector('body > discourse-assets > discourse-assets-icons, discourse-assets-icons, #discourse-assets-icons');
+      return icons ? icons.innerHTML : '';
+    })();
+"""
 
 class LoginWebViewFragment : BaseFragment() {
     private val fragmentScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -118,6 +124,7 @@ class LoginWebViewFragment : BaseFragment() {
         loginWebView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String) {
                 super.onPageFinished(view, url)
+                captureDiscourseAssetsIcons(webView = view, currentUrl = url)
                 maybeCompleteLogin(webView = view, currentUrl = url)
             }
         }
@@ -183,6 +190,21 @@ class LoginWebViewFragment : BaseFragment() {
             return
         }
         startLoginCompletion(webView = webView, currentUrl = currentUrl)
+    }
+
+    private fun captureDiscourseAssetsIcons(
+        webView: WebView,
+        currentUrl: String,
+    ) {
+        if (!isSameOrigin(currentUrl = currentUrl, baseUrl = appContainer.baseUrl)) {
+            return
+        }
+        webView.evaluateJavascript(DISCOURSE_ASSETS_ICONS_SCRIPT) { rawValue ->
+            val markup = decodeJavascriptString(rawValue).trim()
+            if (markup.isNotBlank()) {
+                appContainer.svgSpriteStore.save(markup)
+            }
+        }
     }
 
     private fun startLoginCompletion(webView: WebView, currentUrl: String) {

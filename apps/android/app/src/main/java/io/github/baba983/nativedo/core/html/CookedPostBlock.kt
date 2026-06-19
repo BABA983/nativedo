@@ -5,18 +5,33 @@ internal sealed interface CookedPostBlock {
     data class Heading(val level: Int, val html: String) : CookedPostBlock
     data class Quote(
         val title: String?,
+        val titleHtml: String? = null,
         val html: String,
+        val children: List<CookedPostBlock> = emptyList(),
         val sourceTopicId: Long? = null,
         val sourcePostNumber: Int? = null,
     ) : CookedPostBlock
+    data class Callout(
+        val type: String,
+        val titleHtml: String?,
+        val icon: String,
+        val color: String,
+        val html: String,
+        val children: List<CookedPostBlock> = emptyList(),
+    ) : CookedPostBlock
     data class Code(val code: String) : CookedPostBlock
-    data class ListItems(val ordered: Boolean, val items: List<String>) : CookedPostBlock
+    data class ListItem(
+        val html: String,
+        val blocks: List<CookedPostBlock> = emptyList(),
+    )
+    data class ListItems(val ordered: Boolean, val items: List<ListItem>) : CookedPostBlock
     data class Image(
         val src: String,
         val alt: String,
         val href: String?,
         val widthPx: Int = 0,
         val heightPx: Int = 0,
+        val captionHtml: String? = null,
     ) : CookedPostBlock {
         val aspectRatio: Float? = widthPx
             .takeIf { it > 0 }
@@ -33,12 +48,29 @@ internal sealed interface CookedPostBlock {
         val siteIconUrl: String?,
         val thumbnailUrl: String?,
         val title: String,
+        val titleHtml: String? = null,
         val description: String?,
+        val descriptionHtml: String? = null,
     ) : CookedPostBlock
 
+    enum class TableCellAlign {
+        Start,
+        Center,
+        End,
+    }
+
+    data class TableCell(
+        val text: String,
+        val html: String,
+        val blocks: List<CookedPostBlock> = emptyList(),
+        val colspan: Int = 1,
+        val rowspan: Int = 1,
+        val align: TableCellAlign = TableCellAlign.Start,
+    )
+
     data class Table(
-        val headers: List<String>,
-        val rows: List<List<String>>,
+        val headers: List<TableCell>,
+        val rows: List<List<TableCell>>,
     ) : CookedPostBlock
 
     data class PollOption(
@@ -47,6 +79,7 @@ internal sealed interface CookedPostBlock {
         val votes: Int? = null,
         val percent: Float? = null,
         val selected: Boolean = false,
+        val labelHtml: String? = null,
     )
 
     data class Poll(
@@ -57,7 +90,13 @@ internal sealed interface CookedPostBlock {
         val options: List<PollOption>,
     ) : CookedPostBlock
 
-    data class Spoiler(val html: String) : CookedPostBlock
+    data class Details(
+        val html: String,
+        val summary: String? = null,
+        val summaryHtml: String? = null,
+        val children: List<CookedPostBlock> = emptyList(),
+        val open: Boolean = false,
+    ) : CookedPostBlock
 
     data object Rule : CookedPostBlock
 }

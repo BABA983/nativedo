@@ -48,6 +48,7 @@ public final class SharedConfig {
     public static boolean onlyLocalInstantView = false;
     public static boolean customTabs = true;
     public static int searchEngineType = 0;
+    public static int fontSize = 16;
     public static int ivFontSize = 16;
 
     public static boolean drawActionBarShadow = true;

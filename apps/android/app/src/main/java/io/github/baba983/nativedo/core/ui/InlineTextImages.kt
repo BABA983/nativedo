@@ -1,39 +1,30 @@
 package io.github.baba983.nativedo.core.ui
 
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.ColorFilter
 import android.graphics.Paint
 import android.graphics.PixelFormat
+import android.graphics.RectF
 import android.graphics.drawable.Drawable
-import android.os.Handler
-import android.os.Looper
 import android.text.Spannable
 import android.text.SpannableStringBuilder
-import android.text.style.ImageSpan
+import android.text.style.ReplacementSpan
 import io.github.baba983.nativedo.core.html.resolvePostImageUrl
-import io.github.baba983.nativedo.core.network.addImageRequestHeaders
-import io.github.baba983.nativedo.core.storage.CookieStore
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ImageReceiver
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
+import org.telegram.ui.Cells.TextSelectionHelper
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.OkHttpClient
-import okhttp3.Request
 
 private const val twemojiInlineImageScale = 0.90f
 private const val customEmojiInlineImageScale = 1.0f
 private const val siteIconInlineImageScale = 0.92f
-private const val emojiInlineImageUpwardBiasRatio = 0.04f
-private const val siteIconInlineImageUpwardBiasRatio = 0.04f
+private const val inlineSvgIconScale = 0.92f
 
-private val inlineImageClient = OkHttpClient()
-private val inlineImageExecutor: ExecutorService = Executors.newFixedThreadPool(2)
-private val inlineImageCache = InlineMemoryCache<Bitmap>(maxEntries = 128)
+private val inlineIconSvgDocumentCache = InlineMemoryCache<String>(maxEntries = 128)
 
 internal data class AppliedInlineImages(
     val text: CharSequence,
@@ -45,91 +36,202 @@ internal data class PendingInlineImage(
     val drawable: DeferredInlineImageDrawable,
 )
 
-internal class InlineImageRenderHandle {
-    @Volatile
-    private var cancelled = false
-
-    fun cancel() {
-        cancelled = true
-    }
-
-    fun load(
-        pendingImage: PendingInlineImage,
-        cookieStore: CookieStore,
-        baseUrl: String,
-        onLoaded: () -> Unit,
-    ) {
-        inlineImageCache.get(pendingImage.resolvedUrl)?.let { bitmap ->
-            pendingImage.drawable.setBitmap(bitmap)
-            onLoaded()
-            return
-        }
-
-        inlineImageExecutor.execute {
-            val bitmap = fetchInlineBitmap(
-                resolvedUrl = pendingImage.resolvedUrl,
-                cookieStore = cookieStore,
-                baseUrl = baseUrl,
-            ) ?: return@execute
-            Handler(Looper.getMainLooper()).post {
-                if (cancelled) {
-                    return@post
-                }
-                pendingImage.drawable.setBitmap(bitmap)
-                onLoaded()
-            }
-        }
-    }
-}
-
 internal fun applyInlineImagePlaceholders(
     text: CharSequence,
     inlineImages: List<InlineImageSpec>,
+    inlineIcons: List<InlineIconSpec> = emptyList(),
+    inlineHashtagChips: List<InlineHashtagChipSpec> = emptyList(),
     baseUrl: String,
+    onOpenLink: ((String) -> Unit)? = null,
     textSizePx: Float,
+    accentColor: Int = 0,
+    chipBackgroundArgb: Int = 0,
+    svgSpriteMarkup: String = "",
 ): AppliedInlineImages {
     val builder = SpannableStringBuilder(text)
     val pendingImages = mutableListOf<PendingInlineImage>()
     val searchableText = text.toString()
+    val placeholders = buildList {
+        inlineImages.forEach { image ->
+            val originalStart = searchableText.indexOf(image.token)
+            if (originalStart != -1) {
+                add(InlinePlaceholder.Image(originalStart, image))
+            }
+        }
+        inlineIcons.forEach { icon ->
+            val originalStart = searchableText.indexOf(icon.token)
+            if (originalStart != -1) {
+                add(InlinePlaceholder.Icon(originalStart, icon))
+            }
+        }
+        inlineHashtagChips.forEach { chip ->
+            val originalStart = searchableText.indexOf(chip.token)
+            if (originalStart != -1) {
+                add(InlinePlaceholder.HashtagChip(originalStart, chip))
+            }
+        }
+    }.sortedBy { placeholder -> placeholder.originalStart }
     var replacedCharacterCount = 0
 
-    inlineImages.forEach { image ->
-        val originalStart = searchableText.indexOf(image.token)
-        if (originalStart == -1) {
+    placeholders.forEach { placeholder ->
+        val start = builder.resolvePlaceholderStart(
+            token = placeholder.token,
+            expectedStart = placeholder.originalStart - replacedCharacterCount,
+        )
+        if (start < 0 || start >= builder.length) {
             return@forEach
         }
+        when (placeholder) {
+            is InlinePlaceholder.Image -> {
+                val image = placeholder.spec
+                val end = start + image.token.length
+                if (end > builder.length) {
+                    return@forEach
+                }
+                val drawable = DeferredInlineImageDrawable(
+                    widthPx = image.displayWidthPx(textSizePx),
+                    heightPx = image.displayHeightPx(textSizePx),
+                )
+                builder.replace(start, end, "\uFFFC")
+                builder.setSpan(
+                    CenteredInlineImageSpan(
+                        drawable = drawable,
+                        kind = image.kind,
+                        emojiScale = emojiInlineImageScaleForUrl(image.rawUrl),
+                    ),
+                    start,
+                    start + 1,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                )
+                builder.setSpan(
+                    TextSelectionHelper.IgnoreCopySpannable(),
+                    start,
+                    start + 1,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                )
+                pendingImages += PendingInlineImage(
+                    resolvedUrl = resolvePostImageUrl(
+                        baseUrl = baseUrl,
+                        rawUrl = image.rawUrl,
+                    ),
+                    drawable = drawable,
+                )
+                replacedCharacterCount += image.token.length - 1
+            }
 
-        val start = originalStart - replacedCharacterCount
-        val end = start + image.token.length
-        val drawable = DeferredInlineImageDrawable(
-            widthPx = image.displayWidthPx(textSizePx),
-            heightPx = image.displayHeightPx(textSizePx),
-        )
-        builder.replace(start, end, "\uFFFC")
-        builder.setSpan(
-            CenteredInlineImageSpan(
-                drawable = drawable,
-                kind = image.kind,
-                emojiScale = emojiInlineImageScaleForUrl(image.rawUrl),
-            ),
-            start,
-            start + 1,
-            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
-        )
-        pendingImages += PendingInlineImage(
-            resolvedUrl = resolvePostImageUrl(
-                baseUrl = baseUrl,
-                rawUrl = image.rawUrl,
-            ),
-            drawable = drawable,
-        )
-        replacedCharacterCount += image.token.length - 1
+            is InlinePlaceholder.Icon -> {
+                val icon = placeholder.spec
+                val end = start + icon.token.length
+                if (end > builder.length) {
+                    return@forEach
+                }
+                val drawable = renderInlineSvgIconDrawable(
+                    spriteMarkup = svgSpriteMarkup,
+                    symbolId = icon.symbolId,
+                    rawTintColor = icon.rawTintColor,
+                )
+                if (drawable == null) {
+                    builder.replace(start, end, icon.contentDescription)
+                    replacedCharacterCount += icon.token.length - icon.contentDescription.length
+                    return@forEach
+                }
+                builder.replace(start, end, "\uFFFC")
+                val span = BaselineCenteredInlineSvgSpan(
+                    drawable = drawable,
+                    sizePx = max(1, (textSizePx * inlineSvgIconScale).roundToInt()),
+                    tintColor = parseCssColor(icon.rawTintColor),
+                )
+                builder.setSpan(
+                    span,
+                    start,
+                    start + 1,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                )
+                builder.setSpan(
+                    TextSelectionHelper.IgnoreCopySpannable(),
+                    start,
+                    start + 1,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                )
+                replacedCharacterCount += icon.token.length - 1
+            }
+
+            is InlinePlaceholder.HashtagChip -> {
+                val chip = placeholder.spec
+                val end = start + chip.token.length
+                if (end > builder.length) {
+                    return@forEach
+                }
+                val drawable = renderInlineSvgIconDrawable(
+                    spriteMarkup = svgSpriteMarkup,
+                    symbolId = chip.symbolId,
+                    rawTintColor = chip.rawIconColor.ifBlank { accentColor.toCssHexColor() },
+                )
+                val resolvedUrl = baseUrl.toHttpUrlOrNull()
+                    ?.resolve(chip.href)?.toString() ?: chip.href
+                builder.replace(start, end, chip.label)
+                val chipEnd = start + chip.label.length
+                builder.setSpan(
+                    DiscourseTagChipSpan(
+                        label = chip.label,
+                        icon = drawable,
+                        backgroundColor = chipBackgroundArgb,
+                        textColor = accentColor,
+                        textSizePx = textSizePx,
+                    ),
+                    start,
+                    chipEnd,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                )
+                if (onOpenLink != null) {
+                    builder.setSpan(
+                        PostBodyClickableSpan(
+                            resolvedUrl = resolvedUrl,
+                            clickAction = { onOpenLink(resolvedUrl) },
+                            emphasizeBold = false,
+                        ),
+                        start,
+                        chipEnd,
+                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                    )
+                }
+                replacedCharacterCount += chip.token.length - chip.label.length
+            }
+        }
     }
 
     return AppliedInlineImages(
         text = builder,
         pendingImages = pendingImages,
     )
+}
+
+private sealed class InlinePlaceholder(
+    val originalStart: Int,
+    val token: String,
+) {
+    class Image(originalStart: Int, val spec: InlineImageSpec) : InlinePlaceholder(originalStart, spec.token)
+    class Icon(originalStart: Int, val spec: InlineIconSpec) : InlinePlaceholder(originalStart, spec.token)
+    class HashtagChip(originalStart: Int, val spec: InlineHashtagChipSpec) : InlinePlaceholder(originalStart, spec.token)
+}
+
+private fun SpannableStringBuilder.resolvePlaceholderStart(token: String, expectedStart: Int): Int {
+    if (expectedStart >= 0 && expectedStart + token.length <= length) {
+        var matches = true
+        for (index in token.indices) {
+            if (this[expectedStart + index] != token[index]) {
+                matches = false
+                break
+            }
+        }
+        if (matches) {
+            return expectedStart
+        }
+    }
+    val currentText = toString()
+    return currentText.indexOf(token, expectedStart.coerceIn(0, currentText.length))
+        .takeIf { it >= 0 }
+        ?: currentText.indexOf(token)
 }
 
 private fun emojiInlineImageScaleForUrl(rawUrl: String): Float {
@@ -141,22 +243,12 @@ private fun emojiInlineImageScaleForUrl(rawUrl: String): Float {
 }
 
 private fun calculateInlineImageTranslationY(
-    top: Int,
-    bottom: Int,
-    baseline: Int,
-    fontDescent: Int,
+    y: Int,
+    fontMetrics: Paint.FontMetrics,
     drawableHeight: Int,
-    kind: InlineImageKind,
 ): Float {
-    val upwardBiasRatio = when (kind) {
-        InlineImageKind.Emoji -> emojiInlineImageUpwardBiasRatio
-        InlineImageKind.SiteIcon -> siteIconInlineImageUpwardBiasRatio
-    }
-    val translationY = when (kind) {
-        InlineImageKind.Emoji -> baseline + fontDescent - drawableHeight.toFloat()
-        InlineImageKind.SiteIcon -> top + ((bottom - top - drawableHeight) / 2f)
-    }
-    return translationY - (drawableHeight * upwardBiasRatio)
+    val centerY = y + (fontMetrics.ascent + fontMetrics.descent) / 2f
+    return centerY - drawableHeight / 2f
 }
 
 private fun calculateInlineImageSizePx(
@@ -168,15 +260,143 @@ private fun calculateInlineImageSizePx(
     val scale = when (kind) {
         InlineImageKind.Emoji -> emojiScale
         InlineImageKind.SiteIcon -> siteIconInlineImageScale
+        InlineImageKind.Icon -> inlineSvgIconScale
     }
     return max(1, (fontHeight * scale).roundToInt())
+}
+
+internal fun renderInlineSvgIconDrawable(
+    spriteMarkup: String,
+    symbolId: String,
+    rawTintColor: String,
+): Drawable? {
+    if (spriteMarkup.isBlank() || symbolId.isBlank()) {
+        return null
+    }
+    val cacheKey = listOf(
+        spriteMarkup.hashCode().toString(),
+        symbolId,
+        rawTintColor,
+    ).joinToString(separator = "\n")
+    val svgDocument = inlineIconSvgDocumentCache.get(cacheKey)
+        ?: buildDiscourseFlairSvgDocument(
+            spriteMarkup = spriteMarkup,
+            rawFlairUrl = symbolId,
+            rawTintColor = rawTintColor,
+        )?.also { document ->
+            inlineIconSvgDocumentCache.put(cacheKey, document)
+        }
+        ?: return null
+    return buildDiscourseSvgDrawable(svgDocument)
+}
+
+private fun parseCssColor(rawColor: String): Int? {
+    val trimmed = rawColor.trim()
+    if (trimmed.isBlank()) {
+        return null
+    }
+    val normalized = if (trimmed.startsWith("#")) {
+        val hex = trimmed.removePrefix("#")
+        when (hex.length) {
+            3 -> "#" + hex.map { "$it$it" }.joinToString(separator = "")
+            4 -> {
+                val expanded = hex.map { "$it$it" }
+                "#${expanded[3]}${expanded[0]}${expanded[1]}${expanded[2]}"
+            }
+            8 -> "#${hex.takeLast(2)}${hex.dropLast(2)}"
+            else -> trimmed
+        }
+    } else {
+        trimmed
+    }
+    return runCatching { Color.parseColor(normalized) }.getOrNull()
+}
+
+private fun Int.toCssHexColor(): String {
+    return "#${(this and 0xFFFFFF).toString(16).padStart(6, '0')}"
+}
+
+private class BaselineCenteredInlineSvgSpan(
+    drawable: Drawable,
+    sizePx: Int,
+    private val tintColor: Int?,
+) : ReplacementSpan(), TextSelectionHelper.TextSelectionBoundsProvider {
+    private val centeredDrawable = drawable.mutate().apply {
+        setBounds(0, 0, sizePx, sizePx)
+        tintColor?.let { setColorFilter(android.graphics.PorterDuffColorFilter(it, android.graphics.PorterDuff.Mode.SRC_IN)) }
+    }
+
+    override fun getSize(
+        paint: Paint,
+        text: CharSequence,
+        start: Int,
+        end: Int,
+        fm: Paint.FontMetricsInt?,
+    ): Int {
+        val paintMetrics = paint.fontMetricsInt
+        if (fm != null) {
+            fm.ascent = paintMetrics.ascent
+            fm.descent = paintMetrics.descent
+            fm.top = paintMetrics.top
+            fm.bottom = paintMetrics.bottom
+            fm.leading = paintMetrics.leading
+        }
+        return centeredDrawable.bounds.width()
+    }
+
+    override fun draw(
+        canvas: Canvas,
+        text: CharSequence,
+        start: Int,
+        end: Int,
+        x: Float,
+        top: Int,
+        y: Int,
+        bottom: Int,
+        paint: Paint,
+    ) {
+        val metrics = paint.fontMetrics
+        val centerY = y + (metrics.ascent + metrics.descent) / 2f
+        canvas.save()
+        canvas.translate(
+            x,
+            centerY - centeredDrawable.bounds.height() / 2f,
+        )
+        centeredDrawable.draw(canvas)
+        canvas.restore()
+    }
+
+    override fun getSelectionBounds(
+        paint: Paint,
+        text: CharSequence,
+        start: Int,
+        end: Int,
+        x: Float,
+        top: Int,
+        y: Int,
+        bottom: Int,
+    ): RectF {
+        val metrics = paint.fontMetrics
+        val centerY = y + (metrics.ascent + metrics.descent) / 2f
+        val size = centeredDrawable.bounds.height().toFloat()
+        return RectF(
+            x,
+            centerY - size / 2f,
+            x + centeredDrawable.bounds.width(),
+            centerY + size / 2f,
+        )
+    }
+
+    override fun getSelectionCornerRadius(): Float = AndroidUtilities.dp(3f).toFloat()
 }
 
 private class CenteredInlineImageSpan(
     drawable: Drawable,
     private val kind: InlineImageKind,
     private val emojiScale: Float = customEmojiInlineImageScale,
-) : ImageSpan(drawable, ALIGN_BASELINE) {
+) : ReplacementSpan(), TextSelectionHelper.TextSelectionBoundsProvider {
+    private val inlineDrawable = drawable
+
     override fun getSize(
         paint: Paint,
         text: CharSequence,
@@ -190,12 +410,13 @@ private class CenteredInlineImageSpan(
             kind = kind,
             emojiScale = emojiScale,
         )
-        drawable.setBounds(0, 0, targetSizePx, targetSizePx)
+        inlineDrawable.setBounds(0, 0, targetSizePx, targetSizePx)
         if (fm != null) {
             fm.ascent = paintMetrics.ascent
             fm.descent = paintMetrics.descent
             fm.top = paintMetrics.top
             fm.bottom = paintMetrics.bottom
+            fm.leading = paintMetrics.leading
         }
         return targetSizePx
     }
@@ -211,22 +432,43 @@ private class CenteredInlineImageSpan(
         bottom: Int,
         paint: Paint,
     ) {
-        val drawable = drawable
         canvas.save()
         canvas.translate(
             x,
             calculateInlineImageTranslationY(
-                top = top,
-                bottom = bottom,
-                baseline = y,
-                fontDescent = paint.fontMetricsInt.descent,
-                drawableHeight = drawable.bounds.height(),
-                kind = kind,
+                y = y,
+                fontMetrics = paint.fontMetrics,
+                drawableHeight = inlineDrawable.bounds.height(),
             ),
         )
-        drawable.draw(canvas)
+        inlineDrawable.draw(canvas)
         canvas.restore()
     }
+
+    override fun getSelectionBounds(
+        paint: Paint,
+        text: CharSequence,
+        start: Int,
+        end: Int,
+        x: Float,
+        top: Int,
+        y: Int,
+        bottom: Int,
+    ): RectF {
+        val imageTop = calculateInlineImageTranslationY(
+            y = y,
+            fontMetrics = paint.fontMetrics,
+            drawableHeight = inlineDrawable.bounds.height(),
+        )
+        return RectF(
+            x,
+            imageTop,
+            x + inlineDrawable.bounds.width(),
+            imageTop + inlineDrawable.bounds.height(),
+        )
+    }
+
+    override fun getSelectionCornerRadius(): Float = AndroidUtilities.dp(3f).toFloat()
 }
 
 @Suppress("OVERRIDE_DEPRECATION")
@@ -237,32 +479,14 @@ internal class DeferredInlineImageDrawable(
     private val placeholderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = 0x335D6A7A
     }
-    private var bitmap: Bitmap? = null
     private var imageReceiver: ImageReceiver? = null
 
     init {
         setBounds(0, 0, max(1, widthPx), max(1, heightPx))
     }
 
-    fun setBitmap(bitmap: Bitmap) {
-        this.bitmap = bitmap
-        imageReceiver = null
-        val targetBounds = bounds
-        val maxWidth = max(1, targetBounds.width())
-        val maxHeight = max(1, targetBounds.height())
-        val scale = minOf(
-            maxWidth.toFloat() / bitmap.width.toFloat(),
-            maxHeight.toFloat() / bitmap.height.toFloat(),
-        )
-        val scaledWidth = max(1, (bitmap.width * scale).roundToInt())
-        val scaledHeight = max(1, (bitmap.height * scale).roundToInt())
-        setBounds(0, 0, scaledWidth, scaledHeight)
-        invalidateSelf()
-    }
-
     fun setImageReceiver(receiver: ImageReceiver?) {
         imageReceiver = receiver
-        bitmap = null
         invalidateSelf()
     }
 
@@ -277,21 +501,15 @@ internal class DeferredInlineImageDrawable(
             receiver.draw(canvas)
             return
         }
-        val bitmap = bitmap
-        if (bitmap == null) {
-            canvas.drawRoundRect(
-                bounds.left.toFloat(),
-                bounds.top.toFloat(),
-                bounds.right.toFloat(),
-                bounds.bottom.toFloat(),
-                bounds.width() * 0.18f,
-                bounds.height() * 0.18f,
-                placeholderPaint,
-            )
-            return
-        }
-
-        canvas.drawBitmap(bitmap, null, bounds, null)
+        canvas.drawRoundRect(
+            bounds.left.toFloat(),
+            bounds.top.toFloat(),
+            bounds.right.toFloat(),
+            bounds.bottom.toFloat(),
+            bounds.width() * 0.18f,
+            bounds.height() * 0.18f,
+            placeholderPaint,
+        )
     }
 
     override fun setAlpha(alpha: Int) {
@@ -303,39 +521,6 @@ internal class DeferredInlineImageDrawable(
     }
 
     override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
-}
-
-private fun fetchInlineBitmap(
-    resolvedUrl: String,
-    cookieStore: CookieStore,
-    baseUrl: String,
-): Bitmap? {
-    inlineImageCache.get(resolvedUrl)?.let { return it }
-    val imageUrl = runCatching { resolvedUrl.toHttpUrl() }.getOrNull() ?: return null
-    val cookieHeader = cookieStore.load(imageUrl)
-        .takeIf { it.isNotEmpty() }
-        ?.joinToString(separator = "; ") { cookie ->
-            "${cookie.name}=${cookie.value}"
-        }
-    val request = Request.Builder()
-        .url(imageUrl)
-        .apply { addImageRequestHeaders(baseUrl = baseUrl) }
-        .apply {
-            if (!cookieHeader.isNullOrBlank()) {
-                header("Cookie", cookieHeader)
-            }
-        }
-        .build()
-    return runCatching {
-        inlineImageClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                return@runCatching null
-            }
-            response.body?.bytes()
-                ?.let { bytes -> BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }
-                ?.also { bitmap -> inlineImageCache.put(resolvedUrl, bitmap) }
-        }
-    }.getOrNull()
 }
 
 private class InlineMemoryCache<T>(

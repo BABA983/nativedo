@@ -17,7 +17,7 @@ internal interface TopicPostCellDelegate {
     fun didPressReply(post: Post) = Unit
     fun didLongPressPost(post: Post) = Unit
     fun didExpandQuote(topicId: Long, postNumber: Int, onResult: (String?) -> Unit) = Unit
-    fun didPressPollOption(post: Post, pollName: String, optionId: String) = Unit
+    fun didPressPollOptions(post: Post, pollName: String, optionIds: List<String>) = Unit
     fun didPressImage(
         post: Post,
         url: String,

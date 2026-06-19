@@ -21,5 +21,5 @@ internal interface PostBodyDelegate {
         sourceRadiusProvider: (String) -> IntArray? = { null },
     ) = Unit
     fun onQuoteExpand(topicId: Long, postNumber: Int, onResult: (String?) -> Unit) = Unit
-    fun onPollOptionSelected(pollName: String, optionId: String) = Unit
+    fun onPollOptionsSelected(pollName: String, optionIds: List<String>) = Unit
 }

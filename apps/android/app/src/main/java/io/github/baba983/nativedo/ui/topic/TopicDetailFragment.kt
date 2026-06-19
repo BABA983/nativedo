@@ -28,6 +28,8 @@ import io.github.baba983.nativedo.core.html.resolvePostImageUrl
 import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.PostReaction
 import io.github.baba983.nativedo.core.model.PostReactionUser
+import io.github.baba983.nativedo.core.ui.avatarImageFilter
+import io.github.baba983.nativedo.core.ui.isAnimatedDiscourseImageUrl
 import io.github.baba983.nativedo.core.ui.resolveAvatarUrl
 import io.github.baba983.nativedo.feature.topic.data.TopicRepository
 import io.github.baba983.nativedo.feature.topic.ui.TopicReplySheetItem
@@ -84,6 +86,7 @@ class TopicDetailFragment(
     private var validReactionIds: List<String> = emptyList()
     private var emojiCatalog: Map<String, String> = emptyMap()
     private var topicTitle: String = initialTitle.orEmpty()
+    private var svgSpriteMarkup: String = ""
     private var collapsedTitleVisible: Boolean = false
     private val textSelectionHelper = TextSelectionHelper.ArticleTextSelectionHelper()
 
@@ -94,6 +97,7 @@ class TopicDetailFragment(
 
         val appContainer = (context.applicationContext as NativeDoApp).appContainer
         baseUrl = appContainer.baseUrl
+        svgSpriteMarkup = appContainer.svgSpriteStore.sprite.value
         viewModel = ViewModelProvider(
             this,
             TopicViewModelFactory(
@@ -105,7 +109,6 @@ class TopicDetailFragment(
         val root = SizeNotifierFrameLayout(context).apply {
             setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite))
         }
-        textSelectionHelper.setParentView(root)
         textSelectionHelper.setOnTranslate { text, _, toLang, onAlertDismiss ->
             parentActivity?.let { activity ->
                 val encoded = URLEncoder.encode(text.toString(), Charsets.UTF_8.name())
@@ -138,9 +141,14 @@ class TopicDetailFragment(
                 }
             })
         }
+        textSelectionHelper.setParentView(listView)
         textSelectionHelper.setRecyclerView(listView)
         root.addView(
             listView,
+            LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT.toFloat(), Gravity.TOP, 0f, 0f, 0f, 0f),
+        )
+        root.addView(
+            textSelectionHelper.getOverlayView(context),
             LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT.toFloat(), Gravity.TOP, 0f, 0f, 0f, 0f),
         )
         actionBar.bringToFront()
@@ -152,6 +160,14 @@ class TopicDetailFragment(
                 updateCollapsedTitle()
                 updateReactionUsersSheet(context, state)
                 handleJumpEvent(state)
+            }
+        }
+        collectorScope.launch {
+            appContainer.svgSpriteStore.sprite.collectLatest { markup ->
+                svgSpriteMarkup = markup
+                if (::adapter.isInitialized) {
+                    adapter.notifyDataSetChanged()
+                }
             }
         }
 
@@ -173,6 +189,10 @@ class TopicDetailFragment(
     }
 
     override fun onBackPressed(): Boolean {
+        if (textSelectionHelper.isInSelectionMode()) {
+            textSelectionHelper.clear(true)
+            return false
+        }
         return super.onBackPressed()
     }
 
@@ -421,6 +441,7 @@ class TopicDetailFragment(
             val post: Post,
             val replyCount: Int,
             val replyParticipants: List<Post>,
+            val validReactionIds: List<String>,
             val jumpHighlightNonce: Int,
         ) : TopicDetailRow {
             override val stableId: Long = post.id
@@ -535,6 +556,7 @@ class TopicDetailFragment(
                 VIEW_TYPE_POST -> TopicPostCell(context).apply {
                     delegate = postCellDelegate
                     textSelectionHelper = this@TopicDetailFragment.textSelectionHelper
+                    setSvgSpriteMarkup(this@TopicDetailFragment.svgSpriteMarkup)
                     layoutParams = RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
                 }
                 VIEW_TYPE_SKELETON -> TopicSkeletonView(context)
@@ -563,23 +585,27 @@ class TopicDetailFragment(
                     val blockState = bodyStateCache.getOrPut(BodyStateCacheKey(post.id, htmlHash, post.editCount)) {
                         PostBodyBlockState()
                     }
-                    (holder.itemView as TopicPostCell).setPost(
-                        post,
-                        rows.take(position).lastOrNull { it is TopicDetailRow.PostRow }?.let { (it as TopicDetailRow.PostRow).post },
-                        rows.drop(position + 1).firstOrNull { it is TopicDetailRow.PostRow }?.let { (it as TopicDetailRow.PostRow).post },
-                        rows.take(position).none { it is TopicDetailRow.PostRow },
-                        rows.drop(position + 1).none { it is TopicDetailRow.PostRow },
-                        topicId,
-                        baseUrl,
-                        localPostsByNumber,
-                        emojiCatalog,
-                        row.replyCount,
-                        row.replyParticipants,
-                        parsedBlocks,
-                        blockState,
-                        row.jumpHighlightNonce,
-                        { viewModel.clearJumpHighlight(row.jumpHighlightNonce) },
-                    )
+                    (holder.itemView as TopicPostCell).apply {
+                        setSvgSpriteMarkup(this@TopicDetailFragment.svgSpriteMarkup)
+                        setPost(
+                            post,
+                            rows.take(position).lastOrNull { it is TopicDetailRow.PostRow }?.let { (it as TopicDetailRow.PostRow).post },
+                            rows.drop(position + 1).firstOrNull { it is TopicDetailRow.PostRow }?.let { (it as TopicDetailRow.PostRow).post },
+                            rows.take(position).none { it is TopicDetailRow.PostRow },
+                            rows.drop(position + 1).none { it is TopicDetailRow.PostRow },
+                            topicId,
+                            baseUrl,
+                            localPostsByNumber,
+                            emojiCatalog,
+                            row.validReactionIds,
+                            row.replyCount,
+                            row.replyParticipants,
+                            parsedBlocks,
+                            blockState,
+                            row.jumpHighlightNonce,
+                            { viewModel.clearJumpHighlight(row.jumpHighlightNonce) },
+                        )
+                    }
                 }
             }
         }
@@ -608,6 +634,7 @@ class TopicDetailFragment(
                     post = post,
                     replyCount = replies.size,
                     replyParticipants = replies,
+                    validReactionIds = state.validReactions.ifEmpty { DEFAULT_REACTION_IDS },
                     jumpHighlightNonce = state.jumpHighlight
                         ?.takeIf { highlight -> highlight.postId == post.id }
                         ?.nonce
@@ -656,6 +683,7 @@ class TopicDetailFragment(
                     row.replyParticipants.map { reply ->
                         listOf(reply.id, reply.authorUsername, reply.authorDisplayName, reply.authorAvatarTemplate, reply.authorAnimatedAvatarUrl)
                     },
+                    row.validReactionIds,
                     row.jumpHighlightNonce,
                 )
             }
@@ -717,8 +745,8 @@ class TopicDetailFragment(
             }
         }
 
-        override fun didPressPollOption(post: Post, pollName: String, optionId: String) {
-            viewModel.onPollOptionSelected(post.id, post.postNumber, pollName, optionId)
+        override fun didPressPollOptions(post: Post, pollName: String, optionIds: List<String>) {
+            viewModel.onPollOptionsSelected(post.id, post.postNumber, pollName, optionIds)
         }
 
         override fun didPressImage(
@@ -1345,6 +1373,8 @@ class TopicDetailFragment(
             private val avatarImage = ImageReceiver(this).apply {
                 setRoundRadius(avatarSize / 2)
                 setAllowLoadingOnAttachedOnly(true)
+                setDelegate { _, _, _, _ -> invalidate() }
+                setVisibleInvalidate { invalidate() }
             }
             private val nameView = TextView(context).apply {
                 setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText))
@@ -1376,11 +1406,12 @@ class TopicDetailFragment(
                 nameView.text = name
                 usernameView.text = if (user.username.isBlank()) "" else "@${user.username}"
                 avatarDrawable.setInfo(user.username.hashCode().toLong(), name)
-                val avatarUrl = resolveAvatarUrl(baseUrl, user.avatarTemplate, "", 96)
+                val avatarUrl = resolveAvatarUrl(baseUrl, user.avatarTemplate, user.animatedAvatarUrl, 96)
+                avatarImage.setAllowDecodeSingleFrame(!isAnimatedDiscourseImageUrl(avatarUrl))
                 if (avatarUrl.isBlank()) {
                     avatarImage.setImage(null, null, avatarDrawable, null, user, 0)
                 } else {
-                    avatarImage.setImage(ImageLocation.getForPath(avatarUrl), "50_50", avatarDrawable, null, user, 0)
+                    avatarImage.setImage(ImageLocation.getForPath(avatarUrl), avatarImageFilter(user.animatedAvatarUrl, 50), avatarDrawable, null, user, 0)
                 }
                 divider.visibility = if (showDivider) View.VISIBLE else View.GONE
             }
@@ -1659,6 +1690,8 @@ class TopicDetailFragment(
             private val avatarImage = ImageReceiver(this).apply {
                 setRoundRadius(avatarSize / 2)
                 setAllowLoadingOnAttachedOnly(true)
+                setDelegate { _, _, _, _ -> invalidate() }
+                setVisibleInvalidate { invalidate() }
             }
             private val nameView = TextView(context).apply {
                 setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText))
@@ -1711,10 +1744,11 @@ class TopicDetailFragment(
                 divider.visibility = if (showDivider) View.VISIBLE else View.GONE
                 avatarDrawable.setInfo(reply.authorUsername.hashCode().toLong(), name)
                 val avatarUrl = resolveAvatarUrl(baseUrl, reply.authorAvatarTemplate, reply.authorAnimatedAvatarUrl, 96)
+                avatarImage.setAllowDecodeSingleFrame(!isAnimatedDiscourseImageUrl(avatarUrl))
                 if (avatarUrl.isBlank()) {
                     avatarImage.setImage(null, null, avatarDrawable, null, reply, 0)
                 } else {
-                    avatarImage.setImage(ImageLocation.getForPath(avatarUrl), "50_50", avatarDrawable, null, reply, 0)
+                    avatarImage.setImage(ImageLocation.getForPath(avatarUrl), avatarImageFilter(reply.authorAnimatedAvatarUrl, 50), avatarDrawable, null, reply, 0)
                 }
             }
 

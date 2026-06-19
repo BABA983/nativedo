@@ -18,6 +18,7 @@ internal class PostBodyBuildContext @JvmOverloads constructor(
     @ColorInt val accentColor: Int,
     @ColorInt val chipBackgroundColor: Int,
     @ColorInt val dividerColor: Int,
+    val svgSpriteMarkup: String = "",
     val selectionGeometryInvalidator: () -> Unit = { host.invalidate() },
 ) {
     @ColorInt val subtleBackgroundColor: Int = Theme.multAlpha(secondaryTextColor, 0.10f)
@@ -28,11 +29,12 @@ internal class PostBodyBuildContext @JvmOverloads constructor(
 
     val paragraphPaint: TextPaint = textPaint(sizeSp = 16f, color = textColor)
     val quotePaint: TextPaint = textPaint(sizeSp = 15f, color = textColor)
+    val mediaCaptionPaint: TextPaint = textPaint(sizeSp = 14f, color = secondaryTextColor)
     val headingPaint: TextPaint = textPaint(sizeSp = 20f, color = textColor).apply {
         typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
     }
     val monoPaint: TextPaint = textPaint(sizeSp = 14f, color = textColor).apply {
-        typeface = Typeface.MONOSPACE
+        typeface = AndroidUtilities.getTypeface(AndroidUtilities.TYPEFACE_ROBOTO_MONO)
     }
 
     private fun textPaint(sizeSp: Float, @ColorInt color: Int): TextPaint {

@@ -50,6 +50,7 @@ import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.Cells.ChatMessageCell;
 import org.telegram.ui.Components.AnimatedFileDrawable;
+import org.telegram.ui.Components.AnimatedSvgDrawable;
 import org.telegram.ui.Components.BackgroundGradientDrawable;
 import org.telegram.ui.Components.MotionBackgroundDrawable;
 import org.telegram.ui.Components.Point;
@@ -943,6 +944,14 @@ public class ImageLoader {
                         float h_filter = Float.parseFloat(args[1]);
                         w = (int) (w_filter * AndroidUtilities.density);
                         h = (int) (h_filter * AndroidUtilities.density);
+                    }
+                }
+
+                if (cacheImage.imageType == FileLoader.IMAGE_TYPE_SVG) {
+                    AnimatedSvgDrawable animatedSvgDrawable = AnimatedSvgDrawable.create(cacheImage.finalFilePath, w, h);
+                    if (animatedSvgDrawable != null) {
+                        onPostExecute(animatedSvgDrawable);
+                        return;
                     }
                 }
 
@@ -3222,6 +3231,8 @@ public class ImageLoader {
                                 String trueExt = getHttpUrlExtension(location, "jpg");
                                 if (trueExt.equalsIgnoreCase("webm") || trueExt.equalsIgnoreCase("mp4") || trueExt.equalsIgnoreCase("gif")) {
                                     img.imageType = FileLoader.IMAGE_TYPE_ANIMATION;
+                                } else if (trueExt.equalsIgnoreCase("svg") || trueExt.equalsIgnoreCase("svgz")) {
+                                    img.imageType = FileLoader.IMAGE_TYPE_SVG;
                                 } else if ("tgs".equals(ext)) {
                                     img.imageType = FileLoader.IMAGE_TYPE_LOTTIE;
                                 }

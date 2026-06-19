@@ -39,6 +39,7 @@ import androidx.annotation.Nullable;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.ImageReceiver;
+import io.github.baba983.nativedo.core.ui.DiscourseUiHelpersKt;
 import io.github.baba983.nativedo.core.model.CategorySummary;
 import io.github.baba983.nativedo.core.model.TopicSummary;
 import org.telegram.ui.ActionBar.Theme;
@@ -152,7 +153,8 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
     private final ImageReceiver avatarImage;
     private final AvatarDrawable avatarDrawable;
     private Drawable pinnedDrawable;
-    private String avatarTemplate;
+    private String avatarUrl;
+    private String avatarFilter;
 
     public TopicCell(@NonNull Context context) {
         super(context);
@@ -167,6 +169,8 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
         avatarImage = new ImageReceiver(this);
         avatarImage.setRoundRadius(dp(26));
         avatarImage.setAllowLoadingOnAttachedOnly(true);
+        avatarImage.setDelegate((imageReceiver, set, thumb, memCache) -> invalidateAvatar());
+        avatarImage.setVisibleInvalidate(this::invalidateAvatar);
         updatePinnedDrawable();
     }
 
@@ -261,7 +265,8 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
 
     private static boolean avatarChanged(@NonNull TopicSummary oldTopic, @NonNull TopicSummary newTopic) {
         return !equals(oldTopic.getAuthorUsername(), newTopic.getAuthorUsername()) ||
-            !equals(oldTopic.getAuthorAvatarTemplate(), newTopic.getAuthorAvatarTemplate());
+            !equals(oldTopic.getAuthorAvatarTemplate(), newTopic.getAuthorAvatarTemplate()) ||
+            !equals(oldTopic.getAuthorAnimatedAvatarUrl(), newTopic.getAuthorAnimatedAvatarUrl());
     }
 
     private static boolean sameTextLayoutInputs(@NonNull TopicSummary oldTopic, @NonNull TopicSummary newTopic) {
@@ -315,19 +320,29 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
         int avatarSize = dp(52);
         avatarImage.setImageCoords(dp(avatarStart), dp(9), avatarSize, avatarSize);
 
-        String template = topic.getAuthorAvatarTemplate();
-        if (equals(avatarTemplate, template)) {
+        String animatedAvatarUrl = topic.getAuthorAnimatedAvatarUrl();
+        String nextAvatarUrl = DiscourseUiHelpersKt.resolveAvatarUrl(baseUrl, topic.getAuthorAvatarTemplate(), animatedAvatarUrl, 96);
+        String nextAvatarFilter = DiscourseUiHelpersKt.avatarImageFilter(animatedAvatarUrl, 50);
+        avatarImage.setAllowDecodeSingleFrame(!DiscourseUiHelpersKt.isAnimatedDiscourseImageUrl(nextAvatarUrl));
+        if (equals(avatarUrl, nextAvatarUrl) && equals(avatarFilter, nextAvatarFilter)) {
             return;
         }
-        avatarTemplate = template;
-        if (template == null || template.isEmpty()) {
+        avatarUrl = nextAvatarUrl;
+        avatarFilter = nextAvatarFilter;
+        if (nextAvatarUrl == null || nextAvatarUrl.isEmpty()) {
             avatarImage.setImage(null, null, avatarDrawable, null, topic, 0);
             return;
         }
-        String sized = template.replace("{size}", "96");
-        String url = sized.startsWith("http") ? sized : (baseUrl.replaceAll("/+$", "") + (sized.startsWith("/") ? sized : "/" + sized));
-        ImageLocation location = ImageLocation.getForPath(url);
-        avatarImage.setImage(location, "50_50", avatarDrawable, null, topic, 0);
+        ImageLocation location = ImageLocation.getForPath(nextAvatarUrl);
+        avatarImage.setImage(location, nextAvatarFilter, avatarDrawable, null, topic, 0);
+    }
+
+    private void invalidateAvatar() {
+        if (avatarRect.isEmpty()) {
+            invalidate();
+        } else {
+            invalidate((int) avatarRect.left, (int) avatarRect.top, (int) avatarRect.right, (int) avatarRect.bottom);
+        }
     }
 
     @Override

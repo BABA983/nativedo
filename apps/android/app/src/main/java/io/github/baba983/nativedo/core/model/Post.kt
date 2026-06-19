@@ -34,6 +34,7 @@ data class PostReactionUser(
     val username: String,
     val displayName: String = "",
     val avatarTemplate: String = "",
+    val animatedAvatarUrl: String = "",
     val canUndo: Boolean = false,
     val createdAt: String = "",
 )

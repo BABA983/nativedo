@@ -802,6 +802,8 @@ public final class AndroidUtilities {
     }
 
     private static Typeface typefaceMedium;
+    private static Typeface typefaceItalic;
+    private static Typeface typefaceBoldItalic;
 
     /**
      * Returns a medium typeface. Matches upstream {@code AndroidUtilities.medium()}.
@@ -815,10 +817,31 @@ public final class AndroidUtilities {
     }
 
     /**
-     * Returns a typeface with the given style. Matches upstream
-     * {@code AndroidUtilities.getTypeface(String)} for the common case.
+     * Returns a typeface with the given style. NativeDo does not bundle
+     * Telegram's font assets, so map Telegram font names to system styles.
      */
     public static Typeface getTypeface(String fontName) {
+        if (fontName == null) {
+            return Typeface.DEFAULT;
+        }
+        if (fontName.endsWith("rmono.ttf")) {
+            return Typeface.MONOSPACE;
+        }
+        if (fontName.endsWith("rmediumitalic.ttf")) {
+            if (typefaceBoldItalic == null) {
+                typefaceBoldItalic = Typeface.create(Typeface.DEFAULT, Typeface.BOLD_ITALIC);
+            }
+            return typefaceBoldItalic;
+        }
+        if (fontName.endsWith("ritalic.ttf")) {
+            if (typefaceItalic == null) {
+                typefaceItalic = Typeface.create(Typeface.DEFAULT, Typeface.ITALIC);
+            }
+            return typefaceItalic;
+        }
+        if (fontName.endsWith("rmedium.ttf") || fontName.endsWith("rextrabold.ttf") || fontName.endsWith("mw_bold.ttf")) {
+            return bold();
+        }
         return Typeface.DEFAULT;
     }
 
@@ -858,6 +881,7 @@ public final class AndroidUtilities {
     /** Shared accelerate interpolator. Matches upstream AndroidUtilities.accelerateInterpolator. */
     public static final android.view.animation.AccelerateInterpolator accelerateInterpolator = new android.view.animation.AccelerateInterpolator();
     public static final String TYPEFACE_ROBOTO_MEDIUM = "fonts/rmedium.ttf";
+    public static final String TYPEFACE_ROBOTO_MONO = "fonts/rmono.ttf";
 
     public static int screenRefreshRate = 60;
 

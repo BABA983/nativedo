@@ -999,4 +999,13 @@ public class Utilities {
         return (a + b - 1) / b;
     }
 
+    public static boolean copyBitmaps(Bitmap src, Bitmap dst) {
+        if (src == null || dst == null || src.isRecycled() || dst.isRecycled()) {
+            return false;
+        }
+        Canvas canvas = new Canvas(dst);
+        canvas.drawBitmap(src, 0, 0, null);
+        return true;
+    }
+
 }

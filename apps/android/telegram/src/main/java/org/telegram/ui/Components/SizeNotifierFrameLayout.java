@@ -36,6 +36,9 @@ public class SizeNotifierFrameLayout extends FrameLayout {
         void onSizeChanged(int keyboardHeight, boolean isWidthGreater);
     }
 
+    public static class SimplerCanvas extends android.graphics.Canvas {
+    }
+
     public SizeNotifierFrameLayout(Context context) {
         super(context);
         setFitsSystemWindows(false);

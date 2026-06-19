@@ -43,18 +43,19 @@ in-place as phases land.
   - Telegram UI components that do not bind NativeDo models should live in
     `:telegram` with upstream `org.telegram.*` packages. `:app` may consume
     them directly.
-  - From-scratch NativeDo code (e.g. reaction chip strip) needs neither a
-    header nor a manifest entry.
+  - From-scratch NativeDo code needs neither a header nor a manifest entry.
 - Reuse `:telegram` infrastructure (`RecyclerListView`, `BaseCell`,
   `SizeNotifierFrameLayout`, `ImageReceiver`, `LinkSpanDrawable`, `LinkPath`,
   `AnimatedFloat`, `Theme`, `AndroidUtilities`, `BottomSheet`,
   `BottomSheetWithRecyclerListView`, ...).
 - **Do not** introduce syntax highlighting in this rewrite (Compose path
   doesn't have it either — stay at parity).
-- **Do not** port `ReactionsLayoutInBubble` from upstream. Its dependency
+- **Do not** port full `ReactionsLayoutInBubble` from upstream. Its dependency
   graph (TLRPC reaction objects, AnimatedEmoji set, ...) is too heavy for
-  Discourse's `emoji_name + count + reacted` model. We draw our own chips,
-  borrowing only visual / measurement style.
+  Discourse's `emoji_name + count + reacted` model. `TopicPostCell` keeps a
+  NativeDo-bound `ReactionButton` subset, borrowing upstream field names,
+  26dp button height, 20dp image slot, 4dp spacing, wrapping measurement, and
+  reaction theme keys.
 - **Do not** treat `apps/android/telegram` stubs as the source of truth for
   non-trivial UI behavior. When you want Telegram behavior, diff against
   `vendor/telegram-android` and then either copy the component into `:telegram`
@@ -79,8 +80,9 @@ TopicDetailFragment (BaseFragment, no ComposeView)
     └── (later) ReplyEnterView / JumpToBottomFAB / FloatingDateView
 ```
 
-Inside each `TopicPostCell` (custom-drawn `View`, **no child Views, no
-`AndroidView`, no Compose**):
+Inside each `TopicPostCell` (custom-drawn `View`, **no Compose**; most blocks
+draw on the cell canvas, while top-level scrollable/media blocks may attach
+Telegram-style child views for closer `ArticleViewer` structure):
 
 ```diagram
 TopicPostCell  ── extends BaseCell, implements Theme.Colorable
@@ -89,7 +91,8 @@ TopicPostCell  ── extends BaseCell, implements Theme.Colorable
 ├── avatar  ImageReceiver  (AvatarDrawable + ImageLocation, same as TopicCell)
 ├── header StaticLayouts: displayName · @username · floor#N · relativeTime
 │
-├── body: List<PostBodyBlock>   ← rendered inline, NOT separate child Views
+├── body: List<PostBodyBlock>   ← measured/drawn by the cell; selected blocks
+│                                may expose embedded child Views
 │        each block:
 │          measure(maxWidthPx)         -> heightPx
 │          draw(canvas)                 (canvas already translated)
@@ -110,12 +113,13 @@ TopicPostCell  ── extends BaseCell, implements Theme.Colorable
 │          ListBlock        ← BlockListItemCell / BlockOrderedListItemCell
 │          TableBlock       ← BlockTableCell / TableLayout algorithm,
 │                              adapted to CookedTableBlock
-│          SpoilerBlock     ← SpoilerEffect / SpoilersTextView reveal model
-│                              when Telegram-style reveal is used
+│          DetailsBlock     ← TL_pageBlockDetails / BlockDetailsCell
+│          CalloutBlock     ← Discourse callout; shares ArticleViewer-shaped
+│                              text/link/container pipeline
 │          PollBlock        (NativeDo Discourse model; may borrow Telegram
 │                              percent / result-animation behavior)
 │
-├── reactions row (drawn, NativeDo-original chip strip)
+├── reactions row (drawn, `ReactionButton` subset over Discourse reactions)
 └── reply footer: "N replies" + recent reply avatar stack
 ```
 
@@ -150,11 +154,12 @@ io.github.baba983.nativedo
         ├── PostBodyTextBuilder.kt      ← Spannable + StaticLayout pipeline
         │                                  (replaces buildInlinePostBodyText)
         ├── PostBodyImagePool.kt        ← per-cell ImageReceiver registry
-        ├── ParagraphBlock.kt   HeadingBlock.kt   RuleBlock.kt
-        ├── ImageBlock.kt       CollageBlock.kt
-        ├── OneboxBlock.kt      QuoteBlock.kt     CodeBlock.kt
-        ├── ListBlock.kt        TableBlock.kt
-        ├── SpoilerBlock.kt     PollBlock.kt
+        ├── ParagraphBlock.java HeadingBlock.java RuleBlock.java
+        ├── ImageBlock.java     CollageBlock.java
+        ├── OneboxBlock.java    QuoteBlock.java   CodeBlock.java
+        ├── ListBlock.java      TableBlock.java
+        ├── DetailsBlock.java   CalloutBlock.java
+        ├── PollBlock.java
         └── BuiltText.kt                ← output of PostBodyTextBuilder
 ```
 
@@ -188,12 +193,12 @@ model into NativeDo.
 | List shell | `TopicListFragment` / upstream `ChatActivity` | local pattern + upstream reference |
 | Post cell shell | `TopicCell` / upstream `ChatMessageCell` | NativeDo Java cell; port hot-path drawing/gesture patterns |
 | Text blocks | `ArticleViewer.BlockParagraphCell`, header/footer cells | native-port measurement / drawing |
-| Quote / code / list / divider | `ArticleViewer.BlockBlockquoteCell`, `BlockPreformattedCell`, `BlockListItemCell`, `BlockDividerCell` | native-port measurement / drawing |
-| Image / collage | `ArticleViewer.BlockPhotoCell`, `BlockCollageCell` | native-port layout; NativeDo URL + `ImageReceiver` backend |
+| Quote / code / list / divider | `ArticleViewer.BlockBlockquoteCell`, `ReplyMessageLine`, `BlockPreformattedCell`, `BlockListItemCell`, `BlockDividerCell` | native-port measurement / drawing |
+| Image / collage | `ArticleViewer.BlockPhotoCell`, `BlockCollageCell` | native-port layout; collage uses an embedded inner `RecyclerListView`; NativeDo URL + `ImageReceiver` backend |
 | Onebox | upstream `ChatMessageCell` link-preview code + `MessageObject` link description ideas | native-port layout / hit testing; NativeDo `OneboxPreview` model; no `TLRPC.WebPage` |
 | Table | `ArticleViewer.BlockTableCell`, `TableLayout` | partial native-port; adapt algorithm to `CookedTableBlock` |
 | Spoiler | `TextStyleSpan`, `SpoilerEffect`, `SpoilersTextView`, `SpoilersClickDetector` | trimmed NativeDo renderer; no `SpoilerEffect2` media/GL port |
-| Poll | upstream chat poll behavior | NativeDo Discourse model; borrow only percent normalization / row-state / result animation as attributed helpers if copied |
+| Poll | upstream `ChatMessageCell` poll button/result behavior + `Components/poll/buttons/PollButtonDrawable*` + `CheckBoxBase` | NativeDo Discourse model; native-port PollButton state, choice controls, result bars, voter-count/check drawable subsets, and 300ms result animation |
 | Reaction picker/users/replies sheets | `BottomSheet`, `BottomSheetWithRecyclerListView`, reaction-user row/tab concepts | use/copy generic sheet components into `:telegram`; NativeDo sheet contents in `:app` |
 
 Directly usable generic components belong in `:telegram` under `org.telegram.*`.
@@ -225,7 +230,7 @@ For the renderer phases. Confirms each existing Compose code path has a target.
 
 | Source HTML | Today (Compose) | Rewrite (View) |
 |---|---|---|
-| `<img>` inside paragraph | `AsyncImage` inline span | `DrawableSpan` backed by `ImageReceiver`, via `PostBodyTextBuilder` |
+| `<img>` inside paragraph | `AsyncImage` inline span | `ReplacementSpan` backed by `ImageReceiver`, via `PostBodyTextBuilder` |
 | Standalone `<img>` / `figure` | `CookedImageBlock` (AsyncImage) | `ImageBlock` (`ImageReceiver`) |
 | Lightbox `<a class="lightbox">` group | `CookedCollageBlock` (AsyncImages) | `CollageBlock` (`ImageReceiver[]`) |
 | `aside.quote` (collapsed) | `CookedQuoteBlock` + `fetchPostByNumber` | `QuoteBlock` + `delegate.expandQuote(topicId, postNumber)` |
@@ -234,7 +239,8 @@ For the renderer phases. Confirms each existing Compose code path has a target.
 | `<table>` | `CookedTableBlock` | `TableBlock` |
 | `aside.onebox` | `CookedOneboxBlock` | `OneboxBlock` |
 | `[poll]` widget | `CookedPollBlock` | `PollBlock` |
-| `details` (spoiler) | `CookedSpoilerBlock` | `SpoilerBlock` |
+| `<details>` | `CookedPostBlock.Details` | `DetailsBlock` |
+| `.spoiler` / `.spoiled` inline text | `TextStyleSpan.FLAG_STYLE_SPOILER` | shared `TextLayoutBlock` / `OneboxBlock` spoiler drawing + tap reveal |
 | `<hr>` | `CookedRuleBlock` | `RuleBlock` |
 | `<h1..h6>` | `CookedHeadingBlock` | `HeadingBlock` |
 | Inline link | `URLSpan` in `TextView` | `URLSpan` in `Spannable`, hit-tested by `ParagraphBlock`, ripple via `LinkSpanDrawable` |
@@ -340,12 +346,30 @@ every text-bearing block will reuse.
   Inline image placeholder data is emitted through `pendingImages` and covered
   by tests; `BuiltText.attach()` now attaches each pending inline emoji/image
   to a host-owned `ImageReceiver`, so the View path uses the same image loader
-  bridge as avatars, reaction icons, and post media. `TextLayoutBlock.measure()`
-  also attaches newly built text immediately when the host cell is already on
-  screen, so inline emoji do not miss their first load after a recycled cell is
-  measured.
+  bridge as avatars, reaction icons, and post media. Rich text blocks build
+  their `StaticLayout` before attaching inline image receivers, so
+  replacement spans establish their final bounds first and receiver filters
+  use the same dimensions that drawing and selection will use. If the host
+  cell is already on screen, the handle is attached immediately after layout
+  creation so inline emoji do not miss their first load after a recycled cell
+  is measured. The local `Emoji` shim still draws system emoji instead of
+  Telegram's atlas / animated emoji pipeline, but it keeps the upstream
+  `replaceEmoji` overload shape, replacement-span metrics, baseline/bottom
+  alignment, performance-class span limit, parser/per-span exception guards,
+  and selection-bounds hook so malformed external Unicode content degrades
+  instead of breaking topic text layout.
 - [x] Implement `ParagraphBlock`, `HeadingBlock`, `RuleBlock`. Each owns a
-      `StaticLayout` + (optional) `BuiltText.Handle`.
+      `StaticLayout` + (optional) `BuiltText.Handle`. `TextLayoutBlock`
+      now mirrors ArticleViewer text-cell padding (`textY = dp(8)`,
+      `height += dp(8 + 8)`) and `lineSpacingExtra = dp(4)`.
+      Body text layouts that are not direct `TextLayoutBlock`s now route
+      through the same `ArticleTextLayout` helper, so image captions, onebox
+      title/body, details titles, poll rows, code, and table cells share
+      ArticleViewer's `createLayoutForText` line spacing
+      (`spacingMultiplier = 1.0`, `spacingAdd = dp(4)`, no font pad).
+      `TopicPostCell` does not add a second inter-block gap before blocks that
+      already own their ArticleViewer-style vertical rhythm:
+      paragraph/header/divider, quote, details, code, and callout.
 - [x] Build a dev-only `TopicBodyHarnessFragment` **extending
       `org.telegram.ui.ActionBar.BaseFragment`** (not Compose-hosted): a
       `RecyclerListView` of body-block rows fed from hand-picked fixtures under
@@ -365,6 +389,18 @@ No selection in this phase.
 
 - [x] `LinkPath` + `LinkSpanDrawable`-style ripple on tap. Hit-test via
       `BuiltText.links` regions inside `ParagraphBlock.onTouch`.
+      TextLayoutBlock, ImageBlock captions, OneboxBlock rich text,
+      DetailsBlock titles, and PollBlock option titles now share
+      `ArticleLinkPressState`, which owns the `LinkSpanDrawable` path, release
+      animation, long-press callback, and touch-slop cancellation instead of
+      each block keeping a separate pressed-link implementation. When multiple
+      link spans overlap the same touch point, hit testing now follows
+      `ArticleViewer.checkLayoutForLinks` by preferring the wider covering span.
+      Inline pill/tag/icon spans that expose custom highlight bounds are mixed
+      with normal `StaticLayout` selection segments in the same pressed-link
+      path, and those custom bounds participate in link hit-testing even when
+      they cover only part of the link, so tag chips and icon+text links do not
+      fall back to a plain rectangular text highlight.
 - [x] Wire delegate routes for `URLSpan`, `@user` chips, `#topic` links.
 - [x] Extend `PostBodyDelegate` with `onLinkLongPress(url)`. Long-press on
       a link calls it; Phase 7 may wire a context menu.
@@ -383,7 +419,9 @@ see "Image loading" above).
 - [x] `ImageBlock` — single `ImageReceiver`. Exposes
       `fun imageBoundsInCell(): RectF` returning the block-local rect of the
       drawn image. `TopicPostCell.onTouch` resolves that into window
-      coordinates (`getLocationInWindow` + cell origin + block offset)
+      coordinates (`getLocationInWindow` + cell origin + block offset),
+      first asking the active top-level body block for URL-keyed bounds so
+      nested list/details/table media include their parent offsets,
       before calling `delegate.didPressImage(url, gallery, sourceBoundsInWindow,
       hostView, sourceBoundsProvider)`. `ImageBlock`, `CollageBlock`, and
       `OneboxBlock` also provide block-local bounds by gallery URL, so
@@ -400,34 +438,67 @@ see "Image loading" above).
       with Telegram-style background fade plus close/spring-back release threshold.
 - [x] `CollageBlock` — grid of `ImageReceiver`s, mirroring `BlockCollageCell`
       measurement. Same `imageBoundsInCell(index)` pattern per tile, plus
-      URL-keyed source bounds for PhotoViewer open/close hand-off.
+      URL-keyed source bounds for PhotoViewer open/close hand-off. It now owns
+      `BlockCollageCell`-style internal spacing (`listTop = dp(8)`,
+      `bottom = dp(16)`) instead of depending on `TopicPostCell` media spacing.
 - [x] `OneboxBlock` — native port of upstream `ChatMessageCell` link-preview
       measurement / drawing / hit-testing, backed by a NativeDo
       `OneboxPreview` model. It now builds an immutable
       `OneboxPreviewLayout` containing thumbnail `ImageReceiver` bounds,
-      site/title/description `StaticLayout`s, open-button bounds, total height,
-      and separate hit regions for description/card/thumbnail/button. It does
+      site/title/description layouts, total height, and separate hit regions
+      for description/card/thumbnail. The whole preview is the link target,
+      and its press feedback uses Telegram's `linkPreviewBounce` pattern
+      (`ButtonBounce(..., 2.0f, 2.0f)` plus `getScale(0.01f)`) and
+      `linkPreviewSelector`-style `Theme.createRadSelectorDrawable` hotspot /
+      state updates. The
+      rounded preview background, left line, and link accent color now route
+      through `ReplyMessageLine.TYPE_LINK`, matching the ChatMessageCell
+      quote/link chrome entry point. The
+      description preserves source HTML and renders through
+      `PostBodyTextBuilder`, so inline spoiler spans use the shared
+      `TextStyleSpan` / `SpoilerEffect` draw/reveal path and persist revealed
+      state through `PostBodyBlockState`. Hidden onebox thumbnails keep the
+      media placeholder background while PhotoViewer suppresses the source
+      `ImageReceiver` draw. It does
       **not** import `TLRPC.WebPage` or `MessageObject` into `:app` body code.
 
 **Validate:** harness opens real JSON/cooked fixture rows with images / collage /
 oneboxes; all load through OkHttp + cookies. Tapping image/collage routes through
 the image-viewer delegate path, records `url` / gallery size / source window
 bounds for device verification, and now opens the telegram-module `PhotoViewer`
-NativeDo port.
+NativeDo port. `PhotoViewerDebugActivity` also exposes `topicCellTap`,
+`topicCellNestedImageTap`, `topicCellCollageTap`, and
+`topicCellOneboxThumbnailTap` scenarios so plain, nested list/details/table,
+collage, and onebox-thumbnail media hand-off rectangles can be checked
+on-device. The same debug activity exposes `topicCellPollVote`,
+`topicCellInlineSpoilerTap`, `topicCellReplyFooterTap`,
+`topicCellReactionTap`, and `topicCellMoreReactionTap` smoke scenarios for poll
+option submission state, inline `SpoilerEffect` reveal state, reply-footer
+delegate routing, and reaction / more-reaction delegate routing without adding
+low-value style/pixel tests.
 
 ### Phase 5 — remaining block types
 
 Ported one type per commit. Each ships independently:
 
 - [x] `QuoteBlock` (collapsed → expanded fetch flow).
-      Visual QuoteBlock rendering now follows ArticleViewer blockquote geometry:
-      18dp left line, 2dp line width, 14dp text inset, 8dp vertical spacing,
-      separate title/body `StaticLayout`s, link hit-testing, and both title and
-      body exposed to `TextSelectionHelper`. Discourse `aside.quote` parsing now preserves
+      Visual QuoteBlock rendering follows ArticleViewer blockquote text
+      geometry and chrome rather than ChatMessageCell reply-bubble chrome:
+      18dp..20dp left line, 14dp text inset, 8dp vertical spacing,
+      separate title/body `StaticLayout`s, link hit-testing, and both
+      title and body exposed to `TextSelectionHelper`. Simple fallback quote
+      text no longer inherits paragraph top/bottom padding; the quote container
+      owns the upstream BlockBlockquoteCell-style 8dp top, 8dp title/body gap,
+      and 8dp bottom spacing. Discourse `aside.quote` parsing now preserves
       `data-topic` / `data-post`; `QuoteBlock` requests expansion through
       `PostBodyDelegate.onQuoteExpand`, `TopicPostCellDelegate.didExpandQuote`,
       and `TopicDetailFragment` -> `TopicViewModel.expandQuote()`, then replaces
-      the block body and remeasures the cell.
+      the block body and remeasures the cell. Expanded quote children keep the
+      pressed child target through MOVE/UP/CANCEL so nested link/spoiler/media
+      state clears correctly. Top-level quotes now expose an embedded
+      `ViewGroup`, so nested code/table/list/media children retain their real
+      child-view drawing and scrolling path; quotes nested inside other
+      canvas-only bodies keep the canvas fallback.
       **Expanded state lives on the block instance** (`var expanded: Boolean`
       + cached fetched HTML). The adapter-level layout cache in Phase 6
       preserves block instances across rebind, so expand state survives
@@ -439,25 +510,91 @@ Ported one type per commit. Each ships independently:
       highlighting. Geometry now follows ArticleViewer `BlockPreformattedCell`:
       rectangular background band from `dp(8)` to `height - dp(8)`, 16dp
       horizontal text margin, and 12dp child vertical margin plus 8dp scroll
-      padding.
+      padding. The background color now follows Telegram's link/accent-colored
+      alpha-20 preformatted paint, and the text container keeps the upstream
+      `textWidth + dp(32)` trailing space. When the block is rendered through
+      the nested canvas fallback, it now keeps horizontal drag scrolling and
+      selection geometry aligned to the same text offsets instead of degrading
+      to static text.
 - [x] `ListBlock` — ordered / unordered / nested list text. Marker column,
       first-item top padding, and marker/text spacing follow ArticleViewer list
       item cells; selected/copied text now preserves visible bullets or ordered
-      numbers through `TextSelectionHelper` prefixes.
+      numbers through `TextSelectionHelper` prefixes. Simple text items use
+      list-row padding (`top = 0`, `bottom = dp(8)`) instead of normal paragraph
+      padding, and list rows no longer add a local synthetic 6dp gap between
+      items or nested blocks. The first-item 10dp top padding now follows
+      ArticleViewer's `parent.level == 0` rule, so nested lists do not inherit
+      the top-level list spacer. `ListBlock` now owns its ArticleViewer-style
+      horizontal geometry instead of receiving `TopicPostCell`'s generic 18dp
+      text inset, so marker/text X follows the upstream list-cell formula and
+      the text column keeps the upstream trailing 18dp inset. Nested child touch
+      streams keep the ACTION_DOWN target through MOVE/UP/CANCEL for correct
+      pressed-state cleanup.
 - [x] `TableBlock` — text table now uses intrinsic per-column measurement,
       horizontal overflow scrolling, grid drawing, and exposes table cell
-      `StaticLayout`s to `TextSelectionHelper`. Full upstream
-      `TL_pageTableCell` colspan/rowspan `TableLayout` parity is not claimed.
-- [x] `SpoilerBlock` — plain Discourse `<details>` now renders with a
-      Telegram-style concealed text mask: per-line rounded ranges, deterministic
-      particle noise, tap-origin ripple reveal, and fade-in to the real body.
-      `SpoilerEffect2` media/GL remains intentionally out of scope.
-- [x] `PollBlock` — read-only Discourse poll renderer is in place for the
-      parsed model. It now preserves option ids, selected markers, votes, and
-      percentages from cooked HTML and draws animated result bars from real
-      data. Option taps now submit `POST /polls/vote` with csrf, then refresh
-      the current post by `postNumber` so result percentages remain sourced
-      from Discourse cooked HTML rather than locally guessed.
+      `StaticLayout`s to `TextSelectionHelper`. It now builds logical cells with
+      parsed `colspan` / `rowspan`; standard text-only tables are mapped into
+      `TL_pageTableCell` values and rendered by the vendored Telegram
+      `TableLayout`. Mixed-content cells still use the NativeDo recursive
+      fallback so parsed nested `CookedPostBlock` children, nested text
+      selection layouts, child touch streams, and nested image source bounds /
+      `ImageReceiver`s continue to work. Horizontal table scroll now sends
+      `ACTION_CANCEL` into the active nested child before clearing it, so
+      pressed link/spoiler/media state does not remain stuck after a scroll.
+      The top-level block now also follows `BlockTableCell` outer geometry:
+      `listY = dp(8)`, bottom `dp(8)`, scrollView horizontal padding `dp(18)`,
+      `clipToPadding = false`, and scrollability measured against
+      `viewport - dp(36)`.
+      Full upstream `BlockTableCell` adapter-row parity is still not claimed
+      because Discourse mixed cells are not backed by ArticleViewer page-block
+      holders.
+- [x] `DetailsBlock` — plain Discourse `<details>` now follows
+      `TL_pageBlockDetails` / `ArticleViewer.BlockDetailsCell` structure:
+      the summary is the details title row, `currentBlock.open` owns expansion
+      state, the row uses Telegram's arrow/title/divider geometry, and child
+      content is parsed as recursive blocks that appear only while open. Open
+      children now approximate `TL_pageBlockDetailsChild level + 1`: a
+      `dp(18)..dp(20)` level line is drawn, text/media children start at
+      `dp(32)`, and child blocks own their own vertical padding without an
+      extra fixed details gap. Top-level details now expose an embedded
+      `ViewGroup`, so expanded child code/table/list/media blocks can keep
+      their embedded child-view drawing path; details nested inside
+      quote/canvas-only bodies still use the canvas fallback. Child touch
+      streams keep the pressed child target through MOVE/UP/CANCEL so nested
+      link/spoiler/media state clears correctly.
+      Inline text spoiler uses `TextStyleSpan` / `SpoilerEffect` with
+      Telegram-style tap-to-reveal ripple; media
+      `SpoilerEffect2` remains intentionally out of scope.
+- [x] `CalloutBlock` — remains a NativeDo Discourse renderer rather than an
+      exact upstream `ArticleViewer` cell, but now follows the same
+      ArticleViewer-shaped text/link/container path as the other body blocks:
+      title/body text use the shared `ArticleTextLayout` and
+      `ArticleLinkPressState` pipeline, and top-level callouts expose an
+      embedded `ViewGroup` so nested code/table/list/media children retain
+      their real child-view drawing and scrolling path. Callouts nested inside
+      quote/list/details canvas-only bodies keep the canvas fallback.
+- [x] `PollBlock` — Java native port of Telegram `ChatMessageCell` poll button
+      drawing / animation shape on top of the Discourse model. It keeps per-option
+      button state, left-side single/multiple choice controls, percent labels,
+      5dp result lines, `selectorDrawable` pressed/hotspot feedback, row-aware
+      text selection, and a 300ms result animation. `PollButton` now keeps
+      upstream-shaped
+      `answer/title/x/y/titleX/titleY/count/percent/prevPercent/percentProgress/selectorDrawableColor/selectorDrawable/pollButtonDrawable/checkBox`
+      fields while binding `answer` to Discourse `PollOption` instead of
+      `TLRPC.PollAnswer`; result voter-count chrome goes through a
+      NativeDo-scoped `PollButtonDrawable` subset, and option check state now
+      uses the vendored `CheckBoxBase` setup from upstream `pollCheckBox[]`
+      while media answers, recent voter avatars, and download progress remain omitted.
+      Option-title link/spoiler press state is cleared when the rich-text stream
+      returns unhandled, so a drag-cancelled spoiler/link cannot swallow the
+      next vote tap. Poll option inline spoiler reveal now uses the shared
+      inline state key even when the poll is nested under a details/list body
+      whose structural poll state is intentionally not persisted. Option taps
+      still submit `POST /polls/vote` with csrf,
+      mark the poll locally submitted, and immediately request layout /
+      invalidate so status text, submit-button removal, and result row heights
+      update before the refreshed post arrives. Final percentages remain sourced
+      from Discourse cooked HTML after the post is refreshed by `postNumber`.
 
 **Validate after each:** matching fixture renders correctly in the harness.
 
@@ -503,7 +640,8 @@ friction.
         parsing;
       - bounded `PostBodyBlockState` LRU keyed by
         `(post.id, cookedHtmlHash, post.editCount)`, preserving `QuoteBlock`
-        expanded HTML and `SpoilerBlock.revealed` across scroll recycle.
+        expanded HTML, `DetailsBlock.currentBlock.open`, and inline text
+        spoiler reveal state across scroll recycle / body block rebuilds.
 
       Do **not** cache `List<PostBodyBlock>` / `totalHeightPx` in the adapter
       right now. Current block instances capture a concrete `host`, `delegate`,
@@ -519,10 +657,19 @@ friction.
       2. a Telegram-style immutable `TopicPostLayoutState` render model that
          stores measured text/bounds and explicit width/density/theme keys, but
          **does not** hold `View`, `Context`, `ImageReceiver`, or delegate refs.
-- [x] Reactions strip: NativeDo-original chip layout. Reads `post.reactions`
-      / `post.currentUserReaction`. Draws emoji via `ImageReceiver` from
-      `emojiCatalog`. Emoji URLs go through the same
+- [x] Reactions strip: NativeDo-bound `ReactionsLayoutInBubble.ReactionButton`
+      subset. Reads `post.reactions` / `post.currentUserReaction`, keeps
+      upstream-shaped `reactionButtons`, `pressedReactionButton`,
+      `key/countText/count/realCount/choosen/isSelected/x/y/top/width/height/bounce`,
+      26dp button height, 20dp image slot, 4dp spacing, wrap measurement, and
+      `Theme.key_chat_inReactionButton*` colors. Pressed feedback now uses the
+      vendored `ButtonBounce` scale path like upstream reaction buttons. Draws emoji via
+      `ImageReceiver` from `emojiCatalog`; emoji URLs go through the same
       `NativeDoImageDownloader` bridge, so cookies are handled for free.
+      Touch handling now follows the same button-state shape as
+      `ChatMessageCell` comment/reaction areas: DOWN records the pressed
+      button, MOVE outside clears it, UP only fires while the same button is
+      still pressed, click sound is played on release, and CANCEL clears state.
 - [x] Reply jump highlight: `TopicUiState.jumpHighlight` is now part of the
       post-row diff key, passed into `TopicPostCell`, and rendered as a
       one-shot `AnimatedFloat` blue cell-background fade. Animation completion
@@ -532,7 +679,9 @@ friction.
       down, `StateSet.NOTHING` on up/cancel, and click sound on release. The
       hit target is now the measured reply-button rect rather than the whole
       content width, matching Telegram's `commentButtonRect` touch model. The
-      avatar stack follows Telegram comment-button geometry: 24dp avatars,
+      footer also uses `ButtonBounce(this, 2.0f, 2.0f)` plus
+      `getScale(0.0125f)`, matching `ChatMessageCell` reply chrome rather than
+      a heavier local scale. The avatar stack follows Telegram comment-button geometry: 24dp avatars,
       first avatar inset by 2dp, and subsequent avatars stepped by 17dp. The
       stack now draws reply authors through `ImageReceiver`, using the same
       Discourse avatar URL resolution as the replies sheet and falling back to
@@ -616,7 +765,7 @@ checklist below.**
       loaded reaction-user groups, and tab glyphs use actual emoji images via
       `ImageReceiver` when `iconUrl` / `emojiCatalog` provides one.
 - [x] Reaction picker UI: Telegram `BottomSheet` or compact anchored popup using
-      Telegram reaction container geometry as a reference, but no
+      Telegram reaction container geometry as a reference, but no full
       `ReactionsLayoutInBubble` / TLRPC reaction model port. Current View path
       opens a `BottomSheetWithRecyclerListView` with available `validReactions`
       plus visible reaction ids, renders each row with a reaction glyph/image,
@@ -662,8 +811,8 @@ Standalone, no longer blocks the rewrite.
       `port_mode: native`, `forced_exact: [gesture, drawing]`. This is not a
       full exact upstream port.
 - [x] Wire `TopicPostCell` through `fillTextLayoutBlocks(...)`, including nested
-      `TextLayoutBlock`, `ListBlock`, `QuoteBlock`, revealed
-      `SpoilerBlock` text, and visible `CodeBlock` / `OneboxBlock` / `PollBlock`
+      `TextLayoutBlock`, `ListBlock`, `QuoteBlock`, open
+      `DetailsBlock` text, and visible `CodeBlock` / `OneboxBlock` / `PollBlock`
       labels. Image captions and horizontally scrollable table/code text are also
       exposed to the selection helper.
 - [x] Long-press in `TopicPostCell` enters selection through the shared helper,
@@ -671,6 +820,11 @@ Standalone, no longer blocks the rewrite.
       floating ActionMode with copy / select-all actions. The same still-down
       touch stream is forwarded into the helper after long press, so selection
       can continue expanding before finger-up like Telegram's one-touch drag.
+      Before selection starts, a body block that consumes `ACTION_DOWN` remains
+      the active touch target for MOVE/UP/CANCEL, so nested pressed states are
+      not dropped when the finger leaves the original block bounds. Rebind,
+      detach, and body-context rebuild reset active body / reaction / reply
+      pressed state so recycled cells do not carry stale touch state.
 - [x] Port draggable handles, magnifier, quote / translate actions, multi-cell drag
       selection, cursor haptic feedback, RecyclerView auto-scroll, and upstream-style
       `TextSelectionOverlay` chrome. Current implementation now keeps an
@@ -702,8 +856,12 @@ Standalone, no longer blocks the rewrite.
       line-bottom anchor and RTL-aware left/right silhouette switching from
       Telegram. Same-row blocks such as table cells and poll labels/percentages
       now use Telegram's row-aware closest-layout hit testing, so X position
-      chooses the nearest text layout within the touched visual row; empty-area
-      taps exit selection only after the same short tap/slop check used by upstream.
+      chooses the nearest text layout within the touched visual row. Inline
+      chip/icon/image spans that expose custom selection bounds now use those
+      visual bounds for selectable-block hit testing and initial offset snapping,
+      so their rounded selection geometry is not only drawn after selection but
+      can also be the long-press/drag target. Empty-area taps exit selection only
+      after the same short tap/slop check used by upstream.
 
 ## Telegram parity follow-ups
 
@@ -737,16 +895,85 @@ The rewrite is functionally complete, but several rows are deliberately
       shape. The avatar-stack geometry now follows Telegram's comment button
       stack, while visual content remains NativeDo-shaped rather than upstream's
       exact `commentLayout` / unread-dot / avatar-image drawing.
-- [x] `TableBlock`: intrinsic per-column measurement and selectable cell text
-      are now wired. Full Telegram colspan/rowspan table grid parity remains out
-      of scope for Discourse's current simple table model.
-- [x] `PollBlock`: cooked HTML result data is parsed and result bars animate
-      from real votes/percentages. Vote submission is wired through
-      `POST /polls/vote`; after a successful vote the current post is fetched
-      again so the block renders server-confirmed selected state and results.
-- [x] `SpoilerBlock`: concealed text now uses line-bounded noise masks and
-      tap-origin ripple reveal. Full `SpoilerEffect2` GL/media spoiler parity is
-      intentionally not copied.
+- [x] `CodeBlock` / `TableBlock`: top-level blocks now use embedded
+      `HorizontalScrollView` child views, matching the structural shape of
+      `BlockPreformattedCell` / `BlockTableCell` more closely than the earlier
+      hand-rolled canvas `scrollX`. Both keep a canvas fallback for nested HTML
+      inside quote/list/details bodies, because `TopicPostCell` still owns one
+      post row rather than splitting every InstantView block into adapter rows.
+      `TableBlock` now also renders nested table-cell `CookedPostBlock` children
+      instead of flattening cells to plain text, and its outer scroll geometry
+      matches `BlockTableCell`'s dp(18) horizontal scroll padding plus dp(8)
+      top/bottom table spacing.
+- [x] `ListBlock`: top-level lists now use an embedded `ViewGroup`, matching
+      the structural direction of `BlockListItemCell` / `BlockOrderedListItemCell`
+      and allowing nested `CodeBlock` / `TableBlock` children to keep their real
+      `HorizontalScrollView` child views. Simple text rows now follow the
+      upstream list-item `textY` / `height += dp(8)` spacing instead of reusing
+      paragraph cell padding. Markers are per-item `StaticLayout`s aligned by
+      marker/text first-line ascent difference, matching the upstream
+      `numLayout` / `numOffsetY` direction more closely than raw `drawText`
+      baseline placement. Canvas fallback remains for lists nested inside
+      quote/details bodies.
+- [x] `QuoteBlock`: top-level quotes now use an embedded `ViewGroup`, matching
+      the same ArticleViewer cell-holder direction used by details/list
+      containers and allowing expanded quote children such as `CodeBlock` /
+      `TableBlock` / `ListBlock` / media blocks to keep their real embedded
+      child views. Nested quotes keep the canvas fallback because the current
+      topic body still renders nested HTML inside a single parent block rather
+      than splitting every nested page block into adapter rows.
+- [x] `ImageBlock`: top-level images now use an embedded child `View` that
+      reuses the same photo/caption draw and touch pipeline, moving closer to
+      `BlockPhotoCell`'s real view-holder shape while preserving the canvas
+      fallback for nested quote/list/details bodies. Unloaded or cross-fading
+      images draw a non-interactive `RadialProgress2` chrome like `BlockPhotoCell`. Telegram
+      `DownloadController` progress/cancel state is not faked because NativeDo
+      loads Discourse URLs through `ImageReceiver`. Measurement now follows
+      `BlockPhotoCell`'s self-contained `photoY` / `textY` spacing: non-first
+      images get the internal 8dp top gap, captions are placed from the actual
+      image bottom plus 8dp, and the block owns its 8dp bottom padding instead
+      of depending on `TopicPostCell` media spacing. Discourse lightbox `href`
+      values that point at image files are treated as gallery originals, not
+      Telegram instant-view links; the `msg_instant_link` corner badge is kept
+      only for non-image external image links.
+- [x] `CollageBlock`: 5-12 image groups now choose a Telegram
+      `GroupedMessages`-style optimal 2/3/4-line layout attempt instead of a
+      fixed greedy row pass. It also follows `BlockCollageCell`'s internal
+      8dp list top / 16dp bottom padding. Top-level collage blocks now render
+      through an embedded `RecyclerListView` with a non-scrolling layout manager
+      that places tile views at the grouped-media rects, while nested collage
+      bodies keep the canvas fallback. Hidden source tiles keep the media
+      placeholder background while the ImageReceiver draw is suppressed during
+      PhotoViewer transitions. Tile gallery keys use the same image-like
+      `href` rule as `ImageBlock`, so Discourse lightbox originals participate
+      in PhotoViewer swiping while non-image wrapper links do not become fake
+      gallery images. Full `BlockCollageCell` adapter parity remains incomplete
+      because tiles are NativeDo views rather than ArticleViewer `BlockPhotoCell`
+      / `BlockVideoCell` holders backed by `TLRPC.PageBlock`s.
+- [x] `PollBlock`: cooked HTML result data is parsed into a Java native port of
+      Telegram-style poll option state and result drawing. Each `PollButton`
+      now owns a NativeDo-scoped `PollButtonDrawable` subset for upstream-shaped
+      voter-count drawable lifecycle/drawing and a vendored `CheckBoxBase`
+      for upstream-shaped checked-state animation. Vote submission is wired through
+      `POST /polls/vote`; local submitted state immediately requests layout /
+      invalidation for the optimistic UI transition, and after a successful vote
+      the current post is fetched again so the block renders server-confirmed
+      selected state and results.
+- [x] `DetailsBlock`: replaces the previous self-drawn concealed details body
+      with a `TL_pageBlockDetails`-shaped open/closed child block model.
+      Expanded children now follow the upstream level+1 row direction with a
+      details-level line, dp(32) text/media start, and no synthetic inter-child
+      gap. Top-level details now use an embedded `ViewGroup` so child
+      code/table/list/media blocks retain their embedded drawing structure;
+      nested details keep the canvas fallback because `TopicPostCell` still
+      owns a single post row instead of splitting every details child into
+      adapter rows.
+      Full `SpoilerEffect2` GL/media spoiler parity is intentionally not copied.
+- [x] `CalloutBlock`: still NativeDo-specific because Discourse callouts do not
+      map to a single upstream Instant View block, but top-level callouts now
+      use an embedded `ViewGroup` so nested `CodeBlock` / `TableBlock` /
+      `ListBlock` / media blocks keep the same real child-view structure used
+      by their top-level renderers. Nested callouts keep the canvas fallback.
 - [x] Text selection full overlay: handles, magnifier, translate, multi-cell
       drag, RecyclerView auto-scroll, and overlay chrome are wired for the
       topic-detail path. The `FloatingToolbar` port now mirrors Telegram's
@@ -796,15 +1023,15 @@ The rewrite is functionally complete, but several rows are deliberately
   `port_mode: native`, `forced_exact` listing the subsystems whose constants
   / branch structure we keep (typically `measurement, drawing`; add
   `gesture` for cells with custom hit testing).
-- New Kotlin blocks under `body/` follow the same rule when they port an
+- New Java blocks under `body/` follow the same rule when they port an
   upstream cell's measurement / drawing / gesture / animation. `OneboxBlock`
   requires attribution + manifest entry if it ports `ChatMessageCell` link
-  preview algorithms. `SpoilerBlock` now has a manifest entry for the
-  Telegram-style reveal model. `PollBlock` remains NativeDo-original unless it
-  copies Telegram poll percent / row-state / drawing / animation structure;
-  copied helpers get their own provenance.
-- Pure NativeDo product code (Discourse poll parsing/API models, reaction chip
-  strip, reply footer, sheet content rows) gets neither header nor manifest
+  preview algorithms. `DetailsBlock` has a manifest entry for the
+  `TL_pageBlockDetails` / `BlockDetailsCell` native port. `PollBlock.java` now has a manifest entry for the
+  Telegram-style poll percent / row-state / drawing / animation structure while
+  retaining NativeDo Discourse vote submission.
+- Pure NativeDo product code (Discourse poll parsing/API models, reply footer,
+  sheet content rows) gets neither header nor manifest
   entry unless actual Telegram source or branch structure was copied.
 - Generic Telegram UI components such as `BottomSheet` and
   `BottomSheetWithRecyclerListView` should be copied into `:telegram` with

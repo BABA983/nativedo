@@ -38,7 +38,15 @@
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "exact",
-      "notes": "Browser/menu helpers added for ItemOptions: emptyMotionEvent() copied verbatim from upstream; shakeViewSpring(View,float) is a simplified ObjectAnimator wobble (upstream SpringAnimation + shake id resources not ported) and replaceArrows(...) is a pass-through. BottomSheet support surface added for the exact upstream sheet copy: getViewInset(View) and getNavigationBarThirdButtonsFactor(int) are local safe defaults; isSafeToShow(Context) mirrors the upstream Activity finishing/destroyed guard. updateViewVisibilityAnimated(...) now calls the upstream boolean HideViewAfterAnimation constructor."
+      "notes": "Browser/menu helpers added for ItemOptions: emptyMotionEvent() copied verbatim from upstream; shakeViewSpring(View,float) is a simplified ObjectAnimator wobble (upstream SpringAnimation + shake id resources not ported) and replaceArrows(...) is a pass-through. BottomSheet support surface added for the exact upstream sheet copy: getViewInset(View) and getNavigationBarThirdButtonsFactor(int) are local safe defaults; isSafeToShow(Context) mirrors the upstream Activity finishing/destroyed guard. updateViewVisibilityAnimated(...) now calls the upstream boolean HideViewAfterAnimation constructor. NativeDo does not bundle Telegram font assets, so getTypeface(String) maps Telegram font asset names to stable system mono/bold/italic Typeface equivalents; TYPEFACE_ROBOTO_MONO is exposed for ArticleViewer/code text host wiring."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/messenger/Emoji.java",
+      "upstream": "org/telegram/messenger/Emoji.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "NativeDo emoji shim for vendored UI and topic-detail text layout: preserves the upstream Emoji/EmojiDrawable/EmojiSpan/EmojiSpanRange/replaceEmoji/parseEmojis API surface used by ArticleViewer and other copied components, but does not port Telegram emoji atlas loading, EmojiData, recent emoji state, restricted emoji, or animated emoji. Unicode emoji runs are parsed through an upstream-shaped char-state parser with a small local symbol predicate and the upstream parseEmojis exception guard, then wrapped in Telegram-shaped EmojiSpan replacement spans while still drawing with the system font, so body text can call Emoji.replaceEmoji before StaticLayout creation like ArticleViewer. Topic body rich-text builders now pass the actual block TextPaint font metrics into replaceEmoji, matching ArticleViewer's current-paint StaticLayout pipeline more closely across paragraph, caption, onebox, poll, details, and table text. replaceEmoji keeps the upstream int[] emojiOnly, alignment, scale, minusLimit, performance-class span limit, and per-span exception guard shape; EmojiSpan stores vertical alignment, scale, drawn/lastDrawX/lastDrawY, drawable bounds, and emojiDrawingYOffset for upstream-shaped span state while still omitting atlas drawables. ALIGN_BASELINE and ALIGN_BOTTOM now position the shim's system-emoji draw box and TextSelectionBoundsProvider rectangle with the same baseline/bottom semantics as Telegram's ImageSpan-backed EmojiSpan. EmojiSpan also participates in TextSelectionHelper.TextSelectionBoundsProvider so selection highlight and handle snapping treat each emoji run as a replacement-span unit like other inline media."
     },
     {
       "local": "telegram/src/main/java/org/telegram/messenger/BuildVars.java",
@@ -77,10 +85,10 @@
       "port_mode": "native",
       "notes": [
         "Compile shim, not a port: no Telegram source copied. The local file is a minimal",
-        "stub (~160 lines) that returns safe defaults for SharedConfig.animationsEnabled()",
-        "and SharedConfig.shadowsInSections (the only entry points used by ported UI). The",
-        "previous 'port_mode: exact' was wrong — diff is ~1900 lines, not 0. Kept in the",
-        "manifest so the upstream path stays discoverable; do not treat as vendored."
+        "stub (~160 lines) that returns safe defaults for SharedConfig animations, browser",
+        "settings, performance class, and fontSize surfaces used by ported UI. The previous",
+        "'port_mode: exact' was wrong — diff is ~1900 lines, not 0. Kept in the manifest so",
+        "the upstream path stays discoverable; do not treat as vendored."
       ]
     },
     {
@@ -96,7 +104,8 @@
       "upstream": "org/telegram/messenger/Utilities.java",
       "vendored_at": "009e97356",
       "modified": true,
-      "port_mode": "exact"
+      "port_mode": "exact",
+      "notes": "Mostly upstream-shaped utility surface; copyBitmaps(Bitmap,Bitmap) is host-wired as a Java Canvas fallback for SpoilerEffectBitmapFactory instead of Telegram's native JNI implementation."
     },
     {
       "local": "telegram/src/main/java/org/telegram/messenger/FileLoader.java",
@@ -114,7 +123,7 @@
       "forced_exact": [
         "drawing"
       ],
-      "notes": "Real SAX SVG parser; getBitmap(InputStream) drives Instant View SVG. Copied verbatim from upstream (keeps the Larva Labs / Apache-2.0 header); replaces an 87-line compile stub whose getBitmap(...) returned null and rendered IV SVGs blank. Host-wiring only: none required beyond the verbatim copy (all deps present in :telegram). Real deps DrawingInBackgroundThreadDrawable and wallpaper/WallpaperGiftPatternPosition were vendored verbatim alongside it."
+      "notes": "Real SAX SVG parser; getBitmap(InputStream) drives Instant View SVG. Copied from upstream (keeps the Larva Labs / Apache-2.0 header); replaces an 87-line compile stub whose getBitmap(...) returned null and rendered IV SVGs blank. Host-wiring only: all deps present in :telegram, plus localName-empty SAX compatibility falls back to qName so Discourse sprite symbols parse outside upstream's Android runtime assumptions. Real deps DrawingInBackgroundThreadDrawable and wallpaper/WallpaperGiftPatternPosition were vendored verbatim alongside it."
     },
     {
       "_comment": "actionbar",
@@ -123,7 +132,7 @@
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo Theme subset for vendored UI. Host-wired for CheckBoxBase/BottomSheet/PhotoViewer: added Theme.getServiceMessageColor(), Theme.PAINT_CLEAR, ACTION_BAR_PHOTO_VIEWER_COLOR, ACTION_BAR_PICKER_SELECTOR_COLOR, ACTION_BAR_AUDIO_SELECTOR_COLOR, dialogs_onlineCirclePaint, playPauseAnimator bootstrap, MediaActionDrawable chat_filePath/chat_updatePath/chat_flameIcon/chat_gifIcon bootstrap, AdaptiveRipple.filledRect(...), getSelectorDrawable(boolean, ResourcesProvider), and local safe defaults on MessageDrawable. Full Telegram theme/color-animation pipeline remains unported."
+      "notes": "NativeDo Theme subset for vendored UI. Host-wired for CheckBoxBase/BottomSheet/PhotoViewer/spoilers: added Theme.getServiceMessageColor(), Theme.PAINT_CLEAR, chat_msgTextPaint, ACTION_BAR_PHOTO_VIEWER_COLOR, ACTION_BAR_PICKER_SELECTOR_COLOR, ACTION_BAR_AUDIO_SELECTOR_COLOR, dialogs_onlineCirclePaint, playPauseAnimator bootstrap, MediaActionDrawable chat_filePath/chat_updatePath/chat_flameIcon/chat_gifIcon bootstrap, AdaptiveRipple.filledRect(...), getSelectorDrawable(boolean, ResourcesProvider), createRadSelectorDrawable(...)/RippleRadMaskDrawable plus setMaskDrawableRad(...) radius mutation for RecyclerListView and ChatMessageCell-style link-preview selectors, and local safe defaults on MessageDrawable. Full Telegram theme/color-animation pipeline remains unported."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/BottomSheet.java",
@@ -319,7 +328,7 @@
         "drawing",
         "gesture"
       ],
-      "notes": "NativeDo ArticleTextSelectionHelper port for topic detail: preserves Telegram's ArticleSelectableView/TextLayoutBlock/ArticleTextSelectionHelper API shape, and now keeps an upstream-shaped generic TextSelectionHelper<Cell extends SelectableView> core for selection state / layout hooks / overlay contracts. Includes long-press selection entry, touch-coordinate word selection with one-touch drag continuation after long press, rounded CornerPath selection geometry, ScalablePath line-rect shaping, handle-edge clipping, Telegram-style line-bottom handle anchoring with RTL-aware left/right silhouette switching and overshoot scale-in animation, FloatingActionMode/FloatingToolbar copy/quote/select-all/translate actions with Android/Telegram resource labels and Telegram-style dynamic action visibility, current-locale translate target propagation without copying Telegram's ML Kit source-language detection, copy-to-clipboard callback path, draggable start/end handles with Telegram-style finger-to-endpoint moving offsets, word-boundary snap while dragging, start/end role flip when crossing endpoints, row-aware closest-layout hit testing for table/poll-style same-line text blocks, overlay chrome with upstream-style short-tap/slop guarded empty-area cancel, Android Magnifier support, cursor haptic feedback while dragging, multi-cell drag selection, RecyclerView edge auto-scroll, and selectable visible text from image captions, CodeBlock, OneboxBlock, PollBlock, and TableBlock. Replaces a no-op compile stub."
+      "notes": "NativeDo ArticleTextSelectionHelper port for topic detail: preserves Telegram's ArticleSelectableView/TextLayoutBlock/ArticleTextSelectionHelper API shape, and now keeps an upstream-shaped generic TextSelectionHelper<Cell extends SelectableView> core for selection state / layout hooks / overlay contracts. Includes long-press selection entry, touch-coordinate word selection with one-touch drag continuation after long press, rounded CornerPath selection geometry, ScalablePath line-rect shaping, handle-edge clipping, Telegram-style line-bottom handle anchoring with RTL-aware left/right silhouette switching and overshoot scale-in animation, FloatingActionMode/FloatingToolbar copy/quote/select-all/translate actions with Android/Telegram resource labels and Telegram-style dynamic action visibility plus screen-coordinate content rects derived from the visible selection bounds, current-locale translate target propagation without copying Telegram's ML Kit source-language detection, copy-to-clipboard callback path that refreshes visible selected RecyclerView cells before building selected text, optional prefix StaticLayouts for list marker selection/copy geometry, touch/handle hit-testing, and FloatingToolbar content rect anchoring, optional per-layout viewport clip bounds for horizontally scrolled CodeBlock/TableBlock selection to match Telegram's child-drawn scroll clipping, TextSelectionBoundsProvider for inline pill/tag/icon/image spans that need custom rounded selection geometry mixed with normal StaticLayout selection segments across same-line and multi-line selections plus whole-span word/handle snapping; invalid or zero-sized custom bounds providers are skipped so another valid provider on the same segment can still contribute a Telegram-style rounded selection path. Custom span bounds also participate in selectable-block hit testing and initial touch offset selection, so pill/icon/image spans whose visual bounds extend outside StaticLayout lineLeft/lineRight can still be selected as whole inline objects. Includes draggable start/end handles with Telegram-style finger-to-endpoint moving offsets, word-boundary snap while dragging, start/end role flip when crossing endpoints, row-aware closest-layout hit testing for table/poll-style same-line text blocks that now delays the same-Y early return until X/custom-bounds distance is considered, overlay chrome with upstream-style short-tap/slop guarded empty-area cancel, Android Magnifier support, cursor haptic feedback while dragging, multi-cell drag selection, RecyclerView edge auto-scroll, and selectable visible text from image captions, CodeBlock, OneboxBlock, PollBlock, and TableBlock. Replaces a no-op compile stub."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/FloatingActionMode.java",
@@ -428,10 +437,10 @@
         "drawing",
         "gesture"
       ],
-      "notes": "NativeDo topic-detail post cell: BaseCell shell, avatar/header/body/reaction/reply drawing, long-press, and hit-testing are shaped after ChatMessageCell while binding to Discourse Post and PostBodyBlock models. Reply footer interaction now follows ChatMessageCell commentButtonRect/checkCommentButtonMotionEvent shape for rect hit testing, selector hotspot updates, click sound, and state clearing; the reply footer avatar stack now follows Telegram comment-button geometry (24dp avatars, first avatar +2dp, subsequent +17dp) and draws reply authors through ImageReceiver with AvatarDrawable initials fallback. Body block geometry also follows ArticleViewer block-cell patterns. Image taps now map block-local image bounds to window rects and pass URL-keyed source-bounds/source-receiver/source-bitmap/source-radius providers through the delegate so PhotoViewer can animate close back to the current visible gallery image, including images reached by horizontal swiping after the initial tap. Long-press selection now starts before CodeBlock/OneboxBlock/PollBlock/TableBlock consume ACTION_DOWN, cancels the active block press once selection mode starts, and forwards the still-active touch stream to TextSelectionHelper so Telegram-style one-touch drag selection continues until finger-up."
+      "notes": "NativeDo topic-detail post cell: BaseCell shell, avatar/header/body/reaction/reply drawing, long-press, and hit-testing are shaped after ChatMessageCell while binding to Discourse Post and PostBodyBlock models. Header display/meta StaticLayouts now run through Telegram Emoji.replaceEmoji with the active TextPaint metrics before layout, matching the body text and upstream Telegram replacement-span pipeline for names/titles containing emoji. Reaction strip now uses a NativeDo-bound ReactionsLayoutInBubble.ReactionButton subset: reactionButtons/pressedReactionButton naming, key/countText/count/realCount/choosen/isSelected/x/y/top/width/height/bounce fields, 26dp button height, 20dp image slot, 4dp spacing, wrapping measurement, Theme.key_chat_inReactionButton* colors, ButtonBounce scale feedback, expanded touch slop, and ChatMessageCell/ReactionsLayoutInBubble-style press cancellation on move-out/slop while binding to PostReaction and ImageReceiver emoji URLs instead of TLRPC.ReactionCount/AnimatedEmoji. Reply footer interaction now follows ChatMessageCell commentButtonRect/checkCommentButtonMotionEvent shape for rect hit testing, selector hotspot updates, ButtonBounce(this, 2.0f, 2.0f) plus getScale(0.0125f) scale feedback, click sound, move-out/slop cancellation, and state clearing; the reply footer avatar stack now follows Telegram comment-button geometry (24dp avatars, first avatar +2dp, subsequent +17dp) and draws reply authors through ImageReceiver with AvatarDrawable initials fallback. Body block geometry also follows ArticleViewer block-cell patterns: text/divider/quote/details/code/callout style blocks own their vertical padding, so TopicPostCell does not add an extra inter-block gap before ParagraphBlock/HeadingBlock/RuleBlock/QuoteBlock/DetailsBlock/CodeBlock/CalloutBlock. TopicPostCell supports ArticleViewer-style embedded child views for blocks that need real platform child views: ImageBlock, CollageBlock, CodeBlock, ListBlock, TableBlock, QuoteBlock, DetailsBlock, and CalloutBlock use that path where top-level while retaining canvas fallback for nested HTML blocks. Image taps now resolve URL-keyed image bounds through the active top-level body block before falling back to child-local rects, then map those bounds to window rects and pass source-bounds/source-receiver/source-bitmap/source-radius providers through the delegate so PhotoViewer can animate close back to the current visible gallery image, including nested list/details/table media and images reached by horizontal swiping after the initial tap. Long-press selection now starts before content blocks such as QuoteBlock/DetailsBlock/CodeBlock/CollageBlock/CalloutBlock/OneboxBlock/PollBlock/TableBlock consume ACTION_DOWN, cancels the active block press once selection mode starts, forwards the still-active touch stream to TextSelectionHelper so Telegram-style one-touch drag selection continues until finger-up, and resets active body/reaction/reply pressed state on rebind/detach/body-context rebuild."
     },
     {
-      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicHeaderCell.kt",
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicHeaderCell.java",
       "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -439,10 +448,10 @@
       "forced_exact": [
         "measurement"
       ],
-      "notes": "NativeDo topic header row with Telegram/ArticleViewer-style title + metadata spacing; binds Discourse topic title, counts, and tags."
+      "notes": "NativeDo topic header row with Telegram/ArticleViewer-style StaticLayout measurement/drawing: the title and metadata are measured dynamically instead of using fixed child offsets, run through Emoji.replaceEmoji with the active TextPaint metrics, and use ArticleViewer's default StaticLayout line spacing (extra dp(4), multiplier 1.0, includePad=false), while binding Discourse topic title, counts, and tags."
     },
     {
-      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicFooterCell.kt",
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicFooterCell.java",
       "upstream": "org/telegram/ui/Cells/TextInfoPrivacyCell.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -450,10 +459,10 @@
       "forced_exact": [
         "measurement"
       ],
-      "notes": "Small centered topic footer/retry row following Telegram footer cell spacing while using NativeDo retry/end/empty text."
+      "notes": "Small centered topic footer/retry row now subclasses the vendored Telegram TextInfoPrivacyCell and keeps NativeDo retry/end/empty click binding."
     },
     {
-      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/TextLayoutBlock.kt",
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/TextLayoutBlock.java",
       "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -463,10 +472,22 @@
         "drawing",
         "gesture"
       ],
-      "notes": "Shared NativeDo StaticLayout block base derived from ArticleViewer text block measurement/drawing and link hit-testing concepts; uses NativeDo PostBodyTextBuilder and delegate routing."
+      "notes": "Shared NativeDo StaticLayout block base derived from ArticleViewer text block measurement/drawing and link hit-testing concepts; uses NativeDo PostBodyTextBuilder plus a Telegram SpoilersTextView-shaped tap-to-reveal helper and delegate routing. Inline spoiler reveal state is written to PostBodyBlockState.revealedInlineSpoilersByKey so rebuilt paragraph/header/list/quote/details/table text blocks do not re-mask already revealed spans for the same cached post body. Default text cell padding now mirrors BlockParagraphCell/BlockHeaderCell textY=dp(8) and total vertical padding dp(16), with host inter-block spacing disabled for paragraph/header/divider style blocks to avoid double spacing. Topic body StaticLayout construction is routed through a NativeDo ArticleTextLayout helper so paragraph text, captions, onebox text, details titles, poll text, code, and table text share ArticleViewer's createLayoutForText trailing-newline trim, Emoji.replaceEmoji(..., ALIGN_BASELINE) pass, and default line spacing (multiplier 1.0, extra dp(4), includePad=false). Discourse/HtmlCompat inline bold, italic, underline, strike, monospace, spoiler, and relative/absolute size ranges are now merged into non-overlapping Telegram TextStyleSpan segments before StaticLayout creation, avoiding stacked spans whose applyStyle calls can clear underline or strike state. Inline ImageReceiver handles are now attached after StaticLayout construction so pending inline image/GIF receiver filters read the final ReplacementSpan bounds established by layout measurement, matching Telegram's span-measure-then-draw contract more closely. Link pressed highlight now routes through ArticleLinkPressState, a NativeDo helper that centralizes Telegram LinkSpanDrawable path construction, ArticleViewer's windowBackgroundWhiteLinkSelection pressed color, release animation, long-press callback, touch-slop cancellation, and custom inline pill/tag bounds hit-testing for TextLayoutBlock, ImageBlock captions, OneboxBlock rich text, DetailsBlock titles, and PollBlock option titles. Pressed highlight paths now mix normal StaticLayout selection segments with custom pill/tag/icon bounds on the same single-line link instead of falling back to a plain text path whenever the custom span covers only part of the link, and custom bounds also participate in hit-testing when they cover only part of a link. Overlapping link spans follow ArticleViewer's wider-span hit preference instead of returning the first matching span."
     },
     {
-      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ParagraphBlock.kt",
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/SpoilerTextLayout.java",
+      "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/Components/spoilers/SpoilersTextView.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "forced_exact": [
+        "drawing",
+        "gesture"
+      ],
+      "notes": "NativeDo helper for inline text spoiler drawing and tap-to-reveal over StaticLayout-backed body text. It follows SpoilersTextView/SpoilersClickDetector semantics around SpoilerEffect collection, clipping, ripple reveal, click sound, and TextStyleSpan.FLAG_STYLE_SPOILER_REVEALED state, while omitting TextView-specific padding/editor/animated-emoji plumbing and all SpoilerEffect2 media masking."
+    },
+    {
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ParagraphBlock.java",
       "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -478,7 +499,7 @@
       "notes": "NativeDo paragraph block corresponding to ArticleViewer.BlockParagraphCell, backed by TextLayoutBlock."
     },
     {
-      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/HeadingBlock.kt",
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/HeadingBlock.java",
       "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -487,10 +508,10 @@
         "measurement",
         "drawing"
       ],
-      "notes": "NativeDo heading block corresponding to ArticleViewer header/subheader cells with local Discourse heading levels."
+      "notes": "NativeDo heading block corresponding to ArticleViewer BlockTitleCell/BlockHeaderCell/BlockSubheaderCell with local Discourse heading levels; it inherits the upstream textY=dp(8)/vertical dp(16) text-cell padding from TextLayoutBlock instead of adding an extra local 18dp top gap, and maps Discourse h1/h2/h3+ to ArticleViewer-style 23dp/20dp/17dp heading text sizes while still rendering through one NativeDo HeadingBlock class rather than separate adapter row types."
     },
     {
-      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/RuleBlock.kt",
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/RuleBlock.java",
       "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -499,10 +520,10 @@
         "measurement",
         "drawing"
       ],
-      "notes": "NativeDo divider block corresponding to ArticleViewer.BlockDividerCell."
+      "notes": "NativeDo divider block corresponding to ArticleViewer.BlockDividerCell; keeps upstream full-width 18dp measured cell and centered rounded bar from one-third to two-thirds of the available width, so it opts out of the normal 18dp text-block horizontal inset."
     },
     {
-      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ImageBlock.kt",
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ImageBlock.java",
       "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -512,18 +533,18 @@
         "drawing",
         "gesture"
       ],
-      "notes": "NativeDo image block corresponding to ArticleViewer.BlockPhotoCell; uses Discourse image URLs and ImageReceiver instead of Telegram page media models. Captions are exposed to TextSelectionHelper, and image taps expose URL-keyed source bounds/ImageReceiver/radius for PhotoViewer hand-off."
+      "notes": "NativeDo image block corresponding to ArticleViewer.BlockPhotoCell; uses Discourse image URLs and ImageReceiver instead of Telegram page media models. Measurement keeps Telegram's photo aspect/max-height behavior, upstream-style photoY/textY derivation, 18dp caption inset, width-36dp text column, 8dp image-to-caption spacing, and the BlockPhotoCell-style internal 8dp top gap for non-first images plus 8dp bottom padding instead of relying on TopicPostCell external media spacing. Caption text now uses the shared 14dp secondary-color mediaCaptionPaint matching ArticleViewer photoCaptionTextPaints, and caption layout shares ArticleViewer's default text line spacing through ArticleTextLayout instead of the older local 1.15 multiplier. Caption inline image/GIF receivers attach only after the caption StaticLayout has measured replacement spans, keeping receiver filter dimensions aligned with final span bounds. Caption content follows BlockPhotoCell's currentBlock.caption.text boundary: Discourse alt/title attributes remain accessibility/source metadata and are not rendered as visible captions unless parser produced captionHtml from figcaption/adjacent caption content. Caption link pressed highlight uses ArticleLinkPressState so it shares the same LinkSpanDrawable path/release/long-press lifecycle as regular body text. Top-level image rendering now uses an EmbeddedPostBodyBlock child View that reuses the same draw/touch pipeline for the photo and rich caption, matching BlockPhotoCell's real View-holder direction while canvas drawing remains available for nested quote/list/details bodies. Captions are exposed to TextSelectionHelper; Discourse lightbox hrefs that resolve to image files are treated as gallery originals without the instant-link badge, while non-image external image links keep the BlockPhotoCell msg_instant_link corner badge and route badge taps through normal link handling; image taps expose URL-keyed source bounds/ImageReceiver/radius for PhotoViewer hand-off, and unloaded/cross-fading images draw the square placeholder plus non-interactive RadialProgress2 loading chrome like BlockPhotoCell without pretending to support Telegram DownloadController progress/cancel."
     },
     {
-      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/CollageBlock.kt",
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/CollageBlock.java",
       "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo collage block corresponding to ArticleViewer.BlockCollageCell; uses Telegram grouped-media-style aspect-ratio row geometry with Discourse lightbox groups and ImageReceiver tiles. Each tile now exposes URL-keyed source bounds/ImageReceiver/radius for PhotoViewer hand-off. Not a full BlockCollageCell.GroupedMessages port yet."
+      "notes": "NativeDo collage block corresponding to ArticleViewer.BlockCollageCell; uses Telegram grouped-media-style aspect-ratio row geometry with Discourse lightbox groups and ImageReceiver tiles. Tile gaps follow the upstream grouped-media 2dp edge reduction, 5-12 image groups now choose a Telegram GroupedMessages-style optimal 2/3/4-line layout attempt instead of a fixed greedy row pass, and measurement now follows BlockCollageCell's self-contained listTop=dp(8)/bottom=dp(16) padding instead of relying on TopicPostCell external media spacing. Top-level collage rendering now uses an EmbeddedPostBodyBlock container with a lazy org.telegram.ui.Components.RecyclerListView inner list laid out at y=dp(8) like BlockCollageCell, plus a custom non-scrolling LayoutManager that places grid-local tile views at the grouped-media rects; canvas drawing remains as the fallback for nested quote/list/details bodies. Discourse per-image captionHtml values that were preserved before image coalescing are rendered as a single BlockCollageCell-style caption under the grid, using the shared mediaCaptionPaint/ArticleTextLayout path with link pressed highlight, inline spoiler reveal, TextSelectionHelper exposure, and post-layout inline image/GIF receiver attachment so receiver filters match final replacement-span bounds. Each tile uses the same image-like href rule as ImageBlock for PhotoViewer gallery keys, exposes URL-keyed block-local source bounds/ImageReceiver/radius for PhotoViewer hand-off, uses square tile placeholders, and only draws placeholder/loading chrome while the receiver has no fully visible bitmap. Still not a full BlockCollageCell adapter port because tiles are NativeDo TileView rows instead of ArticleViewer BlockPhotoCell/BlockVideoCell holders backed by TLRPC page blocks, and multiple Discourse image captions are joined into one NativeDo collage caption."
     },
     {
-      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/OneboxBlock.kt",
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/OneboxBlock.java",
       "upstream": "org/telegram/ui/Cells/ChatMessageCell.java",
       "vendored_at": "009e97356",
       "modified": true,
@@ -533,43 +554,51 @@
         "drawing",
         "gesture"
       ],
-      "notes": "NativeDo Discourse onebox card using ChatMessageCell link-preview measurement/drawing/hit-region ideas without importing MessageObject or TLRPC.WebPage. Text layouts are exposed to TextSelectionHelper, and thumbnail taps expose URL-keyed source bounds/ImageReceiver/radius for PhotoViewer hand-off."
+      "notes": "NativeDo Discourse onebox card using ChatMessageCell link-preview measurement/drawing/hit-region ideas without importing MessageObject or TLRPC.WebPage. Link-preview chrome now routes through org.telegram.ui.Components.ReplyMessageLine.TYPE_LINK for the rounded background, left line, and link accent color, while preserving NativeDo onebox data and click routing; the removed local CTA leaves the whole preview as the click target, press state cancels on move-out/slop, and preview feedback follows ChatMessageCell.linkPreviewBounce with ButtonBounce(host, 2.0f, 2.0f) plus getScale(0.01f), per-preview linkPreviewSelector-style Theme.createRadSelectorDrawable hotspot/state updates, and the same asymmetric selector mask radius used by ChatMessageCell link previews via Theme.setMaskDrawableRad(selector, 3, 6, 6, 3). Measurement/text styling now keeps ChatMessageCell link-preview constants for the generic small-preview path: 10dp text x offset, 48dp small-image side, 10dp small-image margin, 2dp inter-layout gaps, title maxLines=4, description maxLines=6, 14dp bold site/title text like chat_replyNamePaint, 14dp regular description text like chat_replyTextPaint, and ChatMessageCell.generateStaticLayout-style 3-line small-image text wrapping so only the leading lines reserve thumbnail space. Onebox text layouts use link-preview line spacing instead of ArticleViewer body paragraph spacing: site name uses 0dp extra spacing on the regular path, while title/description and small-image wrapped layouts use dp(1). Text layouts are exposed to TextSelectionHelper; title and description preserve source HTML and render through PostBodyTextBuilder so inline spoilers use TextStyleSpan/SpoilerEffect draw and tap-to-reveal behavior consistently with paragraph/quote text, including PostBodyBlockState-backed reveal persistence across rebuilt onebox layouts. Onebox rich-text link pressed highlight now uses ArticleLinkPressState, sharing LinkSpanDrawable path/release/long-press behavior with paragraph text and image captions. Thumbnail taps expose URL-keyed source bounds/ImageReceiver/radius for PhotoViewer hand-off, and thumbnail placeholder/loading chrome is drawn only while the receiver has no fully visible bitmap."
     },
     {
-      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/QuoteBlock.kt",
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/QuoteBlock.java",
       "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo quote block derived from ArticleViewer.BlockBlockquoteCell text/bar layout: keeps the upstream 18dp left line, 2dp line width, 14dp text inset, 8dp vertical spacing, separate title/body StaticLayouts, link hit-testing, and now exposes both title and body layouts to TextSelectionHelper. Backend expansion remains NativeDo-specific and routes Discourse data-topic/data-post through TopicViewModel."
+      "notes": "NativeDo quote block derived from ArticleViewer.BlockBlockquoteCell text layout and chrome. It keeps the upstream 18dp..20dp vertical quote line, 14dp text inset after the line, 8dp vertical spacing, separate title/body StaticLayouts, link hit-testing, and the blockquote-caption text style as 14dp secondary text rather than bold/accent text, while intentionally avoiding ChatMessageCell's rounded ReplyMessageLine quote background for Instant View parity. Simple fallback quote text does not inherit paragraph top/bottom padding, so the quote container owns the upstream BlockBlockquoteCell-style 8dp top/title-body/bottom spacing. Quote bodies render recursive CookedPostBlock children without adding a synthetic inter-child gap so nested paragraph/list/details/media blocks own their upstream-style vertical padding, forward nested TextSelectionHelper layouts, keep an active child touch target from ACTION_DOWN through MOVE/UP/CANCEL so nested pressed state clears correctly, and expose nested image source bounds/ImageReceiver/radius for PhotoViewer hand-off. Top-level quotes now expose an EmbeddedPostBodyBlock ViewGroup so nested CodeBlock/TableBlock/ListBlock/media blocks can retain their embedded child-view drawing and scrolling path; quotes nested inside canvas-only bodies keep the draw() fallback. Backend expansion remains NativeDo-specific and routes Discourse data-topic/data-post through TopicViewModel."
     },
     {
-      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/CodeBlock.kt",
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/CodeBlock.java",
       "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo preformatted code block corresponding to ArticleViewer.BlockPreformattedCell; keeps upstream-shaped rectangular background band from y=dp(8) to height-dp(8), 16dp horizontal text margin, 12dp child vertical margin plus 8dp scroll padding, and horizontal scrolling inside the canvas-drawn block with parent-intercept handoff instead of an actual HorizontalScrollView child. Syntax highlighting remains intentionally omitted per topic-detail plan."
+      "notes": "NativeDo preformatted code block corresponding to ArticleViewer.BlockPreformattedCell; now uses an embedded HorizontalScrollView plus textContainer for top-level code blocks, keeping upstream-shaped rectangular background band from y=dp(8) to height-dp(8), preformatted background color derived from accent/link color at alpha=20 like Telegram's windowBackgroundWhiteLinkSelection paint, 16dp horizontal text margin, 12dp child vertical margin plus 8dp scroll padding, textContainer measured as textWidth+dp(32), parent-intercept handoff, and viewport-clipped selection geometry so horizontally scrolled code selection does not draw outside the visible scroll area. Canvas fallback remains for code blocks nested inside quote/list/details bodies, with horizontal drag scrolling and selection geometry using the same 16dp/20dp text offsets as drawing when no real child layout has run. Syntax highlighting remains intentionally omitted per topic-detail plan."
     },
     {
-      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ListBlock.kt",
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ListBlock.java",
       "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo ordered/unordered list block corresponding to ArticleViewer list item block cells; keeps Telegram-style measured marker column, first-item top padding, marker/text spacing, and now exposes ordered/unordered markers as TextSelectionHelper copy prefixes so selected list text preserves the visible bullet/number. Nested block-item parity is not claimed."
+      "notes": "NativeDo ordered/unordered list block corresponding to ArticleViewer BlockListItemCell/BlockOrderedListItemCell; keeps Telegram-style measured marker column, first-item top padding, last-item bottom padding, marker/text spacing, and exposes ordered/unordered markers as TextSelectionHelper copy prefixes on the first selectable child only so selected list text preserves the visible bullet/number without duplicating it for later child blocks. First-item 10dp top padding follows ArticleViewer's top-level-only rule and is not applied to nested lists. ListBlock owns its ArticleViewer list-cell horizontal geometry instead of receiving TopicPostCell's generic 18dp text inset: marker/text X starts from the upstream dp(18 + 6) + max marker width formula, and text width subtracts the upstream trailing dp(18). Markers now render as per-item StaticLayouts through ArticleTextLayout, align to the first selectable text line found through each child block's fillTextLayoutBlocks using the same marker-ascent minus text-ascent idea as ArticleViewer numLayout/numOffsetY instead of raw canvas drawText baseline placement, including the unordered drawDot branch that applies dp(2.5) then subtracts dp(1) when drawing the bullet. Nested lists now carry ArticleViewer-style list level into marker/text geometry, adding level*dp(12) for unordered lists and level*dp(20) for ordered lists instead of resetting indentation at each recursive ListBlock; list items whose first child is DetailsBlock also use the upstream vertical-align branch so the marker centers against the details cell rather than the summary baseline. Simple text list items now use a list-specific TextLayoutBlock with topPadding=0 and bottomPadding=dp(8), matching BlockListItemCell's textY/item-height model and avoiding the normal paragraph dp(8)+dp(8) padding inside list rows; local synthetic 6dp item/nested-block gaps were removed so child blocks own their vertical padding. Top-level lists now use an embedded ViewGroup so nested CodeBlock/TableBlock children can keep their real HorizontalScrollView child structure, and nested child touch streams keep the ACTION_DOWN target through MOVE/UP/CANCEL for correct pressed-state cleanup. Canvas fallback remains for lists nested inside quote/details bodies. Exact BlockListItemCell RecyclerView.ViewHolder parity is still not claimed because list items bind CookedPostBlock children."
     },
     {
-      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/TableBlock.kt",
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/TableBlock.java",
       "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo table block derived from ArticleViewer.BlockTableCell/TableLayout geometry concepts: uses intrinsic per-column width measurement, horizontal overflow scrolling, grid drawing, and exposes table cell StaticLayouts to TextSelectionHelper. Full upstream TL_pageTableCell colspan/rowspan TableLayout parity is not claimed."
+      "notes": "NativeDo table block derived from ArticleViewer.BlockTableCell/TableLayout geometry concepts. Standard text-only tables now build TLRPC.TL_pageTableCell values and render through the vendored org.telegram.ui.Components.TableLayout with ArticleViewer.DrawingText so row/column/span placement, measured line rows, background, borders, and text drawing follow Telegram's table engine. Top-level tables use an embedded HorizontalScrollView plus table container like BlockTableCell, including scrollView horizontal padding dp(18), clipToPadding=false, listY/top padding dp(8), bottom padding dp(8), scrollability checks against viewport-dp(36), and viewport-clipped selection geometry so selected cell text follows the visible horizontal scroll window. Inline-only Discourse table cells with markup now stay inside the cell text-layout path instead of becoming recursive child blocks, rendering through PostBodyTextBuilder/BuiltText and ArticleLinkPressState so links, hashtag chips, inline icons, pending inline image receivers, and inline spoiler reveal use the shared paragraph text pipeline; spoiler reveal state is persisted in PostBodyBlockState by table cell key while plain cells still keep the TableLayout path. Nested or mixed-content Discourse table cells still use the NativeDo recursive CookedPostBlock fallback with child-owned vertical padding and no synthetic inter-child gap so links, nested blocks, image source bounds/ImageReceiver/radius, child touch streams, and nested list marker prefix StaticLayout selection geometry continue to work inside quote/list/details/table bodies; horizontal table scroll now dispatches ACTION_CANCEL to the active nested child before clearing it so pressed link/spoiler/media state does not stick."
     },
     {
-      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/SpoilerBlock.kt",
-      "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/Components/spoilers/SpoilersTextView.java",
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/DetailsBlock.java",
+      "upstream_path": "TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "NativeDo Discourse details block corresponding to ArticleViewer.BlockDetailsCell and TLRPC.TL_pageBlockDetails. It now holds a TL_pageBlockDetails currentBlock, uses currentBlock.open as the expansion state, respects Discourse HTML's initial details open attribute while keeping per-post opened/closed state for user toggles, follows BlockDetailsCell header geometry (arrow at dp(18), title x=dp(50), title text in normal body color, min header height dp(39), bottom divider), and lets the title StaticLayout grow to its natural height instead of imposing a local two-line ellipsis. It maps child CookedPostBlock values into approximate TLRPC.PageBlock children while rendering them through NativeDo PostBodyBlock children. Details title links now use ArticleLinkPressState for the same LinkSpanDrawable path/release/long-press lifecycle as paragraph text, image captions, and onebox rich text. Expanded children now approximate ArticleViewer's TL_pageBlockDetailsChild level+1 rows with a dp(18)..dp(20) level line, child x offsets that place text/media at dp(32), no extra fixed inter-child gap, and child-owned block padding. Top-level details blocks now expose an EmbeddedPostBodyBlock ViewGroup so expanded child CodeBlock/TableBlock/ListBlock/media blocks can keep their embedded child-view drawing path instead of degrading to the nested canvas fallback; details nested inside quote/canvas-only bodies still use the original draw() fallback. Child touch streams now keep an active child target from ACTION_DOWN through MOVE/UP/CANCEL so nested link/spoiler/media pressed state can clear correctly. This is not an exact ArticleViewer adapter-row port because children still bind Discourse/CookedPostBlock data and the topic detail container is not ArticleViewer.WebpageAdapter."
+    },
+    {
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/PollBlock.java",
+      "upstream": "org/telegram/ui/Cells/ChatMessageCell.java",
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native",
@@ -578,7 +607,7 @@
         "drawing",
         "gesture"
       ],
-      "notes": "NativeDo spoiler block derived from Telegram SpoilersTextView/SpoilerEffect reveal model: concealed text is drawn as line-bounded masks with deterministic particle noise and tap-origin ripple reveal. Does not port SpoilerEffect2 media/GL, shader bitmap factory, or TextStyleSpan marker parsing."
+      "notes": "NativeDo Discourse poll renderer derived from ChatMessageCell poll button/result drawing: keeps upstream-shaped PollButton fields (answer/title/x/y/titleX/titleY/count/percent/prevPercent/percentProgress/prevPercentProgress/chosen/prevChosen/selectorDrawableColor/selectorDrawable/pollButtonDrawable/checkBox), left-side single/multiple choice controls, result percent text placed before the title, Telegram-like expanded selector/drawable bounds, 5dp progress lines with right-side room for result chrome, 300ms poll result animation, option pressed hit testing via pressedVoteButton, TextSelectionHelper rows, ChatMessageCell normalizePollPercents-style integer percent normalization by fractional remainder, and now routes option press feedback through per-button Theme.createRadSelectorDrawable selector drawables with setHotspot/setState like ChatMessageCell. Option-title link/spoiler rich-text streams now clear activeRichTextButtonIndex when MOVE returns unhandled, matching Telegram-style pressed-state cancellation so a drag-cancelled title spoiler/link cannot swallow the next vote tap; option-title link pressed highlight now uses ArticleLinkPressState for the same LinkSpanDrawable path/release/long-press lifecycle as paragraph text, image captions, details titles, and onebox rich text. Poll option spoiler reveal uses a separate inlineState/inlineStateKey from structural poll selection/submitted state, so nested polls can keep RichText spoiler persistence while details/list children intentionally disable structural state persistence. Result voter-count chrome goes through a NativeDo-scoped org.telegram.ui.Components.poll.buttons.PollButtonDrawable subset. Poll option check state follows ChatMessageCell's pollCheckBox[] setup with org.telegram.ui.Components.CheckBoxBase configured as setDrawUnchecked(false), setCuttingCheck(true), and setBackgroundType(9), while the unchecked circle/square remains self-drawn like drawPoll. It binds answer to CookedPostBlock.PollOption and submits through TopicViewModel POST /polls/vote, including multiple selected options for multi-choice polls; local submitted state now immediately requestLayouts/invalidates the host so status text, submit-button removal, and result row heights remeasure before the server-refreshed cooked HTML arrives. Does not import TLRPC.MessageMedia, media-answer thumbnails/download progress, public-voter avatars, quiz solution, timer, todo, or hidden-result restrictions."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java",
@@ -600,6 +629,85 @@
         "animation"
       ],
       "notes": "Copied verbatim. Custom toggle switch with BoolAnimator, BaseCell.RippleDrawableSafe, and themed track/thumb drawing. All deps (AndroidUtilities, Theme, BoolAnimator, BaseCell, CubicBezierInterpolator) present in :telegram."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/TextStyleSpan.java",
+      "upstream": "org/telegram/ui/Components/TextStyleSpan.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "drawing",
+        "measurement"
+      ],
+      "notes": "Copied from upstream so inline spoiler text can be marked with FLAG_STYLE_SPOILER and discovered by SpoilerEffect.addSpoilers(...)."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/spoilers/SpoilerEffect.java",
+      "upstream": "org/telegram/ui/Components/spoilers/SpoilerEffect.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "animation",
+        "drawing",
+        "gesture"
+      ],
+      "notes": "Replaces the previous no-op stub with the upstream text spoiler particle/ripple drawable. This is for inline text spoilers; SpoilerEffect2 media/GL masking remains out of scope."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/spoilers/SpoilerEffectBitmapFactory.java",
+      "upstream": "org/telegram/ui/Components/spoilers/SpoilerEffectBitmapFactory.java",
+      "vendored_at": "009e97356",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "animation",
+        "drawing"
+      ],
+      "notes": "Copied from upstream as SpoilerEffect's shared moving particle texture backend. Uses local Utilities.copyBitmaps Java fallback instead of Telegram JNI."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/ReplyMessageLine.java",
+      "upstream": "org/telegram/ui/Components/ReplyMessageLine.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "forced_exact": [
+        "drawing"
+      ],
+      "notes": "NativeDo-scoped subset exposing upstream ReplyMessageLine constants, check(...), getColor/getBackgroundColor/setBackgroundColor, hasSticker(), drawLine(...), and drawBackground(...) for topic reply/link-preview chrome. It intentionally omits Telegram peer-color resolution, animated emoji/sticker, sponsored/loading gradients, and MessageObject-specific branches; NativeDo callers use it for TopicPostCell reply footer and OneboxBlock TYPE_LINK preview chrome, while ArticleViewer-style QuoteBlock uses a simple vertical line instead."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/poll/buttons/PollButtonDrawableBase.java",
+      "upstream": "org/telegram/ui/Components/poll/buttons/PollButtonDrawableBase.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "forced_exact": [
+        "drawing",
+        "gesture"
+      ],
+      "notes": "NativeDo-scoped subset copied from upstream shape: selectorDrawable, getSelectorDrawable(), setupCallbacks(), verifyDrawable(), setSelectorsColor(), resetSelectors(), alpha propagation, and selector color retinting are kept so poll row selectors can use upstream method names without pulling full Telegram poll media infrastructure."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/poll/buttons/PollButtonDrawable.java",
+      "upstream": "org/telegram/ui/Components/poll/buttons/PollButtonDrawable.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "forced_exact": [
+        "drawing"
+      ],
+      "notes": "NativeDo-scoped subset exposing upstream PollButtonDrawable API used by ChatMessageCell.PollButton: setVotersVisible(), attach()/detach(), setVotersCountTextColor(), setHasMediaPadding(), setMedia(), isHasMedia(), getImageReceiver(), setVotersCount(), setRecentVoters(), getVotersCountTargetWidth(), draw(), and verifyDrawable(). Media answers, DownloadController progress, recent voter avatars, RadialProgress2 media chrome, and Telegram MessageObject/TLRPC media binding are intentionally no-op/omitted for Discourse polls."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/QuoteSpan.java",
+      "upstream": "org/telegram/ui/Components/QuoteSpan.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Minimal shell exposing QuoteSpan.Block.top/bottom for SpoilerEffect quote-boundary checks. Full Telegram quote chrome/editing/collapse behavior is intentionally deferred to the topic quote/reply alignment phase."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Adapters/FiltersView.java",
@@ -1042,7 +1150,12 @@
         "HttpFileTask and HttpImageTask delegate the transfer to it; otherwise the",
         "upstream HttpURLConnection path runs verbatim. Lets :app handle product",
         "concerns (auth cookies, Cloudflare clearance, UA, Referer) via OkHttp",
-        "interceptors without leaking that knowledge into vendored code."
+        "interceptors without leaking that knowledge into vendored code.",
+        "NativeDo also treats URL paths ending in .svg/.svgz as IMAGE_TYPE_SVG",
+        "so Discourse image-backed avatar flairs render through SvgHelper instead",
+        "of falling through to BitmapFactory.",
+        "Animated CSS-keyframes SVGs are routed to NativeDo's AnimatedSvgDrawable",
+        "before falling back to the static SvgHelper bitmap path."
       ]
     },
     {
@@ -1051,6 +1164,31 @@
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native"
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/AnimatedFileDrawable.java",
+      "upstream": "org/telegram/ui/Components/AnimatedFileDrawable.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": [
+        "NativeDo keeps Telegram's AnimatedFileDrawable API surface for ImageReceiver",
+        "but replaces upstream ffmpeg/JNI frame decoding with Android Movie-backed",
+        "GIF decoding for URL-based Discourse animated avatars. Video/webm streaming",
+        "and Telegram's full native decoder pipeline are intentionally not ported."
+      ]
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/messenger/utils/BitmapsCache.java",
+      "upstream": "org/telegram/messenger/utils/BitmapsCache.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "notes": [
+        "NativeDo lightweight in-memory frame cache compatible with the upstream",
+        "CacheOptions/Cacheable call surface. It does not implement Telegram's",
+        "pcache2 disk format or native animation cache generation pipeline."
+      ]
     },
     {
       "local": "telegram/src/main/java/org/telegram/messenger/NotificationCenter.java",
@@ -1446,7 +1584,18 @@
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "exact",
-      "notes": "Replaced 309-line native port with full upstream 1346-line copy. Host wiring: DialogCell.FixedWidthSpan replaced with standalone FixedWidthSpan. SpoilerEffect is a no-op stub."
+      "notes": "Replaced 309-line native port with full upstream 1346-line copy. Host wiring: DialogCell.FixedWidthSpan replaced with standalone FixedWidthSpan. Inline spoiler drawing now uses the real upstream-shaped SpoilerEffect infrastructure."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/CachedStaticLayout.java",
+      "upstream": "org/telegram/ui/CachedStaticLayout.java",
+      "vendored_at": "009e97356",
+      "modified": true,
+      "port_mode": "native",
+      "forced_exact": [
+        "drawing"
+      ],
+      "notes": "Lightweight NativeDo subset for SpoilerEffect.renderWithRipple(...): wraps StaticLayout and exposes upstream method names used by the patched-layout path while omitting RenderNode/emoji cache invalidation."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/WebInstantView.java",
@@ -1717,7 +1866,7 @@
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo SizeNotifierFrameLayout subset. Keeps upstream-facing delegate/delegates, getKeyboardHeight(), measureKeyboardHeight(), setBottomClip(int), and notifyHeightChanged() API used by BottomSheet and SizeNotifierFrameLayoutPhoto. Full Telegram blur/wallpaper/chat-background machinery remains unported."
+      "notes": "NativeDo SizeNotifierFrameLayout subset. Keeps upstream-facing delegate/delegates, getKeyboardHeight(), measureKeyboardHeight(), setBottomClip(int), notifyHeightChanged(), and SimplerCanvas marker API used by BottomSheet, SizeNotifierFrameLayoutPhoto, and SpoilerEffect layout drawing. Full Telegram blur/wallpaper/chat-background machinery remains unported."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/SizeNotifierFrameLayoutPhoto.java",

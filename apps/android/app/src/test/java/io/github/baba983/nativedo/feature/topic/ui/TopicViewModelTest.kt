@@ -197,7 +197,7 @@ class TopicViewModelTest {
     }
 
     @Test
-    fun onPollOptionSelectedVotesAndRefreshesPost() = runTest {
+    fun onPollOptionsSelectedVotesAndRefreshesPost() = runTest {
         val refreshedPost = post(id = 1001L, postNumber = 1).copy(cookedHtml = "<p>updated poll</p>")
         val repository = FakeTopicRepository(
             detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L)),
@@ -206,10 +206,10 @@ class TopicViewModelTest {
         viewModel = TopicViewModel(repository = repository, topicId = 101L)
         viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
 
-        viewModel.onPollOptionSelected(postId = 1001L, postNumber = 1, pollName = "frontend", optionId = "option-a")
+        viewModel.onPollOptionsSelected(postId = 1001L, postNumber = 1, pollName = "frontend", optionIds = listOf("option-a", "option-b"))
         runCurrent()
 
-        assertThat(repository.votePollRequests).containsExactly(Triple(1001L, "frontend", "option-a"))
+        assertThat(repository.votePollRequests).containsExactly(PollVoteRequest(1001L, "frontend", listOf("option-a", "option-b")))
         assertThat(repository.loadPostByNumberRequests).containsExactly(101L to 1)
         assertThat(viewModel.uiState.value.posts.single().cookedHtml).isEqualTo("<p>updated poll</p>")
     }
@@ -265,7 +265,7 @@ class TopicViewModelTest {
         val loadPostByNumberRequests = mutableListOf<Pair<Long, Int>>()
         val reactionUsersRequests = mutableListOf<Long>()
         val toggleReactionRequests = mutableListOf<Pair<Long, String>>()
-        val votePollRequests = mutableListOf<Triple<Long, String, String>>()
+        val votePollRequests = mutableListOf<PollVoteRequest>()
 
         override suspend fun load(topicId: Long): Result<TopicDetail> {
             loadRequests += topicId
@@ -292,11 +292,17 @@ class TopicViewModelTest {
             return toggleReactionResult
         }
 
-        override suspend fun votePoll(postId: Long, pollName: String, optionId: String): Result<Unit> {
-            votePollRequests += Triple(postId, pollName, optionId)
+        override suspend fun votePoll(postId: Long, pollName: String, optionIds: List<String>): Result<Unit> {
+            votePollRequests += PollVoteRequest(postId, pollName, optionIds)
             return votePollResult
         }
     }
+
+    private data class PollVoteRequest(
+        val postId: Long,
+        val pollName: String,
+        val optionIds: List<String>,
+    )
 
     private fun topicDetail(
         loadedPostIds: List<Long>,

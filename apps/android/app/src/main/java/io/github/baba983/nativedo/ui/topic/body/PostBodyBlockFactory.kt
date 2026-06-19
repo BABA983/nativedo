@@ -1,69 +1,109 @@
 package io.github.baba983.nativedo.ui.topic.body
 
 import io.github.baba983.nativedo.core.html.CookedPostBlock
+import io.github.baba983.nativedo.core.html.GalleryImage
 import io.github.baba983.nativedo.core.html.cookedGalleryImages
 
 internal object PostBodyBlockFactory {
+    @JvmOverloads
     fun build(
         blocks: List<CookedPostBlock>,
         context: PostBodyBuildContext,
         state: PostBodyBlockState? = null,
+        gallery: List<GalleryImage> = cookedGalleryImages(blocks, context.baseUrl),
+        stateKeyPrefix: String = "",
+        persistStructuralState: Boolean = true,
+        listLevel: Int = 0,
     ): List<PostBodyBlock> {
-        val gallery = cookedGalleryImages(blocks, context.baseUrl)
         return blocks.mapIndexed { index, block ->
+            val stateKey = if (stateKeyPrefix.isEmpty()) index.toString() else "$stateKeyPrefix.$index"
+            val structuralState = if (persistStructuralState) state else null
             when (block) {
                 is CookedPostBlock.Text -> ParagraphBlock(
-                    html = block.html,
-                    context = context,
+                    block.html,
+                    context,
+                    state,
+                    TextLayoutBlock.inlineSpoilerStateKey("text:$stateKey", block.html),
                 )
                 is CookedPostBlock.Heading -> HeadingBlock(
-                    html = block.html,
-                    level = block.level,
-                    context = context,
+                    block.html,
+                    block.level,
+                    context,
+                    state,
+                    TextLayoutBlock.inlineSpoilerStateKey("heading:$stateKey", block.html),
                 )
                 is CookedPostBlock.Image -> ImageBlock(
-                    image = block,
-                    gallery = gallery,
-                    context = context,
+                    block,
+                    gallery,
+                    context,
+                    index == 0,
+                    state,
+                    TextLayoutBlock.inlineSpoilerStateKey("image:$stateKey", block.captionHtml ?: block.alt),
                 )
                 is CookedPostBlock.Collage -> CollageBlock(
-                    block = block,
-                    gallery = gallery,
-                    context = context,
+                    block,
+                    gallery,
+                    context,
+                    state,
+                    TextLayoutBlock.inlineSpoilerStateKey("collage:$stateKey", block.images.joinToString("|") { it.captionHtml ?: it.alt }),
                 )
                 is CookedPostBlock.Onebox -> OneboxBlock(
-                    block = block,
-                    context = context,
+                    block,
+                    context,
+                    state,
+                    "onebox:$stateKey:${block.href}",
                 )
                 is CookedPostBlock.Code -> CodeBlock(
-                    code = block.code,
-                    context = context,
+                    block.code,
+                    context,
                 )
                 is CookedPostBlock.ListItems -> ListBlock(
-                    block = block,
-                    context = context,
+                    block,
+                    context,
+                    gallery,
+                    state,
+                    "list:$stateKey",
+                    listLevel,
                 )
                 is CookedPostBlock.Quote -> QuoteBlock(
-                    block = block,
-                    context = context,
-                    state = state,
-                    stateIndex = index,
+                    block,
+                    context,
+                    structuralState,
+                    index,
+                    gallery,
+                    state,
+                    "quote:$stateKey",
                 )
-                is CookedPostBlock.Spoiler -> SpoilerBlock(
-                    block = block,
-                    context = context,
-                    state = state,
-                    stateIndex = index,
+                is CookedPostBlock.Callout -> CalloutBlock(
+                    block,
+                    context,
+                    gallery,
+                    state,
+                    "callout:$stateKey",
+                )
+                is CookedPostBlock.Details -> DetailsBlock(
+                    block,
+                    context,
+                    structuralState,
+                    index,
+                    gallery,
+                    state,
+                    "details:$stateKey",
                 )
                 is CookedPostBlock.Table -> TableBlock(
-                    block = block,
-                    context = context,
+                    block,
+                    context,
+                    gallery,
+                    state,
+                    "table:$stateKey",
                 )
                 is CookedPostBlock.Poll -> PollBlock(
-                    block = block,
-                    context = context,
-                    state = state,
-                    stateIndex = index,
+                    block,
+                    context,
+                    structuralState,
+                    index,
+                    state,
+                    "poll:$stateKey",
                 )
                 CookedPostBlock.Rule -> RuleBlock(context)
             }

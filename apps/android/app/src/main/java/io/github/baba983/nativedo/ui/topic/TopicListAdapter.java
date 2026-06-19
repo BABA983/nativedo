@@ -340,6 +340,7 @@ public class TopicListAdapter extends RecyclerListView.SelectionAdapter {
             if (!Objects.equals(oldTopic.getTitle(), newTopic.getTitle()) ||
                 !Objects.equals(oldTopic.getAuthorUsername(), newTopic.getAuthorUsername()) ||
                 !Objects.equals(oldTopic.getAuthorAvatarTemplate(), newTopic.getAuthorAvatarTemplate()) ||
+                !Objects.equals(oldTopic.getAuthorAnimatedAvatarUrl(), newTopic.getAuthorAnimatedAvatarUrl()) ||
                 !Objects.equals(oldTopic.getCategoryId(), newTopic.getCategoryId()) ||
                 !Objects.equals(oldTopic.getLastPosterUsername(), newTopic.getLastPosterUsername()) ||
                 !Objects.equals(oldTopic.getTags(), newTopic.getTags()) ||

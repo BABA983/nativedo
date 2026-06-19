@@ -103,7 +103,6 @@ dependencies {
     implementation(libs.coil.gif)
     implementation(libs.coil.network.okhttp)
     implementation(libs.coil.svg)
-    implementation(libs.androidsvg)
 
     testImplementation(libs.junit4)
     testImplementation(libs.truth)

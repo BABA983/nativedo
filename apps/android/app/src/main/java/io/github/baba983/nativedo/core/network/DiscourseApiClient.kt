@@ -85,13 +85,13 @@ class DiscourseApiClient(
             ).close()
         }
 
-    suspend fun votePoll(postId: Long, pollName: String, optionId: String) =
+    suspend fun votePoll(postId: Long, pollName: String, optionIds: List<String>) =
         runWithSessionBoundary {
             val csrfToken = service.csrf().csrf
             service.votePoll(
                 postId = postId,
                 pollName = pollName,
-                optionIds = listOf(optionId),
+                optionIds = optionIds,
                 csrfToken = csrfToken,
             ).close()
         }
