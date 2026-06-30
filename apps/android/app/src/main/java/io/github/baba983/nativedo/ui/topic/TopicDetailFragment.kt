@@ -302,7 +302,7 @@ class TopicDetailFragment(
             viewModel.uiState.collectLatest { state ->
                 topicTitle = state.title.ifBlank { initialTitle.orEmpty() }
                 adapter.submit(state)
-                anchorInitialTopicContentIfNeeded(state)
+                applyInitialTopicHeaderAnchorIfNeeded(state)
                 updateCollapsedTitle()
                 updateReactionUsersSheet(context, state)
                 updateReplyComposerPanel(state)
@@ -409,29 +409,26 @@ class TopicDetailFragment(
         }
     }
 
-    private fun anchorInitialTopicContentIfNeeded(state: TopicUiState) {
+    private fun applyInitialTopicHeaderAnchorIfNeeded(state: TopicUiState) {
         if (!topicDetailShouldAnchorInitialContent(
                 initialContentAnchored = topicInitialContentAnchored,
                 userHasScrolled = topicListUserHasScrolled,
-                hasPosts = state.posts.isNotEmpty(),
                 isLoading = state.isLoading,
+                isRefreshing = state.isRefreshing,
+                postsEmpty = state.posts.isEmpty(),
+                errorMessage = state.errorMessage,
                 hasJumpEvent = state.jumpEvent != null,
             )
         ) {
             return
         }
         topicInitialContentAnchored = true
-        listView.post {
-            if (!::listView.isInitialized || topicListUserHasScrolled) {
-                return@post
-            }
-            val manager = listView.layoutManager as? LinearLayoutManager ?: return@post
-            val firstVisible = manager.findFirstVisibleItemPosition()
-            if (topicDetailShouldCorrectInitialAnchor(firstVisible)) {
-                manager.scrollToPositionWithOffset(0, 0)
-            }
-            updateCollapsedTitle()
+        if (!::listView.isInitialized || topicListUserHasScrolled) {
+            return
         }
+        val manager = listView.layoutManager as? LinearLayoutManager ?: return
+        manager.scrollToPositionWithOffset(0, 0)
+        updateCollapsedTitle()
     }
 
     private fun openImageViewer(
@@ -5600,19 +5597,29 @@ internal fun topicDetailShouldLoadMoreFromScroll(
 internal fun topicDetailShouldAnchorInitialContent(
     initialContentAnchored: Boolean,
     userHasScrolled: Boolean,
-    hasPosts: Boolean,
     isLoading: Boolean,
+    isRefreshing: Boolean,
+    postsEmpty: Boolean,
+    errorMessage: String?,
     hasJumpEvent: Boolean,
 ): Boolean {
     return !initialContentAnchored &&
         !userHasScrolled &&
-        hasPosts &&
-        !isLoading &&
+        topicDetailListShowsTopicHeader(
+            isLoading = isLoading,
+            postsEmpty = postsEmpty,
+            errorMessage = errorMessage,
+        ) &&
+        !isRefreshing &&
         !hasJumpEvent
 }
 
-internal fun topicDetailShouldCorrectInitialAnchor(firstVisibleItemPosition: Int): Boolean {
-    return firstVisibleItemPosition > 0
+internal fun topicDetailListShowsTopicHeader(
+    isLoading: Boolean,
+    postsEmpty: Boolean,
+    errorMessage: String?,
+): Boolean {
+    return !isLoading && postsEmpty.not() && errorMessage == null
 }
 
 internal enum class TopicPostActionKind {

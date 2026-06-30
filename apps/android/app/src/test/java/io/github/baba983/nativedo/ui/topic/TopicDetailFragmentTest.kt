@@ -4,7 +4,6 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.ViewConfiguration
 import com.google.common.truth.Truth.assertThat
-import androidx.recyclerview.widget.RecyclerView
 import io.github.baba983.nativedo.core.model.DiscourseEmoji
 import io.github.baba983.nativedo.core.model.DiscourseEmojiCategory
 import io.github.baba983.nativedo.core.model.PostReaction
@@ -89,8 +88,10 @@ class TopicDetailFragmentTest {
             topicDetailShouldAnchorInitialContent(
                 initialContentAnchored = false,
                 userHasScrolled = false,
-                hasPosts = true,
                 isLoading = false,
+                isRefreshing = false,
+                postsEmpty = false,
+                errorMessage = null,
                 hasJumpEvent = false,
             ),
         ).isTrue()
@@ -98,8 +99,10 @@ class TopicDetailFragmentTest {
             topicDetailShouldAnchorInitialContent(
                 initialContentAnchored = false,
                 userHasScrolled = true,
-                hasPosts = true,
                 isLoading = false,
+                isRefreshing = false,
+                postsEmpty = false,
+                errorMessage = null,
                 hasJumpEvent = false,
             ),
         ).isFalse()
@@ -107,8 +110,10 @@ class TopicDetailFragmentTest {
             topicDetailShouldAnchorInitialContent(
                 initialContentAnchored = true,
                 userHasScrolled = false,
-                hasPosts = true,
                 isLoading = false,
+                isRefreshing = false,
+                postsEmpty = false,
+                errorMessage = null,
                 hasJumpEvent = false,
             ),
         ).isFalse()
@@ -116,18 +121,67 @@ class TopicDetailFragmentTest {
             topicDetailShouldAnchorInitialContent(
                 initialContentAnchored = false,
                 userHasScrolled = false,
-                hasPosts = true,
                 isLoading = false,
+                isRefreshing = false,
+                postsEmpty = false,
+                errorMessage = null,
                 hasJumpEvent = true,
+            ),
+        ).isFalse()
+        assertThat(
+            topicDetailShouldAnchorInitialContent(
+                initialContentAnchored = false,
+                userHasScrolled = false,
+                isLoading = false,
+                isRefreshing = true,
+                postsEmpty = false,
+                errorMessage = null,
+                hasJumpEvent = false,
+            ),
+        ).isFalse()
+        assertThat(
+            topicDetailShouldAnchorInitialContent(
+                initialContentAnchored = false,
+                userHasScrolled = false,
+                isLoading = true,
+                isRefreshing = false,
+                postsEmpty = true,
+                errorMessage = null,
+                hasJumpEvent = false,
             ),
         ).isFalse()
     }
 
     @Test
-    fun topicDetailInitialAnchorCorrection_onlyWhenHeaderAlreadySkipped() {
-        assertThat(topicDetailShouldCorrectInitialAnchor(RecyclerView.NO_POSITION)).isFalse()
-        assertThat(topicDetailShouldCorrectInitialAnchor(0)).isFalse()
-        assertThat(topicDetailShouldCorrectInitialAnchor(1)).isTrue()
+    fun topicDetailListShowsTopicHeader_whenLoadedPostsWithoutError() {
+        assertThat(
+            topicDetailListShowsTopicHeader(
+                isLoading = false,
+                postsEmpty = false,
+                errorMessage = null,
+            ),
+        ).isTrue()
+        assertThat(
+            topicDetailListShowsTopicHeader(
+                isLoading = true,
+                postsEmpty = true,
+                errorMessage = null,
+            ),
+        ).isFalse()
+        assertThat(
+            topicDetailListShowsTopicHeader(
+                isLoading = false,
+                postsEmpty = true,
+                errorMessage = null,
+            ),
+        ).isFalse()
+        assertThat(
+            topicDetailListShowsTopicHeader(
+                isLoading = false,
+                postsEmpty = false,
+                errorMessage = "network",
+            ),
+        ).isFalse()
     }
 
     @Test
