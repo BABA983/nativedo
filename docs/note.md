@@ -25,3 +25,5 @@ anyrouter issue resolve
 https://linux.do/t/topic/1779614
 又来修一下CC
 https://linux.do/t/topic/2336669
+auto scroll issue
+https://linux.do/t/topic/2501882

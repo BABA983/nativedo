@@ -55,7 +55,8 @@ in-place as phases land.
   Discourse's `emoji_name + count + reacted` model. `TopicPostCell` keeps a
   NativeDo-bound `ReactionButton` subset, borrowing upstream field names,
   26dp button height, 20dp image slot, 4dp spacing, wrapping measurement, and
-  reaction theme keys.
+  reaction theme keys, plus a local subset of `recordDrawingState()` /
+  `animateChange()` style update transitions.
 - **Do not** treat `apps/android/telegram` stubs as the source of truth for
   non-trivial UI behavior. When you want Telegram behavior, diff against
   `vendor/telegram-android` and then either copy the component into `:telegram`
@@ -362,6 +363,10 @@ every text-bearing block will reuse.
       `StaticLayout` + (optional) `BuiltText.Handle`. `TextLayoutBlock`
       now mirrors ArticleViewer text-cell padding (`textY = dp(8)`,
       `height += dp(8 + 8)`) and `lineSpacingExtra = dp(4)`.
+      `HeadingBlock` now also mirrors ArticleViewer's title/header/subheader
+      paint split: h1 uses `dp(23)`, h2 uses `dp(20)`, h3-h6 use `dp(17)`,
+      and all heading levels request Telegram's `fonts/mw_bold.ttf` typeface
+      through `AndroidUtilities.getTypeface(...)`.
       Body text layouts that are not direct `TextLayoutBlock`s now route
       through the same `ArticleTextLayout` helper, so image captions, onebox
       title/body, details titles, poll rows, code, and table cells share
@@ -445,21 +450,72 @@ see "Image loading" above).
       measurement / drawing / hit-testing, backed by a NativeDo
       `OneboxPreview` model. It now builds an immutable
       `OneboxPreviewLayout` containing thumbnail `ImageReceiver` bounds,
-      site/title/description layouts, total height, and separate hit regions
-      for description/card/thumbnail. The whole preview is the link target,
+      site/title/description layouts, Telegram-style link-preview chrome
+      bottom, total height, and separate hit regions for
+      description/card/thumbnail. The whole preview is the link target,
       and its press feedback uses Telegram's `linkPreviewBounce` pattern
-      (`ButtonBounce(..., 2.0f, 2.0f)` plus `getScale(0.01f)`) and
+      (`ButtonBounce(..., 2.0f, 2.0f)` plus `getScale(0.01f)`) with the
+      scale pivot centered on `linkPreviewY + linkPreviewHeight / 2`, and
       `linkPreviewSelector`-style `Theme.createRadSelectorDrawable` hotspot /
       state updates. The
       rounded preview background, left line, and link accent color now route
       through `ReplyMessageLine.TYPE_LINK`, matching the ChatMessageCell
-      quote/link chrome entry point. The
+      quote/link chrome entry point. Only the site/domain line uses that
+      returned name color; title and description use the normal body text
+      color like `ChatMessageCell` after its draw-time paint reset, and
+      description inline links use `ReplyMessageLine.getColor()` like the
+      upstream preview description draw path. Domain/title/description paints
+      now clone Telegram's `Theme.chat_replyNamePaint` /
+      `Theme.chat_replyTextPaint` metrics, including the upstream
+      `(2 * SharedConfig.fontSize + 10) / 3` reply text sizing, then apply
+      NativeDo's current body/link colors locally. Its
+      top-level host inset is 18dp, then the preview rail/background apply
+      `ChatMessageCell.drawLinkPreview`'s `linkX -= dp(1.33f)` internal shift
+      while keeping the right edge fixed like the upstream `right - linkX`
+      width calculation; the internal preview text keeps Telegram's extra 10dp
+      offset from that shifted `linkX`.
+      Short text-only/small-image previews now size the rounded background to
+      the visible preview content plus Telegram's 20dp internal text allowance
+      instead of always filling the whole topic body column; large-media
+      previews still use the media width to fill the preview column. Hit
+      testing uses the upstream `checkLinkPreviewMotionEvent` vertical span:
+      it starts at `linkPreviewY` instead of making the rounded background's
+      top padding clickable, and stops at `linkPreviewY + linkPreviewHeight +
+      dp(8)` for the non-InstantView path instead of using the full local
+      block tail/protrusion height. Horizontally, the hit region starts at the
+      unshifted preview text column like `unmovedTextX`; the visual
+      `linkX -= dp(1.33f)` rail/background extension is not a separate tap
+      target. Once pressed, MOVE keeps the selector/bounce active anywhere
+      inside this whole preview hit region and only cancels after leaving it,
+      matching `ChatMessageCell`'s `instantPressed` / `linkPreviewSelector`
+      motion branch instead of cancelling when crossing local
+      card/thumbnail/description sub-targets.
+      Its background/left rail follow ChatMessageCell's preview rect:
+      top starts at `linkPreviewY - dp(6)`, bottom ends at
+      `linkPreviewY + linkPreviewHeight`, with a separate `dp(6)` block tail
+      outside that chrome; large-media previews also keep the upstream
+      `dp(2.66f)` extra chrome tail when media follows text.
+      Small-image previews keep the upstream `isSmallImageLinkPreviewType`
+      whitelist, including `telegram_aicomposetone`, and preserve the
+      `force_large_media` / `force_small_media` override order used by
+      `ChatMessageCell`: force-large disables small media first, then
+      force-small can force the 48dp side thumbnail path back on. They also keep the
+      upstream RTL-title branch that subtracts the 48dp thumbnail width from
+      the following description width, the draw-time RTL/right-aligned x-offset
+      formula, and the `ChatMessageCell` small-image chrome rule of min 50dp
+      then `-dp(8)` bottom trim. The
       description preserves source HTML and renders through
       `PostBodyTextBuilder`, so inline spoiler spans use the shared
       `TextStyleSpan` / `SpoilerEffect` draw/reveal path and persist revealed
       state through `PostBodyBlockState`. Hidden onebox thumbnails keep the
       media placeholder background while PhotoViewer suppresses the source
-      `ImageReceiver` draw. It does
+      `ImageReceiver` draw. Non-small site/domain rows now use Telegram's
+      measured `ceil(paint.measureText(site_name) + 1)` layout width instead
+      of occupying the whole preview text column and keep the upstream 0dp
+      extra line spacing; small-image site/domain rows use the same
+      `generateStaticLayout` path as the other wrapped preview text, including
+      the vendored `StaticLayoutEx.createStaticLayout` final layout and
+      `dp(1)` line spacing. It does
       **not** import `TLRPC.WebPage` or `MessageObject` into `:app` body code.
 
 **Validate:** harness opens real JSON/cooked fixture rows with images / collage /
@@ -472,10 +528,19 @@ NativeDo port. `PhotoViewerDebugActivity` also exposes `topicCellTap`,
 collage, and onebox-thumbnail media hand-off rectangles can be checked
 on-device. The same debug activity exposes `topicCellPollVote`,
 `topicCellInlineSpoilerTap`, `topicCellReplyFooterTap`,
-`topicCellReactionTap`, and `topicCellMoreReactionTap` smoke scenarios for poll
-option submission state, inline `SpoilerEffect` reveal state, reply-footer
-delegate routing, and reaction / more-reaction delegate routing without adding
-low-value style/pixel tests.
+`topicCellReactionTap`, `topicCellMoreReactionTap`,
+`topicCellPostLongPress`, `topicCellReplyFooterLongPress`, and
+`topicCellReactionLongPress` smoke scenarios for poll option submission state,
+inline `SpoilerEffect` reveal state, reply-footer delegate routing, reaction /
+more-reaction delegate routing, and `BaseCell` long-press routing without adding
+low-value style/pixel tests. The fragment-level `topicDetailInteraction`
+scenario builds a minimal `TopicDetailFragment` host and invokes the production
+post-options popup, reply action, root-bottom reply panel, and standalone
+reaction rail paths directly, so popup/panel regressions can be checked from
+logcat even when shell-level input injection is unavailable. The long-press and
+fragment-level debug scenarios emit `passed=` and `failures=` fields so the
+device run has an explicit pass/fail result instead of requiring manual log
+interpretation.
 
 ### Phase 5 — remaining block types
 
@@ -489,7 +554,11 @@ Ported one type per commit. Each ships independently:
       title and body exposed to `TextSelectionHelper`. Simple fallback quote
       text no longer inherits paragraph top/bottom padding; the quote container
       owns the upstream BlockBlockquoteCell-style 8dp top, 8dp title/body gap,
-      and 8dp bottom spacing. Discourse `aside.quote` parsing now preserves
+      and 8dp bottom spacing. Nested `blockquote` parsing now preserves
+      ArticleViewer `TL_pageBlockBlockquote.level` semantics, with the recursive
+      renderer translating those level offsets into parent-text-column local
+      coordinates and drawing the upstream `level > 0` parent rail continuation
+      alongside the current-level rail. Discourse `aside.quote` parsing now preserves
       `data-topic` / `data-post`; `QuoteBlock` requests expansion through
       `PostBodyDelegate.onQuoteExpand`, `TopicPostCellDelegate.didExpandQuote`,
       and `TopicDetailFragment` -> `TopicViewModel.expandQuote()`, then replaces
@@ -510,9 +579,11 @@ Ported one type per commit. Each ships independently:
       highlighting. Geometry now follows ArticleViewer `BlockPreformattedCell`:
       rectangular background band from `dp(8)` to `height - dp(8)`, 16dp
       horizontal text margin, and 12dp child vertical margin plus 8dp scroll
-      padding. The background color now follows Telegram's link/accent-colored
-      alpha-20 preformatted paint, and the text container keeps the upstream
-      `textWidth + dp(32)` trailing space. When the block is rendered through
+      padding. The background color now follows Telegram's
+      `Theme.key_windowBackgroundWhiteLinkSelection` alpha-20 preformatted
+      paint, and the text container keeps the upstream
+      `textWidth + dp(32)` trailing space, where `textWidth` is the measured
+      longest code line rather than a viewport-filled minimum. When the block is rendered through
       the nested canvas fallback, it now keeps horizontal drag scrolling and
       selection geometry aligned to the same text offsets instead of degrading
       to static text.
@@ -554,9 +625,13 @@ Ported one type per commit. Each ships independently:
       state, the row uses Telegram's arrow/title/divider geometry, and child
       content is parsed as recursive blocks that appear only while open. Open
       children now approximate `TL_pageBlockDetailsChild level + 1`: a
-      `dp(18)..dp(20)` level line is drawn, text/media children start at
-      `dp(32)`, and child blocks own their own vertical padding without an
-      extra fixed details gap. Top-level details now expose an embedded
+      `dp(18)..dp(20)` level line is drawn with the same
+      `Theme.key_chat_inReplyLine` color used by ArticleViewer quote/detail
+      rails, text/media children start at `dp(32)`, and child blocks own their
+      own vertical padding without an extra fixed details gap or the stale
+      `BlockDetailsBottomCell` spacer whose insertion is commented out in the
+      pinned `ArticleViewer`. Top-level
+      details now expose an embedded
       `ViewGroup`, so expanded child code/table/list/media blocks can keep
       their embedded child-view drawing path; details nested inside
       quote/canvas-only bodies still use the canvas fallback. Child touch
@@ -633,6 +708,59 @@ friction.
       `didLongPressPost`, `didExpandQuote`.
       Delegate now covers link/user/topic/image/long-link, reply/reaction/
       more-reactions, long-post, and quote expansion.
+      Long-post actions open a Telegram-style `ActionBarPopupWindow` /
+      `ActionBarMenuSubItem` menu at the pressed cell coordinate. The popup is
+      wrapped in a NativeDo `TopicPostScrimPopupContainerLayout` subset so the
+      reaction rail and action menu are sibling surfaces like Telegram's
+      `ChatScrimPopupContainerLayout + ReactionsContainerLayout + popupLayout`
+      shape, with back/outside close handling, 220ms dismiss, and Telegram's
+      default `dimBehind(0.2f)` scrim amount.
+      Popup vertical clamping now follows Telegram's menu height budget by
+      reserving `dp(48)` beyond the measured scrim content, giving the rail
+      enter/overshoot transition the same bottom-edge breathing room as
+      `ChatActivity`.
+      The rail enter progress is also forwarded into
+      `ActionBarPopupWindowLayout.setReactionsTransitionProgress(...)`, so the
+      menu background/content collapses and fades with the reaction rail like
+      Telegram's scrim container subset.
+      The post menu and reaction rail now use Telegram's per-density
+      `popup_fixed_alert4.9.png` background resource instead of the local
+      transparent fallback, so popup padding, shadow, and rounded-edge chrome
+      come from the same asset family as `ChatActivity`.
+      Its enter draw path now uses Telegram `ReactionsContainerLayout`'s
+      `CLIP_PROGRESS = 0.25f` reveal gate, clipping from the trailing side and
+      reducing content translation after the initial reveal instead of simply
+      sliding the whole rail across the popup background. The popup rail
+      background also draws the same `drawBubbles`-style two-circle tail subset
+      (`bigCircleRadius=dp(8)`, `smallCircleRadius=dp(4)`,
+      `bigCircleOffset=dp(36)`) after the reveal gate, including Telegram's
+      `reactions_bubble_shadow.9.png` bubble shadow resource and upstream
+      shadow padding (`dp(3)` for the big bubble, `-dp(1)` for the mini bubble),
+      while still omitting the full upstream custom emoji, star, and Lottie
+      reaction container.
+      `TopicDetailFragment` keeps one active post-options popup, dismisses any
+      reaction-rail popup before showing it, and clears it on dismiss /
+      fragment destroy like Telegram's `ChatActivity.createMenu(...)` lifecycle.
+      While a post-options or standalone reaction popup is showing, the topic
+      list is stopped and temporarily made non-scrollable, matching
+      `ChatActivity`'s `chatListView.stopScroll()` /
+      `setCanScrollVertically(false)` host behavior.
+      The rail intentionally uses the local `ReactionPickerRailView` over
+      NativeDo `emoji_name` / Discourse reaction ids; it is a compact
+      transitional subset of Telegram's `ReactionsContainerLayout`, not a full
+      `ReactionsLayoutInBubble` / TLRPC reaction port.
+      The reply row now uses ChatActivity's `menu_reply` message-menu icon,
+      and the copy-link row uses ChatActivity's `msg_link` icon rather than
+      the generic copy glyph.
+      Copy-link feedback uses `BulletinFactory.createCopyLinkBulletin().show(true)`
+      like `ArticleViewer`'s web-page copy action. The add-bookmark row uses
+      the same `msg_saved` icon as `WebActionBar.bookmark_item`, while the
+      already-bookmarked remove action remains a Discourse extension with a
+      saved/bookmarks icon. Bookmark toggles show Telegram-style
+      `BulletinFactory` feedback; the local `Bulletin` port is a lightweight visible subset that
+      preserves the factory/show/hide surface used by ArticleViewer and
+      BottomSheet without porting Telegram's Lottie/spring/global-window
+      implementation.
 - [x] **Safe adapter caches only.** Keep the cache at data/state boundaries,
       not at reusable View/block-instance boundaries. Current adapter has:
       - bounded parsed-body LRU keyed by `(post.id, cookedHtmlHash)`, passing
@@ -664,12 +792,24 @@ friction.
       26dp button height, 20dp image slot, 4dp spacing, wrap measurement, and
       `Theme.key_chat_inReactionButton*` colors. Pressed feedback now uses the
       vendored `ButtonBounce` scale path like upstream reaction buttons. Draws emoji via
-      `ImageReceiver` from `emojiCatalog`; emoji URLs go through the same
-      `NativeDoImageDownloader` bridge, so cookies are handled for free.
+      `ImageReceiver` from the explicit reaction icon URL or `emojiCatalog`;
+      emoji URLs go through the same `NativeDoImageDownloader` bridge, so
+      cookies are handled for free. Missing URLs do not drop the reaction row:
+      `PostReactionRendering` supplies the same fallback glyph/count text for
+      the strip, reaction picker, reaction-users tabs, and optimistic/default
+      post reaction updates.
       Touch handling now follows the same button-state shape as
       `ChatMessageCell` comment/reaction areas: DOWN records the pressed
       button, MOVE outside clears it, UP only fires while the same button is
       still pressed, click sound is played on release, and CANCEL clears state.
+      Long-pressing an existing reaction chip or the plus chip opens the compact
+      reaction rail instead of the reaction-users sheet. Reaction updates now
+      keep previous drawn button state by key, animate surviving chip position /
+      width / text / background changes with `AnimatedFloat`, run a lightweight
+      selected-chip pulse, animate count text with a local vertical old-out /
+      new-in switch, and keep removed chips as local `outReactionButtons` so
+      they fade out like Telegram's `outButtons` subset. This is still not a
+      full `CounterDrawable` / `ReactionsEffectOverlay` port.
 - [x] Reply jump highlight: `TopicUiState.jumpHighlight` is now part of the
       post-row diff key, passed into `TopicPostCell`, and rendered as a
       one-shot `AnimatedFloat` blue cell-background fade. Animation completion
@@ -686,6 +826,8 @@ friction.
       stack now draws reply authors through `ImageReceiver`, using the same
       Discourse avatar URL resolution as the replies sheet and falling back to
       `AvatarDrawable` initials when an avatar URL is missing.
+      Long-pressing the footer opens the post long-press menu, while tapping it
+      still opens the replies-of-post sheet.
 
 **Validate:** harness renders real JSON `Post` fixture rows from
 [`fixtures/discourse/topic-detail.json`](../fixtures/discourse/topic-detail.json)
@@ -764,13 +906,39 @@ checklist below.**
       reaction; tabs are built from both the post's visible reactions and the
       loaded reaction-user groups, and tab glyphs use actual emoji images via
       `ImageReceiver` when `iconUrl` / `emojiCatalog` provides one.
-- [x] Reaction picker UI: Telegram `BottomSheet` or compact anchored popup using
-      Telegram reaction container geometry as a reference, but no full
-      `ReactionsLayoutInBubble` / TLRPC reaction model port. Current View path
-      opens a `BottomSheetWithRecyclerListView` with available `validReactions`
-      plus visible reaction ids, renders each row with a reaction glyph/image,
-      subtitle, selected check mark, and divider, then calls
-      `TopicViewModel.onReactionSelected()` on selection.
+- [x] Reaction picker UI: compact `ActionBarPopupWindow` rail using Telegram
+      context-menu chrome and reaction-container placement as the reference, but
+      no full `ReactionsContainerLayout` / `ReactionsLayoutInBubble` / TLRPC
+      reaction model port. Long-pressing a post opens the rail at the top of the
+      post-options popup; long-pressing a reaction chip or tapping the plus chip
+      opens the same rail as a standalone popup at the pressed coordinate, also
+      dimming behind through `ActionBarPopupWindow.dimBehind(0.2f)`. The rail
+      renders `currentUserReaction`, available `validReactions`, visible reaction
+      ids, and fallback ids as Telegram-colored glyph/image buttons. The rail
+      keeps the upstream 250ms overshoot container enter, and its buttons now
+      add a 150ms `EASE_OUT_QUINT` staggered scale/alpha enter plus selected
+      content scale like Telegram's `ReactionHolderView.play(delay)` subset.
+      When the rail is attached above a post action menu, its transition
+      progress drives `ActionBarPopupWindowLayout.setReactionsTransitionProgress(...)`
+      so the menu surface participates in the same enter animation. The rail
+      background now includes the upstream two-bubble tail subset that grows
+      from the same clipped transition progress.
+      Holding a rail button past Android's long-press timeout now starts a
+      Telegram-shaped `pressedProgress`: the pressed button scales toward
+      `1 + 2 * progress`, neighbors shrink toward `1 - 0.15 * progress`, and
+      neighboring buttons are translated with the same push-away formula as
+      Telegram's `checkPressedProgressForOtherViews(...)`. Release/cancel
+      restores them over 150ms. Entering this pressed state also
+      performs Android `LONG_PRESS` haptic feedback like Telegram's
+      `ReactionHolderView.longPressRunnable`.
+      Selection now starts a lightweight local move overlay from the pressed
+      rail button to the visible reaction-chip icon before calling
+      `TopicViewModel.onReactionSelected()`, matching Telegram's
+      `ReactionsEffectOverlay.ONLY_MOVE_ANIMATION` timing/easing at the
+      user-visible level. The target chip now also fades in a static reaction
+      copy after 70% progress, mirroring Telegram's target-side static image
+      handoff while the moving reaction fades out. It still does not port the
+      full `ReactionsEffectOverlay` animated-emoji/window/particle stack.
 - [x] Replies-of-post / floor sheet UI: Telegram `BottomSheet` container +
       NativeDo `RecyclerListView` rows with fixed header, bounded list height,
       title/subtitle/preview, and dividers. Current View path reuses
@@ -794,13 +962,28 @@ checklist below.**
 | Quote collapsed → expanded | `fetchPostByNumber` callback | `QuoteBlock` + `delegate.didExpandQuote` |
 | Reply target preview | `TopicPostMeta` shaping | `TopicReplyTargetResolver` |
 | Reply jump highlight | `TopicJumpHighlight` state | one-shot event → `AnimatedFloat` on `TopicPostCell` |
+| Reply composer | generic BottomSheet form | NativeDo-scoped `ChatActivityEnterView`-shaped root-bottom panel, not a sheet: 44dp emoji/input/send row matching upstream `ChatActivityEnterView.DEFAULT_HEIGHT`, inline reply context, list bottom padding adjusted while visible, `SizeNotifierFrameLayout.measureKeyboardHeight()`-driven keyboard offset/list inset, icon send/submitting state, and a bottom-attached emoji panel that uses the latest keyboard height or Telegram's `dp(200)` fallback while inserting Discourse `:emoji_name:` markup. The inline reply context now behaves closer to Telegram's `topView`: it animates height from 0 to the 46dp reply header instead of occupying space before fading in, uses the `ChatReplyContainer` 52dp icon/text/close columns without message-bubble quote-line chrome, uses the local Telegram `menu_reply` asset for the reply icon, and applies the 200ms show delay only while waiting for the keyboard to open. Its visibility animation now uses Telegram's `ChatListItemAnimator.DEFAULT_DURATION` 250ms timing and the same default cubic interpolator used by `animatorTopViewVisibility` / `animatorInputFieldHeight`, and the header translation follows the upstream `topView.setTranslationY(y - topViewHeight * visibility)` direction by sliding down behind the input field at visibility 0 and up into place at visibility 1. If the keyboard becomes visible while that delayed reply-header enter is pending, `SizeNotifierFrameLayout` flushes it immediately, matching `ChatActivityEnterView.onAdjustPanTransitionStart(keyboardVisible && showTopViewRunnable != null)`. The close icon now uses Telegram's copied `input_clear` asset with `Theme.createSelectorDrawable(..., 1, dp(19))` close button chrome, matching the upstream `replyCloseImageView` setup. The emoji button uses Telegram's 7.5dp padding plus `Theme.createInsetRoundRectDrawable(..., dp(19), dp(1), dp(3))` selector chrome. The send button now follows `ChatActivityEnterView.animateSendButton(show)`: initial state is `INVISIBLE` at alpha 0 / scale 0.1 like upstream construction, empty text stays hidden, entering text animates it to alpha 1 / scale 1 over 220ms with `CubicBezierInterpolator.EASE_OUT_QUINT`, the icon runs the upstream `SendButton.appear()`-style 320ms translate/scale/rotate entrance when first shown, the send hit/animation area is 100x44dp like upstream `sendButtonContainer`, and submitting keeps it visible while disabled with a Telegram-shaped loading state: `ButtonBounce` press feedback, 420ms loading visibility animation, icon fade/scale, and an infinite time-driven arc using the same fast-out-slow-in segment curve as upstream. Keyboard requests now follow Telegram's `openKeyboard()` fallback path by retrying focus/show-keyboard when the first `showKeyboard()` call fails, and composer open schedules a 100ms retry like upstream `openKeyboardInternal()`. The emoji button now follows `ChatActivityEnterView` toggle semantics: tap once hides the keyboard and opens emoji content below the composer; tap again while the emoji content is visible dismisses it and focuses the editor/keyboard; Back while the emoji panel is visible consumes both the fragment back path and the focused edit field's `KEYCODE_BACK/ACTION_UP` path, matching `ChatActivityEnterView.hidePopup(true)` plus `messageEditText.setOnKeyListener` when the keyboard is not visible; repeated taps during the local keyboard inset animation or the 200ms post-emoji keyboard-open wait are ignored like upstream `adjustPanLayoutHelper.animationInProgress()` / `waitingForKeyboardOpenAfterAnimation`. If the system keyboard becomes visible while the emoji panel is open, `SizeNotifierFrameLayout` closes the panel immediately, matching Telegram's `keyboardVisible && isPopupShowing()` path. Its icon also switches between the local `SMILE` and `KEYBOARD` drawings like `ChatActivityEnterViewAnimatedIconView.State.SMILE/KEYBOARD`, with a lightweight scale/fade transition instead of Telegram's Lottie assets. The edit field now wires the upstream-shaped `EditTextBoldCursor.setWindowView(rootView)` on attach and reapplies handle tint on touch like Telegram's `fixHandlesColor()` path, while the full `EditTextEffects` stack remains omitted. Multiline field-height changes now feed list bottom padding through a 250ms `animatorInputFieldHeight`-style visible island height, matching the way `ChatActivityEnterView.getIslandTotalHeight()` drives `ChatActivity` bottom layout instead of jumping directly to the measured target height. Multiline scrolling now mirrors `ChatActivityEnterView.drawMessageEditText(...)` with animated top/bottom `DST_OUT` fade masks when the edit field can scroll. Emoji selection keeps the panel open so multiple emoji can be inserted like Telegram's `EmojiView`, though this remains a NativeDo reaction-rail subset rather than a full upstream `EmojiView` port. |
 | Reaction toggle | optimistic `Post.toggledReaction` | same — moved into VM |
-| Reaction picker | bottom sheet | Telegram `BottomSheet`, only for more/add reaction |
+| Reaction picker | bottom sheet | Telegram-style `ActionBarPopupWindow` horizontal reaction rail in the long-press menu, plus the same rail for reaction-chip long-press / plus-chip tap; local `ReactionPickerRailView` now carries the upstream 250ms overshoot, `CLIP_PROGRESS = 0.25f` trailing-side reveal, and two-bubble rail tail subset with Telegram's `reactions_bubble_shadow.9.png` shadow bounds. Reaction selection also has a NativeDo `ReactionsEffectOverlay.ONLY_MOVE_ANIMATION` subset: a 34dp source icon moves toward the target chip over 350ms before the local chip pulse completes. This is still not the full upstream `ReactionsContainerLayout` / `ReactionsEffectOverlay` port. |
 | Reaction users sheet | bottom sheet | Telegram `BottomSheet`, state in VM, existing reaction chip opens users |
 | Replies-of-post count | footer row in cell | drawn footer in cell |
 
-**Validate:** `:app:assembleDebug` + manual run through the checklist on a
-real topic. Smoke-test on a long thread (≥100 posts) for fling smoothness.
+**Validate:** `:app:compileDebugKotlin`, targeted `TopicDetailFragmentTest` /
+`TopicPostCellTest`, `:app:assembleDebug`, then manual run through the checklist
+on a real topic. Smoke-test on a long thread (>=100 posts) for fling smoothness.
+2026-06-20 status: compile, targeted tests, assemble, install, main-activity
+launch, focused-window check, and logcat crash scan passed on device `449dd25d`.
+Targeted tests now cover post-options popup positioning, menu action/reaction
+ordering, reply-footer long-press, reaction-chip long-press, plus-chip tap, and
+text-selection priority over post-menu long-press. Reply-panel keyboard inset
+logic is covered by helper tests and by the local `SizeNotifierFrameLayout`
+keyboard measurement subset. After the keyboard-inset fix, reinstalling the
+debug APK and launching `MainActivity` on device `449dd25d` succeeded, the app
+was the focused application, and a logcat crash scan found no NativeDo fatal
+exception. Screenshot/manual interaction verification of the popup rail and
+reply panel keyboard behavior is still pending because the device is currently
+dozing behind `NotificationShade`, `adb input` is denied by `INJECT_EVENTS`, and
+screenshots capture a black screen.
 
 ### Phase 8 — text selection (separate effort)
 
@@ -824,7 +1007,10 @@ Standalone, no longer blocks the rewrite.
       the active touch target for MOVE/UP/CANCEL, so nested pressed states are
       not dropped when the finger leaves the original block bounds. Rebind,
       detach, and body-context rebuild reset active body / reaction / reply
-      pressed state so recycled cells do not carry stale touch state.
+      pressed state so recycled cells do not carry stale touch state. Selection
+      mode no longer makes `TopicPostCell` intercept every touch: only the
+      still-down one-touch drag continuation is intercepted, while ordinary
+      selection-mode drags fall through to RecyclerView scrolling.
 - [x] Port draggable handles, magnifier, quote / translate actions, multi-cell drag
       selection, cursor haptic feedback, RecyclerView auto-scroll, and upstream-style
       `TextSelectionOverlay` chrome. Current implementation now keeps an
@@ -836,6 +1022,11 @@ Standalone, no longer blocks the rewrite.
       `FloatingToolbar` ports. The toolbar now has a Telegram-style main action
       row plus overflow panel, back-row chrome, 48dp action rows, and upstream
       animated-vector overflow/back arrows instead of a single flat button row.
+      Copy completion is wired through `TextSelectionHelper.Callback` like
+      `ArticleViewer`: after the helper writes to the clipboard,
+      `TopicDetailFragment` shows a `BulletinFactory.createCopyBulletin(...)`
+      with Telegram's `TextCopied` string instead of relying only on a platform
+      clipboard toast.
       Like Telegram's floating toolbar, it now listens for parent layout changes
       while showing and recalculates its popup coordinates when the window size
       changes.
@@ -861,7 +1052,11 @@ Standalone, no longer blocks the rewrite.
       visual bounds for selectable-block hit testing and initial offset snapping,
       so their rounded selection geometry is not only drawn after selection but
       can also be the long-press/drag target. Empty-area taps exit selection only
-      after the same short tap/slop check used by upstream.
+      after the same short tap/slop check used by upstream. `TopicDetailFragment`
+      dispatches touch events through the selection overlay before normal child
+      dispatch like `ArticleViewer`: handle drags consume, empty-area short taps
+      are converted into a downstream cancel after clearing selection, and
+      non-handle movement continues to the list.
 
 ## Telegram parity follow-ups
 
@@ -892,9 +1087,11 @@ The rewrite is functionally complete, but several rows are deliberately
 - [x] Reply footer comment-button interaction parity: selector/ripple,
       button-rect hit testing, MOVE hotspot updates, release click sound, and
       cancel/up state clearing follow Telegram's `checkCommentButtonMotionEvent`
-      shape. The avatar-stack geometry now follows Telegram's comment button
-      stack, while visual content remains NativeDo-shaped rather than upstream's
-      exact `commentLayout` / unread-dot / avatar-image drawing.
+      shape. The avatar stack now follows Telegram's comment button geometry
+      and drawing order: 24dp avatars, first avatar +2dp, subsequent +17dp,
+      right-to-left draw order, and a dp(13) background mask circle between
+      overlapping avatars. Remaining visual content is still NativeDo-shaped
+      rather than upstream's exact `commentLayout` / unread-dot drawing.
 - [x] `CodeBlock` / `TableBlock`: top-level blocks now use embedded
       `HorizontalScrollView` child views, matching the structural shape of
       `BlockPreformattedCell` / `BlockTableCell` more closely than the earlier
@@ -913,7 +1110,10 @@ The rewrite is functionally complete, but several rows are deliberately
       paragraph cell padding. Markers are per-item `StaticLayout`s aligned by
       marker/text first-line ascent difference, matching the upstream
       `numLayout` / `numOffsetY` direction more closely than raw `drawText`
-      baseline placement. Canvas fallback remains for lists nested inside
+      baseline placement. Horizontal marker placement keeps the upstream split:
+      unordered bullets right-align at `dp(15) + maxNumWidth + level * dp(12)`,
+      while ordered markers right-align at `dp(18) + maxNumWidth + level * dp(20)`.
+      Canvas fallback remains for lists nested inside
       quote/details bodies.
 - [x] `QuoteBlock`: top-level quotes now use an embedded `ViewGroup`, matching
       the same ArticleViewer cell-holder direction used by details/list
@@ -921,7 +1121,9 @@ The rewrite is functionally complete, but several rows are deliberately
       `TableBlock` / `ListBlock` / media blocks to keep their real embedded
       child views. Nested quotes keep the canvas fallback because the current
       topic body still renders nested HTML inside a single parent block rather
-      than splitting every nested page block into adapter rows.
+      than splitting every nested page block into adapter rows; their rail
+      geometry still follows `BlockBlockquoteCell`'s current-level rail and
+      parent-rail continuation in recursive local coordinates.
 - [x] `ImageBlock`: top-level images now use an embedded child `View` that
       reuses the same photo/caption draw and touch pipeline, moving closer to
       `BlockPhotoCell`'s real view-holder shape while preserving the canvas
@@ -1009,9 +1211,11 @@ The rewrite is functionally complete, but several rows are deliberately
 - **Cell layout cache memory.** Current adapter caches are bounded LRU maps:
   parsed bodies and `PostBodyBlockState` each keep at most 64 post/html keys.
   No adapter-owned `PostBodyBlock` or measured layout objects are cached.
-- **Reactions data shape.** Confirm `emojiCatalog` always carries usable
-  image URLs for every `reaction.id` we render — if not, fall back to
-  `defaultReactionFallback` paths that already exist on `Post`.
+- **Reactions data shape.** `PostReactionRendering` now centralizes explicit
+  icon URL / `emojiCatalog` fallback and glyph labels, so existing reactions,
+  optimistic toggles, reaction picker buttons, and reaction-users tabs stay
+  visible even when linux.do omits an emoji image URL. Device validation should
+  still confirm the real `emojiCatalog` URL coverage and image loading quality.
 - **AnimatedEmoji in reactions.** Out of scope for this rewrite. Reaction
   emoji are static `ImageReceiver`s for now.
 
