@@ -84,6 +84,7 @@ public final class TopicHeaderCell extends View implements Theme.Colorable {
 
     @Override
     protected void onDraw(Canvas canvas) {
+        canvas.drawColor(Theme.getColor(Theme.key_chat_inBubble));
         if (titleLayout != null) {
             canvas.save();
             canvas.translate(textX, titleY);
@@ -100,8 +101,8 @@ public final class TopicHeaderCell extends View implements Theme.Colorable {
 
     @Override
     public void updateColors() {
-        titlePaint.setColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
-        metaPaint.setColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+        titlePaint.setColor(Theme.getColor(Theme.key_chat_messageTextIn));
+        metaPaint.setColor(Theme.getColor(Theme.key_chat_inTimeText));
         invalidate();
     }
 

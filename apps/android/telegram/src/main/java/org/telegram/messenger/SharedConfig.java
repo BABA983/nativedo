@@ -37,6 +37,9 @@ public final class SharedConfig {
     /** Matches upstream {@code SharedConfig.useThreeLinesLayout}. */
     public static boolean useThreeLinesLayout = true;
 
+    /** Matches upstream default {@code SharedConfig.bubbleRadius}. */
+    public static int bubbleRadius = 17;
+
     /** Matches upstream {@code SharedConfig.deviceIsLow}. */
     public static boolean deviceIsLow() {
         return false;

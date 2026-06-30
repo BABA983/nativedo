@@ -8,6 +8,7 @@
  */
 package io.github.baba983.nativedo.ui.topic.cell;
 
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
@@ -41,6 +42,7 @@ import io.github.baba983.nativedo.core.html.CookedPostBodyParserKt;
 import io.github.baba983.nativedo.core.html.GalleryImage;
 import io.github.baba983.nativedo.core.model.Post;
 import io.github.baba983.nativedo.core.model.PostReaction;
+import io.github.baba983.nativedo.core.model.PostReactionRendering;
 import io.github.baba983.nativedo.core.ui.DiscourseFlairKt;
 import io.github.baba983.nativedo.core.ui.DiscourseUiHelpersKt;
 import io.github.baba983.nativedo.feature.topic.ui.TopicReplyTargetResolverKt;
@@ -61,6 +63,7 @@ import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.BaseCell;
 import org.telegram.ui.Cells.TextSelectionHelper;
 import org.telegram.ui.Components.AnimatedFloat;
+import org.telegram.ui.Components.AnimatedTextView;
 import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.ButtonBounce;
 import org.telegram.ui.Components.CubicBezierInterpolator;
@@ -71,31 +74,58 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
     public TopicPostCellDelegate delegate;
     public TextSelectionHelper.ArticleTextSelectionHelper textSelectionHelper;
 
-    private static final int MAX_VISIBLE_REACTIONS = 3;
     private static final int[] PRESSED_STATE = new int[]{android.R.attr.state_enabled, android.R.attr.state_pressed};
+    private static final float HORIZONTAL_PADDING_DP = 18f;
+    private static final float VERTICAL_PADDING_DP = 12f;
+    private static final long REACTION_CHANGE_ANIMATION_DURATION_MS = 320L;
+    private static final float AVATAR_SIZE_DP = 42f;
+    private static final float AVATAR_GAP_DP = 10f;
+    private static final float HEADER_BOTTOM_SPACING_DP = 10f;
+    private static final float BLOCK_SPACING_DP = 10f;
+    private static final float FOOTER_TOP_SPACING_DP = 12f;
+    private static final float REPLY_FOOTER_HEIGHT_DP = 40f;
+    private static final float REPLY_AVATAR_SIZE_DP = 24f;
+    private static final float REPLY_AVATAR_STEP_DP = 17f;
+    private static final float REPLY_AVATAR_LEADING_OFFSET_DP = 2f;
+    private static final float REPLY_AVATAR_OVERLAP_MASK_RADIUS_DP = 13f;
+    private static final float REPLY_CONTENT_LEFT_DP = 10f;
+    private static final float REPLY_TEXT_GAP_DP = 8f;
+    private static final float REPLY_SELECTOR_RIGHT_PADDING_DP = 12f;
+    private static final float REACTION_TOP_SPACING_DP = 12f;
+    private static final float REACTION_BUTTON_HEIGHT_DP = 26f;
+    private static final float REACTION_BUTTON_SPACING_DP = 4f;
+    private static final float REACTION_BUTTON_TOUCH_SLOP_DP = 4f;
+    private static final float REACTION_BUTTON_HORIZONTAL_PADDING_DP = 8f;
+    private static final float REACTION_BUTTON_MIN_WIDTH_DP = 34f;
+    private static final float REACTION_ICON_SIZE_DP = 20f;
+    private static final float REACTION_ICON_GAP_DP = 4f;
+    private static final long REACTION_EFFECT_ANIMATION_DURATION_MS = 350L;
+    private static final float REACTION_EFFECT_EXPAND_DP = 4f;
 
-    private final int horizontalPadding = AndroidUtilities.dp(18f);
-    private final int verticalPadding = AndroidUtilities.dp(12f);
-    private final int avatarSize = AndroidUtilities.dp(42f);
-    private final int avatarGap = AndroidUtilities.dp(10f);
-    private final int headerBottomSpacing = AndroidUtilities.dp(10f);
-    private final int blockSpacing = AndroidUtilities.dp(10f);
-    private final int footerTopSpacing = AndroidUtilities.dp(12f);
-    private final int replyFooterHeight = AndroidUtilities.dp(40f);
-    private final int replyAvatarSize = AndroidUtilities.dp(24f);
-    private final int replyAvatarStep = AndroidUtilities.dp(17f);
-    private final int reactionTopSpacing = AndroidUtilities.dp(12f);
-    private final int reactionButtonHeight = AndroidUtilities.dp(26f);
-    private final int reactionButtonSpacing = AndroidUtilities.dp(4f);
-    private final int reactionButtonTouchSlop = AndroidUtilities.dp(4f);
+    private final int horizontalPadding = horizontalPaddingPx();
+    private final int verticalPadding = verticalPaddingPx();
+    private final int avatarSize = avatarSizePx();
+    private final int avatarGap = avatarGapPx();
+    private final int headerBottomSpacing = headerBottomSpacingPx();
+    private final int blockSpacing = blockSpacingPx();
+    private final int footerTopSpacing = footerTopSpacingPx();
+    private final int replyFooterHeight = replyFooterHeightPx();
+    private final int replyAvatarSize = replyAvatarSizePx();
+    private final int replyAvatarStep = replyAvatarStepPx();
+    private final int reactionTopSpacing = reactionTopSpacingPx();
+    private final int reactionButtonHeight = reactionButtonHeightPx();
+    private final int reactionButtonSpacing = reactionButtonSpacingPx();
+    private final int reactionButtonTouchSlop = reactionButtonTouchSlopPx();
 
     private final Paint dividerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final TextPaint titlePaint = new TextPaint(TextPaint.ANTI_ALIAS_FLAG);
     private final TextPaint metaPaint = new TextPaint(TextPaint.ANTI_ALIAS_FLAG);
     private final Paint reactionButtonPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint reactionEffectPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final TextPaint reactionTextPaint = new TextPaint(TextPaint.ANTI_ALIAS_FLAG);
     private final TextPaint replyTextPaint = new TextPaint(TextPaint.ANTI_ALIAS_FLAG);
     private final Paint highlightPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint replyAvatarOverlapPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint avatarFlairBadgePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint avatarFlairBadgeStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint avatarFlairIconPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
@@ -103,6 +133,7 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
     private final RectF avatarFlairBadgeRect = new RectF();
     private final RectF avatarFlairContentRect = new RectF();
     private final RectF replyFooterSelectorRect = new RectF();
+    private final RectF reactionEffectRect = new RectF();
     private final AvatarDrawable avatarDrawable = new AvatarDrawable();
     private final ImageReceiver avatarImage;
     private final ImageReceiver avatarFlairImage;
@@ -142,6 +173,12 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
     private int measuredReplyFooterHeight;
     private int reactionRowTop;
     private int reactionRowHeight;
+    private int reactionRowVisibleHeight;
+    private int reactionRowTargetHeight;
+    private float animatedReactionRowHeight;
+    private boolean reactionRowHeightInitialized;
+    private ValueAnimator reactionRowHeightAnimator;
+    private List<ReactionButton> outReactionButtons = Collections.emptyList();
     private int headerTextLeft = horizontalPadding;
     private int chromeLeft = horizontalPadding;
     private int chromeWidth;
@@ -167,8 +204,6 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
     private float pressedReactionDownX;
     private float pressedReactionDownY;
     private boolean replyFooterPressed;
-    private float replyFooterDownX;
-    private float replyFooterDownY;
     private int jumpHighlightNonce;
     private int finishingJumpHighlightNonce;
     private String hiddenImageUrl;
@@ -209,6 +244,41 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
         this.textSelectionHelper = textSelectionHelper;
     }
 
+    public Post getBoundPost() {
+        return post;
+    }
+
+    public boolean fillReactionIconBoundsInWindow(String reactionId, RectF outBounds) {
+        if (TextUtils.isEmpty(reactionId) || outBounds == null) {
+            return false;
+        }
+        for (int i = 0; i < reactionButtons.size(); i++) {
+            ReactionButton button = reactionButtons.get(i);
+            if (!reactionId.equals(button.key) || !button.wasDrawn) {
+                continue;
+            }
+            float iconLeft;
+            float iconTop;
+            float iconSize;
+            if (!button.drawingImageRect.isEmpty()) {
+                iconLeft = button.drawingImageRect.left;
+                iconTop = button.drawingImageRect.top;
+                iconSize = Math.max(button.drawingImageRect.width(), button.drawingImageRect.height());
+            } else {
+                iconSize = reactionIconSizePx();
+                iconLeft = button.lastDrawnX + (button.lastDrawnWidth - iconSize) / 2f;
+                iconTop = button.lastDrawnY + (button.height - iconSize) / 2f;
+            }
+            int[] location = new int[2];
+            getLocationInWindow(location);
+            float left = location[0] + chromeLeft + iconLeft;
+            float top = location[1] + reactionRowTop + iconTop;
+            outBounds.set(left, top, left + iconSize, top + iconSize);
+            return true;
+        }
+        return false;
+    }
+
     public void setHiddenImageUrl(String hiddenImageUrl) {
         if (TextUtils.equals(this.hiddenImageUrl, hiddenImageUrl)) {
             return;
@@ -242,6 +312,7 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
         long oldPostId = this.post != null ? this.post.getId() : Long.MIN_VALUE;
         if (oldPostId != post.getId()) {
             hiddenImageUrl = null;
+            resetReactionRowHeightAnimation();
         }
         this.post = post;
         this.previousPost = prev;
@@ -269,7 +340,7 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
         }
         loadAvatar(post);
         rebuildReplyAvatars();
-        reactionButtons = buildReactionButtons(post);
+        reactionButtons = buildReactionButtons(post, oldPostId == post.getId());
         rebuildBodyContext();
         requestLayout();
         invalidate();
@@ -278,13 +349,14 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
     @Override
     public void updateColors() {
         dividerPaint.setColor(Theme.getColor(Theme.key_divider));
-        titlePaint.setColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
-        metaPaint.setColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
-        reactionTextPaint.setColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
-        replyTextPaint.setColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
-        highlightPaint.setColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText));
-        avatarFlairBadgeStrokePaint.setColor(Theme.multAlpha(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), 0.12f));
-        replyFooterSelector = Theme.createSelectorDrawable(Theme.multAlpha(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText), 0.12f), Theme.RIPPLE_MASK_ROUNDRECT_6DP, replyFooterHeight / 2);
+        titlePaint.setColor(Theme.getColor(Theme.key_chat_messageTextIn));
+        metaPaint.setColor(Theme.getColor(Theme.key_chat_inTimeText));
+        reactionTextPaint.setColor(Theme.getColor(Theme.key_chat_inTimeText));
+        replyTextPaint.setColor(Theme.getColor(Theme.key_chat_inTimeText));
+        highlightPaint.setColor(Theme.getColor(Theme.key_chat_inReplyLine));
+        replyAvatarOverlapPaint.setColor(Theme.getColor(Theme.key_chat_inBubble));
+        avatarFlairBadgeStrokePaint.setColor(Theme.multAlpha(Theme.getColor(Theme.key_chat_messageTextIn), 0.12f));
+        replyFooterSelector = Theme.createSelectorDrawable(Theme.multAlpha(Theme.getColor(Theme.key_chat_inTimeText), 0.12f), Theme.RIPPLE_MASK_ROUNDRECT_6DP, replyFooterHeight / 2);
         rebuildBodyContext();
         requestLayout();
         invalidate();
@@ -344,10 +416,11 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
             replyFooterTop = 0;
         }
         reactionRowHeight = measureReactionRow(chromeWidth);
-        if (reactionRowHeight > 0) {
+        reactionRowVisibleHeight = updateReactionRowVisibleHeight(reactionRowHeight);
+        if (reactionRowHeight > 0 || reactionRowVisibleHeight > 0) {
             y += reactionTopSpacing;
             reactionRowTop = y;
-            y += reactionRowHeight;
+            y += reactionRowVisibleHeight;
         } else {
             reactionRowTop = 0;
         }
@@ -358,7 +431,7 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        canvas.drawColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+        canvas.drawColor(Theme.getColor(Theme.key_chat_inBubble));
         drawJumpHighlight(canvas);
         avatarImage.draw(canvas);
         drawAvatarFlair(canvas);
@@ -387,9 +460,10 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
             drawReplyFooter(canvas);
             canvas.restore();
         }
-        if (reactionRowHeight > 0) {
+        if (reactionRowVisibleHeight > 0) {
             canvas.save();
             canvas.translate(chromeLeft, reactionRowTop);
+            canvas.clipRect(0, 0, chromeWidth, reactionRowVisibleHeight);
             drawReactionRow(canvas);
             canvas.restore();
         }
@@ -407,7 +481,7 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
     @Override
     public boolean onInterceptTouchEvent(MotionEvent event) {
         if (textSelectionHelper != null && textSelectionHelper.isInSelectionMode()) {
-            return true;
+            return shouldInterceptSelectionTouch(true, ignoreSelectionTouchUntilUp);
         }
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
@@ -438,7 +512,7 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
                 }
                 return handled;
             }
-            return true;
+            return false;
         }
         int action = event.getActionMasked();
         float chromeX = event.getX() - chromeLeft;
@@ -518,6 +592,25 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
 
     @Override
     protected boolean onLongPress() {
+        if (pressedReactionButton >= 0 && pressedReactionButton < reactionButtons.size()) {
+            Post currentPost = post;
+            ReactionButton button = reactionButtons.get(pressedReactionButton);
+            button.bounce.setPressed(false);
+            pressedReactionButton = -1;
+            didLongPressPost = true;
+            invalidate();
+            if (currentPost != null && delegate != null) {
+                delegate.didPressMoreReactions(
+                        currentPost,
+                        sortedReactions,
+                        button.postReaction != null ? button.postReaction.getId() : currentPost.getCurrentUserReaction(),
+                        this,
+                        downX,
+                        downY
+                );
+            }
+            return true;
+        }
         if (textSelectionHelper != null && textSelectionHelper.isSelectable(this)) {
             textSelectionHelper.setMaybeView((int) downX, (int) downY, this);
             textSelectionHelper.trySelect(this);
@@ -534,8 +627,11 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
         }
         didLongPressPost = true;
         cancelActiveBodyTouch();
+        if (replyFooterPressed) {
+            setReplyFooterPressed(false, downX - chromeLeft, downY - replyFooterTop);
+        }
         if (delegate != null) {
-            delegate.didLongPressPost(currentPost);
+            delegate.didLongPressPost(currentPost, this, downX, downY);
         }
         return true;
     }
@@ -659,6 +755,7 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
     protected void onDetachedFromWindow() {
         resetTouchState();
         setHiddenImageUrl(null);
+        cancelReactionRowHeightAnimator();
         for (PostBodyBlock block : bodyBlocks) {
             block.onDetachedFromWindow();
         }
@@ -851,10 +948,10 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
                 this,
                 () -> hiddenImageUrl,
                 new PostBodyImagePool(this),
-                Theme.getColor(Theme.key_windowBackgroundWhiteBlackText),
-                Theme.getColor(Theme.key_windowBackgroundWhiteGrayText),
-                Theme.getColor(Theme.key_windowBackgroundWhiteBlueText),
-                Theme.multAlpha(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText), 0.15f),
+                Theme.getColor(Theme.key_chat_messageTextIn),
+                Theme.getColor(Theme.key_chat_inTimeText),
+                Theme.getColor(Theme.key_chat_inReplyLine),
+                Theme.multAlpha(Theme.getColor(Theme.key_chat_inReplyLine), 0.15f),
                 Theme.getColor(Theme.key_divider),
                 svgSpriteMarkup,
                 () -> {
@@ -1011,7 +1108,7 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
 
     private void loadAvatarFlair(Post post) {
         String rawFlairUrl = post.getAuthorFlairUrl();
-        avatarFlairBadgeColor = parseDiscourseColor(post.getAuthorFlairBgColor(), Theme.getColor(Theme.key_windowBackgroundWhite));
+        avatarFlairBadgeColor = parseDiscourseColor(post.getAuthorFlairBgColor(), Theme.getColor(Theme.key_chat_inBubble));
         if (rawFlairUrl != null && DiscourseUiHelpersKt.looksLikeDiscourseImageUrl(rawFlairUrl)) {
             loadAvatarFlairImage(post, rawFlairUrl);
         } else {
@@ -1168,23 +1265,25 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
             canvas.scale(scale, scale, replyFooterSelectorRect.centerX(), replyFooterSelectorRect.centerY());
         }
         int replyColor = replyLine.check(null, null, null, null, ReplyMessageLine.TYPE_REPLY);
-        replyLine.drawBackground(canvas, replyFooterSelectorRect, 5, 5, 5, 1f, false, false);
-        replyLine.drawLine(canvas, replyFooterSelectorRect, 1f);
+        // Intentional NativeDo divergence: keep Telegram reply press/color geometry without the ReplyMessageLine chrome.
         if (replyFooterSelector != null) {
             replyFooterSelector.setBounds((int) replyFooterSelectorRect.left, (int) replyFooterSelectorRect.top, (int) replyFooterSelectorRect.right, (int) replyFooterSelectorRect.bottom);
             replyFooterSelector.draw(canvas);
         }
-        int contentLeft = AndroidUtilities.dp(10f);
-        for (int i = 0; i < replyAvatars.size(); i++) {
+        int contentLeft = replyContentLeftPx();
+        for (int i = replyAvatars.size() - 1; i >= 0; i--) {
             ReplyAvatar avatar = replyAvatars.get(i);
             int left = contentLeft + replyAvatarOffset(i);
             avatar.receiver.setImageCoords(left, (replyFooterHeight - replyAvatarSize) / 2f, replyAvatarSize, replyAvatarSize);
+            if (i != replyAvatars.size() - 1) {
+                canvas.drawCircle(avatar.receiver.getCenterX(), avatar.receiver.getCenterY(), replyAvatarOverlapMaskRadiusPx(), replyAvatarOverlapPaint);
+            }
             avatar.receiver.draw(canvas);
         }
         replyTextPaint.setTextSize(AndroidUtilities.dp(13f));
         replyTextPaint.setColor(replyColor);
         float textY = replyFooterHeight / 2f - (replyTextPaint.ascent() + replyTextPaint.descent()) / 2f;
-        canvas.drawText(label, contentLeft + avatarsWidth + AndroidUtilities.dp(8f), textY, replyTextPaint);
+        canvas.drawText(label, contentLeft + avatarsWidth + replyTextGapPx(), textY, replyTextPaint);
         if (restoreCount >= 0) {
             canvas.restoreToCount(restoreCount);
         }
@@ -1196,14 +1295,23 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
             if (!replyFooterSelectorRect.contains(localX, localY)) {
                 return false;
             }
+            downX = chromeLeft + localX;
+            downY = replyFooterTop + localY;
+            didLongPressPost = false;
+            ignoreSelectionTouchUntilUp = false;
             setReplyFooterPressed(true, localX, localY);
+            startCheckLongPress();
             return true;
         }
         if (event.getActionMasked() == MotionEvent.ACTION_UP) {
+            cancelCheckLongPress();
             if (!replyFooterPressed) {
-                return false;
+                return didLongPressPost;
             }
             setReplyFooterPressed(false, localX, localY);
+            if (didLongPressPost) {
+                return true;
+            }
             if (post != null && delegate != null) {
                 delegate.didPressReply(post);
             }
@@ -1211,19 +1319,13 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
             return true;
         }
         if (event.getActionMasked() == MotionEvent.ACTION_MOVE) {
-            if (replyFooterPressed
-                    && (!replyFooterSelectorRect.contains(localX, localY)
-                    || Math.abs(localX - replyFooterDownX) > touchSlop
-                    || Math.abs(localY - replyFooterDownY) > touchSlop)) {
-                setReplyFooterPressed(false, localX, localY);
-                return false;
-            }
             if (replyFooterPressed && replyFooterSelector != null) {
                 replyFooterSelector.setHotspot(localX, localY);
             }
             return replyFooterPressed;
         }
         if (event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
+            cancelCheckLongPress();
             if (replyFooterPressed) {
                 setReplyFooterPressed(false, localX, localY);
                 return true;
@@ -1270,7 +1372,7 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
 
     private void updateReplyFooterSelectorRect() {
         int avatarsWidth = replyAvatarsWidth(replyAvatars.size());
-        float selectorRight = Math.min(AndroidUtilities.dp(10f) + avatarsWidth + AndroidUtilities.dp(8f) + replyTextPaint.measureText(replyFooterLabel()) + AndroidUtilities.dp(12f), chromeWidth);
+        float selectorRight = Math.min(replyContentLeftPx() + avatarsWidth + replyTextGapPx() + replyTextPaint.measureText(replyFooterLabel()) + replySelectorRightPaddingPx(), chromeWidth);
         replyFooterSelectorRect.set(0, 0, selectorRight, replyFooterHeight);
     }
 
@@ -1278,19 +1380,15 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
         if (avatarCount <= 0) {
             return 0;
         }
-        return AndroidUtilities.dp(2f) + replyAvatarSize + Math.max(avatarCount - 1, 0) * replyAvatarStep;
+        return replyAvatarsWidthPx(avatarCount);
     }
 
     private int replyAvatarOffset(int index) {
-        return AndroidUtilities.dp(2f) + index * replyAvatarStep;
+        return replyAvatarOffsetPx(index);
     }
 
     private void setReplyFooterPressed(boolean pressed, float localX, float localY) {
         replyFooterPressed = pressed;
-        if (pressed) {
-            replyFooterDownX = localX;
-            replyFooterDownY = localY;
-        }
         if (replyFooterSelector != null) {
             replyFooterSelector.setHotspot(localX, localY);
             replyFooterSelector.setState(pressed ? PRESSED_STATE : StateSet.NOTHING);
@@ -1299,11 +1397,16 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
         invalidate();
     }
 
-    private List<ReactionButton> buildReactionButtons(Post post) {
+    private List<ReactionButton> buildReactionButtons(Post post, boolean animateFromPrevious) {
         List<PostReaction> source = new ArrayList<>(post.getReactions());
         if (source.isEmpty() && post.getReactionUsersCount() > 0) {
             String id = post.getCurrentUserReaction() != null ? post.getCurrentUserReaction() : "heart";
-            source.add(new PostReaction(id, post.getReactionUsersCount(), emojiCatalog.get(id), post.getCurrentUserReaction() != null));
+            source.add(new PostReaction(
+                    id,
+                    post.getReactionUsersCount(),
+                    PostReactionRendering.iconUrl(id, null, emojiCatalog),
+                    post.getCurrentUserReaction() != null
+            ));
         }
         source.removeIf(reaction -> reaction.getCount() <= 0);
         source.sort(Comparator
@@ -1312,11 +1415,32 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
                 .thenComparing(PostReaction::getId));
         sortedReactions = source;
         List<ReactionButton> visible = new ArrayList<>();
-        List<ReactionButtonSpec> specs = buildReactionButtonSpecs(source, validReactionIds, emojiCatalog, MAX_VISIBLE_REACTIONS);
+        List<ReactionButtonSpec> specs = buildReactionButtonSpecs(source, validReactionIds, emojiCatalog, 0);
+        Map<String, ReactionButton> previousButtons = new LinkedHashMap<>();
+        if (animateFromPrevious) {
+            for (ReactionButton button : reactionButtons) {
+                previousButtons.put(button.key, button);
+            }
+        }
         for (ReactionButtonSpec spec : specs) {
             PostReaction reaction = spec.postReaction;
             ImageReceiver iconReceiver = reaction != null ? reactionIconReceiver(reaction) : null;
-            visible.add(new ReactionButton(this, reaction, spec.countText, iconReceiver));
+            ReactionButton button = new ReactionButton(this, reaction, spec.countText, iconReceiver, reactionTextPaint);
+            button.animateFrom(previousButtons.get(button.key), animateFromPrevious);
+            previousButtons.remove(button.key);
+            visible.add(button);
+        }
+        if (animateFromPrevious && !previousButtons.isEmpty()) {
+            List<ReactionButton> out = new ArrayList<>();
+            for (ReactionButton previous : previousButtons.values()) {
+                if (previous.wasDrawn) {
+                    previous.animateOut();
+                    out.add(previous);
+                }
+            }
+            outReactionButtons = out;
+        } else {
+            outReactionButtons = Collections.emptyList();
         }
         return visible;
     }
@@ -1324,37 +1448,29 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
     static List<ReactionButtonSpec> buildReactionButtonSpecs(List<PostReaction> sortedReactions, List<String> validReactionIds, Map<String, String> emojiCatalog, int maxVisible) {
         List<ReactionButtonSpec> visible = new ArrayList<>();
         List<PostReaction> source = sortedReactions != null ? sortedReactions : Collections.emptyList();
-        int limit = Math.min(maxVisible, source.size());
-        for (int i = 0; i < limit; i++) {
+        for (int i = 0; i < source.size(); i++) {
             PostReaction reaction = source.get(i);
-            boolean hasIcon = reaction.getIconUrl() != null || emojiCatalog != null && emojiCatalog.containsKey(reaction.getId());
-            String countText = hasIcon ? String.valueOf(reaction.getCount()) : reactionLabel(reaction) + " " + reaction.getCount();
+            String countText = PostReactionRendering.countText(reaction.getId(), reaction.getCount(), reaction.getIconUrl(), emojiCatalog);
             visible.add(new ReactionButtonSpec(reaction, countText));
-        }
-        int hiddenCount = Math.max(source.size() - visible.size(), 0);
-        if (hiddenCount > 0) {
-            visible.add(new ReactionButtonSpec(null, "+" + hiddenCount));
-        } else if (validReactionIds != null && !validReactionIds.isEmpty()) {
-            visible.add(new ReactionButtonSpec(null, "+"));
         }
         return visible;
     }
 
     private int measureReactionRow(int maxWidth) {
-        if (reactionButtons.isEmpty()) {
+        if (reactionButtons.isEmpty() && outReactionButtons.isEmpty()) {
             return 0;
         }
         int currentX = 0;
         int currentY = 0;
         int lineOffset = 0;
-        int iconSize = AndroidUtilities.dp(20f);
-        int iconGap = AndroidUtilities.dp(4f);
+        int iconSize = reactionIconSizePx();
+        int iconGap = reactionIconGapPx();
         for (ReactionButton button : reactionButtons) {
             int textWidth = (int) Math.ceil(reactionTextPaint.measureText(button.countText));
             if (button.imageReceiver != null) {
-                button.width = Math.max(AndroidUtilities.dp(8f) + iconSize + iconGap + textWidth + AndroidUtilities.dp(8f), AndroidUtilities.dp(34f));
+                button.width = Math.max(reactionButtonHorizontalPaddingPx() + iconSize + iconGap + textWidth + reactionButtonHorizontalPaddingPx(), reactionButtonMinWidthPx());
             } else {
-                button.width = Math.max(AndroidUtilities.dp(8f) + textWidth + AndroidUtilities.dp(8f), AndroidUtilities.dp(34f));
+                button.width = Math.max(reactionButtonHorizontalPaddingPx() + textWidth + reactionButtonHorizontalPaddingPx(), reactionButtonMinWidthPx());
             }
             button.height = reactionButtonHeight;
             if (currentX > 0 && currentX + button.width > maxWidth) {
@@ -1367,13 +1483,80 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
             button.top = lineOffset;
             if (button.imageReceiver != null) {
                 float iconTop = button.y + (button.height - iconSize) / 2f;
-                button.drawingImageRect.set(button.x + AndroidUtilities.dp(8f), iconTop, button.x + AndroidUtilities.dp(8f) + iconSize, iconTop + iconSize);
+                button.drawingImageRect.set(button.x + reactionButtonHorizontalPaddingPx(), iconTop, button.x + reactionButtonHorizontalPaddingPx() + iconSize, iconTop + iconSize);
             } else {
                 button.drawingImageRect.setEmpty();
             }
+            button.resolveLayoutAnimation();
             currentX += button.width + reactionButtonSpacing;
         }
-        return currentY + reactionButtonHeight;
+        int measuredHeight = reactionButtons.isEmpty() ? 0 : currentY + reactionButtonHeight;
+        for (ReactionButton button : outReactionButtons) {
+            measuredHeight = Math.max(measuredHeight, (int) Math.ceil(button.lastDrawnY + button.height));
+        }
+        return measuredHeight;
+    }
+
+    private int updateReactionRowVisibleHeight(int targetHeight) {
+        int nextTargetHeight = Math.max(targetHeight, 0);
+        if (!reactionRowHeightInitialized) {
+            reactionRowHeightInitialized = true;
+            reactionRowTargetHeight = nextTargetHeight;
+            animatedReactionRowHeight = nextTargetHeight;
+            return nextTargetHeight;
+        }
+        if (reactionRowTargetHeight != nextTargetHeight) {
+            reactionRowTargetHeight = nextTargetHeight;
+            cancelReactionRowHeightAnimator();
+            if (!isAttachedToWindow()) {
+                animatedReactionRowHeight = nextTargetHeight;
+                return nextTargetHeight;
+            }
+            ValueAnimator animator = ValueAnimator.ofFloat(animatedReactionRowHeight, nextTargetHeight);
+            animator.setDuration(REACTION_CHANGE_ANIMATION_DURATION_MS);
+            animator.setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT);
+            animator.addUpdateListener(animation -> {
+                animatedReactionRowHeight = (float) animation.getAnimatedValue();
+                requestLayout();
+                invalidate();
+            });
+            animator.addListener(new android.animation.AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(android.animation.Animator animation) {
+                    if (reactionRowHeightAnimator == animation) {
+                        reactionRowHeightAnimator = null;
+                        animatedReactionRowHeight = reactionRowTargetHeight;
+                        requestLayout();
+                        invalidate();
+                    }
+                }
+
+                @Override
+                public void onAnimationCancel(android.animation.Animator animation) {
+                    if (reactionRowHeightAnimator == animation) {
+                        reactionRowHeightAnimator = null;
+                    }
+                }
+            });
+            reactionRowHeightAnimator = animator;
+            animator.start();
+        }
+        return (int) Math.ceil(animatedReactionRowHeight);
+    }
+
+    private void resetReactionRowHeightAnimation() {
+        cancelReactionRowHeightAnimator();
+        reactionRowHeightInitialized = false;
+        reactionRowTargetHeight = 0;
+        reactionRowVisibleHeight = 0;
+        animatedReactionRowHeight = 0f;
+    }
+
+    private void cancelReactionRowHeightAnimator() {
+        if (reactionRowHeightAnimator != null) {
+            reactionRowHeightAnimator.cancel();
+            reactionRowHeightAnimator = null;
+        }
     }
 
     private void drawReactionRow(Canvas canvas) {
@@ -1384,30 +1567,137 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
         int text = Theme.getColor(Theme.key_chat_inReactionButtonText);
         for (int i = 0; i < reactionButtons.size(); i++) {
             ReactionButton button = reactionButtons.get(i);
-            float scale = button.bounce.getScale(0.1f);
             button.isSelected = button.choosen;
-            button.lastDrawnBackgroundColor = button.isSelected ? selectedBackground : background;
-            button.lastDrawnTextColor = button.isSelected ? selectedText : text;
-            reactionButtonPaint.setColor(button.lastDrawnBackgroundColor);
-            button.rect.set(button.x, button.y, button.x + button.width, button.y + button.height);
-            int restoreCount = -1;
-            if (scale != 1f) {
-                restoreCount = canvas.save();
-                canvas.scale(scale, scale, button.rect.centerX(), button.rect.centerY());
+            int targetBackground = button.isSelected ? selectedBackground : background;
+            int targetText = button.isSelected ? selectedText : text;
+            float changeProgress = button.changeProgress.set(1f);
+            float drawAlpha = 1f;
+            float drawScale = 1f;
+            if (button.animateIn) {
+                button.lastDrawnBackgroundColor = targetBackground;
+                button.lastDrawnTextColor = targetText;
+                drawAlpha = reactionButtonInAlpha(changeProgress);
+                drawScale = reactionButtonInScale(changeProgress);
+                if (changeProgress >= 1f) {
+                    button.animateIn = false;
+                }
+            } else {
+                button.lastDrawnBackgroundColor = AndroidUtilities.lerpColor(button.fromBackgroundColor, targetBackground, changeProgress);
+                button.lastDrawnTextColor = AndroidUtilities.lerpColor(button.fromTextColor, targetText, changeProgress);
             }
-            canvas.drawRoundRect(button.rect, radius, radius, reactionButtonPaint);
-            reactionTextPaint.setColor(button.lastDrawnTextColor);
-            float textY = button.rect.centerY() - (reactionTextPaint.ascent() + reactionTextPaint.descent()) / 2f;
-            if (button.imageReceiver != null) {
-                button.imageReceiver.setImageCoords(button.drawingImageRect.left, button.drawingImageRect.top, button.drawingImageRect.width(), button.drawingImageRect.height());
-                button.imageReceiver.draw(canvas);
-            }
-            float textX = button.imageReceiver != null ? button.drawingImageRect.right + AndroidUtilities.dp(4f) : button.x + AndroidUtilities.dp(8f);
-            canvas.drawText(button.countText, textX, textY, reactionTextPaint);
-            if (restoreCount >= 0) {
-                canvas.restoreToCount(restoreCount);
+            float drawX = button.drawX(changeProgress);
+            float drawY = button.drawY(changeProgress);
+            float drawWidth = button.drawWidth(changeProgress);
+            drawReactionButton(canvas, button, radius, selectedBackground, drawX, drawY, drawWidth, drawAlpha, drawScale);
+            button.lastDrawnX = drawX;
+            button.lastDrawnY = drawY;
+            button.lastDrawnWidth = drawWidth;
+            button.wasDrawn = true;
+        }
+        boolean keepOutButtons = false;
+        for (int i = 0; i < outReactionButtons.size(); i++) {
+            ReactionButton button = outReactionButtons.get(i);
+            float progress = button.changeProgress.set(1f);
+            float alpha = 1f - progress;
+            if (alpha > 0.01f) {
+                keepOutButtons = true;
+                drawReactionButton(
+                        canvas,
+                        button,
+                        radius,
+                        selectedBackground,
+                        button.lastDrawnX,
+                        button.lastDrawnY,
+                        button.lastDrawnWidth,
+                        alpha,
+                        reactionButtonOutScale(progress)
+                );
             }
         }
+        if (!keepOutButtons && !outReactionButtons.isEmpty()) {
+            outReactionButtons = Collections.emptyList();
+            post(() -> {
+                requestLayout();
+                invalidate();
+            });
+        }
+    }
+
+    private void drawReactionButton(Canvas canvas, ReactionButton button, float radius, int selectedBackground, float drawX, float drawY, float drawWidth, float alpha, float animationScale) {
+        float scale = button.bounce.getScale(0.1f) * animationScale;
+        int backgroundAlpha = Color.alpha(button.lastDrawnBackgroundColor);
+        int textAlpha = Color.alpha(button.lastDrawnTextColor);
+        reactionButtonPaint.setColor(Color.argb(
+                (int) (backgroundAlpha * alpha),
+                Color.red(button.lastDrawnBackgroundColor),
+                Color.green(button.lastDrawnBackgroundColor),
+                Color.blue(button.lastDrawnBackgroundColor)
+        ));
+        button.rect.set(drawX, drawY, drawX + drawWidth, drawY + button.height);
+        int restoreCount = -1;
+        if (scale != 1f) {
+            restoreCount = canvas.save();
+            canvas.scale(scale, scale, button.rect.centerX(), button.rect.centerY());
+        }
+        drawReactionSelectionEffect(canvas, button, selectedBackground, alpha);
+        canvas.drawRoundRect(button.rect, radius, radius, reactionButtonPaint);
+        int contentRestoreCount = canvas.save();
+        canvas.clipRect(button.rect);
+        reactionTextPaint.setColor(Color.argb(
+                (int) (textAlpha * alpha),
+                Color.red(button.lastDrawnTextColor),
+                Color.green(button.lastDrawnTextColor),
+                Color.blue(button.lastDrawnTextColor)
+        ));
+        if (button.imageReceiver != null) {
+            float iconTop = drawY + (button.height - reactionIconSizePx()) / 2f;
+            button.drawingImageRect.set(
+                    drawX + reactionButtonHorizontalPaddingPx(),
+                    iconTop,
+                    drawX + reactionButtonHorizontalPaddingPx() + reactionIconSizePx(),
+                    iconTop + reactionIconSizePx()
+            );
+            button.imageReceiver.setAlpha(alpha);
+            button.imageReceiver.setImageCoords(button.drawingImageRect.left, button.drawingImageRect.top, button.drawingImageRect.width(), button.drawingImageRect.height());
+            button.imageReceiver.draw(canvas);
+            button.imageReceiver.setAlpha(1f);
+        }
+        float textX = button.imageReceiver != null ? button.drawingImageRect.right + reactionIconGapPx() : drawX + reactionButtonHorizontalPaddingPx();
+        drawReactionButtonText(canvas, button, textX);
+        canvas.restoreToCount(contentRestoreCount);
+        if (restoreCount >= 0) {
+            canvas.restoreToCount(restoreCount);
+        }
+    }
+
+    private void drawReactionSelectionEffect(Canvas canvas, ReactionButton button, int selectedBackground, float parentAlpha) {
+        float progress = button.selectionEffectProgress.set(1f);
+        if (progress >= 1f) {
+            return;
+        }
+        float expand = AndroidUtilities.dp(REACTION_EFFECT_EXPAND_DP) * progress;
+        reactionEffectRect.set(button.rect);
+        reactionEffectRect.inset(-expand, -expand);
+        int alpha = (int) ((1f - progress) * 0.32f * parentAlpha * 255);
+        if (alpha <= 0) {
+            return;
+        }
+        reactionEffectPaint.setColor(Theme.multAlpha(selectedBackground, alpha / 255f));
+        float radius = reactionEffectRect.height() / 2f;
+        canvas.drawRoundRect(reactionEffectRect, radius, radius, reactionEffectPaint);
+    }
+
+    private void drawReactionButtonText(Canvas canvas, ReactionButton button, float textX) {
+        int textColor = reactionTextPaint.getColor();
+        button.countDrawable.copyStylesFrom(reactionTextPaint);
+        button.countDrawable.setTextColor(textColor);
+        button.countDrawable.setAlpha(Color.alpha(textColor));
+        int restoreCount = canvas.save();
+        canvas.translate(textX, button.rect.top);
+        button.countDrawable.setBounds(0, 0, (int) Math.ceil(button.rect.right - textX), button.height);
+        button.countDrawable.draw(canvas);
+        canvas.restoreToCount(restoreCount);
+        button.countDrawable.setAlpha(255);
     }
 
     private boolean handleReactionTouch(MotionEvent event, float localX, float localY) {
@@ -1429,7 +1719,12 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
             pressedReactionButton = index;
             pressedReactionDownX = localX;
             pressedReactionDownY = localY;
+            downX = chromeLeft + localX;
+            downY = reactionRowTop + localY;
+            didLongPressPost = false;
+            ignoreSelectionTouchUntilUp = false;
             reactionButtons.get(index).bounce.setPressed(true);
+            startCheckLongPress();
             invalidate();
             return true;
         }
@@ -1440,11 +1735,13 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
                     || Math.abs(localY - pressedReactionDownY) > touchSlop)) {
                 reactionButtons.get(pressedReactionButton).bounce.setPressed(false);
                 pressedReactionButton = -1;
+                cancelCheckLongPress();
                 invalidate();
             }
             return pressedReactionButton >= 0;
         }
         if (event.getActionMasked() == MotionEvent.ACTION_UP) {
+            cancelCheckLongPress();
             int released = pressedReactionButton;
             boolean wasPressed = released >= 0;
             if (wasPressed) {
@@ -1463,16 +1760,19 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
             }
             ReactionButton button = reactionButtons.get(released);
             if (delegate != null) {
+                float cellX = chromeLeft + localX;
+                float cellY = reactionRowTop + localY;
                 if (button.postReaction != null) {
-                    delegate.didPressReaction(currentPost, button.postReaction);
+                    delegate.didPressReaction(currentPost, button.postReaction, this, cellX, cellY);
                 } else {
-                    delegate.didPressMoreReactions(currentPost, sortedReactions, null);
+                    delegate.didPressMoreReactions(currentPost, sortedReactions, null, this, cellX, cellY);
                 }
             }
             playSoundEffect(SoundEffectConstants.CLICK);
             return true;
         }
         if (event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
+            cancelCheckLongPress();
             if (pressedReactionButton >= 0) {
                 reactionButtons.get(pressedReactionButton).bounce.setPressed(false);
                 pressedReactionButton = -1;
@@ -1504,20 +1804,8 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
         return blockSpacing;
     }
 
-    private static String reactionLabel(PostReaction reaction) {
-        if ("heart".equals(reaction.getId()) && (reaction.getIconUrl() == null || reaction.getIconUrl().isEmpty())) {
-            return "♡";
-        }
-        return reaction.getId()
-                .replace('_', ' ')
-                .replace("+1", "👍")
-                .replace("laughing", "😄")
-                .replace("clap", "👏")
-                .replace("confetti ball", "🎉");
-    }
-
     private ImageReceiver reactionIconReceiver(PostReaction reaction) {
-        String rawUrl = reaction.getIconUrl() != null ? reaction.getIconUrl() : emojiCatalog.get(reaction.getId());
+        String rawUrl = PostReactionRendering.iconUrl(reaction.getId(), reaction.getIconUrl(), emojiCatalog);
         if (rawUrl == null) {
             return null;
         }
@@ -1578,6 +1866,143 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
         return html == null || html.isEmpty() ? "<p>（空内容）</p>" : html;
     }
 
+    static boolean usesReactionOverflowChip() {
+        return false;
+    }
+
+    static int horizontalPaddingPx() {
+        return AndroidUtilities.dp(HORIZONTAL_PADDING_DP);
+    }
+
+    static int verticalPaddingPx() {
+        return AndroidUtilities.dp(VERTICAL_PADDING_DP);
+    }
+
+    static int avatarSizePx() {
+        return AndroidUtilities.dp(AVATAR_SIZE_DP);
+    }
+
+    static int avatarGapPx() {
+        return AndroidUtilities.dp(AVATAR_GAP_DP);
+    }
+
+    static int headerBottomSpacingPx() {
+        return AndroidUtilities.dp(HEADER_BOTTOM_SPACING_DP);
+    }
+
+    static int blockSpacingPx() {
+        return AndroidUtilities.dp(BLOCK_SPACING_DP);
+    }
+
+    static int footerTopSpacingPx() {
+        return AndroidUtilities.dp(FOOTER_TOP_SPACING_DP);
+    }
+
+    static int replyFooterHeightPx() {
+        return AndroidUtilities.dp(REPLY_FOOTER_HEIGHT_DP);
+    }
+
+    static int replyAvatarSizePx() {
+        return AndroidUtilities.dp(REPLY_AVATAR_SIZE_DP);
+    }
+
+    static int replyAvatarStepPx() {
+        return AndroidUtilities.dp(REPLY_AVATAR_STEP_DP);
+    }
+
+    static int replyAvatarLeadingOffsetPx() {
+        return AndroidUtilities.dp(REPLY_AVATAR_LEADING_OFFSET_DP);
+    }
+
+    static int replyAvatarOverlapMaskRadiusPx() {
+        return AndroidUtilities.dp(REPLY_AVATAR_OVERLAP_MASK_RADIUS_DP);
+    }
+
+    static int replyAvatarOffsetPx(int index) {
+        return replyAvatarLeadingOffsetPx() + Math.max(0, index) * replyAvatarStepPx();
+    }
+
+    static int replyAvatarsWidthPx(int avatarCount) {
+        if (avatarCount <= 0) {
+            return 0;
+        }
+        return replyAvatarLeadingOffsetPx() + replyAvatarSizePx() + Math.max(avatarCount - 1, 0) * replyAvatarStepPx();
+    }
+
+    static int replyContentLeftPx() {
+        return AndroidUtilities.dp(REPLY_CONTENT_LEFT_DP);
+    }
+
+    static int replyTextGapPx() {
+        return AndroidUtilities.dp(REPLY_TEXT_GAP_DP);
+    }
+
+    static int replySelectorRightPaddingPx() {
+        return AndroidUtilities.dp(REPLY_SELECTOR_RIGHT_PADDING_DP);
+    }
+
+    static int reactionTopSpacingPx() {
+        return AndroidUtilities.dp(REACTION_TOP_SPACING_DP);
+    }
+
+    static int reactionButtonHeightPx() {
+        return AndroidUtilities.dp(REACTION_BUTTON_HEIGHT_DP);
+    }
+
+    static int reactionButtonSpacingPx() {
+        return AndroidUtilities.dp(REACTION_BUTTON_SPACING_DP);
+    }
+
+    static int reactionButtonTouchSlopPx() {
+        return AndroidUtilities.dp(REACTION_BUTTON_TOUCH_SLOP_DP);
+    }
+
+    static int reactionButtonHorizontalPaddingPx() {
+        return AndroidUtilities.dp(REACTION_BUTTON_HORIZONTAL_PADDING_DP);
+    }
+
+    static int reactionButtonMinWidthPx() {
+        return AndroidUtilities.dp(REACTION_BUTTON_MIN_WIDTH_DP);
+    }
+
+    static int reactionIconSizePx() {
+        return AndroidUtilities.dp(REACTION_ICON_SIZE_DP);
+    }
+
+    static int reactionIconGapPx() {
+        return AndroidUtilities.dp(REACTION_ICON_GAP_DP);
+    }
+
+    static long reactionChangeAnimationDurationMs() {
+        return REACTION_CHANGE_ANIMATION_DURATION_MS;
+    }
+
+    static float reactionButtonInAlpha(float progress) {
+        return clamp01(progress);
+    }
+
+    static float reactionButtonInScale(float progress) {
+        return 0.5f + 0.5f * clamp01(progress);
+    }
+
+    static float reactionButtonOutScale(float progress) {
+        return 0.5f + 0.5f * (1f - clamp01(progress));
+    }
+
+    private static float clamp01(float value) {
+        if (value < 0f) {
+            return 0f;
+        }
+        if (value > 1f) {
+            return 1f;
+        }
+        return value;
+    }
+
+    static boolean shouldInterceptSelectionTouch(boolean inSelectionMode, boolean continuingOneTouchSelection) {
+        return inSelectionMode && continuingOneTouchSelection;
+    }
+
     static class ReactionButtonSpec {
         final PostReaction postReaction;
         final String countText;
@@ -1603,12 +2028,28 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
         int height;
         int lastDrawnTextColor;
         int lastDrawnBackgroundColor;
+        int fromTextColor;
+        int fromBackgroundColor;
+        float fromX;
+        float fromY;
+        float fromWidth;
+        float lastDrawnX;
+        float lastDrawnY;
+        float lastDrawnWidth;
+        boolean hasFromLayout;
+        boolean layoutAnimationResolved;
+        boolean wasDrawn;
+        boolean animateIn;
         final ImageReceiver imageReceiver;
         final RectF rect = new RectF();
         final RectF drawingImageRect = new RectF();
         final ButtonBounce bounce;
+        final AnimatedFloat changeProgress;
+        final AnimatedFloat selectionEffectProgress;
+        AnimatedTextView.AnimatedTextDrawable countDrawable;
+        final Drawable.Callback countDrawableCallback;
 
-        ReactionButton(View parentView, PostReaction reaction, String countText, ImageReceiver imageReceiver) {
+        ReactionButton(View parentView, PostReaction reaction, String countText, ImageReceiver imageReceiver, TextPaint countPaint) {
             postReaction = reaction;
             key = reaction != null ? reaction.getId() : "more";
             count = reaction != null ? reaction.getCount() : 0;
@@ -1617,6 +2058,103 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
             this.countText = countText;
             this.imageReceiver = imageReceiver;
             this.bounce = new ButtonBounce(parentView);
+            this.changeProgress = new AnimatedFloat(1f, parentView, 0, REACTION_CHANGE_ANIMATION_DURATION_MS, CubicBezierInterpolator.EASE_OUT_QUINT);
+            this.selectionEffectProgress = new AnimatedFloat(1f, parentView, 0, REACTION_EFFECT_ANIMATION_DURATION_MS, CubicBezierInterpolator.EASE_OUT_QUINT);
+            this.countDrawableCallback = new Drawable.Callback() {
+                @Override
+                public void invalidateDrawable(Drawable who) {
+                    parentView.invalidate();
+                }
+
+                @Override
+                public void scheduleDrawable(Drawable who, Runnable what, long when) {
+                    parentView.scheduleDrawable(who, what, when);
+                }
+
+                @Override
+                public void unscheduleDrawable(Drawable who, Runnable what) {
+                    parentView.unscheduleDrawable(who, what);
+                }
+            };
+            this.countDrawable = createCountDrawable(countPaint, countText);
+        }
+
+        void animateFrom(ReactionButton previous, boolean animateFromPrevious) {
+            if (previous == null || !previous.wasDrawn) {
+                animateIn = animateFromPrevious;
+                changeProgress.force(animateIn ? 0f : 1f);
+                countDrawable.setText(countText, false);
+                if (animateFromPrevious && choosen) {
+                    startSelectionEffect();
+                }
+                return;
+            }
+            if (previous.countDrawable != null) {
+                countDrawable = previous.countDrawable;
+                countDrawable.setCallback(countDrawableCallback);
+            }
+            fromBackgroundColor = previous.lastDrawnBackgroundColor;
+            fromTextColor = previous.lastDrawnTextColor;
+            fromX = previous.lastDrawnX;
+            fromY = previous.lastDrawnY;
+            fromWidth = previous.lastDrawnWidth;
+            hasFromLayout = true;
+            if (previous.count != count || previous.choosen != choosen || !previous.countText.equals(countText)) {
+                changeProgress.force(0f);
+            } else {
+                changeProgress.force(1f);
+            }
+            if (!TextUtils.equals(previous.countText, countText)) {
+                countDrawable.setText(previous.countText, false);
+                countDrawable.setText(countText, true, count < previous.count);
+            } else {
+                countDrawable.setText(countText, false);
+            }
+            if (!previous.choosen && choosen) {
+                startSelectionEffect();
+            }
+        }
+
+        void startSelectionEffect() {
+            selectionEffectProgress.force(0f);
+        }
+
+        void animateOut() {
+            changeProgress.force(0f);
+            bounce.setPressed(false);
+            hasFromLayout = false;
+        }
+
+        void resolveLayoutAnimation() {
+            if (!hasFromLayout || layoutAnimationResolved) {
+                return;
+            }
+            layoutAnimationResolved = true;
+            if (Math.round(fromX) != x || Math.round(fromY) != y || Math.round(fromWidth) != width) {
+                changeProgress.force(0f);
+            }
+        }
+
+        float drawX(float progress) {
+            return hasFromLayout && progress < 1f ? AndroidUtilities.lerp(fromX, (float) x, progress) : x;
+        }
+
+        float drawY(float progress) {
+            return hasFromLayout && progress < 1f ? AndroidUtilities.lerp(fromY, (float) y, progress) : y;
+        }
+
+        float drawWidth(float progress) {
+            return hasFromLayout && progress < 1f ? AndroidUtilities.lerp(fromWidth, (float) width, progress) : width;
+        }
+
+        private AnimatedTextView.AnimatedTextDrawable createCountDrawable(TextPaint countPaint, String countText) {
+            AnimatedTextView.AnimatedTextDrawable drawable = new AnimatedTextView.AnimatedTextDrawable(true, true, true);
+            drawable.setAnimationProperties(.4f, 0, REACTION_CHANGE_ANIMATION_DURATION_MS, CubicBezierInterpolator.EASE_OUT_QUINT);
+            drawable.copyStylesFrom(countPaint);
+            drawable.setCallback(countDrawableCallback);
+            drawable.setOverrideFullWidth(AndroidUtilities.displaySize.x);
+            drawable.setText(countText, false);
+            return drawable;
         }
     }
 

@@ -14,6 +14,7 @@ import android.animation.ObjectAnimator;
 import android.content.Context;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
+import android.graphics.Rect;
 import android.graphics.drawable.Drawable;
 import android.text.Editable;
 import android.text.TextUtils;
@@ -21,6 +22,7 @@ import android.text.TextWatcher;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -64,6 +66,7 @@ public class ActionBarMenuItem extends FrameLayout {
     private final ActionBarMenu parentMenu;
     private ActionBarPopupWindow.ActionBarPopupWindowLayout popupLayout;
     private ActionBarPopupWindow popupWindow;
+    private final Rect rect = new Rect();
     private int popupItemsColor;
     private int popupItemsSelectorColor;
     private int popupBackgroundColor;
@@ -142,6 +145,31 @@ public class ActionBarMenuItem extends FrameLayout {
         ActionBarMenuSubItem item = new ActionBarMenuSubItem(getContext(), false, false, null);
         item.setTag(id);
         item.setTextAndIcon(text, 0, iconDrawable);
+        popupLayout.addView(item, new LinearLayout.LayoutParams(LayoutHelper.MATCH_PARENT, AndroidUtilities.dp(48)));
+        item.setOnClickListener(view -> {
+            if (popupWindow != null && popupWindow.isShowing()) {
+                popupWindow.dismiss();
+            }
+            if (parentMenu != null) {
+                parentMenu.onItemClick((Integer) view.getTag());
+            }
+        });
+        return item;
+    }
+
+    // NativeDo host-wiring overload mirroring upstream ActionBarMenuItem L518.
+    // The (int, Drawable, CharSequence) overload above passes icon=0 to
+    // setTextAndIcon, which takes the "no color filter" branch and renders the
+    // drawable at its native tint — vector icons with fillColor=#FFFFFF end up
+    // invisible on a light submenu background. This overload passes the icon as
+    // an int resource id so ActionBarMenuSubItem applies the
+    // key_actionBarDefaultSubmenuItemIcon MULTIPLY tint, matching upstream
+    // ProfileActivity's addSubItem(id, R.drawable.msg_*, text) usage.
+    public ActionBarMenuSubItem addSubItem(int id, int icon, CharSequence text) {
+        createPopupLayout();
+        ActionBarMenuSubItem item = new ActionBarMenuSubItem(getContext(), false, false, null);
+        item.setTag(id);
+        item.setTextAndIcon(text, icon);
         popupLayout.addView(item, new LinearLayout.LayoutParams(LayoutHelper.MATCH_PARENT, AndroidUtilities.dp(48)));
         item.setOnClickListener(view -> {
             if (popupWindow != null && popupWindow.isShowing()) {
@@ -677,7 +705,25 @@ public class ActionBarMenuItem extends FrameLayout {
         if (popupLayout != null) {
             return;
         }
-        popupLayout = new ActionBarPopupWindow.ActionBarPopupWindowLayout(getContext());
+        // Mirrors upstream ActionBarMenuItem L408: popup_fixed_alert4 (the standard
+        // Telegram submenu 9-patch with correct corner radius/shadow/padding) +
+        // FLAG_USE_SWIPEBACK so getSwipeBack() is non-null and startAnimation takes
+        // the finalScaleY = backScaleY + invalidateTransforms() branch. The default
+        // popup_fixed_alert2 was a smaller 9-patch that made the menu look wrong.
+        popupLayout = new ActionBarPopupWindow.ActionBarPopupWindowLayout(getContext(),
+                R.drawable.popup_fixed_alert4, null,
+                ActionBarPopupWindow.ActionBarPopupWindowLayout.FLAG_USE_SWIPEBACK);
+        popupLayout.setOnTouchListener((v, event) -> {
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                if (popupWindow != null && popupWindow.isShowing()) {
+                    v.getHitRect(rect);
+                    if (!rect.contains((int) event.getX(), (int) event.getY())) {
+                        popupWindow.dismiss();
+                    }
+                }
+            }
+            return false;
+        });
         updatePopupBackground();
     }
 
@@ -685,12 +731,14 @@ public class ActionBarMenuItem extends FrameLayout {
         if (popupLayout == null) {
             return;
         }
-        Drawable background = ContextCompat.getDrawable(getContext(), R.drawable.popup_fixed_alert2);
+        // Only tint the existing popup_fixed_alert4 background; do NOT swap it back
+        // to popup_fixed_alert2 (the constructor already set alert4). Mirrors
+        // upstream's themed submenu background color application.
+        Drawable background = popupLayout.getBackground();
         if (background != null) {
             background = background.mutate();
             background.setColorFilter(new PorterDuffColorFilter(popupBackgroundColor, PorterDuff.Mode.MULTIPLY));
             background.setAlpha(255);
-            popupLayout.setBackgroundDrawable(background);
         }
     }
 }

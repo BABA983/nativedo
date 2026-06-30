@@ -101,6 +101,7 @@ public final class AndroidUtilities {
     public static float density = 1.0f;
     public static int statusBarHeight;
     public static int navigationBarHeight;
+    public static boolean usingHardwareInput;
     public static boolean makingGlobalBlurBitmap;
     public static final String STICKERS_PLACEHOLDER_PACK_NAME = "Placeholders";
 

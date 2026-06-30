@@ -37,6 +37,19 @@ final class CollageBlock implements EmbeddedPostBodyBlock {
     private static final int MAX_TILES_PER_ROW = 3;
     private static final float MAX_SIZE_WIDTH = 1000f;
     private static final float MAX_SIZE_HEIGHT = 814f;
+    private static final float TILE_SPACING_DP = 2f;
+    private static final float LIST_TOP_PADDING_DP = 8f;
+    private static final float BOTTOM_PADDING_DP = 16f;
+    private static final float CAPTION_HORIZONTAL_INSET_DP = 18f;
+    private static final float CAPTION_MIN_WIDTH_DP = 80f;
+    private static final float SINGLE_MIN_HEIGHT_DP = 140f;
+    private static final float SINGLE_MAX_HEIGHT_DP = 420f;
+    private static final float ROW_TARGET_HEIGHT_DP = 180f;
+    private static final float ROW_MIN_HEIGHT_DP = 120f;
+    private static final float ROW_MAX_HEIGHT_DP = 260f;
+    private static final float ATTEMPT_MIN_LINE_HEIGHT_DP = 100f;
+    private static final float TILE_MIN_WIDTH_DP = 64f;
+    private static final float PROGRESS_BUTTON_SIZE_DP = 48f;
 
     private static final class LayoutAttempt {
         final int[] lineCounts;
@@ -75,9 +88,9 @@ final class CollageBlock implements EmbeddedPostBodyBlock {
     private final PostBodyBlockState inlineState;
     private final String inlineSpoilerStateKey;
     private final String captionHtml;
-    private final int spacing = AndroidUtilities.dp(2f);
-    private final int listTopPadding = AndroidUtilities.dp(8f);
-    private final int bottomPadding = AndroidUtilities.dp(16f);
+    private final int spacing = tileSpacingPx();
+    private final int listTopPadding = listTopPaddingPx();
+    private final int bottomPadding = bottomPaddingPx();
     private final Paint placeholderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final TextPaint captionPaint;
     private final PostBodyTextBuilder textBuilder;
@@ -262,7 +275,7 @@ final class CollageBlock implements EmbeddedPostBodyBlock {
     }
 
     private void measureCaption(int availableWidth) {
-        captionX = AndroidUtilities.dp(18f);
+        captionX = captionXPx();
         captionY = contentBottom;
         if (captionHandle != null) {
             captionHandle.detach();
@@ -274,7 +287,7 @@ final class CollageBlock implements EmbeddedPostBodyBlock {
             captionLayout = ArticleTextLayout.builder(
                             builtText.getSpannable(),
                             captionPaint,
-                            Math.max(availableWidth - AndroidUtilities.dp(36f), AndroidUtilities.dp(80f))
+                            captionWidthPx(availableWidth)
                     )
                     .build();
             captionRect.set(captionX, captionY, captionX + captionLayout.getWidth(), captionY + captionLayout.getHeight());
@@ -345,8 +358,8 @@ final class CollageBlock implements EmbeddedPostBodyBlock {
     private int layoutSingle(int availableWidth) {
         int height = clamp(
                 Math.round(availableWidth / tiles.get(0).aspectRatio()),
-                AndroidUtilities.dp(140f),
-                AndroidUtilities.dp(420f)
+                singleMinHeightPx(),
+                singleMaxHeightPx()
         );
         tiles.get(0).rect.set(0f, 0f, availableWidth, height);
         return height;
@@ -475,9 +488,9 @@ final class CollageBlock implements EmbeddedPostBodyBlock {
     }
 
     private int layoutRowsGreedy(int availableWidth) {
-        int targetRowHeight = AndroidUtilities.dp(180f);
-        int minRowHeight = AndroidUtilities.dp(120f);
-        int maxRowHeight = AndroidUtilities.dp(260f);
+        int targetRowHeight = rowTargetHeightPx();
+        int minRowHeight = rowMinHeightPx();
+        int maxRowHeight = rowMaxHeightPx();
         int index = 0;
         int y = 0;
         while (index < tiles.size()) {
@@ -500,7 +513,7 @@ final class CollageBlock implements EmbeddedPostBodyBlock {
                 boolean isLast = tileIndex == rowEnd - 1;
                 int tileWidth = isLast
                         ? remainingWidth
-                        : Math.max(Math.round(rowHeight * tiles.get(tileIndex).aspectRatio()), AndroidUtilities.dp(64f));
+                        : Math.max(Math.round(rowHeight * tiles.get(tileIndex).aspectRatio()), tileMinWidthPx());
                 tiles.get(tileIndex).rect.set(x, y, x + tileWidth, y + rowHeight);
                 x += tileWidth + spacing;
                 remainingWidth -= tileWidth;
@@ -583,7 +596,7 @@ final class CollageBlock implements EmbeddedPostBodyBlock {
         LayoutAttempt optimal = null;
         float optimalDiff = 0f;
         float maxHeight = availableWidth / 3f * 4f;
-        float minLineHeight = AndroidUtilities.dp(100f);
+        float minLineHeight = attemptMinLineHeightPx();
         for (LayoutAttempt attempt : attempts) {
             float height = 0f;
             float minHeight = Float.MAX_VALUE;
@@ -619,7 +632,7 @@ final class CollageBlock implements EmbeddedPostBodyBlock {
             for (int i = 0; i < count; i++) {
                 rowAspectSum += tiles.get(index + i).aspectRatio();
             }
-            int rowHeight = Math.max(AndroidUtilities.dp(100f), Math.round(attempt.heights[lineIndex]));
+            int rowHeight = Math.max(attemptMinLineHeightPx(), Math.round(attempt.heights[lineIndex]));
             int x = 0;
             int remainingWidth = rowWidth;
             for (int i = 0; i < count; i++) {
@@ -627,7 +640,7 @@ final class CollageBlock implements EmbeddedPostBodyBlock {
                 boolean last = i == count - 1;
                 int tileWidth = last
                         ? remainingWidth
-                        : Math.max(AndroidUtilities.dp(64f), Math.round(rowWidth * tiles.get(tileIndex).aspectRatio() / rowAspectSum));
+                        : Math.max(tileMinWidthPx(), Math.round(rowWidth * tiles.get(tileIndex).aspectRatio() / rowAspectSum));
                 tiles.get(tileIndex).rect.set(x, y, x + tileWidth, y + rowHeight);
                 x += tileWidth + spacing;
                 remainingWidth -= tileWidth;
@@ -647,7 +660,7 @@ final class CollageBlock implements EmbeddedPostBodyBlock {
             sum += ratios[i];
         }
         int count = Math.max(end - start, 1);
-        return (width - AndroidUtilities.dp(2f) * (count - 1)) / Math.max(sum, 0.1f);
+        return (width - tileSpacingPx() * (count - 1)) / Math.max(sum, 0.1f);
     }
 
     private int tileIndexAt(float x, float y) {
@@ -890,12 +903,76 @@ final class CollageBlock implements EmbeddedPostBodyBlock {
     }
 
     private void updateProgressState(Tile tile, RectF drawRect, boolean loading) {
-        int buttonSize = AndroidUtilities.dp(48f);
+        int buttonSize = progressButtonSizePx();
         int buttonX = Math.round(drawRect.left + (drawRect.width() - buttonSize) / 2f);
         int buttonY = Math.round(drawRect.top + (drawRect.height() - buttonSize) / 2f);
         tile.radialProgress.setProgressRect(buttonX, buttonY, buttonX + buttonSize, buttonY + buttonSize);
         tile.radialProgress.setIcon(loading ? MediaActionDrawable.ICON_EMPTY : MediaActionDrawable.ICON_NONE, true, false);
         tile.radialProgress.setProgress(loading ? 0f : 1f, false);
+    }
+
+    static int maxTilesPerRow() {
+        return MAX_TILES_PER_ROW;
+    }
+
+    static float maxSizeWidth() {
+        return MAX_SIZE_WIDTH;
+    }
+
+    static float maxSizeHeight() {
+        return MAX_SIZE_HEIGHT;
+    }
+
+    static int tileSpacingPx() {
+        return AndroidUtilities.dp(TILE_SPACING_DP);
+    }
+
+    static int listTopPaddingPx() {
+        return AndroidUtilities.dp(LIST_TOP_PADDING_DP);
+    }
+
+    static int bottomPaddingPx() {
+        return AndroidUtilities.dp(BOTTOM_PADDING_DP);
+    }
+
+    static int captionXPx() {
+        return AndroidUtilities.dp(CAPTION_HORIZONTAL_INSET_DP);
+    }
+
+    static int captionWidthPx(int availableWidth) {
+        return Math.max(availableWidth - captionXPx() * 2, AndroidUtilities.dp(CAPTION_MIN_WIDTH_DP));
+    }
+
+    static int singleMinHeightPx() {
+        return AndroidUtilities.dp(SINGLE_MIN_HEIGHT_DP);
+    }
+
+    static int singleMaxHeightPx() {
+        return AndroidUtilities.dp(SINGLE_MAX_HEIGHT_DP);
+    }
+
+    static int rowTargetHeightPx() {
+        return AndroidUtilities.dp(ROW_TARGET_HEIGHT_DP);
+    }
+
+    static int rowMinHeightPx() {
+        return AndroidUtilities.dp(ROW_MIN_HEIGHT_DP);
+    }
+
+    static int rowMaxHeightPx() {
+        return AndroidUtilities.dp(ROW_MAX_HEIGHT_DP);
+    }
+
+    static int attemptMinLineHeightPx() {
+        return AndroidUtilities.dp(ATTEMPT_MIN_LINE_HEIGHT_DP);
+    }
+
+    static int tileMinWidthPx() {
+        return AndroidUtilities.dp(TILE_MIN_WIDTH_DP);
+    }
+
+    static int progressButtonSizePx() {
+        return AndroidUtilities.dp(PROGRESS_BUTTON_SIZE_DP);
     }
 
     private final class CollageLayoutManager extends RecyclerView.LayoutManager {

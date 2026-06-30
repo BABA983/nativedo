@@ -17,6 +17,7 @@ import android.graphics.RectF;
 import android.view.View;
 
 import org.telegram.messenger.MessageObject;
+import org.telegram.messenger.SharedConfig;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.Theme;
 
@@ -63,6 +64,7 @@ public class ReplyMessageLine {
             Theme.ResourcesProvider resourcesProvider,
             final int type
     ) {
+        final boolean dark = resourcesProvider != null ? resourcesProvider.isDark() : Theme.isCurrentThemeDark();
         hasColor2 = false;
         hasColor3 = false;
         if (type == TYPE_LINK) {
@@ -70,8 +72,8 @@ public class ReplyMessageLine {
         } else {
             color1 = color2 = color3 = Theme.getColor(Theme.key_chat_inReplyLine, resourcesProvider);
         }
-        backgroundColor = Theme.multAlpha(color1, Theme.isCurrentThemeDark() ? 0.12f : 0.10f);
-        nameColor = Theme.getColor(Theme.key_chat_inReplyNameText, resourcesProvider);
+        backgroundColor = Theme.multAlpha(color1, type == TYPE_LINK ? 0.10f : (dark ? 0.12f : 0.10f));
+        nameColor = type == TYPE_LINK ? color1 : Theme.getColor(Theme.key_chat_inReplyNameText, resourcesProvider);
         emojiColor = getColor();
         return nameColor;
     }
@@ -88,8 +90,9 @@ public class ReplyMessageLine {
         canvas.save();
 
         clipPath.rewind();
-        rectF.set(rect.left, rect.top, rect.left + dp(6), rect.bottom);
-        clipPath.addRoundRect(rectF, dp(2), dp(2), Path.Direction.CW);
+        final int rad = (int) Math.floor(SharedConfig.bubbleRadius / 3f);
+        rectF.set(rect.left, rect.top, rect.left + Math.max(dp(3), dp(2 * rad)), rect.bottom);
+        clipPath.addRoundRect(rectF, dp(rad), dp(rad), Path.Direction.CW);
         canvas.clipPath(clipPath);
         canvas.clipRect(rect.left, rect.top, rect.left + dp(3), rect.bottom);
 
@@ -113,10 +116,11 @@ public class ReplyMessageLine {
             boolean hasQuote,
             boolean emojiOnly
     ) {
-        radii[0] = radii[1] = dp(leftRad);
+        int linkPreviewRad = dp((int) Math.floor(SharedConfig.bubbleRadius / 3f));
+        radii[0] = radii[1] = Math.max(linkPreviewRad, dp(leftRad));
         radii[2] = radii[3] = dp(rightRad);
         radii[4] = radii[5] = dp(bottomRad);
-        radii[6] = radii[7] = dp(bottomRad);
+        radii[6] = radii[7] = Math.max(linkPreviewRad, dp(bottomRad));
         drawBackground(canvas, rect, alpha, hasQuote, emojiOnly);
     }
 

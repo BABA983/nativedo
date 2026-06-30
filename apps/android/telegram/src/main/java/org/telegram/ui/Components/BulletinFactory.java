@@ -7,70 +7,96 @@
 
 package org.telegram.ui.Components;
 
-import android.view.View;
 import android.view.ViewGroup;
 
+import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.R;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 
-/**
- * NativeDo stub of org.telegram.ui.Components.BulletinFactory.
- * Upstream shows snackbar-style notifications. NativeDo doesn't use Telegram
- * bulletins yet — all factory methods return a no-op chain.
- */
 public final class BulletinFactory {
 
-    public static class Bulletin {
-        public Bulletin show() { return this; }
-        public Bulletin show(boolean useTransform) { return this; }
-        public Bulletin hide() { return this; }
-        public void setDuration(int durationMs) {}
-    }
+    private final BaseFragment fragment;
+    private final ViewGroup containerLayout;
+    private final Theme.ResourcesProvider resourcesProvider;
 
     public static BulletinFactory of(BaseFragment fragment) {
-        return new BulletinFactory();
+        return new BulletinFactory(fragment, null, fragment != null ? fragment.getResourceProvider() : null);
     }
 
     public static BulletinFactory of(ViewGroup containerLayout, Theme.ResourcesProvider resourcesProvider) {
-        return new BulletinFactory();
+        return new BulletinFactory(null, containerLayout, resourcesProvider);
     }
 
     public static BulletinFactory global() {
-        return new BulletinFactory();
+        return new BulletinFactory(null, null, null);
     }
 
     public static BulletinFactory photoViewer(Theme.ResourcesProvider resourcesProvider) {
-        return new BulletinFactory();
+        return new BulletinFactory(null, null, resourcesProvider);
     }
 
-    private BulletinFactory() {
+    private BulletinFactory(BaseFragment fragment, ViewGroup containerLayout, Theme.ResourcesProvider resourcesProvider) {
+        this.fragment = fragment;
+        this.containerLayout = containerLayout;
+        this.resourcesProvider = resourcesProvider;
     }
 
     public Bulletin createSimpleBulletin(int iconRawId, CharSequence text) {
-        return new Bulletin();
+        return create(text, Bulletin.ICON_INFO, textLengthDuration(text));
     }
 
     public Bulletin createSimpleBulletin(int iconRawId, CharSequence text, int type) {
-        return new Bulletin();
+        return create(text, Bulletin.ICON_INFO, textLengthDuration(text));
     }
 
     public Bulletin createCopyLinkBulletin() {
-        return new Bulletin();
+        if (!AndroidUtilities.shouldShowClipboardToast()) {
+            return new Bulletin();
+        }
+        return create(
+                LocaleController.getString("LinkCopied", R.string.LinkCopied),
+                Bulletin.ICON_COPY,
+                Bulletin.DURATION_SHORT
+        );
     }
 
     public Bulletin createCopyBulletin(String text) {
-        return new Bulletin();
+        if (!AndroidUtilities.shouldShowClipboardToast()) {
+            return new Bulletin();
+        }
+        return create(text, Bulletin.ICON_COPY, Bulletin.DURATION_SHORT);
     }
 
     public Bulletin createErrorBulletin(CharSequence text) {
-        return new Bulletin();
+        return create(text, Bulletin.ICON_ERROR, Bulletin.DURATION_LONG);
     }
 
     public Bulletin createDownloadBulletin(int type) {
-        return new Bulletin();
+        return createInfoBulletin(LocaleController.getString("FileSavedHintLinked", R.string.FileSavedHintLinked));
     }
 
     public Bulletin createInfoBulletin(CharSequence text) {
-        return new Bulletin();
+        return create(text, Bulletin.ICON_INFO, textLengthDuration(text));
+    }
+
+    private Bulletin create(CharSequence text, int iconType, int duration) {
+        ViewGroup container = containerLayout();
+        if (container == null) {
+            return new Bulletin();
+        }
+        return new Bulletin(container, text, iconType, duration, resourcesProvider);
+    }
+
+    private ViewGroup containerLayout() {
+        if (containerLayout != null) {
+            return containerLayout;
+        }
+        return fragment != null ? fragment.getLayoutContainer() : null;
+    }
+
+    private static int textLengthDuration(CharSequence text) {
+        return text != null && text.length() < 20 ? Bulletin.DURATION_SHORT : Bulletin.DURATION_LONG;
     }
 }

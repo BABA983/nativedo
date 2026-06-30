@@ -17,7 +17,15 @@ data class UserProfile(
     val recentTimeRead: Int = 0,
     val createdAt: String = "",
     val lastSeenAt: String = "",
+    val lastPostedAt: String = "",
     val profileViewCount: Int = 0,
     val admin: Boolean = false,
     val moderator: Boolean = false,
+    // linux.do / Discourse plugin fields surfaced on the profile endpoint.
+    val gamificationScore: Int = 0,
+    val cakeDate: String = "",
+    val totalFollowers: Int = 0,
+    val totalFollowing: Int = 0,
+    val acceptedAnswers: Int = 0,
+    val primaryGroupName: String = "",
 )

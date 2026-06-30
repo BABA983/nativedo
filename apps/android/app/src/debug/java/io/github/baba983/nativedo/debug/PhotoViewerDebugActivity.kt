@@ -16,6 +16,8 @@ import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.activity.ComponentActivity
@@ -24,6 +26,7 @@ import io.github.baba983.nativedo.core.html.GalleryImage
 import io.github.baba983.nativedo.core.html.parseCookedPostBody
 import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.PostReaction
+import io.github.baba983.nativedo.ui.topic.TopicDetailFragment
 import io.github.baba983.nativedo.ui.topic.body.PostBodyBlockState
 import io.github.baba983.nativedo.ui.topic.cell.TopicPostCell
 import io.github.baba983.nativedo.ui.topic.cell.TopicPostCellDelegate
@@ -33,7 +36,12 @@ import org.telegram.messenger.ImageReceiver
 import org.telegram.messenger.MessageObject
 import org.telegram.tgnet.TLRPC
 import org.telegram.ui.ActionBar.BaseFragment
+import org.telegram.ui.ActionBar.ActionBarPopupWindow
+import org.telegram.ui.ActionBar.INavigationLayout
+import org.telegram.ui.ActionBar.Theme
 import org.telegram.ui.PhotoViewer
+import org.telegram.ui.Components.RecyclerListView
+import org.telegram.ui.Components.SizeNotifierFrameLayout
 import java.io.File
 
 class PhotoViewerDebugActivity : ComponentActivity() {
@@ -57,7 +65,7 @@ class PhotoViewerDebugActivity : ComponentActivity() {
         val index = intent.getIntExtra(EXTRA_INDEX, 0).coerceIn(0, urls.lastIndex)
         val scenario = intent.getStringExtra(EXTRA_SCENARIO)
 
-        val root = FrameLayout(this).apply {
+        val root = DebugRootLayout(this).apply {
             setBackgroundColor(0xff101010.toInt())
             keepScreenOn = true
         }
@@ -89,6 +97,11 @@ class PhotoViewerDebugActivity : ComponentActivity() {
             },
         )
 
+        if (scenario == SCENARIO_TOPIC_DETAIL_INTERACTION) {
+            setupTopicDetailInteractionScenario(root)
+            return
+        }
+
         val topicCellFixture = when (scenario) {
             SCENARIO_TOPIC_CELL_TAP -> TopicCellFixture.SingleImage
             SCENARIO_TOPIC_CELL_NESTED_IMAGE_TAP -> TopicCellFixture.NestedImage
@@ -99,6 +112,9 @@ class PhotoViewerDebugActivity : ComponentActivity() {
             SCENARIO_TOPIC_CELL_REPLY_FOOTER_TAP -> TopicCellFixture.ReplyFooter
             SCENARIO_TOPIC_CELL_REACTION_TAP -> TopicCellFixture.Reaction
             SCENARIO_TOPIC_CELL_MORE_REACTION_TAP -> TopicCellFixture.MoreReaction
+            SCENARIO_TOPIC_CELL_POST_LONG_PRESS -> TopicCellFixture.PostLongPress
+            SCENARIO_TOPIC_CELL_REPLY_FOOTER_LONG_PRESS -> TopicCellFixture.ReplyFooterLongPress
+            SCENARIO_TOPIC_CELL_REACTION_LONG_PRESS -> TopicCellFixture.ReactionLongPress
             else -> null
         }
         if (topicCellFixture != null) {
@@ -127,6 +143,126 @@ class PhotoViewerDebugActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun setupTopicDetailInteractionScenario(root: DebugRootLayout) {
+        val fragment = TopicDetailFragment(1L, "Debug Topic")
+        fragment.setParentLayout(root)
+        val fragmentRoot = SizeNotifierFrameLayout(this).apply {
+            setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite))
+        }
+        val actionBar = fragment.actionBar
+        fragmentRoot.addView(
+            actionBar,
+            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP),
+        )
+        val listView = RecyclerListView(this).apply {
+            setPadding(0, AndroidUtilities.dp(8f), 0, AndroidUtilities.dp(24f))
+        }
+        fragmentRoot.addView(
+            listView,
+            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT, Gravity.TOP),
+        )
+        val anchor = View(this).apply {
+            setBackgroundColor(0x2200aaff)
+        }
+        fragmentRoot.addView(
+            anchor,
+            FrameLayout.LayoutParams(AndroidUtilities.dp(220f), AndroidUtilities.dp(96f), Gravity.CENTER),
+        )
+        root.addView(
+            fragmentRoot,
+            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT),
+        )
+        statusView.bringToFront()
+        fragment.setFragmentView(fragmentRoot)
+        setReflectedField(fragment, "baseUrl", DEBUG_BASE_URL)
+        setReflectedField(fragment, "validReactionIds", listOf("heart", "rocket", "eyes", "tada"))
+        setReflectedField(fragment, "emojiCatalog", emptyMap<String, String>())
+        setReflectedField(fragment, "listView", listView)
+        setReflectedField(fragment, "listBottomBasePadding", AndroidUtilities.dp(24f))
+
+        val post = Post(
+            id = 1001L,
+            postNumber = 1,
+            authorUsername = "debug",
+            authorDisplayName = "Topic Detail Debug",
+            cookedHtml = "<p>Debug topic detail interaction</p>",
+            currentUserReaction = "heart",
+            reactions = listOf(
+                PostReaction("heart", 3, reacted = true),
+                PostReaction("rocket", 2),
+            ),
+            isBookmarked = false,
+        )
+        fragmentRoot.postDelayed({
+            invokeReflectedMethod(
+                fragment,
+                "showPostOptions",
+                arrayOf(Post::class.java, View::class.java, Float::class.javaPrimitiveType!!, Float::class.javaPrimitiveType!!),
+                post,
+                anchor,
+                anchor.width * 0.55f,
+                anchor.height * 0.4f,
+            )
+            val postPopup = reflectedField(fragment, "postOptions") as? ActionBarPopupWindow
+            val postPopupContent = postPopup?.contentView
+            val postRailCount = countDescendants(postPopupContent) { it.javaClass.simpleName == "ReactionPickerRailView" }
+            val postActionCount = countDescendants(postPopupContent) { it.javaClass.simpleName == "ActionBarMenuSubItem" }
+            val replyItem = findDescendant(postPopupContent) { it.javaClass.simpleName == "ActionBarMenuSubItem" }
+            val postPopupShownBeforeReply = postPopup?.isShowing == true
+            val replyClicked = replyItem?.performClick() == true
+            anchor.postDelayed({
+                val replyPanel = reflectedField(fragment, "replyComposerPanel") as? View
+                val replyAttached = replyPanel?.parent === fragmentRoot
+                val bottomPaddingAfterReply = listView.paddingBottom
+                dismissReflectedReplyPanel(replyPanel)
+                invokeReflectedMethod(
+                    fragment,
+                    "showReactionPickerOptions",
+                    arrayOf(
+                        Post::class.java,
+                        List::class.java,
+                        String::class.java,
+                        View::class.java,
+                        Float::class.javaPrimitiveType!!,
+                        Float::class.javaPrimitiveType!!,
+                    ),
+                    post,
+                    post.reactions,
+                    "heart",
+                    anchor,
+                    anchor.width * 0.5f,
+                    anchor.height * 0.45f,
+                )
+                val reactionPopup = reflectedField(fragment, "reactionRailPopup") as? ActionBarPopupWindow
+                val reactionPopupContent = reactionPopup?.contentView
+                val reactionRailCount = countDescendants(reactionPopupContent) { it.javaClass.simpleName == "ReactionPickerRailView" }
+                val checks = listOf(
+                    "postPopupShown" to postPopupShownBeforeReply,
+                    "postRail" to (postRailCount > 0),
+                    "postActions" to (postActionCount == 3),
+                    "replyClicked" to replyClicked,
+                    "replyAttached" to replyAttached,
+                    "replyBottomPadding" to (bottomPaddingAfterReply >= AndroidUtilities.dp(24f)),
+                    "reactionPopupShown" to (reactionPopup?.isShowing == true),
+                    "reactionRail" to (reactionRailCount > 0),
+                )
+                val text = scenarioStatus(
+                    SCENARIO_TOPIC_DETAIL_INTERACTION,
+                    checks,
+                    "postPopupShown=$postPopupShownBeforeReply postRailCount=$postRailCount postActionCount=$postActionCount replyClicked=$replyClicked replyAttached=$replyAttached bottomPaddingAfterReply=$bottomPaddingAfterReply reactionPopupShown=${reactionPopup?.isShowing == true} reactionRailCount=$reactionRailCount",
+                )
+                logScenarioStatus(text, checks)
+                setStatus(text)
+                anchor.postDelayed({
+                    postPopup?.dismiss()
+                    reactionPopup?.dismiss()
+                    dismissReflectedReplyPanel(reflectedField(fragment, "replyComposerPanel") as? View)
+                    fragment.onFragmentDestroy()
+                }, 900L)
+            }, 260L)
+        }, 700L)
     }
 
     override fun onResume() {
@@ -218,9 +354,12 @@ class PhotoViewerDebugActivity : ComponentActivity() {
             TopicCellFixture.OneboxThumbnail -> oneboxTopicCellHtml(targetUrl)
             TopicCellFixture.PollVote -> pollTopicCellHtml()
             TopicCellFixture.InlineSpoiler -> inlineSpoilerTopicCellHtml()
+            TopicCellFixture.PostLongPress,
             TopicCellFixture.ReplyFooter,
+            TopicCellFixture.ReplyFooterLongPress,
             TopicCellFixture.Reaction,
-            TopicCellFixture.MoreReaction -> """<p>Topic cell chrome smoke fixture</p>"""
+            TopicCellFixture.MoreReaction,
+            TopicCellFixture.ReactionLongPress -> """<p>Topic cell chrome smoke fixture</p>"""
         }
         val parsedBlocks = parseCookedPostBody(cookedHtml, DEBUG_BASE_URL)
         val blockState = PostBodyBlockState().apply {
@@ -233,6 +372,8 @@ class PhotoViewerDebugActivity : ComponentActivity() {
         var lastReplyPostNumber: Int? = null
         var lastReactionId: String? = null
         var lastMoreReactionCount: Int? = null
+        var lastMoreReactionInitialId: String? = null
+        var lastLongPressPostNumber: Int? = null
         val post = debugTopicCellPost(fixture, cookedHtml, topicUrls)
         val cell = TopicPostCell(this).apply {
             setDelegate(object : TopicPostCellDelegate {
@@ -271,14 +412,20 @@ class PhotoViewerDebugActivity : ComponentActivity() {
                     Log.d(TAG, "didPressReply postNumber=${post.postNumber}")
                 }
 
-                override fun didPressReaction(post: Post, reaction: PostReaction) {
+                override fun didPressReaction(post: Post, reaction: PostReaction, anchorView: View, x: Float, y: Float) {
                     lastReactionId = reaction.id
                     Log.d(TAG, "didPressReaction reactionId=${reaction.id}")
                 }
 
-                override fun didPressMoreReactions(post: Post, reactions: List<PostReaction>, initialReactionId: String?) {
+                override fun didPressMoreReactions(post: Post, reactions: List<PostReaction>, initialReactionId: String?, anchorView: View, x: Float, y: Float) {
                     lastMoreReactionCount = reactions.size
+                    lastMoreReactionInitialId = initialReactionId
                     Log.d(TAG, "didPressMoreReactions count=${reactions.size} initialReactionId=$initialReactionId")
+                }
+
+                override fun didLongPressPost(post: Post, anchorView: View, x: Float, y: Float) {
+                    lastLongPressPostNumber = post.postNumber
+                    Log.d(TAG, "didLongPressPost postNumber=${post.postNumber} x=$x y=$y")
                 }
             })
             setPost(
@@ -368,6 +515,57 @@ class PhotoViewerDebugActivity : ComponentActivity() {
                         setStatus(text)
                     }, 300L)
                 }
+                TopicCellFixture.PostLongPress -> {
+                    val dispatched = dispatchTopicCellPostLongPress(cell)
+                    cell.postDelayed({
+                        val checks = listOf(
+                            "dispatched" to dispatched,
+                            "longPressPostNumber" to (lastLongPressPostNumber == post.postNumber),
+                        )
+                        val text = scenarioStatus(
+                            scenarioName,
+                            checks,
+                            "dispatched=$dispatched longPressPostNumber=$lastLongPressPostNumber",
+                        )
+                        logScenarioStatus(text, checks)
+                        setStatus(text)
+                    }, longPressResultDelayMs())
+                }
+                TopicCellFixture.ReplyFooterLongPress -> {
+                    val dispatched = dispatchTopicCellReplyFooterLongPress(cell)
+                    cell.postDelayed({
+                        val checks = listOf(
+                            "dispatched" to dispatched,
+                            "longPressPostNumber" to (lastLongPressPostNumber == post.postNumber),
+                            "replyNotTapped" to (lastReplyPostNumber == null),
+                        )
+                        val text = scenarioStatus(
+                            scenarioName,
+                            checks,
+                            "dispatched=$dispatched longPressPostNumber=$lastLongPressPostNumber replyPostNumber=$lastReplyPostNumber",
+                        )
+                        logScenarioStatus(text, checks)
+                        setStatus(text)
+                    }, longPressResultDelayMs())
+                }
+                TopicCellFixture.ReactionLongPress -> {
+                    val dispatched = dispatchTopicCellReactionLongPress(cell)
+                    cell.postDelayed({
+                        val checks = listOf(
+                            "dispatched" to dispatched,
+                            "moreReactionsOpened" to (lastMoreReactionCount == post.reactions.size),
+                            "initialReactionId" to (lastMoreReactionInitialId == post.currentUserReaction),
+                            "reactionUsersNotOpened" to (lastReactionId == null),
+                        )
+                        val text = scenarioStatus(
+                            scenarioName,
+                            checks,
+                            "dispatched=$dispatched moreReactionCount=$lastMoreReactionCount initialReactionId=$lastMoreReactionInitialId reactionId=$lastReactionId",
+                        )
+                        logScenarioStatus(text, checks)
+                        setStatus(text)
+                    }, longPressResultDelayMs())
+                }
             }
         }, 700L)
     }
@@ -390,7 +588,8 @@ class PhotoViewerDebugActivity : ComponentActivity() {
 
     private fun reactionsForFixture(fixture: TopicCellFixture): List<PostReaction> {
         return when (fixture) {
-            TopicCellFixture.Reaction -> listOf(
+            TopicCellFixture.Reaction,
+            TopicCellFixture.ReactionLongPress -> listOf(
                 PostReaction("heart", 3, reacted = true),
                 PostReaction("rocket", 2),
                 PostReaction("eyes", 1),
@@ -406,11 +605,11 @@ class PhotoViewerDebugActivity : ComponentActivity() {
     }
 
     private fun replyCountForFixture(fixture: TopicCellFixture): Int {
-        return if (fixture == TopicCellFixture.ReplyFooter) 3 else 0
+        return if (fixture == TopicCellFixture.ReplyFooter || fixture == TopicCellFixture.ReplyFooterLongPress) 3 else 0
     }
 
     private fun recentReplyParticipantsForFixture(fixture: TopicCellFixture): List<Post> {
-        if (fixture != TopicCellFixture.ReplyFooter) {
+        if (fixture != TopicCellFixture.ReplyFooter && fixture != TopicCellFixture.ReplyFooterLongPress) {
             return emptyList()
         }
         return listOf(
@@ -421,7 +620,7 @@ class PhotoViewerDebugActivity : ComponentActivity() {
     }
 
     private fun validReactionsForFixture(fixture: TopicCellFixture): List<String> {
-        return if (fixture == TopicCellFixture.MoreReaction) {
+        return if (fixture == TopicCellFixture.MoreReaction || fixture == TopicCellFixture.ReactionLongPress) {
             listOf("heart", "rocket", "eyes", "tada")
         } else {
             emptyList()
@@ -611,6 +810,22 @@ class PhotoViewerDebugActivity : ComponentActivity() {
         return dispatchTapToCell(cell, rect.centerX(), rect.centerY())
     }
 
+    private fun dispatchTopicCellPostLongPress(cell: TopicPostCell): Boolean {
+        val x = AndroidUtilities.dp(18f) + AndroidUtilities.dp(8f)
+        val y = AndroidUtilities.dp(12f) + AndroidUtilities.dp(8f)
+        return dispatchLongPressToCell(cell, x.toFloat(), y.toFloat())
+    }
+
+    private fun dispatchTopicCellReplyFooterLongPress(cell: TopicPostCell): Boolean {
+        val rect = replyFooterRectInCell(cell) ?: return false
+        return dispatchLongPressToCell(cell, rect.centerX(), rect.centerY())
+    }
+
+    private fun dispatchTopicCellReactionLongPress(cell: TopicPostCell): Boolean {
+        val rect = reactionButtonRectInCell(cell, more = false) ?: return false
+        return dispatchLongPressToCell(cell, rect.centerX(), rect.centerY())
+    }
+
     private fun dispatchTapToCell(cell: TopicPostCell, x: Float, y: Float): Boolean {
         val downTime = SystemClock.uptimeMillis()
         val down = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, x, y, 0)
@@ -620,6 +835,24 @@ class PhotoViewerDebugActivity : ComponentActivity() {
         down.recycle()
         up.recycle()
         return downHandled || upHandled
+    }
+
+    private fun dispatchLongPressToCell(cell: TopicPostCell, x: Float, y: Float): Boolean {
+        val downTime = SystemClock.uptimeMillis()
+        val down = MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, x, y, 0)
+        val downHandled = cell.dispatchTouchEvent(down)
+        down.recycle()
+        cell.postDelayed({
+            val upTime = SystemClock.uptimeMillis()
+            val up = MotionEvent.obtain(downTime, upTime, MotionEvent.ACTION_UP, x, y, 0)
+            cell.dispatchTouchEvent(up)
+            up.recycle()
+        }, ViewConfiguration.getLongPressTimeout().toLong() + 80L)
+        return downHandled
+    }
+
+    private fun longPressResultDelayMs(): Long {
+        return ViewConfiguration.getLongPressTimeout().toLong() + 260L
     }
 
     private fun firstPollSelectorRectInCell(cell: TopicPostCell): RectF? {
@@ -892,6 +1125,19 @@ class PhotoViewerDebugActivity : ComponentActivity() {
         return downHandled || upHandled
     }
 
+    private fun scenarioStatus(scenario: String, checks: List<Pair<String, Boolean>>, details: String): String {
+        val failures = checks.filterNot { it.second }.joinToString(",") { it.first }.ifBlank { "none" }
+        return "scenario=$scenario passed=${failures == "none"} failures=$failures $details"
+    }
+
+    private fun logScenarioStatus(text: String, checks: List<Pair<String, Boolean>>) {
+        if (checks.all { it.second }) {
+            Log.i(TAG, text)
+        } else {
+            Log.e(TAG, text)
+        }
+    }
+
     private fun setStatus(text: String) {
         lastStatus = text
         showStatus(text)
@@ -945,6 +1191,73 @@ class PhotoViewerDebugActivity : ComponentActivity() {
             current = current.superclass
         }
         return null
+    }
+
+    private fun setReflectedField(target: Any, fieldName: String, value: Any?) {
+        var current: Class<*>? = target.javaClass
+        while (current != null) {
+            val field = runCatching {
+                current.getDeclaredField(fieldName).apply { isAccessible = true }
+            }.getOrNull()
+            if (field != null) {
+                field.set(target, value)
+                return
+            }
+            current = current.superclass
+        }
+    }
+
+    private fun invokeReflectedMethod(target: Any, methodName: String, parameterTypes: Array<Class<*>>, vararg args: Any?): Any? {
+        var current: Class<*>? = target.javaClass
+        while (current != null) {
+            val method = runCatching {
+                current.getDeclaredMethod(methodName, *parameterTypes).apply { isAccessible = true }
+            }.getOrNull()
+            if (method != null) {
+                return method.invoke(target, *args)
+            }
+            current = current.superclass
+        }
+        return null
+    }
+
+    private fun countDescendants(view: View?, predicate: (View) -> Boolean): Int {
+        if (view == null) {
+            return 0
+        }
+        var count = if (predicate(view)) 1 else 0
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                count += countDescendants(view.getChildAt(i), predicate)
+            }
+        }
+        return count
+    }
+
+    private fun findDescendant(view: View?, predicate: (View) -> Boolean): View? {
+        if (view == null) {
+            return null
+        }
+        if (predicate(view)) {
+            return view
+        }
+        if (view is ViewGroup) {
+            for (i in 0 until view.childCount) {
+                findDescendant(view.getChildAt(i), predicate)?.let { return it }
+            }
+        }
+        return null
+    }
+
+    private fun dismissReflectedReplyPanel(panel: View?) {
+        if (panel == null) {
+            return
+        }
+        runCatching {
+            panel.javaClass.getDeclaredMethod("dismiss", Boolean::class.javaPrimitiveType).apply {
+                isAccessible = true
+            }.invoke(panel, false)
+        }
     }
 
     private fun reflectedIntMethod(target: Any, methodName: String): Int? {
@@ -1085,6 +1398,26 @@ class PhotoViewerDebugActivity : ComponentActivity() {
         }
     }
 
+    private class DebugRootLayout(context: android.content.Context) : FrameLayout(context), INavigationLayout {
+        override fun presentFragment(params: INavigationLayout.NavigationParams): Boolean {
+            return false
+        }
+
+        override fun addFragmentToStack(fragment: BaseFragment, position: Int): Boolean {
+            return false
+        }
+
+        override fun closeLastFragment(animated: Boolean, forceNoAnimation: Boolean) = Unit
+
+        override fun getFragmentStack(): List<BaseFragment> {
+            return emptyList()
+        }
+
+        override fun getOverlayContainerView(): FrameLayout {
+            return this
+        }
+    }
+
     private enum class TopicCellFixture {
         SingleImage,
         NestedImage,
@@ -1095,6 +1428,9 @@ class PhotoViewerDebugActivity : ComponentActivity() {
         ReplyFooter,
         Reaction,
         MoreReaction,
+        PostLongPress,
+        ReplyFooterLongPress,
+        ReactionLongPress,
     }
 
     private companion object {
@@ -1116,6 +1452,10 @@ class PhotoViewerDebugActivity : ComponentActivity() {
         private const val SCENARIO_TOPIC_CELL_REPLY_FOOTER_TAP = "topicCellReplyFooterTap"
         private const val SCENARIO_TOPIC_CELL_REACTION_TAP = "topicCellReactionTap"
         private const val SCENARIO_TOPIC_CELL_MORE_REACTION_TAP = "topicCellMoreReactionTap"
+        private const val SCENARIO_TOPIC_CELL_POST_LONG_PRESS = "topicCellPostLongPress"
+        private const val SCENARIO_TOPIC_CELL_REPLY_FOOTER_LONG_PRESS = "topicCellReplyFooterLongPress"
+        private const val SCENARIO_TOPIC_CELL_REACTION_LONG_PRESS = "topicCellReactionLongPress"
+        private const val SCENARIO_TOPIC_DETAIL_INTERACTION = "topicDetailInteraction"
         private const val SCENARIO_BACK_CLOSE = "backClose"
         private const val DEBUG_BASE_URL = "https://linux.do/"
         private const val TAG = "PhotoViewerDebugActivity"

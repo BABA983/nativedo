@@ -50,6 +50,7 @@ class TopicViewModel(
                         tags = detail.tags,
                         validReactions = detail.validReactions,
                         emojiCatalog = detail.emojiCatalog,
+                        emojiCategories = detail.emojiCategories,
                         totalPosts = detail.totalPosts,
                         posts = detail.posts,
                         isLoading = false,
@@ -118,6 +119,18 @@ class TopicViewModel(
         }
     }
 
+    fun togglePostBookmark(postId: Long) {
+        val currentPost = _uiState.value.posts.firstOrNull { post -> post.id == postId } ?: return
+        val nextBookmarked = !currentPost.isBookmarked
+        replacePostById(currentPost.copy(isBookmarked = nextBookmarked))
+
+        viewModelScope.launch {
+            repository.setPostBookmark(postId = postId, bookmarked = nextBookmarked).onFailure {
+                replacePostById(currentPost)
+            }
+        }
+    }
+
     fun openReactionSheet(
         postId: Long,
         reactions: List<PostReaction>,
@@ -181,6 +194,40 @@ class TopicViewModel(
     suspend fun expandQuote(sourceTopicId: Long, sourcePostNumber: Int): Result<String> {
         return repository.loadPostByNumber(topicId = sourceTopicId, postNumber = sourcePostNumber)
             .map { post -> post.cookedHtml }
+    }
+
+    fun submitReply(raw: String, replyToPostNumber: Int?) {
+        val body = raw.trim()
+        if (body.isEmpty() || _uiState.value.isSubmittingReply) {
+            return
+        }
+        _uiState.value = _uiState.value.copy(
+            isSubmittingReply = true,
+            replySubmitErrorMessage = null,
+        )
+        viewModelScope.launch {
+            repository.createReply(topicId = topicId, raw = body, replyToPostNumber = replyToPostNumber).fold(
+                onSuccess = { createdPost ->
+                    remainingPostIds = remainingPostIds.filterNot { postId -> postId == createdPost.id }
+                    val current = _uiState.value
+                    val alreadyLoaded = current.posts.any { post -> post.id == createdPost.id }
+                    val nextPosts = (current.posts.filterNot { post -> post.id == createdPost.id } + createdPost)
+                        .sortedWith(compareBy<Post> { post -> post.postNumber ?: Int.MAX_VALUE }.thenBy { post -> post.id })
+                    _uiState.value = current.copy(
+                        posts = nextPosts,
+                        totalPosts = if (alreadyLoaded) current.totalPosts else maxOf(current.totalPosts + 1, nextPosts.size),
+                        isSubmittingReply = false,
+                        replySubmitErrorMessage = null,
+                    )
+                },
+                onFailure = { error ->
+                    _uiState.value = _uiState.value.copy(
+                        isSubmittingReply = false,
+                        replySubmitErrorMessage = error.readableMessage(),
+                    )
+                },
+            )
+        }
     }
 
     fun onPollOptionsSelected(postId: Long, postNumber: Int?, pollName: String, optionIds: List<String>) {

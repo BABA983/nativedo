@@ -19,9 +19,8 @@
  *   - topActionBarOffsetY default uses ActionBar.getCurrentActionBarHeight()
  *     (available from the telegram module ActionBar stub).
  *   - allowThisScroll() kept as convenience setter for allowedScrollX/Y.
- *   - Bulletin.getVisibleBulletin() stub returns null so the invalidateTranslation
- *     Bulletin path is a no-op, matching upstream structure without functional
- *     change.
+ *   - Bulletin.getVisibleBulletin() is backed by NativeDo's lightweight bulletin
+ *     subset; invalidateTranslation() can still call updatePosition() like upstream.
  *
  * forced_exact: [gesture, animation] — the gesture/animation subsystems in
  * WebViewSwipeContainer are kept byte-aligned with upstream.

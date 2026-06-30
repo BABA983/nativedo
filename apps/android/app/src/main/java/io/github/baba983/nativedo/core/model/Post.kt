@@ -19,6 +19,7 @@ data class Post(
     val currentUserReaction: String? = null,
     val reactionUsersCount: Int = 0,
     val reactions: List<PostReaction> = emptyList(),
+    val isBookmarked: Boolean = false,
     val cookedHtml: String,
     val imageUrls: List<String> = emptyList(),
 )
@@ -29,6 +30,50 @@ data class PostReaction(
     val iconUrl: String? = null,
     val reacted: Boolean = false,
 )
+
+object PostReactionRendering {
+    @JvmStatic
+    fun iconUrl(
+        id: String,
+        explicitIconUrl: String?,
+        emojiCatalog: Map<String, String>?,
+    ): String? {
+        return explicitIconUrl
+            ?.takeUnless { it.isBlank() }
+            ?: emojiCatalog?.get(id)?.takeUnless { it.isBlank() }
+    }
+
+    @JvmStatic
+    fun fallbackLabel(id: String): String {
+        return when (id) {
+            "+1" -> "👍"
+            "heart" -> "♡"
+            "laughing" -> "😄"
+            "open_mouth" -> "😮"
+            "clap" -> "👏"
+            "confetti_ball", "confetti ball" -> "🎉"
+            "hugs" -> "🤗"
+            "distorted_face" -> "🥴"
+            "tieba_087" -> "87"
+            "bili_057" -> "57"
+            else -> id.replace('_', ' ')
+        }
+    }
+
+    @JvmStatic
+    fun countText(
+        id: String,
+        count: Int,
+        explicitIconUrl: String?,
+        emojiCatalog: Map<String, String>?,
+    ): String {
+        return if (iconUrl(id, explicitIconUrl, emojiCatalog) != null) {
+            count.toString()
+        } else {
+            "${fallbackLabel(id)} $count"
+        }
+    }
+}
 
 data class PostReactionUser(
     val username: String,
@@ -58,7 +103,7 @@ internal fun Post.defaultReactionFallback(
         PostReaction(
             id = currentUserReaction ?: "heart",
             count = reactionUsersCount,
-            iconUrl = emojiCatalog[currentUserReaction ?: "heart"],
+            iconUrl = PostReactionRendering.iconUrl(currentUserReaction ?: "heart", null, emojiCatalog),
             reacted = currentUserReaction != null,
         ),
     )
@@ -77,7 +122,7 @@ fun Post.toggledReaction(
                 nextReactions += PostReaction(
                     id = targetReactionId,
                     count = delta,
-                    iconUrl = emojiCatalog[targetReactionId],
+                    iconUrl = PostReactionRendering.iconUrl(targetReactionId, null, emojiCatalog),
                     reacted = reacted,
                 )
             }
@@ -90,6 +135,7 @@ fun Post.toggledReaction(
         } else {
             nextReactions[index] = current.copy(
                 count = nextCount,
+                iconUrl = PostReactionRendering.iconUrl(targetReactionId, current.iconUrl, emojiCatalog),
                 reacted = reacted,
             )
         }

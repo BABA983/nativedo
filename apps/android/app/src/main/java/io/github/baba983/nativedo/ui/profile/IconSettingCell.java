@@ -223,6 +223,8 @@ public class IconSettingCell extends LinearLayout implements Theme.Colorable {
         public static final int PURPLE_BOTTOM = 0xFF9F55DF;
         public static final int CYAN_TOP    = 0xFF32C0CE;
         public static final int CYAN_BOTTOM = 0xFF1D9CC6;
+        public static final int PINK_TOP    = 0xFFFF85A0;
+        public static final int PINK_BOTTOM = 0xFFFF5580;
     }
 
     // --- UItem Factory ---

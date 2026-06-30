@@ -11,6 +11,8 @@ import android.text.TextPaint;
 import org.telegram.messenger.AndroidUtilities;
 
 final class HeadingBlock extends TextLayoutBlock {
+    private static final String TELEGRAM_HEADING_TYPEFACE = "fonts/mw_bold.ttf";
+
     HeadingBlock(String html, int level, PostBodyBuildContext context) {
         super(html, context, headingPaint(context, level));
     }
@@ -22,10 +24,11 @@ final class HeadingBlock extends TextLayoutBlock {
     private static TextPaint headingPaint(PostBodyBuildContext context, int level) {
         TextPaint paint = new TextPaint(context.getHeadingPaint());
         paint.setTextSize(AndroidUtilities.dp(headingTextSizeDp(level)));
+        paint.setTypeface(AndroidUtilities.getTypeface(headingTypefacePath()));
         return paint;
     }
 
-    private static float headingTextSizeDp(int level) {
+    static float headingTextSizeDp(int level) {
         if (level <= 1) {
             return 23f;
         }
@@ -33,5 +36,9 @@ final class HeadingBlock extends TextLayoutBlock {
             return 20f;
         }
         return 17f;
+    }
+
+    static String headingTypefacePath() {
+        return TELEGRAM_HEADING_TYPEFACE;
     }
 }

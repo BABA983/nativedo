@@ -128,6 +128,39 @@ class TopicViewModelTest {
     }
 
     @Test
+    fun togglePostBookmarkAppliesOptimisticBookmarkAndCallsRepository() = runTest {
+        val repository = FakeTopicRepository(
+            detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L)),
+        )
+        viewModel = TopicViewModel(repository = repository, topicId = 101L)
+        viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
+
+        viewModel.togglePostBookmark(postId = 1001L)
+        val state = viewModel.awaitState { state -> state.posts.single().isBookmarked }
+        runCurrent()
+
+        assertThat(state.posts.single().isBookmarked).isTrue()
+        assertThat(repository.setPostBookmarkRequests).containsExactly(1001L to true)
+    }
+
+    @Test
+    fun togglePostBookmarkRollsBackOnFailure() = runTest {
+        val repository = FakeTopicRepository(
+            detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L)),
+            setPostBookmarkResult = Result.failure(IllegalStateException("nope")),
+        )
+        viewModel = TopicViewModel(repository = repository, topicId = 101L)
+        viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
+
+        viewModel.togglePostBookmark(postId = 1001L)
+        runCurrent()
+
+        val state = viewModel.uiState.value
+        assertThat(state.posts.single().isBookmarked).isFalse()
+        assertThat(repository.setPostBookmarkRequests).containsExactly(1001L to true)
+    }
+
+    @Test
     fun openReactionSheetLoadsUsersAndSelectsInitialReaction() = runTest {
         val groups = listOf(
             PostReactionUsersGroup(
@@ -197,6 +230,65 @@ class TopicViewModelTest {
     }
 
     @Test
+    fun submitReplyCreatesReplyAndAppendsReturnedPost() = runTest {
+        val createdPost = post(id = 1002L, postNumber = 2).copy(
+            replyToPostNumber = 1,
+            cookedHtml = "<p>created reply</p>",
+        )
+        val repository = FakeTopicRepository(
+            detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L)),
+            createReplyResult = Result.success(createdPost),
+        )
+        viewModel = TopicViewModel(repository = repository, topicId = 101L)
+        viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
+
+        viewModel.submitReply(raw = " reply body ", replyToPostNumber = 1)
+        runCurrent()
+
+        val state = viewModel.uiState.value
+        assertThat(repository.createReplyRequests).containsExactly(ReplyCreateRequest(101L, "reply body", 1))
+        assertThat(state.isSubmittingReply).isFalse()
+        assertThat(state.replySubmitErrorMessage).isNull()
+        assertThat(state.posts.map { post -> post.id }).containsExactly(1001L, 1002L).inOrder()
+        assertThat(state.posts.last().replyToPostNumber).isEqualTo(1)
+        assertThat(state.totalPosts).isEqualTo(2)
+    }
+
+    @Test
+    fun submitReplyFailureKeepsExistingPostsAndStoresError() = runTest {
+        val repository = FakeTopicRepository(
+            detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L)),
+            createReplyResult = Result.failure(IllegalStateException("server error")),
+        )
+        viewModel = TopicViewModel(repository = repository, topicId = 101L)
+        viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
+
+        viewModel.submitReply(raw = "reply body", replyToPostNumber = 1)
+        runCurrent()
+
+        val state = viewModel.uiState.value
+        assertThat(repository.createReplyRequests).containsExactly(ReplyCreateRequest(101L, "reply body", 1))
+        assertThat(state.isSubmittingReply).isFalse()
+        assertThat(state.replySubmitErrorMessage).isNotEmpty()
+        assertThat(state.posts.map { post -> post.id }).containsExactly(1001L)
+    }
+
+    @Test
+    fun submitReplyIgnoresBlankRawText() = runTest {
+        val repository = FakeTopicRepository(
+            detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L)),
+        )
+        viewModel = TopicViewModel(repository = repository, topicId = 101L)
+        viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
+
+        viewModel.submitReply(raw = " \n ", replyToPostNumber = 1)
+        runCurrent()
+
+        assertThat(repository.createReplyRequests).isEmpty()
+        assertThat(viewModel.uiState.value.isSubmittingReply).isFalse()
+    }
+
+    @Test
     fun onPollOptionsSelectedVotesAndRefreshesPost() = runTest {
         val refreshedPost = post(id = 1001L, postNumber = 1).copy(cookedHtml = "<p>updated poll</p>")
         val repository = FakeTopicRepository(
@@ -258,13 +350,17 @@ class TopicViewModelTest {
         private val postByNumber: Result<Post> = Result.failure(IllegalStateException("post not configured")),
         private val reactionUsers: Result<List<PostReactionUsersGroup>> = Result.success(emptyList()),
         private val toggleReactionResult: Result<Unit> = Result.success(Unit),
+        private val setPostBookmarkResult: Result<Unit> = Result.success(Unit),
         private val votePollResult: Result<Unit> = Result.success(Unit),
+        private val createReplyResult: Result<Post> = Result.failure(IllegalStateException("reply not configured")),
     ) : TopicRepository() {
         val loadRequests = mutableListOf<Long>()
         val loadPostRequests = mutableListOf<Pair<Long, List<Long>>>()
         val loadPostByNumberRequests = mutableListOf<Pair<Long, Int>>()
+        val createReplyRequests = mutableListOf<ReplyCreateRequest>()
         val reactionUsersRequests = mutableListOf<Long>()
         val toggleReactionRequests = mutableListOf<Pair<Long, String>>()
+        val setPostBookmarkRequests = mutableListOf<Pair<Long, Boolean>>()
         val votePollRequests = mutableListOf<PollVoteRequest>()
 
         override suspend fun load(topicId: Long): Result<TopicDetail> {
@@ -282,6 +378,11 @@ class TopicViewModelTest {
             return postByNumber
         }
 
+        override suspend fun createReply(topicId: Long, raw: String, replyToPostNumber: Int?): Result<Post> {
+            createReplyRequests += ReplyCreateRequest(topicId, raw, replyToPostNumber)
+            return createReplyResult
+        }
+
         override suspend fun loadReactionUsers(postId: Long): Result<List<PostReactionUsersGroup>> {
             reactionUsersRequests += postId
             return reactionUsers
@@ -290,6 +391,11 @@ class TopicViewModelTest {
         override suspend fun toggleReaction(postId: Long, reactionId: String): Result<Unit> {
             toggleReactionRequests += postId to reactionId
             return toggleReactionResult
+        }
+
+        override suspend fun setPostBookmark(postId: Long, bookmarked: Boolean): Result<Unit> {
+            setPostBookmarkRequests += postId to bookmarked
+            return setPostBookmarkResult
         }
 
         override suspend fun votePoll(postId: Long, pollName: String, optionIds: List<String>): Result<Unit> {
@@ -302,6 +408,12 @@ class TopicViewModelTest {
         val postId: Long,
         val pollName: String,
         val optionIds: List<String>,
+    )
+
+    private data class ReplyCreateRequest(
+        val topicId: Long,
+        val raw: String,
+        val replyToPostNumber: Int?,
     )
 
     private fun topicDetail(

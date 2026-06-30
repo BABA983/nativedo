@@ -20,6 +20,7 @@ import android.widget.HorizontalScrollView;
 import java.util.ArrayList;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ImageReceiver;
+import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.TextSelectionHelper;
 
 final class CodeBlock implements EmbeddedPostBodyBlock {
@@ -48,8 +49,7 @@ final class CodeBlock implements EmbeddedPostBodyBlock {
     CodeBlock(String code, PostBodyBuildContext context) {
         this.code = code;
         this.context = context;
-        int accent = context.getAccentColor();
-        backgroundPaint.setColor(Color.argb(20, Color.red(accent), Color.green(accent), Color.blue(accent)));
+        backgroundPaint.setColor(preformattedBackgroundColor());
         touchSlop = ViewConfiguration.get(context.getHost().getContext()).getScaledTouchSlop();
         scrollView = new HorizontalScrollView(context.getHost().getContext()) {
             @Override
@@ -123,12 +123,7 @@ final class CodeBlock implements EmbeddedPostBodyBlock {
     public int measure(int maxWidthPx) {
         viewportWidth = Math.max(maxWidthPx, AndroidUtilities.dp(120f));
         String source = code.trim().isEmpty() ? " " : code;
-        int longestLineWidth = 1;
-        String[] lines = source.split("\\R", -1);
-        for (String line : lines) {
-            longestLineWidth = Math.max(longestLineWidth, (int) Math.ceil(context.getMonoPaint().measureText(line)));
-        }
-        textWidth = Math.max(longestLineWidth + 1, viewportWidth - maxFallbackScrollExtraPx());
+        textWidth = textLayoutWidthPx(source, context.getMonoPaint());
         layout = ArticleTextLayout.builder(source, context.getMonoPaint(), textWidth)
                 .build();
         textContainer.requestLayout();
@@ -278,6 +273,20 @@ final class CodeBlock implements EmbeddedPostBodyBlock {
         return textHorizontalMarginPx() * 2 + textContainerEndPaddingPx();
     }
 
+    static int textLayoutWidthPx(String source, android.text.TextPaint paint) {
+        int longestLineWidth = 1;
+        String[] lines = source.split("\\R", -1);
+        for (String line : lines) {
+            longestLineWidth = Math.max(longestLineWidth, (int) Math.ceil(paint.measureText(line)));
+        }
+        return longestLineWidth + 1;
+    }
+
+    static int preformattedBackgroundColor() {
+        int color = Theme.getColor(Theme.key_windowBackgroundWhiteLinkSelection);
+        return Color.argb(20, Color.red(color), Color.green(color), Color.blue(color));
+    }
+
     @Override
     public RectF imageBoundsInBlock(String imageUrl) {
         return null;
@@ -311,6 +320,7 @@ final class CodeBlock implements EmbeddedPostBodyBlock {
 
     @Override
     public void applyTheme() {
+        backgroundPaint.setColor(preformattedBackgroundColor());
         textContainer.invalidate();
         scrollView.invalidate();
     }

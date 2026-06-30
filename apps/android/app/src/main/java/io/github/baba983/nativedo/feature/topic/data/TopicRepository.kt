@@ -24,12 +24,20 @@ open class TopicRepository protected constructor() {
         client.fetchPostByNumber(topicId = topicId, postNumber = postNumber)
     }
 
+    open suspend fun createReply(topicId: Long, raw: String, replyToPostNumber: Int?): Result<Post> = runCatching {
+        client.createPost(topicId = topicId, raw = raw, replyToPostNumber = replyToPostNumber)
+    }
+
     open suspend fun loadReactionUsers(postId: Long): Result<List<PostReactionUsersGroup>> = runCatching {
         client.fetchReactionUsers(postId = postId)
     }
 
     open suspend fun toggleReaction(postId: Long, reactionId: String): Result<Unit> = runCatching {
         client.toggleReaction(postId = postId, reactionId = reactionId)
+    }
+
+    open suspend fun setPostBookmark(postId: Long, bookmarked: Boolean): Result<Unit> = runCatching {
+        client.setPostBookmark(postId = postId, bookmarked = bookmarked)
     }
 
     open suspend fun votePoll(postId: Long, pollName: String, optionIds: List<String>): Result<Unit> = runCatching {

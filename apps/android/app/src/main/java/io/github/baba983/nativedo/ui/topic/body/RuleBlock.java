@@ -17,9 +17,14 @@ import org.telegram.messenger.ImageReceiver;
 import org.telegram.ui.Cells.TextSelectionHelper;
 
 final class RuleBlock implements PostBodyBlock {
+    private static final float MEASURED_HEIGHT_DP = 18f;
+    private static final float BAR_TOP_DP = 8f;
+    private static final float BAR_BOTTOM_DP = 10f;
+    private static final float BAR_RADIUS_DP = 1f;
+
     private final RectF rect = new RectF();
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final int measuredHeight = AndroidUtilities.dp(18f);
+    private final int measuredHeight = measuredHeightPx();
 
     RuleBlock(PostBodyBuildContext context) {
         paint.setColor(context.getDividerColor());
@@ -38,8 +43,8 @@ final class RuleBlock implements PostBodyBlock {
     @Override
     public void draw(Canvas canvas, int parentWidth) {
         int width = parentWidth / 3;
-        rect.set(width, AndroidUtilities.dp(8f), width * 2f, AndroidUtilities.dp(10f));
-        canvas.drawRoundRect(rect, AndroidUtilities.dp(1f), AndroidUtilities.dp(1f), paint);
+        rect.set(width, barTopPx(), width * 2f, barBottomPx());
+        canvas.drawRoundRect(rect, barRadiusPx(), barRadiusPx(), paint);
     }
 
     @Override
@@ -81,5 +86,29 @@ final class RuleBlock implements PostBodyBlock {
 
     @Override
     public void applyTheme() {
+    }
+
+    static int measuredHeightPx() {
+        return AndroidUtilities.dp(MEASURED_HEIGHT_DP);
+    }
+
+    static int barTopPx() {
+        return AndroidUtilities.dp(BAR_TOP_DP);
+    }
+
+    static int barBottomPx() {
+        return AndroidUtilities.dp(BAR_BOTTOM_DP);
+    }
+
+    static int barRadiusPx() {
+        return AndroidUtilities.dp(BAR_RADIUS_DP);
+    }
+
+    static int barLeftPx(int parentWidth) {
+        return parentWidth / 3;
+    }
+
+    static int barRightPx(int parentWidth) {
+        return barLeftPx(parentWidth) * 2;
     }
 }

@@ -8,6 +8,7 @@
 package org.telegram.ui.Components;
 
 import android.content.Context;
+import android.graphics.Rect;
 import android.view.View;
 import android.widget.FrameLayout;
 
@@ -19,6 +20,7 @@ public class SizeNotifierFrameLayout extends FrameLayout {
 
     protected int keyboardHeight;
     private int bottomClip;
+    private final Rect rect = new Rect();
     protected SizeNotifierFrameLayoutDelegate delegate;
     protected final ArrayList<SizeNotifierFrameLayoutDelegate> delegates = new ArrayList<>();
 
@@ -63,7 +65,21 @@ public class SizeNotifierFrameLayout extends FrameLayout {
     }
 
     public int measureKeyboardHeight() {
-        return 0;
+        View rootView = getRootView();
+        getWindowVisibleDisplayFrame(rect);
+        if (rootView == null || rect.bottom == 0 && rect.top == 0) {
+            return 0;
+        }
+        int usableViewHeight = rootView.getHeight()
+                - (rect.top != 0 ? AndroidUtilities.statusBarHeight : 0)
+                - AndroidUtilities.getViewInset(rootView);
+        return keyboardHeight = Math.max(0, usableViewHeight - (rect.bottom - rect.top));
+    }
+
+    @Override
+    protected void onLayout(boolean changed, int l, int t, int r, int b) {
+        super.onLayout(changed, l, t, r, b);
+        notifyHeightChanged();
     }
 
     public void setBottomClip(int value) {

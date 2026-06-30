@@ -1,5 +1,7 @@
 package io.github.baba983.nativedo.ui.topic.body
 
+import android.view.View
+import android.graphics.Color
 import com.google.common.truth.Truth.assertThat
 import org.junit.Before
 import org.junit.Test
@@ -8,6 +10,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.RobolectricTestRunner
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ApplicationLoader
+import org.telegram.ui.ActionBar.Theme
 
 @RunWith(RobolectricTestRunner::class)
 class CodeBlockTest {
@@ -29,6 +32,51 @@ class CodeBlockTest {
         assertThat(CodeBlock.textTopPx()).isEqualTo(AndroidUtilities.dp(8f) + AndroidUtilities.dp(12f))
         assertThat(CodeBlock.maxFallbackScrollExtraPx()).isEqualTo(
             AndroidUtilities.dp(16f) * 2 + AndroidUtilities.dp(32f),
+        )
+    }
+
+    @Test
+    fun textLayoutWidth_usesLongestLineWidthWithoutViewportFillLikeBlockPreformattedCell() {
+        val context = buildContext()
+        val source = "short"
+        val viewportWidth = AndroidUtilities.dp(360f)
+        val expectedWidth = kotlin.math.ceil(context.monoPaint.measureText(source)).toInt() + 1
+
+        assertThat(CodeBlock.textLayoutWidthPx(source, context.monoPaint)).isEqualTo(expectedWidth)
+        assertThat(CodeBlock.textLayoutWidthPx(source, context.monoPaint))
+            .isLessThan(viewportWidth - CodeBlock.maxFallbackScrollExtraPx())
+    }
+
+    @Test
+    fun preformattedBackgroundColor_usesArticleViewerLinkSelectionPaint() {
+        val linkSelectionColor = Theme.getColor(Theme.key_windowBackgroundWhiteLinkSelection)
+
+        assertThat(CodeBlock.preformattedBackgroundColor()).isEqualTo(
+            Color.argb(
+                20,
+                Color.red(linkSelectionColor),
+                Color.green(linkSelectionColor),
+                Color.blue(linkSelectionColor),
+            ),
+        )
+    }
+
+    private fun buildContext(): PostBodyBuildContext {
+        val host = View(RuntimeEnvironment.getApplication())
+        return PostBodyBuildContext(
+            host = host,
+            baseUrl = "https://linux.do/",
+            delegate = object : PostBodyDelegate {
+                override fun onLinkClick(url: String) = Unit
+                override fun onTopicClick(topicId: Long) = Unit
+                override fun onUserClick(username: String) = Unit
+                override fun onPollOptionsSelected(pollName: String, optionIds: List<String>) = Unit
+            },
+            textColor = 0xFF111111.toInt(),
+            secondaryTextColor = 0xFF666666.toInt(),
+            accentColor = 0xFF1677FF.toInt(),
+            chipBackgroundColor = 0x221677FF,
+            dividerColor = 0xFFE0E0E0.toInt(),
         )
     }
 }

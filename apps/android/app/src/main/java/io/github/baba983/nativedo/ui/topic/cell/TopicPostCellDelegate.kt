@@ -12,10 +12,10 @@ internal interface TopicPostCellDelegate {
     fun didPressUser(username: String) = Unit
     fun didPressTopic(topicId: Long) = Unit
     fun didLongPressLink(url: String) = Unit
-    fun didPressReaction(post: Post, reaction: PostReaction) = Unit
-    fun didPressMoreReactions(post: Post, reactions: List<PostReaction>, initialReactionId: String?) = Unit
+    fun didPressReaction(post: Post, reaction: PostReaction, anchorView: View, x: Float, y: Float) = Unit
+    fun didPressMoreReactions(post: Post, reactions: List<PostReaction>, initialReactionId: String?, anchorView: View, x: Float, y: Float) = Unit
     fun didPressReply(post: Post) = Unit
-    fun didLongPressPost(post: Post) = Unit
+    fun didLongPressPost(post: Post, anchorView: View, x: Float, y: Float) = Unit
     fun didExpandQuote(topicId: Long, postNumber: Int, onResult: (String?) -> Unit) = Unit
     fun didPressPollOptions(post: Post, pollName: String, optionIds: List<String>) = Unit
     fun didPressImage(

@@ -10,6 +10,7 @@ internal sealed interface CookedPostBlock {
         val children: List<CookedPostBlock> = emptyList(),
         val sourceTopicId: Long? = null,
         val sourcePostNumber: Int? = null,
+        val level: Int = 0,
     ) : CookedPostBlock
     data class Callout(
         val type: String,
@@ -47,6 +48,11 @@ internal sealed interface CookedPostBlock {
         val domain: String?,
         val siteIconUrl: String?,
         val thumbnailUrl: String?,
+        val thumbnailWidthPx: Int = 0,
+        val thumbnailHeightPx: Int = 0,
+        val previewType: String? = null,
+        val forceLargeMedia: Boolean = false,
+        val forceSmallMedia: Boolean = false,
         val title: String,
         val titleHtml: String? = null,
         val description: String?,

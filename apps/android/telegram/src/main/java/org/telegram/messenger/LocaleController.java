@@ -145,6 +145,10 @@ public final class LocaleController {
         return new LocaleInfo(Locale.getDefault().getLanguage());
     }
 
+    public Locale getCurrentLocale() {
+        return Locale.getDefault();
+    }
+
     public static final class LocaleInfo {
         public final String shortName;
 

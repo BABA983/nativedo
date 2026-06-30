@@ -32,6 +32,19 @@ import org.telegram.ui.Components.RadialProgress2;
 import org.telegram.ui.Components.spoilers.SpoilerEffect;
 
 final class ImageBlock implements EmbeddedPostBodyBlock {
+    private static final float MIN_WIDTH_DP = 120f;
+    private static final float PHOTO_MAX_HEIGHT_STATUS_OFFSET_DP = 56f;
+    private static final float PHOTO_MAX_HEIGHT_FACTOR = 0.9f;
+    private static final float PHOTO_TOP_GAP_DP = 8f;
+    private static final float PROGRESS_BUTTON_SIZE_DP = 48f;
+    private static final float CAPTION_HORIZONTAL_INSET_DP = 18f;
+    private static final float CAPTION_VERTICAL_GAP_DP = 8f;
+    private static final float CAPTION_BOTTOM_PADDING_DP = 8f;
+    private static final float CAPTION_MIN_WIDTH_DP = 80f;
+    private static final float INSTANT_LINK_TOP_INSET_DP = 11f;
+    private static final float INSTANT_LINK_RIGHT_INSET_DP = 11f;
+    private static final float INSTANT_LINK_SIZE_DP = 24f;
+
     private final CookedPostBlock.Image image;
     private final List<GalleryImage> gallery;
     private final PostBodyBuildContext context;
@@ -110,26 +123,26 @@ final class ImageBlock implements EmbeddedPostBodyBlock {
     }
     @Override
     public int measure(int maxWidthPx) {
-        int width = Math.max(maxWidthPx, AndroidUtilities.dp(120f));
+        int width = Math.max(maxWidthPx, minWidthPx());
         measuredWidth = width;
         Float imageAspect = image.getAspectRatio();
         float aspect = imageAspect != null ? imageAspect : 1.5f;
         int imageWidth = width;
         int imageHeight = Math.round(imageWidth / aspect);
-        int maxHeight = Math.round((Math.max(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y) - AndroidUtilities.dp(56f)) * 0.9f);
+        int maxHeight = photoMaxHeightPx();
         if (imageHeight > maxHeight) {
             imageHeight = maxHeight;
             imageWidth = Math.min(Math.round(imageHeight * aspect), width);
         }
         float imageLeft = (width - imageWidth) / 2f;
-        int photoY = isFirst ? 0 : AndroidUtilities.dp(8f);
+        int photoY = photoTopGapPx(isFirst);
         imageRect.set(imageLeft, photoY, imageLeft + imageWidth, photoY + imageHeight);
-        int buttonSize = AndroidUtilities.dp(48f);
+        int buttonSize = progressButtonSizePx();
         buttonX = Math.round(imageRect.left + (imageRect.width() - buttonSize) / 2f);
         buttonY = Math.round(imageRect.top + (imageRect.height() - buttonSize) / 2f);
         radialProgress.setProgressRect(buttonX, buttonY, buttonX + buttonSize, buttonY + buttonSize);
-        captionX = AndroidUtilities.dp(18f);
-        int captionWidth = Math.max(width - AndroidUtilities.dp(36f), AndroidUtilities.dp(80f));
+        captionX = captionXPx();
+        int captionWidth = captionWidthPx(width);
         String captionHtml = image.getCaptionHtml();
         if (captionHandle != null) {
             captionHandle.detach();
@@ -151,15 +164,15 @@ final class ImageBlock implements EmbeddedPostBodyBlock {
             spoilersPool.addAll(spoilers);
             spoilers.clear();
         }
-        captionY = Math.round(imageRect.bottom) + AndroidUtilities.dp(8f);
+        captionY = Math.round(imageRect.bottom) + captionVerticalGapPx();
         if (captionLayout != null) {
             captionRect.set(captionX, captionY, captionX + captionLayout.getWidth(), captionY + captionLayout.getHeight());
         } else {
             captionRect.setEmpty();
         }
         measuredHeight = Math.round(imageRect.bottom)
-                + (captionLayout != null ? AndroidUtilities.dp(8f) + captionLayout.getHeight() : 0)
-                + AndroidUtilities.dp(8f);
+                + (captionLayout != null ? captionVerticalGapPx() + captionLayout.getHeight() : 0)
+                + captionBottomPaddingPx();
         if (imageBlockView != null) {
             imageBlockView.measure(
                     View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
@@ -185,9 +198,9 @@ final class ImageBlock implements EmbeddedPostBodyBlock {
                 invalidateBlock();
             }
             if (linkDrawable != null) {
-                int linkLeft = parentWidth - AndroidUtilities.dp(11 + 24);
-                int linkTop = Math.round(imageRect.top) + AndroidUtilities.dp(11f);
-                linkDrawable.setBounds(linkLeft, linkTop, linkLeft + AndroidUtilities.dp(24f), linkTop + AndroidUtilities.dp(24f));
+                int linkLeft = instantLinkLeftPx(parentWidth);
+                int linkTop = instantLinkTopPx(imageRect.top);
+                linkDrawable.setBounds(linkLeft, linkTop, linkLeft + instantLinkSizePx(), linkTop + instantLinkSizePx());
                 linkDrawable.draw(canvas);
             }
         }
@@ -335,10 +348,10 @@ final class ImageBlock implements EmbeddedPostBodyBlock {
         if (linkDrawable == null) {
             return false;
         }
-        int linkLeft = measuredWidth - AndroidUtilities.dp(11 + 24);
-        int linkTop = Math.round(imageRect.top) + AndroidUtilities.dp(11f);
-        return x >= linkLeft && x <= linkLeft + AndroidUtilities.dp(24f)
-                && y >= linkTop && y <= linkTop + AndroidUtilities.dp(24f);
+        int linkLeft = instantLinkLeftPx(measuredWidth);
+        int linkTop = instantLinkTopPx(imageRect.top);
+        return x >= linkLeft && x <= linkLeft + instantLinkSizePx()
+                && y >= linkTop && y <= linkTop + instantLinkSizePx();
     }
 
     private boolean onCaptionTouch(MotionEvent event, float localX, float localY) {
@@ -402,6 +415,50 @@ final class ImageBlock implements EmbeddedPostBodyBlock {
         if (imageBlockView != null) {
             imageBlockView.invalidate();
         }
+    }
+
+    static int minWidthPx() {
+        return AndroidUtilities.dp(MIN_WIDTH_DP);
+    }
+
+    static int photoMaxHeightPx() {
+        return Math.round((Math.max(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y) - AndroidUtilities.dp(PHOTO_MAX_HEIGHT_STATUS_OFFSET_DP)) * PHOTO_MAX_HEIGHT_FACTOR);
+    }
+
+    static int photoTopGapPx(boolean first) {
+        return first ? 0 : AndroidUtilities.dp(PHOTO_TOP_GAP_DP);
+    }
+
+    static int progressButtonSizePx() {
+        return AndroidUtilities.dp(PROGRESS_BUTTON_SIZE_DP);
+    }
+
+    static int captionXPx() {
+        return AndroidUtilities.dp(CAPTION_HORIZONTAL_INSET_DP);
+    }
+
+    static int captionWidthPx(int parentWidth) {
+        return Math.max(parentWidth - captionXPx() * 2, AndroidUtilities.dp(CAPTION_MIN_WIDTH_DP));
+    }
+
+    static int captionVerticalGapPx() {
+        return AndroidUtilities.dp(CAPTION_VERTICAL_GAP_DP);
+    }
+
+    static int captionBottomPaddingPx() {
+        return AndroidUtilities.dp(CAPTION_BOTTOM_PADDING_DP);
+    }
+
+    static int instantLinkTopPx(float imageTop) {
+        return Math.round(imageTop) + AndroidUtilities.dp(INSTANT_LINK_TOP_INSET_DP);
+    }
+
+    static int instantLinkLeftPx(int parentWidth) {
+        return parentWidth - AndroidUtilities.dp(INSTANT_LINK_RIGHT_INSET_DP + INSTANT_LINK_SIZE_DP);
+    }
+
+    static int instantLinkSizePx() {
+        return AndroidUtilities.dp(INSTANT_LINK_SIZE_DP);
     }
 
     private final class ImageBlockView extends View {

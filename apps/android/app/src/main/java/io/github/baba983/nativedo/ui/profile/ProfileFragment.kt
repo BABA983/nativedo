@@ -29,7 +29,6 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Paint
-import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
@@ -67,6 +66,7 @@ import androidx.recyclerview.widget.RecyclerView
 import io.github.baba983.nativedo.BuildConfig
 import io.github.baba983.nativedo.NativeDoApp
 import io.github.baba983.nativedo.R
+import org.telegram.messenger.R as TelegramR
 import io.github.baba983.nativedo.core.di.AppContainer
 import io.github.baba983.nativedo.core.session.AppSessionState
 import io.github.baba983.nativedo.core.session.SessionFreshness
@@ -95,11 +95,13 @@ import org.telegram.messenger.Utilities
 import org.telegram.messenger.browser.Browser
 import org.telegram.tgnet.TLRPC
 import org.telegram.ui.ActionBar.ActionBar
+import org.telegram.ui.ActionBar.ActionBarMenuItem
 import org.telegram.ui.ActionBar.AlertDialog
 import org.telegram.ui.ActionBar.BackDrawable
 import org.telegram.ui.ActionBar.BaseFragment
 import org.telegram.ui.ActionBar.SimpleTextView
 import org.telegram.ui.ActionBar.Theme
+import org.telegram.ui.Components.BulletinFactory
 import org.telegram.ui.Components.ButtonBounce
 import org.telegram.ui.Components.AvatarDrawable
 import org.telegram.ui.Components.CubicBezierInterpolator
@@ -125,6 +127,11 @@ private const val ID_JOINED = 14
 private const val ID_LAST_SEEN = 15
 private const val ID_PROFILE_VIEWS = 16
 private const val ID_BADGE_COUNT = 17
+private const val ID_ROLE = 18
+private const val ID_GAMIFICATION = 19
+private const val ID_ACCEPTED_ANSWERS = 20
+private const val ID_FOLLOWERS = 21
+private const val ID_FOLLOWING = 22
 private const val ACTION_DEV_URL = 1
 private const val ACTION_TOPIC_URL = 2
 private const val ACTION_RETRY_PROFILE = 3
@@ -134,6 +141,15 @@ private const val MENU_OPEN_PROFILE = 101
 private const val MENU_REFRESH_PROFILE = 102
 private const val MENU_LOGIN = 103
 private const val MENU_LOGOUT = 104
+private const val MENU_OTHER = 105
+
+// Identity/stats rows whose value can be long-pressed to copy, mirroring upstream
+// ProfileActivity.processOnClickOrPress (copy on tap/long-press of info rows).
+private val COPYABLE_ROW_IDS = setOf(
+    ID_USERNAME, ID_ROLE, ID_TRUST_LEVEL, ID_TITLE, ID_GAMIFICATION,
+    ID_ACCEPTED_ANSWERS, ID_FOLLOWERS, ID_FOLLOWING, ID_LAST_SEEN,
+    ID_TIME_READ, ID_PROFILE_VIEWS, ID_BADGE_COUNT, ID_JOINED,
+)
 
 /**
  * Profile page mirroring Telegram's ProfileActivity (the version used in the bottom tab).
@@ -160,10 +176,10 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
     private var avatarGooey: ProfileGooeyView? = null
     private var avatarImageView: AvatarImageView? = null
     private var avatarContainer2: FrameLayout? = null
-    private var openProfileMenuItem: View? = null
-    private var refreshProfileMenuItem: View? = null
-    private var loginMenuItem: View? = null
-    private var logoutMenuItem: View? = null
+    // ActionBar overflow menu (mirrors upstream ProfileActivity.otherItem —
+    // single "..." item carrying a popup submenu of all profile actions, instead
+    // of four flat top-level icons). L4036 / L11991–12118.
+    private var otherItem: ActionBarMenuItem? = null
     private var nameTextView = arrayOfNulls<SimpleTextView>(2) // [0]=dark(collapsed), [1]=white(expanded)
     private var subtitleView = arrayOfNulls<SimpleTextView>(2)
     private var avatarViewerUrl: String = ""
@@ -213,7 +229,12 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
         actionBar.setItemsColor(Theme.getColor(Theme.key_actionBarDefaultIcon), false)
         actionBar.setItemsColor(Theme.getColor(Theme.key_actionBarDefaultIcon), true)
         actionBar.setOccupyStatusBar(!AndroidUtilities.isTablet())
-        actionBar.setBackButtonDrawable(BackDrawable(false))
+        // ProfileFragment is a bottom tab (MainTabsActivity.POSITION_PROFILE), not a
+        // pushed fragment, so there's no parent to go back to — hide the back button
+        // entirely. Upstream ProfileActivity hasMainTabs branch (L2480–2491) swaps the
+        // back drawable for a QR icon; NativeDo has no QR feature, so we pass null,
+        // which ActionBar.setBackButtonDrawable maps to backButtonImageView GONE.
+        actionBar.setBackButtonDrawable(null)
 
         appContainer = (context.applicationContext as NativeDoApp).appContainer
         viewModel = ViewModelProvider(
@@ -234,7 +255,7 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
             this,
             { items, _ -> fillItems(items) },
             { item, _, _, _, _ -> handleItemClick(item) },
-            null,
+            { item, _, _, _, _ -> handleItemLongClick(item) },
         ) {
             private var velocityTracker: VelocityTracker? = null
 
@@ -525,32 +546,65 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
                 val durationFactor = Math.min(AndroidUtilities.dpf2(2000f),
                     Math.max(AndroidUtilities.dpf2(1100f), Math.abs(listViewVelocityY))) /
                     AndroidUtilities.dpf2(1100f)
+                // Mirrors upstream 8463: duration scales with remaining animation distance.
+                // Computed once so the avatar animator and the list scroll share the same
+                // duration + interpolator (upstream 8494 passes both to listView.smoothScrollBy).
+                val expandDurationMs = ((1f - value) * 250f / durationFactor).toLong()
 
                 expandAnimator?.apply {
                     interpolator = CubicBezierInterpolator.EASE_BOTH
-                    duration = ((1f - value) * 250f / durationFactor).toLong()
-                    // Scroll the list to fully expanded position in sync (mirrors upstream 8490-8496)
+                    duration = expandDurationMs
                     addListener(object : android.animation.AnimatorListenerAdapter() {
                         override fun onAnimationEnd(animation: android.animation.Animator) {
                             expandAnimator?.removeListener(this)
-                            // Mirrors upstream 8478-8481: fully expanded state
-                            // We don't have avatarsViewPager, so we just keep avatarContainer
-                            // filling the screen (setAvatarExpandProgress has already done this)
+                            // Mirrors upstream 8478-8481: we have no avatarsViewPager, so
+                            // setAvatarExpandProgress already keeps avatarContainer filling
+                            // the screen at value=1; the TopView reaches Color.BLACK via the
+                            // currentExpandAnimatorValue blend in TopView.onDraw.
                         }
                     })
                     start()
                 }
 
-                // Scroll the list to fully expanded position (mirrors upstream 8490-8496)
-                // Upstream uses listView.smoothScrollBy with duration+interpolator, which we
-                // don't have. Use ValueAnimator to drive scrollToPositionWithOffset instead.
+                // Scroll the list to fully expanded position in lockstep with expandAnimator
+                // (mirrors upstream 8490-8496: same duration + same interpolator so the avatar
+                // enlargement and the list scroll arrive together).
+                //
+                // We can't use smoothScrollBy here: it goes through the default
+                // LinearLayoutManager.scrollVerticallyBy which clamps at the list start
+                // (the first item can't scroll past the top padding during SETTLING state).
+                // Our custom scrollVerticallyBy only allows overscroll during
+                // SCROLL_STATE_DRAGGING, not SETTLING. So smoothScrollBy would fail to
+                // scroll the list to targetTopExpand, leaving extraHeight stuck near the
+                // 0.33 threshold — the avatar only grows to cover the header, not the full
+                // screen ("只是变大了一点点" bug).
+                //
+                // scrollToPositionWithOffset bypasses the scroll mechanism and directly
+                // positions item 0 at the target offset, so it CAN go past the list start.
+                // We drive it with a ValueAnimator (headerAnimator) using the SAME duration
+                // and interpolator as expandAnimator for lockstep animation.
                 val rv = listView ?: return
                 val layoutManager = rv.layoutManager as? LinearLayoutManager ?: return
                 val view0 = layoutManager.findViewByPosition(0)
                 if (view0 != null) {
                     val targetTopExpand = rv.measuredWidth + newTop
-                    val dy = view0.top - targetTopExpand
-                    rv.smoothScrollBy(0, dy, CubicBezierInterpolator.EASE_OUT_QUINT)
+                    headerAnimator?.cancel()
+                    headerAnimator = ValueAnimator.ofInt(view0.top, targetTopExpand).apply {
+                        duration = expandDurationMs
+                        interpolator = CubicBezierInterpolator.EASE_BOTH
+                        addUpdateListener { animator ->
+                            layoutManager.scrollToPositionWithOffset(0, animator.animatedValue as Int)
+                            checkListViewScroll()
+                        }
+                        addListener(object : android.animation.AnimatorListenerAdapter() {
+                            override fun onAnimationEnd(animation: android.animation.Animator) {
+                                if (headerAnimator == animation) {
+                                    headerAnimator = null
+                                }
+                            }
+                        })
+                        start()
+                    }
                 }
 
                 // Haptic (mirrors upstream 8503-8506)
@@ -564,34 +618,65 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
                 return  // expandAnimator is now running — setAvatarExpandProgress will drive visuals
             }
 
-            // --- Not isPulledDown (still dragging in expand zone) ---
-            // Drive avatar directly from expandProgress (mirrors upstream 8515-8527)
+            // --- Avatar / name-online positioning in the expand zone ---
+            // Upstream has two branches inside `h > headerExtraHeight || isPulledDown`:
+            //   allowPullingDown && expandProgress >= 0.33  → expand zone (avatarsViewPager
+            //     covers the screen; avatarContainer is set GONE on animator end)
+            //   else                                          → drag/collapse zone
+            // We have no avatarsViewPager, so we keep avatarContainer visible. When the
+            // expandAnimator has finished and we're in the stable expand zone
+            // (isPulledDown && expandProgress >= 0.33), we must KEEP the avatar at its
+            // full-expand geometry — driving it from expandProgress here would shrink it
+            // (expandProgress ~0.4 at the full-expand scroll position, NOT 1.0), which is
+            // the "avatar only grows slightly" bug. Only drive from expandProgress when
+            // NOT in the stable expand zone (still dragging, or scrolling back down past
+            // the 0.33 threshold). Mirrors upstream 8515-8527 for the drag branch.
             if (expandAnimator?.isRunning != true) {
-                // Avatar Y moves toward 0 (top) as expand increases
-                avatarY = AndroidUtilities.lerp(avatarY, 0f, expandProgress)
+                if (!isPulledDown || expandProgress < 0.33f) {
+                    // Drag / sub-threshold zone: drive avatar from expandProgress
+                    avatarY = AndroidUtilities.lerp(avatarY, 0f, expandProgress)
 
-                avatarContainer?.let { ac ->
-                    val params = ac.layoutParams as FrameLayout.LayoutParams
-                    // Avatar size grows with expandProgress (mirrors setAvatarExpandProgress formula)
-                    params.width = AndroidUtilities.lerp(AndroidUtilities.dpf2(100f), width.toFloat() / avatarScale, expandProgress).toInt()
-                    params.height = AndroidUtilities.lerp(AndroidUtilities.dpf2(100f), (h + newTop) / avatarScale, expandProgress).toInt()
-                    params.leftMargin = AndroidUtilities.lerp(AndroidUtilities.dpf2(64f), 0f, expandProgress).toInt()
-                    ac.layoutParams = params
-
-                    ac.scaleX = avatarScale
-                    ac.scaleY = avatarScale
-
-                    // Center horizontally (mirrors upstream fixAvatarImageInCenter)
-                    val avatarX = width / 2f - (params.leftMargin + params.width * avatarScale * 0.5f)
-                    ac.translationX = avatarX
-                    ac.translationY = Math.ceil(avatarY.toDouble()).toFloat()
-
-                    avatarImageView?.setRoundRadiusForExpand(
-                        AndroidUtilities.lerp(AndroidUtilities.dp(50f).toFloat(), 0f, expandProgress).toInt()
-                    )
+                    avatarContainer?.let { ac ->
+                        val params = ac.layoutParams as FrameLayout.LayoutParams
+                        params.width = AndroidUtilities.lerp(AndroidUtilities.dpf2(100f), width.toFloat() / avatarScale, expandProgress).toInt()
+                        params.height = AndroidUtilities.lerp(AndroidUtilities.dpf2(100f), (h + newTop) / avatarScale, expandProgress).toInt()
+                        params.leftMargin = AndroidUtilities.lerp(AndroidUtilities.dpf2(64f), 0f, expandProgress).toInt()
+                        ac.scaleX = avatarScale
+                        ac.scaleY = avatarScale
+                        ac.translationX = width / 2f - (params.leftMargin + params.width * avatarScale * 0.5f)
+                        ac.translationY = Math.ceil(avatarY.toDouble()).toFloat()
+                        ac.requestLayout()
+                        avatarImageView?.setRoundRadiusForExpand(
+                            AndroidUtilities.lerp(AndroidUtilities.dp(50f).toFloat(), 0f, expandProgress).toInt()
+                        )
+                    }
+                } else {
+                    // Stable expand zone (isPulledDown && expandProgress >= 0.33):
+                    // maintain the value=1 full-expand geometry with the CURRENT extraHeight
+                    // so the avatar always covers the TopView (mirrors upstream
+                    // onAnimationEnd → topView.setBackgroundColor(BLACK) + avatarsViewPager
+                    // sized to width × (h + newTop)).
+                    avatarContainer?.let { ac ->
+                        val params = ac.layoutParams as FrameLayout.LayoutParams
+                        params.width = (width.toFloat() / avatarScale).toInt()
+                        params.height = ((h + newTop) / avatarScale).toInt()
+                        params.leftMargin = 0
+                        ac.scaleX = avatarScale
+                        ac.scaleY = avatarScale
+                        ac.translationX = width / 2f - (params.leftMargin + params.width * avatarScale * 0.5f)
+                        ac.translationY = 0f
+                        ac.requestLayout()
+                        avatarImageView?.setRoundRadiusForExpand(0)
+                        // Immersive visibility fallback (mirrors setAvatarExpandProgress):
+                        // keep avatarContainer hidden only at the fully-expanded steady
+                        // state (currentExpandAnimatorValue == 1); restore it while the
+                        // collapse animator is mid-flight so the shrinking avatar is seen.
+                        ac.visibility =
+                            if (currentExpandAnimatorValue >= 1f) View.INVISIBLE else View.VISIBLE
+                    }
                 }
 
-                // Name/online position when in expand zone but not fully pulled down
+                // Name/online position at expanded position (both cases)
                 // (mirrors upstream lines 8520-8523)
                 nameTextView[1]?.let { nt ->
                     nt.translationX = AndroidUtilities.dpf2(18f) - nt.left
@@ -704,13 +789,14 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
         val layoutManager = rv.layoutManager as? LinearLayoutManager ?: return
         val view = layoutManager.findViewByPosition(0) ?: return
         val collapsedTop = getListTopForExtraHeight(getHeaderExtraHeight())
+        val newTop = getStatusBarHeight() + getActionBarHeight()
 
         if (allowPullingDown || isPulledDown) {
             // Mirrors upstream: decide whether to fully expand or collapse back
             if (expandProgress >= 0.33f && allowPullingDown) {
                 // Past threshold: trigger expand — needLayout will start expandAnimator
                 isPulledDown = true
-                val expandedTop = rv.measuredWidth.coerceAtLeast(collapsedTop)
+                val expandedTop = (rv.measuredWidth + newTop).coerceAtLeast(collapsedTop)
                 animateHeaderTo(expandedTop, view.top)
             } else {
                 // Below threshold or already pulled down: collapse back
@@ -750,7 +836,8 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
         val rv = listView ?: return
         val layoutManager = rv.layoutManager as? LinearLayoutManager ?: return
         val view = layoutManager.findViewByPosition(0) ?: return
-        val expandedTop = rv.measuredWidth.coerceAtLeast(getListTopForExtraHeight(getHeaderExtraHeight()))
+        val newTop = getStatusBarHeight() + getActionBarHeight()
+        val expandedTop = (rv.measuredWidth + newTop).coerceAtLeast(getListTopForExtraHeight(getHeaderExtraHeight()))
         val isExpanding = extraHeight <= getHeaderExtraHeight() + AndroidUtilities.dp(24f)
         val targetTop = if (!isExpanding) {
             getListTopForExtraHeight(getHeaderExtraHeight())
@@ -918,21 +1005,32 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
         )
 
         // --- Avatar container size — THE KEY: this makes the avatar fill the screen ---
-        // Mirrors upstream lines 6385-6390 exactly.
+        // Mirrors upstream lines 6385-6390 exactly. Upstream mutates the params object
+        // in place, calls fixAvatarImageInCenter() (sets translationX from the new
+        // params), then avatarContainer.requestLayout(). We match that order instead
+        // of setLayoutParams(params) so requestLayout is explicit and translationX
+        // reflects the new width/margin before the next layout pass.
         avatarContainer?.let { ac ->
             val params = ac.layoutParams as FrameLayout.LayoutParams
             params.width = AndroidUtilities.lerp(AndroidUtilities.dpf2(100f), width.toFloat() / avatarScale, value).toInt()
             params.height = AndroidUtilities.lerp(AndroidUtilities.dpf2(100f), (extraHeight + newTop) / avatarScale, value).toInt()
             params.leftMargin = AndroidUtilities.lerp(AndroidUtilities.dpf2(64f), 0f, value).toInt()
-            ac.layoutParams = params
-
-            // Center horizontally (mirrors upstream fixAvatarImageInCenter)
+            // Center horizontally (mirrors upstream fixAvatarImageInCenter, called
+            // BEFORE requestLayout so translationX reflects the new params)
             ac.translationX = width / 2f - (params.leftMargin + params.width * avatarScale * 0.5f)
+            ac.requestLayout()
         }
 
-        // --- Name/online position (mirrors upstream lines 6286-6351) ---
+        // --- Name/online position (mirrors upstream lines 6208-6215) ---
         val diff = calculateHeaderExtraDiff()
         if (!isPulledDown) {
+            refreshNameAndOnlineYBasedOnExpand(diff, newTop, value)
+        } else if (extraHeight >= getHeaderOnlyExtraHeight() && expandProgress < 0.33f) {
+            // Mirrors upstream: isPulledDown but scrolling back into the collapse
+            // transition zone (extraHeight still >= headerOnly, but expandProgress
+            // dropped below 0.33). Upstream calls refreshNameAndOnlineY() which
+            // recomputes nameY/onlineY from the current scroll; our port re-runs
+            // the same Bezier-curve positioning with the isPulledDown control point.
             refreshNameAndOnlineYBasedOnExpand(diff, newTop, value)
         }
 
@@ -945,6 +1043,16 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
 
         // --- Color blends ---
         applyExpandColorBlends(value)
+
+        // --- Immersive full-expand: hide the avatar container once fully expanded.
+        // Mirrors upstream ProfileActivity onAnimationEnd (L8479
+        // avatarContainer.setVisibility(GONE)). We use INVISIBLE (not GONE) because
+        // we have no ProfileGalleryView to take over — keeping the placeholder avoids
+        // layout jitter while still letting the black TopView + bottom name/subtitle
+        // read as the "immersive view" state. nameTextView[1]/subtitleView[1] live in
+        // avatarContainer2, not avatarContainer, so they stay visible. ---
+        avatarContainer?.visibility =
+            if (value >= 1f) View.INVISIBLE else View.VISIBLE
 
         topView?.invalidate()
     }
@@ -1132,12 +1240,10 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
             ), false,
         )
 
-        actionBar.setBackgroundColor(
-            ColorUtils.setAlphaComponent(
-                Theme.getColor(Theme.key_windowBackgroundGray),
-                AndroidUtilities.lerp(68f, 16f, progress).toInt().coerceIn(0, 255),
-            ),
-        )
+        // ActionBar background stays Color.TRANSPARENT (set in createView), mirroring
+        // upstream ProfileActivity L2471 — the TopView's black blend shows through
+        // directly. Do NOT layer a semi-transparent gray here; that produced a gray
+        // film over the ActionBar area that mismatched the TopView during expand.
     }
 
     private fun updateHeaderTextWidths(progress: Float) {
@@ -1274,18 +1380,29 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
 
     private fun setupProfileActionBarMenu(context: Context) {
         val menu = actionBar.createMenu()
-        openProfileMenuItem = menu.addItem(MENU_OPEN_PROFILE, R.drawable.settings_link).apply {
-            contentDescription = context.getString(R.string.post_image_viewer_action_open_in_browser)
-        }
-        refreshProfileMenuItem = menu.addItem(MENU_REFRESH_PROFILE, R.drawable.settings_refresh).apply {
-            contentDescription = context.getString(R.string.action_retry)
-        }
-        loginMenuItem = menu.addItem(MENU_LOGIN, R.drawable.settings_login).apply {
-            contentDescription = context.getString(R.string.profile_login_action)
-        }
-        logoutMenuItem = menu.addItem(MENU_LOGOUT, R.drawable.settings_logout).apply {
-            contentDescription = context.getString(R.string.profile_logout_action)
-        }
+        // Mirrors upstream ProfileActivity L4036: a single overflow ("...") item
+        // carries all profile actions as a popup submenu, instead of four flat
+        // top-level icons. Sub-items are added once and toggled via show/hideSubItem
+        // (upstream L11991–12118 uses the same pattern).
+        val overflow = menu.addItem(MENU_OTHER, TelegramR.drawable.ic_ab_other)
+        overflow.setContentDescription(context.getString(R.string.profile_menu_refresh))
+        // Pass icons as int resources (not Drawable) so ActionBarMenuSubItem
+        // applies the key_actionBarDefaultSubmenuItemIcon MULTIPLY tint — the
+        // Drawable overload clears the color filter and renders vector icons at
+        // their native fillColor (#FFFFFF = invisible on light submenu bg).
+        // Mirrors upstream addSubItem(id, R.drawable.msg_*, text) (L518).
+        overflow.addSubItem(MENU_OPEN_PROFILE, R.drawable.settings_link,
+            context.getString(R.string.profile_menu_open_in_browser))
+        overflow.addSubItem(MENU_REFRESH_PROFILE, R.drawable.settings_refresh,
+            context.getString(R.string.profile_menu_refresh))
+        overflow.addSubItem(MENU_LOGIN, R.drawable.settings_login,
+            context.getString(R.string.profile_menu_login))
+        // Logout sub-item marked red, mirroring upstream report/block_contact red
+        // sub-items (ProfileActivity L12040). key_text_RedBold = red text + icon.
+        overflow.addSubItem(MENU_LOGOUT, R.drawable.settings_logout,
+            context.getString(R.string.profile_menu_logout))
+            .setColors(Theme.getColor(Theme.key_text_RedBold), Theme.getColor(Theme.key_text_RedBold))
+        otherItem = overflow
         actionBar.setActionBarMenuOnItemClick(
             object : ActionBar.ActionBarMenuOnItemClick() {
                 override fun onItemClick(id: Int) {
@@ -1303,10 +1420,11 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
 
     private fun updateProfileActionBarMenu() {
         val authenticated = sessionState is AppSessionState.Authenticated
-        openProfileMenuItem?.visibility = if (profileWebUrl.isNotBlank()) View.VISIBLE else View.GONE
-        refreshProfileMenuItem?.visibility = View.VISIBLE
-        loginMenuItem?.visibility = if (authenticated) View.GONE else View.VISIBLE
-        logoutMenuItem?.visibility = if (authenticated) View.VISIBLE else View.GONE
+        val overflow = otherItem ?: return
+        if (profileWebUrl.isNotBlank()) overflow.showSubItem(MENU_OPEN_PROFILE) else overflow.hideSubItem(MENU_OPEN_PROFILE)
+        overflow.showSubItem(MENU_REFRESH_PROFILE)
+        if (authenticated) overflow.hideSubItem(MENU_LOGIN) else overflow.showSubItem(MENU_LOGIN)
+        if (authenticated) overflow.showSubItem(MENU_LOGOUT) else overflow.hideSubItem(MENU_LOGOUT)
     }
 
     private fun buildHeaderSubtitle(profile: UserProfile?): String {
@@ -1439,30 +1557,55 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
                         items.add(UItem.asShadow(null))
                     }
 
-                    // --- Identity section ---
+                    // --- Profile section (identity + stats merged into one card).
+                    // Mirrors upstream ProfileActivity info block (updateRowsIds
+                    // L10614–10740): a single header + multiple TextDetailCell rows +
+                    // one trailing shadow. recycler.setSections() draws intra-section
+                    // dividers automatically, so this reads as one white card with
+                    // many rows instead of two fragmented sections. ---
                     val username = profile.username
                     val trustLabel = trustLevelLabel(profile.trustLevel)
                     val hasTitle = profile.title.isNotBlank()
-                    if (username.isNotBlank() || trustLabel != null || hasTitle) {
-                        items.add(UItem.asHeader(context?.getString(R.string.profile_identity_title).orEmpty()))
-                        if (username.isNotBlank()) {
-                            items.add(TextDetailCell.Factory.of(ID_USERNAME, "@$username", "Username"))
-                        }
-                        if (trustLabel != null) {
-                            items.add(TextDetailCell.Factory.of(ID_TRUST_LEVEL, trustLabel, "Trust Level"))
-                        }
-                        if (hasTitle) {
-                            items.add(TextDetailCell.Factory.of(ID_TITLE, profile.title, "Title"))
-                        }
-                        items.add(UItem.asShadow(null))
+                    val role = when {
+                        profile.admin -> "管理员"
+                        profile.moderator -> "版主"
+                        else -> null
                     }
-
                     val lastSeen = formatDate(profile.lastSeenAt)
                     val joined = formatDate(profile.createdAt)
                     val hasStats = lastSeen.isNotBlank() || profile.timeRead > 0 ||
-                        profile.profileViewCount > 0 || profile.badgeCount > 0 || joined.isNotBlank()
-                    if (hasStats) {
-                        items.add(UItem.asHeader(context?.getString(R.string.profile_stats_title).orEmpty()))
+                        profile.profileViewCount > 0 || profile.badgeCount > 0 || joined.isNotBlank() ||
+                        profile.gamificationScore > 0 || profile.acceptedAnswers > 0 ||
+                        profile.totalFollowers > 0 || profile.totalFollowing > 0
+                    if (username.isNotBlank() || trustLabel != null || hasTitle || role != null || hasStats) {
+                        items.add(UItem.asHeader(context?.getString(R.string.profile_identity_title).orEmpty()))
+                        if (username.isNotBlank()) {
+                            items.add(TextDetailCell.Factory.of(ID_USERNAME, "@$username",
+                                context?.getString(R.string.profile_username_label).orEmpty()))
+                        }
+                        if (role != null) {
+                            items.add(TextDetailCell.Factory.of(ID_ROLE, role, "角色"))
+                        }
+                        if (trustLabel != null) {
+                            items.add(TextDetailCell.Factory.of(ID_TRUST_LEVEL, trustLabel,
+                                context?.getString(R.string.profile_trust_level_label).orEmpty()))
+                        }
+                        if (hasTitle) {
+                            items.add(TextDetailCell.Factory.of(ID_TITLE, profile.title,
+                                context?.getString(R.string.profile_title_label).orEmpty()))
+                        }
+                        if (profile.gamificationScore > 0) {
+                            items.add(TextDetailCell.Factory.of(ID_GAMIFICATION, profile.gamificationScore.toString(), "论坛积分"))
+                        }
+                        if (profile.acceptedAnswers > 0) {
+                            items.add(TextDetailCell.Factory.of(ID_ACCEPTED_ANSWERS, profile.acceptedAnswers.toString(), "最佳答案"))
+                        }
+                        if (profile.totalFollowers > 0) {
+                            items.add(TextDetailCell.Factory.of(ID_FOLLOWERS, profile.totalFollowers.toString(), "粉丝"))
+                        }
+                        if (profile.totalFollowing > 0) {
+                            items.add(TextDetailCell.Factory.of(ID_FOLLOWING, profile.totalFollowing.toString(), "关注"))
+                        }
                         if (lastSeen.isNotBlank()) {
                             items.add(TextDetailCell.Factory.of(ID_LAST_SEEN, lastSeen, "最近活动"))
                         }
@@ -1481,8 +1624,9 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
                         items.add(UItem.asShadow(null))
                     }
 
-                    // --- Account section ---
-                    items.add(UItem.asHeader(context?.getString(R.string.profile_account_title).orEmpty()))
+                    // --- Account action row (no header — mirrors upstream single
+                    // action rows like unblockRow/deleteReactionRow: a lone logout
+                    // doesn't need its own section header) ---
                     items.add(
                         IconSettingFactory.of(
                             ACTION_LOGOUT,
@@ -1533,6 +1677,10 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
         // Mirrors SettingsActivity.java:737 — dev tools are gated behind a build flag so
         // anonymous/release users never see them.
         addDevToolsItems(items)
+
+        // --- Version footer (mirrors SettingsActivity.versionView, L745) ---
+        // Centered gray build string at the very bottom, shown in every session state.
+        items.add(UItem.asCenterShadow("NativeDo v${BuildConfig.VERSION_NAME}"))
     }
 
     private fun addDevToolsItems(items: ArrayList<UItem>) {
@@ -1586,6 +1734,22 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
         } catch (_: Exception) {
             isoDate.take(10)
         }
+    }
+
+    /**
+     * Long-press an identity/stats row to copy its value, mirroring upstream
+     * ProfileActivity.processOnClickOrPress (copy on press of username/bio/etc).
+     * Returning true makes RecyclerListView fire the long-press haptic automatically.
+     */
+    private fun handleItemLongClick(item: UItem): Boolean {
+        if (item.id !in COPYABLE_ROW_IDS) return false
+        val value = item.text?.toString()?.trim().orEmpty()
+        if (value.isEmpty()) return false
+        AndroidUtilities.addToClipboard(value)
+        BulletinFactory.of(this)
+            .createCopyBulletin(context?.getString(R.string.profile_value_copied).orEmpty())
+            .show()
+        return true
     }
 
     private fun handleItemClick(item: UItem) {
@@ -1701,7 +1865,6 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
         private val scrimPaint = Paint(Paint.ANTI_ALIAS_FLAG)
         private var topGradient: LinearGradient? = null
         private var bottomGradient: LinearGradient? = null
-        private var radialGradient: RadialGradient? = null
         private var gradientWidth = 0
         private var gradientHeight = 0
         private var gradientColor = 0
@@ -1725,8 +1888,20 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
             val h = (statusBarHeight + actionBarHeight + extraHeight).toInt().coerceAtLeast(1)
             if (w <= 0) return
 
-            // Mirrors upstream: when fully expanded, TopView background becomes Color.BLACK
-            val baseColor = ColorUtils.blendARGB(currentColor, Color.BLACK, expandProgress)
+            // At the full-expand scroll position, `expandProgress` (computed by
+            // needLayout from the scroll offset) plateaus around ~0.4 — it never
+            // reaches 1.0 because the formula is (h - headerExtraHeight) /
+            // (width - newTop - headerOnlyExtraHeight), and at full expand h ≈
+            // width + newTop, which gives ~0.4–0.5, not 1.0. The dedicated
+            // expandAnimator drives `currentExpandAnimatorValue` all the way to
+            // 1.0, so blend toward Color.BLACK using the max of the two —
+            // mirroring upstream's topView.setBackgroundColor(Color.BLACK) at
+            // expand end (ProfileActivity.java:8478). Scrims below keep using
+            // `expandProgress` since the avatar now fully covers the TopView at
+            // full expand (the needLayout stable-expand branch maintains the
+            // value=1 geometry), making their non-zero alpha invisible.
+            val expandBlend = Math.max(expandProgress, currentExpandAnimatorValue)
+            val baseColor = ColorUtils.blendARGB(currentColor, Color.BLACK, expandBlend)
             paint.color = baseColor
             canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), paint)
 
@@ -1734,33 +1909,29 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
 
             ensureGradients(w, h, baseColor)
 
-            radialGradient?.let {
-                scrimPaint.shader = it
-                scrimPaint.alpha = ((1f - expandProgress) * 120).toInt().coerceIn(0, 120)
-                canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), scrimPaint)
-                scrimPaint.shader = null
-            }
-
+            // Top scrim — mirrors upstream OverlaysView.topOverlayGradient
+            // {0x42000000, 0} TOP_BOTTOM (ProfileActivity L1447). Single-stop dark
+            // gradient over the actionBar area, alpha rising with expand so the
+            // immersive black header reads cleanly. Replaces the earlier 3-stop
+            // 0x8A..0x22..0 gradient that was darker than upstream.
             topGradient?.let {
                 scrimPaint.shader = it
-                scrimPaint.alpha = ((0.18f + 0.34f * diff + 0.30f * expandProgress) * 255).toInt().coerceIn(0, 255)
-                canvas.drawRect(0f, 0f, w.toFloat(), (statusBarHeight + actionBarHeight + AndroidUtilities.dp(20f)).toFloat(), scrimPaint)
+                scrimPaint.alpha = ((0.26f + 0.5f * expandBlend) * 255).toInt().coerceIn(0, 255)
+                canvas.drawRect(0f, 0f, w.toFloat(), (statusBarHeight + actionBarHeight + AndroidUtilities.dp(16f)).toFloat(), scrimPaint)
                 scrimPaint.shader = null
             }
 
+            // Bottom scrim — mirrors upstream OverlaysView.bottomOverlayGradient
+            // {0x42000000, 0} BOTTOM_TOP (ProfileActivity L1450): dark at the very
+            // bottom, fading up. Alpha fades out as the avatar covers the lower
+            // region during expand.
             bottomGradient?.let {
                 val overlayHeight = AndroidUtilities.dp(96f)
                 val top = (h - overlayHeight).coerceAtLeast(0).toFloat()
                 scrimPaint.shader = it
-                scrimPaint.alpha = ((0.20f + 0.35f * diff) * (1f - expandProgress * 0.35f) * 255).toInt().coerceIn(0, 255)
+                scrimPaint.alpha = ((0.26f + 0.4f * diff) * (1f - expandProgress * 0.3f) * 255).toInt().coerceIn(0, 255)
                 canvas.drawRect(0f, top, w.toFloat(), h.toFloat(), scrimPaint)
                 scrimPaint.shader = null
-            }
-
-            val overlayAlpha = (52 * diff * (1f - expandProgress)).toInt()
-            if (overlayAlpha > 0) {
-                paint.color = ColorUtils.setAlphaComponent(Color.BLACK, overlayAlpha)
-                canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), paint)
             }
         }
 
@@ -1769,28 +1940,19 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
             gradientWidth = width
             gradientHeight = height
             gradientColor = baseColor
+            // Top scrim: {0x42000000, 0} top→bottom over the actionBar+16dp band,
+            // mirroring upstream OverlaysView.topOverlayGradient (ProfileActivity L1447).
             topGradient = LinearGradient(
-                0f, 0f, 0f, (AndroidUtilities.statusBarHeight + ActionBar.getCurrentActionBarHeight() + AndroidUtilities.dp(28f)).toFloat(),
-                intArrayOf(0x8A000000.toInt(), 0x22000000, 0x00000000),
-                floatArrayOf(0f, 0.62f, 1f),
+                0f, 0f, 0f, (AndroidUtilities.statusBarHeight + ActionBar.getCurrentActionBarHeight() + AndroidUtilities.dp(16f)).toFloat(),
+                intArrayOf(0x42000000, 0x00000000),
+                floatArrayOf(0f, 1f),
                 Shader.TileMode.CLAMP,
             )
+            // Bottom scrim: {0, 0x42000000} over the bottom 96dp, mirroring upstream
+            // OverlaysView.bottomOverlayGradient {0x42000000, 0} BOTTOM_TOP (L1450).
             bottomGradient = LinearGradient(
                 0f, (height - AndroidUtilities.dp(96f)).coerceAtLeast(0).toFloat(), 0f, height.toFloat(),
-                intArrayOf(0x00000000, 0x42000000, 0x72000000),
-                floatArrayOf(0f, 0.55f, 1f),
-                Shader.TileMode.CLAMP,
-            )
-            val accent = ColorUtils.blendARGB(
-                Theme.getColor(Theme.key_windowBackgroundWhiteBlueText),
-                baseColor,
-                0.62f,
-            )
-            radialGradient = RadialGradient(
-                width * 0.5f,
-                (AndroidUtilities.statusBarHeight + ActionBar.getCurrentActionBarHeight()).toFloat(),
-                width.coerceAtLeast(height).toFloat() * 0.78f,
-                intArrayOf(ColorUtils.setAlphaComponent(accent, 96), Color.TRANSPARENT),
+                intArrayOf(0x00000000, 0x42000000),
                 floatArrayOf(0f, 1f),
                 Shader.TileMode.CLAMP,
             )

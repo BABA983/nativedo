@@ -445,6 +445,7 @@ public class ThemeColors {
         defaultColors[key_chat_linkSelectBackground] = 0x3362a9e3;
         defaultColors[key_chat_outLinkSelectBackground] = 0x3362a9e3;
         defaultColors[key_chat_textSelectBackground] = 0x6662a9e3;
+        defaultColors[key_chat_wallpaper] = 0xfff1f1f3;
         defaultColors[key_chat_emojiPanelBackground] = 0xfff0f2f5;
         defaultColors[key_chat_emojiSearchBackground] = 0xffe5e9ee;
         defaultColors[key_chat_emojiSearchIcon] = 0xff94a1af;

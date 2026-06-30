@@ -182,8 +182,9 @@ final class QuoteBlock implements EmbeddedPostBodyBlock {
     public int measure(int maxWidthPx) {
         blockWidth = Math.max(maxWidthPx, AndroidUtilities.dp(120f));
         int textY = textTopPx();
-        textLeft = textLeftPx();
-        bodyWidth = Math.max(blockWidth - textLeft - sidePaddingPx(), AndroidUtilities.dp(80f));
+        int quoteLevel = block.getLevel();
+        textLeft = textLeftPx(quoteLevel);
+        bodyWidth = Math.max(blockWidth - textLeft - sidePaddingPx(quoteLevel), AndroidUtilities.dp(80f));
         int titleHeight = 0;
         if (titleBlock != null) {
             titleHeight = titleBlock.measure(bodyWidth);
@@ -223,13 +224,23 @@ final class QuoteBlock implements EmbeddedPostBodyBlock {
     private void drawQuote(Canvas canvas, int parentWidth, boolean skipEmbeddedChildren) {
         quoteLinePaint.setColor(Theme.getColor(Theme.key_chat_inReplyLine));
         titlePaint.setColor(context.getSecondaryTextColor());
+        int quoteLevel = block.getLevel();
         canvas.drawRect(
-                lineLeftPx(),
+                lineLeftPx(quoteLevel),
                 lineVerticalInsetPx(),
-                lineRightPx(),
+                lineRightPx(quoteLevel),
                 measuredHeight - lineVerticalInsetPx(),
                 quoteLinePaint
         );
+        if (quoteLevel > 0) {
+            canvas.drawRect(
+                    parentLineLeftPx(quoteLevel),
+                    0,
+                    parentLineRightPx(quoteLevel),
+                    measuredHeight,
+                    quoteLinePaint
+            );
+        }
         if (titleBlock != null) {
             canvas.save();
             canvas.translate(textLeft, textTopPx());
@@ -538,11 +549,33 @@ final class QuoteBlock implements EmbeddedPostBodyBlock {
     }
 
     static int lineLeftPx() {
-        return AndroidUtilities.dp(LINE_LEFT_DP);
+        return lineLeftPx(0);
+    }
+
+    static int lineLeftPx(int level) {
+        // Nested quote blocks are drawn inside the parent quote's text column.
+        // A level>0 quote therefore starts its own line at local x=0, which
+        // lands on ArticleViewer's absolute dp(18 + 14 * level) line.
+        return level > 0 ? 0 : AndroidUtilities.dp(LINE_LEFT_DP);
     }
 
     static int lineRightPx() {
-        return AndroidUtilities.dp(LINE_RIGHT_DP);
+        return lineRightPx(0);
+    }
+
+    static int lineRightPx(int level) {
+        return lineLeftPx(level) + AndroidUtilities.dp(LINE_RIGHT_DP - LINE_LEFT_DP);
+    }
+
+    static int parentLineLeftPx(int level) {
+        if (level <= 0) {
+            return lineLeftPx(0);
+        }
+        return -AndroidUtilities.dp(TEXT_INSET_AFTER_LINE_DP * level);
+    }
+
+    static int parentLineRightPx(int level) {
+        return parentLineLeftPx(level) + AndroidUtilities.dp(LINE_RIGHT_DP - LINE_LEFT_DP);
     }
 
     static int textInsetAfterLinePx() {
@@ -550,10 +583,21 @@ final class QuoteBlock implements EmbeddedPostBodyBlock {
     }
 
     static int textLeftPx() {
-        return lineLeftPx() + textInsetAfterLinePx();
+        return textLeftPx(0);
+    }
+
+    static int textLeftPx(int level) {
+        return lineLeftPx(level) + textInsetAfterLinePx();
     }
 
     static int sidePaddingPx() {
+        return sidePaddingPx(0);
+    }
+
+    static int sidePaddingPx(int level) {
+        if (level > 0) {
+            return 0;
+        }
         return AndroidUtilities.dp(SIDE_PADDING_DP);
     }
 

@@ -34,4 +34,34 @@ class QuoteBlockTest {
         assertThat(QuoteBlock.bodyBottomPaddingPx()).isEqualTo(AndroidUtilities.dp(8f))
         assertThat(QuoteBlock.bodyBlockSpacingPx()).isEqualTo(0)
     }
+
+    @Test
+    fun nestedBlockquoteGeometry_matchesTelegramLevelOffsetsInRecursiveCoordinates() {
+        assertThat(QuoteBlock.lineLeftPx(1)).isEqualTo(0)
+        assertThat(QuoteBlock.lineRightPx(1)).isEqualTo(AndroidUtilities.dp(2f))
+        assertThat(QuoteBlock.parentLineLeftPx(1)).isEqualTo(-AndroidUtilities.dp(14f))
+        assertThat(QuoteBlock.parentLineRightPx(1)).isEqualTo(-AndroidUtilities.dp(14f) + AndroidUtilities.dp(2f))
+        assertThat(QuoteBlock.textLeftPx(1)).isEqualTo(AndroidUtilities.dp(14f))
+        assertThat(QuoteBlock.sidePaddingPx(1)).isEqualTo(0)
+
+        val parentTextLeft = QuoteBlock.textLeftPx(0)
+        assertThat(parentTextLeft + QuoteBlock.parentLineLeftPx(1))
+            .isEqualTo(AndroidUtilities.dp(18f))
+        assertThat(parentTextLeft + QuoteBlock.lineLeftPx(1))
+            .isEqualTo(AndroidUtilities.dp(18f + 14f))
+        assertThat(parentTextLeft + QuoteBlock.textLeftPx(1))
+            .isEqualTo(AndroidUtilities.dp(18f + 14f + 14f))
+
+        val deepParentTextLeft = parentTextLeft + QuoteBlock.textLeftPx(1)
+        assertThat(deepParentTextLeft + QuoteBlock.parentLineLeftPx(2))
+            .isEqualTo(AndroidUtilities.dp(18f))
+        assertThat(deepParentTextLeft + QuoteBlock.lineLeftPx(2))
+            .isEqualTo(AndroidUtilities.dp(18f + 14f * 2f))
+
+        val width = AndroidUtilities.dp(320f)
+        val parentBodyWidth = width - QuoteBlock.textLeftPx(0) - QuoteBlock.sidePaddingPx(0)
+        val nestedBodyWidth = parentBodyWidth - QuoteBlock.textLeftPx(1) - QuoteBlock.sidePaddingPx(1)
+        assertThat(nestedBodyWidth)
+            .isEqualTo(width - AndroidUtilities.dp(36f + 14f) - AndroidUtilities.dp(14f))
+    }
 }

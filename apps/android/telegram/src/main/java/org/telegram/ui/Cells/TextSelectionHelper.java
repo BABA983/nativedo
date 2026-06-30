@@ -37,6 +37,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
 import org.telegram.ui.ActionBar.FloatingActionMode;
 import org.telegram.ui.ActionBar.FloatingToolbar;
@@ -84,7 +85,7 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
     }
 
     public interface QuoteCallback {
-        void run(CharSequence text);
+        void run(ArticleSelectableView view, CharSequence text);
     }
 
     protected final LayoutBlock layoutBlock = new LayoutBlock();
@@ -167,7 +168,6 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
     public static class ArticleTextSelectionHelper extends TextSelectionHelper<ArticleSelectableView> {
         public final ArrayList<TextLayoutBlock> arrayList = new ArrayList<>();
         public LinearLayoutManager layoutManager;
-        private static final int MENU_TRANSLATE = 1002;
         private final float cornerRadius = AndroidUtilities.dp(6f);
         private final Paint selectionPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint selectionHandlePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -1239,9 +1239,9 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
         private boolean createActionMenu(Menu menu) {
             Context context = overlay != null ? overlay.getContext() : null;
             menu.add(Menu.NONE, android.R.id.copy, 0, context != null ? context.getString(android.R.string.copy) : "Copy").setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
-            menu.add(Menu.NONE, android.R.id.button1, 1, context != null ? context.getString(R.string.Quote) : "Quote").setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
+            menu.add(Menu.NONE, R.id.menu_quote, 1, context != null ? context.getString(R.string.Quote) : "Quote").setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
             menu.add(Menu.NONE, android.R.id.selectAll, 2, context != null ? context.getString(android.R.string.selectAll) : "Select all").setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
-            menu.add(Menu.NONE, MENU_TRANSLATE, 3, context != null ? context.getString(R.string.TranslateMessage) : "Translate").setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
+            menu.add(Menu.NONE, R.id.menu_translate, 3, context != null ? context.getString(R.string.TranslateMessage) : "Translate").setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
             return updateActionMenu(menu);
         }
 
@@ -1251,7 +1251,7 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
             if (copyItem != null) {
                 copyItem.setVisible(canCopy);
             }
-            MenuItem quoteItem = menu.findItem(android.R.id.button1);
+            MenuItem quoteItem = menu.findItem(R.id.menu_quote);
             if (quoteItem != null) {
                 quoteItem.setVisible(quoteCallback != null && canCopy);
             }
@@ -1259,7 +1259,7 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
             if (selectAllItem != null) {
                 selectAllItem.setVisible(canCopy && canSelectAllCurrentView());
             }
-            MenuItem translateItem = menu.findItem(MENU_TRANSLATE);
+            MenuItem translateItem = menu.findItem(R.id.menu_translate);
             if (translateItem != null) {
                 translateItem.setVisible(translateCallback != null && canCopy);
             }
@@ -1271,17 +1271,23 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
                 copySelectedText();
                 mode.finish();
                 return true;
-            } else if (item.getItemId() == android.R.id.button1 && quoteCallback != null) {
-                quoteCallback.run(selectedText());
+            } else if (item.getItemId() == R.id.menu_quote && quoteCallback != null) {
+                quoteCallback.run(selectedView, selectedText());
                 mode.finish();
                 return true;
             } else if (item.getItemId() == android.R.id.selectAll) {
                 selectAllInCurrentBlock();
                 mode.invalidate();
                 return true;
-            } else if (item.getItemId() == MENU_TRANSLATE && translateCallback != null) {
-                translateCallback.run(selectedText(), null, Locale.getDefault().toLanguageTag(), () -> clear());
-                mode.finish();
+            } else if (item.getItemId() == R.id.menu_translate && translateCallback != null) {
+                CharSequence text = selectedText();
+                String translateToLanguage = LocaleController.getInstance().getCurrentLocale().getLanguage();
+                hideActionMode();
+                translateCallback.run(text, null, translateToLanguage, () -> {
+                    if (isInSelectionMode() && selectedView instanceof View) {
+                        showActionMode((View) selectedView);
+                    }
+                });
                 return true;
             }
             return false;
@@ -1644,18 +1650,11 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
                         startMovingHandle(false, event);
                         return true;
                     }
-                    clearPressedX = event.getX();
-                    clearPressedY = event.getY();
-                    clearPressedTime = System.currentTimeMillis();
-                    clearOnTapUp = true;
-                    return true;
+                    movingHandle = false;
+                    return false;
                 case MotionEvent.ACTION_MOVE:
                     if (!movingHandle) {
-                        int touchSlop = ViewConfiguration.get(overlay.getContext()).getScaledTouchSlop();
-                        if (Math.abs(event.getX() - clearPressedX) >= touchSlop || Math.abs(event.getY() - clearPressedY) >= touchSlop) {
-                            clearOnTapUp = false;
-                        }
-                        return true;
+                        return false;
                     }
                     float targetX = event.getX() + movingOffsetX;
                     float targetY = event.getY() + movingOffsetY;
@@ -1668,16 +1667,6 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
                     return true;
                 case MotionEvent.ACTION_CANCEL:
                 case MotionEvent.ACTION_UP:
-                    if (clearOnTapUp) {
-                        clearOnTapUp = false;
-                        int touchSlop = ViewConfiguration.get(overlay.getContext()).getScaledTouchSlop();
-                        if (System.currentTimeMillis() - clearPressedTime < 200
-                                && Math.abs(event.getX() - clearPressedX) < touchSlop
-                                && Math.abs(event.getY() - clearPressedY) < touchSlop) {
-                            clear();
-                        }
-                        return true;
-                    }
                     if (!movingHandle) {
                         return false;
                     }

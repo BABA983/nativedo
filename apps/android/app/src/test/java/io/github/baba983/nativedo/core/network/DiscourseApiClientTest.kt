@@ -83,6 +83,9 @@ class DiscourseApiClientTest {
         assertThat(topic.posts).isNotEmpty()
         assertThat(topic.posts.first().cookedHtml).isNotEmpty()
         assertThat(topic.emojiCatalog["heart"]).isEqualTo("/images/emoji/heart.png")
+        assertThat(topic.emojiCategories).hasSize(1)
+        assertThat(topic.emojiCategories.first().id).isEqualTo("discourse_reactions")
+        assertThat(topic.emojiCategories.first().emojis.first().name).isEqualTo("heart")
         assertThat(server.takeRequest().path).isEqualTo("/emojis.json")
         assertThat(server.takeRequest().path).isEqualTo("/t/1.json")
     }
@@ -130,6 +133,40 @@ class DiscourseApiClientTest {
     }
 
     @Test
+    fun createPostFetchesCsrfAndSendsDiscourseReplyFields() = runTest {
+        server.enqueue(jsonResponse("""{"csrf":"csrf-token"}"""))
+        server.enqueue(
+            jsonResponse(
+                """
+                {
+                  "id": 1003,
+                  "post_number": 3,
+                  "reply_to_post_number": 1,
+                  "username": "baba",
+                  "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png",
+                  "cooked": "<p>Hello reply</p>"
+                }
+                """.trimIndent(),
+            ),
+        )
+
+        val post = client.createPost(topicId = 101L, raw = "hello", replyToPostNumber = 1)
+
+        assertThat(post.id).isEqualTo(1003L)
+        assertThat(post.postNumber).isEqualTo(3)
+        assertThat(post.replyToPostNumber).isEqualTo(1)
+        assertThat(server.takeRequest().path).isEqualTo("/session/csrf")
+        val createRequest = server.takeRequest()
+        assertThat(createRequest.method).isEqualTo("POST")
+        assertThat(createRequest.path).isEqualTo("/posts.json")
+        assertThat(createRequest.getHeader("X-CSRF-Token")).isEqualTo("csrf-token")
+        val body = createRequest.body.readUtf8()
+        assertThat(body).contains("topic_id=101")
+        assertThat(body).contains("raw=hello")
+        assertThat(body).contains("reply_to_post_number=1")
+    }
+
+    @Test
     fun fetchTopicUsesEmojiCatalogForReactionIcons() = runTest {
         server.enqueue(jsonResponse("""{"discourse_reactions":[{"name":"heart","url":"/images/emoji/heart.png"}]}"""))
         server.enqueue(
@@ -147,6 +184,7 @@ class DiscourseApiClientTest {
                         "reactions": [{"id": "heart", "count": 2}],
                         "current_user_reaction": {"id": "heart"},
                         "reaction_users_count": 2,
+                        "bookmarked": true,
                         "cooked": "<p>Hello</p>"
                       }
                     ]
@@ -162,6 +200,7 @@ class DiscourseApiClientTest {
         assertThat(topic.validReactions).containsExactly("heart", "+1").inOrder()
         assertThat(post.currentUserReaction).isEqualTo("heart")
         assertThat(post.reactionUsersCount).isEqualTo(2)
+        assertThat(post.isBookmarked).isTrue()
         assertThat(post.reactions.single().iconUrl).isEqualTo("/images/emoji/heart.png")
         assertThat(post.reactions.single().reacted).isTrue()
     }
@@ -217,6 +256,38 @@ class DiscourseApiClientTest {
     }
 
     @Test
+    fun createBookmarkFetchesCsrfAndSendsDiscourseBookmarkFields() = runTest {
+        server.enqueue(jsonResponse("""{"csrf":"csrf-token"}"""))
+        server.enqueue(jsonResponse("""{}"""))
+
+        client.setPostBookmark(postId = 1001L, bookmarked = true)
+
+        assertThat(server.takeRequest().path).isEqualTo("/session/csrf")
+        val bookmarkRequest = server.takeRequest()
+        assertThat(bookmarkRequest.method).isEqualTo("POST")
+        assertThat(bookmarkRequest.path).isEqualTo("/bookmarks.json")
+        assertThat(bookmarkRequest.getHeader("X-CSRF-Token")).isEqualTo("csrf-token")
+        val body = bookmarkRequest.body.readUtf8()
+        assertThat(body).contains("bookmarkable_id=1001")
+        assertThat(body).contains("bookmarkable_type=Post")
+        assertThat(body).contains("auto_delete_preference=0")
+    }
+
+    @Test
+    fun deletePostBookmarkFetchesCsrfAndSendsDeleteRequest() = runTest {
+        server.enqueue(jsonResponse("""{"csrf":"csrf-token"}"""))
+        server.enqueue(jsonResponse("""{}"""))
+
+        client.setPostBookmark(postId = 1001L, bookmarked = false)
+
+        assertThat(server.takeRequest().path).isEqualTo("/session/csrf")
+        val deleteRequest = server.takeRequest()
+        assertThat(deleteRequest.method).isEqualTo("DELETE")
+        assertThat(deleteRequest.path).isEqualTo("/posts/1001/bookmark")
+        assertThat(deleteRequest.getHeader("X-CSRF-Token")).isEqualTo("csrf-token")
+    }
+
+    @Test
     fun parsesUserProfileFixture() = runTest {
         server.enqueue(jsonResponse(fixture("discourse/user-profile.json")))
 
@@ -228,6 +299,12 @@ class DiscourseApiClientTest {
         assertThat(profile.avatarTemplate).contains("/user_avatar/linux.do/baba/{size}/1.png")
         assertThat(profile.animatedAvatarUrl).contains("/user_avatar/linux.do/baba/120/1.gif")
         assertThat(profile.flairName).isEqualTo("Battery")
+        assertThat(profile.gamificationScore).isEqualTo(2731)
+        assertThat(profile.cakeDate).isEqualTo("2024-05-26")
+        assertThat(profile.totalFollowers).isEqualTo(340)
+        assertThat(profile.totalFollowing).isEqualTo(58)
+        assertThat(profile.acceptedAnswers).isEqualTo(18)
+        assertThat(profile.primaryGroupName).isEqualTo("battery")
         assertThat(server.takeRequest().path).isEqualTo("/u/baba.json")
     }
 

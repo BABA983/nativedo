@@ -19,7 +19,10 @@ internal interface PostBodyBlock {
      * post's top level. Mirrors ArticleViewer's per-cell self-managed inset:
      * text-content cells inset by [DEFAULT_HORIZONTAL_INSET]; media cells
      * (image/code/table/collage) and cells that already inset internally
-     * (quote/poll) return 0 so they span the full content width.
+     * (quote/poll) return 0 so they span the full content width. Onebox uses
+     * the same 18dp host inset as text blocks so its ChatMessageCell-style rail
+     * starts near the body text column, then applies ChatMessageCell's internal
+     * link-preview `linkX -= dp(1.33f)` shift with preview text another 10dp inward.
      *
      * Only consulted for top-level blocks; nested children are positioned by
      * their parent block, so this is never stacked.

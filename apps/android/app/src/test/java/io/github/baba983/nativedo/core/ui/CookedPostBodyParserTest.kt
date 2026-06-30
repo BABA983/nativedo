@@ -23,9 +23,60 @@ class CookedPostBodyParserTest {
         assertThat(onebox.title).contains("CLI")
         assertThat(onebox.titleHtml).contains("href=\"https://developers.example.dev/tooling/cli\"")
         assertThat(onebox.thumbnailUrl).isEqualTo("https://cdn.example.dev/thumbnail.jpeg")
+        assertThat(onebox.thumbnailWidthPx).isEqualTo(690)
+        assertThat(onebox.thumbnailHeightPx).isEqualTo(362)
+        assertThat(onebox.previewType).isEqualTo("article")
+        assertThat(onebox.forceLargeMedia).isTrue()
         assertThat(onebox.siteIconUrl).isEqualTo("https://cdn.example.dev/site-icon.png")
         assertThat(onebox.description).contains("Command-line tooling")
         assertThat(onebox.descriptionHtml).contains("Command-line tooling")
+        assertThat(blocks.filterIsInstance<CookedPostBlock.Text>().joinToString(separator = "\n") { it.html })
+            .doesNotContain("https://docs.example.dev/start")
+    }
+
+    @Test
+    fun parseCookedPostBody_preservesOneboxPreviewTypeAndThumbnailSize() {
+        val html = """
+            <aside class="onebox video" data-onebox-src="https://video.example.dev/watch/1">
+              <header class="source"><a href="https://video.example.dev/watch/1">video.example.dev</a></header>
+              <article class="onebox-body">
+                <img class="thumbnail" src="https://cdn.example.dev/video.jpg" width="1280" height="720">
+                <h3><a href="https://video.example.dev/watch/1">Video preview</a></h3>
+                <p>Watch this.</p>
+              </article>
+            </aside>
+        """.trimIndent()
+
+        val onebox = parseCookedPostBody(html, baseUrl)
+            .filterIsInstance<CookedPostBlock.Onebox>()
+            .single()
+
+        assertThat(onebox.previewType).isEqualTo("video")
+        assertThat(onebox.thumbnailWidthPx).isEqualTo(1280)
+        assertThat(onebox.thumbnailHeightPx).isEqualTo(720)
+        assertThat(onebox.forceLargeMedia).isFalse()
+        assertThat(onebox.forceSmallMedia).isFalse()
+    }
+
+    @Test
+    fun parseCookedPostBody_preservesOneboxForceSmallMediaMarker() {
+        val html = """
+            <aside class="onebox video force-small-media" data-onebox-src="https://video.example.dev/watch/1">
+              <header class="source"><a href="https://video.example.dev/watch/1">video.example.dev</a></header>
+              <article class="onebox-body">
+                <img class="thumbnail" src="https://cdn.example.dev/video.jpg" width="1280" height="720">
+                <h3><a href="https://video.example.dev/watch/1">Video preview</a></h3>
+                <p>Watch this.</p>
+              </article>
+            </aside>
+        """.trimIndent()
+
+        val onebox = parseCookedPostBody(html, baseUrl)
+            .filterIsInstance<CookedPostBlock.Onebox>()
+            .single()
+
+        assertThat(onebox.previewType).isEqualTo("video")
+        assertThat(onebox.forceSmallMedia).isTrue()
     }
 
     @Test
@@ -79,6 +130,31 @@ class CookedPostBodyParserTest {
             .contains("https://cdn.example.dev/optimized/sample-image_2_690x254.png")
         assertThat(image.widthPx).isEqualTo(690)
         assertThat(image.heightPx).isEqualTo(254)
+    }
+
+    @Test
+    fun parseCookedPostBody_preservesNestedQuoteLevels() {
+        val html = """
+            <blockquote>
+              <p>Outer quote</p>
+              <blockquote>
+                <p>Inner quote</p>
+                <blockquote>
+                  <p>Deep quote</p>
+                </blockquote>
+              </blockquote>
+            </blockquote>
+        """.trimIndent()
+
+        val outer = parseCookedPostBody(html, baseUrl)
+            .filterIsInstance<CookedPostBlock.Quote>()
+            .single()
+        val inner = outer.children.filterIsInstance<CookedPostBlock.Quote>().single()
+        val deep = inner.children.filterIsInstance<CookedPostBlock.Quote>().single()
+
+        assertThat(outer.level).isEqualTo(0)
+        assertThat(inner.level).isEqualTo(1)
+        assertThat(deep.level).isEqualTo(2)
     }
 
     @Test

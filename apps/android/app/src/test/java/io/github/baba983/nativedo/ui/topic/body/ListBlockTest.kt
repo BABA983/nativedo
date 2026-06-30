@@ -67,6 +67,26 @@ class ListBlockTest {
     }
 
     @Test
+    fun markerHorizontalGeometry_matchesArticleViewerFormula() {
+        val markerWidth = AndroidUtilities.dp(11f)
+
+        assertThat(ListBlock.markerTextGapPx()).isEqualTo(AndroidUtilities.dp(6f))
+        assertThat(ListBlock.markerTextGapPx(true)).isEqualTo(AndroidUtilities.dp(6f))
+        assertThat(ListBlock.markerTextGapPx(false)).isEqualTo(AndroidUtilities.dp(9f))
+        assertThat(ListBlock.trailingTextInsetPx()).isEqualTo(AndroidUtilities.dp(18f))
+        assertThat(ListBlock.markerTextXPx(markerWidth, false, 0))
+            .isEqualTo(AndroidUtilities.dp(24f) + markerWidth)
+        assertThat(ListBlock.markerTextXPx(markerWidth, false, 2))
+            .isEqualTo(AndroidUtilities.dp(24f) + markerWidth + AndroidUtilities.dp(24f))
+        assertThat(ListBlock.markerTextXPx(markerWidth, true, 2))
+            .isEqualTo(AndroidUtilities.dp(24f) + markerWidth + AndroidUtilities.dp(40f))
+        assertThat(ListBlock.markerRightPx(ListBlock.markerTextXPx(markerWidth, false, 2), false))
+            .isEqualTo((AndroidUtilities.dp(15f) + markerWidth + AndroidUtilities.dp(24f)).toFloat())
+        assertThat(ListBlock.markerRightPx(ListBlock.markerTextXPx(markerWidth, true, 2), true))
+            .isEqualTo((AndroidUtilities.dp(18f) + markerWidth + AndroidUtilities.dp(40f)).toFloat())
+    }
+
+    @Test
     fun postSelectionLayoutBlock_exposesOptionalPrefixLayoutGeometry() {
         val textLayout = staticLayout("item")
         val prefixLayout = staticLayout("•")

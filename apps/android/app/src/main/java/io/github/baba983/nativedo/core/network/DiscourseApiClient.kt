@@ -6,6 +6,7 @@ import io.github.baba983.nativedo.core.model.CategorySummary
 import io.github.baba983.nativedo.core.model.SearchResult
 import io.github.baba983.nativedo.core.model.TopicDetail
 import io.github.baba983.nativedo.core.model.TopicListPage
+import io.github.baba983.nativedo.core.model.TopicSummary
 import io.github.baba983.nativedo.core.model.UserProfile
 import io.github.baba983.nativedo.core.session.SessionBootstrapClient
 import io.github.baba983.nativedo.core.session.SessionLoggedOutException
@@ -51,8 +52,12 @@ class DiscourseApiClient(
 
     suspend fun fetchTopic(topicId: Long): TopicDetail =
         runWithSessionBoundary {
-            val emojiCatalog = service.emojis().toEmojiCatalog()
-            service.topic(topicId).toModel(emojiCatalog = emojiCatalog)
+            val emojiGroups = service.emojis()
+            val emojiCatalog = emojiGroups.toEmojiCatalog()
+            service.topic(topicId).toModel(
+                emojiCatalog = emojiCatalog,
+                emojiCategories = emojiGroups.toEmojiCategories(),
+            )
         }
 
     suspend fun fetchTopicPosts(topicId: Long, postIds: List<Long>): List<Post> =
@@ -70,6 +75,17 @@ class DiscourseApiClient(
             ).toModel(emojiCatalog = emojiCatalog)
         }
 
+    suspend fun createPost(topicId: Long, raw: String, replyToPostNumber: Int?): Post =
+        runWithSessionBoundary {
+            val csrfToken = service.csrf().csrf
+            service.createPost(
+                topicId = topicId,
+                raw = raw,
+                replyToPostNumber = replyToPostNumber,
+                csrfToken = csrfToken,
+            ).toModel()
+        }
+
     suspend fun fetchReactionUsers(postId: Long): List<PostReactionUsersGroup> =
         runWithSessionBoundary {
             service.reactionUsers(postId).toModel()
@@ -83,6 +99,24 @@ class DiscourseApiClient(
                 reactionId = reactionId,
                 csrfToken = csrfToken,
             ).close()
+        }
+
+    suspend fun setPostBookmark(postId: Long, bookmarked: Boolean) =
+        runWithSessionBoundary {
+            val csrfToken = service.csrf().csrf
+            if (bookmarked) {
+                service.createBookmark(
+                    bookmarkableId = postId,
+                    bookmarkableType = "Post",
+                    autoDeletePreference = 0,
+                    csrfToken = csrfToken,
+                ).close()
+            } else {
+                service.deletePostBookmark(
+                    postId = postId,
+                    csrfToken = csrfToken,
+                ).close()
+            }
         }
 
     suspend fun votePoll(postId: Long, pollName: String, optionIds: List<String>) =
@@ -99,6 +133,21 @@ class DiscourseApiClient(
     suspend fun fetchProfile(username: String): UserProfile =
         runWithSessionBoundary {
             service.profile(username).toModel()
+        }
+
+    suspend fun fetchUserActions(
+        username: String,
+        filter: String,
+        offset: Int,
+        limit: Int,
+    ): List<TopicSummary> =
+        runWithSessionBoundary {
+            service.userActions(
+                username = username,
+                filter = filter,
+                offset = offset,
+                limit = limit,
+            ).toTopicSummaries()
         }
 
     private suspend fun <T> runWithSessionBoundary(block: suspend () -> T): T {

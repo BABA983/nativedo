@@ -27,6 +27,7 @@ import android.graphics.drawable.RippleDrawable;
 import android.graphics.drawable.ShapeDrawable;
 import android.graphics.drawable.shapes.OvalShape;
 import android.graphics.drawable.shapes.RoundRectShape;
+import android.os.Build;
 import android.text.TextPaint;
 import android.util.StateSet;
 import android.util.SparseIntArray;
@@ -40,6 +41,7 @@ import android.graphics.PorterDuffColorFilter;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.R;
+import org.telegram.messenger.SharedConfig;
 import org.telegram.ui.Cells.BaseCell;
 import org.telegram.ui.Components.PathAnimator;
 
@@ -51,6 +53,8 @@ public final class Theme {
     public static Paint DEBUG_GREEN_STROKE = new Paint(); static { DEBUG_GREEN_STROKE.setColor(0xff00ff00); DEBUG_GREEN_STROKE.setStrokeWidth(2); DEBUG_GREEN_STROKE.setStyle(Paint.Style.STROKE); }
     public static Paint dialogs_onlineCirclePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     public static TextPaint chat_msgTextPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+    public static TextPaint chat_replyNamePaint = new TextPaint(TextPaint.ANTI_ALIAS_FLAG);
+    public static TextPaint chat_replyTextPaint = new TextPaint(TextPaint.ANTI_ALIAS_FLAG);
     public static PathAnimator playPauseAnimator;
     public static Path[] chat_filePath = new Path[2];
     public static Path[] chat_updatePath = new Path[3];
@@ -1123,14 +1127,15 @@ public final class Theme {
     private static int themeGeneration;
 
     static {
-        ThemeInfo nativeDo = createNativeDoTheme();
-        themes.add(currentDayTheme = defaultTheme = nativeDo);
-        themesDict.put(nativeDo.getKey(), nativeDo);
+        ThemeInfo blue = createDefaultTheme();
+        themes.add(currentDayTheme = defaultTheme = blue);
+        themesDict.put(blue.getKey(), blue);
 
         ThemeInfo darkBlue = createDarkBlueTheme();
         themes.add(currentNightTheme = darkBlue);
         themesDict.put(darkBlue.getKey(), darkBlue);
 
+        updateChatMessageTextPaints();
         applyThemeInternal(defaultTheme);
     }
 
@@ -1175,6 +1180,16 @@ public final class Theme {
         dialogs_timePaint.setTextSize(AndroidUtilities.dp(13));
         dialogs_countTextPaint.setTextSize(AndroidUtilities.dp(13));
         dialogs_countTextPaint.setTypeface(AndroidUtilities.bold());
+        updateChatMessageTextPaints();
+    }
+
+    /** Host-wired subset of upstream Theme chat text paint sizing. */
+    public static void updateChatMessageTextPaints() {
+        chat_msgTextPaint.setTextSize(AndroidUtilities.dp(SharedConfig.fontSize));
+        float smallerDp = (2 * SharedConfig.fontSize + 10) / 3f;
+        chat_replyNamePaint.setTextSize(AndroidUtilities.dp(smallerDp));
+        chat_replyNamePaint.setTypeface(AndroidUtilities.bold());
+        chat_replyTextPaint.setTextSize(AndroidUtilities.dp(smallerDp));
     }
 
     /** Minimal upstream media-action icon/path bootstrap used by RadialProgress2. */
@@ -1404,8 +1419,8 @@ public final class Theme {
                 }
             };
         }
-        RippleDrawable rippleDrawable = new RippleDrawable(ColorStateList.valueOf(color), null, maskDrawable);
-        if (maskType == RIPPLE_MASK_CIRCLE_20DP) {
+        RippleDrawable rippleDrawable = createSafeRippleDrawable(color, maskDrawable);
+        if (rippleDrawable != null && maskType == RIPPLE_MASK_CIRCLE_20DP) {
             rippleDrawable.setRadius(AndroidUtilities.dp(20));
         }
         return rippleDrawable;
@@ -1420,7 +1435,7 @@ public final class Theme {
             g.setColor(Color.WHITE);
             g.setCornerRadius(radius > 0 ? radius : AndroidUtilities.dp(6));
             maskDrawable = g;
-            return new RippleDrawable(ColorStateList.valueOf(color), null, maskDrawable);
+            return createSafeRippleDrawable(color, maskDrawable);
         }
         if (maskType == RIPPLE_MASK_ALL) {
             maskDrawable = new ColorDrawable(Color.WHITE);
@@ -1447,9 +1462,22 @@ public final class Theme {
                 }
             };
         }
-        RippleDrawable rippleDrawable = new RippleDrawable(ColorStateList.valueOf(color), null, maskDrawable);
-        rippleDrawable.setRadius(radius);
+        RippleDrawable rippleDrawable = createSafeRippleDrawable(color, maskDrawable);
+        if (rippleDrawable != null) {
+            rippleDrawable.setRadius(radius);
+        }
         return rippleDrawable;
+    }
+
+    private static RippleDrawable createSafeRippleDrawable(int color, Drawable maskDrawable) {
+        try {
+            return new BaseCell.RippleDrawableSafe(ColorStateList.valueOf(color), new ColorDrawable(Color.TRANSPARENT), maskDrawable);
+        } catch (NullPointerException e) {
+            if (Build.FINGERPRINT != null && Build.FINGERPRINT.toLowerCase().contains("robolectric")) {
+                return null;
+            }
+            throw e;
+        }
     }
 
     public static RippleDrawable getSelectorDrawable(boolean whiteBackground) {
@@ -1531,7 +1559,7 @@ public final class Theme {
     /** ADAPTED: createRadSelectorDrawable for RecyclerListView rounded selectors. */
     public static Drawable createRadSelectorDrawable(int color, int topRadius, int bottomRadius) {
         Drawable maskDrawable = new RippleRadMaskDrawable(topRadius, bottomRadius);
-        return new RippleDrawable(ColorStateList.valueOf(color), null, maskDrawable);
+        return createSafeRippleDrawable(color, maskDrawable);
     }
 
     public static Drawable createRadSelectorDrawable(int color, int rippleColor, int topRadius, int bottomRadius) {
@@ -1769,46 +1797,58 @@ public final class Theme {
         }
     }
 
+    private static ThemeInfo createDefaultTheme() {
+        // Upstream Telegram "Blue" day theme. colors stays empty so every key
+        // falls back to defaultColors[] (ThemeColors.createDefaultColors = upstream
+        // Telegram Blue: white bg, 0xff4092cd blue accents, 0xFF1A1D21 black text,
+        // 0xffcc4747 red). The NativeDo theme (createNativeDoTheme) is kept below
+        // but no longer registered; it will be re-registered once the Telegram
+        // theme system (accents / theme picker) is ported in. Key "Blue" aligns
+        // with upstream L4622 themesDict.put("Blue", themeInfo).
+        return new ThemeInfo("Blue", false);
+    }
+
     private static ThemeInfo createNativeDoTheme() {
         ThemeInfo themeInfo = new ThemeInfo(THEME_NATIVE_DO, false);
-        themeInfo.colors.put(key_windowBackgroundWhite, 0xfffbfaf3);
-        themeInfo.colors.put(key_windowBackgroundGray, 0xfff5f4ed);
-        themeInfo.colors.put(key_windowBackgroundWhiteBlackText, 0xff20251f);
-        themeInfo.colors.put(key_windowBackgroundWhiteGrayText, 0xff6b6f63);
-        themeInfo.colors.put(key_windowBackgroundWhiteGrayText2, 0xff74786b);
+        themeInfo.colors.put(key_windowBackgroundWhite, 0xffffffff);
+        themeInfo.colors.put(key_windowBackgroundGray, 0xffF1F1F3);
+        themeInfo.colors.put(key_windowBackgroundWhiteBlackText, 0xff000000);
+        themeInfo.colors.put(key_windowBackgroundWhiteGrayText, 0xff808384);
+        themeInfo.colors.put(key_windowBackgroundWhiteGrayText2, 0xff808384);
         themeInfo.colors.put(key_windowBackgroundWhiteBlueText, 0xff1e7755);
-        themeInfo.colors.put(key_divider, 0xffdfdace);
-        themeInfo.colors.put(key_actionBarDefault, 0xfff5f4ed);
-        themeInfo.colors.put(key_actionBarDefaultSubtitle, 0xff6b6f63);
-        themeInfo.colors.put(key_actionBarDefaultSubmenuItem, 0xff1c2119);
-        themeInfo.colors.put(key_actionBarDefaultSubmenuBackground, 0xfffbfaf3);
-        themeInfo.colors.put(key_actionBarDefaultSubmenuSeparator, 0xffe6e1d5);
+        themeInfo.colors.put(key_divider, 0xffd9d9d9);
+        themeInfo.colors.put(key_actionBarDefault, 0xffffffff);
+        themeInfo.colors.put(key_actionBarDefaultSubtitle, 0xff79817e);
+        themeInfo.colors.put(key_actionBarDefaultSubmenuItem, 0xff000000);
+        themeInfo.colors.put(key_actionBarDefaultSubmenuBackground, 0xffffffff);
+        themeInfo.colors.put(key_actionBarDefaultSubmenuSeparator, 0xffd9d9d9);
         themeInfo.colors.put(key_glass_tabSelected, 0xff1e7755);
         themeInfo.colors.put(key_glass_tabSelectedText, 0xff1e7755);
-        themeInfo.colors.put(key_glass_tabUnselected, 0xff20251f);
+        themeInfo.colors.put(key_glass_tabUnselected, 0xff000000);
         themeInfo.colors.put(key_telegram_color, 0xff1e7755);
         themeInfo.colors.put(key_iv_background, 0xffffffff);
         themeInfo.colors.put(key_iv_backgroundGray, 0xfff0f0f0);
         themeInfo.colors.put(key_iv_navigationBackground, 0xffffffff);
         themeInfo.colors.put(key_iv_ab_progress, 0xff1e7755);
         themeInfo.colors.put(key_actionBarActionModeDefaultSelector, 0xffe2e2e2);
+        themeInfo.colors.put(key_chat_wallpaper, 0xffF1F1F3);
         themeInfo.colors.put(key_chat_messagePanelBackground, 0xffffffff);
         themeInfo.colors.put(key_chat_messagePanelShadow, 0xff000000);
-        themeInfo.colors.put(key_graySection, 0xfff5f4ed);
-        themeInfo.colors.put(key_graySectionText, 0xff6b6f63);
+        themeInfo.colors.put(key_graySection, 0xfff5f5f5);
+        themeInfo.colors.put(key_graySectionText, 0xff808384);
         themeInfo.colors.put(key_windowBackgroundWhiteBlueHeader, 0xff1e7755);
-        themeInfo.colors.put(key_windowBackgroundGrayShadow, 0xffdfdace);
+        themeInfo.colors.put(key_windowBackgroundGrayShadow, 0xff000000);
         themeInfo.colors.put(key_dialogBackground, 0xffffffff);
         themeInfo.colors.put(key_fastScrollInactive, 0xffc4c4c4);
         themeInfo.colors.put(key_fastScrollActive, 0xff999999);
         themeInfo.colors.put(key_fastScrollText, 0xffffffff);
-        themeInfo.colors.put(key_settings_listSelector, 0xffe8e8d8);
+        themeInfo.colors.put(key_settings_listSelector, 0xffe8e8e8);
         themeInfo.colors.put(key_progressCircle, 0xff1e7755);
 
         // ScrollSlidingTextTabStrip
         themeInfo.colors.put(key_actionBarTabLine, 0xff1e7755);
         themeInfo.colors.put(key_actionBarTabActiveText, 0xff1e7755);
-        themeInfo.colors.put(key_actionBarTabUnactiveText, 0xff6b6f63);
+        themeInfo.colors.put(key_actionBarTabUnactiveText, 0xff808384);
         themeInfo.colors.put(key_actionBarTabSelector, 0x14000000);
 
         // PullForegroundDrawable
@@ -1817,9 +1857,9 @@ public final class Theme {
         themeInfo.colors.put(key_avatar_backgroundArchivedHidden, 0xffc6c9ce);
 
         // DialogCell / TopicCell
-        themeInfo.colors.put(key_chats_name, 0xff20251f);
+        themeInfo.colors.put(key_chats_name, 0xff000000);
         themeInfo.colors.put(key_chats_nameMessage, 0xff1e7755);
-        themeInfo.colors.put(key_chats_message, 0xff6b6f63);
+        themeInfo.colors.put(key_chats_message, 0xff808384);
         themeInfo.colors.put(key_chats_date, 0xff95968a);
         themeInfo.colors.put(key_chats_pinnedIcon, 0xff95968a);
         themeInfo.colors.put(key_chats_pinnedOverlay, 0xfff0eee5);
@@ -1847,8 +1887,8 @@ public final class Theme {
         themeInfo.colors.put(key_avatar_background2Pink, 0xffD95574);
 
         // TableLayout
-        themeInfo.colors.put(key_table_background, 0xfff5f4ed);
-        themeInfo.colors.put(key_table_border, 0xffdfdace);
+        themeInfo.colors.put(key_table_background, 0xffF1F1F3);
+        themeInfo.colors.put(key_table_border, 0xffd9d9d9);
 
         return themeInfo;
     }
@@ -1881,6 +1921,7 @@ public final class Theme {
         themeInfo.colors.put(key_iv_navigationBackground, 0xff000000);
         themeInfo.colors.put(key_iv_ab_progress, -10177041);
         themeInfo.colors.put(key_actionBarActionModeDefaultSelector, 0xff3a3a3a);
+        themeInfo.colors.put(key_chat_wallpaper, -15393241);
         themeInfo.colors.put(key_chat_messagePanelBackground, 0xff1c1c1e);
         themeInfo.colors.put(key_chat_messagePanelShadow, 0xff000000);
         themeInfo.colors.put(key_graySection, -15393241);

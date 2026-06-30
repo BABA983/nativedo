@@ -95,8 +95,6 @@ final class ListBlock implements EmbeddedPostBodyBlock {
     private final String stateKey;
     private final int listLevel;
     private final int lastItemBottomPadding = AndroidUtilities.dp(8f);
-    private final int unorderedMarkerTextGap = AndroidUtilities.dp(9f);
-    private final int orderedMarkerTextGap = AndroidUtilities.dp(6f);
     private final TextPaint bulletPaint = new TextPaint(TextPaint.ANTI_ALIAS_FLAG);
     private final TextPaint numberPaint = new TextPaint(TextPaint.ANTI_ALIAS_FLAG);
     private final List<ItemLayout> itemLayouts;
@@ -125,10 +123,8 @@ final class ListBlock implements EmbeddedPostBodyBlock {
         this.stateKey = stateKey;
         this.listLevel = Math.max(0, listLevel);
         bulletPaint.setColor(context.getTextColor());
-        bulletPaint.setTextAlign(Paint.Align.RIGHT);
         bulletPaint.setTextSize(AndroidUtilities.dp(19f));
         numberPaint.setColor(context.getTextColor());
-        numberPaint.setTextAlign(Paint.Align.RIGHT);
         numberPaint.setTextSize(AndroidUtilities.dp(16f));
 
         List<CookedPostBlock.ListItem> items = block.getItems();
@@ -204,8 +200,9 @@ final class ListBlock implements EmbeddedPostBodyBlock {
             markerLayouts[i] = ArticleTextLayout.builder(marker, markerPaint, maxMarkerWidth + AndroidUtilities.dp(2f))
                     .build();
         }
-        markerColumnWidth = AndroidUtilities.dp(24f) + maxMarkerWidth + listLevelInsetPx();
-        textWidth = Math.max(maxWidthPx - markerColumnWidth - AndroidUtilities.dp(18f), AndroidUtilities.dp(80f));
+        int textX = markerTextXPx(maxMarkerWidth, block.getOrdered(), listLevel);
+        markerColumnWidth = textX;
+        textWidth = Math.max(maxWidthPx - textX - trailingTextInsetPx(), AndroidUtilities.dp(80f));
         int y = itemLayouts.isEmpty() ? 0 : firstItemTopPaddingPx(listLevel);
         for (int i = 0; i < itemLayouts.size(); i++) {
             itemTops[i] = y;
@@ -249,9 +246,10 @@ final class ListBlock implements EmbeddedPostBodyBlock {
                 continue;
             }
             float markerTop = markerTopForItem(item, top, markerLayout);
-            float markerRight = markerColumnWidth - (block.getOrdered() ? orderedMarkerTextGap : unorderedMarkerTextGap);
+            float markerRight = markerRightPx(markerColumnWidth, block.getOrdered());
+            float markerWidth = markerLayout.getLineWidth(0);
             canvas.save();
-            canvas.translate(markerRight - (float) Math.ceil(markerLayout.getLineWidth(0)), markerTop);
+            canvas.translate(markerRight - markerWidth, markerTop);
             markerLayout.draw(canvas);
             canvas.restore();
             for (int blockIndex = 0; blockIndex < item.blocks.size(); blockIndex++) {
@@ -368,7 +366,7 @@ final class ListBlock implements EmbeddedPostBodyBlock {
             int prefixY = y;
             if (prefixLayout != null) {
                 float markerTop = markerTopForItem(item, itemTops[i], prefixLayout);
-                float markerRight = markerColumnWidth - (block.getOrdered() ? orderedMarkerTextGap : unorderedMarkerTextGap);
+                float markerRight = markerRightPx(markerColumnWidth, block.getOrdered());
                 prefixX = x + Math.round(markerRight - (float) Math.ceil(prefixLayout.getLineWidth(0)));
                 prefixY = y + Math.round(markerTop);
             }
@@ -559,7 +557,31 @@ final class ListBlock implements EmbeddedPostBodyBlock {
     }
 
     private int listLevelInsetPx() {
-        return listLevel * AndroidUtilities.dp(block.getOrdered() ? 20f : 12f);
+        return listLevelInsetPx(block.getOrdered(), listLevel);
+    }
+
+    static int markerTextGapPx() {
+        return markerTextGapPx(true);
+    }
+
+    static int markerTextGapPx(boolean ordered) {
+        return AndroidUtilities.dp(ordered ? 6f : 9f);
+    }
+
+    static float markerRightPx(int markerColumnWidth, boolean ordered) {
+        return markerColumnWidth - markerTextGapPx(ordered);
+    }
+
+    static int trailingTextInsetPx() {
+        return AndroidUtilities.dp(18f);
+    }
+
+    static int markerTextXPx(int maxMarkerWidth, boolean ordered, int listLevel) {
+        return AndroidUtilities.dp(24f) + maxMarkerWidth + listLevelInsetPx(ordered, listLevel);
+    }
+
+    static int listLevelInsetPx(boolean ordered, int listLevel) {
+        return Math.max(0, listLevel) * AndroidUtilities.dp(ordered ? 20f : 12f);
     }
 
     static int firstItemTopPaddingPx(int listLevel) {

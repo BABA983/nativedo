@@ -19,7 +19,7 @@ public final class TopicFooterCell extends TextInfoPrivacyCell implements Theme.
     public TopicFooterCell(Context context) {
         super(context, 18);
         setTextGravity(Gravity.CENTER);
-        setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+        setTextColor(Theme.getColor(Theme.key_chat_inTimeText));
     }
 
     public void bind(String text, Runnable onClick) {
@@ -30,6 +30,6 @@ public final class TopicFooterCell extends TextInfoPrivacyCell implements Theme.
 
     @Override
     public void updateColors() {
-        setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+        setTextColor(Theme.getColor(Theme.key_chat_inTimeText));
     }
 }

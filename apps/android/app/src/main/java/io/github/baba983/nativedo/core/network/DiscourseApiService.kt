@@ -5,6 +5,8 @@ import io.github.baba983.nativedo.core.model.PostReaction
 import io.github.baba983.nativedo.core.model.PostReactionUser
 import io.github.baba983.nativedo.core.model.PostReactionUsersGroup
 import io.github.baba983.nativedo.core.model.CategorySummary
+import io.github.baba983.nativedo.core.model.DiscourseEmoji
+import io.github.baba983.nativedo.core.model.DiscourseEmojiCategory
 import io.github.baba983.nativedo.core.model.SearchResult
 import io.github.baba983.nativedo.core.model.SearchUserSummary
 import io.github.baba983.nativedo.core.model.TopicDetail
@@ -26,6 +28,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.ResponseBody
+import retrofit2.http.DELETE
 import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
 import retrofit2.http.GET
@@ -74,6 +77,30 @@ interface DiscourseApiService {
         @Path("postNumber") postNumber: Int,
     ): PostDto
 
+    @FormUrlEncoded
+    @POST("posts.json")
+    suspend fun createPost(
+        @Field("topic_id") topicId: Long,
+        @Field("raw") raw: String,
+        @Field("reply_to_post_number") replyToPostNumber: Int?,
+        @Header("X-CSRF-Token") csrfToken: String,
+    ): PostDto
+
+    @FormUrlEncoded
+    @POST("bookmarks.json")
+    suspend fun createBookmark(
+        @Field("bookmarkable_id") bookmarkableId: Long,
+        @Field("bookmarkable_type") bookmarkableType: String,
+        @Field("auto_delete_preference") autoDeletePreference: Int,
+        @Header("X-CSRF-Token") csrfToken: String,
+    ): ResponseBody
+
+    @DELETE("posts/{id}/bookmark")
+    suspend fun deletePostBookmark(
+        @Path("id") postId: Long,
+        @Header("X-CSRF-Token") csrfToken: String,
+    ): ResponseBody
+
     @GET("discourse-reactions/posts/{id}/reactions-users.json")
     suspend fun reactionUsers(
         @Path("id") postId: Long,
@@ -106,6 +133,16 @@ interface DiscourseApiService {
 
     @GET("session/csrf")
     suspend fun csrf(): CsrfResponseDto
+
+    // Discourse user activity stream. filter values: 4 = topics created,
+    // 5 = replies/posts. Returns a uniform action feed (see contracts/discourse).
+    @GET("user_actions.json")
+    suspend fun userActions(
+        @Query("username") username: String,
+        @Query("filter") filter: String,
+        @Query("offset") offset: Int,
+        @Query("limit") limit: Int,
+    ): UserActionsResponseDto
 }
 
 @Serializable
@@ -328,6 +365,8 @@ data class PostDto(
     val currentUserReaction: CurrentUserReactionDto? = null,
     @SerialName("reaction_users_count")
     val reactionUsersCount: Int = 0,
+    @SerialName("bookmarked")
+    val bookmarked: Boolean? = null,
     @SerialName("cooked")
     val cookedHtml: String,
 )
@@ -430,10 +469,24 @@ data class UserDto(
     val createdAt: String? = null,
     @SerialName("last_seen_at")
     val lastSeenAt: String? = null,
+    @SerialName("last_posted_at")
+    val lastPostedAt: String? = null,
     @SerialName("profile_view_count")
     val profileViewCount: Int = 0,
     val admin: Boolean = false,
     val moderator: Boolean = false,
+    @SerialName("gamification_score")
+    val gamificationScore: Int = 0,
+    @SerialName("cakedate")
+    val cakeDate: String? = null,
+    @SerialName("total_followers")
+    val totalFollowers: Int = 0,
+    @SerialName("total_following")
+    val totalFollowing: Int = 0,
+    @SerialName("accepted_answers")
+    val acceptedAnswers: Int = 0,
+    @SerialName("primary_group_name")
+    val primaryGroupName: String? = null,
 )
 
 @Serializable
@@ -443,6 +496,33 @@ data class CsrfResponseDto(
 
 internal fun EmojiGroupsDto.toEmojiCatalog(): Map<String, String> =
     values.flatten().associate { emoji -> emoji.name to emoji.url }
+
+internal fun EmojiGroupsDto.toEmojiCategories(): List<DiscourseEmojiCategory> =
+    entries.mapNotNull { (groupName, emojis) ->
+        val items = emojis.mapNotNull { emoji ->
+            val name = emoji.name.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val url = emoji.url.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            DiscourseEmoji(name = name, url = url)
+        }.distinctBy { it.name }
+        if (items.isEmpty()) {
+            null
+        } else {
+            DiscourseEmojiCategory(
+                id = groupName,
+                title = emojiGroupTitle(groupName),
+                emojis = items,
+            )
+        }
+    }
+
+private fun emojiGroupTitle(groupName: String): String =
+    groupName.replace('_', ' ')
+        .replace('&', '/')
+        .split(' ')
+        .filter { it.isNotBlank() }
+        .joinToString(" ") { word ->
+            word.replaceFirstChar { char -> char.titlecase() }
+        }
 
 internal fun ReactionUsersResponseDto.toModel(): List<PostReactionUsersGroup> =
     reactionUsers.map { group ->
@@ -502,6 +582,7 @@ internal fun SiteResponseDto.toModel(): List<CategorySummary> = (
 
 internal fun TopicResponseDto.toModel(
     emojiCatalog: Map<String, String> = emptyMap(),
+    emojiCategories: List<DiscourseEmojiCategory> = emptyList(),
 ): TopicDetail {
     val streamPostIds = postStream.stream.ifEmpty { postStream.posts.map { it.id } }
     return TopicDetail(
@@ -514,6 +595,7 @@ internal fun TopicResponseDto.toModel(
         tags = tags,
         validReactions = validReactions,
         emojiCatalog = emojiCatalog,
+        emojiCategories = emojiCategories,
         totalPosts = postsCount.takeIf { it > 0 } ?: streamPostIds.size,
         streamPostIds = streamPostIds,
     )
@@ -540,9 +622,16 @@ internal fun UserProfileResponseDto.toModel(): UserProfile = UserProfile(
     recentTimeRead = user.recentTimeRead,
     createdAt = user.createdAt.orEmpty(),
     lastSeenAt = user.lastSeenAt.orEmpty(),
+    lastPostedAt = user.lastPostedAt.orEmpty(),
     profileViewCount = user.profileViewCount,
     admin = user.admin,
     moderator = user.moderator,
+    gamificationScore = user.gamificationScore,
+    cakeDate = user.cakeDate.orEmpty(),
+    totalFollowers = user.totalFollowers,
+    totalFollowing = user.totalFollowing,
+    acceptedAnswers = user.acceptedAnswers,
+    primaryGroupName = user.primaryGroupName.orEmpty(),
 )
 
 internal fun PostDto.toModel(
@@ -573,6 +662,7 @@ internal fun PostDto.toModel(
             reacted = reaction.id == currentUserReaction?.id,
         )
     },
+    isBookmarked = bookmarked == true,
     cookedHtml = cookedHtml,
     imageUrls = Regex("<img[^>]+src=\\\"([^\\\"]+)\\\"")
         .findAll(cookedHtml)
@@ -655,6 +745,48 @@ private fun SearchPostDto.toTopicSummary(): TopicSummary = TopicSummary(
     lastPosterUsername = username,
     excerpt = blurb,
 )
+
+@Serializable
+data class UserActionsResponseDto(
+    @SerialName("user_actions")
+    val userActions: List<UserActionDto> = emptyList(),
+)
+
+@Serializable
+data class UserActionDto(
+    @SerialName("topic_id")
+    val topicId: Long = 0,
+    val title: String = "",
+    val excerpt: String = "",
+    val username: String = "",
+    @SerialName("avatar_template")
+    val avatarTemplate: String = "",
+    @SerialName("created_at")
+    val createdAt: String = "",
+    @SerialName("category_id")
+    val categoryId: Int? = null,
+    val slug: String = "",
+)
+
+// Maps a Discourse user-action feed to topic-summary rows so the profile feed can
+// reuse TopicListAdapter/TopicCell. An action's topic_id may repeat (e.g. several
+// replies in one topic); we keep each action as its own row to preserve order.
+internal fun UserActionsResponseDto.toTopicSummaries(): List<TopicSummary> =
+    userActions
+        .filter { it.topicId > 0 && it.title.isNotBlank() }
+        .map { action ->
+            TopicSummary(
+                id = action.topicId,
+                title = action.title,
+                authorUsername = action.username,
+                authorAvatarTemplate = action.avatarTemplate,
+                slug = action.slug,
+                lastPostedAt = action.createdAt,
+                categoryId = action.categoryId,
+                lastPosterUsername = action.username,
+                excerpt = action.excerpt,
+            )
+        }
 
 private fun SiteCategoryDto.flattenedModels(): List<CategorySummary> {
     return buildList {

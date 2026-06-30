@@ -10,6 +10,7 @@ import org.robolectric.RobolectricTestRunner
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.tgnet.TLRPC
+import org.telegram.ui.ActionBar.Theme
 
 @RunWith(RobolectricTestRunner::class)
 class DetailsBlockTest {
@@ -30,13 +31,24 @@ class DetailsBlockTest {
 
     @Test
     fun detailsChildrenGeometry_matchesTelegramDetailsChildRows() {
-        assertThat(DetailsBlock.bottomCellHeightPx()).isEqualTo(1 + AndroidUtilities.dp(4f))
         assertThat(DetailsBlock.childLevelInsetPx()).isEqualTo(AndroidUtilities.dp(14f))
         assertThat(DetailsBlock.levelLineLeftPx()).isEqualTo(AndroidUtilities.dp(18f))
         assertThat(DetailsBlock.levelLineRightPx()).isEqualTo(AndroidUtilities.dp(20f))
         assertThat(DetailsBlock.childTextInsetAfterLinePx()).isEqualTo(AndroidUtilities.dp(14f))
         assertThat(DetailsBlock.childTextLeftPx()).isEqualTo(AndroidUtilities.dp(18f) + AndroidUtilities.dp(14f))
         assertThat(DetailsBlock.childRightInsetPx()).isEqualTo(AndroidUtilities.dp(18f))
+        assertThat(DetailsBlock.levelLineColor()).isEqualTo(Theme.getColor(Theme.key_chat_inReplyLine))
+    }
+
+    @Test
+    fun expandedHeight_doesNotAddInactiveTelegramDetailsBottomSpacer() {
+        val headerHeight = AndroidUtilities.dp(39f) + 1
+        val childrenHeight = AndroidUtilities.dp(80f)
+
+        assertThat(DetailsBlock.expandedHeightPx(headerHeight, childrenHeight))
+            .isEqualTo(headerHeight + childrenHeight)
+        assertThat(DetailsBlock.expandedHeightPx(headerHeight, childrenHeight))
+            .isNotEqualTo(headerHeight + childrenHeight + 1 + AndroidUtilities.dp(4f))
     }
 
     @Test
@@ -93,6 +105,7 @@ class DetailsBlockTest {
                     title = "alice",
                     titleHtml = "<a href=\"/u/alice\">alice</a>",
                     html = "<p>quoted</p>",
+                    level = 1,
                 ),
                 CookedPostBlock.Rule,
             ),
@@ -128,6 +141,7 @@ class DetailsBlockTest {
 
         val quote = pageBlock.blocks[3] as TLRPC.TL_pageBlockBlockquote
         assertThat((quote.caption as TLRPC.TL_textPlain).text).isEqualTo("alice")
+        assertThat(quote.level).isEqualTo(1)
 
         assertThat(pageBlock.blocks[4]).isInstanceOf(TLRPC.TL_pageBlockDivider::class.java)
     }

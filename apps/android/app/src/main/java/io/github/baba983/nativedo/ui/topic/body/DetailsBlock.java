@@ -29,6 +29,7 @@ import org.jsoup.Jsoup;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ImageReceiver;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.TextSelectionHelper;
 import org.telegram.ui.Components.AnimatedArrowDrawable;
 import org.telegram.ui.Components.spoilers.SpoilerEffect;
@@ -37,7 +38,6 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
 
     static final float TITLE_TEXT_X_DP = 44f + 6f;
     static final float MIN_HEADER_HEIGHT_DP = 39f;
-    static final float BOTTOM_CELL_EXTRA_HEIGHT_DP = 4f;
     static final float CHILD_LEVEL_INSET_DP = 14f;
     static final float LEVEL_LINE_LEFT_DP = 18f;
     static final float LEVEL_LINE_RIGHT_DP = 20f;
@@ -156,7 +156,7 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
         titlePaint.setColor(context.getTextColor());
         textBuilder = new PostBodyTextBuilder(context);
         dividerPaint.setColor(context.getDividerColor());
-        levelLinePaint.setColor(context.getDividerColor());
+        levelLinePaint.setColor(levelLineColor());
         touchSlop = ViewConfiguration.get(context.getHost().getContext()).getScaledTouchSlop();
     }
 
@@ -187,10 +187,7 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
         int height = headerHeight;
         if (currentBlock.open) {
             int childrenHeight = measureChildren(childLayout, width);
-            height += childrenHeight;
-            if (childrenHeight > 0) {
-                height += bottomCellHeightPx();
-            }
+            height = expandedHeightPx(headerHeight, childrenHeight);
         }
         measuredHeight = height;
         rect.set(0f, 0f, width, measuredHeight);
@@ -244,7 +241,7 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
         if (!currentBlock.open) {
             return;
         }
-        int childrenBottom = measuredHeight - bottomCellHeightPx();
+        int childrenBottom = measuredHeight;
         if (!childLayout.blocks.isEmpty()) {
             canvas.drawRect(
                     levelLineLeftPx(),
@@ -255,9 +252,6 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
             );
         }
         drawChildren(canvas, childLayout, headerHeight, measuredWidth, skipEmbeddedChildren);
-        if (!childLayout.blocks.isEmpty()) {
-            canvas.drawLine(0, childrenBottom, measuredWidth, childrenBottom, dividerPaint);
-        }
     }
 
     @Override
@@ -389,7 +383,7 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
         arrow.setColor(context.getSecondaryTextColor());
         titlePaint.setColor(context.getTextColor());
         dividerPaint.setColor(context.getDividerColor());
-        levelLinePaint.setColor(context.getDividerColor());
+        levelLinePaint.setColor(levelLineColor());
         for (PostBodyBlock child : childLayout.blocks) {
             child.applyTheme();
         }
@@ -588,8 +582,8 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
         return AndroidUtilities.dp(MIN_HEADER_HEIGHT_DP);
     }
 
-    static int bottomCellHeightPx() {
-        return 1 + AndroidUtilities.dp(BOTTOM_CELL_EXTRA_HEIGHT_DP);
+    static int expandedHeightPx(int headerHeight, int childrenHeight) {
+        return headerHeight + childrenHeight;
     }
 
     static int childLevelInsetPx() {
@@ -602,6 +596,10 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
 
     static int levelLineRightPx() {
         return AndroidUtilities.dp(LEVEL_LINE_RIGHT_DP);
+    }
+
+    static int levelLineColor() {
+        return Theme.getColor(Theme.key_chat_inReplyLine);
     }
 
     static int childTextInsetAfterLinePx() {
@@ -706,6 +704,7 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
             CookedPostBlock.Quote quote = (CookedPostBlock.Quote) block;
             pageBlock.text = richTextFromHtml(quote.getHtml());
             pageBlock.caption = richTextFromHtml(quote.getTitleHtml() != null ? quote.getTitleHtml() : quote.getTitle());
+            pageBlock.level = quote.getLevel();
             return pageBlock;
         } else if (block instanceof CookedPostBlock.Callout) {
             TLRPC.TL_pageBlockBlockquote pageBlock = new TLRPC.TL_pageBlockBlockquote();
