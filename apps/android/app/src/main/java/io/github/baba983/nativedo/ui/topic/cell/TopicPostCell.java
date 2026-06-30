@@ -186,6 +186,7 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
     private int activeTouchBlockLeft;
     private int activeTouchBlockIndex = -1;
     private boolean activeBodyTouchStream;
+    private boolean activeEmbeddedBodyTouchStream;
     private int bodyTop;
     private int measuredCellHeight = AndroidUtilities.dp(80f);
     private String avatarUrl;
@@ -522,6 +523,11 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
                 return true;
             }
         }
+        if (activeEmbeddedBodyTouchStream && action != MotionEvent.ACTION_DOWN) {
+            if (dispatchActiveEmbeddedBodyTouch(event)) {
+                return true;
+            }
+        }
         for (int i = 0; i < bodyBlocks.size(); i++) {
             int top = i < blockTops.length ? blockTops[i] : 0;
             int bottom = top + (i < blockHeights.length ? blockHeights[i] : 0);
@@ -549,7 +555,11 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
                 }
                 if (dispatchBlockTouch(block, event, blockX, localY - top)) {
                     if (action == MotionEvent.ACTION_DOWN) {
-                        activeBodyTouchStream = true;
+                        if (embeddedView(block) != null) {
+                            activeEmbeddedBodyTouchStream = true;
+                        } else {
+                            activeBodyTouchStream = true;
+                        }
                     }
                     return true;
                 }
@@ -699,10 +709,36 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
             return;
         }
         activeBodyTouchStream = false;
+        activeEmbeddedBodyTouchStream = false;
         MotionEvent cancelEvent = MotionEvent.obtain(0, 0, MotionEvent.ACTION_CANCEL, downX - activeTouchBlockLeft, downY - activeTouchBlockTop, 0);
         PostBodyBlock block = bodyBlocks.get(activeTouchBlockIndex);
         dispatchBlockTouch(block, cancelEvent, cancelEvent.getX(), cancelEvent.getY());
         cancelEvent.recycle();
+    }
+
+    private boolean dispatchActiveEmbeddedBodyTouch(MotionEvent event) {
+        if (activeTouchBlockIndex < 0 || activeTouchBlockIndex >= bodyBlocks.size()) {
+            activeEmbeddedBodyTouchStream = false;
+            return false;
+        }
+        int action = event.getActionMasked();
+        if (action == MotionEvent.ACTION_MOVE) {
+            float dx = event.getX() - downX;
+            float dy = event.getY() - downY;
+            if (Math.abs(dy) > touchSlop && Math.abs(dy) > Math.abs(dx)) {
+                activeEmbeddedBodyTouchStream = false;
+                cancelActiveBodyTouch();
+                return false;
+            }
+        }
+        PostBodyBlock block = bodyBlocks.get(activeTouchBlockIndex);
+        float blockX = event.getX() - activeTouchBlockLeft;
+        float blockY = event.getY() - activeTouchBlockTop;
+        boolean handled = dispatchBlockTouch(block, event, blockX, blockY);
+        if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL || !handled) {
+            activeEmbeddedBodyTouchStream = false;
+        }
+        return handled;
     }
 
     private boolean dispatchActiveBodyTouch(MotionEvent event) {
@@ -924,6 +960,7 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
     private void resetTouchState() {
         cancelCheckLongPress();
         activeBodyTouchStream = false;
+        activeEmbeddedBodyTouchStream = false;
         activeTouchBlockIndex = -1;
         activeTouchBlockTop = 0;
         activeTouchBlockLeft = 0;

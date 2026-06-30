@@ -584,7 +584,12 @@
       "vendored_at": "009e97356",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo preformatted code block corresponding to ArticleViewer.BlockPreformattedCell; now uses an embedded HorizontalScrollView plus textContainer for top-level code blocks, keeping upstream-shaped rectangular background band from y=dp(8) to height-dp(8), preformatted background color derived from accent/link color at alpha=20 like Telegram's windowBackgroundWhiteLinkSelection paint, 16dp horizontal text margin, 12dp child vertical margin plus 8dp scroll padding, textContainer measured as measured-longest-line textWidth+dp(32) without forcing short code layouts to fill the viewport, parent-intercept handoff, and viewport-clipped selection geometry so horizontally scrolled code selection does not draw outside the visible scroll area. Canvas fallback remains for code blocks nested inside quote/list/details bodies, with horizontal drag scrolling and selection geometry using the same 16dp/20dp text offsets as drawing when no real child layout has run. Syntax highlighting remains intentionally omitted per topic-detail plan."
+      "forced_exact": [
+        "measurement",
+        "drawing",
+        "gesture"
+      ],
+      "notes": "NativeDo preformatted code block corresponding to ArticleViewer.BlockPreformattedCell. Top-level blocks expose a FrameLayout cellView (embeddedView) that draws the full-width preformatted background band on the cell like upstream onDraw, with a child HorizontalScrollView that scrolls only textContainer content so the background does not move horizontally. Geometry follows BlockPreformattedCell: background from y=dp(8) to height-dp(8), Theme.key_windowBackgroundWhiteLinkSelection alpha-20 paint, scrollView vertical padding dp(8), text margins dp(16)/dp(12), textContainer width max(ceil(getLineWidth(i)))+dp(32) after layout built at dp(5000) like createLayoutForText. Text uses PostBodyBuildContext monoPaint (rmono.ttf) and ArticleTextLayout StaticLayout, not DrawingText/createLayoutForText; Discourse plain <pre><code> only, no syntax highlighting or IV rich-text links inside code. HorizontalScrollView intercepts only after super confirms horizontal scroll and then requestDisallowInterceptTouchEvent up the host parent chain; TopicPostCell releases embedded touch to the list when vertical movement dominates. Canvas draw/onTouch fallback remains for code nested inside quote/list/details bodies without embeddedView. Syntax highlighting intentionally omitted per topic-detail plan."
     },
     {
       "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ListBlock.java",

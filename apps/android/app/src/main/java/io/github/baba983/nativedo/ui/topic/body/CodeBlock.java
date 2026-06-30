@@ -15,7 +15,9 @@ import android.graphics.RectF;
 import android.text.StaticLayout;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.ViewConfiguration;
+import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import java.util.ArrayList;
 import org.telegram.messenger.AndroidUtilities;
@@ -33,6 +35,7 @@ final class CodeBlock implements EmbeddedPostBodyBlock {
     private final PostBodyBuildContext context;
     private final Paint backgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final int textContainerEndPadding = textContainerEndPaddingPx();
+    private final FrameLayout cellView;
     private final HorizontalScrollView scrollView;
     private final View textContainer;
     private final int touchSlop;
@@ -51,27 +54,23 @@ final class CodeBlock implements EmbeddedPostBodyBlock {
         this.context = context;
         backgroundPaint.setColor(preformattedBackgroundColor());
         touchSlop = ViewConfiguration.get(context.getHost().getContext()).getScaledTouchSlop();
+
         scrollView = new HorizontalScrollView(context.getHost().getContext()) {
             @Override
             public boolean onInterceptTouchEvent(MotionEvent ev) {
-                if (textContainer.getMeasuredWidth() > getMeasuredWidth()) {
-                    if (CodeBlock.this.context.getHost().getParent() != null) {
-                        CodeBlock.this.context.getHost().getParent().requestDisallowInterceptTouchEvent(true);
-                    }
+                boolean intercept = super.onInterceptTouchEvent(ev);
+                if (scrollContentWiderThanViewport() && intercept) {
+                    setParentInterceptBlocked(true);
                 }
-                return super.onInterceptTouchEvent(ev);
+                return intercept;
             }
 
             @Override
             public boolean onTouchEvent(MotionEvent ev) {
-                boolean handled = super.onTouchEvent(ev);
-                int action = ev.getActionMasked();
-                if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
-                    if (CodeBlock.this.context.getHost().getParent() != null) {
-                        CodeBlock.this.context.getHost().getParent().requestDisallowInterceptTouchEvent(false);
-                    }
+                if (!scrollContentWiderThanViewport()) {
+                    return false;
                 }
-                return handled;
+                return super.onTouchEvent(ev);
             }
 
             @Override
@@ -79,14 +78,7 @@ final class CodeBlock implements EmbeddedPostBodyBlock {
                 super.onScrollChanged(l, t, oldl, oldt);
                 CodeBlock.this.context.getSelectionGeometryInvalidator().invoke();
             }
-
-            @Override
-            protected void onDraw(Canvas canvas) {
-                canvas.drawRect(0f, backgroundVerticalInsetPx(), getWidth(), getHeight() - backgroundVerticalInsetPx(), backgroundPaint);
-                super.onDraw(canvas);
-            }
         };
-        scrollView.setWillNotDraw(false);
         scrollView.setHorizontalScrollBarEnabled(false);
         scrollView.setVerticalScrollBarEnabled(false);
         scrollView.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
@@ -96,7 +88,8 @@ final class CodeBlock implements EmbeddedPostBodyBlock {
             @Override
             protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
                 int height = layout != null ? layout.getHeight() : 1;
-                setMeasuredDimension(Math.max(textWidth + textContainerEndPadding, 1), Math.max(height, 1));
+                int contentWidth = layout != null ? contentWidthFromLayout(layout) : textWidth;
+                setMeasuredDimension(Math.max(contentWidth + textContainerEndPadding, 1), Math.max(height, 1));
             }
 
             @Override
@@ -113,25 +106,63 @@ final class CodeBlock implements EmbeddedPostBodyBlock {
         layoutParams.leftMargin = layoutParams.rightMargin = textHorizontalMarginPx();
         layoutParams.topMargin = layoutParams.bottomMargin = textVerticalMarginPx();
         scrollView.addView(textContainer, layoutParams);
+
+        cellView = new FrameLayout(context.getHost().getContext()) {
+            @Override
+            protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+                int width = View.MeasureSpec.getSize(widthMeasureSpec);
+                scrollView.measure(
+                        View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                        View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+                );
+                setMeasuredDimension(width, scrollView.getMeasuredHeight());
+            }
+
+            @Override
+            protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+                scrollView.layout(0, 0, getMeasuredWidth(), scrollView.getMeasuredHeight());
+            }
+
+            @Override
+            protected void onDraw(Canvas canvas) {
+                canvas.drawRect(
+                        0f,
+                        backgroundVerticalInsetPx(),
+                        getMeasuredWidth(),
+                        getMeasuredHeight() - backgroundVerticalInsetPx(),
+                        backgroundPaint
+                );
+            }
+        };
+        cellView.setWillNotDraw(false);
+        cellView.addView(
+                scrollView,
+                new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.WRAP_CONTENT
+                )
+        );
     }
 
     @Override
     public int horizontalInsetPx() {
         return 0;
     }
+
     @Override
     public int measure(int maxWidthPx) {
         viewportWidth = Math.max(maxWidthPx, AndroidUtilities.dp(120f));
         String source = code.trim().isEmpty() ? " " : code;
-        textWidth = textLayoutWidthPx(source, context.getMonoPaint());
-        layout = ArticleTextLayout.builder(source, context.getMonoPaint(), textWidth)
+        int layoutBuildWidth = AndroidUtilities.dp(5000f);
+        layout = ArticleTextLayout.builder(source, context.getMonoPaint(), layoutBuildWidth)
                 .build();
+        textWidth = contentWidthFromLayout(layout);
         textContainer.requestLayout();
-        scrollView.measure(
+        cellView.measure(
                 View.MeasureSpec.makeMeasureSpec(viewportWidth, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
         );
-        measuredHeight = scrollView.getMeasuredHeight();
+        measuredHeight = cellView.getMeasuredHeight();
         return measuredHeight;
     }
 
@@ -141,7 +172,13 @@ final class CodeBlock implements EmbeddedPostBodyBlock {
             return;
         }
         int saveCount = canvas.save();
-        canvas.drawRect(0f, backgroundVerticalInsetPx(), parentWidth, measuredHeight - backgroundVerticalInsetPx(), backgroundPaint);
+        canvas.drawRect(
+                0f,
+                backgroundVerticalInsetPx(),
+                parentWidth,
+                measuredHeight - backgroundVerticalInsetPx(),
+                backgroundPaint
+        );
         canvas.clipRect(0f, 0f, parentWidth, measuredHeight);
         canvas.translate(textHorizontalMarginPx() - scrollView.getScrollX(), textTopPx());
         layout.draw(canvas);
@@ -150,7 +187,7 @@ final class CodeBlock implements EmbeddedPostBodyBlock {
 
     @Override
     public View embeddedView() {
-        return scrollView;
+        return cellView;
     }
 
     @Override
@@ -239,9 +276,20 @@ final class CodeBlock implements EmbeddedPostBodyBlock {
         return Math.max(textWidth + maxFallbackScrollExtraPx() - viewportWidth, 0);
     }
 
+    private boolean scrollContentWiderThanViewport() {
+        return textContainer.getMeasuredWidth() > scrollView.getMeasuredWidth();
+    }
+
     private void setParentInterceptBlocked(boolean blocked) {
-        if (context.getHost().getParent() != null) {
-            context.getHost().getParent().requestDisallowInterceptTouchEvent(blocked);
+        View parent = context.getHost();
+        while (parent != null) {
+            if (parent instanceof ViewGroup) {
+                ((ViewGroup) parent).requestDisallowInterceptTouchEvent(blocked);
+            }
+            if (!(parent.getParent() instanceof View)) {
+                break;
+            }
+            parent = (View) parent.getParent();
         }
     }
 
@@ -273,13 +321,12 @@ final class CodeBlock implements EmbeddedPostBodyBlock {
         return textHorizontalMarginPx() * 2 + textContainerEndPaddingPx();
     }
 
-    static int textLayoutWidthPx(String source, android.text.TextPaint paint) {
-        int longestLineWidth = 1;
-        String[] lines = source.split("\\R", -1);
-        for (String line : lines) {
-            longestLineWidth = Math.max(longestLineWidth, (int) Math.ceil(paint.measureText(line)));
+    static int contentWidthFromLayout(StaticLayout layout) {
+        int width = 1;
+        for (int i = 0, count = layout.getLineCount(); i < count; i++) {
+            width = Math.max(width, (int) Math.ceil(layout.getLineWidth(i)));
         }
-        return longestLineWidth + 1;
+        return width;
     }
 
     static int preformattedBackgroundColor() {
@@ -322,6 +369,6 @@ final class CodeBlock implements EmbeddedPostBodyBlock {
     public void applyTheme() {
         backgroundPaint.setColor(preformattedBackgroundColor());
         textContainer.invalidate();
-        scrollView.invalidate();
+        cellView.invalidate();
     }
 }

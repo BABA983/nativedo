@@ -1,7 +1,7 @@
 package io.github.baba983.nativedo.ui.topic.body
 
-import android.view.View
 import android.graphics.Color
+import android.view.View
 import com.google.common.truth.Truth.assertThat
 import org.junit.Before
 import org.junit.Test
@@ -33,18 +33,6 @@ class CodeBlockTest {
         assertThat(CodeBlock.maxFallbackScrollExtraPx()).isEqualTo(
             AndroidUtilities.dp(16f) * 2 + AndroidUtilities.dp(32f),
         )
-    }
-
-    @Test
-    fun textLayoutWidth_usesLongestLineWidthWithoutViewportFillLikeBlockPreformattedCell() {
-        val context = buildContext()
-        val source = "short"
-        val viewportWidth = AndroidUtilities.dp(360f)
-        val expectedWidth = kotlin.math.ceil(context.monoPaint.measureText(source)).toInt() + 1
-
-        assertThat(CodeBlock.textLayoutWidthPx(source, context.monoPaint)).isEqualTo(expectedWidth)
-        assertThat(CodeBlock.textLayoutWidthPx(source, context.monoPaint))
-            .isLessThan(viewportWidth - CodeBlock.maxFallbackScrollExtraPx())
     }
 
     @Test
