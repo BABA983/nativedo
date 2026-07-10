@@ -6,6 +6,7 @@ import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.PostReaction
 import io.github.baba983.nativedo.core.model.toggledReaction
 import io.github.baba983.nativedo.feature.home.ui.readableMessage
+import io.github.baba983.nativedo.core.model.PostReactionUsersGroup
 import io.github.baba983.nativedo.feature.topic.data.TopicRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -191,6 +192,72 @@ class TopicViewModel(
         )
     }
 
+    fun openPollVotersSheet(postId: Long, args: PollVotersSheetArgs) {
+        val preferredOptionId = args.initialSelectedOptionId?.takeIf { it.isNotBlank() }
+            ?: args.options.firstOrNull { option -> option.votes > 0 }?.id
+            ?: args.options.firstOrNull()?.id
+        _uiState.value = _uiState.value.copy(
+            pollVotersSheet = TopicPollVotersSheetUiState(
+                postId = postId,
+                pollName = args.pollName,
+                pollTitle = args.pollTitle,
+                options = args.options,
+            ),
+            pollVoters = TopicPollVotersUiState(
+                selectedOptionId = preferredOptionId,
+                isLoading = true,
+                hasLoaded = false,
+                errorMessage = null,
+            ),
+        )
+
+        viewModelScope.launch {
+            repository.loadPollVoters(postId = postId, pollName = args.pollName).fold(
+                onSuccess = { groups ->
+                    val mergedGroups = mergePollVoterGroups(args.options, groups)
+                    val resolvedSelected = preferredOptionId?.takeIf { id ->
+                        mergedGroups.any { group -> group.id == id && group.users.isNotEmpty() }
+                    } ?: mergedGroups.firstOrNull { group -> group.users.isNotEmpty() }?.id
+                        ?: preferredOptionId?.takeIf { id -> mergedGroups.any { group -> group.id == id } }
+                        ?: mergedGroups.firstOrNull()?.id
+                    _uiState.value = _uiState.value.copy(
+                        pollVoters = TopicPollVotersUiState(
+                            groups = mergedGroups,
+                            selectedOptionId = resolvedSelected,
+                            isLoading = false,
+                            hasLoaded = true,
+                            errorMessage = null,
+                        ),
+                    )
+                },
+                onFailure = { error ->
+                    _uiState.value = _uiState.value.copy(
+                        pollVoters = TopicPollVotersUiState(
+                            groups = emptyList(),
+                            selectedOptionId = preferredOptionId,
+                            isLoading = false,
+                            hasLoaded = true,
+                            errorMessage = error.message?.takeIf { it.isNotBlank() } ?: "加载投票用户失败",
+                        ),
+                    )
+                },
+            )
+        }
+    }
+
+    fun selectPollOptionInSheet(optionId: String) {
+        _uiState.value = _uiState.value.copy(
+            pollVoters = _uiState.value.pollVoters.copy(selectedOptionId = optionId),
+        )
+    }
+
+    fun dismissPollVotersSheet() {
+        _uiState.value = _uiState.value.copy(
+            pollVotersSheet = null,
+            pollVoters = TopicPollVotersUiState(),
+        )
+    }
+
     suspend fun expandQuote(sourceTopicId: Long, sourcePostNumber: Int): Result<String> {
         return repository.loadPostByNumber(topicId = sourceTopicId, postNumber = sourcePostNumber)
             .map { post -> post.cookedHtml }
@@ -232,12 +299,33 @@ class TopicViewModel(
 
     fun onPollOptionsSelected(postId: Long, postNumber: Int?, pollName: String, optionIds: List<String>) {
         viewModelScope.launch {
-            repository.votePoll(postId = postId, pollName = pollName, optionIds = optionIds).onSuccess {
-                if (postNumber != null) {
-                    repository.loadPostByNumber(topicId = topicId, postNumber = postNumber).onSuccess(::replacePostById)
-                }
-            }
+            repository.votePoll(postId = postId, pollName = pollName, optionIds = optionIds).fold(
+                onSuccess = {
+                    if (postNumber != null) {
+                        repository.loadPostByNumber(topicId = topicId, postNumber = postNumber).onSuccess(::replacePostById)
+                    }
+                },
+                onFailure = { emitPollActionFailure(postId) },
+            )
         }
+    }
+
+    fun onPollVoteRemoved(postId: Long, postNumber: Int?, pollName: String) {
+        viewModelScope.launch {
+            repository.removePollVote(postId = postId, pollName = pollName).fold(
+                onSuccess = {
+                    if (postNumber != null) {
+                        repository.loadPostByNumber(topicId = topicId, postNumber = postNumber).onSuccess(::replacePostById)
+                    }
+                },
+                onFailure = { emitPollActionFailure(postId) },
+            )
+        }
+    }
+
+    fun consumePollActionFailure(nonce: Int) {
+        if (_uiState.value.pollActionFailure?.nonce != nonce) return
+        _uiState.value = _uiState.value.copy(pollActionFailure = null)
     }
 
     fun requestJumpToReplyTarget(postNumber: Int) {
@@ -272,5 +360,35 @@ class TopicViewModel(
                 if (current.id == post.id) post else current
             },
         )
+    }
+
+    private var pollActionFailureNonce = 0
+
+    private fun emitPollActionFailure(postId: Long) {
+        pollActionFailureNonce += 1
+        _uiState.value = _uiState.value.copy(
+            pollActionFailure = PollActionFailure(postId = postId, nonce = pollActionFailureNonce),
+        )
+    }
+
+    private fun mergePollVoterGroups(
+        options: List<PollOptionRef>,
+        apiGroups: List<PostReactionUsersGroup>,
+    ): List<PostReactionUsersGroup> {
+        val ordered = options.mapNotNull { option ->
+            if (option.id.isBlank()) return@mapNotNull null
+            val apiGroup = apiGroups.firstOrNull { group -> group.id == option.id }
+            PostReactionUsersGroup(
+                id = option.id,
+                count = apiGroup?.count?.takeIf { it > 0 } ?: option.votes,
+                users = apiGroup?.users.orEmpty(),
+            )
+        }
+        val merged = ordered.ifEmpty { apiGroups }
+        return if (merged.all { group -> group.users.isEmpty() } && apiGroups.any { group -> group.users.isNotEmpty() }) {
+            apiGroups
+        } else {
+            merged
+        }
     }
 }

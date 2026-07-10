@@ -77,6 +77,7 @@ import io.github.baba983.nativedo.core.model.UserProfile
 import io.github.baba983.nativedo.feature.profile.data.ProfileRepository
 import io.github.baba983.nativedo.feature.profile.ui.ProfileUiState
 import io.github.baba983.nativedo.feature.profile.ui.ProfileViewModel
+import io.github.baba983.nativedo.debug.DebugTopicFixtureSheet
 import io.github.baba983.nativedo.ui.auth.LoginWebViewFragment
 import io.github.baba983.nativedo.ui.main.MainTabsActivity
 import io.github.baba983.nativedo.ui.profile.IconSettingCell.Factory as IconSettingFactory
@@ -134,6 +135,7 @@ private const val ID_FOLLOWERS = 21
 private const val ID_FOLLOWING = 22
 private const val ACTION_DEV_URL = 1
 private const val ACTION_TOPIC_URL = 2
+private const val ACTION_TOPIC_RENDER_FIXTURES = 6
 private const val ACTION_RETRY_PROFILE = 3
 private const val ACTION_LOGOUT = 4
 private const val ACTION_LOGIN = 5
@@ -186,6 +188,7 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
     private var avatarViewerTitle: String = ""
     private var avatarViewerSubtitle: String = ""
     private var profileWebUrl: String = ""
+    private var topicFixtureSheet: DebugTopicFixtureSheet? = null
 
     // Scroll state (mirrors ProfileActivity)
     private var extraHeight: Float = 0f
@@ -1697,6 +1700,15 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
         )
         items.add(
             IconSettingFactory.of(
+                ACTION_TOPIC_RENDER_FIXTURES,
+                IconSettingCell.Colors.ORANGE_TOP, IconSettingCell.Colors.ORANGE_BOTTOM,
+                R.drawable.settings_topic,
+                context?.getString(R.string.profile_topic_fixture_tools_title).orEmpty(),
+                context?.getString(R.string.profile_topic_fixture_tools_subtitle).orEmpty(),
+            )
+        )
+        items.add(
+            IconSettingFactory.of(
                 ACTION_TOPIC_URL,
                 IconSettingCell.Colors.GREEN_TOP, IconSettingCell.Colors.GREEN_BOTTOM,
                 R.drawable.settings_topic,
@@ -1766,6 +1778,7 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
                 parser = ::normalizeHttpUrl,
                 onSubmit = ::openBrowser,
             )
+            ACTION_TOPIC_RENDER_FIXTURES -> showTopicRenderFixturesSheet()
             ACTION_TOPIC_URL -> showUrlInputDialog(
                 title = context?.getString(R.string.profile_topic_dev_url_title).orEmpty(),
                 message = context?.getString(R.string.profile_topic_dev_url_message).orEmpty(),
@@ -2123,12 +2136,24 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
     }
 
     override fun onFragmentDestroy() {
+        topicFixtureSheet?.dismiss()
+        topicFixtureSheet = null
         Theme.removeThemeDelegate(this)
         fragmentScope.cancel()
         super.onFragmentDestroy()
     }
 
     // --- URL input dialog ---
+
+    private fun showTopicRenderFixturesSheet() {
+        val context = getContext() ?: return
+        topicFixtureSheet?.dismiss()
+        topicFixtureSheet = DebugTopicFixtureSheet(
+            context = context,
+            fragment = this,
+            onDismissed = { topicFixtureSheet = null },
+        ).also { it.show() }
+    }
 
     private fun showUrlInputDialog(
         title: String,

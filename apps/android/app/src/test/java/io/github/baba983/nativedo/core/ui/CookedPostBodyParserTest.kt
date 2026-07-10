@@ -133,6 +133,35 @@ class CookedPostBodyParserTest {
     }
 
     @Test
+    fun parseCookedPostBody_quoteTitle_stripsAvatarAndQuoteControls() {
+        val html = """
+            <aside class="quote quote-modified" data-post="1" data-topic="2239921">
+              <div class="title">
+                <div class="quote-controls"></div>
+                <img alt="" width="24" height="24" src="https://cdn.example.dev/user_avatar/linux.do/jiuuij/48/1118922_2.png" class="avatar">
+                <div class="quote-title__text-content">
+                  <a href="https://linux.do/t/topic/2239921">Topic title</a>
+                  <a class="badge-category__wrapper " href="/c/develop/4"><span data-category-id="4" style="--category-badge-color: #32c3c3; --category-badge-text-color: #000000;" class="badge-category --style-icon "><span class="badge-category__name">开发调优</span></span></a>
+                </div>
+              </div>
+              <blockquote><p>Quoted body</p></blockquote>
+            </aside>
+        """.trimIndent()
+
+        val quote = parseCookedPostBody(html, "https://linux.do/")
+            .filterIsInstance<CookedPostBlock.Quote>()
+            .single()
+
+        assertThat(quote.titleAvatarUrl)
+            .isEqualTo("https://cdn.example.dev/user_avatar/linux.do/jiuuij/48/1118922_2.png")
+        assertThat(quote.titleCategoryName).isEqualTo("开发调优")
+        assertThat(quote.titleCategoryColor).isEqualTo("#32c3c3")
+        assertThat(quote.titleCategoryTextColor).isEqualTo("#000000")
+        assertThat(quote.titleHtml).contains("Topic title")
+        assertThat(quote.titleHtml).doesNotContain("badge-category")
+    }
+
+    @Test
     fun parseCookedPostBody_preservesNestedQuoteLevels() {
         val html = """
             <blockquote>
@@ -205,9 +234,31 @@ class CookedPostBodyParserTest {
         assertThat(callout.icon).isEqualTo("far-pen-to-square")
         assertThat(callout.color).isEqualTo("#086ddd")
         assertThat(callout.titleHtml).isEqualTo("~/.claude/settings.json")
+        assertThat(callout.collapsible).isTrue()
         assertThat(callout.children.filterIsInstance<CookedPostBlock.Code>().single().code)
             .contains("\"model\"")
         assertThat(callout.html).doesNotContain("copy-cmd")
+    }
+
+    @Test
+    fun parseCookedPostBody_parsesMarkdownCalloutWithPlusFoldModifier() {
+        val html = """
+            <blockquote>
+              <p>[!Note]+ ~/.claude/settings.json</p>
+              <pre><code class="lang-auto">{"model": "opus"}</code></pre>
+            </blockquote>
+        """.trimIndent()
+
+        val callout = parseCookedPostBody(html, baseUrl)
+            .filterIsInstance<CookedPostBlock.Callout>()
+            .single()
+
+        assertThat(callout.type).isEqualTo("note")
+        assertThat(callout.titleHtml).isEqualTo("~/.claude/settings.json")
+        assertThat(callout.collapsible).isTrue()
+        assertThat(callout.defaultExpanded).isTrue()
+        assertThat(callout.children.filterIsInstance<CookedPostBlock.Code>().single().code)
+            .contains("opus")
     }
 
     @Test
@@ -292,6 +343,28 @@ class CookedPostBodyParserTest {
     }
 
     @Test
+    fun parseCookedPostBody_parsesDetailsWithParagraphAndCodeBlock() {
+        val html = """
+            <details>
+              <summary>Example title</summary>
+              <p>Helper text</p>
+              <pre class="codeblock-buttons"><div class="codeblock-button-wrapper"><button class="copy-cmd"></button></div><code class="hljs language-json">{ "a": 1 }</code></pre>
+            </details>
+        """.trimIndent()
+
+        val details = parseCookedPostBody(html, baseUrl)
+            .filterIsInstance<CookedPostBlock.Details>()
+            .single()
+
+        assertThat(details.summary).isEqualTo("Example title")
+        assertThat(details.children.filterIsInstance<CookedPostBlock.Text>().single().html)
+            .contains("Helper text")
+        val code = details.children.filterIsInstance<CookedPostBlock.Code>().single()
+        assertThat(code.code).contains("\"a\"")
+        assertThat(code.code).doesNotContain("copy-cmd")
+    }
+
+    @Test
     fun parseCookedPostBody_preservesDetailsSummaryHtmlForInlineSpoilers() {
         val html = """
             <details>
@@ -348,7 +421,7 @@ class CookedPostBodyParserTest {
     @Test
     fun parseCookedPostBody_preservesPollResultState() {
         val html = """
-            <div class="poll" data-poll-name="frontend" data-poll-status="open" data-poll-type="regular">
+            <div class="poll" data-poll-charttype="bar" data-poll-name="frontend" data-poll-title="Frontend work" data-poll-public="true" data-poll-results="always" data-poll-status="open" data-poll-type="regular">
               <div class="poll-container">
                 <ul>
                   <li data-poll-option-id="option-a" class="chosen">
@@ -372,8 +445,12 @@ class CookedPostBodyParserTest {
             .single()
 
         assertThat(poll.name).isEqualTo("frontend")
+        assertThat(poll.title).isEqualTo("Frontend work")
         assertThat(poll.status).isEqualTo("open")
         assertThat(poll.type).isEqualTo("regular")
+        assertThat(poll.results).isEqualTo("always")
+        assertThat(poll.publicPoll).isTrue()
+        assertThat(poll.chartType).isEqualTo("bar")
         assertThat(poll.voters).isEqualTo(10)
         assertThat(poll.options.map { it.id }).containsExactly("option-a", "option-b").inOrder()
         assertThat(poll.options.map { it.label }).containsExactly("Tool A", "Tool B").inOrder()
@@ -406,6 +483,26 @@ class CookedPostBodyParserTest {
 
         assertThat(option.label).isEqualTo("Visible hidden")
         assertThat(option.labelHtml).contains("class=\"spoiler\"")
+    }
+
+    @Test
+    fun parseCookedPostBody_coalescesAdjacentHeadingIntoPollTitle() {
+        val html = """
+            <h2>模型订阅的方式</h2>
+            <div class="poll" data-poll-name="frontend" data-poll-status="closed" data-poll-type="regular" data-poll-public="true">
+              <div class="poll-container">
+                <ul>
+                  <li data-poll-option-id="option-a"><span class="poll-option-label">A</span></li>
+                </ul>
+              </div>
+            </div>
+        """.trimIndent()
+
+        val blocks = parseCookedPostBody(html, baseUrl)
+
+        assertThat(blocks).hasSize(1)
+        val poll = blocks.single() as CookedPostBlock.Poll
+        assertThat(poll.title).isEqualTo("模型订阅的方式")
     }
 
     @Test

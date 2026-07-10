@@ -2,6 +2,7 @@ package io.github.baba983.nativedo.ui.auth
 
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.test.runTest
+import io.github.baba983.nativedo.core.web.decodeJavascriptString
 import org.junit.Test
 
 class LoginWebViewFragmentTest {
@@ -93,5 +94,16 @@ class LoginWebViewFragmentTest {
         assertThat(decodeJavascriptString("\"baba\"")).isEqualTo("baba")
         assertThat(decodeJavascriptString("null")).isEmpty()
         assertThat(decodeJavascriptString("")).isEmpty()
+    }
+
+    @Test
+    fun decodeCurrentUserPayload_readsAvatarTemplate() {
+        val currentUser = decodeCurrentUserPayload(
+            "\"{\\\"username\\\":\\\"baba\\\",\\\"name\\\":\\\"Baba\\\",\\\"avatar_template\\\":\\\"/user_avatar/linux.do/baba/{size}/1.png\\\"}\"",
+        )
+
+        assertThat(currentUser?.username).isEqualTo("baba")
+        assertThat(currentUser?.displayName).isEqualTo("Baba")
+        assertThat(currentUser?.avatarTemplate).isEqualTo("/user_avatar/linux.do/baba/{size}/1.png")
     }
 }

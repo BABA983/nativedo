@@ -43,6 +43,8 @@ import androidx.core.graphics.ColorUtils;
 import io.github.baba983.nativedo.R;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.AvatarDrawable;
+import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.LayoutHelper;
 
@@ -55,6 +57,10 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab {
 
     private final TextView textView;
     private final ImageView iconView;
+    private final BackupImageView avatarView;
+    private final AvatarDrawable avatarDrawable = new AvatarDrawable();
+    private boolean hasAvatar;
+    private final Paint avatarRingPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final TextPaint defaultTextPaint;
     private final Paint selectedPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint counterPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -88,6 +94,17 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab {
         addView(iconView, LayoutHelper.createFrame(24, 24, Gravity.CENTER_HORIZONTAL | Gravity.TOP));
         ((LayoutParams) iconView.getLayoutParams()).topMargin = AndroidUtilities.dp(4);
 
+        // Avatar overlay: shown in place of the static icon when the user is logged
+        // in, so the profile tab renders the account avatar (Telegram-style).
+        avatarView = new BackupImageView(context);
+        avatarView.setRoundRadius(AndroidUtilities.dp(12));
+        avatarView.setVisibility(GONE);
+        addView(avatarView, LayoutHelper.createFrame(24, 24, Gravity.CENTER_HORIZONTAL | Gravity.TOP));
+        ((LayoutParams) avatarView.getLayoutParams()).topMargin = AndroidUtilities.dp(4);
+
+        avatarRingPaint.setStyle(Paint.Style.STROKE);
+        avatarRingPaint.setStrokeWidth(AndroidUtilities.dpf2(1.5f));
+
         textView = new TextView(context);
         textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12f);
         textView.setSingleLine();
@@ -112,6 +129,34 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab {
         tab.textView.setText(context.getString(stringRes));
         tab.updateColors();
         return tab;
+    }
+
+    /**
+     * Render the account avatar in place of the static tab icon. Passing a blank
+     * url falls back to the initials placeholder derived from {@code name}.
+     */
+    public void setAvatar(String url, String filter, String name) {
+        hasAvatar = true;
+        avatarDrawable.setInfo(0, name);
+        if (url != null && !url.isEmpty()) {
+            avatarView.setImage(url, filter, avatarDrawable);
+        } else {
+            avatarView.setImageDrawable(avatarDrawable);
+        }
+        avatarView.setVisibility(VISIBLE);
+        iconView.setVisibility(GONE);
+        invalidate();
+    }
+
+    public void clearAvatar() {
+        if (!hasAvatar) {
+            return;
+        }
+        hasAvatar = false;
+        avatarView.setImageDrawable(null);
+        avatarView.setVisibility(GONE);
+        iconView.setVisibility(VISIBLE);
+        invalidate();
     }
 
     public void setVisualWidth(float width) {
@@ -176,6 +221,17 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab {
             canvas.scale(scale, scale, tmpRectF.centerX(), tmpRectF.centerY());
             canvas.drawRoundRect(tmpRectF, radius, radius, selectedPaint);
             canvas.restore();
+        }
+
+        // Selection ring around the avatar, so the profile tab reads as "selected"
+        // when the account avatar has replaced the tintable icon.
+        if (hasAvatar && drawingSelectedFactor > 0f) {
+            final float cx = avatarView.getX() + avatarView.getWidth() / 2f;
+            final float cy = avatarView.getY() + avatarView.getHeight() / 2f;
+            final float ringRadius = avatarView.getWidth() / 2f + AndroidUtilities.dpf2(2.5f);
+            avatarRingPaint.setColor(colorSelected);
+            avatarRingPaint.setAlpha((int) (255 * CubicBezierInterpolator.DEFAULT.getInterpolation(drawingSelectedFactor)));
+            canvas.drawCircle(cx, cy, ringRadius, avatarRingPaint);
         }
 
         super.dispatchDraw(canvas);
@@ -252,6 +308,7 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab {
         }
         final float offset = (visualWidth - getMeasuredWidth()) / 2f;
         iconView.setTranslationX(offset);
+        avatarView.setTranslationX(offset);
         textView.setTranslationX(offset);
     }
 

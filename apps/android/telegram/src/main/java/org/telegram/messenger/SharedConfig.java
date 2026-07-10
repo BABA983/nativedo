@@ -17,6 +17,8 @@ package org.telegram.messenger;
 
 import android.content.SharedPreferences;
 
+import java.io.File;
+
 /**
  * Minimal shim matching Telegram's {@code SharedConfig} API surface.
  * Returns safe defaults for animation and UI feature flags.
@@ -134,6 +136,42 @@ public final class SharedConfig {
     /** Matches upstream {@code SharedConfig.storageCacheDir} — empty until NativeDo wires custom SD-card storage. */
     public static String storageCacheDir = "";
     public static int lastKeepMediaCheckTime = 0;
+    /** Matches upstream {@code SharedConfig.lastLogsCheckTime}. */
+    public static int lastLogsCheckTime = 0;
+
+    /**
+     * Matches upstream {@code SharedConfig.checkLogsToDelete()} — delete log files older than 10 days,
+     * at most once per hour when {@link BuildVars#LOGS_ENABLED}.
+     */
+    public static void checkLogsToDelete() {
+        if (!BuildVars.LOGS_ENABLED) {
+            return;
+        }
+        int time = (int) (System.currentTimeMillis() / 1000);
+        if (ApplicationLoader.applicationContext != null) {
+            lastLogsCheckTime = MessagesController.getGlobalMainSettings().getInt("lastLogsCheckTime", lastLogsCheckTime);
+        }
+        if (Math.abs(time - lastLogsCheckTime) < 60 * 60) {
+            return;
+        }
+        lastLogsCheckTime = time;
+        Utilities.cacheClearQueue.postRunnable(() -> {
+            long currentTime = time - 60 * 60 * 24 * 10;
+            try {
+                File dir = AndroidUtilities.getLogsDir();
+                if (dir == null) {
+                    return;
+                }
+                Utilities.clearDir(dir.getAbsolutePath(), 0, currentTime, false);
+            } catch (Throwable e) {
+                FileLog.e(e);
+            }
+            SharedPreferences preferences = MessagesController.getGlobalMainSettings();
+            SharedPreferences.Editor editor = preferences.edit();
+            editor.putInt("lastLogsCheckTime", lastLogsCheckTime);
+            editor.apply();
+        });
+    }
 
     public static int saveToGalleryFlags = 0;
     public static final int SAVE_TO_GALLERY_FLAG_PEER = 1;

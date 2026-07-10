@@ -10,7 +10,6 @@ import org.robolectric.RobolectricTestRunner
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.tgnet.TLRPC
-import org.telegram.ui.ActionBar.Theme
 
 @RunWith(RobolectricTestRunner::class)
 class DetailsBlockTest {
@@ -32,12 +31,17 @@ class DetailsBlockTest {
     @Test
     fun detailsChildrenGeometry_matchesTelegramDetailsChildRows() {
         assertThat(DetailsBlock.childLevelInsetPx()).isEqualTo(AndroidUtilities.dp(14f))
-        assertThat(DetailsBlock.levelLineLeftPx()).isEqualTo(AndroidUtilities.dp(18f))
-        assertThat(DetailsBlock.levelLineRightPx()).isEqualTo(AndroidUtilities.dp(20f))
-        assertThat(DetailsBlock.childTextInsetAfterLinePx()).isEqualTo(AndroidUtilities.dp(14f))
-        assertThat(DetailsBlock.childTextLeftPx()).isEqualTo(AndroidUtilities.dp(18f) + AndroidUtilities.dp(14f))
+        assertThat(DetailsBlock.childContentLeftPx()).isEqualTo(AndroidUtilities.dp(18f))
         assertThat(DetailsBlock.childRightInsetPx()).isEqualTo(AndroidUtilities.dp(18f))
-        assertThat(DetailsBlock.levelLineColor()).isEqualTo(Theme.getColor(Theme.key_chat_inReplyLine))
+    }
+
+    @Test
+    fun detailsChildRowCodeBlock_usesFullWidthLikeBlockPreformattedCell() {
+        val code = io.github.baba983.nativedo.ui.topic.body.CodeBlock("{}", buildContext())
+        val paragraph = ParagraphBlock("<p>x</p>", buildContext())
+
+        assertThat(DetailsBlock.usesFullWidthDetailsChildRow(code)).isTrue()
+        assertThat(DetailsBlock.usesFullWidthDetailsChildRow(paragraph)).isFalse()
     }
 
     @Test

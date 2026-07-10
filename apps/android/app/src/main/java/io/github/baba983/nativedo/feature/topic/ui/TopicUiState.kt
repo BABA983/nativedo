@@ -26,6 +26,9 @@ data class TopicUiState(
     val replySubmitErrorMessage: String? = null,
     val reactionSheet: TopicReactionSheetUiState? = null,
     val reactionUsers: TopicReactionUsersUiState = TopicReactionUsersUiState(),
+    val pollVotersSheet: TopicPollVotersSheetUiState? = null,
+    val pollVoters: TopicPollVotersUiState = TopicPollVotersUiState(),
+    val pollActionFailure: PollActionFailure? = null,
     val jumpEvent: TopicJumpEvent? = null,
     val jumpHighlight: TopicJumpHighlight? = null,
 ) {
@@ -44,6 +47,26 @@ data class TopicReactionUsersUiState(
     val selectedReactionId: String? = null,
     val isLoading: Boolean = false,
     val hasLoaded: Boolean = false,
+)
+
+data class TopicPollVotersSheetUiState(
+    val postId: Long,
+    val pollName: String,
+    val pollTitle: String? = null,
+    val options: List<PollOptionRef> = emptyList(),
+)
+
+data class PollActionFailure(
+    val postId: Long,
+    val nonce: Int,
+)
+
+data class TopicPollVotersUiState(
+    val groups: List<PostReactionUsersGroup> = emptyList(),
+    val selectedOptionId: String? = null,
+    val isLoading: Boolean = false,
+    val hasLoaded: Boolean = false,
+    val errorMessage: String? = null,
 )
 
 data class TopicJumpEvent(

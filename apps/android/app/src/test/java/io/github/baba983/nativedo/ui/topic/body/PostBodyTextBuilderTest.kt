@@ -118,7 +118,6 @@ class PostBodyTextBuilderTest {
         )
         val span = built.spannable
             .getSpans(0, built.spannable.length, ReplacementSpan::class.java)
-            .filterNot { it is TextSelectionHelper.IgnoreCopySpannable }
             .single()
         val spanStart = built.spannable.getSpanStart(span)
         val spanEnd = built.spannable.getSpanEnd(span)
@@ -148,7 +147,6 @@ class PostBodyTextBuilderTest {
         )
         val span = built.spannable
             .getSpans(0, built.spannable.length, ReplacementSpan::class.java)
-            .filterNot { it is TextSelectionHelper.IgnoreCopySpannable }
             .single()
         val spanStart = built.spannable.getSpanStart(span)
         val spanEnd = built.spannable.getSpanEnd(span)

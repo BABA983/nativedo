@@ -10,6 +10,7 @@ import io.github.baba983.nativedo.core.model.TopicSummary
 import io.github.baba983.nativedo.core.model.UserProfile
 import io.github.baba983.nativedo.core.session.SessionBootstrapClient
 import io.github.baba983.nativedo.core.session.SessionLoggedOutException
+import io.github.baba983.nativedo.core.session.SessionUserSummary
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -26,10 +27,13 @@ class DiscourseApiClient(
             }
         }
 
-    override suspend fun fetchCurrentUsername(): String? =
+    override suspend fun fetchCurrentUser(): SessionUserSummary? =
         runWithSessionBoundary {
-            service.currentSession().currentUser?.username?.takeIf { it.isNotBlank() }
+            service.currentSession().currentUser?.toSessionUserSummary()
         }
+
+    override suspend fun fetchCurrentUsername(): String? =
+        fetchCurrentUser()?.username
 
     suspend fun fetchCsrfToken(): String = runWithSessionBoundary {
         service.csrf().csrf
@@ -91,6 +95,21 @@ class DiscourseApiClient(
             service.reactionUsers(postId).toModel()
         }
 
+    suspend fun fetchPollVoters(
+        postId: Long,
+        pollName: String,
+        page: Int = 1,
+        limit: Int = 50,
+    ): List<PostReactionUsersGroup> =
+        runWithSessionBoundary {
+            service.pollVoters(
+                postId = postId,
+                pollName = pollName,
+                page = page,
+                limit = limit,
+            ).toModel()
+        }
+
     suspend fun toggleReaction(postId: Long, reactionId: String) =
         runWithSessionBoundary {
             val csrfToken = service.csrf().csrf
@@ -126,6 +145,16 @@ class DiscourseApiClient(
                 postId = postId,
                 pollName = pollName,
                 optionIds = optionIds,
+                csrfToken = csrfToken,
+            ).close()
+        }
+
+    suspend fun removePollVote(postId: Long, pollName: String) =
+        runWithSessionBoundary {
+            val csrfToken = service.csrf().csrf
+            service.removePollVote(
+                postId = postId,
+                pollName = pollName,
                 csrfToken = csrfToken,
             ).close()
         }

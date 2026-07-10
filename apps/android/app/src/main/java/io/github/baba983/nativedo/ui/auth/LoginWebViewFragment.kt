@@ -16,11 +16,16 @@ import android.widget.ProgressBar
 import io.github.baba983.nativedo.NativeDoApp
 import io.github.baba983.nativedo.R
 import io.github.baba983.nativedo.core.di.AppContainer
+import io.github.baba983.nativedo.core.network.NetworkJson
 import io.github.baba983.nativedo.core.session.AppSessionState
+import io.github.baba983.nativedo.core.session.SessionUserSummary
 import org.telegram.ui.ActionBar.BackDrawable
 import org.telegram.ui.ActionBar.BaseFragment
 import org.telegram.ui.ActionBar.Theme
 import org.telegram.ui.Components.LayoutHelper
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -28,41 +33,89 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import io.github.baba983.nativedo.core.web.DISCOURSE_ASSETS_ICONS_SCRIPT
+import io.github.baba983.nativedo.core.web.decodeJavascriptString
+import io.github.baba983.nativedo.core.web.isDiscourseSameOrigin
+import io.github.baba983.nativedo.core.web.saveDiscourseSvgSpriteMarkup
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.serialization.json.Json
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import kotlin.coroutines.resume
 
 private const val LOGIN_COOKIE_READY_MAX_ATTEMPTS = 20
 private const val LOGIN_COOKIE_READY_DELAY_MILLIS = 500L
-private const val CURRENT_USERNAME_SCRIPT = """
+private const val CURRENT_USER_SCRIPT = """
     (function() {
+      function normalizeUser(currentUser) {
+        if (!currentUser) {
+          return null;
+        }
+        if (typeof currentUser === 'string') {
+          try {
+            currentUser = JSON.parse(currentUser);
+          } catch (error) {
+            return null;
+          }
+        }
+        var username = currentUser.username || '';
+        if (!username) {
+          return null;
+        }
+        return {
+          username: username,
+          name: currentUser.name || '',
+          avatar_template: currentUser.avatar_template || ''
+        };
+      }
       var meta = document.querySelector('meta[name="current-username"]');
-      if (meta && meta.content) {
-        return meta.content;
-      }
+      var metaUsername = meta && meta.content || '';
       var preloaded = document.querySelector('#data-preloaded');
-      if (!preloaded) {
-        return '';
-      }
+      var user = null;
       try {
         var payload = JSON.parse(preloaded.getAttribute('data-preloaded') || '{}');
-        var currentUser = payload.currentUser;
-        if (typeof currentUser === 'string') {
-          currentUser = JSON.parse(currentUser);
-        }
-        return currentUser && currentUser.username || '';
+        user = normalizeUser(payload.currentUser);
       } catch (error) {
+      }
+      if (!user && metaUsername) {
+        user = {
+          username: metaUsername,
+          name: '',
+          avatar_template: ''
+        };
+      }
+      if (!user) {
         return '';
       }
+      return JSON.stringify(user);
     })();
 """
-private const val DISCOURSE_ASSETS_ICONS_SCRIPT = """
-    (function() {
-      var icons = document.querySelector('body > discourse-assets > discourse-assets-icons, discourse-assets-icons, #discourse-assets-icons');
-      return icons ? icons.innerHTML : '';
-    })();
-"""
+
+@Serializable
+private data class LoginCurrentUserPayload(
+    val username: String = "",
+    val name: String = "",
+    @SerialName("avatar_template")
+    val avatarTemplate: String = "",
+) {
+    fun toSessionUserSummary(): SessionUserSummary? {
+        val normalizedUsername = username.takeIf { it.isNotBlank() } ?: return null
+        return SessionUserSummary(
+            username = normalizedUsername,
+            displayName = name.takeIf { it.isNotBlank() } ?: normalizedUsername,
+            avatarTemplate = avatarTemplate,
+        )
+    }
+}
+
+internal fun decodeCurrentUserPayload(rawValue: String?): SessionUserSummary? {
+    val payload = decodeJavascriptString(rawValue).trim()
+    if (payload.isBlank()) {
+        return null
+    }
+    return runCatching {
+        NetworkJson.instance.decodeFromString<LoginCurrentUserPayload>(payload)
+            .toSessionUserSummary()
+    }.getOrNull()
+}
 
 class LoginWebViewFragment : BaseFragment() {
     private val fragmentScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -196,21 +249,21 @@ class LoginWebViewFragment : BaseFragment() {
         webView: WebView,
         currentUrl: String,
     ) {
-        if (!isSameOrigin(currentUrl = currentUrl, baseUrl = appContainer.baseUrl)) {
+        if (!isDiscourseSameOrigin(currentUrl = currentUrl, baseUrl = appContainer.baseUrl)) {
             return
         }
         webView.evaluateJavascript(DISCOURSE_ASSETS_ICONS_SCRIPT) { rawValue ->
-            val markup = decodeJavascriptString(rawValue).trim()
-            if (markup.isNotBlank()) {
-                appContainer.svgSpriteStore.save(markup)
-            }
+            saveDiscourseSvgSpriteMarkup(
+                appContainer.svgSpriteStore,
+                decodeJavascriptString(rawValue),
+            )
         }
     }
 
     private fun startLoginCompletion(webView: WebView, currentUrl: String) {
         restoreJob = fragmentScope.launch {
-            val username = if (isSameOrigin(currentUrl, appContainer.baseUrl)) {
-                webView.readCurrentUsername().takeIf { it.isNotBlank() }
+            val currentUser = if (isDiscourseSameOrigin(currentUrl, appContainer.baseUrl)) {
+                webView.readCurrentUser()
             } else {
                 null
             }
@@ -219,8 +272,12 @@ class LoginWebViewFragment : BaseFragment() {
                     appContainer.cookieSyncBridge.hasAuthenticatedCookiesInWebView(appContainer.baseUrl)
                 },
                 completeLogin = {
-                    if (username != null) {
-                        appContainer.sessionCoordinator.completeLoginFromWebViewWithKnownUsername(username)
+                    if (currentUser != null) {
+                        appContainer.sessionCoordinator.completeLoginFromWebViewWithKnownUsername(
+                            username = currentUser.username,
+                            displayName = currentUser.displayName,
+                            avatarTemplate = currentUser.avatarTemplate,
+                        )
                     } else {
                         appContainer.sessionCoordinator.completeLoginFromWebView()
                     }
@@ -245,17 +302,9 @@ internal fun shouldAttemptLoginSessionRestore(
         return false
     }
     val current = currentUrl.toHttpUrlOrNull() ?: return false
-    return isSameOrigin(currentUrl = currentUrl, baseUrl = baseUrl) &&
+    return isDiscourseSameOrigin(currentUrl = currentUrl, baseUrl = baseUrl) &&
         current.encodedPath != "/login" &&
         !current.encodedPath.startsWith("/login/")
-}
-
-private fun isSameOrigin(currentUrl: String, baseUrl: String): Boolean {
-    val current = currentUrl.toHttpUrlOrNull() ?: return false
-    val base = baseUrl.toHttpUrlOrNull() ?: return false
-    return current.scheme == base.scheme &&
-        current.host == base.host &&
-        current.port == base.port
 }
 
 internal suspend fun awaitAuthenticatedSession(
@@ -275,20 +324,10 @@ internal suspend fun awaitAuthenticatedSession(
     return false
 }
 
-internal fun decodeJavascriptString(rawValue: String?): String {
-    val normalized = rawValue.orEmpty()
-    if (normalized.isBlank() || normalized == "null") {
-        return ""
-    }
-    return runCatching {
-        Json.decodeFromString<String>(normalized)
-    }.getOrDefault("")
-}
-
-private suspend fun WebView.readCurrentUsername(): String = suspendCancellableCoroutine { continuation ->
-    evaluateJavascript(CURRENT_USERNAME_SCRIPT) { rawValue ->
+private suspend fun WebView.readCurrentUser(): SessionUserSummary? = suspendCancellableCoroutine { continuation ->
+    evaluateJavascript(CURRENT_USER_SCRIPT) { rawValue ->
         if (continuation.isActive) {
-            continuation.resume(decodeJavascriptString(rawValue).trim())
+            continuation.resume(decodeCurrentUserPayload(rawValue))
         }
     }
 }

@@ -241,6 +241,67 @@ class DiscourseApiClientTest {
     }
 
     @Test
+    fun fetchPollVotersMapsOptionGroups() = runTest {
+        server.enqueue(
+            jsonResponse(
+                """
+                {
+                  "voters": {
+                    "option-a": [
+                      {
+                        "id": 356,
+                        "username": "baba",
+                        "name": "Baba",
+                        "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png"
+                      }
+                    ]
+                  }
+                }
+                """.trimIndent(),
+            ),
+        )
+
+        val groups = client.fetchPollVoters(postId = 1001L, pollName = "frontend")
+
+        assertThat(groups).hasSize(1)
+        assertThat(groups.single().id).isEqualTo("option-a")
+        assertThat(groups.single().users.single().username).isEqualTo("baba")
+        assertThat(server.takeRequest().path)
+            .isEqualTo("/polls/voters.json?post_id=1001&poll_name=frontend&page=1&limit=50")
+    }
+
+    @Test
+    fun fetchPollVotersSupportsNestedRankedChoiceUserPayload() = runTest {
+        server.enqueue(
+            jsonResponse(
+                """
+                {
+                  "voters": {
+                    "option-a": [
+                      {
+                        "user": {
+                          "id": 356,
+                          "username": "baba",
+                          "name": "Baba",
+                          "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png"
+                        }
+                      }
+                    ]
+                  }
+                }
+                """.trimIndent(),
+            ),
+        )
+
+        val groups = client.fetchPollVoters(postId = 1001L, pollName = "frontend")
+
+        assertThat(groups).hasSize(1)
+        assertThat(groups.single().id).isEqualTo("option-a")
+        assertThat(groups.single().users.single().username).isEqualTo("baba")
+        assertThat(groups.single().users.single().displayName).isEqualTo("Baba")
+    }
+
+    @Test
     fun toggleReactionFetchesCsrfAndSendsHeader() = runTest {
         server.enqueue(jsonResponse("""{"csrf":"csrf-token"}"""))
         server.enqueue(jsonResponse("""{}"""))
@@ -288,6 +349,41 @@ class DiscourseApiClientTest {
     }
 
     @Test
+    fun removePollVoteFetchesCsrfAndSendsDeleteBody() = runTest {
+        server.enqueue(jsonResponse("""{"csrf":"csrf-token"}"""))
+        server.enqueue(jsonResponse("""{}"""))
+
+        client.removePollVote(postId = 20028390L, pollName = "poll")
+
+        assertThat(server.takeRequest().path).isEqualTo("/session/csrf")
+        val removeRequest = server.takeRequest()
+        assertThat(removeRequest.method).isEqualTo("DELETE")
+        assertThat(removeRequest.path).isEqualTo("/polls/vote")
+        assertThat(removeRequest.getHeader("X-CSRF-Token")).isEqualTo("csrf-token")
+        val body = removeRequest.body.readUtf8()
+        assertThat(body).contains("post_id=20028390")
+        assertThat(body).contains("poll_name=poll")
+    }
+
+    @Test
+    fun votePollFetchesCsrfAndSendsPutBody() = runTest {
+        server.enqueue(jsonResponse("""{"csrf":"csrf-token"}"""))
+        server.enqueue(jsonResponse("""{"poll":{},"vote":["option-a"]}"""))
+
+        client.votePoll(postId = 20028390L, pollName = "poll", optionIds = listOf("option-a"))
+
+        assertThat(server.takeRequest().path).isEqualTo("/session/csrf")
+        val voteRequest = server.takeRequest()
+        assertThat(voteRequest.method).isEqualTo("PUT")
+        assertThat(voteRequest.path).isEqualTo("/polls/vote")
+        assertThat(voteRequest.getHeader("X-CSRF-Token")).isEqualTo("csrf-token")
+        val body = voteRequest.body.readUtf8()
+        assertThat(body).contains("post_id=20028390")
+        assertThat(body).contains("poll_name=poll")
+        assertThat(body).contains("options%5B%5D=option-a")
+    }
+
+    @Test
     fun parsesUserProfileFixture() = runTest {
         server.enqueue(jsonResponse(fixture("discourse/user-profile.json")))
 
@@ -306,6 +402,30 @@ class DiscourseApiClientTest {
         assertThat(profile.acceptedAnswers).isEqualTo(18)
         assertThat(profile.primaryGroupName).isEqualTo("battery")
         assertThat(server.takeRequest().path).isEqualTo("/u/baba.json")
+    }
+
+    @Test
+    fun fetchCurrentUser_mapsAvatarTemplateFromSessionCurrent() = runTest {
+        server.enqueue(
+            jsonResponse(
+                """
+                {
+                  "current_user": {
+                    "username": "baba",
+                    "name": "Baba",
+                    "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png"
+                  }
+                }
+                """.trimIndent(),
+            ),
+        )
+
+        val currentUser = client.fetchCurrentUser()
+
+        assertThat(currentUser?.username).isEqualTo("baba")
+        assertThat(currentUser?.displayName).isEqualTo("Baba")
+        assertThat(currentUser?.avatarTemplate).isEqualTo("/user_avatar/linux.do/baba/{size}/1.png")
+        assertThat(server.takeRequest().path).isEqualTo("/session/current.json")
     }
 
     @Test

@@ -32,6 +32,13 @@ open class TopicRepository protected constructor() {
         client.fetchReactionUsers(postId = postId)
     }
 
+    open suspend fun loadPollVoters(
+        postId: Long,
+        pollName: String,
+    ): Result<List<PostReactionUsersGroup>> = runCatching {
+        client.fetchPollVoters(postId = postId, pollName = pollName)
+    }
+
     open suspend fun toggleReaction(postId: Long, reactionId: String): Result<Unit> = runCatching {
         client.toggleReaction(postId = postId, reactionId = reactionId)
     }
@@ -42,5 +49,9 @@ open class TopicRepository protected constructor() {
 
     open suspend fun votePoll(postId: Long, pollName: String, optionIds: List<String>): Result<Unit> = runCatching {
         client.votePoll(postId = postId, pollName = pollName, optionIds = optionIds)
+    }
+
+    open suspend fun removePollVote(postId: Long, pollName: String): Result<Unit> = runCatching {
+        client.removePollVote(postId = postId, pollName = pollName)
     }
 }

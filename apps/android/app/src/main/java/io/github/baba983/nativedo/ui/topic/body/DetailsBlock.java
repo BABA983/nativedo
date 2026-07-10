@@ -12,6 +12,7 @@ import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
+import android.graphics.drawable.Drawable;
 import android.text.StaticLayout;
 import android.text.TextPaint;
 import android.text.TextUtils;
@@ -38,10 +39,8 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
 
     static final float TITLE_TEXT_X_DP = 44f + 6f;
     static final float MIN_HEADER_HEIGHT_DP = 39f;
+    static final float CHILD_CONTENT_LEFT_DP = 18f;
     static final float CHILD_LEVEL_INSET_DP = 14f;
-    static final float LEVEL_LINE_LEFT_DP = 18f;
-    static final float LEVEL_LINE_RIGHT_DP = 20f;
-    static final float CHILD_TEXT_INSET_AFTER_LINE_DP = 14f;
     static final float CHILD_RIGHT_INSET_DP = 18f;
     static final float TITLE_WIDTH_INSET_DP = 36f + 16f;
     static final float TITLE_BASELINE_EXTRA_HEIGHT_DP = 21f;
@@ -64,10 +63,23 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
         }
     }
 
-    private final class DetailsBlockView extends ViewGroup {
+    private final class DetailsBlockView extends ViewGroup implements Drawable.Callback {
         DetailsBlockView(android.content.Context context) {
             super(context);
             setWillNotDraw(false);
+        }
+
+        @Override
+        public void invalidateDrawable(Drawable drawable) {
+            invalidate();
+        }
+
+        @Override
+        public void scheduleDrawable(Drawable drawable, Runnable what, long when) {
+        }
+
+        @Override
+        public void unscheduleDrawable(Drawable drawable, Runnable what) {
         }
 
         @Override
@@ -82,7 +94,7 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
 
         @Override
         protected void onDraw(Canvas canvas) {
-            drawDetails(canvas, getMeasuredWidth(), true);
+            drawDetails(canvas, getMeasuredWidth(), true, true);
         }
 
         @Override
@@ -112,7 +124,6 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
     private final TextPaint titlePaint;
     private final PostBodyTextBuilder textBuilder;
     private final Paint dividerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint levelLinePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF rect = new RectF();
     private final ArrayList<SpoilerEffect> titleSpoilers = new ArrayList<>();
     private final Stack<SpoilerEffect> titleSpoilersPool = new Stack<>();
@@ -156,7 +167,6 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
         titlePaint.setColor(context.getTextColor());
         textBuilder = new PostBodyTextBuilder(context);
         dividerPaint.setColor(context.getDividerColor());
-        levelLinePaint.setColor(levelLineColor());
         touchSlop = ViewConfiguration.get(context.getHost().getContext()).getScaledTouchSlop();
     }
 
@@ -202,13 +212,14 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
 
     @Override
     public void draw(Canvas canvas, int parentWidth) {
-        drawDetails(canvas, parentWidth, false);
+        drawDetails(canvas, parentWidth, false, true);
     }
 
     @Override
     public View embeddedView() {
         if (detailsBlockView == null) {
             detailsBlockView = new DetailsBlockView(context.getHost().getContext());
+            arrow.setCallback(detailsBlockView);
             addEmbeddedChildren(detailsBlockView);
         }
         return detailsBlockView;
@@ -221,13 +232,19 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
     }
 
     private void drawDetails(Canvas canvas, int parentWidth, boolean skipEmbeddedChildren) {
+        drawDetails(canvas, parentWidth, skipEmbeddedChildren, false);
+    }
+
+    private void drawDetails(Canvas canvas, int parentWidth, boolean skipEmbeddedChildren, boolean drawArrow) {
         if (textLayout == null) {
             return;
         }
-        canvas.save();
-        canvas.translate(arrowLeftPx(), (headerHeight - arrowSizePx() - 1) / 2f);
-        arrow.draw(canvas);
-        canvas.restore();
+        if (drawArrow) {
+            canvas.save();
+            canvas.translate(arrowLeftPx(), (headerHeight - arrowSizePx() - 1) / 2f);
+            arrow.draw(canvas);
+            canvas.restore();
+        }
 
         canvas.save();
         canvas.translate(titleTextXPx(), textY);
@@ -240,16 +257,6 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
 
         if (!currentBlock.open) {
             return;
-        }
-        int childrenBottom = measuredHeight;
-        if (!childLayout.blocks.isEmpty()) {
-            canvas.drawRect(
-                    levelLineLeftPx(),
-                    headerHeight,
-                    levelLineRightPx(),
-                    childrenBottom,
-                    levelLinePaint
-            );
         }
         drawChildren(canvas, childLayout, headerHeight, measuredWidth, skipEmbeddedChildren);
     }
@@ -383,7 +390,6 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
         arrow.setColor(context.getSecondaryTextColor());
         titlePaint.setColor(context.getTextColor());
         dividerPaint.setColor(context.getDividerColor());
-        levelLinePaint.setColor(levelLineColor());
         for (PostBodyBlock child : childLayout.blocks) {
             child.applyTheme();
         }
@@ -552,7 +558,7 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
         for (int i = 0; i < layout.blocks.size(); i++) {
             PostBodyBlock child = layout.blocks.get(i);
             int childLeft = detailsChildLeft(child);
-            int childWidth = Math.max(maxWidth - childLeft - childRightInsetPx(), AndroidUtilities.dp(120f));
+            int childWidth = detailsChildWidth(maxWidth, child, childLeft);
             layout.blockLefts[i] = childLeft;
             layout.blockTops[i] = y;
             layout.blockWidths[i] = childWidth;
@@ -564,6 +570,9 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
     }
 
     private static int detailsChildLeft(PostBodyBlock child) {
+        if (usesFullWidthDetailsChildRow(child)) {
+            return 0;
+        }
         int inset = Math.max(child.horizontalInsetPx(), 0);
         if (inset > 0) {
             return childLevelInsetPx() + inset;
@@ -571,7 +580,19 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
         if ("QuoteBlock".equals(child.getClass().getSimpleName()) || "CalloutBlock".equals(child.getClass().getSimpleName())) {
             return childLevelInsetPx();
         }
-        return childTextLeftPx();
+        return childContentLeftPx();
+    }
+
+    private static int detailsChildWidth(int maxWidth, PostBodyBlock child, int childLeft) {
+        if (usesFullWidthDetailsChildRow(child)) {
+            return Math.max(maxWidth - childRightInsetPx(), AndroidUtilities.dp(120f));
+        }
+        return Math.max(maxWidth - childLeft - childRightInsetPx(), AndroidUtilities.dp(120f));
+    }
+
+    /** ArticleViewer BlockPreformattedCell uses the full article row width inside details, not the dp(32) text inset. */
+    static boolean usesFullWidthDetailsChildRow(PostBodyBlock child) {
+        return "CodeBlock".equals(child.getClass().getSimpleName());
     }
 
     static int titleTextXPx() {
@@ -590,24 +611,8 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
         return AndroidUtilities.dp(CHILD_LEVEL_INSET_DP);
     }
 
-    static int levelLineLeftPx() {
-        return AndroidUtilities.dp(LEVEL_LINE_LEFT_DP);
-    }
-
-    static int levelLineRightPx() {
-        return AndroidUtilities.dp(LEVEL_LINE_RIGHT_DP);
-    }
-
-    static int levelLineColor() {
-        return Theme.getColor(Theme.key_chat_inReplyLine);
-    }
-
-    static int childTextInsetAfterLinePx() {
-        return AndroidUtilities.dp(CHILD_TEXT_INSET_AFTER_LINE_DP);
-    }
-
-    static int childTextLeftPx() {
-        return levelLineLeftPx() + childTextInsetAfterLinePx();
+    static int childContentLeftPx() {
+        return AndroidUtilities.dp(CHILD_CONTENT_LEFT_DP);
     }
 
     static int childRightInsetPx() {

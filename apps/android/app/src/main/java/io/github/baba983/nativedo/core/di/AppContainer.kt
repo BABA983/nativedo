@@ -24,6 +24,7 @@ import io.github.baba983.nativedo.core.storage.SharedPreferencesCookieStorePersi
 import io.github.baba983.nativedo.core.storage.SharedPreferencesSessionStorePersistence
 import io.github.baba983.nativedo.core.storage.SharedPreferencesSvgSpriteStorePersistence
 import io.github.baba983.nativedo.core.storage.SvgSpriteStore
+import io.github.baba983.nativedo.core.web.DiscourseSvgSpriteLoader
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -59,6 +60,15 @@ class AppContainer(
         baseUrl = baseUrl,
         cookieStore = cookieStore,
     )
+    val discourseSvgSpriteLoader: DiscourseSvgSpriteLoader? = appContext?.let { context ->
+        DiscourseSvgSpriteLoader(
+            appContext = context,
+            baseUrl = baseUrl,
+            userAgent = this.userAgent,
+            cookieSyncBridge = cookieSyncBridge,
+            svgSpriteStore = svgSpriteStore,
+        )
+    }
 
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .cookieJar(PersistentCookieJar(cookieStore))

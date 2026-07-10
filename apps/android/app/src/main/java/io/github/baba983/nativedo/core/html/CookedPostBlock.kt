@@ -6,6 +6,12 @@ internal sealed interface CookedPostBlock {
     data class Quote(
         val title: String?,
         val titleHtml: String? = null,
+        /** Resolved absolute URL for Discourse `.title img.avatar`, when present. */
+        val titleAvatarUrl: String? = null,
+        val titleCategoryName: String? = null,
+        val titleCategoryColor: String? = null,
+        val titleCategoryTextColor: String? = null,
+        val titleCategoryHref: String? = null,
         val html: String,
         val children: List<CookedPostBlock> = emptyList(),
         val sourceTopicId: Long? = null,
@@ -19,6 +25,8 @@ internal sealed interface CookedPostBlock {
         val color: String,
         val html: String,
         val children: List<CookedPostBlock> = emptyList(),
+        val collapsible: Boolean = false,
+        val defaultExpanded: Boolean = true,
     ) : CookedPostBlock
     data class Code(val code: String) : CookedPostBlock
     data class ListItem(
@@ -94,6 +102,10 @@ internal sealed interface CookedPostBlock {
         val status: String?,
         val voters: Int?,
         val options: List<PollOption>,
+        val results: String? = null,
+        val publicPoll: Boolean? = null,
+        val chartType: String? = null,
+        val title: String? = null,
     ) : CookedPostBlock
 
     data class Details(

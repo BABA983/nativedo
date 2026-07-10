@@ -48,6 +48,53 @@ class SessionCoordinatorTest {
     }
 
     @Test
+    fun start_restoresCurrentUserAvatarFromSessionEndpoint() = runTest {
+        val cookieStore = CookieStore()
+        cookieStore.save(
+            baseUrl.toHttpUrl(),
+            listOf(
+                Cookie.Builder()
+                    .name("_t")
+                    .value("auth_token")
+                    .domain("linux.do")
+                    .path("/")
+                    .build(),
+            ),
+        )
+        val sessionStore = SessionStore()
+        val coordinator = SessionCoordinator(
+            cookieStore = cookieStore,
+            sessionStore = sessionStore,
+            apiClient = FakeSessionBootstrapClient(
+                currentUser = SessionUserSummary(
+                    username = "baba",
+                    displayName = "Baba",
+                    avatarTemplate = "/user_avatar/linux.do/baba/{size}/1.png",
+                ),
+            ),
+            now = { 88L },
+        )
+
+        coordinator.start()
+
+        val snapshot = sessionStore.snapshot()
+        assertThat(snapshot).isEqualTo(
+            SessionSnapshot(
+                username = "baba",
+                displayName = "Baba",
+                avatarTemplate = "/user_avatar/linux.do/baba/{size}/1.png",
+                lastValidatedAt = 88L,
+            ),
+        )
+        assertThat(coordinator.sessionState.value).isEqualTo(
+            AppSessionState.Authenticated(
+                snapshot = snapshot!!,
+                freshness = SessionFreshness.Verified,
+            ),
+        )
+    }
+
+    @Test
     fun startupWithStaleCookiesAndNoCache_marksRecoveryFailedAndClearsCookies() = runTest {
         // A bootstrap response with no current-user could be a Cloudflare
         // challenge or a transient parse miss; on startup we still wipe the
@@ -317,6 +364,44 @@ class SessionCoordinatorTest {
     }
 
     @Test
+    fun completeLoginFromWebViewWithKnownUsername_usesWebViewProfilePayload() = runTest {
+        val cookieStore = CookieStore()
+        val bridge = CookieSyncBridge(
+            baseUrl = baseUrl,
+            cookieStore = cookieStore,
+            readCookieHeader = { "_t=auth_token" },
+            writeCookieToWebView = { _, _ -> },
+            flushCookies = {},
+            clearCookies = { onComplete -> onComplete?.invoke() },
+        )
+        val coordinator = SessionCoordinator(
+            cookieStore = cookieStore,
+            sessionStore = SessionStore(),
+            apiClient = FakeSessionBootstrapClient(currentUsernameError = SessionLoggedOutException()),
+            cookieSyncBridge = bridge,
+            now = { 100L },
+        )
+
+        coordinator.completeLoginFromWebViewWithKnownUsername(
+            username = "baba",
+            displayName = "Baba",
+            avatarTemplate = "/user_avatar/linux.do/baba/{size}/1.png",
+        )
+
+        assertThat(coordinator.sessionState.value).isEqualTo(
+            AppSessionState.Authenticated(
+                snapshot = SessionSnapshot(
+                    username = "baba",
+                    displayName = "Baba",
+                    avatarTemplate = "/user_avatar/linux.do/baba/{size}/1.png",
+                    lastValidatedAt = 100L,
+                ),
+                freshness = SessionFreshness.Verified,
+            ),
+        )
+    }
+
+    @Test
     fun completeLoginFromWebViewWithKnownUsername_keepsCachedDisplayNameAndAvatarWhenUsernameMatches() = runTest {
         val cookieStore = CookieStore()
         val cachedSnapshot = SessionSnapshot(
@@ -375,12 +460,20 @@ class SessionCoordinatorTest {
     }
 
     private class FakeSessionBootstrapClient(
+        private val currentUser: SessionUserSummary? = null,
         private val currentUsername: String? = null,
         private val bootstrapUsername: String? = null,
         private val currentUsernameError: Throwable? = null,
     ) : SessionBootstrapClient {
         override suspend fun fetchBootstrap(): ParsedBootstrap =
             ParsedBootstrap(currentUsername = bootstrapUsername)
+
+        override suspend fun fetchCurrentUser(): SessionUserSummary? {
+            currentUsernameError?.let { throw it }
+            return currentUser ?: currentUsername?.let { username ->
+                SessionUserSummary(username = username)
+            }
+        }
 
         override suspend fun fetchCurrentUsername(): String? {
             currentUsernameError?.let { throw it }

@@ -27,7 +27,7 @@ abstract class TextLayoutBlock implements PostBodyBlock {
 
     private final String html;
     private final PostBodyBuildContext context;
-    private final TextPaint paint;
+    protected final TextPaint paint;
     private final PostBodyBlockState inlineState;
     private final String inlineSpoilerStateKey;
     private final PostBodyTextBuilder textBuilder;
@@ -84,6 +84,10 @@ abstract class TextLayoutBlock implements PostBodyBlock {
         return PostBodyBlock.DEFAULT_HORIZONTAL_INSET;
     }
 
+    protected StaticLayout buildLayout(CharSequence spannable, int width) {
+        return ArticleTextLayout.builder(spannable, paint, width).build();
+    }
+
     @Override
     public int measure(int maxWidthPx) {
         int width = Math.max(maxWidthPx, 1);
@@ -96,8 +100,7 @@ abstract class TextLayoutBlock implements PostBodyBlock {
         }
         BuiltText text = textBuilder.build(html, paint);
         builtText = text;
-        layout = ArticleTextLayout.builder(text.getSpannable(), paint, width)
-                .build();
+        layout = buildLayout(text.getSpannable(), width);
         SpoilerTextLayout.collect(context.getHost(), layout, spoilersPool, spoilers, spoilersRevealed);
         if (context.getHost().isAttachedToWindow()) {
             handle = text.attach(context.getHost());

@@ -68,6 +68,11 @@ public class MainTabsActivity extends ViewPagerActivity implements Theme.ThemeDe
     private float tabsVisibilityFactor = 1f;
     private ValueAnimator tabsVisibilityAnimator;
 
+    private boolean hasProfileAvatar;
+    private String profileAvatarUrl;
+    private String profileAvatarFilter;
+    private String profileAvatarName;
+
     @Override
     public View createView(Context context) {
         super.createView(context);
@@ -108,6 +113,7 @@ public class MainTabsActivity extends ViewPagerActivity implements Theme.ThemeDe
             tabsView.addView(tab);
         }
         selectTab(viewPager.getCurrentPosition(), false);
+        applyProfileAvatar();
 
         tabsViewBackground = new TabsBackgroundDrawable();
         tabsView.setBackground(tabsViewBackground);
@@ -279,6 +285,40 @@ public class MainTabsActivity extends ViewPagerActivity implements Theme.ThemeDe
             for (GlassTabView tab : tabs) {
                 tab.updateColors();
             }
+        }
+    }
+
+    /**
+     * Render the signed-in account's avatar on the profile tab. Called from
+     * MainActivity as the session state changes. Safe to call before the view is
+     * created — the request is stored and applied in {@link #createView(Context)}.
+     */
+    public void setProfileAvatar(String url, String filter, String name) {
+        hasProfileAvatar = true;
+        profileAvatarUrl = url;
+        profileAvatarFilter = filter;
+        profileAvatarName = name;
+        applyProfileAvatar();
+    }
+
+    public void clearProfileAvatar() {
+        hasProfileAvatar = false;
+        profileAvatarUrl = null;
+        profileAvatarFilter = null;
+        profileAvatarName = null;
+        if (tabs != null) {
+            tabs[POSITION_PROFILE].clearAvatar();
+        }
+    }
+
+    private void applyProfileAvatar() {
+        if (tabs == null) {
+            return;
+        }
+        if (hasProfileAvatar) {
+            tabs[POSITION_PROFILE].setAvatar(profileAvatarUrl, profileAvatarFilter, profileAvatarName);
+        } else {
+            tabs[POSITION_PROFILE].clearAvatar();
         }
     }
 

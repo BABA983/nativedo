@@ -13,6 +13,7 @@ import io.github.baba983.nativedo.core.model.TopicDetail
 import io.github.baba983.nativedo.core.model.TopicListPage
 import io.github.baba983.nativedo.core.model.TopicSummary
 import io.github.baba983.nativedo.core.model.UserProfile
+import io.github.baba983.nativedo.core.session.SessionUserSummary
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
@@ -28,10 +29,12 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.ResponseBody
+import org.jsoup.Jsoup
 import retrofit2.http.DELETE
 import retrofit2.http.Field
 import retrofit2.http.FormUrlEncoded
 import retrofit2.http.GET
+import retrofit2.http.HTTP
 import retrofit2.http.Header
 import retrofit2.http.Headers
 import retrofit2.http.Path
@@ -114,13 +117,29 @@ interface DiscourseApiService {
     ): ResponseBody
 
     @FormUrlEncoded
-    @POST("polls/vote")
+    @PUT("polls/vote")
     suspend fun votePoll(
         @Field("post_id") postId: Long,
         @Field("poll_name") pollName: String,
         @Field("options[]") optionIds: List<String>,
         @Header("X-CSRF-Token") csrfToken: String,
     ): ResponseBody
+
+    @FormUrlEncoded
+    @HTTP(method = "DELETE", path = "polls/vote", hasBody = true)
+    suspend fun removePollVote(
+        @Field("post_id") postId: Long,
+        @Field("poll_name") pollName: String,
+        @Header("X-CSRF-Token") csrfToken: String,
+    ): ResponseBody
+
+    @GET("polls/voters.json")
+    suspend fun pollVoters(
+        @Query("post_id") postId: Long,
+        @Query("poll_name") pollName: String,
+        @Query("page") page: Int = 1,
+        @Query("limit") limit: Int = 50,
+    ): PollVotersResponseDto
 
     @GET("emojis.json")
     suspend fun emojis(): EmojiGroupsDto
@@ -369,6 +388,31 @@ data class PostDto(
     val bookmarked: Boolean? = null,
     @SerialName("cooked")
     val cookedHtml: String,
+    val polls: List<DiscoursePollDto> = emptyList(),
+    @SerialName("polls_votes")
+    val pollsVotes: Map<String, List<String>> = emptyMap(),
+)
+
+@Serializable
+data class DiscoursePollDto(
+    val name: String,
+    val type: String? = null,
+    val status: String? = null,
+    @SerialName("public")
+    val isPublic: Boolean? = null,
+    val results: String? = null,
+    val voters: Int? = null,
+    @SerialName("chart_type")
+    val chartType: String? = null,
+    val title: String? = null,
+    val options: List<DiscoursePollOptionDto> = emptyList(),
+)
+
+@Serializable
+data class DiscoursePollOptionDto(
+    val id: String,
+    val html: String = "",
+    val votes: Int? = null,
 )
 
 @Serializable
@@ -412,6 +456,33 @@ data class PostReactionUserDto(
     val createdAt: String = "",
 )
 
+@Serializable
+data class PollVotersResponseDto(
+    val voters: Map<String, List<PollVoterDto>> = emptyMap(),
+)
+
+@Serializable
+data class PollVoterDto(
+    val id: Long? = null,
+    val username: String = "",
+    @SerialName("name")
+    val displayName: String? = null,
+    @SerialName("avatar_template")
+    val avatarTemplate: String = "",
+    val title: String? = null,
+    val user: PollVoterUserDto? = null,
+)
+
+@Serializable
+data class PollVoterUserDto(
+    val id: Long? = null,
+    val username: String = "",
+    @SerialName("name")
+    val displayName: String? = null,
+    @SerialName("avatar_template")
+    val avatarTemplate: String = "",
+)
+
 typealias EmojiGroupsDto = Map<String, List<EmojiDto>>
 
 @Serializable
@@ -430,7 +501,19 @@ data class CurrentSessionResponseDto(
 @Serializable
 data class CurrentUserDto(
     val username: String = "",
+    val name: String = "",
+    @SerialName("avatar_template")
+    val avatarTemplate: String = "",
 )
+
+internal fun CurrentUserDto.toSessionUserSummary(): SessionUserSummary? {
+    val normalizedUsername = username.takeIf { it.isNotBlank() } ?: return null
+    return SessionUserSummary(
+        username = normalizedUsername,
+        displayName = name.takeIf { it.isNotBlank() } ?: normalizedUsername,
+        avatarTemplate = avatarTemplate,
+    )
+}
 
 @Serializable
 data class UserProfileResponseDto(
@@ -542,6 +625,32 @@ internal fun ReactionUsersResponseDto.toModel(): List<PostReactionUsersGroup> =
         )
     }
 
+internal fun PollVotersResponseDto.toModel(): List<PostReactionUsersGroup> =
+    voters.map { (optionId, voters) ->
+        val users = voters.mapNotNull { voter -> voter.toPostReactionUser() }
+            .distinctBy { user -> user.username }
+        PostReactionUsersGroup(
+            id = optionId,
+            count = users.size,
+            users = users,
+        )
+    }.filter { group -> group.id.isNotBlank() }
+
+internal fun PollVoterDto.toPostReactionUser(): PostReactionUser? {
+    val resolvedUsername = user?.username?.takeIf { it.isNotBlank() } ?: username.takeIf { it.isNotBlank() }
+        ?: return null
+    val resolvedDisplayName = user?.displayName?.takeIf { it.isNotBlank() }
+        ?: displayName?.takeIf { it.isNotBlank() }
+        ?: resolvedUsername
+    val resolvedAvatar = user?.avatarTemplate?.takeIf { it.isNotBlank() }
+        ?: avatarTemplate
+    return PostReactionUser(
+        username = resolvedUsername,
+        displayName = resolvedDisplayName,
+        avatarTemplate = resolvedAvatar,
+    )
+}
+
 internal fun TopicListResponseDto.toModel(): TopicListPage = TopicListPage(
     topics = topicList.topics.map { topic ->
         topic.toTopicSummary(
@@ -636,39 +745,137 @@ internal fun UserProfileResponseDto.toModel(): UserProfile = UserProfile(
 
 internal fun PostDto.toModel(
     emojiCatalog: Map<String, String> = emptyMap(),
-): Post = Post(
-    id = id,
-    postNumber = postNumber,
-    replyToPostNumber = replyToPostNumber,
-    authorUsername = username,
-    authorDisplayName = displayName.orEmpty(),
-    authorAvatarTemplate = avatarTemplate,
-    authorAnimatedAvatarUrl = animatedAvatar.orEmpty(),
-    authorTitle = userTitle.orEmpty(),
-    authorFlairName = flairName.orEmpty(),
-    authorFlairUrl = flairUrl.orEmpty(),
-    authorFlairBgColor = flairBgColor.orEmpty(),
-    authorFlairColor = flairColor.orEmpty(),
-    createdAt = createdAt,
-    updatedAt = updatedAt,
-    editCount = (version - 1).coerceAtLeast(0),
-    currentUserReaction = currentUserReaction?.id,
-    reactionUsersCount = reactionUsersCount,
-    reactions = reactions.map { reaction ->
-        PostReaction(
-            id = reaction.id,
-            count = reaction.count,
-            iconUrl = reaction.icon ?: emojiCatalog[reaction.id],
-            reacted = reaction.id == currentUserReaction?.id,
-        )
-    },
-    isBookmarked = bookmarked == true,
-    cookedHtml = cookedHtml,
-    imageUrls = Regex("<img[^>]+src=\\\"([^\\\"]+)\\\"")
-        .findAll(cookedHtml)
-        .map { match -> match.groupValues[1] }
-        .toList(),
-)
+): Post {
+    val enrichedCookedHtml = cookedHtml.withSerializedPollData(polls, pollsVotes)
+    return Post(
+        id = id,
+        postNumber = postNumber,
+        replyToPostNumber = replyToPostNumber,
+        authorUsername = username,
+        authorDisplayName = displayName.orEmpty(),
+        authorAvatarTemplate = avatarTemplate,
+        authorAnimatedAvatarUrl = animatedAvatar.orEmpty(),
+        authorTitle = userTitle.orEmpty(),
+        authorFlairName = flairName.orEmpty(),
+        authorFlairUrl = flairUrl.orEmpty(),
+        authorFlairBgColor = flairBgColor.orEmpty(),
+        authorFlairColor = flairColor.orEmpty(),
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+        editCount = (version - 1).coerceAtLeast(0),
+        currentUserReaction = currentUserReaction?.id,
+        reactionUsersCount = reactionUsersCount,
+        reactions = reactions.map { reaction ->
+            PostReaction(
+                id = reaction.id,
+                count = reaction.count,
+                iconUrl = reaction.icon ?: emojiCatalog[reaction.id],
+                reacted = reaction.id == currentUserReaction?.id,
+            )
+        },
+        isBookmarked = bookmarked == true,
+        cookedHtml = enrichedCookedHtml,
+        imageUrls = Regex("<img[^>]+src=\\\"([^\\\"]+)\\\"")
+            .findAll(enrichedCookedHtml)
+            .map { match -> match.groupValues[1] }
+            .toList(),
+    )
+}
+
+internal fun String.withSerializedPollData(
+    polls: List<DiscoursePollDto>,
+    pollsVotes: Map<String, List<String>> = emptyMap(),
+): String {
+    if (polls.isEmpty() && pollsVotes.isEmpty()) {
+        return this
+    }
+    val body = Jsoup.parseBodyFragment(this).body()
+    var changed = false
+    if (polls.isEmpty()) {
+        for ((pollName, optionIds) in pollsVotes) {
+            val pollElement = body.select("div.poll")
+                .firstOrNull { element -> element.attr("data-poll-name") == pollName }
+                ?: continue
+            val list = pollElement.selectFirst(".poll-container ul") ?: continue
+            val selectedOptionIds = optionIds.toSet()
+            for (optionElement in list.select("li[data-poll-option-id]")) {
+                val optionId = optionElement.attr("data-poll-option-id")
+                if (optionId in selectedOptionIds) {
+                    optionElement.addClass("chosen")
+                } else {
+                    optionElement.removeClass("chosen")
+                    optionElement.removeClass("selected")
+                }
+                changed = true
+            }
+        }
+        return if (changed) body.html() else this
+    }
+    for (poll in polls) {
+        val pollElement = body.select("div.poll")
+            .firstOrNull { element -> element.attr("data-poll-name") == poll.name }
+            ?: continue
+        poll.type?.takeIf { it.isNotBlank() }?.let { pollElement.attr("data-poll-type", it) }
+        poll.status?.takeIf { it.isNotBlank() }?.let { pollElement.attr("data-poll-status", it) }
+        poll.results?.takeIf { it.isNotBlank() }?.let { pollElement.attr("data-poll-results", it) }
+        poll.isPublic?.let { pollElement.attr("data-poll-public", it.toString()) }
+        poll.chartType?.takeIf { it.isNotBlank() }?.let { pollElement.attr("data-poll-charttype", it) }
+        poll.title?.takeIf { it.isNotBlank() }?.let { pollElement.attr("data-poll-title", it) }
+        val selectedOptionIds = pollsVotes[poll.name].orEmpty().toSet()
+        val container = pollElement.selectFirst(".poll-container") ?: pollElement.appendElement("div").addClass("poll-container")
+        val list = container.selectFirst("ul") ?: container.appendElement("ul")
+        val existingById = list.select("li[data-poll-option-id]")
+            .associateBy { option -> option.attr("data-poll-option-id") }
+        for (optionElement in list.select("li[data-poll-option-id]")) {
+            val optionId = optionElement.attr("data-poll-option-id")
+            if (optionId in selectedOptionIds) {
+                optionElement.addClass("chosen")
+            } else {
+                optionElement.removeClass("chosen")
+                optionElement.removeClass("selected")
+            }
+        }
+        for (option in poll.options) {
+            if (option.id.isBlank()) {
+                continue
+            }
+            val item = existingById[option.id]
+                ?: list.appendElement("li").attr("data-poll-option-id", option.id)
+            item.attr("data-poll-option-id", option.id)
+            if (option.id in selectedOptionIds) {
+                item.addClass("chosen")
+            } else {
+                item.removeClass("chosen")
+                item.removeClass("selected")
+            }
+            val labelElement = item.selectFirst(".poll-option-label")
+                ?: item.prependElement("span").addClass("poll-option-label")
+            if (labelElement.html().isBlank() && option.html.isNotBlank()) {
+                labelElement.html(option.html)
+            }
+            if (option.votes != null) {
+                val votesElement = item.selectFirst(".poll-option-votes, .votes")
+                    ?: item.appendElement("span").addClass("poll-option-votes")
+                votesElement.text(option.votes.toString())
+            }
+        }
+        val totalVoters = poll.voters?.takeIf { it > 0 }
+            ?: poll.options.mapNotNull { it.votes }.sum().takeIf { it > 0 }
+        if (totalVoters != null) {
+            val pollInfo = pollElement.selectFirst(".poll-info")
+                ?: pollElement.appendElement("div").addClass("poll-info")
+            val counts = pollInfo.selectFirst(".poll-info_counts")
+                ?: pollInfo.appendElement("div").addClass("poll-info_counts")
+            val countElement = counts.selectFirst(".poll-info_counts-count")
+                ?: counts.appendElement("div").addClass("poll-info_counts-count")
+            val numberElement = countElement.selectFirst(".info-number")
+                ?: countElement.appendElement("span").addClass("info-number")
+            numberElement.text(totalVoters.toString())
+        }
+        changed = true
+    }
+    return if (changed) body.html() else this
+}
 
 private fun TopicDto.toTopicSummary(
     usersById: Map<Long, TopicListUserDto>,

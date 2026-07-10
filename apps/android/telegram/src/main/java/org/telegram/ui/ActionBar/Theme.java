@@ -55,6 +55,9 @@ public final class Theme {
     public static TextPaint chat_msgTextPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
     public static TextPaint chat_replyNamePaint = new TextPaint(TextPaint.ANTI_ALIAS_FLAG);
     public static TextPaint chat_replyTextPaint = new TextPaint(TextPaint.ANTI_ALIAS_FLAG);
+    public static TextPaint chat_audioPerformerPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+    public static TextPaint chat_instantViewPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+    public static Drawable[] chat_pollCheckDrawable = new Drawable[2];
     public static PathAnimator playPauseAnimator;
     public static Path[] chat_filePath = new Path[2];
     public static Path[] chat_updatePath = new Path[3];
@@ -1153,6 +1156,9 @@ public final class Theme {
         // Load vendored pin icon — mirrors upstream Theme.createDialogsResources().
         dialogs_pinnedDrawable2 = context.getResources().getDrawable(R.drawable.msg_pin_mini).mutate();
         chat_composeShadowDrawable = context.getResources().getDrawable(R.drawable.compose_panel_shadow).mutate();
+        for (int a = 0; a < chat_pollCheckDrawable.length; a++) {
+            chat_pollCheckDrawable[a] = context.getResources().getDrawable(R.drawable.poll_right).mutate();
+        }
         SharedPreferences preferences = applicationContext.getSharedPreferences(THEME_CONFIG, Activity.MODE_PRIVATE);
         ThemeInfo themeInfo = themesDict.get(preferences.getString(THEME_CONFIG_ACTIVE, defaultTheme.getKey()));
         if (themeInfo == null) {
@@ -1180,6 +1186,10 @@ public final class Theme {
         dialogs_timePaint.setTextSize(AndroidUtilities.dp(13));
         dialogs_countTextPaint.setTextSize(AndroidUtilities.dp(13));
         dialogs_countTextPaint.setTypeface(AndroidUtilities.bold());
+        chat_audioTitlePaint.setTextSize(AndroidUtilities.dp(16));
+        chat_audioPerformerPaint.setTextSize(AndroidUtilities.dp(15));
+        chat_instantViewPaint.setTextSize(AndroidUtilities.dp(13));
+        chat_instantViewPaint.setTypeface(AndroidUtilities.bold());
         updateChatMessageTextPaints();
     }
 
@@ -1277,6 +1287,18 @@ public final class Theme {
         setDrawableColorByKey(chat_composeShadowDrawable, key_chat_messagePanelShadow);
         chat_composeBackgroundPaint.setColor(getColor(key_chat_messagePanelBackground));
         dialogs_dividerPaint.setColor(getColor(key_divider));
+        int messageTextColor = getColor(key_chat_messageTextIn);
+        chat_audioTitlePaint.setColor(messageTextColor);
+        chat_audioPerformerPaint.setColor(messageTextColor);
+        chat_audioPerformerPaint.linkColor = getColor(key_chat_messageLinkIn);
+        chat_instantViewPaint.setColor(messageTextColor);
+        int pollAccentColor = getColor(key_chat_inAudioSeekbarFill);
+        chat_docBackPaint.setColor(pollAccentColor);
+        for (int a = 0; a < chat_pollCheckDrawable.length; a++) {
+            if (chat_pollCheckDrawable[a] != null) {
+                setDrawableColor(chat_pollCheckDrawable[a], pollAccentColor);
+            }
+        }
     }
 
     public static ThemeInfo getTheme(String key) {

@@ -31,6 +31,8 @@ public final class FileLog {
     private DispatchQueue logQueue;
     private OutputStreamWriter streamWriter;
     private File currentFile;
+    private File networkFile = null;
+    private File tonlibFile = null;
     private SimpleDateFormat dateFormat;
     private SimpleDateFormat fileDateFormat;
     private boolean initied;
@@ -209,18 +211,24 @@ public final class FileLog {
     }
 
     public static void cleanupLogs() {
+        ensureInitied();
         File dir = AndroidUtilities.getLogsDir();
         if (dir == null) {
             return;
         }
         File[] files = dir.listFiles();
-        if (files == null) {
-            return;
-        }
-        long currentTime = System.currentTimeMillis();
-        for (int a = 0; a < files.length; a++) {
-            File file = files[a];
-            if (getInstance().currentFile != file && currentTime - file.lastModified() > 24 * 60 * 60 * 1000) {
+        if (files != null) {
+            for (int a = 0; a < files.length; a++) {
+                File file = files[a];
+                if (getInstance().currentFile != null && file.getAbsolutePath().equals(getInstance().currentFile.getAbsolutePath())) {
+                    continue;
+                }
+                if (getInstance().networkFile != null && file.getAbsolutePath().equals(getInstance().networkFile.getAbsolutePath())) {
+                    continue;
+                }
+                if (getInstance().tonlibFile != null && file.getAbsolutePath().equals(getInstance().tonlibFile.getAbsolutePath())) {
+                    continue;
+                }
                 file.delete();
             }
         }

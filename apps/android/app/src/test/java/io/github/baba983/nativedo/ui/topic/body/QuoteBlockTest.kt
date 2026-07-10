@@ -17,6 +17,23 @@ class QuoteBlockTest {
     }
 
     @Test
+    fun collapsedTitleUsesSingleLineEllipsisWhenExpandable() {
+        assertThat(QuoteBlock.TITLE_CATEGORY_CHIP_V_GAP_DP).isEqualTo(4f)
+    }
+
+    @Test
+    fun expandChevronGeometry_matchesDetailsBlockSmallArrow() {
+        assertThat(QuoteBlock.titleChevronSizePx()).isEqualTo(AndroidUtilities.dp(13f))
+        assertThat(QuoteBlock.titleChevronHitPx()).isEqualTo(AndroidUtilities.dp(36f))
+    }
+
+    @Test
+    fun titleAvatarGeometry_matchesDiscourse24dpAvatarColumn() {
+        assertThat(QuoteBlock.titleAvatarSizePx()).isEqualTo(AndroidUtilities.dp(24f))
+        assertThat(QuoteBlock.titleAvatarTextGapPx()).isEqualTo(AndroidUtilities.dp(10f))
+    }
+
+    @Test
     fun blockquoteConstants_matchTelegramArticleViewerGeometry() {
         assertThat(QuoteBlock.textTopPx()).isEqualTo(AndroidUtilities.dp(8f))
         assertThat(QuoteBlock.lineLeftPx()).isEqualTo(AndroidUtilities.dp(18f))

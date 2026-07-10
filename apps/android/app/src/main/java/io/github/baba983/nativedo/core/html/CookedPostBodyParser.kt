@@ -8,8 +8,8 @@ import org.jsoup.nodes.Node
 
 internal fun parseCookedPostBody(html: String, baseUrl: String): List<CookedPostBlock> {
     val body = Jsoup.parseBodyFragment(html).body()
-    val raw = parseCookedNodes(body.childNodes())
-    val blocks = coalesceImagesIntoCollage(raw)
+    val raw = parseCookedNodes(body.childNodes(), baseUrl = baseUrl)
+    val blocks = coalescePollHeadings(coalesceImagesIntoCollage(raw))
     return blocks.ifEmpty {
         body.text().takeIf { it.isNotBlank() }?.let { text ->
             listOf(CookedPostBlock.Text("<p>$text</p>"))
@@ -45,6 +45,34 @@ private fun coalesceImagesIntoCollage(blocks: List<CookedPostBlock>): List<Cooke
         }
     }
     return out
+}
+
+// Discourse often emits the poll question as a standalone heading immediately above the poll div.
+private fun coalescePollHeadings(blocks: List<CookedPostBlock>): List<CookedPostBlock> {
+    if (blocks.isEmpty()) return blocks
+    val out = mutableListOf<CookedPostBlock>()
+    var index = 0
+    while (index < blocks.size) {
+        val current = blocks[index]
+        if (current is CookedPostBlock.Poll && current.title.isNullOrBlank() && index > 0) {
+            val previous = blocks[index - 1]
+            if (previous is CookedPostBlock.Heading && previous.level in 2..3) {
+                if (out.isNotEmpty() && out.last() == previous) {
+                    out.removeAt(out.lastIndex)
+                }
+                out += current.copy(title = headingPlainText(previous.html))
+                index++
+                continue
+            }
+        }
+        out += current
+        index++
+    }
+    return out
+}
+
+private fun headingPlainText(html: String): String {
+    return Jsoup.parseBodyFragment(html).body().text().trim()
 }
 
 private fun attachAdjacentImageCaptions(blocks: List<CookedPostBlock>): List<CookedPostBlock> {
@@ -140,7 +168,11 @@ private val blockElementNames = setOf(
     "figure",
 )
 
-private fun parseCookedNodes(nodes: List<Node>, quoteLevel: Int = 0): List<CookedPostBlock> {
+private fun parseCookedNodes(
+    nodes: List<Node>,
+    quoteLevel: Int = 0,
+    baseUrl: String = "",
+): List<CookedPostBlock> {
     val blocks = mutableListOf<CookedPostBlock>()
     val inline = StringBuilder()
     fun flushInline() {
@@ -153,7 +185,7 @@ private fun parseCookedNodes(nodes: List<Node>, quoteLevel: Int = 0): List<Cooke
         if (element != null && element.normalName() in blockElementNames) {
             flushInline()
             if (!element.isCookedNonContentArtifact() && !element.isOneboxPlaceholderBeforeAside(nodes, index)) {
-                blocks += parseCookedElement(element, quoteLevel)
+                blocks += parseCookedElement(element, quoteLevel, baseUrl)
             }
         } else {
             inline.append(node.outerHtml())
@@ -163,14 +195,14 @@ private fun parseCookedNodes(nodes: List<Node>, quoteLevel: Int = 0): List<Cooke
     return blocks
 }
 
-private fun parseCookedElement(element: Element, quoteLevel: Int): List<CookedPostBlock> {
+private fun parseCookedElement(element: Element, quoteLevel: Int, baseUrl: String): List<CookedPostBlock> {
     return when (element.normalName()) {
         "p" -> parseParagraphElement(element)
-        "blockquote" -> parseBlockquoteElement(element, quoteLevel)
-        "aside" -> parseAsideElement(element, quoteLevel)
+        "blockquote" -> parseBlockquoteElement(element, quoteLevel, baseUrl)
+        "aside" -> parseAsideElement(element, quoteLevel, baseUrl)
         "pre" -> listOf(CookedPostBlock.Code((element.selectFirst("code")?.wholeText() ?: element.wholeText()).trimEnd()))
-        "ul", "ol" -> parseListElement(element, quoteLevel)
-        "details" -> parseDetailsElement(element, quoteLevel)
+        "ul", "ol" -> parseListElement(element, quoteLevel, baseUrl)
+        "details" -> parseDetailsElement(element, quoteLevel, baseUrl)
         "h1" -> listOf(CookedPostBlock.Heading(level = 1, html = element.html()))
         "h2" -> listOf(CookedPostBlock.Heading(level = 2, html = element.html()))
         "h3" -> listOf(CookedPostBlock.Heading(level = 3, html = element.html()))
@@ -178,9 +210,9 @@ private fun parseCookedElement(element: Element, quoteLevel: Int): List<CookedPo
         "h5" -> listOf(CookedPostBlock.Heading(level = 5, html = element.html()))
         "h6" -> listOf(CookedPostBlock.Heading(level = 6, html = element.html()))
         "hr" -> listOf(CookedPostBlock.Rule)
-        "table" -> parseTableElement(element, quoteLevel)
-        "div" -> parseDivElement(element, quoteLevel)
-        "figure" -> parseFigureElement(element, quoteLevel)
+        "table" -> parseTableElement(element, quoteLevel, baseUrl)
+        "div" -> parseDivElement(element, quoteLevel, baseUrl)
+        "figure" -> parseFigureElement(element, quoteLevel, baseUrl)
         else -> element.html().takeIf { it.isNotBlank() }?.let { listOf(CookedPostBlock.Text(it)) }.orEmpty()
     }
 }
@@ -207,11 +239,11 @@ private fun parseParagraphElement(element: Element): List<CookedPostBlock> {
     return listOfNotNull(textHtml?.let(CookedPostBlock::Text)) + images
 }
 
-private fun parseBlockquoteElement(element: Element, quoteLevel: Int): List<CookedPostBlock> {
+private fun parseBlockquoteElement(element: Element, quoteLevel: Int, baseUrl: String): List<CookedPostBlock> {
     if (element.hasClass("callout")) {
-        return parseCalloutElement(element, quoteLevel)
+        return parseCalloutElement(element, quoteLevel, baseUrl)
     }
-    val markdownCallout = parseMarkdownCalloutElement(element, quoteLevel)
+    val markdownCallout = parseMarkdownCalloutElement(element, quoteLevel, baseUrl)
     if (markdownCallout != null) {
         return listOf(markdownCallout)
     }
@@ -220,7 +252,7 @@ private fun parseBlockquoteElement(element: Element, quoteLevel: Int): List<Cook
         CookedPostBlock.Quote(
             title = null,
             html = html,
-            children = coalesceImagesIntoCollage(parseCookedNodes(element.childNodes(), quoteLevel + 1)),
+            children = coalesceImagesIntoCollage(parseCookedNodes(element.childNodes(), quoteLevel + 1, baseUrl)),
             level = quoteLevel,
         ),
     )
@@ -229,16 +261,18 @@ private fun parseBlockquoteElement(element: Element, quoteLevel: Int): List<Cook
 private data class MarkdownCalloutHeader(
     val type: String,
     val titleHtml: String?,
+    val collapsible: Boolean = false,
+    val defaultExpanded: Boolean = true,
 )
 
-private fun parseMarkdownCalloutElement(element: Element, quoteLevel: Int): CookedPostBlock.Callout? {
+private fun parseMarkdownCalloutElement(element: Element, quoteLevel: Int, baseUrl: String): CookedPostBlock.Callout? {
     val content = element.clone().apply {
         removeCookedNonContentArtifacts()
     }
     val firstParagraph = content.selectFirst("p") ?: return null
     val header = firstParagraph.extractMarkdownCalloutHeader() ?: return null
     val spec = resolveDiscourseCalloutSpec(header.type)
-    val children = coalesceImagesIntoCollage(parseCookedNodes(content.childNodes(), quoteLevel))
+    val children = coalesceImagesIntoCollage(parseCookedNodes(content.childNodes(), quoteLevel, baseUrl))
     val html = content.html().takeIfHtmlNotBlank()
         ?: children.joinToString(separator = "\n") { child ->
             when (child) {
@@ -256,19 +290,26 @@ private fun parseMarkdownCalloutElement(element: Element, quoteLevel: Int): Cook
         color = spec.color,
         html = html,
         children = children,
+        collapsible = header.collapsible,
+        defaultExpanded = header.defaultExpanded,
     )
 }
 
 private fun Element.extractMarkdownCalloutHeader(): MarkdownCalloutHeader? {
     val html = html()
-    val match = Regex("^\\s*\\[!([A-Za-z][A-Za-z0-9_-]*)](?:\\s*([^<\\n\\r]+))?\\s*(?:<br\\s*/?>)?", RegexOption.IGNORE_CASE)
-        .find(html)
+    val match = Regex(
+        "^\\s*\\[!([A-Za-z][A-Za-z0-9_-]*)]([+\\-])?\\s*([^<\\n\\r]*)?\\s*(?:<br\\s*/?>)?",
+        RegexOption.IGNORE_CASE,
+    ).find(html)
         ?: return null
     val type = match.groupValues.getOrNull(1).orEmpty().lowercase()
     if (type.isBlank()) {
         return null
     }
-    val title = match.groupValues.getOrNull(2)
+    val foldModifier = match.groupValues.getOrNull(2).orEmpty()
+    val title = match.groupValues.getOrNull(3)
+        ?.trim()
+        ?.removePrefix("+")
         ?.trim()
         ?.takeIf { it.isNotBlank() }
     val remainingHtml = html.removeRange(match.range).takeIfHtmlNotBlank()
@@ -277,20 +318,35 @@ private fun Element.extractMarkdownCalloutHeader(): MarkdownCalloutHeader? {
     } else {
         remove()
     }
+    val collapsible = foldModifier.isNotEmpty()
+    val defaultExpanded = foldModifier != "-"
     return MarkdownCalloutHeader(
         type = type,
         titleHtml = title,
+        collapsible = collapsible,
+        defaultExpanded = defaultExpanded,
     )
 }
 
-private fun parseCalloutElement(element: Element, quoteLevel: Int): List<CookedPostBlock> {
+private fun parseCalloutElement(element: Element, quoteLevel: Int, baseUrl: String): List<CookedPostBlock> {
     val titleElement = element.children().firstOrNull { child -> child.hasClass("callout-title") }
         ?: element.selectFirst(".callout-title")
     val titleInner = titleElement?.selectFirst(".callout-title-inner")
-    val titleHtml = titleInner?.html()?.takeIfHtmlNotBlank()
+    val titlePlain = titleInner?.text()?.trim()?.takeIf { it.isNotBlank() }
+        ?.removePrefix("+")
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+    val titleHtml = titlePlain?.let { org.jsoup.nodes.TextNode(it).outerHtml().trim() }
         ?: titleElement?.clone()?.apply {
             select(".callout-icon, .callout-fold").remove()
-        }?.html()?.takeIfHtmlNotBlank()
+        }?.text()?.trim()?.takeIf { it.isNotBlank() }
+            ?.removePrefix("+")
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?.let { org.jsoup.nodes.TextNode(it).outerHtml().trim() }
+    val collapsible = element.hasClass("is-collapsible") ||
+        titleElement?.selectFirst(".callout-fold") != null ||
+        element.selectFirst(".callout-fold") != null
     val rawIcon = titleElement?.selectFirst(".callout-icon svg use[href], .callout-icon svg use[xlink:href]")
         ?.attr("href")
         ?.ifBlank { titleElement.selectFirst(".callout-icon svg use[xlink:href]")?.attr("xlink:href").orEmpty() }
@@ -309,7 +365,7 @@ private fun parseCalloutElement(element: Element, quoteLevel: Int): List<CookedP
         }
         removeCookedNonContentArtifacts()
     }
-    val children = coalesceImagesIntoCollage(parseCookedNodes(content.childNodes(), quoteLevel))
+    val children = coalesceImagesIntoCollage(parseCookedNodes(content.childNodes(), quoteLevel, baseUrl))
     val html = content.html().takeIfHtmlNotBlank()
         ?: children.joinToString(separator = "\n") { child ->
             when (child) {
@@ -329,24 +385,87 @@ private fun parseCalloutElement(element: Element, quoteLevel: Int): List<CookedP
             color = spec.color,
             html = html,
             children = children,
+            collapsible = collapsible,
         ),
     )
 }
 
-private fun parseAsideElement(element: Element, quoteLevel: Int): List<CookedPostBlock> {
+private data class DiscourseQuoteTitleParts(
+    val avatarUrl: String?,
+    val titleHtml: String?,
+    val categoryName: String?,
+    val categoryColor: String?,
+    val categoryTextColor: String?,
+    val categoryHref: String?,
+)
+
+private fun cssVarFromStyle(style: String, varName: String): String? =
+    Regex("""--${Regex.escape(varName)}:\s*([^;]+)""", RegexOption.IGNORE_CASE)
+        .find(style)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+
+/**
+ * Discourse `aside.quote .title`: avatar column + text column (BlockEmbedPostCell-style).
+ * Strips quote-controls, inline avatar, and badge-category from title HTML.
+ */
+private fun parseDiscourseQuoteTitle(titleElement: Element?, baseUrl: String): DiscourseQuoteTitleParts {
+    if (titleElement == null) {
+        return DiscourseQuoteTitleParts(null, null, null, null, null, null)
+    }
+    val avatarSrc = titleElement.selectFirst("img.avatar[src]")?.attr("src")?.takeIf { it.isNotBlank() }
+    val avatarUrl = avatarSrc?.let { resolvePostImageUrl(baseUrl, it) }
+    val textContent = titleElement.selectFirst(".quote-title__text-content")
+    val contentRoot = if (textContent != null) {
+        textContent.clone()
+    } else {
+        titleElement.clone().apply {
+            select(".quote-controls").remove()
+            select("img.avatar").remove()
+        }
+    }
+    contentRoot.select(".quote-controls").remove()
+    contentRoot.select("img.avatar").remove()
+    val categoryWrapper = contentRoot.selectFirst("a.badge-category__wrapper")
+    val categoryHref = categoryWrapper?.attr("href")?.takeIf { it.isNotBlank() }
+    val categoryName = contentRoot.selectFirst(".badge-category__name")?.text()?.takeIf { it.isNotBlank() }
+    val badgeSpan = contentRoot.selectFirst(".badge-category")
+    val categoryColor = badgeSpan?.attr("style")?.let { cssVarFromStyle(it, "category-badge-color") }
+    val categoryTextColor = badgeSpan?.attr("style")?.let { cssVarFromStyle(it, "category-badge-text-color") }
+    contentRoot.select("a.badge-category__wrapper").remove()
+    contentRoot.select(".badge-category").remove()
+    val titleHtml = contentRoot.html().takeIfHtmlNotBlank()
+    return DiscourseQuoteTitleParts(
+        avatarUrl = avatarUrl,
+        titleHtml = titleHtml,
+        categoryName = categoryName,
+        categoryColor = categoryColor,
+        categoryTextColor = categoryTextColor,
+        categoryHref = categoryHref,
+    )
+}
+
+private fun parseAsideElement(element: Element, quoteLevel: Int, baseUrl: String): List<CookedPostBlock> {
     if (element.hasClass("quote")) {
         val titleElement = element.selectFirst(".title")
         val title = titleElement?.text()?.takeIf { it.isNotBlank() }
-        val titleHtml = titleElement?.html()?.takeIfHtmlNotBlank()
+        val titleParts = parseDiscourseQuoteTitle(titleElement, baseUrl)
         val quoteElement = element.selectFirst("blockquote")
         val quoteHtml = quoteElement?.html()?.takeIfHtmlNotBlank() ?: element.html()
         return listOf(
             CookedPostBlock.Quote(
                 title = title,
-                titleHtml = titleHtml,
+                titleHtml = titleParts.titleHtml,
+                titleAvatarUrl = titleParts.avatarUrl,
+                titleCategoryName = titleParts.categoryName,
+                titleCategoryColor = titleParts.categoryColor,
+                titleCategoryTextColor = titleParts.categoryTextColor,
+                titleCategoryHref = titleParts.categoryHref,
                 html = quoteHtml,
                 children = quoteElement
-                    ?.let { coalesceImagesIntoCollage(parseCookedNodes(it.childNodes(), quoteLevel + 1)) }
+                    ?.let { coalesceImagesIntoCollage(parseCookedNodes(it.childNodes(), quoteLevel + 1, baseUrl)) }
                     .orEmpty(),
                 sourceTopicId = element.attr("data-topic").toLongOrNull(),
                 sourcePostNumber = element.attr("data-post").toIntOrNull(),
@@ -471,8 +590,12 @@ private fun Element.oneboxPreviewType(): String? {
 
 private fun parsePollElement(element: Element): CookedPostBlock.Poll {
     val name = element.attr("data-poll-name").takeIf { it.isNotBlank() }
+    val title = element.attr("data-poll-title").takeIf { it.isNotBlank() }
     val type = element.attr("data-poll-type").takeIf { it.isNotBlank() }
     val status = element.attr("data-poll-status").takeIf { it.isNotBlank() }
+    val results = element.attr("data-poll-results").takeIf { it.isNotBlank() }
+    val publicPoll = element.attr("data-poll-public").takeIf { it.isNotBlank() }?.discourseBoolean()
+    val chartType = element.attr("data-poll-charttype").takeIf { it.isNotBlank() }
     val voters = element.selectFirst(".poll-info_counts-count .info-number")?.text()
         ?.trim()
         ?.toIntOrNull()
@@ -499,27 +622,39 @@ private fun parsePollElement(element: Element): CookedPostBlock.Poll {
         }
     return CookedPostBlock.Poll(
         name = name,
+        title = title,
         type = type,
         status = status,
         voters = voters,
         options = options,
+        results = results,
+        publicPoll = publicPoll,
+        chartType = chartType,
     )
 }
 
 private fun String.pollNumber(): Int? = filter { it.isDigit() }.toIntOrNull()
+
+private fun String.discourseBoolean(): Boolean? {
+    return when (trim().lowercase()) {
+        "true" -> true
+        "false" -> false
+        else -> null
+    }
+}
 
 private fun String.pollPercent(): Float? {
     val value = replace('%', ' ').trim().toFloatOrNull() ?: return null
     return (value / 100f).coerceIn(0f, 1f)
 }
 
-private fun parseTableElement(element: Element, quoteLevel: Int): List<CookedPostBlock> {
+private fun parseTableElement(element: Element, quoteLevel: Int, baseUrl: String): List<CookedPostBlock> {
     val table = if (element.normalName() == "table") element else element.selectFirst("table") ?: return emptyList()
     val headerRow = table.selectFirst("thead tr")
     val headers = headerRow
         ?.children()
         ?.filter { it.normalName() == "th" || it.normalName() == "td" }
-        ?.map { cell -> parseTableCellElement(cell, quoteLevel) }
+        ?.map { cell -> parseTableCellElement(cell, quoteLevel, baseUrl) }
         .orEmpty()
     val bodyRows = table.select("tbody tr")
         .ifEmpty { table.children().filter { it.normalName() == "tr" } }
@@ -527,17 +662,17 @@ private fun parseTableElement(element: Element, quoteLevel: Int): List<CookedPos
     val rows = bodyRows.map { row ->
         row.children()
             .filter { it.normalName() == "th" || it.normalName() == "td" }
-            .map { cell -> parseTableCellElement(cell, quoteLevel) }
+            .map { cell -> parseTableCellElement(cell, quoteLevel, baseUrl) }
     }.filter { it.isNotEmpty() }
     if (headers.isEmpty() && rows.isEmpty()) return emptyList()
     return listOf(CookedPostBlock.Table(headers = headers, rows = rows))
 }
 
-private fun parseTableCellElement(element: Element, quoteLevel: Int): CookedPostBlock.TableCell {
+private fun parseTableCellElement(element: Element, quoteLevel: Int, baseUrl: String): CookedPostBlock.TableCell {
     return CookedPostBlock.TableCell(
         text = element.text().trim(),
         html = element.html(),
-        blocks = coalesceImagesIntoCollage(parseCookedNodes(element.childNodes(), quoteLevel)),
+        blocks = coalesceImagesIntoCollage(parseCookedNodes(element.childNodes(), quoteLevel, baseUrl)),
         colspan = element.attr("colspan").toIntOrNull()?.coerceAtLeast(1) ?: 1,
         rowspan = element.attr("rowspan").toIntOrNull()?.coerceAtLeast(1) ?: 1,
         align = when {
@@ -548,20 +683,20 @@ private fun parseTableCellElement(element: Element, quoteLevel: Int): CookedPost
     )
 }
 
-private fun parseListElement(element: Element, quoteLevel: Int): List<CookedPostBlock> {
+private fun parseListElement(element: Element, quoteLevel: Int, baseUrl: String): List<CookedPostBlock> {
     val items = element.children()
         .filter { child -> child.normalName() == "li" }
         .mapNotNull { item ->
             val html = item.html().takeIfHtmlNotBlank() ?: return@mapNotNull null
             CookedPostBlock.ListItem(
                 html = html,
-                blocks = coalesceImagesIntoCollage(parseCookedNodes(item.childNodes(), quoteLevel)),
+                blocks = coalesceImagesIntoCollage(parseCookedNodes(item.childNodes(), quoteLevel, baseUrl)),
             )
         }
     return if (items.isEmpty()) emptyList() else listOf(CookedPostBlock.ListItems(ordered = element.normalName() == "ol", items = items))
 }
 
-private fun parseDetailsElement(element: Element, quoteLevel: Int): List<CookedPostBlock> {
+private fun parseDetailsElement(element: Element, quoteLevel: Int, baseUrl: String): List<CookedPostBlock> {
     val summaryElement = element.selectFirst("summary")
     val summary = summaryElement?.text()?.takeIf { it.isNotBlank() }
     val summaryHtml = summaryElement?.html()?.takeIfHtmlNotBlank()
@@ -569,7 +704,7 @@ private fun parseDetailsElement(element: Element, quoteLevel: Int): List<CookedP
         select("summary").remove()
         removeCookedNonContentArtifacts()
     }
-    val blocks = parseCookedNodes(content.childNodes(), quoteLevel)
+    val blocks = parseCookedNodes(content.childNodes(), quoteLevel, baseUrl)
     val html = content.html().takeIfHtmlNotBlank()
         ?: blocks.joinToString(separator = "\n") { block ->
             when (block) {
@@ -591,7 +726,7 @@ private fun parseDetailsElement(element: Element, quoteLevel: Int): List<CookedP
     )
 }
 
-private fun parseDivElement(element: Element, quoteLevel: Int): List<CookedPostBlock> {
+private fun parseDivElement(element: Element, quoteLevel: Int, baseUrl: String): List<CookedPostBlock> {
     if (element.isCookedNonContentArtifact()) {
         return emptyList()
     }
@@ -605,17 +740,17 @@ private fun parseDivElement(element: Element, quoteLevel: Int): List<CookedPostB
         return parseInlineHtmlFragment(element.outerHtml())
     }
     if (element.hasClass("md-table") || element.selectFirst(":root > table") != null) {
-        val tableBlocks = parseTableElement(element, quoteLevel)
+        val tableBlocks = parseTableElement(element, quoteLevel, baseUrl)
         if (tableBlocks.isNotEmpty()) return tableBlocks
     }
     return if (element.childNodes().isNotEmpty()) {
-        parseCookedNodes(element.childNodes(), quoteLevel)
+        parseCookedNodes(element.childNodes(), quoteLevel, baseUrl)
     } else {
         element.html().takeIfHtmlNotBlank()?.let { listOf(CookedPostBlock.Text(it)) }.orEmpty()
     }
 }
 
-private fun parseFigureElement(element: Element, quoteLevel: Int): List<CookedPostBlock> {
+private fun parseFigureElement(element: Element, quoteLevel: Int, baseUrl: String): List<CookedPostBlock> {
     val images = imageBlocksFrom(element)
     val captionHtml = element.selectFirst("figcaption")?.html()?.takeIfHtmlNotBlank()
     if (images.size == 1 && captionHtml != null) {

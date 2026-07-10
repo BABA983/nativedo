@@ -3,6 +3,7 @@ package io.github.baba983.nativedo.ui.topic.body
 import android.graphics.RectF
 import android.view.View
 import io.github.baba983.nativedo.core.html.GalleryImage
+import io.github.baba983.nativedo.feature.topic.ui.PollVotersSheetArgs
 import org.telegram.messenger.ImageReceiver
 
 internal interface PostBodyDelegate {
@@ -22,4 +23,6 @@ internal interface PostBodyDelegate {
     ) = Unit
     fun onQuoteExpand(topicId: Long, postNumber: Int, onResult: (String?) -> Unit) = Unit
     fun onPollOptionsSelected(pollName: String, optionIds: List<String>) = Unit
+    fun onPollVoteRemoved(pollName: String) = Unit
+    fun onPollVotersRequested(args: PollVotersSheetArgs) = Unit
 }

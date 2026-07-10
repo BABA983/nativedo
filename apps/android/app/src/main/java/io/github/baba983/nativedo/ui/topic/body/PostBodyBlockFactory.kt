@@ -79,6 +79,8 @@ internal object PostBodyBlockFactory {
                     context,
                     gallery,
                     state,
+                    structuralState,
+                    index,
                     "callout:$stateKey",
                 )
                 is CookedPostBlock.Details -> DetailsBlock(

@@ -19,9 +19,11 @@ import android.text.TextUtils;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
+import io.github.baba983.nativedo.BuildConfig;
 import io.github.baba983.nativedo.core.html.CookedPostBlock;
 import io.github.baba983.nativedo.core.html.GalleryImage;
 import io.github.baba983.nativedo.core.ui.InlineTextImagesKt;
+import android.util.Log;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -29,8 +31,15 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ImageReceiver;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.TextSelectionHelper;
+import org.telegram.ui.Components.AnimatedArrowDrawable;
 
 final class CalloutBlock implements EmbeddedPostBodyBlock {
+
+    private static final float FOLD_ARROW_SIZE_DP = 13f;
+    private static final float FOLD_ARROW_SLOT_PADDING_DP = 6f;
+    /** Gap between fold chevron and the callout content right edge (inside card padding). */
+    private static final float FOLD_ARROW_TRAILING_MARGIN_DP = 6f;
+    private static final float TITLE_TOP_DP = 10f;
 
     private static final class CalloutTitleBlock extends TextLayoutBlock {
         CalloutTitleBlock(String html, PostBodyBuildContext context, TextPaint paint, PostBodyBlockState inlineState, String inlineSpoilerStateKey) {
@@ -66,10 +75,23 @@ final class CalloutBlock implements EmbeddedPostBodyBlock {
         }
     }
 
-    private final class CalloutBlockView extends ViewGroup {
+    private final class CalloutBlockView extends ViewGroup implements Drawable.Callback {
         CalloutBlockView(android.content.Context context) {
             super(context);
             setWillNotDraw(false);
+        }
+
+        @Override
+        public void invalidateDrawable(Drawable drawable) {
+            invalidate();
+        }
+
+        @Override
+        public void scheduleDrawable(Drawable drawable, Runnable what, long when) {
+        }
+
+        @Override
+        public void unscheduleDrawable(Drawable drawable, Runnable what) {
         }
 
         @Override
@@ -88,6 +110,13 @@ final class CalloutBlock implements EmbeddedPostBodyBlock {
         }
 
         @Override
+        protected void dispatchDraw(Canvas canvas) {
+            if (expanded) {
+                super.dispatchDraw(canvas);
+            }
+        }
+
+        @Override
         public boolean onTouchEvent(MotionEvent event) {
             return CalloutBlock.this.onTouch(event, event.getX(), event.getY()) || super.onTouchEvent(event);
         }
@@ -95,13 +124,18 @@ final class CalloutBlock implements EmbeddedPostBodyBlock {
 
     private final CookedPostBlock.Callout block;
     private final PostBodyBuildContext context;
+    private final PostBodyBlockState structuralState;
+    private final int stateIndex;
     private final PostBodyBlockState inlineState;
     private final String stateKey;
+    private final boolean defaultExpanded;
+    private boolean expanded;
+    private final AnimatedArrowDrawable foldArrow;
     private final TextPaint titlePaint = new TextPaint(TextPaint.ANTI_ALIAS_FLAG);
     private final Paint backgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint linePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF backgroundRect = new RectF();
-    private final Drawable calloutIconDrawable;
+    private Drawable calloutIconDrawable;
     private final CalloutTitleBlock titleBlock;
     private final BodyLayout bodyLayout;
     private int contentLeft;
@@ -109,10 +143,13 @@ final class CalloutBlock implements EmbeddedPostBodyBlock {
     private int bodyTop;
     private int bodyWidth;
     private int titleWidth;
+    private int titleHeight;
+    private int titleTopPx;
     private int blockWidth;
     private int measuredHeight;
     private int activeChildTouchIndex = -1;
     private boolean activeTitleTouch;
+    private boolean pressedHeader;
     private CalloutBlockView calloutBlockView;
 
     CalloutBlock(
@@ -120,12 +157,18 @@ final class CalloutBlock implements EmbeddedPostBodyBlock {
             PostBodyBuildContext context,
             List<GalleryImage> gallery,
             PostBodyBlockState inlineState,
+            PostBodyBlockState structuralState,
+            int stateIndex,
             String stateKey
     ) {
         this.block = block;
         this.context = context;
+        this.structuralState = structuralState;
+        this.stateIndex = stateIndex;
         this.inlineState = inlineState;
         this.stateKey = stateKey;
+        defaultExpanded = block.getDefaultExpanded();
+        expanded = initialExpandedState(structuralState, stateIndex, defaultExpanded);
         titlePaint.setColor(context.getTextColor());
         titlePaint.setTextSize(AndroidUtilities.dp(14f));
         titlePaint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
@@ -133,11 +176,13 @@ final class CalloutBlock implements EmbeddedPostBodyBlock {
         linePaint.setColor(color);
         linePaint.setStyle(Paint.Style.FILL);
         backgroundPaint.setColor(Theme.multAlpha(color, 0.10f));
-        calloutIconDrawable = InlineTextImagesKt.renderInlineSvgIconDrawable(
-                context.getSvgSpriteMarkup(),
-                block.getIcon(),
-                block.getColor()
-        );
+        foldArrow = block.getCollapsible()
+                ? new AnimatedArrowDrawable(context.getSecondaryTextColor(), true)
+                : null;
+        if (foldArrow != null) {
+            foldArrow.setAnimationProgress(expanded ? 0.0f : 1.0f);
+        }
+        calloutIconDrawable = resolveCalloutIconDrawable();
         String titleHtml = calloutTitleHtml(block);
         titleBlock = new CalloutTitleBlock(
                 titleHtml,
@@ -160,12 +205,13 @@ final class CalloutBlock implements EmbeddedPostBodyBlock {
         contentLeft = AndroidUtilities.dp(18f + 12f);
         bodyWidth = Math.max(blockWidth - contentLeft - AndroidUtilities.dp(18f), AndroidUtilities.dp(80f));
         int iconSlot = calloutIconDrawable != null ? calloutIconSizePx() + AndroidUtilities.dp(6f) : 0;
+        int foldSlot = foldArrow != null ? foldArrowReservePx() : 0;
         titleLeft = contentLeft + iconSlot;
-        titleWidth = Math.max(bodyWidth - iconSlot, AndroidUtilities.dp(80f));
-        int titleY = AndroidUtilities.dp(10f);
-        int titleHeight = titleBlock.measure(titleWidth);
-        int bodyHeight = measureBody(bodyLayout, bodyWidth);
-        bodyTop = titleY + titleHeight + (bodyHeight > 0 ? AndroidUtilities.dp(8f) : 0);
+        titleWidth = Math.max(bodyWidth - iconSlot - foldSlot, AndroidUtilities.dp(80f));
+        titleTopPx = AndroidUtilities.dp(TITLE_TOP_DP);
+        titleHeight = titleBlock.measure(titleWidth);
+        int bodyHeight = expanded ? measureBody(bodyLayout, bodyWidth) : 0;
+        bodyTop = titleTopPx + titleHeight + (bodyHeight > 0 ? AndroidUtilities.dp(8f) : 0);
         measuredHeight = bodyTop + bodyHeight + AndroidUtilities.dp(10f);
         if (calloutBlockView != null) {
             calloutBlockView.measure(
@@ -185,6 +231,9 @@ final class CalloutBlock implements EmbeddedPostBodyBlock {
     public View embeddedView() {
         if (calloutBlockView == null) {
             calloutBlockView = new CalloutBlockView(context.getHost().getContext());
+            if (foldArrow != null) {
+                foldArrow.setCallback(calloutBlockView);
+            }
             addEmbeddedChildren(calloutBlockView);
         }
         return calloutBlockView;
@@ -215,11 +264,15 @@ final class CalloutBlock implements EmbeddedPostBodyBlock {
         );
 
         canvas.save();
-        canvas.translate(titleLeft, AndroidUtilities.dp(10f));
+        canvas.translate(titleLeft, titleTopPx);
         titleBlock.draw(canvas, titleWidth);
         canvas.restore();
         drawCalloutIcon(canvas);
+        drawFoldArrow(canvas);
 
+        if (!expanded) {
+            return;
+        }
         for (int i = 0; i < bodyLayout.blocks.size(); i++) {
             PostBodyBlock child = bodyLayout.blocks.get(i);
             if (skipEmbeddedChildren && child instanceof EmbeddedPostBodyBlock) {
@@ -235,8 +288,43 @@ final class CalloutBlock implements EmbeddedPostBodyBlock {
     @Override
     public boolean onTouch(MotionEvent event, float localX, float localY) {
         int action = event.getActionMasked();
+        int headerBottom = titleTopPx + titleHeight;
+        if (block.getCollapsible() && foldArrow != null) {
+            if (localY >= titleTopPx && localY <= headerBottom && localX >= contentLeft) {
+                if (activeTitleTouch && action != MotionEvent.ACTION_DOWN) {
+                    boolean handled = titleBlock.onTouch(event, localX - titleLeft, localY - titleTopPx);
+                    if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                        activeTitleTouch = false;
+                    }
+                    if (handled) {
+                        return true;
+                    }
+                }
+                if (action == MotionEvent.ACTION_DOWN) {
+                    boolean handled = titleBlock.onTouch(event, localX - titleLeft, localY - titleTopPx);
+                    if (handled) {
+                        activeTitleTouch = true;
+                        return true;
+                    }
+                    pressedHeader = true;
+                    return true;
+                }
+                if (pressedHeader) {
+                    if (action == MotionEvent.ACTION_UP) {
+                        pressedHeader = false;
+                        toggleExpanded();
+                        return true;
+                    }
+                    if (action == MotionEvent.ACTION_CANCEL) {
+                        pressedHeader = false;
+                        return true;
+                    }
+                    return true;
+                }
+            }
+        }
         if (activeTitleTouch && action != MotionEvent.ACTION_DOWN) {
-            boolean handled = titleBlock.onTouch(event, localX - titleLeft, localY - AndroidUtilities.dp(10f));
+            boolean handled = titleBlock.onTouch(event, localX - titleLeft, localY - titleTopPx);
             if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
                 activeTitleTouch = false;
             }
@@ -245,8 +333,8 @@ final class CalloutBlock implements EmbeddedPostBodyBlock {
         if (activeChildTouchIndex >= 0 && action != MotionEvent.ACTION_DOWN) {
             return dispatchActiveChildTouch(event, localX, localY);
         }
-        if (localX >= titleLeft && localY >= AndroidUtilities.dp(10f) && localY <= bodyTop) {
-            boolean handled = titleBlock.onTouch(event, localX - titleLeft, localY - AndroidUtilities.dp(10f));
+        if (!block.getCollapsible() && localX >= titleLeft && localY >= titleTopPx && localY <= headerBottom) {
+            boolean handled = titleBlock.onTouch(event, localX - titleLeft, localY - titleTopPx);
             if (handled && action == MotionEvent.ACTION_DOWN) {
                 activeTitleTouch = true;
             }
@@ -254,7 +342,7 @@ final class CalloutBlock implements EmbeddedPostBodyBlock {
                 return true;
             }
         }
-        if (localX >= contentLeft && localY >= bodyTop && localY <= measuredHeight) {
+        if (localX >= contentLeft && localY >= bodyTop && localY <= measuredHeight && expanded) {
             float bodyY = localY - bodyTop;
             for (int i = 0; i < bodyLayout.blocks.size(); i++) {
                 int top = bodyLayout.blockTops[i];
@@ -273,7 +361,10 @@ final class CalloutBlock implements EmbeddedPostBodyBlock {
 
     @Override
     public void fillTextLayoutBlocks(ArrayList<TextSelectionHelper.TextLayoutBlock> blocks, int x, int y) {
-        titleBlock.fillTextLayoutBlocks(blocks, x + titleLeft, y + AndroidUtilities.dp(10f));
+        titleBlock.fillTextLayoutBlocks(blocks, x + titleLeft, y + titleTopPx);
+        if (!expanded) {
+            return;
+        }
         for (int i = 0; i < bodyLayout.blocks.size(); i++) {
             bodyLayout.blocks.get(i).fillTextLayoutBlocks(
                     blocks,
@@ -326,8 +417,10 @@ final class CalloutBlock implements EmbeddedPostBodyBlock {
     @Override
     public void onAttachedToWindow() {
         titleBlock.onAttachedToWindow();
-        for (PostBodyBlock child : bodyLayout.blocks) {
-            child.onAttachedToWindow();
+        if (expanded) {
+            for (PostBodyBlock child : bodyLayout.blocks) {
+                child.onAttachedToWindow();
+            }
         }
     }
 
@@ -335,6 +428,7 @@ final class CalloutBlock implements EmbeddedPostBodyBlock {
     public void onDetachedFromWindow() {
         activeChildTouchIndex = -1;
         activeTitleTouch = false;
+        pressedHeader = false;
         titleBlock.onDetachedFromWindow();
         for (PostBodyBlock child : bodyLayout.blocks) {
             child.onDetachedFromWindow();
@@ -344,9 +438,36 @@ final class CalloutBlock implements EmbeddedPostBodyBlock {
     @Override
     public void applyTheme() {
         titlePaint.setColor(context.getTextColor());
+        calloutIconDrawable = resolveCalloutIconDrawable();
+        if (foldArrow != null) {
+            foldArrow.setColor(context.getSecondaryTextColor());
+        }
         for (PostBodyBlock child : bodyLayout.blocks) {
             child.applyTheme();
         }
+    }
+
+    private Drawable resolveCalloutIconDrawable() {
+        String sprite = context.getSvgSpriteMarkup();
+        Drawable drawable = InlineTextImagesKt.renderInlineSvgIconDrawable(
+                sprite,
+                block.getIcon(),
+                block.getColor()
+        );
+        if (BuildConfig.DEBUG) {
+            int spriteLen = sprite == null ? 0 : sprite.length();
+            boolean spriteHasSymbol = sprite != null && sprite.contains("<symbol");
+            boolean spriteHasIcon = sprite != null && sprite.contains("far-pen-to-square");
+            Log.i(
+                    "NativeDoSvgSprite",
+                    "CalloutBlock icon=" + block.getIcon()
+                            + " drawable=" + (drawable != null)
+                            + " spriteLen=" + spriteLen
+                            + " hasSymbol=" + spriteHasSymbol
+                            + " hasNoteId=" + spriteHasIcon
+            );
+        }
+        return drawable;
     }
 
     private boolean dispatchActiveChildTouch(MotionEvent event, float localX, float localY) {
@@ -442,12 +563,85 @@ final class CalloutBlock implements EmbeddedPostBodyBlock {
             return;
         }
         int size = calloutIconSizePx();
-        int baseline = AndroidUtilities.dp(10f) + titleBlock.firstTextBaselinePx();
+        int baseline = titleTopPx + titleBlock.firstTextBaselinePx();
         float centerY = baseline + (titlePaint.getFontMetrics().ascent + titlePaint.getFontMetrics().descent) / 2f;
         int left = contentLeft;
         int top = Math.round(centerY - size / 2f);
         calloutIconDrawable.setBounds(left, top, left + size, top + size);
         calloutIconDrawable.draw(canvas);
+    }
+
+    private void drawFoldArrow(Canvas canvas) {
+        if (foldArrow == null) {
+            return;
+        }
+        int arrowSize = foldArrowSizePx();
+        int contentRight = contentLeft + bodyWidth;
+        float arrowLeft = contentRight - AndroidUtilities.dp(FOLD_ARROW_TRAILING_MARGIN_DP) - arrowSize;
+        float arrowTop = titleTopPx + (titleHeight - arrowSize) / 2f;
+        canvas.save();
+        canvas.translate(arrowLeft, arrowTop);
+        foldArrow.draw(canvas);
+        canvas.restore();
+    }
+
+    private static int foldArrowSizePx() {
+        return AndroidUtilities.dp(FOLD_ARROW_SIZE_DP);
+    }
+
+    private static int foldArrowReservePx() {
+        return foldArrowSizePx()
+                + AndroidUtilities.dp(FOLD_ARROW_SLOT_PADDING_DP)
+                + AndroidUtilities.dp(FOLD_ARROW_TRAILING_MARGIN_DP);
+    }
+
+    private void toggleExpanded() {
+        if (!block.getCollapsible() || foldArrow == null) {
+            return;
+        }
+        activeChildTouchIndex = -1;
+        expanded = !expanded;
+        if (structuralState != null) {
+            if (expanded) {
+                structuralState.getOpenedCalloutsByIndex().add(stateIndex);
+                structuralState.getClosedCalloutsByIndex().remove(stateIndex);
+            } else {
+                structuralState.getOpenedCalloutsByIndex().remove(stateIndex);
+                if (defaultExpanded) {
+                    structuralState.getClosedCalloutsByIndex().add(stateIndex);
+                } else {
+                    structuralState.getClosedCalloutsByIndex().remove(stateIndex);
+                }
+            }
+        }
+        foldArrow.setAnimationProgressAnimated(expanded ? 0.0f : 1.0f);
+        measuredHeight = 0;
+        context.getHost().requestLayout();
+        context.getSelectionGeometryInvalidator().invoke();
+        if (calloutBlockView != null) {
+            calloutBlockView.requestLayout();
+            calloutBlockView.invalidate();
+        }
+        if (context.getHost().isAttachedToWindow()) {
+            for (PostBodyBlock child : bodyLayout.blocks) {
+                if (expanded) {
+                    child.onAttachedToWindow();
+                } else {
+                    child.onDetachedFromWindow();
+                }
+            }
+        }
+        context.getHost().invalidate();
+    }
+
+    private static boolean initialExpandedState(PostBodyBlockState state, int stateIndex, boolean defaultExpanded) {
+        if (state != null && state.getClosedCalloutsByIndex().contains(stateIndex)) {
+            return false;
+        }
+        if (state != null && state.getOpenedCalloutsByIndex().contains(stateIndex)) {
+            return true;
+        }
+        return defaultExpanded;
     }
 
     private int calloutIconSizePx() {

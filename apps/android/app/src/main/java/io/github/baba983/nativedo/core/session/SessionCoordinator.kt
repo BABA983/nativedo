@@ -13,6 +13,11 @@ import kotlinx.coroutines.flow.asStateFlow
 interface SessionBootstrapClient {
     suspend fun fetchBootstrap(): ParsedBootstrap
 
+    suspend fun fetchCurrentUser(): SessionUserSummary? =
+        fetchCurrentUsername()?.let { username ->
+            SessionUserSummary(username = username)
+        }
+
     suspend fun fetchCurrentUsername(): String? = null
 }
 
@@ -60,6 +65,8 @@ class SessionCoordinator(
      */
     suspend fun completeLoginFromWebViewWithKnownUsername(
         username: String,
+        displayName: String? = null,
+        avatarTemplate: String? = null,
         cookieUrl: String? = null,
     ) {
         if (cookieUrl == null) {
@@ -76,8 +83,11 @@ class SessionCoordinator(
         val matchingCachedSnapshot = cachedSnapshot?.takeIf { it.username == username }
         val snapshot = SessionSnapshot(
             username = username,
-            displayName = matchingCachedSnapshot?.displayName ?: username,
-            avatarTemplate = matchingCachedSnapshot?.avatarTemplate.orEmpty(),
+            displayName = displayName?.takeIf { it.isNotBlank() }
+                ?: matchingCachedSnapshot?.displayName
+                ?: username,
+            avatarTemplate = avatarTemplate?.takeIf { it.isNotBlank() }
+                ?: matchingCachedSnapshot?.avatarTemplate.orEmpty(),
             lastValidatedAt = now(),
         )
         sessionStore.save(snapshot)
@@ -116,15 +126,19 @@ class SessionCoordinator(
         val cachedSnapshot = sessionStore.snapshot()
         _sessionState.value = AppSessionState.Restoring(snapshot = cachedSnapshot)
         runCatching {
-            val currentUsername = apiClient.fetchCurrentUsername()
-            val bootstrapUsername = currentUsername ?: apiClient.fetchBootstrap().currentUsername
-            if (bootstrapUsername.isNullOrBlank()) {
+            val currentUser = apiClient.fetchCurrentUser()
+            val username = currentUser?.username ?: apiClient.fetchBootstrap().currentUsername
+            if (username.isNullOrBlank()) {
                 throw SessionNotAuthenticatedException
             }
+            val matchingCachedSnapshot = cachedSnapshot?.takeIf { it.username == username }
             SessionSnapshot(
-                username = bootstrapUsername,
-                displayName = cachedSnapshot?.takeIf { it.username == bootstrapUsername }?.displayName ?: bootstrapUsername,
-                avatarTemplate = cachedSnapshot?.takeIf { it.username == bootstrapUsername }?.avatarTemplate.orEmpty(),
+                username = username,
+                displayName = currentUser?.displayName?.takeIf { it.isNotBlank() }
+                    ?: matchingCachedSnapshot?.displayName
+                    ?: username,
+                avatarTemplate = currentUser?.avatarTemplate?.takeIf { it.isNotBlank() }
+                    ?: matchingCachedSnapshot?.avatarTemplate.orEmpty(),
                 lastValidatedAt = now(),
             )
         }.fold(

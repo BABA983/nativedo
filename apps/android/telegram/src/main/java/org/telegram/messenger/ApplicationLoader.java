@@ -182,6 +182,15 @@ public final class ApplicationLoader {
     }
 
     /**
+     * Matches upstream {@code LaunchActivity.checkFreeDiscSpace(int)} hooks used for log retention
+     * ({@link SharedConfig#checkLogsToDelete()}) and cache housekeeping ({@link AutoDeleteMediaTask#run()}).
+     */
+    public static void checkFreeDiscSpace(final int force) {
+        AutoDeleteMediaTask.run();
+        SharedConfig.checkLogsToDelete();
+    }
+
+    /**
      * Returns the application ID (package name) for use with {@code FileProvider}
      * authority strings, matching upstream {@code ApplicationLoader.getApplicationId()}.
      */

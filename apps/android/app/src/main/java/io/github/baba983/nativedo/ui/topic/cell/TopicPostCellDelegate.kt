@@ -5,6 +5,7 @@ import android.view.View
 import io.github.baba983.nativedo.core.html.GalleryImage
 import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.PostReaction
+import io.github.baba983.nativedo.feature.topic.ui.PollVotersSheetArgs
 import org.telegram.messenger.ImageReceiver
 
 internal interface TopicPostCellDelegate {
@@ -18,6 +19,8 @@ internal interface TopicPostCellDelegate {
     fun didLongPressPost(post: Post, anchorView: View, x: Float, y: Float) = Unit
     fun didExpandQuote(topicId: Long, postNumber: Int, onResult: (String?) -> Unit) = Unit
     fun didPressPollOptions(post: Post, pollName: String, optionIds: List<String>) = Unit
+    fun didPressPollVoteRemoved(post: Post, pollName: String) = Unit
+    fun didPressPollVoters(post: Post, args: PollVotersSheetArgs) = Unit
     fun didPressImage(
         post: Post,
         url: String,

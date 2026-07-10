@@ -9,7 +9,6 @@ import android.graphics.RectF
 import android.graphics.drawable.Drawable
 import android.text.Spannable
 import android.text.SpannableStringBuilder
-import android.text.style.ReplacementSpan
 import io.github.baba983.nativedo.core.html.resolvePostImageUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.telegram.messenger.AndroidUtilities
@@ -103,12 +102,6 @@ internal fun applyInlineImagePlaceholders(
                     start + 1,
                     Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
                 )
-                builder.setSpan(
-                    TextSelectionHelper.IgnoreCopySpannable(),
-                    start,
-                    start + 1,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
-                )
                 pendingImages += PendingInlineImage(
                     resolvedUrl = resolvePostImageUrl(
                         baseUrl = baseUrl,
@@ -143,12 +136,6 @@ internal fun applyInlineImagePlaceholders(
                 )
                 builder.setSpan(
                     span,
-                    start,
-                    start + 1,
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
-                )
-                builder.setSpan(
-                    TextSelectionHelper.IgnoreCopySpannable(),
                     start,
                     start + 1,
                     Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
@@ -320,7 +307,7 @@ private class BaselineCenteredInlineSvgSpan(
     drawable: Drawable,
     sizePx: Int,
     private val tintColor: Int?,
-) : ReplacementSpan(), TextSelectionHelper.TextSelectionBoundsProvider {
+) : TextSelectionHelper.IgnoreCopySpannable(), TextSelectionHelper.TextSelectionBoundsProvider {
     private val centeredDrawable = drawable.mutate().apply {
         setBounds(0, 0, sizePx, sizePx)
         tintColor?.let { setColorFilter(android.graphics.PorterDuffColorFilter(it, android.graphics.PorterDuff.Mode.SRC_IN)) }
@@ -394,7 +381,7 @@ private class CenteredInlineImageSpan(
     drawable: Drawable,
     private val kind: InlineImageKind,
     private val emojiScale: Float = customEmojiInlineImageScale,
-) : ReplacementSpan(), TextSelectionHelper.TextSelectionBoundsProvider {
+) : TextSelectionHelper.IgnoreCopySpannable(), TextSelectionHelper.TextSelectionBoundsProvider {
     private val inlineDrawable = drawable
 
     override fun getSize(

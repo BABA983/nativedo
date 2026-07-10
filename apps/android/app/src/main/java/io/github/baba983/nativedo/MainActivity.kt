@@ -16,11 +16,19 @@ import org.telegram.messenger.AndroidUtilities
 import org.telegram.ui.ActionBar.ActionBarLayout
 import org.telegram.ui.ActionBar.DrawerLayoutContainer
 import org.telegram.ui.LaunchActivity
+import io.github.baba983.nativedo.core.session.AppSessionState
+import io.github.baba983.nativedo.core.session.SessionSnapshot
+import io.github.baba983.nativedo.core.ui.avatarImageFilter
+import io.github.baba983.nativedo.core.ui.resolveAvatarUrl
 import io.github.baba983.nativedo.ui.main.MainTabsActivity
 import org.telegram.ui.PhotoViewer
 import kotlinx.coroutines.launch
 
 private const val LAZY_START = 0.015f
+
+// Profile tab avatar is drawn at 24dp; request a larger source for crispness on
+// high-density screens.
+private const val AVATAR_TAB_SIZE = 120
 
 class MainActivity : LaunchActivity() {
 
@@ -66,6 +74,7 @@ class MainActivity : LaunchActivity() {
         lifecycleScope.launch {
             (applicationContext as NativeDoApp).appContainer.sessionCoordinator.start()
         }
+        observeProfileTabAvatar()
         registerBackCallbacks()
     }
 
@@ -100,6 +109,34 @@ class MainActivity : LaunchActivity() {
         PhotoViewer.getInstance().destroyPhotoViewer()
         LaunchActivity.instance = null
         super.onDestroy()
+    }
+
+    /**
+     * Mirror the signed-in account's avatar onto the bottom profile tab. Shows the
+     * avatar whenever a session snapshot carries a non-blank avatar template
+     * (authenticated, restoring, or expired-with-cache), and falls back to the
+     * static profile icon otherwise.
+     */
+    private fun observeProfileTabAvatar() {
+        val container = (applicationContext as NativeDoApp).appContainer
+        lifecycleScope.launch {
+            container.sessionCoordinator.sessionState.collect { state ->
+                val snapshot: SessionSnapshot? = when (state) {
+                    is AppSessionState.Authenticated -> state.snapshot
+                    is AppSessionState.Restoring -> state.snapshot
+                    is AppSessionState.Expired -> state.snapshot
+                    else -> null
+                }
+                val template = snapshot?.avatarTemplate.orEmpty()
+                if (snapshot != null && template.isNotBlank()) {
+                    val url = resolveAvatarUrl(container.baseUrl, template, size = AVATAR_TAB_SIZE)
+                    val name = snapshot.displayName.ifBlank { snapshot.username }
+                    mainTabsActivity.setProfileAvatar(url, avatarImageFilter("", AVATAR_TAB_SIZE), name)
+                } else {
+                    mainTabsActivity.clearProfileAvatar()
+                }
+            }
+        }
     }
 
     private fun registerBackCallbacks() {

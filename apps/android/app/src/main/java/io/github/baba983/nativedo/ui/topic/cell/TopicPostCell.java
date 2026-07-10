@@ -51,6 +51,7 @@ import io.github.baba983.nativedo.ui.topic.body.PostBodyBlock;
 import io.github.baba983.nativedo.ui.topic.body.PostBodyBlockFactory;
 import io.github.baba983.nativedo.ui.topic.body.PostBodyBlockState;
 import io.github.baba983.nativedo.ui.topic.body.PostBodyBuildContext;
+import io.github.baba983.nativedo.feature.topic.ui.PollVotersSheetArgs;
 import io.github.baba983.nativedo.ui.topic.body.PostBodyDelegate;
 import io.github.baba983.nativedo.ui.topic.body.PostBodyImagePool;
 import kotlin.Unit;
@@ -519,12 +520,20 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
         float chromeX = event.getX() - chromeLeft;
         float localY = event.getY();
         if (activeBodyTouchStream && action != MotionEvent.ACTION_DOWN) {
-            if (dispatchActiveBodyTouch(event)) {
+            boolean handled = dispatchActiveBodyTouch(event);
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                cancelCheckLongPress();
+            }
+            if (handled) {
                 return true;
             }
         }
         if (activeEmbeddedBodyTouchStream && action != MotionEvent.ACTION_DOWN) {
-            if (dispatchActiveEmbeddedBodyTouch(event)) {
+            boolean handled = dispatchActiveEmbeddedBodyTouch(event);
+            if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                cancelCheckLongPress();
+            }
+            if (handled) {
                 return true;
             }
         }
@@ -555,6 +564,7 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
                 }
                 if (dispatchBlockTouch(block, event, blockX, localY - top)) {
                     if (action == MotionEvent.ACTION_DOWN) {
+                        cancelCheckLongPress();
                         if (embeddedView(block) != null) {
                             activeEmbeddedBodyTouchStream = true;
                         } else {
@@ -915,6 +925,20 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
     public void onPollOptionsSelected(String pollName, List<String> optionIds) {
         if (delegate != null && post != null) {
             delegate.didPressPollOptions(post, pollName, optionIds);
+        }
+    }
+
+    @Override
+    public void onPollVoteRemoved(String pollName) {
+        if (delegate != null && post != null) {
+            delegate.didPressPollVoteRemoved(post, pollName);
+        }
+    }
+
+    @Override
+    public void onPollVotersRequested(PollVotersSheetArgs args) {
+        if (delegate != null && post != null) {
+            delegate.didPressPollVoters(post, args);
         }
     }
 

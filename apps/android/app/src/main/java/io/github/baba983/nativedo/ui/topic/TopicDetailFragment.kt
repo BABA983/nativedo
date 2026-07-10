@@ -64,6 +64,9 @@ import io.github.baba983.nativedo.core.ui.resolveAvatarUrl
 import io.github.baba983.nativedo.feature.topic.data.TopicRepository
 import io.github.baba983.nativedo.feature.topic.ui.TopicReplySheetItem
 import io.github.baba983.nativedo.feature.topic.ui.TopicReplyTargetResolver
+import io.github.baba983.nativedo.feature.topic.ui.TopicPollVotersSheetUiState
+import io.github.baba983.nativedo.feature.topic.ui.TopicPollVotersUiState
+import io.github.baba983.nativedo.feature.topic.ui.PollVotersSheetArgs
 import io.github.baba983.nativedo.feature.topic.ui.TopicReactionUsersUiState
 import io.github.baba983.nativedo.feature.topic.ui.TopicUiState
 import io.github.baba983.nativedo.feature.topic.ui.TopicViewModel
@@ -127,6 +130,7 @@ class TopicDetailFragment(
     private lateinit var baseUrl: String
     private val collectorScope = MainScope()
     private var reactionUsersSheet: TopicReactionUsersSheet? = null
+    private var pollVotersSheet: TopicPollVotersSheet? = null
     private var postOptions: ActionBarPopupWindow? = null
     private var reactionRailPopup: ActionBarPopupWindow? = null
     private var expandedReactionPickerPopup: ActionBarPopupWindow? = null
@@ -301,10 +305,15 @@ class TopicDetailFragment(
         collectorScope.launch {
             viewModel.uiState.collectLatest { state ->
                 topicTitle = state.title.ifBlank { initialTitle.orEmpty() }
+                state.pollActionFailure?.let { failure ->
+                    adapter.resetPollInteractionState(failure.postId)
+                    viewModel.consumePollActionFailure(failure.nonce)
+                }
                 adapter.submit(state)
                 applyInitialTopicHeaderAnchorIfNeeded(state)
                 updateCollapsedTitle()
                 updateReactionUsersSheet(context, state)
+                updatePollVotersSheet(context, state)
                 updateReplyComposerPanel(state)
                 handleJumpEvent(state)
             }
@@ -328,6 +337,8 @@ class TopicDetailFragment(
         PhotoViewer.getInstance().closePhoto(false, false)
         reactionUsersSheet?.dismiss()
         reactionUsersSheet = null
+        pollVotersSheet?.dismiss()
+        pollVotersSheet = null
         dismissExpandedReactionPicker(animated = false)
         reactionRailPopup?.dismiss()
         reactionRailPopup = null
@@ -544,6 +555,31 @@ class TopicDetailFragment(
             created.show()
         } else {
             sheet.submit(sheetState.reactions, state.reactionUsers)
+        }
+    }
+
+    private fun updatePollVotersSheet(context: Context, state: TopicUiState) {
+        val sheetState = state.pollVotersSheet
+        if (sheetState == null) {
+            pollVotersSheet?.dismiss()
+            pollVotersSheet = null
+            return
+        }
+        val sheet = pollVotersSheet
+        if (sheet == null) {
+            val created = TopicPollVotersSheet(
+                context = context,
+                fragment = this,
+                baseUrl = baseUrl,
+                onOptionSelected = viewModel::selectPollOptionInSheet,
+                onUserSelected = { username -> Browser.openUrl(parentActivity ?: return@TopicPollVotersSheet, "$baseUrl/u/$username") },
+                onDismissed = viewModel::dismissPollVotersSheet,
+            )
+            pollVotersSheet = created
+            created.submit(sheetState, state.pollVoters)
+            created.show()
+        } else {
+            sheet.submit(sheetState, state.pollVoters)
         }
     }
 
@@ -1052,11 +1088,34 @@ class TopicDetailFragment(
             localPostsByNumber = state.posts.mapNotNull { post ->
                 post.postNumber?.let { number -> number to post.cookedHtml }
             }.toMap()
+            val previousHtmlByPostId = rows.filterIsInstance<TopicDetailRow.PostRow>()
+                .associate { row -> row.post.id to row.post.cookedHtml.hashCode() }
+            val updatedPostsById = state.posts.associateBy { it.id }
+            for ((postId, previousHash) in previousHtmlByPostId) {
+                val updated = updatedPostsById[postId] ?: continue
+                if (updated.cookedHtml.hashCode() != previousHash) {
+                    parsedBodyCache.keys.removeAll { key -> key.postId == postId }
+                    bodyStateCache.keys.removeAll { key -> key.postId == postId }
+                }
+            }
             val oldRows = rows
             val newRows = buildRows(state)
             val diff = DiffUtil.calculateDiff(TopicRowsDiffCallback(oldRows, newRows), false)
             rows = newRows
             diff.dispatchUpdatesTo(this)
+        }
+
+        fun resetPollInteractionState(postId: Long) {
+            bodyStateCache.filterKeys { key -> key.postId == postId }.values.forEach { state ->
+                state.inFlightPollIndexes.clear()
+                state.removedPollIndexes.clear()
+                state.submittedPollIndexes.clear()
+                state.selectedPollOptionIndexesByIndex.clear()
+            }
+            val positions = rows.mapIndexedNotNull { index, row ->
+                if (row is TopicDetailRow.PostRow && row.post.id == postId) index else null
+            }
+            positions.forEach(::notifyItemChanged)
         }
 
         override fun isEnabled(holder: RecyclerView.ViewHolder): Boolean {
@@ -1286,6 +1345,14 @@ class TopicDetailFragment(
 
         override fun didPressPollOptions(post: Post, pollName: String, optionIds: List<String>) {
             viewModel.onPollOptionsSelected(post.id, post.postNumber, pollName, optionIds)
+        }
+
+        override fun didPressPollVoteRemoved(post: Post, pollName: String) {
+            viewModel.onPollVoteRemoved(post.id, post.postNumber, pollName)
+        }
+
+        override fun didPressPollVoters(post: Post, args: PollVotersSheetArgs) {
+            viewModel.openPollVotersSheet(post.id, args)
         }
 
         override fun didPressImage(
@@ -1784,11 +1851,13 @@ class TopicDetailFragment(
         private val recyclerListView = RecyclerListView(context)
         private val fixedHeaderView = ReactionFixedHeaderView(context, baseUrl, emojiCatalog, onReactionSelected, backgroundPaddingLeft)
         private val rect = RectF()
+        private val sizePolicy = StableUserListSheetSizePolicy(AndroidUtilities.dp(56f))
         private var scrollOffsetY = 0
         private var ignoreLayout = false
         private var fullHeight = false
-        private var contentRowsHeight = AndroidUtilities.dp(280f)
+        private var contentRowsHeight = sizePolicy.rowsHeight()
         private var statusBarOpen: Boolean? = null
+        private var lastSelectedReactionId: String? = null
 
         init {
             setUseLightStatusBar(fragment.isLightStatusBar)
@@ -1920,14 +1989,18 @@ class TopicDetailFragment(
             val selectedUsers = selectedGroup?.users ?: usersState.groups
                 .flatMap { group -> group.users }
                 .distinctBy { user -> user.username }
+            val predictedUserCount = tabReactions.firstOrNull { reaction -> reaction.id == selected }?.count
+            val selectedChanged = lastSelectedReactionId != selected
+            lastSelectedReactionId = selected
             fixedHeaderView.bind(tabReactions, visibleSelected)
-            contentRowsHeight = when {
-                usersState.isLoading -> AndroidUtilities.dp(280f)
-                selectedUsers.isEmpty() -> AndroidUtilities.dp(60f)
-                else -> selectedUsers.size * AndroidUtilities.dp(56f)
-            }
-            adapter.submit(usersState, selectedUsers)
+            contentRowsHeight = sizePolicy.rowsHeight(
+                userCount = if (usersState.isLoading) predictedUserCount else selectedUsers.size,
+            )
+            adapter.submit(usersState, selectedUsers, sizePolicy.skeletonRows(predictedUserCount))
             containerView.requestLayout()
+            if (selectedChanged) {
+                recyclerListView.post { recyclerListView.scrollToPosition(0) }
+            }
         }
 
         override fun canDismissWithSwipe(): Boolean {
@@ -1972,7 +2045,7 @@ class TopicDetailFragment(
 
         private sealed interface Row {
             data class TopSpacer(val height: Int) : Row
-            data object Loading : Row
+            data class Loading(val rowCount: Int) : Row
             data object Empty : Row
             data class User(val user: PostReactionUser, val divider: Boolean) : Row
         }
@@ -1993,11 +2066,15 @@ class TopicDetailFragment(
                 notifyDataSetChanged()
             }
 
-            fun submit(usersState: TopicReactionUsersUiState, selectedUsers: List<PostReactionUser>) {
+            fun submit(
+                usersState: TopicReactionUsersUiState,
+                selectedUsers: List<PostReactionUser>,
+                loadingRowCount: Int,
+            ) {
                 rows = buildList {
                     add(Row.TopSpacer(topSpacerHeight))
                     if (usersState.isLoading) {
-                        add(Row.Loading)
+                        add(Row.Loading(loadingRowCount))
                     } else if (selectedUsers.isEmpty()) {
                         add(Row.Empty)
                     } else {
@@ -2018,7 +2095,7 @@ class TopicDetailFragment(
             override fun getItemViewType(position: Int): Int {
                 return when (rows[position]) {
                     is Row.TopSpacer -> SHEET_ROW_REACTION_USERS_TOP_SPACER
-                    Row.Loading -> SHEET_ROW_LOADING
+                    is Row.Loading -> SHEET_ROW_LOADING
                     Row.Empty -> SHEET_ROW_EMPTY
                     is Row.User -> SHEET_ROW_USER
                 }
@@ -2037,7 +2114,7 @@ class TopicDetailFragment(
             override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
                 when (val row = rows[position]) {
                     is Row.TopSpacer -> (holder.itemView as TopSpacerView).setHeight(row.height)
-                    Row.Loading -> Unit
+                    is Row.Loading -> (holder.itemView as ReactionUsersSkeletonView).setRowCount(row.rowCount)
                     Row.Empty -> (holder.itemView as TopicFooterCell).bind("No users", null)
                     is Row.User -> (holder.itemView as ReactionUserRowView).bind(row.user, row.divider)
                 }
@@ -2060,11 +2137,20 @@ class TopicDetailFragment(
 
         private class ReactionUsersSkeletonView(context: Context) : View(context) {
             private val rect = RectF()
+            private val clipRect = Rect()
             private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
             private val rowHeight = AndroidUtilities.dp(56f)
-            private val rowCount = 5
+            private var rowCount = 5
             private val avatarSize = AndroidUtilities.dp(36f)
             private val horizontalInset = AndroidUtilities.dp(18f)
+
+            fun setRowCount(rowCount: Int) {
+                val normalized = rowCount.coerceAtLeast(1)
+                if (this.rowCount == normalized) return
+                this.rowCount = normalized
+                requestLayout()
+                invalidate()
+            }
 
             override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
                 setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), rowHeight * rowCount)
@@ -2072,7 +2158,10 @@ class TopicDetailFragment(
 
             override fun onDraw(canvas: Canvas) {
                 paint.color = Theme.multAlpha(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText), 0.12f)
-                repeat(rowCount) { index ->
+                canvas.getClipBounds(clipRect)
+                val firstRow = (clipRect.top / rowHeight).coerceIn(0, rowCount)
+                val lastRow = ((clipRect.bottom + rowHeight - 1) / rowHeight).coerceIn(firstRow, rowCount)
+                for (index in firstRow until lastRow) {
                     val top = index * rowHeight
                     val centerY = top + rowHeight / 2f
                     canvas.drawCircle(horizontalInset + avatarSize / 2f, centerY, avatarSize / 2f, paint)

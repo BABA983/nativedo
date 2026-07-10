@@ -54,27 +54,6 @@ import java.util.List;
 
 public class ImageReceiver implements NotificationCenter.NotificationCenterDelegate {
 
-    /** V1 stub: ScaleType for image rendering. */
-    public enum ScaleType {
-        FIT_CENTER,
-        CENTER_CROP,
-        CENTER_INSIDE,
-        FIT_XY,
-        CENTER,
-    }
-
-    private ScaleType scaleType = ScaleType.FIT_CENTER;
-
-    /** V1 stub: set the image scale type. */
-    public void setScaleType(ScaleType scaleType) {
-        this.scaleType = scaleType;
-    }
-
-    /** V1 stub: get the image scale type. */
-    public ScaleType getScaleType() {
-        return scaleType;
-    }
-
     List<ImageReceiver> preloadReceivers;
     private boolean allowCrossfadeWithImage = true;
     private boolean allowDrawWhileCacheGenerating;

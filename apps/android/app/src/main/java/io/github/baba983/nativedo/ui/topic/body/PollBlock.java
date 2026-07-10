@@ -9,11 +9,13 @@
 package io.github.baba983.nativedo.ui.topic.body;
 
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffXfermode;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
-import android.graphics.Typeface;
 import android.text.StaticLayout;
 import android.text.TextPaint;
 import android.text.TextUtils;
@@ -25,6 +27,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.Stack;
 
@@ -37,6 +40,7 @@ import org.telegram.ui.Components.AnimatedFloat;
 import org.telegram.ui.Components.CheckBoxBase;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.poll.buttons.PollButtonDrawable;
+import org.telegram.ui.Components.poll.buttons.PollInstantButtonDrawable;
 import org.telegram.ui.Components.spoilers.SpoilerEffect;
 
 final class PollBlock implements PostBodyBlock {
@@ -51,24 +55,27 @@ final class PollBlock implements PostBodyBlock {
     static final float POLL_VERTICAL_PADDING_DP = 12f;
     static final float STATUS_TEXT_GAP_DP = 8f;
     static final float TITLE_MIN_WIDTH_DP = 60f;
-    static final float STATUS_MIN_WIDTH_DP = 40f;
+    static final float STATUS_MIN_WIDTH_DP = 54f;
     static final float TITLE_TO_OPTIONS_GAP_DP = 12f;
     static final float RESULT_MIN_PROGRESS_DP = 5f;
     static final float OPTION_MIN_TEXT_WIDTH_DP = 60f;
     static final float OPTION_MIN_TITLE_HEIGHT_DP = 24f;
-    static final float OPTION_RESULT_EXTRA_HEIGHT_DP = 14f;
-    static final float OPTION_DEFAULT_EXTRA_HEIGHT_DP = 8f;
     static final float OPTION_VOTE_CONTROL_LEFT_DP = 35f;
     static final float SELECTOR_HORIZONTAL_INSET_DP = 8f;
     static final float SELECTOR_VERTICAL_INSET_DP = 13f;
-    static final float OPTION_SPACING_DP = 8f;
-    static final float SUBMIT_BUTTON_HEIGHT_DP = 34f;
-    static final float SUBMIT_BUTTON_RADIUS_DP = 6f;
-    static final float FOOTER_TOP_GAP_DP = 2f;
-    static final float RESULT_LINE_TOP_GAP_DP = 7f;
+    static final float OPTION_ROW_GAP_DP = 26.66f;
+    static final float INSTANT_BUTTON_HEIGHT_DP = 44f;
+    static final float INSTANT_BUTTON_TOP_GAP_DP = 13f;
+    static final float ACTION_BUTTON_GAP_DP = 8f;
+    static final float INFO_FOOTER_TOP_GAP_DP = 6f;
+    static final float RESULT_LINE_TOP_GAP_DP = 6f;
     static final float RESULT_LINE_HEIGHT_DP = 5f;
+    static final float INACTIVE_LINE_TOP_GAP_DP = 13f;
+    static final float INACTIVE_LINE_START_OFFSET_DP = 2f;
     static final float TITLE_CLIP_VERTICAL_INSET_DP = 2f;
     static final float PERCENT_X_OFFSET_DP = 6.5f;
+    static final float PERCENT_BASELINE_Y_DP = 14f;
+    static final float RESULT_VOTE_COUNT_RESERVE_DP = 24f;
     static final float RESULT_LINE_WIDTH_INSET_DP = 23f;
     static final float POLL_BUTTON_LEFT_EXTRA_DP = 9f;
     static final float POLL_BUTTON_RIGHT_EXTRA_DP = 1f;
@@ -81,7 +88,10 @@ final class PollBlock implements PostBodyBlock {
     static final float SINGLE_CHOICE_CHECK_SIZE_DP = 8.5f;
     static final float RESULT_CHECK_CENTER_X_OFFSET_DP = 15.5f;
     static final float RESULT_CHECK_CENTER_Y_OFFSET_DP = 2.5f;
-    static final float RESULT_CHECK_SIZE_DP = 7f;
+    static final float RESULT_LINE_CORNER_DP = 2f;
+    static final float RESULT_CHECK_LAYER_SIZE_DP = 7f;
+    static final float RESULT_CHECK_SINGLE_RADIUS_DP = 7f;
+    static final float RESULT_CHECK_MULTI_RADIUS_DP = 4.5f;
     static final float CHECKBOX_CUSTOM_RADIUS_DP = 5f;
     static final int MULTI_CHOICE_CHECKBOX_SIZE = 19;
     static final int SINGLE_CHOICE_CHECKBOX_SIZE = 20;
@@ -239,29 +249,34 @@ final class PollBlock implements PostBodyBlock {
     private final PostBodyBlockState inlineState;
     private final int stateIndex;
     private final String inlineStateKey;
-    private final Paint resultLinePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint selectedLinePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint resultLineTrackPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint checkStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint pressedPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private Paint srcOutPaint;
     private final TextPaint titlePaint;
     private final TextPaint statusPaint;
     private final TextPaint optionPaint;
     private final TextPaint percentPaint;
-    private final TextPaint footerPaint;
+    private final TextPaint infoFooterPaint;
+    private PollInstantButtonDrawable pollInstantButtonDrawable;
+    private PollInstantButtonDrawable pollRemoveVoteButtonDrawable;
+    private final RectF instantButtonBounds = new RectF();
+    private final RectF removeVoteButtonBounds = new RectF();
     private final AnimatedFloat pollAnimationProgress;
     private final PostBodyTextBuilder textBuilder;
     private final int touchSlop;
     private final ArrayList<PollButton> pollButtons = new ArrayList<>();
     private StaticLayout titleLayout;
     private StaticLayout statusLayout;
-    private StaticLayout footerLayout;
-    private StaticLayout submitLayout;
-    private final RectF submitBounds = new RectF();
+    private StaticLayout infoFooterLayout;
+    private int infoFooterTop;
+    private int measuredWidth;
     private int measuredHeight;
     private int contentWidth;
     private int buttonLeft;
     private int pressedVoteButton = -1;
-    private boolean submitPressed;
+    private boolean instantButtonPressed;
+    private boolean removeVoteButtonPressed;
     private int activeRichTextButtonIndex = -1;
     private boolean lastShowResults;
 
@@ -276,23 +291,19 @@ final class PollBlock implements PostBodyBlock {
         this.inlineState = inlineState;
         this.stateIndex = stateIndex;
         this.inlineStateKey = inlineStateKey;
-        resultLinePaint.setColor(context.getPollBarColor());
-        selectedLinePaint.setColor(Theme.multAlpha(context.getAccentColor(), 0.36f));
         pressedPaint.setColor(Theme.multAlpha(context.getAccentColor(), 0.10f));
         checkStrokePaint.setStyle(Paint.Style.STROKE);
         checkStrokePaint.setStrokeWidth(checkStrokeWidthPx());
-        titlePaint = new TextPaint(context.getParagraphPaint());
-        titlePaint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
+        titlePaint = new TextPaint(Theme.chat_audioTitlePaint);
         statusPaint = new TextPaint(context.getQuotePaint());
         statusPaint.setColor(context.getAccentColor());
-        statusPaint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
-        optionPaint = new TextPaint(context.getQuotePaint());
-        percentPaint = new TextPaint(context.getQuotePaint());
-        percentPaint.setColor(context.getSecondaryTextColor());
-        percentPaint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
-        footerPaint = new TextPaint(context.getQuotePaint());
-        footerPaint.setColor(context.getSecondaryTextColor());
-        footerPaint.setTextSize(footerTextSizePx());
+        statusPaint.setTypeface(android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD));
+        optionPaint = new TextPaint(Theme.chat_audioPerformerPaint);
+        percentPaint = new TextPaint(Theme.chat_instantViewPaint);
+        infoFooterPaint = new TextPaint(context.getQuotePaint());
+        infoFooterPaint.setTextSize(AndroidUtilities.dp(FOOTER_TEXT_SIZE_DP));
+        resultLineTrackPaint.setStyle(Paint.Style.FILL);
+        refreshPollThemeColors();
         pollAnimationProgress = new AnimatedFloat(0f, context.getHost(), 0, pollAnimationDurationMs(), CubicBezierInterpolator.EASE_OUT);
         textBuilder = new PostBodyTextBuilder(context);
         touchSlop = ViewConfiguration.get(context.getHost().getContext()).getScaledTouchSlop();
@@ -300,11 +311,12 @@ final class PollBlock implements PostBodyBlock {
 
     @Override
     public int horizontalInsetPx() {
-        return 0;
+        return PostBodyBlock.DEFAULT_HORIZONTAL_INSET;
     }
     @Override
     public int measure(int maxWidthPx) {
         int width = Math.max(maxWidthPx, minPollWidthPx());
+        measuredWidth = width;
         buttonLeft = optionTextLeftPx();
         contentWidth = Math.max(width - buttonLeft - contentRightInsetPx(), contentMinWidthPx());
         List<CookedPostBlock.PollOption> options = block.getOptions().isEmpty()
@@ -318,14 +330,30 @@ final class PollBlock implements PostBodyBlock {
         float animationProgress = pollAnimationProgress.set(showResults ? 1f : 0f);
 
         int padding = pollVerticalPaddingPx();
-        int statusWidth = statusText().isEmpty() ? 0 : (int) Math.ceil(statusPaint.measureText(statusText())) + statusTextGapPx();
-        int titleWidth = Math.max(contentWidth - statusWidth, titleMinWidthPx());
-        String title = block.getName() != null && !block.getName().trim().isEmpty() ? block.getName() : "投票";
-        titleLayout = layout(title, titlePaint, titleWidth, 2);
-        statusLayout = statusText().isEmpty() ? null : layout(statusText(), statusPaint, Math.max(statusWidth, statusMinWidthPx()), 1);
-        int y = padding + Math.max(titleLayout != null ? titleLayout.getHeight() : 0, statusLayout != null ? statusLayout.getHeight() : 0) + titleToOptionsGapPx();
+        String title = block.getTitle() != null && !block.getTitle().trim().isEmpty() ? block.getTitle().trim() : "";
+        String status = statusText();
+        int statusWidth = 0;
+        if (!status.isEmpty()) {
+            statusWidth = (int) Math.ceil(statusPaint.measureText(status));
+            if (!title.isEmpty()) {
+                statusWidth += statusTextGapPx();
+            }
+            statusWidth = Math.max(statusWidth, statusMinWidthPx());
+        }
+        int titleWidth = title.isEmpty() ? contentWidth : Math.max(contentWidth - statusWidth, titleMinWidthPx());
+        titleLayout = title.isEmpty() ? null : layout(title, titlePaint, titleWidth, 2);
+        statusLayout = status.isEmpty() ? null : layoutStatus(status, statusWidth);
+        int headerHeight = Math.max(titleLayout != null ? titleLayout.getHeight() : 0, statusLayout != null ? statusLayout.getHeight() : 0);
+        int y = padding + headerHeight + (headerHeight > 0 ? titleToOptionsGapPx() : 0);
 
         int[] percents = optionPercents(options);
+        int maxOptionVotes = 0;
+        for (CookedPostBlock.PollOption option : options) {
+            if (option.getVotes() != null) {
+                maxOptionVotes = Math.max(maxOptionVotes, option.getVotes());
+            }
+        }
+        int optionTitleWidth = optionTitleWidthPx(showResults, maxOptionVotes);
         for (int i = 0; i < pollButtons.size(); i++) {
             PollButton button = pollButtons.get(i);
             ensureButtonChrome(button);
@@ -333,18 +361,19 @@ final class PollBlock implements PostBodyBlock {
             button.prevPercentProgress = button.percentProgress;
             button.prevChosen = button.chosen;
             button.percent = percents[i];
-            button.percentProgress = Math.max(resultMinProgressPx() / (float) Math.max(contentWidth, 1), button.percent / 100f);
+            button.percentProgress = button.percent > 0
+                    ? Math.max(resultMinProgressPx() / (float) Math.max(contentWidth, 1), button.percent / 100f)
+                    : 0f;
             button.chosen = isChosen(button.answer, i);
             button.checkBox.setChecked(button.chosen, button.prevChosen != button.chosen);
             button.checkBox.checkScale = showResults ? 1f : 0.85f;
             button.count = button.answer.getVotes() != null ? button.answer.getVotes() : 0;
             button.pollButtonDrawable.setVotersVisible(showResults, false);
             button.pollButtonDrawable.setVotersCount(button.count, false);
-            int textWidth = Math.max(contentWidth, optionMinTextWidthPx());
-            buildButtonTitle(button, textWidth);
+            buildButtonTitle(button, optionTitleWidth);
             button.percentLayout = showResults ? percentLayout(button.percent + "%") : null;
             button.y = y;
-            button.height = Math.max(button.title.getHeight(), optionMinTitleHeightPx()) + (showResults ? optionResultExtraHeightPx() : optionDefaultExtraHeightPx());
+            button.height = Math.max(button.title.getHeight(), optionMinTitleHeightPx());
             button.x = buttonLeft - optionVoteControlLeftPx();
             button.titleX = buttonLeft;
             button.titleY = y;
@@ -354,21 +383,15 @@ final class PollBlock implements PostBodyBlock {
                     buttonLeft + contentWidth,
                     y + button.height + selectorVerticalInsetPx()
             );
-            y += button.height + optionSpacingPx();
+            y += button.height + optionRowGapPx();
         }
 
-        if (shouldShowMultiSelectSubmitButton()) {
-            submitLayout = layout("提交投票", statusPaint, contentWidth, 1);
-            int submitHeight = submitButtonHeightPx();
-            submitBounds.set(buttonLeft, y, buttonLeft + contentWidth, y + submitHeight);
-            y += submitHeight + optionSpacingPx();
-        } else {
-            submitLayout = null;
-            submitBounds.setEmpty();
-        }
-
-        footerLayout = layout(footerText(), footerPaint, contentWidth, 2);
-        y += footerTopGapPx() + (footerLayout != null ? footerLayout.getHeight() : 0);
+        infoFooterLayout = null;
+        infoFooterTop = 0;
+        instantButtonBounds.setEmpty();
+        removeVoteButtonBounds.setEmpty();
+        int actionsTop = y + instantButtonTopGapPx();
+        y = layoutPollActionButtons(actionsTop);
         measuredHeight = y + padding;
         if (animationProgress > 0f && animationProgress < 1f) {
             context.getHost().invalidate();
@@ -395,12 +418,14 @@ final class PollBlock implements PostBodyBlock {
         for (int i = 0; i < pollButtons.size(); i++) {
             drawButton(canvas, pollButtons.get(i), i, progress);
         }
-        drawSubmitButton(canvas);
-        if (footerLayout != null) {
-            canvas.save();
-            canvas.translate(buttonLeft, measuredHeight - padding - footerLayout.getHeight());
-            footerLayout.draw(canvas);
-            canvas.restore();
+        if (shouldDrawInstantButton()) {
+            drawInstantButton(canvas);
+        }
+        if (shouldDrawRemoveVoteButton()) {
+            drawRemoveVoteButton(canvas);
+        }
+        if (infoFooterLayout != null) {
+            drawInfoFooter(canvas);
         }
     }
 
@@ -413,15 +438,6 @@ final class PollBlock implements PostBodyBlock {
         if (statusLayout != null) {
             blocks.add(new PostSelectionLayoutBlock(statusLayout, x + buttonLeft + contentWidth - statusLayout.getWidth(), y + padding, 0, null));
         }
-        if (submitLayout != null) {
-            blocks.add(new PostSelectionLayoutBlock(
-                    submitLayout,
-                    x + (int) (submitBounds.left + (submitBounds.width() - submitLayout.getWidth()) / 2f),
-                    y + (int) (submitBounds.top + (submitBounds.height() - submitLayout.getHeight()) / 2f),
-                    0,
-                    null
-            ));
-        }
         for (int i = 0; i < pollButtons.size(); i++) {
             PollButton button = pollButtons.get(i);
             int row = i + 1;
@@ -429,11 +445,14 @@ final class PollBlock implements PostBodyBlock {
                 blocks.add(new PostSelectionLayoutBlock(button.title, x + (int) button.titleX, y + (int) button.titleY, row, null));
             }
             if (button.percentLayout != null) {
-                blocks.add(new PostSelectionLayoutBlock(button.percentLayout, x + percentLayoutX(button.percentLayout), y + (int) button.titleY, row, null));
+                blocks.add(new PostSelectionLayoutBlock(
+                        button.percentLayout,
+                        x + percentLayoutX(button.percentLayout),
+                        y + (int) (button.titleY + percentBaselineOffsetPx()),
+                        row,
+                        null
+                ));
             }
-        }
-        if (footerLayout != null) {
-            blocks.add(new PostSelectionLayoutBlock(footerLayout, x + buttonLeft, y + measuredHeight - padding - footerLayout.getHeight(), 0, null));
         }
     }
 
@@ -465,11 +484,21 @@ final class PollBlock implements PostBodyBlock {
         int index = buttonIndexAt(localX, localY);
         switch (action) {
             case MotionEvent.ACTION_DOWN:
-                if (submitBounds.contains(localX, localY)) {
-                    if (!canSubmitMultiSelectVote()) {
+                if (shouldDrawInstantButton() && instantButtonBounds.contains(localX, localY)) {
+                    if (!canInstantButtonAction()) {
                         return false;
                     }
-                    submitPressed = true;
+                    instantButtonPressed = true;
+                    setInstantButtonPressed(true, localX, localY);
+                    context.getHost().invalidate();
+                    return true;
+                }
+                if (shouldDrawRemoveVoteButton() && removeVoteButtonBounds.contains(localX, localY)) {
+                    if (!canRemoveVote()) {
+                        return false;
+                    }
+                    removeVoteButtonPressed = true;
+                    setRemoveVoteButtonPressed(true, localX, localY);
                     context.getHost().invalidate();
                     return true;
                 }
@@ -481,10 +510,23 @@ final class PollBlock implements PostBodyBlock {
                 context.getHost().invalidate();
                 return true;
             case MotionEvent.ACTION_MOVE:
-                if (submitPressed) {
-                    if (!submitBounds.contains(localX, localY)) {
-                        submitPressed = false;
+                if (instantButtonPressed) {
+                    if (!instantButtonBounds.contains(localX, localY)) {
+                        instantButtonPressed = false;
+                        setInstantButtonPressed(false, localX, localY);
                         context.getHost().invalidate();
+                    } else {
+                        setInstantButtonHotspot(localX, localY);
+                    }
+                    return true;
+                }
+                if (removeVoteButtonPressed) {
+                    if (!removeVoteButtonBounds.contains(localX, localY)) {
+                        removeVoteButtonPressed = false;
+                        setRemoveVoteButtonPressed(false, localX, localY);
+                        context.getHost().invalidate();
+                    } else {
+                        setRemoveVoteButtonHotspot(localX, localY);
                     }
                     return true;
                 }
@@ -495,15 +537,30 @@ final class PollBlock implements PostBodyBlock {
                 } else if (pressedVoteButton >= 0) {
                     setPollButtonHotspot(pressedVoteButton, localX, localY);
                 }
-                return pressedVoteButton >= 0;
+                return pressedVoteButton >= 0 || removeVoteButtonPressed;
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
-                if (submitPressed) {
-                    boolean submitWasPressed = event.getActionMasked() == MotionEvent.ACTION_UP && submitBounds.contains(localX, localY);
-                    submitPressed = false;
+                if (instantButtonPressed) {
+                    boolean submitWasPressed = event.getActionMasked() == MotionEvent.ACTION_UP && instantButtonBounds.contains(localX, localY);
+                    instantButtonPressed = false;
+                    setInstantButtonPressed(false, localX, localY);
                     context.getHost().invalidate();
                     if (submitWasPressed) {
-                        submitMultiSelectVote();
+                        if (canSubmitMultiSelectVote()) {
+                            submitMultiSelectVote();
+                        } else if (canOpenVotersList()) {
+                            openVotersList();
+                        }
+                    }
+                    return true;
+                }
+                if (removeVoteButtonPressed) {
+                    boolean removeWasPressed = event.getActionMasked() == MotionEvent.ACTION_UP && removeVoteButtonBounds.contains(localX, localY);
+                    removeVoteButtonPressed = false;
+                    setRemoveVoteButtonPressed(false, localX, localY);
+                    context.getHost().invalidate();
+                    if (removeWasPressed) {
+                        removePollVote();
                     }
                     return true;
                 }
@@ -526,6 +583,7 @@ final class PollBlock implements PostBodyBlock {
                     } else {
                         List<String> optionIds = selectedOptionIdsForVote(released);
                         if (!optionIds.isEmpty()) {
+                            markPollActionInFlight();
                             markLocalSubmitted();
                             context.getDelegate().onPollOptionsSelected(block.getName(), optionIds);
                         }
@@ -559,6 +617,14 @@ final class PollBlock implements PostBodyBlock {
 
     @Override
     public void onAttachedToWindow() {
+        ensureInstantButtonDrawable();
+        ensureRemoveVoteButtonDrawable();
+        if (pollInstantButtonDrawable != null) {
+            pollInstantButtonDrawable.setupCallbacks(context.getHost());
+        }
+        if (pollRemoveVoteButtonDrawable != null) {
+            pollRemoveVoteButtonDrawable.setupCallbacks(context.getHost());
+        }
         for (PollButton button : pollButtons) {
             button.attachTitle(context.getHost());
             button.attach();
@@ -572,7 +638,10 @@ final class PollBlock implements PostBodyBlock {
             setPollButtonPressed(pressedVoteButton, false, 0f, 0f);
         }
         pressedVoteButton = -1;
-        submitPressed = false;
+        instantButtonPressed = false;
+        removeVoteButtonPressed = false;
+        setInstantButtonPressed(false, 0f, 0f);
+        setRemoveVoteButtonPressed(false, 0f, 0f);
         for (PollButton button : pollButtons) {
             button.detachTitle();
             button.detach();
@@ -581,61 +650,370 @@ final class PollBlock implements PostBodyBlock {
 
     @Override
     public void applyTheme() {
+        refreshPollThemeColors();
+        if (pollInstantButtonDrawable != null) {
+            pollInstantButtonDrawable.setButtonText(instantButtonText(), false);
+        }
+        if (pollRemoveVoteButtonDrawable != null) {
+            pollRemoveVoteButtonDrawable.setButtonText("撤销投票", false);
+        }
         for (PollButton button : pollButtons) {
             if (button.pollButtonDrawable != null) {
-                button.pollButtonDrawable.setVotersCountTextColor(context.getSecondaryTextColor());
+                button.pollButtonDrawable.setVotersCountTextColor(Theme.getColor(Theme.key_chat_messageTextIn));
             }
         }
         context.getHost().invalidate();
     }
 
+    private void refreshPollThemeColors() {
+        int messageTextColor = Theme.getColor(Theme.key_chat_messageTextIn);
+        int linkColor = Theme.getColor(Theme.key_chat_messageLinkIn);
+        titlePaint.setColor(messageTextColor);
+        optionPaint.setColor(messageTextColor);
+        optionPaint.linkColor = linkColor;
+        percentPaint.setColor(messageTextColor);
+        resultLineTrackPaint.setColor(Theme.multAlpha(messageTextColor, 0.06f));
+        Theme.chat_docBackPaint.setColor(Theme.getColor(Theme.key_chat_inAudioSeekbarFill));
+        checkStrokePaint.setColor(Theme.getColor(Theme.key_chat_inAudioSeekbarFill));
+        infoFooterPaint.setColor(context.getSecondaryTextColor());
+        if (pollInstantButtonDrawable != null) {
+            pollInstantButtonDrawable.setButtonTextColor(Theme.getColor(Theme.key_chat_inPreviewInstantText));
+        }
+        if (pollRemoveVoteButtonDrawable != null) {
+            pollRemoveVoteButtonDrawable.setButtonTextColor(Theme.getColor(Theme.key_chat_inPreviewInstantText));
+        }
+    }
+
+    private int layoutPollActionButtons(int actionsTop) {
+        boolean drawInstant = shouldDrawInstantButton();
+        boolean drawRemove = shouldDrawRemoveVoteButton();
+        int buttonHeight = instantButtonHeightPx();
+        int left = pollButtonLeft();
+        int right = pollButtonRight();
+        int bottom = actionsTop;
+        if (drawInstant) {
+            ensureInstantButtonDrawable();
+            pollInstantButtonDrawable.setButtonText(instantButtonText(), false);
+        }
+        if (drawRemove) {
+            ensureRemoveVoteButtonDrawable();
+            pollRemoveVoteButtonDrawable.setButtonText("撤销投票", false);
+        }
+        if (drawInstant && drawRemove) {
+            int gap = actionButtonGapPx();
+            int halfWidth = Math.max((right - left - gap) / 2, 0);
+            instantButtonBounds.set(left, actionsTop, left + halfWidth, actionsTop + buttonHeight);
+            removeVoteButtonBounds.set(left + halfWidth + gap, actionsTop, right, actionsTop + buttonHeight);
+            bottom = actionsTop + buttonHeight;
+        } else if (drawInstant) {
+            instantButtonBounds.set(left, actionsTop, right, actionsTop + buttonHeight);
+            bottom = actionsTop + buttonHeight;
+        } else if (drawRemove) {
+            removeVoteButtonBounds.set(left, actionsTop, right, actionsTop + buttonHeight);
+            bottom = actionsTop + buttonHeight;
+        }
+        if (shouldDrawInfoFooter()) {
+            bottom += infoFooterTopGapPx();
+            infoFooterLayout = layout(footerText(), infoFooterPaint, contentWidth, 1);
+            infoFooterTop = bottom;
+            bottom += infoFooterLayout.getHeight();
+        }
+        return bottom;
+    }
+
+    private void ensureInstantButtonDrawable() {
+        if (pollInstantButtonDrawable == null) {
+            pollInstantButtonDrawable = new PollInstantButtonDrawable(context.getHost());
+            if (context.getHost().isAttachedToWindow()) {
+                pollInstantButtonDrawable.setupCallbacks(context.getHost());
+            }
+        }
+    }
+
+    private void ensureRemoveVoteButtonDrawable() {
+        if (pollRemoveVoteButtonDrawable == null) {
+            pollRemoveVoteButtonDrawable = new PollInstantButtonDrawable(context.getHost());
+            if (context.getHost().isAttachedToWindow()) {
+                pollRemoveVoteButtonDrawable.setupCallbacks(context.getHost());
+            }
+        }
+    }
+
+    private String instantButtonText() {
+        if (shouldShowMultiSelectSubmitButton()) {
+            return "提交投票";
+        }
+        if (canOpenVotersList()) {
+            return "查看投票";
+        }
+        return footerText();
+    }
+
+    private boolean canInstantButtonSubmit() {
+        return canSubmitMultiSelectVote();
+    }
+
+    private boolean canInstantButtonAction() {
+        return !isPollActionInFlight() && (canSubmitMultiSelectVote() || canOpenVotersList());
+    }
+
+    private boolean canOpenVotersList() {
+        if (Boolean.TRUE.equals(block.getPublicPoll()) && effectiveVoterCount() > 0 && shouldShowResults()) {
+            return true;
+        }
+        return hasVotedState();
+    }
+
+    private boolean hasVotedState() {
+        return !hasLocalRemovedVote() && (hasLocalSubmittedVote() || hasServerSelection());
+    }
+
+    private void openVotersList() {
+        java.util.ArrayList<io.github.baba983.nativedo.feature.topic.ui.PollOptionRef> optionRefs = new java.util.ArrayList<>();
+        String selectedOptionId = null;
+        for (CookedPostBlock.PollOption option : block.getOptions()) {
+            String id = option.getId() != null ? option.getId() : "";
+            int votes = option.getVotes() != null ? option.getVotes() : 0;
+            optionRefs.add(new io.github.baba983.nativedo.feature.topic.ui.PollOptionRef(
+                    id,
+                    option.getLabel(),
+                    votes
+            ));
+            if (selectedOptionId == null && option.getSelected()) {
+                selectedOptionId = id;
+            }
+        }
+        if (selectedOptionId == null && state != null) {
+            java.util.Set<Integer> local = state.getSelectedPollOptionIndexesByIndex().get(stateIndex);
+            if (local != null) {
+                for (Integer index : local) {
+                    if (index == null || index < 0 || index >= pollButtons.size()) {
+                        continue;
+                    }
+                    String optionId = pollButtons.get(index).answer.getId();
+                    if (optionId != null && !optionId.trim().isEmpty()) {
+                        selectedOptionId = optionId;
+                        break;
+                    }
+                }
+            }
+        }
+        context.getDelegate().onPollVotersRequested(new io.github.baba983.nativedo.feature.topic.ui.PollVotersSheetArgs(
+                block.getName() != null ? block.getName() : "",
+                block.getTitle(),
+                optionRefs,
+                selectedOptionId
+        ));
+    }
+
+    private void drawInstantButton(Canvas canvas) {
+        if (pollInstantButtonDrawable == null || instantButtonBounds.isEmpty()) {
+            return;
+        }
+        pollInstantButtonDrawable.setButtonText(instantButtonText(), false);
+        pollInstantButtonDrawable.setButtonTextColor(Theme.getColor(Theme.key_chat_inPreviewInstantText));
+        pollInstantButtonDrawable.setBounds(
+                Math.round(instantButtonBounds.left),
+                Math.round(instantButtonBounds.top),
+                Math.round(instantButtonBounds.right),
+                Math.round(instantButtonBounds.bottom)
+        );
+        Drawable selector = pollInstantButtonDrawable.getSelectorDrawable();
+        selector.draw(canvas);
+        pollInstantButtonDrawable.draw(canvas);
+    }
+
+    private void drawRemoveVoteButton(Canvas canvas) {
+        if (pollRemoveVoteButtonDrawable == null || removeVoteButtonBounds.isEmpty()) {
+            return;
+        }
+        pollRemoveVoteButtonDrawable.setButtonText("撤销投票", false);
+        pollRemoveVoteButtonDrawable.setButtonTextColor(Theme.getColor(Theme.key_chat_inPreviewInstantText));
+        pollRemoveVoteButtonDrawable.setBounds(
+                Math.round(removeVoteButtonBounds.left),
+                Math.round(removeVoteButtonBounds.top),
+                Math.round(removeVoteButtonBounds.right),
+                Math.round(removeVoteButtonBounds.bottom)
+        );
+        Drawable selector = pollRemoveVoteButtonDrawable.getSelectorDrawable();
+        selector.draw(canvas);
+        pollRemoveVoteButtonDrawable.draw(canvas);
+    }
+
+    private void drawInfoFooter(Canvas canvas) {
+        if (infoFooterLayout == null) {
+            return;
+        }
+        float footerX = buttonLeft + (contentWidth - infoFooterLayout.getWidth()) / 2f;
+        canvas.save();
+        canvas.translate(footerX, infoFooterTop);
+        infoFooterLayout.draw(canvas);
+        canvas.restore();
+    }
+
+    private boolean shouldDrawInstantButton() {
+        return canSubmitMultiSelectVote() || canOpenVotersList();
+    }
+
+    private boolean shouldDrawRemoveVoteButton() {
+        return canRemoveVote();
+    }
+
+    private boolean canRemoveVote() {
+        return block.getName() != null
+                && !block.getName().trim().isEmpty()
+                && !"closed".equals(block.getStatus())
+                && !hasLocalRemovedVote()
+                && !isPollActionInFlight()
+                && (hasServerSelection() || hasLocalSubmittedVote());
+    }
+
+    private boolean shouldDrawInfoFooter() {
+        if (shouldDrawInstantButton()) {
+            return false;
+        }
+        if (effectiveVoterCount() <= 0) {
+            return false;
+        }
+        if (shouldDrawRemoveVoteButton()) {
+            return true;
+        }
+        if (shouldShowResults()) {
+            return true;
+        }
+        return "closed".equals(block.getStatus());
+    }
+
+    private void setInstantButtonPressed(boolean pressed, float x, float y) {
+        if (pollInstantButtonDrawable == null) {
+            return;
+        }
+        Drawable selector = pollInstantButtonDrawable.getSelectorDrawable();
+        selector.setHotspot(x, y);
+        selector.setState(pressed ? PRESSED_STATE : StateSet.NOTHING);
+    }
+
+    private void setInstantButtonHotspot(float x, float y) {
+        if (pollInstantButtonDrawable == null) {
+            return;
+        }
+        pollInstantButtonDrawable.getSelectorDrawable().setHotspot(x, y);
+    }
+
+    private void setRemoveVoteButtonPressed(boolean pressed, float x, float y) {
+        if (pollRemoveVoteButtonDrawable == null) {
+            return;
+        }
+        Drawable selector = pollRemoveVoteButtonDrawable.getSelectorDrawable();
+        selector.setHotspot(x, y);
+        selector.setState(pressed ? PRESSED_STATE : StateSet.NOTHING);
+    }
+
+    private void setRemoveVoteButtonHotspot(float x, float y) {
+        if (pollRemoveVoteButtonDrawable == null) {
+            return;
+        }
+        pollRemoveVoteButtonDrawable.getSelectorDrawable().setHotspot(x, y);
+    }
+
+    private void removePollVote() {
+        if (!canRemoveVote()) {
+            return;
+        }
+        markPollActionInFlight();
+        clearLocalVoteState();
+        context.getDelegate().onPollVoteRemoved(block.getName());
+    }
+
+    private void clearLocalVoteState() {
+        if (state != null) {
+            state.getSubmittedPollIndexes().remove(stateIndex);
+            state.getSelectedPollOptionIndexesByIndex().remove(stateIndex);
+            state.getRemovedPollIndexes().add(stateIndex);
+        }
+        for (int i = 0; i < pollButtons.size(); i++) {
+            syncButtonChoiceState(i, true);
+        }
+        context.getHost().requestLayout();
+        context.getHost().invalidate();
+    }
+
     private void drawButton(Canvas canvas, PollButton button, int index, float pollProgress) {
         boolean showResults = shouldShowResults();
-        boolean chosen = button.chosen;
         drawButtonSelector(canvas, button);
+        if (showResults && button.pollButtonDrawable != null && button.count > 0) {
+            button.pollButtonDrawable.setBounds(
+                    pollButtonLeft(),
+                    button.y - selectorVerticalInsetPx(),
+                    pollButtonRight(),
+                    button.y + button.height + selectorVerticalInsetPx()
+            );
+            button.pollButtonDrawable.setVotersCountTextColor(Theme.getColor(Theme.key_chat_messageTextIn));
+            button.pollButtonDrawable.draw(canvas);
+        }
+        if (button.title == null) {
+            if (!showResults) {
+                drawInactiveOptionLine(canvas, button);
+                drawVoteControl(canvas, button);
+            }
+            return;
+        }
+        canvas.save();
+        canvas.translate(button.titleX, button.titleY);
+        canvas.save();
+        canvas.clipRect(
+                0,
+                -titleClipVerticalInsetPx(),
+                button.title.getWidth(),
+                button.title.getHeight() + titleClipVerticalInsetPx()
+        );
+        button.drawTitle(canvas, context.getHost()::invalidate);
+        canvas.restore();
         if (showResults) {
             int currentPercent = clamp(Math.round(button.prevPercent + (button.percent - button.prevPercent) * pollProgress), 0, 100);
             float currentProgress = button.prevPercentProgress + (button.percentProgress - button.prevPercentProgress) * pollProgress;
-            int lineLeft = buttonLeft;
-            int lineRight = lineLeft + resultLineWidth();
-            int lineTop = button.y + button.title.getHeight() + resultLineTopGapPx();
-            int lineHeight = resultLineHeightPx();
-            resultLinePaint.setAlpha(255);
-            canvas.drawRoundRect(lineLeft, lineTop, lineRight, lineTop + lineHeight, lineHeight / 2f, lineHeight / 2f, resultLinePaint);
-            RectF selected = new RectF(lineLeft, lineTop, lineLeft + Math.max(resultLineMinWidthPx(), (lineRight - lineLeft) * currentProgress), lineTop + lineHeight);
-            selectedLinePaint.setAlpha(chosen ? 255 : 160);
-            canvas.drawRoundRect(selected, lineHeight / 2f, lineHeight / 2f, chosen ? selectedLinePaint : resultLinePaint);
-            if (button.percentLayout != null) {
-                StaticLayout percent = percentLayout(currentPercent + "%");
-                canvas.save();
-                canvas.translate(percentLayoutX(percent), button.titleY);
-                percent.draw(canvas);
-                canvas.restore();
+            String percentText = currentPercent + "%";
+            float percentWidth = percentPaint.measureText(percentText);
+            canvas.drawText(
+                    percentText,
+                    -percentXOffsetPx() - percentWidth,
+                    percentBaselineOffsetPx(),
+                    percentPaint
+            );
+            int lineWidth = resultLineWidth();
+            float lineTop = button.height + resultLineTopGapPx();
+            float lineBottom = lineTop + resultLineHeightPx();
+            float corner = resultLineCornerPx();
+            boolean drawChosenCheckbox = button.chosen || button.prevChosen || button.checkBox != null && button.checkBox.getProgress() > 0f;
+            boolean drawProgressTrack = currentPercent > 0 || !drawChosenCheckbox;
+            if (drawProgressTrack) {
+                canvas.drawRoundRect(0f, lineTop, lineWidth, lineBottom, corner, corner, resultLineTrackPaint);
             }
-            if (button.pollButtonDrawable != null && button.count > 0) {
-                button.pollButtonDrawable.setBounds(
-                        pollButtonLeft(),
-                        button.y - selectorVerticalInsetPx(),
-                        pollButtonRight(),
-                        button.y + button.height + selectorVerticalInsetPx()
+            if (currentPercent > 0) {
+                float fillRight = Math.max(lineWidth * currentProgress, resultLineMinWidthPx());
+                int fillColor = Theme.chat_docBackPaint.getColor();
+                int fillAlpha = Color.alpha(fillColor);
+                resultLineTrackPaint.setColor(Color.argb(16 * fillAlpha / 255, Color.red(fillColor), Color.green(fillColor), Color.blue(fillColor)));
+                canvas.drawRoundRect(
+                        Math.max(fillRight - AndroidUtilities.dp(2f), 0f),
+                        lineTop,
+                        lineWidth,
+                        lineBottom,
+                        corner,
+                        corner,
+                        resultLineTrackPaint
                 );
-                button.pollButtonDrawable.setVotersCountTextColor(context.getSecondaryTextColor());
-                button.pollButtonDrawable.draw(canvas);
+                Theme.chat_docBackPaint.setColor(fillColor);
+                resultLineTrackPaint.setColor(Theme.multAlpha(Theme.getColor(Theme.key_chat_messageTextIn), 0.06f));
+                canvas.drawRoundRect(0f, lineTop, fillRight, lineBottom, corner, corner, Theme.chat_docBackPaint);
+            }
+            if (drawChosenCheckbox) {
+                drawResultCheck(canvas, 0f, lineTop, lineBottom - lineTop);
             }
         }
-        if (button.title != null) {
-            canvas.save();
-            int textWidth = contentWidth;
-            canvas.clipRect(0, -titleClipVerticalInsetPx(), textWidth, button.title.getHeight() + titleClipVerticalInsetPx());
-            canvas.translate(button.titleX, button.titleY);
-            button.drawTitle(canvas, context.getHost()::invalidate);
-            canvas.restore();
-        }
-        if (showResults) {
-            if (chosen || button.prevChosen || button.checkBox != null && button.checkBox.getProgress() > 0f) {
-                drawResultCheck(canvas, button);
-            }
-        } else {
+        canvas.restore();
+        if (!showResults) {
+            drawInactiveOptionLine(canvas, button);
             drawVoteControl(canvas, button);
         }
     }
@@ -654,29 +1032,6 @@ final class PollBlock implements PostBodyBlock {
                 (int) button.selectorBounds.bottom
         );
         button.selectorDrawable.draw(canvas);
-    }
-
-    private void drawSubmitButton(Canvas canvas) {
-        if (submitLayout == null || submitBounds.isEmpty()) {
-            return;
-        }
-        boolean enabled = canSubmitMultiSelectVote();
-        int backgroundColor = enabled
-                ? Theme.multAlpha(context.getAccentColor(), submitPressed ? 0.22f : 0.12f)
-                : Theme.multAlpha(context.getSecondaryTextColor(), 0.10f);
-        int textColor = enabled ? context.getAccentColor() : context.getSecondaryTextColor();
-        pressedPaint.setColor(backgroundColor);
-        statusPaint.setColor(textColor);
-        canvas.drawRoundRect(submitBounds, submitButtonRadiusPx(), submitButtonRadiusPx(), pressedPaint);
-        canvas.save();
-        canvas.translate(
-                submitBounds.left + (submitBounds.width() - submitLayout.getWidth()) / 2f,
-                submitBounds.top + (submitBounds.height() - submitLayout.getHeight()) / 2f
-        );
-        submitLayout.draw(canvas);
-        canvas.restore();
-        statusPaint.setColor(context.getAccentColor());
-        pressedPaint.setColor(Theme.multAlpha(context.getAccentColor(), 0.10f));
     }
 
     private int percentLayoutX(StaticLayout layout) {
@@ -755,12 +1110,8 @@ final class PollBlock implements PostBodyBlock {
         return AndroidUtilities.dp(OPTION_MIN_TITLE_HEIGHT_DP);
     }
 
-    static int optionResultExtraHeightPx() {
-        return AndroidUtilities.dp(OPTION_RESULT_EXTRA_HEIGHT_DP);
-    }
-
-    static int optionDefaultExtraHeightPx() {
-        return AndroidUtilities.dp(OPTION_DEFAULT_EXTRA_HEIGHT_DP);
+    static int optionRowGapPx() {
+        return AndroidUtilities.dp(OPTION_ROW_GAP_DP);
     }
 
     static int optionVoteControlLeftPx() {
@@ -775,20 +1126,20 @@ final class PollBlock implements PostBodyBlock {
         return AndroidUtilities.dp(SELECTOR_VERTICAL_INSET_DP);
     }
 
-    static int optionSpacingPx() {
-        return AndroidUtilities.dp(OPTION_SPACING_DP);
+    static int instantButtonHeightPx() {
+        return AndroidUtilities.dp(INSTANT_BUTTON_HEIGHT_DP);
     }
 
-    static int submitButtonHeightPx() {
-        return AndroidUtilities.dp(SUBMIT_BUTTON_HEIGHT_DP);
+    static int instantButtonTopGapPx() {
+        return AndroidUtilities.dp(INSTANT_BUTTON_TOP_GAP_DP);
     }
 
-    static int submitButtonRadiusPx() {
-        return AndroidUtilities.dp(SUBMIT_BUTTON_RADIUS_DP);
+    static int actionButtonGapPx() {
+        return AndroidUtilities.dp(ACTION_BUTTON_GAP_DP);
     }
 
-    static int footerTopGapPx() {
-        return AndroidUtilities.dp(FOOTER_TOP_GAP_DP);
+    static int infoFooterTopGapPx() {
+        return AndroidUtilities.dp(INFO_FOOTER_TOP_GAP_DP);
     }
 
     static int resultLineTopGapPx() {
@@ -797,6 +1148,14 @@ final class PollBlock implements PostBodyBlock {
 
     static int resultLineHeightPx() {
         return AndroidUtilities.dp(RESULT_LINE_HEIGHT_DP);
+    }
+
+    static int inactiveLineTopGapPx() {
+        return AndroidUtilities.dp(INACTIVE_LINE_TOP_GAP_DP);
+    }
+
+    static int inactiveLineStartOffsetPx() {
+        return AndroidUtilities.dp(INACTIVE_LINE_START_OFFSET_DP);
     }
 
     static int resultLineMinWidthPx() {
@@ -809,6 +1168,14 @@ final class PollBlock implements PostBodyBlock {
 
     static int percentXOffsetPx() {
         return AndroidUtilities.dp(PERCENT_X_OFFSET_DP);
+    }
+
+    static int percentBaselineOffsetPx() {
+        return AndroidUtilities.dp(PERCENT_BASELINE_Y_DP);
+    }
+
+    static int resultVoteCountReservePx() {
+        return AndroidUtilities.dp(RESULT_VOTE_COUNT_RESERVE_DP);
     }
 
     static int resultLineWidthInsetPx() {
@@ -859,8 +1226,24 @@ final class PollBlock implements PostBodyBlock {
         return AndroidUtilities.dp(RESULT_CHECK_CENTER_Y_OFFSET_DP);
     }
 
+    static int resultLineCornerPx() {
+        return AndroidUtilities.dp(RESULT_LINE_CORNER_DP);
+    }
+
+    static int resultCheckLayerSizePx() {
+        return AndroidUtilities.dp(RESULT_CHECK_LAYER_SIZE_DP);
+    }
+
+    static int resultCheckSingleRadiusPx() {
+        return AndroidUtilities.dp(RESULT_CHECK_SINGLE_RADIUS_DP);
+    }
+
+    static int resultCheckMultiRadiusPx() {
+        return AndroidUtilities.dp(RESULT_CHECK_MULTI_RADIUS_DP);
+    }
+
     static int resultCheckSizePx() {
-        return AndroidUtilities.dp(RESULT_CHECK_SIZE_DP);
+        return AndroidUtilities.dp(RESULT_CHECK_LAYER_SIZE_DP);
     }
 
     static int checkboxCustomRadiusPx() {
@@ -906,11 +1289,60 @@ final class PollBlock implements PostBodyBlock {
         drawCheckBox(canvas, button, cx, cy, isMultipleChoice() ? multiChoiceCheckSizePx() : singleChoiceCheckSizePx(), isMultipleChoice());
     }
 
-    private void drawResultCheck(Canvas canvas, PollButton button) {
-        int lineTop = button.y + button.title.getHeight() + resultLineTopGapPx();
-        float cx = buttonLeft - resultCheckCenterXOffsetPx();
-        float cy = lineTop + resultCheckCenterYOffsetPx();
-        drawCheckBox(canvas, button, cx, cy, resultCheckSizePx(), isMultipleChoice());
+    private void drawInactiveOptionLine(Canvas canvas, PollButton button) {
+        if (button.title == null) {
+            return;
+        }
+        int lineY = button.y + button.height + inactiveLineTopGapPx();
+        canvas.drawLine(
+                buttonLeft - inactiveLineStartOffsetPx(),
+                lineY,
+                buttonLeft + resultLineWidth(),
+                lineY,
+                resultLineTrackPaint
+        );
+    }
+
+    private void drawResultCheck(Canvas canvas, float fillLeft, float lineTop, float lineHeight) {
+        Drawable drawable = Theme.chat_pollCheckDrawable[0];
+        if (drawable == null) {
+            return;
+        }
+        float cx = fillLeft - resultCheckCenterXOffsetPx();
+        float cy = lineTop + lineHeight / 2f;
+        float layerSize = resultCheckLayerSizePx();
+        float checkRadius = isMultipleChoice() ? resultCheckMultiRadiusPx() : resultCheckSingleRadiusPx();
+        int saveCount = canvas.saveLayerAlpha(
+                Math.round(cx - layerSize),
+                Math.round(cy - layerSize),
+                Math.round(cx + layerSize),
+                Math.round(cy + layerSize),
+                255
+        );
+        int width = drawable.getIntrinsicWidth();
+        int height = drawable.getIntrinsicHeight();
+        drawable.setBounds(
+                Math.round(cx - width / 2f),
+                Math.round(cy - height / 2f),
+                Math.round(cx + width / 2f),
+                Math.round(cy + height / 2f)
+        );
+        drawable.draw(canvas);
+        if (srcOutPaint == null) {
+            srcOutPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            srcOutPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.SRC_OUT));
+        }
+        srcOutPaint.setColor(Theme.chat_docBackPaint.getColor());
+        canvas.drawRoundRect(
+                cx - layerSize,
+                cy - layerSize,
+                cx + layerSize,
+                cy + layerSize,
+                checkRadius,
+                checkRadius,
+                srcOutPaint
+        );
+        canvas.restoreToCount(saveCount);
     }
 
     private void drawCheckBox(Canvas canvas, PollButton button, float cx, float cy, int size, boolean square) {
@@ -1064,25 +1496,42 @@ final class PollBlock implements PostBodyBlock {
 
     private boolean isChosen(CookedPostBlock.PollOption option, int index) {
         Set<Integer> local = state != null ? state.getSelectedPollOptionIndexesByIndex().get(stateIndex) : null;
-        return option.getSelected() || local != null && local.contains(index);
+        if (local != null && local.contains(index)) {
+            return true;
+        }
+        return option.getSelected() && !hasLocalRemovedVote();
     }
 
     private boolean shouldShowResults() {
         if ("closed".equals(block.getStatus())) {
             return true;
         }
-        if (hasLocalSubmittedVote()) {
+        boolean hasOptionResultData = hasOptionResultData();
+        String results = normalizedResults();
+        if (hasOptionResultData) {
             return true;
         }
-        if (block.getVoters() != null && block.getVoters() > 0) {
-            return true;
+        if ("always".equals(results)) {
+            return false;
         }
+        if ("on_vote".equals(results) || "on_close".equals(results) || "staff_only".equals(results)) {
+            return false;
+        }
+        return false;
+    }
+
+    private boolean hasOptionResultData() {
         for (CookedPostBlock.PollOption option : block.getOptions()) {
-            if (option.getSelected() || option.getPercent() != null || option.getVotes() != null && option.getVotes() > 0) {
+            if (option.getPercent() != null || option.getVotes() != null && option.getVotes() > 0) {
                 return true;
             }
         }
         return false;
+    }
+
+    private String normalizedResults() {
+        String results = block.getResults();
+        return results != null ? results.trim().toLowerCase(Locale.US) : "";
     }
 
     private boolean canVote(int index) {
@@ -1096,7 +1545,8 @@ final class PollBlock implements PostBodyBlock {
                 && !button.answer.getId().trim().isEmpty()
                 && !"closed".equals(block.getStatus())
                 && !hasLocalSubmittedVote()
-                && !hasServerSelection();
+                && !hasServerSelection()
+                && !isPollActionInFlight();
     }
 
     private int buttonIndexAt(float x, float y) {
@@ -1136,6 +1586,9 @@ final class PollBlock implements PostBodyBlock {
         if ("closed".equals(block.getStatus())) {
             return "已结束";
         }
+        if (hasLocalRemovedVote()) {
+            return "";
+        }
         if (hasLocalSubmittedVote()) {
             return "已投票";
         }
@@ -1148,6 +1601,10 @@ final class PollBlock implements PostBodyBlock {
     }
 
     private void updateLocalSelection(int index) {
+        if (state == null) {
+            return;
+        }
+        state.getRemovedPollIndexes().remove(stateIndex);
         Set<Integer> selected = state.getSelectedPollOptionIndexesByIndex().get(stateIndex);
         if (selected == null) {
             selected = initialSelectedIndexes();
@@ -1179,6 +1636,9 @@ final class PollBlock implements PostBodyBlock {
 
     private Set<Integer> initialSelectedIndexes() {
         Set<Integer> selected = new LinkedHashSet<>();
+        if (hasLocalRemovedVote()) {
+            return selected;
+        }
         for (int i = 0; i < pollButtons.size(); i++) {
             if (pollButtons.get(i).answer.getSelected()) {
                 selected.add(i);
@@ -1213,7 +1673,26 @@ final class PollBlock implements PostBodyBlock {
         return state != null && state.getSubmittedPollIndexes().contains(stateIndex);
     }
 
+    private boolean hasLocalRemovedVote() {
+        return state != null && state.getRemovedPollIndexes().contains(stateIndex);
+    }
+
+    private boolean isPollActionInFlight() {
+        return state != null && state.getInFlightPollIndexes().contains(stateIndex);
+    }
+
+    private void markPollActionInFlight() {
+        if (state != null) {
+            state.getInFlightPollIndexes().add(stateIndex);
+        }
+        context.getHost().requestLayout();
+        context.getHost().invalidate();
+    }
+
     private boolean hasServerSelection() {
+        if (hasLocalRemovedVote()) {
+            return false;
+        }
         for (CookedPostBlock.PollOption option : block.getOptions()) {
             if (option.getSelected()) {
                 return true;
@@ -1232,7 +1711,9 @@ final class PollBlock implements PostBodyBlock {
     }
 
     private boolean canSubmitMultiSelectVote() {
-        return shouldShowMultiSelectSubmitButton() && !selectedOptionIdsForVote(-1).isEmpty();
+        return shouldShowMultiSelectSubmitButton()
+                && !selectedOptionIdsForVote(-1).isEmpty()
+                && !isPollActionInFlight();
     }
 
     private void submitMultiSelectVote() {
@@ -1240,12 +1721,14 @@ final class PollBlock implements PostBodyBlock {
         if (optionIds.isEmpty()) {
             return;
         }
+        markPollActionInFlight();
         markLocalSubmitted();
         context.getDelegate().onPollOptionsSelected(block.getName(), optionIds);
     }
 
     private void markLocalSubmitted() {
         if (state != null) {
+            state.getRemovedPollIndexes().remove(stateIndex);
             state.getSubmittedPollIndexes().add(stateIndex);
         }
         context.getHost().requestLayout();
@@ -1273,11 +1756,53 @@ final class PollBlock implements PostBodyBlock {
         return TextUtils.htmlEncode(option.getLabel());
     }
 
+    private int optionTitleWidthPx(boolean showResults, int maxOptionVotes) {
+        if (!showResults || maxOptionVotes <= 0) {
+            return Math.max(contentWidth, optionMinTextWidthPx());
+        }
+        String sample = String.valueOf(maxOptionVotes);
+        int voteCountReserve = (int) Math.ceil(percentPaint.measureText(sample)) + resultVoteCountReservePx();
+        return Math.max(contentWidth - voteCountReserve, optionMinTextWidthPx());
+    }
+
+    private int effectiveVoterCount() {
+        if (block.getVoters() != null && block.getVoters() > 0) {
+            return block.getVoters();
+        }
+        int total = 0;
+        boolean hasAny = false;
+        for (CookedPostBlock.PollOption option : block.getOptions()) {
+            if (option.getVotes() != null) {
+                total += option.getVotes();
+                hasAny = true;
+            }
+        }
+        if (hasAny) {
+            return total;
+        }
+        return block.getVoters() != null ? block.getVoters() : 0;
+    }
+
+    private static String pollTypeLabel(String type) {
+        if (type == null || type.trim().isEmpty()) {
+            return null;
+        }
+        String normalized = type.trim().toLowerCase(Locale.US);
+        if (normalized.contains("multiple") || normalized.contains("checkbox")) {
+            return "多选";
+        }
+        if ("regular".equals(normalized)) {
+            return "单选";
+        }
+        return type.trim();
+    }
+
     private String footerText() {
         StringBuilder builder = new StringBuilder();
-        builder.append(block.getVoters() != null ? block.getVoters() + " 票" : "投票");
-        if (block.getType() != null && !block.getType().trim().isEmpty()) {
-            builder.append(" · ").append(block.getType());
+        builder.append(effectiveVoterCount()).append(" 票");
+        String typeLabel = pollTypeLabel(block.getType());
+        if (typeLabel != null) {
+            builder.append(" · ").append(typeLabel);
         }
         return builder.toString();
     }
@@ -1287,6 +1812,14 @@ final class PollBlock implements PostBodyBlock {
         return ArticleTextLayout.builder(value, paint, width)
                 .setMaxLines(maxLines)
                 .setEllipsize(TextUtils.TruncateAt.END)
+                .build();
+    }
+
+    private StaticLayout layoutStatus(String text, int width) {
+        String value = text == null || text.isEmpty() ? " " : text;
+        int layoutWidth = Math.max(width, (int) Math.ceil(statusPaint.measureText(value)));
+        return ArticleTextLayout.builder(value, statusPaint, layoutWidth)
+                .setMaxLines(1)
                 .build();
     }
 

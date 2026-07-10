@@ -307,6 +307,112 @@ class TopicViewModelTest {
     }
 
     @Test
+    fun onPollVoteRemovedRetractsVoteAndRefreshesPost() = runTest {
+        val refreshedPost = post(id = 1001L, postNumber = 1).copy(cookedHtml = "<p>poll retracted</p>")
+        val repository = FakeTopicRepository(
+            detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L)),
+            postByNumber = Result.success(refreshedPost),
+        )
+        viewModel = TopicViewModel(repository = repository, topicId = 101L)
+        viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
+
+        viewModel.onPollVoteRemoved(postId = 1001L, postNumber = 1, pollName = "poll")
+        runCurrent()
+
+        assertThat(repository.removePollVoteRequests).containsExactly(PollRemoveVoteRequest(1001L, "poll"))
+        assertThat(repository.loadPostByNumberRequests).containsExactly(101L to 1)
+        assertThat(viewModel.uiState.value.posts.single().cookedHtml).isEqualTo("<p>poll retracted</p>")
+    }
+
+    @Test
+    fun openPollVotersSheetLoadsAndDismisses() = runTest {
+        val voters = listOf(
+            PostReactionUsersGroup(
+                id = "option-a",
+                count = 1,
+                users = listOf(
+                    io.github.baba983.nativedo.core.model.PostReactionUser(
+                        username = "baba",
+                        displayName = "Baba",
+                    ),
+                ),
+            ),
+        )
+        val repository = FakeTopicRepository(
+            detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L)),
+            pollVoters = Result.success(voters),
+        )
+        viewModel = TopicViewModel(repository = repository, topicId = 101L)
+        viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
+
+        viewModel.openPollVotersSheet(
+            postId = 1001L,
+            args = PollVotersSheetArgs(
+                pollName = "frontend",
+                pollTitle = "模型订阅的方式",
+                options = listOf(
+                    PollOptionRef(id = "option-a", label = "国模的API付费", votes = 3),
+                    PollOptionRef(id = "option-b", label = "国外模型自己充账号", votes = 5),
+                ),
+            ),
+        )
+        runCurrent()
+
+        assertThat(repository.pollVotersRequests).containsExactly(PollVotersRequest(1001L, "frontend"))
+        val loaded = viewModel.awaitState { state -> state.pollVoters.hasLoaded }
+        assertThat(loaded.pollVoters.groups).hasSize(2)
+        assertThat(loaded.pollVoters.groups.first().users.single().username).isEqualTo("baba")
+
+        viewModel.dismissPollVotersSheet()
+        assertThat(viewModel.uiState.value.pollVotersSheet).isNull()
+        assertThat(viewModel.uiState.value.pollVoters).isEqualTo(TopicPollVotersUiState())
+    }
+
+    @Test
+    fun openPollVotersSheetPrefersInitialSelectedOptionWithUsers() = runTest {
+        val voters = listOf(
+            PostReactionUsersGroup(
+                id = "option-a",
+                count = 0,
+                users = emptyList(),
+            ),
+            PostReactionUsersGroup(
+                id = "option-b",
+                count = 1,
+                users = listOf(
+                    io.github.baba983.nativedo.core.model.PostReactionUser(
+                        username = "baba",
+                        displayName = "Baba",
+                    ),
+                ),
+            ),
+        )
+        val repository = FakeTopicRepository(
+            detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L)),
+            pollVoters = Result.success(voters),
+        )
+        viewModel = TopicViewModel(repository = repository, topicId = 101L)
+        viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
+
+        viewModel.openPollVotersSheet(
+            postId = 1001L,
+            args = PollVotersSheetArgs(
+                pollName = "frontend",
+                options = listOf(
+                    PollOptionRef(id = "option-a", label = "Option A", votes = 0),
+                    PollOptionRef(id = "option-b", label = "Option B", votes = 0),
+                ),
+                initialSelectedOptionId = "option-b",
+            ),
+        )
+        runCurrent()
+
+        val loaded = viewModel.awaitState { state -> state.pollVoters.hasLoaded }
+        assertThat(loaded.pollVoters.selectedOptionId).isEqualTo("option-b")
+        assertThat(loaded.pollVoters.groups.first { it.id == "option-b" }.users.single().username).isEqualTo("baba")
+    }
+
+    @Test
     fun requestJumpToReplyTargetEmitsEventAndHighlightWithNonce() = runTest {
         val repository = FakeTopicRepository(
             detail = Result.success(
@@ -349,9 +455,11 @@ class TopicViewModelTest {
         private val posts: Result<List<Post>> = Result.success(emptyList()),
         private val postByNumber: Result<Post> = Result.failure(IllegalStateException("post not configured")),
         private val reactionUsers: Result<List<PostReactionUsersGroup>> = Result.success(emptyList()),
+        private val pollVoters: Result<List<PostReactionUsersGroup>> = Result.success(emptyList()),
         private val toggleReactionResult: Result<Unit> = Result.success(Unit),
         private val setPostBookmarkResult: Result<Unit> = Result.success(Unit),
         private val votePollResult: Result<Unit> = Result.success(Unit),
+        private val removePollVoteResult: Result<Unit> = Result.success(Unit),
         private val createReplyResult: Result<Post> = Result.failure(IllegalStateException("reply not configured")),
     ) : TopicRepository() {
         val loadRequests = mutableListOf<Long>()
@@ -362,6 +470,8 @@ class TopicViewModelTest {
         val toggleReactionRequests = mutableListOf<Pair<Long, String>>()
         val setPostBookmarkRequests = mutableListOf<Pair<Long, Boolean>>()
         val votePollRequests = mutableListOf<PollVoteRequest>()
+        val removePollVoteRequests = mutableListOf<PollRemoveVoteRequest>()
+        val pollVotersRequests = mutableListOf<PollVotersRequest>()
 
         override suspend fun load(topicId: Long): Result<TopicDetail> {
             loadRequests += topicId
@@ -388,6 +498,11 @@ class TopicViewModelTest {
             return reactionUsers
         }
 
+        override suspend fun loadPollVoters(postId: Long, pollName: String): Result<List<PostReactionUsersGroup>> {
+            pollVotersRequests += PollVotersRequest(postId, pollName)
+            return pollVoters
+        }
+
         override suspend fun toggleReaction(postId: Long, reactionId: String): Result<Unit> {
             toggleReactionRequests += postId to reactionId
             return toggleReactionResult
@@ -402,12 +517,27 @@ class TopicViewModelTest {
             votePollRequests += PollVoteRequest(postId, pollName, optionIds)
             return votePollResult
         }
+
+        override suspend fun removePollVote(postId: Long, pollName: String): Result<Unit> {
+            removePollVoteRequests += PollRemoveVoteRequest(postId, pollName)
+            return removePollVoteResult
+        }
     }
 
     private data class PollVoteRequest(
         val postId: Long,
         val pollName: String,
         val optionIds: List<String>,
+    )
+
+    private data class PollRemoveVoteRequest(
+        val postId: Long,
+        val pollName: String,
+    )
+
+    private data class PollVotersRequest(
+        val postId: Long,
+        val pollName: String,
     )
 
     private data class ReplyCreateRequest(
