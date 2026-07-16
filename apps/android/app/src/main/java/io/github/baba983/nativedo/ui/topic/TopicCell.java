@@ -27,10 +27,14 @@ import android.graphics.Paint;
 import android.graphics.RectF;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
+import android.text.Html;
 import android.text.Layout;
+import android.text.SpannableString;
+import android.text.Spanned;
 import android.text.StaticLayout;
 import android.text.TextPaint;
 import android.text.TextUtils;
+import android.text.style.ForegroundColorSpan;
 import android.view.View;
 
 import androidx.annotation.NonNull;
@@ -52,6 +56,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoUnit;
 import java.util.Map;
+import java.util.Locale;
 
 /**
  * Telegram-shaped Discourse topic row.
@@ -155,6 +160,8 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
     private Drawable pinnedDrawable;
     private String avatarUrl;
     private String avatarFilter;
+    private String searchQuery;
+    private boolean showSearchExcerpt;
 
     public TopicCell(@NonNull Context context) {
         super(context);
@@ -180,6 +187,18 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
             resolveCategory();
             invalidate();
         }
+    }
+
+    public void setSearchPresentation(@Nullable String query, boolean showExcerpt) {
+        String normalized = query == null ? null : query.trim();
+        if (equals(searchQuery, normalized) && showSearchExcerpt == showExcerpt) {
+            return;
+        }
+        searchQuery = normalized;
+        showSearchExcerpt = showExcerpt;
+        lastWidth = 0;
+        requestLayout();
+        invalidate();
     }
 
     public void setTopic(@NonNull TopicSummary topic, @NonNull String baseUrl) {
@@ -272,6 +291,8 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
     private static boolean sameTextLayoutInputs(@NonNull TopicSummary oldTopic, @NonNull TopicSummary newTopic) {
         return equals(oldTopic.getTitle(), newTopic.getTitle()) &&
             equals(oldTopic.getLastPosterUsername(), newTopic.getLastPosterUsername()) &&
+            equals(oldTopic.getExcerpt(), newTopic.getExcerpt()) &&
+            equals(oldTopic.getTargetPostNumber(), newTopic.getTargetPostNumber()) &&
             equals(oldTopic.getCategoryId(), newTopic.getCategoryId()) &&
             equals(oldTopic.getTags(), newTopic.getTags()) &&
             oldTopic.isPinned() == newTopic.isPinned() &&
@@ -425,7 +446,7 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
         nameWidth = width - nameLeft - timeInset;
         if (nameWidth < dp(20)) nameWidth = dp(20);
         CharSequence ellipsizedName = TextUtils.ellipsize(
-            topic.getTitle() == null ? "" : topic.getTitle(),
+            highlightSearchText(topic.getTitle() == null ? "" : topic.getTitle()),
             Theme.dialogs_namePaint, nameWidth, TextUtils.TruncateAt.END);
         nameLayout = new StaticLayout(ellipsizedName, Theme.dialogs_namePaint, nameWidth,
             Layout.Alignment.ALIGN_NORMAL, 1f, 0f, false);
@@ -451,6 +472,12 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
 
     /** Builds the muted Telegram-style second line: "@lastPoster · category · #tag". */
     private CharSequence buildActivityLine() {
+        if (showSearchExcerpt && topic.getExcerpt() != null && !topic.getExcerpt().isEmpty()) {
+            String excerpt = Html.fromHtml(topic.getExcerpt(), Html.FROM_HTML_MODE_LEGACY).toString().trim();
+            String poster = topic.getAuthorUsername();
+            String text = poster == null || poster.isEmpty() ? excerpt : "@" + poster + " · " + excerpt;
+            return highlightSearchText(text);
+        }
         StringBuilder sb = new StringBuilder();
         String poster = topic.getLastPosterUsername();
         if (poster == null || poster.isEmpty()) {
@@ -479,6 +506,31 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
             }
         }
         return sb.toString();
+    }
+
+    private CharSequence highlightSearchText(@NonNull String text) {
+        if (searchQuery == null || searchQuery.isEmpty() || text.isEmpty()) {
+            return text;
+        }
+        SpannableString highlighted = new SpannableString(text);
+        String lowercaseText = text.toLowerCase(Locale.ROOT);
+        String[] terms = searchQuery.toLowerCase(Locale.ROOT).split("\\s+");
+        int color = Theme.getColor(Theme.key_windowBackgroundWhiteBlueText);
+        for (String term : terms) {
+            if (term.isEmpty()) continue;
+            int start = 0;
+            while (start < lowercaseText.length()) {
+                int index = lowercaseText.indexOf(term, start);
+                if (index < 0) break;
+                highlighted.setSpan(
+                    new ForegroundColorSpan(color),
+                    index,
+                    index + term.length(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                start = index + term.length();
+            }
+        }
+        return highlighted;
     }
 
     /** Format large counts compactly: 1200 → 1.2k, 1200000 → 1.2M. */

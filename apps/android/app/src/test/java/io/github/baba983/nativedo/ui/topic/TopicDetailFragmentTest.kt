@@ -7,6 +7,9 @@ import com.google.common.truth.Truth.assertThat
 import io.github.baba983.nativedo.core.model.DiscourseEmoji
 import io.github.baba983.nativedo.core.model.DiscourseEmojiCategory
 import io.github.baba983.nativedo.core.model.PostReaction
+import io.github.baba983.nativedo.core.model.PostReactionUser
+import io.github.baba983.nativedo.core.model.PostReactionUsersGroup
+import io.github.baba983.nativedo.feature.topic.ui.TOPIC_REACTION_ALL_FILTER_ID
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -23,6 +26,7 @@ class TopicDetailFragmentTest {
     fun setUp() {
         AndroidUtilities.density = 1f
         AndroidUtilities.statusBarHeight = 0
+        AndroidUtilities.navigationBarHeight = 0
         AndroidUtilities.displaySize.set(400, 800)
     }
 
@@ -44,6 +48,104 @@ class TopicDetailFragmentTest {
     fun topicDetailBackground_usesConfiguredTelegramWallpaperFallback() {
         assertThat(Theme.getDefaultColor(Theme.key_chat_wallpaper)).isEqualTo(0xfff1f1f3.toInt())
         assertThat(TopicDetailFragment.topicDetailListBackgroundColor()).isEqualTo(0xfff1f1f3.toInt())
+        assertThat(Theme.getDefaultColor(Theme.key_chat_serviceBackground)).isEqualTo(0x6685859e)
+        assertThat(Theme.getDefaultColor(Theme.key_chat_serviceBackgroundSelected)).isEqualTo(0x889393af.toInt())
+    }
+
+    @Test
+    fun pullRefresh_startsOnlyWhenTopicInteractionsAreIdle() {
+        assertThat(
+            topicDetailCanStartPullRefresh(
+                isBusy = false,
+                selectionActive = false,
+                popupActive = false,
+                keyboardInset = 0,
+                emojiPanelVisible = false,
+            ),
+        ).isTrue()
+
+        assertThat(topicDetailCanStartPullRefresh(true, false, false, 0, false)).isFalse()
+        assertThat(topicDetailCanStartPullRefresh(false, true, false, 0, false)).isFalse()
+        assertThat(topicDetailCanStartPullRefresh(false, false, true, 0, false)).isFalse()
+        assertThat(topicDetailCanStartPullRefresh(false, false, false, 1, false)).isFalse()
+        assertThat(topicDetailCanStartPullRefresh(false, false, false, 0, true)).isFalse()
+    }
+
+    @Test
+    fun pullRefresh_requiresTelegramThresholdAndMinimumPullDuration() {
+        assertThat(
+            topicPullRefreshShouldTrigger(
+                pullProgress = org.telegram.ui.Components.PullForegroundDrawable.SNAP_HEIGHT,
+                pullingDurationMs = org.telegram.ui.Components.PullForegroundDrawable.minPullingTime,
+                isBusy = false,
+            ),
+        ).isTrue()
+        assertThat(
+            topicPullRefreshShouldTrigger(
+                pullProgress = org.telegram.ui.Components.PullForegroundDrawable.SNAP_HEIGHT - 0.01f,
+                pullingDurationMs = org.telegram.ui.Components.PullForegroundDrawable.minPullingTime,
+                isBusy = false,
+            ),
+        ).isFalse()
+        assertThat(
+            topicPullRefreshShouldTrigger(
+                pullProgress = 1f,
+                pullingDurationMs = org.telegram.ui.Components.PullForegroundDrawable.minPullingTime - 1,
+                isBusy = false,
+            ),
+        ).isFalse()
+        assertThat(topicPullRefreshShouldTrigger(1f, 1_000L, true)).isFalse()
+    }
+
+    @Test
+    fun swipeReply_startsOnlyWhenCompetingTopicInteractionsAreIdle() {
+        assertThat(topicDetailCanStartSwipeReply(false, false, false, false, false)).isTrue()
+        assertThat(topicDetailCanStartSwipeReply(true, false, false, false, false)).isFalse()
+        assertThat(topicDetailCanStartSwipeReply(false, true, false, false, false)).isFalse()
+        assertThat(topicDetailCanStartSwipeReply(false, false, true, false, false)).isFalse()
+        assertThat(topicDetailCanStartSwipeReply(false, false, false, true, false)).isFalse()
+        assertThat(topicDetailCanStartSwipeReply(false, false, false, false, true)).isFalse()
+    }
+
+    @Test
+    fun reactionAllFilterMergesRecentUsersAndDeduplicatesByUsername() {
+        val groups = listOf(
+            PostReactionUsersGroup(
+                id = "heart",
+                users = listOf(
+                    PostReactionUser(username = "baba", createdAt = "2026-05-01T01:00:00Z"),
+                    PostReactionUser(username = "alice", createdAt = "2026-05-01T03:00:00Z"),
+                ),
+            ),
+            PostReactionUsersGroup(
+                id = "+1",
+                users = listOf(
+                    PostReactionUser(username = "baba", createdAt = "2026-05-01T04:00:00Z"),
+                    PostReactionUser(username = "carol", createdAt = "2026-05-01T02:00:00Z"),
+                ),
+            ),
+        )
+
+        assertThat(topicReactionUsersForFilter(groups, TOPIC_REACTION_ALL_FILTER_ID).map { it.username })
+            .containsExactly("baba", "alice", "carol")
+            .inOrder()
+        assertThat(topicReactionUsersForFilter(groups, "heart").map { it.username })
+            .containsExactly("baba", "alice")
+            .inOrder()
+    }
+
+    @Test
+    fun replyFooterUsesServerReplyCountInsteadOfLoadedPreviewSize() {
+        val post = io.github.baba983.nativedo.core.model.Post(
+            id = 1001L,
+            postNumber = 1,
+            authorUsername = "baba",
+            replyCount = 80,
+            cookedHtml = "<p>source</p>",
+        )
+
+        assertThat(topicReplyFooterCount(post, loadedPreviewCount = 0)).isEqualTo(80)
+        assertThat(topicReplyFooterCount(post.copy(replyCount = 0), loadedPreviewCount = 3)).isEqualTo(3)
     }
 
     @Test
@@ -80,6 +182,14 @@ class TopicDetailFragmentTest {
                 itemCount = 20,
             ),
         ).isFalse()
+    }
+
+    @Test
+    fun repliesSheetLoadMore_countsTelegramPaddingRowInOuterAdapter() {
+        assertThat(topicRepliesSheetShouldLoadMore(1, true, 5, outerItemCount = 8)).isTrue()
+        assertThat(topicRepliesSheetShouldLoadMore(1, true, 4, outerItemCount = 8)).isFalse()
+        assertThat(topicRepliesSheetShouldLoadMore(0, true, 5, outerItemCount = 8)).isFalse()
+        assertThat(topicRepliesSheetShouldLoadMore(1, false, 5, outerItemCount = 8)).isFalse()
     }
 
     @Test
@@ -206,6 +316,8 @@ class TopicDetailFragmentTest {
             .isEqualTo(org.telegram.messenger.R.drawable.menu_reply)
         assertThat(TopicDetailFragment.postCopyLinkIconRes())
             .isEqualTo(org.telegram.messenger.R.drawable.msg_link)
+        assertThat(TopicDetailFragment.postSelectTextIconRes())
+            .isEqualTo(org.telegram.messenger.R.drawable.msg_select)
     }
 
     @Test
@@ -214,6 +326,7 @@ class TopicDetailFragmentTest {
         assertThat(addActions.map { it.kind })
             .containsExactly(
                 TopicPostActionKind.REPLY,
+                TopicPostActionKind.SELECT_TEXT,
                 TopicPostActionKind.COPY_LINK,
                 TopicPostActionKind.BOOKMARK,
             )
@@ -253,6 +366,43 @@ class TopicDetailFragmentTest {
     }
 
     @Test
+    fun pageDownCountUsesCanonicalStreamInsteadOfAdapterRowDistance() {
+        val stream = listOf(1001L, 1002L, 1003L, 1004L)
+
+        assertThat(topicPostsBelowViewport(stream, 1001L)).isEqualTo(3)
+        assertThat(topicPostsBelowViewport(stream, 1003L)).isEqualTo(1)
+        assertThat(topicPostsBelowViewport(stream, 1004L)).isEqualTo(0)
+        assertThat(topicPostsBelowViewport(stream, null)).isEqualTo(0)
+    }
+
+    @Test
+    fun pageDownVisibilityShowsInitiallyButUsesTelegramHundredDpThresholdAfterLatest() {
+        assertThat(
+            topicShouldShowPageDown(5, selectionActive = false, hasReachedLatest = false, distanceFromLatestPx = 0, revealThresholdPx = 100),
+        ).isTrue()
+        assertThat(
+            topicShouldShowPageDown(5, selectionActive = false, hasReachedLatest = true, distanceFromLatestPx = 99, revealThresholdPx = 100),
+        ).isFalse()
+        assertThat(
+            topicShouldShowPageDown(5, selectionActive = false, hasReachedLatest = true, distanceFromLatestPx = 100, revealThresholdPx = 100),
+        ).isTrue()
+        assertThat(
+            topicShouldShowPageDown(5, selectionActive = true, hasReachedLatest = false, distanceFromLatestPx = 100, revealThresholdPx = 100),
+        ).isFalse()
+        assertThat(
+            topicShouldShowPageDown(0, selectionActive = false, hasReachedLatest = false, distanceFromLatestPx = 100, revealThresholdPx = 100),
+        ).isFalse()
+    }
+
+    @Test
+    fun pageDownTranslationTracksComposerAndKeyboardInset() {
+        assertThat(topicPageDownControlsBottomOffset(panelHeight = 44, panelBottomInset = 0))
+            .isEqualTo(AndroidUtilities.dp(48f))
+        assertThat(topicPageDownControlsBottomOffset(panelHeight = 44, panelBottomInset = 300))
+            .isEqualTo(AndroidUtilities.dp(48f) + 300)
+    }
+
+    @Test
     fun postReactionPickerIds_useLinuxDoDefaultReactionsWhenServerListIsMissing() {
         assertThat(
             TopicDetailFragment.postReactionPickerIds(
@@ -284,11 +434,6 @@ class TopicDetailFragmentTest {
     @Test
     fun postCopyLinkBulletin_showsOnTopLikeArticleViewer() {
         assertThat(TopicDetailFragment.topicCopyLinkBulletinOnTop()).isTrue()
-    }
-
-    @Test
-    fun postOptionsPopup_usesTelegramDefaultDimBehindAmount() {
-        assertThat(TopicDetailFragment.postOptionsPopupDimAmount()).isEqualTo(0.2f)
     }
 
     @Test
@@ -405,7 +550,6 @@ class TopicDetailFragmentTest {
     @Test
     fun replyComposerSendButtonWidth_matchesChatActivityEnterViewContainer() {
         assertThat(topicReplyComposerSendButtonWidthDp()).isEqualTo(100)
-        assertThat(topicReplyComposerActionButtonWidthDp()).isEqualTo(44)
     }
 
     @Test
@@ -452,6 +596,7 @@ class TopicDetailFragmentTest {
         assertThat(topicReplyComposerPanelHorizontalInsetDp()).isEqualTo(0f)
         assertThat(topicReplyComposerPanelBottomInsetDp()).isEqualTo(0f)
         assertThat(topicReplyComposerPanelRadiusDp()).isEqualTo(0f)
+        assertThat(topicInputIslandBottomGapDp()).isEqualTo(9f)
     }
 
     @Test
@@ -633,43 +778,7 @@ class TopicDetailFragmentTest {
     }
 
     @Test
-    fun replyComposerEditTextBackKey_dismissesComposerWhenEmojiIsHidden() {
-        assertThat(
-            topicReplyComposerShouldDismissFromEditTextBack(
-                keyCode = KeyEvent.KEYCODE_BACK,
-                action = KeyEvent.ACTION_UP,
-                keyboardVisible = false,
-                emojiPanelShowing = false,
-            ),
-        ).isTrue()
-        assertThat(
-            topicReplyComposerShouldDismissFromEditTextBack(
-                keyCode = KeyEvent.KEYCODE_BACK,
-                action = KeyEvent.ACTION_DOWN,
-                keyboardVisible = false,
-                emojiPanelShowing = false,
-            ),
-        ).isFalse()
-        assertThat(
-            topicReplyComposerShouldDismissFromEditTextBack(
-                keyCode = KeyEvent.KEYCODE_BACK,
-                action = KeyEvent.ACTION_UP,
-                keyboardVisible = true,
-                emojiPanelShowing = false,
-            ),
-        ).isFalse()
-        assertThat(
-            topicReplyComposerShouldDismissFromEditTextBack(
-                keyCode = KeyEvent.KEYCODE_BACK,
-                action = KeyEvent.ACTION_UP,
-                keyboardVisible = false,
-                emojiPanelShowing = true,
-            ),
-        ).isFalse()
-    }
-
-    @Test
-    fun replyComposerEditTextBackKey_closesKeyboardBeforeDismissingComposer() {
+    fun replyComposerEditTextBackKey_closesKeyboardBeforeLeavingTopic() {
         assertThat(
             topicReplyComposerShouldCloseKeyboardFromEditTextBack(
                 keyCode = KeyEvent.KEYCODE_BACK,
@@ -717,6 +826,19 @@ class TopicDetailFragmentTest {
     fun replyComposerKeyboardInset_ignoresTelegramSmallKeyboardNoise() {
         assertThat(topicReplyComposerKeyboardInsetPx(AndroidUtilities.dp(20f))).isEqualTo(0)
         assertThat(topicReplyComposerKeyboardInsetPx(AndroidUtilities.dp(21f))).isEqualTo(AndroidUtilities.dp(21f))
+
+        AndroidUtilities.navigationBarHeight = AndroidUtilities.dp(21f)
+        assertThat(topicReplyComposerKeyboardInsetPx(AndroidUtilities.dp(21f))).isEqualTo(0)
+        assertThat(topicReplyComposerKeyboardInsetPx(AndroidUtilities.dp(221f))).isEqualTo(AndroidUtilities.dp(200f))
+    }
+
+    @Test
+    fun replyComposerPanelKeyboardInset_doesNotSubtractNavigationBarTwice() {
+        AndroidUtilities.navigationBarHeight = AndroidUtilities.dp(21f)
+
+        assertThat(topicReplyComposerPanelKeyboardInsetPx(AndroidUtilities.dp(200f)))
+            .isEqualTo(AndroidUtilities.dp(200f))
+        assertThat(topicReplyComposerPanelKeyboardInsetPx(-1)).isEqualTo(0)
     }
 
     @Test

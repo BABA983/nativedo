@@ -133,6 +133,40 @@ public class BottomSheetTabs extends FrameLayout {
         }
     }
 
+    public WebTabData tryReopenTab(String url) {
+        if (TextUtils.isEmpty(url)) {
+            return null;
+        }
+        for (int i = 0; i < tabs.size(); ++i) {
+            WebTabData tab = tabs.get(i);
+            if (!(tab.articleViewer instanceof ArticleViewer)) {
+                continue;
+            }
+            ArticleViewer articleViewer = (ArticleViewer) tab.articleViewer;
+            if (articleViewer.pagesStack.isEmpty()) {
+                continue;
+            }
+            Object lastPage = articleViewer.pagesStack.get(articleViewer.pagesStack.size() - 1);
+            if (!(lastPage instanceof ArticleViewer.CachedWeb)) {
+                continue;
+            }
+            ArticleViewer.CachedWeb web = (ArticleViewer.CachedWeb) lastPage;
+            org.telegram.ui.web.BotWebViewContainer.MyWebView webView = web.webView;
+            if (webView == null && articleViewer.pages != null && articleViewer.pages[0] != null) {
+                webView = articleViewer.pages[0].getWebView();
+            }
+            if (webView == null) {
+                continue;
+            }
+            String currentUrl = webView.canGoBack() ? webView.getUrl() : webView.getOpenURL();
+            if (TextUtils.equals(urlWithoutFragment(currentUrl), urlWithoutFragment(url))) {
+                openTab(tab);
+                return tab;
+            }
+        }
+        return null;
+    }
+
     public boolean isExpanded() {
         return !tabs.isEmpty();
     }

@@ -5654,6 +5654,7 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
     }
 
     public void destroyArticleViewer() {
+        cancelFileChooser();
         if (parentActivity == null || windowView == null) {
             return;
         }
@@ -14635,39 +14636,73 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
         destroyArticleViewer();
     }
 
+    private static final int FILE_CHOOSER_REQUEST_CODE = 5000;
+    private static ArticleViewer fileChooserOwner;
     private android.webkit.ValueCallback<android.net.Uri[]> filePathCallback;
 
     private void openFileChooser(android.webkit.ValueCallback<android.net.Uri[]> callback, android.webkit.WebChromeClient.FileChooserParams params) {
+        if (fileChooserOwner != null && fileChooserOwner != this) {
+            fileChooserOwner.cancelFileChooser();
+        }
         if (filePathCallback != null) {
             filePathCallback.onReceiveValue(null);
         }
         filePathCallback = callback;
+        fileChooserOwner = this;
 
         try {
             Intent intent = params.createIntent();
             if (parentActivity != null) {
-                parentActivity.startActivityForResult(intent, 5000);
+                parentActivity.startActivityForResult(intent, FILE_CHOOSER_REQUEST_CODE);
+            } else {
+                cancelFileChooser();
             }
         } catch (Exception e) {
             FileLog.e(e);
-            if (filePathCallback != null) {
-                filePathCallback.onReceiveValue(null);
-                filePathCallback = null;
-            }
+            cancelFileChooser();
         }
     }
 
     public void onActivityResult(int requestCode, int resultCode, Intent data) {
-        if (requestCode == 5000 && filePathCallback != null) {
+        if (requestCode == FILE_CHOOSER_REQUEST_CODE && filePathCallback != null) {
             android.net.Uri[] results = null;
             if (resultCode == Activity.RESULT_OK && data != null) {
-                String dataString = data.getDataString();
-                if (dataString != null) {
-                    results = new android.net.Uri[]{android.net.Uri.parse(dataString)};
+                android.content.ClipData clipData = data.getClipData();
+                if (clipData != null && clipData.getItemCount() > 0) {
+                    results = new android.net.Uri[clipData.getItemCount()];
+                    for (int i = 0; i < clipData.getItemCount(); i++) {
+                        results[i] = clipData.getItemAt(i).getUri();
+                    }
+                } else if (data.getData() != null) {
+                    results = new android.net.Uri[]{data.getData()};
+                } else {
+                    results = android.webkit.WebChromeClient.FileChooserParams.parseResult(resultCode, data);
                 }
             }
             filePathCallback.onReceiveValue(results);
             filePathCallback = null;
+            if (fileChooserOwner == this) {
+                fileChooserOwner = null;
+            }
+        }
+    }
+
+    public static boolean dispatchActivityResult(int requestCode, int resultCode, Intent data) {
+        ArticleViewer owner = fileChooserOwner;
+        if (requestCode != FILE_CHOOSER_REQUEST_CODE || owner == null) {
+            return false;
+        }
+        owner.onActivityResult(requestCode, resultCode, data);
+        return true;
+    }
+
+    private void cancelFileChooser() {
+        if (filePathCallback != null) {
+            filePathCallback.onReceiveValue(null);
+            filePathCallback = null;
+        }
+        if (fileChooserOwner == this) {
+            fileChooserOwner = null;
         }
     }
 

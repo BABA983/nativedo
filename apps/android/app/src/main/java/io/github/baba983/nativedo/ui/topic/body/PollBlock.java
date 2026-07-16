@@ -758,6 +758,9 @@ final class PollBlock implements PostBodyBlock {
     }
 
     private boolean canOpenVotersList() {
+        if (block.getType() != null && "number".equalsIgnoreCase(block.getType().trim())) {
+            return false;
+        }
         if (Boolean.TRUE.equals(block.getPublicPoll()) && effectiveVoterCount() > 0 && shouldShowResults()) {
             return true;
         }

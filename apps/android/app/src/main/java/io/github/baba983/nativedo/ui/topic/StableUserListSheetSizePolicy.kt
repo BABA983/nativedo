@@ -18,6 +18,12 @@ internal class StableUserListSheetSizePolicy(
             .toInt()
     }
 
+    fun minimumHeight(): Int {
+        return (minimumVisibleRows.toLong() * rowHeightPx)
+            .coerceAtMost(MAX_SAFE_CONTENT_HEIGHT_PX.toLong())
+            .toInt()
+    }
+
     fun skeletonRows(predictedCount: Int?): Int {
         return normalizedRows(predictedCount)
     }
@@ -28,8 +34,8 @@ internal class StableUserListSheetSizePolicy(
     }
 
     private companion object {
-        private const val DEFAULT_MINIMUM_VISIBLE_ROWS = 5
-        private const val DEFAULT_MAXIMUM_SIZING_ROWS = 100
+        private const val DEFAULT_MINIMUM_VISIBLE_ROWS = 6
+        private const val DEFAULT_MAXIMUM_SIZING_ROWS = DEFAULT_MINIMUM_VISIBLE_ROWS
         private const val MAX_SAFE_CONTENT_HEIGHT_PX = Int.MAX_VALUE / 4
     }
 }

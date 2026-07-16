@@ -1,0 +1,29 @@
+{
+  "reaction_users": [
+    {
+      "id": "heart",
+      "count": 50,
+      "users": [
+        {
+          "username": "baba",
+          "name": "Baba",
+          "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png",
+          "can_undo": true,
+          "created_at": "2026-05-01T01:02:03.000Z"
+        }
+      ]
+    },
+    {
+      "id": "+1",
+      "count": 10,
+      "users": [
+        {
+          "username": "alice",
+          "name": "Alice",
+          "avatar_template": "/user_avatar/linux.do/alice/{size}/2.png",
+          "created_at": "2026-05-01T01:01:00.000Z"
+        }
+      ]
+    }
+  ]
+}

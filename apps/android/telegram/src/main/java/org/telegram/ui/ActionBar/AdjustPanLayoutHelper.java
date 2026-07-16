@@ -39,7 +39,12 @@ public class AdjustPanLayoutHelper {
     public static boolean USE_ANDROID11_INSET_ANIMATOR = false;
     private boolean useInsetsAnimator;
 
-    public final static Interpolator keyboardInterpolator = CubicBezierInterpolator.EASE_OUT;
+    public final static Interpolator keyboardInterpolator = new CubicBezierInterpolator(
+            0.19919472913616398,
+            0.010644531250000006,
+            0.27920937042459737,
+            0.91025390625
+    );
     public final static long keyboardDuration = 250;
 
     private final View parent;

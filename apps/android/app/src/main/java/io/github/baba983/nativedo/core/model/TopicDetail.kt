@@ -4,6 +4,7 @@ data class TopicDetail(
     val id: Long,
     val title: String,
     val posts: List<Post>,
+    val participants: List<MentionCandidate> = emptyList(),
     val createdAt: String = "",
     val lastPostedAt: String = "",
     val viewCount: Int = 0,

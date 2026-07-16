@@ -3,6 +3,11 @@
 
     <application>
         <activity
+            android:name=".debug.SessionCookieImportActivity"
+            android:exported="true"
+            android:noHistory="true"
+            android:theme="@style/Theme.NativeDo" />
+        <activity
             android:name=".debug.PhotoViewerDebugActivity"
             android:exported="true"
             android:theme="@style/Theme.NativeDo" />

@@ -1,6 +1,6 @@
 package io.github.baba983.nativedo.feature.profile.data
 
-import io.github.baba983.nativedo.core.model.TopicSummary
+import io.github.baba983.nativedo.core.model.UserActionPage
 import io.github.baba983.nativedo.core.network.DiscourseApiClient
 
 /**
@@ -15,7 +15,7 @@ open class ProfileFeedRepository protected constructor() {
     }
 
     /** filter: "4" = topics created, "5" = replies/posts. */
-    open suspend fun load(username: String, filter: String, offset: Int): Result<List<TopicSummary>> =
+    open suspend fun load(username: String, filter: String, offset: Int): Result<UserActionPage> =
         runCatching {
             client.fetchUserActions(
                 username = username,

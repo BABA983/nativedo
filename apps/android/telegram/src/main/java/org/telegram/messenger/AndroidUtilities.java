@@ -10,7 +10,6 @@ package org.telegram.messenger;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
-import android.animation.ObjectAnimator;
 import android.app.Activity;
 import android.content.ContentUris;
 import android.content.Context;
@@ -30,6 +29,7 @@ import android.net.Uri;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Vibrator;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 import android.text.SpannableStringBuilder;
@@ -41,6 +41,7 @@ import android.text.style.ForegroundColorSpan;
 import android.text.style.TypefaceSpan;
 import android.util.DisplayMetrics;
 import android.util.Pair;
+import android.view.HapticFeedbackConstants;
 import android.view.PixelCopy;
 import android.view.Surface;
 import android.view.SurfaceView;
@@ -58,6 +59,9 @@ import android.view.inputmethod.InputMethodManager;
 
 import androidx.annotation.NonNull;
 import androidx.core.view.WindowCompat;
+import androidx.dynamicanimation.animation.DynamicAnimation;
+import androidx.dynamicanimation.animation.SpringAnimation;
+import androidx.dynamicanimation.animation.SpringForce;
 import androidx.exifinterface.media.ExifInterface;
 import androidx.viewpager.widget.ViewPager;
 
@@ -65,15 +69,18 @@ import android.graphics.Typeface;
 import android.text.TextPaint;
 
 import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.HashSet;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Scanner;
 import java.util.concurrent.CountDownLatch;
@@ -942,28 +949,28 @@ public final class AndroidUtilities {
     }
 
     public static void vibrateCursor(View view) {
-        if (view != null) {
-            view.performHapticFeedback(android.view.HapticFeedbackConstants.TEXT_HANDLE_MOVE);
-        }
+        try {
+            if (view == null || view.getContext() == null) return;
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return;
+            if (!((Vibrator) view.getContext().getSystemService(Context.VIBRATOR_SERVICE)).hasAmplitudeControl()) return;
+            view.performHapticFeedback(HapticFeedbackConstants.TEXT_HANDLE_MOVE, HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING);
+        } catch (Exception ignore) {}
     }
 
     public static boolean hasDialogOnTop(org.telegram.ui.ActionBar.BaseFragment fragment) {
         return false;
     }
 
-    /** Stub of upstream {@code AndroidUtilities.createEmptyFile}. */
-    public static boolean createEmptyFile(File file) {
+    public static void createEmptyFile(File f) {
         try {
-            if (file.exists()) {
-                return true;
+            if (f.exists()) {
+                return;
             }
-            File parent = file.getParentFile();
-            if (parent != null && !parent.exists()) {
-                parent.mkdirs();
-            }
-            return file.createNewFile();
-        } catch (IOException e) {
-            return false;
+            FileWriter writer = new FileWriter(f);
+            writer.flush();
+            writer.close();
+        } catch (Throwable e) {
+            FileLog.e(e, false);
         }
     }
 
@@ -1000,13 +1007,32 @@ public final class AndroidUtilities {
     /** Stub of upstream {@code AndroidUtilities.roundMessageInset} — extra inset for round-video bubbles. */
     public static int roundMessageInset = 0;
 
-    /** Stub of upstream {@code AndroidUtilities.recycleBitmaps}. */
-    public static void recycleBitmaps(ArrayList<Bitmap> bitmaps) {
-        if (bitmaps == null) return;
-        for (android.graphics.Bitmap b : bitmaps) {
-            if (b != null && !b.isRecycled()) {
-                b.recycle();
+    public static void recycleBitmaps(List<Bitmap> bitmapToRecycle) {
+        if (Build.VERSION.SDK_INT <= 23) {
+            // cause to crash on API <= 23 — let GC reclaim pixels.
+            return;
+        }
+        if (bitmapToRecycle != null && !bitmapToRecycle.isEmpty()) {
+            ArrayList<WeakReference<Bitmap>> bitmapsToRecycleRef = new ArrayList<>();
+            for (int i = 0; i < bitmapToRecycle.size(); i++) {
+                Bitmap bitmap = bitmapToRecycle.get(i);
+                if (bitmap != null && !bitmap.isRecycled()) {
+                    bitmapsToRecycleRef.add(new WeakReference<>(bitmap));
+                }
             }
+            AndroidUtilities.runOnUIThread(() -> Utilities.globalQueue.postRunnable(() -> {
+                for (int i = 0; i < bitmapsToRecycleRef.size(); i++) {
+                    Bitmap bitmap = bitmapsToRecycleRef.get(i).get();
+                    bitmapsToRecycleRef.get(i).clear();
+                    if (bitmap != null && !bitmap.isRecycled()) {
+                        try {
+                            bitmap.recycle();
+                        } catch (Exception e) {
+                            FileLog.e(e);
+                        }
+                    }
+                }
+            }), 36);
         }
     }
 
@@ -1104,34 +1130,91 @@ public final class AndroidUtilities {
         return null;
     }
 
-    /** Stub of upstream {@code AndroidUtilities.getCacheDir()}. */
     public static File getCacheDir() {
-        if (ApplicationLoader.applicationContext != null) {
-            return ApplicationLoader.applicationContext.getCacheDir();
+        if (ApplicationLoader.applicationContext == null) {
+            return new File(System.getProperty("java.io.tmpdir", "/tmp"));
+        }
+
+        String state = null;
+        try {
+            state = Environment.getExternalStorageState();
+        } catch (Exception ignore) {
+        }
+
+        if (state == null || state.startsWith(Environment.MEDIA_MOUNTED)) {
+            try {
+                File file;
+
+                File[] dirs = ApplicationLoader.applicationContext.getExternalCacheDirs();
+                file = dirs != null && dirs.length > 0 ? dirs[0] : null;
+                if (!TextUtils.isEmpty(SharedConfig.storageCacheDir) && dirs != null) {
+                    for (int a = 0; a < dirs.length; a++) {
+                        if (dirs[a] != null && dirs[a].getAbsolutePath().startsWith(SharedConfig.storageCacheDir)) {
+                            file = dirs[a];
+                            break;
+                        }
+                    }
+                }
+
+                if (file != null && (file.exists() || file.mkdirs()) && file.canWrite()) {
+                    return file;
+                }
+            } catch (Exception ignore) {
+            }
+        }
+        try {
+            File file = ApplicationLoader.applicationContext.getCacheDir();
+            if (file != null) {
+                return file;
+            }
+        } catch (Exception ignore) {
+        }
+        try {
+            File file = ApplicationLoader.applicationContext.getFilesDir();
+            if (file != null) {
+                File cacheFile = new File(file, "cache/");
+                cacheFile.mkdirs();
+                if ((file.exists() || file.mkdirs()) && file.canWrite()) {
+                    return cacheFile;
+                }
+            }
+        } catch (Exception ignore) {
         }
         return new File(System.getProperty("java.io.tmpdir", "/tmp"));
     }
 
     public static File getLogsDir() {
+        Context context = ApplicationLoader.applicationContext;
+        if (context == null) {
+            return null;
+        }
         try {
             if (Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState())) {
-                File path = ApplicationLoader.applicationContext.getExternalFilesDir(null);
-                File dir = new File(path.getAbsolutePath() + "/logs");
+                File path = context.getExternalFilesDir(null);
+                if (path != null) {
+                    File dir = new File(path, "logs");
+                    dir.mkdirs();
+                    return dir;
+                }
+            }
+        } catch (Exception ignore) {
+        }
+        try {
+            File cacheDir = context.getCacheDir();
+            if (cacheDir != null) {
+                File dir = new File(cacheDir, "logs");
                 dir.mkdirs();
                 return dir;
             }
         } catch (Exception ignore) {
         }
         try {
-            File dir = new File(ApplicationLoader.applicationContext.getCacheDir() + "/logs");
-            dir.mkdirs();
-            return dir;
-        } catch (Exception ignore) {
-        }
-        try {
-            File dir = new File(ApplicationLoader.applicationContext.getFilesDir() + "/logs");
-            dir.mkdirs();
-            return dir;
+            File filesDir = context.getFilesDir();
+            if (filesDir != null) {
+                File dir = new File(filesDir, "logs");
+                dir.mkdirs();
+                return dir;
+            }
         } catch (Exception ignore) {
         }
         return null;
@@ -1839,6 +1922,55 @@ public final class AndroidUtilities {
     private static Field mAttachInfoField;
     private static Field mStableInsetsField;
 
+    public static String formatCount(int count) {
+        if (count < 1000) return Integer.toString(count);
+
+        ArrayList<String> strings = new ArrayList<>();
+        while (count != 0) {
+            int mod = count % 1000;
+            count /= 1000;
+            if (count > 0) {
+                strings.add(String.format(Locale.ENGLISH, "%03d", mod));
+            } else {
+                strings.add(Integer.toString(mod));
+            }
+        }
+        StringBuilder stringBuilder = new StringBuilder();
+        for (int i = strings.size() - 1; i >= 0; i--) {
+            stringBuilder.append(strings.get(i));
+            if (i != 0) {
+                stringBuilder.append(",");
+            }
+        }
+        return stringBuilder.toString();
+    }
+
+    public static final String[] numbersSignatureArray = {"", "K", "M", "B", "T", "P"};
+
+    public static String formatWholeNumber(int v, int dif) {
+        if (v == 0) {
+            return "0";
+        }
+        float num_ = v;
+        int count = 0;
+        if (dif == 0) dif = v;
+        if (dif < 1000) {
+            return AndroidUtilities.formatCount(v);
+        }
+        while (dif >= 1000 && count < numbersSignatureArray.length - 1) {
+            dif /= 1000;
+            num_ /= 1000;
+            count++;
+        }
+        if (num_ < 0.1) {
+            return "0";
+        } else if ((num_ * 10) == (int) (num_ * 10)) {
+            return String.format(Locale.ENGLISH, "%s%s", AndroidUtilities.formatCount((int) num_), numbersSignatureArray[count]);
+        } else {
+            return String.format(Locale.ENGLISH, "%.1f%s", (int) (num_ * 10) / 10f, numbersSignatureArray[count]);
+        }
+    }
+
     public static int getViewInset(View view) {
         if (view == null || view.getHeight() == AndroidUtilities.displaySize.y || view.getHeight() == AndroidUtilities.displaySize.y - statusBarHeight) {
             return 0;
@@ -1891,20 +2023,45 @@ public final class AndroidUtilities {
         return MotionEvent.obtain(0, 0, MotionEvent.ACTION_CANCEL, 0, 0, 0);
     }
 
-    /**
-     * NativeDo adaptation of upstream {@code shakeViewSpring(View, float)} —
-     * upstream uses androidx SpringAnimation plus id tags; this is an equivalent
-     * translationX wobble that avoids new id resources for a non-core path.
-     */
+    public static void shakeViewSpring(View view) {
+        shakeViewSpring(view, 10, null);
+    }
+
     public static void shakeViewSpring(View view, float shiftDp) {
+        shakeViewSpring(view, shiftDp, null);
+    }
+
+    public static void shakeViewSpring(View view, Runnable endCallback) {
+        shakeViewSpring(view, 10, endCallback);
+    }
+
+    public static void shakeViewSpring(View view, float shiftDp, Runnable endCallback) {
         if (view == null) {
             return;
         }
-        final float t = view.getTranslationX();
-        final int shift = dp(shiftDp);
-        ObjectAnimator a = ObjectAnimator.ofFloat(view, View.TRANSLATION_X, t, t + shift, t - shift, t + shift * 0.6f, t - shift * 0.6f, t);
-        a.setDuration(300);
-        a.start();
+        int shift = dp(shiftDp);
+        if (view.getTag(R.id.spring_tag) != null) {
+            ((SpringAnimation) view.getTag(R.id.spring_tag)).cancel();
+        }
+        Float wasX = (Float) view.getTag(R.id.spring_was_translation_x_tag);
+        if (wasX != null) {
+            view.setTranslationX(wasX);
+        }
+        view.setTag(R.id.spring_was_translation_x_tag, view.getTranslationX());
+
+        float translationX = view.getTranslationX();
+        SpringAnimation springAnimation = new SpringAnimation(view, DynamicAnimation.TRANSLATION_X, translationX)
+                .setSpring(new SpringForce(translationX).setStiffness(600f))
+                .setStartVelocity(-shift * 100)
+                .addEndListener((animation, canceled, value, velocity) -> {
+                    if (endCallback != null) endCallback.run();
+
+                    view.setTranslationX(translationX);
+                    view.setTag(R.id.spring_tag, null);
+                    view.setTag(R.id.spring_was_translation_x_tag, null);
+                });
+        view.setTag(R.id.spring_tag, springAnimation);
+        springAnimation.start();
     }
 
     /**
@@ -1914,6 +2071,21 @@ public final class AndroidUtilities {
      */
     public static CharSequence replaceArrows(CharSequence text, boolean link, int translateX, int translateY) {
         return text;
+    }
+
+    public static float getAnimatorDurationScale() {
+        try {
+            if (ApplicationLoader.applicationContext == null) {
+                return 1.0f;
+            }
+            return android.provider.Settings.Global.getFloat(
+                    ApplicationLoader.applicationContext.getContentResolver(),
+                    android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+                    1.0f
+            );
+        } catch (Exception e) {
+            return 1.0f;
+        }
     }
 
     public static void adjustBrightnessColorMatrix(ColorMatrix colorMatrix, float brightness) {

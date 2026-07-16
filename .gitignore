@@ -24,3 +24,6 @@ captures/
 .openclaude/
 .agents/
 skills-lock.json
+
+# Local Paparazzi baselines; not a repository/CI source of truth yet.
+apps/android/app/src/test/snapshots/

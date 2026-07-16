@@ -14,6 +14,7 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
@@ -35,6 +36,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import io.github.baba983.nativedo.core.html.CookedPostBlock;
@@ -68,6 +70,7 @@ import org.telegram.ui.Components.AnimatedTextView;
 import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.ButtonBounce;
 import org.telegram.ui.Components.CubicBezierInterpolator;
+import org.telegram.ui.Components.LinkPath;
 import org.telegram.ui.Components.ReplyMessageLine;
 import org.telegram.ui.PhotoViewer;
 
@@ -102,6 +105,7 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
     private static final float REACTION_ICON_GAP_DP = 4f;
     private static final long REACTION_EFFECT_ANIMATION_DURATION_MS = 350L;
     private static final float REACTION_EFFECT_EXPAND_DP = 4f;
+    private static final String HIGHLIGHT_PUNCTUATION = " !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~\n";
 
     private final int horizontalPadding = horizontalPaddingPx();
     private final int verticalPadding = verticalPaddingPx();
@@ -142,6 +146,7 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
     private final ArrayList<ReplyAvatar> replyAvatars = new ArrayList<>();
     private final LinkedHashMap<String, ImageReceiver> reactionIconReceivers = new LinkedHashMap<>();
     private final AnimatedFloat jumpHighlightProgress = new AnimatedFloat(0f, this, 0, 640, CubicBezierInterpolator.EASE_OUT_QUINT);
+    private final ArrayList<SearchHighlightPath> searchHighlightPaths = new ArrayList<>();
     private final ReplyMessageLine replyLine = new ReplyMessageLine(this);
     private final ButtonBounce replyBounce = new ButtonBounce(this, 2.0f, 2.0f);
     private Drawable replyFooterSelector;
@@ -210,6 +215,9 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
     private int finishingJumpHighlightNonce;
     private String hiddenImageUrl;
     private Runnable jumpHighlightFinishedCallback;
+    private String highlightedText = "";
+    private boolean searchHighlightPathsDirty;
+    private float slidingOffsetX;
 
     public TopicPostCell(Context context) {
         super(context);
@@ -238,6 +246,86 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
         updateColors();
     }
 
+    public boolean setHighlightedText(String text) {
+        String nextText = text == null ? "" : text;
+        if (TextUtils.equals(highlightedText, nextText) && !searchHighlightPathsDirty) {
+            return !searchHighlightPaths.isEmpty();
+        }
+        highlightedText = nextText;
+        searchHighlightPathsDirty = true;
+        if (TextUtils.isEmpty(highlightedText)) {
+            searchHighlightPaths.clear();
+            searchHighlightPathsDirty = false;
+        }
+        invalidate();
+        return !searchHighlightPaths.isEmpty();
+    }
+
+    static int[] searchHighlightRange(CharSequence source, String text) {
+        if (TextUtils.isEmpty(source) || TextUtils.isEmpty(text)) {
+            return null;
+        }
+        String message = source.toString().toLowerCase(Locale.ROOT);
+        String query = text.toLowerCase(Locale.ROOT);
+        int start = -1;
+        int length = -1;
+        for (int a = 0, messageLength = message.length(); a < messageLength; a++) {
+                int currentLength = 0;
+                for (int b = 0, queryLength = Math.min(query.length(), messageLength - a); b < queryLength; b++) {
+                    boolean match = message.charAt(a + b) == query.charAt(b);
+                    if (match) {
+                        if (currentLength != 0 || isSearchTokenBoundary(message, a)) {
+                            currentLength++;
+                        } else {
+                        match = false;
+                    }
+                }
+                if (!match || b == queryLength - 1) {
+                    if (currentLength > 0 && currentLength > length) {
+                        length = currentLength;
+                        start = a;
+                    }
+                    break;
+                }
+            }
+        }
+        if (start == -1) {
+            return null;
+        }
+        for (int a = start + length, messageLength = message.length(); a < messageLength; a++) {
+            if (HIGHLIGHT_PUNCTUATION.indexOf(message.charAt(a)) < 0 && !isSearchTokenBoundary(message, a)) {
+                length++;
+            } else {
+                break;
+            }
+        }
+        return new int[]{start, start + length};
+    }
+
+    private static boolean isSearchTokenBoundary(String text, int offset) {
+        if (offset <= 0) {
+            return true;
+        }
+        char previous = text.charAt(offset - 1);
+        char current = text.charAt(offset);
+        return HIGHLIGHT_PUNCTUATION.indexOf(previous) >= 0 ||
+                isCjkCharacter(previous) || isCjkCharacter(current);
+    }
+
+    private static boolean isCjkCharacter(char value) {
+        return value >= 0x2E80 && value <= 0x9FFF ||
+                value >= 0xAC00 && value <= 0xD7AF ||
+                value >= 0xF900 && value <= 0xFAFF ||
+                value >= 0xFF00 && value <= 0xFFEF;
+    }
+
+    int searchHighlightPathCount() {
+        if (searchHighlightPathsDirty) {
+            rebuildSearchHighlightPaths();
+        }
+        return searchHighlightPaths.size();
+    }
+
     public void setDelegate(TopicPostCellDelegate delegate) {
         this.delegate = delegate;
     }
@@ -248,6 +336,62 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
 
     public Post getBoundPost() {
         return post;
+    }
+
+    public void setSlidingOffset(float offsetX) {
+        if (slidingOffsetX != offsetX) {
+            slidingOffsetX = offsetX;
+            setTranslationX(offsetX);
+        }
+    }
+
+    public float getSlidingOffsetX() {
+        return slidingOffsetX;
+    }
+
+    public float getNonAnimationTranslationX(boolean update) {
+        return slidingOffsetX;
+    }
+
+    public boolean isSwipeReplyGestureBlockedAt(float x, float y) {
+        for (int i = getChildCount() - 1; i >= 0; i--) {
+            View child = getChildAt(i);
+            float childX = x - child.getX();
+            float childY = y - child.getY();
+            if (childX >= 0 && childX < child.getWidth() && childY >= 0 && childY < child.getHeight() &&
+                    blocksSwipeReply(child, childX, childY)) {
+                return true;
+            }
+        }
+        for (int i = 0; i < bodyBlocks.size(); i++) {
+            if (x < blockLefts[i] || x >= blockLefts[i] + blockWidths[i] ||
+                    y < blockTops[i] || y >= blockTops[i] + blockHeights[i]) {
+                continue;
+            }
+            String name = bodyBlocks.get(i).getClass().getSimpleName();
+            return "CodeBlock".equals(name) || "TableBlock".equals(name);
+        }
+        return false;
+    }
+
+    private static boolean blocksSwipeReply(View view, float x, float y) {
+        if (view.canScrollHorizontally(-1) || view.canScrollHorizontally(1)) {
+            return true;
+        }
+        if (!(view instanceof ViewGroup)) {
+            return false;
+        }
+        ViewGroup group = (ViewGroup) view;
+        for (int i = group.getChildCount() - 1; i >= 0; i--) {
+            View child = group.getChildAt(i);
+            float childX = x - child.getX();
+            float childY = y - child.getY();
+            if (childX >= 0 && childX < child.getWidth() && childY >= 0 && childY < child.getHeight() &&
+                    blocksSwipeReply(child, childX, childY)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public boolean fillReactionIconBoundsInWindow(String reactionId, RectF outBounds) {
@@ -313,6 +457,7 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
         resetTouchState();
         long oldPostId = this.post != null ? this.post.getId() : Long.MIN_VALUE;
         if (oldPostId != post.getId()) {
+            setSlidingOffset(0f);
             hiddenImageUrl = null;
             resetReactionRowHeightAnimation();
         }
@@ -428,6 +573,7 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
         }
         measuredCellHeight = y + verticalPadding;
         setMeasuredDimension(width, measuredCellHeight);
+        searchHighlightPathsDirty = !TextUtils.isEmpty(highlightedText);
     }
 
     @Override
@@ -475,6 +621,7 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
     @Override
     protected void dispatchDraw(Canvas canvas) {
         super.dispatchDraw(canvas);
+        drawSearchHighlight(canvas);
         if (textSelectionHelper != null) {
             textSelectionHelper.draw(canvas, this, 0);
         }
@@ -552,7 +699,7 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
                     downY = event.getY();
                     didLongPressPost = false;
                     ignoreSelectionTouchUntilUp = false;
-                    if (shouldStartSelectionBeforeBlockTouch(block)) {
+                    if (shouldStartLongPressBeforeBlockTouch(block)) {
                         startCheckLongPress();
                     }
                 } else if (action == MotionEvent.ACTION_MOVE) {
@@ -631,16 +778,6 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
             }
             return true;
         }
-        if (textSelectionHelper != null && textSelectionHelper.isSelectable(this)) {
-            textSelectionHelper.setMaybeView((int) downX, (int) downY, this);
-            textSelectionHelper.trySelect(this);
-            if (textSelectionHelper.isInSelectionMode()) {
-                ignoreSelectionTouchUntilUp = true;
-                textSelectionHelper.startOneTouchSelection();
-                cancelActiveBodyTouch();
-                return true;
-            }
-        }
         Post currentPost = post;
         if (currentPost == null) {
             return false;
@@ -656,6 +793,18 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
         return true;
     }
 
+    public boolean startTextSelectionAt(float x, float y) {
+        if (textSelectionHelper == null || !textSelectionHelper.isSelectable(this)) {
+            return false;
+        }
+        ignoreSelectionTouchUntilUp = false;
+        cancelCheckLongPress();
+        cancelActiveBodyTouch();
+        textSelectionHelper.setMaybeView((int) x, (int) y, this);
+        textSelectionHelper.trySelect(this);
+        return textSelectionHelper.isInSelectionMode();
+    }
+
     private void prepareLongPressCandidate(MotionEvent event) {
         downX = event.getX();
         downY = event.getY();
@@ -666,7 +815,7 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
         activeTouchBlockTop = blockIndex >= 0 && blockIndex < blockTops.length ? blockTops[blockIndex] : 0;
         activeTouchBlockLeft = blockIndex >= 0 && blockIndex < blockLefts.length ? blockLefts[blockIndex] : 0;
         if (blockIndex >= 0 && blockIndex < bodyBlocks.size()) {
-            if (shouldStartSelectionBeforeBlockTouch(bodyBlocks.get(blockIndex))) {
+            if (shouldStartLongPressBeforeBlockTouch(bodyBlocks.get(blockIndex))) {
                 startCheckLongPress();
             }
         } else {
@@ -685,7 +834,7 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
         return -1;
     }
 
-    private boolean shouldStartSelectionBeforeBlockTouch(PostBodyBlock block) {
+    private boolean shouldStartLongPressBeforeBlockTouch(PostBodyBlock block) {
         String name = block.getClass().getSimpleName();
         return "ParagraphBlock".equals(name)
                 || "HeadingBlock".equals(name)
@@ -799,6 +948,7 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
 
     @Override
     protected void onDetachedFromWindow() {
+        setSlidingOffset(0f);
         resetTouchState();
         setHiddenImageUrl(null);
         cancelReactionRowHeightAnimator();
@@ -965,6 +1115,66 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
         }
     }
 
+    private void drawSearchHighlight(Canvas canvas) {
+        if (searchHighlightPathsDirty) {
+            rebuildSearchHighlightPaths();
+        }
+        if (searchHighlightPaths.isEmpty()) {
+            return;
+        }
+        Paint paint = Theme.chat_urlPaint;
+        int previousColor = paint.getColor();
+        int previousAlpha = paint.getAlpha();
+        paint.setColor(Theme.getColor(Theme.key_chat_inReplyLine));
+        paint.setAlpha((int) (paint.getAlpha() * (Theme.isCurrentThemeDark() ? 0.2f : 0.3f)));
+        for (int i = 0; i < searchHighlightPaths.size(); i++) {
+            SearchHighlightPath highlight = searchHighlightPaths.get(i);
+            int saveCount = canvas.save();
+            if (highlight.clipBounds != null) {
+                canvas.clipRect(highlight.clipBounds);
+            }
+            canvas.drawPath(highlight.path, paint);
+            canvas.restoreToCount(saveCount);
+        }
+        paint.setColor(previousColor);
+        paint.setAlpha(previousAlpha);
+    }
+
+    private void rebuildSearchHighlightPaths() {
+        searchHighlightPaths.clear();
+        searchHighlightPathsDirty = false;
+        if (TextUtils.isEmpty(highlightedText) || getMeasuredWidth() <= 0) {
+            return;
+        }
+        ArrayList<TextSelectionHelper.TextLayoutBlock> textBlocks = new ArrayList<>();
+        fillTextLayoutBlocks(textBlocks);
+        TextSelectionHelper.TextLayoutBlock bestBlock = null;
+        int[] bestRange = null;
+        for (int i = 0; i < textBlocks.size(); i++) {
+            TextSelectionHelper.TextLayoutBlock block = textBlocks.get(i);
+            StaticLayout layout = block.getLayout();
+            int[] range = layout == null ? null : searchHighlightRange(layout.getText(), highlightedText);
+            if (range != null && (bestRange == null || range[1] - range[0] > bestRange[1] - bestRange[0])) {
+                bestBlock = block;
+                bestRange = range;
+            }
+        }
+        if (bestBlock == null || bestRange == null) {
+            return;
+        }
+        try {
+            LinkPath path = new LinkPath(true);
+            path.setUseCornerPathImplementation(true);
+            path.setCurrentLayout(bestBlock.getLayout(), bestRange[0], bestBlock.getX(), bestBlock.getY());
+            bestBlock.getLayout().getSelectionPath(bestRange[0], bestRange[1], path);
+            path.closeRects();
+            Rect clipBounds = bestBlock.getClipBounds();
+            searchHighlightPaths.add(new SearchHighlightPath(path, clipBounds == null ? null : new Rect(clipBounds)));
+        } catch (Exception ignored) {
+            searchHighlightPaths.clear();
+        }
+    }
+
     private void rebuildBodyContext() {
         resetTouchState();
         for (PostBodyBlock block : bodyBlocks) {
@@ -979,6 +1189,8 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
         }
         bodyContext = null;
         bodyBlocks = Collections.emptyList();
+        searchHighlightPaths.clear();
+        searchHighlightPathsDirty = !TextUtils.isEmpty(highlightedText);
     }
 
     private void resetTouchState() {
@@ -1016,11 +1228,11 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
                 Theme.getColor(Theme.key_divider),
                 svgSpriteMarkup,
                 () -> {
+                    searchHighlightPathsDirty = !TextUtils.isEmpty(highlightedText);
                     if (textSelectionHelper != null) {
                         textSelectionHelper.invalidate();
-                    } else {
-                        invalidate();
                     }
+                    invalidate();
                     return Unit.INSTANCE;
                 }
         );
@@ -1039,6 +1251,16 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
             for (PostBodyBlock block : bodyBlocks) {
                 block.onAttachedToWindow();
             }
+        }
+    }
+
+    private static final class SearchHighlightPath {
+        final LinkPath path;
+        final Rect clipBounds;
+
+        SearchHighlightPath(LinkPath path, Rect clipBounds) {
+            this.path = path;
+            this.clipBounds = clipBounds;
         }
     }
 

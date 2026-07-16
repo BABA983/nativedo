@@ -16,6 +16,7 @@ import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
@@ -42,6 +43,7 @@ public class TextDetailCell extends FrameLayout {
     private final TextView textView;
     private final TextView valueTextView;
     private boolean needDivider;
+    private boolean contentDescriptionValueFirst;
 
     public TextDetailCell(Context context) {
         super(context);
@@ -86,6 +88,20 @@ public class TextDetailCell extends FrameLayout {
         valueTextView.setText(value);
         needDivider = divider;
         setWillNotDraw(!needDivider);
+    }
+
+    public void setContentDescriptionValueFirst(boolean contentDescriptionValueFirst) {
+        this.contentDescriptionValueFirst = contentDescriptionValueFirst;
+    }
+
+    @Override
+    public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
+        super.onInitializeAccessibilityNodeInfo(info);
+        CharSequence text = textView.getText();
+        CharSequence valueText = valueTextView.getText();
+        if (!TextUtils.isEmpty(text) && !TextUtils.isEmpty(valueText)) {
+            info.setText((contentDescriptionValueFirst ? valueText : text) + ": " + (contentDescriptionValueFirst ? text : valueText));
+        }
     }
 
     @Override

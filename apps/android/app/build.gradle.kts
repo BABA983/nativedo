@@ -12,6 +12,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.paparazzi)
 }
 
 android {
@@ -80,6 +81,7 @@ dependencies {
 
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.recyclerview)
+    implementation(libs.androidx.viewpager)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.ktx)
     implementation(libs.androidx.activity.compose)
@@ -109,5 +111,7 @@ dependencies {
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.turbine)
-    testImplementation("org.robolectric:robolectric:4.11.1")
+    // Paparazzi 1.3.5 brings layoutlib onto the unit-test classpath; Robolectric
+    // 4.16.1 keeps its Android framework shadows compatible with that layoutlib.
+    testImplementation("org.robolectric:robolectric:4.16.1")
 }

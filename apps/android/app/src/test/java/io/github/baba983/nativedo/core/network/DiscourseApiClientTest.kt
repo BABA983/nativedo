@@ -50,12 +50,83 @@ class DiscourseApiClientTest {
 
         val result = client.search(query = "NativeDo", page = 0)
 
-        assertThat(result.topics.map { it.id }).containsExactly(202L, 101L).inOrder()
+        assertThat(result.topics.map { it.id }).containsExactly(202L)
+        assertThat(result.posts.map { it.id }).containsExactly(101L)
+        assertThat(result.posts.single().targetPostNumber).isEqualTo(4)
+        assertThat(result.posts.single().targetPostId).isEqualTo(9001L)
+        assertThat(result.posts.single().rowIdentity).isEqualTo("search-post:9001")
         assertThat(result.topics.first().title).isEqualTo("How to configure the 5.5 model")
-        assertThat(result.topics.last().authorUsername).isEqualTo("baba")
+        assertThat(result.topics.single().authorUsername).isEqualTo("baba")
+        assertThat(result.topics.single().authorAvatarTemplate)
+            .isEqualTo("/user_avatar/linux.do/baba/{size}/1.png")
+        assertThat(result.posts.single().authorUsername).isEqualTo("baba")
         assertThat(result.users.single().username).isEqualTo("baba")
         assertThat(result.hasMore).isTrue()
         assertThat(server.takeRequest().path).isEqualTo("/search.json?q=NativeDo&page=0")
+    }
+
+    @Test
+    fun parsesSearchWhenDiscourseReturnsNullPaginationFlags() = runTest {
+        server.enqueue(
+            jsonResponse(
+                """
+                {
+                  "topics": [],
+                  "posts": [],
+                  "users": [],
+                  "grouped_search_result": {
+                    "more_posts": null,
+                    "more_topics": null,
+                    "more_full_page_results": false
+                  }
+                }
+                """.trimIndent(),
+            ),
+        )
+
+        val result = client.search(query = "topic:2566145", page = 0)
+
+        assertThat(result.hasMore).isFalse()
+        assertThat(server.takeRequest().path).isEqualTo("/search.json?q=topic%3A2566145&page=0")
+    }
+
+    @Test
+    fun topicScopedSearchSendsTypeFilterAndUsesFullPagePaginationFlag() = runTest {
+        server.enqueue(
+            jsonResponse(
+                """
+                {
+                  "topics": [],
+                  "posts": [],
+                  "users": [],
+                  "grouped_search_result": {
+                    "more_posts": null,
+                    "more_topics": false,
+                    "more_full_page_results": true
+                  }
+                }
+                """.trimIndent(),
+            ),
+        )
+
+        val result = client.search(query = "429 topic:2566145", page = 1, typeFilter = "topic")
+
+        assertThat(result.hasMore).isTrue()
+        assertThat(server.takeRequest().path)
+            .isEqualTo("/search.json?q=429%20topic%3A2566145&page=1&type_filter=topic")
+    }
+
+    @Test
+    fun searchesTopicMentionUsersWithComposerEndpointAndBlankTerm() = runTest {
+        server.enqueue(jsonResponse(fixture("discourse/mention-users.json")))
+
+        val result = client.searchMentionUsers(term = "", topicId = 847468)
+
+        assertThat(result.candidates.map { it.username }).containsExactly("orchid.hu", "team").inOrder()
+        assertThat(result.candidates.first().priorityGroup).isEqualTo(0)
+        assertThat(result.candidates.last().isGroup).isTrue()
+        assertThat(server.takeRequest().path)
+            .isEqualTo("/u/search/users?term=&topic_id=847468&include_groups=true&limit=6")
     }
 
     @Test
@@ -82,12 +153,39 @@ class DiscourseApiClientTest {
         assertThat(topic.title).isNotEmpty()
         assertThat(topic.posts).isNotEmpty()
         assertThat(topic.posts.first().cookedHtml).isNotEmpty()
+        assertThat(topic.posts.first().replyCount).isEqualTo(80)
+        assertThat(topic.participants.map { it.username }).containsExactly("orchid.hu", "quiet-user").inOrder()
+        assertThat(topic.participants.first().postCount).isEqualTo(4)
+        assertThat(topic.participants.last().displayName).isEmpty()
+        assertThat(topic.participants.last().avatarTemplate).contains("quiet-user")
+        assertThat(topic.participants.last().animatedAvatarUrl).endsWith(".gif")
         assertThat(topic.emojiCatalog["heart"]).isEqualTo("/images/emoji/heart.png")
         assertThat(topic.emojiCategories).hasSize(1)
         assertThat(topic.emojiCategories.first().id).isEqualTo("discourse_reactions")
         assertThat(topic.emojiCategories.first().emojis.first().name).isEqualTo("heart")
         assertThat(server.takeRequest().path).isEqualTo("/emojis.json")
         assertThat(server.takeRequest().path).isEqualTo("/t/1.json")
+    }
+
+    @Test
+    fun topicDetailWithoutDetailsKeepsParticipantsEmpty() = runTest {
+        server.enqueue(jsonResponse("""{"discourse_reactions":[]}"""))
+        server.enqueue(
+            jsonResponse(
+                """{
+                    "id": 2,
+                    "title": "No details",
+                    "post_stream": {
+                        "stream": [2001],
+                        "posts": [{"id":2001,"post_number":1,"username":"baba","cooked":"<p>x</p>"}]
+                    }
+                }""".trimIndent(),
+            ),
+        )
+
+        val topic = client.fetchTopic(topicId = 2)
+
+        assertThat(topic.participants).isEmpty()
     }
 
     @Test
@@ -101,6 +199,17 @@ class DiscourseApiClientTest {
         assertThat(posts.first().authorUsername).isNotEmpty()
         assertThat(server.takeRequest().path).isEqualTo("/emojis.json")
         assertThat(server.takeRequest().path).isEqualTo("/t/1/posts.json?post_ids%5B%5D=1&post_ids%5B%5D=2")
+    }
+
+    @Test
+    fun fetchPostRepliesMapsDirectReplyPage() = runTest {
+        server.enqueue(jsonResponse(fixture("discourse/post-replies.json")))
+
+        val replies = client.fetchPostReplies(postId = 1001L, afterPostNumber = 1)
+
+        assertThat(replies.map { it.id }).containsExactly(1002L, 1003L).inOrder()
+        assertThat(replies.first().replyToPostNumber).isEqualTo(1)
+        assertThat(server.takeRequest().path).isEqualTo("/posts/1001/replies?after=1")
     }
 
     @Test
@@ -207,36 +316,15 @@ class DiscourseApiClientTest {
 
     @Test
     fun fetchReactionUsersMapsGroups() = runTest {
-        server.enqueue(
-            jsonResponse(
-                """
-                {
-                  "reaction_users": [
-                    {
-                      "id": "heart",
-                      "count": 1,
-                      "users": [
-                        {
-                          "username": "baba",
-                          "name": "Baba",
-                          "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png",
-                          "can_undo": true,
-                          "created_at": "2026-05-01T01:02:03.000Z"
-                        }
-                      ]
-                    }
-                  ]
-                }
-                """.trimIndent(),
-            ),
-        )
+        server.enqueue(jsonResponse(fixture("discourse/reaction-users.json")))
 
         val groups = client.fetchReactionUsers(postId = 1001L)
 
-        assertThat(groups).hasSize(1)
-        assertThat(groups.single().id).isEqualTo("heart")
-        assertThat(groups.single().users.single().displayName).isEqualTo("Baba")
-        assertThat(groups.single().users.single().canUndo).isTrue()
+        assertThat(groups.map { it.id }).containsExactly("heart", "+1").inOrder()
+        assertThat(groups.first().count).isEqualTo(50)
+        assertThat(groups.first().users).hasSize(1)
+        assertThat(groups.first().users.single().displayName).isEqualTo("Baba")
+        assertThat(groups.first().users.single().canUndo).isTrue()
         assertThat(server.takeRequest().path).isEqualTo("/discourse-reactions/posts/1001/reactions-users.json")
     }
 
@@ -299,6 +387,24 @@ class DiscourseApiClientTest {
         assertThat(groups.single().id).isEqualTo("option-a")
         assertThat(groups.single().users.single().username).isEqualTo("baba")
         assertThat(groups.single().users.single().displayName).isEqualTo("Baba")
+    }
+
+    @Test
+    fun fetchPollVotersSupportsPerOptionPagination() = runTest {
+        server.enqueue(jsonResponse(fixture("discourse/poll-voters.json")))
+
+        val groups = client.fetchPollVoters(
+            postId = 1001L,
+            pollName = "frontend",
+            optionId = "e539a9df8700d0d05c69356a07b768cf",
+            page = 2,
+            limit = 50,
+        )
+
+        assertThat(groups.single().users).hasSize(2)
+        assertThat(server.takeRequest().path).isEqualTo(
+            "/polls/voters.json?post_id=1001&poll_name=frontend&option_id=e539a9df8700d0d05c69356a07b768cf&page=2&limit=50",
+        )
     }
 
     @Test

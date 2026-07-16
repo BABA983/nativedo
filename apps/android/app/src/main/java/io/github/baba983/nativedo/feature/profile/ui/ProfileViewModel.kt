@@ -116,8 +116,8 @@ class ProfileViewModel(
             val feedError = topicsResult.exceptionOrNull() ?: repliesResult.exceptionOrNull()
             _uiState.value = _uiState.value.copy(
                 categories = categories,
-                recentTopics = topicsResult.getOrElse { emptyList() },
-                recentReplies = repliesResult.getOrElse { emptyList() },
+                recentTopics = topicsResult.getOrNull()?.items.orEmpty(),
+                recentReplies = repliesResult.getOrNull()?.items.orEmpty(),
                 isFeedLoading = false,
                 feedErrorMessage = feedError?.readableMessage(),
             )

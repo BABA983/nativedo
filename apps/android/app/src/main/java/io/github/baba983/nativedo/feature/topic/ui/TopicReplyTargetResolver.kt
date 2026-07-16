@@ -117,6 +117,17 @@ internal fun topicReplySheetEntriesByPostNumber(
     posts: List<Post>,
 ): Map<Int, List<TopicReplySheetItem>> = TopicReplyTargetResolver.replySheetEntriesByPostNumber(posts)
 
+internal fun topicReplySheetItem(post: Post): TopicReplySheetItem = TopicReplySheetItem(
+    postId = post.id,
+    postNumber = post.postNumber,
+    authorUsername = post.authorUsername,
+    authorDisplayName = post.authorDisplayName,
+    authorAvatarTemplate = post.authorAvatarTemplate,
+    authorAnimatedAvatarUrl = post.authorAnimatedAvatarUrl,
+    createdAt = post.createdAt,
+    previewText = post.cookedHtml.htmlToPreviewText(),
+)
+
 internal fun topicPostMetaLabel(
     index: Int,
     createdAt: String,
@@ -139,14 +150,7 @@ internal fun topicPostTimeLabel(
 ): String? {
     if (rawValue.isBlank()) return null
 
-    val postedInstant = runCatching { OffsetDateTime.parse(rawValue).toInstant() }
-        .recoverCatching {
-            java.time.LocalDateTime.parse(rawValue, topicPostUtcFormatter)
-                .atOffset(ZoneOffset.UTC)
-                .toInstant()
-        }
-        .getOrNull()
-        ?: return null
+    val postedInstant = parseTopicPostInstant(rawValue) ?: return null
     val duration = Duration.between(postedInstant, now)
     val postedLocalDateTime = postedInstant.atZone(zoneId)
     val nowLocalDate = now.atZone(zoneId).toLocalDate()
@@ -161,6 +165,17 @@ internal fun topicPostTimeLabel(
         postedLocalDateTime.toLocalDate() == nowLocalDate -> postedLocalDateTime.format(topicPostTimeFormatter)
         else -> postedLocalDateTime.format(topicPostDateTimeFormatter)
     }
+}
+
+internal fun parseTopicPostInstant(rawValue: String): Instant? {
+    if (rawValue.isBlank()) return null
+    return runCatching { OffsetDateTime.parse(rawValue).toInstant() }
+        .recoverCatching {
+            java.time.LocalDateTime.parse(rawValue, topicPostUtcFormatter)
+                .atOffset(ZoneOffset.UTC)
+                .toInstant()
+        }
+        .getOrNull()
 }
 
 internal fun topicPostEditedMetaLabel(

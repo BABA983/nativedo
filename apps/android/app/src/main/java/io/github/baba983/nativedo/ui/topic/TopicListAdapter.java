@@ -61,6 +61,8 @@ public class TopicListAdapter extends RecyclerListView.SelectionAdapter {
     @Nullable private CharSequence loadMoreErrorMessage;
     @Nullable private Runnable retryCallback;
     @Nullable private Runnable loadMoreRetryCallback;
+    @Nullable private String searchQuery;
+    private boolean showSearchExcerpt;
 
     public TopicListAdapter(@NonNull Context context, @NonNull String baseUrl) {
         this.context = context;
@@ -73,6 +75,16 @@ public class TopicListAdapter extends RecyclerListView.SelectionAdapter {
                 @Override public void onChanged(int position, int count, @Nullable Object payload) {}
             },
             new AsyncDifferConfig.Builder<>(new TopicDiffCallback()).build());
+    }
+
+    public void setSearchPresentation(@Nullable String query, boolean showExcerpt) {
+        String normalized = query == null ? null : query.trim();
+        if (TextUtils.equals(searchQuery, normalized) && showSearchExcerpt == showExcerpt) {
+            return;
+        }
+        searchQuery = normalized;
+        showSearchExcerpt = showExcerpt;
+        notifyDataSetChanged();
     }
 
     public void submit(@NonNull List<TopicSummary> topics,
@@ -276,6 +288,7 @@ public class TopicListAdapter extends RecyclerListView.SelectionAdapter {
         TopicSummary topic = getTopicAt(position);
         if (topic == null) return;
         TopicCell cell = (TopicCell) holder.itemView;
+        cell.setSearchPresentation(searchQuery, showSearchExcerpt);
         cell.setCategories(categories);
         cell.setTopic(topic, baseUrl);
     }
@@ -302,6 +315,7 @@ public class TopicListAdapter extends RecyclerListView.SelectionAdapter {
             return;
         }
         TopicCell cell = (TopicCell) holder.itemView;
+        cell.setSearchPresentation(searchQuery, showSearchExcerpt);
         cell.setCategories(categories);
         cell.setTopic(topic, baseUrl, payloadMask);
     }
@@ -309,7 +323,11 @@ public class TopicListAdapter extends RecyclerListView.SelectionAdapter {
     private static final class TopicDiffCallback extends DiffUtil.ItemCallback<TopicSummary> {
         @Override
         public boolean areItemsTheSame(@NonNull TopicSummary oldTopic, @NonNull TopicSummary newTopic) {
-            return oldTopic.getId() == newTopic.getId();
+            if (oldTopic.getRowIdentity() != null || newTopic.getRowIdentity() != null) {
+                return Objects.equals(oldTopic.getRowIdentity(), newTopic.getRowIdentity());
+            }
+            return oldTopic.getId() == newTopic.getId() &&
+                Objects.equals(oldTopic.getTargetPostNumber(), newTopic.getTargetPostNumber());
         }
 
         @Override

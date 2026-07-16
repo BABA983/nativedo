@@ -1,0 +1,32 @@
+#!/bin/bash
+
+set -euo pipefail
+
+if [ -z "${1:-}" ]; then
+  echo "Usage: ./scripts/recordScreenshots <ScreenshotTestClass>" >&2
+  exit 1
+fi
+
+ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
+CLASS_NAME="${1%.kt}"
+TEST_FILE=$(find "$ROOT_DIR/apps/android" -type f \
+  -path '*/src/test/java/*' -name "${CLASS_NAME}.kt" -print -quit)
+
+if [ -z "$TEST_FILE" ]; then
+  echo "Screenshot test class not found: $CLASS_NAME" >&2
+  exit 1
+fi
+
+RELATIVE_PATH="${TEST_FILE#"$ROOT_DIR/apps/android/"}"
+MODULE="${RELATIVE_PATH%%/*}"
+PACKAGE_PATH=$(echo "$TEST_FILE" \
+  | sed 's|.*/src/test/java/||' \
+  | sed 's|/[^/]*\.kt$||' \
+  | tr '/' '.')
+FULL_CLASS_NAME="${PACKAGE_PATH}.${CLASS_NAME}"
+
+echo "Recording ${FULL_CLASS_NAME} in :${MODULE}"
+"$ROOT_DIR/apps/android/gradlew" \
+  -p "$ROOT_DIR/apps/android" \
+  ":${MODULE}:recordPaparazziDebug" \
+  --tests "$FULL_CLASS_NAME"

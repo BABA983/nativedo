@@ -5,6 +5,9 @@ import io.github.baba983.nativedo.core.storage.CookieStore
 import okhttp3.Cookie
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.coroutines.resume
 
 class CookieSyncBridge(
     private val baseUrl: String,
@@ -23,6 +26,9 @@ class CookieSyncBridge(
             CookieManager.getInstance().flush()
             onComplete?.invoke()
         }
+    },
+    private val writeCookieToWebViewAsync: (String, String, (Boolean) -> Unit) -> Unit = { url, cookie, onComplete ->
+        CookieManager.getInstance().setCookie(url, cookie, onComplete)
     },
 ) {
     fun syncFromWebView(url: String = baseUrl): Boolean {
@@ -53,6 +59,36 @@ class CookieSyncBridge(
             writeCookieToWebView(url, cookie.toString())
         }
         flushCookies()
+    }
+
+    suspend fun syncToWebViewAsync(
+        url: String = baseUrl,
+        timeoutMillis: Long = DEFAULT_ASYNC_COOKIE_TIMEOUT_MILLIS,
+    ): Boolean {
+        val cookies = cookieStore.load(url.toHttpUrl())
+        if (cookies.isEmpty()) {
+            return true
+        }
+        return withTimeoutOrNull(timeoutMillis) {
+            suspendCancellableCoroutine { continuation ->
+                var remaining = cookies.size
+                var allSucceeded = true
+                var resumed = false
+                cookies.forEach { cookie ->
+                    writeCookieToWebViewAsync(url, cookie.toString()) { succeeded ->
+                        allSucceeded = allSucceeded && succeeded
+                        remaining -= 1
+                        if (!resumed && remaining == 0) {
+                            resumed = true
+                            if (allSucceeded) {
+                                flushCookies()
+                            }
+                            if (continuation.isActive) continuation.resume(allSucceeded)
+                        }
+                    }
+                }
+            }
+        } ?: false
     }
 
     fun clear() {
@@ -86,4 +122,8 @@ class CookieSyncBridge(
                     }
                     .build()
             }
+
+    private companion object {
+        private const val DEFAULT_ASYNC_COOKIE_TIMEOUT_MILLIS = 5_000L
+    }
 }

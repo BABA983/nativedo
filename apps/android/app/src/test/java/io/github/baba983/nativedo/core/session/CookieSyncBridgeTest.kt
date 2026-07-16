@@ -5,6 +5,9 @@ import io.github.baba983.nativedo.core.storage.CookieStore
 import okhttp3.Cookie
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Test
+import kotlinx.coroutines.async
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 
 class CookieSyncBridgeTest {
     private val baseUrl = "https://linux.do/"
@@ -45,6 +48,82 @@ class CookieSyncBridgeTest {
             cookies[0].toString(),
             cookies[1].toString(),
         )
+    }
+
+    @Test
+    fun syncToWebViewAsync_waitsForEverySetCookieCallbackBeforeFlushing() = runTest {
+        val cookieStore = CookieStore()
+        val callbacks = mutableListOf<(Boolean) -> Unit>()
+        var flushCount = 0
+        cookieStore.save(
+            baseUrl.toHttpUrl(),
+            listOf(
+                Cookie.Builder().name("_t").value("token").domain("linux.do").path("/").build(),
+                Cookie.Builder().name("cf_clearance").value("clearance").domain("linux.do").path("/").build(),
+            ),
+        )
+        val bridge = CookieSyncBridge(
+            baseUrl = baseUrl,
+            cookieStore = cookieStore,
+            readCookieHeader = { null },
+            writeCookieToWebView = { _, _ -> },
+            flushCookies = { flushCount += 1 },
+            clearCookies = { onComplete -> onComplete?.invoke() },
+            writeCookieToWebViewAsync = { _, _, callback -> callbacks += callback },
+        )
+
+        val sync = async { bridge.syncToWebViewAsync() }
+        runCurrent()
+        assertThat(sync.isCompleted).isFalse()
+        callbacks.first().invoke(true)
+        runCurrent()
+        assertThat(sync.isCompleted).isFalse()
+        callbacks.last().invoke(true)
+        assertThat(sync.await()).isTrue()
+
+        assertThat(flushCount).isEqualTo(1)
+    }
+
+    @Test
+    fun syncToWebViewAsync_reportsRejectedCookieWithoutFlushing() = runTest {
+        val cookieStore = CookieStore()
+        var flushCount = 0
+        cookieStore.save(
+            baseUrl.toHttpUrl(),
+            listOf(Cookie.Builder().name("_t").value("token").domain("linux.do").path("/").build()),
+        )
+        val bridge = CookieSyncBridge(
+            baseUrl = baseUrl,
+            cookieStore = cookieStore,
+            readCookieHeader = { null },
+            writeCookieToWebView = { _, _ -> },
+            flushCookies = { flushCount += 1 },
+            clearCookies = { onComplete -> onComplete?.invoke() },
+            writeCookieToWebViewAsync = { _, _, callback -> callback(false) },
+        )
+
+        assertThat(bridge.syncToWebViewAsync()).isFalse()
+        assertThat(flushCount).isEqualTo(0)
+    }
+
+    @Test
+    fun syncToWebViewAsync_timesOutWhenWebViewDropsCallback() = runTest {
+        val cookieStore = CookieStore()
+        cookieStore.save(
+            baseUrl.toHttpUrl(),
+            listOf(Cookie.Builder().name("_t").value("token").domain("linux.do").path("/").build()),
+        )
+        val bridge = CookieSyncBridge(
+            baseUrl = baseUrl,
+            cookieStore = cookieStore,
+            readCookieHeader = { null },
+            writeCookieToWebView = { _, _ -> },
+            flushCookies = {},
+            clearCookies = { onComplete -> onComplete?.invoke() },
+            writeCookieToWebViewAsync = { _, _, _ -> },
+        )
+
+        assertThat(bridge.syncToWebViewAsync(timeoutMillis = 1)).isFalse()
     }
 
     @Test

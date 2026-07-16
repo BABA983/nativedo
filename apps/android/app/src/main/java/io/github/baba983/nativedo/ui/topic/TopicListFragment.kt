@@ -33,11 +33,17 @@ import io.github.baba983.nativedo.NativeDoApp
 import io.github.baba983.nativedo.R
 import io.github.baba983.nativedo.core.model.CategorySummary
 import org.telegram.messenger.AndroidUtilities
+import org.telegram.messenger.LiteMode
+import org.telegram.messenger.browser.Browser
 import io.github.baba983.nativedo.feature.home.data.HomeRepository
 import io.github.baba983.nativedo.feature.home.ui.HomeFeedTab
 import io.github.baba983.nativedo.feature.home.ui.HomeFeedState
 import io.github.baba983.nativedo.feature.home.ui.HomeViewModel
 import io.github.baba983.nativedo.feature.topic.data.TopicSearchRepository
+import io.github.baba983.nativedo.feature.topic.ui.TopicSearchRequest
+import io.github.baba983.nativedo.feature.topic.ui.TopicSearchSession
+import io.github.baba983.nativedo.ui.main.MainTabsActivity
+import io.github.baba983.nativedo.ui.main.MainTabsController
 import org.telegram.ui.ActionBar.ActionBar
 import org.telegram.ui.ActionBar.ActionBarMenuItem
 import org.telegram.ui.ActionBar.BaseFragment
@@ -49,6 +55,7 @@ import org.telegram.ui.Components.RecyclerItemsEnterAnimator
 import org.telegram.ui.Components.SearchStateDrawable
 import org.telegram.ui.Components.SizeNotifierFrameLayout
 import org.telegram.ui.Components.PullForegroundDrawable
+import org.telegram.ui.Components.RadialProgressView
 import org.telegram.ui.Components.CubicBezierInterpolator
 import org.telegram.ui.Components.FragmentSearchField
 import org.telegram.ui.Components.FragmentFloatingButton
@@ -87,7 +94,7 @@ private const val TAB_MODE_SWITCH_DURATION_MS = 220L
 private const val TAB_MODE_SWITCH_OUT_DURATION_MS = 90L
 private const val TAB_MODE_SWITCH_MIN_SCALE = 0.98f
 
-private enum class SearchFilter {
+internal enum class SearchFilter {
     Topics,
     Posts,
     Users,
@@ -114,12 +121,15 @@ private enum class SearchFilter {
  * - Tab strip stays in place below ActionBar — no separate search tabs needed.
  * - Search results fade in over the topic list.
  */
-class TopicListFragment : BaseFragment(), FactorAnimator.Target, Theme.ThemeDelegate {
+class TopicListFragment(
+    private val mainTabsController: MainTabsController? = null,
+) : BaseFragment(), FactorAnimator.Target, Theme.ThemeDelegate, MainTabsActivity.TabFragmentDelegate {
 
     // --- ViewModel & data -----------------------------------------------------------
 
     private lateinit var viewModel: HomeViewModel
     private lateinit var searchRepository: TopicSearchRepository
+    private var baseUrl: String = ""
     private val collectorScope = MainScope()
 
     // --- Views ----------------------------------------------------------------------
@@ -129,9 +139,9 @@ class TopicListFragment : BaseFragment(), FactorAnimator.Target, Theme.ThemeDele
     private var tabStripContainer: PillTabContainer? = null
     private var adapter: TopicListAdapter? = null
     private var viewPager: ViewPagerFixed? = null
-    private var searchListView: RecyclerListView? = null
-    private var searchAdapter: TopicListAdapter? = null
+    private var searchViewPager: TopicSearchViewPager? = null
     private var searchMenuItem: ActionBarMenuItem? = null
+    private var searchProgressView: RadialProgressView? = null
     private var fragmentSearchField: FragmentSearchField? = null
     private var searchContentView: View? = null
     private var actionBarDivider: View? = null
@@ -145,6 +155,7 @@ class TopicListFragment : BaseFragment(), FactorAnimator.Target, Theme.ThemeDele
     // --- Search state ---------------------------------------------------------------
 
     private var searchJob: Job? = null
+    private val searchSession = TopicSearchSession()
     private var selectedSearchFilter = SearchFilter.Topics
     private val pagesByPosition = mutableMapOf<Int, TopicListPage>()
     private val scrollPositions = mutableMapOf<Int, ScrollPosition>()
@@ -179,7 +190,7 @@ class TopicListFragment : BaseFragment(), FactorAnimator.Target, Theme.ThemeDele
     override fun onFactorChangeFinished(id: Int, finalFactor: Float, callee: FactorAnimator?) {
         if (id == ANIMATOR_ID_SEARCH_VISIBLE) {
             listView?.isVerticalScrollBarEnabled = true
-            searchListView?.isVerticalScrollBarEnabled = true
+            searchViewPager?.setScrollBarsEnabled(true)
             if (finalFactor == 0f && tabStripInSearchMode) {
                 switchTabStripToFeedMode(animated = false)
             }
@@ -200,6 +211,7 @@ class TopicListFragment : BaseFragment(), FactorAnimator.Target, Theme.ThemeDele
         applyCurrentTheme(context)
 
         val appContainer = (context.applicationContext as NativeDoApp).appContainer
+        baseUrl = appContainer.baseUrl
         searchRepository = TopicSearchRepository(appContainer.discourseApiClient)
         viewModel = ViewModelProvider(
             this,
@@ -265,12 +277,19 @@ class TopicListFragment : BaseFragment(), FactorAnimator.Target, Theme.ThemeDele
                 override fun afterTextChanged(s: Editable?) {}
             })
             setCloseButtonOnClickListener {
-                if (editText.text.isNotEmpty()) {
-                    editText.text.clear()
-                } else {
-                    exitSearchMode()
-                }
+                exitSearchMode()
             }
+            val visibleProgress = RadialProgressView(context).apply {
+                setSize(AndroidUtilities.dp(20f))
+                setProgressColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText))
+                visibility = View.GONE
+                layoutParams = LinearLayout.LayoutParams(
+                    AndroidUtilities.dp(32f),
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                )
+            }
+            addAdditionalIcon(visibleProgress)
+            searchProgressView = visibleProgress
             updateColors()
         }
 
@@ -308,7 +327,8 @@ class TopicListFragment : BaseFragment(), FactorAnimator.Target, Theme.ThemeDele
                     TAB_ID_SEARCH_USERS -> SearchFilter.Users
                     else -> SearchFilter.Topics
                 }
-                fragmentSearchField?.editText?.text?.let { submitSearchQuery(it.toString()) }
+                searchViewPager?.selectFilter(selectedSearchFilter, animated = true)
+                renderSearchSnapshot()
                 return@setDelegate
             }
             val position = idToPosition(id)
@@ -399,38 +419,41 @@ class TopicListFragment : BaseFragment(), FactorAnimator.Target, Theme.ThemeDele
         )
 
         // Search results overlay.
-        val searchContent = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
+        val searchContent = TopicSearchViewPager(
+            context = context,
+            baseUrl = appContainer.baseUrl,
+            topPaddingPx = AndroidUtilities.dp(TAB_STRIP_HEIGHT_DP),
+            onFilterSelected = { filter ->
+                selectedSearchFilter = filter
+                strip.selectTab(searchFilterToTabId(filter), false)
+                renderSearchSnapshot()
+            },
+            onTopicSelected = { topic, isPost ->
+                presentFragment(
+                    TopicDetailFragment(
+                        topicId = topic.id,
+                        initialTitle = topic.title,
+                        initialPostNumber = if (isPost) topic.targetPostNumber else null,
+                        initialPostId = if (isPost) topic.targetPostId else null,
+                    ),
+                )
+            },
+            onUserSelected = { username ->
+                parentActivity?.let { activity -> Browser.openUrl(activity, "$baseUrl/u/$username") }
+            },
+            onLoadMore = ::loadMoreSearch,
+            onRetry = ::retrySearchPage,
+        ).apply {
             visibility = View.GONE
             setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite))
+            setSearchField(fragmentSearchField?.editText)
         }
-        val searchList = RecyclerListView(context)
-        val searchAdapter = TopicListAdapter(context, appContainer.baseUrl)
-        searchList.layoutManager = LinearLayoutManager(context)
-        searchList.itemAnimator = DialogsItemAnimator(searchList)
-        searchList.setPadding(0, AndroidUtilities.dp(TAB_STRIP_HEIGHT_DP), 0, 0)
-        searchList.clipToPadding = false
-        searchList.adapter = searchAdapter
-        searchList.setOnItemClickListener { view, _ ->
-            val cell = view as? TopicCell ?: return@setOnItemClickListener
-            val topic = cell.topic ?: return@setOnItemClickListener
-            presentFragment(TopicDetailFragment(topic.id, topic.title))
-        }
-        searchContent.addView(
-            searchList,
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                0,
-                1f,
-            ),
-        )
         body.addView(
             searchContent,
             LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT),
         )
         searchContentView = searchContent
-        searchListView = searchList
-        this.searchAdapter = searchAdapter
+        searchViewPager = searchContent
 
         // ---- Observe state ----
         collectorScope.launch {
@@ -524,16 +547,17 @@ class TopicListFragment : BaseFragment(), FactorAnimator.Target, Theme.ThemeDele
         // --- Search results & pager visibility ---
         val contentFactor = searchContentFactor
         val pagerAlpha = 1f - contentFactor
+        val scaleAnimations = LiteMode.isEnabled(LiteMode.FLAG_CHAT_SCALE)
         pager?.let {
             it.alpha = pagerAlpha
-            it.scaleX = 1f - (1f - SEARCH_PAGER_MIN_SCALE) * contentFactor
-            it.scaleY = 1f - (1f - SEARCH_PAGER_MIN_SCALE) * contentFactor
+            it.scaleX = if (scaleAnimations) 1f - (1f - SEARCH_PAGER_MIN_SCALE) * contentFactor else 1f
+            it.scaleY = if (scaleAnimations) 1f - (1f - SEARCH_PAGER_MIN_SCALE) * contentFactor else 1f
             it.visibility = if (pagerAlpha > 0.01f) View.VISIBLE else View.GONE
         }
         searchContent?.let {
             it.alpha = contentFactor
-            it.scaleX = SEARCH_CONTENT_MAX_SCALE - (SEARCH_CONTENT_MAX_SCALE - 1f) * contentFactor
-            it.scaleY = SEARCH_CONTENT_MAX_SCALE - (SEARCH_CONTENT_MAX_SCALE - 1f) * contentFactor
+            it.scaleX = if (scaleAnimations) SEARCH_CONTENT_MAX_SCALE - (SEARCH_CONTENT_MAX_SCALE - 1f) * contentFactor else 1f
+            it.scaleY = if (scaleAnimations) SEARCH_CONTENT_MAX_SCALE - (SEARCH_CONTENT_MAX_SCALE - 1f) * contentFactor else 1f
             it.visibility = if (contentFactor > 0.01f) View.VISIBLE else View.GONE
         }
 
@@ -606,15 +630,10 @@ class TopicListFragment : BaseFragment(), FactorAnimator.Target, Theme.ThemeDele
         actionBar.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite))
         actionBarDivider?.setBackgroundColor(Theme.multAlpha(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText), 0.18f))
         searchStateDrawable?.setColor(Theme.getColor(Theme.key_actionBarDefaultIcon))
+        searchProgressView?.setProgressColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText))
         fragmentSearchField?.updateColors()
         searchContentView?.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite))
-        searchListView?.let { list ->
-            list.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite))
-            for (index in 0 until list.childCount) {
-                (list.getChildAt(index) as? Theme.Colorable)?.updateColors()
-            }
-            list.invalidate()
-        }
+        searchViewPager?.updateColors()
         tabStrip?.updateColors()
         tabStripContainer?.updateColors()
         pagesByPosition.values.forEach { page -> page.updateColors() }
@@ -623,6 +642,28 @@ class TopicListFragment : BaseFragment(), FactorAnimator.Target, Theme.ThemeDele
     // ================================================================================
     // Back press
     // ================================================================================
+
+    override fun onParentScrollToTop() {
+        val target = if (searchExpanded) {
+            searchViewPager?.currentListView()
+        } else {
+            pagesByPosition[viewPager?.currentPosition ?: 0]?.listView ?: listView
+        }
+        target?.smoothScrollToPosition(0)
+    }
+
+    override fun canParentTabsSlide(event: MotionEvent, forward: Boolean): Boolean {
+        if (searchExpanded) {
+            return false
+        }
+        if (event.y <= actionBar.measuredHeight) {
+            return true
+        }
+        if (!forward) {
+            return true
+        }
+        return viewPager?.currentPosition == HomeFeedTab.entries.lastIndex
+    }
 
     override fun onBackPressed(): Boolean {
         if (searchExpanded) {
@@ -640,54 +681,61 @@ class TopicListFragment : BaseFragment(), FactorAnimator.Target, Theme.ThemeDele
         val normalizedQuery = query.trim()
         searchJob?.cancel()
         if (normalizedQuery.isBlank()) {
-            searchAdapter?.submit(emptyList(), viewModel.uiState.value.categories, false, false)
+            searchSession.clear()
+            renderSearchSnapshot()
             searchStateDrawable?.setIconState(SearchStateDrawable.State.STATE_SEARCH, true)
             return
         }
-        searchAdapter?.submit(emptyList(), viewModel.uiState.value.categories, false, true)
+        val request = searchSession.start(normalizedQuery)
+        renderSearchSnapshot()
         searchStateDrawable?.setIconState(SearchStateDrawable.State.STATE_PROGRESS, true)
         searchJob = collectorScope.launch {
             delay(300L)
-            val result = searchRepository.search(normalizedQuery, page = 0)
-            if (!isActiveSearchQuery(normalizedQuery)) return@launch
-            result.fold(
-                onSuccess = { searchResult ->
-                    searchAdapter?.submit(
-                        searchResult.topics,
-                        viewModel.uiState.value.categories,
-                        false,
-                        false,
-                        getContext()?.getString(R.string.search_topics_empty_title),
-                        getContext()?.getString(R.string.search_topics_empty_message),
-                        null,
-                        null,
-                        null,
-                        null,
-                        null,
-                    )
-                },
-                onFailure = { error ->
-                    searchAdapter?.submit(
-                        emptyList(),
-                        viewModel.uiState.value.categories,
-                        false,
-                        false,
-                        null,
-                        null,
-                        getContext()?.getString(R.string.search_topics_error_title),
-                        error.message ?: error.javaClass.simpleName,
-                        null,
-                        { submitSearchQuery(normalizedQuery) },
-                        null,
-                    )
-                },
-            )
-            searchStateDrawable?.setIconState(SearchStateDrawable.State.STATE_SEARCH, true)
+            executeSearchRequest(request)
         }
     }
 
-    private fun isActiveSearchQuery(query: String): Boolean {
-        return searchExpanded && searchJob?.isCancelled == false && query.isNotBlank()
+    private suspend fun executeSearchRequest(request: TopicSearchRequest) {
+        val result = searchRepository.search(request.query, request.page)
+        result.fold(
+            onSuccess = { searchResult ->
+                if (!searchSession.accept(request, searchResult)) return
+            },
+            onFailure = { error ->
+                if (!searchSession.fail(request, error.message ?: error.javaClass.simpleName)) return
+            },
+        )
+        if (!searchExpanded) return
+        renderSearchSnapshot()
+        searchStateDrawable?.setIconState(SearchStateDrawable.State.STATE_SEARCH, true)
+    }
+
+    private fun loadMoreSearch() {
+        val request = searchSession.nextPage() ?: return
+        renderSearchSnapshot()
+        searchJob = collectorScope.launch {
+            executeSearchRequest(request)
+        }
+    }
+
+    private fun retrySearchPage() {
+        val snapshot = searchSession.snapshot
+        if (snapshot.page < 0) {
+            submitSearchQuery(snapshot.query)
+        } else {
+            loadMoreSearch()
+        }
+    }
+
+    private fun renderSearchSnapshot() {
+        val snapshot = searchSession.snapshot
+        searchViewPager?.submit(snapshot, viewModel.uiState.value.categories)
+        searchProgressView?.let { progress ->
+            FragmentFloatingButton.setAnimatedVisibility(
+                progress,
+                if (snapshot.isInitialLoading || snapshot.isLoadingMore) 1f else 0f,
+            )
+        }
     }
 
     private fun animateSearchContent(show: Boolean) {
@@ -700,13 +748,14 @@ class TopicListFragment : BaseFragment(), FactorAnimator.Target, Theme.ThemeDele
                 it.visibility = View.VISIBLE
                 if (searchContentFactor == 0f) {
                     it.alpha = 0f
-                    it.scaleX = SEARCH_CONTENT_MAX_SCALE
-                    it.scaleY = SEARCH_CONTENT_MAX_SCALE
+                    val scale = if (LiteMode.isEnabled(LiteMode.FLAG_CHAT_SCALE)) SEARCH_CONTENT_MAX_SCALE else 1f
+                    it.scaleX = scale
+                    it.scaleY = scale
                 }
             }
         }
         listView?.isVerticalScrollBarEnabled = false
-        searchListView?.isVerticalScrollBarEnabled = false
+        searchViewPager?.setScrollBarsEnabled(false)
         searchContentAnimator = ValueAnimator.ofFloat(searchContentFactor, if (show) 1f else 0f).apply {
             duration = if (show) SEARCH_ENTER_DURATION_MS else SEARCH_EXIT_DURATION_MS
             startDelay = if (show) 0L else SEARCH_EXIT_START_DELAY_MS
@@ -721,7 +770,7 @@ class TopicListFragment : BaseFragment(), FactorAnimator.Target, Theme.ThemeDele
                     searchContentFactor = if (show) 1f else 0f
                     checkUi_searchFieldVisibility()
                     listView?.isVerticalScrollBarEnabled = true
-                    searchListView?.isVerticalScrollBarEnabled = true
+                    searchViewPager?.setScrollBarsEnabled(true)
                     searchContentAnimator = null
                 }
             })
@@ -736,6 +785,9 @@ class TopicListFragment : BaseFragment(), FactorAnimator.Target, Theme.ThemeDele
     private fun enterSearchMode() {
         if (searchExpanded) return
         searchExpanded = true
+        selectedSearchFilter = SearchFilter.Topics
+        searchViewPager?.selectFilter(SearchFilter.Topics, animated = false)
+        checkUiMainTabsVisible(animated = true)
         switchTabStripToSearchMode(animated = true)
         fragmentSearchField?.editText?.apply {
             isFocusable = true
@@ -759,7 +811,9 @@ class TopicListFragment : BaseFragment(), FactorAnimator.Target, Theme.ThemeDele
     private fun exitSearchMode() {
         if (!searchExpanded) return
         searchJob?.cancel()
+        searchSession.clear()
         searchExpanded = false
+        checkUiMainTabsVisible(animated = true)
         switchTabStripToFeedMode(animated = true)
         fragmentSearchField?.editText?.let { field ->
             val imm = field.context.getSystemService(InputMethodManager::class.java)
@@ -771,7 +825,7 @@ class TopicListFragment : BaseFragment(), FactorAnimator.Target, Theme.ThemeDele
             field.isCursorVisible = false
         }
         fragmentSearchField?.setCloseButtonVisible(false)
-        searchAdapter?.submit(emptyList(), viewModel.uiState.value.categories, false, false)
+        renderSearchSnapshot()
         animatorSearchVisible.setDuration(SEARCH_UI_DURATION_MS)
         animatorSearchVisible.setStartDelay(0L)
         animatorSearchVisible.setValue(false, true)
@@ -783,6 +837,10 @@ class TopicListFragment : BaseFragment(), FactorAnimator.Target, Theme.ThemeDele
     // ================================================================================
 
     override fun onFragmentDestroy() {
+        searchJob?.cancel()
+        searchJob = null
+        searchSession.clear()
+        mainTabsController?.setTabsVisible(true, false)
         pagesByPosition.values.forEach { page -> page.saveScrollPosition() }
         Theme.removeThemeDelegate(this)
         super.onFragmentDestroy()
@@ -799,6 +857,10 @@ class TopicListFragment : BaseFragment(), FactorAnimator.Target, Theme.ThemeDele
         }
     }
 
+    private fun checkUiMainTabsVisible(animated: Boolean) {
+        mainTabsController?.setTabsVisible(!searchExpanded, animated)
+    }
+
     override fun getNavigationBarColor(): Int = Theme.getColor(Theme.key_windowBackgroundGray)
 
     override fun isSupportEdgeToEdge(): Boolean = true
@@ -811,6 +873,12 @@ class TopicListFragment : BaseFragment(), FactorAnimator.Target, Theme.ThemeDele
         TAB_ID_NEW -> HomeFeedTab.New
         TAB_ID_TOP -> HomeFeedTab.Top
         else -> HomeFeedTab.Latest
+    }
+
+    private fun searchFilterToTabId(filter: SearchFilter): Int = when (filter) {
+        SearchFilter.Topics -> TAB_ID_SEARCH_TOPICS
+        SearchFilter.Posts -> TAB_ID_SEARCH_POSTS
+        SearchFilter.Users -> TAB_ID_SEARCH_USERS
     }
 
     private fun idToPosition(id: Int): Int = when (id) {

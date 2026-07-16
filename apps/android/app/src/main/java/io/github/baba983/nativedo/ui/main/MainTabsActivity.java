@@ -21,34 +21,36 @@ package io.github.baba983.nativedo.ui.main;
 import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
-import android.graphics.ColorFilter;
-import android.graphics.LinearGradient;
-import android.graphics.Paint;
-import android.graphics.PixelFormat;
-import android.graphics.Rect;
-import android.graphics.RectF;
-import android.graphics.Shader;
-import android.graphics.drawable.Drawable;
+import android.os.Build;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.FrameLayout;
 
 import androidx.annotation.NonNull;
-import androidx.core.graphics.ColorUtils;
+import androidx.annotation.Nullable;
 import androidx.core.view.WindowInsetsCompat;
 
 import io.github.baba983.nativedo.R;
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.LiteMode;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory;
+import org.telegram.ui.Components.blur3.BlurredBackgroundWithFadeDrawable;
+import org.telegram.ui.Components.blur3.RenderNodeWithHash;
+import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
+import org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl;
+import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceColor;
+import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceRenderNode;
+import org.telegram.ui.Components.chat.ViewPositionWatcher;
 import io.github.baba983.nativedo.ui.profile.ProfileFragment;
 import io.github.baba983.nativedo.ui.topic.TopicListFragment;
 
-public class MainTabsActivity extends ViewPagerActivity implements Theme.ThemeDelegate {
+public class MainTabsActivity extends ViewPagerActivity implements Theme.ThemeDelegate, MainTabsController {
 
     public static final int TABS_COUNT = 2;
     public static final int POSITION_HOME = 0;
@@ -62,8 +64,11 @@ public class MainTabsActivity extends ViewPagerActivity implements Theme.ThemeDe
     public GlassTabView[] tabs;
     private MainTabsLayout tabsView;
     private FrameLayout tabsViewWrapper;
-    private TabsBackgroundDrawable tabsViewBackground;
-    private BottomFadeView fadeView;
+    private BlurredBackgroundDrawable tabsViewBackground;
+    private View fadeView;
+    private ViewPositionWatcher blurViewPositionWatcher;
+    private final BlurredBackgroundSourceColor blurSourceColor;
+    private final @Nullable BlurredBackgroundSourceRenderNode blurSourceTabs;
     private int navigationBarHeight;
     private float tabsVisibilityFactor = 1f;
     private ValueAnimator tabsVisibilityAnimator;
@@ -72,6 +77,46 @@ public class MainTabsActivity extends ViewPagerActivity implements Theme.ThemeDe
     private String profileAvatarUrl;
     private String profileAvatarFilter;
     private String profileAvatarName;
+
+    public MainTabsActivity() {
+        blurSourceColor = new BlurredBackgroundSourceColor();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            blurSourceTabs = new BlurredBackgroundSourceRenderNode(blurSourceColor);
+            blurSourceTabs.setupRenderer(new RenderNodeWithHash.Renderer() {
+                @Override
+                public void renderNodeUpdateDisplayList(Canvas canvas) {
+                    canvas.drawColor(getThemedColor(Theme.key_windowBackgroundWhite));
+                    if (viewPager == null) {
+                        return;
+                    }
+                    canvas.save();
+                    canvas.translate(viewPager.getX(), viewPager.getY());
+                    viewPager.draw(canvas);
+                    canvas.restore();
+                }
+            });
+        } else {
+            blurSourceTabs = null;
+        }
+    }
+
+    @Override
+    protected FrameLayout createContentView(Context context) {
+        return new FrameLayout(context) {
+            @Override
+            protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+                super.onLayout(changed, left, top, right, bottom);
+                checkUiTabsPosition();
+                checkUiFadeView();
+            }
+
+            @Override
+            protected void dispatchDraw(@NonNull Canvas canvas) {
+                super.dispatchDraw(canvas);
+                blur3InvalidateBlur();
+            }
+        };
+    }
 
     @Override
     public View createView(Context context) {
@@ -88,7 +133,6 @@ public class MainTabsActivity extends ViewPagerActivity implements Theme.ThemeDe
                 AndroidUtilities.dp(MAIN_TABS_MARGIN + 4f),
                 AndroidUtilities.dp(MAIN_TABS_MARGIN + 4f)
         );
-        tabsView.setElevation(AndroidUtilities.dpf2(2f));
 
         tabs = new GlassTabView[TABS_COUNT];
         tabs[POSITION_HOME] = GlassTabView.createMainTab(context, GlassTabView.TabIcon.HOME, R.string.tab_home);
@@ -115,10 +159,30 @@ public class MainTabsActivity extends ViewPagerActivity implements Theme.ThemeDe
         selectTab(viewPager.getCurrentPosition(), false);
         applyProfileAvatar();
 
-        tabsViewBackground = new TabsBackgroundDrawable();
+        blurSourceColor.setColor(getThemedColor(Theme.key_windowBackgroundWhite));
+        blurViewPositionWatcher = new ViewPositionWatcher(contentView);
+
+        BlurredBackgroundDrawableViewFactory glassFactory = new BlurredBackgroundDrawableViewFactory(
+                blurSourceTabs != null ? blurSourceTabs : blurSourceColor
+        );
+        glassFactory.setSourceRootView(blurViewPositionWatcher, contentView);
+        glassFactory.setLiquidGlassEffectAllowed(LiteMode.isEnabled(LiteMode.FLAG_LIQUID_GLASS));
+        tabsViewBackground = glassFactory.create(
+                tabsView,
+                BlurredBackgroundProviderImpl.mainTabs(getResourceProvider())
+        );
+        tabsViewBackground.setRadius(AndroidUtilities.dp(MAIN_TABS_HEIGHT / 2f));
+        tabsViewBackground.setPadding(AndroidUtilities.dp(MAIN_TABS_MARGIN - 0.334f));
         tabsView.setBackground(tabsViewBackground);
 
-        fadeView = new BottomFadeView(context);
+        BlurredBackgroundDrawableViewFactory fadeFactory = new BlurredBackgroundDrawableViewFactory(blurSourceColor);
+        fadeFactory.setSourceRootView(blurViewPositionWatcher, contentView);
+        fadeView = new View(context);
+        BlurredBackgroundWithFadeDrawable fadeDrawable = new BlurredBackgroundWithFadeDrawable(
+                fadeFactory.create(fadeView, null)
+        );
+        fadeDrawable.setFadeHeight(AndroidUtilities.dp(60f), true);
+        fadeView.setBackground(fadeDrawable);
         contentView.addView(fadeView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 0, Gravity.BOTTOM));
 
         tabsViewWrapper = new FrameLayout(context);
@@ -146,6 +210,7 @@ public class MainTabsActivity extends ViewPagerActivity implements Theme.ThemeDe
     public void onResume() {
         super.onResume();
         Theme.addThemeDelegate(this);
+        blur3UpdateColors();
         checkUiTabsPosition();
         checkUiFadeView();
     }
@@ -154,6 +219,15 @@ public class MainTabsActivity extends ViewPagerActivity implements Theme.ThemeDe
     public void onPause() {
         Theme.removeThemeDelegate(this);
         super.onPause();
+    }
+
+    @Override
+    public void onFragmentDestroy() {
+        if (blurViewPositionWatcher != null) {
+            blurViewPositionWatcher.shutdown();
+            blurViewPositionWatcher = null;
+        }
+        super.onFragmentDestroy();
     }
 
     @Override
@@ -196,6 +270,7 @@ public class MainTabsActivity extends ViewPagerActivity implements Theme.ThemeDe
         return false;
     }
 
+    @Override
     public void setTabsVisible(boolean visible, boolean animated) {
         float target = visible ? 1f : 0f;
         if (!animated) {
@@ -237,17 +312,27 @@ public class MainTabsActivity extends ViewPagerActivity implements Theme.ThemeDe
         if (position == POSITION_PROFILE) {
             return new ProfileFragment();
         }
-        return new TopicListFragment();
+        return new TopicListFragment(this);
     }
 
     @Override
     protected boolean canScrollBackward(MotionEvent ev) {
-        return viewPager != null && viewPager.getCurrentPosition() > POSITION_HOME;
+        return viewPager != null &&
+                viewPager.getCurrentPosition() > POSITION_HOME &&
+                canCurrentFragmentSlide(ev, false);
     }
 
     @Override
     protected boolean canScrollForward(MotionEvent ev) {
-        return viewPager != null && viewPager.getCurrentPosition() < POSITION_PROFILE;
+        return viewPager != null &&
+                viewPager.getCurrentPosition() < POSITION_PROFILE &&
+                canCurrentFragmentSlide(ev, true);
+    }
+
+    private boolean canCurrentFragmentSlide(MotionEvent event, boolean forward) {
+        BaseFragment fragment = getCurrentVisibleFragment();
+        return fragment instanceof TabFragmentDelegate &&
+                ((TabFragmentDelegate) fragment).canParentTabsSlide(event, forward);
     }
 
     @Override
@@ -275,12 +360,7 @@ public class MainTabsActivity extends ViewPagerActivity implements Theme.ThemeDe
         if (contentView != null) {
             contentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
         }
-        if (tabsViewBackground != null) {
-            tabsViewBackground.updateColors();
-        }
-        if (fadeView != null) {
-            fadeView.updateColors();
-        }
+        blur3UpdateColors();
         if (tabs != null) {
             for (GlassTabView tab : tabs) {
                 tab.updateColors();
@@ -368,118 +448,36 @@ public class MainTabsActivity extends ViewPagerActivity implements Theme.ThemeDe
 
     public interface TabFragmentDelegate {
         void onParentScrollToTop();
-    }
 
-    private static class TabsBackgroundDrawable extends Drawable {
-        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint shadowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint highlightPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint strokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final RectF rect = new RectF();
-        private int alpha = 255;
-        private int paintAlpha;
-        private int shadowAlpha;
-        private int highlightAlpha;
-        private int strokeAlpha;
-
-        TabsBackgroundDrawable() {
-            highlightPaint.setStyle(Paint.Style.STROKE);
-            highlightPaint.setStrokeWidth(Math.max(1f, AndroidUtilities.dpf2(0.5f)));
-            strokePaint.setStyle(Paint.Style.STROKE);
-            strokePaint.setStrokeWidth(Math.max(1f, AndroidUtilities.dpf2(0.5f)));
-            updateColors();
-        }
-
-        void updateColors() {
-            paint.setColor(Theme.getColor(Theme.key_windowBackgroundWhite));
-            shadowPaint.setColor(0xff000000);
-            highlightPaint.setColor(0xffffffff);
-            strokePaint.setColor(Theme.getColor(Theme.key_divider));
-            paintAlpha = Theme.isCurrentThemeDark() ? 188 : 178;
-            shadowAlpha = Theme.isCurrentThemeDark() ? 36 : 18;
-            highlightAlpha = Theme.isCurrentThemeDark() ? 28 : 82;
-            strokeAlpha = Theme.isCurrentThemeDark() ? 58 : 92;
-            invalidateSelf();
-        }
-
-        @Override
-        public void draw(@NonNull Canvas canvas) {
-            Rect bounds = getBounds();
-            float inset = AndroidUtilities.dpf2(MAIN_TABS_MARGIN - 0.334f);
-            rect.set(bounds.left, bounds.top, bounds.right, bounds.bottom);
-            rect.inset(inset, inset);
-            float radius = AndroidUtilities.dpf2(MAIN_TABS_HEIGHT / 2f);
-            paint.setAlpha(paintAlpha * alpha / 255);
-            shadowPaint.setAlpha(shadowAlpha * alpha / 255);
-            highlightPaint.setAlpha(highlightAlpha * alpha / 255);
-            strokePaint.setAlpha(strokeAlpha * alpha / 255);
-            rect.offset(0f, AndroidUtilities.dpf2(0.67f));
-            canvas.drawRoundRect(rect, radius, radius, shadowPaint);
-            rect.offset(0f, -AndroidUtilities.dpf2(0.67f));
-            canvas.drawRoundRect(rect, radius, radius, paint);
-            canvas.drawRoundRect(rect, radius, radius, highlightPaint);
-            canvas.drawRoundRect(rect, radius, radius, strokePaint);
-        }
-
-        @Override
-        public void setAlpha(int alpha) {
-            this.alpha = alpha;
-            invalidateSelf();
-        }
-
-        @Override
-        public void setColorFilter(ColorFilter colorFilter) {
-            paint.setColorFilter(colorFilter);
-            shadowPaint.setColorFilter(colorFilter);
-            highlightPaint.setColorFilter(colorFilter);
-            strokePaint.setColorFilter(colorFilter);
-            invalidateSelf();
-        }
-
-        @Override
-        public int getOpacity() {
-            return PixelFormat.TRANSLUCENT;
+        default boolean canParentTabsSlide(MotionEvent event, boolean forward) {
+            return false;
         }
     }
 
-    private static class BottomFadeView extends View {
-
-        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private LinearGradient shader;
-        private int lastColor;
-
-        BottomFadeView(Context context) {
-            super(context);
-            updateColors();
+    private void blur3InvalidateBlur() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || blurSourceTabs == null || contentView == null) {
+            return;
         }
-
-        void updateColors() {
-            lastColor = Theme.getColor(Theme.key_windowBackgroundGray);
-            shader = null;
-            invalidate();
+        int width = contentView.getMeasuredWidth();
+        int height = contentView.getMeasuredHeight();
+        if (width <= 0 || height <= 0) {
+            return;
         }
+        blurSourceTabs.setSize(width, height);
+        blurSourceTabs.updateDisplayListIfNeeded();
+    }
 
-        @Override
-        protected void onDraw(Canvas canvas) {
-            if (getHeight() <= 0) {
-                return;
-            }
-            if (shader == null) {
-                shader = new LinearGradient(
-                        0f,
-                        0f,
-                        0f,
-                        getHeight(),
-                        new int[]{
-                                ColorUtils.setAlphaComponent(lastColor, 0),
-                                ColorUtils.setAlphaComponent(lastColor, Theme.isCurrentThemeDark() ? 210 : 230),
-                        },
-                        new float[]{0f, 0.72f},
-                        Shader.TileMode.CLAMP
-                );
-                paint.setShader(shader);
-            }
-            canvas.drawRect(0f, 0f, getWidth(), getHeight(), paint);
+    private void blur3UpdateColors() {
+        blurSourceColor.setColor(getThemedColor(Theme.key_windowBackgroundWhite));
+        if (tabsViewBackground != null) {
+            tabsViewBackground.updateColors();
+        }
+        blur3InvalidateBlur();
+        if (fadeView != null) {
+            fadeView.invalidate();
+        }
+        if (tabsView != null) {
+            tabsView.invalidate();
         }
     }
 }

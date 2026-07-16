@@ -22,6 +22,7 @@ import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.ActionBar.BottomSheetTabs;
 import org.telegram.ui.LaunchActivity;
 
 import java.net.IDN;
@@ -216,6 +217,12 @@ public class Browser {
 
     /** Telegram-style in-app browser entry backed by the current NativeDo ActionBarLayout. */
     public static boolean openInTelegramBrowser(Activity activity, String url, Object progress) {
+        if (LaunchActivity.instance != null) {
+            BottomSheetTabs tabs = LaunchActivity.instance.getBottomSheetTabs();
+            if (tabs != null && tabs.tryReopenTab(url) != null) {
+                return true;
+            }
+        }
         BaseFragment fragment = LaunchActivity.getSafeLastFragment();
         if (fragment == null || TextUtils.isEmpty(url)) {
             return false;

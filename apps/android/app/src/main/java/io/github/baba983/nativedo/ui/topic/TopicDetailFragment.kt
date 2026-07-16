@@ -31,23 +31,32 @@ import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import android.view.WindowManager
+import android.view.accessibility.AccessibilityNodeInfo
 import android.view.animation.DecelerateInterpolator
 import android.view.animation.OvershootInterpolator
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.EditText
 import android.widget.TextView
 import androidx.appcompat.widget.AppCompatTextView
+import androidx.core.content.ContextCompat
 import androidx.core.graphics.ColorUtils
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearSmoothScrollerCustom
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.viewpager.widget.PagerAdapter
+import androidx.viewpager.widget.ViewPager
 import io.github.baba983.nativedo.NativeDoApp
+import io.github.baba983.nativedo.R
 import io.github.baba983.nativedo.core.html.CookedPostBlock
 import io.github.baba983.nativedo.core.html.GalleryImage
 import io.github.baba983.nativedo.core.html.parseCookedPostBody
@@ -58,28 +67,48 @@ import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.PostReaction
 import io.github.baba983.nativedo.core.model.PostReactionRendering
 import io.github.baba983.nativedo.core.model.PostReactionUser
+import io.github.baba983.nativedo.core.model.PostReactionUsersGroup
+import io.github.baba983.nativedo.core.model.TopicSummary
 import io.github.baba983.nativedo.core.ui.avatarImageFilter
 import io.github.baba983.nativedo.core.ui.isAnimatedDiscourseImageUrl
 import io.github.baba983.nativedo.core.ui.resolveAvatarUrl
 import io.github.baba983.nativedo.feature.topic.data.TopicRepository
+import io.github.baba983.nativedo.feature.topic.data.TopicSearchRepository
+import io.github.baba983.nativedo.feature.topic.data.TopicReplyDraft
+import io.github.baba983.nativedo.feature.topic.data.TopicReplyDraftKey
+import io.github.baba983.nativedo.feature.topic.data.TopicMentionRepository
 import io.github.baba983.nativedo.feature.topic.ui.TopicReplySheetItem
 import io.github.baba983.nativedo.feature.topic.ui.TopicReplyTargetResolver
 import io.github.baba983.nativedo.feature.topic.ui.TopicPollVotersSheetUiState
 import io.github.baba983.nativedo.feature.topic.ui.TopicPollVotersUiState
+import io.github.baba983.nativedo.feature.topic.ui.TopicPostRepliesUiState
 import io.github.baba983.nativedo.feature.topic.ui.PollVotersSheetArgs
 import io.github.baba983.nativedo.feature.topic.ui.TopicReactionUsersUiState
+import io.github.baba983.nativedo.feature.topic.ui.TopicSearchNavigator
+import io.github.baba983.nativedo.feature.topic.ui.TopicSearchRequest
+import io.github.baba983.nativedo.feature.topic.ui.TopicSearchSession
+import io.github.baba983.nativedo.feature.topic.ui.topicScopedSearchQuery
+import io.github.baba983.nativedo.feature.topic.ui.TOPIC_REACTION_ALL_FILTER_ID
 import io.github.baba983.nativedo.feature.topic.ui.TopicUiState
 import io.github.baba983.nativedo.feature.topic.ui.TopicViewModel
+import io.github.baba983.nativedo.feature.topic.ui.TopicDateHeader
 import io.github.baba983.nativedo.feature.topic.ui.topicFloorLabelForPostNumber
+import io.github.baba983.nativedo.feature.topic.ui.topicPostDateEntries
 import io.github.baba983.nativedo.feature.topic.ui.topicPostDisplayName
 import io.github.baba983.nativedo.feature.topic.ui.topicPostTimeLabel
+import io.github.baba983.nativedo.feature.topic.ui.topicReplySheetItem
+import io.github.baba983.nativedo.ui.components.DiscourseUserCell
+import io.github.baba983.nativedo.ui.components.FixedHeaderRecyclerBottomSheet
 import io.github.baba983.nativedo.ui.topic.body.PostBodyBlockState
 import io.github.baba983.nativedo.ui.topic.cell.TopicFooterCell
+import io.github.baba983.nativedo.ui.topic.cell.TopicDateCell
 import io.github.baba983.nativedo.ui.topic.cell.TopicHeaderCell
 import io.github.baba983.nativedo.ui.topic.cell.TopicPostCell
 import io.github.baba983.nativedo.ui.topic.cell.TopicPostCellDelegate
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.telegram.messenger.AndroidUtilities
@@ -87,21 +116,23 @@ import org.telegram.messenger.Emoji
 import org.telegram.messenger.ImageLocation
 import org.telegram.messenger.ImageReceiver
 import org.telegram.messenger.LocaleController
+import org.telegram.messenger.LiteMode
 import org.telegram.messenger.MessageObject
 import org.telegram.messenger.SharedConfig
 import org.telegram.messenger.browser.Browser
 import org.telegram.tgnet.TLRPC
 import org.telegram.ui.ActionBar.AdjustPanLayoutHelper
 import org.telegram.ui.ActionBar.BackDrawable
+import org.telegram.ui.ActionBar.ActionBarMenuItem
 import org.telegram.ui.ActionBar.ActionBarMenuSubItem
 import org.telegram.ui.ActionBar.ActionBarPopupWindow
 import org.telegram.ui.ActionBar.BaseFragment
-import org.telegram.ui.ActionBar.BottomSheet
 import org.telegram.ui.ActionBar.Theme
 import org.telegram.ui.PhotoViewer
 import org.telegram.ui.Cells.TextSelectionHelper
 import org.telegram.ui.Cells.LoadingCell
 import org.telegram.ui.Components.AvatarDrawable
+import org.telegram.ui.Components.AnimatedTextView
 import org.telegram.ui.Components.AnimatedFloat
 import org.telegram.ui.Components.BottomSheetWithRecyclerListView
 import org.telegram.ui.Components.BulletinFactory
@@ -116,17 +147,36 @@ import org.telegram.ui.Components.LayoutHelper
 import org.telegram.ui.Components.PullForegroundDrawable
 import org.telegram.ui.Components.RecyclerAnimationScrollHelper
 import org.telegram.ui.Components.RecyclerListView
-import org.telegram.ui.Components.SizeNotifierFrameLayout
+import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory
+import org.telegram.ui.Components.blur3.RenderNodeWithHash
+import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable
+import org.telegram.ui.Components.blur3.drawable.color.BlurredBackgroundColorProviderThemed
+import org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl
+import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceColor
+import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceRenderNode
+import org.telegram.ui.Components.chat.layouts.ChatActivitySideControlsButtonsLayout
+import org.telegram.ui.Components.chat.ChatActivityBottomViewsVisibilityController
+import org.telegram.ui.Components.chat.ChatInputViewsContainer
+import org.telegram.ui.Components.chat.ViewPositionWatcher
+import org.telegram.ui.Components.inset.WindowAnimatedInsetsProvider
+import org.telegram.ui.Components.inset.WindowInsetsStateHolder
 import org.telegram.messenger.R as TelegramR
 import java.net.URLEncoder
+import kotlin.math.roundToInt
 
-class TopicDetailFragment(
+private const val TOPIC_SEARCH_HIGHLIGHT_PAYLOAD = "topic_search_highlight"
+
+class TopicDetailFragment @JvmOverloads constructor(
     private val topicId: Long,
     private val initialTitle: String? = null,
+    private val initialPostNumber: Int? = null,
+    private val initialPostId: Long? = null,
 ) : BaseFragment() {
     private lateinit var viewModel: TopicViewModel
     private lateinit var adapter: TopicDetailAdapter
-    private lateinit var listView: RecyclerListView
+    private lateinit var listView: TopicSwipeReplyRecyclerView
+    private lateinit var topicSearchRepository: TopicSearchRepository
+    private var pullRefreshLayout: PullRefreshLayout? = null
     private lateinit var baseUrl: String
     private val collectorScope = MainScope()
     private var reactionUsersSheet: TopicReactionUsersSheet? = null
@@ -139,10 +189,20 @@ class TopicDetailFragment(
     private var repliesSheet: TopicRepliesSheet? = null
     private var replyComposerPanel: TopicReplyComposerPanel? = null
     private var replyComposerEmojiPanel: TopicReplyComposerEmojiPanel? = null
+    private var topicInputViewsContainer: ChatInputViewsContainer? = null
+    private var topicInsetsStateHolder: WindowInsetsStateHolder? = null
+    private var topicAnimatedInsetsProvider: WindowAnimatedInsetsProvider? = null
+    private val topicBottomViewsVisibilityController =
+        ChatActivityBottomViewsVisibilityController(::onTopicBottomItemsVisibilityChanged)
+    private var mentionSuggestionsView: TopicMentionSuggestionsView? = null
+    private lateinit var mentionRepository: TopicMentionRepository
+    private var mentionBlurSourceColor: BlurredBackgroundSourceColor? = null
+    private var mentionBlurSource: BlurredBackgroundSourceRenderNode? = null
+    private var mentionBlurWatcher: ViewPositionWatcher? = null
+    private var mentionBackground: BlurredBackgroundDrawable? = null
     private var replyComposerEmojiPanelHeight: Int = 0
-    private var replyComposerAwaitingSubmit: Boolean = false
     private var replySheetEntriesByPostNumber: Map<Int, List<TopicReplySheetItem>> = emptyMap()
-    private var rootFrameLayout: SizeNotifierFrameLayout? = null
+    private var rootFrameLayout: TopicPostScrimHostLayout? = null
     private var replyComposerKeyboardHeight: Int = 0
     private var replyComposerLastKeyboardHeight: Int = AndroidUtilities.dp(200f)
     private var replyComposerPopupContentType = TopicReplyComposerPopupContentType.NONE
@@ -161,6 +221,22 @@ class TopicDetailFragment(
     private var topicListUserScrollActive: Boolean = false
     private var topicListUserHasScrolled: Boolean = false
     private var topicInitialContentAnchored: Boolean = false
+    private var initialPostJumpRequested: Boolean = false
+    private var latestTopicState: TopicUiState = TopicUiState()
+    private var pageDownControls: ChatActivitySideControlsButtonsLayout? = null
+    private var pageDownReachedLatest: Boolean = false
+    private var pageDownDistanceFromLatestPx: Int = 0
+    private var pageDownInitialized: Boolean = false
+    private var floatingDateController: TopicFloatingDateController? = null
+    private var topicSearchItem: ActionBarMenuItem? = null
+    private var topicSearchPanel: FrameLayout? = null
+    private var topicSearchCountText: AnimatedTextView? = null
+    private var topicSearchJob: Job? = null
+    private val topicSearchSession = TopicSearchSession()
+    private val topicSearchNavigator = TopicSearchNavigator(topicId)
+    private var topicSearchOpen = false
+    private var topicSearchQuery = ""
+    private var topicSearchPendingNext = false
     private val textSelectionHelper = TextSelectionHelper.ArticleTextSelectionHelper()
 
     override fun createView(context: Context): View {
@@ -170,16 +246,23 @@ class TopicDetailFragment(
 
         val appContainer = (context.applicationContext as NativeDoApp).appContainer
         baseUrl = appContainer.baseUrl
+        topicSearchRepository = TopicSearchRepository(appContainer.discourseApiClient)
+        mentionRepository = TopicMentionRepository(appContainer.discourseApiClient)
         svgSpriteMarkup = appContainer.svgSpriteStore.sprite.value
+        createTopicSearchMenu(context)
         viewModel = ViewModelProvider(
             this,
             TopicViewModelFactory(
                 repository = TopicRepository(appContainer.discourseApiClient),
                 topicId = topicId,
+                replyDraftStore = appContainer.topicReplyDraftStore,
+                replyDraftKey = appContainer.sessionStore.snapshot()?.username?.takeIf { it.isNotBlank() }?.let { username ->
+                    TopicReplyDraftKey(baseUrl = appContainer.baseUrl, username = username, topicId = topicId)
+                },
             ),
         )[TopicViewModel::class.java]
 
-        val root = object : SizeNotifierFrameLayout(context) {
+        val root = object : TopicPostScrimHostLayout(context) {
             override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
                 val selectionOverlay = textSelectionHelper.getOverlayView(context)
                 val textSelectionEvent = MotionEvent.obtain(ev)
@@ -207,25 +290,18 @@ class TopicDetailFragment(
                 }
                 return super.dispatchTouchEvent(ev)
             }
+
+            override fun dispatchDraw(canvas: Canvas) {
+                super.dispatchDraw(canvas)
+                updateRootBlurSource(width, height)
+            }
         }.apply {
             setBackgroundColor(topicDetailListBackgroundColor())
             replyComposerLastKeyboardHeight = topicReplyComposerRememberedKeyboardHeight(context)
-            setDelegate { keyboardHeight, _ ->
-                replyComposerKeyboardHeight = topicReplyComposerKeyboardInsetPx(keyboardHeight)
-                if (replyComposerKeyboardHeight > 0) {
-                    replyComposerLastKeyboardHeight = replyComposerKeyboardHeight
-                    topicReplyComposerRememberKeyboardHeight(context, replyComposerKeyboardHeight)
-                    clearReplyComposerWaitingForKeyboardOpenAfterEmoji()
-                    replyComposerPanel?.onKeyboardVisible()
-                }
-                if (replyComposerKeyboardHeight > 0 && replyComposerEmojiPanel != null) {
-                    hideReplyComposerEmojiPanel(openKeyboard = false, animated = false)
-                } else {
-                    updateReplyComposerBottomInset()
-                }
-            }
         }
         rootFrameLayout = root
+        createMentionBlurSource(root)
+        createTopicInputViewsContainer(context, root)
         textSelectionHelper.setOnTranslate { text, _, toLang, onAlertDismiss ->
             parentActivity?.let { activity ->
                 val encoded = URLEncoder.encode(text.toString(), Charsets.UTF_8.name())
@@ -242,6 +318,14 @@ class TopicDetailFragment(
             )
         }
         textSelectionHelper.setCallback(object : TextSelectionHelper.Callback {
+            override fun onStateChanged(isSelected: Boolean) {
+                if (isSelected && ::listView.isInitialized) {
+                    listView.cancelSwipeReply(true)
+                    floatingDateController?.hide(animated = false, force = true)
+                }
+                updatePageDownControls(animated = true)
+            }
+
             override fun onTextCopied() {
                 if (AndroidUtilities.shouldShowClipboardToast()) {
                     BulletinFactory.of(this@TopicDetailFragment)
@@ -253,23 +337,42 @@ class TopicDetailFragment(
         root.addView(actionBar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT))
 
         adapter = TopicDetailAdapter(context)
-        listView = RecyclerListView(context).apply {
-            layoutManager = LinearLayoutManager(context)
+        listView = TopicSwipeReplyRecyclerView(context).apply {
+            layoutManager = TopicSwipeReplyRecyclerView.SwipeReplyLayoutManager(context)
             itemAnimator = null
             clipToPadding = false
             setBackgroundColor(topicDetailListBackgroundColor())
             listBottomBasePadding = AndroidUtilities.dp(24f)
             setPadding(0, 0, 0, listBottomBasePadding)
             adapter = this@TopicDetailFragment.adapter
+            setSwipeReplyDelegate(object : TopicSwipeReplyRecyclerView.Delegate {
+                override fun canStartSwipeReply(): Boolean {
+                    return topicDetailCanStartSwipeReply(
+                        isBusy = latestTopicState.isLoading || latestTopicState.isRefreshing || latestTopicState.isLoadingMore,
+                        selectionActive = textSelectionHelper.isInSelectionMode,
+                        popupActive = postOptions != null || reactionRailPopup != null ||
+                            expandedReactionPickerPopup != null || root.isScrimActive,
+                        listScrollLocked = postOptionsListScrollLocked,
+                        pullRefreshActive = pullRefreshLayout?.isPulling == true,
+                    )
+                }
+
+                override fun onSwipeReply(cell: TopicPostCell, post: Post) {
+                    showReplyComposer(initialText = "", replyToPost = post)
+                }
+            })
             addOnScrollListener(object : RecyclerView.OnScrollListener() {
                 override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
                     when (newState) {
                         RecyclerView.SCROLL_STATE_DRAGGING -> {
                             topicListUserScrollActive = true
                             topicListUserHasScrolled = true
+                            floatingDateController?.onScrollStateChanged(newState)
                         }
                         RecyclerView.SCROLL_STATE_IDLE -> {
                             topicListUserScrollActive = false
+                            textSelectionHelper.stopScrolling()
+                            floatingDateController?.onScrollStateChanged(newState)
                         }
                     }
                 }
@@ -277,7 +380,9 @@ class TopicDetailFragment(
                 override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
                     textSelectionHelper.onParentScrolled()
                     updateCollapsedTitle()
+                    floatingDateController?.onScrolled(dy)
                     val manager = recyclerView.layoutManager as? LinearLayoutManager ?: return
+                    updatePageDownScrollState(manager, dy)
                     if (topicDetailShouldLoadMoreFromScroll(
                             dy = dy,
                             userScrollActive = topicListUserScrollActive,
@@ -292,30 +397,106 @@ class TopicDetailFragment(
         }
         textSelectionHelper.setParentView(listView)
         textSelectionHelper.setRecyclerView(listView)
+        val pullRefresh = PullRefreshLayout(
+            context = context,
+            listView = listView,
+            canPull = {
+                topicDetailCanStartPullRefresh(
+                    isBusy = latestTopicState.isLoading || latestTopicState.isRefreshing || latestTopicState.isLoadingMore,
+                    selectionActive = textSelectionHelper.isInSelectionMode,
+                    popupActive = postOptions != null || reactionRailPopup != null || expandedReactionPickerPopup != null || root.isScrimActive,
+                    keyboardInset = replyComposerKeyboardHeight,
+                    emojiPanelVisible = replyComposerEmojiPanel != null || replyComposerEmojiPanelHeight > 0,
+                )
+            },
+            onRefresh = viewModel::refresh,
+        )
+        pullRefreshLayout = pullRefresh
         root.addView(
-            listView,
+            pullRefresh,
             LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT.toFloat(), Gravity.TOP, 0f, 0f, 0f, 0f),
+        )
+        val floatingDateView = TopicDateCell(context, true).apply {
+            alpha = 0f
+            visibility = View.INVISIBLE
+        }
+        root.addView(
+            floatingDateView,
+            LayoutHelper.createFrame(
+                LayoutHelper.WRAP_CONTENT,
+                LayoutHelper.WRAP_CONTENT.toFloat(),
+                Gravity.TOP or Gravity.CENTER_HORIZONTAL,
+                0f,
+                4f,
+                0f,
+                0f,
+            ),
+        )
+        floatingDateController = TopicFloatingDateController(
+            dateView = floatingDateView,
+            listView = listView,
+            topInsetView = actionBar,
+            rowAt = adapter::floatingDateRowAt,
+            interactionsBlocked = ::floatingDateInteractionBlocked,
         )
         root.addView(
             textSelectionHelper.getOverlayView(context),
             LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT.toFloat(), Gravity.TOP, 0f, 0f, 0f, 0f),
         )
+        val inputBubbleContainer = topicInputViewsContainer?.inputIslandBubbleContainer ?: root
+        createReplyComposer(context, inputBubbleContainer)
+        createTopicSearchPanel(context, inputBubbleContainer)
+        topicInputViewsContainer?.bringToFront()
+        topicBottomViewsVisibilityController.setViewVisible(TOPIC_BOTTOM_INPUT_CONTAINER, true, false)
+        topicBottomViewsVisibilityController.setViewVisible(TOPIC_BOTTOM_SEARCH_CONTAINER, false, false)
+        createMentionSuggestions(context, root)
+        root.setScrimViewport(listView, actionBar, replyComposerPanel)
+        root.setOnScrimStateChanged {
+            updatePageDownControls(animated = pageDownInitialized)
+        }
+        root.setScrimProgressListener { progress ->
+            pageDownControls?.alpha = 1f - progress
+            if (progress > 0f) {
+                floatingDateController?.hide(animated = false, force = true)
+            }
+        }
+        createPageDownControls(context, root)
         actionBar.bringToFront()
 
         collectorScope.launch {
             viewModel.uiState.collectLatest { state ->
+                latestTopicState = state
+                mentionSuggestionsView?.setParticipants(state.participants, state.posts)
+                pullRefreshLayout?.isBusy = state.isLoading || state.isRefreshing || state.isLoadingMore
                 topicTitle = state.title.ifBlank { initialTitle.orEmpty() }
                 state.pollActionFailure?.let { failure ->
                     adapter.resetPollInteractionState(failure.postId)
                     viewModel.consumePollActionFailure(failure.nonce)
                 }
                 adapter.submit(state)
+                listView.post { floatingDateController?.update() }
                 applyInitialTopicHeaderAnchorIfNeeded(state)
+                if (!initialPostJumpRequested && !state.isLoading && state.posts.isNotEmpty()) {
+                    initialPostJumpRequested = true
+                    if (initialPostId != null) {
+                        viewModel.requestJumpToPostId(initialPostId)
+                    } else {
+                        initialPostNumber?.let(viewModel::requestJumpToReplyTarget)
+                    }
+                }
                 updateCollapsedTitle()
                 updateReactionUsersSheet(context, state)
                 updatePollVotersSheet(context, state)
+                updatePostRepliesSheet(context, state)
                 updateReplyComposerPanel(state)
                 handleJumpEvent(state)
+                updatePageDownControls(animated = pageDownInitialized)
+                listView.post { updatePageDownControls(animated = pageDownInitialized) }
+                state.jumpToLatestErrorMessage?.let { message ->
+                    BulletinFactory.of(this@TopicDetailFragment).createErrorBulletin(message).show()
+                    viewModel.consumeJumpToLatestError()
+                }
+                pageDownInitialized = true
             }
         }
         collectorScope.launch {
@@ -332,6 +513,13 @@ class TopicDetailFragment(
     }
 
     override fun onFragmentDestroy() {
+        topicSearchJob?.cancel()
+        topicSearchJob = null
+        topicSearchSession.clear()
+        topicSearchNavigator.clear()
+        topicSearchItem = null
+        topicSearchPanel = null
+        topicSearchCountText = null
         textSelectionHelper.destroy()
         collectorScope.cancel()
         PhotoViewer.getInstance().closePhoto(false, false)
@@ -345,20 +533,50 @@ class TopicDetailFragment(
         reactionEffectOverlay?.dismiss()
         reactionEffectOverlay = null
         hideReplyComposerEmojiPanel(openKeyboard = false, animated = false)
+        mentionSuggestionsView?.release()
+        mentionSuggestionsView = null
+        mentionBackground = null
+        mentionBlurWatcher?.shutdown()
+        mentionBlurWatcher = null
+        mentionBlurSource = null
+        mentionBlurSourceColor = null
         clearReplyComposerWaitingForKeyboardOpenAfterEmoji()
         postOptions?.dismiss()
         postOptions = null
         unlockPostOptionsListScroll()
         repliesSheet?.dismiss()
         repliesSheet = null
-        replyComposerPanel?.dismiss(animated = false)
+        replyComposerPanel?.release()
         replyComposerPanel = null
+        listView.cancelSwipeReply(false)
+        pullRefreshLayout?.release()
+        pullRefreshLayout = null
+        pageDownControls = null
+        floatingDateController?.release()
+        floatingDateController = null
+        topicInsetsStateHolder?.let { holder ->
+            topicAnimatedInsetsProvider?.unsubscribeFromWindowInsetsAnimation(holder)
+        }
+        topicAnimatedInsetsProvider = null
+        topicInsetsStateHolder = null
+        topicInputViewsContainer = null
+        rootFrameLayout?.clearScrim()
         rootFrameLayout?.setDelegate(null)
+        rootFrameLayout?.setOnScrimStateChanged(null)
+        rootFrameLayout?.setScrimProgressListener(null)
         rootFrameLayout = null
         super.onFragmentDestroy()
     }
 
     override fun onBackPressed(): Boolean {
+        if (topicSearchItem?.isSearchFieldVisible == true) {
+            topicSearchItem?.closeSearch(true)
+            return false
+        }
+        if (mentionSuggestionsView?.isOpen() == true) {
+            mentionSuggestionsView?.dismiss()
+            return false
+        }
         if (expandedReactionPickerPopup != null || expandedReactionPickerPanel != null) {
             dismissExpandedReactionPicker(animated = true)
             return false
@@ -371,12 +589,8 @@ class TopicDetailFragment(
             hideReplyComposerEmojiPanel(openKeyboard = false)
             return false
         }
-        replyComposerPanel?.let { panel ->
-            if (replyComposerKeyboardHeight > 0) {
-                closeReplyComposerKeyboard(panel)
-                return false
-            }
-            panel.dismiss()
+        if (replyComposerKeyboardHeight > 0) {
+            replyComposerPanel?.let(::closeReplyComposerKeyboard)
             return false
         }
         return super.onBackPressed()
@@ -410,8 +624,12 @@ class TopicDetailFragment(
     private fun updateCollapsedTitle() {
         val manager = listView.layoutManager as? LinearLayoutManager ?: return
         val firstVisible = manager.findFirstVisibleItemPosition()
-        val firstPostView = manager.findViewByPosition(1)
-        val shouldShow = firstVisible > 1 || (firstPostView != null && firstPostView.bottom <= actionBar.measuredHeight)
+        val firstPostPosition = adapter.firstPostAdapterPosition()
+        val firstPostView = firstPostPosition?.let(manager::findViewByPosition)
+        val shouldShow = firstPostPosition != null && (
+            firstVisible > firstPostPosition ||
+                (firstPostView != null && firstPostView.bottom <= actionBar.measuredHeight)
+            )
         if (collapsedTitleVisible != shouldShow) {
             collapsedTitleVisible = shouldShow
             actionBar.setTitle(if (shouldShow) topicTitle else "")
@@ -420,7 +638,23 @@ class TopicDetailFragment(
         }
     }
 
+    private fun floatingDateInteractionBlocked(): Boolean {
+        return topicSearchOpen ||
+            textSelectionHelper.isInSelectionMode ||
+            postOptions != null ||
+            reactionRailPopup != null ||
+            expandedReactionPickerPopup != null ||
+            rootFrameLayout?.isScrimActive == true ||
+            replyComposerKeyboardHeight > 0 ||
+            replyComposerEmojiPanel != null ||
+            replyComposerEmojiPanelHeight > 0
+    }
+
     private fun applyInitialTopicHeaderAnchorIfNeeded(state: TopicUiState) {
+        if (initialPostNumber != null) {
+            topicInitialContentAnchored = true
+            return
+        }
         if (!topicDetailShouldAnchorInitialContent(
                 initialContentAnchored = topicInitialContentAnchored,
                 userHasScrolled = topicListUserHasScrolled,
@@ -548,13 +782,18 @@ class TopicDetailFragment(
                 baseUrl = baseUrl,
                 emojiCatalog = emojiCatalog,
                 onReactionSelected = viewModel::selectReactionInSheet,
+                onRetry = viewModel::retryReactionUsers,
+                onUserSelected = { username ->
+                    reactionUsersSheet?.dismiss()
+                    Browser.openUrl(parentActivity ?: return@TopicReactionUsersSheet, "$baseUrl/u/$username")
+                },
                 onDismissed = viewModel::dismissReactionSheet,
             )
             reactionUsersSheet = created
-            created.submit(sheetState.reactions, state.reactionUsers)
+            created.submit(sheetState.reactions, sheetState.reactionUsersCount, state.reactionUsers)
             created.show()
         } else {
-            sheet.submit(sheetState.reactions, state.reactionUsers)
+            sheet.submit(sheetState.reactions, sheetState.reactionUsersCount, state.reactionUsers)
         }
     }
 
@@ -572,7 +811,12 @@ class TopicDetailFragment(
                 fragment = this,
                 baseUrl = baseUrl,
                 onOptionSelected = viewModel::selectPollOptionInSheet,
-                onUserSelected = { username -> Browser.openUrl(parentActivity ?: return@TopicPollVotersSheet, "$baseUrl/u/$username") },
+                onLoadMore = viewModel::loadMorePollVoters,
+                onRetry = viewModel::retryPollVoters,
+                onUserSelected = { username ->
+                    pollVotersSheet?.dismiss()
+                    Browser.openUrl(parentActivity ?: return@TopicPollVotersSheet, "$baseUrl/u/$username")
+                },
                 onDismissed = viewModel::dismissPollVotersSheet,
             )
             pollVotersSheet = created
@@ -583,24 +827,32 @@ class TopicDetailFragment(
         }
     }
 
-    private fun showRepliesSheet(sourcePost: Post, replies: List<TopicReplySheetItem>) {
-        if (replies.isEmpty()) return
-        val context = fragmentView?.context ?: return
-        repliesSheet?.dismiss()
-        repliesSheet = TopicRepliesSheet(
-            context = context,
-            fragment = this,
-            baseUrl = baseUrl,
-            sourcePost = sourcePost,
-            replies = replies,
-            onReplySelected = { reply ->
-                repliesSheet?.dismiss()
-                repliesSheet = null
-                reply.postNumber?.let(viewModel::requestJumpToReplyTarget)
-            },
-            onDismissed = { repliesSheet = null },
-        ).also { sheet ->
-            sheet.show()
+    private fun updatePostRepliesSheet(context: Context, state: TopicUiState) {
+        val sheetState = state.postRepliesSheet
+        if (sheetState == null) {
+            repliesSheet?.dismiss()
+            repliesSheet = null
+            return
+        }
+        val sheet = repliesSheet
+        if (sheet == null) {
+            val created = TopicRepliesSheet(
+                context = context,
+                fragment = this,
+                baseUrl = baseUrl,
+                onReplySelected = { reply ->
+                    repliesSheet?.dismiss()
+                    reply.postNumber?.let(viewModel::requestJumpToReplyTarget)
+                },
+                onLoadMore = viewModel::loadMorePostReplies,
+                onRetry = viewModel::retryPostReplies,
+                onDismissed = viewModel::dismissPostReplies,
+            )
+            repliesSheet = created
+            created.submit(sheetState.sourcePost, sheetState.totalCount, state.postReplies)
+            created.show()
+        } else {
+            sheet.submit(sheetState.sourcePost, sheetState.totalCount, state.postReplies)
         }
     }
 
@@ -648,6 +900,7 @@ class TopicDetailFragment(
                 } else {
                     content.cancelEnterAnimation()
                 }
+                rootFrameLayout?.hideScrim(this, animated)
                 super.dismiss(animated)
                 if (reactionRailPopup === this) {
                     reactionRailPopup = null
@@ -674,7 +927,7 @@ class TopicDetailFragment(
         reactionRailPopup = window
         lockPostOptionsListScroll()
         window.showAtLocation(anchorView, Gravity.LEFT or Gravity.TOP, position.x, position.y)
-        window.dimBehind(postOptionsPopupDimAmount())
+        rootFrameLayout?.showScrim(anchorView, window, true)
         content.startEnterAnimation(animatePopup = true)
     }
 
@@ -683,53 +936,609 @@ class TopicDetailFragment(
         replyToPost: Post? = null,
         replyToPostNumber: Int? = replyToPost?.postNumber,
     ) {
-        val context = fragmentView?.context ?: return
-        val delayReplyHeaderEnter = topicReplyComposerShouldDelayTopViewForKeyboard(
-            keyboardInset = replyComposerKeyboardHeight,
-            emojiPopupShowing = replyComposerEmojiPanel != null || replyComposerEmojiPanelHeight > 0,
-        )
         hideReplyComposerEmojiPanel(openKeyboard = false, animated = false)
         replyComposerPanel?.setEmojiPopupShowing(false)
-        replyComposerPanel?.dismiss()
-        replyComposerAwaitingSubmit = false
+        viewModel.prepareReplyDraft(initialText = initialText, replyToPostNumber = replyToPostNumber)
+        val draft = viewModel.uiState.value.replyDraft
+        replyComposerPanel?.bindDraft(draft, replyToPost)
+        replyComposerPanel?.focusAndOpenKeyboard()
+        replyComposerPanel?.bringToFront()
+        actionBar.bringToFront()
+    }
+
+    private fun createTopicInputViewsContainer(context: Context, root: ViewGroup) {
+        if (topicInputViewsContainer != null) return
+        val insetsStateHolder = WindowInsetsStateHolder(::onTopicInsetsChanged)
+        val container = ChatInputViewsContainer(context).apply {
+            clipChildren = false
+            clipToPadding = false
+            setWindowInsetsProvider(insetsStateHolder)
+            setInputIslandBubbleDrawable(createTopicInputIslandBackground(this, root))
+            setUnderKeyboardBackgroundDrawable(createTopicInputIslandBackground(this, root))
+        }
+        topicInsetsStateHolder = insetsStateHolder
+        topicInputViewsContainer = container
+        root.addView(
+            container,
+            LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT.toFloat()),
+        )
+        ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
+            insetsStateHolder.setInsets(insets)
+            WindowInsetsCompat.CONSUMED
+        }
+        topicAnimatedInsetsProvider = WindowAnimatedInsetsProvider(root).also { provider ->
+            insetsStateHolder.setupAnimatedInsetsProvider(provider, root)
+        }
+    }
+
+    private fun onTopicInsetsChanged() {
+        val insetsStateHolder = topicInsetsStateHolder ?: return
+        topicInputViewsContainer?.checkInsets()
+        val systemImeHeight = insetsStateHolder.getInsets(WindowInsetsCompat.Type.ime()).bottom.coerceAtLeast(0)
+        replyComposerKeyboardHeight = topicReplyComposerKeyboardInsetPx(systemImeHeight)
+        if (replyComposerKeyboardHeight > 0) {
+            replyComposerLastKeyboardHeight = replyComposerKeyboardHeight
+            rootFrameLayout?.context?.let { context ->
+                topicReplyComposerRememberKeyboardHeight(context, replyComposerKeyboardHeight)
+            }
+            clearReplyComposerWaitingForKeyboardOpenAfterEmoji()
+            replyComposerPanel?.onKeyboardVisible()
+        }
+        if (replyComposerKeyboardHeight > 0 && replyComposerEmojiPanel != null) {
+            hideReplyComposerEmojiPanel(openKeyboard = false, animated = false)
+        }
+        updateReplyComposerBottomInset()
+    }
+
+    private fun onTopicBottomItemsVisibilityChanged() {
+        val replyFactor = topicBottomViewsVisibilityController.getVisibility(TOPIC_BOTTOM_INPUT_CONTAINER)
+        val searchFactor = topicBottomViewsVisibilityController.getVisibility(TOPIC_BOTTOM_SEARCH_CONTAINER)
+        replyComposerPanel?.let { panel ->
+            panel.alpha = replyFactor
+            panel.visibility = if (replyFactor > 0f) View.VISIBLE else View.INVISIBLE
+        }
+        topicSearchPanel?.let { panel ->
+            panel.alpha = searchFactor
+            panel.visibility = if (searchFactor > 0f) View.VISIBLE else View.INVISIBLE
+        }
+        updateTopicInputBubbleHeight(replyFactor, searchFactor)
+        rootFrameLayout?.setScrimViewport(
+            listView,
+            actionBar,
+            if (topicSearchOpen) topicSearchPanel else replyComposerPanel,
+        )
+        updateReplyComposerBottomInset()
+    }
+
+    private fun updateTopicInputBubbleHeight(
+        replyFactor: Float = topicBottomViewsVisibilityController.getVisibility(TOPIC_BOTTOM_INPUT_CONTAINER),
+        searchFactor: Float = topicBottomViewsVisibilityController.getVisibility(TOPIC_BOTTOM_SEARCH_CONTAINER),
+    ) {
+        val replyHeight = replyComposerPanel
+            ?.visibleHeightForListPadding()
+            ?.toFloat()
+            ?.coerceAtLeast(AndroidUtilities.dp(TOPIC_REPLY_COMPOSER_DEFAULT_HEIGHT_DP.toFloat()).toFloat())
+            ?: AndroidUtilities.dp(TOPIC_REPLY_COMPOSER_DEFAULT_HEIGHT_DP.toFloat()).toFloat()
+        val searchHeight = AndroidUtilities.dp(44f).toFloat()
+        val inputHeight = (replyHeight * replyFactor + searchHeight * searchFactor)
+            .coerceAtLeast(AndroidUtilities.dp(44f).toFloat())
+        topicInputViewsContainer?.setInputBubbleHeight(inputHeight)
+    }
+
+    private fun createReplyComposer(context: Context, inputBubbleContainer: ViewGroup) {
+        if (replyComposerPanel != null) return
+        val draft = viewModel.uiState.value.replyDraft
         val panel = TopicReplyComposerPanel(
             context = context,
-            initialText = initialText,
-            replyToPost = replyToPost,
-            replyToPostNumber = replyToPostNumber,
-            delayReplyHeaderEnter = delayReplyHeaderEnter,
+            initialDraft = draft,
+            replyToPost = viewModel.uiState.value.posts.firstOrNull { it.postNumber == draft.replyToPostNumber },
             onEmojiButtonPressed = ::handleReplyComposerEmojiButton,
             onKeyboardRequested = ::handleReplyComposerKeyboardRequested,
             onReplyContextPressed = { postNumber ->
                 viewModel.requestJumpToReplyTarget(postNumber)
             },
             onBackKeyPressed = ::handleReplyComposerEditTextBackKey,
+            onMentionKeyPressed = { keyCode, action ->
+                mentionSuggestionsView?.handleKey(keyCode, action) == true
+            },
             onVisibleHeightChanged = ::updateReplyComposerBottomInset,
-            onSubmit = { raw, activeReplyToPostNumber ->
-                replyComposerAwaitingSubmit = true
-                viewModel.submitReply(raw = raw, replyToPostNumber = activeReplyToPostNumber)
-            },
-            onDismissed = {
-                hideReplyComposerEmojiPanel(openKeyboard = false, animated = false)
-                replyComposerPanel?.setEmojiPopupShowing(false)
-                replyComposerPanel = null
-                replyComposerAwaitingSubmit = false
-                updateReplyComposerBottomInset()
-            },
+            onTextChanged = viewModel::updateReplyDraftText,
+            onMentionTokenChanged = { token -> mentionSuggestionsView?.updateQuery(token) },
+            onClearReplyTarget = viewModel::clearReplyTarget,
+            onSubmit = viewModel::submitReply,
         )
-        val root = fragmentView as? ViewGroup ?: return
         replyComposerPanel = panel
-        root.addView(
+        inputBubbleContainer.addView(
             panel,
-            LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM),
+            LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT,
+                LayoutHelper.WRAP_CONTENT.toFloat(),
+                Gravity.BOTTOM,
+                0f,
+                0f,
+                0f,
+                0f,
+            ),
         )
         panel.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             updateReplyComposerBottomInset()
         }
-        panel.show()
-        panel.bringToFront()
+        panel.bindDraft(draft, viewModel.uiState.value.posts.firstOrNull { it.postNumber == draft.replyToPostNumber })
+        updateReplyComposerBottomInset()
+    }
+
+    private fun createTopicSearchMenu(context: Context) {
+        if (topicSearchItem != null) return
+        topicSearchItem = actionBar.createMenu()
+            .addItem(0, TelegramR.drawable.outline_header_search, resourceProvider)
+            .setIsSearchField(true)
+            .setActionBarMenuItemSearchListener(object : ActionBarMenuItem.ActionBarMenuItemSearchListener() {
+                override fun onSearchExpand() {
+                    enterTopicSearchMode()
+                }
+
+                override fun onSearchCollapse() {
+                    exitTopicSearchMode()
+                }
+
+                override fun onTextChanged(editText: EditText) {
+                    scheduleTopicSearch(editText.text?.toString().orEmpty())
+                }
+
+                override fun onSearchPressed(editText: EditText) {
+                    startTopicSearch(editText.text?.toString().orEmpty())
+                }
+            })
+            .apply {
+                setSearchFieldHint(context.getString(R.string.topic_search_hint))
+                contentDescription = context.getString(R.string.topic_search_hint)
+            }
+    }
+
+    private fun createTopicSearchPanel(context: Context, inputBubbleContainer: ViewGroup) {
+        if (topicSearchPanel != null) return
+        val panel = TopicInputIslandFrameLayout(context).apply {
+            visibility = View.GONE
+        }
+        val content = FrameLayout(context)
+        panel.addView(
+            content,
+            LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT,
+                LayoutHelper.MATCH_PARENT.toFloat(),
+                Gravity.LEFT or Gravity.TOP,
+                0f,
+                0f,
+                0f,
+                0f,
+            ),
+        )
+        val count = AnimatedTextView(context, true, true, true).apply {
+            setAnimationProperties(.25f, 0, 280, CubicBezierInterpolator.EASE_OUT_QUINT)
+            setTextColor(Theme.getColor(Theme.key_chat_searchPanelText))
+            setTextSize(AndroidUtilities.dp(15f).toFloat())
+            setTypeface(AndroidUtilities.bold())
+            setGravity(Gravity.LEFT or Gravity.CENTER_VERTICAL)
+            getDrawable().setOverrideFullWidth(AndroidUtilities.displaySize.x)
+            contentDescription = context.getString(R.string.topic_search_count_description)
+        }
+        content.addView(
+            count,
+            LayoutHelper.createFrame(
+                LayoutHelper.WRAP_CONTENT,
+                30f,
+                Gravity.LEFT or Gravity.CENTER_VERTICAL,
+                18f,
+                -1f,
+                97.33f,
+                0f,
+            ),
+        )
+        inputBubbleContainer.addView(
+            panel,
+            LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT,
+                44f,
+                Gravity.BOTTOM,
+                TOPIC_INPUT_ISLAND_HORIZONTAL_INSET_DP,
+                0f,
+                TOPIC_INPUT_ISLAND_HORIZONTAL_INSET_DP,
+                0f,
+            ),
+        )
+        topicSearchPanel = panel
+        topicSearchCountText = count
+    }
+
+    private fun createTopicInputIslandBackground(
+        view: View,
+        root: ViewGroup,
+    ): BlurredBackgroundDrawable {
+        val source = mentionBlurSource ?: mentionBlurSourceColor ?: BlurredBackgroundSourceColor().apply {
+            setColor(topicDetailListBackgroundColor())
+        }
+        val factory = BlurredBackgroundDrawableViewFactory(source).apply {
+            mentionBlurWatcher?.let { setSourceRootView(it, root) }
+            setLiquidGlassEffectAllowed(LiteMode.isEnabled(LiteMode.FLAG_LIQUID_GLASS))
+        }
+        return factory.create(
+            view,
+            object : BlurredBackgroundColorProviderThemed(resourceProvider, Theme.key_chat_messagePanelBackground) {
+                override fun getBackgroundColor(): Int {
+                    if (!BlurredBackgroundProviderImpl.checkBlurEnabled(resourceProvider)) {
+                        return ColorUtils.setAlphaComponent(
+                            Theme.getColor(Theme.key_chat_messagePanelBackground, resourceProvider),
+                            255,
+                        )
+                    }
+                    return if (!super.isDark()) {
+                        ColorUtils.setAlphaComponent(super.getBackgroundColor(), 216)
+                    } else {
+                        super.getBackgroundColor()
+                    }
+                }
+            },
+        ).apply {
+            setRadius(AndroidUtilities.dp(TOPIC_INPUT_ISLAND_RADIUS_DP).toFloat())
+            setPadding(AndroidUtilities.dp(TOPIC_INPUT_ISLAND_HORIZONTAL_INSET_DP))
+        }
+    }
+
+    private fun enterTopicSearchMode() {
+        if (topicSearchOpen) return
+        topicSearchOpen = true
+        topicSearchQuery = ""
+        topicSearchPendingNext = false
+        topicSearchSession.clear()
+        topicSearchNavigator.clear()
+        adapter.setSearchHighlights("", emptyList())
+        hideReplyComposerEmojiPanel(openKeyboard = false, animated = false)
+        replyComposerPanel?.setEmojiPopupShowing(false)
+        topicBottomViewsVisibilityController.setViewVisible(TOPIC_BOTTOM_SEARCH_CONTAINER, true, true)
+        topicBottomViewsVisibilityController.setViewVisible(TOPIC_BOTTOM_INPUT_CONTAINER, false, true)
+        topicSearchCountText?.setText("", false)
+        floatingDateController?.hide(animated = false, force = true)
+        updateTopicSearchControls(animated = true)
+        updateReplyComposerBottomInset()
+    }
+
+    private fun exitTopicSearchMode() {
+        if (!topicSearchOpen) return
+        topicSearchOpen = false
+        topicSearchJob?.cancel()
+        topicSearchJob = null
+        topicSearchSession.clear()
+        topicSearchNavigator.clear()
+        topicSearchQuery = ""
+        topicSearchPendingNext = false
+        adapter.setSearchHighlights("", emptyList())
+        topicSearchCountText?.setText("", false)
+        topicBottomViewsVisibilityController.setViewVisible(TOPIC_BOTTOM_INPUT_CONTAINER, true, true)
+        topicBottomViewsVisibilityController.setViewVisible(TOPIC_BOTTOM_SEARCH_CONTAINER, false, true)
+        updateTopicSearchControls(animated = true)
+        updatePageDownControls(animated = true)
+        updateReplyComposerBottomInset()
+        AndroidUtilities.runOnUIThread({
+            if (!topicSearchOpen) {
+                actionBar.visibility = View.VISIBLE
+                actionBar.alpha = 1f
+                actionBar.bringToFront()
+                updateCollapsedTitle()
+            }
+        }, TOPIC_SEARCH_ACTION_BAR_ANIMATION_DURATION_MS)
+    }
+
+    private fun scheduleTopicSearch(query: String) {
+        topicSearchQuery = query
+        topicSearchJob?.cancel()
+        val normalized = query.trim()
+        adapter.setSearchHighlights(normalized, emptyList())
+        if (normalized.isEmpty()) {
+            topicSearchSession.clear()
+            topicSearchNavigator.clear()
+            topicSearchCountText?.setText("", true)
+            getContext()?.let { context ->
+                topicSearchCountText?.contentDescription = context.getString(R.string.topic_search_count_description)
+            }
+            updateTopicSearchControls(animated = true)
+            return
+        }
+        topicSearchCountText?.setText("", false)
+        topicSearchJob = collectorScope.launch {
+            delay(TOPIC_SEARCH_DEBOUNCE_MS)
+            startTopicSearch(normalized)
+        }
+    }
+
+    private fun startTopicSearch(query: String) {
+        topicSearchQuery = query
+        val scopedQuery = topicScopedSearchQuery(query, topicId)
+        if (scopedQuery.isBlank() || !topicSearchOpen) return
+        topicSearchJob?.cancel()
+        topicSearchPendingNext = false
+        topicSearchNavigator.clear()
+        val request = topicSearchSession.start(scopedQuery)
+        renderTopicSearch()
+        topicSearchJob = collectorScope.launch { executeTopicSearch(request) }
+    }
+
+    private suspend fun executeTopicSearch(request: TopicSearchRequest) {
+        val result = topicSearchRepository.search(request.query, request.page, typeFilter = "topic")
+        result.fold(
+            onSuccess = { searchResult ->
+                if (!topicSearchSession.accept(request, searchResult)) return
+            },
+            onFailure = { error ->
+                if (!topicSearchSession.fail(request, error.message ?: error.javaClass.simpleName)) return
+            },
+        )
+        if (!topicSearchOpen) return
+        val snapshot = topicSearchSession.snapshot
+        val current = topicSearchNavigator.submit(snapshot.result.posts)
+        if (topicSearchPendingNext) {
+            topicSearchPendingNext = false
+            topicSearchNavigator.next()
+        }
+        renderTopicSearch()
+        current?.let { jumpToTopicSearchMatch(topicSearchNavigator.current) }
+    }
+
+    private fun loadNextTopicSearchPage() {
+        val request = topicSearchSession.nextPage() ?: return
+        topicSearchPendingNext = true
+        renderTopicSearch()
+        topicSearchJob = collectorScope.launch { executeTopicSearch(request) }
+    }
+
+    private fun moveTopicSearch(previous: Boolean) {
+        if (!topicSearchOpen) return
+        val before = topicSearchNavigator.current
+        if (previous) {
+            topicSearchNavigator.previous()
+        } else if (topicSearchNavigator.hasNext) {
+            topicSearchNavigator.next()
+        } else if (topicSearchSession.snapshot.hasMore) {
+            loadNextTopicSearchPage()
+            return
+        }
+        if (before != topicSearchNavigator.current) {
+            jumpToTopicSearchMatch(topicSearchNavigator.current)
+            renderTopicSearch()
+        }
+    }
+
+    private fun jumpToTopicSearchMatch(match: io.github.baba983.nativedo.feature.topic.ui.TopicSearchMatch?) {
+        match ?: return
+        match.postId?.let(viewModel::requestJumpToPostId)
+            ?: match.postNumber?.let(viewModel::requestJumpToReplyTarget)
+    }
+
+    private fun renderTopicSearch() {
+        val countView = topicSearchCountText ?: return
+        val context = getContext() ?: return
+        val snapshot = topicSearchSession.snapshot
+        adapter.setSearchHighlights(topicSearchQuery.trim(), topicSearchNavigator.matches)
+        val text = when {
+            snapshot.isInitialLoading || snapshot.isLoadingMore -> ""
+            snapshot.initialError != null || snapshot.loadMoreError != null -> context.getString(R.string.search_topics_error_title)
+            topicSearchNavigator.matches.isEmpty() -> {
+                if (snapshot.query.isBlank()) "" else context.getString(TelegramR.string.NoResult)
+            }
+            else -> context.getString(
+                TelegramR.string.Of,
+                topicSearchNavigator.selectedIndex + 1,
+                topicSearchNavigator.matches.size,
+            )
+        }
+        countView.setText(text, true)
+        countView.contentDescription = if (text.isBlank()) {
+            context.getString(R.string.topic_search_count_description)
+        } else {
+            text
+        }
+        updateTopicSearchControls(animated = true)
+    }
+
+    private fun updateTopicSearchControls(animated: Boolean) {
+        val controls = pageDownControls ?: return
+        val showSearch = topicSearchOpen && topicSearchNavigator.matches.isNotEmpty()
+        controls.showButton(ChatActivitySideControlsButtonsLayout.BUTTON_SEARCH_UP, showSearch, animated)
+        controls.showButton(ChatActivitySideControlsButtonsLayout.BUTTON_SEARCH_DOWN, showSearch, animated)
+        controls.setButtonEnabled(
+            ChatActivitySideControlsButtonsLayout.BUTTON_SEARCH_UP,
+            showSearch && topicSearchNavigator.hasPrevious,
+            animated,
+        )
+        controls.setButtonEnabled(
+            ChatActivitySideControlsButtonsLayout.BUTTON_SEARCH_DOWN,
+            showSearch && (topicSearchNavigator.hasNext || topicSearchSession.snapshot.hasMore),
+            animated,
+        )
+        controls.showButton(ChatActivitySideControlsButtonsLayout.BUTTON_PAGE_DOWN, false, animated)
+    }
+
+    private fun createMentionSuggestions(context: Context, root: ViewGroup) {
+        if (mentionSuggestionsView != null) return
+        val view = TopicMentionSuggestionsView(
+            context = context,
+            baseUrl = baseUrl,
+            topicId = topicId,
+            scope = collectorScope,
+            repository = mentionRepository,
+            onUserSelected = { token, user ->
+                replyComposerPanel?.replaceMention(token, user.username)
+                mentionSuggestionsView?.dismiss()
+            },
+        )
+        mentionSuggestionsView = view
+        val blurSource = mentionBlurSource ?: mentionBlurSourceColor
+        val watcher = mentionBlurWatcher
+        if (blurSource != null && watcher != null) {
+            val factory = BlurredBackgroundDrawableViewFactory(blurSource).apply {
+                setSourceRootView(watcher, root)
+                setLiquidGlassEffectAllowed(LiteMode.isEnabled(LiteMode.FLAG_LIQUID_GLASS))
+            }
+            mentionBackground = factory.create(
+                view,
+                object : BlurredBackgroundColorProviderThemed(resourceProvider, Theme.key_windowBackgroundWhite) {
+                    override fun getBackgroundColor(): Int {
+                        if (!BlurredBackgroundProviderImpl.checkBlurEnabled(resourceProvider)) {
+                            return ColorUtils.setAlphaComponent(
+                                Theme.getColor(Theme.key_windowBackgroundWhite, resourceProvider),
+                                255,
+                            )
+                        }
+                        return if (!super.isDark()) {
+                            ColorUtils.setAlphaComponent(super.getBackgroundColor(), 216)
+                        } else {
+                            super.getBackgroundColor()
+                        }
+                    }
+                },
+            ).apply {
+                setRadius(AndroidUtilities.dp(22f).toFloat())
+                setPadding(AndroidUtilities.dp(5f))
+            }
+            view.setBackgroundDrawable(mentionBackground!!)
+        }
+        root.addView(
+            view,
+            LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT,
+                TOPIC_MENTION_HOST_HEIGHT_DP.toFloat(),
+                Gravity.BOTTOM,
+                0f,
+                0f,
+                0f,
+                0f,
+            ),
+        )
+        view.setParticipants(latestTopicState.participants, latestTopicState.posts)
+        replyComposerPanel?.refreshMentionSuggestions()
+        replyComposerPanel?.bringToFront()
         actionBar.bringToFront()
         updateReplyComposerBottomInset()
+    }
+
+    private fun createMentionBlurSource(root: ViewGroup) {
+        val colorSource = BlurredBackgroundSourceColor().apply {
+            setColor(topicDetailListBackgroundColor())
+        }
+        mentionBlurSourceColor = colorSource
+        mentionBlurWatcher = ViewPositionWatcher(root)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+        mentionBlurSource = BlurredBackgroundSourceRenderNode(colorSource).apply {
+            setupRenderer(object : RenderNodeWithHash.Renderer {
+                override fun renderNodeUpdateDisplayList(canvas: Canvas) {
+                    canvas.drawColor(topicDetailListBackgroundColor())
+                    val content = pullRefreshLayout ?: return
+                    canvas.save()
+                    canvas.translate(content.x, content.y)
+                    content.draw(canvas)
+                    canvas.restore()
+                }
+            })
+        }
+    }
+
+    private fun updateRootBlurSource(width: Int, height: Int) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            width <= 0 || height <= 0
+        ) {
+            return
+        }
+        mentionBlurSource?.apply {
+            setSize(width, height)
+            updateDisplayListIfNeeded()
+        }
+        if (mentionSuggestionsView?.visibility == View.VISIBLE) {
+            mentionBackground?.invalidateSelf()
+        }
+        topicInputViewsContainer?.invalidate()
+    }
+
+    private fun createPageDownControls(context: Context, root: ViewGroup) {
+        if (pageDownControls != null) return
+        val source = mentionBlurSource ?: mentionBlurSourceColor ?: BlurredBackgroundSourceColor().apply {
+            setColor(topicDetailListBackgroundColor())
+        }
+        val backgroundFactory = BlurredBackgroundDrawableViewFactory(source).apply {
+            mentionBlurWatcher?.let { setSourceRootView(it, root) }
+            setLiquidGlassEffectAllowed(LiteMode.isEnabled(LiteMode.FLAG_LIQUID_GLASS))
+        }
+        val controls = ChatActivitySideControlsButtonsLayout(
+            context,
+            resourceProvider,
+            BlurredBackgroundColorProviderThemed(resourceProvider, Theme.key_chat_messagePanelBackground),
+            backgroundFactory,
+        ).apply {
+            setOnClickListener { buttonId, _ ->
+                when (buttonId) {
+                    ChatActivitySideControlsButtonsLayout.BUTTON_SEARCH_UP -> {
+                        moveTopicSearch(previous = true)
+                    }
+                    ChatActivitySideControlsButtonsLayout.BUTTON_SEARCH_DOWN -> {
+                        moveTopicSearch(previous = false)
+                    }
+                    ChatActivitySideControlsButtonsLayout.BUTTON_PAGE_DOWN -> {
+                        if (textSelectionHelper.isInSelectionMode) {
+                            textSelectionHelper.clear(true)
+                        }
+                        viewModel.requestJumpToLatest()
+                    }
+                }
+            }
+            setButtonCount(ChatActivitySideControlsButtonsLayout.BUTTON_PAGE_DOWN, 0, false)
+            showButton(ChatActivitySideControlsButtonsLayout.BUTTON_PAGE_DOWN, false, false)
+        }
+        pageDownControls = controls
+        root.addView(
+            controls,
+            LayoutHelper.createFrame(57f, 300f, Gravity.RIGHT or Gravity.BOTTOM),
+        )
+        updateReplyComposerBottomInset()
+    }
+
+    private fun updatePageDownScrollState(manager: LinearLayoutManager, dy: Int) {
+        val below = pageDownPostsBelowViewport(manager)
+        if (below == 0) {
+            pageDownReachedLatest = true
+            pageDownDistanceFromLatestPx = 0
+        } else if (pageDownReachedLatest && dy < 0) {
+            pageDownDistanceFromLatestPx += kotlin.math.abs(dy)
+        }
+        updatePageDownControls(animated = pageDownInitialized)
+    }
+
+    private fun updatePageDownControls(animated: Boolean) {
+        val controls = pageDownControls ?: return
+        if (topicSearchOpen) {
+            updateTopicSearchControls(animated)
+            return
+        }
+        val manager = listView.layoutManager as? LinearLayoutManager
+        val below = manager?.let(::pageDownPostsBelowViewport) ?: 0
+        val show = topicShouldShowPageDown(
+            postsBelowViewport = below,
+            selectionActive = textSelectionHelper.isInSelectionMode,
+            hasReachedLatest = pageDownReachedLatest,
+            distanceFromLatestPx = pageDownDistanceFromLatestPx,
+            revealThresholdPx = AndroidUtilities.dp(100f),
+        )
+        controls.setButtonCount(ChatActivitySideControlsButtonsLayout.BUTTON_PAGE_DOWN, below, animated)
+        controls.setButtonLoading(
+            ChatActivitySideControlsButtonsLayout.BUTTON_PAGE_DOWN,
+            latestTopicState.isJumpingToLatest,
+            animated,
+        )
+        controls.showButton(ChatActivitySideControlsButtonsLayout.BUTTON_PAGE_DOWN, show, animated)
+    }
+
+    private fun pageDownPostsBelowViewport(manager: LinearLayoutManager): Int {
+        val lastVisiblePosition = manager.findLastVisibleItemPosition()
+        val lastVisiblePostId = (lastVisiblePosition downTo 0)
+            .firstNotNullOfOrNull(adapter::postIdAtAdapterPosition)
+        return topicPostsBelowViewport(latestTopicState.streamPostIds, lastVisiblePostId)
     }
 
     private fun handleReplyComposerKeyboardRequested(keyboardTarget: View) {
@@ -740,6 +1549,10 @@ class TopicDetailFragment(
         if (keyCode != KeyEvent.KEYCODE_BACK || action != KeyEvent.ACTION_UP) {
             return false
         }
+        if (mentionSuggestionsView?.isOpen() == true) {
+            mentionSuggestionsView?.dismiss()
+            return true
+        }
         if (isReplyComposerPopupShowing()) {
             hideReplyComposerPopup(byBackButton = true, openKeyboard = false)
             return true
@@ -748,8 +1561,7 @@ class TopicDetailFragment(
             replyComposerPanel?.let(::closeReplyComposerKeyboard)
             return true
         }
-        replyComposerPanel?.dismiss()
-        return true
+        return false
     }
 
     private fun handleReplyComposerEmojiButton(
@@ -782,6 +1594,7 @@ class TopicDetailFragment(
         keyboardTarget: View,
         onEmojiSelected: (String) -> Unit,
     ) {
+        mentionSuggestionsView?.dismiss()
         val categories = emojiCategories.ifEmpty {
             topicReplyComposerFallbackEmojiCategories(
                 reactionIds = validReactionIds.ifEmpty { DEFAULT_REACTION_IDS },
@@ -791,7 +1604,6 @@ class TopicDetailFragment(
         if (categories.isEmpty()) return
         val context = anchorView.context
         hideReplyComposerPopup(byBackButton = false, openKeyboard = false, animated = false)
-        AndroidUtilities.hideKeyboard(keyboardTarget)
         val root = rootFrameLayout ?: fragmentView as? ViewGroup ?: return
         val panelHeight = topicReplyComposerEmojiPanelHeightPx(
             keyboardInset = replyComposerKeyboardHeight,
@@ -808,17 +1620,31 @@ class TopicDetailFragment(
         replyComposerEmojiPanel = panel
         replyComposerEmojiPanelHeight = panelHeight
         replyComposerPopupContentType = TopicReplyComposerPopupContentType.EMOJI_KEYBOARD
+        topicInsetsStateHolder?.requestInAppKeyboardHeight(panelHeight)
+        AndroidUtilities.hideKeyboard(keyboardTarget)
         panel.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             updateReplyComposerEmojiPanelContentInset()
         }
-        root.addView(
-            panel,
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                panelHeight,
-                Gravity.BOTTOM,
-            ),
-        )
+        val inAppKeyboardContainer = topicInputViewsContainer?.inAppKeyboardBubbleContainer
+        if (inAppKeyboardContainer != null) {
+            inAppKeyboardContainer.addView(
+                panel,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    Gravity.BOTTOM,
+                ),
+            )
+        } else {
+            root.addView(
+                panel,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    panelHeight,
+                    Gravity.BOTTOM,
+                ),
+            )
+        }
         replyComposerPanel?.setEmojiPopupShowing(true)
         updateReplyComposerBottomInset()
         panel.show()
@@ -842,6 +1668,7 @@ class TopicDetailFragment(
         }
         replyComposerPanel?.setEmojiPopupShowing(false)
         replyComposerPopupContentType = TopicReplyComposerPopupContentType.NONE
+        topicInsetsStateHolder?.resetInAppKeyboardHeight(openKeyboard)
         val panel = replyComposerEmojiPanel
         if (panel == null) {
             replyComposerEmojiPanelHeight = 0
@@ -889,8 +1716,6 @@ class TopicDetailFragment(
 
     private fun closeReplyComposerKeyboard(panel: TopicReplyComposerPanel) {
         panel.closeKeyboard()
-        replyComposerKeyboardHeight = 0
-        updateReplyComposerBottomInset()
     }
 
     private fun markReplyComposerWaitingForKeyboardOpenAfterEmoji() {
@@ -913,32 +1738,48 @@ class TopicDetailFragment(
 
     private fun updateReplyComposerPanel(state: TopicUiState) {
         val panel = replyComposerPanel ?: return
+        panel.bindDraft(
+            state.replyDraft,
+            state.posts.firstOrNull { it.postNumber == state.replyDraft.replyToPostNumber },
+        )
         panel.setSubmitting(state.isSubmittingReply)
         val error = state.replySubmitErrorMessage
         if (error != null) {
-            replyComposerAwaitingSubmit = false
             panel.setError(error)
             return
         }
         panel.setError(null)
-        if (replyComposerAwaitingSubmit && !state.isSubmittingReply) {
-            replyComposerAwaitingSubmit = false
-            panel.dismiss()
-        }
     }
 
     private fun updateReplyComposerBottomInset() {
         if (!::listView.isInitialized) return
-        val panel = replyComposerPanel?.takeIf { it.parent != null }
-        val panelHeight = panel?.visibleHeightForListPadding() ?: 0
-        val keyboardInset = topicReplyComposerActiveKeyboardInset(panelAttached = panel != null, keyboardInset = replyComposerKeyboardHeight)
-        val activeInset = topicReplyComposerActiveBottomInset(
-            panelAttached = panel != null,
-            keyboardInset = keyboardInset,
-            emojiPanelHeight = replyComposerEmojiPanelHeight,
-        )
-        panel?.setKeyboardInset(activeInset)
-        val listInset = panel?.bottomInsetForListPadding(activeInset) ?: activeInset
+        updateTopicInputBubbleHeight()
+        val inputIslandBottomGap = AndroidUtilities.dp(TOPIC_INPUT_ISLAND_BOTTOM_GAP_DP)
+        val inputFactor = topicBottomViewsVisibilityController.getVisibility(TOPIC_BOTTOM_INPUT_CONTAINER)
+        val searchFactor = topicBottomViewsVisibilityController.getVisibility(TOPIC_BOTTOM_SEARCH_CONTAINER)
+        val bottomPanelAttached = inputFactor > 0f || searchFactor > 0f
+        val panelHeight = if (bottomPanelAttached) {
+            (topicInputViewsContainer?.inputBubbleHeight?.roundToInt()
+                ?: AndroidUtilities.dp(TOPIC_REPLY_COMPOSER_DEFAULT_HEIGHT_DP.toFloat())) + inputIslandBottomGap
+        } else {
+            0
+        }
+        val animatedBottomInset = topicInsetsStateHolder
+            ?.animatedMaxBottomInset
+            ?.roundToInt()
+            ?: topicReplyComposerActiveBottomInset(
+                panelAttached = bottomPanelAttached,
+                keyboardInset = replyComposerKeyboardHeight,
+                emojiPanelHeight = replyComposerEmojiPanelHeight,
+            )
+        val activeInset = if (bottomPanelAttached) animatedBottomInset.coerceAtLeast(0) else 0
+        replyComposerPanel?.setKeyboardInset(replyComposerKeyboardHeight)
+        val listInset = activeInset
+        mentionSuggestionsView?.translationY = -(panelHeight + activeInset).toFloat()
+        pageDownControls?.translationY = -topicPageDownControlsBottomOffset(
+            panelHeight = panelHeight,
+            panelBottomInset = listInset,
+        ).toFloat()
         val nextBottom = topicReplyComposerListBottomPadding(
             basePadding = listBottomBasePadding,
             panelHeight = panelHeight,
@@ -969,7 +1810,9 @@ class TopicDetailFragment(
     private fun handleJumpEvent(state: TopicUiState) {
         val event = state.jumpEvent ?: return
         val manager = listView.layoutManager as? LinearLayoutManager ?: return
-        manager.scrollToPositionWithOffset(event.itemIndex, AndroidUtilities.dp(8f))
+        val adapterPosition = adapter.adapterPositionForPostId(event.postId) ?: event.itemIndex
+        manager.scrollToPositionWithOffset(adapterPosition, AndroidUtilities.dp(8f))
+        listView.post { floatingDateController?.showForProgrammaticUpdate() }
         viewModel.consumeJumpEvent(event.nonce)
     }
 
@@ -1005,8 +1848,13 @@ class TopicDetailFragment(
             override val stableId: Long = -4L
         }
 
+        data class DateSeparator(val date: TopicDateHeader) : TopicDetailRow {
+            override val stableId: Long = date.stableId
+        }
+
         data class PostRow(
             val post: Post,
+            val date: TopicDateHeader?,
             val replyCount: Int,
             val replyParticipants: List<Post>,
             val validReactionIds: List<String>,
@@ -1030,6 +1878,7 @@ class TopicDetailFragment(
 
     private data class PostDiffKey(
         val id: Long,
+        val createdAt: String,
         val updatedAt: String,
         val editCount: Int,
         val cookedHtmlHash: Int,
@@ -1075,6 +1924,9 @@ class TopicDetailFragment(
         private val bodyStateCache = BodyStateCache()
         private var rows: List<TopicDetailRow> = emptyList()
         private var localPostsByNumber: Map<Int, String> = emptyMap()
+        private var searchHighlightText = ""
+        private var searchHighlightPostIds: Set<Long> = emptySet()
+        private var searchHighlightPostNumbers: Set<Int> = emptySet()
 
         init {
             setHasStableIds(true)
@@ -1103,6 +1955,49 @@ class TopicDetailFragment(
             val diff = DiffUtil.calculateDiff(TopicRowsDiffCallback(oldRows, newRows), false)
             rows = newRows
             diff.dispatchUpdatesTo(this)
+        }
+
+        fun setSearchHighlights(text: String, matches: List<io.github.baba983.nativedo.feature.topic.ui.TopicSearchMatch>) {
+            val nextText = text.trim()
+            val nextPostIds = matches.mapNotNullTo(linkedSetOf()) { match -> match.postId }
+            val nextPostNumbers = matches.mapNotNullTo(linkedSetOf()) { match -> match.postNumber }
+            if (searchHighlightText == nextText &&
+                searchHighlightPostIds == nextPostIds &&
+                searchHighlightPostNumbers == nextPostNumbers
+            ) {
+                return
+            }
+            searchHighlightText = nextText
+            searchHighlightPostIds = nextPostIds
+            searchHighlightPostNumbers = nextPostNumbers
+            rows.forEachIndexed { index, row ->
+                if (row is TopicDetailRow.PostRow) {
+                    notifyItemChanged(index, TOPIC_SEARCH_HIGHLIGHT_PAYLOAD)
+                }
+            }
+        }
+
+        fun postIdAtAdapterPosition(position: Int): Long? {
+            return (rows.getOrNull(position) as? TopicDetailRow.PostRow)?.post?.id
+        }
+
+        fun adapterPositionForPostId(postId: Long): Int? {
+            return rows.indexOfFirst { row -> row is TopicDetailRow.PostRow && row.post.id == postId }
+                .takeIf { position -> position >= 0 }
+        }
+
+        fun firstPostAdapterPosition(): Int? {
+            return rows.indexOfFirst { row -> row is TopicDetailRow.PostRow }
+                .takeIf { position -> position >= 0 }
+        }
+
+        fun floatingDateRowAt(position: Int): TopicFloatingDateRow? {
+            return when (val row = rows.getOrNull(position)) {
+                is TopicDetailRow.PostRow -> TopicFloatingDateRow(TopicFloatingDateRowKind.POST, row.date)
+                is TopicDetailRow.DateSeparator -> TopicFloatingDateRow(TopicFloatingDateRowKind.DATE, row.date)
+                null -> null
+                else -> TopicFloatingDateRow(TopicFloatingDateRowKind.OTHER, null)
+            }
         }
 
         fun resetPollInteractionState(postId: Long) {
@@ -1140,6 +2035,7 @@ class TopicDetailFragment(
                 is TopicDetailRow.AppendError,
                 TopicDetailRow.EndOfList -> VIEW_TYPE_FOOTER
                 is TopicDetailRow.Header -> VIEW_TYPE_HEADER
+                is TopicDetailRow.DateSeparator -> VIEW_TYPE_DATE
                 is TopicDetailRow.PostRow -> VIEW_TYPE_POST
             }
         }
@@ -1155,6 +2051,9 @@ class TopicDetailFragment(
                 VIEW_TYPE_SKELETON -> TopicSkeletonView(context)
                 VIEW_TYPE_LOADING -> LoadingCell(context)
                 VIEW_TYPE_FOOTER -> TopicFooterCell(context)
+                VIEW_TYPE_DATE -> TopicDateCell(context, false).apply {
+                    layoutParams = RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+                }
                 else -> TopicHeaderCell(context)
             }
             return RecyclerListView.Holder(view)
@@ -1169,6 +2068,10 @@ class TopicDetailFragment(
                 is TopicDetailRow.AppendError -> (holder.itemView as TopicFooterCell).bind(row.text, viewModel::loadMore)
                 TopicDetailRow.EndOfList -> (holder.itemView as TopicFooterCell).bind("End of topic", null)
                 is TopicDetailRow.Header -> (holder.itemView as TopicHeaderCell).bind(row.title, row.totalPosts, row.viewCount, row.tags)
+                is TopicDetailRow.DateSeparator -> (holder.itemView as TopicDateCell).apply {
+                    alpha = 1f
+                    setCustomDate(row.date.epochSeconds)
+                }
                 is TopicDetailRow.PostRow -> {
                     val post = row.post
                     val htmlHash = post.cookedHtml.hashCode()
@@ -1198,9 +2101,33 @@ class TopicDetailFragment(
                             row.jumpHighlightNonce,
                             { viewModel.clearJumpHighlight(row.jumpHighlightNonce) },
                         )
+                        setHighlightedText(searchHighlightFor(post))
                     }
                 }
             }
+        }
+
+        override fun onBindViewHolder(
+            holder: RecyclerView.ViewHolder,
+            position: Int,
+            payloads: MutableList<Any?>,
+        ) {
+            if (payloads.any { payload -> payload == TOPIC_SEARCH_HIGHLIGHT_PAYLOAD }) {
+                val row = rows.getOrNull(position) as? TopicDetailRow.PostRow
+                val cell = holder.itemView as? TopicPostCell
+                if (row != null && cell != null) {
+                    cell.setHighlightedText(searchHighlightFor(row.post))
+                    return
+                }
+            }
+            super.onBindViewHolder(holder, position, payloads)
+        }
+
+        private fun searchHighlightFor(post: Post): String {
+            if (searchHighlightText.isEmpty()) return ""
+            val matches = post.id in searchHighlightPostIds ||
+                post.postNumber?.let(searchHighlightPostNumbers::contains) == true
+            return if (matches) searchHighlightText else ""
         }
 
         private fun buildRows(state: TopicUiState): List<TopicDetailRow> {
@@ -1221,11 +2148,14 @@ class TopicDetailFragment(
                 tags = state.tags,
             )
             val repliesByNumber = state.posts.groupBy { post -> post.replyToPostNumber }
-            state.posts.forEach { post ->
+            topicPostDateEntries(state.posts).forEach { entry ->
+                val post = entry.post
+                entry.header?.let { date -> rows += TopicDetailRow.DateSeparator(date) }
                 val replies = post.postNumber?.let { repliesByNumber[it] }.orEmpty()
                 rows += TopicDetailRow.PostRow(
                     post = post,
-                    replyCount = replies.size,
+                    date = entry.date,
+                    replyCount = topicReplyFooterCount(post, replies.size),
                     replyParticipants = replies,
                     validReactionIds = state.validReactions.ifEmpty { DEFAULT_REACTION_IDS },
                     jumpHighlightNonce = state.jumpHighlight
@@ -1270,6 +2200,7 @@ class TopicDetailFragment(
                 is TopicDetailRow.InitialError -> row.text
                 is TopicDetailRow.AppendError -> row.text
                 is TopicDetailRow.Header -> row
+                is TopicDetailRow.DateSeparator -> row.date
                 is TopicDetailRow.PostRow -> listOf(
                     postDiffKey(row.post),
                     row.replyCount,
@@ -1285,6 +2216,7 @@ class TopicDetailFragment(
         private fun postDiffKey(post: Post): PostDiffKey {
             return PostDiffKey(
                 id = post.id,
+                createdAt = post.createdAt,
                 updatedAt = post.updatedAt,
                 editCount = post.editCount,
                 cookedHtmlHash = post.cookedHtml.hashCode(),
@@ -1318,7 +2250,7 @@ class TopicDetailFragment(
         }
 
         override fun didPressReaction(post: Post, reaction: PostReaction, anchorView: View, x: Float, y: Float) {
-            viewModel.openReactionSheet(post.id, post.reactions, reaction.id)
+            viewModel.openReactionSheet(post.id, post.reactions, reaction.id, post.reactionUsersCount)
         }
 
         override fun didPressMoreReactions(post: Post, reactions: List<PostReaction>, initialReactionId: String?, anchorView: View, x: Float, y: Float) {
@@ -1326,10 +2258,8 @@ class TopicDetailFragment(
         }
 
         override fun didPressReply(post: Post) {
-            val postNumber = post.postNumber ?: return
-            val replies = replySheetEntriesByPostNumber[postNumber].orEmpty()
-            if (replies.isEmpty()) return
-            showRepliesSheet(post, replies)
+            val previewCount = post.postNumber?.let(replySheetEntriesByPostNumber::get)?.size ?: 0
+            viewModel.openPostReplies(post, topicReplyFooterCount(post, previewCount))
         }
 
         override fun didLongPressPost(post: Post, anchorView: View, x: Float, y: Float) {
@@ -1437,6 +2367,9 @@ class TopicDetailFragment(
                     postOptions = null
                     when (action.kind) {
                         TopicPostActionKind.REPLY -> showReplyComposer(initialText = "", replyToPost = post)
+                        TopicPostActionKind.SELECT_TEXT -> {
+                            (anchorView as? TopicPostCell)?.startTextSelectionAt(pressX, pressY)
+                        }
                         TopicPostActionKind.COPY_LINK -> {
                             AndroidUtilities.addToClipboard(postLink(post))
                             BulletinFactory.of(this@TopicDetailFragment).createCopyLinkBulletin().show(topicCopyLinkBulletinOnTop())
@@ -1481,6 +2414,7 @@ class TopicDetailFragment(
                 } else {
                     reactionGrid?.cancelEnterAnimation()
                 }
+                rootFrameLayout?.hideScrim(this, animated)
                 super.dismiss(animated)
                 if (postOptions === this) {
                     postOptions = null
@@ -1507,7 +2441,7 @@ class TopicDetailFragment(
         postOptions = window
         lockPostOptionsListScroll()
         window.showAtLocation(anchorView, Gravity.LEFT or Gravity.TOP, position.x, position.y)
-        window.dimBehind(postOptionsPopupDimAmount())
+        rootFrameLayout?.showScrim(anchorView, window, true)
         reactionGrid?.startEnterAnimation(animatePopup = true)
     }
 
@@ -1743,6 +2677,7 @@ class TopicDetailFragment(
         if (!::listView.isInitialized || postOptionsListScrollLocked) {
             return
         }
+        listView.cancelSwipeReply(true)
         listView.stopScroll()
         listView.setScrollEnabled(false)
         postOptionsListScrollLocked = true
@@ -1841,134 +2776,81 @@ class TopicDetailFragment(
 
     private class TopicReactionUsersSheet(
         context: Context,
-        private val fragment: BaseFragment,
+        fragment: BaseFragment,
         private val baseUrl: String,
         private val emojiCatalog: Map<String, String>,
         private val onReactionSelected: (String) -> Unit,
+        private val onRetry: () -> Unit,
+        private val onUserSelected: (String) -> Unit,
         private val onDismissed: () -> Unit,
-    ) : BottomSheet(context, false, null) {
-        private val adapter = Adapter()
-        private val recyclerListView = RecyclerListView(context)
-        private val fixedHeaderView = ReactionFixedHeaderView(context, baseUrl, emojiCatalog, onReactionSelected, backgroundPaddingLeft)
-        private val rect = RectF()
-        private val sizePolicy = StableUserListSheetSizePolicy(AndroidUtilities.dp(56f))
-        private var scrollOffsetY = 0
-        private var ignoreLayout = false
-        private var fullHeight = false
-        private var contentRowsHeight = sizePolicy.rowsHeight()
-        private var statusBarOpen: Boolean? = null
+    ) : FixedHeaderRecyclerBottomSheet(context, fragment) {
+        private val sheetContext = context
+        private val pager = ViewPager(context)
+        private val pagerAdapter = ReactionPagesAdapter()
+        private val pagesByFilterId = linkedMapOf<String, ReactionUsersPage>()
+        private var filterIds: List<String> = emptyList()
+        private val fixedHeaderView = ReactionFixedHeaderView(
+            context,
+            baseUrl,
+            emojiCatalog,
+            onReactionSelected = { reactionId ->
+                selectFilter(reactionId, smoothScroll = true, notifySelection = true)
+            },
+            horizontalInset = backgroundPaddingLeft,
+        )
+        private val sizePolicy = StableUserListSheetSizePolicy(AndroidUtilities.dp(DiscourseUserCell.ITEM_HEIGHT_DP.toFloat()))
+        private var contentHeightAnimator: ValueAnimator? = null
         private var lastSelectedReactionId: String? = null
+        private var suppressPageSelectionCallback = false
+        private var pagerScrollState = ViewPager.SCROLL_STATE_IDLE
 
         init {
-            setUseLightStatusBar(fragment.isLightStatusBar)
-            containerView = object : FrameLayout(context) {
-                override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
-                    if (ev.action == MotionEvent.ACTION_DOWN && scrollOffsetY != 0 && ev.y < scrollOffsetY) {
-                        dismiss()
-                        return true
-                    }
-                    return super.onInterceptTouchEvent(ev)
-                }
-
-                override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-                    val height = MeasureSpec.getSize(heightMeasureSpec)
-                    ignoreLayout = true
-                    setPadding(backgroundPaddingLeft, AndroidUtilities.statusBarHeight, backgroundPaddingLeft, 0)
-                    ignoreLayout = false
-                    fixedHeaderView.measure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
-                    val contentSize = fixedHeaderView.measuredHeight + contentRowsHeight + backgroundPaddingTop + AndroidUtilities.statusBarHeight
-                    val recyclerParams = recyclerListView.layoutParams as? FrameLayout.LayoutParams
-                    if (recyclerParams != null && recyclerParams.topMargin != fixedHeaderView.measuredHeight) {
-                        recyclerParams.topMargin = fixedHeaderView.measuredHeight
-                        recyclerListView.layoutParams = recyclerParams
-                    }
-                    var padding = if (contentSize < height / 5f * 3.2f) 0 else (height / 5f * 2).toInt()
-                    if (padding != 0 && contentSize < height) {
-                        padding -= height - contentSize
-                    }
-                    if (padding == 0) {
-                        padding = backgroundPaddingTop
-                    }
-                    if (recyclerListView.paddingTop != padding) {
-                        ignoreLayout = true
-                        recyclerListView.setPadding(0, padding, 0, AndroidUtilities.dp(8f))
-                        ignoreLayout = false
-                    }
-                    fullHeight = contentSize >= height
-                    super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(minOf(contentSize, height), MeasureSpec.EXACTLY))
-                }
-
-                override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
-                    super.onLayout(changed, left, top, right, bottom)
-                    updateLayout()
-                }
-
-                override fun requestLayout() {
-                    if (ignoreLayout) return
-                    super.requestLayout()
-                }
-
-                override fun onDraw(canvas: Canvas) {
-                    var y = scrollOffsetY - backgroundPaddingTop + AndroidUtilities.dp(6f)
-                    var top = scrollOffsetY - backgroundPaddingTop - AndroidUtilities.dp(13f)
-                    var statusBarHeight = 0
-                    var radProgress = 1f
-                    top += AndroidUtilities.statusBarHeight
-                    y += AndroidUtilities.statusBarHeight
-                    if (fullHeight) {
-                        if (top + backgroundPaddingTop < AndroidUtilities.statusBarHeight * 2) {
-                            val diff = minOf(AndroidUtilities.statusBarHeight, AndroidUtilities.statusBarHeight * 2 - top - backgroundPaddingTop)
-                            top -= diff
-                            radProgress = 1f - minOf(1f, diff * 2f / AndroidUtilities.statusBarHeight)
-                        }
-                        if (top + backgroundPaddingTop < AndroidUtilities.statusBarHeight) {
-                            statusBarHeight = minOf(AndroidUtilities.statusBarHeight, AndroidUtilities.statusBarHeight - top - backgroundPaddingTop)
-                        }
-                    }
-                    shadowDrawable.setBounds(0, top, measuredWidth, measuredHeight)
-                    shadowDrawable.draw(canvas)
-                    if (radProgress != 1f) {
-                        Theme.dialogs_onlineCirclePaint.color = Theme.getColor(Theme.key_dialogBackground)
-                        rect.set(backgroundPaddingLeft.toFloat(), (backgroundPaddingTop + top).toFloat(), (measuredWidth - backgroundPaddingLeft).toFloat(), (backgroundPaddingTop + top + AndroidUtilities.dp(24f)).toFloat())
-                        val radius = AndroidUtilities.dp(12f) * radProgress
-                        canvas.drawRoundRect(rect, radius, radius, Theme.dialogs_onlineCirclePaint)
-                    }
-                    val handleAlpha = maxOf(0f, minOf(1f, (y - AndroidUtilities.statusBarHeight).toFloat() / AndroidUtilities.dp(16f)))
-                    if (handleAlpha > 0f) {
-                        val width = AndroidUtilities.dp(36f)
-                        rect.set((measuredWidth - width) / 2f, y.toFloat(), (measuredWidth + width) / 2f, (y + AndroidUtilities.dp(4f)).toFloat())
-                        Theme.dialogs_onlineCirclePaint.color = Theme.getColor(Theme.key_sheet_scrollUp)
-                        Theme.dialogs_onlineCirclePaint.alpha = (Theme.dialogs_onlineCirclePaint.alpha * handleAlpha).toInt()
-                        canvas.drawRoundRect(rect, AndroidUtilities.dp(2f).toFloat(), AndroidUtilities.dp(2f).toFloat(), Theme.dialogs_onlineCirclePaint)
-                    }
-                    if (statusBarHeight > 0) {
-                        Theme.dialogs_onlineCirclePaint.color = Theme.getColor(Theme.key_dialogBackground)
-                        canvas.drawRect(backgroundPaddingLeft.toFloat(), (AndroidUtilities.statusBarHeight - statusBarHeight).toFloat(), (measuredWidth - backgroundPaddingLeft).toFloat(), AndroidUtilities.statusBarHeight.toFloat(), Theme.dialogs_onlineCirclePaint)
-                    }
-                    updateLightStatusBar(statusBarHeight > AndroidUtilities.statusBarHeight / 2)
-                }
-            }
-            containerView.setWillNotDraw(false)
-            containerView.setPadding(backgroundPaddingLeft, 0, backgroundPaddingLeft, 0)
-            fixNavigationBar(Theme.getColor(Theme.key_dialogBackground))
-            adapter.configure(baseUrl)
-            adapter.setTopSpacerHeight(0)
             setOnDismissListener(DialogInterface.OnDismissListener { onDismissed() })
-            recyclerListView.itemAnimator = null
-            recyclerListView.clipToPadding = false
-            recyclerListView.layoutManager = LinearLayoutManager(context)
-            recyclerListView.adapter = adapter
-            recyclerListView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
-                override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
-                    updateLayout()
+            pager.adapter = pagerAdapter
+            pager.offscreenPageLimit = 1
+            pager.addOnPageChangeListener(object : ViewPager.OnPageChangeListener {
+                override fun onPageScrolled(position: Int, positionOffset: Float, positionOffsetPixels: Int) {
+                    val fromId = filterIds.getOrNull(position) ?: return
+                    val fromPage = pagesByFilterId[fromId] ?: return
+                    val toId = filterIds.getOrNull(position + 1)
+                    val toPage = toId?.let(pagesByFilterId::get)
+                    if (toId != null && toPage != null && positionOffset > 0f) {
+                        contentHeightAnimator?.cancel()
+                        fixedHeaderView.setPageProgress(fromId, toId, positionOffset)
+                        setContentHeightPx(lerpInt(fromPage.contentHeight, toPage.contentHeight, positionOffset))
+                        setRecyclerListTransition(fromPage.listView, toPage.listView, positionOffset)
+                    } else {
+                        setContentHeightPx(fromPage.contentHeight)
+                    }
+                }
+
+                override fun onPageSelected(position: Int) {
+                    val filterId = filterIds.getOrNull(position) ?: return
+                    lastSelectedReactionId = filterId
+                    if (!suppressPageSelectionCallback) {
+                        onReactionSelected(filterId)
+                    }
+                }
+
+                override fun onPageScrollStateChanged(state: Int) {
+                    pagerScrollState = state
+                    if (state == ViewPager.SCROLL_STATE_IDLE) {
+                        val filterId = filterIds.getOrNull(pager.currentItem) ?: return
+                        val page = pagesByFilterId[filterId] ?: return
+                        setActiveRecyclerListView(page.listView)
+                        setContentHeightPx(page.contentHeight)
+                        fixedHeaderView.setSelectedFilter(filterId)
+                    }
                 }
             })
-            containerView.addView(recyclerListView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT.toFloat(), Gravity.TOP or Gravity.LEFT, 0f, 0f, 0f, 0f))
-            containerView.addView(fixedHeaderView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP or Gravity.LEFT))
-            fixedHeaderView.bringToFront()
+            setSheetContentView(pager)
+            setFixedHeaderView(fixedHeaderView)
+            setHeaderShadowDelegate { visible -> fixedHeaderView.setShadowVisible(visible) }
+            setMinimumContentHeightPx(sizePolicy.minimumHeight())
+            setContentHeightPx(sizePolicy.rowsHeight())
         }
 
-        fun submit(reactions: List<PostReaction>, usersState: TopicReactionUsersUiState) {
+        fun submit(reactions: List<PostReaction>, reactionUsersCount: Int, usersState: TopicReactionUsersUiState) {
             val tabReactions = buildList {
                 addAll(reactions)
                 usersState.groups.forEach { group ->
@@ -1983,80 +2865,190 @@ class TopicDetailFragment(
                     }
                 }
             }
-            val selected = usersState.selectedReactionId ?: usersState.groups.firstOrNull()?.id ?: tabReactions.firstOrNull()?.id
-            val selectedGroup = usersState.groups.firstOrNull { group -> group.id == selected }
-            val visibleSelected = selectedGroup?.id
-            val selectedUsers = selectedGroup?.users ?: usersState.groups
-                .flatMap { group -> group.users }
-                .distinctBy { user -> user.username }
-            val predictedUserCount = tabReactions.firstOrNull { reaction -> reaction.id == selected }?.count
+            val showAll = tabReactions.size > 1
+            val requestedSelected = usersState.selectedReactionId
+                ?: usersState.groups.firstOrNull()?.id
+                ?: tabReactions.firstOrNull()?.id
+            val requestedGroup = usersState.groups.firstOrNull { group -> group.id == requestedSelected }
+            val selected = when {
+                requestedSelected == TOPIC_REACTION_ALL_FILTER_ID -> TOPIC_REACTION_ALL_FILTER_ID
+                usersState.hasLoaded && requestedGroup == null && usersState.groups.isNotEmpty() && showAll -> TOPIC_REACTION_ALL_FILTER_ID
+                tabReactions.any { reaction -> reaction.id == requestedSelected } -> requestedSelected
+                showAll -> TOPIC_REACTION_ALL_FILTER_ID
+                else -> tabReactions.firstOrNull()?.id
+            }
+            val allCount = reactionUsersCount.takeIf { it > 0 } ?: tabReactions
+                .sumOf { reaction -> reaction.count.toLong() }
+                .coerceAtMost(Int.MAX_VALUE.toLong())
+                .toInt()
             val selectedChanged = lastSelectedReactionId != selected
-            lastSelectedReactionId = selected
-            fixedHeaderView.bind(tabReactions, visibleSelected)
-            contentRowsHeight = sizePolicy.rowsHeight(
-                userCount = if (usersState.isLoading) predictedUserCount else selectedUsers.size,
-            )
-            adapter.submit(usersState, selectedUsers, sizePolicy.skeletonRows(predictedUserCount))
-            containerView.requestLayout()
-            if (selectedChanged) {
-                recyclerListView.post { recyclerListView.scrollToPosition(0) }
+            val animateSelectionChange = lastSelectedReactionId != null && selectedChanged
+            val nextFilterIds = buildList {
+                if (showAll) add(TOPIC_REACTION_ALL_FILTER_ID)
+                addAll(tabReactions.map(PostReaction::id))
+            }
+            reconcilePages(nextFilterIds)
+            fixedHeaderView.bind(tabReactions, selected, showAll, allCount)
+            filterIds.forEach { filterId ->
+                val page = pagesByFilterId.getValue(filterId)
+                val pageUsers = topicReactionUsersForFilter(usersState.groups, filterId)
+                val pagePredictedCount = if (filterId == TOPIC_REACTION_ALL_FILTER_ID) {
+                    allCount
+                } else {
+                    tabReactions.firstOrNull { reaction -> reaction.id == filterId }?.count
+                }
+                val partialMessage = if (
+                    !usersState.isLoading &&
+                    usersState.errorMessage == null &&
+                    pageUsers.isNotEmpty() &&
+                    pagePredictedCount != null &&
+                    pagePredictedCount > pageUsers.size
+                ) {
+                    sheetContext.getString(R.string.topic_reaction_users_partial, pageUsers.size, pagePredictedCount)
+                } else {
+                    null
+                }
+                page.contentHeight = sizePolicy.rowsHeight(
+                    userCount = if (usersState.isLoading) pagePredictedCount else pageUsers.size,
+                )
+                page.adapter.submit(
+                    usersState,
+                    pageUsers,
+                    sizePolicy.skeletonRows(pagePredictedCount),
+                    partialMessage,
+                )
+            }
+            val selectedId = selected?.takeIf(filterIds::contains) ?: filterIds.firstOrNull() ?: return
+            val selectedPage = pagesByFilterId.getValue(selectedId)
+            val selectedIndex = filterIds.indexOf(selectedId)
+            if (pager.currentItem != selectedIndex) {
+                suppressPageSelectionCallback = true
+                pager.setCurrentItem(selectedIndex, false)
+                suppressPageSelectionCallback = false
+            }
+            lastSelectedReactionId = selectedId
+            if (pagerScrollState == ViewPager.SCROLL_STATE_IDLE) {
+                setActiveRecyclerListView(selectedPage.listView)
+                setContentHeight(selectedPage.contentHeight, animateSelectionChange)
             }
         }
 
-        override fun canDismissWithSwipe(): Boolean {
-            return false
+        private fun reconcilePages(nextFilterIds: List<String>) {
+            if (filterIds == nextFilterIds) return
+            filterIds = nextFilterIds
+            filterIds.forEach(::pageForFilter)
+            pagerAdapter.notifyDataSetChanged()
         }
 
-        private fun updateLightStatusBar(open: Boolean) {
-            if (statusBarOpen == open) return
-            val openBgLight = AndroidUtilities.computePerceivedBrightness(Theme.getColor(Theme.key_dialogBackground)) > 0.721f
-            statusBarOpen = open
-            AndroidUtilities.setLightStatusBar(window, if (open) openBgLight else fragment.isLightStatusBar)
+        private fun pageForFilter(filterId: String): ReactionUsersPage {
+            return pagesByFilterId.getOrPut(filterId) {
+                val listView = RecyclerListView(sheetContext).apply {
+                    itemAnimator = null
+                    layoutManager = LinearLayoutManager(sheetContext)
+                }
+                val pageAdapter = Adapter().apply {
+                    configure(
+                        baseUrl = baseUrl,
+                        emptyMessage = sheetContext.getString(R.string.topic_reaction_users_empty),
+                        retryMessage = sheetContext.getString(R.string.topic_reaction_users_retry),
+                        onRetry = onRetry,
+                    )
+                    setTopSpacerHeight(0)
+                }
+                listView.adapter = pageAdapter
+                listView.setOnItemClickListener(RecyclerListView.OnItemClickListener { _, position ->
+                    pageAdapter.usernameAt(position)?.let(onUserSelected)
+                })
+                registerScrollableRecyclerListView(listView)
+                ReactionUsersPage(filterId, listView, pageAdapter, sizePolicy.minimumHeight())
+            }
         }
 
-        private fun updateLayout() {
-            if (recyclerListView.childCount <= 0) {
-                setScrollOffsetY(recyclerListView.paddingTop)
+        private fun selectFilter(filterId: String, smoothScroll: Boolean, notifySelection: Boolean) {
+            val position = filterIds.indexOf(filterId)
+            if (position < 0 || pager.currentItem == position) return
+            suppressPageSelectionCallback = !notifySelection
+            pager.setCurrentItem(position, smoothScroll)
+            suppressPageSelectionCallback = false
+        }
+
+        private fun setContentHeight(targetHeight: Int, animated: Boolean) {
+            contentHeightAnimator?.cancel()
+            if (!animated || contentHeightPx == targetHeight) {
+                setContentHeightPx(targetHeight)
                 return
             }
-            var firstChild: View? = null
-            var firstChildPosition = -1
-            for (index in 0 until recyclerListView.childCount) {
-                val child = recyclerListView.getChildAt(index)
-                val position = recyclerListView.getChildAdapterPosition(child)
-                if (firstChildPosition == -1 || firstChildPosition > position) {
-                    firstChild = child
-                    firstChildPosition = position
+            contentHeightAnimator = ValueAnimator.ofInt(contentHeightPx, targetHeight).also { animator ->
+                animator.duration = 150L
+                animator.interpolator = CubicBezierInterpolator.DEFAULT
+                animator.addUpdateListener { valueAnimator ->
+                    setContentHeightPx(valueAnimator.animatedValue as Int)
                 }
-            }
-            val newOffset = if (firstChild != null && firstChild.top >= 0) firstChild.top else 0
-            fixedHeaderView.setShadowVisible(newOffset == 0 && recyclerListView.canScrollVertically(-1))
-            if (scrollOffsetY != newOffset) {
-                setScrollOffsetY(newOffset)
+                animator.start()
             }
         }
 
-        private fun setScrollOffsetY(newOffset: Int) {
-            scrollOffsetY = newOffset
-            fixedHeaderView.translationY = newOffset.toFloat()
-            fixedHeaderView.bringToFront()
-            containerView.invalidate()
+        private data class ReactionUsersPage(
+            val filterId: String,
+            val listView: RecyclerListView,
+            val adapter: Adapter,
+            var contentHeight: Int,
+        )
+
+        private inner class ReactionPagesAdapter : PagerAdapter() {
+            override fun getCount(): Int = filterIds.size
+
+            override fun isViewFromObject(view: View, `object`: Any): Boolean {
+                return view === (`object` as ReactionUsersPage).listView
+            }
+
+            override fun instantiateItem(container: ViewGroup, position: Int): Any {
+                val page = pageForFilter(filterIds[position])
+                (page.listView.parent as? ViewGroup)?.removeView(page.listView)
+                container.addView(page.listView)
+                return page
+            }
+
+            override fun destroyItem(container: ViewGroup, position: Int, `object`: Any) {
+                container.removeView((`object` as ReactionUsersPage).listView)
+            }
+
+            override fun getItemPosition(`object`: Any): Int {
+                val position = filterIds.indexOf((`object` as ReactionUsersPage).filterId)
+                return if (position >= 0) position else POSITION_NONE
+            }
         }
 
         private sealed interface Row {
             data class TopSpacer(val height: Int) : Row
             data class Loading(val rowCount: Int) : Row
-            data object Empty : Row
-            data class User(val user: PostReactionUser, val divider: Boolean) : Row
+            data class Empty(val message: String, val canRetry: Boolean) : Row
+            data class User(val user: PostReactionUser) : Row
+            data class Info(val message: String) : Row
         }
 
         private class Adapter : RecyclerListView.SelectionAdapter() {
             private var rows: List<Row> = emptyList()
             private var baseUrl: String = ""
+            private var emptyMessage: String = ""
+            private var retryMessage: String = ""
+            private var onRetry: () -> Unit = {}
             private var topSpacerHeight: Int = AndroidUtilities.dp(140f)
 
-            fun configure(baseUrl: String) {
+            fun configure(
+                baseUrl: String,
+                emptyMessage: String,
+                retryMessage: String,
+                onRetry: () -> Unit,
+            ) {
                 this.baseUrl = baseUrl
+                this.emptyMessage = emptyMessage
+                this.retryMessage = retryMessage
+                this.onRetry = onRetry
+            }
+
+            fun usernameAt(position: Int): String? {
+                return (rows.getOrNull(position) as? Row.User)?.user?.username?.takeIf { it.isNotBlank() }
             }
 
             fun setTopSpacerHeight(height: Int) {
@@ -2070,17 +3062,26 @@ class TopicDetailFragment(
                 usersState: TopicReactionUsersUiState,
                 selectedUsers: List<PostReactionUser>,
                 loadingRowCount: Int,
+                partialMessage: String?,
             ) {
                 rows = buildList {
-                    add(Row.TopSpacer(topSpacerHeight))
+                    if (topSpacerHeight > 0) {
+                        add(Row.TopSpacer(topSpacerHeight))
+                    }
                     if (usersState.isLoading) {
                         add(Row.Loading(loadingRowCount))
                     } else if (selectedUsers.isEmpty()) {
-                        add(Row.Empty)
+                        add(
+                            Row.Empty(
+                                message = if (usersState.errorMessage != null) retryMessage else emptyMessage,
+                                canRetry = usersState.errorMessage != null,
+                            ),
+                        )
                     } else {
-                        selectedUsers.forEachIndexed { index, user ->
-                            add(Row.User(user, divider = index != selectedUsers.lastIndex))
+                        selectedUsers.forEach { user ->
+                            add(Row.User(user))
                         }
+                        partialMessage?.let { message -> add(Row.Info(message)) }
                     }
                 }
                 notifyDataSetChanged()
@@ -2096,8 +3097,9 @@ class TopicDetailFragment(
                 return when (rows[position]) {
                     is Row.TopSpacer -> SHEET_ROW_REACTION_USERS_TOP_SPACER
                     is Row.Loading -> SHEET_ROW_LOADING
-                    Row.Empty -> SHEET_ROW_EMPTY
+                    is Row.Empty -> SHEET_ROW_EMPTY
                     is Row.User -> SHEET_ROW_USER
+                    is Row.Info -> SHEET_ROW_EMPTY
                 }
             }
 
@@ -2105,7 +3107,7 @@ class TopicDetailFragment(
                 val view = when (viewType) {
                     SHEET_ROW_REACTION_USERS_TOP_SPACER -> TopSpacerView(parent.context)
                     SHEET_ROW_LOADING -> ReactionUsersSkeletonView(parent.context)
-                    SHEET_ROW_USER -> ReactionUserRowView(parent.context, baseUrl)
+                    SHEET_ROW_USER -> DiscourseUserCell(parent.context)
                     else -> TopicFooterCell(parent.context)
                 }
                 return RecyclerListView.Holder(view)
@@ -2115,8 +3117,22 @@ class TopicDetailFragment(
                 when (val row = rows[position]) {
                     is Row.TopSpacer -> (holder.itemView as TopSpacerView).setHeight(row.height)
                     is Row.Loading -> (holder.itemView as ReactionUsersSkeletonView).setRowCount(row.rowCount)
-                    Row.Empty -> (holder.itemView as TopicFooterCell).bind("No users", null)
-                    is Row.User -> (holder.itemView as ReactionUserRowView).bind(row.user, row.divider)
+                    is Row.Empty -> (holder.itemView as TopicFooterCell).bind(
+                        row.message,
+                        if (row.canRetry) Runnable(onRetry) else null,
+                    )
+                    is Row.User -> {
+                        val avatarUrl = resolveAvatarUrl(baseUrl, row.user.avatarTemplate, row.user.animatedAvatarUrl, 96)
+                        (holder.itemView as DiscourseUserCell).bind(
+                            row.user.displayName,
+                            row.user.username,
+                            avatarUrl,
+                            avatarImageFilter(row.user.animatedAvatarUrl, 50),
+                            isAnimatedDiscourseImageUrl(avatarUrl),
+                            row.user,
+                        )
+                    }
+                    is Row.Info -> (holder.itemView as TopicFooterCell).bind(row.message, null)
                 }
             }
         }
@@ -2139,10 +3155,10 @@ class TopicDetailFragment(
             private val rect = RectF()
             private val clipRect = Rect()
             private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-            private val rowHeight = AndroidUtilities.dp(56f)
+            private val rowHeight = AndroidUtilities.dp(DiscourseUserCell.ITEM_HEIGHT_DP.toFloat())
             private var rowCount = 5
             private val avatarSize = AndroidUtilities.dp(36f)
-            private val horizontalInset = AndroidUtilities.dp(18f)
+            private val horizontalInset = AndroidUtilities.dp(8f)
 
             fun setRowCount(rowCount: Int) {
                 val normalized = rowCount.coerceAtLeast(1)
@@ -2165,9 +3181,8 @@ class TopicDetailFragment(
                     val top = index * rowHeight
                     val centerY = top + rowHeight / 2f
                     canvas.drawCircle(horizontalInset + avatarSize / 2f, centerY, avatarSize / 2f, paint)
-                    val textLeft = horizontalInset + avatarSize + AndroidUtilities.dp(12f)
-                    drawRound(canvas, textLeft, top + AndroidUtilities.dp(13f), textLeft + AndroidUtilities.dp(128f), top + AndroidUtilities.dp(24f), 5f)
-                    drawRound(canvas, textLeft, top + AndroidUtilities.dp(34f), textLeft + AndroidUtilities.dp(84f), top + AndroidUtilities.dp(42f), 4f)
+                    val textLeft = AndroidUtilities.dp(58f)
+                    drawRound(canvas, textLeft, top + AndroidUtilities.dp(20f), width - AndroidUtilities.dp(53f), top + AndroidUtilities.dp(28f), 8f)
                 }
             }
 
@@ -2188,7 +3203,7 @@ class TopicDetailFragment(
             private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG)
             private val backgroundRect = RectF()
             private val titleView = TextView(context).apply {
-                text = "Reactions"
+                text = context.getString(R.string.topic_reaction_users_title)
                 setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText))
                 textSize = 20f
                 setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
@@ -2208,8 +3223,16 @@ class TopicDetailFragment(
                 addView(shadowView)
             }
 
-            fun bind(reactions: List<PostReaction>, selectedId: String?) {
-                tabsView.bind(reactions, selectedId)
+            fun bind(reactions: List<PostReaction>, selectedId: String?, showAll: Boolean, allCount: Int) {
+                tabsView.bind(reactions, selectedId, showAll, allCount)
+            }
+
+            fun setPageProgress(fromId: String, toId: String, progress: Float) {
+                tabsView.setPageProgress(fromId, toId, progress)
+            }
+
+            fun setSelectedFilter(filterId: String) {
+                tabsView.setSelectedFilter(filterId)
             }
 
             fun setShadowVisible(visible: Boolean) {
@@ -2250,90 +3273,161 @@ class TopicDetailFragment(
             private val baseUrl: String,
             private val emojiCatalog: Map<String, String>,
             private val onReactionSelected: (String) -> Unit,
-        ) : FrameLayout(context) {
+        ) : HorizontalScrollView(context) {
+            private val tabsContainer = LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(AndroidUtilities.dp(6f), 0, 0, 0)
+            }
             private val chips = mutableListOf<ReactionTabChipView>()
+            private var selectedId: String? = null
+            private var selectionAnimator: ValueAnimator? = null
 
             init {
-                setPadding(AndroidUtilities.dp(12f), AndroidUtilities.dp(10f), AndroidUtilities.dp(12f), AndroidUtilities.dp(8f))
+                isHorizontalScrollBarEnabled = false
+                isFillViewport = false
+                clipToPadding = false
+                addView(tabsContainer, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT))
             }
 
-            fun bind(reactions: List<PostReaction>, selectedId: String?) {
-                removeAllViews()
+            fun bind(reactions: List<PostReaction>, selectedId: String?, showAll: Boolean, allCount: Int) {
+                val previousSelectedId = this.selectedId
+                this.selectedId = selectedId
+                selectionAnimator?.cancel()
+                tabsContainer.removeAllViews()
                 chips.clear()
+                if (showAll) {
+                    addChip(TOPIC_REACTION_ALL_FILTER_ID) {
+                        bindAll(
+                            count = allCount,
+                            selected = selectedId == TOPIC_REACTION_ALL_FILTER_ID,
+                            contentDescription = context.getString(R.string.topic_reaction_users_all),
+                        )
+                    }
+                }
                 reactions.forEach { reaction ->
-                    val chip = ReactionTabChipView(context).apply {
+                    addChip(reaction.id) {
                         bind(
                             reaction,
                             PostReactionRendering.iconUrl(reaction.id, reaction.iconUrl, emojiCatalog),
                             baseUrl,
                             selected = reaction.id == selectedId,
                         )
-                        setOnClickListener { onReactionSelected(reaction.id) }
                     }
-                    chips += chip
-                    addView(chip)
                 }
                 requestLayout()
+                post {
+                    val selectedChip = chips.firstOrNull { chip -> chip.reactionId == selectedId } ?: return@post
+                    val targetScroll = (selectedChip.left - (width - selectedChip.width) / 2).coerceAtLeast(0)
+                    if (previousSelectedId != null && previousSelectedId != selectedId) {
+                        val startScroll = scrollX
+                        val previousChip = chips.firstOrNull { chip -> chip.reactionId == previousSelectedId }
+                        previousChip?.setSelectionProgress(1f)
+                        selectedChip.setSelectionProgress(0f)
+                        ValueAnimator.ofFloat(0f, 1f).also { animator ->
+                            selectionAnimator = animator
+                            animator.duration = 150L
+                            animator.interpolator = CubicBezierInterpolator.DEFAULT
+                            animator.addUpdateListener { valueAnimator ->
+                                val progress = valueAnimator.animatedValue as Float
+                                scrollTo((startScroll + (targetScroll - startScroll) * progress).toInt(), 0)
+                                previousChip?.setSelectionProgress(1f - progress)
+                                selectedChip.setSelectionProgress(progress)
+                            }
+                            animator.start()
+                        }
+                    } else {
+                        scrollTo(targetScroll, 0)
+                    }
+                }
+            }
+
+            fun setPageProgress(fromId: String, toId: String, progress: Float) {
+                val fromChip = chips.firstOrNull { chip -> chip.reactionId == fromId } ?: return
+                val toChip = chips.firstOrNull { chip -> chip.reactionId == toId } ?: return
+                val normalizedProgress = progress.coerceIn(0f, 1f)
+                selectionAnimator?.cancel()
+                chips.forEach { chip ->
+                    chip.setSelectionProgress(
+                        when (chip) {
+                            fromChip -> 1f - normalizedProgress
+                            toChip -> normalizedProgress
+                            else -> 0f
+                        },
+                    )
+                }
+                val fromScroll = fromChip.left - (width - fromChip.width) / 2f
+                val toScroll = toChip.left - (width - toChip.width) / 2f
+                scrollTo((fromScroll + (toScroll - fromScroll) * normalizedProgress).toInt().coerceAtLeast(0), 0)
+            }
+
+            fun setSelectedFilter(filterId: String) {
+                selectedId = filterId
+                selectionAnimator?.cancel()
+                chips.forEach { chip ->
+                    chip.setSelectionProgress(if (chip.reactionId == filterId) 1f else 0f)
+                }
+                post {
+                    val selectedChip = chips.firstOrNull { chip -> chip.reactionId == filterId } ?: return@post
+                    scrollTo((selectedChip.left - (width - selectedChip.width) / 2).coerceAtLeast(0), 0)
+                }
             }
 
             override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-                val width = MeasureSpec.getSize(widthMeasureSpec)
-                val chipHeight = AndroidUtilities.dp(32f)
-                val gap = AndroidUtilities.dp(8f)
-                val available = (width - paddingLeft - paddingRight).coerceAtLeast(0)
-                var x = 0
-                var y = paddingTop
-                var rowHeight = chipHeight
-                chips.forEach { chip ->
-                    chip.measure(MeasureSpec.makeMeasureSpec(available, MeasureSpec.AT_MOST), MeasureSpec.makeMeasureSpec(chipHeight, MeasureSpec.EXACTLY))
-                    if (x > 0 && x + chip.measuredWidth > available) {
-                        x = 0
-                        y += rowHeight + gap
-                    }
-                    x += chip.measuredWidth + gap
-                }
-                setMeasuredDimension(width, y + rowHeight + paddingBottom)
+                super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(44f), MeasureSpec.EXACTLY))
             }
 
-            override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
-                val gap = AndroidUtilities.dp(8f)
-                val available = (right - left - paddingLeft - paddingRight).coerceAtLeast(0)
-                var x = paddingLeft
-                var y = paddingTop
-                chips.forEach { chip ->
-                    if (x > paddingLeft && x - paddingLeft + chip.measuredWidth > available) {
-                        x = paddingLeft
-                        y += chip.measuredHeight + gap
+            private fun addChip(id: String, bind: ReactionTabChipView.() -> Unit) {
+                val chip = ReactionTabChipView(context).apply {
+                    reactionId = id
+                    bind()
+                    setOnClickListener {
+                        if (this@ReactionTabsView.selectedId != id) {
+                            onReactionSelected(id)
+                        }
                     }
-                    chip.layout(x, y, x + chip.measuredWidth, y + chip.measuredHeight)
-                    x += chip.measuredWidth + gap
                 }
+                chips += chip
+                tabsContainer.addView(
+                    chip,
+                    LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, AndroidUtilities.dp(32f)).apply {
+                        gravity = Gravity.CENTER_VERTICAL
+                        marginEnd = AndroidUtilities.dp(6f)
+                    },
+                )
             }
         }
 
         private class ReactionTabChipView(context: Context) : View(context) {
-            private val iconSize = AndroidUtilities.dp(18f)
+            private val iconSize = AndroidUtilities.dp(24f)
             private val iconReceiver = ImageReceiver(this).apply {
                 setAllowLoadingOnAttachedOnly(true)
             }
             private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG)
             private val fallbackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 textAlign = Paint.Align.CENTER
-                textSize = AndroidUtilities.dp(15f).toFloat()
+                textSize = AndroidUtilities.dp(16f).toFloat()
             }
             private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                textSize = AndroidUtilities.dp(13f).toFloat()
+                textSize = AndroidUtilities.dp(14f).toFloat()
                 typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
             }
+            private val allReactionsDrawable = ContextCompat.getDrawable(context, TelegramR.drawable.msg_reactions_filled)?.mutate()
+            var reactionId: String = ""
             private var id = ""
             private var count = 0
             private var selected = false
+            private var selectionProgress = 0f
             private var hasIcon = false
+            private var isAll = false
 
             fun bind(reaction: PostReaction, rawIconUrl: String?, baseUrl: String, selected: Boolean) {
                 this.id = reaction.id
                 this.count = reaction.count
                 this.selected = selected
+                selectionProgress = if (selected) 1f else 0f
+                isAll = false
+                isSelected = selected
+                contentDescription = "${PostReactionRendering.fallbackLabel(reaction.id)}, ${reaction.count}"
                 val iconUrl = rawIconUrl?.let { resolvePostImageUrl(baseUrl, it) }
                 hasIcon = !iconUrl.isNullOrBlank()
                 if (hasIcon) {
@@ -2343,6 +3437,34 @@ class TopicDetailFragment(
                 }
                 requestLayout()
                 invalidate()
+            }
+
+            fun bindAll(count: Int, selected: Boolean, contentDescription: String) {
+                id = TOPIC_REACTION_ALL_FILTER_ID
+                this.count = count
+                this.selected = selected
+                selectionProgress = if (selected) 1f else 0f
+                isAll = true
+                hasIcon = true
+                isSelected = selected
+                this.contentDescription = "$contentDescription, $count"
+                iconReceiver.setImage(null, null, null, null, id, 0)
+                requestLayout()
+                invalidate()
+            }
+
+            fun setSelectionProgress(progress: Float) {
+                selectionProgress = progress.coerceIn(0f, 1f)
+                selected = selectionProgress > 0.5f
+                isSelected = selected
+                invalidate()
+            }
+
+            override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
+                super.onInitializeAccessibilityNodeInfo(info)
+                info.className = "android.widget.Button"
+                info.isClickable = true
+                info.isSelected = selected
             }
 
             override fun onAttachedToWindow() {
@@ -2356,26 +3478,36 @@ class TopicDetailFragment(
             }
 
             override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-                val textWidth = textPaint.measureText(count.toString()).toInt()
+                val countText = LocaleController.formatShortNumber(count, null)
+                val textWidth = textPaint.measureText(countText).toInt()
                 val fallbackWidth = if (hasIcon) 0 else fallbackPaint.measureText(PostReactionRendering.fallbackLabel(id)).toInt().coerceAtLeast(iconSize)
-                val desired = AndroidUtilities.dp(18f) + maxOf(iconSize, fallbackWidth) + AndroidUtilities.dp(5f) + textWidth
+                val desired = AndroidUtilities.dp(8f) + maxOf(iconSize, fallbackWidth) + AndroidUtilities.dp(8f) + textWidth + AndroidUtilities.dp(8f)
                 setMeasuredDimension(desired.coerceAtLeast(AndroidUtilities.dp(52f)), MeasureSpec.getSize(heightMeasureSpec))
             }
 
             override fun onDraw(canvas: Canvas) {
-                val accentColor = Theme.getColor(Theme.key_windowBackgroundWhiteBlueText)
-                val secondaryColor = Theme.getColor(Theme.key_windowBackgroundWhiteGrayText)
-                backgroundPaint.color = Theme.multAlpha(accentColor, if (selected) 0.16f else 0.08f)
-                val radius = height / 2f
+                val selectedBackgroundColor = Theme.getColor(Theme.key_chat_inReactionButtonBackground)
+                val normalBackgroundColor = ColorUtils.setAlphaComponent(selectedBackgroundColor, 0x10)
+                val selectedTextColor = Theme.getColor(Theme.key_chat_inReactionButtonTextSelected)
+                val normalTextColor = Theme.getColor(Theme.key_chat_inReactionButtonText)
+                backgroundPaint.color = ColorUtils.blendARGB(normalBackgroundColor, selectedBackgroundColor, selectionProgress)
+                val contentColor = ColorUtils.blendARGB(normalTextColor, selectedTextColor, selectionProgress)
+                val radius = AndroidUtilities.dp(32f).toFloat()
                 canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), radius, radius, backgroundPaint)
 
-                val iconLeft = AndroidUtilities.dp(9f)
+                val iconLeft = AndroidUtilities.dp(8f)
                 val iconTop = (height - iconSize) / 2
-                if (hasIcon) {
+                if (isAll) {
+                    allReactionsDrawable?.let { drawable ->
+                        drawable.colorFilter = PorterDuffColorFilter(contentColor, PorterDuff.Mode.MULTIPLY)
+                        drawable.setBounds(iconLeft, iconTop, iconLeft + iconSize, iconTop + iconSize)
+                        drawable.draw(canvas)
+                    }
+                } else if (hasIcon) {
                     iconReceiver.setImageCoords(iconLeft.toFloat(), iconTop.toFloat(), iconSize.toFloat(), iconSize.toFloat())
                     iconReceiver.draw(canvas)
                 } else {
-                    fallbackPaint.color = if (selected) accentColor else secondaryColor
+                    fallbackPaint.color = contentColor
                     val fallback = PostReactionRendering.fallbackLabel(id)
                     canvas.drawText(
                         fallback,
@@ -2385,105 +3517,23 @@ class TopicDetailFragment(
                     )
                 }
 
-                textPaint.color = if (selected) accentColor else secondaryColor
-                val text = count.toString()
+                textPaint.color = contentColor
+                val text = LocaleController.formatShortNumber(count, null)
                 canvas.drawText(
                     text,
-                    (iconLeft + iconSize + AndroidUtilities.dp(5f)).toFloat(),
+                    (iconLeft + iconSize + AndroidUtilities.dp(8f)).toFloat(),
                     height / 2f - (textPaint.ascent() + textPaint.descent()) / 2f,
                     textPaint,
                 )
             }
         }
 
-        private class ReactionUserRowView(context: Context, private val baseUrl: String) : FrameLayout(context) {
-            private val avatarSize = AndroidUtilities.dp(36f)
-            private val avatarDrawable = AvatarDrawable()
-            private val avatarImage = ImageReceiver(this).apply {
-                setRoundRadius(avatarSize / 2)
-                setAllowLoadingOnAttachedOnly(true)
-                setDelegate { _, _, _, _ -> invalidate() }
-                setVisibleInvalidate { invalidate() }
-            }
-            private val nameView = TextView(context).apply {
-                setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText))
-                textSize = 15f
-                setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
-                maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.END
-            }
-            private val usernameView = TextView(context).apply {
-                setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText))
-                textSize = 13f
-                maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.END
-            }
-            private val divider = View(context).apply {
-                setBackgroundColor(Theme.getColor(Theme.key_divider))
-            }
-
-            init {
-                setWillNotDraw(false)
-                addView(nameView)
-                addView(usernameView)
-                addView(divider)
-                setPadding(AndroidUtilities.dp(18f), AndroidUtilities.dp(8f), AndroidUtilities.dp(18f), AndroidUtilities.dp(8f))
-            }
-
-            fun bind(user: PostReactionUser, showDivider: Boolean) {
-                val name = user.displayName.ifBlank { user.username }
-                nameView.text = name
-                usernameView.text = if (user.username.isBlank()) "" else "@${user.username}"
-                avatarDrawable.setInfo(user.username.hashCode().toLong(), name)
-                val avatarUrl = resolveAvatarUrl(baseUrl, user.avatarTemplate, user.animatedAvatarUrl, 96)
-                avatarImage.setAllowDecodeSingleFrame(!isAnimatedDiscourseImageUrl(avatarUrl))
-                if (avatarUrl.isBlank()) {
-                    avatarImage.setImage(null, null, avatarDrawable, null, user, 0)
-                } else {
-                    avatarImage.setImage(ImageLocation.getForPath(avatarUrl), avatarImageFilter(user.animatedAvatarUrl, 50), avatarDrawable, null, user, 0)
-                }
-                divider.visibility = if (showDivider) View.VISIBLE else View.GONE
-            }
-
-            override fun onAttachedToWindow() {
-                super.onAttachedToWindow()
-                avatarImage.onAttachedToWindow()
-            }
-
-            override fun onDetachedFromWindow() {
-                avatarImage.onDetachedFromWindow()
-                super.onDetachedFromWindow()
-            }
-
-            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-                val width = MeasureSpec.getSize(widthMeasureSpec)
-                val textWidth = (width - paddingLeft - paddingRight - avatarSize - AndroidUtilities.dp(12f)).coerceAtLeast(0)
-                nameView.measure(MeasureSpec.makeMeasureSpec(textWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(22f), MeasureSpec.EXACTLY))
-                usernameView.measure(MeasureSpec.makeMeasureSpec(textWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(18f), MeasureSpec.EXACTLY))
-                divider.measure(MeasureSpec.makeMeasureSpec(textWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(1, MeasureSpec.EXACTLY))
-                setMeasuredDimension(width, AndroidUtilities.dp(56f))
-            }
-
-            override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
-                val avatarTop = (height - avatarSize) / 2
-                avatarImage.setImageCoords(paddingLeft.toFloat(), avatarTop.toFloat(), avatarSize.toFloat(), avatarSize.toFloat())
-                val textLeft = paddingLeft + avatarSize + AndroidUtilities.dp(12f)
-                val nameTop = AndroidUtilities.dp(8f)
-                nameView.layout(textLeft, nameTop, width - paddingRight, nameTop + nameView.measuredHeight)
-                usernameView.layout(textLeft, nameTop + nameView.measuredHeight, width - paddingRight, nameTop + nameView.measuredHeight + usernameView.measuredHeight)
-                divider.layout(textLeft, height - 1, width - paddingRight, height)
-            }
-
-            override fun dispatchDraw(canvas: Canvas) {
-                avatarImage.draw(canvas)
-                super.dispatchDraw(canvas)
-            }
-        }
     }
 
     private class PullRefreshLayout(
         context: Context,
         private val listView: RecyclerListView,
+        private val canPull: () -> Boolean,
         private val onRefresh: () -> Unit,
     ) : FrameLayout(context) {
         private val maxPull = PullForegroundDrawable.getMaxOverscroll().toFloat()
@@ -2502,8 +3552,11 @@ class TopicDetailFragment(
         private var dragging = false
         private var pullDistance = 0f
         private var thresholdReached = false
+        private var pullingStartTime = 0L
         private var settleAnimator: ValueAnimator? = null
         var isBusy: Boolean = false
+        val isPulling: Boolean
+            get() = dragging || pullDistance > 0f
 
         init {
             pullDrawable.setCell(headerView)
@@ -2522,14 +3575,16 @@ class TopicDetailFragment(
                     settleAnimator?.cancel()
                     pullDrawable.resetText()
                     thresholdReached = false
+                    pullingStartTime = 0L
                     pullDrawable.colorize(false)
                     parent?.requestDisallowInterceptTouchEvent(false)
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = kotlin.math.abs(ev.x - downX)
                     val dy = ev.y - downY
-                    if (dy > touchSlop && dy > dx && !listView.canScrollVertically(-1)) {
+                    if (canPull() && !isBusy && dy > touchSlop && dy > dx && !listView.canScrollVertically(-1)) {
                         dragging = true
+                        pullingStartTime = System.currentTimeMillis()
                         parent?.requestDisallowInterceptTouchEvent(true)
                         return true
                     }
@@ -2546,13 +3601,20 @@ class TopicDetailFragment(
                     settleAnimator?.cancel()
                     pullDrawable.resetText()
                     thresholdReached = false
+                    pullingStartTime = 0L
                     pullDrawable.colorize(false)
                     return true
                 }
                 MotionEvent.ACTION_MOVE -> {
+                    if (!canPull() || isBusy) {
+                        if (pullDistance > 0f) animatePullBack()
+                        dragging = false
+                        return false
+                    }
                     val dy = event.y - downY
                     if (dy > 0 && !listView.canScrollVertically(-1)) {
                         dragging = true
+                        if (pullingStartTime == 0L) pullingStartTime = System.currentTimeMillis()
                         parent?.requestDisallowInterceptTouchEvent(true)
                         setPullDistance(dampenPull(dy))
                         return true
@@ -2560,12 +3622,18 @@ class TopicDetailFragment(
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     if (dragging || pullDistance > 0f) {
-                        if (pullDrawable.pullProgress >= PullForegroundDrawable.SNAP_HEIGHT && !isBusy) {
+                        if (event.actionMasked == MotionEvent.ACTION_UP && topicPullRefreshShouldTrigger(
+                                pullProgress = pullDrawable.pullProgress,
+                                pullingDurationMs = System.currentTimeMillis() - pullingStartTime,
+                                isBusy = isBusy || !canPull(),
+                            )
+                        ) {
                             onRefresh()
                         }
                         pullDrawable.doNotShow()
                         pullDrawable.colorize(false)
                         thresholdReached = false
+                        pullingStartTime = 0L
                         animatePullBack()
                         dragging = false
                         parent?.requestDisallowInterceptTouchEvent(false)
@@ -2584,10 +3652,20 @@ class TopicDetailFragment(
             pullDistance = distance.coerceIn(0f, maxPull)
             listView.translationY = pullDistance
             val progress = (pullDistance / maxPull).coerceIn(0f, 1f)
-            val reached = progress >= PullForegroundDrawable.SNAP_HEIGHT
+            val reached = progress >= PullForegroundDrawable.SNAP_HEIGHT &&
+                System.currentTimeMillis() - pullingStartTime >= PullForegroundDrawable.minPullingTime
             if (thresholdReached != reached) {
                 thresholdReached = reached
                 pullDrawable.colorize(reached)
+                if (reached) {
+                    try {
+                        listView.performHapticFeedback(
+                            HapticFeedbackConstants.KEYBOARD_TAP,
+                            HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING,
+                        )
+                    } catch (_: Exception) {
+                    }
+                }
             }
             pullDrawable.showHidden()
             pullDrawable.setWillDraw(pullDistance > 0f)
@@ -2613,26 +3691,70 @@ class TopicDetailFragment(
                 start()
             }
         }
+
+        fun release() {
+            settleAnimator?.cancel()
+            settleAnimator = null
+            pullingStartTime = 0L
+            dragging = false
+            pullDistance = 0f
+            listView.translationY = 0f
+            pullDrawable.doNotShow()
+            pullDrawable.resetText()
+            pullDrawable.colorize(false)
+        }
     }
 
     private class TopicRepliesSheet(
         context: Context,
         fragment: BaseFragment,
         private val baseUrl: String,
-        sourcePost: Post,
-        replies: List<TopicReplySheetItem>,
         private val onReplySelected: (TopicReplySheetItem) -> Unit,
+        private val onLoadMore: () -> Unit,
+        private val onRetry: () -> Unit,
         private val onDismissed: () -> Unit,
-    ) : BottomSheetWithRecyclerListView(context, fragment, false, true, false, null) {
+    ) : BottomSheetWithRecyclerListView(
+        context,
+        fragment,
+        false,
+        false,
+        false,
+        BottomSheetWithRecyclerListView.ActionBarType.SLIDING,
+        fragment.resourceProvider,
+    ) {
         private lateinit var adapter: Adapter
+        private var canLoadMore = false
 
         init {
             adapter.configure(baseUrl, onReplySelected)
+            setShowHandle(true)
             setOnDismissListener(DialogInterface.OnDismissListener { onDismissed() })
-            recyclerListView.layoutParams = recyclerListView.layoutParams.apply {
-                height = AndroidUtilities.dp(460f)
-            }
-            adapter.submit(sourcePost, replies)
+            recyclerListView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+                override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                    val layoutManager = recyclerView.layoutManager as? LinearLayoutManager ?: return
+                    val outerItemCount = recyclerView.adapter?.itemCount ?: return
+                    if (topicRepliesSheetShouldLoadMore(
+                            dy = dy,
+                            canLoadMore = canLoadMore,
+                            lastVisibleItemPosition = layoutManager.findLastVisibleItemPosition(),
+                            outerItemCount = outerItemCount,
+                        )
+                    ) {
+                        onLoadMore()
+                    }
+                }
+            })
+        }
+
+        fun submit(sourcePost: Post, totalCount: Int, state: TopicPostRepliesUiState) {
+            canLoadMore = state.canLoadMore
+            adapter.submit(
+                sourcePost = sourcePost,
+                totalCount = totalCount,
+                replies = state.posts.map(::topicReplySheetItem),
+                state = state,
+                onRetry = onRetry,
+            )
         }
 
         override fun getTitle(): CharSequence = "Replies"
@@ -2644,6 +3766,9 @@ class TopicDetailFragment(
         private sealed interface Row {
             data class Header(val sourcePost: Post, val count: Int) : Row
             data class Reply(val item: TopicReplySheetItem, val divider: Boolean) : Row
+            data object Loading : Row
+            data object LoadingMore : Row
+            data class State(val message: String, val onRetry: (() -> Unit)?) : Row
         }
 
         private class Adapter : RecyclerListView.SelectionAdapter() {
@@ -2656,18 +3781,36 @@ class TopicDetailFragment(
                 this.onReplySelected = onReplySelected
             }
 
-            fun submit(sourcePost: Post, replies: List<TopicReplySheetItem>) {
+            fun submit(
+                sourcePost: Post,
+                totalCount: Int,
+                replies: List<TopicReplySheetItem>,
+                state: TopicPostRepliesUiState,
+                onRetry: () -> Unit,
+            ) {
                 rows = buildList {
-                    add(Row.Header(sourcePost, replies.size))
+                    add(Row.Header(sourcePost, totalCount))
+                    if (state.isLoading) {
+                        add(Row.Loading)
+                        return@buildList
+                    }
+                    if (replies.isEmpty()) {
+                        add(Row.State(state.errorMessage ?: "No replies", state.errorMessage?.let { onRetry }))
+                        return@buildList
+                    }
                     replies.forEachIndexed { index, reply ->
                         add(Row.Reply(reply, divider = index != replies.lastIndex))
+                    }
+                    when {
+                        state.isLoadingMore -> add(Row.LoadingMore)
+                        state.errorMessage != null -> add(Row.State(state.errorMessage, onRetry))
                     }
                 }
                 notifyDataSetChanged()
             }
 
             override fun isEnabled(holder: RecyclerView.ViewHolder): Boolean {
-                return rows.getOrNull(holder.bindingAdapterPosition) is Row.Reply
+                return holder.itemView is ReplySheetRowView
             }
 
             override fun getItemCount(): Int = rows.size
@@ -2676,14 +3819,17 @@ class TopicDetailFragment(
                 return when (rows[position]) {
                     is Row.Header -> SHEET_ROW_REPLY_HEADER
                     is Row.Reply -> SHEET_ROW_REPLY
+                    Row.Loading, Row.LoadingMore -> SHEET_ROW_LOADING
+                    is Row.State -> SHEET_ROW_EMPTY
                 }
             }
 
             override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
-                val view = if (viewType == SHEET_ROW_REPLY_HEADER) {
-                    ReplySheetHeaderView(parent.context)
-                } else {
-                    ReplySheetRowView(parent.context, baseUrl)
+                val view = when (viewType) {
+                    SHEET_ROW_REPLY_HEADER -> ReplySheetHeaderView(parent.context)
+                    SHEET_ROW_REPLY -> ReplySheetRowView(parent.context, baseUrl)
+                    SHEET_ROW_LOADING -> LoadingCell(parent.context)
+                    else -> TopicFooterCell(parent.context)
                 }
                 return RecyclerListView.Holder(view)
             }
@@ -2695,25 +3841,35 @@ class TopicDetailFragment(
                         (holder.itemView as ReplySheetRowView).bind(row.item, row.divider)
                         holder.itemView.setOnClickListener { onReplySelected(row.item) }
                     }
+                    Row.Loading, Row.LoadingMore -> Unit
+                    is Row.State -> (holder.itemView as TopicFooterCell).bind(
+                        row.message,
+                        row.onRetry?.let { retry -> Runnable(retry) },
+                    )
                 }
             }
         }
 
-        private class ReplySheetHeaderView(context: Context) : AppCompatTextView(context) {
+        private class ReplySheetHeaderView(context: Context) : AppCompatTextView(context), Theme.Colorable {
             init {
-                setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText))
                 textSize = 20f
                 setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
                 setPadding(AndroidUtilities.dp(18f), AndroidUtilities.dp(18f), AndroidUtilities.dp(18f), AndroidUtilities.dp(8f))
+                updateColors()
             }
 
             fun bind(sourcePost: Post, count: Int) {
                 val floor = sourcePost.postNumber?.let { "#${it}" }.orEmpty()
                 text = if (floor.isBlank()) "$count replies" else "$count replies to $floor"
             }
+
+            override fun updateColors() {
+                setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText))
+                invalidate()
+            }
         }
 
-        private class ReplySheetRowView(context: Context, private val baseUrl: String) : FrameLayout(context) {
+        private class ReplySheetRowView(context: Context, private val baseUrl: String) : FrameLayout(context), Theme.Colorable {
             private val avatarSize = AndroidUtilities.dp(36f)
             private val avatarDrawable = AvatarDrawable()
             private val avatarImage = ImageReceiver(this).apply {
@@ -2723,27 +3879,22 @@ class TopicDetailFragment(
                 setVisibleInvalidate { invalidate() }
             }
             private val nameView = TextView(context).apply {
-                setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText))
                 textSize = 15f
                 setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
             }
             private val metaView = TextView(context).apply {
-                setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText))
                 textSize = 12f
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
             }
             private val previewView = TextView(context).apply {
-                setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText))
                 textSize = 13f
                 maxLines = 2
                 ellipsize = android.text.TextUtils.TruncateAt.END
             }
-            private val divider = View(context).apply {
-                setBackgroundColor(Theme.getColor(Theme.key_divider))
-            }
+            private val divider = View(context)
 
             init {
                 setWillNotDraw(false)
@@ -2752,12 +3903,13 @@ class TopicDetailFragment(
                 addView(metaView)
                 addView(previewView)
                 addView(divider)
+                updateColors()
             }
 
             fun bind(reply: TopicReplySheetItem, showDivider: Boolean) {
                 val name = topicPostDisplayName(reply.authorDisplayName, reply.authorUsername)
-                nameView.text = name
-                metaView.text = buildString {
+                nameView.text = Emoji.replaceEmoji(name, nameView.paint.fontMetricsInt, false)
+                val meta = buildString {
                     reply.postNumber?.let { append('#').append(it) }
                     val time = topicPostTimeLabel(reply.createdAt)
                     if (!time.isNullOrBlank()) {
@@ -2769,7 +3921,9 @@ class TopicDetailFragment(
                         append('@').append(reply.authorUsername)
                     }
                 }
-                previewView.text = reply.previewText.ifBlank { "View original reply" }
+                metaView.text = Emoji.replaceEmoji(meta, metaView.paint.fontMetricsInt, false)
+                val preview = reply.previewText.ifBlank { "View original reply" }
+                previewView.text = Emoji.replaceEmoji(preview, previewView.paint.fontMetricsInt, false)
                 divider.visibility = if (showDivider) View.VISIBLE else View.GONE
                 avatarDrawable.setInfo(reply.authorUsername.hashCode().toLong(), name)
                 val avatarUrl = resolveAvatarUrl(baseUrl, reply.authorAvatarTemplate, reply.authorAnimatedAvatarUrl, 96)
@@ -2779,6 +3933,15 @@ class TopicDetailFragment(
                 } else {
                     avatarImage.setImage(ImageLocation.getForPath(avatarUrl), avatarImageFilter(reply.authorAnimatedAvatarUrl, 50), avatarDrawable, null, reply, 0)
                 }
+            }
+
+            override fun updateColors() {
+                setBackground(Theme.getSelectorDrawable(false))
+                nameView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText))
+                metaView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText))
+                previewView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText))
+                divider.setBackgroundColor(Theme.getColor(Theme.key_divider))
+                invalidate()
             }
 
             override fun onAttachedToWindow() {
@@ -5322,6 +6485,7 @@ class TopicDetailFragment(
         private const val VIEW_TYPE_FOOTER = 2
         private const val VIEW_TYPE_LOADING = 3
         private const val VIEW_TYPE_SKELETON = 4
+        private const val VIEW_TYPE_DATE = 5
         private const val SHEET_ROW_HEADER = 9
         private const val SHEET_ROW_REACTION_USERS_TOP_SPACER = 10
         private const val SHEET_ROW_LOADING = 11
@@ -5585,6 +6749,11 @@ class TopicDetailFragment(
                     titleRes = io.github.baba983.nativedo.R.string.topic_reader_action_reply,
                 ),
                 TopicPostAction(
+                    kind = TopicPostActionKind.SELECT_TEXT,
+                    iconRes = postSelectTextIconRes(),
+                    titleRes = io.github.baba983.nativedo.R.string.topic_reader_action_select_text,
+                ),
+                TopicPostAction(
                     kind = TopicPostActionKind.COPY_LINK,
                     iconRes = postCopyLinkIconRes(),
                     titleRes = io.github.baba983.nativedo.R.string.app_browser_copy_link,
@@ -5655,6 +6824,10 @@ class TopicDetailFragment(
             return TelegramR.drawable.msg_link
         }
 
+        fun postSelectTextIconRes(): Int {
+            return TelegramR.drawable.msg_select
+        }
+
         fun selectionCopyFeedbackMessageRes(): Int {
             return TelegramR.string.TextCopied
         }
@@ -5663,11 +6836,37 @@ class TopicDetailFragment(
             return true
         }
 
-        fun postOptionsPopupDimAmount(): Float {
-            return 0.2f
-        }
-
     }
+}
+
+internal fun topicDetailCanStartPullRefresh(
+    isBusy: Boolean,
+    selectionActive: Boolean,
+    popupActive: Boolean,
+    keyboardInset: Int,
+    emojiPanelVisible: Boolean,
+): Boolean {
+    return !isBusy && !selectionActive && !popupActive && keyboardInset <= 0 && !emojiPanelVisible
+}
+
+internal fun topicPullRefreshShouldTrigger(
+    pullProgress: Float,
+    pullingDurationMs: Long,
+    isBusy: Boolean,
+): Boolean {
+    return !isBusy &&
+        pullProgress >= PullForegroundDrawable.SNAP_HEIGHT &&
+        pullingDurationMs >= PullForegroundDrawable.minPullingTime
+}
+
+internal fun topicDetailCanStartSwipeReply(
+    isBusy: Boolean,
+    selectionActive: Boolean,
+    popupActive: Boolean,
+    listScrollLocked: Boolean,
+    pullRefreshActive: Boolean,
+): Boolean {
+    return !isBusy && !selectionActive && !popupActive && !listScrollLocked && !pullRefreshActive
 }
 
 internal fun topicDetailShouldLoadMoreFromScroll(
@@ -5681,6 +6880,19 @@ internal fun topicDetailShouldLoadMoreFromScroll(
         return false
     }
     return lastVisibleItemPosition >= (itemCount - threshold.coerceAtLeast(1)).coerceAtLeast(0)
+}
+
+internal fun topicRepliesSheetShouldLoadMore(
+    dy: Int,
+    canLoadMore: Boolean,
+    lastVisibleItemPosition: Int,
+    outerItemCount: Int,
+    threshold: Int = 3,
+): Boolean {
+    if (!canLoadMore || dy <= 0 || lastVisibleItemPosition < 0 || outerItemCount <= 1) {
+        return false
+    }
+    return lastVisibleItemPosition >= (outerItemCount - threshold.coerceAtLeast(1)).coerceAtLeast(1)
 }
 
 internal fun topicDetailShouldAnchorInitialContent(
@@ -5713,6 +6925,7 @@ internal fun topicDetailListShowsTopicHeader(
 
 internal enum class TopicPostActionKind {
     REPLY,
+    SELECT_TEXT,
     COPY_LINK,
     BOOKMARK,
 }
@@ -5770,8 +6983,14 @@ internal fun topicPostScrimPopupMaxHeight(anchorView: View, popupY: Int): Int {
 }
 
 private const val TOPIC_REPLY_COMPOSER_DEFAULT_HEIGHT_DP = 44
+private const val TOPIC_BOTTOM_INPUT_CONTAINER = 1
+private const val TOPIC_BOTTOM_SEARCH_CONTAINER = 4
+private const val TOPIC_SEARCH_DEBOUNCE_MS = 300L
+private const val TOPIC_SEARCH_ACTION_BAR_ANIMATION_DURATION_MS = 150L
 private const val TOPIC_REPLY_COMPOSER_SEND_BUTTON_WIDTH_DP = 100
-private const val TOPIC_REPLY_COMPOSER_ACTION_BUTTON_WIDTH_DP = 44
+private const val TOPIC_INPUT_ISLAND_RADIUS_DP = 22f
+private const val TOPIC_INPUT_ISLAND_HORIZONTAL_INSET_DP = 7f
+private const val TOPIC_INPUT_ISLAND_BOTTOM_GAP_DP = 9f
 private const val TOPIC_REPLY_COMPOSER_PANEL_HORIZONTAL_INSET_DP = 0f
 private const val TOPIC_REPLY_COMPOSER_PANEL_TOP_INSET_DP = 0f
 private const val TOPIC_REPLY_COMPOSER_PANEL_BOTTOM_INSET_DP = 0f
@@ -5833,19 +7052,22 @@ private val TOPIC_REPLY_COMPOSER_EDIT_TEXT_BOUNDS_INTERPOLATOR by lazy {
 
 private class TopicReplyComposerPanel(
     context: Context,
-    initialText: String,
+    initialDraft: TopicReplyDraft,
     replyToPost: Post?,
-    replyToPostNumber: Int?,
-    private val delayReplyHeaderEnter: Boolean,
     private val onEmojiButtonPressed: (View, View, (String) -> Unit) -> Unit,
     private val onKeyboardRequested: (View) -> Unit,
     private val onReplyContextPressed: (Int) -> Unit,
     private val onBackKeyPressed: (Int, Int) -> Boolean,
+    private val onMentionKeyPressed: (Int, Int) -> Boolean,
     private val onVisibleHeightChanged: () -> Unit,
-    private val onSubmit: (String, Int?) -> Unit,
-    private val onDismissed: () -> Unit,
-) : FrameLayout(context) {
-    private var activeReplyToPostNumber = replyToPostNumber
+    private val onTextChanged: (String) -> Unit,
+    private val onMentionTokenChanged: (TopicMentionToken?) -> Unit,
+    private val onClearReplyTarget: () -> Unit,
+    private val onSubmit: () -> Unit,
+) : TopicInputIslandFrameLayout(context) {
+    private var activeReplyToPostNumber = initialDraft.replyToPostNumber
+    private var bindingDraft = false
+    private var lastReplyHeaderKey: String? = null
     private var submitting = false
     private var sendButtonAnimator: ValueAnimator? = null
     private var sendButtonPopup: ActionBarPopupWindow? = null
@@ -5881,14 +7103,22 @@ private class TopicReplyComposerPanel(
         setTextColor(Theme.getColor(Theme.key_text_RedRegular))
         setPadding(AndroidUtilities.dp(52f), AndroidUtilities.dp(2f), AndroidUtilities.dp(52f), 0)
     }
-    private val editText = EditTextBoldCursor(context).apply {
+    private var editTextReady = false
+    private val editText = object : EditTextBoldCursor(context) {
+        override fun onSelectionChanged(selStart: Int, selEnd: Int) {
+            super.onSelectionChanged(selStart, selEnd)
+            if (editTextReady) {
+                dispatchMentionToken()
+            }
+        }
+    }.apply {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             setFallbackLineSpacing(false)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
             setLocalePreferredLineHeightForMinimumUsed(false)
         }
-        setText(initialText)
+        setText(initialDraft.raw)
         setSelection(text.length)
         setSingleLine(false)
         maxLines = 6
@@ -5930,20 +7160,6 @@ private class TopicReplyComposerPanel(
         scaleY = 0.1f
         setSoundEffectsEnabled(false)
     }
-    private val secondaryActionButton = ComposerActionButton(context, ComposerActionButton.Kind.Attach).apply {
-        isFocusable = true
-        background = Theme.createSelectorDrawable(
-            Theme.getColor(Theme.key_listSelector),
-            Theme.RIPPLE_MASK_CIRCLE_20DP,
-            AndroidUtilities.dp(16f),
-        )
-        contentDescription = context.getString(io.github.baba983.nativedo.R.string.topic_reply_composer_attach)
-    }
-    private val voiceActionButton = ComposerActionButton(context, ComposerActionButton.Kind.Mic).apply {
-        isFocusable = true
-        setSoundEffectsEnabled(false)
-        contentDescription = context.getString(io.github.baba983.nativedo.R.string.topic_reply_composer_voice)
-    }
     private val emojiButton = ChatActivityEnterViewAnimatedIconView(context).apply {
         val padding = AndroidUtilities.dp(TOPIC_REPLY_COMPOSER_ICON_BUTTON_PADDING_DP)
         setPadding(padding, padding, padding, padding)
@@ -5965,6 +7181,11 @@ private class TopicReplyComposerPanel(
         }
     }
     private val openKeyboardRunnable: Runnable = Runnable {
+        if (visibility != View.VISIBLE) {
+            waitingForKeyboardOpen = false
+            waitingForKeyboardOpenFromPopup = false
+            return@Runnable
+        }
         val shouldRetry = if (waitingForKeyboardOpenFromPopup) {
             !dismissed &&
                 waitingForKeyboardOpen &&
@@ -6001,8 +7222,8 @@ private class TopicReplyComposerPanel(
         clipChildren = false
         clipToPadding = false
 
-        val headerSubtitle = replyHeaderSubtitle(initialText, replyToPost)
-        val hasReplyHeader = activeReplyToPostNumber != null || headerSubtitle.isNotBlank()
+        val headerSubtitle = replyHeaderSubtitle(initialDraft.raw, replyToPost)
+        val hasReplyHeader = activeReplyToPostNumber != null
         if (hasReplyHeader) {
             replyHeader.bind(
                 title = replyHeaderTitle(context, replyToPost, activeReplyToPostNumber),
@@ -6016,11 +7237,12 @@ private class TopicReplyComposerPanel(
         }
         content.addView(replyHeader, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
-            if (hasReplyHeader) 0 else LinearLayout.LayoutParams.WRAP_CONTENT,
+            if (hasReplyHeader) {
+                AndroidUtilities.dp(TOPIC_REPLY_COMPOSER_TOP_VIEW_HEIGHT_DP.toFloat())
+            } else {
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            },
         ))
-        if (hasReplyHeader) {
-            replyHeader.prepareEnterAnimation()
-        }
 
         content.addView(errorView, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
@@ -6157,26 +7379,10 @@ private class TopicReplyComposerPanel(
             showSendButtonMenu(sendButton)
             true
         }
-        voiceActionButton.setOnClickListener {
-            topicReplyComposerRequestKeyboard(editText)
-        }
-        secondaryActionButton.setOnClickListener {
-            topicReplyComposerRequestKeyboard(editText)
-        }
         val actionContainer = FrameLayout(context).apply {
             clipChildren = false
             clipToPadding = false
         }
-        actionContainer.addView(secondaryActionButton, LayoutHelper.createFrame(
-            TOPIC_REPLY_COMPOSER_ACTION_BUTTON_WIDTH_DP.toFloat(),
-            TOPIC_REPLY_COMPOSER_DEFAULT_HEIGHT_DP.toFloat(),
-            Gravity.BOTTOM or Gravity.LEFT,
-        ))
-        actionContainer.addView(voiceActionButton, LayoutHelper.createFrame(
-            TOPIC_REPLY_COMPOSER_ACTION_BUTTON_WIDTH_DP.toFloat(),
-            TOPIC_REPLY_COMPOSER_DEFAULT_HEIGHT_DP.toFloat(),
-            Gravity.BOTTOM or Gravity.RIGHT,
-        ))
         actionContainer.addView(sendButton, LayoutHelper.createFrame(
             TOPIC_REPLY_COMPOSER_SEND_BUTTON_WIDTH_DP.toFloat(),
             TOPIC_REPLY_COMPOSER_DEFAULT_HEIGHT_DP.toFloat(),
@@ -6223,11 +7429,18 @@ private class TopicReplyComposerPanel(
                 if (errorView.visibility == View.VISIBLE) {
                     setError(null)
                 }
+                if (!bindingDraft) {
+                    onTextChanged(s?.toString().orEmpty())
+                }
+                dispatchMentionToken()
                 updateSendButtonState()
             }
         })
         editText.setOnKeyListener { _, keyCode, event ->
             if (event != null && onBackKeyPressed(keyCode, event.action)) {
+                return@setOnKeyListener true
+            }
+            if (event != null && onMentionKeyPressed(keyCode, event.action)) {
                 return@setOnKeyListener true
             }
             if (event != null && topicReplyComposerShouldSubmitFromKey(
@@ -6265,19 +7478,35 @@ private class TopicReplyComposerPanel(
             }
             false
         }
+        editTextReady = true
         updateSendButtonState()
 
-        addView(content, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM))
+        addView(
+            content,
+            LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT,
+                LayoutHelper.WRAP_CONTENT.toFloat(),
+                Gravity.BOTTOM,
+                TOPIC_INPUT_ISLAND_HORIZONTAL_INSET_DP,
+                0f,
+                TOPIC_INPUT_ISLAND_HORIZONTAL_INSET_DP,
+                0f,
+            ),
+        )
     }
 
-    fun show() {
+    fun focusAndOpenKeyboard() {
         panelAnimator?.cancel()
         panelAnimator = null
         alpha = 1f
         panelOffsetY = 0f
         updatePanelTranslation()
         AndroidUtilities.cancelRunOnUIThread(showReplyHeaderRunnable)
-        val delayMs = if (delayReplyHeaderEnter) topicReplyComposerTopViewShowDelayMs() else 0L
+        val delayMs = if (topicReplyComposerShouldDelayTopViewForKeyboard(
+                keyboardInset = keyboardInset,
+                emojiPopupShowing = false,
+            ) && activeReplyToPostNumber != null
+        ) topicReplyComposerTopViewShowDelayMs() else 0L
         if (delayMs > 0L) {
             replyHeaderShowPending = true
             AndroidUtilities.runOnUIThread(showReplyHeaderRunnable, delayMs)
@@ -6288,6 +7517,66 @@ private class TopicReplyComposerPanel(
         editText.post {
             requestKeyboardWithRetry()
         }
+    }
+
+    fun bindDraft(draft: TopicReplyDraft, replyToPost: Post?) {
+        val hadReplyTarget = activeReplyToPostNumber != null && replyHeader.visibility == View.VISIBLE
+        activeReplyToPostNumber = draft.replyToPostNumber
+        val currentText = editText.text?.toString().orEmpty()
+        if (currentText != draft.raw) {
+            bindingDraft = true
+            editText.setText(draft.raw)
+            editText.setSelection(draft.raw.length)
+            bindingDraft = false
+        }
+        if (draft.replyToPostNumber != null) {
+            val title = replyHeaderTitle(context, replyToPost, draft.replyToPostNumber)
+            val subtitle = replyHeaderSubtitle(draft.raw, replyToPost)
+            val headerKey = "${draft.replyToPostNumber}|$title|$subtitle"
+            if (lastReplyHeaderKey != headerKey) {
+                replyHeader.bind(
+                    title = title,
+                    subtitle = subtitle,
+                    onClose = ::clearReplyContext,
+                    canOpen = true,
+                    onOpen = ::openReplyContext,
+                )
+                lastReplyHeaderKey = headerKey
+            }
+            if (!hadReplyTarget) {
+                replyHeader.prepareEnterAnimation()
+                replyHeader.startEnterAnimation()
+            }
+        } else if (replyHeader.visibility == View.VISIBLE) {
+            lastReplyHeaderKey = null
+            replyHeader.dismiss(animated = isAttachedToWindow)
+        }
+        dispatchMentionToken()
+        updateSendButtonState()
+    }
+
+    fun replaceMention(token: TopicMentionToken, username: String) {
+        if (submitting) return
+        val editable = editText.text ?: return
+        val replacement = topicMentionReplacement(editable, token, username) ?: return
+        val insertion = replacement.text.substring(token.start, replacement.cursor)
+        editable.replace(token.start, token.end, insertion)
+        editText.setSelection(replacement.cursor.coerceAtMost(editable.length))
+        editText.requestFocus()
+        dispatchMentionToken()
+    }
+
+    fun refreshMentionSuggestions() {
+        dispatchMentionToken()
+    }
+
+    private fun dispatchMentionToken() {
+        val editable = editText.text
+        val cursor = editText.selectionStart
+        val selectionEnd = editText.selectionEnd
+        onMentionTokenChanged(
+            if (editable == null || cursor < 0 || cursor != selectionEnd) null else topicMentionTokenAt(editable, cursor),
+        )
     }
 
     fun requestKeyboardWithRetry(forceWaitForKeyboard: Boolean = false) {
@@ -6316,11 +7605,15 @@ private class TopicReplyComposerPanel(
     }
 
     fun closeKeyboard() {
+        cancelKeyboardRequest()
+        AndroidUtilities.hideKeyboard(editText)
+        editText.clearFocus()
+    }
+
+    fun cancelKeyboardRequest() {
         AndroidUtilities.cancelRunOnUIThread(openKeyboardRunnable)
         waitingForKeyboardOpen = false
         waitingForKeyboardOpenFromPopup = false
-        AndroidUtilities.hideKeyboard(editText)
-        editText.clearFocus()
     }
 
     fun dismiss(animated: Boolean = true) {
@@ -6342,9 +7635,9 @@ private class TopicReplyComposerPanel(
         waitingForKeyboardOpenFromPopup = false
         AndroidUtilities.hideKeyboard(editText)
         val parentView = parent as? ViewGroup
-        val remove = {
+        val remove: () -> Unit = {
             parentView?.removeView(this)
-            onDismissed()
+            Unit
         }
         if (animated && isAttachedToWindow) {
             animatePanel(
@@ -6362,6 +7655,7 @@ private class TopicReplyComposerPanel(
     }
 
     override fun onDetachedFromWindow() {
+        onMentionTokenChanged(null)
         sendButtonPopup?.dismiss()
         sendButtonPopup = null
         keyboardInsetAnimator?.cancel()
@@ -6377,6 +7671,10 @@ private class TopicReplyComposerPanel(
         super.onDetachedFromWindow()
     }
 
+    fun release() {
+        dismiss(animated = false)
+    }
+
     fun onKeyboardVisible() {
         if (!topicReplyComposerShouldFlushDelayedTopView(
                 keyboardVisible = true,
@@ -6390,58 +7688,20 @@ private class TopicReplyComposerPanel(
     }
 
     fun setKeyboardInset(inset: Int) {
-        val nextInset = topicReplyComposerKeyboardInsetPx(inset)
+        val nextInset = topicReplyComposerPanelKeyboardInsetPx(inset)
         if (nextInset > 0) {
             waitingForKeyboardOpen = false
             waitingForKeyboardOpenFromPopup = false
             AndroidUtilities.cancelRunOnUIThread(openKeyboardRunnable)
         }
-        if (keyboardInsetTarget == nextInset && (keyboardInset == nextInset || keyboardInsetAnimator != null)) {
-            if (keyboardInset == nextInset) {
-                updatePanelTranslation()
-            }
+        if (keyboardInsetTarget == nextInset && keyboardInset == nextInset) {
             return
         }
         keyboardInsetTarget = nextInset
         keyboardInsetAnimator?.cancel()
         keyboardInsetAnimator = null
-        if (!isAttachedToWindow || dismissed) {
-            keyboardInset = nextInset
-            updatePanelTranslation()
-            return
-        }
-        val fromInset = keyboardInset
-        if (fromInset == nextInset) {
-            updatePanelTranslation()
-            return
-        }
-        val animator = ValueAnimator.ofInt(fromInset, nextInset).apply {
-            duration = AdjustPanLayoutHelper.keyboardDuration
-            interpolator = AdjustPanLayoutHelper.keyboardInterpolator
-            addUpdateListener { animation ->
-                keyboardInset = animation.animatedValue as Int
-                updatePanelTranslation()
-                onVisibleHeightChanged()
-            }
-            addListener(object : android.animation.AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: android.animation.Animator) {
-                    if (keyboardInsetAnimator === animation) {
-                        keyboardInsetAnimator = null
-                        keyboardInset = nextInset
-                        updatePanelTranslation()
-                        onVisibleHeightChanged()
-                    }
-                }
-
-                override fun onAnimationCancel(animation: android.animation.Animator) {
-                    if (keyboardInsetAnimator === animation) {
-                        keyboardInsetAnimator = null
-                    }
-                }
-            })
-        }
-        keyboardInsetAnimator = animator
-        animator.start()
+        keyboardInset = nextInset
+        updatePanelTranslation()
     }
 
     fun isKeyboardAnimationInProgress(): Boolean {
@@ -6479,6 +7739,9 @@ private class TopicReplyComposerPanel(
 
     fun setSubmitting(submitting: Boolean) {
         this.submitting = submitting
+        if (submitting) {
+            onMentionTokenChanged(null)
+        }
         sendButton.isSubmitting = submitting
         updateSendButtonState()
     }
@@ -6552,7 +7815,7 @@ private class TopicReplyComposerPanel(
         }
         setError(null)
         setSubmitting(true)
-        onSubmit(raw, activeReplyToPostNumber)
+        onSubmit()
     }
 
     private fun insertEmoji(reactionId: String) {
@@ -6757,7 +8020,7 @@ private class TopicReplyComposerPanel(
     }
 
     private fun updatePanelTranslation() {
-        translationY = panelOffsetY - keyboardInset
+        translationY = panelOffsetY
     }
 
     private fun updateSendButtonState() {
@@ -6779,16 +8042,10 @@ private class TopicReplyComposerPanel(
             sendButton.alpha = if (visible) 1f else 0f
             sendButton.scaleX = if (visible) 1f else 0.1f
             sendButton.scaleY = if (visible) 1f else 0.1f
-            voiceActionButton.visibility = if (visible) View.INVISIBLE else View.VISIBLE
-            voiceActionButton.alpha = if (visible) 0f else 1f
-            voiceActionButton.scaleX = if (visible) 0.1f else 1f
-            voiceActionButton.scaleY = if (visible) 0.1f else 1f
             return
         }
         if (visible) {
             sendButton.visibility = View.VISIBLE
-        } else {
-            voiceActionButton.visibility = View.VISIBLE
         }
         val fromAlpha = sendButton.alpha
         val toAlpha = if (visible) 1f else 0f
@@ -6796,12 +8053,6 @@ private class TopicReplyComposerPanel(
         val toScaleX = if (visible) 1f else 0.1f
         val fromScaleY = sendButton.scaleY
         val toScaleY = if (visible) 1f else 0.1f
-        val voiceFromAlpha = voiceActionButton.alpha
-        val voiceToAlpha = if (visible) 0f else 1f
-        val voiceFromScaleX = voiceActionButton.scaleX
-        val voiceToScaleX = if (visible) 0.1f else 1f
-        val voiceFromScaleY = voiceActionButton.scaleY
-        val voiceToScaleY = if (visible) 0.1f else 1f
         if (visible && fromAlpha < 0.25f) {
             sendButton.appear()
         }
@@ -6813,17 +8064,12 @@ private class TopicReplyComposerPanel(
                 sendButton.alpha = lerpFloat(fromAlpha, toAlpha, t)
                 sendButton.scaleX = lerpFloat(fromScaleX, toScaleX, t)
                 sendButton.scaleY = lerpFloat(fromScaleY, toScaleY, t)
-                voiceActionButton.alpha = lerpFloat(voiceFromAlpha, voiceToAlpha, t)
-                voiceActionButton.scaleX = lerpFloat(voiceFromScaleX, voiceToScaleX, t)
-                voiceActionButton.scaleY = lerpFloat(voiceFromScaleY, voiceToScaleY, t)
             }
             addListener(object : android.animation.AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: android.animation.Animator) {
                     if (sendButtonAnimator === animation) {
                         if (!visible) {
                             sendButton.visibility = View.INVISIBLE
-                        } else {
-                            voiceActionButton.visibility = View.INVISIBLE
                         }
                         sendButtonAnimator = null
                     }
@@ -6841,11 +8087,9 @@ private class TopicReplyComposerPanel(
     }
 
     private fun clearReplyContext() {
-        if (editText.text?.toString()?.isBlank() != false) {
-            dismiss()
-            return
-        }
+        onClearReplyTarget()
         activeReplyToPostNumber = null
+        lastReplyHeaderKey = null
         replyHeader.dismiss(animated = true)
     }
 
@@ -6883,11 +8127,12 @@ internal fun topicReplyComposerDefaultHeightDp(): Int = TOPIC_REPLY_COMPOSER_DEF
 
 internal fun topicReplyComposerSendButtonWidthDp(): Int = TOPIC_REPLY_COMPOSER_SEND_BUTTON_WIDTH_DP
 
-internal fun topicReplyComposerActionButtonWidthDp(): Int = TOPIC_REPLY_COMPOSER_ACTION_BUTTON_WIDTH_DP
 
 internal fun topicReplyComposerPanelHorizontalInsetDp(): Float = TOPIC_REPLY_COMPOSER_PANEL_HORIZONTAL_INSET_DP
 
 internal fun topicReplyComposerPanelBottomInsetDp(): Float = TOPIC_REPLY_COMPOSER_PANEL_BOTTOM_INSET_DP
+
+internal fun topicInputIslandBottomGapDp(): Float = TOPIC_INPUT_ISLAND_BOTTOM_GAP_DP
 
 internal fun topicReplyComposerPanelRadiusDp(): Float = TOPIC_REPLY_COMPOSER_PANEL_RADIUS_DP
 
@@ -7089,18 +8334,6 @@ internal fun topicReplyComposerShouldCloseKeyboardFromEditTextBack(
         !emojiPanelShowing
 }
 
-internal fun topicReplyComposerShouldDismissFromEditTextBack(
-    keyCode: Int,
-    action: Int,
-    keyboardVisible: Boolean,
-    emojiPanelShowing: Boolean,
-): Boolean {
-    return keyCode == KeyEvent.KEYCODE_BACK &&
-        action == KeyEvent.ACTION_UP &&
-        !keyboardVisible &&
-        !emojiPanelShowing
-}
-
 internal fun topicReplyComposerTopViewTranslationY(
     headerHeightPx: Int,
     visibilityProgress: Float,
@@ -7142,8 +8375,11 @@ internal fun topicReplyComposerShouldAnimateEditTextBounds(
 }
 
 internal fun topicReplyComposerKeyboardInsetPx(keyboardHeight: Int): Int {
-    return if (keyboardHeight > AndroidUtilities.dp(20f)) keyboardHeight else 0
+    val keyboardOnlyHeight = (keyboardHeight - AndroidUtilities.navigationBarHeight).coerceAtLeast(0)
+    return if (keyboardOnlyHeight > AndroidUtilities.dp(20f)) keyboardOnlyHeight else 0
 }
+
+internal fun topicReplyComposerPanelKeyboardInsetPx(inset: Int): Int = inset.coerceAtLeast(0)
 
 internal fun topicReplyComposerActiveKeyboardInset(panelAttached: Boolean, keyboardInset: Int): Int {
     return if (panelAttached) keyboardInset.coerceAtLeast(0) else 0
@@ -7339,8 +8575,14 @@ private fun drawEmojiLoadingPlaceholder(
     canvas.drawRoundRect(AndroidUtilities.rectTmp, radius, radius, paint)
 }
 
+private open class TopicInputIslandFrameLayout(context: Context) : FrameLayout(context) {
+    init {
+        clipChildren = false
+        clipToPadding = false
+    }
+}
+
 private class ComposerBackgroundLayout(context: Context) : LinearLayout(context) {
-    private val panelPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private var topView: View? = null
     private var textFieldContainer: View? = null
     private var inputFieldHeightProvider: (() -> Float)? = null
@@ -7385,24 +8627,6 @@ private class ComposerBackgroundLayout(context: Context) : LinearLayout(context)
         return result
     }
 
-    override fun onDraw(canvas: Canvas) {
-        val shadow = Theme.chat_composeShadowDrawable
-        val shadowHeight = shadow?.intrinsicHeight?.coerceAtLeast(0) ?: 0
-        if (shadow != null && shadowHeight > 0) {
-            shadow.alpha = 0xff
-            shadow.setBounds(0, 0, width, shadowHeight)
-            shadow.draw(canvas)
-        }
-        panelPaint.style = Paint.Style.FILL
-        panelPaint.color = Theme.getColor(Theme.key_chat_messagePanelBackground)
-        canvas.drawRect(
-            0f,
-            shadowHeight.toFloat(),
-            width.toFloat(),
-            height.toFloat(),
-            panelPaint,
-        )
-    }
 }
 
 private class ReplyContextView(context: Context) : ChatActivityEnterTopView(context) {
@@ -7950,98 +9174,6 @@ private fun composerIconColor(kind: ComposerIconKind): Int {
     }
 }
 
-private class ComposerActionButton(
-    context: Context,
-    private val kind: Kind,
-) : View(context) {
-    enum class Kind {
-        Attach,
-        Mic,
-    }
-
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        strokeCap = Paint.Cap.ROUND
-        strokeJoin = Paint.Join.ROUND
-    }
-    private val rect = RectF()
-    private val bounce = ButtonBounce(this)
-
-    init {
-        isClickable = true
-    }
-
-    override fun setPressed(pressed: Boolean) {
-        super.setPressed(pressed)
-        bounce.setPressed(pressed)
-    }
-
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        val scale = bounce.getScale(0.1f)
-        val cx = width / 2f
-        val cy = height / 2f
-        val save = if (scale != 1f) {
-            val count = canvas.save()
-            canvas.scale(scale, scale, cx, cy)
-            count
-        } else {
-            -1
-        }
-        when (kind) {
-            Kind.Attach -> drawSecondaryAction(canvas, cx, cy)
-            Kind.Mic -> drawMicAction(canvas, cx, cy)
-        }
-        if (save >= 0) {
-            canvas.restoreToCount(save)
-        }
-    }
-
-    private fun drawSecondaryAction(canvas: Canvas, cx: Float, cy: Float) {
-        paint.style = Paint.Style.STROKE
-        paint.strokeWidth = AndroidUtilities.dp(2.1f).toFloat()
-        paint.color = Theme.getColor(Theme.key_glass_defaultIcon)
-        paint.alpha = 255
-        val w = AndroidUtilities.dp(19f).toFloat()
-        val h = AndroidUtilities.dp(24f).toFloat()
-        rect.set(cx - w / 2f, cy - h / 2f, cx + w / 2f, cy + h / 2f)
-        canvas.drawRoundRect(rect, AndroidUtilities.dp(5f).toFloat(), AndroidUtilities.dp(5f).toFloat(), paint)
-        canvas.drawLine(
-            rect.left + AndroidUtilities.dp(5f),
-            rect.bottom - AndroidUtilities.dp(5f),
-            rect.right - AndroidUtilities.dp(5f),
-            rect.top + AndroidUtilities.dp(5f),
-            paint,
-        )
-    }
-
-    private fun drawMicAction(canvas: Canvas, cx: Float, cy: Float) {
-        paint.color = Theme.getColor(Theme.key_glass_defaultIcon)
-        paint.alpha = 255
-        paint.style = Paint.Style.STROKE
-        paint.strokeWidth = AndroidUtilities.dp(2.2f).toFloat()
-        rect.set(
-            cx - AndroidUtilities.dp(5.5f),
-            cy - AndroidUtilities.dp(11f),
-            cx + AndroidUtilities.dp(5.5f),
-            cy + AndroidUtilities.dp(5f),
-        )
-        canvas.drawRoundRect(rect, AndroidUtilities.dp(5.5f).toFloat(), AndroidUtilities.dp(5.5f).toFloat(), paint)
-        canvas.drawArc(
-            cx - AndroidUtilities.dp(10f),
-            cy - AndroidUtilities.dp(2f),
-            cx + AndroidUtilities.dp(10f),
-            cy + AndroidUtilities.dp(13f),
-            16f,
-            148f,
-            false,
-            paint,
-        )
-        canvas.drawLine(cx, cy + AndroidUtilities.dp(13f), cx, cy + AndroidUtilities.dp(18f), paint)
-        canvas.drawLine(cx - AndroidUtilities.dp(6f), cy + AndroidUtilities.dp(18f), cx + AndroidUtilities.dp(6f), cy + AndroidUtilities.dp(18f), paint)
-        paint.alpha = 255
-    }
-}
-
 private class ComposerSendButton(context: Context) : View(context) {
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val sendIcon: Drawable = context.resources.getDrawable(topicReplyComposerSendButtonIconRes()).mutate().apply {
@@ -8193,10 +9325,10 @@ private fun replyHeaderTitle(context: Context, replyToPost: Post?, replyToPostNu
 }
 
 private fun replyHeaderSubtitle(initialText: String, replyToPost: Post?): String {
-    val quotedLine = initialText
-        .lineSequence()
-        .map { it.trim() }
-        .firstOrNull { line ->
+    val quotedLine = initialText.takeIf { it.trimStart().startsWith("[quote") }
+        ?.lineSequence()
+        ?.map { it.trim() }
+        ?.firstOrNull { line ->
             line.isNotBlank() && !line.startsWith("[quote") && line != "[/quote]"
         }
         ?.removePrefix(">")
@@ -8211,6 +9343,10 @@ private fun lerpFloat(from: Float, to: Float, progress: Float): Float {
     return from + (to - from) * progress
 }
 
+private fun lerpInt(from: Int, to: Int, progress: Float): Int {
+    return (from + (to - from) * progress).toInt()
+}
+
 internal fun discourseQuoteMarkup(text: CharSequence, sourcePost: Post?, topicId: Long): String {
     val quoteText = text.toString().trim('\n')
     val postNumber = sourcePost?.postNumber
@@ -8220,6 +9356,43 @@ internal fun discourseQuoteMarkup(text: CharSequence, sourcePost: Post?, topicId
         return "[quote=\"$escapedUsername, post:$postNumber, topic:$topicId\"]\n$quoteText\n[/quote]"
     }
     return quoteText.lineSequence().joinToString("\n") { line -> "> $line" }
+}
+
+internal fun topicReactionUsersForFilter(
+    groups: List<PostReactionUsersGroup>,
+    selectedReactionId: String?,
+): List<PostReactionUser> {
+    if (selectedReactionId != TOPIC_REACTION_ALL_FILTER_ID) {
+        return groups.firstOrNull { group -> group.id == selectedReactionId }?.users.orEmpty()
+    }
+    return groups
+        .flatMap { group -> group.users }
+        .sortedByDescending { user -> user.createdAt }
+        .distinctBy { user -> user.username }
+}
+
+internal fun topicReplyFooterCount(post: Post, loadedPreviewCount: Int): Int =
+    maxOf(post.replyCount, loadedPreviewCount)
+
+internal fun topicPostsBelowViewport(streamPostIds: List<Long>, lastVisiblePostId: Long?): Int {
+    if (lastVisiblePostId == null || streamPostIds.isEmpty()) return 0
+    val index = streamPostIds.indexOf(lastVisiblePostId)
+    return if (index < 0) 0 else (streamPostIds.lastIndex - index).coerceAtLeast(0)
+}
+
+internal fun topicShouldShowPageDown(
+    postsBelowViewport: Int,
+    selectionActive: Boolean,
+    hasReachedLatest: Boolean,
+    distanceFromLatestPx: Int,
+    revealThresholdPx: Int,
+): Boolean {
+    if (postsBelowViewport <= 0 || selectionActive) return false
+    return !hasReachedLatest || distanceFromLatestPx >= revealThresholdPx
+}
+
+internal fun topicPageDownControlsBottomOffset(panelHeight: Int, panelBottomInset: Int): Int {
+    return panelHeight.coerceAtLeast(0) + panelBottomInset.coerceAtLeast(0) + AndroidUtilities.dp(4f)
 }
 
 internal enum class TopicSelectionTouchDispatch {
@@ -8242,9 +9415,16 @@ internal fun topicSelectionTouchDispatch(
 private class TopicViewModelFactory(
     private val repository: TopicRepository,
     private val topicId: Long,
+    private val replyDraftStore: io.github.baba983.nativedo.feature.topic.data.TopicReplyDraftStore,
+    private val replyDraftKey: TopicReplyDraftKey?,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-        return TopicViewModel(repository = repository, topicId = topicId) as T
+        return TopicViewModel(
+            repository = repository,
+            topicId = topicId,
+            replyDraftStore = replyDraftStore,
+            replyDraftKey = replyDraftKey,
+        ) as T
     }
 }

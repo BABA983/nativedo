@@ -1,0 +1,18 @@
+{
+  "users": [
+    {
+      "username": "orchid.hu",
+      "name": "Orchid Hu",
+      "avatar_template": "/user_avatar/linux.do/orchid.hu/{size}/1_2.png",
+      "priority_group": 0
+    }
+  ],
+  "groups": [
+    {
+      "name": "team",
+      "full_name": "Team",
+      "flair_url": "star",
+      "user_count": 12
+    }
+  ]
+}

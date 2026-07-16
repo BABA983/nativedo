@@ -4,8 +4,67 @@ import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.test.runTest
 import io.github.baba983.nativedo.core.web.decodeJavascriptString
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [28], manifest = Config.NONE)
 class LoginWebViewFragmentTest {
+    @Test
+    fun backPrioritizesRestoreThenWebHistoryThenSessionCompletion() {
+        assertThat(loginWebBackAction(true, true, true)).isEqualTo(LoginWebBackAction.CONSUME_RESTORE)
+        assertThat(loginWebBackAction(false, true, true)).isEqualTo(LoginWebBackAction.GO_WEB_HISTORY)
+        assertThat(loginWebBackAction(false, false, true)).isEqualTo(LoginWebBackAction.COMPLETE_SESSION)
+        assertThat(loginWebBackAction(false, false, false)).isEqualTo(LoginWebBackAction.POP_FRAGMENT)
+    }
+
+    @Test
+    fun navigationKeepsOAuthHttpPagesInsideAndRoutesExternalSchemes() {
+        assertThat(loginWebNavigationDecision("https://github.com/login/oauth"))
+            .isEqualTo(LoginWebNavigationDecision.LoadInWebView)
+        assertThat(loginWebNavigationDecision("mailto:admin@linux.do"))
+            .isEqualTo(LoginWebNavigationDecision.OpenExternal)
+        assertThat(loginWebNavigationDecision("javascript:alert(1)"))
+            .isEqualTo(LoginWebNavigationDecision.Block)
+        assertThat(loginWebNavigationDecision("file:///data/local/tmp/token"))
+            .isEqualTo(LoginWebNavigationDecision.Block)
+    }
+
+    @Test
+    fun intentNavigationUsesSafeHttpsFallback() {
+        val decision = loginWebNavigationDecision(
+            "intent://oauth#Intent;scheme=github;S.browser_fallback_url=https%3A%2F%2Fgithub.com%2Flogin;end",
+        )
+
+        assertThat(decision).isEqualTo(
+            LoginWebNavigationDecision.LoadFallback("https://github.com/login"),
+        )
+    }
+
+    @Test
+    fun mainFrameErrorsBlockCompletionButSubresourcesDoNot() {
+        assertThat(loginWebShouldShowMainFrameError(isForMainFrame = true)).isTrue()
+        assertThat(loginWebShouldShowMainFrameError(isForMainFrame = false)).isFalse()
+        assertThat(loginWebShouldShowMainFrameError(isForMainFrame = true, httpStatusCode = 503)).isTrue()
+        assertThat(loginWebShouldShowMainFrameError(isForMainFrame = true, httpStatusCode = 302)).isFalse()
+
+        assertThat(loginWebCanCompleteNavigation(navigationGeneration = 4, failedNavigationGeneration = 4)).isFalse()
+        assertThat(loginWebCanCompleteNavigation(navigationGeneration = 5, failedNavigationGeneration = 4)).isTrue()
+    }
+
+    @Test
+    fun downloadsKeepCookiesSameOriginOnly() {
+        assertThat(loginWebDownloadDecision("https://linux.do/uploads/private.pdf", "https://linux.do/"))
+            .isEqualTo(LoginWebDownloadDecision.AUTHENTICATED_SAME_ORIGIN)
+        assertThat(loginWebDownloadDecision("https://cdn.example.com/public.pdf", "https://linux.do/"))
+            .isEqualTo(LoginWebDownloadDecision.OPEN_EXTERNAL)
+        assertThat(loginWebDownloadDecision("blob:https://linux.do/uuid", "https://linux.do/"))
+            .isEqualTo(LoginWebDownloadDecision.BLOCK)
+        assertThat(loginWebDownloadDecision("file:///data/data/token", "https://linux.do/"))
+            .isEqualTo(LoginWebDownloadDecision.BLOCK)
+    }
+
     @Test
     fun shouldAttemptLoginSessionRestore_requiresLinuxDoPageOutsideLogin() {
         assertThat(
@@ -87,6 +146,24 @@ class LoginWebViewFragmentTest {
         assertThat(authenticated).isTrue()
         assertThat(completed).isTrue()
         assertThat(attempts).isEqualTo(3)
+    }
+
+    @Test
+    fun awaitAuthenticatedSession_retriesTransientCompletionFailure() = runTest {
+        var completionAttempts = 0
+
+        val authenticated = awaitAuthenticatedSession(
+            hasAuthenticatedCookies = { true },
+            completeLogin = {
+                completionAttempts += 1
+                completionAttempts == 3
+            },
+            maxAttempts = 5,
+            delayMillis = 1,
+        )
+
+        assertThat(authenticated).isTrue()
+        assertThat(completionAttempts).isEqualTo(3)
     }
 
     @Test

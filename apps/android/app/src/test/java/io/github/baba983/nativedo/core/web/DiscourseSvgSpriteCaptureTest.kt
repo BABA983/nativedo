@@ -3,7 +3,12 @@ package io.github.baba983.nativedo.core.web
 import com.google.common.truth.Truth.assertThat
 import io.github.baba983.nativedo.core.storage.SvgSpriteStore
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(manifest = Config.NONE)
 class DiscourseSvgSpriteCaptureTest {
     @Test
     fun looksLikeDiscourseSvgSpriteMarkup_requiresSymbolAndViewBox() {

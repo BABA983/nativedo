@@ -1,5 +1,6 @@
 package io.github.baba983.nativedo.ui.topic
 
+import android.animation.ValueAnimator
 import android.content.Context
 import android.content.DialogInterface
 import android.graphics.Canvas
@@ -9,13 +10,18 @@ import android.graphics.RectF
 import android.text.TextPaint
 import android.text.TextUtils
 import android.view.Gravity
-import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
+import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.core.graphics.ColorUtils
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.viewpager.widget.PagerAdapter
+import androidx.viewpager.widget.ViewPager
 import io.github.baba983.nativedo.core.model.PostReactionUser
 import io.github.baba983.nativedo.core.ui.avatarImageFilter
 import io.github.baba983.nativedo.core.ui.isAnimatedDiscourseImageUrl
@@ -23,242 +29,252 @@ import io.github.baba983.nativedo.core.ui.resolveAvatarUrl
 import io.github.baba983.nativedo.feature.topic.ui.PollOptionRef
 import io.github.baba983.nativedo.feature.topic.ui.TopicPollVotersSheetUiState
 import io.github.baba983.nativedo.feature.topic.ui.TopicPollVotersUiState
+import io.github.baba983.nativedo.ui.components.DiscourseUserCell
+import io.github.baba983.nativedo.ui.components.FixedHeaderRecyclerBottomSheet
 import io.github.baba983.nativedo.ui.topic.cell.TopicFooterCell
 import org.telegram.messenger.AndroidUtilities
-import org.telegram.messenger.ImageLocation
-import org.telegram.messenger.ImageReceiver
 import org.telegram.ui.ActionBar.BaseFragment
-import org.telegram.ui.ActionBar.BottomSheet
 import org.telegram.ui.ActionBar.Theme
-import org.telegram.ui.Components.AvatarDrawable
-import org.telegram.ui.Components.LayoutHelper
+import org.telegram.ui.Cells.LoadingCell
+import org.telegram.ui.Components.CubicBezierInterpolator
 import org.telegram.ui.Components.RecyclerListView
-import kotlin.math.max
 import kotlin.math.min
 
 internal class TopicPollVotersSheet(
     context: Context,
-    private val fragment: BaseFragment,
+    fragment: BaseFragment,
     private val baseUrl: String,
     private val onOptionSelected: (String) -> Unit,
+    private val onLoadMore: () -> Unit,
+    private val onRetry: () -> Unit,
     private val onUserSelected: (String) -> Unit,
     private val onDismissed: () -> Unit,
-) : BottomSheet(context, false, null) {
-    private val adapter = Adapter()
-    private val recyclerListView = RecyclerListView(context)
-    private val fixedHeaderView = PollFixedHeaderView(context, backgroundPaddingLeft, onOptionSelected)
-    private val rect = RectF()
-    private val sizePolicy = StableUserListSheetSizePolicy(AndroidUtilities.dp(56f))
-    private var scrollOffsetY = 0
-    private var ignoreLayout = false
-    private var fullHeight = false
-    private var contentRowsHeight = sizePolicy.rowsHeight()
-    private var statusBarOpen: Boolean? = null
+) : FixedHeaderRecyclerBottomSheet(context, fragment) {
+    private val sheetContext = context
+    private val pager = ViewPager(context)
+    private val pagerAdapter = PollPagesAdapter()
+    private val pagesByOptionId = linkedMapOf<String, PollVotersPage>()
+    private var optionIds: List<String> = emptyList()
+    private val fixedHeaderView = PollFixedHeaderView(
+        context,
+        backgroundPaddingLeft,
+        onOptionSelected = { optionId ->
+            selectOption(optionId, smoothScroll = true, notifySelection = true)
+        },
+    )
+    private val sizePolicy = StableUserListSheetSizePolicy(AndroidUtilities.dp(DiscourseUserCell.ITEM_HEIGHT_DP.toFloat()))
+    private var contentHeightAnimator: ValueAnimator? = null
     private var lastSelectedOptionId: String? = null
+    private var suppressPageSelectionCallback = false
+    private var pagerScrollState = ViewPager.SCROLL_STATE_IDLE
 
     init {
-        setUseLightStatusBar(fragment.isLightStatusBar)
-        containerView = object : FrameLayout(context) {
-            override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
-                if (ev.action == MotionEvent.ACTION_DOWN && scrollOffsetY != 0 && ev.y < scrollOffsetY) {
-                    dismiss()
-                    return true
-                }
-                return super.onInterceptTouchEvent(ev)
-            }
-
-            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-                val height = MeasureSpec.getSize(heightMeasureSpec)
-                ignoreLayout = true
-                setPadding(backgroundPaddingLeft, AndroidUtilities.statusBarHeight, backgroundPaddingLeft, 0)
-                ignoreLayout = false
-                fixedHeaderView.measure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED))
-                val contentSize = fixedHeaderView.measuredHeight + contentRowsHeight + backgroundPaddingTop + AndroidUtilities.statusBarHeight
-                val recyclerParams = recyclerListView.layoutParams as? FrameLayout.LayoutParams
-                if (recyclerParams != null && recyclerParams.topMargin != fixedHeaderView.measuredHeight) {
-                    recyclerParams.topMargin = fixedHeaderView.measuredHeight
-                    recyclerListView.layoutParams = recyclerParams
-                }
-                var padding = if (contentSize < height / 5f * 3.2f) 0 else (height / 5f * 2).toInt()
-                if (padding != 0 && contentSize < height) {
-                    padding -= height - contentSize
-                }
-                if (padding == 0) {
-                    padding = backgroundPaddingTop
-                }
-                if (recyclerListView.paddingTop != padding) {
-                    ignoreLayout = true
-                    recyclerListView.setPadding(0, padding, 0, AndroidUtilities.dp(8f))
-                    ignoreLayout = false
-                }
-                fullHeight = contentSize >= height
-                super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(minOf(contentSize, height), MeasureSpec.EXACTLY))
-            }
-
-            override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
-                super.onLayout(changed, left, top, right, bottom)
-                updateLayout()
-            }
-
-            override fun requestLayout() {
-                if (ignoreLayout) return
-                super.requestLayout()
-            }
-
-            override fun onDraw(canvas: Canvas) {
-                var y = scrollOffsetY - backgroundPaddingTop + AndroidUtilities.dp(6f)
-                var top = scrollOffsetY - backgroundPaddingTop - AndroidUtilities.dp(13f)
-                var statusBarHeight = 0
-                var radProgress = 1f
-                top += AndroidUtilities.statusBarHeight
-                y += AndroidUtilities.statusBarHeight
-                if (fullHeight) {
-                    if (top + backgroundPaddingTop < AndroidUtilities.statusBarHeight * 2) {
-                        val diff = min(AndroidUtilities.statusBarHeight, AndroidUtilities.statusBarHeight * 2 - top - backgroundPaddingTop)
-                        top -= diff
-                        radProgress = 1f - min(1f, diff * 2f / AndroidUtilities.statusBarHeight)
-                    }
-                    if (top + backgroundPaddingTop < AndroidUtilities.statusBarHeight) {
-                        statusBarHeight = min(AndroidUtilities.statusBarHeight, AndroidUtilities.statusBarHeight - top - backgroundPaddingTop)
-                    }
-                }
-                shadowDrawable.setBounds(0, top, measuredWidth, measuredHeight)
-                shadowDrawable.draw(canvas)
-                if (radProgress != 1f) {
-                    Theme.dialogs_onlineCirclePaint.color = Theme.getColor(Theme.key_dialogBackground)
-                    rect.set(
-                        backgroundPaddingLeft.toFloat(),
-                        (backgroundPaddingTop + top).toFloat(),
-                        (measuredWidth - backgroundPaddingLeft).toFloat(),
-                        (backgroundPaddingTop + top + AndroidUtilities.dp(24f)).toFloat(),
-                    )
-                    val radius = AndroidUtilities.dp(12f) * radProgress
-                    canvas.drawRoundRect(rect, radius, radius, Theme.dialogs_onlineCirclePaint)
-                }
-                val handleAlpha = max(0f, min(1f, (y - AndroidUtilities.statusBarHeight).toFloat() / AndroidUtilities.dp(16f)))
-                if (handleAlpha > 0f) {
-                    val width = AndroidUtilities.dp(36f)
-                    rect.set(
-                        (measuredWidth - width) / 2f,
-                        y.toFloat(),
-                        (measuredWidth + width) / 2f,
-                        (y + AndroidUtilities.dp(4f)).toFloat(),
-                    )
-                    Theme.dialogs_onlineCirclePaint.color = Theme.getColor(Theme.key_sheet_scrollUp)
-                    Theme.dialogs_onlineCirclePaint.alpha = (Theme.dialogs_onlineCirclePaint.alpha * handleAlpha).toInt()
-                    canvas.drawRoundRect(rect, AndroidUtilities.dp(2f).toFloat(), AndroidUtilities.dp(2f).toFloat(), Theme.dialogs_onlineCirclePaint)
-                }
-                if (statusBarHeight > 0) {
-                    Theme.dialogs_onlineCirclePaint.color = Theme.getColor(Theme.key_dialogBackground)
-                    canvas.drawRect(
-                        backgroundPaddingLeft.toFloat(),
-                        (AndroidUtilities.statusBarHeight - statusBarHeight).toFloat(),
-                        (measuredWidth - backgroundPaddingLeft).toFloat(),
-                        AndroidUtilities.statusBarHeight.toFloat(),
-                        Theme.dialogs_onlineCirclePaint,
-                    )
-                }
-                updateLightStatusBar(statusBarHeight > AndroidUtilities.statusBarHeight / 2)
-            }
-        }
-        containerView.setWillNotDraw(false)
-        containerView.setPadding(backgroundPaddingLeft, 0, backgroundPaddingLeft, 0)
-        fixNavigationBar(Theme.getColor(Theme.key_dialogBackground))
-        adapter.configure(baseUrl, onUserSelected)
-        adapter.setTopSpacerHeight(0)
         setOnDismissListener(DialogInterface.OnDismissListener { onDismissed() })
-        recyclerListView.itemAnimator = null
-        recyclerListView.clipToPadding = false
-        recyclerListView.layoutManager = LinearLayoutManager(context)
-        recyclerListView.adapter = adapter
-        recyclerListView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
-            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
-                updateLayout()
+        pager.adapter = pagerAdapter
+        pager.offscreenPageLimit = 1
+        pager.addOnPageChangeListener(object : ViewPager.OnPageChangeListener {
+            override fun onPageScrolled(position: Int, positionOffset: Float, positionOffsetPixels: Int) {
+                val fromId = optionIds.getOrNull(position) ?: return
+                val fromPage = pagesByOptionId[fromId] ?: return
+                val toId = optionIds.getOrNull(position + 1)
+                val toPage = toId?.let(pagesByOptionId::get)
+                if (toId != null && toPage != null && positionOffset > 0f) {
+                    contentHeightAnimator?.cancel()
+                    fixedHeaderView.setPageProgress(fromId, toId, positionOffset)
+                    setContentHeightPx(lerpInt(fromPage.contentHeight, toPage.contentHeight, positionOffset))
+                    setRecyclerListTransition(fromPage.listView, toPage.listView, positionOffset)
+                } else {
+                    setContentHeightPx(fromPage.contentHeight)
+                }
+            }
+
+            override fun onPageSelected(position: Int) {
+                val optionId = optionIds.getOrNull(position) ?: return
+                lastSelectedOptionId = optionId
+                if (!suppressPageSelectionCallback) {
+                    onOptionSelected(optionId)
+                }
+            }
+
+            override fun onPageScrollStateChanged(state: Int) {
+                pagerScrollState = state
+                if (state == ViewPager.SCROLL_STATE_IDLE) {
+                    val optionId = optionIds.getOrNull(pager.currentItem) ?: return
+                    val page = pagesByOptionId[optionId] ?: return
+                    setActiveRecyclerListView(page.listView)
+                    setContentHeightPx(page.contentHeight)
+                    fixedHeaderView.setSelectedOption(optionId)
+                }
             }
         })
-        containerView.addView(recyclerListView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT.toFloat(), Gravity.TOP or Gravity.LEFT, 0f, 0f, 0f, 0f))
-        containerView.addView(fixedHeaderView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP or Gravity.LEFT))
-        fixedHeaderView.bringToFront()
+            setSheetContentView(pager)
+            setFixedHeaderView(fixedHeaderView)
+            setHeaderShadowDelegate { visible -> fixedHeaderView.setShadowVisible(visible) }
+            setKeepSheetPositionOnScroll(true)
+            setMinimumContentHeightPx(sizePolicy.minimumHeight())
+        setContentHeightPx(sizePolicy.rowsHeight())
     }
 
     fun submit(sheetState: TopicPollVotersSheetUiState, votersState: TopicPollVotersUiState) {
         val tabOptions = buildTabOptions(sheetState, votersState)
         val selected = votersState.selectedOptionId ?: tabOptions.firstOrNull()?.id
-        val selectedGroup = votersState.groups.firstOrNull { group -> group.id == selected }
-        val selectedUsers = selectedGroup?.users.orEmpty()
-        val selectedId = selected
-        val predictedUserCount = tabOptions.firstOrNull { option -> option.id == selectedId }?.votes
+        val selectedId = selected?.takeIf { candidate -> tabOptions.any { it.id == candidate } }
+            ?: tabOptions.firstOrNull()?.id
         val selectedChanged = lastSelectedOptionId != selectedId
-        lastSelectedOptionId = selectedId
+        val animateSelectionChange = lastSelectedOptionId != null && selectedChanged
+        reconcilePages(tabOptions.map(PollOptionRef::id))
         fixedHeaderView.bind(
             title = sheetState.pollTitle?.takeIf { it.isNotBlank() } ?: "投票结果",
             options = tabOptions,
             selectedId = selectedId,
         )
-        contentRowsHeight = sizePolicy.rowsHeight(
-            userCount = if (votersState.isLoading) predictedUserCount else selectedUsers.size,
-        )
-        adapter.submit(votersState, selectedUsers, sizePolicy.skeletonRows(predictedUserCount))
-        containerView.requestLayout()
-        if (selectedChanged) {
-            recyclerListView.post { recyclerListView.scrollToPosition(0) }
+        optionIds.forEach { optionId ->
+            val page = pagesByOptionId.getValue(optionId)
+            val optionState = votersState.optionPages[optionId]
+            val users = votersState.groups.firstOrNull { group -> group.id == optionId }?.users.orEmpty()
+            val predictedUserCount = tabOptions.firstOrNull { option -> option.id == optionId }?.votes
+            val isInitialLoading = optionState?.let { it.isLoading && !it.hasLoaded } == true
+            page.canLoadMore = optionState?.let { it.hasLoaded && !it.isLoading && !it.endReached } == true
+            page.contentHeight = sizePolicy.rowsHeight(
+                userCount = if (isInitialLoading) predictedUserCount else users.size,
+            )
+            page.adapter.submit(
+                isLoading = isInitialLoading,
+                isLoadingMore = optionState?.let { it.isLoading && it.hasLoaded } == true,
+                errorMessage = optionState?.errorMessage,
+                selectedUsers = users,
+                loadingRowCount = sizePolicy.skeletonRows(predictedUserCount),
+                onRetry = onRetry,
+            )
+        }
+        val activeId = selectedId?.takeIf(optionIds::contains) ?: optionIds.firstOrNull() ?: return
+        val activePage = pagesByOptionId.getValue(activeId)
+        val selectedIndex = optionIds.indexOf(activeId)
+        if (pager.currentItem != selectedIndex) {
+            suppressPageSelectionCallback = true
+            pager.setCurrentItem(selectedIndex, false)
+            suppressPageSelectionCallback = false
+        }
+        lastSelectedOptionId = activeId
+        if (pagerScrollState == ViewPager.SCROLL_STATE_IDLE) {
+            setActiveRecyclerListView(activePage.listView)
+            setContentHeight(activePage.contentHeight, animateSelectionChange)
         }
     }
 
-    override fun canDismissWithSwipe(): Boolean = false
-
-    private fun updateLightStatusBar(open: Boolean) {
-        if (statusBarOpen == open) return
-        val openBgLight = AndroidUtilities.computePerceivedBrightness(Theme.getColor(Theme.key_dialogBackground)) > 0.721f
-        statusBarOpen = open
-        AndroidUtilities.setLightStatusBar(window, if (open) openBgLight else fragment.isLightStatusBar)
+    private fun reconcilePages(nextOptionIds: List<String>) {
+        if (optionIds == nextOptionIds) return
+        optionIds = nextOptionIds
+        optionIds.forEach(::pageForOption)
+        pagerAdapter.notifyDataSetChanged()
     }
 
-    private fun updateLayout() {
-        if (recyclerListView.childCount <= 0) {
-            setScrollOffsetY(recyclerListView.paddingTop)
+    private fun pageForOption(optionId: String): PollVotersPage {
+        return pagesByOptionId.getOrPut(optionId) {
+            val listView = RecyclerListView(sheetContext).apply {
+                itemAnimator = null
+                layoutManager = LinearLayoutManager(sheetContext)
+            }
+            val pageAdapter = Adapter().apply {
+                configure(baseUrl)
+                setTopSpacerHeight(0)
+            }
+            val page = PollVotersPage(optionId, listView, pageAdapter, sizePolicy.minimumHeight())
+            listView.adapter = pageAdapter
+            listView.setOnItemClickListener(RecyclerListView.OnItemClickListener { _, position ->
+                pageAdapter.usernameAt(position)?.let(onUserSelected)
+            })
+            listView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+                override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                    if (dy <= 0 || !page.canLoadMore || optionIds.getOrNull(pager.currentItem) != optionId) return
+                    val layoutManager = recyclerView.layoutManager as? LinearLayoutManager ?: return
+                    if (layoutManager.findLastVisibleItemPosition() >= pageAdapter.itemCount - 3) {
+                        page.canLoadMore = false
+                        onLoadMore()
+                    }
+                }
+            })
+            registerScrollableRecyclerListView(listView)
+            page
+        }
+    }
+
+    private fun selectOption(optionId: String, smoothScroll: Boolean, notifySelection: Boolean) {
+        val position = optionIds.indexOf(optionId)
+        if (position < 0 || pager.currentItem == position) return
+        suppressPageSelectionCallback = !notifySelection
+        pager.setCurrentItem(position, smoothScroll)
+        suppressPageSelectionCallback = false
+    }
+
+    private fun setContentHeight(targetHeight: Int, animated: Boolean) {
+        contentHeightAnimator?.cancel()
+        if (!animated || contentHeightPx == targetHeight) {
+            setContentHeightPx(targetHeight)
             return
         }
-        var firstChild: View? = null
-        var firstChildPosition = -1
-        for (index in 0 until recyclerListView.childCount) {
-            val child = recyclerListView.getChildAt(index)
-            val position = recyclerListView.getChildAdapterPosition(child)
-            if (firstChildPosition == -1 || firstChildPosition > position) {
-                firstChild = child
-                firstChildPosition = position
+        contentHeightAnimator = ValueAnimator.ofInt(contentHeightPx, targetHeight).also { animator ->
+            animator.duration = 150L
+            animator.interpolator = CubicBezierInterpolator.DEFAULT
+            animator.addUpdateListener { valueAnimator ->
+                setContentHeightPx(valueAnimator.animatedValue as Int)
             }
-        }
-        val newOffset = if (firstChild != null && firstChild.top >= 0) firstChild.top else 0
-        fixedHeaderView.setShadowVisible(newOffset == 0 && recyclerListView.canScrollVertically(-1))
-        if (scrollOffsetY != newOffset) {
-            setScrollOffsetY(newOffset)
+            animator.start()
         }
     }
 
-    private fun setScrollOffsetY(newOffset: Int) {
-        scrollOffsetY = newOffset
-        fixedHeaderView.translationY = newOffset.toFloat()
-        fixedHeaderView.bringToFront()
-        containerView.invalidate()
+    private data class PollVotersPage(
+        val optionId: String,
+        val listView: RecyclerListView,
+        val adapter: Adapter,
+        var contentHeight: Int,
+        var canLoadMore: Boolean = false,
+    )
+
+    private inner class PollPagesAdapter : PagerAdapter() {
+        override fun getCount(): Int = optionIds.size
+
+        override fun isViewFromObject(view: View, `object`: Any): Boolean {
+            return view === (`object` as PollVotersPage).listView
+        }
+
+        override fun instantiateItem(container: ViewGroup, position: Int): Any {
+            val page = pageForOption(optionIds[position])
+            (page.listView.parent as? ViewGroup)?.removeView(page.listView)
+            container.addView(page.listView)
+            return page
+        }
+
+        override fun destroyItem(container: ViewGroup, position: Int, `object`: Any) {
+            container.removeView((`object` as PollVotersPage).listView)
+        }
+
+        override fun getItemPosition(`object`: Any): Int {
+            val position = optionIds.indexOf((`object` as PollVotersPage).optionId)
+            return if (position >= 0) position else POSITION_NONE
+        }
     }
 
     private sealed interface Row {
         data class TopSpacer(val height: Int) : Row
         data class Loading(val rowCount: Int) : Row
-        data class Empty(val message: String) : Row
-        data class User(val user: PostReactionUser, val divider: Boolean) : Row
+        data class Empty(val message: String, val onRetry: (() -> Unit)?) : Row
+        data class User(val user: PostReactionUser) : Row
+        data object LoadingMore : Row
+        data class LoadMoreError(val message: String, val onRetry: () -> Unit) : Row
     }
 
     private class Adapter : RecyclerListView.SelectionAdapter() {
         private var rows: List<Row> = emptyList()
         private var baseUrl: String = ""
-        private var onUserSelected: (String) -> Unit = {}
         private var topSpacerHeight: Int = AndroidUtilities.dp(140f)
 
-        fun configure(baseUrl: String, onUserSelected: (String) -> Unit) {
+        fun configure(baseUrl: String) {
             this.baseUrl = baseUrl
-            this.onUserSelected = onUserSelected
+        }
+
+        fun usernameAt(position: Int): String? {
+            return (rows.getOrNull(position) as? Row.User)?.user?.username?.takeIf { it.isNotBlank() }
         }
 
         fun setTopSpacerHeight(height: Int) {
@@ -269,21 +285,28 @@ internal class TopicPollVotersSheet(
         }
 
         fun submit(
-            votersState: TopicPollVotersUiState,
+            isLoading: Boolean,
+            isLoadingMore: Boolean,
+            errorMessage: String?,
             selectedUsers: List<PostReactionUser>,
             loadingRowCount: Int,
+            onRetry: () -> Unit,
         ) {
             rows = buildList {
                 if (topSpacerHeight > 0) {
                     add(Row.TopSpacer(topSpacerHeight))
                 }
-                if (votersState.isLoading) {
+                if (isLoading) {
                     add(Row.Loading(loadingRowCount))
                 } else if (selectedUsers.isEmpty()) {
-                    add(Row.Empty(votersState.errorMessage ?: "暂无投票用户"))
+                    add(Row.Empty(errorMessage ?: "暂无投票用户", errorMessage?.let { onRetry }))
                 } else {
-                    selectedUsers.forEachIndexed { index, user ->
-                        add(Row.User(user, divider = index != selectedUsers.lastIndex))
+                    selectedUsers.forEach { user ->
+                        add(Row.User(user))
+                    }
+                    when {
+                        isLoadingMore -> add(Row.LoadingMore)
+                        errorMessage != null -> add(Row.LoadMoreError(errorMessage, onRetry))
                     }
                 }
             }
@@ -302,6 +325,8 @@ internal class TopicPollVotersSheet(
                 is Row.Loading -> VIEW_LOADING
                 is Row.Empty -> VIEW_EMPTY
                 is Row.User -> VIEW_USER
+                Row.LoadingMore -> VIEW_LOADING_MORE
+                is Row.LoadMoreError -> VIEW_EMPTY
             }
         }
 
@@ -309,7 +334,8 @@ internal class TopicPollVotersSheet(
             val view = when (viewType) {
                 VIEW_TOP_SPACER -> TopSpacerView(parent.context)
                 VIEW_LOADING -> PollUsersSkeletonView(parent.context)
-                VIEW_USER -> PollUserRowView(parent.context, baseUrl)
+                VIEW_USER -> DiscourseUserCell(parent.context, DiscourseUserCell.STYLE_POLL)
+                VIEW_LOADING_MORE -> LoadingCell(parent.context)
                 else -> TopicFooterCell(parent.context)
             }
             return RecyclerListView.Holder(view)
@@ -319,8 +345,23 @@ internal class TopicPollVotersSheet(
             when (val row = rows[position]) {
                 is Row.TopSpacer -> (holder.itemView as TopSpacerView).setHeight(row.height)
                 is Row.Loading -> (holder.itemView as PollUsersSkeletonView).setRowCount(row.rowCount)
-                is Row.Empty -> (holder.itemView as TopicFooterCell).bind(row.message, null)
-                is Row.User -> (holder.itemView as PollUserRowView).bind(row.user, row.divider, onUserSelected)
+                is Row.Empty -> (holder.itemView as TopicFooterCell).bind(
+                    row.message,
+                    row.onRetry?.let { retry -> Runnable(retry) },
+                )
+                is Row.User -> {
+                    val avatarUrl = resolveAvatarUrl(baseUrl, row.user.avatarTemplate, row.user.animatedAvatarUrl, 96)
+                    (holder.itemView as DiscourseUserCell).bind(
+                        row.user.displayName,
+                        row.user.username,
+                        avatarUrl,
+                        avatarImageFilter(row.user.animatedAvatarUrl, 50),
+                        isAnimatedDiscourseImageUrl(avatarUrl),
+                        row.user,
+                    )
+                }
+                Row.LoadingMore -> Unit
+                is Row.LoadMoreError -> (holder.itemView as TopicFooterCell).bind(row.message, Runnable(row.onRetry))
             }
         }
     }
@@ -343,10 +384,10 @@ internal class TopicPollVotersSheet(
         private val rect = RectF()
         private val clipRect = Rect()
         private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-        private val rowHeight = AndroidUtilities.dp(56f)
+        private val rowHeight = AndroidUtilities.dp(DiscourseUserCell.ITEM_HEIGHT_DP.toFloat())
         private var rowCount = 5
         private val avatarSize = AndroidUtilities.dp(36f)
-        private val horizontalInset = AndroidUtilities.dp(18f)
+        private val horizontalInset = AndroidUtilities.dp(8f)
 
         fun setRowCount(rowCount: Int) {
             val normalized = rowCount.coerceAtLeast(1)
@@ -369,9 +410,8 @@ internal class TopicPollVotersSheet(
                 val top = index * rowHeight
                 val centerY = top + rowHeight / 2f
                 canvas.drawCircle(horizontalInset + avatarSize / 2f, centerY, avatarSize / 2f, paint)
-                val textLeft = horizontalInset + avatarSize + AndroidUtilities.dp(12f)
-                drawRound(canvas, textLeft, top + AndroidUtilities.dp(13f), textLeft + AndroidUtilities.dp(128f), top + AndroidUtilities.dp(24f), 5f)
-                drawRound(canvas, textLeft, top + AndroidUtilities.dp(34f), textLeft + AndroidUtilities.dp(84f), top + AndroidUtilities.dp(42f), 4f)
+                val textLeft = AndroidUtilities.dp(58f)
+                drawRound(canvas, textLeft, top + AndroidUtilities.dp(20f), width - AndroidUtilities.dp(53f), top + AndroidUtilities.dp(28f), 8f)
             }
         }
 
@@ -414,6 +454,14 @@ internal class TopicPollVotersSheet(
             tabsView.bind(options, selectedId)
         }
 
+        fun setPageProgress(fromId: String, toId: String, progress: Float) {
+            tabsView.setPageProgress(fromId, toId, progress)
+        }
+
+        fun setSelectedOption(optionId: String) {
+            tabsView.setSelectedOption(optionId)
+        }
+
         fun setShadowVisible(visible: Boolean) {
             val target = if (visible) 1f else 0f
             if (shadowView.alpha == target) return
@@ -450,59 +498,111 @@ internal class TopicPollVotersSheet(
     private class PollOptionTabsView(
         context: Context,
         private val onOptionSelected: (String) -> Unit,
-    ) : FrameLayout(context) {
+    ) : HorizontalScrollView(context) {
+        private val tabsContainer = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(AndroidUtilities.dp(6f), 0, 0, 0)
+        }
         private val chips = mutableListOf<PollOptionTabChipView>()
+        private var selectedId: String? = null
+        private var selectionAnimator: ValueAnimator? = null
 
         init {
-            setPadding(AndroidUtilities.dp(12f), AndroidUtilities.dp(10f), AndroidUtilities.dp(12f), AndroidUtilities.dp(8f))
+            isHorizontalScrollBarEnabled = false
+            isFillViewport = false
+            clipToPadding = false
+            addView(tabsContainer, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT))
         }
 
         fun bind(options: List<PollOptionRef>, selectedId: String?) {
-            removeAllViews()
+            val previousSelectedId = this.selectedId
+            this.selectedId = selectedId
+            selectionAnimator?.cancel()
+            tabsContainer.removeAllViews()
             chips.clear()
             options.forEach { option ->
                 val chip = PollOptionTabChipView(context).apply {
-                    bind(option, selected = option.id == selectedId)
-                    setOnClickListener { onOptionSelected(option.id) }
+                    optionId = option.id
+                    bind(option, selectionProgress = if (option.id == selectedId) 1f else 0f)
+                    setOnClickListener {
+                        if (this@PollOptionTabsView.selectedId != option.id) {
+                            onOptionSelected(option.id)
+                        }
+                    }
                 }
                 chips += chip
-                addView(chip)
+                tabsContainer.addView(
+                    chip,
+                    LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, AndroidUtilities.dp(32f)).apply {
+                        gravity = Gravity.CENTER_VERTICAL
+                        marginEnd = AndroidUtilities.dp(6f)
+                    },
+                )
             }
             requestLayout()
+            post {
+                val selectedChip = chips.firstOrNull { chip -> chip.optionId == selectedId } ?: return@post
+                val targetScroll = centeredScrollFor(selectedChip)
+                if (previousSelectedId != null && previousSelectedId != selectedId) {
+                    val startScroll = scrollX
+                    val previousChip = chips.firstOrNull { chip -> chip.optionId == previousSelectedId }
+                    previousChip?.setSelectionProgress(1f)
+                    selectedChip.setSelectionProgress(0f)
+                    ValueAnimator.ofFloat(0f, 1f).also { animator ->
+                        selectionAnimator = animator
+                        animator.duration = 150L
+                        animator.interpolator = CubicBezierInterpolator.DEFAULT
+                        animator.addUpdateListener { valueAnimator ->
+                            val progress = valueAnimator.animatedValue as Float
+                            scrollTo((startScroll + (targetScroll - startScroll) * progress).toInt(), 0)
+                            previousChip?.setSelectionProgress(1f - progress)
+                            selectedChip.setSelectionProgress(progress)
+                        }
+                        animator.start()
+                    }
+                } else {
+                    scrollTo(targetScroll, 0)
+                }
+            }
+        }
+
+        fun setPageProgress(fromId: String, toId: String, progress: Float) {
+            val fromChip = chips.firstOrNull { chip -> chip.optionId == fromId } ?: return
+            val toChip = chips.firstOrNull { chip -> chip.optionId == toId } ?: return
+            val normalizedProgress = progress.coerceIn(0f, 1f)
+            selectionAnimator?.cancel()
+            chips.forEach { chip ->
+                chip.setSelectionProgress(
+                    when (chip) {
+                        fromChip -> 1f - normalizedProgress
+                        toChip -> normalizedProgress
+                        else -> 0f
+                    },
+                )
+            }
+            val fromScroll = centeredScrollFor(fromChip).toFloat()
+            val toScroll = centeredScrollFor(toChip).toFloat()
+            scrollTo((fromScroll + (toScroll - fromScroll) * normalizedProgress).toInt(), 0)
+        }
+
+        fun setSelectedOption(optionId: String) {
+            selectedId = optionId
+            selectionAnimator?.cancel()
+            chips.forEach { chip ->
+                chip.setSelectionProgress(if (chip.optionId == optionId) 1f else 0f)
+            }
+            post {
+                val selectedChip = chips.firstOrNull { chip -> chip.optionId == optionId } ?: return@post
+                scrollTo(centeredScrollFor(selectedChip), 0)
+            }
         }
 
         override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-            val width = MeasureSpec.getSize(widthMeasureSpec)
-            val chipHeight = AndroidUtilities.dp(32f)
-            val gap = AndroidUtilities.dp(8f)
-            val available = (width - paddingLeft - paddingRight).coerceAtLeast(0)
-            var x = 0
-            var y = paddingTop
-            var rowHeight = chipHeight
-            chips.forEach { chip ->
-                chip.measure(MeasureSpec.makeMeasureSpec(available, MeasureSpec.AT_MOST), MeasureSpec.makeMeasureSpec(chipHeight, MeasureSpec.EXACTLY))
-                if (x > 0 && x + chip.measuredWidth > available) {
-                    x = 0
-                    y += rowHeight + gap
-                }
-                x += chip.measuredWidth + gap
-            }
-            setMeasuredDimension(width, y + rowHeight + paddingBottom)
+            super.onMeasure(widthMeasureSpec, MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(44f), MeasureSpec.EXACTLY))
         }
 
-        override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
-            val gap = AndroidUtilities.dp(8f)
-            val available = (right - left - paddingLeft - paddingRight).coerceAtLeast(0)
-            var x = paddingLeft
-            var y = paddingTop
-            chips.forEach { chip ->
-                if (x > paddingLeft && x - paddingLeft + chip.measuredWidth > available) {
-                    x = paddingLeft
-                    y += chip.measuredHeight + gap
-                }
-                chip.layout(x, y, x + chip.measuredWidth, y + chip.measuredHeight)
-                x += chip.measuredWidth + gap
-            }
+        private fun centeredScrollFor(chip: View): Int {
+            return (chip.left - (width - chip.width) / 2).coerceAtLeast(0)
         }
     }
 
@@ -517,14 +617,32 @@ internal class TopicPollVotersSheet(
         }
         private var label = ""
         private var count = 0
-        private var selected = false
+        var optionId: String = ""
+        private var selectionProgress = 0f
 
-        fun bind(option: PollOptionRef, selected: Boolean) {
+        fun bind(option: PollOptionRef, selectionProgress: Float) {
             label = option.label.trim()
             count = option.votes
-            this.selected = selected
+            this.selectionProgress = selectionProgress
+            isSelected = selectionProgress >= 0.5f
+            contentDescription = "$label, $count"
             requestLayout()
             invalidate()
+        }
+
+        fun setSelectionProgress(progress: Float) {
+            val normalized = progress.coerceIn(0f, 1f)
+            if (selectionProgress == normalized) return
+            selectionProgress = normalized
+            isSelected = normalized >= 0.5f
+            invalidate()
+        }
+
+        override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
+            super.onInitializeAccessibilityNodeInfo(info)
+            info.className = "android.widget.Button"
+            info.isClickable = true
+            info.isSelected = isSelected
         }
 
         private fun ellipsizedLabel(maxWidth: Float): String {
@@ -537,7 +655,7 @@ internal class TopicPollVotersSheet(
 
         override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
             countPaint.typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
-            labelPaint.typeface = if (selected) android.graphics.Typeface.DEFAULT_BOLD else android.graphics.Typeface.DEFAULT
+            labelPaint.typeface = android.graphics.Typeface.DEFAULT
             val countText = count.toString()
             val countWidth = countPaint.measureText(countText)
             val maxLabelWidth = AndroidUtilities.dp(160f).toFloat()
@@ -549,11 +667,19 @@ internal class TopicPollVotersSheet(
         override fun onDraw(canvas: Canvas) {
             val accentColor = Theme.getColor(Theme.key_windowBackgroundWhiteBlueText)
             val secondaryColor = Theme.getColor(Theme.key_windowBackgroundWhiteGrayText)
-            backgroundPaint.color = if (selected) Theme.multAlpha(accentColor, 0.12f) else Theme.getColor(Theme.key_windowBackgroundGray)
+            backgroundPaint.color = ColorUtils.blendARGB(
+                Theme.getColor(Theme.key_windowBackgroundGray),
+                Theme.multAlpha(accentColor, 0.12f),
+                selectionProgress,
+            )
             val radius = height / 2f
             canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), radius, radius, backgroundPaint)
-            labelPaint.color = if (selected) accentColor else Theme.getColor(Theme.key_windowBackgroundWhiteBlackText)
-            countPaint.color = if (selected) accentColor else secondaryColor
+            labelPaint.color = ColorUtils.blendARGB(
+                Theme.getColor(Theme.key_windowBackgroundWhiteBlackText),
+                accentColor,
+                selectionProgress,
+            )
+            countPaint.color = ColorUtils.blendARGB(secondaryColor, accentColor, selectionProgress)
             val countText = count.toString()
             val countWidth = countPaint.measureText(countText)
             val maxLabelWidth = (width - AndroidUtilities.dp(18f) - AndroidUtilities.dp(8f) - countWidth).coerceAtLeast(0f)
@@ -564,102 +690,16 @@ internal class TopicPollVotersSheet(
         }
     }
 
-    private class PollUserRowView(
-        context: Context,
-        private val baseUrl: String,
-    ) : FrameLayout(context) {
-        private val avatarSize = AndroidUtilities.dp(36f)
-        private val avatarDrawable = AvatarDrawable()
-        private val avatarImage = ImageReceiver(this).apply {
-            setRoundRadius(avatarSize / 2)
-            setAllowLoadingOnAttachedOnly(true)
-            setDelegate { _, _, _, _ -> invalidate() }
-            setVisibleInvalidate { invalidate() }
-        }
-        private val nameView = TextView(context).apply {
-            setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText))
-            textSize = 15f
-            setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        }
-        private val usernameView = TextView(context).apply {
-            setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText))
-            textSize = 13f
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        }
-        private val divider = View(context).apply {
-            setBackgroundColor(Theme.getColor(Theme.key_divider))
-        }
-
-        init {
-            setWillNotDraw(false)
-            addView(nameView)
-            addView(usernameView)
-            addView(divider)
-            setPadding(AndroidUtilities.dp(18f), AndroidUtilities.dp(8f), AndroidUtilities.dp(18f), AndroidUtilities.dp(8f))
-        }
-
-        fun bind(user: PostReactionUser, showDivider: Boolean, onUserSelected: (String) -> Unit) {
-            val name = user.displayName.ifBlank { user.username }
-            nameView.text = name
-            usernameView.text = if (user.username.isBlank()) "" else "@${user.username}"
-            avatarDrawable.setInfo(user.username.hashCode().toLong(), name)
-            val avatarUrl = resolveAvatarUrl(baseUrl, user.avatarTemplate, user.animatedAvatarUrl, 96)
-            avatarImage.setAllowDecodeSingleFrame(!isAnimatedDiscourseImageUrl(avatarUrl))
-            if (avatarUrl.isBlank()) {
-                avatarImage.setImage(null, null, avatarDrawable, null, user, 0)
-            } else {
-                avatarImage.setImage(ImageLocation.getForPath(avatarUrl), avatarImageFilter(user.animatedAvatarUrl, 50), avatarDrawable, null, user, 0)
-            }
-            divider.visibility = if (showDivider) VISIBLE else GONE
-            setOnClickListener {
-                val username = user.username
-                if (username.isNotBlank()) onUserSelected(username)
-            }
-        }
-
-        override fun onAttachedToWindow() {
-            super.onAttachedToWindow()
-            avatarImage.onAttachedToWindow()
-        }
-
-        override fun onDetachedFromWindow() {
-            avatarImage.onDetachedFromWindow()
-            super.onDetachedFromWindow()
-        }
-
-        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-            val width = MeasureSpec.getSize(widthMeasureSpec)
-            val textWidth = (width - paddingLeft - paddingRight - avatarSize - AndroidUtilities.dp(12f)).coerceAtLeast(0)
-            nameView.measure(MeasureSpec.makeMeasureSpec(textWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(22f), MeasureSpec.EXACTLY))
-            usernameView.measure(MeasureSpec.makeMeasureSpec(textWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(18f), MeasureSpec.EXACTLY))
-            divider.measure(MeasureSpec.makeMeasureSpec(textWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(1, MeasureSpec.EXACTLY))
-            setMeasuredDimension(width, AndroidUtilities.dp(56f))
-        }
-
-        override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
-            val avatarTop = (height - avatarSize) / 2
-            avatarImage.setImageCoords(paddingLeft.toFloat(), avatarTop.toFloat(), avatarSize.toFloat(), avatarSize.toFloat())
-            val textLeft = paddingLeft + avatarSize + AndroidUtilities.dp(12f)
-            val nameTop = AndroidUtilities.dp(8f)
-            nameView.layout(textLeft, nameTop, width - paddingRight, nameTop + nameView.measuredHeight)
-            usernameView.layout(textLeft, nameTop + nameView.measuredHeight, width - paddingRight, nameTop + nameView.measuredHeight + usernameView.measuredHeight)
-            divider.layout(textLeft, height - 1, width - paddingRight, height)
-        }
-
-        override fun dispatchDraw(canvas: Canvas) {
-            avatarImage.draw(canvas)
-            super.dispatchDraw(canvas)
-        }
-    }
-
     private companion object {
         private const val VIEW_TOP_SPACER = 40
         private const val VIEW_LOADING = 41
         private const val VIEW_EMPTY = 42
         private const val VIEW_USER = 43
+        private const val VIEW_LOADING_MORE = 44
+
+        private fun lerpInt(from: Int, to: Int, progress: Float): Int {
+            return (from + (to - from) * progress).toInt()
+        }
 
         private fun buildTabOptions(
             sheetState: TopicPollVotersSheetUiState,

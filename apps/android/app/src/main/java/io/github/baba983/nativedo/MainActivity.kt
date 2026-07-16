@@ -1,6 +1,7 @@
 package io.github.baba983.nativedo
 
 import android.content.res.Configuration
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.view.ViewGroup
@@ -16,6 +17,7 @@ import org.telegram.messenger.AndroidUtilities
 import org.telegram.ui.ActionBar.ActionBarLayout
 import org.telegram.ui.ActionBar.DrawerLayoutContainer
 import org.telegram.ui.LaunchActivity
+import org.telegram.ui.ArticleViewer
 import io.github.baba983.nativedo.core.session.AppSessionState
 import io.github.baba983.nativedo.core.session.SessionSnapshot
 import io.github.baba983.nativedo.core.ui.avatarImageFilter
@@ -82,6 +84,14 @@ class MainActivity : LaunchActivity() {
         super.onConfigurationChanged(newConfig)
         AndroidUtilities.init(this)
         PhotoViewer.getInstance().onConfigurationChanged(newConfig)
+    }
+
+    @Deprecated("Deprecated in Android")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (ArticleViewer.dispatchActivityResult(requestCode, resultCode, data)) {
+            return
+        }
+        super.onActivityResult(requestCode, resultCode, data)
     }
 
     override fun onResume() {

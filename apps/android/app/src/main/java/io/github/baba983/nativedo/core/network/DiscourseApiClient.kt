@@ -4,10 +4,12 @@ import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.PostReactionUsersGroup
 import io.github.baba983.nativedo.core.model.CategorySummary
 import io.github.baba983.nativedo.core.model.SearchResult
+import io.github.baba983.nativedo.core.model.MentionSearchResult
 import io.github.baba983.nativedo.core.model.TopicDetail
 import io.github.baba983.nativedo.core.model.TopicListPage
 import io.github.baba983.nativedo.core.model.TopicSummary
 import io.github.baba983.nativedo.core.model.UserProfile
+import io.github.baba983.nativedo.core.model.UserActionPage
 import io.github.baba983.nativedo.core.session.SessionBootstrapClient
 import io.github.baba983.nativedo.core.session.SessionLoggedOutException
 import io.github.baba983.nativedo.core.session.SessionUserSummary
@@ -48,8 +50,13 @@ class DiscourseApiClient(
     suspend fun fetchTopPage(page: Int): TopicListPage =
         service.topTopics(page).toModel()
 
-    suspend fun search(query: String, page: Int = 0): SearchResult =
-        service.search(query = query, page = page).toModel()
+    suspend fun search(query: String, page: Int = 0, typeFilter: String? = null): SearchResult =
+        service.search(query = query, page = page, typeFilter = typeFilter).toModel()
+
+    suspend fun searchMentionUsers(term: String, topicId: Long): MentionSearchResult =
+        runWithSessionBoundary {
+            service.searchMentionUsers(term = term, topicId = topicId).toModel()
+        }
 
     suspend fun fetchCategories(): List<CategorySummary> =
         service.site().toModel()
@@ -79,6 +86,11 @@ class DiscourseApiClient(
             ).toModel(emojiCatalog = emojiCatalog)
         }
 
+    suspend fun fetchPostReplies(postId: Long, afterPostNumber: Int = 1): List<Post> =
+        runWithSessionBoundary {
+            service.postReplies(postId = postId, afterPostNumber = afterPostNumber).map { post -> post.toModel() }
+        }
+
     suspend fun createPost(topicId: Long, raw: String, replyToPostNumber: Int?): Post =
         runWithSessionBoundary {
             val csrfToken = service.csrf().csrf
@@ -98,6 +110,7 @@ class DiscourseApiClient(
     suspend fun fetchPollVoters(
         postId: Long,
         pollName: String,
+        optionId: String? = null,
         page: Int = 1,
         limit: Int = 50,
     ): List<PostReactionUsersGroup> =
@@ -105,6 +118,7 @@ class DiscourseApiClient(
             service.pollVoters(
                 postId = postId,
                 pollName = pollName,
+                optionId = optionId,
                 page = page,
                 limit = limit,
             ).toModel()
@@ -169,14 +183,14 @@ class DiscourseApiClient(
         filter: String,
         offset: Int,
         limit: Int,
-    ): List<TopicSummary> =
+    ): UserActionPage =
         runWithSessionBoundary {
             service.userActions(
                 username = username,
                 filter = filter,
                 offset = offset,
                 limit = limit,
-            ).toTopicSummaries()
+            ).toModel()
         }
 
     private suspend fun <T> runWithSessionBoundary(block: suspend () -> T): T {

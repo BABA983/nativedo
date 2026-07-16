@@ -3,6 +3,7 @@ package io.github.baba983.nativedo.ui.topic.cell
 import android.view.MotionEvent
 import android.view.View
 import com.google.common.truth.Truth.assertThat
+import io.github.baba983.nativedo.core.html.parseCookedPostBody
 import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.PostReaction
 import io.github.baba983.nativedo.core.model.PostReactionRendering
@@ -74,6 +75,85 @@ class TopicPostCellTest {
     }
 
     @Test
+    fun searchHighlightRange_matchesTelegramWordBoundaryAndWholeWordExtension() {
+        val range = TopicPostCell.searchHighlightRange("prefix searching suffix", "SEARCH")
+
+        assertThat(range).isNotNull()
+        assertThat(range!![0]).isEqualTo(7)
+        assertThat(range[1]).isEqualTo(16)
+        assertThat(TopicPostCell.searchHighlightRange("researching", "search")).isNull()
+    }
+
+    @Test
+    fun searchHighlightRange_keepsTelegramLongestMatchingPrefix() {
+        val range = TopicPostCell.searchHighlightRange("telegram native", "telegramming")
+
+        assertThat(range).isNotNull()
+        assertThat(range!![0]).isEqualTo(0)
+        assertThat(range[1]).isEqualTo(8)
+    }
+
+    @Test
+    fun searchHighlightRange_handlesCjkAndLatinWithoutWhitespace() {
+        val latinRange = TopicPostCell.searchHighlightRange("来点Linux建议", "linux")
+        val cjkRange = TopicPostCell.searchHighlightRange("中文搜索结果", "搜索")
+
+        assertThat(latinRange).isEqualTo(intArrayOf(2, 7))
+        assertThat(cjkRange).isEqualTo(intArrayOf(2, 4))
+    }
+
+    @Test
+    fun highlightedText_buildsAndClearsRoundedBodyPathAfterMeasurement() {
+        val cell = TopicPostCell(RuntimeEnvironment.getApplication())
+        val html = "<p>prefix searching suffix</p>"
+        val post = Post(id = 1001L, postNumber = 1, authorUsername = "alice", cookedHtml = html)
+        cell.setPost(
+            post,
+            null,
+            null,
+            true,
+            true,
+            42L,
+            "https://linux.do/",
+            emptyMap(),
+            emptyMap(),
+            emptyList(),
+            0,
+            emptyList(),
+            parseCookedPostBody(html, "https://linux.do/"),
+            PostBodyBlockState(),
+            0,
+            null,
+        )
+        cell.setHighlightedText("search")
+        val width = AndroidUtilities.dp(360f)
+        cell.measure(
+            View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+        )
+        cell.layout(0, 0, width, cell.measuredHeight)
+
+        assertThat(cell.searchHighlightPathCount()).isEqualTo(1)
+
+        cell.setHighlightedText("")
+        assertThat(cell.searchHighlightPathCount()).isEqualTo(0)
+    }
+
+    @Test
+    fun slidingOffset_matchesChatMessageCellTranslationApi() {
+        val cell = TopicPostCell(RuntimeEnvironment.getApplication())
+
+        cell.setSlidingOffset(-50f)
+
+        assertThat(cell.slidingOffsetX).isEqualTo(-50f)
+        assertThat(cell.getNonAnimationTranslationX(false)).isEqualTo(-50f)
+        assertThat(cell.translationX).isEqualTo(-50f)
+
+        cell.setSlidingOffset(0f)
+        assertThat(cell.translationX).isEqualTo(0f)
+    }
+
+    @Test
     fun replyFooterMoveOutside_keepsPressLikeChatMessageCellCommentButton() {
         val cell = TopicPostCell(RuntimeEnvironment.getApplication())
         val post = Post(id = 1001L, postNumber = 1, authorUsername = "alice", cookedHtml = "")
@@ -120,7 +200,7 @@ class TopicPostCellTest {
     }
 
     @Test
-    fun selectableTextLongPress_startsSelectionInsteadOfPostMenu() {
+    fun selectableTextLongPress_opensPostMenuBeforeTextSelection() {
         val cell = TestTopicPostCell(RuntimeEnvironment.getApplication())
         val post = Post(id = 1001L, postNumber = 1, authorUsername = "alice", cookedHtml = "")
         val selectionHelper = FakeSelectingHelper()
@@ -135,10 +215,24 @@ class TopicPostCellTest {
 
         assertThat(dispatchTouch(cell, MotionEvent.ACTION_DOWN, TopicPostCell.horizontalPaddingPx() + 80f, TopicPostCell.verticalPaddingPx() + 80f)).isTrue()
         assertThat(cell.triggerLongPressForTest()).isTrue()
+        assertThat(selectionHelper.maybeViewSet).isFalse()
+        assertThat(selectionHelper.trySelectCalled).isFalse()
+        assertThat(selectionHelper.oneTouchSelectionStarted).isFalse()
+        assertThat(longPressedPost).isEqualTo(post)
+    }
+
+    @Test
+    fun explicitTextSelection_selectsTouchedWordWithoutOneTouchDrag() {
+        val cell = TestTopicPostCell(RuntimeEnvironment.getApplication())
+        val post = Post(id = 1001L, postNumber = 1, authorUsername = "alice", cookedHtml = "")
+        val selectionHelper = FakeSelectingHelper()
+        cell.setTextSelectionHelper(selectionHelper)
+        bindAndLayoutBasicPost(cell, post)
+
+        assertThat(cell.startTextSelectionAt(80f, 120f)).isTrue()
         assertThat(selectionHelper.maybeViewSet).isTrue()
         assertThat(selectionHelper.trySelectCalled).isTrue()
-        assertThat(selectionHelper.oneTouchSelectionStarted).isTrue()
-        assertThat(longPressedPost).isNull()
+        assertThat(selectionHelper.oneTouchSelectionStarted).isFalse()
     }
 
     @Test

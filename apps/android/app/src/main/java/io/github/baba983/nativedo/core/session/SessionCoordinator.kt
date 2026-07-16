@@ -33,21 +33,26 @@ class SessionCoordinator(
 
     private val _events = MutableSharedFlow<SessionEvent>(extraBufferCapacity = 4)
     val events: SharedFlow<SessionEvent> = _events.asSharedFlow()
+    private var operationGeneration = 0
 
     suspend fun start() {
+        val generation = ++operationGeneration
         restore(
+            generation = generation,
             allowCachedFallback = true,
             clearInvalidWebViewCookies = true,
         )
     }
 
     suspend fun completeLoginFromWebView(cookieUrl: String? = null) {
+        val generation = ++operationGeneration
         if (cookieUrl == null) {
             cookieSyncBridge?.syncFromWebView()
         } else {
             cookieSyncBridge?.syncFromWebView(cookieUrl)
         }
         restore(
+            generation = generation,
             loginCompletion = true,
             allowCachedFallback = false,
             clearInvalidWebViewCookies = false,
@@ -69,11 +74,13 @@ class SessionCoordinator(
         avatarTemplate: String? = null,
         cookieUrl: String? = null,
     ) {
+        val generation = ++operationGeneration
         if (cookieUrl == null) {
             cookieSyncBridge?.syncFromWebView()
         } else {
             cookieSyncBridge?.syncFromWebView(cookieUrl)
         }
+        if (generation != operationGeneration) return
         if (!cookieStore.hasAuthenticatedCookies()) {
             sessionStore.clear()
             _sessionState.value = AppSessionState.Anonymous
@@ -99,6 +106,7 @@ class SessionCoordinator(
     }
 
     suspend fun markExpired(reason: SessionExpiredReason) {
+        ++operationGeneration
         val snapshot = sessionStore.snapshot()
         clearCookies()
         sessionStore.clear()
@@ -107,6 +115,7 @@ class SessionCoordinator(
     }
 
     suspend fun onLogout() {
+        ++operationGeneration
         clearCookies()
         sessionStore.clear()
         _sessionState.value = AppSessionState.Anonymous
@@ -114,10 +123,12 @@ class SessionCoordinator(
     }
 
     private suspend fun restore(
+        generation: Int,
         loginCompletion: Boolean = false,
         allowCachedFallback: Boolean,
         clearInvalidWebViewCookies: Boolean,
     ) {
+        if (generation != operationGeneration) return
         if (!cookieStore.hasAuthenticatedCookies()) {
             sessionStore.clear()
             _sessionState.value = AppSessionState.Anonymous
@@ -143,6 +154,7 @@ class SessionCoordinator(
             )
         }.fold(
             onSuccess = { snapshot ->
+                if (generation != operationGeneration) return@fold
                 sessionStore.save(snapshot)
                 _sessionState.value = AppSessionState.Authenticated(
                     snapshot = snapshot,
@@ -157,6 +169,7 @@ class SessionCoordinator(
                 )
             },
             onFailure = { error ->
+                if (generation != operationGeneration) return@fold
                 _sessionState.value = cachedSnapshot?.takeIf { allowCachedFallback }?.let { snapshot ->
                         AppSessionState.Authenticated(
                             snapshot = snapshot,

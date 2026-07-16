@@ -23,4 +23,9 @@ NativeDo for Linux.do. This repository keeps the Android app as the active imple
 ## Verification
 
 - Run the current shell test suite with `./apps/android/gradlew -p apps/android :app:testDebugUnitTest --quiet`.
+- Record one local Paparazzi screenshot class with `./scripts/recordScreenshots TopicPostCellScreenshotTest`.
+- After recording, verify the local screenshot baselines with `./apps/android/gradlew -p apps/android :app:verifyPaparazziDebug --quiet`.
+- Run unit and local screenshot verification together with `./apps/android/gradlew -p apps/android runUnitAndScreenshotTests --quiet`.
 - Build a debug APK with `./apps/android/gradlew -p apps/android :app:assembleDebug --quiet`.
+
+Paparazzi baselines live in `apps/android/app/src/test/snapshots/images` and are currently Git-ignored local artifacts, so record them before verification. Use device tests for behavior that depends on IME/insets, separate windows, WebView, network images, or gestures.

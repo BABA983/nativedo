@@ -984,8 +984,7 @@ public class FlickerLoadingView extends View implements Theme.Colorable {
                 return dp(107);
             case REACTED_TYPE_WITH_EMOJI_HINT:
             case REACTED_TYPE:
-                // OMITTED: ReactedUsersListView out of scope - hardcoded dp(42)
-                return dp(42);
+                return dp(50);
             case LIMIT_REACHED_GROUPS:
                 return dp(58);
             case LIMIT_REACHED_LINKS:

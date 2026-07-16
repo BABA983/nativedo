@@ -3,6 +3,7 @@
 These are screen-facing model semantics shared between Android today and iOS later.
 
 - `TopicSummary` - list item model for feeds and search topic hits
+  - `targetPostNumber` distinguishes post/reply activity rows from topic-only rows. User-action rows additionally carry `targetPostId` and `rowIdentity` from `post_id`, action `id`, or a stable payload fallback so same-topic activities without `post_number` remain distinct and can still load/jump to the exact post; ordinary topic rows still use `(topic id, target post number)` identity.
   - Feed author identity may come from root `users[]` plus `topic_list.topics[].posters[].user_id`
   - Feed topics may include optional `image_url` for list thumbnails
   - Feed topics may include `pinned` / `pinned_globally` for pinned row rendering
@@ -14,8 +15,11 @@ These are screen-facing model semantics shared between Android today and iOS lat
   - Feed topics include `last_poster_username` for richer list rendering
 - `CategorySummary` - category badge metadata for list rendering, including `name`, `slug`, `color`, optional `textColor`, and optional parent linkage
 - `TopicListPage` - topic summaries plus `moreTopicsUrl` for feed pagination
-- `TopicDetail` - topic header metadata (`createdAt`, `lastPostedAt`, `viewCount`, `tags`) plus ordered `Post` items, `totalPosts`, and full `streamPostIds`
-- `Post` - post number, optional replied floor target, author username, optional display name/title/flair icon metadata, created timestamp, optional edit timestamp/edit count metadata, cooked HTML body, and extracted image URLs
-- `SearchResult` - topic hits plus lightweight user hits
+- `TopicDetail` - topic header metadata (`createdAt`, `lastPostedAt`, `viewCount`, `tags`) plus ordered `Post` items, `totalPosts`, full `streamPostIds`, and `details.participants` mapped as ranked mention candidates. Composer autocomplete uses these server-ranked participants before supplementing them with loaded post authors.
+- `Post` - post number, optional replied floor target, authoritative direct `replyCount`, author username, optional display name/title/flair icon metadata, created timestamp, optional edit timestamp/edit count metadata, cooked HTML body, and extracted image URLs
+- `PostReactionUsersGroup` - one reaction id, its server-wide `count`, and only the users included by the endpoint. `users.size` is not the total: the current discourse-reactions controller returns at most 27 recent users per group, so UI completeness and pagination must never be inferred from list length.
+- `PollOptionRef` - poll option digest/label plus the poll payload's authoritative vote total. Voter pages do not include totals, so the UI must keep this value instead of replacing it with the current page's `users.size`.
+- `SearchResult` - distinct topic hits, post hits adapted to `TopicSummary` with optional `targetPostNumber`, and lightweight user hits
+- `MentionSearchResult` / `MentionCandidate` - ordered topic-aware composer candidates from `/u/search/users`; candidates preserve user avatar and `priority_group` metadata or a mentionable group identity. They remain separate from generic `SearchResult` because server ordering and group semantics are part of the composer contract.
 - `UserProfile` - profile header data for user and self pages, including optional avatar flair metadata
 - `AppError` - normalized error surface for API and parsing failures

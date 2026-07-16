@@ -16,6 +16,7 @@ data class Post(
     val createdAt: String = "",
     val updatedAt: String = "",
     val editCount: Int = 0,
+    val replyCount: Int = 0,
     val currentUserReaction: String? = null,
     val reactionUsersCount: Int = 0,
     val reactions: List<PostReaction> = emptyList(),

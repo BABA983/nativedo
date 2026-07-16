@@ -18,10 +18,14 @@ import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.SystemClock;
 import android.text.Layout;
+import android.view.Gravity;
 import android.view.View;
 import android.widget.EditText;
+import android.widget.TextView;
 
 import org.telegram.messenger.AndroidUtilities;
+
+import java.lang.reflect.Method;
 
 /** NativeDo minimal port of Telegram's EditTextBoldCursor for FragmentSearchField. */
 public class EditTextBoldCursor extends EditText {
@@ -36,6 +40,9 @@ public class EditTextBoldCursor extends EditText {
     private boolean forceCursorEnd;
     private boolean textWatchersSuppressed;
     private Runnable delegate;
+
+    private static Method getVerticalOffsetMethod;
+    private static boolean getVerticalOffsetMethodResolved;
 
     public EditTextBoldCursor(Context context) {
         super(context);
@@ -213,17 +220,52 @@ public class EditTextBoldCursor extends EditText {
         int line = layout.getLineForOffset(offset);
         float horizontal = layout.getPrimaryHorizontal(offset);
         float cursorLeft = getCompoundPaddingLeft() + horizontal - getScrollX();
-        float lineTop = getCompoundPaddingTop() + layout.getLineTop(line) - getScrollY();
-        float lineBottom = getCompoundPaddingTop() + layout.getLineBottom(line) - getScrollY();
-        float height = cursorSize;
-        if (height <= 0 || height > lineBottom - lineTop) {
-            height = lineBottom - lineTop;
+        float textTop = getExtendedPaddingTop() + getCursorVerticalOffset() - getScrollY();
+        float lineTop = textTop + layout.getLineTop(line);
+        float lineBottom = textTop + layout.getLineTop(line + 1);
+        if (getLineSpacingExtra() != 0 && line < layout.getLineCount() - 1) {
+            lineBottom -= getLineSpacingExtra();
         }
-        float top = lineTop + (lineBottom - lineTop - height) / 2f;
+        float top = (lineTop + lineBottom) / 2f - cursorSize / 2f;
         float width = Math.max(1f, AndroidUtilities.dp(cursorWidth));
-        cursorRect.set(cursorLeft, top, cursorLeft + width, top + height);
+        cursorRect.set(cursorLeft, top, cursorLeft + width, top + cursorSize);
         canvas.drawRoundRect(cursorRect, width / 2f, width / 2f, cursorPaint);
         invalidate();
+    }
+
+    /**
+     * TextView draws its layout below a gravity-dependent vertical offset.  The
+     * custom cursor must use the same origin; otherwise a centered search field
+     * draws the cursor at the top of the control instead of beside its glyphs.
+     */
+    private int getCursorVerticalOffset() {
+        if ((getGravity() & Gravity.VERTICAL_GRAVITY_MASK) == Gravity.TOP) {
+            return 0;
+        }
+        try {
+            if (!getVerticalOffsetMethodResolved) {
+                getVerticalOffsetMethodResolved = true;
+                getVerticalOffsetMethod = TextView.class.getDeclaredMethod("getVerticalOffset", boolean.class);
+                getVerticalOffsetMethod.setAccessible(true);
+            }
+            if (getVerticalOffsetMethod != null) {
+                return (Integer) getVerticalOffsetMethod.invoke(this, true);
+            }
+        } catch (Throwable ignore) {
+            getVerticalOffsetMethod = null;
+        }
+
+        Layout layout = getLayout();
+        if (layout == null) {
+            return 0;
+        }
+        int availableHeight = getHeight() - getExtendedPaddingTop() - getExtendedPaddingBottom();
+        int remaining = Math.max(0, availableHeight - layout.getHeight());
+        int verticalGravity = getGravity() & Gravity.VERTICAL_GRAVITY_MASK;
+        if (verticalGravity == Gravity.BOTTOM) {
+            return remaining;
+        }
+        return verticalGravity == Gravity.CENTER_VERTICAL ? remaining / 2 : 0;
     }
 
     public void setHintColor(int color) {

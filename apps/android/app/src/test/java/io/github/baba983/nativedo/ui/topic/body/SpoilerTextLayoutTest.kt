@@ -12,10 +12,12 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import org.telegram.ui.Components.TextStyleSpan
 import org.telegram.ui.Components.spoilers.SpoilerEffect
 
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [28])
 class SpoilerTextLayoutTest {
     @Test
     fun collect_addsSpoilerEffectsForTelegramSpoilerSpan() {

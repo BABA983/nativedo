@@ -9,9 +9,12 @@ import io.github.baba983.nativedo.core.model.DiscourseEmoji
 import io.github.baba983.nativedo.core.model.DiscourseEmojiCategory
 import io.github.baba983.nativedo.core.model.SearchResult
 import io.github.baba983.nativedo.core.model.SearchUserSummary
+import io.github.baba983.nativedo.core.model.MentionCandidate
+import io.github.baba983.nativedo.core.model.MentionSearchResult
 import io.github.baba983.nativedo.core.model.TopicDetail
 import io.github.baba983.nativedo.core.model.TopicListPage
 import io.github.baba983.nativedo.core.model.TopicSummary
+import io.github.baba983.nativedo.core.model.UserActionPage
 import io.github.baba983.nativedo.core.model.UserProfile
 import io.github.baba983.nativedo.core.session.SessionUserSummary
 import kotlinx.serialization.SerialName
@@ -60,7 +63,16 @@ interface DiscourseApiService {
     suspend fun search(
         @Query("q") query: String,
         @Query("page") page: Int,
+        @Query("type_filter") typeFilter: String? = null,
     ): SearchResponseDto
+
+    @GET("u/search/users")
+    suspend fun searchMentionUsers(
+        @Query("term") term: String,
+        @Query("topic_id") topicId: Long,
+        @Query("include_groups") includeGroups: Boolean = true,
+        @Query("limit") limit: Int = 6,
+    ): MentionSearchResponseDto
 
     @GET("site.json")
     suspend fun site(): SiteResponseDto
@@ -79,6 +91,12 @@ interface DiscourseApiService {
         @Path("topicId") topicId: Long,
         @Path("postNumber") postNumber: Int,
     ): PostDto
+
+    @GET("posts/{id}/replies")
+    suspend fun postReplies(
+        @Path("id") postId: Long,
+        @Query("after") afterPostNumber: Int,
+    ): List<PostDto>
 
     @FormUrlEncoded
     @POST("posts.json")
@@ -137,6 +155,7 @@ interface DiscourseApiService {
     suspend fun pollVoters(
         @Query("post_id") postId: Long,
         @Query("poll_name") pollName: String,
+        @Query("option_id") optionId: String? = null,
         @Query("page") page: Int = 1,
         @Query("limit") limit: Int = 50,
     ): PollVotersResponseDto
@@ -226,9 +245,11 @@ data class SearchResponseDto(
 @Serializable
 data class GroupedSearchResultDto(
     @SerialName("more_posts")
-    val morePosts: Boolean = false,
+    val morePosts: Boolean? = null,
     @SerialName("more_topics")
-    val moreTopics: Boolean = false,
+    val moreTopics: Boolean? = null,
+    @SerialName("more_full_page_results")
+    val moreFullPageResults: Boolean? = null,
 )
 
 @Serializable
@@ -236,6 +257,8 @@ data class SearchPostDto(
     val id: Long,
     @SerialName("topic_id")
     val topicId: Long,
+    @SerialName("post_number")
+    val postNumber: Int? = null,
     @SerialName("topic_title")
     val topicTitle: String = "",
     val username: String = "",
@@ -254,10 +277,40 @@ data class SearchPostDto(
 
 @Serializable
 data class SearchUserDto(
+    val id: Long? = null,
     val username: String = "",
     val name: String = "",
     @SerialName("avatar_template")
     val avatarTemplate: String = "",
+    @SerialName("animated_avatar")
+    val animatedAvatar: String? = null,
+)
+
+@Serializable
+data class MentionSearchResponseDto(
+    val users: List<MentionUserDto> = emptyList(),
+    val groups: List<MentionGroupDto> = emptyList(),
+)
+
+@Serializable
+data class MentionUserDto(
+    val username: String = "",
+    val name: String = "",
+    @SerialName("avatar_template")
+    val avatarTemplate: String = "",
+    @SerialName("priority_group")
+    val priorityGroup: Int? = null,
+)
+
+@Serializable
+data class MentionGroupDto(
+    val name: String = "",
+    @SerialName("full_name")
+    val fullName: String = "",
+    @SerialName("flair_url")
+    val flairUrl: String = "",
+    @SerialName("user_count")
+    val userCount: Int? = null,
 )
 
 @Serializable
@@ -330,6 +383,24 @@ data class TopicResponseDto(
     val validReactions: List<String> = emptyList(),
     @SerialName("post_stream")
     val postStream: PostStreamDto,
+    val details: TopicDetailsDto? = null,
+)
+
+@Serializable
+data class TopicDetailsDto(
+    val participants: List<TopicParticipantDto> = emptyList(),
+)
+
+@Serializable
+data class TopicParticipantDto(
+    val username: String = "",
+    val name: String? = null,
+    @SerialName("avatar_template")
+    val avatarTemplate: String = "",
+    @SerialName("animated_avatar")
+    val animatedAvatar: String? = null,
+    @SerialName("post_count")
+    val postCount: Int = 0,
 )
 
 @Serializable
@@ -356,6 +427,8 @@ data class PostDto(
     val postNumber: Int? = null,
     @SerialName("reply_to_post_number")
     val replyToPostNumber: Int? = null,
+    @SerialName("reply_count")
+    val replyCount: Int = 0,
     val username: String,
     @SerialName("name")
     val displayName: String? = null,
@@ -661,14 +734,34 @@ internal fun TopicListResponseDto.toModel(): TopicListPage = TopicListPage(
 )
 
 internal fun SearchResponseDto.toModel(): SearchResult {
+    val usersById = users.mapNotNull { user ->
+        user.id?.let { id ->
+            TopicListUserDto(
+                id = id,
+                username = user.username,
+                avatarTemplate = user.avatarTemplate,
+                animatedAvatar = user.animatedAvatar,
+            )
+        }
+    }.associateBy(TopicListUserDto::id)
+    val usersByUsername = users.mapNotNull { user ->
+        user.username.takeIf(String::isNotBlank)?.let { username ->
+            username to posterUser(
+                username = username,
+                avatarTemplate = user.avatarTemplate,
+                animatedAvatarUrl = user.animatedAvatar.orEmpty(),
+            )
+        }
+    }.toMap()
     val topicHits = topics.map { topic ->
-        topic.toTopicSummary(usersById = emptyMap())
+        topic.toTopicSummary(
+            usersById = usersById,
+            usersByUsername = usersByUsername,
+        )
     }
-    val postTopicHits = posts
-        .filter { post -> topicHits.none { topic -> topic.id == post.topicId } }
-        .map { post -> post.toTopicSummary() }
+    val postTopicHits = posts.map { post -> post.toTopicSummary() }
     return SearchResult(
-        topics = topicHits + postTopicHits,
+        topics = topicHits,
         posts = postTopicHits,
         users = users.mapNotNull { user ->
             user.username.takeIf(String::isNotBlank)?.let { username ->
@@ -679,9 +772,34 @@ internal fun SearchResponseDto.toModel(): SearchResult {
                 )
             }
         },
-        hasMore = groupedSearchResult?.let { result -> result.moreTopics || result.morePosts } ?: false,
+        hasMore = groupedSearchResult?.let { result ->
+            result.moreTopics == true || result.morePosts == true || result.moreFullPageResults == true
+        } ?: false,
     )
 }
+
+internal fun MentionSearchResponseDto.toModel(): MentionSearchResult = MentionSearchResult(
+    candidates = users.mapNotNull { user ->
+        user.username.takeIf(String::isNotBlank)?.let { username ->
+            MentionCandidate(
+                username = username,
+                displayName = user.name,
+                avatarTemplate = user.avatarTemplate,
+                priorityGroup = user.priorityGroup,
+            )
+        }
+    } + groups.mapNotNull { group ->
+        group.name.takeIf(String::isNotBlank)?.let { name ->
+            MentionCandidate(
+                username = name,
+                displayName = group.fullName.ifBlank { name },
+                isGroup = true,
+                flairUrl = group.flairUrl,
+                userCount = group.userCount,
+            )
+        }
+    },
+)
 
 internal fun SiteResponseDto.toModel(): List<CategorySummary> = (
     categories.takeIf { it.isNotEmpty() } ?: categoryList?.categories.orEmpty()
@@ -698,6 +816,17 @@ internal fun TopicResponseDto.toModel(
         id = id,
         title = title,
         posts = postStream.posts.map { post -> post.toModel(emojiCatalog = emojiCatalog) },
+        participants = details?.participants.orEmpty().mapNotNull { participant ->
+            participant.username.takeIf(String::isNotBlank)?.let { username ->
+                MentionCandidate(
+                    username = username,
+                    displayName = participant.name.orEmpty(),
+                    avatarTemplate = participant.avatarTemplate,
+                    animatedAvatarUrl = participant.animatedAvatar.orEmpty(),
+                    postCount = participant.postCount.coerceAtLeast(0),
+                )
+            }
+        },
         createdAt = createdAt,
         lastPostedAt = lastPostedAt,
         viewCount = views,
@@ -763,6 +892,7 @@ internal fun PostDto.toModel(
         createdAt = createdAt,
         updatedAt = updatedAt,
         editCount = (version - 1).coerceAtLeast(0),
+        replyCount = replyCount,
         currentUserReaction = currentUserReaction?.id,
         reactionUsersCount = reactionUsersCount,
         reactions = reactions.map { reaction ->
@@ -879,6 +1009,7 @@ internal fun String.withSerializedPollData(
 
 private fun TopicDto.toTopicSummary(
     usersById: Map<Long, TopicListUserDto>,
+    usersByUsername: Map<String, PosterUser> = emptyMap(),
 ): TopicSummary {
     val posterUser = posters.primaryPosterOrNull()?.let { poster ->
         poster.user?.let { user ->
@@ -914,13 +1045,31 @@ private fun TopicDto.toTopicSummary(
                 )
             }
     }
+    val resolvedPosterUser = posterUser?.let { embedded ->
+        usersByUsername[embedded.username]?.let { responseUser ->
+            embedded.copy(
+                avatarTemplate = embedded.avatarTemplate.ifBlank { responseUser.avatarTemplate },
+                animatedAvatarUrl = embedded.animatedAvatarUrl.ifBlank { responseUser.animatedAvatarUrl },
+            )
+        } ?: embedded
+    } ?: lastPosterUsername
+        ?.takeIf(String::isNotBlank)
+        ?.let(usersByUsername::get)
+    val resolvedRecentPosterUser = recentPosterUser?.let { embedded ->
+        usersByUsername[embedded.username]?.let { responseUser ->
+            embedded.copy(
+                avatarTemplate = embedded.avatarTemplate.ifBlank { responseUser.avatarTemplate },
+                animatedAvatarUrl = embedded.animatedAvatarUrl.ifBlank { responseUser.animatedAvatarUrl },
+            )
+        } ?: embedded
+    }
 
     return TopicSummary(
         id = id,
         title = title.ifBlank { fancyTitle },
-        authorUsername = posterUser?.username.orEmpty(),
-        authorAvatarTemplate = posterUser?.avatarTemplate.orEmpty(),
-        authorAnimatedAvatarUrl = posterUser?.animatedAvatarUrl.orEmpty(),
+        authorUsername = resolvedPosterUser?.username.orEmpty(),
+        authorAvatarTemplate = resolvedPosterUser?.avatarTemplate.orEmpty(),
+        authorAnimatedAvatarUrl = resolvedPosterUser?.animatedAvatarUrl.orEmpty(),
         imageUrl = imageUrl,
         slug = slug,
         replyCount = replyCount,
@@ -928,7 +1077,7 @@ private fun TopicDto.toTopicSummary(
         likeCount = likeCount,
         lastPostedAt = lastPostedAt,
         categoryId = categoryId,
-        lastPosterUsername = lastPosterUsername.orEmpty().ifBlank { recentPosterUser?.username.orEmpty() },
+        lastPosterUsername = lastPosterUsername.orEmpty().ifBlank { resolvedRecentPosterUser?.username.orEmpty() },
         isPinned = pinned || pinnedGlobally,
         isPinnedGlobally = pinnedGlobally,
         isHot = isHot,
@@ -951,6 +1100,9 @@ private fun SearchPostDto.toTopicSummary(): TopicSummary = TopicSummary(
     categoryId = categoryId,
     lastPosterUsername = username,
     excerpt = blurb,
+    targetPostNumber = postNumber,
+    targetPostId = id,
+    rowIdentity = "search-post:$id",
 )
 
 @Serializable
@@ -961,6 +1113,9 @@ data class UserActionsResponseDto(
 
 @Serializable
 data class UserActionDto(
+    val id: Long? = null,
+    @SerialName("post_id")
+    val postId: Long? = null,
     @SerialName("topic_id")
     val topicId: Long = 0,
     val title: String = "",
@@ -973,13 +1128,16 @@ data class UserActionDto(
     @SerialName("category_id")
     val categoryId: Int? = null,
     val slug: String = "",
+    @SerialName("post_number")
+    val postNumber: Int? = null,
 )
 
 // Maps a Discourse user-action feed to topic-summary rows so the profile feed can
 // reuse TopicListAdapter/TopicCell. An action's topic_id may repeat (e.g. several
 // replies in one topic); we keep each action as its own row to preserve order.
-internal fun UserActionsResponseDto.toTopicSummaries(): List<TopicSummary> =
-    userActions
+internal fun UserActionsResponseDto.toModel(): UserActionPage = UserActionPage(
+    rawCount = userActions.size,
+    items = userActions
         .filter { it.topicId > 0 && it.title.isNotBlank() }
         .map { action ->
             TopicSummary(
@@ -992,8 +1150,18 @@ internal fun UserActionsResponseDto.toTopicSummaries(): List<TopicSummary> =
                 categoryId = action.categoryId,
                 lastPosterUsername = action.username,
                 excerpt = action.excerpt,
+                targetPostNumber = action.postNumber?.takeIf { it > 0 },
+                targetPostId = action.postId?.takeIf { it > 0 },
+                rowIdentity = action.activityRowIdentity(),
             )
-        }
+        },
+)
+
+private fun UserActionDto.activityRowIdentity(): String = when {
+    postId != null && postId > 0 -> "post:$postId"
+    id != null && id > 0 -> "action:$id"
+    else -> "fallback:$topicId:${postNumber ?: 0}:$createdAt:$username:$excerpt"
+}
 
 private fun SiteCategoryDto.flattenedModels(): List<CategorySummary> {
     return buildList {

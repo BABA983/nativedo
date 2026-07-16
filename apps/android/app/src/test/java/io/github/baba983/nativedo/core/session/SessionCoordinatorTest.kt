@@ -5,6 +5,9 @@ import io.github.baba983.nativedo.core.network.ParsedBootstrap
 import io.github.baba983.nativedo.core.storage.CookieStore
 import io.github.baba983.nativedo.core.storage.SessionStore
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
 import okhttp3.Cookie
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Test
@@ -45,6 +48,44 @@ class SessionCoordinatorTest {
                 freshness = SessionFreshness.Verified,
             ),
         )
+    }
+
+    @Test
+    fun newerKnownWebViewLoginWinsOverLateStartupRestore() = runTest {
+        val cookieStore = CookieStore().apply {
+            save(
+                baseUrl.toHttpUrl(),
+                listOf(Cookie.Builder().name("_t").value("token").domain("linux.do").path("/").build()),
+            )
+        }
+        val startupUser = CompletableDeferred<SessionUserSummary?>()
+        val bridge = CookieSyncBridge(
+            baseUrl = baseUrl,
+            cookieStore = cookieStore,
+            readCookieHeader = { "_t=token" },
+            writeCookieToWebView = { _, _ -> },
+            flushCookies = {},
+            clearCookies = { onComplete -> onComplete?.invoke() },
+        )
+        val coordinator = SessionCoordinator(
+            cookieStore = cookieStore,
+            sessionStore = SessionStore(),
+            apiClient = object : SessionBootstrapClient {
+                override suspend fun fetchBootstrap(): ParsedBootstrap = ParsedBootstrap(null)
+                override suspend fun fetchCurrentUser(): SessionUserSummary? = startupUser.await()
+            },
+            cookieSyncBridge = bridge,
+            now = { 9L },
+        )
+
+        val startup = launch { coordinator.start() }
+        runCurrent()
+        coordinator.completeLoginFromWebViewWithKnownUsername("new-user")
+        startupUser.complete(SessionUserSummary(username = "stale-user"))
+        startup.join()
+
+        val state = coordinator.sessionState.value as AppSessionState.Authenticated
+        assertThat(state.snapshot.username).isEqualTo("new-user")
     }
 
     @Test

@@ -53,6 +53,33 @@ public final class LocaleController {
         return sb.toString();
     }
 
+    public static String formatShortNumber(int number, int[] rounded) {
+        StringBuilder suffix = new StringBuilder();
+        int lastDecimal = 0;
+        while (number / 1000 > 0) {
+            suffix.append("K");
+            lastDecimal = (number % 1000) / 100;
+            number /= 1000;
+        }
+        if (rounded != null) {
+            double value = number + lastDecimal / 10.0;
+            for (int i = 0; i < suffix.length(); i++) {
+                value *= 1000;
+            }
+            rounded[0] = (int) value;
+        }
+        if (lastDecimal != 0 && suffix.length() > 0) {
+            if (suffix.length() == 2) {
+                return String.format(Locale.US, "%d.%dM", number, lastDecimal);
+            }
+            return String.format(Locale.US, "%d.%d%s", number, lastDecimal, suffix);
+        }
+        if (suffix.length() == 2) {
+            return String.format(Locale.US, "%dM", number);
+        }
+        return String.format(Locale.US, "%d%s", number, suffix);
+    }
+
     public static String formatDuration(int duration) {
         return AndroidUtilities.formatShortDuration(duration);
     }
@@ -158,7 +185,11 @@ public final class LocaleController {
     }
 
     public SimpleDateFormat getChatFullDate() {
-        return new SimpleDateFormat("MMM d, yyyy", Locale.US);
+        return new SimpleDateFormat(getDatePattern("chatFullDate", R.string.chatFullDate, "MMMM d, yyyy"), Locale.getDefault());
+    }
+
+    public SimpleDateFormat getChatDate() {
+        return new SimpleDateFormat(getDatePattern("chatDate", R.string.chatDate, "MMMM d"), Locale.getDefault());
     }
 
     public SimpleDateFormat getFormatterDay() {
@@ -166,7 +197,33 @@ public final class LocaleController {
     }
 
     public static String formatDateChat(long value) {
-        return new SimpleDateFormat("MMM d, yyyy", Locale.US).format(value * 1000L);
+        return formatDateChat(value, false);
+    }
+
+    public static String formatDateChat(long value, boolean checkYear) {
+        try {
+            java.util.Calendar calendar = java.util.Calendar.getInstance();
+            calendar.setTimeInMillis(System.currentTimeMillis());
+            int currentYear = calendar.get(java.util.Calendar.YEAR);
+            long date = value * 1000L;
+
+            calendar.setTimeInMillis(date);
+            if (checkYear && currentYear == calendar.get(java.util.Calendar.YEAR)
+                    || !checkYear && Math.abs(System.currentTimeMillis() - date) < 31536000000L) {
+                return getInstance().getChatDate().format(date);
+            }
+            return getInstance().getChatFullDate().format(date);
+        } catch (Exception ignore) {
+            return "LOC_ERR: formatDateChat";
+        }
+    }
+
+    private static String getDatePattern(String key, int resId, String fallback) {
+        String pattern = getString(key, resId);
+        if (pattern == null || pattern.isEmpty() || pattern.equals(key) || pattern.startsWith("LOC_ERR:")) {
+            return fallback;
+        }
+        return pattern;
     }
 
     /**

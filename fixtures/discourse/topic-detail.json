@@ -13,6 +13,7 @@
         "id": 1001,
         "post_number": 1,
         "reply_to_post_number": null,
+        "reply_count": 80,
         "username": "baba",
         "name": "Baba",
         "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png",
@@ -23,6 +24,25 @@
         "updated_at": "2026-04-05T09:12:00.000Z",
         "version": 2,
         "cooked": "<p>Hello from Android.</p><img src=\"https://linux.do/uploads/default/original/1X/demo.png\" />"
+      }
+    ]
+  },
+  "details": {
+    "participants": [
+      {
+        "username": "orchid.hu",
+        "name": "Orchid Hu",
+        "avatar_template": "/user_avatar/linux.do/orchid.hu/{size}/1_2.png",
+        "post_count": 4,
+        "flair_url": "star"
+      },
+      {
+        "username": "quiet-user",
+        "name": null,
+        "avatar_template": "/letter_avatar/quiet-user/{size}/5.png",
+        "animated_avatar": "https://cdn.example.com/quiet-user.gif",
+        "post_count": 2,
+        "flair_url": null
       }
     ]
   }

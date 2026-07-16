@@ -75,10 +75,13 @@ TopicDetailFragment (BaseFragment, no ComposeView)
     ├── RecyclerListView (vertical, LinearLayoutManager)
     │   └── TopicAdapter (RecyclerListView.SelectionAdapter)
     │       ├── HEADER : TopicHeaderCell   (title + date line + load progress + tags)
+    │       ├── DATE   : TopicDateCell     (ChatActionCell date-only native port)
     │       ├── POSTS  : TopicPostCell     (one per floor, BaseCell, drawn)
     │       └── FOOTER : TopicFooterCell   (loading / retry / end-of-list)
     ├── PullForegroundDrawable             (replicated pattern, ~80 LOC, see Phase 7)
-    └── (later) ReplyEnterView / JumpToBottomFAB / FloatingDateView
+    ├── ChatActivityEnterView-style persistent reply composer
+    ├── ChatActivitySideControlsButtonsLayout page-down control
+    └── TopicFloatingDateController + floating TopicDateCell
 ```
 
 Inside each `TopicPostCell` (custom-drawn `View`, **no Compose**; most blocks
@@ -883,7 +886,20 @@ checklist below.**
       lines ~857–933 (custom header view + manual `OnScrollListener` glue,
       ~80 LOC). `TopicDetailFragment` now wraps its `RecyclerListView` in a
       local `PullRefreshLayout` using the vendored drawable and calls
-      `TopicViewModel.refresh()` on release.
+      `TopicViewModel.refresh()` on release. The wrapper is now the actual parent
+      of the topic `RecyclerListView` (rather than an unused local class), keeps
+      Telegram's `SNAP_HEIGHT` and `minPullingTime` gates, emits threshold haptic
+      feedback, and yields while selection, popup scrim, pagination, keyboard,
+      or the emoji panel owns the interaction.
+- [x] Swipe-to-reply: the topic list is now a NativeDo-bound port of
+      `ChatActivity`'s list-owned gesture subsystem rather than an
+      `ItemTouchHelper` approximation. It preserves the pinned physical-left
+      direction, `-80dp` clamp, `0.4cm` + 3:1 takeover gate, `50dp` reply/haptic
+      threshold, three reply-button springs, upstream `filled_button_reply`
+      asset, and 180ms decelerate return. `TopicPostCell` only owns the
+      ChatMessageCell-shaped sliding-offset API; selection, popup/scrim,
+      pull-refresh, locked scrolling, recycled post ids, and horizontally
+      scrollable code/table content are explicitly arbitrated by the list host.
 - [x] `viewModel.uiState` collected via `lifecycleScope` +
       `Flow.collectLatest` → `TopicAdapter.submitList(...)`.
       Current implementation uses the fragment's `MainScope`, matching the
@@ -895,17 +911,53 @@ checklist below.**
       title once the first post scrolls under the ActionBar.
 - [x] Image viewer hand-off: `TopicPostCellDelegate.didPressImage` →
       `openImageViewer(...)` → telegram-module `PhotoViewer` NativeDo port.
-- [x] Reactions users sheet UI: Telegram `BottomSheet` /
-      `BottomSheetWithRecyclerListView` container (not Material3
-      `ModalBottomSheet`) with NativeDo content rows. The local `:telegram`
-      now copies upstream `BottomSheet` and `BottomSheetWithRecyclerListView`
-      verbatim; `TopicDetailFragment` subclasses that container for reaction
-      tabs/chips, loading/empty states, user rows, selected reaction changes,
-      and dismissal wired back to `TopicViewModel.dismissReactionSheet()`.
+- [x] Reactions users sheet UI: app-side
+      `FixedHeaderRecyclerBottomSheet` native port of pinned Telegram
+      `StickersAlert` (not Material3 `ModalBottomSheet`) with NativeDo content
+      rows. The shared shell owns Telegram-shaped natural-content measurement,
+      rounded background/handle/status-bar drawing, and fixed-header scroll
+      translation; reaction and poll sheets provide their own tabs, loading /
+      empty states, and user rows. Their user-list geometry follows pinned
+      `ReactedUsersListView` / `ReactedUserHolderView`: 50dp rows in a fixed
+      six-row viewport, enforced by the shared sheet, so loading, a one-user
+      result, and larger scrollable result sets do not resize the sheet. Failed reaction-user loads expose an
+      in-sheet tap-to-retry state instead of being rendered as an empty result.
+      Multi-reaction posts now expose a real All tab followed by reaction tabs
+      in Telegram's fixed 44dp horizontal strip; the 32dp pills use the pinned
+      24dp icon, 6dp spacing, short-number counter, reaction theme colors, and
+      150ms `CubicBezierInterpolator.DEFAULT` selection/centering animation.
+      Content now follows pinned `ChatActivity` with AndroidX `ViewPager`:
+      every filter owns an independent cached `RecyclerListView + Adapter`,
+      preserves its vertical scroll state, supports horizontal page swipes,
+      and interpolates tab selection, tab centering, page height, and the two
+      lists' sheet-top offsets during a swipe.
+      All users are merged by username and use the post-level
+      `reaction_users_count` rather than summing per-reaction counts. The
+      discourse-reactions endpoint currently caps each group at 27 recent users
+      and has no cursor/offset support, so truncated tabs show an explicit
+      "recent N of total" footer instead of pretending the list is complete;
+      true pagination remains blocked on a server-side cursor API.
+      Dismissal is wired back to
+      `TopicViewModel.dismissReactionSheet()`.
       Clicking an existing reaction chip opens this users sheet for that
       reaction; tabs are built from both the post's visible reactions and the
       loaded reaction-user groups, and tab glyphs use actual emoji images via
       `ImageReceiver` when `iconUrl` / `emojiCatalog` provides one.
+- [x] Poll voter sheet pagination: each option keeps an independent page,
+      loading/error/end state and scroll position, matching Telegram's cached
+      per-filter list behavior while using Discourse poll semantics. The sheet
+      now uses the same AndroidX `ViewPager` infrastructure as reaction users:
+      each option owns a cached list/adapter, horizontal swipes interpolate the
+      tab and sheet offset, and the 44dp single-line tab strip scrolls the
+      selected 32dp option pill into the center. Tabs keep
+      `PollOptionRef.votes` as the authoritative total; selecting an unloaded
+      option lazily requests page 1 with `option_id`, and scrolling near the end
+      appends 50-user pages with username de-duplication, load-more progress,
+      retry, and stale-sheet request rejection. The server partitions page
+      windows per option and returns no `has_more`, so exhaustion is derived
+      from the real option vote count, a short page, or a missing option key.
+      Number-poll voter responses are a different flat-array shape and remain
+      intentionally unsupported until a separate DTO/UI path is added.
 - [x] Reaction picker UI: compact `ActionBarPopupWindow` rail using Telegram
       context-menu chrome and reaction-container placement as the reference, but
       no full `ReactionsContainerLayout` / `ReactionsLayoutInBubble` / TLRPC
@@ -941,10 +993,16 @@ checklist below.**
       full `ReactionsEffectOverlay` animated-emoji/window/particle stack.
 - [x] Replies-of-post / floor sheet UI: Telegram `BottomSheet` container +
       NativeDo `RecyclerListView` rows with fixed header, bounded list height,
-      title/subtitle/preview, and dividers. Current View path reuses
-      `TopicReplyTargetResolver.replySheetEntriesByPostNumber`, opens a
-      `BottomSheetWithRecyclerListView` from the drawn reply footer, renders
-      avatar-backed reply rows, and jumps to the selected reply row.
+      title/subtitle/preview, and dividers. The footer now uses Discourse's
+      authoritative post-level `reply_count`; already-loaded topic posts are
+      only an avatar preview fallback and no longer determine whether the
+      footer/sheet exists. Clicking immediately opens a loading sheet backed by
+      `GET /posts/{postId}/replies?after=...`, with retry, append pagination,
+      de-duplication, authoritative header total, stale-request rejection, and
+      dismissal state in `TopicViewModel`. Selecting an unloaded reply fetches
+      it by topic/post number before emitting the normal jump/highlight event.
+      This sheet intentionally represents direct replies; recursive reply-tree
+      semantics would require `/posts/{id}/reply-ids.json` plus hierarchy UI.
 - [x] Delete the files listed under "Files deleted" above.
 - [x] Remove the dev-only `TopicBodyHarnessFragment` entry.
 
@@ -965,6 +1023,31 @@ checklist below.**
 | Reply composer | generic BottomSheet form | NativeDo-scoped `ChatActivityEnterView`-shaped root-bottom panel, not a sheet: 44dp emoji/input/send row matching upstream `ChatActivityEnterView.DEFAULT_HEIGHT`, inline reply context, list bottom padding adjusted while visible, `SizeNotifierFrameLayout.measureKeyboardHeight()`-driven keyboard offset/list inset, icon send/submitting state, and a bottom-attached emoji panel that uses the latest keyboard height or Telegram's `dp(200)` fallback while inserting Discourse `:emoji_name:` markup. The inline reply context now behaves closer to Telegram's `topView`: it animates height from 0 to the 46dp reply header instead of occupying space before fading in, uses the `ChatReplyContainer` 52dp icon/text/close columns without message-bubble quote-line chrome, uses the local Telegram `menu_reply` asset for the reply icon, and applies the 200ms show delay only while waiting for the keyboard to open. Its visibility animation now uses Telegram's `ChatListItemAnimator.DEFAULT_DURATION` 250ms timing and the same default cubic interpolator used by `animatorTopViewVisibility` / `animatorInputFieldHeight`, and the header translation follows the upstream `topView.setTranslationY(y - topViewHeight * visibility)` direction by sliding down behind the input field at visibility 0 and up into place at visibility 1. If the keyboard becomes visible while that delayed reply-header enter is pending, `SizeNotifierFrameLayout` flushes it immediately, matching `ChatActivityEnterView.onAdjustPanTransitionStart(keyboardVisible && showTopViewRunnable != null)`. The close icon now uses Telegram's copied `input_clear` asset with `Theme.createSelectorDrawable(..., 1, dp(19))` close button chrome, matching the upstream `replyCloseImageView` setup. The emoji button uses Telegram's 7.5dp padding plus `Theme.createInsetRoundRectDrawable(..., dp(19), dp(1), dp(3))` selector chrome. The send button now follows `ChatActivityEnterView.animateSendButton(show)`: initial state is `INVISIBLE` at alpha 0 / scale 0.1 like upstream construction, empty text stays hidden, entering text animates it to alpha 1 / scale 1 over 220ms with `CubicBezierInterpolator.EASE_OUT_QUINT`, the icon runs the upstream `SendButton.appear()`-style 320ms translate/scale/rotate entrance when first shown, the send hit/animation area is 100x44dp like upstream `sendButtonContainer`, and submitting keeps it visible while disabled with a Telegram-shaped loading state: `ButtonBounce` press feedback, 420ms loading visibility animation, icon fade/scale, and an infinite time-driven arc using the same fast-out-slow-in segment curve as upstream. Keyboard requests now follow Telegram's `openKeyboard()` fallback path by retrying focus/show-keyboard when the first `showKeyboard()` call fails, and composer open schedules a 100ms retry like upstream `openKeyboardInternal()`. The emoji button now follows `ChatActivityEnterView` toggle semantics: tap once hides the keyboard and opens emoji content below the composer; tap again while the emoji content is visible dismisses it and focuses the editor/keyboard; Back while the emoji panel is visible consumes both the fragment back path and the focused edit field's `KEYCODE_BACK/ACTION_UP` path, matching `ChatActivityEnterView.hidePopup(true)` plus `messageEditText.setOnKeyListener` when the keyboard is not visible; repeated taps during the local keyboard inset animation or the 200ms post-emoji keyboard-open wait are ignored like upstream `adjustPanLayoutHelper.animationInProgress()` / `waitingForKeyboardOpenAfterAnimation`. If the system keyboard becomes visible while the emoji panel is open, `SizeNotifierFrameLayout` closes the panel immediately, matching Telegram's `keyboardVisible && isPopupShowing()` path. Its icon also switches between the local `SMILE` and `KEYBOARD` drawings like `ChatActivityEnterViewAnimatedIconView.State.SMILE/KEYBOARD`, with a lightweight scale/fade transition instead of Telegram's Lottie assets. The edit field now wires the upstream-shaped `EditTextBoldCursor.setWindowView(rootView)` on attach and reapplies handle tint on touch like Telegram's `fixHandlesColor()` path, while the full `EditTextEffects` stack remains omitted. Multiline field-height changes now feed list bottom padding through a 250ms `animatorInputFieldHeight`-style visible island height, matching the way `ChatActivityEnterView.getIslandTotalHeight()` drives `ChatActivity` bottom layout instead of jumping directly to the measured target height. Multiline scrolling now mirrors `ChatActivityEnterView.drawMessageEditText(...)` with animated top/bottom `DST_OUT` fade masks when the edit field can scroll. Emoji selection keeps the panel open so multiple emoji can be inserted like Telegram's `EmojiView`, though this remains a NativeDo reaction-rail subset rather than a full upstream `EmojiView` port. |
 | Reaction toggle | optimistic `Post.toggledReaction` | same — moved into VM |
 | Reaction picker | bottom sheet | Telegram-style `ActionBarPopupWindow` horizontal reaction rail in the long-press menu, plus the same rail for reaction-chip long-press / plus-chip tap; local `ReactionPickerRailView` now carries the upstream 250ms overshoot, `CLIP_PROGRESS = 0.25f` trailing-side reveal, and two-bubble rail tail subset with Telegram's `reactions_bubble_shadow.9.png` shadow bounds. Reaction selection also has a NativeDo `ReactionsEffectOverlay.ONLY_MOVE_ANIMATION` subset: a 34dp source icon moves toward the target chip over 350ms before the local chip pulse completes. This is still not the full upstream `ReactionsContainerLayout` / `ReactionsEffectOverlay` port. |
+
+The reply composer is now a persistent 44dp bottom child of the topic host,
+matching Telegram's long-lived `ChatActivityEnterView` lifecycle instead of
+being recreated for every reply action. Its text and reply target have one
+ViewModel state source and are persisted per normalized site, authenticated
+username, and topic; refresh, keyboard dismissal, navigation, and process
+recreation no longer discard a draft. Successful submission clears the stored
+draft, while failure keeps it editable. Tapping the always-present field is the
+general topic-reply entry; replying to a post only changes the same composer's
+top reply context. The unsupported Attach and voice controls were removed
+instead of presenting buttons that only reopened the keyboard. The Telegram
+100x44dp send container, 50dp edit-field right inset, emoji/keyboard behavior,
+and reply-header animation remain.
+
+Long topics now use Telegram's exact `ChatActivitySideControlsButtonsLayout`,
+`ChatActivityBlurredRoundPageDownButton`, round blur button, and `CounterView`
+stack. NativeDo adapts the badge semantics from chat unread count to the number
+of canonical `post_stream.stream` entries below the last visible post. The
+button appears immediately when a topic opens above the latest post; after the
+user has reached the bottom, Telegram's 100dp leave-bottom threshold prevents
+it from flashing during small scroll corrections. It hides during text
+selection, tracks the persistent composer/keyboard/emoji inset, and shows the
+upstream loading state while one tail request loads the latest 20 stream IDs.
+Tail and ordinary pagination results are merged by canonical stream order, so
+jumping to the end no longer requires serially loading every intermediate page.
 | Reaction users sheet | bottom sheet | Telegram `BottomSheet`, state in VM, existing reaction chip opens users |
 | Replies-of-post count | footer row in cell | drawn footer in cell |
 
@@ -975,7 +1058,7 @@ on a real topic. Smoke-test on a long thread (>=100 posts) for fling smoothness.
 launch, focused-window check, and logcat crash scan passed on device `449dd25d`.
 Targeted tests now cover post-options popup positioning, menu action/reaction
 ordering, reply-footer long-press, reaction-chip long-press, plus-chip tap, and
-text-selection priority over post-menu long-press. Reply-panel keyboard inset
+post-menu priority over first text-selection entry. Reply-panel keyboard inset
 logic is covered by helper tests and by the local `SizeNotifierFrameLayout`
 keyboard measurement subset. After the keyboard-inset fix, reinstalling the
 debug APK and launching `MainActivity` on device `449dd25d` succeeded, the app
@@ -998,12 +1081,13 @@ Standalone, no longer blocks the rewrite.
       `DetailsBlock` text, and visible `CodeBlock` / `OneboxBlock` / `PollBlock`
       labels. Image captions and horizontally scrollable table/code text are also
       exposed to the selection helper.
-- [x] Long-press in `TopicPostCell` enters selection through the shared helper,
-      uses the press coordinates to select the touched word, and shows a
-      floating ActionMode with copy / select-all actions. The same still-down
-      touch stream is forwarded into the helper after long press, so selection
-      can continue expanding before finger-up like Telegram's one-touch drag.
-      Before selection starts, a body block that consumes `ACTION_DOWN` remains
+- [x] First long-press in `TopicPostCell` follows `ChatMessageCell` arbitration
+      and opens the host post menu. The menu exposes an explicit **Select text**
+      action that passes the original press coordinates to the shared helper,
+      selects the touched word, and shows the floating ActionMode. The menu path
+      intentionally does not start one-touch drag continuation because the
+      initiating finger stream has already ended. Before the post menu opens,
+      a body block that consumes `ACTION_DOWN` remains
       the active touch target for MOVE/UP/CANCEL, so nested pressed states are
       not dropped when the finger leaves the original block bounds. Rebind,
       detach, and body-context rebuild reset active body / reaction / reply
@@ -1011,6 +1095,14 @@ Standalone, no longer blocks the rewrite.
       mode no longer makes `TopicPostCell` intercept every touch: only the
       still-down one-touch drag continuation is intercepted, while ordinary
       selection-mode drags fall through to RecyclerView scrolling.
+- [x] Cross-post selection ownership now remains in adapter-position / child /
+      offset endpoint tuples like Telegram's `ArticleTextSelectionHelper`.
+      RecyclerView scrolling may detach or recycle the active cell without
+      clearing the selection; visible endpoints are projected back into the
+      current cell when they re-enter the viewport. The floating toolbar hides
+      while the list moves and is refreshed when scrolling stops. Position-
+      shifting adapter mutations clear the selection cache, while appends after
+      the selected range preserve it.
 - [x] Port draggable handles, magnifier, quote / translate actions, multi-cell drag
       selection, cursor haptic feedback, RecyclerView auto-scroll, and upstream-style
       `TextSelectionOverlay` chrome. Current implementation now keeps an

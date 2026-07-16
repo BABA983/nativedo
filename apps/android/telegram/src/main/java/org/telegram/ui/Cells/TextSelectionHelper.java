@@ -187,6 +187,7 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
         private TextSelectionOverlay overlay;
         private ViewGroup parentView;
         private RecyclerView parentRecyclerView;
+        private RecyclerView.Adapter<?> observedAdapter;
         private Callback callback;
         private TranslateCallback translateCallback;
         private QuoteCallback quoteCallback;
@@ -211,6 +212,7 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
         private boolean finishingActionMode;
         private boolean movingHandle;
         private boolean movingStartHandle;
+        private boolean activeEndpointStart;
         private float movingOffsetX;
         private float movingOffsetY;
         private boolean movingDirectionSettling;
@@ -224,6 +226,50 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
         private float autoScrollTargetX;
         private float autoScrollTargetY;
         private Magnifier magnifier;
+        private final RecyclerView.AdapterDataObserver adapterDataObserver = new RecyclerView.AdapterDataObserver() {
+            @Override
+            public void onChanged() {
+                if (isInSelectionMode()) {
+                    clear(false);
+                }
+            }
+
+            @Override
+            public void onItemRangeChanged(int positionStart, int itemCount) {
+                if (rangeTouchesSelection(positionStart, itemCount)) {
+                    clear(false);
+                }
+            }
+
+            @Override
+            public void onItemRangeChanged(int positionStart, int itemCount, Object payload) {
+                onItemRangeChanged(positionStart, itemCount);
+            }
+
+            @Override
+            public void onItemRangeInserted(int positionStart, int itemCount) {
+                if (isInSelectionMode() && positionStart <= normalizedSelection().endPosition) {
+                    clear(false);
+                }
+            }
+
+            @Override
+            public void onItemRangeRemoved(int positionStart, int itemCount) {
+                if (isInSelectionMode() && positionStart <= normalizedSelection().endPosition) {
+                    clear(false);
+                }
+            }
+
+            @Override
+            public void onItemRangeMoved(int fromPosition, int toPosition, int itemCount) {
+                if (!isInSelectionMode()) {
+                    return;
+                }
+                if (Math.min(fromPosition, toPosition) <= normalizedSelection().endPosition) {
+                    clear(false);
+                }
+            }
+        };
 
         private final Runnable autoScrollRunnable = new Runnable() {
             @Override
@@ -254,10 +300,18 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
         }
 
         public void setRecyclerView(RecyclerView recyclerView) {
+            if (observedAdapter != null) {
+                observedAdapter.unregisterAdapterDataObserver(adapterDataObserver);
+                observedAdapter = null;
+            }
             parentRecyclerView = recyclerView;
             layoutManager = recyclerView != null && recyclerView.getLayoutManager() instanceof LinearLayoutManager
                     ? (LinearLayoutManager) recyclerView.getLayoutManager()
                     : null;
+            if (recyclerView != null && recyclerView.getAdapter() != null) {
+                observedAdapter = recyclerView.getAdapter();
+                observedAdapter.registerAdapterDataObserver(adapterDataObserver);
+            }
         }
 
         public void setCallback(Callback callback) {
@@ -365,6 +419,9 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
         protected void onTextSelected(ArticleSelectableView newView, ArticleSelectableView oldView) {
             selectedView = newView;
             int position = getAdapterPosition((View) newView);
+            if (position < 0) {
+                return;
+            }
             startViewPosition = endViewPosition = position;
             startViewChildPosition = endViewChildPosition = selectedIndex;
             startViewOffset = selectionStart;
@@ -376,7 +433,12 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
         }
 
         public boolean isInSelectionMode() {
-            return selectedView != null && selectedIndex >= 0 && selectionStart >= 0 && selectionEnd >= 0;
+            return startViewPosition >= 0
+                    && startViewChildPosition >= 0
+                    && startViewOffset >= 0
+                    && endViewPosition >= 0
+                    && endViewChildPosition >= 0
+                    && endViewOffset >= 0;
         }
 
         public boolean isSelectable(View view) {
@@ -408,10 +470,17 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
             selectionStart = bounds.start;
             selectionEnd = bounds.end;
             int position = getAdapterPosition(viewObject);
+            if (position < 0) {
+                selectedView = null;
+                selectedIndex = -1;
+                selectionStart = selectionEnd = -1;
+                return;
+            }
             startViewPosition = endViewPosition = position;
             startViewChildPosition = endViewChildPosition = selectedIndex;
             startViewOffset = selectionStart;
             endViewOffset = selectionEnd;
+            activeEndpointStart = false;
             cacheTextForView(selectableView, position);
             viewObject.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS, HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING);
             if (overlay != null) {
@@ -439,6 +508,7 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
             startViewPosition = endViewPosition = -1;
             startViewChildPosition = endViewChildPosition = -1;
             startViewOffset = endViewOffset = -1;
+            activeEndpointStart = false;
             textByPosition.clear();
             prefixByPosition.clear();
             childCountByPosition.clear();
@@ -475,20 +545,25 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
         }
         public void setTopOffset(int topOffset) { this.topOffset = topOffset; }
         public void invalidate() { invalidateSelectedView(); invalidateOverlay(); }
-        public void stopScrolling() { stopAutoScroll(); }
+        public void stopScrolling() {
+            stopAutoScroll();
+            if (!isInSelectionMode()) {
+                return;
+            }
+            syncActiveViewFromEndpoint();
+            invalidate();
+            if (overlay != null && selectedView instanceof View) {
+                showActionMode((View) selectedView);
+            }
+        }
         public void onParentScrolled() {
             if (!isInSelectionMode()) {
                 return;
             }
-            if (selectedView instanceof View && parentRecyclerView != null && parentRecyclerView.indexOfChild((View) selectedView) < 0) {
-                clear(false);
-                return;
-            }
+            cacheVisibleTextForSelection(normalizedSelection());
+            syncActiveViewFromEndpoint();
             invalidate();
-            if (usingFloatingToolbar && actionMode instanceof FloatingActionMode) {
-                actionMode.invalidateContentRect();
-                ((FloatingActionMode) actionMode).updateViewLocationInWindow();
-            }
+            hideActionMode();
         }
 
         public void destroy() {
@@ -506,6 +581,10 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
             overlay = null;
             parentRecyclerView = null;
             layoutManager = null;
+            if (observedAdapter != null) {
+                observedAdapter.unregisterAdapterDataObserver(adapterDataObserver);
+                observedAdapter = null;
+            }
             parentView = null;
             callback = null;
             translateCallback = null;
@@ -519,6 +598,7 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
             }
             movingHandle = true;
             movingStartHandle = false;
+            activeEndpointStart = false;
             movingOffsetX = 0;
             movingOffsetY = 0;
             movingDirectionSettling = true;
@@ -1253,7 +1333,7 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
             }
             MenuItem quoteItem = menu.findItem(R.id.menu_quote);
             if (quoteItem != null) {
-                quoteItem.setVisible(quoteCallback != null && canCopy);
+                quoteItem.setVisible(quoteCallback != null && canCopy && canQuoteSelection());
             }
             MenuItem selectAllItem = menu.findItem(android.R.id.selectAll);
             if (selectAllItem != null) {
@@ -1301,14 +1381,19 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
         }
 
         private void fillSelectionContentRect(Rect outRect) {
-            fillFallbackContentRect(outRect);
             if (!isInSelectionMode()) {
+                fillFallbackContentRect(outRect);
                 return;
             }
             if (fillVisibleSelectionContentRect(outRect)) {
                 outRect.inset(-AndroidUtilities.dp(8), -AndroidUtilities.dp(6));
                 return;
             }
+            if (selectedView == null) {
+                outRect.set(-1, -1, -1, -1);
+                return;
+            }
+            fillFallbackContentRect(outRect);
             arrayList.clear();
             selectedView.fillTextLayoutBlocks(arrayList);
             if (selectedIndex < 0 || selectedIndex >= arrayList.size()) {
@@ -1514,6 +1599,15 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
                     && normalized.endOffset >= lastLength);
         }
 
+        private boolean canQuoteSelection() {
+            if (!isInSelectionMode() || selectedView == null) {
+                return false;
+            }
+            NormalizedSelection normalized = normalizedSelection();
+            return normalized.startPosition == normalized.endPosition
+                    && getAdapterPosition((View) selectedView) == normalized.startPosition;
+        }
+
         private void copySelectedText() {
             AndroidUtilities.addToClipboard(selectedText());
             if (callback != null) {
@@ -1690,6 +1784,7 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
             Endpoint endpoint = endpointFor(startHandle);
             movingHandle = true;
             movingStartHandle = startHandle;
+            activeEndpointStart = startHandle;
             movingOffsetX = endpoint == null ? 0 : endpoint.x - event.getX();
             movingOffsetY = endpoint == null ? 0 : endpoint.y - event.getY();
             movingDirectionSettling = false;
@@ -1788,6 +1883,7 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
             selectedIndex = hit.childPosition;
             cacheTextForView(hit.view, hit.position);
             settleMovingHandleDirection();
+            syncActiveViewFromEndpoint();
             if (changed && overlay != null) {
                 AndroidUtilities.vibrateCursor(overlay);
             }
@@ -1932,7 +2028,66 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
             selectionStart = startViewOffset;
             selectionEnd = endViewOffset;
             movingStartHandle = !movingStartHandle;
+            activeEndpointStart = !activeEndpointStart;
             movingDirectionSettling = false;
+        }
+
+        private void syncActiveViewFromEndpoint() {
+            if (!isInSelectionMode()) {
+                selectedView = null;
+                selectedIndex = -1;
+                return;
+            }
+            NormalizedSelection normalized = normalizedSelection();
+            int position = activeEndpointStart ? normalized.startPosition : normalized.endPosition;
+            int childPosition = activeEndpointStart ? normalized.startChild : normalized.endChild;
+            View view = findAttachedViewByPosition(position);
+            if (!(view instanceof ArticleSelectableView)) {
+                selectedView = null;
+                selectedIndex = -1;
+                return;
+            }
+            ArticleSelectableView selectableView = (ArticleSelectableView) view;
+            ArrayList<TextLayoutBlock> blocks = new ArrayList<>();
+            selectableView.fillTextLayoutBlocks(blocks);
+            if (childPosition < 0 || childPosition >= blocks.size() || blocks.get(childPosition).getLayout() == null) {
+                selectedView = null;
+                selectedIndex = -1;
+                return;
+            }
+            int textLength = blocks.get(childPosition).getLayout().getText().length();
+            selectedView = selectableView;
+            selectedIndex = childPosition;
+            selectionStart = position == normalized.startPosition && childPosition == normalized.startChild
+                    ? clamp(normalized.startOffset, 0, textLength)
+                    : 0;
+            selectionEnd = position == normalized.endPosition && childPosition == normalized.endChild
+                    ? clamp(normalized.endOffset, 0, textLength)
+                    : textLength;
+            cacheTextForView(selectableView, position);
+        }
+
+        private View findAttachedViewByPosition(int position) {
+            View view = layoutManager != null ? layoutManager.findViewByPosition(position) : null;
+            if (view != null || parentRecyclerView == null) {
+                return view;
+            }
+            for (int i = 0; i < parentRecyclerView.getChildCount(); i++) {
+                View child = parentRecyclerView.getChildAt(i);
+                if (getAdapterPosition(child) == position) {
+                    return child;
+                }
+            }
+            return null;
+        }
+
+        private boolean rangeTouchesSelection(int positionStart, int itemCount) {
+            if (!isInSelectionMode() || itemCount <= 0) {
+                return false;
+            }
+            NormalizedSelection normalized = normalizedSelection();
+            int positionEnd = positionStart + itemCount - 1;
+            return positionStart <= normalized.endPosition && positionEnd >= normalized.startPosition;
         }
 
         private Hit findHitForOverlayPoint(float overlayX, float overlayY) {

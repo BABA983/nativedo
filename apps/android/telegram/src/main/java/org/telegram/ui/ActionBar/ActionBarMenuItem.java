@@ -588,6 +588,7 @@ public class ActionBarMenuItem extends FrameLayout {
         searchContainer.setVisibility(GONE);
         searchContainer.setClipChildren(false);
         searchField = new EditTextBoldCursor(getContext());
+        searchField.setCursorWidth(1.5f);
         searchField.setSingleLine(true);
         searchField.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 18);
         searchField.setBackground(null);
@@ -658,8 +659,12 @@ public class ActionBarMenuItem extends FrameLayout {
         if (searchField == null) {
             return;
         }
-        searchField.setTextColor(Theme.getColor(Theme.key_actionBarDefaultTitle));
-        searchField.setHintTextColor(Theme.getColor(Theme.key_actionBarDefaultIcon));
+        int searchColor = Theme.getColor(Theme.key_actionBarDefaultSearch);
+        searchField.setCursorColor(searchColor);
+        searchField.setTextColor(searchColor);
+        searchField.setHintTextColor(Theme.getColor(Theme.key_actionBarDefaultSearchPlaceholder));
+        searchField.setHighlightColor(Theme.getColor(Theme.key_chat_inTextSelectionHighlight));
+        searchField.setHandlesColor(Theme.getColor(Theme.key_chat_TextSelectionCursor));
     }
 
     private void updateClearButton(boolean animated) {

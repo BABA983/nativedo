@@ -25,6 +25,7 @@ package io.github.baba983.nativedo.ui.profile
 import android.app.Dialog
 import android.animation.ValueAnimator
 import android.content.Context
+import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
@@ -51,6 +52,7 @@ import android.view.ViewGroup
 import android.view.VelocityTracker
 import android.view.Window
 import android.view.WindowManager
+import android.view.accessibility.AccessibilityNodeInfo
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
@@ -77,6 +79,7 @@ import io.github.baba983.nativedo.core.model.UserProfile
 import io.github.baba983.nativedo.feature.profile.data.ProfileRepository
 import io.github.baba983.nativedo.feature.profile.ui.ProfileUiState
 import io.github.baba983.nativedo.feature.profile.ui.ProfileViewModel
+import io.github.baba983.nativedo.feature.profile.ui.ProfileFeedType
 import io.github.baba983.nativedo.debug.DebugTopicFixtureSheet
 import io.github.baba983.nativedo.ui.auth.LoginWebViewFragment
 import io.github.baba983.nativedo.ui.main.MainTabsActivity
@@ -163,7 +166,7 @@ private val COPYABLE_ROW_IDS = setOf(
  * - Avatar uses scaleX/Y with ProfileGooeyView for waterdrop absorption effect
  * - TopView draws the cover background from y=0 (covers status bar)
  */
-class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
+class ProfileFragment : BaseFragment(), Theme.ThemeDelegate, MainTabsActivity.TabFragmentDelegate {
     private val fragmentScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var viewModel: ProfileViewModel
     private lateinit var appContainer: AppContainer
@@ -178,6 +181,8 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
     private var avatarGooey: ProfileGooeyView? = null
     private var avatarImageView: AvatarImageView? = null
     private var avatarContainer2: FrameLayout? = null
+    private var profileActionsView: DiscourseProfileActionsView? = null
+    private var profileActionsEnabled: Boolean = false
     // ActionBar overflow menu (mirrors upstream ProfileActivity.otherItem —
     // single "..." item carrying a popup submenu of all profile actions, instead
     // of four flat top-level icons). L4036 / L11991–12118.
@@ -213,13 +218,17 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
     // --- Header height constants (mirrors ProfileActivity) ---
 
     private fun getHeaderOnlyExtraHeight(): Int {
-        return AndroidUtilities.dp(152f)
+        return AndroidUtilities.dp(if (getActionsExtraHeight() == 0) 168f else 152f)
     }
 
-    private fun getHeaderExtraHeight(): Int = getHeaderOnlyExtraHeight()
+    private fun getActionsExtraHeight(): Int {
+        return if (profileActionsEnabled) AndroidUtilities.dp(74f) else 0
+    }
+
+    private fun getHeaderExtraHeight(): Int = getHeaderOnlyExtraHeight() + getActionsExtraHeight()
 
     private fun calculateHeaderExtraDiff(): Float {
-        return Utilities.clamp01(extraHeight / getHeaderOnlyExtraHeight())
+        return profileHeaderExtraDiff(extraHeight, getActionsExtraHeight(), getHeaderOnlyExtraHeight())
     }
 
     override fun createView(context: Context): View {
@@ -240,6 +249,8 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
         actionBar.setBackButtonDrawable(null)
 
         appContainer = (context.applicationContext as NativeDoApp).appContainer
+        sessionState = appContainer.sessionCoordinator.sessionState.value
+        profileActionsEnabled = sessionState is AppSessionState.Authenticated
         viewModel = ViewModelProvider(
             this,
             ProfileViewModelFactory(repository = ProfileRepository(appContainer.discourseApiClient)),
@@ -307,7 +318,9 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
                     if (!allowPullingDown && canScroll > dy) {
                         // Snap to headerExtraHeight boundary, then enable pulling down
                         val result = super.scrollVerticallyBy(canScroll, recycler, state)
-                        if (avatarImageView?.imageReceiver?.hasNotThumb() == true) {
+                        if (avatarImageView?.imageReceiver?.hasNotThumb() == true &&
+                            !AndroidUtilities.isAccessibilityScreenReaderEnabled()
+                        ) {
                             allowPullingDown = true
                         }
                         return result
@@ -371,7 +384,15 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
 
         // --- AvatarImageView (mirrors ProfileActivity.AvatarImageView — BackupImageView subclass) ---
         val aiv = AvatarImageView(context)
-        aiv.setOnClickListener { openAvatarViewer() }
+        aiv.setOnClickListener {
+            if (!expandAvatarOnClick()) {
+                openAvatarViewer()
+            }
+        }
+        aiv.setOnLongClickListener {
+            openAvatarViewer()
+            true
+        }
         ac.addView(aiv, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT))
         avatarImageView = aiv
 
@@ -431,6 +452,15 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
         ac2.addView(sub1, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT.toFloat(), LayoutHelper.WRAP_CONTENT.toFloat(), Gravity.LEFT or Gravity.TOP, 114f, -2f, 4f, 0f))
         subtitleView[1] = sub1
 
+        val actions = DiscourseProfileActionsView(context, AndroidUtilities.dp(74f)).apply {
+            setOnActionClickListener { key, _, _ -> handleProfileAction(key) }
+            visibility = if (profileActionsEnabled) View.VISIBLE else View.GONE
+        }
+        ac2.addView(actions, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT))
+        profileActionsView = actions
+        updateProfileActions(animated = false)
+        actions.post(actions::finishOpeningLayout)
+
         // ActionBar on top of everything
         container.addView(actionBar)
 
@@ -454,6 +484,7 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
         fragmentScope.launch {
             appContainer.sessionCoordinator.sessionState.collectLatest { state ->
                 sessionState = state
+                updateProfileActionsAvailability(state is AppSessionState.Authenticated)
                 viewModel.onSessionStateChanged(state)
                 updateInfo()
                 updateList()
@@ -490,6 +521,121 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
         )
 
         needLayout()
+    }
+
+    private fun updateActionsPosition() {
+        val actions = profileActionsView ?: return
+        if (!profileActionsEnabled) {
+            actions.visibility = View.GONE
+            return
+        }
+        actions.visibility = View.VISIBLE
+        actions.setParentExpanded(currentExpandAnimatorValue)
+        val newTop = getHeaderTopOffset()
+        val bottom = extraHeight + newTop
+        val height = Math.min(getActionsExtraHeight().toFloat(), bottom - newTop).coerceAtLeast(0f)
+        actions.updatePosition(bottom - height, height)
+    }
+
+    private fun updateProfileActionsAvailability(enabled: Boolean) {
+        if (profileActionsEnabled == enabled) {
+            updateProfileActions(animated = true)
+            return
+        }
+        val oldHeaderHeight = getHeaderExtraHeight()
+        val oldExtraHeight = extraHeight
+        profileActionsEnabled = enabled
+        val newHeaderHeight = getHeaderExtraHeight()
+        val mappedExtraHeight = if (oldExtraHeight > oldHeaderHeight) {
+            newHeaderHeight + (oldExtraHeight - oldHeaderHeight)
+        } else if (oldHeaderHeight > 0) {
+            oldExtraHeight / oldHeaderHeight * newHeaderHeight
+        } else {
+            newHeaderHeight.toFloat()
+        }
+
+        profileActionsView?.visibility = if (enabled) View.VISIBLE else View.GONE
+        updateProfileActions(animated = true)
+        listView?.setPadding(
+            0,
+            getListTopForExtraHeight(newHeaderHeight),
+            0,
+            AndroidUtilities.dp((MainTabsActivity.MAIN_TABS_HEIGHT_WITH_MARGINS + 12).toFloat()),
+        )
+        val layoutManager = listView?.layoutManager as? LinearLayoutManager
+        if (layoutManager?.findViewByPosition(0) != null) {
+            layoutManager.scrollToPositionWithOffset(0, getHeaderTopOffset() + mappedExtraHeight.toInt())
+            checkListViewScroll()
+        } else {
+            extraHeight = mappedExtraHeight
+            needLayout()
+        }
+    }
+
+    private fun updateProfileActions(animated: Boolean) {
+        val actions = profileActionsView ?: return
+        if (!profileActionsEnabled) {
+            actions.setActions(emptyList(), animated)
+            return
+        }
+        actions.setActions(
+            listOf(
+                DiscourseProfileActionsView.ActionSpec(
+                    DiscourseProfileActionsView.KEY_EDIT_PROFILE,
+                    actions.context.getString(R.string.profile_action_edit),
+                    TelegramR.drawable.filled_profile_edit_24,
+                    TelegramR.drawable.outline_profile_edit_24,
+                ),
+                DiscourseProfileActionsView.ActionSpec(
+                    DiscourseProfileActionsView.KEY_TOPICS,
+                    actions.context.getString(R.string.profile_action_topics),
+                    TelegramR.drawable.tabs_chats_active_24,
+                    TelegramR.drawable.tabs_chats_24,
+                ),
+                DiscourseProfileActionsView.ActionSpec(
+                    DiscourseProfileActionsView.KEY_REPLIES,
+                    actions.context.getString(R.string.profile_action_replies),
+                    TelegramR.drawable.filled_profile_message_24,
+                    TelegramR.drawable.outline_profile_message_24,
+                ),
+                DiscourseProfileActionsView.ActionSpec(
+                    DiscourseProfileActionsView.KEY_SHARE,
+                    actions.context.getString(R.string.profile_action_share),
+                    TelegramR.drawable.action_share,
+                    TelegramR.drawable.msg_share,
+                ),
+            ),
+            animated,
+        )
+    }
+
+    private fun handleProfileAction(key: Int) {
+        val username = profileState.username
+            ?: (sessionState as? AppSessionState.Authenticated)?.username
+            ?: return
+        when (key) {
+            DiscourseProfileActionsView.KEY_EDIT_PROFILE -> {
+                openBrowser("${appContainer.baseUrl.trimEnd('/')}/u/$username/preferences/profile")
+            }
+            DiscourseProfileActionsView.KEY_TOPICS -> {
+                presentFragment(ProfileFeedFragment(username, ProfileFeedType.Topics))
+            }
+            DiscourseProfileActionsView.KEY_REPLIES -> {
+                presentFragment(ProfileFeedFragment(username, ProfileFeedType.Replies))
+            }
+            DiscourseProfileActionsView.KEY_SHARE -> shareProfile()
+        }
+    }
+
+    private fun shareProfile() {
+        val activity = parentActivity ?: return
+        val url = profileWebUrl.takeIf(String::isNotBlank) ?: return
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, avatarViewerTitle)
+            putExtra(Intent.EXTRA_TEXT, url)
+        }
+        activity.startActivity(Intent.createChooser(intent, activity.getString(R.string.profile_action_share)))
     }
 
     /**
@@ -683,11 +829,11 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
                 // (mirrors upstream lines 8520-8523)
                 nameTextView[1]?.let { nt ->
                     nt.translationX = AndroidUtilities.dpf2(18f) - nt.left
-                    nt.translationY = newTop + h - AndroidUtilities.dpf2(30f) - nt.bottom
+                    nt.translationY = newTop + h - getActionsExtraHeight() - AndroidUtilities.dpf2(30f) - nt.bottom
                 }
                 subtitleView[1]?.let { sv ->
                     sv.translationX = AndroidUtilities.dpf2(16f) - sv.left
-                    sv.translationY = newTop + h - AndroidUtilities.dpf2(10f) - sv.bottom
+                    sv.translationY = newTop + h - getActionsExtraHeight() - AndroidUtilities.dpf2(10f) - sv.bottom
                 }
             }
 
@@ -785,6 +931,7 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
 
         // --- Color blends ---
         applyExpandColorBlends(expandProgress)
+        updateActionsPosition()
     }
 
     private fun settleHeaderAfterTouch() {
@@ -821,10 +968,24 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
                 }
                 smoothHeaderBy(view.top - collapsedTop)
             }
-        } else if (extraHeight > 0f && listViewVelocityY < -1000f) {
-            smoothHeaderBy(extraHeight.toInt())
-        } else if (extraHeight > 0f) {
-            smoothHeaderBy(view.top - collapsedTop)
+        } else {
+            val actionsHeight = getActionsExtraHeight()
+            when (
+                profileHeaderReleaseTarget(
+                    extraHeight = extraHeight,
+                    headerExtraHeight = getHeaderExtraHeight(),
+                    actionsExtraHeight = actionsHeight,
+                    velocityY = listViewVelocityY,
+                )
+            ) {
+                ProfileHeaderReleaseTarget.COLLAPSED -> {
+                    val dy = if (actionsHeight > 0) actionsHeight - extraHeight else extraHeight
+                    smoothHeaderBy(dy.toInt())
+                }
+                ProfileHeaderReleaseTarget.ACTIONS -> smoothHeaderBy((extraHeight - actionsHeight).toInt())
+                ProfileHeaderReleaseTarget.HEADER -> smoothHeaderBy(view.top - collapsedTop)
+                ProfileHeaderReleaseTarget.NONE -> Unit
+            }
         }
         listViewVelocityY = 0f
     }
@@ -876,6 +1037,20 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
             }
             animateHeaderTo(targetTop, view.top)
         }
+    }
+
+    private fun expandAvatarOnClick(): Boolean {
+        if (!canExpandAvatar || AndroidUtilities.isAccessibilityScreenReaderEnabled()) {
+            return false
+        }
+        if (headerAnimator != null || expandAnimator?.isRunning == true) {
+            return true
+        }
+        if (isPulledDown || extraHeight > getHeaderExtraHeight() + AndroidUtilities.dp(24f)) {
+            return false
+        }
+        toggleAvatarExpansion()
+        return true
     }
 
     private fun animateHeaderTo(targetTop: Int, currentTop: Int) {
@@ -991,6 +1166,7 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
         val value = AndroidUtilities.lerp(expandAnimatorValues[0], expandAnimatorValues[1], animatedFraction)
         currentExpandAnimatorValue = value
         currentExpandAnimatorFraction = animatedFraction
+        profileActionsView?.setParentExpanded(value)
 
         val newTop = getStatusBarHeight() + getActionBarHeight()
         val width = fragmentView?.width ?: AndroidUtilities.displaySize.x
@@ -1058,6 +1234,7 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
             if (value >= 1f) View.INVISIBLE else View.VISIBLE
 
         topView?.invalidate()
+        updateActionsPosition()
     }
 
     /**
@@ -1123,7 +1300,7 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
                 (ac.height * ac.scaleY + AndroidUtilities.dpf2(8f)) * diff
             val nameYStart = avatarBottom + AndroidUtilities.dp(1.3f) + AndroidUtilities.dp(7f) * diff
             // Name Y end: bottom of expanded cover (mirrors upstream line 6327)
-            val nameYEnd = newTop + extraHeight - AndroidUtilities.dpf2(30f) -
+            val nameYEnd = newTop + extraHeight - getActionsExtraHeight() - AndroidUtilities.dpf2(30f) -
                 (nameTextView[1]?.bottom ?: 0)
 
             val nameCy = ky + nameYStart + (nameYEnd - nameYStart) / 2f
@@ -1134,7 +1311,7 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
 
             // Online Y start and end
             val onlineYStart = avatarBottom + AndroidUtilities.dp(24f) + 11f * AndroidUtilities.density * diff
-            val onlineYEnd = newTop + extraHeight - AndroidUtilities.dpf2(10f) -
+            val onlineYEnd = newTop + extraHeight - getActionsExtraHeight() - AndroidUtilities.dpf2(10f) -
                 (subtitleView[1]?.bottom ?: 0)
 
             val onlineCy = ky + onlineYStart + (onlineYEnd - onlineYStart) / 2f
@@ -1187,8 +1364,8 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
 
         avatarContainer?.let { ac ->
             if (extraHeight > getHeaderExtraHeight() || isPulledDown) {
-                val nameY = newTop + extraHeight - AndroidUtilities.dpf2(30f) - (nameTextView[1]?.bottom ?: 0)
-                val onlineY = newTop + extraHeight - AndroidUtilities.dpf2(10f) - (subtitleView[1]?.bottom ?: 0)
+                val nameY = newTop + extraHeight - getActionsExtraHeight() - AndroidUtilities.dpf2(30f) - (nameTextView[1]?.bottom ?: 0)
+                val onlineY = newTop + extraHeight - getActionsExtraHeight() - AndroidUtilities.dpf2(10f) - (subtitleView[1]?.bottom ?: 0)
                 val minNameY = Math.floor(endNameY.toDouble()).toFloat() + AndroidUtilities.dp(1.3f)
                 val minOnlineY = minNameY + AndroidUtilities.dpf2(22.7f)
 
@@ -1366,6 +1543,8 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
             aiv.localAvatarDrawable.setInfo(0, title)
             canExpandAvatar = showAvatar && (avatarTemplate.isNotEmpty() || animatedAvatarUrl.isNotEmpty())
             aiv.isClickable = canExpandAvatar
+            aiv.isLongClickable = canExpandAvatar
+            aiv.importantForAccessibility = if (canExpandAvatar) View.IMPORTANT_FOR_ACCESSIBILITY_YES else View.IMPORTANT_FOR_ACCESSIBILITY_NO
             if (showAvatar && (avatarTemplate.isNotEmpty() || animatedAvatarUrl.isNotEmpty())) {
                 val avatarUrl = resolveAvatarUrl(appContainer.baseUrl, avatarTemplate, animatedAvatarUrl, 360)
                 aiv.imageReceiver.setAllowDecodeSingleFrame(animatedAvatarUrl.isBlank())
@@ -1388,7 +1567,7 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
         // top-level icons. Sub-items are added once and toggled via show/hideSubItem
         // (upstream L11991–12118 uses the same pattern).
         val overflow = menu.addItem(MENU_OTHER, TelegramR.drawable.ic_ab_other)
-        overflow.setContentDescription(context.getString(R.string.profile_menu_refresh))
+        overflow.setContentDescription(context.getString(R.string.action_more_options))
         // Pass icons as int resources (not Drawable) so ActionBarMenuSubItem
         // applies the key_actionBarDefaultSubmenuItemIcon MULTIPLY tint — the
         // Drawable overload clears the color filter and renders vector icons at
@@ -2008,6 +2187,28 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
             bounce.setPressed(pressed)
         }
 
+        override fun onInitializeAccessibilityNodeInfo(info: AccessibilityNodeInfo) {
+            super.onInitializeAccessibilityNodeInfo(info)
+            if (imageReceiver.hasNotThumb()) {
+                info.className = "android.widget.ImageButton"
+                info.text = context.getString(R.string.profile_avatar_accessibility)
+                info.addAction(
+                    AccessibilityNodeInfo.AccessibilityAction(
+                        AccessibilityNodeInfo.ACTION_CLICK,
+                        context.getString(R.string.action_open),
+                    ),
+                )
+                info.addAction(
+                    AccessibilityNodeInfo.AccessibilityAction(
+                        AccessibilityNodeInfo.ACTION_LONG_CLICK,
+                        context.getString(R.string.profile_avatar_open_viewer),
+                    ),
+                )
+            } else {
+                info.isVisibleToUser = false
+            }
+        }
+
         override fun onDraw(canvas: Canvas) {
             val scale = bounce.getScale(0.04f)
             if (scale != 1f) {
@@ -2127,6 +2328,20 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
     }
 
     // --- Theme delegate ---
+
+    override fun onParentScrollToTop() {
+        listView?.smoothScrollToPosition(0)
+    }
+
+    override fun canParentTabsSlide(event: MotionEvent, forward: Boolean): Boolean {
+        val avatarHost = avatarContainer ?: return true
+        if (!avatarHost.isShown) {
+            return true
+        }
+        val bounds = android.graphics.Rect()
+        return !avatarHost.getGlobalVisibleRect(bounds) ||
+            !bounds.contains(event.rawX.toInt(), event.rawY.toInt())
+    }
 
     override fun didSetNewTheme() {
         (fragmentView as? View)?.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray))
@@ -2339,6 +2554,46 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate {
         btn.setOnClickListener { onClick() }
         return btn
     }
+}
+
+internal enum class ProfileHeaderReleaseTarget {
+    NONE,
+    COLLAPSED,
+    ACTIONS,
+    HEADER,
+}
+
+internal fun profileHeaderExtraDiff(
+    extraHeight: Float,
+    actionsExtraHeight: Int,
+    headerOnlyExtraHeight: Int,
+): Float {
+    if (headerOnlyExtraHeight <= 0) return 0f
+    return Utilities.clamp01((extraHeight - actionsExtraHeight) / headerOnlyExtraHeight)
+}
+
+internal fun profileHeaderReleaseTarget(
+    extraHeight: Float,
+    headerExtraHeight: Int,
+    actionsExtraHeight: Int,
+    velocityY: Float,
+): ProfileHeaderReleaseTarget {
+    if (extraHeight <= 0f) return ProfileHeaderReleaseTarget.NONE
+    val hasActions = actionsExtraHeight > 0
+    if (
+        hasActions &&
+        (extraHeight < headerExtraHeight * 0.6f || velocityY < -1000f) &&
+        extraHeight > actionsExtraHeight * 0.6f
+    ) {
+        return ProfileHeaderReleaseTarget.ACTIONS
+    }
+    if (hasActions && extraHeight < actionsExtraHeight * 0.6f) {
+        return ProfileHeaderReleaseTarget.COLLAPSED
+    }
+    if (!hasActions && velocityY < -1000f) {
+        return ProfileHeaderReleaseTarget.COLLAPSED
+    }
+    return ProfileHeaderReleaseTarget.HEADER
 }
 
 private class ProfileViewModelFactory(

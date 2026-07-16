@@ -43,6 +43,7 @@ import org.telegram.messenger.FileLog;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.ui.Cells.BaseCell;
+import org.telegram.ui.Components.LinkPath;
 import org.telegram.ui.Components.PathAnimator;
 
 public final class Theme {
@@ -166,6 +167,10 @@ public final class Theme {
         /** ADAPTED: getPaint stub for RecyclerListView compatibility. */
         default Paint getPaint(String paintKey) {
             return Theme.getThemePaint(paintKey);
+        }
+
+        default boolean hasGradientService() {
+            return false;
         }
 
         default boolean isDark() {
@@ -1100,6 +1105,20 @@ public final class Theme {
     public static final Paint dialogs_dividerPaint = new Paint();
     public static final Paint checkboxSquare_eraserPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     public static final Paint chat_docBackPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    public static final Paint chat_urlPaint = new Paint(); static {
+        chat_urlPaint.setPathEffect(LinkPath.getRoundedEffect());
+    }
+    public static final Paint chat_outUrlPaint = new Paint(); static {
+        chat_outUrlPaint.setPathEffect(LinkPath.getRoundedEffect());
+    }
+    public static final Paint chat_actionBackgroundGradientDarkenPaint = new Paint(Paint.ANTI_ALIAS_FLAG); static {
+        chat_actionBackgroundGradientDarkenPaint.setColor(0x15000000);
+    }
+    public static final String key_paint_chatActionBackground = "paintChatActionBackground";
+    public static final String key_paint_chatActionBackgroundDarken = "paintChatActionBackgroundDarken";
+    public static final String key_paint_chatActionBackgroundSelected = "paintChatActionBackgroundSelected";
+    private static final Paint chat_actionBackgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
+    private static final Paint chat_actionBackgroundSelectedPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
     public static final TextPaint chat_audioTitlePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
     public static Drawable chat_composeShadowDrawable;
     public static final Paint chat_composeBackgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -1294,6 +1313,8 @@ public final class Theme {
         chat_instantViewPaint.setColor(messageTextColor);
         int pollAccentColor = getColor(key_chat_inAudioSeekbarFill);
         chat_docBackPaint.setColor(pollAccentColor);
+        chat_urlPaint.setColor(getColor(key_chat_linkSelectBackground));
+        chat_outUrlPaint.setColor(getColor(key_chat_outLinkSelectBackground));
         for (int a = 0; a < chat_pollCheckDrawable.length; a++) {
             if (chat_pollCheckDrawable[a] != null) {
                 setDrawableColor(chat_pollCheckDrawable[a], pollAccentColor);
@@ -1323,6 +1344,10 @@ public final class Theme {
 
     public static boolean isCurrentThemeDark() {
         return currentTheme != null && currentTheme.isDark();
+    }
+
+    public static boolean hasGradientService() {
+        return false;
     }
 
     public static int getThemeGeneration() {
@@ -1689,8 +1714,18 @@ public final class Theme {
         return null;
     }
 
-    /** ADAPTED: getThemePaint stub for RecyclerListView. */
     public static Paint getThemePaint(String paintKey) {
+        if (key_paint_chatActionBackground.equals(paintKey)) {
+            chat_actionBackgroundPaint.setColor(getColor(key_chat_serviceBackground));
+            return chat_actionBackgroundPaint;
+        }
+        if (key_paint_chatActionBackgroundSelected.equals(paintKey)) {
+            chat_actionBackgroundSelectedPaint.setColor(getColor(key_chat_serviceBackgroundSelected));
+            return chat_actionBackgroundSelectedPaint;
+        }
+        if (key_paint_chatActionBackgroundDarken.equals(paintKey)) {
+            return chat_actionBackgroundGradientDarkenPaint;
+        }
         return new Paint();
     }
 

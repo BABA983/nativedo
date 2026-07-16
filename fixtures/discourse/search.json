@@ -3,6 +3,7 @@
     {
       "id": 9001,
       "topic_id": 101,
+      "post_number": 4,
       "topic_title": "Welcome to NativeDo Android",
       "username": "baba",
       "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png",
@@ -21,13 +22,20 @@
       "views": 88,
       "like_count": 6,
       "last_posted_at": "2026-03-31T08:30:00.000Z",
-      "last_poster_username": "searcher",
+      "last_poster_username": "baba",
       "category_id": 2,
-      "tags": ["ai", "llm"]
+      "tags": ["ai", "llm"],
+      "posters": [
+        {
+          "description": "Original Poster",
+          "user_id": 7
+        }
+      ]
     }
   ],
   "users": [
     {
+      "id": 7,
       "username": "baba",
       "name": "Baba",
       "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png"

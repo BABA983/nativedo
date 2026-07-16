@@ -25,6 +25,8 @@ import io.github.baba983.nativedo.core.storage.SharedPreferencesSessionStorePers
 import io.github.baba983.nativedo.core.storage.SharedPreferencesSvgSpriteStorePersistence
 import io.github.baba983.nativedo.core.storage.SvgSpriteStore
 import io.github.baba983.nativedo.core.web.DiscourseSvgSpriteLoader
+import io.github.baba983.nativedo.feature.topic.data.SharedPreferencesTopicReplyDraftPersistence
+import io.github.baba983.nativedo.feature.topic.data.TopicReplyDraftStore
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -41,6 +43,7 @@ class AppContainer(
     private val cookiePreferences = appContext?.getSharedPreferences(COOKIE_STORE_PREFS, Context.MODE_PRIVATE)
     private val sessionPreferences = appContext?.getSharedPreferences(SESSION_STORE_PREFS, Context.MODE_PRIVATE)
     private val svgSpritePreferences = appContext?.getSharedPreferences(SVG_SPRITE_STORE_PREFS, Context.MODE_PRIVATE)
+    private val topicReplyDraftPreferences = appContext?.getSharedPreferences(TOPIC_REPLY_DRAFT_STORE_PREFS, Context.MODE_PRIVATE)
     val cookieStore: CookieStore = cookiePreferences
         ?.let { preferences ->
             CookieStore(persistence = SharedPreferencesCookieStorePersistence(preferences))
@@ -56,6 +59,11 @@ class AppContainer(
             SvgSpriteStore(persistence = SharedPreferencesSvgSpriteStorePersistence(preferences))
         }
         ?: SvgSpriteStore()
+    val topicReplyDraftStore: TopicReplyDraftStore = topicReplyDraftPreferences
+        ?.let { preferences ->
+            TopicReplyDraftStore(SharedPreferencesTopicReplyDraftPersistence(preferences))
+        }
+        ?: TopicReplyDraftStore()
     val cookieSyncBridge: CookieSyncBridge = CookieSyncBridge(
         baseUrl = baseUrl,
         cookieStore = cookieStore,
@@ -133,5 +141,6 @@ class AppContainer(
         const val COOKIE_STORE_PREFS: String = "nativedo.cookie_store"
         const val SESSION_STORE_PREFS: String = "nativedo.session_store"
         const val SVG_SPRITE_STORE_PREFS: String = "nativedo.svg_sprite_store"
+        const val TOPIC_REPLY_DRAFT_STORE_PREFS: String = "nativedo.topic_reply_drafts"
     }
 }
