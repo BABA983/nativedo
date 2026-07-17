@@ -12,6 +12,7 @@
   - RLottieImageView
   - FragmentSearchField
   - FlickerLoadingView
+    - host contract: `FlickerLoadingViewHostContractTest` (REACTED_TYPE = 50dp)
 
 ## ArticleViewer (epic)
 - See `docs/vendor-articleviewer-plan.md` (B1–B4 landed; no full-file pin)
@@ -26,3 +27,17 @@
 ## Next global picks
 1. Other small exact files still on `vendored_at` 009e… **with** non-FF stuck reasons (triage case-by-case)
 2. Or forced_exact regression tests / product paths for the 5 just unstuck
+
+## Testing policy (vendor FF)
+
+Add a unit test **only** when it locks a *host-specific contract* that a clean pin FF would break:
+
+| Worth it | Examples |
+|----------|----------|
+| Yes | Host constant replacing missing upstream type (`dp(50)` vs `ITEM_HEIGHT_DP`); public measure/API :app depends on |
+| Yes | ArticleViewer public surface (`ErrorContainer`, `DrawingText` ctor) |
+| No | "File compiles"; re-asserting pure upstream `forced_exact` math already covered by pin fidelity |
+| No | Full onDraw / gesture / nested-scroll without product path or Paparazzi |
+
+GraySectionCell / NestedSizeNotifierLayout / RLottieImageView / FragmentSearchField:
+host deltas are structural (omit class, TextView swap) — compile + isolation is the check; no value in trivial construct tests.
