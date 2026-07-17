@@ -225,7 +225,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 
-public class ArticleViewer implements NotificationCenter.NotificationCenterDelegate {
+public class ArticleViewer extends IArticleViewer implements NotificationCenter.NotificationCenterDelegate {
 
     public static HashSet<ArticleViewer> activeSheets = new HashSet<>();
 
@@ -406,6 +406,30 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
 
     public static boolean hasInstance() {
         return Instance != null;
+    }
+
+    @Override
+    public int getCurrentAccount() {
+        return currentAccount;
+    }
+
+    @Override
+    public TextSelectionHelper.ArticleTextSelectionHelper getTextSelectionHelper(View view) {
+        if (view != null && view.getTag() == BOTTOM_SHEET_VIEW_TAG && textSelectionHelperBottomSheet != null) {
+            return textSelectionHelperBottomSheet;
+        }
+        return textSelectionHelper;
+    }
+
+    /** Paint cache shell for IArticleViewer; populated in a later field-move PR. */
+    public static class Resources {
+    }
+
+    private final Resources resources = new Resources();
+
+    @Override
+    public Resources getResources() {
+        return resources;
     }
 
     private int selectedFont = 0;
@@ -2173,7 +2197,8 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
         closeAnimationInProgress = true;
     }
 
-    private boolean scrollToAnchor(String anchor, boolean animated) {
+    @Override
+    public boolean scrollToAnchor(String anchor, boolean animated) {
         if (TextUtils.isEmpty(anchor)) {
             return false;
         }
@@ -2714,15 +2739,18 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
         return null;
     }
 
-    private int getTextColor() {
+    @Override
+    public int getTextColor() {
         return getThemedColor(Theme.key_windowBackgroundWhiteBlackText);
     }
 
-    private int getLinkTextColor() {
+    @Override
+    public int getLinkTextColor() {
         return getThemedColor(Theme.key_windowBackgroundWhiteLinkText);
     }
 
-    private int getGrayTextColor() {
+    @Override
+    public int getGrayTextColor() {
         return getThemedColor(Theme.key_windowBackgroundWhiteGrayText);
     }
 
@@ -3343,7 +3371,8 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
         }
     }
 
-    private void openWebpageUrl(String url, String anchor, Browser.Progress progress) {
+    @Override
+    public void openWebpageUrl(String url, String anchor, Browser.Progress progress) {
         if (loadingProgress != null) {
             loadingProgress.cancel();
         }
@@ -5791,7 +5820,7 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
 
     private LongSparseArray<BlockVideoCellState> videoStates = new LongSparseArray<>();
 
-    private class WebpageAdapter extends RecyclerListView.SelectionAdapter {
+    public class WebpageAdapter extends RecyclerListView.SelectionAdapter {
 
         private Context context;
         private ArrayList<TLRPC.PageBlock> localBlocks = new ArrayList<>();
@@ -12478,6 +12507,7 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
         }
     }
 
+    @Override
     public boolean openPhoto(TLRPC.PageBlock block, WebpageAdapter adapter) {
         if (parentFragment == null || parentFragment.getParentActivity() == null) {
             return false;
@@ -12797,16 +12827,23 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
         }
     }
 
+    @Override
     public int getThemedColor(int key) {
         return Theme.getColor(key, getResourcesProvider());
     }
 
+    @Override
     public Theme.ResourcesProvider getResourcesProvider() {
         return null; // sheet != null ? sheet.resourcesProvider : null;
     }
 
     public boolean isFirstArticle() {
         return pagesStack.size() > 0 && pagesStack.get(0) instanceof TLRPC.WebPage;
+    }
+
+    @Override
+    public WebpageAdapter getAdapter() {
+        return pages != null && pages[0] != null ? pages[0].adapter : null;
     }
 
     private final AnimatedColor page0Background = new AnimatedColor(() -> AndroidUtilities.runOnUIThread(this::updatePages), 320, CubicBezierInterpolator.EASE_OUT_QUINT);

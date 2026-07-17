@@ -76,6 +76,32 @@ Next Phase 2 slice options:
 2. Continue surgical Sheet/chrome patches only — preferred
 3. Defer rest of AV until product needs full IV-in-viewer parity
 
+
+### Phase B1 — Thin `IArticleViewer` (landed)
+
+Introduced `org.telegram.ui.IArticleViewer` (API surface only):
+
+- Abstract: account, text/link/gray colors, themed color, resources provider, `getResources()`, text-selection helper
+- Defaults: `padx`/`pady` (18/8), `allowTouches`, empty `openWebpageUrl` / `openPhoto(TLRPC.PageBlock)` / …
+- **Not moved yet:** `pressedLink*`, `videoPlayer`, `searchResults`, `popupWindow`, … still on `ArticleViewer`
+- `ArticleViewer.Resources` empty shell (paint maps stay as existing statics until B2)
+- `WebpageAdapter` visibility public for base type references
+
+```bash
+# verify
+./apps/android/gradlew -p apps/android :telegram:compileDebugJavaWithJavac --quiet
+./apps/android/gradlew -p apps/android :app:testDebugUnitTest --tests 'org.telegram.ui.ArticleViewerContractTest' --quiet
+```
+
+### Phase B2 — Field move + DrawingText(parent) (next)
+
+1. Move pin-matching fields from `ArticleViewer` onto `IArticleViewer` (public)
+2. Change `DrawingText` / block helpers to take `IArticleViewer parent` where pin does
+3. Port `ArticleViewer.Resources` paint maps from pin (or keep statics and assign into Resources)
+4. Only then re-attempt larger pin body slices
+
+Do **not** full-file replace until B2 compiles with contract tests green.
+
 ### Phase 3 — WebActionBar / bookmarks chrome
 
 Align with already-pinned `WebActionBar`, scheme-2 `AddressBarList` / `WebMetadataCache`.
