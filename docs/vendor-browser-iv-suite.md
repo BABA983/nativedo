@@ -17,7 +17,7 @@ lives under `org.telegram.ui.web.*` + `ArticleViewer`.
 |------|------|--------|
 | `WebMetadataCache` | Favicon/sitename cache + offscreen WebView extract | **Scheme-2 @ pin** (host wiring kept) |
 | `AddressBarList` | Address bar list + bookmarks UI | **Scheme-2 @ pin** (WebBookmarks backend) |
-| `WebInstantView` | HTML → Instant View page model | **Blocked on TL_iv** |
+| `WebInstantView` | HTML → Instant View page model | **S1 reverse-patch @ pin** (TL_iv→TLRPC + host readHTML) |
 | `ArticleViewer` | Sheet chrome + IV display + related UI | **Epic after TL_iv / WebInstantView** |
 | `Browser` (native) | URL open dispatch | Host shim (not exact FF) |
 | `WebActionBar` | Browser action bar | Already @ pin |
@@ -33,8 +33,9 @@ lives under `org.telegram.ui.web.*` + `ArticleViewer`.
 
 ## How to proceed
 
-### Done (this pass)
+### Done
 - Scheme-2 baseline for `WebMetadataCache` + `AddressBarList`.
+- **S1 reverse-patch** for `WebInstantView` (TL_iv→TLRPC; host Activity for readHTML).
 
 ### Next (when ready for real IV pin sync)
 1. Pick **TL_iv strategy**:

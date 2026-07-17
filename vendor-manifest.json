@@ -1968,11 +1968,10 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/WebInstantView.java",
       "upstream": "org/telegram/ui/web/WebInstantView.java",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
+      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
       "modified": true,
       "port_mode": "exact",
-      "notes": "Host wiring only: readHTML resolves the offscreen extraction WebView's host Activity/Context via LaunchActivity.getActionBarLayoutActivity() (real MainActivity) instead of the non-window LaunchActivity.instance stub; without this the local Instant View page never builds and the IV menu item stays disabled. Animation/parsing/measurement bodies remain upstream-shaped.",
-      "stuck_reason": "Browser/IV: pin uses org.telegram.tgnet.tl.TL_iv (~174 refs); local uses TLRPC.TL_page* + LaunchActivity.getActionBarLayoutActivity() for readHTML. Apply TL_iv strategy S1 reverse-patch or S2 shim before rebase. Do not clean-FF pin."
+      "notes": "S1 reverse-patch from 12.8.1 pin: TL_iv.* mapped to TLRPC page/text types (headings collapsed to Header/Subheader; PageCaption→TL_pageCaption). Host readHTML uses LaunchActivity.getActionBarLayoutActivity()."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/BrowserHistory.java",

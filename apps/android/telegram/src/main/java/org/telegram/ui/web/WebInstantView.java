@@ -12,7 +12,6 @@ import android.graphics.Canvas;
 import android.os.Build;
 import android.text.TextUtils;
 import android.util.JsonReader;
-import android.util.Log;
 import android.util.Pair;
 import android.view.MotionEvent;
 import android.view.View;
@@ -41,7 +40,6 @@ import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.SvgHelper;
 import org.telegram.messenger.Timer;
 import org.telegram.messenger.Utilities;
-import org.telegram.messenger.browser.Browser;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.Components.LayoutHelper;
@@ -328,19 +326,16 @@ public class WebInstantView {
             return;
         }
 
-        // NativeDo: LaunchActivity is a non-window stub Context; resolve the real host
-        // Activity (MainActivity) via the root ActionBarLayout so the offscreen extraction
-        // WebView gets a real Context and a real content view to attach to.
         Activity activity = LaunchActivity.getActionBarLayoutActivity();
         if (activity == null) {
             Context fallback = LaunchActivity.instance != null ? LaunchActivity.instance : ApplicationLoader.applicationContext;
             activity = AndroidUtilities.findActivity(fallback);
         }
+        final Context context = activity;
         if (activity == null) {
             whenDone.run(null);
             return;
         }
-        final Context context = activity;
         final View rootView = activity.findViewById(android.R.id.content).getRootView();
         if (!(rootView instanceof ViewGroup)) {
             whenDone.run(null);
@@ -521,12 +516,6 @@ public class WebInstantView {
         page.url = url;
         page.blocks.addAll(parsePageBlocks(url, content, page));
         if (page.blocks.isEmpty() || !(page.blocks.get(0) instanceof TLRPC.TL_pageBlockHeader)) {
-//            if (byline != null || publishedTime != null) {
-//                final TLRPC.TL_pageBlockAuthorDate authorDate = new TLRPC.TL_pageBlockAuthorDate();
-//                authorDate.author = trim(parseRichText(byline));
-//                page.blocks.add(0, authorDate);
-//            }
-
             final TLRPC.TL_pageBlockTitle blockTitle = new TLRPC.TL_pageBlockTitle();
             blockTitle.text = trim(parseRichText(title));
             page.blocks.add(0, blockTitle);
@@ -554,18 +543,34 @@ public class WebInstantView {
                         blocks.add(p);
                         break;
                     case "h1":
-                    case "h2":
                         TLRPC.TL_pageBlockHeader h1 = new TLRPC.TL_pageBlockHeader();
                         h1.text = trim(parseRichText(o, page));
                         blocks.add(h1);
                         break;
+                    case "h2":
+                        TLRPC.TL_pageBlockHeader h2 = new TLRPC.TL_pageBlockHeader();
+                        h2.text = trim(parseRichText(o, page));
+                        blocks.add(h2);
+                        break;
                     case "h3":
+                        TLRPC.TL_pageBlockSubheader h3 = new TLRPC.TL_pageBlockSubheader();
+                        h3.text = trim(parseRichText(o, page));
+                        blocks.add(h3);
+                        break;
                     case "h4":
+                        TLRPC.TL_pageBlockSubheader h4 = new TLRPC.TL_pageBlockSubheader();
+                        h4.text = trim(parseRichText(o, page));
+                        blocks.add(h4);
+                        break;
                     case "h5":
+                        TLRPC.TL_pageBlockSubheader h5 = new TLRPC.TL_pageBlockSubheader();
+                        h5.text = trim(parseRichText(o, page));
+                        blocks.add(h5);
+                        break;
                     case "h6":
-                        TLRPC.TL_pageBlockSubheader h = new TLRPC.TL_pageBlockSubheader();
-                        h.text = trim(parseRichText(o, page));
-                        blocks.add(h);
+                        TLRPC.TL_pageBlockSubheader h6 = new TLRPC.TL_pageBlockSubheader();
+                        h6.text = trim(parseRichText(o, page));
+                        blocks.add(h6);
                         break;
                     case "pre":
                         TLRPC.TL_pageBlockPreformatted pre = new TLRPC.TL_pageBlockPreformatted();

@@ -1,13 +1,14 @@
 # Exact rebase queue (global pin 12.8.1)
 
-## Scheme-2 complete (this area)
-- `Utilities.java`
-- `WebMetadataCache.java`
-- `AddressBarList.java`
+## Scheme-2 / S1 complete
+- `Utilities.java` — scheme-2
+- `WebMetadataCache.java` — scheme-2
+- `AddressBarList.java` — scheme-2
+- `WebInstantView.java` — **S1 reverse-patch** (TL_iv→TLRPC + host readHTML)
 
-## Browser/IV still blocked (see docs/vendor-browser-iv-suite.md)
-- `telegram/src/main/java/org/telegram/ui/web/WebInstantView.java` — TL_iv
-- `telegram/src/main/java/org/telegram/ui/ArticleViewer.java` — epic after TL_iv
+## Still blocked / epic
+- `telegram/src/main/java/org/telegram/ui/ArticleViewer.java` — large UI + IV display; after product priority
+- `WebBrowserSettings.java` — low ROI Telegram settings surface
 
-## Other / low ROI
-- `WebBrowserSettings.java` — Telegram settings surface; prefer permanent stuck or native thin page
+## List stack (done earlier)
+- `RecyclerListView.java`, `RecyclerAnimationScrollHelper.java`
