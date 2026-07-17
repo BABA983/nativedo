@@ -52,10 +52,7 @@ public abstract class IArticleViewer {
 
     public abstract Theme.ResourcesProvider getResourcesProvider();
 
-    /**
-     * Upstream returns a paint-cache {@link ArticleViewer.Resources}. Local paints may still
-     * live as statics; subclasses may return an empty shell until paint maps are relocated.
-     */
+    /** Upstream-shaped paint cache; local subclasses expose their own map set here. */
     public abstract ArticleViewer.Resources getResources();
 
     /** Horizontal content inset in dp (upstream constant 18). */

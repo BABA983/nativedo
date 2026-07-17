@@ -103,4 +103,23 @@ class ArticleViewerContractTest {
         assertThat(res.isRichMessage).isFalse()
     }
 
+    @Test
+    fun resources_preserveIdentityAndConstructorModes() {
+        val viewer = ArticleViewer.getInstance()
+        assertThat(viewer.getResources()).isSameInstanceAs(viewer.getResources())
+        assertThat(ArticleViewer.Resources().isRichMessage).isFalse()
+        assertThat(ArticleViewer.Resources(true).isRichMessage).isTrue()
+    }
+
+    @Test
+    fun resources_instancesOwnIndependentPaintMaps() {
+        val first = ArticleViewer.Resources()
+        val second = ArticleViewer.Resources()
+
+        first.paragraphTextPaints.put(7, android.text.TextPaint())
+
+        assertThat(first.paragraphTextPaints.size()).isEqualTo(1)
+        assertThat(second.paragraphTextPaints.size()).isEqualTo(0)
+    }
+
 }

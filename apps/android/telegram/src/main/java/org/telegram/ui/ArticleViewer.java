@@ -443,6 +443,110 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         public Resources(boolean isRichMessage) {
             this.isRichMessage = isRichMessage;
         }
+
+        public void updatePaintColors(IArticleViewer parent) {
+            setMapColors(parent, titleTextPaints);
+            setMapColors(parent, kickerTextPaints);
+            setMapColors(parent, subtitleTextPaints);
+            setMapColors(parent, headerTextPaints);
+            setMapColors(parent, subheaderTextPaints);
+            setMapColors(parent, quoteTextPaints);
+            setMapColors(parent, preformattedTextPaints);
+            setMapColors(parent, paragraphTextPaints);
+            setMapColors(parent, listTextPaints);
+            setMapColors(parent, embedPostTextPaints);
+            setMapColors(parent, mediaCaptionTextPaints);
+            setMapColors(parent, mediaCreditTextPaints);
+            setMapColors(parent, photoCaptionTextPaints);
+            setMapColors(parent, photoCreditTextPaints);
+            setMapColors(parent, authorTextPaints);
+            setMapColors(parent, footerTextPaints);
+            setMapColors(parent, embedPostCaptionTextPaints);
+            setMapColors(parent, relatedArticleTextPaints);
+            setMapColors(parent, detailsTextPaints);
+            setMapColors(parent, tableTextPaints);
+        }
+
+        private void setMapColors(IArticleViewer parent, SparseArray<TextPaint> map) {
+            for (int a = 0; a < map.size(); a++) {
+                final int flags = map.keyAt(a);
+                final TextPaint paint = map.valueAt(a);
+                if (paint == null) continue;
+                if ((flags & TEXT_FLAG_URL) != 0 || (flags & TEXT_FLAG_WEBPAGE_URL) != 0) {
+                    paint.setColor(parent.getLinkTextColor());
+                } else {
+                    paint.setColor(parent.getTextColor());
+                }
+            }
+        }
+
+        public void updatePaintFonts(int selectedFont) {
+            ApplicationLoader.applicationContext.getSharedPreferences("articles", Activity.MODE_PRIVATE).edit().putInt("font_type", selectedFont).commit();
+            Typeface typefaceNormal = selectedFont == 0 ? Typeface.DEFAULT : Typeface.SERIF;
+            Typeface typefaceItalic = selectedFont == 0 ? AndroidUtilities.getTypeface("fonts/ritalic.ttf") : Typeface.create("serif", Typeface.ITALIC);
+            Typeface typefaceBold = selectedFont == 0 ? AndroidUtilities.bold() : Typeface.create("serif", Typeface.BOLD);
+            Typeface typefaceBoldItalic = selectedFont == 0 ? AndroidUtilities.getTypeface("fonts/rmediumitalic.ttf") : Typeface.create("serif", Typeface.BOLD_ITALIC);
+
+            for (int a = 0; a < quoteTextPaints.size(); a++) {
+                updateFontEntry(quoteTextPaints.keyAt(a), quoteTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
+            }
+            for (int a = 0; a < preformattedTextPaints.size(); a++) {
+                updateFontEntry(preformattedTextPaints.keyAt(a), preformattedTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
+            }
+            for (int a = 0; a < paragraphTextPaints.size(); a++) {
+                updateFontEntry(paragraphTextPaints.keyAt(a), paragraphTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
+            }
+            for (int a = 0; a < listTextPaints.size(); a++) {
+                updateFontEntry(listTextPaints.keyAt(a), listTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
+            }
+            for (int a = 0; a < embedPostTextPaints.size(); a++) {
+                updateFontEntry(embedPostTextPaints.keyAt(a), embedPostTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
+            }
+            for (int a = 0; a < mediaCaptionTextPaints.size(); a++) {
+                updateFontEntry(mediaCaptionTextPaints.keyAt(a), mediaCaptionTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
+            }
+            for (int a = 0; a < mediaCreditTextPaints.size(); a++) {
+                updateFontEntry(mediaCreditTextPaints.keyAt(a), mediaCreditTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
+            }
+            for (int a = 0; a < photoCaptionTextPaints.size(); a++) {
+                updateFontEntry(photoCaptionTextPaints.keyAt(a), photoCaptionTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
+            }
+            for (int a = 0; a < photoCreditTextPaints.size(); a++) {
+                updateFontEntry(photoCreditTextPaints.keyAt(a), photoCreditTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
+            }
+            for (int a = 0; a < authorTextPaints.size(); a++) {
+                updateFontEntry(authorTextPaints.keyAt(a), authorTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
+            }
+            for (int a = 0; a < footerTextPaints.size(); a++) {
+                updateFontEntry(footerTextPaints.keyAt(a), footerTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
+            }
+            for (int a = 0; a < embedPostCaptionTextPaints.size(); a++) {
+                updateFontEntry(embedPostCaptionTextPaints.keyAt(a), embedPostCaptionTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
+            }
+            for (int a = 0; a < relatedArticleTextPaints.size(); a++) {
+                updateFontEntry(relatedArticleTextPaints.keyAt(a), relatedArticleTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
+            }
+            for (int a = 0; a < detailsTextPaints.size(); a++) {
+                updateFontEntry(detailsTextPaints.keyAt(a), detailsTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
+            }
+            for (int a = 0; a < tableTextPaints.size(); a++) {
+                updateFontEntry(tableTextPaints.keyAt(a), tableTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
+            }
+        }
+
+        private void updateFontEntry(int flags, TextPaint paint, Typeface typefaceNormal, Typeface typefaceBoldItalic, Typeface typefaceBold, Typeface typefaceItalic) {
+            if ((flags & TEXT_FLAG_MEDIUM) != 0 && (flags & TEXT_FLAG_ITALIC) != 0) {
+                paint.setTypeface(typefaceBoldItalic);
+            } else if ((flags & TEXT_FLAG_MEDIUM) != 0) {
+                paint.setTypeface(typefaceBold);
+            } else if ((flags & TEXT_FLAG_ITALIC) != 0) {
+                paint.setTypeface(typefaceItalic);
+            } else if ((flags & TEXT_FLAG_MONO) != 0) {
+                //change nothing
+            } else {
+                paint.setTypeface(typefaceNormal);
+            }
+        }
     }
 
     /** Shared paint maps (pin uses a static Resources; static field names alias into this). */
@@ -1354,7 +1458,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    private void createPaint(boolean update) {
+    public static void createPaint(IArticleViewer parent, boolean update) {
         if (quoteLinePaint == null) {
             quoteLinePaint = new Paint();
 
@@ -1381,35 +1485,35 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             return;
         }
 
-        int color2 = getThemedColor(Theme.key_windowBackgroundWhite);
+        int color2 = parent.getThemedColor(Theme.key_windowBackgroundWhite);
         float lightness = (0.2126f * Color.red(color2) + 0.7152f * Color.green(color2) + 0.0722f * Color.blue(color2)) / 255.0f;
         webpageSearchPaint.setColor(lightness <= 0.705f ? 0xffd1982e : 0xffffe669);
-        webpageUrlPaint.setColor(getThemedColor(Theme.key_windowBackgroundWhiteLinkSelection) & 0x33ffffff);
+        webpageUrlPaint.setColor(parent.getThemedColor(Theme.key_windowBackgroundWhiteLinkSelection) & 0x33ffffff);
         webpageUrlPaint.setPathEffect(LinkPath.getRoundedEffect());
-        urlPaint.setColor(getThemedColor(Theme.key_windowBackgroundWhiteLinkSelection) & 0x33ffffff);
+        urlPaint.setColor(parent.getThemedColor(Theme.key_windowBackgroundWhiteLinkSelection) & 0x33ffffff);
         urlPaint.setPathEffect(LinkPath.getRoundedEffect());
-        tableHalfLinePaint.setColor(getThemedColor(Theme.key_windowBackgroundWhiteInputField));
-        tableLinePaint.setColor(getThemedColor(Theme.key_windowBackgroundWhiteInputField));
+        tableHalfLinePaint.setColor(parent.getThemedColor(Theme.key_windowBackgroundWhiteInputField));
+        tableLinePaint.setColor(parent.getThemedColor(Theme.key_windowBackgroundWhiteInputField));
 
         photoBackgroundPaint.setColor(0x0f000000);
-        dividerPaint.setColor(getThemedColor(Theme.key_divider));
-        webpageMarkPaint.setColor(getThemedColor(Theme.key_windowBackgroundWhiteLinkSelection) & 0x33ffffff);
+        dividerPaint.setColor(parent.getThemedColor(Theme.key_divider));
+        webpageMarkPaint.setColor(parent.getThemedColor(Theme.key_windowBackgroundWhiteLinkSelection) & 0x33ffffff);
         webpageMarkPaint.setPathEffect(LinkPath.getRoundedEffect());
 
-        int color = getThemedColor(Theme.key_switchTrack);
+        int color = parent.getThemedColor(Theme.key_switchTrack);
         int r = Color.red(color);
         int g = Color.green(color);
         int b = Color.blue(color);
         tableStripPaint.setColor(Color.argb(20, r, g, b));
         tableHeaderPaint.setColor(Color.argb(34, r, g, b));
 
-        color = getThemedColor(Theme.key_windowBackgroundWhiteLinkSelection);
+        color = parent.getThemedColor(Theme.key_windowBackgroundWhiteLinkSelection);
         r = Color.red(color);
         g = Color.green(color);
         b = Color.blue(color);
         preformattedBackgroundPaint.setColor(Color.argb(20, r, g, b));
 
-        quoteLinePaint.setColor(getThemedColor(Theme.key_chat_inReplyLine));
+        quoteLinePaint.setColor(parent.getThemedColor(Theme.key_chat_inReplyLine));
     }
 
     private void showCopyPopup(String urlFinal) {
@@ -3566,7 +3670,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
     public void updateThemeColors(float progress) {
         refreshThemeColors();
-        updatePaintColors();
+        updatePaintColors(this);
         if (windowView != null) {
             pages[0].listView.invalidateViews();
             pages[1].listView.invalidateViews();
@@ -3586,141 +3690,35 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    private void updatePaintFonts() {
-        ApplicationLoader.applicationContext.getSharedPreferences("articles", Activity.MODE_PRIVATE).edit().putInt("font_type", selectedFont).commit();
-        Typeface typefaceNormal = selectedFont == 0 ? Typeface.DEFAULT : Typeface.SERIF;
-        Typeface typefaceItalic = selectedFont == 0 ? AndroidUtilities.getTypeface("fonts/ritalic.ttf") : Typeface.create("serif", Typeface.ITALIC);
-        Typeface typefaceBold = selectedFont == 0 ? AndroidUtilities.bold() : Typeface.create("serif", Typeface.BOLD);
-        Typeface typefaceBoldItalic = selectedFont == 0 ? AndroidUtilities.getTypeface("fonts/rmediumitalic.ttf") : Typeface.create("serif", Typeface.BOLD_ITALIC);
-
-        for (int a = 0; a < quoteTextPaints.size(); a++) {
-            updateFontEntry(quoteTextPaints.keyAt(a), quoteTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
-        }
-        for (int a = 0; a < preformattedTextPaints.size(); a++) {
-            updateFontEntry(preformattedTextPaints.keyAt(a), preformattedTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
-        }
-        for (int a = 0; a < paragraphTextPaints.size(); a++) {
-            updateFontEntry(paragraphTextPaints.keyAt(a), paragraphTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
-        }
-        for (int a = 0; a < listTextPaints.size(); a++) {
-            updateFontEntry(listTextPaints.keyAt(a), listTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
-        }
-        for (int a = 0; a < embedPostTextPaints.size(); a++) {
-            updateFontEntry(embedPostTextPaints.keyAt(a), embedPostTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
-        }
-        for (int a = 0; a < mediaCaptionTextPaints.size(); a++) {
-            updateFontEntry(mediaCaptionTextPaints.keyAt(a), mediaCaptionTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
-        }
-        for (int a = 0; a < mediaCreditTextPaints.size(); a++) {
-            updateFontEntry(mediaCreditTextPaints.keyAt(a), mediaCreditTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
-        }
-        for (int a = 0; a < photoCaptionTextPaints.size(); a++) {
-            updateFontEntry(photoCaptionTextPaints.keyAt(a), photoCaptionTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
-        }
-        for (int a = 0; a < photoCreditTextPaints.size(); a++) {
-            updateFontEntry(photoCreditTextPaints.keyAt(a), photoCreditTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
-        }
-        for (int a = 0; a < authorTextPaints.size(); a++) {
-            updateFontEntry(authorTextPaints.keyAt(a), authorTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
-        }
-        for (int a = 0; a < footerTextPaints.size(); a++) {
-            updateFontEntry(footerTextPaints.keyAt(a), footerTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
-        }
-        for (int a = 0; a < embedPostCaptionTextPaints.size(); a++) {
-            updateFontEntry(embedPostCaptionTextPaints.keyAt(a), embedPostCaptionTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
-        }
-        for (int a = 0; a < relatedArticleTextPaints.size(); a++) {
-            updateFontEntry(relatedArticleTextPaints.keyAt(a), relatedArticleTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
-        }
-        for (int a = 0; a < detailsTextPaints.size(); a++) {
-            updateFontEntry(detailsTextPaints.keyAt(a), detailsTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
-        }
-        for (int a = 0; a < tableTextPaints.size(); a++) {
-            updateFontEntry(tableTextPaints.keyAt(a), tableTextPaints.valueAt(a), typefaceNormal, typefaceBoldItalic, typefaceBold, typefaceItalic);
-        }
-    }
-
-    private void updateFontEntry(int flags, TextPaint paint, Typeface typefaceNormal, Typeface typefaceBoldItalic, Typeface typefaceBold, Typeface typefaceItalic) {
-        if ((flags & TEXT_FLAG_MEDIUM) != 0 && (flags & TEXT_FLAG_ITALIC) != 0) {
-            paint.setTypeface(typefaceBoldItalic);
-        } else if ((flags & TEXT_FLAG_MEDIUM) != 0) {
-            paint.setTypeface(typefaceBold);
-        } else if ((flags & TEXT_FLAG_ITALIC) != 0) {
-            paint.setTypeface(typefaceItalic);
-        } else if ((flags & TEXT_FLAG_MONO) != 0) {
-            //change nothing
-        } else {
-            paint.setTypeface(typefaceNormal);
-        }
-    }
-
-    private void updatePaintColors() {
-        backgroundPaint.setColor(getThemedColor(Theme.key_iv_background));
-//        for (int i = 0; i < pages.length; i++) {
-//            pages[i].listView.setGlowColor(getThemedColor(Theme.key_windowBackgroundWhite));
-//        }
-
+    public static void updatePaintColors(IArticleViewer parent) {
         if (listTextPointerPaint != null) {
-            listTextPointerPaint.setColor(getTextColor());
+            listTextPointerPaint.setColor(parent.getTextColor());
         }
         if (listTextNumPaint != null) {
-            listTextNumPaint.setColor(getTextColor());
+            listTextNumPaint.setColor(parent.getTextColor());
         }
         if (embedPostAuthorPaint != null) {
-            embedPostAuthorPaint.setColor(getTextColor());
+            embedPostAuthorPaint.setColor(parent.getTextColor());
         }
         if (channelNamePaint != null) {
-            channelNamePaint.setColor(getTextColor());
+            channelNamePaint.setColor(parent.getTextColor());
         }
         if (channelNamePhotoPaint != null) {
             channelNamePhotoPaint.setColor(0xffffffff);
         }
         if (relatedArticleHeaderPaint != null) {
-            relatedArticleHeaderPaint.setColor(getTextColor());
+            relatedArticleHeaderPaint.setColor(parent.getTextColor());
         }
         if (relatedArticleTextPaint != null) {
-            relatedArticleTextPaint.setColor(getGrayTextColor());
+            relatedArticleTextPaint.setColor(parent.getGrayTextColor());
         }
 
         if (embedPostDatePaint != null) {
-            embedPostDatePaint.setColor(getGrayTextColor());
+            embedPostDatePaint.setColor(parent.getGrayTextColor());
         }
 
-        createPaint(true);
-
-        setMapColors(titleTextPaints);
-        setMapColors(kickerTextPaints);
-        setMapColors(subtitleTextPaints);
-        setMapColors(headerTextPaints);
-        setMapColors(subheaderTextPaints);
-        setMapColors(quoteTextPaints);
-        setMapColors(preformattedTextPaints);
-        setMapColors(paragraphTextPaints);
-        setMapColors(listTextPaints);
-        setMapColors(embedPostTextPaints);
-        setMapColors(mediaCaptionTextPaints);
-        setMapColors(mediaCreditTextPaints);
-        setMapColors(photoCaptionTextPaints);
-        setMapColors(photoCreditTextPaints);
-        setMapColors(authorTextPaints);
-        setMapColors(footerTextPaints);
-        setMapColors(embedPostCaptionTextPaints);
-        setMapColors(relatedArticleTextPaints);
-        setMapColors(detailsTextPaints);
-        setMapColors(tableTextPaints);
-    }
-
-    private void setMapColors(SparseArray<TextPaint> map) {
-        for (int a = 0; a < map.size(); a++) {
-            int flags = map.keyAt(a);
-            TextPaint paint = map.valueAt(a);
-            if (paint == null) continue;
-            if ((flags & TEXT_FLAG_URL) != 0 || (flags & TEXT_FLAG_WEBPAGE_URL) != 0) {
-                paint.setColor(getLinkTextColor());
-            } else {
-                paint.setColor(getTextColor());
-            }
-        }
+        createPaint(parent, true);
+        resources.updatePaintColors(parent);
     }
 
     public void setParentActivity(Activity activity, BaseFragment fragment) {
@@ -3731,7 +3729,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.messagePlayingPlayStateChanged);
         NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.messagePlayingDidStart);
         if (parentActivity == activity || parentActivity != null && isSheet && sheet != null && sheet.dialog != null) {
-            updatePaintColors();
+            updatePaintColors(this);
             refreshThemeColors();
             return;
         }
@@ -3739,7 +3737,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
         SharedPreferences sharedPreferences = ApplicationLoader.applicationContext.getSharedPreferences("articles", Activity.MODE_PRIVATE);
         selectedFont = sharedPreferences.getInt("font_type", 0);
-        createPaint(false);
+        createPaint(this, false);
         backgroundPaint = new Paint();
 
         layerShadowDrawable = activity.getResources().getDrawable(R.drawable.layer_shadow);
@@ -4551,7 +4549,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                             for (int a1 = 0; a1 < 2; a1++) {
                                 fontCells[a1].select(a1 == num, true);
                             }
-                            updatePaintFonts();
+                            resources.updatePaintFonts(selectedFont);
                             for (int i = 0; i < pages.length; i++) {
                                 pages[i].adapter.notifyDataSetChanged();
                             }
@@ -4722,7 +4720,8 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 }
             }
         });
-        updatePaintColors();
+        backgroundPaint.setColor(getThemedColor(Theme.key_iv_background));
+        updatePaintColors(this);
     }
 
     private boolean showRestrictedToastOnResume;

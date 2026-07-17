@@ -93,12 +93,13 @@ Introduced `org.telegram.ui.IArticleViewer` (API surface only):
 ./apps/android/gradlew -p apps/android :app:testDebugUnitTest --tests 'org.telegram.ui.ArticleViewerContractTest' --quiet
 ```
 
-### Phase B2 — Field move (landed) + DrawingText(parent) (next)
+### Phase B2 — Field move (landed) + DrawingText(parent)
 
 1. [x] Move pin-matching fields from `ArticleViewer` onto `IArticleViewer` (public)
 2. [x] `DrawingText(IArticleViewer parent)` + no-arg convenience; draw via parent fields (B3)
 3. [x] B4: Resources holds paint SparseArrays; static names alias shared instance
-4. [ ] Only then re-attempt larger pin body slices
+4. [x] B5: Resources owns paint color/font updates; outer paint creation/color entry points match pin
+5. [ ] Only then re-attempt larger pin body slices
 
 Do **not** full-file replace until B2 compiles with contract tests green.
 
@@ -174,5 +175,15 @@ scripts/vendor-status.sh
 - `ArticleViewer.Resources` now has pin-shaped `SparseArray<TextPaint>` fields + `isRichMessage`
 - Static map fields (`paragraphTextPaints`, …) **alias** `resources.*` (same instances)
 - `getResources()` returns the shared static instance
-- **Not** ported yet: pin `Resources.updatePaintColors` / `updatePaintSize` methods (still on ArticleViewer as private helpers)
 - Heading1–6 maps omitted (local S1 uses Header/Subheader only)
+
+### Phase B5 — Paint resource updates (landed)
+
+- `Resources.updatePaintColors(IArticleViewer)`, private `setMapColors(...)`,
+  `updatePaintFonts(int)`, and private `updateFontEntry(...)` now match the pin's ownership
+- Outer `createPaint(IArticleViewer, boolean)` and static
+  `updatePaintColors(IArticleViewer)` match the pin-shaped host boundary
+- `updatePaintSize()` correctly remains on outer `ArticleViewer`, as it does upstream
+- Heading1–6 paint-map loops remain omitted because local S1 maps headings to Header/Subheader
+- Shared map aliases, no-arg `Resources()` support, lazy `errorTextPaint` sync, and NativeDo
+  bookmark/sheet/file-chooser wiring remain intact
