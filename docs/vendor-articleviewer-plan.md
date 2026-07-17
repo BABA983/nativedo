@@ -97,7 +97,7 @@ Introduced `org.telegram.ui.IArticleViewer` (API surface only):
 
 1. [x] Move pin-matching fields from `ArticleViewer` onto `IArticleViewer` (public)
 2. [x] `DrawingText(IArticleViewer parent)` + no-arg convenience; draw via parent fields (B3)
-3. [ ] Port `ArticleViewer.Resources` paint maps from pin (or keep statics and assign into Resources)
+3. [x] B4: Resources holds paint SparseArrays; static names alias shared instance
 4. [ ] Only then re-attempt larger pin body slices
 
 Do **not** full-file replace until B2 compiles with contract tests green.
@@ -168,3 +168,11 @@ scripts/vendor-status.sh
 - Mixing TableLayout pin (CellText/TL_iv) with ArticleViewer mid-flight
 - Dropping WebBookmarks for upstream Saved-Messages send
 - Merging without Phase 0 tests green
+
+### Phase B4 — Resources paint bridge (landed)
+
+- `ArticleViewer.Resources` now has pin-shaped `SparseArray<TextPaint>` fields + `isRichMessage`
+- Static map fields (`paragraphTextPaints`, …) **alias** `resources.*` (same instances)
+- `getResources()` returns the shared static instance
+- **Not** ported yet: pin `Resources.updatePaintColors` / `updatePaintSize` methods (still on ArticleViewer as private helpers)
+- Heading1–6 maps omitted (local S1 uses Header/Subheader only)

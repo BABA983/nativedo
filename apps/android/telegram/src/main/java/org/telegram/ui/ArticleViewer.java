@@ -407,11 +407,46 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         return textSelectionHelper;
     }
 
-    /** Paint cache shell for IArticleViewer; populated in a later field-move PR. */
+    /**
+     * Pin-shaped paint cache (12.8.1 Resources). B4 bridges static paint maps onto one
+     * shared instance so getResources() and legacy static field names share the same maps.
+     * Heading1–6 maps omitted: local S1 collapses headings onto Header/Subheader paints.
+     */
     public static class Resources {
+        public final boolean isRichMessage;
+        public TextPaint errorTextPaint;
+        public final SparseArray<TextPaint> photoCaptionTextPaints = new SparseArray<>();
+        public final SparseArray<TextPaint> photoCreditTextPaints = new SparseArray<>();
+        public final SparseArray<TextPaint> titleTextPaints = new SparseArray<>();
+        public final SparseArray<TextPaint> kickerTextPaints = new SparseArray<>();
+        public final SparseArray<TextPaint> headerTextPaints = new SparseArray<>();
+        public final SparseArray<TextPaint> subtitleTextPaints = new SparseArray<>();
+        public final SparseArray<TextPaint> subheaderTextPaints = new SparseArray<>();
+        public final SparseArray<TextPaint> authorTextPaints = new SparseArray<>();
+        public final SparseArray<TextPaint> footerTextPaints = new SparseArray<>();
+        public final SparseArray<TextPaint> paragraphTextPaints = new SparseArray<>();
+        public final SparseArray<TextPaint> listTextPaints = new SparseArray<>();
+        public final SparseArray<TextPaint> preformattedTextPaints = new SparseArray<>();
+        public final SparseArray<TextPaint> quoteTextPaints = new SparseArray<>();
+        public final SparseArray<TextPaint> embedPostTextPaints = new SparseArray<>();
+        public final SparseArray<TextPaint> embedPostCaptionTextPaints = new SparseArray<>();
+        public final SparseArray<TextPaint> mediaCaptionTextPaints = new SparseArray<>();
+        public final SparseArray<TextPaint> mediaCreditTextPaints = new SparseArray<>();
+        public final SparseArray<TextPaint> relatedArticleTextPaints = new SparseArray<>();
+        public final SparseArray<TextPaint> detailsTextPaints = new SparseArray<>();
+        public final SparseArray<TextPaint> tableTextPaints = new SparseArray<>();
+
+        public Resources() {
+            this(false);
+        }
+
+        public Resources(boolean isRichMessage) {
+            this.isRichMessage = isRichMessage;
+        }
     }
 
-    private final Resources resources = new Resources();
+    /** Shared paint maps (pin uses a static Resources; static field names alias into this). */
+    private static final Resources resources = new Resources(false);
 
     @Override
     public Resources getResources() {
@@ -2410,27 +2445,28 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
     private static final int TEXT_FLAG_WEBPAGE_URL = 512;
 
     private static final TextPaint audioTimePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+    // B4: SparseArray maps live on Resources; static names alias the shared instance.
     private static TextPaint errorTextPaint;
-    private static final SparseArray<TextPaint> photoCaptionTextPaints = new SparseArray<>();
-    private static final SparseArray<TextPaint> photoCreditTextPaints = new SparseArray<>();
-    private static final SparseArray<TextPaint> titleTextPaints = new SparseArray<>();
-    private static final SparseArray<TextPaint> kickerTextPaints = new SparseArray<>();
-    private static final SparseArray<TextPaint> headerTextPaints = new SparseArray<>();
-    private static final SparseArray<TextPaint> subtitleTextPaints = new SparseArray<>();
-    private static final SparseArray<TextPaint> subheaderTextPaints = new SparseArray<>();
-    private static final SparseArray<TextPaint> authorTextPaints = new SparseArray<>();
-    private static final SparseArray<TextPaint> footerTextPaints = new SparseArray<>();
-    private static final SparseArray<TextPaint> paragraphTextPaints = new SparseArray<>();
-    private static final SparseArray<TextPaint> listTextPaints = new SparseArray<>();
-    private static final SparseArray<TextPaint> preformattedTextPaints = new SparseArray<>();
-    private static final SparseArray<TextPaint> quoteTextPaints = new SparseArray<>();
-    private static final SparseArray<TextPaint> embedPostTextPaints = new SparseArray<>();
-    private static final SparseArray<TextPaint> embedPostCaptionTextPaints = new SparseArray<>();
-    private static final SparseArray<TextPaint> mediaCaptionTextPaints = new SparseArray<>();
-    private static final SparseArray<TextPaint> mediaCreditTextPaints = new SparseArray<>();
-    private static final SparseArray<TextPaint> relatedArticleTextPaints = new SparseArray<>();
-    private static final SparseArray<TextPaint> detailsTextPaints = new SparseArray<>();
-    private static final SparseArray<TextPaint> tableTextPaints = new SparseArray<>();
+    private static final SparseArray<TextPaint> photoCaptionTextPaints = resources.photoCaptionTextPaints;
+    private static final SparseArray<TextPaint> photoCreditTextPaints = resources.photoCreditTextPaints;
+    private static final SparseArray<TextPaint> titleTextPaints = resources.titleTextPaints;
+    private static final SparseArray<TextPaint> kickerTextPaints = resources.kickerTextPaints;
+    private static final SparseArray<TextPaint> headerTextPaints = resources.headerTextPaints;
+    private static final SparseArray<TextPaint> subtitleTextPaints = resources.subtitleTextPaints;
+    private static final SparseArray<TextPaint> subheaderTextPaints = resources.subheaderTextPaints;
+    private static final SparseArray<TextPaint> authorTextPaints = resources.authorTextPaints;
+    private static final SparseArray<TextPaint> footerTextPaints = resources.footerTextPaints;
+    private static final SparseArray<TextPaint> paragraphTextPaints = resources.paragraphTextPaints;
+    private static final SparseArray<TextPaint> listTextPaints = resources.listTextPaints;
+    private static final SparseArray<TextPaint> preformattedTextPaints = resources.preformattedTextPaints;
+    private static final SparseArray<TextPaint> quoteTextPaints = resources.quoteTextPaints;
+    private static final SparseArray<TextPaint> embedPostTextPaints = resources.embedPostTextPaints;
+    private static final SparseArray<TextPaint> embedPostCaptionTextPaints = resources.embedPostCaptionTextPaints;
+    private static final SparseArray<TextPaint> mediaCaptionTextPaints = resources.mediaCaptionTextPaints;
+    private static final SparseArray<TextPaint> mediaCreditTextPaints = resources.mediaCreditTextPaints;
+    private static final SparseArray<TextPaint> relatedArticleTextPaints = resources.relatedArticleTextPaints;
+    private static final SparseArray<TextPaint> detailsTextPaints = resources.detailsTextPaints;
+    private static final SparseArray<TextPaint> tableTextPaints = resources.tableTextPaints;
 
     private static TextPaint embedPostAuthorPaint;
     private static TextPaint embedPostDatePaint;
@@ -2929,6 +2965,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         if (currentMap == null) {
             if (errorTextPaint == null) {
                 errorTextPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+                resources.errorTextPaint = errorTextPaint;
                 errorTextPaint.setColor(0xffff0000);
             }
             errorTextPaint.setTextSize(dp(14));

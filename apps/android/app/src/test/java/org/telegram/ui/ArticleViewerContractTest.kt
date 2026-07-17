@@ -89,4 +89,18 @@ class ArticleViewerContractTest {
         assertThat(viewer.pagesStack).isNotNull()
         assertThat(viewer.pagesStack).isEmpty()
     }
+
+    @Test
+    fun getResources_exposesSharedPaintMaps() {
+        val viewer = ArticleViewer.getInstance()
+        val res = viewer.getResources()
+        assertThat(res).isNotNull()
+        // B4: pin-shaped Resources holds the paint SparseArrays (static fields alias these)
+        assertThat(res.paragraphTextPaints).isNotNull()
+        assertThat(res.tableTextPaints).isNotNull()
+        assertThat(res.quoteTextPaints).isNotNull()
+        assertThat(res.photoCaptionTextPaints).isNotNull()
+        assertThat(res.isRichMessage).isFalse()
+    }
+
 }
