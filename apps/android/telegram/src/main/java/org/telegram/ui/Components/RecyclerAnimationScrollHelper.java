@@ -12,6 +12,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.MessagesController;
 import org.telegram.ui.Cells.ChatMessageCell;
+import org.telegram.ui.Cells.IMessageCell;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -68,13 +69,13 @@ public class RecyclerAnimationScrollHelper {
             }
         }
         if (!smooth || scrollDirection == SCROLL_DIRECTION_UNSET) {
-            layoutManager.scrollToPositionWithOffset(position, offset);
+            layoutManager.scrollToPositionWithOffset(position, offset, bottom);
             return;
         }
 
         int n = recyclerView.getChildCount();
         if (n == 0 || !MessagesController.getGlobalMainSettings().getBoolean("view_animations", true)) {
-            layoutManager.scrollToPositionWithOffset(position, offset);
+            layoutManager.scrollToPositionWithOffset(position, offset, bottom);
             return;
         }
 
@@ -96,31 +97,30 @@ public class RecyclerAnimationScrollHelper {
             if (adapter != null && (adapter.hasStableIds() || forceUseStableId)) {
                 long itemId;
                 if (forceUseStableId) {
-                    int adapterPosition = recyclerView.getChildAdapterPosition(child);
+                    int adapterPosition = ((RecyclerView.LayoutParams) child.getLayoutParams()).mViewHolder.getAdapterPosition();
                     if (adapterPosition < 0) {
                         continue;
                     }
                     itemId = adapter.getItemId(adapterPosition);
                 } else {
-                    int pos = recyclerView.getChildAdapterPosition(child);
-                    itemId = pos >= 0 ? adapter.getItemId(pos) : RecyclerView.NO_ID;
+                    itemId = ((RecyclerView.LayoutParams) child.getLayoutParams()).mViewHolder.getItemId();
                 }
 
                 oldStableIds.put(itemId, child);
             }
-            if (child instanceof ChatMessageCell) {
-                ((ChatMessageCell) child).setAnimationRunning(true, true);
+            if (child instanceof IMessageCell) {
+                ((IMessageCell) child).setAnimationRunning(true, true);
             }
         }
 
-        // OMITTED: prepareForFastScroll not available
+        recyclerView.prepareForFastScroll();
 
         AnimatableAdapter animatableAdapter = null;
         if (adapter instanceof AnimatableAdapter) {
             animatableAdapter = (AnimatableAdapter) adapter;
         }
 
-        layoutManager.scrollToPositionWithOffset(position, offset);
+        layoutManager.scrollToPositionWithOffset(position, offset, bottom);
         if (adapter != null) adapter.notifyDataSetChanged();
         AnimatableAdapter finalAnimatableAdapter = animatableAdapter;
 
@@ -151,8 +151,8 @@ public class RecyclerAnimationScrollHelper {
                     if (child.getBottom() > bottom)
                         bottom = child.getBottom();
 
-                    if (child instanceof ChatMessageCell) {
-                        ((ChatMessageCell) child).setAnimationRunning(true, false);
+                    if (child instanceof IMessageCell) {
+                        ((IMessageCell) child).setAnimationRunning(true, false);
                     }
 
                     if (adapter != null && (adapter.hasStableIds() || forceUseStableId)) {
@@ -161,8 +161,8 @@ public class RecyclerAnimationScrollHelper {
                             View view = oldStableIds.get(stableId);
                             if (view != null) {
                                 hasSameViews = true;
-                                if (view instanceof ChatMessageCell) {
-                                    ((ChatMessageCell) view).setAnimationRunning(false, false);
+                                if (view instanceof IMessageCell) {
+                                    ((IMessageCell) view).setAnimationRunning(false, false);
                                 }
                                 oldViews.remove(view);
                                 if (animationCallback != null) {
@@ -195,8 +195,8 @@ public class RecyclerAnimationScrollHelper {
                             animationCallback.ignoreView(view, true);
                         }
                     }
-                    if (view instanceof ChatMessageCell) {
-                        ((ChatMessageCell) view).setAnimationRunning(true, true);
+                    if (view instanceof IMessageCell) {
+                        ((IMessageCell) view).setAnimationRunning(true, true);
                     }
                 }
 
@@ -261,8 +261,8 @@ public class RecyclerAnimationScrollHelper {
                         recyclerView.fastScrollAnimationRunning = false;
 
                         for (View view : oldViews) {
-                            if (view instanceof ChatMessageCell) {
-                                ((ChatMessageCell) view).setAnimationRunning(false, true);
+                            if (view instanceof IMessageCell) {
+                                ((IMessageCell) view).setAnimationRunning(false, true);
                             }
                             view.setTranslationY(0);
                             layoutManager.stopIgnoringView(view);
@@ -276,29 +276,28 @@ public class RecyclerAnimationScrollHelper {
                         recyclerView.setScrollEnabled(true);
                         recyclerView.setVerticalScrollBarEnabled(true);
 
-                        // OMITTED: mChildHelper not accessible from AndroidX RecyclerView
-                        // if (BuildVars.DEBUG_PRIVATE_VERSION) {
-                        //     if (recyclerView.mChildHelper.getChildCount() != recyclerView.getChildCount()) {
-                        //         throw new RuntimeException("views count in child helper must be quals views count in recycler view");
-                        //     }
-                        //
-                        //     if (recyclerView.mChildHelper.getHiddenChildCount() != 0) {
-                        //         throw new RuntimeException("hidden child count must be 0");
-                        //     }
-                        // }
+                        if (BuildVars.DEBUG_PRIVATE_VERSION) {
+                            if (recyclerView.mChildHelper.getChildCount() != recyclerView.getChildCount()) {
+                                throw new RuntimeException("views count in child helper must be quals views count in recycler view");
+                            }
+
+                            if (recyclerView.mChildHelper.getHiddenChildCount() != 0) {
+                                throw new RuntimeException("hidden child count must be 0");
+                            }
+                        }
 
                         int n = recyclerView.getChildCount();
                         for (int i = 0; i < n; i++) {
                             View child = recyclerView.getChildAt(i);
-                            if (child instanceof ChatMessageCell) {
-                                ((ChatMessageCell) child).setAnimationRunning(false, false);
+                            if (child instanceof IMessageCell) {
+                                ((IMessageCell) child).setAnimationRunning(false, false);
                             }
                             child.setTranslationY(0);
                         }
 
                         for (View v : incomingViews) {
-                            if (v instanceof ChatMessageCell) {
-                                ((ChatMessageCell) v).setAnimationRunning(false, false);
+                            if (v instanceof IMessageCell) {
+                                ((IMessageCell) v).setAnimationRunning(false, false);
                             }
                             v.setTranslationY(0);
                         }
@@ -360,17 +359,17 @@ public class RecyclerAnimationScrollHelper {
     private void clear() {
         recyclerView.setVerticalScrollBarEnabled(true);
         recyclerView.fastScrollAnimationRunning = false;
-        RecyclerView.Adapter adapter = recyclerView.getAdapter();
+        final RecyclerView.Adapter adapter = recyclerView.getAdapter();
         if (adapter instanceof AnimatableAdapter)
             ((AnimatableAdapter) adapter).onAnimationEnd();
         animator = null;
 
         int n = recyclerView.getChildCount();
         for (int i = 0; i < n; i++) {
-            View child = recyclerView.getChildAt(i);
+            final View child = recyclerView.getChildAt(i);
             child.setTranslationY(0f);
-            if (child instanceof ChatMessageCell) {
-                ((ChatMessageCell) child).setAnimationRunning(false, false);
+            if (child instanceof IMessageCell) {
+                ((IMessageCell) child).setAnimationRunning(false, false);
             }
         }
     }
@@ -422,23 +421,68 @@ public class RecyclerAnimationScrollHelper {
         private ArrayList<Integer> rangeInserted = new ArrayList<>();
         private ArrayList<Integer> rangeRemoved = new ArrayList<>();
 
-        // OMITTED: AndroidX Adapter notification methods are final, cannot override.
-        // The animation-deferral logic is removed; callers should use the standard
-        // Adapter notification methods directly.
-        // @Override
-        // public void notifyDataSetChanged() { ... }
-        // @Override
-        // public void notifyItemInserted(int position) { ... }
-        // @Override
-        // public void notifyItemRangeInserted(int positionStart, int itemCount) { ... }
-        // @Override
-        // public void notifyItemRemoved(int position) { ... }
-        // @Override
-        // public void notifyItemRangeRemoved(int positionStart, int itemCount) { ... }
-        // @Override
-        // public void notifyItemChanged(int position) { ... }
-        // @Override
-        // public void notifyItemRangeChanged(int positionStart, int itemCount) { ... }
+        @Override
+        public void notifyDataSetChanged() {
+            if (!animationRunning) {
+                super.notifyDataSetChanged();
+            } else {
+                shouldNotifyDataSetChanged = true;
+            }
+        }
+
+        @Override
+        public void notifyItemInserted(int position) {
+            if (!animationRunning) {
+                super.notifyItemInserted(position);
+            } else {
+                rangeInserted.add(position);
+                rangeInserted.add(1);
+            }
+        }
+
+        @Override
+        public void notifyItemRangeInserted(int positionStart, int itemCount) {
+            if (!animationRunning) {
+                super.notifyItemRangeInserted(positionStart, itemCount);
+            } else {
+                rangeInserted.add(positionStart);
+                rangeInserted.add(itemCount);
+            }
+        }
+
+        @Override
+        public void notifyItemRemoved(int position) {
+            if (!animationRunning) {
+                super.notifyItemRemoved(position);
+            } else {
+                rangeRemoved.add(position);
+                rangeRemoved.add(1);
+            }
+        }
+
+        @Override
+        public void notifyItemRangeRemoved(int positionStart, int itemCount) {
+            if (!animationRunning) {
+                super.notifyItemRangeRemoved(positionStart, itemCount);
+            } else {
+                rangeRemoved.add(positionStart);
+                rangeRemoved.add(itemCount);
+            }
+        }
+
+        @Override
+        public void notifyItemChanged(int position) {
+            if (!animationRunning) {
+                super.notifyItemChanged(position);
+            }
+        }
+
+        @Override
+        public void notifyItemRangeChanged(int positionStart, int itemCount) {
+            if (!animationRunning) {
+                super.notifyItemRangeChanged(positionStart, itemCount);
+            }
+        }
 
         public void onAnimationStart() {
             animationRunning = true;
@@ -450,7 +494,7 @@ public class RecyclerAnimationScrollHelper {
         public void onAnimationEnd() {
             animationRunning = false;
             if (shouldNotifyDataSetChanged || !rangeInserted.isEmpty() || !rangeRemoved.isEmpty()) {
-                super.notifyDataSetChanged();
+                notifyDataSetChanged();
             }
         }
     }

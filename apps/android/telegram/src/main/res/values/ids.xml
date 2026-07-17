@@ -12,4 +12,5 @@
     <!-- Tag IDs for AndroidUtilities.shakeViewSpring (upstream ids.xml) -->
     <item name="spring_tag" type="id"/>
     <item name="spring_was_translation_x_tag" type="id"/>
+    <item name="dragging" type="id"/>
 </resources>

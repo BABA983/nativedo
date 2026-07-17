@@ -428,6 +428,15 @@ public class Utilities {
     }
 
     /**
+     * Soft-light blend used by Telegram MotionBackgroundPaint (12.7+).
+     * Not needed for NativeDo — no-op (MotionBackgroundPaint not ported).
+     * Signature matches upstream {@code Utilities.applySoftLight}.
+     */
+    public static boolean applySoftLight(Bitmap inputBitmap, Bitmap outputBitmap, int color) {
+        return false;
+    }
+
+    /**
      * Native crash listener setup via breakpad.
      * Not applicable to NativeDo — no-op.
      */
