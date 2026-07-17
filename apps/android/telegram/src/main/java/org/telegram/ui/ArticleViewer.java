@@ -6532,7 +6532,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                     break;
                 }
                 case 1: {
-                    view = new BlockHeaderCell(context, this);
+                    view = new BlockHeaderCell(context, ArticleViewer.this, this);
                     break;
                 }
                 case 2: {
@@ -6544,7 +6544,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                     break;
                 }
                 case 4: {
-                    view = new BlockSubtitleCell(context, this);
+                    view = new BlockSubtitleCell(context, ArticleViewer.this, this);
                     break;
                 }
                 case 5: {
@@ -6572,7 +6572,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                     break;
                 }
                 case 11: {
-                    view = new BlockTitleCell(context, this);
+                    view = new BlockTitleCell(context, ArticleViewer.this, this);
                     break;
                 }
                 case 12: {
@@ -6580,7 +6580,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                     break;
                 }
                 case 13: {
-                    view = new BlockFooterCell(context, this);
+                    view = new BlockFooterCell(context, ArticleViewer.this, this);
                     break;
                 }
                 case 14: {
@@ -6588,7 +6588,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                     break;
                 }
                 case 15: {
-                    view = new BlockSubheaderCell(context, this);
+                    view = new BlockSubheaderCell(context, ArticleViewer.this, this);
                     break;
                 }
                 case 16: {
@@ -6608,7 +6608,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                     break;
                 }
                 case 20: {
-                    view = new BlockKickerCell(context, this);
+                    view = new BlockKickerCell(context, ArticleViewer.this, this);
                     break;
                 }
                 case 21: {
@@ -10816,19 +10816,21 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    private class BlockHeaderCell extends View implements TextSelectionHelper.ArticleSelectableView {
+    public static class BlockHeaderCell extends View implements TextSelectionHelper.ArticleSelectableView {
+
+        private final IArticleViewer parent;
+        private final WebpageAdapter adapter;
 
         private DrawingText textLayout;
-        private int textX = dp(18);
-        private int textY = dp(8);
+        private int textX;
+        private int textY;
 
         private TLRPC.TL_pageBlockHeader currentBlock;
 
-        private WebpageAdapter parentAdapter;
-
-        public BlockHeaderCell(Context context, WebpageAdapter adapter) {
+        public BlockHeaderCell(Context context, IArticleViewer parent, WebpageAdapter adapter) {
             super(context);
-            parentAdapter = adapter;
+            this.parent = parent;
+            this.adapter = adapter;
         }
 
         public void setBlock(TLRPC.TL_pageBlockHeader block) {
@@ -10838,7 +10840,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
         @Override
         public boolean onTouchEvent(MotionEvent event) {
-            return checkLayoutForLinks(parentAdapter, event, this, textLayout, textX, textY) || super.onTouchEvent(event);
+            return checkLayoutForLinks(parent, adapter, event, this, textLayout, textX, textY) || super.onTouchEvent(event);
         }
 
         @SuppressLint("NewApi")
@@ -10848,9 +10850,11 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             int height = 0;
 
             if (currentBlock != null) {
-                textLayout = createLayoutForText(this, null, currentBlock.text, width - dp(36), textY, currentBlock, parentAdapter.isRtl ? StaticLayoutEx.ALIGN_RIGHT() : Layout.Alignment.ALIGN_NORMAL, parentAdapter);
+                textX = dp(parent.padx());
+                textY = dp(parent.pady());
+                textLayout = createLayoutForText(parent, this, null, currentBlock.text, width - dp(2 * parent.padx()), textY, currentBlock, adapter != null && adapter.isRtl ? StaticLayoutEx.ALIGN_RIGHT() : Layout.Alignment.ALIGN_NORMAL, adapter);
                 if (textLayout != null) {
-                    height += dp(8 + 8) + textLayout.getHeight();
+                    height += dp(2 * parent.pady()) + textLayout.getHeight();
                     textLayout.x = textX;
                     textLayout.y = textY;
                 }
@@ -10869,7 +10873,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (textLayout != null) {
                 canvas.save();
                 canvas.translate(textX, textY);
-                drawTextSelection(canvas, this);
+                drawTextSelection(parent, canvas, this);
                 textLayout.draw(canvas, this);
                 canvas.restore();
             }
@@ -10913,19 +10917,21 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    private class BlockSubtitleCell extends View implements TextSelectionHelper.ArticleSelectableView {
+    public static class BlockSubtitleCell extends View implements TextSelectionHelper.ArticleSelectableView {
+
+        private final IArticleViewer parent;
+        private final WebpageAdapter adapter;
 
         private DrawingText textLayout;
-        private int textX = dp(18);
-        private int textY = dp(8);
+        private int textX;
+        private int textY;
 
         private TLRPC.TL_pageBlockSubtitle currentBlock;
 
-        private WebpageAdapter parentAdapter;
-
-        public BlockSubtitleCell(Context context, WebpageAdapter adapter) {
+        public BlockSubtitleCell(Context context, IArticleViewer parent, WebpageAdapter adapter) {
             super(context);
-            parentAdapter = adapter;
+            this.parent = parent;
+            this.adapter = adapter;
         }
 
         public void setBlock(TLRPC.TL_pageBlockSubtitle block) {
@@ -10935,7 +10941,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
         @Override
         public boolean onTouchEvent(MotionEvent event) {
-            return checkLayoutForLinks(parentAdapter, event, this, textLayout, textX, textY) || super.onTouchEvent(event);
+            return checkLayoutForLinks(parent, adapter, event, this, textLayout, textX, textY) || super.onTouchEvent(event);
         }
 
         @SuppressLint("NewApi")
@@ -10945,9 +10951,11 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             int height = 0;
 
             if (currentBlock != null) {
-                textLayout = createLayoutForText(this, null, currentBlock.text, width - dp(36), textY, currentBlock, parentAdapter.isRtl ? StaticLayoutEx.ALIGN_RIGHT() : Layout.Alignment.ALIGN_NORMAL, parentAdapter);
+                textX = dp(parent.padx());
+                textY = dp(parent.pady());
+                textLayout = createLayoutForText(parent, this, null, currentBlock.text, width - dp(2 * parent.padx()), textY, currentBlock, adapter != null && adapter.isRtl ? StaticLayoutEx.ALIGN_RIGHT() : Layout.Alignment.ALIGN_NORMAL, adapter);
                 if (textLayout != null) {
-                    height += dp(8 + 8) + textLayout.getHeight();
+                    height += dp(2 * parent.pady()) + textLayout.getHeight();
                     textLayout.x = textX;
                     textLayout.y = textY;
                 }
@@ -10966,7 +10974,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (textLayout != null) {
                 canvas.save();
                 canvas.translate(textX, textY);
-                drawTextSelection(canvas, this);
+                drawTextSelection(parent, canvas, this);
                 textLayout.draw(canvas, this);
                 canvas.restore();
             }
@@ -12119,19 +12127,21 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    private class BlockTitleCell extends View implements TextSelectionHelper.ArticleSelectableView {
+    public static class BlockTitleCell extends View implements TextSelectionHelper.ArticleSelectableView {
+
+        private final IArticleViewer parent;
+        private final WebpageAdapter adapter;
 
         private DrawingText textLayout;
 
         private TLRPC.TL_pageBlockTitle currentBlock;
-        private int textX = dp(18);
+        private int textX;
         private int textY;
 
-        private WebpageAdapter parentAdapter;
-
-        public BlockTitleCell(Context context, WebpageAdapter adapter) {
+        public BlockTitleCell(Context context, IArticleViewer parent, WebpageAdapter adapter) {
             super(context);
-            parentAdapter = adapter;
+            this.parent = parent;
+            this.adapter = adapter;
         }
 
         public void setBlock(TLRPC.TL_pageBlockTitle block) {
@@ -12141,7 +12151,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
         @Override
         public boolean onTouchEvent(MotionEvent event) {
-            return checkLayoutForLinks(parentAdapter, event, this, textLayout, textX, textY) || super.onTouchEvent(event);
+            return checkLayoutForLinks(parent, adapter, event, this, textLayout, textX, textY) || super.onTouchEvent(event);
         }
 
         @SuppressLint("NewApi")
@@ -12151,15 +12161,16 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             int height = 0;
 
             if (currentBlock != null) {
+                textX = dp(parent.padx());
                 if (currentBlock.first) {
-                    height += dp(8);
-                    textY = dp(16);
+                    height += dp(parent.pady());
+                    textY = dp(2 * parent.pady());
                 } else {
-                    textY = dp(8);
+                    textY = dp(parent.pady());
                 }
-                textLayout = createLayoutForText(this, null, currentBlock.text, width - dp(36), textY, currentBlock, parentAdapter.isRtl ? StaticLayoutEx.ALIGN_RIGHT() : Layout.Alignment.ALIGN_NORMAL, parentAdapter);
+                textLayout = createLayoutForText(parent, this, null, currentBlock.text, width - dp(2 * parent.padx()), textY, currentBlock, adapter != null && adapter.isRtl ? StaticLayoutEx.ALIGN_RIGHT() : Layout.Alignment.ALIGN_NORMAL, adapter);
                 if (textLayout != null) {
-                    height += dp(8 + 8) + textLayout.getHeight();
+                    height += dp(2 * parent.pady()) + textLayout.getHeight();
                     textLayout.x = textX;
                     textLayout.y = textY;
                 }
@@ -12178,7 +12189,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (textLayout != null) {
                 canvas.save();
                 canvas.translate(textX, textY);
-                drawTextSelection(canvas, this);
+                drawTextSelection(parent, canvas, this);
                 textLayout.draw(canvas, this);
                 canvas.restore();
             }
@@ -12201,19 +12212,21 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    private class BlockKickerCell extends View implements TextSelectionHelper.ArticleSelectableView {
+    public static class BlockKickerCell extends View implements TextSelectionHelper.ArticleSelectableView {
+
+        private final IArticleViewer parent;
+        private final WebpageAdapter adapter;
 
         private DrawingText textLayout;
 
         private TLRPC.TL_pageBlockKicker currentBlock;
-        private int textX = dp(18);
+        private int textX;
         private int textY;
 
-        private WebpageAdapter parentAdapter;
-
-        public BlockKickerCell(Context context, WebpageAdapter adapter) {
+        public BlockKickerCell(Context context, IArticleViewer parent, WebpageAdapter adapter) {
             super(context);
-            parentAdapter = adapter;
+            this.parent = parent;
+            this.adapter = adapter;
         }
 
         public void setBlock(TLRPC.TL_pageBlockKicker block) {
@@ -12223,7 +12236,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
         @Override
         public boolean onTouchEvent(MotionEvent event) {
-            return checkLayoutForLinks(parentAdapter, event, this, textLayout, textX, textY) || super.onTouchEvent(event);
+            return checkLayoutForLinks(parent, adapter, event, this, textLayout, textX, textY) || super.onTouchEvent(event);
         }
 
         @SuppressLint("NewApi")
@@ -12233,15 +12246,16 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             int height = 0;
 
             if (currentBlock != null) {
+                textX = dp(parent.padx());
                 if (currentBlock.first) {
-                    textY = dp(16);
-                    height += dp(8);
+                    textY = dp(2 * parent.pady());
+                    height += dp(parent.pady());
                 } else {
-                    textY = dp(8);
+                    textY = dp(parent.pady());
                 }
-                textLayout = createLayoutForText(this, null, currentBlock.text, width - dp(36), textY, currentBlock, parentAdapter.isRtl ? StaticLayoutEx.ALIGN_RIGHT() : Layout.Alignment.ALIGN_NORMAL, parentAdapter);
+                textLayout = createLayoutForText(parent, this, null, currentBlock.text, width - dp(2 * parent.padx()), textY, currentBlock, adapter != null && adapter.isRtl ? StaticLayoutEx.ALIGN_RIGHT() : Layout.Alignment.ALIGN_NORMAL, adapter);
                 if (textLayout != null) {
-                    height += dp(8 + 8) + textLayout.getHeight();
+                    height += dp(2 * parent.pady()) + textLayout.getHeight();
                     textLayout.x = textX;
                     textLayout.y = textY;
                 }
@@ -12260,7 +12274,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (textLayout != null) {
                 canvas.save();
                 canvas.translate(textX, textY);
-                drawTextSelection(canvas, this);
+                drawTextSelection(parent, canvas, this);
                 textLayout.draw(canvas, this);
                 canvas.restore();
             }
@@ -12274,19 +12288,21 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    private class BlockFooterCell extends View implements TextSelectionHelper.ArticleSelectableView {
+    public static class BlockFooterCell extends View implements TextSelectionHelper.ArticleSelectableView {
+
+        private final IArticleViewer parent;
+        private final WebpageAdapter adapter;
 
         private DrawingText textLayout;
-        private int textX = dp(18);
-        private int textY = dp(8);
+        private int textX;
+        private int textY;
 
         private TLRPC.TL_pageBlockFooter currentBlock;
 
-        private WebpageAdapter parentAdapter;
-
-        public BlockFooterCell(Context context, WebpageAdapter adapter) {
+        public BlockFooterCell(Context context, IArticleViewer parent, WebpageAdapter adapter) {
             super(context);
-            parentAdapter = adapter;
+            this.parent = parent;
+            this.adapter = adapter;
         }
 
         public void setBlock(TLRPC.TL_pageBlockFooter block) {
@@ -12296,7 +12312,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
         @Override
         public boolean onTouchEvent(MotionEvent event) {
-            return checkLayoutForLinks(parentAdapter, event, this, textLayout, textX, textY) || super.onTouchEvent(event);
+            return checkLayoutForLinks(parent, adapter, event, this, textLayout, textX, textY) || super.onTouchEvent(event);
         }
 
         @SuppressLint("NewApi")
@@ -12307,19 +12323,19 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
             if (currentBlock != null) {
                 if (currentBlock.level == 0) {
-                    textY = dp(8);
-                    textX = dp(18);
+                    textY = dp(parent.pady());
+                    textX = dp(parent.padx());
                 } else {
                     textY = 0;
-                    textX = dp(18 + 14 * currentBlock.level);
+                    textX = dp(parent.padx() + 14 * currentBlock.level);
                 }
-                textLayout = createLayoutForText(this, null, currentBlock.text, width - dp(18) - textX, textY, currentBlock, parentAdapter.isRtl ? StaticLayoutEx.ALIGN_RIGHT() : Layout.Alignment.ALIGN_NORMAL, parentAdapter);
+                textLayout = createLayoutForText(parent, this, null, currentBlock.text, width - dp(parent.padx()) - textX, textY, currentBlock, adapter != null && adapter.isRtl ? StaticLayoutEx.ALIGN_RIGHT() : Layout.Alignment.ALIGN_NORMAL, adapter);
                 if (textLayout != null) {
                     height = textLayout.getHeight();
                     if (currentBlock.level > 0) {
-                        height += dp(8);
+                        height += dp(parent.pady());
                     } else {
-                        height += dp(8 + 8);
+                        height += dp(2 * parent.pady());
                     }
                     textLayout.x = textX;
                     textLayout.y = textY;
@@ -12339,11 +12355,11 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (textLayout != null) {
                 canvas.save();
                 canvas.translate(textX, textY);
-                drawTextSelection(canvas, this);
+                drawTextSelection(parent, canvas, this);
                 textLayout.draw(canvas, this);
                 canvas.restore();
             }
-            drawQuoteLines(canvas, ArticleViewer.this, currentBlock, getMeasuredHeight());
+            drawQuoteLines(canvas, parent, currentBlock, getMeasuredHeight());
         }
 
         @Override
@@ -12477,19 +12493,21 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    private class BlockSubheaderCell extends View implements TextSelectionHelper.ArticleSelectableView {
+    public static class BlockSubheaderCell extends View implements TextSelectionHelper.ArticleSelectableView {
+
+        private final IArticleViewer parent;
+        private final WebpageAdapter adapter;
 
         private DrawingText textLayout;
-        private int textX = dp(18);
-        private int textY = dp(8);
+        private int textX;
+        private int textY;
 
         private TLRPC.TL_pageBlockSubheader currentBlock;
 
-        private WebpageAdapter parentAdapter;
-
-        public BlockSubheaderCell(Context context, WebpageAdapter adapter) {
+        public BlockSubheaderCell(Context context, IArticleViewer parent, WebpageAdapter adapter) {
             super(context);
-            parentAdapter = adapter;
+            this.parent = parent;
+            this.adapter = adapter;
         }
 
         public void setBlock(TLRPC.TL_pageBlockSubheader block) {
@@ -12499,7 +12517,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
         @Override
         public boolean onTouchEvent(MotionEvent event) {
-            return checkLayoutForLinks(parentAdapter, event, this, textLayout, textX, textY) || super.onTouchEvent(event);
+            return checkLayoutForLinks(parent, adapter, event, this, textLayout, textX, textY) || super.onTouchEvent(event);
         }
 
         @SuppressLint("NewApi")
@@ -12509,9 +12527,11 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             int height = 0;
 
             if (currentBlock != null) {
-                textLayout = createLayoutForText(this, null, currentBlock.text, width - dp(36), textY, currentBlock, parentAdapter.isRtl ? StaticLayoutEx.ALIGN_RIGHT() : Layout.Alignment.ALIGN_NORMAL, parentAdapter);
+                textX = dp(parent.padx());
+                textY = dp(parent.pady());
+                textLayout = createLayoutForText(parent, this, null, currentBlock.text, width - dp(2 * parent.padx()), textY, currentBlock, adapter != null && adapter.isRtl ? StaticLayoutEx.ALIGN_RIGHT() : Layout.Alignment.ALIGN_NORMAL, adapter);
                 if (textLayout != null) {
-                    height += dp(8 + 8) + textLayout.getHeight();
+                    height += dp(2 * parent.pady()) + textLayout.getHeight();
                     textLayout.x = textX;
                     textLayout.y = textY;
                 }
@@ -12530,7 +12550,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (textLayout != null) {
                 canvas.save();
                 canvas.translate(textX, textY);
-                drawTextSelection(canvas, this);
+                drawTextSelection(parent, canvas, this);
                 textLayout.draw(canvas, this);
                 canvas.restore();
             }

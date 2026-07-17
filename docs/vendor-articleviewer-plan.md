@@ -105,7 +105,8 @@ Introduced `org.telegram.ui.IArticleViewer` (API surface only):
 8. [x] B7c: move `createLayoutForText` onto the parent-driven core
 9. [x] B8: parent-driven `makeProgress` + `drawQuoteLines` helpers (simple gutter sites)
 10. [x] B9: pilot parent-reshape `BlockParagraphCell` (`IArticleViewer` + static helpers)
-11. [ ] Continue text-block parent reshape (Header/Title/Subtitle/…) then media/list cells
+11. [x] B10: parent-reshape simple text blocks (Header/Title/Subtitle/Subheader/Kicker/Footer)
+12. [ ] Continue remaining Block*Cell parent reshape (AuthorDate/Preformatted/quotes/lists/media/table)
 
 Do **not** full-file replace until B2 compiles with contract tests green.
 
@@ -262,3 +263,15 @@ scripts/vendor-status.sh
 - Deferred for this pilot: `IBlock` bounds, spoiler attach/detach, `buildAccessibilityText`,
   math-centered alignment (`TL_textMath`)
 - Contract coverage measures a parent-hosted paragraph cell against isolated Resources
+
+### Phase B10 — Simple text Block*Cell parent reshape (landed)
+
+- Static parent reshape for: `BlockHeaderCell`, `BlockTitleCell`, `BlockSubtitleCell`,
+  `BlockSubheaderCell`, `BlockKickerCell`, `BlockFooterCell`
+- Each takes `(Context, IArticleViewer, WebpageAdapter)` and uses `parent.padx()`/`pady()` plus
+  parent-driven `createLayoutForText` / `checkLayoutForLinks` / `drawTextSelection`
+  (`drawQuoteLines` on Footer)
+- `WebpageAdapter` constructs with `ArticleViewer.this`
+- Deferred: `IBlock` bounds, spoiler attach/detach, `buildAccessibilityText`, AuthorDate /
+  Preformatted / quote / list / media / table cells
+- Contract coverage measures a parent-hosted header cell against isolated Resources
