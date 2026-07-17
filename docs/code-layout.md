@@ -167,7 +167,7 @@ Some vendored files reference MTProto types we don't use (`TLObject`,
 
 | Situation | What to do |
 |---|---|
-| Empty type needed for compile (e.g. `TLObject`) | Stub: empty abstract class or interface, no methods, no fields. Place under the corresponding upstream package in `:telegram`. Manifest entry with `notes: "MTProto stub — empty type for compile only"`. |
+| Empty type needed for compile (e.g. `TLObject`) | Stub: empty abstract class or interface, no methods, no fields. Place under the corresponding upstream package in `:telegram`. Track scratch stubs under `compat_shim_groups`; copied upstream types remain ordinary vendored entries. |
 | Vendored method that takes `TLObject` and we never call it (e.g. `setForUserOrChat`) | **Keep upstream body unchanged**. Don't stub the method. The dead branch is harmless and re-sync stays clean. |
 | Same as above, but a misroute would cause a silent-but-wrong UI (e.g. blank avatar) | Replace the method body with `throw new UnsupportedOperationException("nativedo: use AvatarImageBinder")`. Manifest `notes` must record this. |
 | A vendored helper returns a hardcoded default just to "make tests pass" | **Forbidden**. Either keep upstream behavior, or delete the method and switch the file to `port_mode = native` with `notes`. |
@@ -233,15 +233,13 @@ When you `cp` a new file from `vendor/telegram-android/` into `:telegram`:
 2. No `sed` package rewrite needed — package stays `org.telegram.*`.
 3. Drop any upstream import the host can't satisfy (or replace with the
    AndroidX/host equivalent).
-4. Add a manifest entry under `vendor-manifest.json`:
-   `local: "telegram/src/main/java/org/telegram/<path>"`,
-   `upstream: "org/telegram/<path>"`,
-   `vendored_at: "<pinned_commit>"`,
-   `modified: false` (true if you had to drop imports / change theme keys),
-   `port_mode: "exact"`.
-5. `scripts/vendor-isolation-check.sh` — must exit 0.
-6. `./apps/android/gradlew -p apps/android :telegram:compileDebugJavaWithJavac --quiet`
-7. Commit source + manifest update in **one commit**.
+4. Add a compact `file_groups` entry under `vendor-manifest.json`. For the
+   normal `telegram/src/main/java/` group, only `path` is required at the
+   global pin; add `modified: true` for import/theme/resource host wiring.
+5. `scripts/vendor-manifest.sh --write` followed by `--check`.
+6. `scripts/vendor-isolation-check.sh` — must exit 0.
+7. `./apps/android/gradlew -p apps/android :telegram:compileDebugJavaWithJavac --quiet`
+8. Commit source + compact manifest + generated lock in **one commit**.
 
 When you `git mv` a vendored file within `:telegram` (rare — only happens
 if upstream itself moved the file): repeat the above with the new path,

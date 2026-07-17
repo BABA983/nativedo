@@ -132,8 +132,13 @@ def main() -> int:
                 )
 
     files = manifest.get("files") or []
+    compat_shims = manifest.get("compat_shims") or []
+    tracked_entries = [(entry, "file") for entry in files] + [
+        (entry, "compat_shim") for entry in compat_shims
+    ]
     resources = manifest.get("resources") or []
     report["stats"]["file_entries"] = len(files)
+    report["stats"]["compat_shims"] = len(compat_shims)
     report["stats"]["resource_groups"] = len(resources)
 
     mode_c = Counter(e.get("port_mode") or "?" for e in files)
@@ -151,7 +156,10 @@ def main() -> int:
     local_set: set[str] = set()
     dup_local: list[str] = []
 
-    for entry in files:
+    shim_bad_mode: list[str] = []
+    shim_bad_modified: list[str] = []
+
+    for entry, kind in tracked_entries:
         local = entry.get("local") or ""
         if not local:
             report["errors"].append("file entry missing 'local'")
@@ -170,7 +178,13 @@ def main() -> int:
             pin_dist["<null>"] += 1
         else:
             pin_dist[va[:12]] += 1
-            if pin and va != pin and not str(pin).startswith(va) and not va.startswith(str(pin)[:12]):
+            if (
+                kind == "file"
+                and pin
+                and va != pin
+                and not str(pin).startswith(va)
+                and not va.startswith(str(pin)[:12])
+            ):
                 behind_global.append(local)
                 if not entry.get("stuck_reason"):
                     no_stuck.append(local)
@@ -178,6 +192,12 @@ def main() -> int:
         pm = entry.get("port_mode")
         if pm not in ("exact", "native"):
             bad_port.append(local)
+
+        if kind == "compat_shim":
+            if pm != "native":
+                shim_bad_mode.append(local)
+            if entry.get("modified") is not True:
+                shim_bad_modified.append(local)
 
         if entry.get("modified") is None:
             report["warnings"].append(f"missing modified flag: {local}")
@@ -197,6 +217,16 @@ def main() -> int:
     if bad_port:
         report["errors"].append(f"invalid port_mode ({len(bad_port)})")
         report["stats"]["bad_port_mode"] = bad_port[: args.sample]
+    if shim_bad_mode:
+        report["errors"].append(
+            f"compat shims must use port_mode=native ({len(shim_bad_mode)})"
+        )
+        report["stats"]["compat_shim_bad_mode"] = shim_bad_mode[: args.sample]
+    if shim_bad_modified:
+        report["errors"].append(
+            f"compat shims must declare modified=true ({len(shim_bad_modified)})"
+        )
+        report["stats"]["compat_shim_bad_modified"] = shim_bad_modified[: args.sample]
     if behind_global:
         report["info"].append(
             f"{len(behind_global)} file(s) vendored_at behind global pin "
@@ -267,7 +297,7 @@ def main() -> int:
             mismatches = []
             unavailable = []
             checked = 0
-            for entry in files:
+            for entry, _kind in tracked_entries:
                 if not local_abs(entry, manifest, root).is_file():
                     continue
                 cmp = compare_to_upstream(entry, manifest, root)
@@ -379,6 +409,7 @@ def _print_human(report: dict, sample: int) -> None:
     )
     print(
         f"files: {stats.get('file_entries')}  "
+        f"compat_shims: {stats.get('compat_shims')}  "
         f"resources: {stats.get('resource_groups')}  "
         f"port_mode: {stats.get('port_mode')}  "
         f"modified: {stats.get('modified')}"

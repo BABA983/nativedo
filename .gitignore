@@ -30,3 +30,4 @@ apps/android/app/src/test/snapshots/
 
 .tmp-home/
 .tmp-robolectric/
+.vendor-manifest.write.lock

@@ -19,10 +19,12 @@ must be discoverable.
 
 ### Where the truth lives
 
-- **`vendor-manifest.json`** — single source of truth per file: upstream path,
-  vendored commit, `port_mode`, `forced_exact` subsystems, `modified` flag,
-  optional `notes`. This is the **only** place per-file vendoring metadata
-  lives. Do not duplicate it inside source files.
+- **`vendor-manifest.json`** — compact, human-owned source of truth. Shared
+  pins/reasons/defaults live once; `file_groups` and per-file overrides carry
+  upstream path, `port_mode`, `forced_exact`, `modified`, and stable `notes`.
+- **`vendor-manifest.lock.json`** — generated flat per-file expansion consumed
+  by tooling and useful for audits. Never edit it directly; run
+  `scripts/vendor-manifest.sh --write` after editing the source manifest.
 - **`VENDOR.md`** — workflow (setup, diff, status, re-sync, pin bump).
 - **`docs/code-layout.md`** — directory layout, language choice (Java vs
   Kotlin), façade/Bridge pattern, stub-vs-throw policy. Read this before
@@ -43,14 +45,20 @@ must be discoverable.
   blocks this at compile time; this is a belt-and-suspenders check.
 - **`scripts/auto-vendor-copy.sh /tmp/javac-out.log`** — bulk-copy upstream
   classes that `javac` reported as missing into `:telegram` **and register
-  each copy in `vendor-manifest.json`** (no package rewrite needed).
+  each copy in the source manifest + generated lock** (no package rewrite
+  needed).
+- **`scripts/vendor-manifest.sh --check|--write`** — verify or regenerate the
+  flat lock from the compact source manifest.
 - **`vendor-allowlist.json`** — path prefixes under `:telegram` that may exist
   without a per-file manifest entry (AndroidX fork, ExoPlayer/GMS shims).
 
 A file is _vendored_ only when Telegram source was copied, split out, or
 substantially adapted. Files written from scratch are NativeDo code even if they
 follow Telegram-like patterns. Do not add manifest entries or origin comments
-unless actual Telegram source was copied or substantially adapted.
+unless actual Telegram source was copied or substantially adapted. A scratch
+`org.telegram.*` compatibility surface that exists only to compile vendored code
+belongs under `compat_shim_groups`, not `file_groups`; it remains discoverable
+without being described as vendored source.
 
 ### In-file comments on derived files
 
@@ -93,14 +101,17 @@ durable record.
 5. **`port_mode = native`** — we've already diverged and don't claim Telegram
    parity. Any `forced_exact` subsystem still applies.
 6. **Adapting backend deps** (Telegram messaging APIs → Discourse/linux.do) is
-   expected. If the divergence is non-obvious, leave a one-line `notes` entry in
-   the manifest.
+   expected. If the divergence is non-obvious, leave a short, stable `notes`
+   entry in the manifest. Do not record phase-by-phase history there; link the
+   relevant design document and let Git retain the changelog.
 7. **Adding a new vendored file**: copy upstream → fix imports / host wiring
    (no package rewrite needed for `:telegram`; package stays `org.telegram.*`)
-   → add manifest entry → run `scripts/vendor-isolation-check.sh` and
+   → add source-manifest entry → run `scripts/vendor-manifest.sh --write` → run
+   `scripts/vendor-isolation-check.sh` and
    `scripts/vendor-status.sh` plus `:telegram:compileDebugJavaWithJavac` →
-   commit source + manifest together. If the code is written from scratch, do
-   not add a manifest entry.
+   commit source + manifest + generated lock together. If the code is written
+   from scratch, do not add it to `file_groups`; use `compat_shim_groups` only
+   when an upstream-package compile surface must remain tracked.
 8. **License headers on copied files stay.** That's how compliance works.
 
 ### Host wiring

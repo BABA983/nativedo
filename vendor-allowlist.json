@@ -1,6 +1,6 @@
 {
   "_comment": [
-    "Paths under apps/android/ that may exist on disk without a vendor-manifest.json files[] entry.",
+    "Paths under apps/android/ that may exist on disk without a generated vendor-manifest.lock.json files[]/compat_shims[] entry.",
     "Used by scripts/vendor-status.sh. Prefer registering Telegram-derived sources in the manifest;",
     "allowlist is for intentional forks / third-party trees that are not tracked as per-file vendored ports.",
     "Each entry: prefix relative to local_root (apps/android/), plus reason."

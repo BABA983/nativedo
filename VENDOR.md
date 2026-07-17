@@ -24,10 +24,10 @@ live in `AGENTS.md` (Telegram-Derived Code → Rules). This file describes
 - Pinned commit: see `vendor-manifest.json` (`upstream.pinned_commit`)
 - Pristine working copy: `vendor/telegram-android/` (read-only, do not edit)
 
-The pristine copy is a `git clone` (or worktree) of the upstream repo
-checked out at `upstream.pinned_commit`. It is **not** committed to this repo
-(`vendor/telegram-android/` is gitignored). The pin in `vendor-manifest.json`
-is the single source of truth.
+The pristine copy is a `git clone` (or worktree) of the upstream repo checked
+out at `upstream.pinned_commit`. It is **not** committed to this repo. The pin
+in the compact, human-owned `vendor-manifest.json` is the single source of
+truth. `vendor-manifest.lock.json` is its generated flat expansion.
 
 Bootstrap / refresh it with:
 
@@ -39,8 +39,13 @@ scripts/vendor-setup.sh --fetch    # fetch only
 
 ## Manifest
 
-Every vendored file MUST have an entry in `vendor-manifest.json`. The
-manifest is the single source of truth for:
+Every vendored file MUST have an effective entry generated from
+`vendor-manifest.json`. The source manifest is compact: common pins, reasons,
+path prefixes, and defaults are declared once; per-file overrides live under
+`file_groups`. `vendor-manifest.lock.json` expands those groups into the flat
+per-file records consumed by the scripts.
+
+Together they record:
 
 - which local files came from Telegram
 - which upstream file each one came from
@@ -54,7 +59,18 @@ Only copied, split-out, or substantially adapted Telegram source is vendored.
 NativeDo code written from scratch does not belong in the manifest, even when
 it uses Telegram-like UI or architecture patterns. A copied or substantially
 adapted Telegram file without a manifest entry is a bug — please add the
-entry.
+entry. The narrow exception is a scratch `org.telegram.*` compile surface:
+track it under `compat_shim_groups` so it is discoverable without claiming it
+as vendored Telegram source.
+
+After editing the compact source, regenerate and verify the lock:
+
+```bash
+scripts/vendor-manifest.sh --write
+scripts/vendor-manifest.sh --check
+```
+
+Do not edit `vendor-manifest.lock.json` directly.
 
 ### Where paths point
 
@@ -70,6 +86,7 @@ that:
 
 | Script | Purpose |
 |---|---|
+| `scripts/vendor-manifest.sh` | Generate/check the flat lock from the compact source manifest |
 | `scripts/vendor-setup.sh` | Clone/fetch/checkout `vendor/telegram-android` at the pin |
 | `scripts/vendor-status.sh` | Manifest health, isolation, unmanifested files, behind-pin |
 | `scripts/vendor-diff.sh` | `diff -u` local file vs upstream blob |
@@ -84,6 +101,9 @@ Shared helpers live in `scripts/vendorlib.py`. Prefer the shell wrappers above.
 ### Daily checks
 
 ```bash
+# Source → generated-lock drift (fast; no pristine tree needed)
+scripts/vendor-manifest.sh --check
+
 # Health summary (exit 1 on consistency errors)
 scripts/vendor-status.sh
 
@@ -123,9 +143,10 @@ scripts/vendor-isolation-check.sh
 scripts/vendor-status.sh
 ```
 
-`auto-vendor-copy` **always** writes/updates `vendor-manifest.json` for each
-copied file (`port_mode: exact`, `modified: false`, `vendored_at: pin`).
-Do not `cp` upstream files by hand without a matching manifest entry.
+`auto-vendor-copy` **always** writes/updates the compact source and regenerates
+the lock for each copied file (`port_mode: exact`, `modified: false`,
+`vendored_at: pin`). Do not `cp` upstream files by hand without a matching
+manifest entry.
 
 ### Isolation
 
@@ -222,8 +243,8 @@ is a regression signal.
 ## Adding a new vendored file
 
 1. Confirm the file copies, splits out, or substantially adapts Telegram source.
-   If it is written from scratch, stop here: it is NativeDo code and should not
-   get a manifest entry.
+   If it is written from scratch, it must not enter `file_groups`. A scratch
+   upstream-package compile surface may instead enter `compat_shim_groups`.
 2. For files going into `:telegram`: `cp` the upstream file into the same
    relative path under `apps/android/telegram/src/main/java/org/telegram/`.
    Package stays `org.telegram.*`; no `sed` rewrite needed.
@@ -231,15 +252,16 @@ is a regression signal.
    `io.github.baba983.nativedo.*` location, rewrite package and imports,
    bind to NativeDo models.
 4. Adjust imports and host wiring (see `AGENTS.md` → Host wiring).
-5. Add an entry to `vendor-manifest.json`. Set `vendored_at` to the **full**
-   commit SHA you copied from (usually `upstream.pinned_commit`). For files
-   copied byte-identical from upstream, `modified: false`. For files that
-   needed any import drop, theme-key rewrite, or constructor glue,
-   `modified: true`.
-6. Run `scripts/vendor-isolation-check.sh` and `scripts/vendor-status.sh`.
-7. `./apps/android/gradlew -p apps/android :telegram:compileDebugJavaWithJavac
+5. Add an entry under the appropriate `file_groups` group in
+   `vendor-manifest.json`. Omit fields inherited from the defaults. Set `pin`
+   only when the file is not at `upstream.pinned_commit`; set `modified: true`
+   for import drops, theme-key rewrites, or constructor glue.
+6. Run `scripts/vendor-manifest.sh --write` and
+   `scripts/vendor-manifest.sh --check`.
+7. Run `scripts/vendor-isolation-check.sh` and `scripts/vendor-status.sh`.
+8. `./apps/android/gradlew -p apps/android :telegram:compileDebugJavaWithJavac
    --quiet` (and `:app:assembleDebug` if app code is affected).
-8. Commit the source file and the manifest change together.
+9. Commit the source file, compact manifest, and generated lock together.
 
 ## Re-syncing one file to a newer upstream
 
@@ -253,7 +275,8 @@ is a regression signal.
 
 3. If you want to absorb the changes:
    - update the local file (manually re-apply any local modifications)
-   - update `vendored_at` for that entry in the manifest to the full SHA
+   - update `pin`/the corresponding pin alias for that entry in the compact
+     manifest
    - set `modified` correctly (`false` only if byte-identical)
    - clear `stuck_reason` if present
    - run tests that cover the file
@@ -288,7 +311,7 @@ Tracks (`port_mode` / `modified`) guide the work:
 
 This is a deliberately heavy operation; don't bump the pin casually.
 
-After a successful bump, set:
+After a successful bump, set the compact source manifest's upstream block:
 
 ```json
 "upstream": {
@@ -298,21 +321,49 @@ After a successful bump, set:
 }
 ```
 
-Use the **full** SHA in `pinned_commit` and every `vendored_at`. Short
-prefixes are normalized by tooling but should not be written back.
+Use the **full** SHA in `pinned_commit` and under `aliases.pins`. Entries at the
+global pin omit `pin`; historical entries reference a pin alias. Short prefixes
+are normalized by tooling but should not be written back.
 
 ## Manifest schema
 
-`vendor-manifest.json` is plain JSON (no JSON5) so `jq` can read it. It
-uses two conventions for human notes:
+Both manifest files are plain JSON. `vendor-manifest.json` is compact and
+human-owned; `vendor-manifest.lock.json` is generated and flat.
 
-- `_comment` fields anywhere in the structure are ignored by tooling.
-  Use them as section headers or schema reminders.
-- `notes` on a file entry can be a string or an array of strings. The
-  array form is just `["line 1", "line 2"]` and is concatenated with
-  newlines if you ever pretty-print it.
+Compact source structure:
 
-Per-file fields:
+| Field | Meaning |
+|---|---|
+| `schema_version` | Compact source schema version. |
+| `upstream` | Repository, global pin, and pin date. |
+| `defaults` | Values inherited by ordinary vendored entries. |
+| `aliases.pins` | Full historical SHAs referenced by short logical names. |
+| `aliases.stuck_reasons` | Reused synchronization blockers, stored once. |
+| `aliases.notes` | Reused stable notes, stored once. |
+| `file_groups` | Copied, split-out, or substantially adapted Telegram source. |
+| `compat_shim_groups` | Scratch upstream-package compile/runtime surfaces; never eligible for vendor-ff. |
+| `resources` | Copied resource groups. |
+
+Each group declares `local_prefix`, optional `upstream_prefix`, and `entries`.
+An entry's `path` is relative to `local_prefix`; `upstream` is omitted when it
+can be derived from the two prefixes. Fields equal to the defaults are omitted.
+
+Compact per-entry overrides:
+
+| Field | Meaning |
+|---|---|
+| `path` | Path relative to the group's `local_prefix`. |
+| `upstream` | Explicit upstream path when prefix mapping cannot derive it. |
+| `pin` | Optional key in `aliases.pins`; omission means the global pin. |
+| `modified` | Optional byte-drift override; ordinary entries default to `false`. |
+| `port_mode` | Optional `exact`/`native` override; ordinary entries default to `exact`. |
+| `forced_exact` | Optional forced-exact subsystem list. |
+| `notes` / `notes_ref` | Stable current delta, or a key in `aliases.notes`. |
+| `stuck_reason` / `stuck_ref` | Concrete FF blocker, or a key in `aliases.stuck_reasons`. |
+
+`notes` must describe stable current host wiring, omissions, or behavior. Keep
+phase-by-phase history and validation logs in Git or the relevant design doc.
+The generated lock expands these into the established per-file fields:
 
 | Field | Meaning |
 |---|---|
@@ -322,7 +373,7 @@ Per-file fields:
 | `modified` | `true` if the local file differs byte-for-byte from `vendored_at`. Package/import/host wiring counts. |
 | `port_mode` | `exact` or `native`. Mirrors `AGENTS.md`. |
 | `forced_exact` | Optional list. Subset of `gesture`, `animation`, `measurement`, `drawing`, `recycling`. Mirrors `AGENTS.md`. |
-| `notes` | Optional. String or array of strings. |
+| `notes` | Optional stable string. |
 | `stuck_reason` | Optional. Why this file is intentionally pinned to an older `vendored_at` than `upstream.pinned_commit`. |
 
 Resource entries under `resources` follow the same shape but list copied
@@ -337,7 +388,7 @@ glob, and the commit they were copied from.
 |---|---|
 | `androidx/` under `:telegram` | **Allowlisted** tree — Telegram's RecyclerView fork. See `vendor-allowlist.json`. |
 | `com/google/android/exoplayer2/`, GMS/common shims | **Allowlisted** compile surface — not UI ports. |
-| `org.telegram.*` / `me.vkryl.*` compile stubs | **Must be in `vendor-manifest.json`** (`port_mode: native` is fine). |
+| Scratch `org.telegram.*` / `me.vkryl.*` compile stubs | Track under `compat_shim_groups`; they are discoverable but are not vendored source. |
 | Anything else on disk without entry or allowlist | `vendor-status` **warning** with bucket counts. |
 
 ```bash
@@ -353,10 +404,12 @@ manifest entries). Do not leave new `org.telegram.*` files untracked.
 
 **Errors (exit 1):**
 
+- compact source / generated lock drift (`scripts/vendor-manifest.sh --check`)
 - `vendored_at` null/missing on any file or resource group
 - manifest `local` path missing on disk
 - duplicate `local` entries
 - invalid `port_mode`
+- compatibility shim not `native` + `modified:true`
 - `vendor-isolation-check` failures
 - with `--check-modified`: `modified` flag disagrees with bytes
 

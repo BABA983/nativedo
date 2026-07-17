@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Normalize vendor-manifest.json pins: expand short SHAs, fill nulls, set global pin.
+"""Normalize vendoring pins and persist compact source + generated lock.
 
 Default target pin: 9b50143d8896d255d03155598937e4f3e28afd86 (Telegram 12.8.1).
 
@@ -52,7 +52,12 @@ def main() -> int:
     print("global pin ->", manifest.get("upstream"))
 
     # show remaining nulls
-    nulls = [e.get("local") for e in manifest.get("files", []) if not e.get("vendored_at")]
+    nulls = [
+        e.get("local")
+        for key in ("files", "compat_shims")
+        for e in manifest.get(key, [])
+        if not e.get("vendored_at")
+    ]
     print("remaining null vendored_at:", nulls)
 
     if args.dry_run:
@@ -60,7 +65,7 @@ def main() -> int:
         return 0
 
     save_manifest(manifest, root)
-    print("wrote", root / "vendor-manifest.json")
+    print("wrote", root / "vendor-manifest.json", "and generated lock")
     return 0
 
 

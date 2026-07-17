@@ -237,7 +237,7 @@ def main() -> int:
 
     if args.apply and stats["applied"]:
         save_manifest(manifest, root)
-        print(f"wrote manifest; applied={stats['applied']}")
+        print(f"wrote manifest source+lock; applied={stats['applied']}")
         print("Next: scripts/vendor-status.sh && compile :telegram")
     elif not args.apply and stats["would_ff"]:
         print("Re-run with --apply to write.")

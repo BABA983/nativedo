@@ -79,6 +79,24 @@ fi
 
 mkdir -p "$ROOT/vendor"
 
+if [[ "$MODE" == "status" ]]; then
+  if [[ ! -d "$VENDOR_DIR/.git" && ! -f "$VENDOR_DIR/.git" ]]; then
+    echo "ERROR: pristine tree missing at $VENDOR_DIR" >&2
+    echo "Run: scripts/vendor-setup.sh" >&2
+    exit 1
+  fi
+  HEAD="$(git -C "$VENDOR_DIR" rev-parse HEAD)"
+  RESOLVED_PIN="$(git -C "$VENDOR_DIR" rev-parse "$PIN" 2>/dev/null || true)"
+  echo "manifest pin: ${PIN:-<none>}"
+  echo "vendor HEAD:  $HEAD"
+  if [[ -n "$RESOLVED_PIN" && "$HEAD" == "$RESOLVED_PIN" ]]; then
+    echo "OK: HEAD matches pin"
+    exit 0
+  fi
+  echo "DRIFT: HEAD does not match pin"
+  exit 1
+fi
+
 if [[ ! -d "$VENDOR_DIR/.git" && ! -f "$VENDOR_DIR/.git" ]]; then
   if [[ -d "$VENDOR_DIR" ]]; then
     echo "ERROR: $VENDOR_DIR exists but is not a git repo" >&2
@@ -96,16 +114,6 @@ HEAD="$(git -C "$VENDOR_DIR" rev-parse HEAD)"
 echo "manifest pin: ${PIN:-<none>}"
 echo "vendor HEAD:  $HEAD"
 echo "target:       ${TARGET_REF:-<none>}"
-
-if [[ "$MODE" == "status" ]]; then
-  RESOLVED_PIN="$(git -C "$VENDOR_DIR" rev-parse "$PIN" 2>/dev/null || true)"
-  if [[ -n "$RESOLVED_PIN" && "$HEAD" == "$RESOLVED_PIN" ]]; then
-    echo "OK: HEAD matches pin"
-    exit 0
-  fi
-  echo "DRIFT: HEAD does not match pin"
-  exit 1
-fi
 
 if [[ "$MODE" == "fetch" ]]; then
   echo "OK: fetch complete (HEAD unchanged)"

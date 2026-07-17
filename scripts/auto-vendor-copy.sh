@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/auto-vendor-copy.sh
 # Automatically copy missing vendor classes that javac complains about, and
-# register each copy in vendor-manifest.json (atomic with the copy).
+# register each copy in compact vendor-manifest.json and regenerate the lock.
 #
 # Skips: classes > MAX_LINES or with > MAX_IMPORTS telegram imports.
 #
@@ -42,7 +42,7 @@ if [[ ! -d "$VENDOR_JAVA" ]]; then
   exit 1
 fi
 
-# Resolve pin for new manifest entries.
+# Resolve pin for new source-manifest entries.
 PIN="$(
   python3 -c "
 import sys
@@ -58,7 +58,8 @@ classes=$(
   grep -A4 "error: cannot find symbol" "$LOG" \
     | grep -E "symbol:[[:space:]]*class" \
     | sed -E 's/.*symbol:[[:space:]]*class[[:space:]]+([A-Za-z0-9_]+).*/\1/' \
-    | sort -u
+    | sort -u \
+    || true
 )
 
 copied=0
@@ -162,7 +163,7 @@ fi
 echo ""
 echo "Summary: copied=$copied, skipped_big=$skipped_big, skipped_deps=$skipped_deps, skipped_missing=$skipped_missing, skipped_exists=$skipped_exists"
 if [[ "$DRY_RUN" -eq 0 ]]; then
-  echo "Manifest: inserted=$manifest_inserted, updated=$manifest_updated (pin=$PIN)"
+  echo "Manifest source+lock: inserted=$manifest_inserted, updated=$manifest_updated (pin=$PIN)"
 else
   echo "Manifest: dry-run (no write)"
 fi

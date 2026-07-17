@@ -53,7 +53,9 @@ def parse_args() -> argparse.Namespace:
 
 
 def resolve_entry(manifest: dict, path_arg: str, root: Path) -> dict:
-    files = manifest.get("files") or []
+    files = list(manifest.get("files") or []) + list(
+        manifest.get("compat_shims") or []
+    )
     candidates = []
     arg = path_arg.strip().lstrip("./")
     # strip absolute root
@@ -122,7 +124,10 @@ def main() -> int:
         n_mis = 0
         n_ok = 0
         n_skip = 0
-        for entry in manifest.get("files") or []:
+        entries = list(manifest.get("files") or []) + list(
+            manifest.get("compat_shims") or []
+        )
+        for entry in entries:
             if not local_abs(entry, manifest, root).is_file():
                 n_skip += 1
                 continue
@@ -183,6 +188,7 @@ def main() -> int:
         f"# local:    {entry.get('local')}\n"
         f"# upstream: {up_path}\n"
         f"# commit:   {commit}\n"
+        f"# kind:     {'compat_shim' if entry in (manifest.get('compat_shims') or []) else 'vendored'}\n"
         f"# port_mode:{entry.get('port_mode')}  modified:{entry.get('modified')}  "
         f"synthetic:{bool(entry.get('_synthetic'))}\n"
     )
