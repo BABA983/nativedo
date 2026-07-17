@@ -616,7 +616,8 @@ final class TableBlock implements EmbeddedPostBodyBlock, TableLayout.TableLayout
         if (source.length() == 0) {
             source = " ";
         }
-        ArticleViewer.DrawingText drawingText = ArticleViewer.getInstance().new DrawingText();
+        ArticleViewer viewer = ArticleViewer.getInstance();
+        ArticleViewer.DrawingText drawingText = viewer.new DrawingText(viewer);
         drawingText.textLayout = ArticleTextLayout.builder(source, paint, Math.max(maxWidth, 1))
                 .setAlignment(alignment(cell))
                 .build();

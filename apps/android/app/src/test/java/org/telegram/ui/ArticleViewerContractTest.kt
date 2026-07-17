@@ -45,14 +45,18 @@ class ArticleViewerContractTest {
     @Test
     fun drawingText_canBeConstructedFromInstance() {
         val viewer = ArticleViewer.getInstance()
-        val drawingText = viewer.DrawingText()
-        assertThat(drawingText).isNotNull()
-        assertThat(drawingText.textLayout).isNull()
-        assertThat(drawingText.parentBlock).isNull()
+        val viaNoArg = viewer.DrawingText()
+        val viaParent = viewer.DrawingText(viewer)
+        assertThat(viaNoArg).isNotNull()
+        assertThat(viaParent).isNotNull()
+        assertThat(viaNoArg.parentViewer).isSameInstanceAs(viewer)
+        assertThat(viaParent.parentViewer).isSameInstanceAs(viewer)
+        assertThat(viaNoArg.textLayout).isNull()
+        assertThat(viaNoArg.parentBlock).isNull()
         // Defaults used by TableBlock / table layout bridge
-        assertThat(drawingText.x).isEqualTo(0)
-        assertThat(drawingText.y).isEqualTo(0)
-        assertThat(drawingText.row).isEqualTo(0)
+        assertThat(viaNoArg.x).isEqualTo(0)
+        assertThat(viaNoArg.y).isEqualTo(0)
+        assertThat(viaNoArg.row).isEqualTo(0)
     }
 
     @Test

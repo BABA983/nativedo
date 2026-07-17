@@ -96,11 +96,18 @@ Introduced `org.telegram.ui.IArticleViewer` (API surface only):
 ### Phase B2 — Field move (landed) + DrawingText(parent) (next)
 
 1. [x] Move pin-matching fields from `ArticleViewer` onto `IArticleViewer` (public)
-2. [ ] Change `DrawingText` / block helpers to take `IArticleViewer parent` where pin does
+2. [x] `DrawingText(IArticleViewer parent)` + no-arg convenience; draw via parent fields (B3)
 3. [ ] Port `ArticleViewer.Resources` paint maps from pin (or keep statics and assign into Resources)
 4. [ ] Only then re-attempt larger pin body slices
 
 Do **not** full-file replace until B2 compiles with contract tests green.
+
+### Phase B3 — DrawingText(parent) (landed)
+
+- `DrawingText` stores `IArticleViewer parent`
+- No-arg ctor → enclosing/`getInstance()` ArticleViewer (TableBlock-safe)
+- `draw` reads `parent.searchResults` / `links` / pressed-link selection
+- Still **not** ported: MultiLayoutTypingAnimator, Spoiler, a11y dump, Resources paint maps
 
 ### Phase 3 — WebActionBar / bookmarks chrome
 

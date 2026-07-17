@@ -479,6 +479,8 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
     }
 
     public class DrawingText implements TextSelectionHelper.TextLayoutBlock {
+        /** Pin-shaped host; B2 fields (search/links/selection) are read via this parent. */
+        private final IArticleViewer parent;
         private View latestParentView;
 
         private boolean isDrawing;
@@ -494,19 +496,33 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         public int row;
         public CharSequence prefix;
 
+        /** Convenience for outer-instance sites and TableBlock: parent = enclosing ArticleViewer. */
+        public DrawingText() {
+            this(ArticleViewer.this);
+        }
+
+        public DrawingText(IArticleViewer parent) {
+            this.parent = parent != null ? parent : ArticleViewer.this;
+        }
+
+        public IArticleViewer getParentViewer() {
+            return parent;
+        }
+
         public void draw(Canvas canvas, View view) {
             isDrawing = true;
             latestParentView = view;
 
-            if (!searchResults.isEmpty()) {
-                SearchResult result = searchResults.get(currentSearchIndex);
+            if (parent.searchResults != null && !parent.searchResults.isEmpty()) {
+                SearchResult result = parent.searchResults.get(parent.currentSearchIndex);
                 if (result.block == parentBlock && (result.text == parentText || result.text instanceof String && parentText == null)) {
                     if (searchIndex != result.index) {
                         searchPath = new LinkPath(true);
                         searchPath.setAllowReset(false);
                         searchPath.setCurrentLayout(textLayout, result.index, 0);
                         searchPath.setBaselineShift(0);
-                        textLayout.getSelectionPath(result.index, result.index + searchText.length(), searchPath);
+                        final String q = parent.searchText != null ? parent.searchText : "";
+                        textLayout.getSelectionPath(result.index, result.index + q.length(), searchPath);
                         searchPath.setAllowReset(true);
                     }
                 } else {
@@ -526,10 +542,10 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (markPath != null) {
                 canvas.drawPath(markPath, webpageMarkPaint);
             }
-            if (links.draw(canvas, this)) {
+            if (parent.links != null && parent.links.draw(canvas, this)) {
                 view.invalidate();
             }
-            if (pressedLinkOwnerLayout == this && pressedLink == null && drawBlockSelection) {
+            if (parent.pressedLinkOwnerLayout == this && parent.pressedLink == null && parent.drawBlockSelection) {
                 float width;
                 float x;
                 if (getLineCount() == 1) {
@@ -3161,7 +3177,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
             }
         }
-        DrawingText drawingText = new DrawingText();
+        DrawingText drawingText = new DrawingText(this);
         drawingText.textLayout = result;
         drawingText.textPath = textPath;
         drawingText.markPath = markPath;
@@ -7720,7 +7736,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                         stringBuilder.setSpan(span, 0, author.length(), Spanned.SPAN_INCLUSIVE_INCLUSIVE);
                     }
                     CharSequence stringFinal = TextUtils.ellipsize(stringBuilder, Theme.chat_audioTitlePaint, w, TextUtils.TruncateAt.END);
-                    titleLayout = new DrawingText();
+                    titleLayout = new DrawingText(ArticleViewer.this);
                     titleLayout.textLayout = new StaticLayout(stringFinal, audioTimePaint, w, Layout.Alignment.ALIGN_NORMAL, 1.0f, 0.0f, false);
                     titleLayout.parentBlock = currentBlock;
                     seekBarY = buttonY + (size - dp(30)) / 2 + dp(11);
