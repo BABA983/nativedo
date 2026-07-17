@@ -53,6 +53,18 @@ class TopicDetailFragmentTest {
         assertThat(Theme.getDefaultColor(Theme.key_chat_serviceBackgroundSelected)).isEqualTo(0x889393af.toInt())
     }
 
+    @Test
+    fun topicDetailBlurSources_matchChatActivityWallpaperVsListSplit() {
+        // ChatActivity: FadeView -> navbarContentSourceWallpaper; ActionBar glass ->
+        // glassBackgroundSourceRenderNode / Frosted (live list + noise suppressor).
+        assertThat(topicDetailTopFadeSourceKind())
+            .isEqualTo(TopicDetailBlurSourceKind.WALLPAPER_COLOR)
+        assertThat(topicDetailActionBarGlassSourceKind(liquidGlassEnabled = false))
+            .isEqualTo(TopicDetailBlurSourceKind.LIST_RENDER_NODE_FROSTED)
+        assertThat(topicDetailActionBarGlassSourceKind(liquidGlassEnabled = true))
+            .isEqualTo(TopicDetailBlurSourceKind.LIST_RENDER_NODE_GLASS)
+    }
+
 
     @Test
     fun swipeReply_startsOnlyWhenCompetingTopicInteractionsAreIdle() {

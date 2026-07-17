@@ -1903,11 +1903,20 @@ class TopicDetailFragment @JvmOverloads constructor(
     }
 
     private fun createTopicActionBarGlass(root: ViewGroup) {
-        val source = mentionBlurSource ?: mentionBlurSourceColor ?: return
+        // ChatActivity ActionBar glass pills sample the live list via
+        // glassBackgroundSourceRenderNode / Frosted (DownscaleScrollableNoiseSuppressor),
+        // falling back to wallpaper color only when blur3 is unavailable.
+        val liquidGlass = LiteMode.isEnabled(LiteMode.FLAG_LIQUID_GLASS)
+        val source = when (topicDetailActionBarGlassSourceKind(liquidGlass)) {
+            TopicDetailBlurSourceKind.LIST_RENDER_NODE_GLASS,
+            TopicDetailBlurSourceKind.LIST_RENDER_NODE_FROSTED,
+            -> mentionBlurSource ?: mentionBlurSourceColor
+            TopicDetailBlurSourceKind.WALLPAPER_COLOR -> mentionBlurSourceColor
+        } ?: return
         val watcher = mentionBlurWatcher ?: return
         val backgroundFactory = BlurredBackgroundDrawableViewFactory(source).apply {
             setSourceRootView(watcher, root)
-            setLiquidGlassEffectAllowed(LiteMode.isEnabled(LiteMode.FLAG_LIQUID_GLASS))
+            setLiquidGlassEffectAllowed(liquidGlass)
         }
         // ChatActivity uses key_chat_messagePanelBackground for glass ActionBar pills.
         actionBar.setupGlass(
@@ -1940,12 +1949,17 @@ class TopicDetailFragment @JvmOverloads constructor(
     }
 
     private fun createTopicTopFade(context: Context, root: ViewGroup) {
-        val source = mentionBlurSourceFrosted ?: mentionBlurSourceColor ?: return
-        val watcher = mentionBlurWatcher ?: return
-        val factory = BlurredBackgroundDrawableViewFactory(source).apply {
-            setSourceRootView(watcher, root)
-            setLiquidGlassEffectAllowed(LiteMode.isEnabled(LiteMode.FLAG_LIQUID_GLASS))
-        }
+        // ChatActivity wires FadeView to navbarContentDrawableFactory, which samples
+        // navbarContentSourceWallpaper (underlayer), not the frosted/list RenderNode used
+        // by glass pills. TopicDetail's wallpaper equivalent is mentionBlurSourceColor.
+        // Binding frosted list capture here double-blurs the top band and can shift the
+        // color seam that glass capsules then sample against.
+        val source = when (topicDetailTopFadeSourceKind()) {
+            TopicDetailBlurSourceKind.WALLPAPER_COLOR -> mentionBlurSourceColor
+            TopicDetailBlurSourceKind.LIST_RENDER_NODE_FROSTED -> mentionBlurSourceFrosted
+            TopicDetailBlurSourceKind.LIST_RENDER_NODE_GLASS -> mentionBlurSource
+        } ?: return
+        val factory = BlurredBackgroundDrawableViewFactory(source)
         val fadeView = ChatActivityFadeView(context).apply {
             setup(factory)
             setFadeHeightTop(AndroidUtilities.dp(48f))
@@ -7226,6 +7240,30 @@ class TopicDetailFragment @JvmOverloads constructor(
     }
 }
 
+/**
+ * Mirrors ChatActivity's blur-source split:
+ * - wallpaper underlayer for top FadeView (`navbarContentSourceWallpaper`)
+ * - live list RenderNode + noise suppressor for glass capsules
+ */
+internal enum class TopicDetailBlurSourceKind {
+    WALLPAPER_COLOR,
+    LIST_RENDER_NODE_FROSTED,
+    LIST_RENDER_NODE_GLASS,
+}
+
+/** ChatActivity: FadeView uses wallpaper, never frosted list capture. */
+internal fun topicDetailTopFadeSourceKind(): TopicDetailBlurSourceKind =
+    TopicDetailBlurSourceKind.WALLPAPER_COLOR
+
+/** ChatActivity: ActionBar glass uses list RenderNode (glass or frosted). */
+internal fun topicDetailActionBarGlassSourceKind(
+    liquidGlassEnabled: Boolean,
+): TopicDetailBlurSourceKind =
+    if (liquidGlassEnabled) {
+        TopicDetailBlurSourceKind.LIST_RENDER_NODE_GLASS
+    } else {
+        TopicDetailBlurSourceKind.LIST_RENDER_NODE_FROSTED
+    }
 
 
 internal fun topicDetailCanStartSwipeReply(
