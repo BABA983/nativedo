@@ -360,13 +360,17 @@ class TopicListFragment(
         )
 
         // Body container (pager + search results) — also direct child of root.
+        // Anchor below ActionBar immediately so the first skeleton paint does not
+        // share y=0 with the search pill / tab strip (checkUi runs after layout).
         val body = FrameLayout(context)
         root.addView(
             body,
             FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT,
-            ),
+            ).apply {
+                topMargin = getActionBarOccupiedHeight()
+            },
         )
         bodyContainer = body
 
@@ -455,6 +459,13 @@ class TopicListFragment(
         searchContentView = searchContent
         searchViewPager = searchContent
 
+        // Position body / pill / tabs once views exist, then re-sync after the first
+        // real ActionBar measure so skeleton never sits under chrome at y=0.
+        checkUi_searchFieldVisibility()
+        root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+            checkUi_searchFieldVisibility()
+        }
+
         // ---- Observe state ----
         collectorScope.launch {
             viewModel.uiState.collectLatest { state ->
@@ -481,24 +492,36 @@ class TopicListFragment(
     // Position helpers
     // ================================================================================
 
+    /**
+     * Full vertical space occupied by ActionBar (content height + optional status bar).
+     * Prefer measured height after layout; before the first measure, fall back to the
+     * same formula ActionBar uses in onMeasure / ViewPagerActivity host wiring.
+     */
+    private fun getActionBarOccupiedHeight(): Int {
+        val measured = actionBar.measuredHeight
+        if (measured > 0) return measured
+        val statusInset = if (actionBar.occupyStatusBar) AndroidUtilities.statusBarHeight else 0
+        return ActionBar.getCurrentActionBarHeight() + statusInset
+    }
+
     /** Pill's Y when collapsed: right below ActionBar. */
-    private fun getPillCollapsedTop(): Float = actionBar.measuredHeight.toFloat()
+    private fun getPillCollapsedTop(): Float = getActionBarOccupiedHeight().toFloat()
 
     /** Pill's Y when expanded: bottom-aligned inside ActionBar content, below the status bar area. */
     private fun getPillExpandedTop(): Float {
-        val abHeight = actionBar.measuredHeight
+        val abHeight = getActionBarOccupiedHeight()
         return (abHeight - AndroidUtilities.dp(SEARCH_FIELD_HEIGHT_DP)).coerceAtLeast(0).toFloat()
     }
 
     /** Tab strip's Y when pill is fully visible: below ActionBar + pill. */
     private fun getTabStripFullTop(): Float =
-        actionBar.measuredHeight.toFloat() + AndroidUtilities.dp(SEARCH_FIELD_HEIGHT_DP)
+        getActionBarOccupiedHeight().toFloat() + AndroidUtilities.dp(SEARCH_FIELD_HEIGHT_DP)
 
     /** Tab strip's Y when pill is gone (scrolled away): just below ActionBar. */
-    private fun getTabStripStickyTop(): Float = actionBar.measuredHeight.toFloat()
+    private fun getTabStripStickyTop(): Float = getActionBarOccupiedHeight().toFloat()
 
     /** Body is anchored below ActionBar; each list owns the scrollable header padding. */
-    private fun getBodyTopMargin(): Int = actionBar.measuredHeight
+    private fun getBodyTopMargin(): Int = getActionBarOccupiedHeight()
 
     // ================================================================================
     // Unified UI state check
@@ -574,7 +597,7 @@ class TopicListFragment(
         }
 
         actionBarDivider?.let {
-            it.translationY = actionBar.measuredHeight - 1f
+            it.translationY = getActionBarOccupiedHeight() - 1f
             it.alpha = (scrollProgress * (1f - searchFactor)).coerceIn(0f, 1f)
         }
 
@@ -656,7 +679,7 @@ class TopicListFragment(
         if (searchExpanded) {
             return false
         }
-        if (event.y <= actionBar.measuredHeight) {
+        if (event.y <= getActionBarOccupiedHeight()) {
             return true
         }
         if (!forward) {
@@ -1042,9 +1065,8 @@ class TopicListFragment(
             listView.clipToPadding = false
             itemsEnterAnimator = RecyclerItemsEnterAnimator(listView, true)
             listView.adapter = adapter
-            listView.setOnItemClickListener { view, _ ->
-                val cell = view as? TopicCell ?: return@setOnItemClickListener
-                val topic = cell.topic ?: return@setOnItemClickListener
+            listView.setOnItemClickListener { _, position ->
+                val topic = adapter.getTopicAt(position) ?: return@setOnItemClickListener
                 viewModel.markTopicSeen(topic.id)
                 presentFragment(TopicDetailFragment(topic.id, topic.title))
             }

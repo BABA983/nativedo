@@ -12,10 +12,7 @@ import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.recyclerview.widget.AsyncListDiffer;
-import androidx.recyclerview.widget.AsyncDifferConfig;
 import androidx.recyclerview.widget.DiffUtil;
-import androidx.recyclerview.widget.ListUpdateCallback;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.AndroidUtilities;
@@ -49,7 +46,7 @@ public class TopicListAdapter extends RecyclerListView.SelectionAdapter {
 
     private final Context context;
     private final String baseUrl;
-    private final AsyncListDiffer<TopicSummary> differ;
+    private List<TopicSummary> topics = Collections.emptyList();
 
     private Map<Integer, CategorySummary> categories = Collections.emptyMap();
     private boolean showLoadingFooter;
@@ -67,14 +64,6 @@ public class TopicListAdapter extends RecyclerListView.SelectionAdapter {
     public TopicListAdapter(@NonNull Context context, @NonNull String baseUrl) {
         this.context = context;
         this.baseUrl = baseUrl;
-        differ = new AsyncListDiffer<>(
-            new ListUpdateCallback() {
-                @Override public void onInserted(int position, int count) {}
-                @Override public void onRemoved(int position, int count) {}
-                @Override public void onMoved(int fromPosition, int toPosition) {}
-                @Override public void onChanged(int position, int count, @Nullable Object payload) {}
-            },
-            new AsyncDifferConfig.Builder<>(new TopicDiffCallback()).build());
     }
 
     public void setSearchPresentation(@Nullable String query, boolean showExcerpt) {
@@ -137,17 +126,23 @@ public class TopicListAdapter extends RecyclerListView.SelectionAdapter {
                            @Nullable CharSequence loadMoreErrorMessage,
                            @Nullable Runnable retryCallback,
                            @Nullable Runnable loadMoreRetryCallback) {
-        int oldItemCount = getItemCount();
+        AdapterSnapshot oldSnapshot = snapshot();
         Map<Integer, CategorySummary> oldCategories = this.categories;
         List<TopicSummary> newTopics = new ArrayList<>(topics);
-        boolean structureChanged = this.showInitialLoading != showInitialLoading ||
-            this.showLoadingFooter != showLoadingFooter ||
-            !TextUtils.equals(this.emptyTitle, emptyTitle) ||
-            !TextUtils.equals(this.emptyMessage, emptyMessage) ||
-            !TextUtils.equals(this.errorTitle, errorTitle) ||
-            !TextUtils.equals(this.errorMessage, errorMessage) ||
-            !TextUtils.equals(this.loadMoreErrorMessage, loadMoreErrorMessage);
+        AdapterSnapshot newSnapshot = new AdapterSnapshot(
+            newTopics,
+            showLoadingFooter,
+            showInitialLoading,
+            emptyTitle,
+            emptyMessage,
+            errorTitle,
+            errorMessage,
+            loadMoreErrorMessage,
+            retryCallback,
+            loadMoreRetryCallback);
+        DiffUtil.DiffResult diff = DiffUtil.calculateDiff(new TopicListDiffCallback(oldSnapshot, newSnapshot));
 
+        this.topics = newTopics;
         this.categories = categories;
         this.showInitialLoading = showInitialLoading;
         this.showLoadingFooter = showLoadingFooter;
@@ -159,13 +154,29 @@ public class TopicListAdapter extends RecyclerListView.SelectionAdapter {
         this.retryCallback = retryCallback;
         this.loadMoreRetryCallback = loadMoreRetryCallback;
 
-        differ.submitList(showInitialLoading ? Collections.emptyList() : newTopics, this::notifyDataSetChanged);
+        diff.dispatchUpdatesTo(this);
+        notifyCategoriesChanged(oldCategories, categories, newTopics.size());
+    }
+
+    @NonNull
+    private AdapterSnapshot snapshot() {
+        return new AdapterSnapshot(
+            topics,
+            showLoadingFooter,
+            showInitialLoading,
+            emptyTitle,
+            emptyMessage,
+            errorTitle,
+            errorMessage,
+            loadMoreErrorMessage,
+            retryCallback,
+            loadMoreRetryCallback);
     }
 
     private void notifyCategoriesChanged(@NonNull Map<Integer, CategorySummary> oldCategories,
                                          @NonNull Map<Integer, CategorySummary> categories,
                                          int topicCount) {
-        if (!Objects.equals(oldCategories, categories)) {
+        if (!showInitialLoading && topicCount > 0 && !Objects.equals(oldCategories, categories)) {
             notifyItemRangeChanged(0, topicCount, TopicCell.MASK_FULL);
         }
     }
@@ -180,18 +191,17 @@ public class TopicListAdapter extends RecyclerListView.SelectionAdapter {
         if (showInitialLoading) {
             return SKELETON_ROW_COUNT;
         }
-        int count = differ.getCurrentList().size();
+        int count = topics.size();
         if (count == 0 && hasInitialError()) return 1;
         if (count == 0 && hasEmptyState()) return 1;
-        if (count > 0 && showLoadingFooter) count += 1;
-        if (count > 0 && hasLoadMoreError()) count += 1;
+        if (count > 0 && (showLoadingFooter || hasLoadMoreError())) count += 1;
         return count;
     }
 
     @Override
     public int getItemViewType(int position) {
         if (showInitialLoading) return VIEW_TYPE_SKELETON;
-        int topicCount = differ.getCurrentList().size();
+        int topicCount = topics.size();
         if (topicCount == 0 && hasInitialError()) return VIEW_TYPE_ERROR;
         if (topicCount == 0 && hasEmptyState()) return VIEW_TYPE_EMPTY;
         if (position >= topicCount) {
@@ -214,7 +224,6 @@ public class TopicListAdapter extends RecyclerListView.SelectionAdapter {
 
     public @androidx.annotation.Nullable TopicSummary getTopicAt(int position) {
         if (showInitialLoading) return null;
-        List<TopicSummary> topics = differ.getCurrentList();
         if (position < 0 || position >= topics.size()) return null;
         return topics.get(position);
     }
@@ -367,6 +376,142 @@ public class TopicListAdapter extends RecyclerListView.SelectionAdapter {
                 payload |= TopicCell.MASK_FULL;
             }
             return payload == 0 ? null : payload;
+        }
+    }
+
+    private static final class TopicListDiffCallback extends DiffUtil.Callback {
+        private static final TopicDiffCallback TOPIC_DIFF = new TopicDiffCallback();
+
+        private final AdapterSnapshot oldSnapshot;
+        private final AdapterSnapshot newSnapshot;
+
+        TopicListDiffCallback(@NonNull AdapterSnapshot oldSnapshot, @NonNull AdapterSnapshot newSnapshot) {
+            this.oldSnapshot = oldSnapshot;
+            this.newSnapshot = newSnapshot;
+        }
+
+        @Override
+        public int getOldListSize() {
+            return oldSnapshot.getItemCount();
+        }
+
+        @Override
+        public int getNewListSize() {
+            return newSnapshot.getItemCount();
+        }
+
+        @Override
+        public boolean areItemsTheSame(int oldItemPosition, int newItemPosition) {
+            int oldType = oldSnapshot.getItemViewType(oldItemPosition);
+            int newType = newSnapshot.getItemViewType(newItemPosition);
+            if (oldType != newType) return false;
+            if (oldType == VIEW_TYPE_TOPIC) {
+                return TOPIC_DIFF.areItemsTheSame(
+                    oldSnapshot.topics.get(oldItemPosition),
+                    newSnapshot.topics.get(newItemPosition));
+            }
+            // Structural rows (skeleton / empty / error / footer) are type-identity only.
+            // Do not special-case skeleton positions to paper over layout chrome bugs.
+            return true;
+        }
+
+        @Override
+        public boolean areContentsTheSame(int oldItemPosition, int newItemPosition) {
+            int viewType = oldSnapshot.getItemViewType(oldItemPosition);
+            if (viewType == VIEW_TYPE_TOPIC) {
+                return TOPIC_DIFF.areContentsTheSame(
+                    oldSnapshot.topics.get(oldItemPosition),
+                    newSnapshot.topics.get(newItemPosition));
+            }
+            switch (viewType) {
+                case VIEW_TYPE_EMPTY:
+                    return TextUtils.equals(oldSnapshot.emptyTitle, newSnapshot.emptyTitle) &&
+                        TextUtils.equals(oldSnapshot.emptyMessage, newSnapshot.emptyMessage);
+                case VIEW_TYPE_ERROR:
+                    return TextUtils.equals(oldSnapshot.errorTitle, newSnapshot.errorTitle) &&
+                        TextUtils.equals(oldSnapshot.errorMessage, newSnapshot.errorMessage) &&
+                        oldSnapshot.retryCallback == newSnapshot.retryCallback;
+                case VIEW_TYPE_FOOTER_ERROR:
+                    return TextUtils.equals(oldSnapshot.loadMoreErrorMessage, newSnapshot.loadMoreErrorMessage) &&
+                        oldSnapshot.loadMoreRetryCallback == newSnapshot.loadMoreRetryCallback;
+                default:
+                    return true;
+            }
+        }
+
+        @Nullable
+        @Override
+        public Object getChangePayload(int oldItemPosition, int newItemPosition) {
+            if (oldSnapshot.getItemViewType(oldItemPosition) != VIEW_TYPE_TOPIC) return null;
+            return TOPIC_DIFF.getChangePayload(
+                oldSnapshot.topics.get(oldItemPosition),
+                newSnapshot.topics.get(newItemPosition));
+        }
+    }
+
+    private static final class AdapterSnapshot {
+        private final List<TopicSummary> topics;
+        private final boolean showLoadingFooter;
+        private final boolean showInitialLoading;
+        @Nullable private final CharSequence emptyTitle;
+        @Nullable private final CharSequence emptyMessage;
+        @Nullable private final CharSequence errorTitle;
+        @Nullable private final CharSequence errorMessage;
+        @Nullable private final CharSequence loadMoreErrorMessage;
+        @Nullable private final Runnable retryCallback;
+        @Nullable private final Runnable loadMoreRetryCallback;
+
+        AdapterSnapshot(@NonNull List<TopicSummary> topics,
+                        boolean showLoadingFooter,
+                        boolean showInitialLoading,
+                        @Nullable CharSequence emptyTitle,
+                        @Nullable CharSequence emptyMessage,
+                        @Nullable CharSequence errorTitle,
+                        @Nullable CharSequence errorMessage,
+                        @Nullable CharSequence loadMoreErrorMessage,
+                        @Nullable Runnable retryCallback,
+                        @Nullable Runnable loadMoreRetryCallback) {
+            this.topics = topics;
+            this.showLoadingFooter = showLoadingFooter;
+            this.showInitialLoading = showInitialLoading;
+            this.emptyTitle = emptyTitle;
+            this.emptyMessage = emptyMessage;
+            this.errorTitle = errorTitle;
+            this.errorMessage = errorMessage;
+            this.loadMoreErrorMessage = loadMoreErrorMessage;
+            this.retryCallback = retryCallback;
+            this.loadMoreRetryCallback = loadMoreRetryCallback;
+        }
+
+        int getItemCount() {
+            if (showInitialLoading) return SKELETON_ROW_COUNT;
+            int count = topics.size();
+            if (count == 0 && (hasInitialError() || hasEmptyState())) return 1;
+            if (count > 0 && (showLoadingFooter || hasLoadMoreError())) count += 1;
+            return count;
+        }
+
+        int getItemViewType(int position) {
+            if (showInitialLoading) return VIEW_TYPE_SKELETON;
+            int topicCount = topics.size();
+            if (topicCount == 0 && hasInitialError()) return VIEW_TYPE_ERROR;
+            if (topicCount == 0 && hasEmptyState()) return VIEW_TYPE_EMPTY;
+            if (position >= topicCount) {
+                return hasLoadMoreError() ? VIEW_TYPE_FOOTER_ERROR : VIEW_TYPE_FOOTER_LOADING;
+            }
+            return VIEW_TYPE_TOPIC;
+        }
+
+        private boolean hasEmptyState() {
+            return !TextUtils.isEmpty(emptyTitle) || !TextUtils.isEmpty(emptyMessage);
+        }
+
+        private boolean hasInitialError() {
+            return !TextUtils.isEmpty(errorTitle) || !TextUtils.isEmpty(errorMessage);
+        }
+
+        private boolean hasLoadMoreError() {
+            return !TextUtils.isEmpty(loadMoreErrorMessage);
         }
     }
 
