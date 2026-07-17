@@ -102,7 +102,7 @@ Introduced `org.telegram.ui.IArticleViewer` (API surface only):
 5. [x] B6: link-touch and text-selection drawing helpers use the pin-shaped `IArticleViewer` boundary
 6. [x] B7a: text flags and paint selection use the pin-shaped static parent/resource boundary
 7. [x] B7b: move supported S1 rich-text construction onto the parent-driven `getText` boundary
-8. [ ] B7c: move `createLayoutForText` onto the parent-driven core
+8. [x] B7c: move `createLayoutForText` onto the parent-driven core
 9. [ ] Only then re-attempt larger pin body slices
 
 Do **not** full-file replace until B2 compiles with contract tests green.
@@ -227,8 +227,15 @@ scripts/vendor-status.sh
 - Spoiler / math (`textSpoiler`, `textMath`) remain deferred with the rest of the local S1 surface
 - Contract coverage verifies parent-driven bold+url concat span construction against isolated resources
 
-#### B7c — Deferred
+#### B7c — Parent-driven createLayoutForText (landed)
 
-- B7c will move `createLayoutForText` onto its static parent core after B7b is stable
-- That slice may not introduce `TL_iv`, `TableLayout.CellText`, spoiler/typing lifecycle, or alter
-  NativeDo bookmark/sheet/file-chooser wiring
+- Overloads expose the pinned static `createLayoutForText(IArticleViewer, …)` surface; instance
+  wrappers still route block-cell callers through `this`
+- Body uses parent-driven `getText` / `getTextPaint`, parent text/gray colors for special paints
+  (embed post author/date, channel name, related articles, list markers), and parent
+  `searchResults` / `searchText` / `getAdapter()` for search offsets
+- `DrawingText` remains a non-static nested class for `TableBlock` (`viewer.new DrawingText`);
+  static core constructs via the ArticleViewer outer when the parent is not one
+- Local Emoji shim keeps `ALIGN_BASELINE`; spoiler / `liveDrawingTexts` / typing attach lifecycle
+  remain deferred with the local S1 surface
+- Contract coverage verifies parent-driven paragraph layout and plain-text embed-author layout

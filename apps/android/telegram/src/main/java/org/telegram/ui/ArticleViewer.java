@@ -3160,11 +3160,23 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         return createLayoutForText(parentView, plainText, richText, width, 0, parentBlock, align, 0, parentAdapter);
     }
 
+    private static DrawingText createLayoutForText(IArticleViewer parent, View parentView, CharSequence plainText, TLRPC.RichText richText, int width, int textY, TLRPC.PageBlock parentBlock, Layout.Alignment align, WebpageAdapter parentAdapter) {
+        return createLayoutForText(parent, parentView, plainText, richText, width, 0, parentBlock, align, 0, parentAdapter);
+    }
+
     private DrawingText createLayoutForText(View parentView, CharSequence plainText, TLRPC.RichText richText, int width, int textY, TLRPC.PageBlock parentBlock, WebpageAdapter parentAdapter) {
         return createLayoutForText(parentView, plainText, richText, width, textY, parentBlock, Layout.Alignment.ALIGN_NORMAL, 0, parentAdapter);
     }
 
+    public static DrawingText createLayoutForText(IArticleViewer parent, View parentView, CharSequence plainText, TLRPC.RichText richText, int width, int textY, TLRPC.PageBlock parentBlock, WebpageAdapter parentAdapter) {
+        return createLayoutForText(parent, parentView, plainText, richText, width, textY, parentBlock, Layout.Alignment.ALIGN_NORMAL, 0, parentAdapter);
+    }
+
     private DrawingText createLayoutForText(View parentView, CharSequence plainText, TLRPC.RichText richText, int width, int textY, TLRPC.PageBlock parentBlock, Layout.Alignment align, int maxLines, WebpageAdapter parentAdapter) {
+        return createLayoutForText(this, parentView, plainText, richText, width, textY, parentBlock, align, maxLines, parentAdapter);
+    }
+
+    public static DrawingText createLayoutForText(IArticleViewer parent, View parentView, CharSequence plainText, TLRPC.RichText richText, int width, int textY, TLRPC.PageBlock parentBlock, Layout.Alignment align, int maxLines, WebpageAdapter parentAdapter) {
         if (plainText == null && (richText == null || richText instanceof TLRPC.TL_textEmpty)) {
             return null;
         }
@@ -3176,7 +3188,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         if (plainText != null) {
             text = plainText;
         } else {
-            text = getText(parentAdapter, parentView, richText, richText, parentBlock, width);
+            text = getText(parent, parentAdapter, parentView, richText, richText, parentBlock, width);
         }
         if (TextUtils.isEmpty(text)) {
             return null;
@@ -3190,14 +3202,14 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (pageBlockEmbedPost.author == plainText) {
                 if (embedPostAuthorPaint == null) {
                     embedPostAuthorPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-                    embedPostAuthorPaint.setColor(getTextColor());
+                    embedPostAuthorPaint.setColor(parent.getTextColor());
                 }
                 embedPostAuthorPaint.setTextSize(dp(15) + additionalSize);
                 paint = embedPostAuthorPaint;
             } else {
                 if (embedPostDatePaint == null) {
                     embedPostDatePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-                    embedPostDatePaint.setColor(getGrayTextColor());
+                    embedPostDatePaint.setColor(parent.getGrayTextColor());
                 }
                 embedPostDatePaint.setTextSize(dp(14) + additionalSize);
                 paint = embedPostDatePaint;
@@ -3210,13 +3222,13 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 channelNamePhotoPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
                 channelNamePhotoPaint.setTypeface(AndroidUtilities.bold());
             }
-            channelNamePaint.setColor(getTextColor());
+            channelNamePaint.setColor(parent.getTextColor());
             channelNamePaint.setTextSize(dp(15));
 
             channelNamePhotoPaint.setColor(0xffffffff);
             channelNamePhotoPaint.setTextSize(dp(15));
 
-            paint = parentAdapter.channelBlock != null ? channelNamePhotoPaint : channelNamePaint;
+            paint = parentAdapter != null && parentAdapter.channelBlock != null ? channelNamePhotoPaint : channelNamePaint;
         } else if (parentBlock instanceof TL_pageBlockRelatedArticlesChild) {
             TL_pageBlockRelatedArticlesChild pageBlockRelatedArticlesChild = (TL_pageBlockRelatedArticlesChild) parentBlock;
             if (plainText == pageBlockRelatedArticlesChild.parent.articles.get(pageBlockRelatedArticlesChild.num).title) {
@@ -3224,25 +3236,25 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                     relatedArticleHeaderPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
                     relatedArticleHeaderPaint.setTypeface(AndroidUtilities.bold());
                 }
-                relatedArticleHeaderPaint.setColor(getTextColor());
+                relatedArticleHeaderPaint.setColor(parent.getTextColor());
                 relatedArticleHeaderPaint.setTextSize(dp(15) + additionalSize);
                 paint = relatedArticleHeaderPaint;
             } else {
                 if (relatedArticleTextPaint == null) {
                     relatedArticleTextPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
                 }
-                relatedArticleTextPaint.setColor(getGrayTextColor());
+                relatedArticleTextPaint.setColor(parent.getGrayTextColor());
                 relatedArticleTextPaint.setTextSize(dp(14) + additionalSize);
                 paint = relatedArticleTextPaint;
             }
         } else if (isListItemBlock(parentBlock) && plainText != null) {
             if (listTextPointerPaint == null) {
                 listTextPointerPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-                listTextPointerPaint.setColor(getTextColor());
+                listTextPointerPaint.setColor(parent.getTextColor());
             }
             if (listTextNumPaint == null) {
                 listTextNumPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-                listTextNumPaint.setColor(getTextColor());
+                listTextNumPaint.setColor(parent.getTextColor());
             }
             listTextPointerPaint.setTextSize(dp(19) + additionalSize);
             listTextNumPaint.setTextSize(dp(16) + additionalSize);
@@ -3252,8 +3264,9 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 paint = listTextNumPaint;
             }
         } else {
-            paint = getTextPaint(richText, richText, parentBlock);
+            paint = getTextPaint(parent, richText, richText, parentBlock);
         }
+        // Local Emoji shim keeps ALIGN_BASELINE (pin uses ALIGN_CENTER with animated-emoji pipeline).
         text = Emoji.replaceEmoji(text, paint.getFontMetricsInt(), false, null, DynamicDrawableSpan.ALIGN_BASELINE);
         StaticLayout result;
         if (maxLines != 0) {
@@ -3279,14 +3292,17 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         LinkPath textPath = null;
         LinkPath markPath = null;
         if (textY >= 0) {
-            if (result != null && !searchResults.isEmpty() && searchText != null) {
-                String lowerString = text.toString().toLowerCase();
-                int startIndex = 0;
-                int index;
-                while ((index = lowerString.indexOf(searchText, startIndex)) >= 0) {
-                    startIndex = index + searchText.length();
-                    if (index == 0 || AndroidUtilities.isPunctuationCharacter(lowerString.charAt(index - 1))) {
-                        pages[0].adapter.searchTextOffset.put(searchText + parentBlock + richText + index, textY + result.getLineTop(result.getLineForOffset(index)));
+            if (result != null && !parent.searchResults.isEmpty() && parent.searchText != null) {
+                final WebpageAdapter adapter = parent.getAdapter();
+                if (adapter != null) {
+                    final String lowerString = text.toString().toLowerCase();
+                    int startIndex = 0;
+                    int index;
+                    while ((index = lowerString.indexOf(parent.searchText, startIndex)) >= 0) {
+                        startIndex = index + parent.searchText.length();
+                        if (index == 0 || AndroidUtilities.isPunctuationCharacter(lowerString.charAt(index - 1))) {
+                            adapter.searchTextOffset.put(parent.searchText + parentBlock + richText + index, textY + result.getLineTop(result.getLineForOffset(index)));
+                        }
                     }
                 }
             }
@@ -3345,12 +3361,17 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
             }
         }
-        DrawingText drawingText = new DrawingText(this);
+        // DrawingText remains a non-static nested class for TableBlock (`viewer.new DrawingText`).
+        // Static parent core still constructs via an ArticleViewer outer when parent is not one.
+        final DrawingText drawingText = parent instanceof ArticleViewer
+                ? ((ArticleViewer) parent).new DrawingText(parent)
+                : getInstance().new DrawingText(parent);
         drawingText.textLayout = result;
         drawingText.textPath = textPath;
         drawingText.markPath = markPath;
         drawingText.parentBlock = parentBlock;
         drawingText.parentText = richText;
+        // Spoiler / liveDrawingTexts / typing lifecycle remain deferred with the local S1 surface.
         return drawingText;
     }
 

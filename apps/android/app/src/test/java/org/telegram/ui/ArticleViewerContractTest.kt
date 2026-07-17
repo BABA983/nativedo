@@ -200,5 +200,71 @@ class ArticleViewerContractTest {
         assertThat(last).isSameInstanceAs(plain)
     }
 
+    @Test
+    fun createLayoutForText_parentDrivenBuildsLayoutFromRichText() {
+        val isolated = ArticleViewer.Resources()
+        val host = object : IArticleViewer() {
+            override fun getCurrentAccount() = 0
+            override fun getTextColor() = 0xff111111.toInt()
+            override fun getLinkTextColor() = 0xff222222.toInt()
+            override fun getGrayTextColor() = 0xff333333.toInt()
+            override fun getThemedColor(colorKey: Int) = 0xffffffff.toInt()
+            override fun getResourcesProvider(): Theme.ResourcesProvider? = null
+            override fun getResources() = isolated
+            override fun getTextSelectionHelper(view: android.view.View?): TextSelectionHelper.ArticleTextSelectionHelper? = null
+        }
 
+        val plain = TLRPC.TL_textPlain().apply { text = "hello layout" }
+        val block = TLRPC.TL_pageBlockParagraph()
+
+        val drawing = ArticleViewer.createLayoutForText(
+            host,
+            /* parentView = */ null,
+            /* plainText = */ null,
+            plain,
+            /* width = */ 320,
+            /* textY = */ 0,
+            block,
+            /* parentAdapter = */ null as ArticleViewer.WebpageAdapter?,
+        )
+
+        assertThat(drawing).isNotNull()
+        assertThat(drawing!!.textLayout).isNotNull()
+        assertThat(drawing.textLayout.text.toString()).isEqualTo("hello layout")
+        assertThat(drawing.parentViewer).isSameInstanceAs(host)
+        assertThat(drawing.parentBlock).isSameInstanceAs(block)
+        assertThat(drawing.parentText).isSameInstanceAs(plain)
+        assertThat(isolated.paragraphTextPaints.size()).isAtLeast(1)
+    }
+
+    @Test
+    fun createLayoutForText_plainTextUsesParentColoredSpecialPaints() {
+        val isolated = ArticleViewer.Resources()
+        val host = object : IArticleViewer() {
+            override fun getCurrentAccount() = 0
+            override fun getTextColor() = 0xffabcdef.toInt()
+            override fun getLinkTextColor() = 0xff222222.toInt()
+            override fun getGrayTextColor() = 0xff333333.toInt()
+            override fun getThemedColor(colorKey: Int) = 0
+            override fun getResourcesProvider(): Theme.ResourcesProvider? = null
+            override fun getResources() = isolated
+            override fun getTextSelectionHelper(view: android.view.View?): TextSelectionHelper.ArticleTextSelectionHelper? = null
+        }
+
+        val block = TLRPC.TL_pageBlockEmbedPost().apply { author = "alice" }
+        val drawing = ArticleViewer.createLayoutForText(
+            host,
+            null,
+            block.author,
+            /* richText = */ null,
+            200,
+            0,
+            block,
+            null as ArticleViewer.WebpageAdapter?,
+        )
+
+        assertThat(drawing).isNotNull()
+        assertThat(drawing!!.textLayout.text.toString()).isEqualTo("alice")
+        assertThat(drawing.parentViewer).isSameInstanceAs(host)
+    }
 }
