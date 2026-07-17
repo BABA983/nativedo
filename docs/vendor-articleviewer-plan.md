@@ -111,7 +111,8 @@ Introduced `org.telegram.ui.IArticleViewer` (API surface only):
 14. [x] B13: parent-reshape List + OrderedList item cells
 15. [x] B14: parent-reshape `BlockTableCell` (P0 product path)
 16. [x] B15: parent-reshape media + channel cells (Photo/Video/Audio/Map/Channel) + loadChannel/joinChannel
-17. [ ] Continue remaining Block*Cell parent reshape (Embed/EmbedPost/Collage/Slideshow; Divider/DetailsBottom optional)
+17. [x] B16: EmbedPost static parent reshape + Embed/Collage/Slideshow helper rewire
+18. [ ] Optional: Divider/DetailsBottom polish; larger pin body / Sheet chrome slices
 
 Do **not** full-file replace until B2 compiles with contract tests green.
 
@@ -337,3 +338,15 @@ scripts/vendor-status.sh
 - Nested channel chips construct with `(parent, adapter, type=1)`
 - Deferred: Embed/EmbedPost/Collage/Slideshow; pin WebView join result path; IBlock/a11y
 - Contract coverage constructs parent-hosted media/channel cells and measures empty state
+
+### Phase B16 — Embed family (landed)
+
+- `BlockEmbedPostCell` is a static nested cell with `(Context, IArticleViewer, WebpageAdapter)`
+  and parent-driven createLayout/checkLinks/drawTextSelection
+- `BlockEmbedCell`, `BlockCollageCell`, `BlockSlideshowCell` remain non-static (matches pin 12.8.1;
+  WebView / nested adapters need outer ArticleViewer host state) but now call parent-driven
+  helpers via `ArticleViewer.this`
+- Nested collage/slideshow photo+video cells already construct with `ArticleViewer.this`
+- Deferred: making Embed/Collage/Slideshow fully static; Divider/DetailsBottom are already
+  parent-less static paint helpers
+- Contract coverage constructs a parent-hosted EmbedPost cell and measures the empty-block sentinel

@@ -6601,7 +6601,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                     break;
                 }
                 case 16: {
-                    view = new BlockEmbedPostCell(context, this);
+                    view = new BlockEmbedPostCell(context, ArticleViewer.this, this);
                     break;
                 }
                 case 17: {
@@ -8109,7 +8109,10 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    private class BlockEmbedPostCell extends View implements TextSelectionHelper.ArticleSelectableView {
+    public static class BlockEmbedPostCell extends View implements TextSelectionHelper.ArticleSelectableView {
+
+        private final IArticleViewer parent;
+        private final WebpageAdapter adapter;
 
         private ImageReceiver avatarImageView;
         private AvatarDrawable avatarDrawable;
@@ -8129,11 +8132,10 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
         private TLRPC.TL_pageBlockEmbedPost currentBlock;
 
-        private WebpageAdapter parentAdapter;
-
-        public BlockEmbedPostCell(Context context, WebpageAdapter adapter) {
+        public BlockEmbedPostCell(Context context, IArticleViewer parent, WebpageAdapter adapter) {
             super(context);
-            parentAdapter = adapter;
+            this.parent = parent;
+            this.adapter = adapter;
 
             avatarImageView = new ImageReceiver(this);
             avatarImageView.setRoundRadius(dp(20));
@@ -8149,7 +8151,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
         @Override
         public boolean onTouchEvent(MotionEvent event) {
-            return checkLayoutForLinks(parentAdapter, event, this, captionLayout, textX, textY) || checkLayoutForLinks(parentAdapter, event, this, creditLayout, textX, textY + creditOffset) || super.onTouchEvent(event);
+            return checkLayoutForLinks(parent, adapter, event, this, captionLayout, textX, textY) || checkLayoutForLinks(parent, adapter, event, this, creditLayout, textX, textY + creditOffset) || super.onTouchEvent(event);
         }
 
         @SuppressLint("NewApi")
@@ -8164,32 +8166,32 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                     textX = dp(18);
                     textY = dp(4);
                     int textWidth = width - dp(36 + 14);
-                    captionLayout = createLayoutForText(this, null, currentBlock.caption.text, textWidth, textY, currentBlock, parentAdapter);
+                    captionLayout = createLayoutForText(parent, this, null, currentBlock.caption.text, textWidth, textY, currentBlock, adapter);
                     if (captionLayout != null) {
                         creditOffset = dp(4) + captionLayout.getHeight();
                         height += creditOffset + dp(4);
                     }
-                    creditLayout = createLayoutForText(this, null, currentBlock.caption.credit, textWidth, textY + creditOffset, currentBlock, parentAdapter.isRtl ? StaticLayoutEx.ALIGN_RIGHT() : Layout.Alignment.ALIGN_NORMAL, parentAdapter);
+                    creditLayout = createLayoutForText(parent, this, null, currentBlock.caption.credit, textWidth, textY + creditOffset, currentBlock, adapter != null && (adapter != null && adapter.isRtl) ? StaticLayoutEx.ALIGN_RIGHT() : Layout.Alignment.ALIGN_NORMAL, adapter);
                     if (creditLayout != null) {
                         height += dp(4) + creditLayout.getHeight();
                     }
                 } else {
                     if (avatarVisible = (currentBlock.author_photo_id != 0)) {
-                        TLRPC.Photo photo = parentAdapter.getPhotoWithId(currentBlock.author_photo_id);
+                        TLRPC.Photo photo = adapter.getPhotoWithId(currentBlock.author_photo_id);
                         if (avatarVisible = (photo instanceof TLRPC.TL_photo)) {
                             avatarDrawable.setInfo(0, currentBlock.author, null);
                             TLRPC.PhotoSize image = FileLoader.getClosestPhotoSizeWithSize(photo.sizes, dp(40), true);
-                            avatarImageView.setImage(ImageLocation.getForPhoto(image, photo), "40_40", avatarDrawable, 0, null, parentAdapter.currentPage, 1);
+                            avatarImageView.setImage(ImageLocation.getForPhoto(image, photo), "40_40", avatarDrawable, 0, null, adapter.currentPage, 1);
                         }
                     }
-                    nameLayout = createLayoutForText(this, currentBlock.author, null, width - dp(36 + 14 + (avatarVisible ? 40 + 14 : 0)), 0, currentBlock, Layout.Alignment.ALIGN_NORMAL, 1, parentAdapter);
+                    nameLayout = createLayoutForText(parent, this, currentBlock.author, null, width - dp(36 + 14 + (avatarVisible ? 40 + 14 : 0)), 0, currentBlock, Layout.Alignment.ALIGN_NORMAL, 1, adapter);
                     if (nameLayout != null) {
                         nameLayout.x = dp(18 + 14 + (avatarVisible ? 40 + 14 : 0));
                         nameLayout.y = dp(dateLayout != null ? 10 : 19);
                     }
 
                     if (currentBlock.date != 0) {
-                        dateLayout = createLayoutForText(this, LocaleController.getInstance().getChatFullDate().format((long) currentBlock.date * 1000), null, width - dp(36 + 14 + (avatarVisible ? 40 + 14 : 0)), dp(29), currentBlock, parentAdapter);
+                        dateLayout = createLayoutForText(parent, this, LocaleController.getInstance().getChatFullDate().format((long) currentBlock.date * 1000), null, width - dp(36 + 14 + (avatarVisible ? 40 + 14 : 0)), dp(29), currentBlock, adapter);
                     } else {
                         dateLayout = null;
                     }
@@ -8200,12 +8202,12 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                         textX = dp(18 + 14);
                         textY = dp(40 + 8 + 8);
                         int textWidth = width - dp(36 + 14);
-                        captionLayout = createLayoutForText(this, null, currentBlock.caption.text, textWidth, textY, currentBlock, parentAdapter);
+                        captionLayout = createLayoutForText(parent, this, null, currentBlock.caption.text, textWidth, textY, currentBlock, adapter);
                         if (captionLayout != null) {
                             creditOffset = dp(4) + captionLayout.getHeight();
                             height += creditOffset + dp(4);
                         }
-                        creditLayout = createLayoutForText(this, null, currentBlock.caption.credit, textWidth, textY + creditOffset, currentBlock, parentAdapter.isRtl ? StaticLayoutEx.ALIGN_RIGHT() : Layout.Alignment.ALIGN_NORMAL, parentAdapter);
+                        creditLayout = createLayoutForText(parent, this, null, currentBlock.caption.credit, textWidth, textY + creditOffset, currentBlock, adapter != null && (adapter != null && adapter.isRtl) ? StaticLayoutEx.ALIGN_RIGHT() : Layout.Alignment.ALIGN_NORMAL, adapter);
                         if (creditLayout != null) {
                             height += dp(4) + creditLayout.getHeight();
                         }
@@ -8249,14 +8251,14 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 if (nameLayout != null) {
                     canvas.save();
                     canvas.translate(dp(18 + 14 + (avatarVisible ? 40 + 14 : 0)), dp(dateLayout != null ? 10 : 19));
-                    drawTextSelection(canvas, this, count++);
+                    drawTextSelection(parent, canvas, this, count++);
                     nameLayout.draw(canvas, this);
                     canvas.restore();
                 }
                 if (dateLayout != null) {
                     canvas.save();
                     canvas.translate(dp(18 + 14 + (avatarVisible ? 40 + 14 : 0)), dp(29));
-                    drawTextSelection(canvas, this, count++);
+                    drawTextSelection(parent, canvas, this, count++);
                     dateLayout.draw(canvas, this);
                     canvas.restore();
                 }
@@ -8265,14 +8267,14 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (captionLayout != null) {
                 canvas.save();
                 canvas.translate(textX, textY);
-                drawTextSelection(canvas, this, count++);
+                drawTextSelection(parent, canvas, this, count++);
                 captionLayout.draw(canvas, this);
                 canvas.restore();
             }
             if (creditLayout != null) {
                 canvas.save();
                 canvas.translate(textX, textY + creditOffset);
-                drawTextSelection(canvas, this, count);
+                drawTextSelection(parent, canvas, this, count);
                 creditLayout.draw(canvas, this);
                 canvas.restore();
             }
@@ -8745,7 +8747,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
         @Override
         public boolean onTouchEvent(MotionEvent event) {
-            return checkLayoutForLinks(parentAdapter, event, this, captionLayout, textX, textY) || checkLayoutForLinks(parentAdapter, event, this, creditLayout, textX, textY + creditOffset) || super.onTouchEvent(event);
+            return checkLayoutForLinks(ArticleViewer.this, parentAdapter, event, this, captionLayout, textX, textY) || checkLayoutForLinks(ArticleViewer.this, parentAdapter, event, this, creditLayout, textX, textY + creditOffset) || super.onTouchEvent(event);
         }
 
         @SuppressLint("NewApi")
@@ -8792,14 +8794,14 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 }
 
                 textY = dp(8) + height;
-                captionLayout = createLayoutForText(this, null, currentBlock.caption.text, textWidth, textY, currentBlock, parentAdapter);
+                captionLayout = createLayoutForText(ArticleViewer.this, this, null, currentBlock.caption.text, textWidth, textY, currentBlock, parentAdapter);
                 if (captionLayout != null) {
                     creditOffset = dp(4) + captionLayout.getHeight();
                     height += creditOffset + dp(4);
                 } else {
                     creditOffset = 0;
                 }
-                creditLayout = createLayoutForText(this, null, currentBlock.caption.credit, textWidth, textY + creditOffset, currentBlock, parentAdapter.isRtl ? StaticLayoutEx.ALIGN_RIGHT() : Layout.Alignment.ALIGN_NORMAL, parentAdapter);
+                creditLayout = createLayoutForText(ArticleViewer.this, this, null, currentBlock.caption.credit, textWidth, textY + creditOffset, currentBlock, parentAdapter.isRtl ? StaticLayoutEx.ALIGN_RIGHT() : Layout.Alignment.ALIGN_NORMAL, parentAdapter);
                 if (creditLayout != null) {
                     height += dp(4) + creditLayout.getHeight();
                     creditLayout.x = textX;
@@ -8843,14 +8845,14 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (captionLayout != null) {
                 canvas.save();
                 canvas.translate(textX, textY);
-                drawTextSelection(canvas, this, count++);
+                drawTextSelection(ArticleViewer.this, canvas, this, count++);
                 captionLayout.draw(canvas, this);
                 canvas.restore();
             }
             if (creditLayout != null) {
                 canvas.save();
                 canvas.translate(textX, textY + creditOffset);
-                drawTextSelection(canvas, this, count);
+                drawTextSelection(ArticleViewer.this, canvas, this, count);
                 creditLayout.draw(canvas, this);
                 canvas.restore();
             }
@@ -9671,7 +9673,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
         @Override
         public boolean onTouchEvent(MotionEvent event) {
-            return checkLayoutForLinks(parentAdapter, event, this, captionLayout, textX, textY) || checkLayoutForLinks(parentAdapter, event, this, creditLayout, textX, textY + creditOffset) || super.onTouchEvent(event);
+            return checkLayoutForLinks(ArticleViewer.this, parentAdapter, event, this, captionLayout, textX, textY) || checkLayoutForLinks(ArticleViewer.this, parentAdapter, event, this, creditLayout, textX, textY + creditOffset) || super.onTouchEvent(event);
         }
 
         @SuppressLint("NewApi")
@@ -9698,7 +9700,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 height = innerListView.getMeasuredHeight();
 
                 textY = height + dp(8);
-                captionLayout = createLayoutForText(this, null, currentBlock.caption.text, textWidth, textY, currentBlock, parentAdapter);
+                captionLayout = createLayoutForText(ArticleViewer.this, this, null, currentBlock.caption.text, textWidth, textY, currentBlock, parentAdapter);
                 if (captionLayout != null) {
                     creditOffset = dp(4) + captionLayout.getHeight();
                     height += creditOffset + dp(4);
@@ -9707,7 +9709,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 } else {
                     creditOffset = 0;
                 }
-                creditLayout = createLayoutForText(this, null, currentBlock.caption.credit, textWidth, textY + creditOffset, currentBlock, parentAdapter.isRtl ? StaticLayoutEx.ALIGN_RIGHT() : Layout.Alignment.ALIGN_NORMAL, parentAdapter);
+                creditLayout = createLayoutForText(ArticleViewer.this, this, null, currentBlock.caption.credit, textWidth, textY + creditOffset, currentBlock, parentAdapter.isRtl ? StaticLayoutEx.ALIGN_RIGHT() : Layout.Alignment.ALIGN_NORMAL, parentAdapter);
                 if (creditLayout != null) {
                     height += dp(4) + creditLayout.getHeight();
                     creditLayout.x = textX;
@@ -9740,14 +9742,14 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (captionLayout != null) {
                 canvas.save();
                 canvas.translate(textX, textY);
-                drawTextSelection(canvas, this, count++);
+                drawTextSelection(ArticleViewer.this, canvas, this, count++);
                 captionLayout.draw(canvas, this);
                 canvas.restore();
             }
             if (creditLayout != null) {
                 canvas.save();
                 canvas.translate(textX, textY + creditOffset);
-                drawTextSelection(canvas, this, count);
+                drawTextSelection(ArticleViewer.this, canvas, this, count);
                 creditLayout.draw(canvas, this);
                 canvas.restore();
             }
@@ -9942,7 +9944,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
         @Override
         public boolean onTouchEvent(MotionEvent event) {
-            return checkLayoutForLinks(parentAdapter, event, this, captionLayout, textX, textY) || checkLayoutForLinks(parentAdapter, event, this, creditLayout, textX, textY + creditOffset) || super.onTouchEvent(event);
+            return checkLayoutForLinks(ArticleViewer.this, parentAdapter, event, this, captionLayout, textX, textY) || checkLayoutForLinks(ArticleViewer.this, parentAdapter, event, this, creditLayout, textX, textY + creditOffset) || super.onTouchEvent(event);
         }
 
         @SuppressLint("NewApi")
@@ -9959,7 +9961,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
                 int textWidth = width - dp(36);
                 textY = height + dp(16);
-                captionLayout = createLayoutForText(this, null, currentBlock.caption.text, textWidth, textY, currentBlock, parentAdapter);
+                captionLayout = createLayoutForText(ArticleViewer.this, this, null, currentBlock.caption.text, textWidth, textY, currentBlock, parentAdapter);
                 if (captionLayout != null) {
                     creditOffset = dp(4) + captionLayout.getHeight();
                     height += creditOffset + dp(4);
@@ -9968,7 +9970,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 } else {
                     creditOffset = 0;
                 }
-                creditLayout = createLayoutForText(this, null, currentBlock.caption.credit, textWidth, textY + creditOffset, currentBlock, parentAdapter.isRtl ? StaticLayoutEx.ALIGN_RIGHT() : Layout.Alignment.ALIGN_NORMAL, parentAdapter);
+                creditLayout = createLayoutForText(ArticleViewer.this, this, null, currentBlock.caption.credit, textWidth, textY + creditOffset, currentBlock, parentAdapter.isRtl ? StaticLayoutEx.ALIGN_RIGHT() : Layout.Alignment.ALIGN_NORMAL, parentAdapter);
                 if (creditLayout != null) {
                     height += dp(4) + creditLayout.getHeight();
                     creditLayout.x = textX;
@@ -9999,14 +10001,14 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (captionLayout != null) {
                 canvas.save();
                 canvas.translate(textX, textY);
-                drawTextSelection(canvas, this, count++);
+                drawTextSelection(ArticleViewer.this, canvas, this, count++);
                 captionLayout.draw(canvas, this);
                 canvas.restore();
             }
             if (creditLayout != null) {
                 canvas.save();
                 canvas.translate(textX, textY + creditOffset);
-                drawTextSelection(canvas, this, count);
+                drawTextSelection(ArticleViewer.this, canvas, this, count);
                 creditLayout.draw(canvas, this);
                 canvas.restore();
             }
