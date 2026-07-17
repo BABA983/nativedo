@@ -6528,7 +6528,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                     break;
                 }
                 case 0: {
-                    view = new BlockParagraphCell(context, this);
+                    view = new BlockParagraphCell(context, ArticleViewer.this, this);
                     break;
                 }
                 case 1: {
@@ -8279,7 +8279,10 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    public class BlockParagraphCell extends View implements TextSelectionHelper.ArticleSelectableView {
+    public static class BlockParagraphCell extends View implements TextSelectionHelper.ArticleSelectableView {
+
+        private final IArticleViewer parent;
+        private final WebpageAdapter adapter;
 
         public DrawingText textLayout;
         public int textX;
@@ -8287,11 +8290,10 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
         private TLRPC.TL_pageBlockParagraph currentBlock;
 
-        private WebpageAdapter parentAdapter;
-
-        public BlockParagraphCell(Context context, WebpageAdapter adapter) {
+        public BlockParagraphCell(Context context, IArticleViewer parent, WebpageAdapter adapter) {
             super(context);
-            parentAdapter = adapter;
+            this.parent = parent;
+            this.adapter = adapter;
         }
 
         public void setBlock(TLRPC.TL_pageBlockParagraph block) {
@@ -8301,7 +8303,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
         @Override
         public boolean onTouchEvent(MotionEvent event) {
-            return checkLayoutForLinks(parentAdapter, event, this, textLayout, textX, textY) || super.onTouchEvent(event);
+            return checkLayoutForLinks(parent, adapter, event, this, textLayout, textX, textY) || super.onTouchEvent(event);
         }
 
         @SuppressLint("NewApi")
@@ -8312,19 +8314,22 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
             if (currentBlock != null) {
                 if (currentBlock.level == 0) {
-                    textY = dp(8);
-                    textX = dp(18);
+                    textY = dp(parent.pady());
+                    textX = dp(parent.padx());
                 } else {
                     textY = 0;
-                    textX = dp(18 + 14 * currentBlock.level);
+                    textX = dp(parent.padx() + 14 * currentBlock.level);
                 }
-                textLayout = createLayoutForText(this, null, currentBlock.text, width - dp(18) - textX, textY, currentBlock, parentAdapter.isRtl ? StaticLayoutEx.ALIGN_RIGHT() : Layout.Alignment.ALIGN_NORMAL, 0, parentAdapter);
+                final Layout.Alignment paraAlign = adapter != null && adapter.isRtl
+                        ? StaticLayoutEx.ALIGN_RIGHT()
+                        : Layout.Alignment.ALIGN_NORMAL;
+                textLayout = createLayoutForText(parent, this, null, currentBlock.text, width - dp(parent.padx()) - textX, textY, currentBlock, paraAlign, 0, adapter);
                 if (textLayout != null) {
                     height = textLayout.getHeight();
                     if (currentBlock.level > 0) {
-                        height += dp(8);
+                        height += dp(parent.pady());
                     } else {
-                        height += dp(8 + 8);
+                        height += dp(2 * parent.pady());
                     }
                     textLayout.x = textX;
                     textLayout.y = textY;
@@ -8345,11 +8350,11 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (textLayout != null) {
                 canvas.save();
                 canvas.translate(textX, textY);
-                drawTextSelection(canvas, this);
+                drawTextSelection(parent, canvas, this);
                 textLayout.draw(canvas, this);
                 canvas.restore();
             }
-            drawQuoteLines(canvas, ArticleViewer.this, currentBlock, getMeasuredHeight());
+            drawQuoteLines(canvas, parent, currentBlock, getMeasuredHeight());
         }
 
         @Override

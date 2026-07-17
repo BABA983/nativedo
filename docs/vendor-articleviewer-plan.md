@@ -104,7 +104,8 @@ Introduced `org.telegram.ui.IArticleViewer` (API surface only):
 7. [x] B7b: move supported S1 rich-text construction onto the parent-driven `getText` boundary
 8. [x] B7c: move `createLayoutForText` onto the parent-driven core
 9. [x] B8: parent-driven `makeProgress` + `drawQuoteLines` helpers (simple gutter sites)
-10. [ ] Only then re-attempt larger pin body / Block*Cell reshape slices
+10. [x] B9: pilot parent-reshape `BlockParagraphCell` (`IArticleViewer` + static helpers)
+11. [ ] Continue text-block parent reshape (Header/Title/Subtitle/…) then media/list cells
 
 Do **not** full-file replace until B2 compiles with contract tests green.
 
@@ -251,3 +252,13 @@ scripts/vendor-status.sh
   `drawQuoteLines`; EmbedPost / BlockBlockquoteCell keep their specialized quote geometry
 - Spoiler / typing / a11y / full Block*Cell `(IArticleViewer parent)` reshape remain deferred
 - Contract coverage verifies null-safe parent-driven `drawQuoteLines` after `createPaint`
+
+### Phase B9 — BlockParagraphCell parent reshape pilot (landed)
+
+- `BlockParagraphCell` is now a static nested class with `(Context, IArticleViewer, WebpageAdapter)`
+- Measure/draw/touch use `parent.padx()`/`pady()`, parent-driven `createLayoutForText` /
+  `checkLayoutForLinks` / `drawTextSelection` / `drawQuoteLines`
+- `WebpageAdapter` constructs with `ArticleViewer.this` as parent
+- Deferred for this pilot: `IBlock` bounds, spoiler attach/detach, `buildAccessibilityText`,
+  math-centered alignment (`TL_textMath`)
+- Contract coverage measures a parent-hosted paragraph cell against isolated Resources

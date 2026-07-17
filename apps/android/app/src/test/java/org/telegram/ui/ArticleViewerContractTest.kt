@@ -296,4 +296,42 @@ class ArticleViewerContractTest {
         ArticleViewer.drawQuoteLines(canvas, null, nested, 120)
         ArticleViewer.drawQuoteLines(canvas, host, TLRPC.TL_pageBlockParagraph().apply { level = 0 }, 120)
     }
+
+    @Test
+    fun blockParagraphCell_parentDrivenConstructsAndLayoutsText() {
+        val isolated = ArticleViewer.Resources()
+        val host = object : IArticleViewer() {
+            override fun getCurrentAccount() = 0
+            override fun getTextColor() = 0xff111111.toInt()
+            override fun getLinkTextColor() = 0xff222222.toInt()
+            override fun getGrayTextColor() = 0xff333333.toInt()
+            override fun getThemedColor(colorKey: Int) = 0xffffffff.toInt()
+            override fun getResourcesProvider(): Theme.ResourcesProvider? = null
+            override fun getResources() = isolated
+            override fun getTextSelectionHelper(view: android.view.View?): TextSelectionHelper.ArticleTextSelectionHelper? = null
+            override fun padx() = 18
+            override fun pady() = 8
+        }
+        ArticleViewer.createPaint(host, true)
+
+        val context = RuntimeEnvironment.getApplication()
+        val cell = ArticleViewer.BlockParagraphCell(context, host, null)
+        val plain = TLRPC.TL_textPlain().apply { text = "paragraph pilot" }
+        cell.setBlock(TLRPC.TL_pageBlockParagraph().apply {
+            text = plain
+            level = 0
+        })
+
+        cell.measure(
+            android.view.View.MeasureSpec.makeMeasureSpec(360, android.view.View.MeasureSpec.EXACTLY),
+            android.view.View.MeasureSpec.makeMeasureSpec(0, android.view.View.MeasureSpec.UNSPECIFIED),
+        )
+
+        assertThat(cell.textLayout).isNotNull()
+        assertThat(cell.textLayout.text.toString()).isEqualTo("paragraph pilot")
+        assertThat(cell.textX).isEqualTo(org.telegram.messenger.AndroidUtilities.dp(18f))
+        assertThat(cell.textY).isEqualTo(org.telegram.messenger.AndroidUtilities.dp(8f))
+        assertThat(cell.measuredHeight).isGreaterThan(0)
+        assertThat(isolated.paragraphTextPaints.size()).isAtLeast(1)
+    }
 }
