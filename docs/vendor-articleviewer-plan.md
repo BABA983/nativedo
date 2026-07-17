@@ -100,7 +100,10 @@ Introduced `org.telegram.ui.IArticleViewer` (API surface only):
 3. [x] B4: Resources holds paint SparseArrays; static names alias shared instance
 4. [x] B5: Resources owns paint color/font updates; outer paint creation/color entry points match pin
 5. [x] B6: link-touch and text-selection drawing helpers use the pin-shaped `IArticleViewer` boundary
-6. [ ] Only then re-attempt larger pin body slices
+6. [x] B7a: text flags and paint selection use the pin-shaped static parent/resource boundary
+7. [ ] B7b: move supported S1 rich-text construction onto the parent-driven `getText` boundary
+8. [ ] B7c: move `createLayoutForText` onto the parent-driven core
+9. [ ] Only then re-attempt larger pin body slices
 
 Do **not** full-file replace until B2 compiles with contract tests green.
 
@@ -199,3 +202,22 @@ scripts/vendor-status.sh
 - Pressed-link cleanup now has the pinned parent-driven helper
 - The pinned spoiler-hit branch remains deferred with the rest of the local `DrawingText` spoiler
   lifecycle; this slice does not introduce `TL_iv`, `TableLayout.CellText`, or block-cell reshaping
+
+### Phase B7 — Parent-driven text layout foundation
+
+#### B7a — Paint selection (landed)
+
+- `TEXT_FLAG_*`, `getTextFlags(TLRPC.RichText)`, and `isListItemBlock(TLRPC.PageBlock)`
+  now expose the pinned public static surface with the local S1 types
+- `getTextPaint(IArticleViewer, ...)` selects maps, colors, font mode, and font-size source from
+  the supplied parent's `Resources`; the instance wrapper remains for existing callers
+- Preformatted blocks now force `TEXT_FLAG_MONO` as pinned; shared-resource lazy
+  `errorTextPaint` synchronization remains intact
+- Contract coverage verifies an isolated parent receives its own cached preformatted paint
+
+#### B7b / B7c — Deferred
+
+- B7b will adapt the pinned parent-driven `getText` recursion for supported TLRPC/S1 rich-text nodes
+- B7c will move `createLayoutForText` onto its static parent core after B7b is stable
+- Neither slice may introduce `TL_iv`, `TableLayout.CellText`, spoiler/typing lifecycle, or alter
+  NativeDo bookmark/sheet/file-chooser wiring

@@ -9,7 +9,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.telegram.messenger.ApplicationLoader
+import org.telegram.tgnet.TLRPC
 import org.telegram.ui.ActionBar.Theme
+import org.telegram.ui.Cells.TextSelectionHelper
 
 /**
  * Phase 0 contract tests for ArticleViewer public surface used by NativeDo.
@@ -120,6 +122,28 @@ class ArticleViewerContractTest {
 
         assertThat(first.paragraphTextPaints.size()).isEqualTo(1)
         assertThat(second.paragraphTextPaints.size()).isEqualTo(0)
+    }
+
+    @Test
+    fun getTextPaint_usesParentResourcesAndPinnedPreformattedFlags() {
+        val isolated = ArticleViewer.Resources()
+        val host = object : IArticleViewer() {
+            override fun getCurrentAccount() = 0
+            override fun getTextColor() = 0xff111111.toInt()
+            override fun getLinkTextColor() = 0xff222222.toInt()
+            override fun getGrayTextColor() = 0xff333333.toInt()
+            override fun getThemedColor(colorKey: Int) = 0
+            override fun getResourcesProvider(): Theme.ResourcesProvider? = null
+            override fun getResources() = isolated
+            override fun getTextSelectionHelper(view: android.view.View?): TextSelectionHelper.ArticleTextSelectionHelper? = null
+        }
+        val text = TLRPC.TL_textPlain()
+        val block = TLRPC.TL_pageBlockPreformatted()
+
+        val paint = ArticleViewer.getTextPaint(host, text, text, block)
+
+        assertThat(isolated.preformattedTextPaints.size()).isEqualTo(1)
+        assertThat(isolated.preformattedTextPaints.get(ArticleViewer.TEXT_FLAG_MONO)).isSameInstanceAs(paint)
     }
 
 }

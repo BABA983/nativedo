@@ -1769,7 +1769,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         return view;
     }
 
-    private boolean isListItemBlock(TLRPC.PageBlock block) {
+    public static boolean isListItemBlock(TLRPC.PageBlock block) {
         return block instanceof TL_pageBlockListItem || block instanceof TL_pageBlockOrderedListItem;
     }
 
@@ -2536,17 +2536,17 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    private static final int TEXT_FLAG_REGULAR = 0;
-    private static final int TEXT_FLAG_MEDIUM = 1;
-    private static final int TEXT_FLAG_ITALIC = 2;
-    private static final int TEXT_FLAG_MONO = 4;
-    private static final int TEXT_FLAG_URL = 8;
-    private static final int TEXT_FLAG_UNDERLINE = 16;
-    private static final int TEXT_FLAG_STRIKE = 32;
-    private static final int TEXT_FLAG_MARKED = 64;
-    private static final int TEXT_FLAG_SUB = 128;
-    private static final int TEXT_FLAG_SUP = 256;
-    private static final int TEXT_FLAG_WEBPAGE_URL = 512;
+    public static final int TEXT_FLAG_REGULAR     = 0;
+    public static final int TEXT_FLAG_MEDIUM      = 1 << 0;
+    public static final int TEXT_FLAG_ITALIC      = 1 << 1;
+    public static final int TEXT_FLAG_MONO        = 1 << 2;
+    public static final int TEXT_FLAG_URL         = 1 << 3;
+    public static final int TEXT_FLAG_UNDERLINE   = 1 << 4;
+    public static final int TEXT_FLAG_STRIKE      = 1 << 5;
+    public static final int TEXT_FLAG_MARKED      = 1 << 6;
+    public static final int TEXT_FLAG_SUB         = 1 << 7;
+    public static final int TEXT_FLAG_SUP         = 1 << 8;
+    public static final int TEXT_FLAG_WEBPAGE_URL = 1 << 9;
 
     private static final TextPaint audioTimePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
     // B4: SparseArray maps live on Resources; static names alias the shared instance.
@@ -2595,7 +2595,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
     private static Paint webpageSearchPaint;
     private static Paint webpageMarkPaint;
 
-    private int getTextFlags(TLRPC.RichText richText) {
+    public static int getTextFlags(TLRPC.RichText richText) {
         if (richText instanceof TLRPC.TL_textFixed) {
             return getTextFlags(richText.parentRichText) | TEXT_FLAG_MONO;
         } else if (richText instanceof TLRPC.TL_textItalic) {
@@ -2896,184 +2896,197 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
     }
 
     private TextPaint getTextPaint(TLRPC.RichText parentRichText, TLRPC.RichText richText, TLRPC.PageBlock parentBlock) {
+        return getTextPaint(this, parentRichText, richText, parentBlock);
+    }
+
+    public static TextPaint getTextPaint(
+            IArticleViewer parent,
+            TLRPC.RichText parentRichText,
+            TLRPC.RichText richText,
+            TLRPC.PageBlock parentBlock
+    ) {
         int flags = getTextFlags(richText);
         SparseArray<TextPaint> currentMap = null;
         int textSize = dp(14);
         int textColor = 0xffff0000;
+        final Resources resources = parent.getResources();
 
-        int additionalSize = dp(SharedConfig.ivFontSize - 16);
+        final int additionalSize = dp((resources.isRichMessage ? SharedConfig.fontSize : SharedConfig.ivFontSize) - 16);
 
         if (parentBlock instanceof TLRPC.TL_pageBlockPhoto) {
             TLRPC.TL_pageBlockPhoto pageBlockPhoto = (TLRPC.TL_pageBlockPhoto) parentBlock;
             if (pageBlockPhoto.caption.text == richText || pageBlockPhoto.caption.text == parentRichText) {
-                currentMap = photoCaptionTextPaints;
+                currentMap = resources.photoCaptionTextPaints;
                 textSize = dp(14);
             } else {
-                currentMap = photoCreditTextPaints;
+                currentMap = resources.photoCreditTextPaints;
                 textSize = dp(12);
             }
-            textColor = getGrayTextColor();
+            textColor = parent.getGrayTextColor();
         } else if (parentBlock instanceof TLRPC.TL_pageBlockMap) {
             TLRPC.TL_pageBlockMap pageBlockMap = (TLRPC.TL_pageBlockMap) parentBlock;
             if (pageBlockMap.caption.text == richText || pageBlockMap.caption.text == parentRichText) {
-                currentMap = photoCaptionTextPaints;
+                currentMap = resources.photoCaptionTextPaints;
                 textSize = dp(14);
             } else {
-                currentMap = photoCreditTextPaints;
+                currentMap = resources.photoCreditTextPaints;
                 textSize = dp(12);
             }
-            textColor = getGrayTextColor();
+            textColor = parent.getGrayTextColor();
         } else if (parentBlock instanceof TLRPC.TL_pageBlockTitle) {
-            currentMap = titleTextPaints;
+            currentMap = resources.titleTextPaints;
             textSize = dp(23);
-            textColor = getTextColor();
+            textColor = parent.getTextColor();
         } else if (parentBlock instanceof TLRPC.TL_pageBlockKicker) {
-            currentMap = kickerTextPaints;
+            currentMap = resources.kickerTextPaints;
             textSize = dp(14);
-            textColor = getTextColor();
+            textColor = parent.getTextColor();
         } else if (parentBlock instanceof TLRPC.TL_pageBlockAuthorDate) {
-            currentMap = authorTextPaints;
+            currentMap = resources.authorTextPaints;
             textSize = dp(14);
-            textColor = getGrayTextColor();
+            textColor = parent.getGrayTextColor();
         } else if (parentBlock instanceof TLRPC.TL_pageBlockFooter) {
-            currentMap = footerTextPaints;
+            currentMap = resources.footerTextPaints;
             textSize = dp(14);
-            textColor = getGrayTextColor();
+            textColor = parent.getGrayTextColor();
         } else if (parentBlock instanceof TLRPC.TL_pageBlockSubtitle) {
-            currentMap = subtitleTextPaints;
+            currentMap = resources.subtitleTextPaints;
             textSize = dp(20);
-            textColor = getTextColor();
+            textColor = parent.getTextColor();
         } else if (parentBlock instanceof TLRPC.TL_pageBlockHeader) {
-            currentMap = headerTextPaints;
+            currentMap = resources.headerTextPaints;
             textSize = dp(20);
-            textColor = getTextColor();
+            textColor = parent.getTextColor();
         } else if (parentBlock instanceof TLRPC.TL_pageBlockSubheader) {
-            currentMap = subheaderTextPaints;
+            currentMap = resources.subheaderTextPaints;
             textSize = dp(17);
-            textColor = getTextColor();
+            textColor = parent.getTextColor();
         } else if (parentBlock instanceof TLRPC.TL_pageBlockBlockquote) {
             TLRPC.TL_pageBlockBlockquote pageBlockBlockquote = (TLRPC.TL_pageBlockBlockquote) parentBlock;
             if (pageBlockBlockquote.text == parentRichText) {
-                currentMap = quoteTextPaints;
+                currentMap = resources.quoteTextPaints;
                 textSize = dp(15);
-                textColor = getTextColor();
+                textColor = parent.getTextColor();
             } else if (pageBlockBlockquote.caption == parentRichText) {
-                currentMap = photoCaptionTextPaints;
+                currentMap = resources.photoCaptionTextPaints;
                 textSize = dp(14);
-                textColor = getGrayTextColor();
+                textColor = parent.getGrayTextColor();
             }
         } else if (parentBlock instanceof TLRPC.TL_pageBlockPullquote) {
             TLRPC.TL_pageBlockPullquote pageBlockBlockquote = (TLRPC.TL_pageBlockPullquote) parentBlock;
             if (pageBlockBlockquote.text == parentRichText) {
-                currentMap = quoteTextPaints;
+                currentMap = resources.quoteTextPaints;
                 textSize = dp(15);
-                textColor = getTextColor();
+                textColor = parent.getTextColor();
             } else if (pageBlockBlockquote.caption == parentRichText) {
-                currentMap = photoCaptionTextPaints;
+                currentMap = resources.photoCaptionTextPaints;
                 textSize = dp(14);
-                textColor = getGrayTextColor();
+                textColor = parent.getGrayTextColor();
             }
         } else if (parentBlock instanceof TLRPC.TL_pageBlockPreformatted) {
-            currentMap = preformattedTextPaints;
+            currentMap = resources.preformattedTextPaints;
             textSize = dp(14);
-            textColor = getTextColor();
+            textColor = parent.getTextColor();
+            flags |= TEXT_FLAG_MONO;
         } else if (parentBlock instanceof TLRPC.TL_pageBlockParagraph) {
-            currentMap = paragraphTextPaints;
+            currentMap = resources.paragraphTextPaints;
             textSize = dp(16);
-            textColor = getTextColor();
+            textColor = parent.getTextColor();
         } else if (isListItemBlock(parentBlock)) {
-            currentMap = listTextPaints;
+            currentMap = resources.listTextPaints;
             textSize = dp(16);
-            textColor = getTextColor();
+            textColor = parent.getTextColor();
         } else if (parentBlock instanceof TLRPC.TL_pageBlockEmbed) {
             TLRPC.TL_pageBlockEmbed pageBlockEmbed = (TLRPC.TL_pageBlockEmbed) parentBlock;
             if (pageBlockEmbed.caption.text == richText || pageBlockEmbed.caption.text == parentRichText) {
-                currentMap = photoCaptionTextPaints;
+                currentMap = resources.photoCaptionTextPaints;
                 textSize = dp(14);
             } else {
-                currentMap = photoCreditTextPaints;
+                currentMap = resources.photoCreditTextPaints;
                 textSize = dp(12);
             }
-            textColor = getGrayTextColor();
+            textColor = parent.getGrayTextColor();
         } else if (parentBlock instanceof TLRPC.TL_pageBlockSlideshow) {
             TLRPC.TL_pageBlockSlideshow pageBlockSlideshow = (TLRPC.TL_pageBlockSlideshow) parentBlock;
             if (pageBlockSlideshow.caption.text == richText || pageBlockSlideshow.caption.text == parentRichText) {
-                currentMap = photoCaptionTextPaints;
+                currentMap = resources.photoCaptionTextPaints;
                 textSize = dp(14);
             } else {
-                currentMap = photoCreditTextPaints;
+                currentMap = resources.photoCreditTextPaints;
                 textSize = dp(12);
             }
-            textColor = getGrayTextColor();
+            textColor = parent.getGrayTextColor();
         } else if (parentBlock instanceof TLRPC.TL_pageBlockCollage) {
             TLRPC.TL_pageBlockCollage pageBlockCollage = (TLRPC.TL_pageBlockCollage) parentBlock;
             if (pageBlockCollage.caption.text == richText || pageBlockCollage.caption.text == parentRichText) {
-                currentMap = photoCaptionTextPaints;
+                currentMap = resources.photoCaptionTextPaints;
                 textSize = dp(14);
             } else {
-                currentMap = photoCreditTextPaints;
+                currentMap = resources.photoCreditTextPaints;
                 textSize = dp(12);
             }
-            textColor = getGrayTextColor();
+            textColor = parent.getGrayTextColor();
         } else if (parentBlock instanceof TLRPC.TL_pageBlockEmbedPost) {
             TLRPC.TL_pageBlockEmbedPost pageBlockEmbedPost = (TLRPC.TL_pageBlockEmbedPost) parentBlock;
             if (richText == pageBlockEmbedPost.caption.text) {
-                currentMap = photoCaptionTextPaints;
+                currentMap = resources.photoCaptionTextPaints;
                 textSize = dp(14);
-                textColor = getGrayTextColor();
+                textColor = parent.getGrayTextColor();
             } else if (richText == pageBlockEmbedPost.caption.credit) {
-                currentMap = photoCreditTextPaints;
+                currentMap = resources.photoCreditTextPaints;
                 textSize = dp(12);
-                textColor = getGrayTextColor();
+                textColor = parent.getGrayTextColor();
             } else if (richText != null) {
-                currentMap = embedPostTextPaints;
+                currentMap = resources.embedPostTextPaints;
                 textSize = dp(14);
-                textColor = getTextColor();
+                textColor = parent.getTextColor();
             }
         } else if (parentBlock instanceof TLRPC.TL_pageBlockVideo) {
             TLRPC.TL_pageBlockVideo pageBlockVideo = (TLRPC.TL_pageBlockVideo) parentBlock;
             if (richText == pageBlockVideo.caption.text) {
-                currentMap = mediaCaptionTextPaints;
+                currentMap = resources.mediaCaptionTextPaints;
                 textSize = dp(14);
             } else {
-                currentMap = mediaCreditTextPaints;
+                currentMap = resources.mediaCreditTextPaints;
                 textSize = dp(12);
             }
-            textColor = getTextColor();
+            textColor = parent.getTextColor();
         } else if (parentBlock instanceof TLRPC.TL_pageBlockAudio) {
             TLRPC.TL_pageBlockAudio pageBlockAudio = (TLRPC.TL_pageBlockAudio) parentBlock;
             if (richText == pageBlockAudio.caption.text) {
-                currentMap = mediaCaptionTextPaints;
+                currentMap = resources.mediaCaptionTextPaints;
                 textSize = dp(14);
             } else {
-                currentMap = mediaCreditTextPaints;
+                currentMap = resources.mediaCreditTextPaints;
                 textSize = dp(12);
             }
-            textColor = getTextColor();
+            textColor = parent.getTextColor();
         } else if (parentBlock instanceof TLRPC.TL_pageBlockRelatedArticles) {
-            currentMap = relatedArticleTextPaints;
+            currentMap = resources.relatedArticleTextPaints;
             textSize = dp(15);
-            textColor = getGrayTextColor();
+            textColor = parent.getGrayTextColor();
         } else if (parentBlock instanceof TLRPC.TL_pageBlockDetails) {
-            currentMap = detailsTextPaints;
+            currentMap = resources.detailsTextPaints;
             textSize = dp(15);
-            textColor = getTextColor();
+            textColor = parent.getTextColor();
         } else if (parentBlock instanceof TLRPC.TL_pageBlockTable) {
-            currentMap = tableTextPaints;
+            currentMap = resources.tableTextPaints;
             textSize = dp(15);
-            textColor = getTextColor();
+            textColor = parent.getTextColor();
         }
         if ((flags & TEXT_FLAG_SUP) != 0 || (flags & TEXT_FLAG_SUB) != 0) {
             textSize -= dp(4);
         }
         if (currentMap == null) {
-            if (errorTextPaint == null) {
-                errorTextPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
-                resources.errorTextPaint = errorTextPaint;
-                errorTextPaint.setColor(0xffff0000);
+            if (resources.errorTextPaint == null) {
+                resources.errorTextPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+                resources.errorTextPaint.setColor(0xffff0000);
             }
-            errorTextPaint.setTextSize(dp(14));
-            return errorTextPaint;
+            if (resources == ArticleViewer.resources) {
+                errorTextPaint = resources.errorTextPaint;
+            }
+            resources.errorTextPaint.setTextSize(dp(14));
+            return resources.errorTextPaint;
         }
         TextPaint paint = currentMap.get(flags);
         if (paint == null) {
@@ -3083,7 +3096,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             } else {
                 if (parentBlock instanceof TLRPC.TL_pageBlockRelatedArticles) {
                     paint.setTypeface(AndroidUtilities.bold());
-                } else if (selectedFont == 1 || parentBlock instanceof TLRPC.TL_pageBlockTitle || parentBlock instanceof TLRPC.TL_pageBlockKicker || parentBlock instanceof TLRPC.TL_pageBlockHeader || parentBlock instanceof TLRPC.TL_pageBlockSubtitle || parentBlock instanceof TLRPC.TL_pageBlockSubheader) {
+                } else if (parent.selectedFont == 1 || parentBlock instanceof TLRPC.TL_pageBlockTitle || parentBlock instanceof TLRPC.TL_pageBlockKicker || parentBlock instanceof TLRPC.TL_pageBlockHeader || parentBlock instanceof TLRPC.TL_pageBlockSubtitle || parentBlock instanceof TLRPC.TL_pageBlockSubheader) {
                     if (parentBlock instanceof TLRPC.TL_pageBlockTitle || parentBlock instanceof TLRPC.TL_pageBlockHeader || parentBlock instanceof TLRPC.TL_pageBlockSubtitle || parentBlock instanceof TLRPC.TL_pageBlockSubheader) {
                         paint.setTypeface(AndroidUtilities.getTypeface("fonts/mw_bold.ttf"));
                     } else {
@@ -3115,7 +3128,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             }
             if ((flags & TEXT_FLAG_URL) != 0 || (flags & TEXT_FLAG_WEBPAGE_URL) != 0) {
                 paint.setFlags(paint.getFlags());
-                textColor = getLinkTextColor();
+                textColor = parent.getLinkTextColor();
             }
             if ((flags & TEXT_FLAG_SUP) != 0) {
                 paint.baselineShift -= dp(6.0f);
