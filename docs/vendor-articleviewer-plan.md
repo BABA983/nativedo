@@ -107,7 +107,8 @@ Introduced `org.telegram.ui.IArticleViewer` (API surface only):
 10. [x] B9: pilot parent-reshape `BlockParagraphCell` (`IArticleViewer` + static helpers)
 11. [x] B10: parent-reshape simple text blocks (Header/Title/Subtitle/Subheader/Kicker/Footer)
 12. [x] B11: parent-reshape AuthorDate / Preformatted / Pullquote / Blockquote
-13. [ ] Continue remaining Block*Cell parent reshape (lists/details/media/table/related)
+13. [x] B12: parent-reshape Details + Related articles cells
+14. [ ] Continue remaining Block*Cell parent reshape (lists/media/table/channel/embed)
 
 Do **not** full-file replace until B2 compiles with contract tests green.
 
@@ -288,3 +289,14 @@ scripts/vendor-status.sh
 - Deferred: `IBlock` bounds, spoiler attach/detach, `buildAccessibilityText`, CodeHighlighting
   language path, list/media/table cells
 - Contract coverage measures a parent-hosted pullquote cell against isolated Resources
+
+### Phase B12 — Details + Related cells (landed)
+
+- Static parent reshape for: `BlockDetailsCell`, `BlockRelatedArticlesHeaderCell`,
+  `BlockRelatedArticlesCell`, `BlockRelatedArticlesShadowCell`
+- Details uses `parent.getGrayTextColor()` for the arrow, `parent.padx()` for title width /
+  arrow x, and parent-driven createLayout/checkLinks/drawTextSelection
+- Related header/cell/shadow route theme/photo/layout through parent + adapter
+- Deferred: list/ordered-list nested block holders, media cells, table, channel/embed,
+  `IBlock` bounds, a11y conversion
+- Contract coverage measures a parent-hosted details cell against isolated Resources

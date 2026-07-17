@@ -399,4 +399,37 @@ class ArticleViewerContractTest {
         assertThat(cell.measuredHeight).isGreaterThan(0)
         assertThat(isolated.quoteTextPaints.size()).isAtLeast(1)
     }
+
+    @Test
+    fun blockDetailsCell_parentDrivenConstructsAndLayoutsTitle() {
+        val isolated = ArticleViewer.Resources()
+        val host = object : IArticleViewer() {
+            override fun getCurrentAccount() = 0
+            override fun getTextColor() = 0xff111111.toInt()
+            override fun getLinkTextColor() = 0xff222222.toInt()
+            override fun getGrayTextColor() = 0xff333333.toInt()
+            override fun getThemedColor(colorKey: Int) = 0xffffffff.toInt()
+            override fun getResourcesProvider(): Theme.ResourcesProvider? = null
+            override fun getResources() = isolated
+            override fun getTextSelectionHelper(view: android.view.View?): TextSelectionHelper.ArticleTextSelectionHelper? = null
+            override fun padx() = 18
+            override fun pady() = 8
+        }
+        ArticleViewer.createPaint(host, true)
+
+        val context = RuntimeEnvironment.getApplication()
+        val cell = ArticleViewer.BlockDetailsCell(context, host, null)
+        cell.setBlock(TLRPC.TL_pageBlockDetails().apply {
+            title = TLRPC.TL_textPlain().apply { text = "details title" }
+            open = true
+        })
+
+        cell.measure(
+            android.view.View.MeasureSpec.makeMeasureSpec(360, android.view.View.MeasureSpec.EXACTLY),
+            android.view.View.MeasureSpec.makeMeasureSpec(0, android.view.View.MeasureSpec.UNSPECIFIED),
+        )
+
+        assertThat(cell.measuredHeight).isGreaterThan(0)
+        assertThat(isolated.detailsTextPaints.size()).isAtLeast(1)
+    }
 }
