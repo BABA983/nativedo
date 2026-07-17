@@ -65,6 +65,10 @@ Exit criteria: remaining `TL_iv` types empty; all map targets exist on local `TL
 - Nested-scroll dismiss gated with `!textSelectionHelper.isInSelectionMode()` (preFling / preScroll / stopNestedScroll)
 - Corner radii: attached `dp(24)`, `drawInto` `lerp(dp(16), dp(18), …)` (was 16/10)
 - Host preserved: WebBookmarks bookmark path, ActionBarLayout overlay dismiss, file chooser / `dispatchActivityResult`
+- `refreshThemeColors` also updates `backgroundPaint` (pin 12.8.1)
+- `getLastRichText(TL_textAnchor)` now returns (local bugfix aligned with intended control flow)
+- `PageLayout.isLocal()` stub + `actionBar.setIsLocal` on URL/page transitions (always false until `Page.local` exists)
+
 
 Next Phase 2 slice options:
 

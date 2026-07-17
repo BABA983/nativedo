@@ -2482,7 +2482,7 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
         } else if (richText instanceof TLRPC.TL_textUrl) {
             return getLastRichText(((TLRPC.TL_textUrl) richText).text);
         } else if (richText instanceof TLRPC.TL_textAnchor) {
-            getLastRichText(((TLRPC.TL_textAnchor) richText).text);
+            return getLastRichText(((TLRPC.TL_textAnchor) richText).text);
         } else if (richText instanceof TLRPC.TL_textSubscript) {
             return getLastRichText(((TLRPC.TL_textSubscript) richText).text);
         } else if (richText instanceof TLRPC.TL_textSuperscript) {
@@ -5439,6 +5439,9 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
         if (actionBar != null) {
             actionBar.setMenuColors(pages[0] != null && SharedConfig.adaptableColorInBrowser ? pages[0].getBackgroundColor() : getThemedColor(Theme.key_iv_background));
             actionBar.setColors(pages[0] != null && SharedConfig.adaptableColorInBrowser ? pages[0].getActionBarColor() : getThemedColor(Theme.key_iv_background), true);
+        }
+        if (backgroundPaint != null) {
+            backgroundPaint.setColor(getThemedColor(Theme.key_iv_background));
         }
     }
 
@@ -12832,6 +12835,7 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
                 actionBar.setBackButtonCached(false); // backButton > .5f);
             }
             actionBar.setHasForward(pages[0].hasForwardButton());
+            actionBar.setIsLocal(pages[0].isLocal());
             actionBar.setIsLoaded(pages[0].getWebView() != null && pages[0].getWebView().isPageLoaded());
         }
 
@@ -13008,6 +13012,8 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
                         }
                         actionBar.setHasForward(forwardButton);
                         actionBar.setIsTonsite(pages[0] != null && pages[0].isTonsite());
+                        // Pin 12.8.1: hide share for offline/local pages. NativeDo has no Page.local File yet → always false.
+                        actionBar.setIsLocal(pages[0] != null && pages[0].isLocal());
                     }
                 }
 
@@ -13504,6 +13510,14 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
             BotWebViewContainer.MyWebView webView = getWebView();
             if (webView == null) return false;
             return BotWebViewContainer.isTonsite(BotWebViewContainer.magic2tonsite(webView.getUrl()));
+        }
+
+        public boolean isLocal() {
+            if (isWeb()) {
+                return false;
+            }
+            // Pin uses adapter.currentPage.cached_page.local (File). Local TLRPC has no such field yet.
+            return false;
         }
 
         public void cleanup() {
