@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -148,6 +150,99 @@ class VendorManifestTest(unittest.TestCase):
             save_manifest(second, root)
             with self.assertRaises(ManifestError):
                 save_manifest(first, root)
+
+    def test_set_note_cli_updates_source_and_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            expanded = expand_source_manifest(compact_manifest(sample_flat_manifest()))
+            save_manifest(expanded, root)
+            local = "telegram/src/main/java/org/telegram/Foo.java"
+            env = {**os.environ, "NATIVEDO_ROOT": str(root)}
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "vendor_manifest.py"),
+                    "--set-note",
+                    local,
+                    "--note",
+                    "stable replacement",
+                ],
+                check=True,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+            loaded = load_manifest(root)
+            entry = next(item for item in loaded["files"] if item["local"] == local)
+            self.assertEqual("stable replacement", entry["notes"])
+
+    def test_set_note_cli_updates_compat_shim(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            local = "telegram/src/main/java/org/telegram/CompileShim.java"
+            source = compact_manifest(
+                sample_flat_manifest(),
+                compat_shim_locals={local},
+            )
+            save_manifest(expand_source_manifest(source), root)
+            env = {**os.environ, "NATIVEDO_ROOT": str(root)}
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "vendor_manifest.py"),
+                    "--set-note",
+                    local,
+                    "--note",
+                    "shim contract",
+                ],
+                check=True,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+            loaded = load_manifest(root)
+            self.assertEqual("shim contract", loaded["compat_shims"][0]["notes"])
+
+    def test_set_note_cli_rejects_missing_path_and_blank_note(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            save_manifest(
+                expand_source_manifest(compact_manifest(sample_flat_manifest())),
+                root,
+            )
+            env = {**os.environ, "NATIVEDO_ROOT": str(root)}
+            base = [sys.executable, str(SCRIPTS / "vendor_manifest.py")]
+
+            missing = subprocess.run(
+                base
+                + [
+                    "--set-note",
+                    "telegram/src/main/java/org/telegram/Missing.java",
+                    "--note",
+                    "replacement",
+                ],
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+            blank = subprocess.run(
+                base
+                + [
+                    "--set-note",
+                    "telegram/src/main/java/org/telegram/Foo.java",
+                    "--note",
+                    "   ",
+                ],
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(1, missing.returncode)
+            self.assertIn("expected one entry", missing.stderr)
+            self.assertEqual(1, blank.returncode)
+            self.assertIn("non-empty", blank.stderr)
 
 
 if __name__ == "__main__":

@@ -803,6 +803,9 @@ friction.
       `PostReactionRendering` supplies the same fallback glyph/count text for
       the strip, reaction picker, reaction-users tabs, and optimistic/default
       post reaction updates.
+      The strip renders every real `PostReaction` and intentionally omits the
+      local `+` / `+N` aggregate chip; adding a reaction is routed through the
+      long-press picker.
       Touch handling now follows the same button-state shape as
       `ChatMessageCell` comment/reaction areas: DOWN records the pressed
       button, MOVE outside clears it, UP only fires while the same button is
@@ -990,6 +993,13 @@ checklist below.**
       so the menu surface participates in the same enter animation. The rail
       background now includes the upstream two-bubble tail subset that grows
       from the same clipped transition progress.
+      Expanded picking uses a transparent full-screen `ActionBarPopupWindow`:
+      the collapsed `fromRect` / `fromRadius` animates to a dp(8) panel over
+      350ms. Its fixed linux.do grid is 5 columns × 2 rows with 36dp cells and
+      30dp icons; the first row is visible immediately, the second row fades
+      in, the expand affordance is redrawn inside the clip, and outside/back
+      collapses the panel. Tall post menus retain ChatActivity's 240dp
+      positioning budget.
       Holding a rail button past Android's long-press timeout now starts a
       Telegram-shaped `pressedProgress`: the pressed button scales toward
       `1 + 2 * progress`, neighbors shrink toward `1 - 0.15 * progress`, and

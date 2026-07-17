@@ -68,6 +68,9 @@ After editing the compact source, regenerate and verify the lock:
 ```bash
 scripts/vendor-manifest.sh --write
 scripts/vendor-manifest.sh --check
+
+# Replace one stable per-file note and regenerate source + lock
+scripts/vendor-manifest.sh --set-note <local-path> --note "<current contract>"
 ```
 
 Do not edit `vendor-manifest.lock.json` directly.

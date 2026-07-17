@@ -19,10 +19,12 @@ from vendorlib import (  # noqa: E402
     bootstrap_manifest_source,
     check_manifest_lock,
     expand_source_manifest,
+    load_manifest,
     load_source_manifest,
     manifest_lock_path,
     regenerate_manifest_lock,
     repo_root,
+    save_manifest,
 )
 
 
@@ -44,6 +46,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="one-time conversion of a legacy flat vendor-manifest.json",
     )
+    action.add_argument(
+        "--set-note",
+        metavar="LOCAL_PATH",
+        help="replace one effective entry's stable note and regenerate source+lock",
+    )
     parser.add_argument(
         "--compat-shim",
         action="append",
@@ -51,7 +58,16 @@ def parse_args() -> argparse.Namespace:
         metavar="LOCAL_PATH",
         help="with --bootstrap, move this verified scratch shim out of files[]",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--note",
+        help="replacement text for --set-note",
+    )
+    args = parser.parse_args()
+    if args.note and not args.set_note:
+        parser.error("--note is only valid with --set-note")
+    if args.compat_shim and not args.bootstrap:
+        parser.error("--compat-shim is only valid with --bootstrap")
+    return args
 
 
 def main() -> int:
@@ -79,6 +95,26 @@ def main() -> int:
                 f"files={len(expanded['files'])} "
                 f"compat_shims={len(expanded['compat_shims'])}"
             )
+            return 0
+
+        if args.set_note:
+            note = (args.note or "").strip()
+            if not note:
+                raise ManifestError("--set-note requires non-empty --note text")
+            manifest = load_manifest(root)
+            matches = [
+                entry
+                for key in ("files", "compat_shims")
+                for entry in manifest.get(key, [])
+                if entry.get("local") == args.set_note
+            ]
+            if len(matches) != 1:
+                raise ManifestError(
+                    f"expected one entry for {args.set_note!r}, found {len(matches)}"
+                )
+            matches[0]["notes"] = note
+            save_manifest(manifest, root)
+            print(f"updated note: {args.set_note}")
             return 0
 
         ok, message = check_manifest_lock(root)
