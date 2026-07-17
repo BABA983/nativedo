@@ -14,6 +14,9 @@ Local pristine checkout: `vendor/telegram-android` at that pin.
 | `9c32e06` | ArticleViewer B19: spoiler fields, `liveDrawingTexts`, spoiler draw/hit |
 | `d70d193` | ArticleViewer B20a: search menu header height reset |
 | `beab531` | `WindowInsetsStateHolder` restored byte-identical exact at pin |
+| `d3439c0` | `CircularProgressDrawable`, `Blur3Utils` restored pin-identical |
+| `9d8694b` | Decisions backlog doc |
+| *(follow-up)* | `WindowAnimatedInsetsProvider` restored pin-identical |
 
 ## ArticleViewer — still deferred
 
@@ -71,16 +74,13 @@ Already host-wired on purpose; do **not** bulk-copy pin without choosing:
 
 | File | Delta | Risk if forced to pin |
 |---|---|---|
-| `AnimatedTextView.java` | Drop unused Checker Framework imports | Low; pin is dirtier |
-| `Blur3Utils.java` | `org.jspecify` → AndroidX `@Nullable` | Medium; may need jspecify dep |
-| `WindowAnimatedInsetsProvider.java` | jspecify → AndroidX + annotation placement | Medium |
+| `AnimatedTextView.java` | Drop unused Checker Framework imports (classpath lacks checker) | Keep modified unless checker dep added |
 | `SimpleTextView.java` | `DialogCell.FixedWidthSpan` → `FixedWidthSpan` | High if DialogCell not wanted |
 
 ### B2. Dependency substitutions (intentional)
 
 | File | Delta | Decision |
 |---|---|---|
-| `CircularProgressDrawable.java` | `PathInterpolator` instead of `FastOutSlowInInterpolator` | Add androidx.interpolator and restore pin type? |
 | `SearchStateDrawable.java` | `Math.hypot` instead of zxing `MathUtils` | Add zxing dep? |
 | `UniversalRecyclerView.java` | `getClassGuid()` → `0` | BaseFragment lacks classGuid? |
 | `LayoutHelper.java` | Extra `createFrame(int,int)` for Kotlin | Keep host overload forever? |
