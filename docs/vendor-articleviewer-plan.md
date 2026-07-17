@@ -108,7 +108,8 @@ Introduced `org.telegram.ui.IArticleViewer` (API surface only):
 11. [x] B10: parent-reshape simple text blocks (Header/Title/Subtitle/Subheader/Kicker/Footer)
 12. [x] B11: parent-reshape AuthorDate / Preformatted / Pullquote / Blockquote
 13. [x] B12: parent-reshape Details + Related articles cells
-14. [ ] Continue remaining Block*Cell parent reshape (lists/media/table/channel/embed)
+14. [x] B13: parent-reshape List + OrderedList item cells
+15. [ ] Continue remaining Block*Cell parent reshape (media/table/channel/embed)
 
 Do **not** full-file replace until B2 compiles with contract tests green.
 
@@ -300,3 +301,13 @@ scripts/vendor-status.sh
 - Deferred: list/ordered-list nested block holders, media cells, table, channel/embed,
   `IBlock` bounds, a11y conversion
 - Contract coverage measures a parent-hosted details cell against isolated Resources
+
+### Phase B13 — List / OrderedList item cells (landed)
+
+- Static parent reshape for: `BlockListItemCell`, `BlockOrderedListItemCell`
+- Nested block holders still come from `adapter.onCreateViewHolder` / `bindBlockToHolder`
+- Measure/draw/touch use parent-driven createLayout/checkLinks/drawTextSelection and
+  `parent.getTextSelectionHelper` when adjusting nested DrawingText offsets
+- Geometry prefers `parent.padx()`/`pady()` (list first-item top uses pin-shaped
+  `dp(2 + pady)`); pin checklist checkbox path and IBlock bounds remain deferred
+- Contract coverage constructs both cells and measures the empty-block sentinel height

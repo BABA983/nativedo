@@ -6576,7 +6576,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                     break;
                 }
                 case 12: {
-                    view = new BlockListItemCell(context, this);
+                    view = new BlockListItemCell(context, ArticleViewer.this, this);
                     break;
                 }
                 case 13: {
@@ -6612,7 +6612,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                     break;
                 }
                 case 21: {
-                    view = new BlockOrderedListItemCell(context, this);
+                    view = new BlockOrderedListItemCell(context, ArticleViewer.this, this);
                     break;
                 }
                 case 22: {
@@ -9996,7 +9996,10 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    private class BlockListItemCell extends ViewGroup implements TextSelectionHelper.ArticleSelectableView {
+    public static class BlockListItemCell extends ViewGroup implements TextSelectionHelper.ArticleSelectableView {
+
+        private final IArticleViewer parent;
+        private final WebpageAdapter adapter;
 
         private DrawingText textLayout;
         private RecyclerView.ViewHolder blockLayout;
@@ -10011,11 +10014,10 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         private TL_pageBlockListItem currentBlock;
         private boolean drawDot;
 
-        private WebpageAdapter parentAdapter;
-
-        public BlockListItemCell(Context context, WebpageAdapter adapter) {
+        public BlockListItemCell(Context context, IArticleViewer parent, WebpageAdapter adapter) {
             super(context);
-            parentAdapter = adapter;
+            this.parent = parent;
+            this.adapter = adapter;
             setWillNotDraw(false);
         }
 
@@ -10026,21 +10028,21 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                     removeView(blockLayout.itemView);
                     blockLayout = null;
                 }
-                if (currentBlock.blockItem != null) {
-                    currentBlockType = parentAdapter.getTypeForBlock(currentBlock.blockItem);
-                    blockLayout = parentAdapter.onCreateViewHolder(this, currentBlockType);
+                if (currentBlock.blockItem != null && adapter != null) {
+                    currentBlockType = adapter.getTypeForBlock(currentBlock.blockItem);
+                    blockLayout = adapter.onCreateViewHolder(this, currentBlockType);
                     addView(blockLayout.itemView);
                 }
             }
-            if (currentBlock.blockItem != null) {
-                parentAdapter.bindBlockToHolder(currentBlockType, blockLayout, currentBlock.blockItem, 0, 0, false);
+            if (currentBlock.blockItem != null && adapter != null) {
+                adapter.bindBlockToHolder(currentBlockType, blockLayout, currentBlock.blockItem, 0, 0, false);
             }
             requestLayout();
         }
 
         @Override
         public boolean onTouchEvent(MotionEvent event) {
-            if (checkLayoutForLinks(parentAdapter, event, this, textLayout, textX, textY)) {
+            if (checkLayoutForLinks(parent, adapter, event, this, textLayout, textX, textY)) {
                 return true;
             }
             return super.onTouchEvent(event);
@@ -10054,7 +10056,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
             if (currentBlock != null) {
                 textLayout = null;
-                textY = currentBlock.index == 0 && currentBlock.parent.level == 0 ? dp(10) : 0;
+                textY = currentBlock.index == 0 && currentBlock.parent.level == 0 ? dp(2 + parent.pady()) : 0;
                 numOffsetY = 0;
                 if (currentBlock.parent.lastMaxNumCalcWidth != width || currentBlock.parent.lastFontSize != SharedConfig.ivFontSize) {
                     currentBlock.parent.lastMaxNumCalcWidth = width;
@@ -10065,62 +10067,62 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                         if (item.num == null) {
                             continue;
                         }
-                        item.numLayout = createLayoutForText(this, item.num, null, width - dp(36 + 18), textY, currentBlock, parentAdapter);
+                        item.numLayout = createLayoutForText(parent, this, item.num, null, width - dp(3 * parent.padx()), textY, currentBlock, adapter);
                         currentBlock.parent.maxNumWidth = Math.max(currentBlock.parent.maxNumWidth, (int) Math.ceil(item.numLayout.getLineWidth(0)));
                     }
                     currentBlock.parent.maxNumWidth = Math.max(currentBlock.parent.maxNumWidth, (int) Math.ceil(listTextNumPaint.measureText("00.")));
                 }
                 drawDot = !currentBlock.parent.pageBlockList.ordered;
 
-                if (parentAdapter.isRtl) {
-                    textX = dp(18);
+                if (adapter != null && adapter.isRtl) {
+                    textX = dp(parent.padx());
                 } else {
-                    textX = dp(18 + 6) + currentBlock.parent.maxNumWidth + currentBlock.parent.level * dp(12);
+                    textX = dp(parent.padx() + 6) + currentBlock.parent.maxNumWidth + currentBlock.parent.level * dp(12);
                 }
-                int maxWidth = width - dp(18) - textX;
-                if (parentAdapter.isRtl) {
+                int maxWidth = width - dp(parent.padx()) - textX;
+                if (adapter != null && adapter.isRtl) {
                     maxWidth -= dp(6) + currentBlock.parent.maxNumWidth + currentBlock.parent.level * dp(12);
                 }
                 if (currentBlock.textItem != null) {
-                    textLayout = createLayoutForText(this, null, currentBlock.textItem, maxWidth, textY, currentBlock, parentAdapter.isRtl ? StaticLayoutEx.ALIGN_RIGHT() : Layout.Alignment.ALIGN_NORMAL, parentAdapter);
+                    textLayout = createLayoutForText(parent, this, null, currentBlock.textItem, maxWidth, textY, currentBlock, adapter != null && adapter.isRtl ? StaticLayoutEx.ALIGN_RIGHT() : Layout.Alignment.ALIGN_NORMAL, adapter);
                     if (textLayout != null && textLayout.getLineCount() > 0) {
                         if (currentBlock.numLayout != null && currentBlock.numLayout.getLineCount() > 0) {
                             int ascent = textLayout.getLineAscent(0);
                             numOffsetY = (currentBlock.numLayout.getLineAscent(0) + dp(2.5f)) - ascent;
                         }
-                        height += textLayout.getHeight() + dp(8);
+                        height += textLayout.getHeight() + dp(parent.pady());
                     }
                 } else if (currentBlock.blockItem != null) {
                     blockX = textX;
                     blockY = textY;
                     if (blockLayout != null) {
                         if (blockLayout.itemView instanceof BlockParagraphCell) {
-                            blockY -= dp(8);
-                            if (!parentAdapter.isRtl) {
-                                blockX -= dp(18);
+                            blockY -= dp(parent.pady());
+                            if (!(adapter != null && adapter.isRtl)) {
+                                blockX -= dp(parent.padx());
                             }
-                            maxWidth += dp(18);
-                            height -= dp(8);
+                            maxWidth += dp(parent.padx());
+                            height -= dp(parent.pady());
                         } else if (blockLayout.itemView instanceof BlockHeaderCell ||
                                 blockLayout.itemView instanceof BlockSubheaderCell ||
                                 blockLayout.itemView instanceof BlockTitleCell ||
                                 blockLayout.itemView instanceof BlockSubtitleCell) {
-                            if (!parentAdapter.isRtl) {
-                                blockX -= dp(18);
+                            if (!(adapter != null && adapter.isRtl)) {
+                                blockX -= dp(parent.padx());
                             }
-                            maxWidth += dp(18);
+                            maxWidth += dp(parent.padx());
                         } else if (isListItemBlock(currentBlock.blockItem)) {
                             blockX = 0;
                             blockY = 0;
                             textY = 0;
                             if (currentBlock.index == 0 && currentBlock.parent.level == 0) {
-                                height -= dp(10);
+                                height -= dp(2 + parent.pady());
                             }
                             maxWidth = width;
-                            height -= dp(8);
+                            height -= dp(parent.pady());
                         } else if (blockLayout.itemView instanceof BlockTableCell) {
-                            blockX -= dp(18);
-                            maxWidth += dp(36);
+                            blockX -= dp(parent.padx());
+                            maxWidth += dp(2 * parent.padx());
                         }
                         blockLayout.itemView.measure(MeasureSpec.makeMeasureSpec(maxWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
                         if (blockLayout.itemView instanceof BlockParagraphCell && currentBlock.numLayout != null && currentBlock.numLayout.getLineCount() > 0) {
@@ -10134,9 +10136,9 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                             verticalAlign = true;
                             blockY = 0;
                             if (currentBlock.index == 0 && currentBlock.parent.level == 0) {
-                                height -= dp(10);
+                                height -= dp(2 + parent.pady());
                             }
-                            height -= dp(8);
+                            height -= dp(parent.pady());
                         } else if (blockLayout.itemView instanceof BlockOrderedListItemCell) {
                             verticalAlign = ((BlockOrderedListItemCell) blockLayout.itemView).verticalAlign;
                         } else if (blockLayout.itemView instanceof BlockListItemCell) {
@@ -10148,25 +10150,28 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                         }
                         height += blockLayout.itemView.getMeasuredHeight();
                     }
-                    height += dp(8);
+                    height += dp(parent.pady());
                 }
                 if (currentBlock.parent.items.get(currentBlock.parent.items.size() - 1) == currentBlock) {
-                    height += dp(8);
+                    height += dp(parent.pady());
                 }
                 if (currentBlock.index == 0 && currentBlock.parent.level == 0) {
-                    height += dp(10);
+                    height += dp(2 + parent.pady());
                 }
                 if (textLayout != null) {
                     textLayout.x = textX;
                     textLayout.y = textY;
                 }
                 if (blockLayout != null && blockLayout.itemView instanceof TextSelectionHelper.ArticleSelectableView) {
-                    textSelectionHelper.arrayList.clear();
-                    ((TextSelectionHelper.ArticleSelectableView) blockLayout.itemView).fillTextLayoutBlocks(textSelectionHelper.arrayList);
-                    for (TextSelectionHelper.TextLayoutBlock block : textSelectionHelper.arrayList) {
-                        if (block instanceof DrawingText) {
-                            ((DrawingText) block).x += blockX;
-                            ((DrawingText) block).y += blockY;
+                    final TextSelectionHelper.ArticleTextSelectionHelper textSelectionHelper = parent.getTextSelectionHelper(null);
+                    if (textSelectionHelper != null) {
+                        textSelectionHelper.arrayList.clear();
+                        ((TextSelectionHelper.ArticleSelectableView) blockLayout.itemView).fillTextLayoutBlocks(textSelectionHelper.arrayList);
+                        for (TextSelectionHelper.TextLayoutBlock block : textSelectionHelper.arrayList) {
+                            if (block instanceof DrawingText) {
+                                ((DrawingText) block).x += blockX;
+                                ((DrawingText) block).y += blockY;
+                            }
                         }
                     }
                 }
@@ -10192,10 +10197,10 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             int width = getMeasuredWidth();
             if (currentBlock.numLayout != null) {
                 canvas.save();
-                if (parentAdapter.isRtl) {
-                    canvas.translate(width - dp(15) - currentBlock.parent.maxNumWidth - currentBlock.parent.level * dp(12), textY + numOffsetY - (drawDot ? dp(1) : 0));
+                if (adapter != null && adapter.isRtl) {
+                    canvas.translate(width - dp(parent.padx() - 3) - currentBlock.parent.maxNumWidth - currentBlock.parent.level * dp(12), textY + numOffsetY - (drawDot ? dp(1) : 0));
                 } else {
-                    canvas.translate(dp(15) + currentBlock.parent.maxNumWidth - (int) Math.ceil(currentBlock.numLayout.getLineWidth(0)) + currentBlock.parent.level * dp(12), textY + numOffsetY - (drawDot ? dp(1) : 0));
+                    canvas.translate(dp(parent.padx() - 3) + currentBlock.parent.maxNumWidth - (int) Math.ceil(currentBlock.numLayout.getLineWidth(0)) + currentBlock.parent.level * dp(12), textY + numOffsetY - (drawDot ? dp(1) : 0));
                 }
                 currentBlock.numLayout.draw(canvas, this);
                 canvas.restore();
@@ -10203,7 +10208,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (textLayout != null) {
                 canvas.save();
                 canvas.translate(textX, textY);
-                drawTextSelection(canvas, this);
+                drawTextSelection(parent, canvas, this);
                 textLayout.draw(canvas, this);
                 canvas.restore();
             }
@@ -10237,7 +10242,10 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    private class BlockOrderedListItemCell extends ViewGroup implements TextSelectionHelper.ArticleSelectableView {
+    public static class BlockOrderedListItemCell extends ViewGroup implements TextSelectionHelper.ArticleSelectableView {
+
+        private final IArticleViewer parent;
+        private final WebpageAdapter adapter;
 
         private DrawingText textLayout;
         private RecyclerView.ViewHolder blockLayout;
@@ -10252,11 +10260,10 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
         private TL_pageBlockOrderedListItem currentBlock;
 
-        private WebpageAdapter parentAdapter;
-
-        public BlockOrderedListItemCell(Context context, WebpageAdapter adapter) {
+        public BlockOrderedListItemCell(Context context, IArticleViewer parent, WebpageAdapter adapter) {
             super(context);
-            parentAdapter = adapter;
+            this.parent = parent;
+            this.adapter = adapter;
             setWillNotDraw(false);
         }
 
@@ -10267,21 +10274,21 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                     removeView(blockLayout.itemView);
                     blockLayout = null;
                 }
-                if (currentBlock.blockItem != null) {
-                    currentBlockType = parentAdapter.getTypeForBlock(currentBlock.blockItem);
-                    blockLayout = parentAdapter.onCreateViewHolder(this, currentBlockType);
+                if (currentBlock.blockItem != null && adapter != null) {
+                    currentBlockType = adapter.getTypeForBlock(currentBlock.blockItem);
+                    blockLayout = adapter.onCreateViewHolder(this, currentBlockType);
                     addView(blockLayout.itemView);
                 }
             }
-            if (currentBlock.blockItem != null) {
-                parentAdapter.bindBlockToHolder(currentBlockType, blockLayout, currentBlock.blockItem, 0, 0, false);
+            if (currentBlock.blockItem != null && adapter != null) {
+                adapter.bindBlockToHolder(currentBlockType, blockLayout, currentBlock.blockItem, 0, 0, false);
             }
             requestLayout();
         }
 
         @Override
         public boolean onTouchEvent(MotionEvent event) {
-            if (checkLayoutForLinks(parentAdapter, event, this, textLayout, textX, textY)) {
+            if (checkLayoutForLinks(parent, adapter, event, this, textLayout, textX, textY)) {
                 return true;
             }
             return super.onTouchEvent(event);
@@ -10306,58 +10313,58 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                         if (item.num == null) {
                             continue;
                         }
-                        item.numLayout = createLayoutForText(this, item.num, null, width - dp(36 + 18), textY, currentBlock, parentAdapter);
+                        item.numLayout = createLayoutForText(parent, this, item.num, null, width - dp(3 * parent.padx()), textY, currentBlock, adapter);
                         currentBlock.parent.maxNumWidth = Math.max(currentBlock.parent.maxNumWidth, (int) Math.ceil(item.numLayout.getLineWidth(0)));
                     }
                     currentBlock.parent.maxNumWidth = Math.max(currentBlock.parent.maxNumWidth, (int) Math.ceil(listTextNumPaint.measureText("00.")));
                 }
-                if (parentAdapter.isRtl) {
-                    textX = dp(18);
+                if (adapter != null && adapter.isRtl) {
+                    textX = dp(parent.padx());
                 } else {
-                    textX = dp(18 + 6) + currentBlock.parent.maxNumWidth + currentBlock.parent.level * dp(20);
+                    textX = dp(parent.padx() + 6) + currentBlock.parent.maxNumWidth + currentBlock.parent.level * dp(20);
                 }
                 verticalAlign = false;
-                int maxWidth = width - dp(18) - textX;
-                if (parentAdapter.isRtl) {
+                int maxWidth = width - dp(parent.padx()) - textX;
+                if (adapter != null && adapter.isRtl) {
                     maxWidth -= dp(6) + currentBlock.parent.maxNumWidth + currentBlock.parent.level * dp(20);
                 }
                 if (currentBlock.textItem != null) {
-                    textLayout = createLayoutForText(this, null, currentBlock.textItem, maxWidth, textY, currentBlock, parentAdapter.isRtl ? StaticLayoutEx.ALIGN_RIGHT() : Layout.Alignment.ALIGN_NORMAL, parentAdapter);
+                    textLayout = createLayoutForText(parent, this, null, currentBlock.textItem, maxWidth, textY, currentBlock, adapter != null && adapter.isRtl ? StaticLayoutEx.ALIGN_RIGHT() : Layout.Alignment.ALIGN_NORMAL, adapter);
                     if (textLayout != null && textLayout.getLineCount() > 0) {
                         if (currentBlock.numLayout != null && currentBlock.numLayout.getLineCount() > 0) {
                             int ascent = textLayout.getLineAscent(0);
                             numOffsetY = currentBlock.numLayout.getLineAscent(0) - ascent;
                         }
-                        height += textLayout.getHeight() + dp(8);
+                        height += textLayout.getHeight() + dp(parent.pady());
                     }
                 } else if (currentBlock.blockItem != null) {
                     blockX = textX;
                     blockY = textY;
                     if (blockLayout != null) {
                         if (blockLayout.itemView instanceof BlockParagraphCell) {
-                            blockY -= dp(8);
-                            if (!parentAdapter.isRtl) {
-                                blockX -= dp(18);
+                            blockY -= dp(parent.pady());
+                            if (!(adapter != null && adapter.isRtl)) {
+                                blockX -= dp(parent.padx());
                             }
-                            maxWidth += dp(18);
-                            height -= dp(8);
+                            maxWidth += dp(parent.padx());
+                            height -= dp(parent.pady());
                         } else if (blockLayout.itemView instanceof BlockHeaderCell ||
                                 blockLayout.itemView instanceof BlockSubheaderCell ||
                                 blockLayout.itemView instanceof BlockTitleCell ||
                                 blockLayout.itemView instanceof BlockSubtitleCell) {
-                            if (!parentAdapter.isRtl) {
-                                blockX -= dp(18);
+                            if (!(adapter != null && adapter.isRtl)) {
+                                blockX -= dp(parent.padx());
                             }
-                            maxWidth += dp(18);
+                            maxWidth += dp(parent.padx());
                         } else if (isListItemBlock(currentBlock.blockItem)) {
                             blockX = 0;
                             blockY = 0;
                             textY = 0;
                             maxWidth = width;
-                            height -= dp(8);
+                            height -= dp(parent.pady());
                         } else if (blockLayout.itemView instanceof BlockTableCell) {
-                            blockX -= dp(18);
-                            maxWidth += dp(36);
+                            blockX -= dp(parent.padx());
+                            maxWidth += dp(2 * parent.padx());
                         }
                         blockLayout.itemView.measure(MeasureSpec.makeMeasureSpec(maxWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
                         if (blockLayout.itemView instanceof BlockParagraphCell && currentBlock.numLayout != null && currentBlock.numLayout.getLineCount() > 0) {
@@ -10370,7 +10377,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                         if (currentBlock.blockItem instanceof TLRPC.TL_pageBlockDetails) {
                             verticalAlign = true;
                             blockY = 0;
-                            height -= dp(8);
+                            height -= dp(parent.pady());
                         } else if (blockLayout.itemView instanceof BlockOrderedListItemCell) {
                             verticalAlign = ((BlockOrderedListItemCell) blockLayout.itemView).verticalAlign;
                         } else if (blockLayout.itemView instanceof BlockListItemCell) {
@@ -10381,10 +10388,10 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                         }
                         height += blockLayout.itemView.getMeasuredHeight();
                     }
-                    height += dp(8);
+                    height += dp(parent.pady());
                 }
                 if (currentBlock.parent.items.get(currentBlock.parent.items.size() - 1) == currentBlock) {
-                    height += dp(8);
+                    height += dp(parent.pady());
                 }
                 if (currentBlock.index == 0 && currentBlock.parent.level == 0) {
                     height += dp(10);
@@ -10397,12 +10404,15 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                     }
                 }
                 if (blockLayout != null && blockLayout.itemView instanceof TextSelectionHelper.ArticleSelectableView) {
-                    textSelectionHelper.arrayList.clear();
-                    ((TextSelectionHelper.ArticleSelectableView) blockLayout.itemView).fillTextLayoutBlocks(textSelectionHelper.arrayList);
-                    for (TextSelectionHelper.TextLayoutBlock block : textSelectionHelper.arrayList) {
-                        if (block instanceof DrawingText) {
-                            ((DrawingText) block).x += blockX;
-                            ((DrawingText) block).y += blockY;
+                    final TextSelectionHelper.ArticleTextSelectionHelper textSelectionHelper = parent.getTextSelectionHelper(null);
+                    if (textSelectionHelper != null) {
+                        textSelectionHelper.arrayList.clear();
+                        ((TextSelectionHelper.ArticleSelectableView) blockLayout.itemView).fillTextLayoutBlocks(textSelectionHelper.arrayList);
+                        for (TextSelectionHelper.TextLayoutBlock block : textSelectionHelper.arrayList) {
+                            if (block instanceof DrawingText) {
+                                ((DrawingText) block).x += blockX;
+                                ((DrawingText) block).y += blockY;
+                            }
                         }
                     }
                 }
@@ -10428,10 +10438,10 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             int width = getMeasuredWidth();
             if (currentBlock.numLayout != null) {
                 canvas.save();
-                if (parentAdapter.isRtl) {
-                    canvas.translate(width - dp(18) - currentBlock.parent.maxNumWidth - currentBlock.parent.level * dp(20), textY + numOffsetY);
+                if (adapter != null && adapter.isRtl) {
+                    canvas.translate(width - dp(parent.padx()) - currentBlock.parent.maxNumWidth - currentBlock.parent.level * dp(20), textY + numOffsetY);
                 } else {
-                    canvas.translate(dp(18) + currentBlock.parent.maxNumWidth - (int) Math.ceil(currentBlock.numLayout.getLineWidth(0)) + currentBlock.parent.level * dp(20), textY + numOffsetY);
+                    canvas.translate(dp(parent.padx()) + currentBlock.parent.maxNumWidth - (int) Math.ceil(currentBlock.numLayout.getLineWidth(0)) + currentBlock.parent.level * dp(20), textY + numOffsetY);
                 }
                 currentBlock.numLayout.draw(canvas, this);
                 canvas.restore();
@@ -10439,7 +10449,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (textLayout != null) {
                 canvas.save();
                 canvas.translate(textX, textY);
-                drawTextSelection(canvas, this);
+                drawTextSelection(parent, canvas, this);
                 textLayout.draw(canvas, this);
                 canvas.restore();
             }
