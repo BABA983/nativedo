@@ -249,7 +249,7 @@ public class WindowInsetsStateHolder implements WindowInsetsProvider, WindowInse
         }
 
     }
-
+    
     private @Nullable WindowAnimatedInsetsProvider animatedInsetsProvider;
     private @Nullable View animatedInsetsProviderTarget;
     private int animatedImeInset;
