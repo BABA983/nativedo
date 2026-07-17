@@ -49,3 +49,8 @@ lives under `org.telegram.ui.web.*` + `ArticleViewer`.
 ### Do not
 - `vendor-ff` WebInstantView or ArticleViewer without TL_iv plan.
 - Reintroduce MTProto bookmarks in AddressBarList.
+
+## ArticleViewer epic
+
+See [`vendor-articleviewer-plan.md`](vendor-articleviewer-plan.md) for phased rebase,
+contract tests, and S1 preview (`scripts/vendor_articleviewer_s1_preview.py`).

@@ -1,14 +1,15 @@
 # Exact rebase queue (global pin 12.8.1)
 
-## Scheme-2 / S1 complete
-- `Utilities.java` — scheme-2
-- `WebMetadataCache.java` — scheme-2
-- `AddressBarList.java` — scheme-2
-- `WebInstantView.java` — **S1 reverse-patch** (TL_iv→TLRPC + host readHTML)
+## Done
+- List stack: RecyclerListView, RecyclerAnimationScrollHelper
+- Utilities scheme-2
+- Browser chrome scheme-2: WebMetadataCache, AddressBarList
+- WebInstantView S1 reverse-patch
 
-## Still blocked / epic
-- `telegram/src/main/java/org/telegram/ui/ArticleViewer.java` — large UI + IV display; after product priority
-- `WebBrowserSettings.java` — low ROI Telegram settings surface
+## ArticleViewer (epic)
+- Phase 0+1 started: see `docs/vendor-articleviewer-plan.md`
+- Contract tests: `org.telegram.ui.ArticleViewerContractTest`
+- S1 preview: `scripts/vendor_articleviewer_s1_preview.py` (map complete; main file not replaced)
 
-## List stack (done earlier)
-- `RecyclerListView.java`, `RecyclerAnimationScrollHelper.java`
+## Low ROI
+- WebBrowserSettings — permanent stuck / native thin page
