@@ -4972,6 +4972,17 @@
     <string name="AccDescrPollVotesMentionDown">Go to next unread poll vote</string>
     <string name="AccDescrIVTitle">Title</string>
     <string name="AccDescrIVHeading">Heading</string>
+    <string name="AccDescrIVKicker">Kicker</string>
+    <string name="AccDescrIVFooter">Footer</string>
+    <string name="AccDescrIVCode">Code</string>
+    <string name="AccDescrIVPullquote">Pull quote</string>
+    <string name="AccDescrIVBlockquote">Block quote</string>
+    <string name="AccDescrIVRelatedArticles">Related articles</string>
+    <string name="AccDescrIVRelatedArticle">Related article</string>
+    <string name="AccDescrIVDetails">Details</string>
+    <string name="AccDescrIVExpanded">Expanded</string>
+    <string name="AccDescrIVCollapsed">Collapsed</string>
+    <string name="AccDescrIVTable">Table</string>
     <string name="AccDescrMyLocation">My location</string>
     <string name="AccDescrLocationNotify">Notify when in range</string>
     <string name="AccDescrVideoQuality">Video quality</string>

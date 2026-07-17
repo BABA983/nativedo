@@ -113,7 +113,8 @@ Introduced `org.telegram.ui.IArticleViewer` (API surface only):
 16. [x] B15: parent-reshape media + channel cells (Photo/Video/Audio/Map/Channel) + loadChannel/joinChannel
 17. [x] B16: EmbedPost static parent reshape + Embed/Collage/Slideshow helper rewire
 18. [x] B17: `IBlock` + DrawingText bounds + `buildAccessibilityText` / `appendA11yLabel` foundation
-19. [ ] Optional: wire remaining Block*Cell IBlock/a11y; spoiler attach; larger Sheet chrome
+19. [x] B18: wire remaining static parent cells to IBlock/a11y + AccDescrIV strings
+20. [ ] Optional: spoiler attach; remaining media a11y; larger Sheet chrome
 
 Do **not** full-file replace until B2 compiles with contract tests green.
 
@@ -364,3 +365,15 @@ scripts/vendor-status.sh
 - Deferred: spoiler/typing attach lifecycle, remaining Block*Cell IBlock coverage, full AccDescr
   string set beyond Title/Heading
 - Contract coverage locks DrawingText bounds + a11y helpers + Paragraph `IBlock` empty bounds
+
+### Phase B18 — Remaining static cells IBlock/a11y (landed)
+
+- IBlock bounds on: AuthorDate, RelatedArticlesHeader, Preformatted, Pullquote, Blockquote,
+  ListItem, OrderedListItem (plus B17 simple text set)
+- a11y helpers on: Kicker/Footer labels, Related header/cell, Details expand/collapse, Table,
+  Channel, Preformatted code, Pullquote/Blockquote multi-layout
+- Added local `AccDescrIV*` strings (Kicker/Footer/Code/Pullquote/Blockquote/Related/Details/
+  Expanded/Collapsed/Table) next to existing Title/Heading
+- Deferred: spoiler/typing attach; deep nested list IBlock recursion with numLayout; media
+  photo/video a11y polish; full Sheet chrome
+- Contract coverage asserts AuthorDate/Pullquote/Preformatted implement `IBlock`

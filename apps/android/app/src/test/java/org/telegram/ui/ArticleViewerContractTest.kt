@@ -602,5 +602,12 @@ class ArticleViewerContractTest {
         assertThat(iblock.boundLeft).isEqualTo(-1)
         assertThat(iblock.boundRight).isEqualTo(-1)
         assertThat(iblock.lastLineBoundRight).isEqualTo(-1)
+
+        val authorDate = ArticleViewer.BlockAuthorDateCell(context, host, null)
+        assertThat(authorDate).isInstanceOf(ArticleViewer.IBlock::class.java)
+        val pullquote = ArticleViewer.BlockPullquoteCell(context, host, null)
+        assertThat(pullquote).isInstanceOf(ArticleViewer.IBlock::class.java)
+        val preformatted = ArticleViewer.BlockPreformattedCell(context, host, null)
+        assertThat(preformatted).isInstanceOf(ArticleViewer.IBlock::class.java)
     }
 }

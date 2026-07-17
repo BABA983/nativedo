@@ -9303,6 +9303,15 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 }
             }
         }
+    
+        @Override
+        public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
+            super.onInitializeAccessibilityNodeInfo(info);
+            info.setEnabled(true);
+            StringBuilder sb = new StringBuilder(getString(R.string.AccDescrIVTable));
+            if (titleLayout != null) sb.append(", ").append(titleLayout.getText());
+            info.setText(sb);
+        }
     }
 
     private class BlockCollageCell extends FrameLayout implements TextSelectionHelper.ArticleSelectableView {
@@ -10169,7 +10178,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    public static class BlockListItemCell extends ViewGroup implements TextSelectionHelper.ArticleSelectableView {
+    public static class BlockListItemCell extends ViewGroup implements TextSelectionHelper.ArticleSelectableView, IBlock {
 
         private final IArticleViewer parent;
         private final WebpageAdapter adapter;
@@ -10192,6 +10201,24 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             this.parent = parent;
             this.adapter = adapter;
             setWillNotDraw(false);
+        }
+
+        @Override
+        public int getBoundLeft() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getBoundLeft() - dp(parent.padx());
+        }
+
+        @Override
+        public int getBoundRight() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getBoundRight() + dp(parent.padx());
+        }
+
+        @Override
+        public int getLastLineBoundRight() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getLastLineBoundRight() + dp(parent.padx());
         }
 
         public void setBlock(TL_pageBlockListItem block) {
@@ -10398,6 +10425,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         @Override
         public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
             super.onInitializeAccessibilityNodeInfo(info);
+            info.setClassName("android.widget.TextView");
             info.setEnabled(true);
             if (textLayout == null)
                 return;
@@ -10415,7 +10443,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    public static class BlockOrderedListItemCell extends ViewGroup implements TextSelectionHelper.ArticleSelectableView {
+    public static class BlockOrderedListItemCell extends ViewGroup implements TextSelectionHelper.ArticleSelectableView, IBlock {
 
         private final IArticleViewer parent;
         private final WebpageAdapter adapter;
@@ -10438,6 +10466,24 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             this.parent = parent;
             this.adapter = adapter;
             setWillNotDraw(false);
+        }
+
+        @Override
+        public int getBoundLeft() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getBoundLeft() - dp(parent.padx());
+        }
+
+        @Override
+        public int getBoundRight() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getBoundRight() + dp(parent.padx());
+        }
+
+        @Override
+        public int getLastLineBoundRight() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getLastLineBoundRight() + dp(parent.padx());
         }
 
         public void setBlock(TL_pageBlockOrderedListItem block) {
@@ -10639,6 +10685,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         @Override
         public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
             super.onInitializeAccessibilityNodeInfo(info);
+            info.setClassName("android.widget.TextView");
             info.setEnabled(true);
             if (textLayout == null)
                 return;
@@ -10752,6 +10799,21 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 blocks.add(textLayout);
             }
         }
+    
+        @Override
+        public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
+            super.onInitializeAccessibilityNodeInfo(info);
+            info.setClassName("android.widget.TextView");
+            info.setEnabled(true);
+            SpannableStringBuilder sb = new SpannableStringBuilder();
+            if (textLayout != null) {
+                CharSequence t = buildAccessibilityText(parent, adapter, textLayout);
+                if (t != null) sb.append(t).append(", ");
+            }
+            sb.append(getString(R.string.AccDescrIVDetails)).append(", ");
+            sb.append(getString(currentBlock != null && currentBlock.open ? R.string.AccDescrIVExpanded : R.string.AccDescrIVCollapsed));
+            info.setText(sb);
+        }
     }
 
     private static class BlockDetailsBottomCell extends View {
@@ -10795,7 +10857,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    public static class BlockRelatedArticlesHeaderCell extends View implements TextSelectionHelper.ArticleSelectableView {
+    public static class BlockRelatedArticlesHeaderCell extends View implements TextSelectionHelper.ArticleSelectableView, IBlock {
 
         private final IArticleViewer parent;
         private final WebpageAdapter adapter;
@@ -10810,6 +10872,24 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             super(context);
             this.parent = parent;
             this.adapter = adapter;
+        }
+
+        @Override
+        public int getBoundLeft() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getBoundLeft() - dp(parent.padx());
+        }
+
+        @Override
+        public int getBoundRight() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getBoundRight() + dp(parent.padx());
+        }
+
+        @Override
+        public int getLastLineBoundRight() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getLastLineBoundRight() + dp(parent.padx());
         }
 
         public void setBlock(TLRPC.TL_pageBlockRelatedArticles block) {
@@ -10860,6 +10940,15 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (textLayout != null) {
                 blocks.add(textLayout);
             }
+        }
+    
+        @Override
+        public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
+            super.onInitializeAccessibilityNodeInfo(info);
+            info.setClassName("android.widget.TextView");
+            info.setEnabled(true);
+            if (textLayout == null) return;
+            info.setText(appendA11yLabel(buildAccessibilityText(parent, adapter, textLayout), R.string.AccDescrIVRelatedArticles));
         }
     }
 
@@ -11012,6 +11101,28 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (textLayout2 != null) {
                 blocks.add(textLayout2);
             }
+        }
+    
+        @Override
+        public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
+            super.onInitializeAccessibilityNodeInfo(info);
+            info.setClassName("android.widget.TextView");
+            info.setEnabled(true);
+            SpannableStringBuilder sb = new SpannableStringBuilder();
+            if (textLayout != null) {
+                CharSequence t = buildAccessibilityText(parent, adapter, textLayout);
+                if (t != null) sb.append(t);
+            }
+            if (textLayout2 != null) {
+                CharSequence t = buildAccessibilityText(parent, adapter, textLayout2);
+                if (t != null) {
+                    if (sb.length() > 0) sb.append(", ");
+                    sb.append(t);
+                }
+            }
+            if (sb.length() == 0) return;
+            sb.append(", ").append(getString(R.string.AccDescrIVRelatedArticle));
+            info.setText(sb);
         }
     }
 
@@ -11233,7 +11344,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    public static class BlockPullquoteCell extends View implements TextSelectionHelper.ArticleSelectableView {
+    public static class BlockPullquoteCell extends View implements TextSelectionHelper.ArticleSelectableView, IBlock {
 
         private final IArticleViewer parent;
         private final WebpageAdapter adapter;
@@ -11250,6 +11361,31 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             super(context);
             this.parent = parent;
             this.adapter = adapter;
+        }
+
+        @Override
+        public int getBoundLeft() {
+            int left = Integer.MAX_VALUE;
+            if (textLayout != null) left = Math.min(left, textLayout.x + textLayout.getBoundLeft());
+            if (textLayout2 != null) left = Math.min(left, textLayout2.x + textLayout2.getBoundLeft());
+            if (left == Integer.MAX_VALUE) return -1;
+            return left - dp(parent.padx());
+        }
+
+        @Override
+        public int getBoundRight() {
+            int right = Integer.MIN_VALUE;
+            if (textLayout != null) right = Math.max(right, textLayout.x + textLayout.getBoundRight());
+            if (textLayout2 != null) right = Math.max(right, textLayout2.x + textLayout2.getBoundRight());
+            if (right == Integer.MIN_VALUE) return -1;
+            return right + dp(parent.padx());
+        }
+
+        @Override
+        public int getLastLineBoundRight() {
+            if (textLayout2 != null) return textLayout2.x + textLayout2.getLastLineBoundRight() + dp(parent.padx());
+            if (textLayout != null) return textLayout.x + textLayout.getLastLineBoundRight() + dp(parent.padx());
+            return -1;
         }
 
         public void setBlock(TLRPC.TL_pageBlockPullquote block) {
@@ -11325,9 +11461,33 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 blocks.add(textLayout2);
             }
         }
+    
+        @Override
+        public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
+            super.onInitializeAccessibilityNodeInfo(info);
+            info.setClassName("android.widget.TextView");
+            info.setEnabled(true);
+            info.setClickable(false);
+            info.setLongClickable(false);
+            SpannableStringBuilder sb = new SpannableStringBuilder();
+            if (textLayout != null) {
+                CharSequence t = buildAccessibilityText(parent, adapter, textLayout);
+                if (t != null) sb.append(t);
+            }
+            if (textLayout2 != null) {
+                CharSequence t = buildAccessibilityText(parent, adapter, textLayout2);
+                if (t != null) {
+                    if (sb.length() > 0) sb.append(", ");
+                    sb.append(t);
+                }
+            }
+            if (sb.length() == 0) return;
+            sb.append(", ").append(getString(R.string.AccDescrIVPullquote));
+            info.setText(sb);
+        }
     }
 
-    public static class BlockBlockquoteCell extends View implements TextSelectionHelper.ArticleSelectableView {
+    public static class BlockBlockquoteCell extends View implements TextSelectionHelper.ArticleSelectableView, IBlock {
 
         private final IArticleViewer parent;
         private final WebpageAdapter adapter;
@@ -11344,6 +11504,33 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             super(context);
             this.parent = parent;
             this.adapter = adapter;
+        }
+
+        @Override
+        public int getBoundLeft() {
+            int left = Integer.MAX_VALUE;
+            final int padx = dp(parent.padx());
+            if (textLayout != null) left = Math.min(left, textLayout.x + textLayout.getBoundLeft() - padx);
+            if (textLayout2 != null) left = Math.min(left, textLayout2.x + textLayout2.getBoundLeft() - padx);
+            if (left == Integer.MAX_VALUE) return -1;
+            return left - dp(parent.padx());
+        }
+
+        @Override
+        public int getBoundRight() {
+            int right = Integer.MIN_VALUE;
+            final int padx = dp(parent.padx());
+            if (textLayout != null) right = Math.max(right, textLayout.x + textLayout.getBoundRight() + padx);
+            if (textLayout2 != null) right = Math.max(right, textLayout2.x + textLayout2.getBoundRight() + padx);
+            if (right == Integer.MIN_VALUE) return -1;
+            return right + dp(parent.padx());
+        }
+
+        @Override
+        public int getLastLineBoundRight() {
+            if (textLayout2 != null) return textLayout2.x + textLayout2.getLastLineBoundRight() + dp(parent.padx());
+            if (textLayout != null) return textLayout.x + textLayout.getLastLineBoundRight() + dp(parent.padx());
+            return -1;
         }
 
         public void setBlock(TLRPC.TL_pageBlockBlockquote block) {
@@ -11447,6 +11634,30 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (textLayout2 != null) {
                 blocks.add(textLayout2);
             }
+        }
+    
+        @Override
+        public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
+            super.onInitializeAccessibilityNodeInfo(info);
+            info.setClassName("android.widget.TextView");
+            info.setEnabled(true);
+            info.setClickable(false);
+            info.setLongClickable(false);
+            SpannableStringBuilder sb = new SpannableStringBuilder();
+            if (textLayout != null) {
+                CharSequence t = buildAccessibilityText(parent, adapter, textLayout);
+                if (t != null) sb.append(t);
+            }
+            if (textLayout2 != null) {
+                CharSequence t = buildAccessibilityText(parent, adapter, textLayout2);
+                if (t != null) {
+                    if (sb.length() > 0) sb.append(", ");
+                    sb.append(t);
+                }
+            }
+            if (sb.length() == 0) return;
+            sb.append(", ").append(getString(R.string.AccDescrIVBlockquote));
+            info.setText(sb);
         }
     }
 
@@ -12271,9 +12482,17 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 blocks.add(textLayout);
             }
         }
+    
+        @Override
+        public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
+            super.onInitializeAccessibilityNodeInfo(info);
+            info.setEnabled(true);
+            if (textLayout == null) return;
+            info.setText(appendA11yLabel(buildAccessibilityText(parent, adapter, textLayout), R.string.AccDescrChannel));
+        }
     }
 
-    public static class BlockAuthorDateCell extends View implements TextSelectionHelper.ArticleSelectableView {
+    public static class BlockAuthorDateCell extends View implements TextSelectionHelper.ArticleSelectableView, IBlock {
 
         private final IArticleViewer parent;
         private final WebpageAdapter adapter;
@@ -12288,6 +12507,24 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             super(context);
             this.parent = parent;
             this.adapter = adapter;
+        }
+
+        @Override
+        public int getBoundLeft() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getBoundLeft() - dp(parent.padx());
+        }
+
+        @Override
+        public int getBoundRight() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getBoundRight() + dp(parent.padx());
+        }
+
+        @Override
+        public int getLastLineBoundRight() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getLastLineBoundRight() + dp(parent.padx());
         }
 
         public void setBlock(TLRPC.TL_pageBlockAuthorDate block) {
@@ -12375,6 +12612,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         @Override
         public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
             super.onInitializeAccessibilityNodeInfo(info);
+            info.setClassName("android.widget.TextView");
             info.setEnabled(true);
             if (textLayout == null)
                 return;
@@ -12584,6 +12822,15 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 blocks.add(textLayout);
             }
         }
+    
+        @Override
+        public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
+            super.onInitializeAccessibilityNodeInfo(info);
+            info.setClassName("android.widget.TextView");
+            info.setEnabled(true);
+            if (textLayout == null) return;
+            info.setText(appendA11yLabel(buildAccessibilityText(parent, adapter, textLayout), R.string.AccDescrIVKicker));
+        }
     }
 
     public static class BlockFooterCell extends View implements TextSelectionHelper.ArticleSelectableView, IBlock {
@@ -12684,9 +12931,18 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 blocks.add(textLayout);
             }
         }
+    
+        @Override
+        public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
+            super.onInitializeAccessibilityNodeInfo(info);
+            info.setClassName("android.widget.TextView");
+            info.setEnabled(true);
+            if (textLayout == null) return;
+            info.setText(appendA11yLabel(buildAccessibilityText(parent, adapter, textLayout), R.string.AccDescrIVFooter));
+        }
     }
 
-    public static class BlockPreformattedCell extends FrameLayout implements TextSelectionHelper.ArticleSelectableView {
+    public static class BlockPreformattedCell extends FrameLayout implements TextSelectionHelper.ArticleSelectableView, IBlock {
 
         private final IArticleViewer parent;
         private final WebpageAdapter adapter;
@@ -12788,6 +13044,24 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
 
         @Override
+        public int getBoundLeft() {
+            if (textLayout == null) return -1;
+            return dp(16) + textLayout.getBoundLeft() - dp(parent.padx());
+        }
+
+        @Override
+        public int getBoundRight() {
+            if (textLayout == null) return -1;
+            return dp(16) + textLayout.getBoundRight() + dp(parent.padx());
+        }
+
+        @Override
+        public int getLastLineBoundRight() {
+            if (textLayout == null) return -1;
+            return dp(16) + textLayout.getLastLineBoundRight() + dp(parent.padx());
+        }
+
+        @Override
         protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
             int width = MeasureSpec.getSize(widthMeasureSpec);
             scrollView.measure(MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
@@ -12813,6 +13087,17 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         public void invalidate() {
             textContainer.invalidate();
             super.invalidate();
+        }
+    
+        @Override
+        public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
+            super.onInitializeAccessibilityNodeInfo(info);
+            info.setClassName("android.widget.TextView");
+            info.setEnabled(true);
+            info.setClickable(false);
+            info.setLongClickable(false);
+            if (textLayout == null) return;
+            info.setText(appendA11yLabel(buildAccessibilityText(parent, adapter, textLayout), R.string.AccDescrIVCode));
         }
     }
 
