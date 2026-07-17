@@ -3327,11 +3327,24 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         return drawingText;
     }
 
+    @Override
+    public boolean allowTouches() {
+        return pageSwitchAnimation == null;
+    }
+
     private boolean checkLayoutForLinks(WebpageAdapter adapter, MotionEvent event, View parentView, DrawingText drawingText, int layoutX, int layoutY) {
-        if (pageSwitchAnimation != null || parentView == null || !textSelectionHelper.isSelectable(parentView)) {
+        return checkLayoutForLinks(this, adapter, event, parentView, drawingText, layoutX, layoutY);
+    }
+
+    public static boolean checkLayoutForLinks(IArticleViewer parent, WebpageAdapter adapter, MotionEvent event, View parentView, DrawingText drawingText, int layoutX, int layoutY) {
+        if (!parent.allowTouches() || parentView == null) {
             return false;
         }
-        pressedLinkOwnerView = parentView;
+        final TextSelectionHelper.ArticleTextSelectionHelper textSelectionHelper = parent.getTextSelectionHelper(parentView);
+        if (textSelectionHelper != null && !textSelectionHelper.isSelectable(parentView)) {
+            return false;
+        }
+        parent.pressedLinkOwnerView = parentView;
         if (drawingText != null) {
             StaticLayout layout = drawingText.textLayout;
             int x = (int) event.getX();
@@ -3345,8 +3358,8 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                     left = Math.min(layout.getLineLeft(a), left);
                 }
                 if (x >= layoutX + left && x <= left + layoutX + width && y >= layoutY && y <= layoutY + layout.getHeight()) {
-                    pressedLinkOwnerLayout = drawingText;
-                    pressedLayoutY = layoutY;
+                    parent.pressedLinkOwnerLayout = drawingText;
+                    parent.pressedLayoutY = layoutY;
                     CharSequence text = layout.getText();
                     if (text instanceof Spannable) {
                         try {
@@ -3372,18 +3385,18 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                                             pressedEnd = end;
                                         }
                                     }
-                                    if (pressedLink == null || pressedLink.getSpan() != selectedLink) {
-                                        if (pressedLink != null) {
-                                            links.removeLink(pressedLink);
+                                    if (parent.pressedLink == null || parent.pressedLink.getSpan() != selectedLink) {
+                                        if (parent.pressedLink != null) {
+                                            parent.links.removeLink(parent.pressedLink);
                                         }
-                                        pressedLink = new LinkSpanDrawable(selectedLink, null, x, y);
-                                        pressedLink.setColor(getThemedColor(Theme.key_windowBackgroundWhiteLinkSelection) & 0x33ffffff);
-                                        links.addLink(pressedLink, pressedLinkOwnerLayout);
+                                        parent.pressedLink = new LinkSpanDrawable(selectedLink, null, x, y);
+                                        parent.pressedLink.setColor(parent.getThemedColor(Theme.key_windowBackgroundWhiteLinkSelection) & 0x33ffffff);
+                                        parent.links.addLink(parent.pressedLink, parent.pressedLinkOwnerLayout);
                                         try {
-                                            LinkPath path = pressedLink.obtainNewPath();
+                                            final LinkPath path = parent.pressedLink.obtainNewPath();
                                             path.setCurrentLayout(layout, pressedStart, 0);
-                                            TextPaint textPaint = selectedLink.getTextPaint();
-                                            int shift = textPaint != null ? textPaint.baselineShift : 0;
+                                            final TextPaint textPaint = selectedLink.getTextPaint();
+                                            final int shift = textPaint != null ? textPaint.baselineShift : 0;
                                             path.setBaselineShift(shift != 0 ? shift + dp(shift > 0 ? 5 : -2) : 0);
                                             layout.getSelectionPath(pressedStart, pressedEnd, path);
                                             parentView.invalidate();
@@ -3399,63 +3412,68 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                     }
                 }
             } else if (event.getAction() == MotionEvent.ACTION_UP) {
-                if (pressedLink != null) {
+                if (parent.pressedLink != null) {
                     removeLink = true;
-                    String url = pressedLink.getSpan().getUrl();
-                    if (url != null) {
-                        if (linkSheet != null) {
-                            linkSheet.dismiss();
-                            linkSheet = null;
-                        }
-                        int index;
-                        boolean isAnchor = false;
-                        String anchor;
-                        if ((index = url.lastIndexOf('#')) != -1) {
-                            String webPageUrl;
-                            if (!TextUtils.isEmpty(adapter.currentPage.cached_page.url)) {
-                                webPageUrl = adapter.currentPage.cached_page.url.toLowerCase();
-                            } else {
-                                webPageUrl = adapter.currentPage.url.toLowerCase();
-                            }
-                            try {
-                                anchor = URLDecoder.decode(url.substring(index + 1), "UTF-8");
-                            } catch (Exception ignore) {
-                                anchor = "";
-                            }
-                            if (index == 0 || url.toLowerCase().contains(webPageUrl)) {
-                                if (TextUtils.isEmpty(anchor)) {
-                                    pages[0].layoutManager.scrollToPositionWithOffset(0, 0);
-                                    checkScrollAnimated();
-                                } else {
-                                    scrollToAnchor(anchor, true);
-                                }
-                                isAnchor = true;
-                            }
-                        } else {
-                            anchor = null;
-                        }
-                        if (!isAnchor) {
-                            openWebpageUrl(pressedLink.getSpan().getUrl(), anchor, pressedLinkOwnerLayout == null ? null : makeProgress(pressedLink, pressedLinkOwnerLayout));
-                        }
-                    }
+                    parent.handleLinkClick(adapter, parent.pressedLink.getSpan());
                 }
-            } else if (event.getAction() == MotionEvent.ACTION_CANCEL && (popupWindow == null || !popupWindow.isShowing())) {
+            } else if (event.getAction() == MotionEvent.ACTION_CANCEL && (parent.popupWindow == null || !parent.popupWindow.isShowing())) {
                 removeLink = true;
             }
             if (removeLink) {
-                removePressedLink();
+                removePressedLink(parent);
             }
         }
+        parent.checkLayoutForLinks(event, parentView);
+        if (parentView instanceof BlockDetailsCell) {
+            return parent.pressedLink != null;
+        } else {
+            return parent.pressedLinkOwnerLayout != null;
+        }
+    }
+
+    @Override
+    public void checkLayoutForLinks(MotionEvent event, View parentView) {
         if (event.getAction() == MotionEvent.ACTION_DOWN) {
             startCheckLongPress(event.getX(), event.getY(), parentView);
         }
         if (event.getAction() != MotionEvent.ACTION_DOWN && event.getAction() != MotionEvent.ACTION_MOVE) {
             cancelCheckLongPress();
         }
-        if (parentView instanceof BlockDetailsCell) {
-            return pressedLink != null;
+    }
+
+    @Override
+    public void handleLinkClick(WebpageAdapter adapter, TextPaintUrlSpan span) {
+        if (span == null) return;
+        final String url = span.getUrl();
+        if (url == null) return;
+        if (linkSheet != null) {
+            linkSheet.dismiss();
+            linkSheet = null;
+        }
+        int index;
+        boolean isAnchor = false;
+        String anchor;
+        if ((index = url.lastIndexOf('#')) != -1) {
+            String webPageUrl;
+            if (!TextUtils.isEmpty(adapter.currentPage.cached_page.url)) {
+                webPageUrl = adapter.currentPage.cached_page.url.toLowerCase();
+            } else {
+                webPageUrl = adapter.currentPage.url.toLowerCase();
+            }
+            try {
+                anchor = URLDecoder.decode(url.substring(index + 1), "UTF-8");
+            } catch (Exception ignore) {
+                anchor = "";
+            }
+            if (index == 0 || url.toLowerCase().contains(webPageUrl)) {
+                scrollToAnchor(anchor, true);
+                isAnchor = true;
+            }
         } else {
-            return pressedLinkOwnerLayout != null;
+            anchor = null;
+        }
+        if (!isAnchor) {
+            openWebpageUrl(url, anchor, pressedLinkOwnerLayout == null ? null : makeProgress(pressedLink, pressedLinkOwnerLayout));
         }
     }
 
@@ -3500,14 +3518,18 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
     }
 
     private void removePressedLink() {
-        if (pressedLink == null && pressedLinkOwnerView == null) {
+        removePressedLink(this);
+    }
+
+    private static void removePressedLink(IArticleViewer parent) {
+        if (parent.pressedLink == null && parent.pressedLinkOwnerView == null) {
             return;
         }
-        View parentView = pressedLinkOwnerView;
-        links.clear();
-        pressedLink = null;
-        pressedLinkOwnerLayout = null;
-        pressedLinkOwnerView = null;
+        View parentView = parent.pressedLinkOwnerView;
+        parent.links.clear();
+        parent.pressedLink = null;
+        parent.pressedLinkOwnerLayout = null;
+        parent.pressedLinkOwnerView = null;
         if (parentView != null) {
             parentView.invalidate();
         }
@@ -12526,14 +12548,20 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
     }
 
     private void drawTextSelection(Canvas canvas, TextSelectionHelper.ArticleSelectableView view) {
-        drawTextSelection(canvas, view, 0);
+        drawTextSelection(this, canvas, view, 0);
+    }
+
+    public static void drawTextSelection(IArticleViewer parent, Canvas canvas, TextSelectionHelper.ArticleSelectableView view) {
+        drawTextSelection(parent, canvas, view, 0);
     }
 
     private void drawTextSelection(Canvas canvas, TextSelectionHelper.ArticleSelectableView view, int i) {
-        View v = (View) view;
-        if (v.getTag() != null && v.getTag() == BOTTOM_SHEET_VIEW_TAG && textSelectionHelperBottomSheet != null) {
-            textSelectionHelperBottomSheet.draw(canvas, view, i);
-        } else {
+        drawTextSelection(this, canvas, view, i);
+    }
+
+    public static void drawTextSelection(IArticleViewer parent, Canvas canvas, TextSelectionHelper.ArticleSelectableView view, int i) {
+        final TextSelectionHelper.ArticleTextSelectionHelper textSelectionHelper = parent.getTextSelectionHelper((View) view);
+        if (textSelectionHelper != null) {
             textSelectionHelper.draw(canvas, view, i);
         }
     }

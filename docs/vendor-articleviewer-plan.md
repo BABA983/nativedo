@@ -99,7 +99,8 @@ Introduced `org.telegram.ui.IArticleViewer` (API surface only):
 2. [x] `DrawingText(IArticleViewer parent)` + no-arg convenience; draw via parent fields (B3)
 3. [x] B4: Resources holds paint SparseArrays; static names alias shared instance
 4. [x] B5: Resources owns paint color/font updates; outer paint creation/color entry points match pin
-5. [ ] Only then re-attempt larger pin body slices
+5. [x] B6: link-touch and text-selection drawing helpers use the pin-shaped `IArticleViewer` boundary
+6. [ ] Only then re-attempt larger pin body slices
 
 Do **not** full-file replace until B2 compiles with contract tests green.
 
@@ -108,7 +109,7 @@ Do **not** full-file replace until B2 compiles with contract tests green.
 - `DrawingText` stores `IArticleViewer parent`
 - No-arg ctor → enclosing/`getInstance()` ArticleViewer (TableBlock-safe)
 - `draw` reads `parent.searchResults` / `links` / pressed-link selection
-- Still **not** ported: MultiLayoutTypingAnimator, Spoiler, a11y dump, Resources paint maps
+- Still **not** ported: MultiLayoutTypingAnimator, Spoiler, and a11y text conversion
 
 ### Phase 3 — WebActionBar / bookmarks chrome
 
@@ -187,3 +188,14 @@ scripts/vendor-status.sh
 - Heading1–6 paint-map loops remain omitted because local S1 maps headings to Header/Subheader
 - Shared map aliases, no-arg `Resources()` support, lazy `errorTextPaint` sync, and NativeDo
   bookmark/sheet/file-chooser wiring remain intact
+
+### Phase B6 — Parent-driven interaction helpers (landed)
+
+- `checkLayoutForLinks(IArticleViewer, ...)` and `drawTextSelection(IArticleViewer, ...)`
+  now expose the pinned static helper boundary; existing instance wrappers remain for local cells
+- `ArticleViewer.allowTouches()` keeps link handling gated while page-switch animation is active
+- URL/anchor dispatch now lives in the pinned `handleLinkClick(WebpageAdapter, TextPaintUrlSpan)`
+  host callback; long-press handling stays in the `checkLayoutForLinks(MotionEvent, View)` override
+- Pressed-link cleanup now has the pinned parent-driven helper
+- The pinned spoiler-hit branch remains deferred with the rest of the local `DrawingText` spoiler
+  lifecycle; this slice does not introduce `TL_iv`, `TableLayout.CellText`, or block-cell reshaping

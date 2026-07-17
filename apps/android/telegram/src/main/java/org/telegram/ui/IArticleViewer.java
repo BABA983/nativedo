@@ -6,8 +6,8 @@
  * Copyright Zark X, 2013-2018.
  *
  * NativeDo: vendored extract of Telegram 12.8.1 IArticleViewer.
- * Phase B1: abstract API. Phase B2: shared fields (link/search/video) live here
- * so block helpers can take IArticleViewer parent. openPhoto uses TLRPC.PageBlock (S1).
+ * Shared host API/state lets ArticleViewer helpers and block cells take an IArticleViewer
+ * parent. openPhoto uses TLRPC.PageBlock for the local S1 type mapping.
  */
 
 package org.telegram.ui;
