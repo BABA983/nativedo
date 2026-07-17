@@ -15,7 +15,7 @@
     - host contract: `FlickerLoadingViewHostContractTest` (REACTED_TYPE = 50dp)
 
 ## ArticleViewer (epic)
-- See `docs/vendor-articleviewer-plan.md` (B1–B19 landed; optional Sheet chrome next; no full-file pin)
+- See `docs/vendor-articleviewer-plan.md` (B1–B20a landed; broader Sheet chrome still host-wired; no full-file pin)
 
 ## Still heavy stuck (not FF-host class)
 - WebBrowserSettings — MessagesController browser policy APIs

@@ -115,7 +115,8 @@ Introduced `org.telegram.ui.IArticleViewer` (API surface only):
 18. [x] B17: `IBlock` + DrawingText bounds + `buildAccessibilityText` / `appendA11yLabel` foundation
 19. [x] B18: wire remaining static parent cells to IBlock/a11y + AccDescrIV strings
 20. [x] B19: spoiler attach / liveDrawingTexts / spoiler-hit (typing + full cell attach still deferred)
-21. [ ] Optional: remaining media a11y; larger Sheet chrome (B20)
+21. [x] B20a: WebActionBar search menu restores pin header height reset
+22. [ ] Optional: remaining media a11y; larger Sheet/WebActionBar chrome (bookmarks/open-external still host-wired)
 
 Do **not** full-file replace until B2 compiles with contract tests green.
 
@@ -386,3 +387,8 @@ scripts/vendor-status.sh
 - `checkLayoutForLinks` restores pin spoiler-hit / ripple / clear
 - OMITTED: `MultiLayoutTypingAnimator` draw branch; real AnimatedEmoji pipeline (stub no-op); full Block*Cell `layout.attach(this)` call sites; `TL_textSpoiler` / S1 spoiler content production (no local TL type)
 - Contract: empty spoiler pools without spans; attach/detach lifecycle safe
+
+### Phase B20a — WebActionBar search header height (landed)
+
+- Search menu item restores pin `actionBar.setHeight(currentHeaderHeight = dp(56))` before `showSearch`
+- Broader Sheet dismiss/preview, bookmark MTProto path, and open-external alert remain host-wired NativeDo deltas (not bulk-copied)

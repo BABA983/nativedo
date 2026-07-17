@@ -4706,6 +4706,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 return;
             }
             if (id == WebActionBar.search_item) {
+                actionBar.setHeight(currentHeaderHeight = dp(56));
                 actionBar.showSearch(true, true);
             } else if (id == WebActionBar.share_item) {
                 String url;
