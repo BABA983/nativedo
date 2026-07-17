@@ -128,8 +128,8 @@ public class NestedSizeNotifierLayout extends SizeNotifierFrameLayout implements
             if (attached && childLayout != null && childLayout.getListView() != null) {
                 childLayout.getListView().addOnLayoutChangeListener(this);
             }
-            updateMaxTop();
         }
+        updateMaxTop();
     }
 
     @Override

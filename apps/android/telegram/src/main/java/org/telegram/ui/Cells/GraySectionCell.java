@@ -25,6 +25,7 @@ import org.telegram.ui.Components.AnimatedTextView;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.LayoutHelper;
 
+
 public class GraySectionCell extends FrameLayout implements Theme.Colorable {
 
     // OMITTED: AnimatedEmojiSpan.TextViewEmojis replaced with plain TextView

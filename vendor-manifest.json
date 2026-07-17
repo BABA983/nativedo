@@ -291,10 +291,10 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Cells/GraySectionCell.java",
       "upstream": "org/telegram/ui/Cells/GraySectionCell.java",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
+      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
       "modified": true,
       "port_mode": "exact",
-      "stuck_reason": "FF clean pin blob fails compile; needs host wiring re-apply (was 009e97356f96)"
+      "notes": "FF to 12.8.1 + host: plain TextView instead of AnimatedEmojiSpan.TextViewEmojis; LocaleController.isRTL → false; createThemeDescriptions omitted."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Cells/HeaderCell.java",
@@ -922,15 +922,14 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/RLottieImageView.java",
       "upstream": "org/telegram/ui/Components/RLottieImageView.java",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
+      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
       "modified": true,
       "port_mode": "exact",
       "forced_exact": [
         "animation",
         "drawing"
       ],
-      "notes": "Copied from upstream as the RLottieImageView wrapper used by ChatActivityEnterViewAnimatedIconView. Host wiring only: NativeDo's TLRPC.Document shim does not expose localThumbPath or DocumentObject.getSvgThumb(...), so the document-thumb fallback skips those optional branches; raw-resource lottie state handling remains upstream-shaped.",
-      "stuck_reason": "FF clean pin blob fails compile; needs host wiring re-apply (was 009e97356f96)"
+      "notes": "FF to 12.8.1 + host: omit document.localThumbPath (shim); svg thumb null (DocumentObject path not fully wired). forced_exact animation/drawing retained from pin body."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ChatActivityEnterViewAnimatedIconView.java",
@@ -1002,7 +1001,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/FragmentSearchField.java",
       "upstream": "org/telegram/ui/Components/FragmentSearchField.java",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
+      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
       "modified": true,
       "port_mode": "exact",
       "forced_exact": [
@@ -1010,8 +1009,7 @@
         "measurement",
         "drawing"
       ],
-      "notes": "Host-wired for NativeDo resources and Rect clip conversion; filter chips keep upstream API with minimal stubs.",
-      "stuck_reason": "FF clean pin blob fails compile; needs host wiring re-apply (was 009e97356f96)"
+      "notes": "FF to 12.8.1 + host: RectF→Rect clip via AndroidUtilities.rectTmp2I; inputType NO_SUGGESTIONS|MULTI_LINE; IME_ACTION_DONE (product). forced_exact animation/measurement/drawing from pin."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/DrawingInBackgroundThreadDrawable.java",
@@ -1131,15 +1129,14 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/NestedSizeNotifierLayout.java",
       "upstream": "org/telegram/ui/Components/NestedSizeNotifierLayout.java",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
+      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
       "modified": true,
       "port_mode": "exact",
       "forced_exact": [
         "gesture",
         "measurement"
       ],
-      "notes": "Copied from upstream as a BottomSheetWithRecyclerListView dependency. Host wiring only: removed CachedMediaLayout import/branch because that class is not vendored; nested-scroll handoff and maxTop measurement structure remain upstream-shaped.",
-      "stuck_reason": "FF clean pin blob fails compile; needs host wiring re-apply (was 009e97356f96)"
+      "notes": "FF to 12.8.1 + host: CachedMediaLayout import/branch omitted (not vendored); maxTopPadding overload dropped — single setChildLayout(ChildLayout)."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/CircularProgressDrawable.java",
@@ -1261,15 +1258,14 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/FlickerLoadingView.java",
       "upstream": "org/telegram/ui/Components/FlickerLoadingView.java",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
+      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
       "modified": true,
       "port_mode": "exact",
       "forced_exact": [
         "animation",
         "drawing"
       ],
-      "notes": "REACTED_TYPE cell height is restored to the pinned 50dp ReactedUsersListView row constant so shimmer, shared DiscourseUserCell geometry, and stable sheet sizing agree.",
-      "stuck_reason": "FF clean pin blob fails compile; needs host wiring re-apply (was 009e97356f96)"
+      "notes": "FF to 12.8.1 + host: REACTED_TYPE cell height dp(50) (ReactedUsersListView const); member-request button width strings hardcoded (missing R.string). forced_exact animation/drawing from pin."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/GestureDetectorFixDoubleTap.java",

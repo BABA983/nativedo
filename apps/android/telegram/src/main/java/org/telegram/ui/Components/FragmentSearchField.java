@@ -1,11 +1,3 @@
-/*
- * This is the source code of Telegram for Android v. 5.x.x.
- * It is licensed under GNU GPL v. 2 or later.
- * You should have received a copy of the license in this archive (see LICENSE).
- *
- * Copyright Nikolai Kudashov, 2013-2018.
- */
-
 package org.telegram.ui.Components;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
@@ -37,6 +29,7 @@ import android.view.inputmethod.EditorInfo;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 
@@ -114,15 +107,9 @@ public class FragmentSearchField extends FrameLayout implements FactorAnimator.T
         editText.setGravity((LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL);
         editText.addTextChangedListener(new TextWatcher() {
             @Override
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
-
-            }
-
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             @Override
-            public void onTextChanged(CharSequence s, int start, int before, int count) {
-
-            }
-
+            public void onTextChanged(CharSequence s, int start, int before, int count) {}
             @Override
             public void afterTextChanged(Editable s) {
                 if (!currentSearchFilters.isEmpty()) {
@@ -263,10 +250,10 @@ public class FragmentSearchField extends FrameLayout implements FactorAnimator.T
             editText.getMeasuredHeight()
         );
         AndroidUtilities.rectTmp2I.set(
-            (int) AndroidUtilities.rectTmp2.left,
-            (int) AndroidUtilities.rectTmp2.top,
-            (int) AndroidUtilities.rectTmp2.right,
-            (int) AndroidUtilities.rectTmp2.bottom
+                (int) AndroidUtilities.rectTmp2.left,
+                (int) AndroidUtilities.rectTmp2.top,
+                (int) AndroidUtilities.rectTmp2.right,
+                (int) AndroidUtilities.rectTmp2.bottom
         );
         editText.setClipBounds(AndroidUtilities.rectTmp2I);
         editText.setPadding(pLeft, 0, pRight, 0);
@@ -279,12 +266,19 @@ public class FragmentSearchField extends FrameLayout implements FactorAnimator.T
         updateColors();
     }
 
+    private boolean isWhiteBackground;
+
+    public void setWhiteBackground() {
+        isWhiteBackground = true;
+        updateColors();
+    }
+
     @Override
     public void updateColors() {
         final boolean isDark = resourcesProvider != null ? resourcesProvider.isDark() : Theme.isCurrentThemeDark();
         bg = isSectionBackground ?
             Theme.createRoundRectDrawableShadowed(dp(20), getThemedColor(Theme.key_windowBackgroundWhite)) :
-            Theme.createRoundRectDrawable(dp(20), getThemedColor(Theme.key_windowBackgroundWhiteBlackText, isDark ? 0.07f : 0.05f));
+            Theme.createRoundRectDrawable(dp(20), isWhiteBackground ? getThemedColor(Theme.key_windowBackgroundWhite) : getThemedColor(Theme.key_windowBackgroundWhiteBlackText, isDark ? 0.07f : 0.05f));
         searchIcon.setColorFilter(getThemedColor(Theme.key_windowBackgroundWhiteBlackText, 0.6f), PorterDuff.Mode.MULTIPLY);
         closeIcon.setColorFilter(getThemedColor(Theme.key_windowBackgroundWhiteBlackText, 0.6f), PorterDuff.Mode.MULTIPLY);
         closeIcon.setBackground(Theme.createSelectorDrawable(getThemedColor(Theme.key_listSelector), 1, dp(17)));
