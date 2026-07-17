@@ -964,7 +964,7 @@
         "animation",
         "drawing"
       ],
-      "notes": "Copied upstream AnimatedTextView; local delta removes unused Checker Framework imports unavailable in the Android module."
+      "notes": "Copied upstream AnimatedTextView; local delta removes unused Checker Framework imports that are not on the :telegram compile classpath."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/Bulletin.java",
@@ -1000,13 +1000,12 @@
       "local": "telegram/src/main/java/org/telegram/ui/Components/CircularProgressDrawable.java",
       "upstream": "org/telegram/ui/Components/CircularProgressDrawable.java",
       "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
-      "modified": true,
+      "modified": false,
       "port_mode": "exact",
       "forced_exact": [
         "animation",
         "drawing"
-      ],
-      "notes": "Upstream drawing/animation shape retained."
+      ]
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/AvatarDrawable.java",
@@ -2370,9 +2369,8 @@
       "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/utils/Blur3Utils.java",
       "upstream": "org/telegram/ui/Components/blur3/utils/Blur3Utils.java",
       "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
-      "modified": true,
-      "port_mode": "exact",
-      "notes": "Host wiring only: androidx.annotation.Nullable replaces org.jspecify.annotations.Nullable because the Telegram module does not carry jspecify."
+      "modified": false,
+      "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/utils/NinePatchBuilder.java",

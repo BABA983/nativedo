@@ -16,7 +16,7 @@ import android.view.ViewGroup;
 import androidx.annotation.NonNull;
 import androidx.core.graphics.drawable.WrappedDrawable;
 
-import androidx.annotation.Nullable;
+import org.jspecify.annotations.Nullable;
 import org.telegram.ui.Components.blur3.capture.IBlur3Capture;
 import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceBitmap;
 import org.telegram.ui.Components.chat.ViewPositionWatcher;

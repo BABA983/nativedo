@@ -10,8 +10,7 @@ import android.os.SystemClock;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-//              (NativeDo doesn't depend on androidx.interpolator; PathInterpolator with the FastOutSlowIn cubic is equivalent on minSdk 28+).
-import android.view.animation.PathInterpolator;
+import androidx.interpolator.view.animation.FastOutSlowInInterpolator;
 
 import org.telegram.messenger.AndroidUtilities;
 
@@ -33,7 +32,7 @@ public class CircularProgressDrawable extends Drawable {
     }
 
     private long start = -1;
-    public static final PathInterpolator interpolator = new PathInterpolator(0.4f, 0f, 0.2f, 1f);
+    public static final FastOutSlowInInterpolator interpolator = new FastOutSlowInInterpolator();
     private float[] segment = new float[2];
     private void updateSegment() {
         final long now = SystemClock.elapsedRealtime();
