@@ -11,6 +11,7 @@ import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -31,6 +32,9 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory;
+import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
+import org.telegram.ui.Components.blur3.drawable.color.BlurredBackgroundColorProvider;
 
 import java.util.ArrayList;
 
@@ -54,10 +58,17 @@ public class ActionBar extends FrameLayout {
     private int titleColor;
     private ActionBarMenuOnItemClick actionBarMenuOnItemClick;
     private boolean isSearchFieldVisible;
+    private float searchFieldVisibleAlpha;
+    private float searchFactor;
+    private ValueAnimator searchFactorAnimator;
     private AnimatorSet searchVisibleAnimator;
     private boolean centerScale;
     private boolean occupyStatusBar = true;
     private boolean castShadows = SharedConfig.drawActionBarShadow;
+    private boolean glassMode;
+    private BlurredBackgroundDrawable glassDrawable;
+    private BlurredBackgroundDrawable glassDrawableBack;
+    private BlurredBackgroundDrawable glassDrawableMenu;
     private boolean addToContainer = true;
     private boolean overlayTitleAnimation;
     private int subtitleColor;
@@ -103,6 +114,35 @@ public class ActionBar extends FrameLayout {
 
     public CharSequence getTitle() {
         return titleTextView.getText();
+    }
+
+    public void setupGlass(BlurredBackgroundDrawableViewFactory factory, BlurredBackgroundColorProvider colorProvider) {
+        setBackground(null);
+        setClipChildren(false);
+        glassMode = true;
+
+        glassDrawable = factory.create(this)
+                .setColorProvider(colorProvider)
+                .setRadius(AndroidUtilities.dp(23))
+                .setPadding(AndroidUtilities.dp(6));
+        glassDrawableBack = factory.create(this)
+                .setColorProvider(colorProvider)
+                .setRadius(AndroidUtilities.dp(23))
+                .setPadding(AndroidUtilities.dp(6));
+        glassDrawableMenu = factory.create(this)
+                .setColorProvider(colorProvider)
+                .setRadius(AndroidUtilities.dp(23))
+                .setPadding(AndroidUtilities.dp(6));
+
+        if (menu != null) {
+            menu.setTranslationX(-AndroidUtilities.dp(10));
+            menu.setGlassMode(true);
+        }
+        if (actionMode != null) {
+            actionMode.setTranslationX(-AndroidUtilities.dp(10));
+            actionMode.setGlassMode(true);
+        }
+        backButtonImageView.setTranslationX(AndroidUtilities.dp(2));
     }
 
     public void setBackButtonDrawable(Drawable drawable) {
@@ -164,6 +204,11 @@ public class ActionBar extends FrameLayout {
             return menu;
         }
         menu = new ActionBarMenu(getContext(), this);
+        if (glassMode) {
+            menu.setTranslationX(-AndroidUtilities.dp(10));
+            menu.setGlassMode(true);
+            menu.setOnLayoutListener(() -> invalidate());
+        }
         addView(menu, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.MATCH_PARENT, Gravity.RIGHT));
         return menu;
     }
@@ -176,6 +221,21 @@ public class ActionBar extends FrameLayout {
         searchVisibleAnimator = new AnimatorSet();
         ArrayList<View> viewsToHide = new ArrayList<>();
         viewsToHide.add(titleTextView);
+
+        // Upstream animates searchFieldVisibleAlpha and a searchFactor used by
+        // glass middle-pill bounds so the title capsule expands into the menu
+        // icon space while icons fade out (Chat glass ActionBar).
+        if (searchFactorAnimator != null) {
+            searchFactorAnimator.cancel();
+        }
+        searchFactorAnimator = ValueAnimator.ofFloat(searchFactor, visible ? 1f : 0f);
+        searchFactorAnimator.addUpdateListener(anm -> {
+            searchFactor = (float) anm.getAnimatedValue();
+            searchFieldVisibleAlpha = searchFactor;
+            invalidate();
+        });
+        searchFactorAnimator.setDuration(150);
+        searchFactorAnimator.start();
 
         for (int i = 0; i < viewsToHide.size(); i++) {
             View view = viewsToHide.get(i);
@@ -197,15 +257,30 @@ public class ActionBar extends FrameLayout {
                 for (int i = 0; i < viewsToHide.size(); i++) {
                     View view = viewsToHide.get(i);
                     if (visible) {
-                        view.setVisibility(GONE);
+                        // Upstream ends on INVISIBLE then GONE for title rows so measure
+                        // can settle without a hard GONE mid-animation.
+                        view.setVisibility(INVISIBLE);
                         view.setAlpha(0f);
                     } else {
+                        view.setVisibility(VISIBLE);
                         view.setAlpha(1f);
+                        view.setScaleX(1f);
+                        view.setScaleY(1f);
                     }
                 }
+                if (visible && titleTextView != null) {
+                    titleTextView.setVisibility(GONE);
+                }
+                // Final glass bounds after menu icons are fully hidden/shown.
+                if (menu != null) {
+                    menu.requestLayout();
+                }
+                invalidate();
             }
         });
         searchVisibleAnimator.setDuration(150).start();
+        // Keep glass/search factor layout in sync for the full 150ms.
+        requestLayout();
     }
 
     public void closeSearchField() {
@@ -298,6 +373,10 @@ public class ActionBar extends FrameLayout {
         return actionModeVisible;
     }
 
+    public float getActionModeFactor() {
+        return actionModeVisible ? 1f : 0f;
+    }
+
     public void showActionMode() {
         if (actionModeVisible) {
             return;
@@ -361,6 +440,11 @@ public class ActionBar extends FrameLayout {
     }
 
     private void updateAdaptiveBackground() {
+        if (glassMode) {
+            setBackgroundColor(Color.TRANSPARENT);
+            setCastShadows(false);
+            return;
+        }
         if (adaptiveBackgroundListView == null) {
             setBackgroundColor(Theme.getColor(Theme.key_actionBarDefault));
             setCastShadows(SharedConfig.drawActionBarShadow);
@@ -453,19 +537,23 @@ public class ActionBar extends FrameLayout {
             MeasureSpec.makeMeasureSpec(buttonSize, MeasureSpec.EXACTLY),
             MeasureSpec.makeMeasureSpec(barHeight, MeasureSpec.EXACTLY)
         );
-        int titleLeft = backButtonImageView.getVisibility() == VISIBLE ? AndroidUtilities.dp(72) : AndroidUtilities.dp(20);
-        int availableTitleWidth = width - menuWidth - AndroidUtilities.dp(16) - titleLeft;
-        titleTextView.measure(
-            MeasureSpec.makeMeasureSpec(availableTitleWidth, MeasureSpec.AT_MOST),
-            MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(24) + titleTextView.getPaddingTop() + titleTextView.getPaddingBottom(), MeasureSpec.AT_MOST)
-        );
-        if (centerScale) {
-            CharSequence text = titleTextView.getText();
-            titleTextView.setPivotX(text == null ? 0 : titleTextView.getTextPaint().measureText(text, 0, text.length()) / 2f);
-            titleTextView.setPivotY(AndroidUtilities.dp(24) >> 1);
-        } else {
-            titleTextView.setPivotX(0);
-            titleTextView.setPivotY(0);
+        if (titleTextView.getVisibility() != GONE) {
+            int titleLeft = backButtonImageView.getVisibility() == VISIBLE
+                    ? (glassMode ? AndroidUtilities.dp(76) : AndroidUtilities.dp(72))
+                    : (glassMode ? AndroidUtilities.dp(24) : AndroidUtilities.dp(20));
+            int availableTitleWidth = width - menuWidth - AndroidUtilities.dp(16) - titleLeft;
+            titleTextView.measure(
+                MeasureSpec.makeMeasureSpec(availableTitleWidth, MeasureSpec.AT_MOST),
+                MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(24) + titleTextView.getPaddingTop() + titleTextView.getPaddingBottom(), MeasureSpec.AT_MOST)
+            );
+            if (centerScale) {
+                CharSequence text = titleTextView.getText();
+                titleTextView.setPivotX(text == null ? 0 : titleTextView.getTextPaint().measureText(text, 0, text.length()) / 2f);
+                titleTextView.setPivotY(AndroidUtilities.dp(24) >> 1);
+            } else {
+                titleTextView.setPivotX(0);
+                titleTextView.setPivotY(0);
+            }
         }
         for (int i = 0; i < getChildCount(); i++) {
             View child = getChildAt(i);
@@ -494,20 +582,58 @@ public class ActionBar extends FrameLayout {
             menu.layout(menuLeft, topInset, getMeasuredWidth(), topInset + barHeight);
         }
 
-        int titleLeft = backButtonImageView.getVisibility() == VISIBLE ? AndroidUtilities.dp(72) : AndroidUtilities.dp(20);
-        int titleTop = (barHeight - titleTextView.getTextHeight()) / 2;
-        titleTextView.layout(
-            titleLeft,
-            topInset + titleTop - titleTextView.getPaddingTop(),
-            titleLeft + titleTextView.getMeasuredWidth(),
-            topInset + titleTop + titleTextView.getTextHeight() - titleTextView.getPaddingTop() + titleTextView.getPaddingBottom()
-        );
+        if (titleTextView.getVisibility() != GONE) {
+            int titleLeft = backButtonImageView.getVisibility() == VISIBLE
+                    ? (glassMode ? AndroidUtilities.dp(76) : AndroidUtilities.dp(72))
+                    : (glassMode ? AndroidUtilities.dp(24) : AndroidUtilities.dp(20));
+            int titleTop = (barHeight - titleTextView.getTextHeight()) / 2;
+            titleTextView.layout(
+                titleLeft,
+                topInset + titleTop - titleTextView.getPaddingTop(),
+                titleLeft + titleTextView.getMeasuredWidth(),
+                topInset + titleTop + titleTextView.getTextHeight() - titleTextView.getPaddingTop() + titleTextView.getPaddingBottom()
+            );
+        }
+        // Upstream ActionBar.onLayout: extra children (ChatAvatarContainer / Topic identity)
+        // respect FrameLayout.LayoutParams gravity + margins instead of full-bleed 0,0.
         for (int i = 0; i < getChildCount(); i++) {
             View child = getChildAt(i);
             if (child == backButtonImageView || child == titleTextView || child == menu || child.getVisibility() == GONE) {
                 continue;
             }
-            child.layout(0, 0, getMeasuredWidth(), getMeasuredHeight());
+            LayoutParams lp = (LayoutParams) child.getLayoutParams();
+            int width = child.getMeasuredWidth();
+            int height = child.getMeasuredHeight();
+            int gravity = lp.gravity;
+            if (gravity == -1) {
+                gravity = Gravity.TOP | Gravity.LEFT;
+            }
+            final int absoluteGravity = gravity & Gravity.HORIZONTAL_GRAVITY_MASK;
+            final int verticalGravity = gravity & Gravity.VERTICAL_GRAVITY_MASK;
+            int childLeft;
+            switch (absoluteGravity) {
+                case Gravity.CENTER_HORIZONTAL:
+                    childLeft = (getMeasuredWidth() - width) / 2 + lp.leftMargin - lp.rightMargin;
+                    break;
+                case Gravity.RIGHT:
+                    childLeft = getMeasuredWidth() - width - lp.rightMargin;
+                    break;
+                case Gravity.LEFT:
+                default:
+                    childLeft = lp.leftMargin;
+            }
+            int childTop;
+            switch (verticalGravity) {
+                case Gravity.CENTER_VERTICAL:
+                    childTop = (getMeasuredHeight() - height) / 2 + lp.topMargin - lp.bottomMargin;
+                    break;
+                case Gravity.BOTTOM:
+                    childTop = getMeasuredHeight() - height - lp.bottomMargin;
+                    break;
+                default:
+                    childTop = lp.topMargin;
+            }
+            child.layout(childLeft, childTop, childLeft + width, childTop + height);
         }
     }
 
@@ -520,6 +646,53 @@ public class ActionBar extends FrameLayout {
             canvas.drawColor(Color.parseColor("#1F000000"));
             canvas.restore();
         }
+    }
+
+    private int forcedMenuWidth;
+    private boolean hasForcedMenuWidth;
+
+    public void setForcedMenuWidth(int width) {
+        hasForcedMenuWidth = true;
+        if (forcedMenuWidth != width) {
+            forcedMenuWidth = width;
+            invalidate();
+        }
+    }
+
+    @Override
+    protected void dispatchDraw(Canvas canvas) {
+        final int p = AndroidUtilities.dp(6);
+        final int s = AndroidUtilities.dp(46);
+
+        final float actionModeFactor = getActionModeFactor();
+        final int defaultMenuWidth = Math.max(0, menu != null ? menu.getItemsWidth() - AndroidUtilities.dp(1) - AndroidUtilities.dp(1) : 0);
+        final int actionMenuWidth = Math.max(0, actionMode != null ? actionMode.getItemsWidth() - AndroidUtilities.dp(1) - AndroidUtilities.dp(1) : 0);
+        final int menuWidth = hasForcedMenuWidth ? forcedMenuWidth : AndroidUtilities.lerp(defaultMenuWidth, actionMenuWidth, actionModeFactor);
+
+        final boolean hasBackButton = backButtonImageView.getVisibility() == View.VISIBLE;
+
+        final int t = getHeight() - (getCurrentActionBarHeight() + s) / 2 - p;
+        final int b = t + s + p * 2;
+
+        if (glassDrawable != null) {
+            final int menuWidthWithPadding = menuWidth > 0 ? (menuWidth + p) : 0;
+            final int rightOffset = menuWidthWithPadding;
+            final int left = hasBackButton ? s + p : 0;
+            final int right = getWidth() - rightOffset;
+
+            glassDrawable.setBounds(left, t, right, b);
+            glassDrawable.draw(canvas);
+        }
+        if (glassDrawableBack != null && hasBackButton) {
+            glassDrawableBack.setBounds(0, t, s + p * 2, b);
+            glassDrawableBack.draw(canvas);
+        }
+        if (glassDrawableMenu != null && menuWidth > 0) {
+            glassDrawableMenu.setBounds(getWidth() - menuWidth - p * 2, t, getWidth(), b);
+            glassDrawableMenu.draw(canvas);
+        }
+
+        super.dispatchDraw(canvas);
     }
 
     private void applyBackButtonColor(Drawable drawable) {

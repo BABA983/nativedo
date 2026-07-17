@@ -16,7 +16,7 @@ files, and don't strip the GPL notice when modifying them.
 We do **not** merge upstream changes automatically. Vendored files
 may be modified locally; the rules for *what kind of changes are allowed*
 live in `AGENTS.md` (Telegram-Derived Code → Rules). This file describes
-*what version we vendored* and *how to inspect it*.
+*what version we vendored* and *how to inspect / sync it*.
 
 ## Source of truth
 
@@ -24,10 +24,18 @@ live in `AGENTS.md` (Telegram-Derived Code → Rules). This file describes
 - Pinned commit: see `vendor-manifest.json` (`upstream.pinned_commit`)
 - Pristine working copy: `vendor/telegram-android/` (read-only, do not edit)
 
-The pristine copy is a manual `git clone` (or worktree) of the upstream repo
+The pristine copy is a `git clone` (or worktree) of the upstream repo
 checked out at `upstream.pinned_commit`. It is **not** committed to this repo
 (`vendor/telegram-android/` is gitignored). The pin in `vendor-manifest.json`
 is the single source of truth.
+
+Bootstrap / refresh it with:
+
+```bash
+scripts/vendor-setup.sh            # clone if needed, fetch, checkout pin
+scripts/vendor-setup.sh --status   # pin vs HEAD
+scripts/vendor-setup.sh --fetch    # fetch only
+```
 
 ## Manifest
 
@@ -58,38 +66,158 @@ that:
 - `app/src/main/java/io/github/baba983/nativedo/...` — native port in `:app`
   (package is `io.github.baba983.nativedo.*`)
 
-## Common tasks
+## Tooling
+
+| Script | Purpose |
+|---|---|
+| `scripts/vendor-setup.sh` | Clone/fetch/checkout `vendor/telegram-android` at the pin |
+| `scripts/vendor-status.sh` | Manifest health, isolation, unmanifested files, behind-pin |
+| `scripts/vendor-diff.sh` | `diff -u` local file vs upstream blob |
+| `scripts/vendor-ff.sh` | Fast-forward `exact` + `modified:false` files to the pin |
+| `scripts/vendor-classify.sh` | Classify host-wiring drift on `modified` files |
+| `scripts/auto-vendor-copy.sh` | Copy javac-missing symbols **and** register them in the manifest |
+| `scripts/vendor-isolation-check.sh` | `:telegram` must not import `io.github.baba983.nativedo.*` |
+| `vendor-allowlist.json` | Prefixes allowed on disk without a per-file manifest entry |
+
+Shared helpers live in `scripts/vendorlib.py`. Prefer the shell wrappers above.
+
+### Daily checks
 
 ```bash
-# Verify :telegram does not import io.github.baba983.nativedo.*
-scripts/vendor-isolation-check.sh
+# Health summary (exit 1 on consistency errors)
+scripts/vendor-status.sh
 
-# Bulk-copy missing vendored classes that javac is complaining about.
-# Reads a javac error log and copies referenced upstream files into
-# :telegram with no package rewrite. Reads vendor/telegram-android/ as source.
+# Stricter: warnings also fail
+scripts/vendor-status.sh --strict
+
+# Byte-check modified flags against vendored_at (slow; needs pristine tree)
+scripts/vendor-status.sh --check-modified
+
+# Machine-readable
+scripts/vendor-status.sh --json
+```
+
+### Diff a file
+
+```bash
+# Against the entry's vendored_at
+scripts/vendor-diff.sh telegram/src/main/java/org/telegram/ui/Components/RecyclerListView.java
+
+# Against the global pin
+scripts/vendor-diff.sh apps/android/telegram/src/main/java/org/telegram/ui/Components/RecyclerListView.java --pinned
+
+# Against an arbitrary commit
+scripts/vendor-diff.sh org/telegram/ui/Components/RecyclerListView.java --at origin/master
+
+# Scan for modified-flag lies
+scripts/vendor-diff.sh --stat
+```
+
+### Bulk-copy missing classes (javac)
+
+```bash
 ./apps/android/gradlew -p apps/android :telegram:compileDebugJavaWithJavac \
     --quiet > /tmp/javac-out.log 2>&1 || true
 scripts/auto-vendor-copy.sh /tmp/javac-out.log
+scripts/vendor-isolation-check.sh
+scripts/vendor-status.sh
 ```
 
-> **TODO (tooling)**: previously documented helpers `setup-vendor.sh`,
-> `vendor-diff.sh`, and `vendor-status.sh` do not exist yet. Until they
-> land, use `git -C vendor/telegram-android show <pinned_commit>:<upstream-path>`
-> to inspect a vendored file's pristine upstream form, and inspect the
-> manifest by hand or with `jq`.
+`auto-vendor-copy` **always** writes/updates `vendor-manifest.json` for each
+copied file (`port_mode: exact`, `modified: false`, `vendored_at: pin`).
+Do not `cp` upstream files by hand without a matching manifest entry.
 
-### Inspecting a vendored file against upstream
+### Isolation
 
 ```bash
-# Compare the local copy against the pinned upstream form
-COMMIT=$(jq -r .upstream.pinned_commit vendor-manifest.json)
-LOCAL=apps/android/telegram/src/main/java/org/telegram/ui/Components/RecyclerListView.java
-UPSTREAM=TMessagesProj/src/main/java/org/telegram/ui/Components/RecyclerListView.java
-diff -u <(git -C vendor/telegram-android show "$COMMIT:$UPSTREAM") "$LOCAL"
+scripts/vendor-isolation-check.sh
 ```
 
-If you do this often, wrap it in `scripts/vendor-diff.sh <local-path>`
-(not yet written).
+### Fast-forward exact unmodified files (P2)
+
+When the global pin moves, files that are still byte-identical to their
+`vendored_at` blob can be advanced automatically:
+
+```bash
+# Dry-run (default): list what would overwrite
+scripts/vendor-ff.sh
+
+# Apply: copy target blob → local, set vendored_at, keep modified:false
+scripts/vendor-ff.sh --apply
+
+# Optional filters
+scripts/vendor-ff.sh --only BottomSheet --apply
+scripts/vendor-ff.sh --to origin/master   # dry-run against another ref
+scripts/vendor-ff.sh --include-unchanged --apply  # also bump vendored_at when blob identical
+```
+
+Safety rails:
+
+- only `port_mode: exact` **and** `modified: false`
+- refuses to overwrite if local no longer matches `vendored_at` (fix the flag
+  first, or pass `--force` deliberately)
+- skips files whose upstream path is missing at the target commit
+
+**Compile gate:** bulk `--apply` is not always safe — a file can be
+byte-identical to its old `vendored_at` and still fail to compile after
+advancing to a newer pin (new upstream symbols). Prefer:
+
+1. `scripts/vendor-ff.sh` dry-run
+2. apply in small batches, or one-by-one with
+   `:telegram:compileDebugJavaWithJavac` between steps
+3. on failure: restore the file, set `stuck_reason`, leave `vendored_at`
+
+Entries with `stuck_reason` are **skipped** by `vendor-ff` unless
+`--include-stuck` is passed.
+
+After apply: `scripts/vendor-status.sh` and compile `:telegram`.
+
+### Host-wiring classification (P2)
+
+```bash
+scripts/vendor-classify.sh                 # all modified entries
+scripts/vendor-classify.sh --port-mode exact
+scripts/vendor-classify.sh --only RecyclerListView
+scripts/vendor-classify.sh --json
+```
+
+Buckets changed lines into `import` / `theme` / `resource_r` /
+`nativedo_guard` / `package` / `comment_or_blank` / `other`, and reports a
+`primary` label (`import_only`, `host_wiring_only`, `identical`, `other`, …).
+Also lists `modified:false` entries whose bytes still differ (flag lies).
+
+Use this before a rebase-assisted re-sync: import-only / host-wiring-only
+files are cheaper to re-apply than `other`.
+
+### Forced-exact regression (P2)
+
+Hand-feel subsystems need more than code review. Prefer existing Paparazzi +
+geometry unit tests over inventing a second visual stack.
+
+| Kind | What | How |
+|---|---|---|
+| Geometry / constants | `LayoutHelper`, `CircularProgressDrawable` segment schedule, side-controls measure | Robolectric unit tests under `app/src/test/.../org/telegram/...` |
+| Visual golden | Switch / CheckBox2 / CircularProgressDrawable | `ForcedExactControlsScreenshotTest` (Paparazzi) |
+| Product surfaces | Topic swipe / scrim / cells (already native ports) | existing `*ScreenshotTest` |
+
+```bash
+# Geometry
+./apps/android/gradlew -p apps/android :app:testDebugUnitTest \
+  --tests 'org.telegram.ui.Components.LayoutHelperForcedExactTest' \
+  --tests 'org.telegram.ui.Components.CircularProgressDrawableForcedExactTest' \
+  --quiet
+
+# Record / verify Paparazzi goldens
+./scripts/recordScreenshots ForcedExactControlsScreenshotTest
+./apps/android/gradlew -p apps/android :app:testDebugUnitTest \
+  --tests 'org.telegram.ui.Components.ForcedExactControlsScreenshotTest' --quiet
+# or whole suite:
+./apps/android/gradlew -p apps/android runUnitAndScreenshotTests --quiet
+```
+
+When you re-sync a `forced_exact` component, re-record its golden if the
+upstream drawing intentionally changed; otherwise a failed Paparazzi verify
+is a regression signal.
 
 ## Adding a new vendored file
 
@@ -103,27 +231,31 @@ If you do this often, wrap it in `scripts/vendor-diff.sh <local-path>`
    `io.github.baba983.nativedo.*` location, rewrite package and imports,
    bind to NativeDo models.
 4. Adjust imports and host wiring (see `AGENTS.md` → Host wiring).
-5. Add an entry to `vendor-manifest.json`. Set `vendored_at` to the commit
-   you copied from (usually `upstream.pinned_commit`). For files copied
-   byte-identical from upstream, `modified: false`. For files that needed
-   any import drop, theme-key rewrite, or constructor glue, `modified: true`.
-6. Run `scripts/vendor-isolation-check.sh` and confirm no violations.
+5. Add an entry to `vendor-manifest.json`. Set `vendored_at` to the **full**
+   commit SHA you copied from (usually `upstream.pinned_commit`). For files
+   copied byte-identical from upstream, `modified: false`. For files that
+   needed any import drop, theme-key rewrite, or constructor glue,
+   `modified: true`.
+6. Run `scripts/vendor-isolation-check.sh` and `scripts/vendor-status.sh`.
 7. `./apps/android/gradlew -p apps/android :telegram:compileDebugJavaWithJavac
    --quiet` (and `:app:assembleDebug` if app code is affected).
 8. Commit the source file and the manifest change together.
 
 ## Re-syncing one file to a newer upstream
 
-1. `cd vendor/telegram-android && git fetch origin`
+1. `scripts/vendor-setup.sh --fetch` (or full setup).
 2. Look at upstream activity:
 
    ```bash
-   git log <vendored_at>..origin/master -- <upstream-path>
+   git -C vendor/telegram-android log <vendored_at>..origin/master -- <upstream-path>
+   scripts/vendor-diff.sh <local-path> --at origin/master
    ```
 
 3. If you want to absorb the changes:
    - update the local file (manually re-apply any local modifications)
-   - update `vendored_at` for that entry in the manifest
+   - update `vendored_at` for that entry in the manifest to the full SHA
+   - set `modified` correctly (`false` only if byte-identical)
+   - clear `stuck_reason` if present
    - run tests that cover the file
 4. If you decide *not* to absorb:
    - leave `vendored_at` as is
@@ -138,7 +270,36 @@ whole is *known to be safely re-syncable to*. Bump it only after:
   new pin, or
 - explicitly skipping each file with a `stuck_reason`.
 
+### Pin-bump report
+
+```bash
+# Files in the manifest that upstream touched between current pin and NEW
+scripts/vendor-status.sh --bump-report <new_sha>
+scripts/vendor-status.sh --bump-report origin/master
+```
+
+Tracks (`port_mode` / `modified`) guide the work:
+
+| Track | Condition | Action |
+|---|---|---|
+| Fast-forward | `exact` + `modified: false` | `scripts/vendor-ff.sh --apply` |
+| Rebase-assisted | `exact` + `modified: true` | 3-way merge; triage with `scripts/vendor-classify.sh` |
+| Reference-only | `native` | Do not auto-overwrite; re-check `forced_exact` + Paparazzi/geometry tests |
+
 This is a deliberately heavy operation; don't bump the pin casually.
+
+After a successful bump, set:
+
+```json
+"upstream": {
+  "repo": "git@github.com:DrKLO/Telegram.git",
+  "pinned_commit": "<full 40-char sha>",
+  "pinned_date": "YYYY-MM-DD"
+}
+```
+
+Use the **full** SHA in `pinned_commit` and every `vendored_at`. Short
+prefixes are normalized by tooling but should not be written back.
 
 ## Manifest schema
 
@@ -157,13 +318,53 @@ Per-file fields:
 |---|---|
 | `local` | Path under `local_root` (the file you actually compile). |
 | `upstream` | Path under `upstream_root` in the Telegram repo. |
-| `vendored_at` | Commit SHA in the Telegram repo this copy came from. |
+| `vendored_at` | **Full** commit SHA in the Telegram repo this copy came from. |
 | `modified` | `true` if the local file differs byte-for-byte from `vendored_at`. Package/import/host wiring counts. |
 | `port_mode` | `exact` or `native`. Mirrors `AGENTS.md`. |
 | `forced_exact` | Optional list. Subset of `gesture`, `animation`, `measurement`, `drawing`, `recycling`. Mirrors `AGENTS.md`. |
 | `notes` | Optional. String or array of strings. |
 | `stuck_reason` | Optional. Why this file is intentionally pinned to an older `vendored_at` than `upstream.pinned_commit`. |
 
-Resource entries under `resources` (if/when added) follow the same shape but
-list copied resource basenames, the upstream resource directory, the local
-directory glob, and the commit they were copied from.
+Resource entries under `resources` follow the same shape but list copied
+resource basenames, the upstream resource directory, the local directory
+glob, and the commit they were copied from.
+
+## Unmanifested files & allowlist
+
+`:telegram` may contain files that are not per-file Telegram ports:
+
+| Bucket | Policy |
+|---|---|
+| `androidx/` under `:telegram` | **Allowlisted** tree — Telegram's RecyclerView fork. See `vendor-allowlist.json`. |
+| `com/google/android/exoplayer2/`, GMS/common shims | **Allowlisted** compile surface — not UI ports. |
+| `org.telegram.*` / `me.vkryl.*` compile stubs | **Must be in `vendor-manifest.json`** (`port_mode: native` is fine). |
+| Anything else on disk without entry or allowlist | `vendor-status` **warning** with bucket counts. |
+
+```bash
+# prefixes in vendor-allowlist.json are excluded from the unmanifested warning
+scripts/vendor-status.sh
+```
+
+When auto-copying a missing symbol, prefer `scripts/auto-vendor-copy.sh` (registers
+manifest entries). Do not leave new `org.telegram.*` files untracked.
+
+## Consistency policy (enforced by `vendor-status`)
+
+
+**Errors (exit 1):**
+
+- `vendored_at` null/missing on any file or resource group
+- manifest `local` path missing on disk
+- duplicate `local` entries
+- invalid `port_mode`
+- `vendor-isolation-check` failures
+- with `--check-modified`: `modified` flag disagrees with bytes
+
+**Warnings (exit 0 unless `--strict`):**
+
+- `:telegram` `.java` files on disk not listed in the manifest
+- files with `vendored_at` behind the global pin and no `stuck_reason`
+- pristine tree missing or HEAD ≠ pin
+
+Historical `vendored_at` values behind the global pin are allowed during
+incremental re-sync; prefer adding `stuck_reason` when the lag is intentional.

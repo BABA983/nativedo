@@ -17,5 +17,11 @@ public final class BuildVars {
     public static final String APP_HASH = "";
     public static final boolean NO_SCOPED_STORAGE = false;
     public static final boolean USE_PREVIEW_VIDEO = false;
+    /**
+     * Upstream DrawerLayoutContainer uses modern WindowInsets path when false.
+     * NativeDo always prefers the modern path so IME height changes reach
+     * AdjustPanLayoutHelper the same way Chat does.
+     */
+    public static final boolean USE_LEGACY_SYSTEM_INSETS = false;
     private BuildVars() {}
 }

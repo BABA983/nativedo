@@ -21,6 +21,18 @@ class TopicFloatingDateControllerTest {
     }
 
     @Test
+    fun terminalSeparatorNeverPushesFloatingDate() {
+        assertThat(
+            topicFloatingDatePushOffset(
+                separatorBottom = 150,
+                clipTop = 100,
+                floatingHeight = 28,
+                isTerminalSeparator = true,
+            ),
+        ).isEqualTo(0)
+    }
+
+    @Test
     fun translationAccountsForHostLayoutTopInsteadOfDoublingActionBarInset() {
         org.telegram.messenger.AndroidUtilities.density = 1f
 

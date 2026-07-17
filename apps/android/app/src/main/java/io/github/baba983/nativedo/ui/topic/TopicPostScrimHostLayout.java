@@ -37,6 +37,7 @@ public class TopicPostScrimHostLayout extends SizeNotifierFrameLayout {
     private final Rect scrimViewport = new Rect();
 
     private View scrimView;
+    private TopicSwipeReplyRecyclerView scrimmedRecyclerView;
     private Object scrimOwner;
     private long expectedPostId = Long.MIN_VALUE;
     private boolean expectedTopicPostCell;
@@ -124,14 +125,37 @@ public class TopicPostScrimHostLayout extends SizeNotifierFrameLayout {
         if (!resolveScrimViewport(scrimViewport) || scrimViewport.isEmpty()) {
             return;
         }
-        getLocationInWindow(hostLocation);
-        scrimView.getLocationInWindow(viewLocation);
-
         int save = canvas.save();
         canvas.clipRect(scrimViewport);
-        canvas.translate(viewLocation[0] - hostLocation[0], viewLocation[1] - hostLocation[1]);
-        scrimView.draw(canvas);
+        boolean drewThroughRecyclerView = false;
+        if (scrimmedRecyclerView != null && scrimView.getParent() == scrimmedRecyclerView) {
+            int recyclerSave = canvas.save();
+            getLocationInWindow(hostLocation);
+            scrimmedRecyclerView.getLocationInWindow(viewLocation);
+            canvas.translate(viewLocation[0] - hostLocation[0], viewLocation[1] - hostLocation[1]);
+            drewThroughRecyclerView = scrimmedRecyclerView.drawScrimmedChild(canvas, scrimView);
+            canvas.restoreToCount(recyclerSave);
+        }
+        if (!drewThroughRecyclerView) {
+            drawScrimViewDirectly(canvas);
+        }
         canvas.restoreToCount(save);
+    }
+
+    private void drawScrimViewDirectly(Canvas canvas) {
+        getLocationInWindow(hostLocation);
+        scrimView.getLocationInWindow(viewLocation);
+        canvas.translate(viewLocation[0] - hostLocation[0], viewLocation[1] - hostLocation[1]);
+        if (scrimView instanceof TopicPostCell) {
+            ((TopicPostCell) scrimView).setScrimForegroundDrawing(true);
+            try {
+                scrimView.draw(canvas);
+            } finally {
+                ((TopicPostCell) scrimView).setScrimForegroundDrawing(false);
+            }
+            return;
+        }
+        scrimView.draw(canvas);
     }
 
     boolean resolveScrimViewport(Rect out) {
@@ -162,14 +186,15 @@ public class TopicPostScrimHostLayout extends SizeNotifierFrameLayout {
             return;
         }
         if (scrimView instanceof TopicPostCell) {
-            ((TopicPostCell) scrimView).listenInvalidate(null);
+            ((TopicPostCell) scrimView).setInvalidatesParent(false);
         }
         scrimView = view;
+        setScrimmedRecyclerChild(view);
         scrimOwner = owner;
         expectedTopicPostCell = view instanceof TopicPostCell;
         expectedPostId = boundPostId(view);
         if (view instanceof TopicPostCell) {
-            ((TopicPostCell) view).listenInvalidate(this::invalidate);
+            ((TopicPostCell) view).setInvalidatesParent(true);
         }
         invalidate();
     }
@@ -239,8 +264,13 @@ public class TopicPostScrimHostLayout extends SizeNotifierFrameLayout {
 
     private void clearScrimView() {
         boolean wasActive = scrimView != null;
+        if (scrimmedRecyclerView != null) {
+            scrimmedRecyclerView.setScrimmedChild(null);
+            scrimmedRecyclerView = null;
+        }
         if (scrimView instanceof TopicPostCell) {
-            ((TopicPostCell) scrimView).listenInvalidate(null);
+            ((TopicPostCell) scrimView).setInvalidatesParent(false);
+            scrimView.invalidate();
         }
         scrimView = null;
         scrimOwner = null;
@@ -249,6 +279,19 @@ public class TopicPostScrimHostLayout extends SizeNotifierFrameLayout {
         invalidScrimClearPosted = false;
         if (wasActive) {
             notifyScrimStateChanged();
+        }
+    }
+
+    private void setScrimmedRecyclerChild(View view) {
+        TopicSwipeReplyRecyclerView nextRecyclerView = view.getParent() instanceof TopicSwipeReplyRecyclerView
+                ? (TopicSwipeReplyRecyclerView) view.getParent()
+                : null;
+        if (scrimmedRecyclerView != null && scrimmedRecyclerView != nextRecyclerView) {
+            scrimmedRecyclerView.setScrimmedChild(null);
+        }
+        scrimmedRecyclerView = nextRecyclerView;
+        if (scrimmedRecyclerView != null) {
+            scrimmedRecyclerView.setScrimmedChild(view);
         }
     }
 

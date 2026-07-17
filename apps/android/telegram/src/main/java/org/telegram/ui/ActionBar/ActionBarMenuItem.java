@@ -11,6 +11,7 @@ import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
@@ -74,6 +75,7 @@ public class ActionBarMenuItem extends FrameLayout {
     private int menuYOffset;
     private boolean isSearchField;
     private FrameLayout searchContainer;
+    private int searchItemPaddingStart;
     private EditTextBoldCursor searchField;
     private ImageView clearButton;
     private ActionBarMenuItemSearchListener searchListener;
@@ -186,6 +188,16 @@ public class ActionBarMenuItem extends FrameLayout {
         return popupLayout != null && popupLayout.getChildCount() > 0;
     }
 
+    public ActionBarMenuItem setSearchPaddingStart(int padding) {
+        // Upstream trims the search field left inset; compact host stores for layout.
+        searchItemPaddingStart = padding;
+        if (searchContainer != null && searchContainer.getLayoutParams() instanceof ViewGroup.MarginLayoutParams) {
+            ((ViewGroup.MarginLayoutParams) searchContainer.getLayoutParams()).leftMargin = AndroidUtilities.dp(padding);
+            searchContainer.requestLayout();
+        }
+        return this;
+    }
+
     public ActionBarMenuItem setIsSearchField(boolean value) {
         isSearchField = value;
         return this;
@@ -210,7 +222,10 @@ public class ActionBarMenuItem extends FrameLayout {
     }
 
     public boolean isSearchFieldVisible() {
-        return searchContainer != null && searchContainer.getVisibility() == VISIBLE;
+        // Open only while searchContainer tag is set. Visibility stays VISIBLE during the
+        // collapse fade after tag is cleared — treating that as open re-triggers expand
+        // from closeSearch/back paths.
+        return searchContainer != null && searchContainer.getTag() != null;
     }
 
     public boolean isSearchField() {
@@ -226,7 +241,10 @@ public class ActionBarMenuItem extends FrameLayout {
     }
 
     public void closeSearch(boolean hideKeyboard) {
-        if (searchContainer == null || searchContainer.getVisibility() != VISIBLE) {
+        // Only close when open (tag set). During collapse the container stays VISIBLE for
+        // the fade-out animation with tag already cleared — treating that as open would
+        // re-toggle into expand (system edge-back: exit search then immediately re-enter).
+        if (searchContainer == null || searchContainer.getTag() == null) {
             return;
         }
         if (parentMenu != null && parentMenu.parentActionBar != null) {
@@ -263,6 +281,14 @@ public class ActionBarMenuItem extends FrameLayout {
                 menuIcons.get(i).setAlpha(0f);
                 searchContainerAnimator.playTogether(ObjectAnimator.ofFloat(menuIcons.get(i), View.ALPHA, menuIcons.get(i).getAlpha(), 1f));
             }
+            ValueAnimator glassTick = ValueAnimator.ofFloat(0f, 1f);
+            glassTick.setDuration(150);
+            glassTick.addUpdateListener(a -> {
+                if (parentMenu != null && parentMenu.parentActionBar != null) {
+                    parentMenu.parentActionBar.invalidate();
+                }
+            });
+            glassTick.start();
             searchContainerAnimator.setDuration(150);
             searchContainerAnimator.addListener(new AnimatorListenerAdapter() {
                 @Override
@@ -300,6 +326,15 @@ public class ActionBarMenuItem extends FrameLayout {
             for (int i = 0; i < menuIcons.size(); i++) {
                 searchContainerAnimator.playTogether(ObjectAnimator.ofFloat(menuIcons.get(i), View.ALPHA, menuIcons.get(i).getAlpha(), 0f));
             }
+            // Drive ActionBar glass searchFactor bounds every frame while icons fade.
+            ValueAnimator glassTick = ValueAnimator.ofFloat(0f, 1f);
+            glassTick.setDuration(150);
+            glassTick.addUpdateListener(a -> {
+                if (parentMenu != null && parentMenu.parentActionBar != null) {
+                    parentMenu.parentActionBar.invalidate();
+                }
+            });
+            glassTick.start();
             searchContainerAnimator.setDuration(150);
             searchContainerAnimator.addListener(new AnimatorListenerAdapter() {
                 @Override

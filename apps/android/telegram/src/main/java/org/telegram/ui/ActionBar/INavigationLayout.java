@@ -32,6 +32,14 @@ public interface INavigationLayout {
         return null;
     }
 
+    default boolean checkTransitionAnimation() {
+        return false;
+    }
+
+    default boolean storyViewerAttached() {
+        return false;
+    }
+
     class NavigationParams {
         public BaseFragment fragment;
         public boolean removeLast;

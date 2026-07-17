@@ -518,6 +518,15 @@ public class BottomSheetTabs extends FrameLayout {
         }
     }
 
+    /**
+     * True while tabs height is mid-animation (or snapped height differs from progress).
+     * Used by Chat/TopicDetail to suppress AdjustPan height animations that would race
+     * the BottomSheetTabs margin snap + progress ease and cause a post-settle shake.
+     */
+    public boolean isAnimatingHeight() {
+        return bottomTabsAnimator != null || Math.round(bottomTabsProgress) != bottomTabsHeight;
+    }
+
     public void setNavigationBarColor(int color) {
         setNavigationBarColor(color, true);
     }

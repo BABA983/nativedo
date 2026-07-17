@@ -148,20 +148,33 @@ public class ImageLocation {
     public static final int TYPE_VIDEO_BIG = 4;
 
     public static ImageLocation getForUserOrChat(TLObject object, int type) {
+        return getForUserOrChat(UserConfig.selectedAccount, object, type);
+    }
+
+    /**
+     * Account-scoped overload from Telegram 12.7+. NativeDo keeps the legacy
+     * photo-location logic and ignores account-specific fromMessage peers
+     * (no MTProto message-origin users).
+     */
+    public static ImageLocation getForUserOrChat(int currentAccount, TLObject object, int type) {
         if (object instanceof TLRPC.User) {
-            return getForUser((TLRPC.User) object, type);
+            return getForUser(currentAccount, (TLRPC.User) object, type);
         } else if (object instanceof TLRPC.Chat) {
-            return getForChat((TLRPC.Chat) object, type);
+            return getForChat(currentAccount, (TLRPC.Chat) object, type);
         }
         return null;
     }
 
     public static ImageLocation getForUser(TLRPC.User user, int type) {
+        return getForUser(UserConfig.selectedAccount, user, type);
+    }
+
+    public static ImageLocation getForUser(int currentAccount, TLRPC.User user, int type) {
+        // Multi-account photo cache is not ported; parameter retained for Telegram 12.7+ call sites.
         if (user == null || user.access_hash == 0 || user.photo == null) {
             return null;
         }
         if (type == TYPE_VIDEO_BIG || type == TYPE_VIDEO_SMALL) {
-            int currentAccount = UserConfig.selectedAccount;
             if (MessagesController.getInstance(currentAccount).isPremiumUser(user) && user.photo.has_video) {
                 final TLRPC.UserFull userFull = MessagesController.getInstance(currentAccount).getUserFull(user.id);
                 if (userFull != null && userFull.profile_photo != null && userFull.profile_photo.video_sizes != null && !userFull.profile_photo.video_sizes.isEmpty()) {
@@ -212,6 +225,11 @@ public class ImageLocation {
     }
 
     public static ImageLocation getForChat(TLRPC.Chat chat, int type) {
+        return getForChat(UserConfig.selectedAccount, chat, type);
+    }
+
+    public static ImageLocation getForChat(int currentAccount, TLRPC.Chat chat, int type) {
+        // currentAccount unused: local stub has no multi-account photo cache.
         if (chat == null || chat.photo == null) {
             return null;
         }

@@ -898,6 +898,16 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
         return bottomSheetTabsOverlay;
     }
 
+    /** Upstream DrawerLayoutContainer keyboard path; NativeDo has no story viewer yet. */
+    public boolean storyViewerAttached() {
+        return false;
+    }
+
+    /** Upstream drawer intercept gate; NativeDo has no slide transition yet. */
+    public boolean checkTransitionAnimation() {
+        return false;
+    }
+
     public BaseFragment getLastFragment() {
         return fragmentsStack.isEmpty() ? null : fragmentsStack.get(fragmentsStack.size() - 1);
     }

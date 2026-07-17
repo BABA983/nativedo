@@ -35,6 +35,7 @@ class ChatActivitySideControlsButtonsLayoutTest {
             BlurredBackgroundColorProviderThemed(null, Theme.key_chat_messagePanelBackground),
             BlurredBackgroundDrawableViewFactory(source),
         )
+        assertThat(controls.hasOverlappingRendering()).isFalse()
         controls.setButtonCount(ChatActivitySideControlsButtonsLayout.BUTTON_PAGE_DOWN, 3, false)
         controls.showButton(ChatActivitySideControlsButtonsLayout.BUTTON_PAGE_DOWN, true, false)
         controls.measure(

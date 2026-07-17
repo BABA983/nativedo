@@ -231,7 +231,7 @@ internal class TopicMentionSuggestionsView(
             delay(TOPIC_MENTION_REMOTE_DELAY_MS)
             val remote = repository.search(token.query, topicId).getOrNull()?.candidates ?: return@launch
             if (generation != queryGeneration || currentToken != token) return@launch
-            submit(topicMentionMergedUsers(remote, emptyList(), token.query))
+            submit(topicMentionMergedUsers(localUsers, remote, token.query))
         }
     }
 

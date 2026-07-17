@@ -18,11 +18,66 @@ import org.telegram.messenger.AndroidUtilities;
 public class ActionBarMenu extends LinearLayout {
 
     protected ActionBar parentActionBar;
+    private boolean glassMode;
+    private Runnable onLayoutListener;
 
     public ActionBarMenu(Context context, ActionBar layer) {
         super(context);
         setOrientation(LinearLayout.HORIZONTAL);
         parentActionBar = layer;
+    }
+
+    /**
+     * Upstream ActionBarMenu.setGlassMode: glass ActionBars tighten item margins
+     * so the menu pill hugs the icons the way Chat's glass chrome does.
+     */
+    public void setGlassMode(boolean glassMode) {
+        this.glassMode = glassMode;
+        requestLayout();
+    }
+
+    public boolean isGlassMode() {
+        return glassMode;
+    }
+
+    /**
+     * Upstream uses the summed visible item width for glass menu pill bounds.
+     * Compact host: fall back to measured width once laid out.
+     */
+    public int getItemsWidth() {
+        float left = Float.POSITIVE_INFINITY;
+        float right = Float.NEGATIVE_INFINITY;
+        boolean found = false;
+        for (int i = 0, n = getChildCount(); i < n; i++) {
+            View child = getChildAt(i);
+            if (child instanceof ActionBarMenuItem && child.getVisibility() == View.VISIBLE) {
+                found = true;
+                left = Math.min(left, child.getX());
+                right = Math.max(right, child.getX() + child.getWidth());
+            }
+        }
+        if (found && right > left) {
+            return Math.max(0, Math.round(right - left));
+        }
+        return Math.max(0, getMeasuredWidth());
+    }
+
+    @Override
+    protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        if (glassMode) {
+            for (int a = 0, N = getChildCount(); a < N; a++) {
+                final View view = getChildAt(a);
+                if (view instanceof ActionBarMenuItem) {
+                    final ViewGroup.LayoutParams lp = view.getLayoutParams();
+                    if (lp instanceof MarginLayoutParams) {
+                        MarginLayoutParams mlp = (MarginLayoutParams) lp;
+                        mlp.leftMargin = -AndroidUtilities.dp(5);
+                        mlp.rightMargin = -AndroidUtilities.dp(5);
+                    }
+                }
+            }
+        }
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec);
     }
 
     public ActionBarMenuItem addItem(int id, Drawable drawable) {
@@ -195,6 +250,18 @@ public class ActionBarMenu extends LinearLayout {
             if (view instanceof ActionBarMenuItem) {
                 ((ActionBarMenuItem) view).redrawPopup(color);
             }
+        }
+    }
+
+    public void setOnLayoutListener(Runnable listener) {
+        this.onLayoutListener = listener;
+    }
+
+    @Override
+    protected void onLayout(boolean changed, int l, int t, int r, int b) {
+        super.onLayout(changed, l, t, r, b);
+        if (onLayoutListener != null) {
+            onLayoutListener.run();
         }
     }
 }

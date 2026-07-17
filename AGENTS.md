@@ -27,15 +27,25 @@ must be discoverable.
 - **`docs/code-layout.md`** — directory layout, language choice (Java vs
   Kotlin), façade/Bridge pattern, stub-vs-throw policy. Read this before
   moving files between directories or starting a new façade.
+- **`scripts/vendor-setup.sh`** — clone/fetch/checkout `vendor/telegram-android`
+  at `upstream.pinned_commit`.
+- **`scripts/vendor-status.sh`** — manifest health, isolation, unmanifested
+  files, behind-pin report; `--bump-report <sha>` for pin-bump surface;
+  `--check-modified` for byte-level `modified` verification.
+- **`scripts/vendor-diff.sh <path>`** — `diff -u` a local vendored file against
+  its `vendored_at` (or `--pinned` / `--at <commit>`).
+- **`scripts/vendor-ff.sh`** — fast-forward `exact` + `modified:false` files
+  to the global pin (`--apply` to write).
+- **`scripts/vendor-classify.sh`** — classify host-wiring drift on modified
+  files; also surfaces `modified` flag lies.
 - **`scripts/vendor-isolation-check.sh`** — fails if anything in `:telegram`
   imports `io.github.baba983.nativedo.*`. The Gradle module boundary already
   blocks this at compile time; this is a belt-and-suspenders check.
 - **`scripts/auto-vendor-copy.sh /tmp/javac-out.log`** — bulk-copy upstream
-  classes that `javac` reported as missing into `:telegram`, no package
-  rewrite needed.
-- Diffing a vendored file against pinned upstream: until a dedicated wrapper
-  exists, use `git -C vendor/telegram-android show <pinned_commit>:<upstream-path>`
-  and `diff -u` against the local copy. See `VENDOR.md` for the one-liner.
+  classes that `javac` reported as missing into `:telegram` **and register
+  each copy in `vendor-manifest.json`** (no package rewrite needed).
+- **`vendor-allowlist.json`** — path prefixes under `:telegram` that may exist
+  without a per-file manifest entry (AndroidX fork, ExoPlayer/GMS shims).
 
 A file is _vendored_ only when Telegram source was copied, split out, or
 substantially adapted. Files written from scratch are NativeDo code even if they
@@ -65,10 +75,11 @@ durable record.
 
 1. **A copied or substantially adapted Telegram file without a manifest entry is
    a bug.** Add the entry in the same commit that copies or derives the file.
-2. **Before modifying a vendored file**, diff it against pinned upstream so you
-   see what's already been changed locally — don't rewrite from memory. Until
-   a wrapper exists: `diff -u <(git -C vendor/telegram-android show
-   $(jq -r .upstream.pinned_commit vendor-manifest.json):<upstream-path>) <local-path>`.
+2. **Before modifying a vendored file**, diff it against its `vendored_at`
+   (or the global pin) so you see what's already been changed locally — don't
+   rewrite from memory:
+   `scripts/vendor-diff.sh <local-path>`
+   (or `scripts/vendor-diff.sh <local-path> --pinned`).
 3. **Respect `forced_exact`.** If a manifest entry lists `gesture`, `animation`,
    `measurement`, `drawing`, or `recycling`, keep that subsystem's method shape,
    signatures (return types, parameters, overload set), constants (`dp(10)`,
@@ -87,8 +98,9 @@ durable record.
 7. **Adding a new vendored file**: copy upstream → fix imports / host wiring
    (no package rewrite needed for `:telegram`; package stays `org.telegram.*`)
    → add manifest entry → run `scripts/vendor-isolation-check.sh` and
-   `:telegram:compileDebugJavaWithJavac` → commit source + manifest together.
-   If the code is written from scratch, do not add a manifest entry.
+   `scripts/vendor-status.sh` plus `:telegram:compileDebugJavaWithJavac` →
+   commit source + manifest together. If the code is written from scratch, do
+   not add a manifest entry.
 8. **License headers on copied files stay.** That's how compliance works.
 
 ### Host wiring
@@ -113,10 +125,11 @@ If a Telegram-derived component's interaction, animation, or measurement feels
 wrong, **read the upstream file before patching**:
 
 ```bash
-COMMIT=$(jq -r .upstream.pinned_commit vendor-manifest.json)
-git -C vendor/telegram-android show \
-  "$COMMIT:TMessagesProj/src/main/java/org/telegram/ui/Components/RecyclerListView.java" \
-  | diff -u - apps/android/telegram/src/main/java/org/telegram/ui/Components/RecyclerListView.java
+scripts/vendor-diff.sh \
+  telegram/src/main/java/org/telegram/ui/Components/RecyclerListView.java
+# or against the global pin:
+scripts/vendor-diff.sh \
+  telegram/src/main/java/org/telegram/ui/Components/RecyclerListView.java --pinned
 ```
 
 Re-align to upstream if the drift was unintentional. Don't "fix" gesture/animation/

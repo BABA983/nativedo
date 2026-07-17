@@ -23,6 +23,7 @@ import android.widget.TextView;
 import androidx.core.view.ViewCompat;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.LocaleController;
 import org.telegram.ui.ActionBar.SimpleTextView;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.AnimatedTextView;
@@ -83,28 +84,28 @@ public class HeaderCell extends FrameLayout {
             animatedTextView = new AnimatedTextView(getContext());
             animatedTextView.setTextSize(AndroidUtilities.dp(15));
             animatedTextView.setTypeface(AndroidUtilities.bold());
-            animatedTextView.setGravity((false ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL);
+            animatedTextView.setGravity((LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL);
             animatedTextView.setTextColor(getThemedColor(textColorKey));
             animatedTextView.setTag(textColorKey);
             animatedTextView.getDrawable().setHacks(true, true, false);
-            addView(animatedTextView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, height - topMargin, (false ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, padding, topMargin, padding, text2 ? 0 : bottomMargin));
+            addView(animatedTextView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, height - topMargin, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, padding, topMargin, padding, text2 ? 0 : bottomMargin));
         } else {
             textView = new TextView(getContext());
             textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
             textView.setTypeface(AndroidUtilities.bold());
             textView.setEllipsize(TextUtils.TruncateAt.END);
-            textView.setGravity((false ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL);
+            textView.setGravity((LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL);
             textView.setMinHeight(AndroidUtilities.dp(height - topMargin));
             textView.setTextColor(getThemedColor(textColorKey));
             textView.setTag(textColorKey);
-            addView(textView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, (false ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, padding, topMargin, padding, text2 ? 0 : bottomMargin));
+            addView(textView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, padding, topMargin, padding, text2 ? 0 : bottomMargin));
         }
 
         if (text2) {
             textView2 = new SimpleTextView(getContext());
             textView2.setTextSize(13);
-            textView2.setGravity((false ? Gravity.LEFT : Gravity.RIGHT) | Gravity.TOP);
-            addView(textView2, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, (false ? Gravity.LEFT : Gravity.RIGHT) | Gravity.TOP, padding, 21, padding, bottomMargin));
+            textView2.setGravity((LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.TOP);
+            addView(textView2, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, (LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.TOP, padding, 21, padding, bottomMargin));
         }
 
         ViewCompat.setAccessibilityHeading(this, true);
@@ -135,6 +136,15 @@ public class HeaderCell extends FrameLayout {
         ((LayoutParams) textView.getLayoutParams()).bottomMargin = AndroidUtilities.dp(bottomMargin);
         if (textView2 != null) {
             ((LayoutParams) textView2.getLayoutParams()).bottomMargin = AndroidUtilities.dp(bottomMargin);
+        }
+    }
+
+    public void setEnabled(boolean value, boolean animated) {
+        super.setEnabled(value);
+        if (animated) {
+            textView.animate().alpha(value ? 1.0f : 0.5f).start();
+        } else {
+            textView.setAlpha(value ? 1.0f : 0.5f);
         }
     }
 
@@ -174,10 +184,10 @@ public class HeaderCell extends FrameLayout {
 
     public void setText(CharSequence text, boolean animate) {
         if (this.animated) {
-            animatedTextView.setGravity((false ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL);
+            animatedTextView.setGravity((LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL);
             animatedTextView.setText(text, animate);
         } else {
-            textView.setGravity((false ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL);
+            textView.setGravity((LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL);
             textView.setText(text);
         }
     }

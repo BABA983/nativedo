@@ -1,0 +1,35 @@
+{
+  "_comment": [
+    "Paths under apps/android/ that may exist on disk without a vendor-manifest.json files[] entry.",
+    "Used by scripts/vendor-status.sh. Prefer registering Telegram-derived sources in the manifest;",
+    "allowlist is for intentional forks / third-party trees that are not tracked as per-file vendored ports.",
+    "Each entry: prefix relative to local_root (apps/android/), plus reason."
+  ],
+  "prefixes": [
+    {
+      "prefix": "telegram/src/main/java/androidx/",
+      "bucket": "androidx_fork",
+      "reason": "Telegram's patched AndroidX RecyclerView stack lives under :telegram for RecyclerListView. Tracked as a tree, not per-file Telegram ports."
+    },
+    {
+      "prefix": "telegram/src/main/java/com/google/android/exoplayer2/",
+      "bucket": "third_party_com",
+      "reason": "Minimal ExoPlayer API surface / shims required by PhotoViewer/ArticleViewer video paths. Not one-to-one Telegram UI ports."
+    },
+    {
+      "prefix": "telegram/src/main/java/com/google/android/exoplayer2/ui/",
+      "bucket": "third_party_com",
+      "reason": "ExoPlayer UI helpers (e.g. AspectRatioFrameLayout) vendored as compile surface."
+    },
+    {
+      "prefix": "telegram/src/main/java/com/google/android/gms/",
+      "bucket": "third_party_com",
+      "reason": "Compile-only GMS cast/vision stubs for upstream API surface; not Telegram UI ports."
+    },
+    {
+      "prefix": "telegram/src/main/java/com/google/common/",
+      "bucket": "third_party_com",
+      "reason": "Minimal Guava-facing shims required by vendored code; not per-file Telegram ports."
+    }
+  ]
+}

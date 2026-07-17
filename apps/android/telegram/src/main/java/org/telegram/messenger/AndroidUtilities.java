@@ -118,6 +118,7 @@ public final class AndroidUtilities {
     public static final RectF rectTmp2 = new RectF();
     public static final android.graphics.Rect rectTmp2I = new android.graphics.Rect();
     private static final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private static int adjustOwnerClassGuid;
     private static float xdpi;
     private static float ydpi;
 
@@ -790,6 +791,30 @@ public final class AndroidUtilities {
         return isTabletValue;
     }
 
+    public static void requestAdjustResize(Activity activity, int classGuid) {
+        if (activity == null) {
+            return;
+        }
+        requestAdjustResize(activity.getWindow(), classGuid);
+    }
+
+    public static void requestAdjustResize(Window window, int classGuid) {
+        if (window == null || isTablet()) {
+            return;
+        }
+        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        adjustOwnerClassGuid = classGuid;
+    }
+
+    public static void removeAdjustResize(Activity activity, int classGuid) {
+        if (activity == null || isTablet()) {
+            return;
+        }
+        if (adjustOwnerClassGuid == classGuid) {
+            activity.getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN);
+        }
+    }
+
     public static int getStatusBarHeight(Context context) {
         if (context == null) return 0;
         int resourceId = context.getResources().getIdentifier("status_bar_height", "dimen", "android");
@@ -889,6 +914,12 @@ public final class AndroidUtilities {
     /** Shared accelerate interpolator. Matches upstream AndroidUtilities.accelerateInterpolator. */
     public static final android.view.animation.AccelerateInterpolator accelerateInterpolator = new android.view.animation.AccelerateInterpolator();
     public static final String TYPEFACE_ROBOTO_MEDIUM = "fonts/rmedium.ttf";
+    /**
+     * Upstream name for bold-italic. NativeDo does not ship Telegram font files;
+     * {@link #getTypeface(String)} maps this path suffix to system BOLD_ITALIC.
+     */
+    public static final String TYPEFACE_ROBOTO_MEDIUM_ITALIC = "fonts/rmediumitalic.ttf";
+    public static final String TYPEFACE_ROBOTO_ITALIC = "fonts/ritalic.ttf";
     public static final String TYPEFACE_ROBOTO_MONO = "fonts/rmono.ttf";
 
     public static int screenRefreshRate = 60;

@@ -26,7 +26,7 @@ public class LayoutHelper {
 
     public static final int MATCH_PARENT = -1;
     public static final int WRAP_CONTENT = -2;
-
+    
     private static int getSize(float size) {
         return (int) (size < 0 ? size : AndroidUtilities.dp(size));
     }
@@ -84,6 +84,7 @@ public class LayoutHelper {
         return createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT);
     }
 
+    /** Host-retained overload used widely by Kotlin call sites (int height in dp). */
     public static FrameLayout.LayoutParams createFrame(int width, int height) {
         return new FrameLayout.LayoutParams(getSize(width), getSize(height));
     }

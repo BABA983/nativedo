@@ -3,6 +3,7 @@ package io.github.baba983.nativedo.ui.topic
 import android.app.Activity
 import android.graphics.drawable.ColorDrawable
 import android.view.MotionEvent
+import android.view.View
 import android.view.ViewGroup
 import com.google.common.truth.Truth.assertThat
 import androidx.recyclerview.widget.RecyclerView
@@ -64,6 +65,19 @@ class TopicSwipeReplyRecyclerViewTest {
         assertThat(TopicSwipeReplyRecyclerView.hasReachedReplyThreshold(-49f)).isFalse()
         assertThat(TopicSwipeReplyRecyclerView.hasReachedReplyThreshold(-50f)).isTrue()
         assertThat(TopicSwipeReplyRecyclerView.hasReachedReplyThreshold(-80f)).isTrue()
+    }
+
+    @Test
+    fun selectedScrimChild_isHeldOutOfTheRegularListPassUntilCleared() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        val list = TopicSwipeReplyRecyclerView(activity, ColorDrawable(0xffffffff.toInt()))
+        val selected = View(activity)
+
+        list.setScrimmedChild(selected)
+
+        assertThat(list.scrimmedChild).isSameInstanceAs(selected)
+        list.setScrimmedChild(null)
+        assertThat(list.scrimmedChild).isNull()
     }
 
     @Test

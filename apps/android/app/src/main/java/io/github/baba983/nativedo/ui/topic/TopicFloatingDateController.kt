@@ -26,6 +26,7 @@ internal enum class TopicFloatingDateRowKind {
 internal data class TopicFloatingDateRow(
     val kind: TopicFloatingDateRowKind,
     val date: TopicDateHeader?,
+    val isTerminalDateSeparator: Boolean = false,
 )
 
 internal class TopicFloatingDateController(
@@ -90,6 +91,7 @@ internal class TopicFloatingDateController(
         var topDate: TopicDateHeader? = null
         var topDateBottom = Int.MAX_VALUE
         var approachingDateCell: TopicDateCell? = null
+        var approachingDateRow: TopicFloatingDateRow? = null
         var approachingDateTop = Int.MAX_VALUE
 
         for (index in 0 until listView.childCount) {
@@ -101,6 +103,7 @@ internal class TopicFloatingDateController(
                 if (child.top < approachingDateTop && child.bottom > clipTop) {
                     approachingDateTop = child.top
                     approachingDateCell = child as? TopicDateCell
+                    approachingDateRow = row
                 }
             }
             if (child.bottom <= clipTop) continue
@@ -127,11 +130,24 @@ internal class TopicFloatingDateController(
         currentTopIsNotMessage = topRow?.kind == TopicFloatingDateRowKind.OTHER
 
         val separator = approachingDateCell
+        if (separator != null && approachingDateRow?.isTerminalDateSeparator == true) {
+            separator.alpha = 1f
+            viewOffset = 0
+            currentDateOnScreen = false
+            updatePosition()
+            hide(animated = false, force = true)
+            return
+        }
         val separatorTop = separator?.top ?: Int.MAX_VALUE
         val height = dateView.measuredHeight.takeIf { it > 0 } ?: AndroidUtilities.dp(28f)
         currentDateOnScreen = separator != null && separatorTop <= clipTop + height
         viewOffset = if (separator != null) {
-            topicFloatingDatePushOffset(separator.bottom, clipTop, height)
+            topicFloatingDatePushOffset(
+                separatorBottom = separator.bottom,
+                clipTop = clipTop,
+                floatingHeight = height,
+                isTerminalSeparator = approachingDateRow?.isTerminalDateSeparator == true,
+            )
         } else {
             0
         }
@@ -228,7 +244,13 @@ internal class TopicFloatingDateController(
     }
 }
 
-internal fun topicFloatingDatePushOffset(separatorBottom: Int, clipTop: Int, floatingHeight: Int): Int {
+internal fun topicFloatingDatePushOffset(
+    separatorBottom: Int,
+    clipTop: Int,
+    floatingHeight: Int,
+    isTerminalSeparator: Boolean = false,
+): Int {
+    if (isTerminalSeparator) return 0
     val offset = separatorBottom - clipTop
     return if (offset > floatingHeight && offset < 2 * floatingHeight) {
         -2 * floatingHeight + offset

@@ -1,11 +1,3 @@
-/*
- * This is the source code of Telegram for Android v. 5.x.x
- * It is licensed under GNU GPL v. 2 or later.
- * You should have received a copy of the license in this archive (see LICENSE).
- *
- * Copyright Nikolai Kudashov, 2013-2018.
- */
-
 package org.telegram.ui.Components;
 
 import android.content.Context;
@@ -110,6 +102,18 @@ public class GestureDetectorFixDoubleTap {
             }
         }
 
+        /**
+         * Creates a GestureDetector with the supplied listener.
+         * You may only use this constructor from a UI thread (this is the usual situation).
+         * @see android.os.Handler#Handler()
+         *
+         * @param context the application's context
+         * @param listener the listener invoked for all the callbacks, this must
+         * not be null.
+         * @param handler the handler to use
+         *
+         * @throws NullPointerException if {@code listener} is null.
+         */
         GestureDetectorCompatImplBase(Context context, OnGestureListener listener,
                                       Handler handler) {
             if (handler != null) {
@@ -143,11 +147,27 @@ public class GestureDetectorFixDoubleTap {
             mDoubleTapSlopSquare = doubleTapSlop * doubleTapSlop;
         }
 
+        /**
+         * Sets the listener which will be called for double-tap and related
+         * gestures.
+         *
+         * @param onDoubleTapListener the listener invoked for all the callbacks, or
+         *        null to stop listening for double-tap gestures.
+         */
         @Override
         public void setOnDoubleTapListener(OnDoubleTapListener onDoubleTapListener) {
             mDoubleTapListener = onDoubleTapListener;
         }
 
+        /**
+         * Set whether longpress is enabled, if this is enabled when a user
+         * presses and holds down you get a longpress event and nothing further.
+         * If it's disabled the user can press and hold down and then later
+         * moved their finger and you will get scroll events. By default
+         * longpress is enabled.
+         *
+         * @param isLongpressEnabled whether longpress should be enabled.
+         */
         @Override
         public void setIsLongpressEnabled(boolean isLongpressEnabled) {
             mIsLongpressEnabled = isLongpressEnabled;
@@ -158,11 +178,22 @@ public class GestureDetectorFixDoubleTap {
             mLongpressDuration = duration;
         }
 
+        /**
+         * @return true if longpress is enabled, else false.
+         */
         @Override
         public boolean isLongpressEnabled() {
             return mIsLongpressEnabled;
         }
 
+        /**
+         * Analyzes the given motion event and if applicable triggers the
+         * appropriate callbacks on the {@link OnGestureListener} supplied.
+         *
+         * @param ev The current motion event.
+         * @return true if the {@link OnGestureListener} consumed the event,
+         *              else false.
+         */
         @Override
         public boolean onTouchEvent(MotionEvent ev) {
             final int action = ev.getAction();
@@ -404,22 +435,61 @@ public class GestureDetectorFixDoubleTap {
 
     private final GestureDetectorCompatImpl mImpl;
 
+    /**
+     * Creates a GestureDetectorCompat with the supplied listener.
+     * As usual, you may only use this constructor from a UI thread.
+     * @see android.os.Handler#Handler()
+     *
+     * @param context the application's context
+     * @param listener the listener invoked for all the callbacks, this must
+     * not be null.
+     */
     public GestureDetectorFixDoubleTap(Context context, OnGestureListener listener) {
         this(context, listener, null);
     }
 
+    /**
+     * Creates a GestureDetectorCompat with the supplied listener.
+     * As usual, you may only use this constructor from a UI thread.
+     * @see android.os.Handler#Handler()
+     *
+     * @param context the application's context
+     * @param listener the listener invoked for all the callbacks, this must
+     * not be null.
+     * @param handler the handler that will be used for posting deferred messages
+     */
     public GestureDetectorFixDoubleTap(Context context, OnGestureListener listener, Handler handler) {
         mImpl = new GestureDetectorCompatImplBase(context, listener, handler);
     }
 
+    /**
+     * @return true if longpress is enabled, else false.
+     */
     public boolean isLongpressEnabled() {
         return mImpl.isLongpressEnabled();
     }
 
+    /**
+     * Analyzes the given motion event and if applicable triggers the
+     * appropriate callbacks on the {@link OnGestureListener} supplied.
+     *
+     * @param event The current motion event.
+     * @return true if the {@link OnGestureListener} consumed the event,
+     *              else false.
+     */
     public boolean onTouchEvent(MotionEvent event) {
         return mImpl.onTouchEvent(event);
     }
 
+    /**
+     * Set whether longpress is enabled, if this is enabled when a user
+     * presses and holds down you get a longpress event and nothing further.
+     * If it's disabled the user can press and hold down and then later
+     * moved their finger and you will get scroll events. By default
+     * longpress is enabled.
+     *
+     * @param enabled whether longpress should be enabled.
+     */
     public void setIsLongpressEnabled(boolean enabled) {
         mImpl.setIsLongpressEnabled(enabled);
     }
@@ -428,6 +498,13 @@ public class GestureDetectorFixDoubleTap {
         mImpl.setLongpressDuration(duration);
     }
 
+    /**
+     * Sets the listener which will be called for double-tap and related
+     * gestures.
+     *
+     * @param listener the listener invoked for all the callbacks, or
+     *        null to stop listening for double-tap gestures.
+     */
     public void setOnDoubleTapListener(OnDoubleTapListener listener) {
         mImpl.setOnDoubleTapListener(listener);
     }

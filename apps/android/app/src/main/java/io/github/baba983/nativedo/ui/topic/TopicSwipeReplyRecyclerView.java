@@ -20,6 +20,7 @@ import android.view.MotionEvent;
 import android.view.View;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import androidx.dynamicanimation.animation.FloatValueHolder;
 import androidx.dynamicanimation.animation.SpringAnimation;
 import androidx.dynamicanimation.animation.SpringForce;
@@ -94,6 +95,7 @@ public class TopicSwipeReplyRecyclerView extends RecyclerListView {
             .addUpdateListener((animation, value, velocity) -> invalidate());
 
     private Delegate delegate;
+    private View scrimmedChild;
     private TopicPostCell slidingView;
     private long expectedPostId = Long.MIN_VALUE;
     private boolean maybeStartTrackingSlidingView;
@@ -120,8 +122,45 @@ public class TopicSwipeReplyRecyclerView extends RecyclerListView {
         this.replyIcon = replyIcon;
     }
 
+    public boolean drawChildForBlur(@NonNull Canvas canvas, @NonNull View child, long drawingTime) {
+        return super.drawChild(canvas, child, drawingTime);
+    }
+
     public void setSwipeReplyDelegate(Delegate delegate) {
         this.delegate = delegate;
+    }
+
+    /**
+     * Matches ChatActivity's selected-message drawing order: the list leaves the
+     * selected child out of its regular pass, then the host draws it above the
+     * full-screen scrim.
+     */
+    public void setScrimmedChild(@Nullable View child) {
+        if (scrimmedChild == child) {
+            return;
+        }
+        scrimmedChild = child;
+        invalidate();
+    }
+
+    @Nullable
+    View getScrimmedChild() {
+        return scrimmedChild;
+    }
+
+    boolean drawScrimmedChild(Canvas canvas, View child) {
+        if (child == null || child != scrimmedChild || child.getParent() != this) {
+            return false;
+        }
+        if (child instanceof TopicPostCell) {
+            ((TopicPostCell) child).setScrimForegroundDrawing(true);
+            try {
+                return super.drawChild(canvas, child, getDrawingTime());
+            } finally {
+                ((TopicPostCell) child).setScrimForegroundDrawing(false);
+            }
+        }
+        return super.drawChild(canvas, child, getDrawingTime());
     }
 
     public boolean isTrackingSwipeReply() {
@@ -176,6 +215,9 @@ public class TopicSwipeReplyRecyclerView extends RecyclerListView {
 
     @Override
     public void onChildDetachedFromWindow(@NonNull View child) {
+        if (child == scrimmedChild) {
+            setScrimmedChild(null);
+        }
         if (child == slidingView) {
             cancelSwipeReply(false);
         }
@@ -200,6 +242,14 @@ public class TopicSwipeReplyRecyclerView extends RecyclerListView {
     protected void dispatchDraw(Canvas canvas) {
         super.dispatchDraw(canvas);
         drawReplyButton(canvas);
+    }
+
+    @Override
+    public boolean drawChild(Canvas canvas, View child, long drawingTime) {
+        if (child == scrimmedChild) {
+            return false;
+        }
+        return super.drawChild(canvas, child, drawingTime);
     }
 
     private void processTouchEvent(MotionEvent event) {

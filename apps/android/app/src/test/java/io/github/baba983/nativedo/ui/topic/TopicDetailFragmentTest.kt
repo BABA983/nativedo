@@ -6,6 +6,7 @@ import android.view.ViewConfiguration
 import com.google.common.truth.Truth.assertThat
 import io.github.baba983.nativedo.core.model.DiscourseEmoji
 import io.github.baba983.nativedo.core.model.DiscourseEmojiCategory
+import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.PostReaction
 import io.github.baba983.nativedo.core.model.PostReactionUser
 import io.github.baba983.nativedo.core.model.PostReactionUsersGroup
@@ -52,59 +53,14 @@ class TopicDetailFragmentTest {
         assertThat(Theme.getDefaultColor(Theme.key_chat_serviceBackgroundSelected)).isEqualTo(0x889393af.toInt())
     }
 
-    @Test
-    fun pullRefresh_startsOnlyWhenTopicInteractionsAreIdle() {
-        assertThat(
-            topicDetailCanStartPullRefresh(
-                isBusy = false,
-                selectionActive = false,
-                popupActive = false,
-                keyboardInset = 0,
-                emojiPanelVisible = false,
-            ),
-        ).isTrue()
-
-        assertThat(topicDetailCanStartPullRefresh(true, false, false, 0, false)).isFalse()
-        assertThat(topicDetailCanStartPullRefresh(false, true, false, 0, false)).isFalse()
-        assertThat(topicDetailCanStartPullRefresh(false, false, true, 0, false)).isFalse()
-        assertThat(topicDetailCanStartPullRefresh(false, false, false, 1, false)).isFalse()
-        assertThat(topicDetailCanStartPullRefresh(false, false, false, 0, true)).isFalse()
-    }
-
-    @Test
-    fun pullRefresh_requiresTelegramThresholdAndMinimumPullDuration() {
-        assertThat(
-            topicPullRefreshShouldTrigger(
-                pullProgress = org.telegram.ui.Components.PullForegroundDrawable.SNAP_HEIGHT,
-                pullingDurationMs = org.telegram.ui.Components.PullForegroundDrawable.minPullingTime,
-                isBusy = false,
-            ),
-        ).isTrue()
-        assertThat(
-            topicPullRefreshShouldTrigger(
-                pullProgress = org.telegram.ui.Components.PullForegroundDrawable.SNAP_HEIGHT - 0.01f,
-                pullingDurationMs = org.telegram.ui.Components.PullForegroundDrawable.minPullingTime,
-                isBusy = false,
-            ),
-        ).isFalse()
-        assertThat(
-            topicPullRefreshShouldTrigger(
-                pullProgress = 1f,
-                pullingDurationMs = org.telegram.ui.Components.PullForegroundDrawable.minPullingTime - 1,
-                isBusy = false,
-            ),
-        ).isFalse()
-        assertThat(topicPullRefreshShouldTrigger(1f, 1_000L, true)).isFalse()
-    }
 
     @Test
     fun swipeReply_startsOnlyWhenCompetingTopicInteractionsAreIdle() {
-        assertThat(topicDetailCanStartSwipeReply(false, false, false, false, false)).isTrue()
-        assertThat(topicDetailCanStartSwipeReply(true, false, false, false, false)).isFalse()
-        assertThat(topicDetailCanStartSwipeReply(false, true, false, false, false)).isFalse()
-        assertThat(topicDetailCanStartSwipeReply(false, false, true, false, false)).isFalse()
-        assertThat(topicDetailCanStartSwipeReply(false, false, false, true, false)).isFalse()
-        assertThat(topicDetailCanStartSwipeReply(false, false, false, false, true)).isFalse()
+        assertThat(topicDetailCanStartSwipeReply(false, false, false, false)).isTrue()
+        assertThat(topicDetailCanStartSwipeReply(true, false, false, false)).isFalse()
+        assertThat(topicDetailCanStartSwipeReply(false, true, false, false)).isFalse()
+        assertThat(topicDetailCanStartSwipeReply(false, false, true, false)).isFalse()
+        assertThat(topicDetailCanStartSwipeReply(false, false, false, true)).isFalse()
     }
 
     @Test
@@ -373,6 +329,16 @@ class TopicDetailFragmentTest {
         assertThat(topicPostsBelowViewport(stream, 1003L)).isEqualTo(1)
         assertThat(topicPostsBelowViewport(stream, 1004L)).isEqualTo(0)
         assertThat(topicPostsBelowViewport(stream, null)).isEqualTo(0)
+        assertThat(topicPostsBelowViewportOrNull(stream, 9999L)).isNull()
+        assertThat(topicPostsBelowViewportOrNull(stream, null)).isNull()
+    }
+
+    @Test
+    fun pageDownCountQueueUsesCounterViewAnimationDurations() {
+        assertThat(topicPageDownCounterAnimationDurationMs(previousCount = 0, nextCount = 30)).isEqualTo(220L)
+        assertThat(topicPageDownCounterAnimationDurationMs(previousCount = 30, nextCount = 20)).isEqualTo(430L)
+        assertThat(topicPageDownCounterAnimationDurationMs(previousCount = 20, nextCount = 28)).isEqualTo(430L)
+        assertThat(topicPageDownCounterAnimationDurationMs(previousCount = 28, nextCount = 0)).isEqualTo(150L)
     }
 
     @Test
@@ -525,6 +491,61 @@ class TopicDetailFragmentTest {
     }
 
     @Test
+    fun replyComposerEmojiPanelIgnoresStaleImeUntilKeyboardWasExplicitlyRequested() {
+        assertThat(
+            topicReplyComposerShouldHideEmojiPanelForKeyboard(
+                keyboardVisible = true,
+                emojiPanelShowing = true,
+                waitingForKeyboardOpenAfterEmoji = false,
+            ),
+        ).isFalse()
+        assertThat(
+            topicReplyComposerShouldHideEmojiPanelForKeyboard(
+                keyboardVisible = true,
+                emojiPanelShowing = true,
+                waitingForKeyboardOpenAfterEmoji = true,
+            ),
+        ).isTrue()
+        assertThat(
+            topicReplyComposerShouldHideEmojiPanelForKeyboard(
+                keyboardVisible = false,
+                emojiPanelShowing = true,
+                waitingForKeyboardOpenAfterEmoji = true,
+            ),
+        ).isFalse()
+    }
+
+    @Test
+    fun collapsedTitleWaitsUntilSearchFieldTransitionIsFinished() {
+        assertThat(topicDetailShouldUpdateCollapsedTitle(searchOpen = false, searchFieldVisible = false)).isTrue()
+        assertThat(topicDetailShouldUpdateCollapsedTitle(searchOpen = true, searchFieldVisible = true)).isFalse()
+        assertThat(topicDetailShouldUpdateCollapsedTitle(searchOpen = false, searchFieldVisible = true)).isFalse()
+    }
+
+    @Test
+    fun identitySubtitle_formatsRepliesViewsAndOptionalTag() {
+        val context = org.robolectric.RuntimeEnvironment.getApplication()
+        assertThat(
+            topicDetailIdentitySubtitle(context, totalPosts = 12, viewCount = 340, tags = listOf("开发")),
+        ).contains("开发")
+        assertThat(
+            topicDetailIdentitySubtitle(context, totalPosts = 12, viewCount = 340, tags = emptyList()),
+        ).isNotEmpty()
+        assertThat(
+            topicDetailIdentityDisplayName(
+                firstPost = Post(id = 1, authorUsername = "baba", authorDisplayName = "Baba", cookedHtml = ""),
+                fallbackTitle = "Topic",
+            ),
+        ).isEqualTo("Baba")
+        assertThat(
+            topicDetailIdentityDisplayName(
+                firstPost = Post(id = 1, authorUsername = "baba", cookedHtml = ""),
+                fallbackTitle = "Topic",
+            ),
+        ).isEqualTo("baba")
+    }
+
+    @Test
     fun replyComposerEmojiIcon_switchesSmileAndKeyboardLikeChatActivityEnterView() {
         assertThat(topicReplyComposerEmojiIconKind(isEmojiPopupShowing = false))
             .isEqualTo(ComposerIconKind.Smile)
@@ -653,6 +674,9 @@ class TopicDetailFragmentTest {
         assertThat(topicReplyComposerKeyboardHeightPreferenceKey()).isAnyOf("kbd_height", "kbd_height_land3")
         assertThat(topicReplyComposerEmojiPanelAnimationStartDelayMs()).isEqualTo(0L)
         assertThat(topicReplyComposerEmojiPanelTabsHeightDp()).isEqualTo(36)
+        assertThat(topicReplyComposerEmojiTabButtonSizeDp()).isEqualTo(30)
+        assertThat(topicReplyComposerEmojiTabSelectorSizeDp()).isEqualTo(30)
+        assertThat(topicReplyComposerEmojiTabGapDp()).isEqualTo(3)
         assertThat(topicReplyComposerEmojiPanelSearchHeightDp()).isEqualTo(0)
         assertThat(topicReplyComposerEmojiPanelBottomControlsDp()).isEqualTo(44)
         assertThat(topicReplyComposerEmojiGridHorizontalPaddingDp()).isEqualTo(5)
@@ -859,6 +883,84 @@ class TopicDetailFragmentTest {
             .isEqualTo(0)
         assertThat(topicReplyComposerActiveKeyboardInset(panelAttached = true, keyboardInset = -1))
             .isEqualTo(0)
+    }
+
+    @Test
+    fun panStartOffsetUsesEmojiHeightOnlyWhileSystemKeyboardIsClosed() {
+        assertThat(topicDetailPanStartOffset(keyboardHeight = 0, popupShowing = true, popupHeight = 220))
+            .isEqualTo(220)
+        assertThat(topicDetailPanStartOffset(keyboardHeight = 20, popupShowing = true, popupHeight = 220))
+            .isEqualTo(220)
+        assertThat(topicDetailPanStartOffset(keyboardHeight = 21, popupShowing = true, popupHeight = 220))
+            .isEqualTo(0)
+        assertThat(topicDetailPanStartOffset(keyboardHeight = 0, popupShowing = false, popupHeight = 220))
+            .isEqualTo(0)
+    }
+
+    @Test
+    fun panHeightAnimationDisabledForBrowserSheetAndBottomTabsMotion() {
+        assertThat(
+            topicDetailPanHeightAnimationEnabled(
+                hasParentActivity = true,
+                fragmentPaused = false,
+                hasBlockingPopup = false,
+                hasShownAttachedSheet = false,
+                bottomTabsAnimating = false,
+                isLastFragment = true,
+            ),
+        ).isTrue()
+        assertThat(
+            topicDetailPanHeightAnimationEnabled(
+                hasParentActivity = true,
+                fragmentPaused = false,
+                hasBlockingPopup = false,
+                hasShownAttachedSheet = true,
+                bottomTabsAnimating = false,
+                isLastFragment = true,
+            ),
+        ).isFalse()
+        assertThat(
+            topicDetailPanHeightAnimationEnabled(
+                hasParentActivity = true,
+                fragmentPaused = false,
+                hasBlockingPopup = false,
+                hasShownAttachedSheet = false,
+                bottomTabsAnimating = true,
+                isLastFragment = true,
+            ),
+        ).isFalse()
+        assertThat(
+            topicDetailPanHeightAnimationEnabled(
+                hasParentActivity = true,
+                fragmentPaused = true,
+                hasBlockingPopup = false,
+                hasShownAttachedSheet = false,
+                bottomTabsAnimating = false,
+                isLastFragment = true,
+            ),
+        ).isFalse()
+    }
+
+    @Test
+    fun listTopPaddingAndContentLiftMatchChatGeometry() {
+        assertThat(topicDetailListTopPaddingPx(baseTopPadding = 0, contentPanTranslation = 48f))
+            .isEqualTo(0)
+        assertThat(topicDetailListContentTopPaddingPx(actionBarHeight = 112))
+            .isEqualTo(112)
+        assertThat(topicDetailContentLiftPx(animatedImeBottomInset = 300f))
+            .isEqualTo(-300f)
+        assertThat(topicDetailContentLiftPx(animatedImeBottomInset = -10f))
+            .isEqualTo(0f)
+        assertThat(topicDetailPanSafeBottomInsetPx(navigationBarInset = 40, inAppKeyboardHeight = 0, systemImeHeight = 300))
+            .isEqualTo(40)
+        assertThat(topicDetailIslandBottomInsetPx(windowMaxBottomInset = 360, bottomTabsHeight = 68))
+            .isEqualTo(292)
+        assertThat(topicDetailShouldApplyInputInsets(panInProgress = true, systemImeHeight = 300))
+            .isFalse()
+        assertThat(topicDetailShouldApplyInputInsets(panInProgress = false, systemImeHeight = 300))
+            .isTrue()
+        assertThat(topicDetailShouldApplyInputInsets(panInProgress = true, systemImeHeight = 0))
+            .isTrue()
     }
 
     @Test

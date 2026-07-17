@@ -16,6 +16,7 @@ import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.drawable.Drawable
+import android.net.Uri
 import android.os.Build
 import android.text.Editable
 import android.text.InputType
@@ -121,12 +122,16 @@ import org.telegram.messenger.MessageObject
 import org.telegram.messenger.SharedConfig
 import org.telegram.messenger.browser.Browser
 import org.telegram.tgnet.TLRPC
+import org.telegram.ui.ActionBar.ActionBar
+import org.telegram.ui.ActionBar.AlertDialog
 import org.telegram.ui.ActionBar.AdjustPanLayoutHelper
 import org.telegram.ui.ActionBar.BackDrawable
 import org.telegram.ui.ActionBar.ActionBarMenuItem
 import org.telegram.ui.ActionBar.ActionBarMenuSubItem
 import org.telegram.ui.ActionBar.ActionBarPopupWindow
 import org.telegram.ui.ActionBar.BaseFragment
+import org.telegram.ui.ActionBar.BottomSheet
+import org.telegram.ui.ActionBar.SimpleTextView
 import org.telegram.ui.ActionBar.Theme
 import org.telegram.ui.PhotoViewer
 import org.telegram.ui.Cells.TextSelectionHelper
@@ -134,6 +139,7 @@ import org.telegram.ui.Cells.LoadingCell
 import org.telegram.ui.Components.AvatarDrawable
 import org.telegram.ui.Components.AnimatedTextView
 import org.telegram.ui.Components.AnimatedFloat
+import org.telegram.ui.Components.BackupImageView
 import org.telegram.ui.Components.BottomSheetWithRecyclerListView
 import org.telegram.ui.Components.BulletinFactory
 import org.telegram.ui.Components.ButtonBounce
@@ -144,17 +150,18 @@ import org.telegram.ui.Components.CubicBezierInterpolator
 import org.telegram.ui.Components.EditTextBoldCursor
 import org.telegram.ui.Components.FlickerLoadingView
 import org.telegram.ui.Components.LayoutHelper
-import org.telegram.ui.Components.PullForegroundDrawable
 import org.telegram.ui.Components.RecyclerAnimationScrollHelper
 import org.telegram.ui.Components.RecyclerListView
 import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory
-import org.telegram.ui.Components.blur3.RenderNodeWithHash
+import org.telegram.ui.Components.blur3.DownscaleScrollableNoiseSuppressor
+import org.telegram.ui.Components.blur3.ViewGroupPartRenderer
 import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable
 import org.telegram.ui.Components.blur3.drawable.color.BlurredBackgroundColorProviderThemed
 import org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl
 import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceColor
 import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceRenderNode
 import org.telegram.ui.Components.chat.layouts.ChatActivitySideControlsButtonsLayout
+import org.telegram.ui.Components.chat.layouts.ChatActivityFadeView
 import org.telegram.ui.Components.chat.ChatActivityBottomViewsVisibilityController
 import org.telegram.ui.Components.chat.ChatInputViewsContainer
 import org.telegram.ui.Components.chat.ViewPositionWatcher
@@ -176,7 +183,6 @@ class TopicDetailFragment @JvmOverloads constructor(
     private lateinit var adapter: TopicDetailAdapter
     private lateinit var listView: TopicSwipeReplyRecyclerView
     private lateinit var topicSearchRepository: TopicSearchRepository
-    private var pullRefreshLayout: PullRefreshLayout? = null
     private lateinit var baseUrl: String
     private val collectorScope = MainScope()
     private var reactionUsersSheet: TopicReactionUsersSheet? = null
@@ -198,13 +204,24 @@ class TopicDetailFragment @JvmOverloads constructor(
     private lateinit var mentionRepository: TopicMentionRepository
     private var mentionBlurSourceColor: BlurredBackgroundSourceColor? = null
     private var mentionBlurSource: BlurredBackgroundSourceRenderNode? = null
+    private var mentionBlurSourceFrosted: BlurredBackgroundSourceRenderNode? = null
+    private var mentionBlurNoiseSuppressor: DownscaleScrollableNoiseSuppressor? = null
+    private var mentionBlurCapture: ViewGroupPartRenderer? = null
+    private val mentionBlurPositions = ArrayList<RectF>()
     private var mentionBlurWatcher: ViewPositionWatcher? = null
     private var mentionBackground: BlurredBackgroundDrawable? = null
+    private var topicTopFadeView: ChatActivityFadeView? = null
+    private var topicContentPanTranslation = 0f
+    private var topicContentPanTranslationT = 0f
+    private var topicFragmentPaused = false
     private var replyComposerEmojiPanelHeight: Int = 0
     private var replySheetEntriesByPostNumber: Map<Int, List<TopicReplySheetItem>> = emptyMap()
-    private var rootFrameLayout: TopicPostScrimHostLayout? = null
+    private var rootFrameLayout: TopicDetailHostLayout? = null
     private var replyComposerKeyboardHeight: Int = 0
     private var replyComposerLastKeyboardHeight: Int = AndroidUtilities.dp(200f)
+    private var topicLastImeVisible = false
+    private var topicInitialInsetsSyncScheduled = false
+    private val topicAdjustResizeOwnerClassGuid = System.identityHashCode(this)
     private var replyComposerPopupContentType = TopicReplyComposerPopupContentType.NONE
     private var replyComposerWaitingForKeyboardOpenAfterEmoji = false
     private val clearReplyComposerWaitingForKeyboardOpenRunnable = Runnable {
@@ -227,8 +244,22 @@ class TopicDetailFragment @JvmOverloads constructor(
     private var pageDownReachedLatest: Boolean = false
     private var pageDownDistanceFromLatestPx: Int = 0
     private var pageDownInitialized: Boolean = false
+    private var pageDownLastKnownBelowPosts: Int = 0
+    private var pageDownSubmittedBelowPosts: Int = 0
+    private var pageDownQueuedBelowPosts: Int? = null
+    private var pageDownCountAnimationRunning: Boolean = false
+    private val pageDownCountAnimationEndRunnable = Runnable {
+        pageDownCountAnimationRunning = false
+        val queuedCount = pageDownQueuedBelowPosts
+        pageDownQueuedBelowPosts = null
+        if (queuedCount != null && queuedCount != pageDownSubmittedBelowPosts) {
+            setPageDownCounter(queuedCount, animated = true)
+        }
+    }
     private var floatingDateController: TopicFloatingDateController? = null
     private var topicSearchItem: ActionBarMenuItem? = null
+    private var topicHeaderItem: ActionBarMenuItem? = null
+    private var topicIdentityContainer: TopicIdentityContainer? = null
     private var topicSearchPanel: FrameLayout? = null
     private var topicSearchCountText: AnimatedTextView? = null
     private var topicSearchJob: Job? = null
@@ -241,15 +272,20 @@ class TopicDetailFragment @JvmOverloads constructor(
 
     override fun createView(context: Context): View {
         actionBar.setBackButtonDrawable(BackDrawable(false))
-        actionBar.setTitle(initialTitle ?: "")
+        // Identity container owns the visible title; keep ActionBar title empty.
+        actionBar.setTitle("")
         actionBar.setCastShadows(false)
+        // Chat: actionBar.setAddToContainer(false) so the bar lives inside
+        // contentView and the list draws under the glass chrome.
+        actionBar.setAddToContainer(false)
+        AndroidUtilities.requestAdjustResize(parentActivity, topicAdjustResizeOwnerClassGuid)
 
         val appContainer = (context.applicationContext as NativeDoApp).appContainer
         baseUrl = appContainer.baseUrl
         topicSearchRepository = TopicSearchRepository(appContainer.discourseApiClient)
         mentionRepository = TopicMentionRepository(appContainer.discourseApiClient)
         svgSpriteMarkup = appContainer.svgSpriteStore.sprite.value
-        createTopicSearchMenu(context)
+        createTopicActionBarMenu(context)
         viewModel = ViewModelProvider(
             this,
             TopicViewModelFactory(
@@ -262,7 +298,7 @@ class TopicDetailFragment @JvmOverloads constructor(
             ),
         )[TopicViewModel::class.java]
 
-        val root = object : TopicPostScrimHostLayout(context) {
+        val root = object : TopicDetailHostLayout(context) {
             override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
                 val selectionOverlay = textSelectionHelper.getOverlayView(context)
                 val textSelectionEvent = MotionEvent.obtain(ev)
@@ -292,14 +328,98 @@ class TopicDetailFragment @JvmOverloads constructor(
             }
 
             override fun dispatchDraw(canvas: Canvas) {
-                super.dispatchDraw(canvas)
                 updateRootBlurSource(width, height)
+                super.dispatchDraw(canvas)
             }
         }.apply {
             setBackgroundColor(topicDetailListBackgroundColor())
             replyComposerLastKeyboardHeight = topicReplyComposerRememberedKeyboardHeight(context)
         }
         rootFrameLayout = root
+        root.setPanTransitionDelegate(object : TopicDetailHostLayout.PanTransitionDelegate {
+            override fun onPanTransitionStart(keyboardVisible: Boolean, contentHeight: Int) {
+                if (::listView.isInitialized) {
+                    listView.cancelSwipeReply(true)
+                }
+                if (keyboardVisible) {
+                    floatingDateController?.hide(animated = false, force = true)
+                }
+                // Match Chat: keep island insets live for the whole pan transition.
+                updateReplyComposerBottomInset()
+                replyComposerPanel?.onAdjustPanTransitionStart(keyboardVisible, contentHeight)
+            }
+
+            override fun onPanTranslationUpdate(y: Float, progress: Float, keyboardVisible: Boolean) {
+                // Chat stores contentPanTranslation for reversed-list top padding and
+                // service shaders. TopicDetail is a normal top-down list: folding the
+                // pan amount into list top padding cancels the root translation and
+                // kills the whole-page motion. Keep the value for overlays/debug, but
+                // let AdjustPan's parent.setTranslationY carry every child — including
+                // bubbles and the composer island — as one unit.
+                val panChanged = topicContentPanTranslation != y || topicContentPanTranslationT != progress
+                topicContentPanTranslation = y
+                topicContentPanTranslationT = progress
+                if (panChanged) {
+                    mentionBlurSource?.invalidateDisplayListForDrawables()
+                    mentionBackground?.invalidateSelf()
+                    topicInputViewsContainer?.invalidate()
+                }
+                replyComposerPanel?.onAdjustPanTransitionUpdate(y, progress, keyboardVisible)
+                if (::listView.isInitialized) {
+                    listView.invalidate()
+                }
+                mentionSuggestionsView?.invalidate()
+                pageDownControls?.invalidate()
+                floatingDateController?.update()
+                root.invalidate()
+            }
+
+            override fun onPanTransitionEnd() {
+                if (topicContentPanTranslation != 0f || topicContentPanTranslationT != 0f) {
+                    topicContentPanTranslation = 0f
+                    topicContentPanTranslationT = 0f
+                    mentionBlurSource?.invalidateDisplayListForDrawables()
+                    mentionBackground?.invalidateSelf()
+                    topicInputViewsContainer?.invalidate()
+                }
+                // Re-sync island + list padding after pan settles, same as Chat checkInsets.
+                updateReplyComposerBottomInset()
+                replyComposerPanel?.onAdjustPanTransitionEnd()
+                if (::listView.isInitialized) {
+                    listView.invalidate()
+                }
+                root.invalidate()
+            }
+
+            override fun getPanStartOffset(): Int {
+                return topicDetailPanStartOffset(
+                    keyboardHeight = replyComposerKeyboardHeight,
+                    popupShowing = isReplyComposerPopupShowing(),
+                    popupHeight = replyComposerEmojiPanelHeight,
+                )
+            }
+
+            override fun isPanHeightAnimationEnabled(): Boolean {
+                val layout = parentLayout as? org.telegram.ui.ActionBar.ActionBarLayout
+                // Keep pan on while BottomSheetTabs are merely visible (AdjustPan folds
+                // getExpandedHeight into freeze height). But block while tabs height is
+                // mid-animation or a browser sheet is attached — those change host height
+                // via margin snap + progress ease; running AdjustPan on top causes the
+                // "finishes then shakes once" settle.
+                val tabsAnimating = layout?.bottomSheetTabs?.isAnimatingHeight == true
+                return topicDetailPanHeightAnimationEnabled(
+                    hasParentActivity = parentActivity != null,
+                    fragmentPaused = topicFragmentPaused,
+                    hasBlockingPopup = postOptions != null ||
+                        reactionRailPopup != null ||
+                        expandedReactionPickerPopup != null,
+                    hasShownAttachedSheet = hasShownSheet(),
+                    bottomTabsAnimating = tabsAnimating,
+                    isLastFragment = layout?.getLastFragment() === this@TopicDetailFragment ||
+                        (layout == null && parentLayout == null),
+                )
+            }
+        })
         createMentionBlurSource(root)
         createTopicInputViewsContainer(context, root)
         textSelectionHelper.setOnTranslate { text, _, toLang, onAlertDismiss ->
@@ -334,7 +454,9 @@ class TopicDetailFragment @JvmOverloads constructor(
                 }
             }
         })
+        root.setFixedTopView(actionBar)
         root.addView(actionBar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT))
+        createTopicIdentityContainer(context)
 
         adapter = TopicDetailAdapter(context)
         listView = TopicSwipeReplyRecyclerView(context).apply {
@@ -343,7 +465,9 @@ class TopicDetailFragment @JvmOverloads constructor(
             clipToPadding = false
             setBackgroundColor(topicDetailListBackgroundColor())
             listBottomBasePadding = AndroidUtilities.dp(24f)
-            setPadding(0, 0, 0, listBottomBasePadding)
+            // Match Chat: list fills the host and top padding equals the ActionBar
+            // height so posts scroll under the glass bar instead of starting below it.
+            setPadding(0, 0, 0, listBottomBasePadding) // top padding applied after layout via applyTopicListChromePadding()
             adapter = this@TopicDetailFragment.adapter
             setSwipeReplyDelegate(object : TopicSwipeReplyRecyclerView.Delegate {
                 override fun canStartSwipeReply(): Boolean {
@@ -353,7 +477,6 @@ class TopicDetailFragment @JvmOverloads constructor(
                         popupActive = postOptions != null || reactionRailPopup != null ||
                             expandedReactionPickerPopup != null || root.isScrimActive,
                         listScrollLocked = postOptionsListScrollLocked,
-                        pullRefreshActive = pullRefreshLayout?.isPulling == true,
                     )
                 }
 
@@ -373,6 +496,10 @@ class TopicDetailFragment @JvmOverloads constructor(
                             topicListUserScrollActive = false
                             textSelectionHelper.stopScrolling()
                             floatingDateController?.onScrollStateChanged(newState)
+                            val manager = recyclerView.layoutManager as? LinearLayoutManager
+                            if (manager != null) {
+                                updatePageDownScrollState(manager, 0)
+                            }
                         }
                     }
                 }
@@ -381,6 +508,10 @@ class TopicDetailFragment @JvmOverloads constructor(
                     textSelectionHelper.onParentScrolled()
                     updateCollapsedTitle()
                     floatingDateController?.onScrolled(dy)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        mentionBlurNoiseSuppressor?.onScrolled(dx.toFloat(), dy.toFloat())
+                        root.invalidate()
+                    }
                     val manager = recyclerView.layoutManager as? LinearLayoutManager ?: return
                     updatePageDownScrollState(manager, dy)
                     if (topicDetailShouldLoadMoreFromScroll(
@@ -397,25 +528,12 @@ class TopicDetailFragment @JvmOverloads constructor(
         }
         textSelectionHelper.setParentView(listView)
         textSelectionHelper.setRecyclerView(listView)
-        val pullRefresh = PullRefreshLayout(
-            context = context,
-            listView = listView,
-            canPull = {
-                topicDetailCanStartPullRefresh(
-                    isBusy = latestTopicState.isLoading || latestTopicState.isRefreshing || latestTopicState.isLoadingMore,
-                    selectionActive = textSelectionHelper.isInSelectionMode,
-                    popupActive = postOptions != null || reactionRailPopup != null || expandedReactionPickerPopup != null || root.isScrimActive,
-                    keyboardInset = replyComposerKeyboardHeight,
-                    emojiPanelVisible = replyComposerEmojiPanel != null || replyComposerEmojiPanelHeight > 0,
-                )
-            },
-            onRefresh = viewModel::refresh,
-        )
-        pullRefreshLayout = pullRefresh
         root.addView(
-            pullRefresh,
+            listView,
             LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT.toFloat(), Gravity.TOP, 0f, 0f, 0f, 0f),
         )
+        mentionBlurCapture = ViewGroupPartRenderer(listView, root, listView::drawChildForBlur)
+        createTopicTopFade(context, root)
         val floatingDateView = TopicDateCell(context, true).apply {
             alpha = 0f
             visibility = View.INVISIBLE
@@ -461,13 +579,16 @@ class TopicDetailFragment @JvmOverloads constructor(
             }
         }
         createPageDownControls(context, root)
+        createTopicActionBarGlass(root)
+        topicIdentityContainer?.setOccupyStatusBar(actionBar.occupyStatusBar)
         actionBar.bringToFront()
+        scheduleInitialTopicInsetsSync(root)
+        root.post { applyTopicListChromePadding() }
 
         collectorScope.launch {
             viewModel.uiState.collectLatest { state ->
                 latestTopicState = state
                 mentionSuggestionsView?.setParticipants(state.participants, state.posts)
-                pullRefreshLayout?.isBusy = state.isLoading || state.isRefreshing || state.isLoadingMore
                 topicTitle = state.title.ifBlank { initialTitle.orEmpty() }
                 state.pollActionFailure?.let { failure ->
                     adapter.resetPollInteractionState(failure.postId)
@@ -484,6 +605,7 @@ class TopicDetailFragment @JvmOverloads constructor(
                         initialPostNumber?.let(viewModel::requestJumpToReplyTarget)
                     }
                 }
+                updateTopicIdentity(state)
                 updateCollapsedTitle()
                 updateReactionUsersSheet(context, state)
                 updatePollVotersSheet(context, state)
@@ -512,12 +634,30 @@ class TopicDetailFragment @JvmOverloads constructor(
         return root
     }
 
+    override fun onResume() {
+        super.onResume()
+        topicFragmentPaused = false
+        AndroidUtilities.requestAdjustResize(parentActivity, topicAdjustResizeOwnerClassGuid)
+        // Match ChatActivity's activityResumeTime < 250 gate via the host delay.
+        rootFrameLayout?.delayPanAnimations(250L)
+    }
+
+    override fun onPause() {
+        topicFragmentPaused = true
+        // Chat disables pan while paused; also drop any in-flight transition so a
+        // browser-sheet / tabs height change cannot leave a residual translation.
+        rootFrameLayout?.stopPanTransition()
+        super.onPause()
+    }
+
     override fun onFragmentDestroy() {
         topicSearchJob?.cancel()
         topicSearchJob = null
         topicSearchSession.clear()
         topicSearchNavigator.clear()
         topicSearchItem = null
+        topicHeaderItem = null
+        topicIdentityContainer = null
         topicSearchPanel = null
         topicSearchCountText = null
         textSelectionHelper.destroy()
@@ -536,11 +676,19 @@ class TopicDetailFragment @JvmOverloads constructor(
         mentionSuggestionsView?.release()
         mentionSuggestionsView = null
         mentionBackground = null
+        topicTopFadeView = null
         mentionBlurWatcher?.shutdown()
         mentionBlurWatcher = null
+        mentionBlurCapture = null
+        mentionBlurNoiseSuppressor = null
+        mentionBlurSourceFrosted = null
         mentionBlurSource = null
         mentionBlurSourceColor = null
+        mentionBlurPositions.clear()
         clearReplyComposerWaitingForKeyboardOpenAfterEmoji()
+        AndroidUtilities.cancelRunOnUIThread(pageDownCountAnimationEndRunnable)
+        pageDownCountAnimationRunning = false
+        pageDownQueuedBelowPosts = null
         postOptions?.dismiss()
         postOptions = null
         unlockPostOptionsListScroll()
@@ -549,8 +697,6 @@ class TopicDetailFragment @JvmOverloads constructor(
         replyComposerPanel?.release()
         replyComposerPanel = null
         listView.cancelSwipeReply(false)
-        pullRefreshLayout?.release()
-        pullRefreshLayout = null
         pageDownControls = null
         floatingDateController?.release()
         floatingDateController = null
@@ -560,15 +706,26 @@ class TopicDetailFragment @JvmOverloads constructor(
         topicAnimatedInsetsProvider = null
         topicInsetsStateHolder = null
         topicInputViewsContainer = null
+        topicLastImeVisible = false
+        topicInitialInsetsSyncScheduled = false
         rootFrameLayout?.clearScrim()
         rootFrameLayout?.setDelegate(null)
         rootFrameLayout?.setOnScrimStateChanged(null)
         rootFrameLayout?.setScrimProgressListener(null)
+        rootFrameLayout?.releasePanLayoutHelper()
         rootFrameLayout = null
+        AndroidUtilities.removeAdjustResize(parentActivity, topicAdjustResizeOwnerClassGuid)
         super.onFragmentDestroy()
     }
 
     override fun onBackPressed(): Boolean {
+        // Prefer topicSearchOpen over isSearchFieldVisible: during collapse the search
+        // container stays VISIBLE until the fade ends; a second edge-back would otherwise
+        // re-toggle into expand. closeSearch is also tag-guarded in ActionBarMenuItem.
+        if (topicSearchOpen) {
+            topicSearchItem?.closeSearch(true)
+            return false
+        }
         if (topicSearchItem?.isSearchFieldVisible == true) {
             topicSearchItem?.closeSearch(true)
             return false
@@ -622,20 +779,9 @@ class TopicDetailFragment @JvmOverloads constructor(
     }
 
     private fun updateCollapsedTitle() {
-        val manager = listView.layoutManager as? LinearLayoutManager ?: return
-        val firstVisible = manager.findFirstVisibleItemPosition()
-        val firstPostPosition = adapter.firstPostAdapterPosition()
-        val firstPostView = firstPostPosition?.let(manager::findViewByPosition)
-        val shouldShow = firstPostPosition != null && (
-            firstVisible > firstPostPosition ||
-                (firstPostView != null && firstPostView.bottom <= actionBar.measuredHeight)
-            )
-        if (collapsedTitleVisible != shouldShow) {
-            collapsedTitleVisible = shouldShow
-            actionBar.setTitle(if (shouldShow) topicTitle else "")
-        } else if (shouldShow) {
-            actionBar.setTitle(topicTitle)
-        }
+        // Identity capsule is always-on (Chat avatarContainer). Keep the name so
+        // existing scroll listeners still call in; only re-apply visibility for search.
+        updateTopicIdentityVisibility()
     }
 
     private fun floatingDateInteractionBlocked(): Boolean {
@@ -946,7 +1092,7 @@ class TopicDetailFragment @JvmOverloads constructor(
         actionBar.bringToFront()
     }
 
-    private fun createTopicInputViewsContainer(context: Context, root: ViewGroup) {
+    private fun createTopicInputViewsContainer(context: Context, root: TopicDetailHostLayout) {
         if (topicInputViewsContainer != null) return
         val insetsStateHolder = WindowInsetsStateHolder(::onTopicInsetsChanged)
         val container = ChatInputViewsContainer(context).apply {
@@ -964,6 +1110,11 @@ class TopicDetailFragment @JvmOverloads constructor(
         )
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             insetsStateHolder.setInsets(insets)
+            val imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
+            if (topicLastImeVisible != imeVisible) {
+                topicLastImeVisible = imeVisible
+                root.notifyHeightChanged()
+            }
             WindowInsetsCompat.CONSUMED
         }
         topicAnimatedInsetsProvider = WindowAnimatedInsetsProvider(root).also { provider ->
@@ -971,21 +1122,63 @@ class TopicDetailFragment @JvmOverloads constructor(
         }
     }
 
+    /**
+     * The first WindowInsets callback can arrive while the input container is
+     * already attached but before the list/composer exists. Replay that cached
+     * baseline once all three are present, otherwise the first keyboard cycle
+     * becomes the first time the composer receives its navigation-bar inset.
+     */
+    private fun scheduleInitialTopicInsetsSync(root: TopicDetailHostLayout) {
+        if (topicInitialInsetsSyncScheduled) {
+            return
+        }
+        topicInitialInsetsSyncScheduled = true
+        root.post {
+            if (rootFrameLayout !== root || !root.isAttachedToWindow) {
+                return@post
+            }
+            ViewCompat.requestApplyInsets(root)
+            topicInputViewsContainer?.checkInsets()
+            onTopicInsetsChanged()
+            updateReplyComposerBottomInset()
+            root.notifyHeightChanged()
+            root.requestLayout()
+        }
+    }
+
     private fun onTopicInsetsChanged() {
         val insetsStateHolder = topicInsetsStateHolder ?: return
-        topicInputViewsContainer?.checkInsets()
         val systemImeHeight = insetsStateHolder.getInsets(WindowInsetsCompat.Type.ime()).bottom.coerceAtLeast(0)
+        // AdjustPan already carries the complete host while the resize is animating.
+        // Applying ChatInputViewsContainer's animated IME translation in the same frame
+        // stacks both lifts; it is especially visible with BottomSheetTabs because the
+        // host is already shortened by the browser strip. Re-apply the final inset from
+        // onPanTransitionEnd once AdjustPan releases the host.
+        if (topicDetailShouldApplyInputInsets(
+                panInProgress = rootFrameLayout?.isPanAnimationInProgress() == true,
+                systemImeHeight = systemImeHeight,
+            )
+        ) {
+            topicInputViewsContainer?.checkInsets()
+        }
         replyComposerKeyboardHeight = topicReplyComposerKeyboardInsetPx(systemImeHeight)
+        val shouldHideEmojiPanel = topicReplyComposerShouldHideEmojiPanelForKeyboard(
+            keyboardVisible = replyComposerKeyboardHeight > 0,
+            emojiPanelShowing = isReplyComposerPopupShowing(),
+            waitingForKeyboardOpenAfterEmoji = replyComposerWaitingForKeyboardOpenAfterEmoji,
+        )
         if (replyComposerKeyboardHeight > 0) {
             replyComposerLastKeyboardHeight = replyComposerKeyboardHeight
             rootFrameLayout?.context?.let { context ->
                 topicReplyComposerRememberKeyboardHeight(context, replyComposerKeyboardHeight)
             }
-            clearReplyComposerWaitingForKeyboardOpenAfterEmoji()
             replyComposerPanel?.onKeyboardVisible()
         }
-        if (replyComposerKeyboardHeight > 0 && replyComposerEmojiPanel != null) {
+        if (shouldHideEmojiPanel) {
             hideReplyComposerEmojiPanel(openKeyboard = false, animated = false)
+        }
+        if (replyComposerKeyboardHeight > 0) {
+            clearReplyComposerWaitingForKeyboardOpenAfterEmoji()
         }
         updateReplyComposerBottomInset()
     }
@@ -1067,18 +1260,36 @@ class TopicDetailFragment @JvmOverloads constructor(
         updateReplyComposerBottomInset()
     }
 
-    private fun createTopicSearchMenu(context: Context) {
-        if (topicSearchItem != null) return
-        topicSearchItem = actionBar.createMenu()
-            .addItem(0, TelegramR.drawable.outline_header_search, resourceProvider)
+    private fun createTopicActionBarMenu(context: Context) {
+        if (topicSearchItem != null || topicHeaderItem != null) return
+        val menu = actionBar.createMenu()
+        // Hidden search-field host (Chat still has a searchItem, but we only expose Search
+        // under ⋯ so the menu pill stays a single icon). Collapse path must re-GONE the
+        // host — toggleSearch() forces VISIBLE on close and would otherwise leave a second
+        // 🔍 next to ⋯.
+        topicSearchItem = menu
+            .addItem(TOPIC_MENU_SEARCH_FIELD, TelegramR.drawable.outline_header_search, resourceProvider)
             .setIsSearchField(true)
             .setActionBarMenuItemSearchListener(object : ActionBarMenuItem.ActionBarMenuItemSearchListener() {
                 override fun onSearchExpand() {
+                    actionBar.visibility = View.VISIBLE
+                    actionBar.alpha = 1f
+                    topicHeaderItem?.visibility = View.GONE
+                    // Drive visibility only via topicSearchOpen (not isSearchFieldVisible):
+                    // during collapse the searchContainer is still VISIBLE until the anim ends.
                     enterTopicSearchMode()
+                    topicIdentityContainer?.setIdentityVisible(false)
                 }
 
                 override fun onSearchCollapse() {
+                    topicSearchItem?.visibility = View.GONE
+                    topicHeaderItem?.visibility = View.VISIBLE
                     exitTopicSearchMode()
+                    // Force-restore identity here. updateTopicIdentityVisibility alone can race
+                    // with isSearchFieldVisible still true mid-collapse animation.
+                    topicIdentityContainer?.setIdentityVisible(true)
+                    topicIdentityContainer?.requestLayout()
+                    actionBar.invalidate()
                 }
 
                 override fun onTextChanged(editText: EditText) {
@@ -1090,9 +1301,156 @@ class TopicDetailFragment @JvmOverloads constructor(
                 }
             })
             .apply {
+                setSearchPaddingStart(12)
                 setSearchFieldHint(context.getString(R.string.topic_search_hint))
                 contentDescription = context.getString(R.string.topic_search_hint)
+                visibility = View.GONE
             }
+
+        topicHeaderItem = menu.addItem(TOPIC_MENU_OTHER, TelegramR.drawable.ic_ab_other).apply {
+            setContentDescription(context.getString(R.string.action_more_options))
+            addSubItem(TOPIC_MENU_SEARCH, TelegramR.drawable.msg_search, context.getString(R.string.topic_menu_search))
+            addSubItem(TOPIC_MENU_REFRESH, R.drawable.settings_refresh, context.getString(R.string.topic_menu_refresh))
+        }
+
+        actionBar.setActionBarMenuOnItemClick(
+            object : ActionBar.ActionBarMenuOnItemClick() {
+                override fun onItemClick(id: Int) {
+                    when (id) {
+                        // BaseFragment installs a default -1 → finishFragment handler;
+                        // we replace it here and must keep the back-button path.
+                        -1 -> finishFragment()
+                        TOPIC_MENU_SEARCH -> topicSearchItem?.openSearch(true)
+                        TOPIC_MENU_REFRESH -> viewModel.refresh()
+                    }
+                }
+            },
+        )
+    }
+
+    private fun createTopicIdentityContainer(context: Context) {
+        if (topicIdentityContainer != null) return
+        val container = TopicIdentityContainer(context).apply {
+            bind(
+                title = topicTitle.ifBlank { initialTitle.orEmpty() },
+                subtitle = "",
+                avatarUrl = "",
+                displayName = topicTitle.ifBlank { initialTitle.orEmpty() },
+            )
+            // Always-on Chat-style identity capsule (not scroll-collapsed).
+            setIdentityVisible(true)
+            setOnClickListener { openTopicIdentity() }
+        }
+        topicIdentityContainer = container
+        container.setOccupyStatusBar(actionBar.occupyStatusBar)
+        // Hide ActionBar's built-in title so glass middle pill tracks the identity
+        // strip, not an empty SimpleTextView.
+        actionBar.titleTextView.visibility = View.GONE
+        // ChatAvatarContainer: WRAP_CONTENT + left 53 / right 52 gutters so the
+        // back circle and ⋯ menu stay outside the identity hit target.
+        actionBar.addView(
+            container,
+            0,
+            LayoutHelper.createFrame(
+                LayoutHelper.WRAP_CONTENT,
+                LayoutHelper.MATCH_PARENT.toFloat(),
+                Gravity.TOP or Gravity.LEFT,
+                TOPIC_IDENTITY_HOST_LEFT_GUTTER_DP,
+                0f,
+                TOPIC_IDENTITY_HOST_RIGHT_GUTTER_DP,
+                0f,
+            ),
+        )
+        actionBar.backButtonImageView.bringToFront()
+        actionBar.createMenu().bringToFront()
+    }
+
+    private fun updateTopicIdentity(state: TopicUiState) {
+        val firstPost = state.posts.firstOrNull()
+        topicIdentityContainer?.bind(
+            title = state.title.ifBlank { topicTitle },
+            subtitle = topicDetailIdentitySubtitle(
+                context = actionBar.context,
+                totalPosts = state.totalPosts,
+                viewCount = state.viewCount,
+                tags = state.tags,
+            ),
+            avatarUrl = topicDetailIdentityAvatarUrl(
+                baseUrl = baseUrl,
+                firstPost = firstPost,
+            ),
+            displayName = topicDetailIdentityDisplayName(firstPost, state.title.ifBlank { topicTitle }),
+        )
+        updateTopicIdentityVisibility()
+    }
+
+    private fun openTopicIdentity() {
+        val activity = parentActivity ?: return
+        val username = latestTopicState.posts.firstOrNull()?.authorUsername?.trim().orEmpty()
+        if (username.isBlank()) {
+            showTopicInfoSheet()
+            return
+        }
+        // Telegram's ChatAvatarContainer opens the peer profile on a middle-pill tap.
+        // NativeDo only has a native profile screen for the signed-in user, so use the
+        // in-app browser for arbitrary topic authors until that screen is reusable.
+        Browser.openUrl(activity, "${baseUrl.trimEnd('/')}/u/${Uri.encode(username)}")
+    }
+
+    private fun updateTopicIdentityVisibility() {
+        // Only topicSearchOpen — isSearchFieldVisible stays true until collapse animation ends
+        // and would leave the identity strip blank after cancel-without-query until scroll.
+        topicIdentityContainer?.setIdentityVisible(!topicSearchOpen)
+    }
+
+    private fun showTopicInfoSheet() {
+        val activity = parentActivity ?: return
+        val state = latestTopicState
+        val firstPost = state.posts.firstOrNull()
+        val author = topicDetailIdentityDisplayName(firstPost, state.title.ifBlank { topicTitle })
+        val empty = activity.getString(R.string.topic_detail_info_empty)
+        val tags = state.tags.filter { it.isNotBlank() }.joinToString(" · ").ifBlank { empty }
+        val content = LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(
+                AndroidUtilities.dp(20f),
+                AndroidUtilities.dp(8f),
+                AndroidUtilities.dp(20f),
+                AndroidUtilities.dp(12f),
+            )
+        }
+        fun addRow(label: String, value: String) {
+            val labelView = TextView(activity).apply {
+                text = label
+                setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2, resourceProvider))
+                textSize = 13f
+            }
+            val valueView = TextView(activity).apply {
+                text = value.ifBlank { empty }
+                setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourceProvider))
+                textSize = 16f
+                setPadding(0, AndroidUtilities.dp(2f), 0, AndroidUtilities.dp(14f))
+            }
+            content.addView(labelView, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ))
+            content.addView(valueView, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ))
+        }
+        addRow(activity.getString(R.string.topic_detail_info_author), author)
+        addRow(activity.getString(R.string.topic_detail_info_replies), state.totalPosts.coerceAtLeast(0).toString())
+        addRow(activity.getString(R.string.topic_detail_info_views), state.viewCount.coerceAtLeast(0).toString())
+        addRow(activity.getString(R.string.topic_detail_info_created), state.createdAt.ifBlank { empty })
+        addRow(activity.getString(R.string.topic_detail_info_last_activity), state.lastPostedAt.ifBlank { empty })
+        addRow(activity.getString(R.string.topic_detail_info_tags), tags)
+        addRow(activity.getString(R.string.topic_detail_info_topic_id), topicId.toString())
+        BottomSheet.Builder(activity, false, resourceProvider)
+            .setTitle(state.title.ifBlank { activity.getString(R.string.topic_detail_info_title) }, true)
+            .setCustomView(content)
+            .show()
     }
 
     private fun createTopicSearchPanel(context: Context, inputBubbleContainer: ViewGroup) {
@@ -1218,14 +1576,14 @@ class TopicDetailFragment @JvmOverloads constructor(
         updateTopicSearchControls(animated = true)
         updatePageDownControls(animated = true)
         updateReplyComposerBottomInset()
-        AndroidUtilities.runOnUIThread({
-            if (!topicSearchOpen) {
-                actionBar.visibility = View.VISIBLE
-                actionBar.alpha = 1f
-                actionBar.bringToFront()
-                updateCollapsedTitle()
-            }
-        }, TOPIC_SEARCH_ACTION_BAR_ANIMATION_DURATION_MS)
+        actionBar.visibility = View.VISIBLE
+        actionBar.alpha = 1f
+        actionBar.bringToFront()
+        // Restore middle capsule immediately (collapse anim can leave searchField still "visible").
+        topicIdentityContainer?.setIdentityVisible(true)
+        topicIdentityContainer?.requestLayout()
+        actionBar.invalidate()
+        updateCollapsedTitle()
     }
 
     private fun scheduleTopicSearch(query: String) {
@@ -1427,17 +1785,31 @@ class TopicDetailFragment @JvmOverloads constructor(
         mentionBlurSourceColor = colorSource
         mentionBlurWatcher = ViewPositionWatcher(root)
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
-        mentionBlurSource = BlurredBackgroundSourceRenderNode(colorSource).apply {
-            setupRenderer(object : RenderNodeWithHash.Renderer {
-                override fun renderNodeUpdateDisplayList(canvas: Canvas) {
-                    canvas.drawColor(topicDetailListBackgroundColor())
-                    val content = pullRefreshLayout ?: return
-                    canvas.save()
-                    canvas.translate(content.x, content.y)
-                    content.draw(canvas)
-                    canvas.restore()
-                }
-            })
+
+        val noiseSuppressor = DownscaleScrollableNoiseSuppressor()
+        mentionBlurNoiseSuppressor = noiseSuppressor
+
+        val frostedSource = BlurredBackgroundSourceRenderNode(colorSource).apply {
+            setOnDrawablesRelativePositionChangeListener(root::invalidate)
+            setScrollableNoiseSuppressor(
+                noiseSuppressor,
+                DownscaleScrollableNoiseSuppressor.DRAW_FROSTED_GLASS,
+            )
+            setUnderSource(colorSource)
+        }
+        mentionBlurSourceFrosted = frostedSource
+
+        mentionBlurSource = if (LiteMode.isEnabled(LiteMode.FLAG_LIQUID_GLASS)) {
+            BlurredBackgroundSourceRenderNode(colorSource).apply {
+                setOnDrawablesRelativePositionChangeListener(root::invalidate)
+                setScrollableNoiseSuppressor(
+                    noiseSuppressor,
+                    DownscaleScrollableNoiseSuppressor.DRAW_GLASS,
+                )
+                setUnderSource(colorSource)
+            }
+        } else {
+            frostedSource
         }
     }
 
@@ -1447,14 +1819,45 @@ class TopicDetailFragment @JvmOverloads constructor(
         ) {
             return
         }
-        mentionBlurSource?.apply {
-            setSize(width, height)
-            updateDisplayListIfNeeded()
+        val source = mentionBlurSource ?: return
+        val noiseSuppressor = mentionBlurNoiseSuppressor ?: return
+        val capture = mentionBlurCapture ?: return
+        if (listView.height <= 0) return
+
+        val actionBarPosition = if (mentionBlurPositions.isEmpty()) {
+            RectF().also(mentionBlurPositions::add)
+        } else {
+            mentionBlurPositions[0]
         }
-        if (mentionSuggestionsView?.visibility == View.VISIBLE) {
-            mentionBackground?.invalidateSelf()
+        actionBarPosition.set(
+            0f,
+            -AndroidUtilities.dp(48f).toFloat(),
+            width.toFloat(),
+            actionBar.measuredHeight + AndroidUtilities.dp(48f).toFloat(),
+        )
+        val positionsCount = 1 + source.getVisiblePositions(
+            mentionBlurPositions,
+            1,
+            AndroidUtilities.dp(8f),
+        )
+        val maxX = width.toFloat()
+        val listTop = listView.y
+        val listBottom = listView.y + listView.height
+        for (index in 0 until positionsCount) {
+            val position = mentionBlurPositions[index]
+            position.left = position.left.coerceIn(0f, maxX)
+            position.top = maxOf(listTop, position.top)
+            position.right = position.right.coerceIn(0f, maxX)
+            position.bottom = minOf(listBottom, position.bottom)
         }
-        topicInputViewsContainer?.invalidate()
+
+        noiseSuppressor.setupRenderNodes(mentionBlurPositions, positionsCount)
+        if (noiseSuppressor.invalidateResultRenderNodes(capture, width, height)) {
+            source.invalidateDisplayListForDrawables()
+            if (mentionBlurSourceFrosted !== source) {
+                mentionBlurSourceFrosted?.invalidateDisplayListForDrawables()
+            }
+        }
     }
 
     private fun createPageDownControls(context: Context, root: ViewGroup) {
@@ -1499,13 +1902,73 @@ class TopicDetailFragment @JvmOverloads constructor(
         updateReplyComposerBottomInset()
     }
 
+    private fun createTopicActionBarGlass(root: ViewGroup) {
+        val source = mentionBlurSource ?: mentionBlurSourceColor ?: return
+        val watcher = mentionBlurWatcher ?: return
+        val backgroundFactory = BlurredBackgroundDrawableViewFactory(source).apply {
+            setSourceRootView(watcher, root)
+            setLiquidGlassEffectAllowed(LiteMode.isEnabled(LiteMode.FLAG_LIQUID_GLASS))
+        }
+        // ChatActivity uses key_chat_messagePanelBackground for glass ActionBar pills.
+        actionBar.setupGlass(
+            backgroundFactory,
+            object : BlurredBackgroundColorProviderThemed(resourceProvider, Theme.key_chat_messagePanelBackground) {
+                override fun getBackgroundColor(): Int {
+                    // ChatActivity blurredBackgroundColorProvider for glass ActionBar:
+                    // light theme uses alpha 216 so posts show through the pills.
+                    if (!BlurredBackgroundProviderImpl.checkBlurEnabled(resourceProvider)) {
+                        return ColorUtils.setAlphaComponent(
+                            Theme.getColor(Theme.key_chat_messagePanelBackground, resourceProvider),
+                            255,
+                        )
+                    }
+                    return if (!super.isDark()) {
+                        ColorUtils.setAlphaComponent(super.getBackgroundColor(), 216)
+                    } else {
+                        super.getBackgroundColor()
+                    }
+                }
+            },
+        )
+        actionBar.setCastShadows(false)
+        actionBar.background = null
+        // Chat glass ActionBar occupies the status bar; content draws underneath the
+        // entire top chrome (not only under the three pills).
+        actionBar.setOccupyStatusBar(true)
+        actionBar.setClipChildren(false)
+        actionBar.clipToPadding = false
+    }
+
+    private fun createTopicTopFade(context: Context, root: ViewGroup) {
+        val source = mentionBlurSourceFrosted ?: mentionBlurSourceColor ?: return
+        val watcher = mentionBlurWatcher ?: return
+        val factory = BlurredBackgroundDrawableViewFactory(source).apply {
+            setSourceRootView(watcher, root)
+            setLiquidGlassEffectAllowed(LiteMode.isEnabled(LiteMode.FLAG_LIQUID_GLASS))
+        }
+        val fadeView = ChatActivityFadeView(context).apply {
+            setup(factory)
+            setFadeHeightTop(AndroidUtilities.dp(48f))
+            setFadeHeightBottom(AndroidUtilities.dp(48f))
+            setFadeZoneBottom(0)
+        }
+        topicTopFadeView = fadeView
+        root.addView(
+            fadeView,
+            LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT.toFloat()),
+        )
+    }
+
     private fun updatePageDownScrollState(manager: LinearLayoutManager, dy: Int) {
         val below = pageDownPostsBelowViewport(manager)
-        if (below == 0) {
-            pageDownReachedLatest = true
-            pageDownDistanceFromLatestPx = 0
-        } else if (pageDownReachedLatest && dy < 0) {
-            pageDownDistanceFromLatestPx += kotlin.math.abs(dy)
+        if (below != null) {
+            pageDownLastKnownBelowPosts = below
+            if (below == 0) {
+                pageDownReachedLatest = true
+                pageDownDistanceFromLatestPx = 0
+            } else if (pageDownReachedLatest && dy < 0) {
+                pageDownDistanceFromLatestPx += kotlin.math.abs(dy)
+            }
         }
         updatePageDownControls(animated = pageDownInitialized)
     }
@@ -1517,15 +1980,18 @@ class TopicDetailFragment @JvmOverloads constructor(
             return
         }
         val manager = listView.layoutManager as? LinearLayoutManager
-        val below = manager?.let(::pageDownPostsBelowViewport) ?: 0
+        val measuredBelow = manager?.let(::pageDownPostsBelowViewport)
+        if (measuredBelow != null) {
+            pageDownLastKnownBelowPosts = measuredBelow
+        }
         val show = topicShouldShowPageDown(
-            postsBelowViewport = below,
+            postsBelowViewport = pageDownLastKnownBelowPosts,
             selectionActive = textSelectionHelper.isInSelectionMode,
             hasReachedLatest = pageDownReachedLatest,
             distanceFromLatestPx = pageDownDistanceFromLatestPx,
             revealThresholdPx = AndroidUtilities.dp(100f),
         )
-        controls.setButtonCount(ChatActivitySideControlsButtonsLayout.BUTTON_PAGE_DOWN, below, animated)
+        setPageDownCounter(pageDownLastKnownBelowPosts, animated)
         controls.setButtonLoading(
             ChatActivitySideControlsButtonsLayout.BUTTON_PAGE_DOWN,
             latestTopicState.isJumpingToLatest,
@@ -1534,11 +2000,46 @@ class TopicDetailFragment @JvmOverloads constructor(
         controls.showButton(ChatActivitySideControlsButtonsLayout.BUTTON_PAGE_DOWN, show, animated)
     }
 
-    private fun pageDownPostsBelowViewport(manager: LinearLayoutManager): Int {
+    private fun setPageDownCounter(count: Int, animated: Boolean) {
+        val controls = pageDownControls ?: return
+        val nextCount = count.coerceAtLeast(0)
+        if (!animated) {
+            AndroidUtilities.cancelRunOnUIThread(pageDownCountAnimationEndRunnable)
+            pageDownCountAnimationRunning = false
+            pageDownQueuedBelowPosts = null
+            pageDownSubmittedBelowPosts = nextCount
+            controls.setButtonCount(ChatActivitySideControlsButtonsLayout.BUTTON_PAGE_DOWN, nextCount, false)
+            return
+        }
+        if (nextCount == pageDownSubmittedBelowPosts) {
+            if (pageDownQueuedBelowPosts == nextCount) {
+                pageDownQueuedBelowPosts = null
+            }
+            return
+        }
+        if (pageDownCountAnimationRunning) {
+            pageDownQueuedBelowPosts = nextCount
+            return
+        }
+        val previousCount = pageDownSubmittedBelowPosts
+        pageDownSubmittedBelowPosts = nextCount
+        controls.setButtonCount(ChatActivitySideControlsButtonsLayout.BUTTON_PAGE_DOWN, nextCount, true)
+        pageDownCountAnimationRunning = true
+        AndroidUtilities.cancelRunOnUIThread(pageDownCountAnimationEndRunnable)
+        AndroidUtilities.runOnUIThread(
+            pageDownCountAnimationEndRunnable,
+            topicPageDownCounterAnimationDurationMs(previousCount, nextCount),
+        )
+    }
+
+    private fun pageDownPostsBelowViewport(manager: LinearLayoutManager): Int? {
         val lastVisiblePosition = manager.findLastVisibleItemPosition()
+        if (lastVisiblePosition == RecyclerView.NO_POSITION) {
+            return null
+        }
         val lastVisiblePostId = (lastVisiblePosition downTo 0)
             .firstNotNullOfOrNull(adapter::postIdAtAdapterPosition)
-        return topicPostsBelowViewport(latestTopicState.streamPostIds, lastVisiblePostId)
+        return topicPostsBelowViewportOrNull(latestTopicState.streamPostIds, lastVisiblePostId)
     }
 
     private fun handleReplyComposerKeyboardRequested(keyboardTarget: View) {
@@ -1700,9 +2201,12 @@ class TopicDetailFragment @JvmOverloads constructor(
 
     private fun openReplyComposerKeyboardInternal(keyboardTarget: View) {
         if (isReplyComposerPopupShowing()) {
-            markReplyComposerWaitingForKeyboardOpenAfterEmoji()
-            replyComposerPanel?.requestKeyboardWithRetry(forceWaitForKeyboard = true)
-                ?: topicReplyComposerRequestKeyboard(keyboardTarget)
+            hideReplyComposerPopup(
+                byBackButton = false,
+                openKeyboard = true,
+                keyboardTarget = keyboardTarget,
+                animated = true,
+            )
             return
         }
         replyComposerPanel?.requestKeyboardWithRetry() ?: topicReplyComposerRequestKeyboard(keyboardTarget)
@@ -1751,8 +2255,23 @@ class TopicDetailFragment @JvmOverloads constructor(
         panel.setError(null)
     }
 
+    private fun applyTopicListChromePadding() {
+        if (!::listView.isInitialized) return
+        val actionBarHeight = if (actionBar.measuredHeight > 0) {
+            actionBar.measuredHeight
+        } else {
+            AndroidUtilities.statusBarHeight + ActionBar.getCurrentActionBarHeight()
+        }
+        val nextTop = topicDetailListContentTopPaddingPx(actionBarHeight)
+        topicTopFadeView?.setFadeZoneTop(actionBarHeight + AndroidUtilities.dp(1f))
+        if (listView.paddingTop != nextTop) {
+            listView.setPadding(listView.paddingLeft, nextTop, listView.paddingRight, listView.paddingBottom)
+        }
+    }
+
     private fun updateReplyComposerBottomInset() {
         if (!::listView.isInitialized) return
+        applyTopicListChromePadding()
         updateTopicInputBubbleHeight()
         val inputIslandBottomGap = AndroidUtilities.dp(TOPIC_INPUT_ISLAND_BOTTOM_GAP_DP)
         val inputFactor = topicBottomViewsVisibilityController.getVisibility(TOPIC_BOTTOM_INPUT_CONTAINER)
@@ -1764,15 +2283,37 @@ class TopicDetailFragment @JvmOverloads constructor(
         } else {
             0
         }
-        val animatedBottomInset = topicInsetsStateHolder
-            ?.animatedMaxBottomInset
-            ?.roundToInt()
-            ?: topicReplyComposerActiveBottomInset(
-                panelAttached = bottomPanelAttached,
-                keyboardInset = replyComposerKeyboardHeight,
-                emojiPanelHeight = replyComposerEmojiPanelHeight,
-            )
-        val activeInset = if (bottomPanelAttached) animatedBottomInset.coerceAtLeast(0) else 0
+        val insetsStateHolder = topicInsetsStateHolder
+        // ActionBarLayout already dispatches insets.inset(0,0,0, nav+tabs) into the
+        // edge-to-edge LayoutContainer, so animatedMaxBottomInset is relative to the
+        // shortened host — do not subtract tabs again.
+        //
+        // Chat keeps checkInsets() running during AdjustPan. Island position is owned
+        // solely by ChatInputViewsContainer (-animatedMaxBottomInset - 9dp); the
+        // composer panel must not also translate by keyboardInset.
+        // Relative to shortened host (nav+tabs already in ActionBarLayout margin).
+        val animatedInset = (
+            insetsStateHolder?.animatedMaxBottomInset?.roundToInt()
+                ?: topicReplyComposerActiveBottomInset(
+                    panelAttached = bottomPanelAttached,
+                    keyboardInset = replyComposerKeyboardHeight,
+                    emojiPanelHeight = replyComposerEmojiPanelHeight,
+                )
+            ).coerceAtLeast(0)
+        // While AdjustPan carries the host for system IME, do not also lift island /
+        // pageDown by the same IME amount (would stack pan + inset → jump then settle).
+        // Floor is 0 relative to host; emoji panel height still lifts when in-app keyboard.
+        val panInProgress = rootFrameLayout?.isPanAnimationInProgress() == true
+        val activeInset = when {
+            !bottomPanelAttached -> 0
+            panInProgress && replyComposerKeyboardHeight > AndroidUtilities.dp(20f) ->
+                topicDetailPanSafeBottomInsetPx(
+                    navigationBarInset = 0,
+                    inAppKeyboardHeight = replyComposerEmojiPanelHeight,
+                    systemImeHeight = replyComposerKeyboardHeight,
+                )
+            else -> animatedInset
+        }
         replyComposerPanel?.setKeyboardInset(replyComposerKeyboardHeight)
         val listInset = activeInset
         mentionSuggestionsView?.translationY = -(panelHeight + activeInset).toFloat()
@@ -1787,6 +2328,17 @@ class TopicDetailFragment @JvmOverloads constructor(
         )
         if (listView.paddingBottom != nextBottom) {
             listView.setPadding(listView.paddingLeft, listView.paddingTop, listView.paddingRight, nextBottom)
+        }
+        // Chat keeps checkInsets during pan, but Chat's reversed list does not also ride a
+        // full host translation the same way for the island. When AdjustPan is carrying the
+        // host for system IME, skip island re-lift so pan + animatedMaxBottomInset don't stack
+        // (composer / pageDown "jump then settle" with Browser bar).
+        if (topicDetailShouldApplyInputInsets(
+                panInProgress = rootFrameLayout?.isPanAnimationInProgress() == true,
+                systemImeHeight = replyComposerKeyboardHeight,
+            )
+        ) {
+            topicInputViewsContainer?.checkInsets()
         }
         updateReplyComposerEmojiPanelContentInset()
     }
@@ -1923,6 +2475,7 @@ class TopicDetailFragment @JvmOverloads constructor(
         private val parsedBodyCache = ParsedBodyCache()
         private val bodyStateCache = BodyStateCache()
         private var rows: List<TopicDetailRow> = emptyList()
+        private var terminalDateSeparatorPosition = RecyclerView.NO_POSITION
         private var localPostsByNumber: Map<Int, String> = emptyMap()
         private var searchHighlightText = ""
         private var searchHighlightPostIds: Set<Long> = emptySet()
@@ -1954,6 +2507,7 @@ class TopicDetailFragment @JvmOverloads constructor(
             val newRows = buildRows(state)
             val diff = DiffUtil.calculateDiff(TopicRowsDiffCallback(oldRows, newRows), false)
             rows = newRows
+            terminalDateSeparatorPosition = rows.indexOfLast { row -> row is TopicDetailRow.DateSeparator }
             diff.dispatchUpdatesTo(this)
         }
 
@@ -1994,7 +2548,11 @@ class TopicDetailFragment @JvmOverloads constructor(
         fun floatingDateRowAt(position: Int): TopicFloatingDateRow? {
             return when (val row = rows.getOrNull(position)) {
                 is TopicDetailRow.PostRow -> TopicFloatingDateRow(TopicFloatingDateRowKind.POST, row.date)
-                is TopicDetailRow.DateSeparator -> TopicFloatingDateRow(TopicFloatingDateRowKind.DATE, row.date)
+                is TopicDetailRow.DateSeparator -> TopicFloatingDateRow(
+                    kind = TopicFloatingDateRowKind.DATE,
+                    date = row.date,
+                    isTerminalDateSeparator = position == terminalDateSeparatorPosition,
+                )
                 null -> null
                 else -> TopicFloatingDateRow(TopicFloatingDateRowKind.OTHER, null)
             }
@@ -2141,12 +2699,8 @@ class TopicDetailFragment @JvmOverloads constructor(
                 return listOf(TopicDetailRow.Empty)
             }
             val rows = mutableListOf<TopicDetailRow>()
-            rows += TopicDetailRow.Header(
-                title = state.title,
-                totalPosts = state.totalPosts,
-                viewCount = state.viewCount,
-                tags = state.tags,
-            )
+            // Topic chrome (title / meta) lives in the always-on ActionBar identity
+            // capsule — do not also render a list Header cell (felt redundant).
             val repliesByNumber = state.posts.groupBy { post -> post.replyToPostNumber }
             topicPostDateEntries(state.posts).forEach { entry ->
                 val post = entry.post
@@ -3530,181 +4084,6 @@ class TopicDetailFragment @JvmOverloads constructor(
 
     }
 
-    private class PullRefreshLayout(
-        context: Context,
-        private val listView: RecyclerListView,
-        private val canPull: () -> Boolean,
-        private val onRefresh: () -> Unit,
-    ) : FrameLayout(context) {
-        private val maxPull = PullForegroundDrawable.getMaxOverscroll().toFloat()
-        private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
-        private val pullDrawable = PullForegroundDrawable(
-            context.getString(io.github.baba983.nativedo.R.string.topic_detail_pull_refresh),
-            context.getString(io.github.baba983.nativedo.R.string.topic_detail_release_refresh),
-        )
-        private val headerView = object : View(context) {
-            override fun onDraw(canvas: Canvas) {
-                pullDrawable.draw(canvas)
-            }
-        }
-        private var downX = 0f
-        private var downY = 0f
-        private var dragging = false
-        private var pullDistance = 0f
-        private var thresholdReached = false
-        private var pullingStartTime = 0L
-        private var settleAnimator: ValueAnimator? = null
-        var isBusy: Boolean = false
-        val isPulling: Boolean
-            get() = dragging || pullDistance > 0f
-
-        init {
-            pullDrawable.setCell(headerView)
-            pullDrawable.setListView(listView)
-            pullDrawable.doNotShow()
-            addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT))
-            addView(headerView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, PullForegroundDrawable.getMaxOverscroll(), Gravity.TOP))
-        }
-
-        override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
-            when (ev.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    downX = ev.x
-                    downY = ev.y
-                    dragging = false
-                    settleAnimator?.cancel()
-                    pullDrawable.resetText()
-                    thresholdReached = false
-                    pullingStartTime = 0L
-                    pullDrawable.colorize(false)
-                    parent?.requestDisallowInterceptTouchEvent(false)
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    val dx = kotlin.math.abs(ev.x - downX)
-                    val dy = ev.y - downY
-                    if (canPull() && !isBusy && dy > touchSlop && dy > dx && !listView.canScrollVertically(-1)) {
-                        dragging = true
-                        pullingStartTime = System.currentTimeMillis()
-                        parent?.requestDisallowInterceptTouchEvent(true)
-                        return true
-                    }
-                }
-            }
-            return super.onInterceptTouchEvent(ev)
-        }
-
-        override fun onTouchEvent(event: MotionEvent): Boolean {
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    downX = event.x
-                    downY = event.y
-                    settleAnimator?.cancel()
-                    pullDrawable.resetText()
-                    thresholdReached = false
-                    pullingStartTime = 0L
-                    pullDrawable.colorize(false)
-                    return true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    if (!canPull() || isBusy) {
-                        if (pullDistance > 0f) animatePullBack()
-                        dragging = false
-                        return false
-                    }
-                    val dy = event.y - downY
-                    if (dy > 0 && !listView.canScrollVertically(-1)) {
-                        dragging = true
-                        if (pullingStartTime == 0L) pullingStartTime = System.currentTimeMillis()
-                        parent?.requestDisallowInterceptTouchEvent(true)
-                        setPullDistance(dampenPull(dy))
-                        return true
-                    }
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    if (dragging || pullDistance > 0f) {
-                        if (event.actionMasked == MotionEvent.ACTION_UP && topicPullRefreshShouldTrigger(
-                                pullProgress = pullDrawable.pullProgress,
-                                pullingDurationMs = System.currentTimeMillis() - pullingStartTime,
-                                isBusy = isBusy || !canPull(),
-                            )
-                        ) {
-                            onRefresh()
-                        }
-                        pullDrawable.doNotShow()
-                        pullDrawable.colorize(false)
-                        thresholdReached = false
-                        pullingStartTime = 0L
-                        animatePullBack()
-                        dragging = false
-                        parent?.requestDisallowInterceptTouchEvent(false)
-                        return true
-                    }
-                }
-            }
-            return super.onTouchEvent(event)
-        }
-
-        private fun dampenPull(distance: Float): Float {
-            return distance.coerceAtMost(maxPull * 2.0f) * 0.5f
-        }
-
-        private fun setPullDistance(distance: Float) {
-            pullDistance = distance.coerceIn(0f, maxPull)
-            listView.translationY = pullDistance
-            val progress = (pullDistance / maxPull).coerceIn(0f, 1f)
-            val reached = progress >= PullForegroundDrawable.SNAP_HEIGHT &&
-                System.currentTimeMillis() - pullingStartTime >= PullForegroundDrawable.minPullingTime
-            if (thresholdReached != reached) {
-                thresholdReached = reached
-                pullDrawable.colorize(reached)
-                if (reached) {
-                    try {
-                        listView.performHapticFeedback(
-                            HapticFeedbackConstants.KEYBOARD_TAP,
-                            HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING,
-                        )
-                    } catch (_: Exception) {
-                    }
-                }
-            }
-            pullDrawable.showHidden()
-            pullDrawable.setWillDraw(pullDistance > 0f)
-            pullDrawable.setPullProgress(progress)
-            headerView.invalidate()
-        }
-
-        private fun animatePullBack() {
-            settleAnimator?.cancel()
-            settleAnimator = ValueAnimator.ofFloat(pullDistance, 0f).apply {
-                interpolator = DecelerateInterpolator()
-                duration = 180L
-                addUpdateListener { animator -> setPullDistance(animator.animatedValue as Float) }
-                addListener(object : android.animation.AnimatorListenerAdapter() {
-                    override fun onAnimationEnd(animation: android.animation.Animator) {
-                        pullDrawable.doNotShow()
-                        pullDrawable.resetText()
-                        pullDrawable.colorize(false)
-                        thresholdReached = false
-                        headerView.invalidate()
-                    }
-                })
-                start()
-            }
-        }
-
-        fun release() {
-            settleAnimator?.cancel()
-            settleAnimator = null
-            pullingStartTime = 0L
-            dragging = false
-            pullDistance = 0f
-            listView.translationY = 0f
-            pullDrawable.doNotShow()
-            pullDrawable.resetText()
-            pullDrawable.colorize(false)
-        }
-    }
-
     private class TopicRepliesSheet(
         context: Context,
         fragment: BaseFragment,
@@ -4357,6 +4736,8 @@ class TopicDetailFragment @JvmOverloads constructor(
         private val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            clipChildren = false
+            clipToPadding = false
             setPadding(AndroidUtilities.dp(8f), 0, AndroidUtilities.dp(8f), 0)
         }
         private var selectedIndex = 0
@@ -4364,6 +4745,8 @@ class TopicDetailFragment @JvmOverloads constructor(
         init {
             isHorizontalScrollBarEnabled = false
             overScrollMode = OVER_SCROLL_NEVER
+            clipChildren = false
+            clipToPadding = false
             setBackgroundColor(Theme.getColor(Theme.key_chat_emojiPanelBackground))
             addView(row, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.MATCH_PARENT))
         }
@@ -4384,9 +4767,13 @@ class TopicDetailFragment @JvmOverloads constructor(
                 row.addView(
                     tab,
                     LinearLayout.LayoutParams(
-                        AndroidUtilities.dp(TOPIC_REPLY_COMPOSER_EMOJI_PANEL_TABS_HEIGHT_DP.toFloat()),
-                        AndroidUtilities.dp(TOPIC_REPLY_COMPOSER_EMOJI_PANEL_TABS_HEIGHT_DP.toFloat()),
-                    ),
+                        AndroidUtilities.dp(TOPIC_REPLY_COMPOSER_EMOJI_TAB_BUTTON_SIZE_DP.toFloat()),
+                        AndroidUtilities.dp(TOPIC_REPLY_COMPOSER_EMOJI_TAB_BUTTON_SIZE_DP.toFloat()),
+                    ).apply {
+                        if (index + 1 < categories.size) {
+                            rightMargin = AndroidUtilities.dp(TOPIC_REPLY_COMPOSER_EMOJI_TAB_GAP_DP.toFloat())
+                        }
+                    },
                 )
             }
         }
@@ -4473,7 +4860,7 @@ class TopicDetailFragment @JvmOverloads constructor(
             val scale = bounce.getScale(0.1f)
             val restore = canvas.save()
             canvas.scale(scale, scale, width / 2f, height / 2f)
-            val selectorSize = AndroidUtilities.dp(34f).toFloat()
+            val selectorSize = AndroidUtilities.dp(TOPIC_REPLY_COMPOSER_EMOJI_TAB_SELECTOR_SIZE_DP.toFloat()).toFloat()
             rect.set(
                 (width - selectorSize) / 2f,
                 (height - selectorSize) / 2f,
@@ -6839,34 +7226,15 @@ class TopicDetailFragment @JvmOverloads constructor(
     }
 }
 
-internal fun topicDetailCanStartPullRefresh(
-    isBusy: Boolean,
-    selectionActive: Boolean,
-    popupActive: Boolean,
-    keyboardInset: Int,
-    emojiPanelVisible: Boolean,
-): Boolean {
-    return !isBusy && !selectionActive && !popupActive && keyboardInset <= 0 && !emojiPanelVisible
-}
 
-internal fun topicPullRefreshShouldTrigger(
-    pullProgress: Float,
-    pullingDurationMs: Long,
-    isBusy: Boolean,
-): Boolean {
-    return !isBusy &&
-        pullProgress >= PullForegroundDrawable.SNAP_HEIGHT &&
-        pullingDurationMs >= PullForegroundDrawable.minPullingTime
-}
 
 internal fun topicDetailCanStartSwipeReply(
     isBusy: Boolean,
     selectionActive: Boolean,
     popupActive: Boolean,
     listScrollLocked: Boolean,
-    pullRefreshActive: Boolean,
 ): Boolean {
-    return !isBusy && !selectionActive && !popupActive && !listScrollLocked && !pullRefreshActive
+    return !isBusy && !selectionActive && !popupActive && !listScrollLocked
 }
 
 internal fun topicDetailShouldLoadMoreFromScroll(
@@ -6985,6 +7353,28 @@ internal fun topicPostScrimPopupMaxHeight(anchorView: View, popupY: Int): Int {
 private const val TOPIC_REPLY_COMPOSER_DEFAULT_HEIGHT_DP = 44
 private const val TOPIC_BOTTOM_INPUT_CONTAINER = 1
 private const val TOPIC_BOTTOM_SEARCH_CONTAINER = 4
+private const val TOPIC_MENU_SEARCH_FIELD = 1
+private const val TOPIC_MENU_OTHER = 2
+private const val TOPIC_MENU_SEARCH = 3
+private const val TOPIC_MENU_REFRESH = 4
+private const val TOPIC_IDENTITY_AVATAR_SIZE_DP = 42
+/** ChatActivity avatarContainer left margin (back button zone). */
+private const val TOPIC_IDENTITY_HOST_LEFT_GUTTER_DP = 53f
+/**
+ * Chat uses 52 (single ⋯) / 92 (call icon). Topic only shows ⋯ in the menu pill.
+ */
+private const val TOPIC_IDENTITY_HOST_RIGHT_GUTTER_DP = 52f
+private const val TOPIC_IDENTITY_LEFT_PADDING_DP = 8f
+/** Trailing reserve inside middle pill (Chat avatarContainer width - 54 - 16). */
+private const val TOPIC_IDENTITY_TEXT_TRAILING_RESERVE_DP = 16
+/** SimpleTextView gradient fade width at the long-title edge (Chat-like soft cut). */
+private const val TOPIC_IDENTITY_TEXT_FADE_DP = 16
+/** Right padding so marquee/ellipsize fade sits inside the pill, not on the glass rim. */
+private const val TOPIC_IDENTITY_TEXT_RIGHT_PADDING_DP = 8
+private const val TOPIC_IDENTITY_TITLE_TOP_OFFSET_DP = 1.3f
+private const val TOPIC_IDENTITY_SUBTITLE_TOP_OFFSET_DP = 24f
+private const val TOPIC_IDENTITY_TITLE_SIZE_DP = 17
+private const val TOPIC_IDENTITY_SUBTITLE_SIZE_DP = 14
 private const val TOPIC_SEARCH_DEBOUNCE_MS = 300L
 private const val TOPIC_SEARCH_ACTION_BAR_ANIMATION_DURATION_MS = 150L
 private const val TOPIC_REPLY_COMPOSER_SEND_BUTTON_WIDTH_DP = 100
@@ -7021,6 +7411,9 @@ private const val TOPIC_REPLY_COMPOSER_EDIT_TEXT_BOUNDS_ANIMATION_DURATION_MS = 
 private const val TOPIC_REPLY_COMPOSER_EMOJI_PANEL_ANIMATION_START_DELAY_MS = 0L
 private const val TOPIC_REPLY_COMPOSER_SEND_BUTTON_LOADING_REPEAT_DELAY_MS = 650L
 private const val TOPIC_REPLY_COMPOSER_EMOJI_PANEL_TABS_HEIGHT_DP = 36
+private const val TOPIC_REPLY_COMPOSER_EMOJI_TAB_BUTTON_SIZE_DP = 30
+private const val TOPIC_REPLY_COMPOSER_EMOJI_TAB_SELECTOR_SIZE_DP = 30
+private const val TOPIC_REPLY_COMPOSER_EMOJI_TAB_GAP_DP = 3
 private const val TOPIC_REPLY_COMPOSER_EMOJI_PANEL_SEARCH_HEIGHT_DP = 0
 private const val TOPIC_REPLY_COMPOSER_EMOJI_PANEL_BOTTOM_CONTROLS_DP = 44
 private const val TOPIC_REPLY_COMPOSER_EMOJI_GRID_HORIZONTAL_PADDING_DP = 5
@@ -7687,6 +8080,21 @@ private class TopicReplyComposerPanel(
         showReplyHeaderRunnable.run()
     }
 
+    fun onAdjustPanTransitionStart(keyboardVisible: Boolean, contentHeight: Int) {
+        if (keyboardVisible) {
+            onKeyboardVisible()
+        }
+    }
+
+    fun onAdjustPanTransitionUpdate(y: Float, progress: Float, keyboardVisible: Boolean) {
+        // Kept as the upstream-shaped host hook. The current NativeDo composer
+        // has no bot-webview child that needs a per-frame counter-translation.
+    }
+
+    fun onAdjustPanTransitionEnd() {
+        // Insets own the final keyboard state; AdjustPan only bridges the resize.
+    }
+
     fun setKeyboardInset(inset: Int) {
         val nextInset = topicReplyComposerPanelKeyboardInsetPx(inset)
         if (nextInset > 0) {
@@ -7700,8 +8108,9 @@ private class TopicReplyComposerPanel(
         keyboardInsetTarget = nextInset
         keyboardInsetAnimator?.cancel()
         keyboardInsetAnimator = null
+        // Island lift is owned by ChatInputViewsContainer.checkInsets(). Keep keyboard
+        // inset as state for emoji/retry only — do not translate the panel by IME.
         keyboardInset = nextInset
-        updatePanelTranslation()
     }
 
     fun isKeyboardAnimationInProgress(): Boolean {
@@ -8226,6 +8635,12 @@ internal fun topicReplyComposerKeyboardHeightPreferenceKey(): String {
 
 internal fun topicReplyComposerEmojiPanelTabsHeightDp(): Int = TOPIC_REPLY_COMPOSER_EMOJI_PANEL_TABS_HEIGHT_DP
 
+internal fun topicReplyComposerEmojiTabButtonSizeDp(): Int = TOPIC_REPLY_COMPOSER_EMOJI_TAB_BUTTON_SIZE_DP
+
+internal fun topicReplyComposerEmojiTabSelectorSizeDp(): Int = TOPIC_REPLY_COMPOSER_EMOJI_TAB_SELECTOR_SIZE_DP
+
+internal fun topicReplyComposerEmojiTabGapDp(): Int = TOPIC_REPLY_COMPOSER_EMOJI_TAB_GAP_DP
+
 internal fun topicReplyComposerEmojiPanelSearchHeightDp(): Int = TOPIC_REPLY_COMPOSER_EMOJI_PANEL_SEARCH_HEIGHT_DP
 
 internal fun topicReplyComposerEmojiPanelBottomControlsDp(): Int = TOPIC_REPLY_COMPOSER_EMOJI_PANEL_BOTTOM_CONTROLS_DP
@@ -8268,6 +8683,14 @@ internal fun topicReplyComposerShouldIgnoreEmojiButton(
     waitingForKeyboardOpenAfterAnimation: Boolean,
 ): Boolean {
     return keyboardAnimationInProgress || emojiPanelAnimationInProgress || waitingForKeyboardOpenAfterAnimation
+}
+
+internal fun topicReplyComposerShouldHideEmojiPanelForKeyboard(
+    keyboardVisible: Boolean,
+    emojiPanelShowing: Boolean,
+    waitingForKeyboardOpenAfterEmoji: Boolean,
+): Boolean {
+    return keyboardVisible && emojiPanelShowing && waitingForKeyboardOpenAfterEmoji
 }
 
 internal fun topicReplyComposerShouldFlushDelayedTopView(
@@ -8414,6 +8837,100 @@ internal fun topicReplyComposerActiveBottomInset(panelAttached: Boolean, keyboar
     }
     val emojiInset = emojiPanelHeight.coerceAtLeast(0)
     return if (emojiInset > 0) emojiInset else keyboardInset.coerceAtLeast(0)
+}
+
+internal fun topicDetailPanStartOffset(keyboardHeight: Int, popupShowing: Boolean, popupHeight: Int): Int {
+    return if (keyboardHeight <= AndroidUtilities.dp(20f) && popupShowing) {
+        popupHeight.coerceAtLeast(0)
+    } else {
+        0
+    }
+}
+
+/**
+ * ChatActivityFragmentView.heightAnimationEnabled() subset for TopicDetail.
+ * BottomSheetTabs height is applied through ActionBarLayout margins + AdjustPan's
+ * getExpandedHeight(); TopicDetail must not disable pan solely because tabs are
+ * visible (that forced an insets-only path and overshot).
+ */
+internal fun topicDetailPanHeightAnimationEnabled(
+    hasParentActivity: Boolean,
+    fragmentPaused: Boolean,
+    hasBlockingPopup: Boolean,
+    hasShownAttachedSheet: Boolean,
+    bottomTabsAnimating: Boolean,
+    isLastFragment: Boolean,
+): Boolean {
+    if (!hasParentActivity || fragmentPaused || hasBlockingPopup) {
+        return false
+    }
+    // Only block pan while a sheet transition is actively animating tabs height.
+    if (hasShownAttachedSheet || bottomTabsAnimating) {
+        return false
+    }
+    return isLastFragment
+}
+
+/**
+ * TopicDetail is a normal top-down list. Unlike Chat's reversed chatListViewPaddingTop
+ * path, contentPanTranslation must NOT be folded into list top padding — that cancels
+ * AdjustPan's root translation and kills the whole-page keyboard motion.
+ * Kept as an explicit identity helper so call sites/tests document the decision.
+ */
+internal fun topicDetailListTopPaddingPx(baseTopPadding: Int, contentPanTranslation: Float): Int {
+    // contentPanTranslation is intentionally ignored for top padding — top-down list.
+    return baseTopPadding.coerceAtLeast(0)
+}
+
+/** Chat list top pad includes ActionBar height so content draws under glass chrome. */
+internal fun topicDetailListContentTopPaddingPx(actionBarHeight: Int, extra: Int = 0): Int {
+    return actionBarHeight.coerceAtLeast(0) + extra.coerceAtLeast(0)
+}
+
+/**
+ * Top-down list whole-page keyboard motion. Chat gets this "for free" from a reversed
+ * list + bottom padding; TopicDetail applies the same animated IME lift as translationY
+ * on the list container so posts rise with the island under a fixed ActionBar.
+ */
+internal fun topicDetailContentLiftPx(animatedImeBottomInset: Float): Float {
+    val inset = animatedImeBottomInset.coerceAtLeast(0f)
+    return if (inset == 0f) 0f else -inset
+}
+
+/**
+ * When BottomSheetTabs are visible, ActionBarLayout already shortens LayoutContainer by
+ * (nav + tabs). Window-level IME insets still report distance from the display bottom.
+ * Applying the full IME under the island double-counts the reserved strip and the
+ * composer overshoots, then settles — the "moves too high, then drops" glitch.
+ */
+internal fun topicDetailIslandBottomInsetPx(
+    windowMaxBottomInset: Int,
+    bottomTabsHeight: Int,
+): Int {
+    return (windowMaxBottomInset - bottomTabsHeight.coerceAtLeast(0)).coerceAtLeast(0)
+}
+
+/**
+ * While AdjustPan is carrying the host, only keep the non-IME floor under the island
+ * so pan + inset animation do not stack.
+ */
+internal fun topicDetailPanSafeBottomInsetPx(
+    navigationBarInset: Int,
+    inAppKeyboardHeight: Int,
+    systemImeHeight: Int,
+): Int {
+    if (systemImeHeight > 0) {
+        // IME is the pan driver; don't also lift the island by IME.
+        return maxOf(navigationBarInset.coerceAtLeast(0), 0)
+    }
+    return maxOf(navigationBarInset.coerceAtLeast(0), inAppKeyboardHeight.coerceAtLeast(0))
+}
+
+internal fun topicDetailShouldApplyInputInsets(
+    panInProgress: Boolean,
+    systemImeHeight: Int,
+): Boolean {
+    return !panInProgress || systemImeHeight <= AndroidUtilities.dp(20f)
 }
 
 internal fun topicReplyComposerEmojiTabsBottomY(contentTopInset: Int): Int {
@@ -9374,10 +9891,64 @@ internal fun topicReactionUsersForFilter(
 internal fun topicReplyFooterCount(post: Post, loadedPreviewCount: Int): Int =
     maxOf(post.replyCount, loadedPreviewCount)
 
-internal fun topicPostsBelowViewport(streamPostIds: List<Long>, lastVisiblePostId: Long?): Int {
-    if (lastVisiblePostId == null || streamPostIds.isEmpty()) return 0
+internal fun topicDetailShouldUpdateCollapsedTitle(searchOpen: Boolean, searchFieldVisible: Boolean): Boolean {
+    return !searchOpen && !searchFieldVisible
+}
+
+internal fun topicDetailIdentitySubtitle(
+    context: Context,
+    totalPosts: Int,
+    viewCount: Int,
+    tags: List<String> = emptyList(),
+): String {
+    val replies = totalPosts.coerceAtLeast(0)
+    val views = viewCount.coerceAtLeast(0)
+    val base = when {
+        replies > 0 && views > 0 -> context.getString(R.string.topic_detail_subtitle_replies_views, replies, views)
+        replies > 0 -> context.getString(R.string.topic_detail_subtitle_replies, replies)
+        views > 0 -> context.getString(R.string.topic_detail_subtitle_views, views)
+        else -> ""
+    }
+    val tag = tags.firstOrNull()?.takeIf { it.isNotBlank() }
+    return if (tag != null && base.isNotBlank()) {
+        "$tag · $base"
+    } else {
+        tag ?: base
+    }
+}
+
+internal fun topicDetailIdentityDisplayName(firstPost: Post?, fallbackTitle: String): String {
+    val display = firstPost?.authorDisplayName?.takeIf { it.isNotBlank() }
+    val username = firstPost?.authorUsername?.takeIf { it.isNotBlank() }
+    return display ?: username ?: fallbackTitle
+}
+
+internal fun topicDetailIdentityAvatarUrl(baseUrl: String, firstPost: Post?): String {
+    if (firstPost == null) return ""
+    return resolveAvatarUrl(
+        baseUrl = baseUrl,
+        avatarTemplate = firstPost.authorAvatarTemplate,
+        animatedAvatarUrl = firstPost.authorAnimatedAvatarUrl,
+        size = AndroidUtilities.dp(TOPIC_IDENTITY_AVATAR_SIZE_DP.toFloat()),
+    )
+}
+
+internal fun topicPostsBelowViewportOrNull(streamPostIds: List<Long>, lastVisiblePostId: Long?): Int? {
+    if (lastVisiblePostId == null || streamPostIds.isEmpty()) return null
     val index = streamPostIds.indexOf(lastVisiblePostId)
-    return if (index < 0) 0 else (streamPostIds.lastIndex - index).coerceAtLeast(0)
+    return if (index < 0) null else (streamPostIds.lastIndex - index).coerceAtLeast(0)
+}
+
+internal fun topicPostsBelowViewport(streamPostIds: List<Long>, lastVisiblePostId: Long?): Int {
+    return topicPostsBelowViewportOrNull(streamPostIds, lastVisiblePostId) ?: 0
+}
+
+internal fun topicPageDownCounterAnimationDurationMs(previousCount: Int, nextCount: Int): Long {
+    return when {
+        previousCount <= 0 && nextCount > 0 -> 220L
+        previousCount > 0 && nextCount <= 0 -> 150L
+        else -> 430L
+    }
 }
 
 internal fun topicShouldShowPageDown(
@@ -9426,5 +9997,206 @@ private class TopicViewModelFactory(
             replyDraftStore = replyDraftStore,
             replyDraftKey = replyDraftKey,
         ) as T
+    }
+}
+
+/**
+ * Compact ChatAvatarContainer-shaped identity strip for TopicDetail ActionBar.
+ * Layout mirrors upstream ChatAvatarContainer (avatar 42, leftPadding 8, title/subtitle
+ * offsets). Hosted with WRAP_CONTENT + left 53 / right menu gutters so back / menu stay
+ * outside the hit target — same as ChatActivity.avatarContainer.
+ */
+internal class TopicIdentityContainer(context: Context) : FrameLayout(context) {
+    private val avatarDrawable = AvatarDrawable()
+    // Draw AvatarDrawable directly. BackupImageView's ImageReceiver path is flaky for
+    // monogram-only avatars under Paparazzi / when no remote image is bound.
+    private val avatarView = object : View(context) {
+        init {
+            setWillNotDraw(false)
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            // Theme "Blue" defaultColors may leave avatar keys at 0 → AvatarDrawable
+            // paints pure black. Prefer the NativeDo/Telegram palette when missing.
+            if (avatarDrawable.color == 0 || avatarDrawable.color == 0xFF000000.toInt()) {
+                avatarDrawable.setColor(0xFFFF845E.toInt(), 0xFFD45246.toInt())
+            }
+            avatarDrawable.setBounds(0, 0, width, height)
+            avatarDrawable.draw(canvas)
+        }
+    }
+    private val remoteAvatarView = BackupImageView(context).apply {
+        setRoundRadius(AndroidUtilities.dp(TOPIC_IDENTITY_AVATAR_SIZE_DP / 2f))
+        visibility = GONE
+    }
+    private val titleView = SimpleTextView(context).apply {
+        setTextSize(TOPIC_IDENTITY_TITLE_SIZE_DP)
+        setTypeface(AndroidUtilities.getTypeface(AndroidUtilities.TYPEFACE_ROBOTO_MEDIUM))
+        setTextColor(Theme.getColor(Theme.key_actionBarDefaultTitle))
+        setGravity(Gravity.LEFT or Gravity.TOP)
+        // ChatAvatarContainer: long titles use gradient ellipsize (soft edge), not a hard
+        // clip line. Keep a right padding so the fade has room inside the middle pill.
+        setScrollNonFitText(true)
+        setEllipsizeByGradient(TOPIC_IDENTITY_TEXT_FADE_DP)
+        setRightPadding(AndroidUtilities.dp(TOPIC_IDENTITY_TEXT_RIGHT_PADDING_DP.toFloat()))
+    }
+    private val subtitleView = SimpleTextView(context).apply {
+        setTextSize(TOPIC_IDENTITY_SUBTITLE_SIZE_DP)
+        setTextColor(Theme.getColor(Theme.key_actionBarDefaultSubtitle))
+        setGravity(Gravity.LEFT or Gravity.TOP)
+        setScrollNonFitText(true)
+        setEllipsizeByGradient(TOPIC_IDENTITY_TEXT_FADE_DP)
+        setRightPadding(AndroidUtilities.dp(TOPIC_IDENTITY_TEXT_RIGHT_PADDING_DP.toFloat()))
+    }
+    private var boundTitle: String = ""
+    private var boundSubtitle: String = ""
+    private var boundAvatarUrl: String = ""
+    private var boundDisplayName: String = ""
+    private var avatarInfoApplied: Boolean = false
+    private var occupyStatusBar: Boolean = true
+    private val leftPadding = AndroidUtilities.dp(TOPIC_IDENTITY_LEFT_PADDING_DP)
+
+    init {
+        clipChildren = false
+        clipToPadding = false
+        addView(avatarView)
+        addView(remoteAvatarView)
+        addView(titleView)
+        addView(subtitleView)
+    }
+
+    fun setOccupyStatusBar(value: Boolean) {
+        if (occupyStatusBar == value) return
+        occupyStatusBar = value
+        requestLayout()
+    }
+
+    fun bind(title: String, subtitle: String, avatarUrl: String, displayName: String) {
+        if (boundTitle != title) {
+            boundTitle = title
+            titleView.setText(title)
+        }
+        if (boundSubtitle != subtitle) {
+            boundSubtitle = subtitle
+            subtitleView.setText(subtitle)
+            subtitleView.visibility = if (subtitle.isBlank()) GONE else VISIBLE
+        }
+        val monogram = displayName.ifBlank { title }
+        val avatarChanged = !avatarInfoApplied || boundAvatarUrl != avatarUrl || boundDisplayName != monogram
+        if (avatarChanged) {
+            boundAvatarUrl = avatarUrl
+            boundDisplayName = monogram
+            avatarInfoApplied = true
+            // Non-zero seed so palette isn't stuck on the first red slot for every topic.
+            val seed = monogram.hashCode().toLong().let { if (it == 0L) 1L else it }
+            avatarDrawable.setInfo(seed, monogram)
+            if (avatarUrl.isBlank()) {
+                remoteAvatarView.visibility = GONE
+                avatarView.visibility = VISIBLE
+                avatarView.invalidate()
+            } else {
+                avatarView.visibility = GONE
+                remoteAvatarView.visibility = VISIBLE
+                remoteAvatarView.setImage(
+                    ImageLocation.getForPath(avatarUrl),
+                    avatarImageFilter(avatarUrl, AndroidUtilities.dp(TOPIC_IDENTITY_AVATAR_SIZE_DP.toFloat())),
+                    avatarDrawable,
+                    null,
+                )
+            }
+        }
+        requestLayout()
+    }
+
+    fun setIdentityVisible(visible: Boolean) {
+        // ChatAvatarContainer uses alpha while searching; INVISIBLE keeps layout
+        // space for glass middle-pill measure when we want the pill to stay.
+        val target = if (visible) VISIBLE else INVISIBLE
+        if (visibility != target) {
+            visibility = target
+        }
+        alpha = if (visible) 1f else 0f
+        isEnabled = visible
+        isClickable = visible
+    }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        // ChatAvatarContainer.onMeasure: width from parent, availableWidth = width - 54 - 16.
+        val width = MeasureSpec.getSize(widthMeasureSpec)
+        val height = MeasureSpec.getSize(heightMeasureSpec).takeIf { it > 0 }
+            ?: (ActionBar.getCurrentActionBarHeight() + if (occupyStatusBar) AndroidUtilities.statusBarHeight else 0)
+        val avatarSize = AndroidUtilities.dp(TOPIC_IDENTITY_AVATAR_SIZE_DP.toFloat())
+        val avatarSpec = MeasureSpec.makeMeasureSpec(avatarSize, MeasureSpec.EXACTLY)
+        avatarView.measure(avatarSpec, avatarSpec)
+        remoteAvatarView.measure(avatarSpec, avatarSpec)
+        // ChatAvatarContainer: availableWidth = width - avatarColumn(54) - trailing(16).
+        // Trailing reserves pill inner padding so long titles don't kiss the glass edge;
+        // SimpleTextView fade/ellipsize paints in the right padding band.
+        val availableWidth = (
+            width
+                - AndroidUtilities.dp(54f)
+                - AndroidUtilities.dp(TOPIC_IDENTITY_TEXT_TRAILING_RESERVE_DP.toFloat())
+        ).coerceAtLeast(AndroidUtilities.dp(32f))
+        titleView.measure(
+            MeasureSpec.makeMeasureSpec(availableWidth, MeasureSpec.AT_MOST),
+            MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(24f + 8f), MeasureSpec.AT_MOST),
+        )
+        if (subtitleView.visibility != GONE) {
+            subtitleView.measure(
+                MeasureSpec.makeMeasureSpec(availableWidth, MeasureSpec.AT_MOST),
+                MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(20f), MeasureSpec.AT_MOST),
+            )
+        } else {
+            subtitleView.measure(
+                MeasureSpec.makeMeasureSpec(0, MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(0, MeasureSpec.EXACTLY),
+            )
+        }
+        setMeasuredDimension(width, height)
+    }
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        // ChatAvatarContainer.onLayout geometry (avatar 42, leftPadding 8, title 1.3, subtitle 24).
+        val actionBarHeight = ActionBar.getCurrentActionBarHeight()
+        val statusInset = if (occupyStatusBar) AndroidUtilities.statusBarHeight else 0
+        val avatarSize = AndroidUtilities.dp(TOPIC_IDENTITY_AVATAR_SIZE_DP.toFloat())
+        val viewTop = (actionBarHeight - avatarSize) / 2 + statusInset
+        avatarView.layout(
+            leftPadding,
+            viewTop + 1,
+            leftPadding + avatarSize,
+            viewTop + 1 + avatarSize,
+        )
+        remoteAvatarView.layout(
+            leftPadding,
+            viewTop + 1,
+            leftPadding + avatarSize,
+            viewTop + 1 + avatarSize,
+        )
+        val textLeft = leftPadding + AndroidUtilities.dp(54f)
+        if (subtitleView.visibility != GONE) {
+            val titleTop = viewTop + AndroidUtilities.dp(TOPIC_IDENTITY_TITLE_TOP_OFFSET_DP)
+            titleView.layout(
+                textLeft,
+                titleTop,
+                textLeft + titleView.measuredWidth,
+                titleTop + titleView.measuredHeight,
+            )
+            val subtitleTop = viewTop + AndroidUtilities.dp(TOPIC_IDENTITY_SUBTITLE_TOP_OFFSET_DP)
+            subtitleView.layout(
+                textLeft,
+                subtitleTop,
+                textLeft + subtitleView.measuredWidth,
+                subtitleTop + subtitleView.measuredHeight,
+            )
+        } else {
+            val titleTop = viewTop + AndroidUtilities.dp(11f)
+            titleView.layout(
+                textLeft,
+                titleTop,
+                textLeft + titleView.measuredWidth,
+                titleTop + titleView.measuredHeight,
+            )
+        }
     }
 }

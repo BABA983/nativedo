@@ -150,6 +150,8 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
     private final ReplyMessageLine replyLine = new ReplyMessageLine(this);
     private final ButtonBounce replyBounce = new ButtonBounce(this, 2.0f, 2.0f);
     private Drawable replyFooterSelector;
+    private boolean invalidatesParent;
+    private boolean scrimForegroundDrawing;
 
     private Post post;
     private Post previousPost;
@@ -579,7 +581,9 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        canvas.drawColor(Theme.getColor(Theme.key_chat_inBubble));
+        if (!scrimForegroundDrawing) {
+            canvas.drawColor(Theme.getColor(Theme.key_chat_inBubble));
+        }
         drawJumpHighlight(canvas);
         avatarImage.draw(canvas);
         drawAvatarFlair(canvas);
@@ -624,6 +628,41 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
         drawSearchHighlight(canvas);
         if (textSelectionHelper != null) {
             textSelectionHelper.draw(canvas, this, 0);
+        }
+    }
+
+    public void setInvalidatesParent(boolean value) {
+        invalidatesParent = value;
+    }
+
+    /** Used by the selected-message foreground pass above the full-screen scrim. */
+    public void setScrimForegroundDrawing(boolean value) {
+        scrimForegroundDrawing = value;
+    }
+
+    @Override
+    public void invalidate() {
+        super.invalidate();
+        if (invalidatesParent && getParent() instanceof View) {
+            View parent = (View) getParent();
+            parent.invalidate();
+            if (parent.getParent() instanceof View) {
+                ((View) parent.getParent()).invalidate();
+            }
+        }
+    }
+
+    @Override
+    public void invalidate(int left, int top, int right, int bottom) {
+        super.invalidate(left, top, right, bottom);
+        if (invalidatesParent && getParent() instanceof View) {
+            View parent = (View) getParent();
+            parent.invalidate(
+                (int) getX() + left,
+                (int) getY() + top,
+                (int) getX() + right,
+                (int) getY() + bottom
+            );
         }
     }
 

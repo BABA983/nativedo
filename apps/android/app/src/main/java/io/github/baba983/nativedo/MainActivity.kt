@@ -53,6 +53,15 @@ class MainActivity : LaunchActivity() {
         drawerLayoutContainer = DrawerLayoutContainer(this)
         drawerLayoutContainer.clipChildren = false
         drawerLayoutContainer.clipToPadding = false
+        // Upstream LaunchActivity wires this so drawer intercept / keyboard path can
+        // consult the root ActionBarLayout. Required for DrawerLayoutContainer's
+        // IME-driven requestLayout that AdjustPanLayoutHelper depends on.
+        drawerLayoutContainer.setParentActionBarLayout(actionBarLayout)
+        // Upstream LaunchActivity paints the strip behind IME with windowBackgroundWhite.
+        // Without this, AdjustPan height freezes can flash a grey/default gap under tabs.
+        drawerLayoutContainer.setBehindKeyboardColor(
+            org.telegram.ui.ActionBar.Theme.getColor(org.telegram.ui.ActionBar.Theme.key_windowBackgroundWhite),
+        )
         drawerLayoutContainer.addView(
             actionBarLayout,
             ViewGroup.LayoutParams(

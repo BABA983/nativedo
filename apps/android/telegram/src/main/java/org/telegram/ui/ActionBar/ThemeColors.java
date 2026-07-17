@@ -77,6 +77,7 @@ public class ThemeColors {
         defaultColors[key_share_linkBackground] = 0x0F000000;
 
         defaultColors[key_windowBackgroundWhite] = 0xffffffff;
+        defaultColors[key_chat_wallpaper] = 0xfff1f1f3;
         defaultColors[key_windowBackgroundUnchecked] = 0xff96A2AD;
         defaultColors[key_windowBackgroundChecked] = 0xff229AF0;
         defaultColors[key_windowBackgroundCheckText] = 0xffffffff;
@@ -319,11 +320,6 @@ public class ThemeColors {
         defaultColors[key_chat_serviceText] = 0xffffffff;
         defaultColors[key_chat_serviceLink] = 0xffffffff;
         defaultColors[key_chat_serviceIcon] = 0xffffffff;
-        // Upstream derives these from the active wallpaper via
-        // AndroidUtilities.calcDrawableColor(). NativeDo's default wallpaper is
-        // #f1f1f3, which produces these exact service-message colors.
-        defaultColors[key_chat_serviceBackground] = 0x6685859e;
-        defaultColors[key_chat_serviceBackgroundSelected] = 0x889393af;
         defaultColors[key_chat_mediaTimeBackground] = 0x66000000;
         defaultColors[key_chat_outSentCheck] = 0xff5db050;
         defaultColors[key_chat_outSentCheckSelected] = 0xff5db050;
@@ -450,7 +446,6 @@ public class ThemeColors {
         defaultColors[key_chat_linkSelectBackground] = 0x3362a9e3;
         defaultColors[key_chat_outLinkSelectBackground] = 0x3362a9e3;
         defaultColors[key_chat_textSelectBackground] = 0x6662a9e3;
-        defaultColors[key_chat_wallpaper] = 0xfff1f1f3;
         defaultColors[key_chat_emojiPanelBackground] = 0xfff0f2f5;
         defaultColors[key_chat_emojiSearchBackground] = 0xffe5e9ee;
         defaultColors[key_chat_emojiSearchIcon] = 0xff94a1af;
@@ -489,6 +484,11 @@ public class ThemeColors {
         defaultColors[key_chat_replyPanelClose] = 0xff8e959b;
         defaultColors[key_chat_replyPanelName] = TELEGRAM_COLOR_TEXT;
         defaultColors[key_chat_replyPanelLine] = 0xffe8e8e8;
+        // Upstream derives these from the active wallpaper via
+        // AndroidUtilities.calcDrawableColor(). NativeDo's default wallpaper is
+        // #f1f1f3, which produces these exact service-message colors.
+        defaultColors[key_chat_serviceBackground] = 0x6685859e;
+        defaultColors[key_chat_serviceBackgroundSelected] = 0x889393af;
         defaultColors[key_chat_messagePanelBackground] = 0xffffffff;
         defaultColors[key_chat_messagePanelText] = 0xff000000;
         defaultColors[key_chat_messagePanelHint] = 0xff858a84;
@@ -813,7 +813,7 @@ public class ThemeColors {
         defaultColors[key_code_keyword] = 0xFFE05356;
         defaultColors[key_code_operator] = 0xFF4DBBFF;
         defaultColors[key_code_constant] = 0xFF7F79F3;
-        defaultColors[key_code_string] = 0xFF61C752;
+        defaultColors[key_code_string] = 0xFF37C123;
         defaultColors[key_code_number] = 0xFF327FE5;
         defaultColors[key_code_comment] = 0x80000000;
         defaultColors[key_code_function] = 0xFFF28C39;
