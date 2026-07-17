@@ -110,7 +110,8 @@ Introduced `org.telegram.ui.IArticleViewer` (API surface only):
 13. [x] B12: parent-reshape Details + Related articles cells
 14. [x] B13: parent-reshape List + OrderedList item cells
 15. [x] B14: parent-reshape `BlockTableCell` (P0 product path)
-16. [ ] Continue remaining Block*Cell parent reshape (media/channel/embed)
+16. [x] B15: parent-reshape media + channel cells (Photo/Video/Audio/Map/Channel) + loadChannel/joinChannel
+17. [ ] Continue remaining Block*Cell parent reshape (Embed/EmbedPost/Collage/Slideshow; Divider/DetailsBottom optional)
 
 Do **not** full-file replace until B2 compiles with contract tests green.
 
@@ -324,3 +325,15 @@ scripts/vendor-status.sh
   media/channel/embed cells
 - Contract coverage constructs a parent-hosted table cell and measures the empty-block sentinel
 - `:app` `TableBlock` remains its own native port and does not depend on this nested class
+
+### Phase B15 — Media + Channel cells (landed)
+
+- Static parent reshape for: `BlockPhotoCell`, `BlockVideoCell`, `BlockAudioCell`,
+  `BlockMapCell`, `BlockChannelCell`
+- `loadChannel` / `joinChannel` expose pin-shaped static parent cores; instance wrappers remain
+- Media cells use `parent.getCurrentAccount()` / themed colors / `parent.openPhoto` and keep
+  ArticleViewer-only host wiring for pinch-to-zoom, parentFragment channel open, and video player
+  fields via `parent.videoPlayer` / `parent.videoStates`
+- Nested channel chips construct with `(parent, adapter, type=1)`
+- Deferred: Embed/EmbedPost/Collage/Slideshow; pin WebView join result path; IBlock/a11y
+- Contract coverage constructs parent-hosted media/channel cells and measures empty state

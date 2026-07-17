@@ -5,7 +5,7 @@
 - Utilities scheme-2
 - Browser chrome scheme-2: WebMetadataCache, AddressBarList
 - WebInstantView S1 reverse-patch
-- ArticleViewer B1–B14 (through BlockTableCell parent reshape) — full body still epic
+- ArticleViewer B1–B15 (through media/channel Block*Cell parent reshape) — full body still epic
 - **Cleared entire "FF clean pin fails compile" class (5 files)** — pin 12.8.1 + host re-apply:
   - GraySectionCell
   - NestedSizeNotifierLayout
@@ -15,7 +15,7 @@
     - host contract: `FlickerLoadingViewHostContractTest` (REACTED_TYPE = 50dp)
 
 ## ArticleViewer (epic)
-- See `docs/vendor-articleviewer-plan.md` (B1–B14 landed; media/channel/embed Block*Cell reshape next; no full-file pin)
+- See `docs/vendor-articleviewer-plan.md` (B1–B15 landed; Embed/Collage/Slideshow reshape next; no full-file pin)
 
 ## Still heavy stuck (not FF-host class)
 - WebBrowserSettings — MessagesController browser policy APIs
