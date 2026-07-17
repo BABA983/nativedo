@@ -112,7 +112,8 @@ Introduced `org.telegram.ui.IArticleViewer` (API surface only):
 15. [x] B14: parent-reshape `BlockTableCell` (P0 product path)
 16. [x] B15: parent-reshape media + channel cells (Photo/Video/Audio/Map/Channel) + loadChannel/joinChannel
 17. [x] B16: EmbedPost static parent reshape + Embed/Collage/Slideshow helper rewire
-18. [ ] Optional: Divider/DetailsBottom polish; larger pin body / Sheet chrome slices
+18. [x] B17: `IBlock` + DrawingText bounds + `buildAccessibilityText` / `appendA11yLabel` foundation
+19. [ ] Optional: wire remaining Block*Cell IBlock/a11y; spoiler attach; larger Sheet chrome
 
 Do **not** full-file replace until B2 compiles with contract tests green.
 
@@ -350,3 +351,16 @@ scripts/vendor-status.sh
 - Deferred: making Embed/Collage/Slideshow fully static; Divider/DetailsBottom are already
   parent-less static paint helpers
 - Contract coverage constructs a parent-hosted EmbedPost cell and measures the empty-block sentinel
+
+### Phase B17 — IBlock + DrawingText bounds + a11y helpers (landed)
+
+- `DrawingText` exposes pin-shaped `getBoundLeft` / `getBoundRight` / `getLastLineBoundRight`
+  (cached) plus `setX`/`setY`/`setRow`
+- `ArticleViewer.IBlock` is the public static bounds interface with `getMinWidth()` default
+- `buildAccessibilityText(parent, adapter, layout)` converts URL spans to clickable a11y spans via
+  `parent.handleLinkClick`; `appendA11yLabel` appends localized labels
+- Simple text cells implement `IBlock` with `padx`-relative bounds: Paragraph, Header, Title,
+  Subtitle, Subheader, Kicker, Footer; a11y paths use the new helpers where labels exist
+- Deferred: spoiler/typing attach lifecycle, remaining Block*Cell IBlock coverage, full AccDescr
+  string set beyond Title/Heading
+- Contract coverage locks DrawingText bounds + a11y helpers + Paragraph `IBlock` empty bounds

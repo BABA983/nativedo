@@ -52,6 +52,7 @@ import android.text.Editable;
 import android.text.Layout;
 import android.text.Spannable;
 import android.text.SpannableStringBuilder;
+import android.text.style.ClickableSpan;
 import android.text.Spanned;
 import android.text.StaticLayout;
 import android.text.TextPaint;
@@ -726,6 +727,51 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             return textLayout.getLineWidth(line);
         }
 
+        private CharSequence accessibilityText;
+        private int boundLeft = -1, boundRight = -1, lastLineBoundRight = -1;
+
+        public int getBoundLeft() {
+            if (textLayout == null) {
+                return 0;
+            }
+            if (boundLeft != -1) {
+                return boundLeft;
+            }
+            boundLeft = textLayout.getWidth();
+            for (int line = 0; line < textLayout.getLineCount(); ++line) {
+                boundLeft = Math.min(boundLeft, (int) textLayout.getLineLeft(line));
+            }
+            return boundLeft;
+        }
+
+        public int getBoundRight() {
+            if (textLayout == null) {
+                return 0;
+            }
+            if (boundRight != -1) {
+                return boundRight;
+            }
+            boundRight = 0;
+            for (int line = 0; line < textLayout.getLineCount(); ++line) {
+                boundRight = Math.max(boundRight, (int) textLayout.getLineRight(line));
+            }
+            return boundRight;
+        }
+
+        public int getLastLineBoundRight() {
+            if (textLayout == null) {
+                return 0;
+            }
+            if (lastLineBoundRight != -1) {
+                return lastLineBoundRight;
+            }
+            lastLineBoundRight = 0;
+            if (textLayout.getLineCount() > 0) {
+                lastLineBoundRight = Math.max(lastLineBoundRight, (int) textLayout.getLineRight(textLayout.getLineCount() - 1));
+            }
+            return lastLineBoundRight;
+        }
+
         public int getHeight() {
             return textLayout.getHeight();
         }
@@ -754,10 +800,90 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             return row;
         }
 
+        public void setX(int x) {
+            this.x = x;
+        }
+
+        public void setY(int y) {
+            this.y = y;
+        }
+
+        public void setRow(int row) {
+            this.row = row;
+        }
+
         @Override
         public CharSequence getPrefix() {
             return prefix;
         }
+    }
+
+    /**
+     * Pin-shaped block bounds surface used by IV layout measurements.
+     * Returns -1 when the block is not sure about its text bounds.
+     */
+    public static interface IBlock {
+        int getBoundLeft();
+        int getBoundRight();
+        int getLastLineBoundRight();
+
+        default int getMinWidth() {
+            final int l = getBoundLeft();
+            final int r = getBoundRight();
+            if (l < 0 || r < 0 || r < l) {
+                return -1;
+            }
+            return r - l;
+        }
+    }
+
+    public static CharSequence buildAccessibilityText(IArticleViewer parent, WebpageAdapter adapter, DrawingText layout) {
+        if (layout == null || layout.textLayout == null) {
+            return null;
+        }
+        if (layout.accessibilityText != null) {
+            return layout.accessibilityText;
+        }
+        CharSequence text = layout.textLayout.getText();
+        if (!(text instanceof Spannable)) {
+            return text;
+        }
+        Spannable buffer = (Spannable) text;
+        TextPaintUrlSpan[] spans = buffer.getSpans(0, buffer.length(), TextPaintUrlSpan.class);
+        if (spans == null || spans.length == 0) {
+            return text;
+        }
+        SpannableStringBuilder sb = new SpannableStringBuilder(buffer);
+        for (TextPaintUrlSpan span : spans) {
+            int start = sb.getSpanStart(span);
+            int end = sb.getSpanEnd(span);
+            if (start < 0 || end <= start) {
+                continue;
+            }
+            final TextPaintUrlSpan urlSpan = span;
+            sb.setSpan(new ClickableSpan() {
+                @Override
+                public void onClick(@NonNull View widget) {
+                    if (parent != null) {
+                        parent.handleLinkClick(adapter, urlSpan);
+                    }
+                }
+            }, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        layout.accessibilityText = sb;
+        return sb;
+    }
+
+    public static CharSequence appendA11yLabel(CharSequence content, int labelResId) {
+        SpannableStringBuilder sb = new SpannableStringBuilder();
+        if (content != null) {
+            sb.append(content);
+        }
+        if (sb.length() > 0) {
+            sb.append(", ");
+        }
+        sb.append(getString(labelResId));
+        return sb;
     }
 
     private class TextSizeCell extends FrameLayout {
@@ -8297,7 +8423,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    public static class BlockParagraphCell extends View implements TextSelectionHelper.ArticleSelectableView {
+    public static class BlockParagraphCell extends View implements TextSelectionHelper.ArticleSelectableView, IBlock {
 
         private final IArticleViewer parent;
         private final WebpageAdapter adapter;
@@ -8312,6 +8438,24 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             super(context);
             this.parent = parent;
             this.adapter = adapter;
+        }
+
+        @Override
+        public int getBoundLeft() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getBoundLeft() - dp(parent.padx());
+        }
+
+        @Override
+        public int getBoundRight() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getBoundRight() + dp(parent.padx());
+        }
+
+        @Override
+        public int getLastLineBoundRight() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getLastLineBoundRight() + dp(parent.padx());
         }
 
         public void setBlock(TLRPC.TL_pageBlockParagraph block) {
@@ -8381,7 +8525,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             info.setEnabled(true);
             if (textLayout == null)
                 return;
-            info.setText(textLayout.getText());
+            info.setText(buildAccessibilityText(parent, adapter, textLayout));
         }
 
         @Override
@@ -10257,7 +10401,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             info.setEnabled(true);
             if (textLayout == null)
                 return;
-            info.setText(textLayout.getText());
+            info.setText(buildAccessibilityText(parent, adapter, textLayout));
         }
 
         @Override
@@ -10498,7 +10642,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             info.setEnabled(true);
             if (textLayout == null)
                 return;
-            info.setText(textLayout.getText());
+            info.setText(buildAccessibilityText(parent, adapter, textLayout));
         }
 
         @Override
@@ -10871,7 +11015,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    public static class BlockHeaderCell extends View implements TextSelectionHelper.ArticleSelectableView {
+    public static class BlockHeaderCell extends View implements TextSelectionHelper.ArticleSelectableView, IBlock {
 
         private final IArticleViewer parent;
         private final WebpageAdapter adapter;
@@ -10886,6 +11030,24 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             super(context);
             this.parent = parent;
             this.adapter = adapter;
+        }
+
+        @Override
+        public int getBoundLeft() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getBoundLeft() - dp(parent.padx());
+        }
+
+        @Override
+        public int getBoundRight() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getBoundRight() + dp(parent.padx());
+        }
+
+        @Override
+        public int getLastLineBoundRight() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getLastLineBoundRight() + dp(parent.padx());
         }
 
         public void setBlock(TLRPC.TL_pageBlockHeader block) {
@@ -10940,7 +11102,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             info.setEnabled(true);
             if (textLayout == null)
                 return;
-            info.setText(textLayout.getText() + ", " + LocaleController.getString(R.string.AccDescrIVHeading));
+            info.setText(appendA11yLabel(buildAccessibilityText(parent, adapter, textLayout), R.string.AccDescrIVHeading));
         }
 
         @Override
@@ -10972,7 +11134,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    public static class BlockSubtitleCell extends View implements TextSelectionHelper.ArticleSelectableView {
+    public static class BlockSubtitleCell extends View implements TextSelectionHelper.ArticleSelectableView, IBlock {
 
         private final IArticleViewer parent;
         private final WebpageAdapter adapter;
@@ -10987,6 +11149,24 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             super(context);
             this.parent = parent;
             this.adapter = adapter;
+        }
+
+        @Override
+        public int getBoundLeft() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getBoundLeft() - dp(parent.padx());
+        }
+
+        @Override
+        public int getBoundRight() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getBoundRight() + dp(parent.padx());
+        }
+
+        @Override
+        public int getLastLineBoundRight() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getLastLineBoundRight() + dp(parent.padx());
         }
 
         public void setBlock(TLRPC.TL_pageBlockSubtitle block) {
@@ -11042,7 +11222,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (textLayout == null) {
                 return;
             }
-            info.setText(textLayout.getText() + ", " + LocaleController.getString(R.string.AccDescrIVHeading));
+            info.setText(appendA11yLabel(buildAccessibilityText(parent, adapter, textLayout), R.string.AccDescrIVHeading));
         }
 
         @Override
@@ -12198,7 +12378,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             info.setEnabled(true);
             if (textLayout == null)
                 return;
-            info.setText(textLayout.getText());
+            info.setText(buildAccessibilityText(parent, adapter, textLayout));
         }
 
         @Override
@@ -12209,7 +12389,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    public static class BlockTitleCell extends View implements TextSelectionHelper.ArticleSelectableView {
+    public static class BlockTitleCell extends View implements TextSelectionHelper.ArticleSelectableView, IBlock {
 
         private final IArticleViewer parent;
         private final WebpageAdapter adapter;
@@ -12224,6 +12404,24 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             super(context);
             this.parent = parent;
             this.adapter = adapter;
+        }
+
+        @Override
+        public int getBoundLeft() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getBoundLeft() - dp(parent.padx());
+        }
+
+        @Override
+        public int getBoundRight() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getBoundRight() + dp(parent.padx());
+        }
+
+        @Override
+        public int getLastLineBoundRight() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getLastLineBoundRight() + dp(parent.padx());
         }
 
         public void setBlock(TLRPC.TL_pageBlockTitle block) {
@@ -12283,7 +12481,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             info.setEnabled(true);
             if (textLayout == null)
                 return;
-            info.setText(textLayout.getText() + ", " + LocaleController.getString(R.string.AccDescrIVTitle));
+            info.setText(appendA11yLabel(buildAccessibilityText(parent, adapter, textLayout), R.string.AccDescrIVTitle));
         }
 
         @Override
@@ -12294,7 +12492,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    public static class BlockKickerCell extends View implements TextSelectionHelper.ArticleSelectableView {
+    public static class BlockKickerCell extends View implements TextSelectionHelper.ArticleSelectableView, IBlock {
 
         private final IArticleViewer parent;
         private final WebpageAdapter adapter;
@@ -12309,6 +12507,24 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             super(context);
             this.parent = parent;
             this.adapter = adapter;
+        }
+
+        @Override
+        public int getBoundLeft() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getBoundLeft() - dp(parent.padx());
+        }
+
+        @Override
+        public int getBoundRight() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getBoundRight() + dp(parent.padx());
+        }
+
+        @Override
+        public int getLastLineBoundRight() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getLastLineBoundRight() + dp(parent.padx());
         }
 
         public void setBlock(TLRPC.TL_pageBlockKicker block) {
@@ -12370,7 +12586,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    public static class BlockFooterCell extends View implements TextSelectionHelper.ArticleSelectableView {
+    public static class BlockFooterCell extends View implements TextSelectionHelper.ArticleSelectableView, IBlock {
 
         private final IArticleViewer parent;
         private final WebpageAdapter adapter;
@@ -12385,6 +12601,24 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             super(context);
             this.parent = parent;
             this.adapter = adapter;
+        }
+
+        @Override
+        public int getBoundLeft() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getBoundLeft() - dp(parent.padx());
+        }
+
+        @Override
+        public int getBoundRight() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getBoundRight() + dp(parent.padx());
+        }
+
+        @Override
+        public int getLastLineBoundRight() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getLastLineBoundRight() + dp(parent.padx());
         }
 
         public void setBlock(TLRPC.TL_pageBlockFooter block) {
@@ -12582,7 +12816,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    public static class BlockSubheaderCell extends View implements TextSelectionHelper.ArticleSelectableView {
+    public static class BlockSubheaderCell extends View implements TextSelectionHelper.ArticleSelectableView, IBlock {
 
         private final IArticleViewer parent;
         private final WebpageAdapter adapter;
@@ -12597,6 +12831,24 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             super(context);
             this.parent = parent;
             this.adapter = adapter;
+        }
+
+        @Override
+        public int getBoundLeft() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getBoundLeft() - dp(parent.padx());
+        }
+
+        @Override
+        public int getBoundRight() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getBoundRight() + dp(parent.padx());
+        }
+
+        @Override
+        public int getLastLineBoundRight() {
+            if (textLayout == null) return -1;
+            return textLayout.x + textLayout.getLastLineBoundRight() + dp(parent.padx());
         }
 
         public void setBlock(TLRPC.TL_pageBlockSubheader block) {
@@ -12652,7 +12904,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (textLayout == null) {
                 return;
             }
-            info.setText(textLayout.getText() + ", " + LocaleController.getString(R.string.AccDescrIVHeading));
+            info.setText(appendA11yLabel(buildAccessibilityText(parent, adapter, textLayout), R.string.AccDescrIVHeading));
         }
 
         @Override

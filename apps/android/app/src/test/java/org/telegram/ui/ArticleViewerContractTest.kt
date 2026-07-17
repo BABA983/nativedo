@@ -553,4 +553,54 @@ class ArticleViewerContractTest {
         )
         assertThat(cell.measuredHeight).isEqualTo(1)
     }
+
+    @Test
+    fun drawingText_boundsAndAccessibilityHelpers_parentDriven() {
+        val isolated = ArticleViewer.Resources()
+        val host = object : IArticleViewer() {
+            override fun getCurrentAccount() = 0
+            override fun getTextColor() = 0xff111111.toInt()
+            override fun getLinkTextColor() = 0xff222222.toInt()
+            override fun getGrayTextColor() = 0xff333333.toInt()
+            override fun getThemedColor(colorKey: Int) = 0xffffffff.toInt()
+            override fun getResourcesProvider(): Theme.ResourcesProvider? = null
+            override fun getResources() = isolated
+            override fun getTextSelectionHelper(view: android.view.View?): TextSelectionHelper.ArticleTextSelectionHelper? = null
+            override fun padx() = 18
+            override fun pady() = 8
+        }
+        ArticleViewer.createPaint(host, true)
+
+        val plain = TLRPC.TL_textPlain().apply { text = "bounds text" }
+        val block = TLRPC.TL_pageBlockParagraph()
+        val drawing = ArticleViewer.createLayoutForText(
+            host,
+            null,
+            null,
+            plain,
+            320,
+            0,
+            block,
+            null as ArticleViewer.WebpageAdapter?,
+        )
+        assertThat(drawing).isNotNull()
+        assertThat(drawing!!.boundLeft).isAtLeast(0)
+        assertThat(drawing.boundRight).isAtLeast(drawing.boundLeft)
+        assertThat(drawing.lastLineBoundRight).isAtLeast(0)
+
+        val a11y = ArticleViewer.buildAccessibilityText(host, null, drawing)
+        assertThat(a11y.toString()).isEqualTo("bounds text")
+
+        val labeled = ArticleViewer.appendA11yLabel(a11y, org.telegram.messenger.R.string.AccDescrIVHeading)
+        assertThat(labeled.toString()).contains("bounds text")
+        assertThat(labeled.toString()).contains(",")
+
+        val context = RuntimeEnvironment.getApplication()
+        val cell = ArticleViewer.BlockParagraphCell(context, host, null)
+        assertThat(cell).isInstanceOf(ArticleViewer.IBlock::class.java)
+        val iblock = cell as ArticleViewer.IBlock
+        assertThat(iblock.boundLeft).isEqualTo(-1)
+        assertThat(iblock.boundRight).isEqualTo(-1)
+        assertThat(iblock.lastLineBoundRight).isEqualTo(-1)
+    }
 }
