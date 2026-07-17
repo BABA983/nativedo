@@ -14284,7 +14284,7 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
                 canvas.save();
                 canvas.translate(getWidth() * backProgress, y);
                 rect.set(0, drawnTop, getWidth(), getHeight() + dp(16));
-                final float r = dp(16) * (1f - attachedActionBar);
+                final float r = dp(24) * (1f - attachedActionBar);
                 if (attachedActionBar < 1f) {
                     shadowPaint.setColor(0);
                     shadowPaint.setShadowLayer(dp(18), 0, -dp(3), Theme.multAlpha(Color.BLACK, .26f * open));
@@ -14363,7 +14363,7 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
                 scrimPaint.setAlpha((int) (0x60 * open * (1f - backProgress)));
                 canvas.drawRect(0, 0, getWidth(), getHeight(), scrimPaint);
 
-                final float r = lerp(dp(16), dp(10), progress);
+                final float r = lerp(dp(16), dp(18), progress);
 
                 backgroundPaint.setColor(getThemedColor(Theme.key_windowBackgroundWhite));
                 clipPath2.rewind();
@@ -14416,7 +14416,10 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
             @Override
             public boolean onNestedPreFling(View target, float velocityX, float velocityY) {
                 boolean r = super.onNestedPreFling(target, velocityX, velocityY);
-                if (halfSize()) {
+                // Pin 12.8.1: do not dismiss/snap sheet while article text selection is active.
+                // (Upstream also cancels a selection runnable; local TextSelectionHelper has no
+                // cancelTextSelectionRunnable, so we only gate dismiss on isInSelectionMode.)
+                if (halfSize() && !textSelectionHelper.isInSelectionMode()) {
                     if (pages[0].isAtTop() && velocityY < -1000) {
                         dismiss(true);
                     } else {
@@ -14437,7 +14440,7 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
                 if (!nestedVerticalScroll) {
                     nestedVerticalScroll = dy != 0;
                 }
-                if (pages[0].isAtTop() && halfSize()) {
+                if (pages[0].isAtTop() && halfSize() && !textSelectionHelper.isInSelectionMode()) {
                     consumed[1] = Math.min((int) (getEmptyPadding() * dismissProgress), dy);
                     dismissProgress = Utilities.clamp(dismissProgress - (float) dy / getEmptyPadding(), 1, 0);
                     updateTranslation();
@@ -14459,7 +14462,7 @@ public class ArticleViewer implements NotificationCenter.NotificationCenterDeleg
             @Override
             public void onStopNestedScroll(View child) {
                 nestedVerticalScroll = false;
-                if (halfSize() && !stoppedAtFling) {
+                if (halfSize() && !stoppedAtFling && !textSelectionHelper.isInSelectionMode()) {
                     if (dismissProgress > .25f) {
                         dismiss(true);
                     } else {

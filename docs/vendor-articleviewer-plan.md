@@ -47,16 +47,30 @@ python3 scripts/vendor_articleviewer_s1_preview.py --write /tmp/ArticleViewer-s1
 
 Exit criteria: remaining `TL_iv` types empty; all map targets exist on local `TLRPC`.
 
-### Phase 2 — Sheet / lifecycle only (next real edit)
+### Phase 2 — Sheet / lifecycle (partial landed)
 
-1. Tag: `git tag vendor-av-before-sheet`
-2. Work on a **copy** of pin → S1 map → re-apply host patches:
-   - Sheet restore/capture/dismiss (ActionBarLayout / BottomSheetTabs)
-   - `dispatchActivityResult` / file chooser
-   - **WebBookmarks** bookmark menu (never `SendMessagesHelper` Saved Messages)
-3. Compile `:telegram` + `:app`
-4. Run contract tests + body geometry tests + manual checklist
-5. Only then replace main `ArticleViewer.java` and update manifest notes
+**Attempted full pin+S1:** 322 compile errors. Top blockers:
+
+| Missing | Count (approx) | Notes |
+|---------|----------------|-------|
+| `IArticleViewer` base class | 71 | Pin extracts shared state/API into abstract base |
+| Field moves (`popupWindow`, `pressedLink*`, `videoPlayer`, …) | many | Live on `IArticleViewer` / restructured fields |
+| `Page.local`, `cancelTextSelectionRunnable`, jlatexmath | mid | Pin-only APIs / optional deps |
+| Local-only file chooser | — | Must keep host `dispatchActivityResult` region |
+
+**Do not** replace main `ArticleViewer.java` with pin until `IArticleViewer` (+ field moves) is planned as its own PR.
+
+**Landed on local (safe subset of pin Sheet):**
+
+- Nested-scroll dismiss gated with `!textSelectionHelper.isInSelectionMode()` (preFling / preScroll / stopNestedScroll)
+- Corner radii: attached `dp(24)`, `drawInto` `lerp(dp(16), dp(18), …)` (was 16/10)
+- Host preserved: WebBookmarks bookmark path, ActionBarLayout overlay dismiss, file chooser / `dispatchActivityResult`
+
+Next Phase 2 slice options:
+
+1. Introduce thin local `IArticleViewer` **without** full pin body (API surface only) — high cost
+2. Continue surgical Sheet/chrome patches only — preferred
+3. Defer rest of AV until product needs full IV-in-viewer parity
 
 ### Phase 3 — WebActionBar / bookmarks chrome
 
