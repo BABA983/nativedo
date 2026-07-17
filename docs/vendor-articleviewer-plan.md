@@ -103,7 +103,8 @@ Introduced `org.telegram.ui.IArticleViewer` (API surface only):
 6. [x] B7a: text flags and paint selection use the pin-shaped static parent/resource boundary
 7. [x] B7b: move supported S1 rich-text construction onto the parent-driven `getText` boundary
 8. [x] B7c: move `createLayoutForText` onto the parent-driven core
-9. [ ] Only then re-attempt larger pin body slices
+9. [x] B8: parent-driven `makeProgress` + `drawQuoteLines` helpers (simple gutter sites)
+10. [ ] Only then re-attempt larger pin body / Block*Cell reshape slices
 
 Do **not** full-file replace until B2 compiles with contract tests green.
 
@@ -239,3 +240,14 @@ scripts/vendor-status.sh
 - Local Emoji shim keeps `ALIGN_BASELINE`; spoiler / `liveDrawingTexts` / typing attach lifecycle
   remain deferred with the local S1 surface
 - Contract coverage verifies parent-driven paragraph layout and plain-text embed-author layout
+
+### Phase B8 — Parent-driven progress + quote gutters (landed)
+
+- `makeProgress` exposes the pinned static parent core; instance wrapper remains for local callers
+- `drawQuoteLines(Canvas, IArticleViewer, PageBlock, height)` is the pin-shaped public helper;
+  local S1 `PageBlock` has `level`/`bottom` only (no pin `quoteLevels` mask), so the helper draws
+  the single-level gutter at `parent.padx()` when `level > 0`
+- Ten block `onDraw` sites that previously inlined the simple `dp(18)…dp(20)` gutter now call
+  `drawQuoteLines`; EmbedPost / BlockBlockquoteCell keep their specialized quote geometry
+- Spoiler / typing / a11y / full Block*Cell `(IArticleViewer parent)` reshape remain deferred
+- Contract coverage verifies null-safe parent-driven `drawQuoteLines` after `createPaint`

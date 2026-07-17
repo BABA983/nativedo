@@ -267,4 +267,33 @@ class ArticleViewerContractTest {
         assertThat(drawing!!.textLayout.text.toString()).isEqualTo("alice")
         assertThat(drawing.parentViewer).isSameInstanceAs(host)
     }
+
+    @Test
+    fun drawQuoteLines_isNullSafeAndAcceptsParentDrivenLevelGutter() {
+        val isolated = ArticleViewer.Resources()
+        val host = object : IArticleViewer() {
+            override fun getCurrentAccount() = 0
+            override fun getTextColor() = 0xff111111.toInt()
+            override fun getLinkTextColor() = 0xff222222.toInt()
+            override fun getGrayTextColor() = 0xff333333.toInt()
+            override fun getThemedColor(colorKey: Int) = 0xff445566.toInt()
+            override fun getResourcesProvider(): Theme.ResourcesProvider? = null
+            override fun getResources() = isolated
+            override fun getTextSelectionHelper(view: android.view.View?): TextSelectionHelper.ArticleTextSelectionHelper? = null
+            override fun padx() = 18
+        }
+        ArticleViewer.createPaint(host, true)
+
+        val nested = TLRPC.TL_pageBlockParagraph().apply {
+            level = 2
+            bottom = true
+        }
+        val canvas = android.graphics.Canvas()
+        // Parent-driven single-level gutter path (local S1 has no quoteLevels mask).
+        ArticleViewer.drawQuoteLines(canvas, host, nested, /* height = */ 120)
+        // Null-safe no-ops for incomplete hosts/blocks.
+        ArticleViewer.drawQuoteLines(canvas, host, null, 120)
+        ArticleViewer.drawQuoteLines(canvas, null, nested, 120)
+        ArticleViewer.drawQuoteLines(canvas, host, TLRPC.TL_pageBlockParagraph().apply { level = 0 }, 120)
+    }
 }

@@ -3526,43 +3526,66 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
     }
 
     private Browser.Progress makeProgress(LinkSpanDrawable<TextPaintUrlSpan> link, DrawingText text) {
+        return makeProgress(this, link, text);
+    }
+
+    private static Browser.Progress makeProgress(IArticleViewer parent, LinkSpanDrawable<TextPaintUrlSpan> link, DrawingText text) {
         if (link == null) return null;
         return new Browser.Progress() {
             @Override
             public void init() {
-                loadingText = text;
-                loadingLinkView = text != null ? text.latestParentView : null;
-                loadingLink = link.getSpan();
+                parent.loadingText = text;
+                parent.loadingLinkView = text != null ? text.latestParentView : null;
+                parent.loadingLink = link.getSpan();
 
-                links.removeLoading(loadingLinkDrawable, true);
+                parent.links.removeLoading(parent.loadingLinkDrawable, true);
                 if (text != null) {
-                    loadingLinkDrawable = LinkSpanDrawable.LinkCollector.makeLoading(text.textLayout, link.getSpan(), 0);
-                    final int color = getThemedColor(Theme.key_chat_linkSelectBackground);
-                    loadingLinkDrawable.setColors(
+                    parent.loadingLinkDrawable = LinkSpanDrawable.LinkCollector.makeLoading(text.textLayout, link.getSpan(), 0);
+                    final int color = parent.getThemedColor(Theme.key_chat_linkSelectBackground);
+                    parent.loadingLinkDrawable.setColors(
                             Theme.multAlpha(color, .8f),
                             Theme.multAlpha(color, 1.3f),
                             Theme.multAlpha(color, 1f),
                             Theme.multAlpha(color, 4f)
                     );
-                    loadingLinkDrawable.strokePaint.setStrokeWidth(AndroidUtilities.dpf2(1.25f));
-                    links.addLoading(loadingLinkDrawable, text);
+                    parent.loadingLinkDrawable.strokePaint.setStrokeWidth(AndroidUtilities.dpf2(1.25f));
+                    parent.links.addLoading(parent.loadingLinkDrawable, text);
                 }
 
-                if (loadingLinkView != null) {
-                    loadingLinkView.invalidate();
+                if (parent.loadingLinkView != null) {
+                    parent.loadingLinkView.invalidate();
                 }
                 super.init();
             }
+
             @Override
             public void end() {
-                links.removeLoading(loadingLinkDrawable, true);
-                if (loadingLinkView != null) {
-                    loadingLinkView.invalidate();
+                parent.links.removeLoading(parent.loadingLinkDrawable, true);
+                if (parent.loadingLinkView != null) {
+                    parent.loadingLinkView.invalidate();
                 }
-                loadingLink = null;
+                parent.loadingLink = null;
                 super.end();
             }
         };
+    }
+
+    /**
+     * Pin-shaped quote gutter lines for nested page blocks.
+     * Local S1 PageBlock has {@code level}/{@code bottom} only (no pin {@code quoteLevels} mask),
+     * so this draws the single-level gutter when {@code level > 0}.
+     */
+    public static void drawQuoteLines(Canvas canvas, IArticleViewer parent, TLRPC.PageBlock block, int height) {
+        if (block == null || parent == null || quoteLinePaint == null) {
+            return;
+        }
+        final int padxDp = parent.padx();
+        final int bottomTrim = block.bottom ? AndroidUtilities.dp(6) : 0;
+        final int y2 = height - bottomTrim;
+        if (block.level > 0) {
+            final int x = AndroidUtilities.dp(padxDp);
+            canvas.drawRect(x, 0, x + AndroidUtilities.dp(2), y2, quoteLinePaint);
+        }
     }
 
     private void removePressedLink() {
@@ -7455,9 +7478,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 creditLayout.draw(canvas, this);
                 canvas.restore();
             }
-            if (currentBlock.level > 0) {
-                canvas.drawRect(dp(18), 0, dp(20), getMeasuredHeight() - (currentBlock.bottom ? dp(6) : 0), quoteLinePaint);
-            }
+            drawQuoteLines(canvas, ArticleViewer.this, currentBlock, getMeasuredHeight());
             super.onDraw(canvas);
 
             if (!pinchToZoomHelper.isInOverlayModeFor(this)) {
@@ -7905,9 +7926,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 creditLayout.draw(canvas, this);
                 canvas.restore();
             }
-            if (currentBlock.level > 0) {
-                canvas.drawRect(dp(18), 0, dp(20), getMeasuredHeight() - (currentBlock.bottom ? dp(6) : 0), quoteLinePaint);
-            }
+            drawQuoteLines(canvas, ArticleViewer.this, currentBlock, getMeasuredHeight());
         }
 
         private int getIconForCurrentState() {
@@ -8330,9 +8349,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 textLayout.draw(canvas, this);
                 canvas.restore();
             }
-            if (currentBlock.level > 0) {
-                canvas.drawRect(dp(18), 0, dp(20), getMeasuredHeight() - (currentBlock.bottom ? dp(6) : 0), quoteLinePaint);
-            }
+            drawQuoteLines(canvas, ArticleViewer.this, currentBlock, getMeasuredHeight());
         }
 
         @Override
@@ -8816,9 +8833,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 creditLayout.draw(canvas, this);
                 canvas.restore();
             }
-            if (currentBlock.level > 0) {
-                canvas.drawRect(dp(18), 0, dp(20), getMeasuredHeight() - (currentBlock.bottom ? dp(6) : 0), quoteLinePaint);
-            }
+            drawQuoteLines(canvas, ArticleViewer.this, currentBlock, getMeasuredHeight());
         }
 
         @Override
@@ -9094,9 +9109,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 titleLayout.draw(canvas, this);
                 canvas.restore();
             }
-            if (currentBlock.level > 0) {
-                canvas.drawRect(dp(18), 0, dp(20), getMeasuredHeight() - (currentBlock.bottom ? dp(6) : 0), quoteLinePaint);
-            }
+            drawQuoteLines(canvas, ArticleViewer.this, currentBlock, getMeasuredHeight());
         }
 
         @Override
@@ -9706,9 +9719,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 creditLayout.draw(canvas, this);
                 canvas.restore();
             }
-            if (currentBlock.level > 0) {
-                canvas.drawRect(dp(18), 0, dp(20), getMeasuredHeight() - (currentBlock.bottom ? dp(6) : 0), quoteLinePaint);
-            }
+            drawQuoteLines(canvas, ArticleViewer.this, currentBlock, getMeasuredHeight());
         }
 
 
@@ -11167,9 +11178,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             } else {
                 canvas.drawRect(dp(18 + currentBlock.level * 14), dp(6), dp(20 + currentBlock.level * 14), getMeasuredHeight() - dp(6), quoteLinePaint);
             }
-            if (currentBlock.level > 0) {
-                canvas.drawRect(dp(18), 0, dp(20), getMeasuredHeight() - (currentBlock.bottom ? dp(6) : 0), quoteLinePaint);
-            }
+            drawQuoteLines(canvas, ArticleViewer.this, currentBlock, getMeasuredHeight());
         }
 
         @Override
@@ -11483,9 +11492,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 creditLayout.draw(canvas, this);
                 canvas.restore();
             }
-            if (currentBlock.level > 0) {
-                canvas.drawRect(dp(18), 0, dp(20), getMeasuredHeight() - (currentBlock.bottom ? dp(6) : 0), quoteLinePaint);
-            }
+            drawQuoteLines(canvas, ArticleViewer.this, currentBlock, getMeasuredHeight());
         }
 
         private int getIconForCurrentState() {
@@ -11783,9 +11790,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 creditLayout.draw(canvas, this);
                 canvas.restore();
             }
-            if (currentBlock.level > 0) {
-                canvas.drawRect(dp(18), 0, dp(20), getMeasuredHeight() - (currentBlock.bottom ? dp(6) : 0), quoteLinePaint);
-            }
+            drawQuoteLines(canvas, ArticleViewer.this, currentBlock, getMeasuredHeight());
         }
 
         @Override
@@ -12333,9 +12338,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 textLayout.draw(canvas, this);
                 canvas.restore();
             }
-            if (currentBlock.level > 0) {
-                canvas.drawRect(dp(18), 0, dp(20), getMeasuredHeight() - (currentBlock.bottom ? dp(6) : 0), quoteLinePaint);
-            }
+            drawQuoteLines(canvas, ArticleViewer.this, currentBlock, getMeasuredHeight());
         }
 
         @Override
