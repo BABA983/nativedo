@@ -106,7 +106,8 @@ Introduced `org.telegram.ui.IArticleViewer` (API surface only):
 9. [x] B8: parent-driven `makeProgress` + `drawQuoteLines` helpers (simple gutter sites)
 10. [x] B9: pilot parent-reshape `BlockParagraphCell` (`IArticleViewer` + static helpers)
 11. [x] B10: parent-reshape simple text blocks (Header/Title/Subtitle/Subheader/Kicker/Footer)
-12. [ ] Continue remaining Block*Cell parent reshape (AuthorDate/Preformatted/quotes/lists/media/table)
+12. [x] B11: parent-reshape AuthorDate / Preformatted / Pullquote / Blockquote
+13. [ ] Continue remaining Block*Cell parent reshape (lists/details/media/table/related)
 
 Do **not** full-file replace until B2 compiles with contract tests green.
 
@@ -275,3 +276,15 @@ scripts/vendor-status.sh
 - Deferred: `IBlock` bounds, spoiler attach/detach, `buildAccessibilityText`, AuthorDate /
   Preformatted / quote / list / media / table cells
 - Contract coverage measures a parent-hosted header cell against isolated Resources
+
+### Phase B11 — AuthorDate / Preformatted / quote cells (landed)
+
+- Static parent reshape for: `BlockAuthorDateCell`, `BlockPreformattedCell`,
+  `BlockPullquoteCell`, `BlockBlockquoteCell`
+- Parent-driven `getText` / `createLayoutForText` / `checkLayoutForLinks` /
+  `drawTextSelection`; Blockquote keeps specialized level/RTL gutter plus `drawQuoteLines`
+- Preformatted keeps horizontal scroll + local `windowView` disallow-intercept host wiring;
+  scroll selection helper comes from `parent.getTextSelectionHelper`
+- Deferred: `IBlock` bounds, spoiler attach/detach, `buildAccessibilityText`, CodeHighlighting
+  language path, list/media/table cells
+- Contract coverage measures a parent-hosted pullquote cell against isolated Resources
