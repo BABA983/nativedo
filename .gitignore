@@ -31,3 +31,6 @@ apps/android/app/src/test/snapshots/
 .tmp-home/
 .tmp-robolectric/
 .vendor-manifest.write.lock
+
+# Local pristine Telegram checkout created by scripts/vendor-setup.sh.
+/vendor/
