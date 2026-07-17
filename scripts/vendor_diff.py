@@ -56,7 +56,8 @@ def resolve_entry(manifest: dict, path_arg: str, root: Path) -> dict:
     files = list(manifest.get("files") or []) + list(
         manifest.get("compat_shims") or []
     )
-    candidates = []
+    exact_candidates = []
+    fuzzy_candidates = []
     arg = path_arg.strip().lstrip("./")
     # strip absolute root
     try:
@@ -75,12 +76,16 @@ def resolve_entry(manifest: dict, path_arg: str, root: Path) -> dict:
     for entry in files:
         local = entry.get("local") or ""
         upstream = entry.get("upstream") or ""
-        if local == arg or local.endswith("/" + arg) or local.endswith(arg):
-            candidates.append(entry)
-        elif upstream == arg or upstream.endswith(arg):
-            candidates.append(entry)
+        if local == arg or upstream == arg:
+            exact_candidates.append(entry)
+        elif local.endswith("/" + arg) or local.endswith(arg):
+            fuzzy_candidates.append(entry)
+        elif upstream.endswith(arg):
+            fuzzy_candidates.append(entry)
         elif arg.endswith(local) or arg.endswith(upstream):
-            candidates.append(entry)
+            fuzzy_candidates.append(entry)
+
+    candidates = exact_candidates or fuzzy_candidates
 
     # unique by local
     uniq = {}
