@@ -2073,13 +2073,12 @@
       "local": "telegram/src/main/java/org/telegram/ui/Components/inset/WindowAnimatedInsetsProvider.java",
       "upstream": "org/telegram/ui/Components/inset/WindowAnimatedInsetsProvider.java",
       "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
-      "modified": true,
+      "modified": false,
       "port_mode": "exact",
       "forced_exact": [
         "animation",
         "measurement"
-      ],
-      "notes": "Only org.jspecify nullability annotations are host-wired to AndroidX annotations; WindowInsetsAnimationCompat dispatch and target-relative inset calculation remain unchanged."
+      ]
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/inset/WindowInsetsInAppController.java",

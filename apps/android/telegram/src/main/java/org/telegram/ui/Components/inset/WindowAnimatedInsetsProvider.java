@@ -6,12 +6,12 @@ import android.graphics.RectF;
 import android.view.View;
 import android.view.ViewGroup;
 
-import androidx.annotation.NonNull;
+import org.jspecify.annotations.NonNull;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsAnimationCompat;
 import androidx.core.view.WindowInsetsCompat;
 
-import androidx.annotation.Nullable;
+import org.jspecify.annotations.Nullable;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.ui.Components.chat.ViewPositionWatcher;
 
@@ -53,8 +53,7 @@ public class WindowAnimatedInsetsProvider extends WindowInsetsAnimationCompat.Ca
     }
 
     @Override
-    @NonNull
-    public WindowInsetsAnimationCompat.BoundsCompat onStart(@NonNull WindowInsetsAnimationCompat animation, @NonNull WindowInsetsAnimationCompat.BoundsCompat bounds) {
+    public WindowInsetsAnimationCompat.@NonNull BoundsCompat onStart(@NonNull WindowInsetsAnimationCompat animation, WindowInsetsAnimationCompat.@NonNull BoundsCompat bounds) {
         if (activeAnimationsCounter == 0) {
             dispatchWindowInsetsAnimationStart();
         }
