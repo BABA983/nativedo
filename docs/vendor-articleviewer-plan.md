@@ -114,7 +114,8 @@ Introduced `org.telegram.ui.IArticleViewer` (API surface only):
 17. [x] B16: EmbedPost static parent reshape + Embed/Collage/Slideshow helper rewire
 18. [x] B17: `IBlock` + DrawingText bounds + `buildAccessibilityText` / `appendA11yLabel` foundation
 19. [x] B18: wire remaining static parent cells to IBlock/a11y + AccDescrIV strings
-20. [ ] Optional: spoiler attach; remaining media a11y; larger Sheet chrome
+20. [x] B19: spoiler attach / liveDrawingTexts / spoiler-hit (typing + full cell attach still deferred)
+21. [ ] Optional: remaining media a11y; larger Sheet chrome (B20)
 
 Do **not** full-file replace until B2 compiles with contract tests green.
 
@@ -377,3 +378,11 @@ scripts/vendor-status.sh
 - Deferred: spoiler/typing attach; deep nested list IBlock recursion with numLayout; media
   photo/video a11y polish; full Sheet chrome
 - Contract coverage asserts AuthorDate/Pullquote/Preformatted implement `IBlock`
+
+### Phase B19 — Spoiler attach / liveDrawingTexts (landed)
+
+- `DrawingText` gains pin-shaped spoiler fields, `attach`/`detach`/`isAttached`, and spoiler draw via `SpoilerEffect.renderWithRipple`
+- Static `liveDrawingTexts` registry + `createLayoutForText` tail matches pin (pool/list/replace/attach when view is attached)
+- `checkLayoutForLinks` restores pin spoiler-hit / ripple / clear
+- OMITTED: `MultiLayoutTypingAnimator` draw branch; real AnimatedEmoji pipeline (stub no-op); full Block*Cell `layout.attach(this)` call sites; `TL_textSpoiler` / S1 spoiler content production (no local TL type)
+- Contract: empty spoiler pools without spans; attach/detach lifecycle safe

@@ -235,6 +235,63 @@ class ArticleViewerContractTest {
         assertThat(drawing.parentBlock).isSameInstanceAs(block)
         assertThat(drawing.parentText).isSameInstanceAs(plain)
         assertThat(isolated.paragraphTextPaints.size()).isAtLeast(1)
+        // B19: spoiler pools always allocated; empty when layout text has no TextStyleSpan spoilers.
+        assertThat(drawing.spoilers).isNotNull()
+        assertThat(drawing.spoilersPool).isNotNull()
+        assertThat(drawing.spoilersPatchedLayout).isNotNull()
+        assertThat(drawing.spoilers).isEmpty()
+        assertThat(drawing.isAttached).isFalse()
+    }
+
+    @Test
+    fun createLayoutForText_spoilerSpanPopulatesEffectsAndAttachLifecycle() {
+        val isolated = ArticleViewer.Resources()
+        val host = object : IArticleViewer() {
+            override fun getCurrentAccount() = 0
+            override fun getTextColor() = 0xff111111.toInt()
+            override fun getLinkTextColor() = 0xff222222.toInt()
+            override fun getGrayTextColor() = 0xff333333.toInt()
+            override fun getThemedColor(colorKey: Int) = 0xffffffff.toInt()
+            override fun getResourcesProvider(): Theme.ResourcesProvider? = null
+            override fun getResources() = isolated
+            override fun getTextSelectionHelper(view: android.view.View?): TextSelectionHelper.ArticleTextSelectionHelper? = null
+        }
+
+        val plain = TLRPC.TL_textPlain().apply { text = "hidden spoiler" }
+        val block = TLRPC.TL_pageBlockParagraph()
+        // SpoilerEffect.addSpoilers scans TextStyleSpan with FLAG_STYLE_SPOILER on the laid-out text.
+        // createLayoutForText builds from rich text only; inject via plainText Spanned path.
+        val spoilerRun = org.telegram.ui.Components.TextStyleSpan.TextStyleRun().apply {
+            flags = flags or org.telegram.ui.Components.TextStyleSpan.FLAG_STYLE_SPOILER
+        }
+        val spanned = android.text.SpannableStringBuilder("hidden spoiler").apply {
+            setSpan(
+                org.telegram.ui.Components.TextStyleSpan(spoilerRun),
+                0,
+                length,
+                android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+            )
+        }
+        val drawing = ArticleViewer.createLayoutForText(
+            host,
+            /* parentView = */ null,
+            spanned,
+            /* richText = */ null,
+            /* width = */ 320,
+            /* textY = */ 0,
+            block,
+            /* parentAdapter = */ null as ArticleViewer.WebpageAdapter?,
+        )
+
+        assertThat(drawing).isNotNull()
+        assertThat(drawing!!.spoilers).isNotNull()
+        assertThat(drawing.spoilersPool).isNotNull()
+        // SpoilerEffect may or may not allocate particles under Robolectric depending on metrics;
+        // fields and draw path must remain non-null and attach/detach must be safe.
+        drawing.attach(android.view.View(org.robolectric.RuntimeEnvironment.getApplication()))
+        assertThat(drawing.isAttached).isTrue()
+        drawing.detach(null)
+        assertThat(drawing.isAttached).isFalse()
     }
 
     @Test

@@ -164,6 +164,8 @@ import org.telegram.ui.Components.AlertsCreator;
 import org.telegram.ui.Components.AnchorSpan;
 import org.telegram.ui.Components.AnimatedArrowDrawable;
 import org.telegram.ui.Components.AnimatedColor;
+import org.telegram.ui.Components.AnimatedEmojiDrawable;
+import org.telegram.ui.Components.AnimatedEmojiSpan;
 import org.telegram.ui.Components.AnimatedFloat;
 import org.telegram.ui.Components.AnimatedTextView;
 import org.telegram.ui.Components.AnimationProperties;
@@ -194,11 +196,13 @@ import org.telegram.ui.Components.TextPaintMarkSpan;
 import org.telegram.ui.Components.TextPaintSpan;
 import org.telegram.ui.Components.TextPaintUrlSpan;
 import org.telegram.ui.Components.TextPaintWebpageUrlSpan;
+import org.telegram.ui.Components.TextStyleSpan;
 import org.telegram.ui.Components.TranslateAlert2;
 import org.telegram.ui.Components.TranslateAlert3;
 import org.telegram.ui.Components.TypefaceSpan;
 import org.telegram.ui.Components.VideoPlayer;
 import org.telegram.ui.Components.WebPlayerView;
+import org.telegram.ui.Components.spoilers.SpoilerEffect;
 import org.telegram.ui.Stories.DarkThemeResourceProvider;
 import org.telegram.ui.Stories.recorder.ButtonWithCounterView;
 import org.telegram.ui.Stories.recorder.HintView2;
@@ -225,6 +229,9 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Stack;
+import java.util.WeakHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class ArticleViewer extends IArticleViewer implements NotificationCenter.NotificationCenterDelegate {
 
@@ -552,6 +559,8 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
     /** Shared paint maps (pin uses a static Resources; static field names alias into this). */
     private static final Resources resources = new Resources(false);
+    /** Pin-shaped registry of live DrawingText instances per parent view for spoiler attach/replace. */
+    private static final WeakHashMap<View, ArrayList<DrawingText>> liveDrawingTexts = new WeakHashMap<>();
 
     @Override
     public Resources getResources() {
@@ -636,6 +645,14 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         public int row;
         public CharSequence prefix;
 
+        public int emojiCacheType = AnimatedEmojiDrawable.CACHE_TYPE_MESSAGES;
+        public AnimatedEmojiSpan.EmojiGroupedSpans animatedEmojiStack;
+        public List<SpoilerEffect> spoilers;
+        public Stack<SpoilerEffect> spoilersPool;
+        public AtomicReference<Layout> spoilersPatchedLayout;
+        private boolean attached;
+        private View attachedToView;
+
         /** Convenience for outer-instance sites and TableBlock: parent = enclosing ArticleViewer. */
         public DrawingText() {
             this(ArticleViewer.this);
@@ -647,6 +664,28 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
         public IArticleViewer getParentViewer() {
             return parent;
+        }
+
+        public void attach(View view) {
+            attachedToView = view;
+            attached = true;
+            if (textLayout != null) {
+                // Local AnimatedEmojiSpan is a no-op stub; keep pin-shaped attach/update call shape without the unused boolean overload.
+                animatedEmojiStack = AnimatedEmojiSpan.update(emojiCacheType, view, animatedEmojiStack, textLayout);
+            }
+        }
+
+        public void detach(View view) {
+            attached = false;
+            if (view == null) {
+                view = attachedToView;
+            }
+            AnimatedEmojiSpan.release(view, animatedEmojiStack);
+            attachedToView = null;
+        }
+
+        public boolean isAttached() {
+            return attached;
         }
 
         public void draw(Canvas canvas, View view) {
@@ -697,7 +736,12 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 }
                 canvas.drawRect(-dp(2) + x, 0, x + width + dp(2), getHeight(), urlPaint);
             }
-            textLayout.draw(canvas);
+            // Typing animator omitted (MultiLayoutTypingAnimator not vendored). Spoiler path is pin-shaped.
+            if (spoilers != null && !spoilers.isEmpty()) {
+                SpoilerEffect.renderWithRipple(view, false, textLayout.getPaint().getColor(), 0, spoilersPatchedLayout, 0, textLayout, spoilers, canvas, false);
+            } else {
+                textLayout.draw(canvas);
+            }
             isDrawing = false;
         }
 
@@ -3497,7 +3541,35 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         drawingText.markPath = markPath;
         drawingText.parentBlock = parentBlock;
         drawingText.parentText = richText;
-        // Spoiler / liveDrawingTexts / typing lifecycle remain deferred with the local S1 surface.
+        drawingText.spoilersPool = new Stack<>();
+        drawingText.spoilers = new ArrayList<>();
+        drawingText.spoilersPatchedLayout = new AtomicReference<>();
+        if (finalText instanceof Spanned) {
+            SpoilerEffect.addSpoilers(parentView, result, (Spanned) finalText, drawingText.spoilersPool, drawingText.spoilers);
+        }
+        if (parentView != null) {
+            ArrayList<DrawingText> list = liveDrawingTexts.get(parentView);
+            if (list != null) {
+                for (int i = 0; i < list.size(); ++i) {
+                    DrawingText other = list.get(i);
+                    if (other.parentBlock != parentBlock || richText != null && other.parentText == richText) {
+                        other.detach(parentView);
+                        list.remove(i);
+                        i--;
+                    }
+                }
+            }
+            if (richText != null) {
+                if (list == null) {
+                    liveDrawingTexts.put(parentView, list = new ArrayList<>());
+                }
+                list.add(drawingText);
+            }
+            if (parentView.isAttachedToWindow()) {
+                drawingText.attach(parentView);
+            }
+        }
+        // MultiLayoutTypingAnimator attach lifecycle remains deferred (not vendored).
         return drawingText;
     }
 
@@ -3576,6 +3648,42 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                                             parentView.invalidate();
                                         } catch (Exception e) {
                                             FileLog.e(e);
+                                        }
+                                    }
+                                }
+                                if (drawingText.spoilers != null && !drawingText.spoilers.isEmpty()) {
+                                    TextStyleSpan[] spoilerSpans = buffer.getSpans(off, off, TextStyleSpan.class);
+                                    boolean spoilerHit = false;
+                                    if (spoilerSpans != null) {
+                                        for (int a = 0; a < spoilerSpans.length; a++) {
+                                            if (spoilerSpans[a].isSpoiler()) {
+                                                spoilerHit = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if (spoilerHit) {
+                                        Path spoilerPath = new Path();
+                                        for (SpoilerEffect eff : drawingText.spoilers) {
+                                            Rect b = eff.getBounds();
+                                            spoilerPath.addRect(b.left, b.top, b.right, b.bottom, Path.Direction.CW);
+                                        }
+                                        RectF spoilerBounds = new RectF();
+                                        spoilerPath.computeBounds(spoilerBounds, false);
+                                        float rad = (float) Math.sqrt(spoilerBounds.width() * spoilerBounds.width() + spoilerBounds.height() * spoilerBounds.height());
+                                        final DrawingText finalDrawingText = drawingText;
+                                        final View finalParentView = parentView;
+                                        finalDrawingText.spoilers.get(0).setOnRippleEndCallback(() -> finalParentView.post(() -> {
+                                            finalDrawingText.spoilers.clear();
+                                            finalDrawingText.spoilersPatchedLayout.set(null);
+                                            finalParentView.invalidate();
+                                        }));
+                                        for (SpoilerEffect eff : drawingText.spoilers) {
+                                            eff.startRipple(checkX, checkY, rad);
+                                        }
+                                        parentView.invalidate();
+                                        if (parentView.getParent() != null) {
+                                            parentView.getParent().requestDisallowInterceptTouchEvent(true);
                                         }
                                     }
                                 }
