@@ -6628,7 +6628,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                     break;
                 }
                 case 25: {
-                    view = new BlockTableCell(context, this);
+                    view = new BlockTableCell(context, ArticleViewer.this, this);
                     break;
                 }
                 case 26: {
@@ -8853,7 +8853,10 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    public class BlockTableCell extends FrameLayout implements TableLayout.TableLayoutDelegate, TextSelectionHelper.ArticleSelectableView {
+    public static class BlockTableCell extends FrameLayout implements TableLayout.TableLayoutDelegate, TextSelectionHelper.ArticleSelectableView {
+
+        private final IArticleViewer parent;
+        private final WebpageAdapter adapter;
 
         private HorizontalScrollView scrollView;
         private DrawingText titleLayout;
@@ -8867,25 +8870,27 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
         private TLRPC.TL_pageBlockTable currentBlock;
 
-        private WebpageAdapter parentAdapter;
-
-        public BlockTableCell(Context context, WebpageAdapter adapter) {
+        public BlockTableCell(Context context, IArticleViewer parent, WebpageAdapter adapter) {
             super(context);
-            parentAdapter = adapter;
+            this.parent = parent;
+            this.adapter = adapter;
 
             scrollView = new HorizontalScrollView(context) {
                 @Override
                 public boolean onInterceptTouchEvent(MotionEvent ev) {
                     boolean intercept = super.onInterceptTouchEvent(ev);
-                    if (tableLayout.getMeasuredWidth() > getMeasuredWidth() - dp(36) && intercept) {
-                        windowView.requestDisallowInterceptTouchEvent(true);
+                    if (tableLayout.getMeasuredWidth() > getMeasuredWidth() - dp(2 * parent.padx()) && intercept) {
+                        final ArticleViewer viewer = parent instanceof ArticleViewer ? (ArticleViewer) parent : ArticleViewer.getInstance();
+                        if (viewer != null && viewer.windowView != null) {
+                            viewer.windowView.requestDisallowInterceptTouchEvent(true);
+                        }
                     }
                     return intercept;
                 }
 
                 @Override
                 public boolean onTouchEvent(MotionEvent ev) {
-                    if (tableLayout.getMeasuredWidth() <= getMeasuredWidth() - dp(36)) {
+                    if (tableLayout.getMeasuredWidth() <= getMeasuredWidth() - dp(2 * parent.padx())) {
                         return false;
                     }
                     return super.onTouchEvent(ev);
@@ -8894,11 +8899,12 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 @Override
                 protected void onScrollChanged(int l, int t, int oldl, int oldt) {
                     super.onScrollChanged(l, t, oldl, oldt);
-                    if (pressedLinkOwnerLayout != null) {
-                        pressedLinkOwnerLayout = null;
-                        pressedLinkOwnerView = null;
+                    if (parent.pressedLinkOwnerLayout != null) {
+                        parent.pressedLinkOwnerLayout = null;
+                        parent.pressedLinkOwnerView = null;
                     }
                     updateChildTextPositions();
+                    final TextSelectionHelper.ArticleTextSelectionHelper textSelectionHelper = parent.getTextSelectionHelper(null);
                     if (textSelectionHelper != null && textSelectionHelper.isInSelectionMode()) {
                         textSelectionHelper.invalidate();
                     }
@@ -8906,7 +8912,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
                 @Override
                 protected boolean overScrollBy(int deltaX, int deltaY, int scrollX, int scrollY, int scrollRangeX, int scrollRangeY, int maxOverScrollX, int maxOverScrollY, boolean isTouchEvent) {
-                    removePressedLink();
+                    removePressedLink(parent);
                     return super.overScrollBy(deltaX, deltaY, scrollX, scrollY, scrollRangeX, scrollRangeY, maxOverScrollX, maxOverScrollY, isTouchEvent);
                 }
 
@@ -8916,10 +8922,11 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                     setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), tableLayout.getMeasuredHeight());
                 }
             };
-            scrollView.setPadding(dp(18), 0, dp(18), 0);
+            scrollView.setPadding(dp(parent.padx()), 0, dp(parent.padx()), 0);
             scrollView.setClipToPadding(false);
             addView(scrollView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
+            final TextSelectionHelper.ArticleTextSelectionHelper textSelectionHelper = parent.getTextSelectionHelper(null);
             tableLayout = new TableLayout(context, this, textSelectionHelper);
             tableLayout.setOrientation(TableLayout.HORIZONTAL);
             tableLayout.setRowOrderPreserved(true);
@@ -8941,7 +8948,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             } else {
                 alignment = Layout.Alignment.ALIGN_NORMAL;
             }
-            return createLayoutForText(this, null, cell.text, maxWidth, -1, currentBlock, alignment, 0, parentAdapter);
+            return createLayoutForText(parent, this, null, cell.text, maxWidth, -1, currentBlock, alignment, 0, adapter);
         }
 
         @Override
@@ -8966,14 +8973,18 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
         @Override
         public void onLayoutChild(DrawingText text, int x, int y) {
-            if (text != null && !searchResults.isEmpty() && searchText != null) {
+            if (text != null && parent.searchResults != null && !parent.searchResults.isEmpty() && parent.searchText != null) {
+                final WebpageAdapter searchAdapter = adapter != null ? adapter : parent.getAdapter();
+                if (searchAdapter == null) {
+                    return;
+                }
                 String lowerString = text.textLayout.getText().toString().toLowerCase();
                 int startIndex = 0;
                 int index;
-                while ((index = lowerString.indexOf(searchText, startIndex)) >= 0) {
-                    startIndex = index + searchText.length();
+                while ((index = lowerString.indexOf(parent.searchText, startIndex)) >= 0) {
+                    startIndex = index + parent.searchText.length();
                     if (index == 0 || AndroidUtilities.isPunctuationCharacter(lowerString.charAt(index - 1))) {
-                        pages[0].adapter.searchTextOffset.put(searchText + currentBlock + text.parentText + index, y + text.textLayout.getLineTop(text.textLayout.getLineForOffset(index)));
+                        searchAdapter.searchTextOffset.put(parent.searchText + currentBlock + text.parentText + index, y + text.textLayout.getLineTop(text.textLayout.getLineForOffset(index)));
                     }
                 }
             }
@@ -8981,11 +8992,11 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
         public void setBlock(TLRPC.TL_pageBlockTable block) {
             currentBlock = block;
-            AndroidUtilities.setScrollViewEdgeEffectColor(scrollView, getThemedColor(Theme.key_windowBackgroundWhite));
+            AndroidUtilities.setScrollViewEdgeEffectColor(scrollView, parent.getThemedColor(Theme.key_windowBackgroundWhite));
             tableLayout.removeAllChildrens();
             tableLayout.setDrawLines(currentBlock.bordered);
             tableLayout.setStriped(currentBlock.striped);
-            tableLayout.setRtl(parentAdapter.isRtl);
+            tableLayout.setRtl(adapter != null && adapter.isRtl);
 
             int maxCols = 0;
 
@@ -9021,11 +9032,11 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         public boolean onTouchEvent(MotionEvent event) {
             for (int i = 0, N = tableLayout.getChildCount(); i < N; i++) {
                 TableLayout.Child c = tableLayout.getChildAt(i);
-                if (checkLayoutForLinks(parentAdapter, event, this, c.textLayout, scrollView.getPaddingLeft() - scrollView.getScrollX() + listX + c.getTextX(), listY + c.getTextY())) {
+                if (checkLayoutForLinks(parent, adapter, event, this, c.textLayout, scrollView.getPaddingLeft() - scrollView.getScrollX() + listX + c.getTextX(), listY + c.getTextY())) {
                     return true;
                 }
             }
-            return checkLayoutForLinks(parentAdapter, event, this, titleLayout, textX, textY) || super.onTouchEvent(event);
+            return checkLayoutForLinks(parent, adapter, event, this, titleLayout, textX, textY) || super.onTouchEvent(event);
         }
 
         @Override
@@ -9043,30 +9054,30 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 int textWidth;
                 if (currentBlock.level > 0) {
                     listX = dp(14 * currentBlock.level);
-                    textX = listX + dp(18);
+                    textX = listX + dp(parent.padx());
                     textWidth = width - textX;
                 } else {
                     listX = 0;
-                    textX = dp(18);
-                    textWidth = width - dp(36);
+                    textX = dp(parent.padx());
+                    textWidth = width - dp(2 * parent.padx());
                 }
 
-                titleLayout = createLayoutForText(this, null, currentBlock.title, textWidth, 0, currentBlock, Layout.Alignment.ALIGN_CENTER, 0, parentAdapter);
+                titleLayout = createLayoutForText(parent, this, null, currentBlock.title, textWidth, 0, currentBlock, Layout.Alignment.ALIGN_CENTER, 0, adapter);
                 if (titleLayout != null) {
                     textY = 0;
-                    height += titleLayout.getHeight() + dp(8);
+                    height += titleLayout.getHeight() + dp(parent.pady());
                     listY = height;
                     titleLayout.x = textX;
                     titleLayout.y = textY;
                 } else {
-                    listY = dp(8);
+                    listY = dp(parent.pady());
                 }
 
                 scrollView.measure(MeasureSpec.makeMeasureSpec(width - listX, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED));
-                height += scrollView.getMeasuredHeight() + dp(8);
+                height += scrollView.getMeasuredHeight() + dp(parent.pady());
 
                 if (currentBlock.level > 0 && !currentBlock.bottom) {
-                    height += dp(8);
+                    height += dp(parent.pady());
                 }
             } else {
                 height = 1;
@@ -9081,7 +9092,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             for (int i = 0, N = tableLayout.getChildCount(); i < N; i++) {
                 TableLayout.Child c = tableLayout.getChildAt(i);
                 if (c.textLayout != null) {
-                    c.textLayout.x = c.getTextX() + listX + dp(18) - scrollView.getScrollX();
+                    c.textLayout.x = c.getTextX() + listX + dp(parent.padx()) - scrollView.getScrollX();
                     c.textLayout.y = c.getTextY() + listY;
                     c.textLayout.row = c.getRow();
                     c.setSelectionIndex(count++);
@@ -9093,8 +9104,8 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
             scrollView.layout(listX, listY, listX + scrollView.getMeasuredWidth(), listY + scrollView.getMeasuredHeight());
             if (firstLayout) {
-                if (parentAdapter.isRtl) {
-                    scrollView.setScrollX(tableLayout.getMeasuredWidth() - scrollView.getMeasuredWidth() + dp(36));
+                if (adapter != null && adapter.isRtl) {
+                    scrollView.setScrollX(tableLayout.getMeasuredWidth() - scrollView.getMeasuredWidth() + dp(2 * parent.padx()));
                 } else {
                     scrollView.setScrollX(0);
                 }
@@ -9110,11 +9121,11 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (titleLayout != null) {
                 canvas.save();
                 canvas.translate(textX, textY);
-                drawTextSelection(canvas, this, 0);
+                drawTextSelection(parent, canvas, this, 0);
                 titleLayout.draw(canvas, this);
                 canvas.restore();
             }
-            drawQuoteLines(canvas, ArticleViewer.this, currentBlock, getMeasuredHeight());
+            drawQuoteLines(canvas, parent, currentBlock, getMeasuredHeight());
         }
 
         @Override

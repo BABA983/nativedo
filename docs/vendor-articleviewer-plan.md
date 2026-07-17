@@ -109,7 +109,8 @@ Introduced `org.telegram.ui.IArticleViewer` (API surface only):
 12. [x] B11: parent-reshape AuthorDate / Preformatted / Pullquote / Blockquote
 13. [x] B12: parent-reshape Details + Related articles cells
 14. [x] B13: parent-reshape List + OrderedList item cells
-15. [ ] Continue remaining Block*Cell parent reshape (media/table/channel/embed)
+15. [x] B14: parent-reshape `BlockTableCell` (P0 product path)
+16. [ ] Continue remaining Block*Cell parent reshape (media/channel/embed)
 
 Do **not** full-file replace until B2 compiles with contract tests green.
 
@@ -311,3 +312,15 @@ scripts/vendor-status.sh
 - Geometry prefers `parent.padx()`/`pady()` (list first-item top uses pin-shaped
   `dp(2 + pady)`); pin checklist checkbox path and IBlock bounds remain deferred
 - Contract coverage constructs both cells and measures the empty-block sentinel height
+
+### Phase B14 — BlockTableCell parent reshape (landed)
+
+- `BlockTableCell` is a static nested cell with `(Context, IArticleViewer, WebpageAdapter)`
+- Scroll/title/cell text use parent-driven createLayout/checkLinks/drawTextSelection and
+  `parent.getTextSelectionHelper`; search offsets write through adapter/`parent.getAdapter()`
+- Geometry prefers `parent.padx()`/`pady()`; nested scroll disallow still uses local
+  `windowView` host wiring when parent is an ArticleViewer
+- Deferred: pin selection long-press dispatch, CellText attach/detach, IBlock bounds,
+  media/channel/embed cells
+- Contract coverage constructs a parent-hosted table cell and measures the empty-block sentinel
+- `:app` `TableBlock` remains its own native port and does not depend on this nested class
