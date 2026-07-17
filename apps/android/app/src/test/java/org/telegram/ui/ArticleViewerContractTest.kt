@@ -12,6 +12,8 @@ import org.telegram.messenger.ApplicationLoader
 import org.telegram.tgnet.TLRPC
 import org.telegram.ui.ActionBar.Theme
 import org.telegram.ui.Cells.TextSelectionHelper
+import org.telegram.ui.Components.TextPaintSpan
+import org.telegram.ui.Components.TextPaintUrlSpan
 
 /**
  * Phase 0 contract tests for ArticleViewer public surface used by NativeDo.
@@ -145,5 +147,58 @@ class ArticleViewerContractTest {
         assertThat(isolated.preformattedTextPaints.size()).isEqualTo(1)
         assertThat(isolated.preformattedTextPaints.get(ArticleViewer.TEXT_FLAG_MONO)).isSameInstanceAs(paint)
     }
+
+    @Test
+    fun getText_parentDrivenRichTextBuildsUrlAndStyleSpans() {
+        val isolated = ArticleViewer.Resources()
+        val host = object : IArticleViewer() {
+            override fun getCurrentAccount() = 0
+            override fun getTextColor() = 0xff111111.toInt()
+            override fun getLinkTextColor() = 0xff222222.toInt()
+            override fun getGrayTextColor() = 0xff333333.toInt()
+            override fun getThemedColor(colorKey: Int) = 0xffffffff.toInt()
+            override fun getResourcesProvider(): Theme.ResourcesProvider? = null
+            override fun getResources() = isolated
+            override fun getTextSelectionHelper(view: android.view.View?): TextSelectionHelper.ArticleTextSelectionHelper? = null
+        }
+
+        val plain = TLRPC.TL_textPlain().apply { text = "hello" }
+        val bold = TLRPC.TL_textBold().apply {
+            text = plain
+            plain.parentRichText = this
+        }
+        val urlInner = TLRPC.TL_textPlain().apply { text = "docs" }
+        val url = TLRPC.TL_textUrl().apply {
+            text = urlInner
+            this.url = "https://linux.do/t/1"
+            urlInner.parentRichText = this
+        }
+        val concat = TLRPC.TL_textConcat().apply {
+            texts.add(bold)
+            texts.add(url)
+            bold.parentRichText = this
+            url.parentRichText = this
+        }
+        val block = TLRPC.TL_pageBlockParagraph()
+
+        val built = ArticleViewer.getText(host, null as TLRPC.WebPage?, null, concat, concat, block, 320)
+        assertThat(built).isInstanceOf(android.text.Spanned::class.java)
+        val spanned = built as android.text.Spanned
+        assertThat(spanned.toString()).isEqualTo("hellodocs")
+
+        val paintSpans = spanned.getSpans(0, spanned.length, TextPaintSpan::class.java)
+        assertThat(paintSpans).isNotEmpty()
+        assertThat(isolated.paragraphTextPaints.size()).isAtLeast(1)
+
+        val urlSpans = spanned.getSpans(0, spanned.length, TextPaintUrlSpan::class.java)
+        assertThat(urlSpans).hasLength(1)
+        assertThat(urlSpans[0].url).isEqualTo("https://linux.do/t/1")
+        assertThat(spanned.getSpanStart(urlSpans[0])).isEqualTo(5)
+        assertThat(spanned.getSpanEnd(urlSpans[0])).isEqualTo(9)
+
+        val last = ArticleViewer.getLastRichText(bold)
+        assertThat(last).isSameInstanceAs(plain)
+    }
+
 
 }

@@ -101,7 +101,7 @@ Introduced `org.telegram.ui.IArticleViewer` (API surface only):
 4. [x] B5: Resources owns paint color/font updates; outer paint creation/color entry points match pin
 5. [x] B6: link-touch and text-selection drawing helpers use the pin-shaped `IArticleViewer` boundary
 6. [x] B7a: text flags and paint selection use the pin-shaped static parent/resource boundary
-7. [ ] B7b: move supported S1 rich-text construction onto the parent-driven `getText` boundary
+7. [x] B7b: move supported S1 rich-text construction onto the parent-driven `getText` boundary
 8. [ ] B7c: move `createLayoutForText` onto the parent-driven core
 9. [ ] Only then re-attempt larger pin body slices
 
@@ -215,9 +215,20 @@ scripts/vendor-status.sh
   `errorTextPaint` synchronization remains intact
 - Contract coverage verifies an isolated parent receives its own cached preformatted paint
 
-#### B7b / B7c — Deferred
+#### B7b — Parent-driven getText (landed)
 
-- B7b will adapt the pinned parent-driven `getText` recursion for supported TLRPC/S1 rich-text nodes
+- `getLastRichText(TLRPC.RichText)` is the pinned public static helper over local S1 rich-text nodes
+- `getText(IArticleViewer, WebpageAdapter|WebPage, ...)` exposes the pinned static parent boundary;
+  instance wrappers still route existing cell callers through `this`
+- Supported S1 nodes keep the recursive span construction path (style wrappers, url/email/phone,
+  anchor, concat, marked, image) and paint selection via `getTextPaint(parent, ...)`
+- Inline image invert brightness now uses the pin-shaped
+  `AndroidUtilities.computePerceivedBrightness(parent.getThemedColor(...))` path
+- Spoiler / math (`textSpoiler`, `textMath`) remain deferred with the rest of the local S1 surface
+- Contract coverage verifies parent-driven bold+url concat span construction against isolated resources
+
+#### B7c — Deferred
+
 - B7c will move `createLayoutForText` onto its static parent core after B7b is stable
-- Neither slice may introduce `TL_iv`, `TableLayout.CellText`, spoiler/typing lifecycle, or alter
+- That slice may not introduce `TL_iv`, `TableLayout.CellText`, spoiler/typing lifecycle, or alter
   NativeDo bookmark/sheet/file-chooser wiring
