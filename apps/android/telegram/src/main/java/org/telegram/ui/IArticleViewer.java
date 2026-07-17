@@ -5,9 +5,9 @@
  *
  * Copyright Zark X, 2013-2018.
  *
- * NativeDo: thin vendored extract of Telegram 12.8.1 IArticleViewer.
- * API surface only — fields stay on ArticleViewer until a later field-move PR.
- * openPhoto uses TLRPC.PageBlock (S1), not TL_iv.PageBlock.
+ * NativeDo: vendored extract of Telegram 12.8.1 IArticleViewer.
+ * Phase B1: abstract API. Phase B2: shared fields (link/search/video) live here
+ * so block helpers can take IArticleViewer parent. openPhoto uses TLRPC.PageBlock (S1).
  */
 
 package org.telegram.ui;
@@ -15,22 +15,32 @@ package org.telegram.ui;
 import android.view.MotionEvent;
 import android.view.View;
 
+import androidx.collection.LongSparseArray;
+
 import org.telegram.messenger.browser.Browser;
+import org.telegram.messenger.video.VideoPlayerHolderBase;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.ui.ActionBar.ActionBarPopupWindow;
+import org.telegram.ui.ActionBar.BottomSheet;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.TextSelectionHelper;
+import org.telegram.ui.Components.LinkSpanDrawable;
+import org.telegram.ui.Components.LoadingDrawable;
 import org.telegram.ui.Components.TextPaintUrlSpan;
 
+import java.util.ArrayList;
+
 /**
- * Shared host surface for ArticleViewer (and future block helpers that take a parent viewer).
+ * Shared host surface for ArticleViewer block/chrome helpers.
  * <p>
- * Upstream (12.8.1) also parks link/search/video fields on this base so DrawingText /
- * Block*Cell can take {@code IArticleViewer parent}. We introduce the type + abstract
- * methods first; field relocation is a separate Phase B2 change.
+ * Fields match upstream 12.8.1 so a future DrawingText(IArticleViewer) reshape can
+ * reference {@code parent.pressedLink} etc. without casting to ArticleViewer.
  */
 public abstract class IArticleViewer {
 
     public abstract int getCurrentAccount();
+
+    public int selectedFont = 0;
 
     public abstract int getTextColor();
 
@@ -43,8 +53,8 @@ public abstract class IArticleViewer {
     public abstract Theme.ResourcesProvider getResourcesProvider();
 
     /**
-     * Upstream returns a paint-cache {@link ArticleViewer.Resources}. Local paints still
-     * live as statics on ArticleViewer; subclasses may return null until B2.
+     * Upstream returns a paint-cache {@link ArticleViewer.Resources}. Local paints may still
+     * live as statics; subclasses may return an empty shell until paint maps are relocated.
      */
     public abstract ArticleViewer.Resources getResources();
 
@@ -68,6 +78,12 @@ public abstract class IArticleViewer {
         return false;
     }
 
+    public LinkSpanDrawable<TextPaintUrlSpan> pressedLink;
+    public LinkSpanDrawable.LinkCollector links = new LinkSpanDrawable.LinkCollector();
+    public ArticleViewer.DrawingText pressedLinkOwnerLayout;
+    public int pressedLayoutY;
+    public View pressedLinkOwnerView;
+
     public void openWebpageUrl(String url, String anchor, Browser.Progress progress) {
     }
 
@@ -78,11 +94,30 @@ public abstract class IArticleViewer {
         return false;
     }
 
+    public boolean drawBlockSelection;
+
     public void handleLinkClick(ArticleViewer.WebpageAdapter adapter, TextPaintUrlSpan span) {
     }
 
+    public TLRPC.Chat loadedChannel;
+    public boolean loadingChannel;
+    public View loadingLinkView;
+    public TextPaintUrlSpan loadingLink;
+    public ArticleViewer.DrawingText loadingText;
+    public LoadingDrawable loadingLinkDrawable;
+
+    public VideoPlayerHolderBase videoPlayer;
+    public ArticleViewer.BlockVideoCell currentPlayer;
+    public LongSparseArray<ArticleViewer.BlockVideoCellState> videoStates = new LongSparseArray<>();
+
     public void reset() {
+        loadedChannel = null;
+        loadingChannel = false;
     }
+
+    public ArrayList<ArticleViewer.SearchResult> searchResults = new ArrayList<>();
+    public String searchText;
+    public int currentSearchIndex;
 
     public ArticleViewer.WebpageAdapter getAdapter() {
         return null;
@@ -92,4 +127,7 @@ public abstract class IArticleViewer {
     public boolean openPhoto(TLRPC.PageBlock block, ArticleViewer.WebpageAdapter adapter) {
         return false;
     }
+
+    public ActionBarPopupWindow popupWindow;
+    public BottomSheet linkSheet;
 }

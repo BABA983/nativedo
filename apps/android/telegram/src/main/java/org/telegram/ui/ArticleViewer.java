@@ -256,8 +256,6 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
     private AspectRatioFrameLayout fullscreenAspectRatioView;
     private WebChromeClient.CustomViewCallback customViewCallback;
 
-    private TLRPC.Chat loadedChannel;
-    private boolean loadingChannel;
 
     private Object lastInsets;
     private boolean hasCutout;
@@ -332,7 +330,6 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
     private Paint navigationBarPaint = new Paint();
     private Paint headerProgressPaint = new Paint();
 
-    private ActionBarPopupWindow popupWindow;
     private ActionBarPopupWindow.ActionBarPopupWindowLayout popupLayout;
     private TextView deleteView;
     private Rect popupRect;
@@ -355,18 +352,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
     private CheckForTap pendingCheckForTap = null;
 
     private Browser.Progress loadingProgress;
-    private TextPaintUrlSpan loadingLink;
-    private DrawingText loadingText;
-    private View loadingLinkView;
-    private LoadingDrawable loadingLinkDrawable;
 
-    private LinkSpanDrawable<TextPaintUrlSpan> pressedLink;
-    private LinkSpanDrawable.LinkCollector links = new LinkSpanDrawable.LinkCollector();
-    private BottomSheet linkSheet;
-    private int pressedLayoutY;
-    private DrawingText pressedLinkOwnerLayout;
-    private View pressedLinkOwnerView;
-    private boolean drawBlockSelection;
     private LinkPath urlPath = new LinkPath();
 
     private int anchorsOffsetMeasuredWidth;
@@ -432,7 +418,6 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         return resources;
     }
 
-    private int selectedFont = 0;
     private FontCell[] fontCells = new FontCell[2];
 
     private static class TL_pageBlockRelatedArticlesChild extends TLRPC.PageBlock {
@@ -4741,8 +4726,6 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    VideoPlayerHolderBase videoPlayer;
-    BlockVideoCell currentPlayer;
 
     private void checkVideoPlayer() {
         RecyclerView recyclerView = pages[0].listView;
@@ -4827,12 +4810,9 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
     }
 
     private Runnable searchRunnable;
-    private ArrayList<SearchResult> searchResults = new ArrayList<>();
-    private String searchText;
-    private int currentSearchIndex;
     private int lastSearchIndex = -1;
 
-    private static class SearchResult {
+    public static class SearchResult {
         private int index;
         private Object text;
         private TLRPC.PageBlock block;
@@ -5818,7 +5798,6 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    private LongSparseArray<BlockVideoCellState> videoStates = new LongSparseArray<>();
 
     public class WebpageAdapter extends RecyclerListView.SelectionAdapter {
 
@@ -6999,7 +6978,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    private static class BlockVideoCellState {
+    public static class BlockVideoCellState {
         long playFrom;
         Bitmap lastFrameBitmap;
 
@@ -7049,7 +7028,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
     }
 
-    private class BlockVideoCell extends FrameLayout implements DownloadController.FileDownloadProgressListener, TextSelectionHelper.ArticleSelectableView {
+    public class BlockVideoCell extends FrameLayout implements DownloadController.FileDownloadProgressListener, TextSelectionHelper.ArticleSelectableView {
 
         private DrawingText captionLayout;
         private DrawingText creditLayout;

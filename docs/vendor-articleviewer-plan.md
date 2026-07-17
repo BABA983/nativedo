@@ -93,12 +93,12 @@ Introduced `org.telegram.ui.IArticleViewer` (API surface only):
 ./apps/android/gradlew -p apps/android :app:testDebugUnitTest --tests 'org.telegram.ui.ArticleViewerContractTest' --quiet
 ```
 
-### Phase B2 — Field move + DrawingText(parent) (next)
+### Phase B2 — Field move (landed) + DrawingText(parent) (next)
 
-1. Move pin-matching fields from `ArticleViewer` onto `IArticleViewer` (public)
-2. Change `DrawingText` / block helpers to take `IArticleViewer parent` where pin does
-3. Port `ArticleViewer.Resources` paint maps from pin (or keep statics and assign into Resources)
-4. Only then re-attempt larger pin body slices
+1. [x] Move pin-matching fields from `ArticleViewer` onto `IArticleViewer` (public)
+2. [ ] Change `DrawingText` / block helpers to take `IArticleViewer parent` where pin does
+3. [ ] Port `ArticleViewer.Resources` paint maps from pin (or keep statics and assign into Resources)
+4. [ ] Only then re-attempt larger pin body slices
 
 Do **not** full-file replace until B2 compiles with contract tests green.
 
