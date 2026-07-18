@@ -64,3 +64,11 @@ preview bitmap. **A5** wontfix (pin non-static). Full history:
 - Custom Tabs via `androidx.browser`: when in-app is off (or domain restricted) and
   `SharedConfig.customTabs` is true, `Browser.openUrl` tries Custom Tabs after
   non-browser app handlers; else `ACTION_VIEW`. Bound from `MainActivity`.
+
+## BotWebViewContainer (browser host)
+
+Native subset used as ArticleViewer in-app browser engine (not full Telegram bot
+WebView). Wired for: URL/title/favicon/progress/error → WebActionBar; back/forward
+history; non-http schemes via external apps; long-press open/copy/download menus;
+local BrowserHistory + WebMetadataCache; page find. Still omitted vs pin: TON
+proxy, Mini App JS bridge, full multi-window, DangerousWebWarning intercept.

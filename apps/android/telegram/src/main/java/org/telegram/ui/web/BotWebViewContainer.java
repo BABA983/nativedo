@@ -2,7 +2,9 @@ package org.telegram.ui.web;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.content.Intent;
 import android.graphics.Bitmap;
+import android.net.Uri;
 import android.net.http.SslError;
 import android.os.Build;
 import android.text.TextUtils;
@@ -20,6 +22,7 @@ import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -27,9 +30,13 @@ import java.util.Map;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.FileLog;
+import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.Utilities;
+import org.telegram.messenger.browser.Browser;
+import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.LayoutHelper;
 
 public class BotWebViewContainer extends FrameLayout {
@@ -85,10 +92,18 @@ public class BotWebViewContainer extends FrameLayout {
     private Delegate delegate;
     private boolean preserving;
     private final boolean bot;
+    private final Theme.ResourcesProvider resourcesProvider;
+    private String mUrl;
+    private boolean isPageLoaded;
+    private boolean keyboardFocusable;
+    private boolean wasFocusable;
 
     public BotWebViewContainer(Context context, Object resourcesProvider, int backgroundColor, boolean allow) {
         super(context);
         this.bot = allow;
+        this.resourcesProvider = resourcesProvider instanceof Theme.ResourcesProvider
+                ? (Theme.ResourcesProvider) resourcesProvider
+                : null;
         setBackgroundColor(backgroundColor);
         setFocusable(false);
     }
@@ -107,12 +122,59 @@ public class BotWebViewContainer extends FrameLayout {
             webView.setContainers(this, listener);
         }
     }
-    public void setPageLoaded(String url, boolean animated) {}
+    public void setPageLoaded(String url, boolean animated) {
+        if (webView != null) {
+            webView.pageLoaded = true;
+            onURLChanged(
+                    webView.getUrl() != null ? webView.getUrl() : url,
+                    !webView.canGoBack(),
+                    !webView.canGoForward());
+            updateKeyboardFocusable();
+        }
+        mUrl = url;
+        if (isPageLoaded) {
+            return;
+        }
+        isPageLoaded = true;
+        if (webView != null) {
+            webView.setAlpha(1f);
+        }
+        updateKeyboardFocusable();
+        if (delegate != null) {
+            // Pin calls delegate.onWebAppReady(); keep no-op-safe for browser sheets.
+        }
+    }
+
+    public boolean isPageLoaded() {
+        return isPageLoaded;
+    }
+
+    public String getUrlLoaded() {
+        return mUrl;
+    }
+
     public void onWebViewCreated(MyWebView webView) {}
     protected void onURLChanged(String url, boolean first, boolean last) {}
     protected void onTitleChanged(String title) {}
     protected void onFaviconChanged(Bitmap favicon) {}
     protected void onErrorShown(boolean shown, int errorCode, String description) {}
+
+    public void showLinkCopiedBulletin() {
+        try {
+            BulletinFactory.of(this, resourcesProvider).createCopyLinkBulletin().show(true);
+        } catch (Throwable t) {
+            FileLog.e(t);
+        }
+    }
+
+    /** Pin-shaped back: consume when WebView can go back. */
+    public boolean onBackPressed() {
+        if (webView != null && webView.canGoBack()) {
+            webView.goBack();
+            return true;
+        }
+        return false;
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
     public MyWebView getWebView() {
@@ -173,20 +235,53 @@ public class BotWebViewContainer extends FrameLayout {
         view.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP && request != null) {
+                    return shouldOverrideUrl(request.getUrl() != null ? request.getUrl().toString() : null);
+                }
                 return false;
             }
 
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                return shouldOverrideUrl(url);
+            }
+
+            private boolean shouldOverrideUrl(String url) {
+                if (TextUtils.isEmpty(url)) {
+                    return false;
+                }
+                String scheme = null;
+                try {
+                    Uri uri = Uri.parse(url);
+                    scheme = uri.getScheme() != null ? uri.getScheme().toLowerCase() : "";
+                } catch (Exception e) {
+                    FileLog.e(e);
+                }
+                // Keep http(s) inside the in-app WebView.
+                if ("http".equals(scheme) || "https".equals(scheme) || TextUtils.isEmpty(scheme)) {
+                    return false;
+                }
+                // tel:/mailto:/intent:/custom schemes → external handlers.
+                try {
+                    if (Browser.openInExternalApp(getContext(), url, true)
+                            || Browser.openInExternalBrowser(getContext(), url, true)) {
+                        return true;
+                    }
+                } catch (Exception e) {
+                    FileLog.e(e);
+                }
                 return false;
             }
 
             @Override
             public void onPageStarted(WebView view, String url, Bitmap favicon) {
-                webView.pageLoaded = false;
-                webView.injectedJS = false;
-                webView.currentUrl = url;
-                webView.lastUrl = url;
+                if (webView != null) {
+                    webView.pageLoaded = false;
+                    webView.injectedJS = false;
+                    webView.currentUrl = url;
+                    webView.lastUrl = url;
+                }
+                isPageLoaded = false;
                 onErrorShown(false, 0, null);
                 notifyUrlChanged();
                 if (progressListener != null) {
@@ -201,12 +296,14 @@ public class BotWebViewContainer extends FrameLayout {
 
             @Override
             public void onPageFinished(WebView view, String url) {
-                webView.pageLoaded = true;
-                webView.currentUrl = url;
-                webView.lastUrl = url;
+                if (webView != null) {
+                    webView.pageLoaded = true;
+                    webView.currentUrl = url;
+                    webView.lastUrl = url;
+                    webView.saveHistory(bot);
+                }
                 notifyUrlChanged();
                 injectWebViewScripts();
-                webView.saveHistory(bot);
                 setPageLoaded(url, true);
                 if (progressListener != null) {
                     progressListener.onProgress(1f);
@@ -336,6 +433,8 @@ public class BotWebViewContainer extends FrameLayout {
         webView.destroy();
         webView = null;
         webViewProxy = null;
+        isPageLoaded = false;
+        mUrl = null;
     }
     public void preserveWebView() {
         preserving = true;
@@ -386,13 +485,14 @@ public class BotWebViewContainer extends FrameLayout {
             webView = null;
             view = getWebView();
         }
+        isPageLoaded = false;
+        mUrl = url;
         view.loadUrl(url);
     }
     public void invalidateViewPortHeight() {}
     public void invalidateViewPortHeight(boolean animated) {}
-    private boolean keyboardFocusable;
-    private boolean wasFocusable;
-    private boolean isPageLoaded;
+    public void invalidateViewPortHeight(boolean isStable, boolean force) {}
+
     private void updateKeyboardFocusable() {
         final boolean focusable = keyboardFocusable && isPageLoaded && false;
         if (wasFocusable != focusable) {
@@ -724,18 +824,26 @@ public class BotWebViewContainer extends FrameLayout {
 
         private void showLinkContextMenu(String url) {
             AndroidUtilities.runOnUIThread(() -> {
-                if (getContext() == null) return;
-
-                org.telegram.ui.ActionBar.AlertDialog.Builder builder = new org.telegram.ui.ActionBar.AlertDialog.Builder(getContext());
+                if (getContext() == null || TextUtils.isEmpty(url)) {
+                    return;
+                }
+                org.telegram.ui.ActionBar.AlertDialog.Builder builder =
+                        new org.telegram.ui.ActionBar.AlertDialog.Builder(getContext());
                 builder.setTitle(url);
                 builder.setItems(new CharSequence[]{
-                        org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.Open),
-                        org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.Copy)
+                        LocaleController.getString(R.string.Open),
+                        LocaleController.getString(R.string.OpenInExternalApp),
+                        LocaleController.getString(R.string.Copy)
                 }, (dialog, which) -> {
                     if (which == 0) {
                         loadUrl(url);
                     } else if (which == 1) {
+                        Browser.openInExternalBrowser(getContext(), url, true);
+                    } else if (which == 2) {
                         AndroidUtilities.addToClipboard(url);
+                        if (botWebViewContainer != null) {
+                            botWebViewContainer.showLinkCopiedBulletin();
+                        }
                     }
                 });
                 builder.show();
@@ -744,20 +852,29 @@ public class BotWebViewContainer extends FrameLayout {
 
         private void showImageContextMenu(String imageUrl) {
             AndroidUtilities.runOnUIThread(() -> {
-                if (getContext() == null) return;
-
-                org.telegram.ui.ActionBar.AlertDialog.Builder builder = new org.telegram.ui.ActionBar.AlertDialog.Builder(getContext());
+                if (getContext() == null || TextUtils.isEmpty(imageUrl)) {
+                    return;
+                }
+                org.telegram.ui.ActionBar.AlertDialog.Builder builder =
+                        new org.telegram.ui.ActionBar.AlertDialog.Builder(getContext());
                 builder.setTitle(imageUrl);
                 builder.setItems(new CharSequence[]{
-                        org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.AccActionDownload),
-                        org.telegram.messenger.LocaleController.getString(org.telegram.messenger.R.string.CopyLink)
+                        LocaleController.getString(R.string.OpenInExternalApp),
+                        LocaleController.getString(R.string.AccActionDownload),
+                        LocaleController.getString(R.string.CopyLink)
                 }, (dialog, which) -> {
                     if (which == 0) {
-                        if (botWebViewContainer != null && botWebViewContainer.delegate != null) {
-                            botWebViewContainer.delegate.onDownloadStart(imageUrl, null, null, "image/*", 0);
-                        }
+                        Browser.openInExternalBrowser(getContext(), imageUrl, true);
                     } else if (which == 1) {
+                        if (botWebViewContainer != null && botWebViewContainer.delegate != null) {
+                            botWebViewContainer.delegate.onDownloadStart(
+                                    imageUrl, null, null, "image/*", 0);
+                        }
+                    } else if (which == 2) {
                         AndroidUtilities.addToClipboard(imageUrl);
+                        if (botWebViewContainer != null) {
+                            botWebViewContainer.showLinkCopiedBulletin();
+                        }
                     }
                 });
                 builder.show();

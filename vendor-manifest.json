@@ -1557,7 +1557,7 @@
           "pin": "legacy_009e97356",
           "modified": true,
           "port_mode": "native",
-          "notes": "Minimal native WebView host for ArticleViewer URL loading; WebViewProxy/getProxy, MyWebView.setContainers/evaluateJS/opener, basic webview_ext/webview_share/webview_app_ext injection, low-risk URL/title/favicon/history metadata state, find-in-page search state with destroyed-WebView guards, and preserve/replace WebView rebinds mirror the upstream API surface (resetWebView() clears the field like upstream so a preserved WebView is owned solely by ArticleViewer.CachedWeb; re-attachment is replaceWebView's job in attach(); the WebViewClient/WebChromeClient page-load/title/icon callbacks null-guard that field since a preserved WebView can still fire callbacks after it is cleared), while Telegram bot WebApp event handling remains stubbed.",
+          "notes": "Native browser WebView host for ArticleViewer (not full pin BotWebView). Real navigation: http(s) stays in-webview; tel/mailto/intent/custom schemes open externally. setPageLoaded drives URL/back-forward chrome; progress/title/favicon/error callbacks wired; long-press link/image menus; history+metadata persist; page find/search; JS inject from raw webview_*.js. Omitted: TON proxy, bot Mini App bridge, full flicker placeholder, DangerousWebWarning CORS intercept.",
           "stuck_ref": "native_host_reference_only"
         },
         {
