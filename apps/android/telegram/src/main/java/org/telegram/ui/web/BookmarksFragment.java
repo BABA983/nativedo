@@ -228,7 +228,7 @@ public class BookmarksFragment extends UniversalFragment {
             }
         });
 
-        StickerEmptyView emptyView = new StickerEmptyView(context, null, StickerEmptyView.STICKER_TYPE_SEARCH, getResourceProvider());
+        StickerEmptyView emptyView = new StickerEmptyView(context, null, StickerEmptyView.STICKER_TYPE_SEARCH);
         emptyView.title.setText(getString(R.string.WebNoBookmarks));
         emptyView.subtitle.setVisibility(View.GONE);
         emptyView.showProgress(false, false);

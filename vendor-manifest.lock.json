@@ -2517,7 +2517,7 @@
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/CheckBoxSquare.java",
-      "upstream": "org/telegram/ui/Cells/CheckBoxSquare.java",
+      "upstream": "org/telegram/ui/Components/CheckBoxSquare.java",
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
       "modified": true,
       "port_mode": "native",
@@ -2705,14 +2705,6 @@
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (35 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
-    },
-    {
-      "local": "telegram/src/main/java/org/telegram/messenger/DispatchQueuePriority.java",
-      "upstream": "org/telegram/messenger/DispatchQueuePriority.java",
-      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": true,
-      "port_mode": "native",
-      "notes": "Auto-registered unmanifested compile dependency (37 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
     },
     {
       "local": "telegram/src/main/java/org/telegram/messenger/DocumentObject.java",
@@ -2964,11 +2956,11 @@
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarSheet.java",
-      "upstream": "org/telegram/ui/ActionBar/ActionBarSheet.java",
+      "upstream": "org/telegram/ui/ActionBar/BaseFragment.java",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
-      "notes": "Auto-registered unmanifested on-disk source (264 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
+      "notes": "NativeDo top-level sheet host substantially adapted from BaseFragment.showAsSheet and BottomSheet right-transition structure. Keeps AttachedSheet lifecycle, ActionBarLayout ownership, scrim/window drawing, and open/dismiss animation while omitting Telegram activity/navigation integration."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/AlertDialog.java",
@@ -3060,14 +3052,6 @@
       "notes": "Host stubs: CACHE_TYPE_MESSAGES_LARGE + make(account,cacheType,documentId) for WebBrowserSettings WebsiteView favicon path (returns empty drawable)."
     },
     {
-      "local": "telegram/src/main/java/org/telegram/ui/Components/AnimatedSvgDrawable.java",
-      "upstream": "org/telegram/ui/Components/AnimatedSvgDrawable.java",
-      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": true,
-      "port_mode": "native",
-      "notes": "Auto-registered unmanifested on-disk source (1081 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
-    },
-    {
       "local": "telegram/src/main/java/org/telegram/ui/Components/AttachableDrawable.java",
       "upstream": "org/telegram/ui/Components/AttachableDrawable.java",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
@@ -3132,28 +3116,12 @@
       "notes": "Auto-registered unmanifested on-disk source (178 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
     },
     {
-      "local": "telegram/src/main/java/org/telegram/ui/Components/ContentPreviewViewer.java",
-      "upstream": "org/telegram/ui/Components/ContentPreviewViewer.java",
-      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": true,
-      "port_mode": "native",
-      "notes": "Auto-registered unmanifested compile dependency (18 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
-    },
-    {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ContextProgressView.java",
       "upstream": "org/telegram/ui/Components/ContextProgressView.java",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested compile dependency (109 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
-    },
-    {
-      "local": "telegram/src/main/java/org/telegram/ui/Components/CurvesToolValue.java",
-      "upstream": "org/telegram/ui/Components/CurvesToolValue.java",
-      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": true,
-      "port_mode": "native",
-      "notes": "Auto-registered unmanifested compile dependency (21 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/FilterGLThread.java",
@@ -3212,14 +3180,6 @@
       "notes": "Auto-registered unmanifested compile dependency (44 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
     },
     {
-      "local": "telegram/src/main/java/org/telegram/ui/Components/MovableCell.java",
-      "upstream": "org/telegram/ui/Components/MovableCell.java",
-      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": true,
-      "port_mode": "native",
-      "notes": "Auto-registered unmanifested compile dependency (11 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
-    },
-    {
       "local": "telegram/src/main/java/org/telegram/ui/Components/OtherDocumentPlaceholderDrawable.java",
       "upstream": "org/telegram/ui/Components/OtherDocumentPlaceholderDrawable.java",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
@@ -3246,10 +3206,10 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/Point.java",
       "upstream": "org/telegram/ui/Components/Point.java",
-      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": true,
-      "port_mode": "native",
-      "notes": "Auto-registered unmanifested compile dependency (25 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
+      "modified": false,
+      "port_mode": "exact",
+      "stuck_reason": "Standalone Components.Point was removed after the legacy pin; retained byte-identical for legacy port call sites."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/RadioButton.java",
@@ -3262,10 +3222,10 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/Rect.java",
       "upstream": "org/telegram/ui/Components/Rect.java",
-      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": true,
-      "port_mode": "native",
-      "notes": "Auto-registered unmanifested compile dependency (28 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
+      "modified": false,
+      "port_mode": "exact",
+      "stuck_reason": "Standalone Components.Rect was removed after the legacy pin; retained byte-identical for legacy port call sites."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ScaleStateListAnimator.java",
@@ -3453,14 +3413,6 @@
       "notes": "Auto-registered unmanifested compile dependency (18 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
     },
     {
-      "local": "telegram/src/main/java/org/telegram/ui/Components/UniversalListCallbacks.java",
-      "upstream": "org/telegram/ui/Components/UniversalListCallbacks.java",
-      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": true,
-      "port_mode": "native",
-      "notes": "Auto-registered unmanifested compile dependency (19 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
-    },
-    {
       "local": "telegram/src/main/java/org/telegram/ui/Components/VectorAvatarThumbDrawable.java",
       "upstream": "org/telegram/ui/Components/VectorAvatarThumbDrawable.java",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
@@ -3541,14 +3493,6 @@
       "notes": "Auto-registered unmanifested compile dependency (16 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
     },
     {
-      "local": "telegram/src/main/java/org/telegram/ui/Stories/StoryItem.java",
-      "upstream": "org/telegram/ui/Stories/StoryItem.java",
-      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": true,
-      "port_mode": "native",
-      "notes": "Auto-registered unmanifested compile dependency (25 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
-    },
-    {
       "local": "telegram/src/main/java/org/telegram/ui/Stories/recorder/ButtonWithCounterView.java",
       "upstream": "org/telegram/ui/Stories/recorder/ButtonWithCounterView.java",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
@@ -3604,14 +3548,6 @@
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (4 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
-    },
-    {
-      "local": "telegram/src/main/java/org/telegram/ui/web/WebBookmarks.java",
-      "upstream": "org/telegram/ui/web/WebBookmarks.java",
-      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": true,
-      "port_mode": "native",
-      "notes": "Auto-registered unmanifested on-disk source (255 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
     },
     {
       "local": "telegram/src/main/java/org/telegram/messenger/utils/Choreographer60FpsContent.java",
@@ -3794,6 +3730,70 @@
       "modified": true,
       "port_mode": "native",
       "notes": "Compile/runtime type shim providing DialogCell.FixedWidthSpan for pin SimpleTextView. Full DialogCell UI is not ported under :telegram."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/messenger/DispatchQueuePriority.java",
+      "upstream": "org/telegram/DispatchQueuePriority.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Runtime queue shim, not a port. It preserves only the API needed by NativeDo and routes all priorities to Utilities.globalQueue; upstream owns a real priority queue pool in the root org.telegram package."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/AnimatedSvgDrawable.java",
+      "upstream": "org/telegram/ui/Components/AnimatedFileDrawable.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "NativeDo-authored CSS-keyframes SVG runtime surface for Discourse avatar flairs. It extends the vendored AnimatedFileDrawable API but does not copy a same-name Telegram class."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/ContentPreviewViewer.java",
+      "upstream": "org/telegram/ui/ContentPreviewViewer.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Compile-only no-op facade for the upstream ContentPreviewViewer touch API; sticker/GIF preview behavior is not ported."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/CurvesToolValue.java",
+      "upstream": "org/telegram/ui/Components/PhotoFilterView.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Compile shim extracted from PhotoFilterView.CurvesToolValue for MediaController serialization fields; filter curve behavior is not ported."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/MovableCell.java",
+      "upstream": "org/telegram/ui/Cells/DialogCell.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Host SPI exposing the DialogCell movement and clipping methods consumed by DialogsItemAnimator so NativeDo topic cells can participate without vendoring full DialogCell."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/UniversalListCallbacks.java",
+      "upstream": "org/telegram/ui/Components/UniversalRecyclerView.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Host callback aliases matching UniversalRecyclerView fill/click/long-click shapes; upstream uses Utilities.Callback* directly and has no standalone type."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Stories/StoryItem.java",
+      "upstream": "org/telegram/tgnet/tl/TL_stories.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Compile-only story parent-object shim for FileLoader/ImageLoader branches. LinuxDo has no Stories; upstream StoryItem is nested under TL_stories."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/web/WebBookmarks.java",
+      "upstream": "org/telegram/ui/web/AddressBarList.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "NativeDo-authored local bookmark persistence backend used by the host-wired AddressBarList and BookmarksFragment instead of Telegram Saved Messages."
     }
   ],
   "resources": [

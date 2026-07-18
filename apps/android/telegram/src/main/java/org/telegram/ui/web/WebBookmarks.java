@@ -5,7 +5,8 @@
 // messaging backend) so that the web browser's "Add bookmark" action persists
 // locally instead of going through Telegram Saved-Messages / Discourse.
 //
-// This is not a vendored Telegram file; do not add a vendor-manifest entry.
+// This is not a vendored Telegram file; it is tracked as a compatibility surface
+// under compat_shim_groups rather than as copied Telegram source.
 
 package org.telegram.ui.web;
 
