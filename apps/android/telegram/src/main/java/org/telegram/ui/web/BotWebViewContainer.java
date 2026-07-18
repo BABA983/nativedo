@@ -1,17 +1,21 @@
 package org.telegram.ui.web;
 
 import android.annotation.SuppressLint;
+import android.app.DownloadManager;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.net.Uri;
 import android.net.http.SslError;
 import android.os.Build;
+import android.os.Environment;
+import android.os.Message;
 import android.text.TextUtils;
 import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.SslErrorHandler;
+import android.webkit.URLUtil;
 import android.webkit.WebBackForwardList;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
@@ -31,13 +35,19 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
+import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.browser.Browser;
+import org.telegram.ui.ActionBar.AlertDialog;
+import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.ArticleViewer;
 import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.LaunchActivity;
 
 public class BotWebViewContainer extends FrameLayout {
     public static boolean firstWebView = true;
@@ -350,18 +360,82 @@ public class BotWebViewContainer extends FrameLayout {
 
             @Override
             public void onReceivedTitle(WebView view, String title) {
-                webView.lastTitleGot = title != null;
-                webView.setTitle(title);
-                webView.saveHistory(bot);
+                if (webView != null) {
+                    webView.lastTitleGot = title != null;
+                    webView.setTitle(title);
+                    webView.saveHistory(bot);
+                }
                 onTitleChanged(title);
             }
 
             @Override
             public void onReceivedIcon(WebView view, Bitmap icon) {
-                webView.lastFaviconGot = icon != null;
-                webView.setFavicon(icon);
-                webView.saveHistory(bot);
+                if (webView != null) {
+                    webView.lastFaviconGot = icon != null;
+                    webView.setFavicon(icon);
+                    webView.saveHistory(bot);
+                }
                 onFaviconChanged(icon);
+            }
+
+            @Override
+            public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
+                if (resultMsg == null || !(resultMsg.obj instanceof WebView.WebViewTransport)) {
+                    return false;
+                }
+                final String fromUrl = webView != null ? webView.getUrl() : null;
+                if (MessagesController.getInstance(UserConfig.selectedAccount).isWebBrowserInAppEnabled()) {
+                    BaseFragment lastFragment = LaunchActivity.getSafeLastFragment();
+                    if (lastFragment == null) {
+                        return false;
+                    }
+                    try {
+                        ArticleViewer articleViewer = lastFragment.createArticleViewer(true);
+                        articleViewer.setOpener(webView);
+                        articleViewer.open((String) null);
+                        MyWebView newWebView = articleViewer.getLastWebView();
+                        if (newWebView != null) {
+                            if (!TextUtils.isEmpty(fromUrl) && TextUtils.isEmpty(newWebView.getOpenURL())) {
+                                newWebView.setOpenURL(fromUrl);
+                            }
+                            WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
+                            transport.setWebView(newWebView);
+                            resultMsg.sendToTarget();
+                            return true;
+                        }
+                        articleViewer.close(true, true);
+                    } catch (Exception e) {
+                        FileLog.e(e);
+                    }
+                    return false;
+                }
+                // In-app browser off: open popup targets via Browser policy (Custom Tabs / external).
+                WebView transportView = new WebView(view.getContext());
+                transportView.setWebViewClient(new WebViewClient() {
+                    @Override
+                    public boolean shouldOverrideUrlLoading(WebView v, String url) {
+                        Browser.openUrl(getContext(), url);
+                        try {
+                            transportView.destroy();
+                        } catch (Exception ignore) {
+                        }
+                        return true;
+                    }
+                });
+                WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
+                transport.setWebView(transportView);
+                resultMsg.sendToTarget();
+                return true;
+            }
+
+            @Override
+            public void onCloseWindow(WebView window) {
+                if (delegate != null) {
+                    delegate.onCloseRequested(null);
+                } else if (closeRequestedListener != null) {
+                    closeRequestedListener.run();
+                }
+                super.onCloseWindow(window);
             }
 
             @Override
@@ -376,8 +450,73 @@ public class BotWebViewContainer extends FrameLayout {
         view.setDownloadListener((url, userAgent, contentDisposition, mimetype, contentLength) -> {
             if (delegate != null) {
                 delegate.onDownloadStart(url, userAgent, contentDisposition, mimetype, contentLength);
+            } else {
+                startDownload(url, userAgent, contentDisposition, mimetype, contentLength);
             }
         });
+    }
+
+    /**
+     * Default download path when no ArticleViewer delegate is attached
+     * (e.g. long-press image download). Uses system DownloadManager.
+     */
+    public void startDownload(String url, String userAgent, String contentDisposition, String mimetype, long contentLength) {
+        if (TextUtils.isEmpty(url) || url.startsWith("blob:")) {
+            return;
+        }
+        try {
+            final String filename = URLUtil.guessFileName(url, contentDisposition, mimetype);
+            final Runnable download = () -> {
+                try {
+                    DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
+                    if (!TextUtils.isEmpty(mimetype)) {
+                        request.setMimeType(mimetype);
+                    }
+                    if (!TextUtils.isEmpty(userAgent)) {
+                        request.addRequestHeader("User-Agent", userAgent);
+                    }
+                    request.setDescription(LocaleController.getString(R.string.WebDownloading));
+                    request.setTitle(filename);
+                    request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+                    request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, filename);
+                    DownloadManager downloadManager =
+                            (DownloadManager) getContext().getSystemService(Context.DOWNLOAD_SERVICE);
+                    if (downloadManager != null) {
+                        downloadManager.enqueue(request);
+                    }
+                    try {
+                        BulletinFactory.of(this, resourcesProvider)
+                                .createSimpleBulletin(
+                                        R.raw.chats_infotip,
+                                        AndroidUtilities.replaceTags(
+                                                LocaleController.formatString(
+                                                        R.string.WebDownloadingFile, filename)))
+                                .show(true);
+                    } catch (Throwable t) {
+                        FileLog.e(t);
+                    }
+                } catch (Exception e) {
+                    FileLog.e(e);
+                }
+            };
+            if (contentLength > 2L * 1024L * 1024L) {
+                AlertDialog.Builder builder = new AlertDialog.Builder(getContext(), resourcesProvider);
+                builder.setTitle(LocaleController.getString(R.string.WebDownloadAlertTitle));
+                builder.setMessage(AndroidUtilities.replaceTags(
+                        LocaleController.formatString(
+                                R.string.WebDownloadAlertInfoWithSize,
+                                filename,
+                                AndroidUtilities.formatFileSize(contentLength))));
+                builder.setPositiveButton(LocaleController.getString(R.string.WebDownloadAlertYes),
+                        (di, w) -> download.run());
+                builder.setNegativeButton(LocaleController.getString(R.string.Cancel), null);
+                builder.show();
+            } else {
+                download.run();
+            }
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
     }
 
     private void injectWebViewScripts() {
@@ -613,6 +752,11 @@ public class BotWebViewContainer extends FrameLayout {
         }
 
         public String getOpenURL() { return openedByUrl; }
+
+        /** Host helper for popup windows that inherit opener URL fallback. */
+        public void setOpenURL(String url) {
+            openedByUrl = url;
+        }
         public int getSearchIndex() { return destroyed ? 0 : searchIndex; }
         public int getSearchCount() { return destroyed ? 0 : searchCount; }
         public void search(String text, Runnable listener) {
@@ -866,8 +1010,8 @@ public class BotWebViewContainer extends FrameLayout {
                     if (which == 0) {
                         Browser.openInExternalBrowser(getContext(), imageUrl, true);
                     } else if (which == 1) {
-                        if (botWebViewContainer != null && botWebViewContainer.delegate != null) {
-                            botWebViewContainer.delegate.onDownloadStart(
+                        if (botWebViewContainer != null) {
+                            botWebViewContainer.startDownload(
                                     imageUrl, null, null, "image/*", 0);
                         }
                     } else if (which == 2) {

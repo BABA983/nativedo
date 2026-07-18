@@ -8412,7 +8412,7 @@
     <string name="WebRecentClearTitle">Clear recent searches?</string>
     <string name="WebRecentClearText">Do you want to clear your recent search queries?</string>
     <string name="SearchEngine">Search Engine</string>
-    <string name="OpenInTelegramBrowser">Open in Telegram</string>
+    <string name="OpenInTelegramBrowser">Open in NativeDo</string>
     <string name="OpenInSystemBrowser">Open in...</string>
     <string name="AppsTab">Apps</string>
     <string name="ProfileBotOpenApp">Open App</string>
@@ -8495,15 +8495,15 @@
     <string name="BrowserSettingsTitle">Web Browser</string>
     <string name="BrowserSettingsEnable">Enable In-App Browser</string>
     <string name="BrowserSettingsCustomTabsTitle">Open external links in</string>
-    <string name="BrowserSettingsCustomTabs">New Pages within Telegram</string>
+    <string name="BrowserSettingsCustomTabs">New pages within NativeDo</string>
     <string name="BrowserSettingsNoCustomTabs">New Tabs in External Browser</string>
-    <string name="BrowserSettingsNoCustomTabsInfo">You can choose to open external link without leaving Telegram.</string>
-    <string name="BrowserSettingsEnableInfo">Open links inside Telegram without starting an external browser.</string>
+    <string name="BrowserSettingsNoCustomTabsInfo">You can open external links without leaving the app.</string>
+    <string name="BrowserSettingsEnableInfo">Open links inside NativeDo without starting an external browser.</string>
     <string name="BrowserSettingsCacheClear">Clear Cache</string>
     <string name="BrowserSettingsCookiesClear">Clear Cookies</string>
     <string name="BrowserSettingsCacheClearText">Are you sure you want to clear browser cache%s?</string>
     <string name="BrowserSettingsCookiesClearText">Are you sure you want to clear browser cookies%s?\n\nThis might log you out from website account sessions.</string>
-    <string name="BrowserSettingsCookiesInfo">Delete all cookies and cache from the Telegram in-app browser and miniapps.</string>
+    <string name="BrowserSettingsCookiesInfo">Delete all cookies and cache from the NativeDo in-app browser.</string>
     <string name="BrowserSettingsHistoryShow">View History</string>
     <string name="BrowserSettingsHistoryClear">Clear History</string>
     <string name="BrowserSettingsHistoryPages_one">%d page</string>
@@ -8512,7 +8512,7 @@
     <string name="BrowserSettingsNeverOpenInTitle">Never open in the in-app browser</string>
     <string name="BrowserSettingsNeverOpenInAdd">Add Website</string>
     <string name="BrowserSettingsNeverOpenInClearList">Clear List</string>
-    <string name="BrowserSettingsNeverOpenInInfo">Telegram will always open links from these websites in the external browser.</string>
+    <string name="BrowserSettingsNeverOpenInInfo">NativeDo will always open links from these websites in the external browser.</string>
     <string name="BrowserSettingsAddTitle">Add Website</string>
     <string name="BrowserSettingsAddText">Enter a domain that you don’t want to be opened in the in-app browser.</string>
     <string name="BrowserSettingsAddHint">Enter URL</string>
@@ -8523,7 +8523,7 @@
     <string name="BrowserExternalTitle">Open in Browser</string>
     <string name="BrowserExternalText">Do you want to open this link in your default browser?</string>
     <string name="BrowserExternalCheck">Always open links from **%s** in browser</string>
-    <string name="BrowserExternalRestricted">Telegram will now open links from this website in the external browser. You can change this in **Settings.**</string>
+    <string name="BrowserExternalRestricted">NativeDo will now open links from this website in the external browser. You can change this in **Settings.**</string>
     <string name="StoryEditCover">Edit Cover</string>
     <string name="StoryEditCoverInfo">Choose a frame from the story to show in your Profile.</string>
     <string name="StoryEditCoverMenu">Edit Cover</string>

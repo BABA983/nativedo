@@ -1901,7 +1901,7 @@
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
       "modified": true,
       "port_mode": "native",
-      "notes": "Native browser WebView host for ArticleViewer (not full pin BotWebView). Real navigation: http(s) stays in-webview; tel/mailto/intent/custom schemes open externally. setPageLoaded drives URL/back-forward chrome; progress/title/favicon/error callbacks wired; long-press link/image menus; history+metadata persist; page find/search; JS inject from raw webview_*.js. Omitted: TON proxy, bot Mini App bridge, full flicker placeholder, DangerousWebWarning CORS intercept.",
+      "notes": "Native browser WebView host for ArticleViewer (not full pin BotWebView). http(s) in-webview; other schemes external. setPageLoaded + back/forward chrome; progress/title/favicon/error; long-press menus; DownloadManager downloads with size confirm; onCreateWindow opens nested ArticleViewer when in-app browser on; history+metadata+find. Omitted: TON proxy, Mini App bridge, full DangerousWebWarning.",
       "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
     },
     {

@@ -70,5 +70,7 @@ preview bitmap. **A5** wontfix (pin non-static). Full history:
 Native subset used as ArticleViewer in-app browser engine (not full Telegram bot
 WebView). Wired for: URL/title/favicon/progress/error → WebActionBar; back/forward
 history; non-http schemes via external apps; long-press open/copy/download menus;
-local BrowserHistory + WebMetadataCache; page find. Still omitted vs pin: TON
-proxy, Mini App JS bridge, full multi-window, DangerousWebWarning intercept.
+DownloadManager downloads (+ size confirm); popup windows via nested ArticleViewer
+when in-app browser is on; local BrowserHistory + WebMetadataCache; page find.
+Browser settings strings use NativeDo branding. Still omitted vs pin: TON proxy,
+Mini App JS bridge, DangerousWebWarning CORS intercept.
