@@ -4983,6 +4983,8 @@
     <string name="AccDescrIVExpanded">Expanded</string>
     <string name="AccDescrIVCollapsed">Collapsed</string>
     <string name="AccDescrIVTable">Table</string>
+    <string name="AccDescrIVEmbedPost">Embed post</string>
+    <string name="AccDescrIVSlideshow">Slideshow</string>
     <string name="AccDescrMyLocation">My location</string>
     <string name="AccDescrLocationNotify">Notify when in range</string>
     <string name="AccDescrVideoQuality">Video quality</string>

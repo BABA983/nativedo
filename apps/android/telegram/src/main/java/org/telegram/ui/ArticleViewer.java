@@ -3570,6 +3570,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             }
         }
         // MultiLayoutTypingAnimator attach lifecycle remains deferred (not vendored).
+        // Block* cells also attach/detach DrawingText in onAttachedToWindow/onDetachedFromWindow (B20b).
         return drawingText;
     }
 
@@ -7835,6 +7836,8 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             imageView.onDetachedFromWindow();
             DownloadController.getInstance(parent.getCurrentAccount()).removeLoadingFileObserver(this);
             firstFrameRendered = false;
+            if (captionLayout != null) captionLayout.detach(this);
+            if (creditLayout != null) creditLayout.detach(this);
         }
 
         public BlockVideoCellState setState(BlockVideoCellState newState) {
@@ -7855,6 +7858,8 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             super.onAttachedToWindow();
             imageView.onAttachedToWindow();
             updateButtonState(false);
+            if (captionLayout != null) captionLayout.attach(this);
+            if (creditLayout != null) creditLayout.attach(this);
         }
 
         private void startVideoPlayer() {
@@ -8293,12 +8298,18 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         protected void onDetachedFromWindow() {
             super.onDetachedFromWindow();
             DownloadController.getInstance(parent.getCurrentAccount()).removeLoadingFileObserver(this);
+            if (titleLayout != null) titleLayout.detach(this);
+            if (captionLayout != null) captionLayout.detach(this);
+            if (creditLayout != null) creditLayout.detach(this);
         }
 
         @Override
         protected void onAttachedToWindow() {
             super.onAttachedToWindow();
             updateButtonState(false);
+            if (titleLayout != null) titleLayout.attach(this);
+            if (captionLayout != null) captionLayout.attach(this);
+            if (creditLayout != null) creditLayout.attach(this);
         }
 
         @Override
@@ -8530,6 +8541,36 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 blocks.add(creditLayout);
             }
         }
+
+        @Override
+        public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
+            super.onInitializeAccessibilityNodeInfo(info);
+            info.setEnabled(true);
+            StringBuilder sb = new StringBuilder(getString(R.string.AccDescrIVEmbedPost));
+            if (nameLayout != null) sb.append(", ").append(nameLayout.getText());
+            if (dateLayout != null) sb.append(", ").append(dateLayout.getText());
+            if (captionLayout != null) sb.append(", ").append(captionLayout.getText());
+            if (creditLayout != null) sb.append(", ").append(creditLayout.getText());
+            info.setText(sb);
+        }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            if (nameLayout != null) nameLayout.attach(this);
+            if (dateLayout != null) dateLayout.attach(this);
+            if (captionLayout != null) captionLayout.attach(this);
+            if (creditLayout != null) creditLayout.attach(this);
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            if (nameLayout != null) nameLayout.detach(this);
+            if (dateLayout != null) dateLayout.detach(this);
+            if (captionLayout != null) captionLayout.detach(this);
+            if (creditLayout != null) creditLayout.detach(this);
+        }
     }
 
     public static class BlockParagraphCell extends View implements TextSelectionHelper.ArticleSelectableView, IBlock {
@@ -8642,6 +8683,18 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (textLayout != null) {
                 blocks.add(textLayout);
             }
+        }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            if (textLayout != null) textLayout.attach(this);
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            if (textLayout != null) textLayout.detach(this);
         }
     }
 
@@ -8991,11 +9044,15 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (!isVisible) {
                 currentBlock = null;
             }
+            if (captionLayout != null) captionLayout.detach(this);
+            if (creditLayout != null) creditLayout.detach(this);
         }
 
         @Override
         protected void onAttachedToWindow() {
             super.onAttachedToWindow();
+            if (captionLayout != null) captionLayout.attach(this);
+            if (creditLayout != null) creditLayout.attach(this);
         }
 
         @Override
@@ -9420,6 +9477,30 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             StringBuilder sb = new StringBuilder(getString(R.string.AccDescrIVTable));
             if (titleLayout != null) sb.append(", ").append(titleLayout.getText());
             info.setText(sb);
+        }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            if (titleLayout != null) titleLayout.attach(this);
+            for (int i = 0, N = tableLayout.getChildCount(); i < N; i++) {
+                TableLayout.Child c = tableLayout.getChildAt(i);
+                if (c.textLayout != null) {
+                    c.textLayout.attach(this);
+                }
+            }
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            if (titleLayout != null) titleLayout.detach(this);
+            for (int i = 0, N = tableLayout.getChildCount(); i < N; i++) {
+                TableLayout.Child c = tableLayout.getChildAt(i);
+                if (c.textLayout != null) {
+                    c.textLayout.detach(this);
+                }
+            }
         }
     }
 
@@ -10028,6 +10109,20 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 blocks.add(creditLayout);
             }
         }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            if (captionLayout != null) captionLayout.attach(this);
+            if (creditLayout != null) creditLayout.attach(this);
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            if (captionLayout != null) captionLayout.detach(this);
+            if (creditLayout != null) creditLayout.detach(this);
+        }
     }
 
     private static Paint dotsPaint;
@@ -10284,6 +10379,30 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (creditLayout != null) {
                 blocks.add(creditLayout);
             }
+        }
+
+        @Override
+        public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
+            super.onInitializeAccessibilityNodeInfo(info);
+            info.setEnabled(true);
+            StringBuilder sb = new StringBuilder(getString(R.string.AccDescrIVSlideshow));
+            if (captionLayout != null) sb.append(", ").append(captionLayout.getText());
+            if (creditLayout != null) sb.append(", ").append(creditLayout.getText());
+            info.setText(sb);
+        }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            if (captionLayout != null) captionLayout.attach(this);
+            if (creditLayout != null) creditLayout.attach(this);
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            if (captionLayout != null) captionLayout.detach(this);
+            if (creditLayout != null) creditLayout.detach(this);
         }
     }
 
@@ -10550,6 +10669,18 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 blocks.add(textLayout);
             }
         }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            if (textLayout != null) textLayout.attach(this);
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            if (textLayout != null) textLayout.detach(this);
+        }
     }
 
     public static class BlockOrderedListItemCell extends ViewGroup implements TextSelectionHelper.ArticleSelectableView, IBlock {
@@ -10810,6 +10941,18 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 blocks.add(textLayout);
             }
         }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            if (textLayout != null) textLayout.attach(this);
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            if (textLayout != null) textLayout.detach(this);
+        }
     }
 
     public static class BlockDetailsCell extends View implements Drawable.Callback, TextSelectionHelper.ArticleSelectableView {
@@ -10922,6 +11065,18 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             sb.append(getString(R.string.AccDescrIVDetails)).append(", ");
             sb.append(getString(currentBlock != null && currentBlock.open ? R.string.AccDescrIVExpanded : R.string.AccDescrIVCollapsed));
             info.setText(sb);
+        }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            if (textLayout != null) textLayout.attach(this);
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            if (textLayout != null) textLayout.detach(this);
         }
     }
 
@@ -11058,6 +11213,18 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             info.setEnabled(true);
             if (textLayout == null) return;
             info.setText(appendA11yLabel(buildAccessibilityText(parent, adapter, textLayout), R.string.AccDescrIVRelatedArticles));
+        }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            if (textLayout != null) textLayout.attach(this);
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            if (textLayout != null) textLayout.detach(this);
         }
     }
 
@@ -11233,6 +11400,20 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             sb.append(", ").append(getString(R.string.AccDescrIVRelatedArticle));
             info.setText(sb);
         }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            if (textLayout != null) textLayout.attach(this);
+            if (textLayout2 != null) textLayout2.attach(this);
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            if (textLayout != null) textLayout.detach(this);
+            if (textLayout2 != null) textLayout2.detach(this);
+        }
     }
 
     public static class BlockHeaderCell extends View implements TextSelectionHelper.ArticleSelectableView, IBlock {
@@ -11330,6 +11511,18 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (textLayout != null) {
                 blocks.add(textLayout);
             }
+        }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            if (textLayout != null) textLayout.attach(this);
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            if (textLayout != null) textLayout.detach(this);
         }
     }
 
@@ -11450,6 +11643,18 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (textLayout != null) {
                 blocks.add(textLayout);
             }
+        }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            if (textLayout != null) textLayout.attach(this);
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            if (textLayout != null) textLayout.detach(this);
         }
     }
 
@@ -11593,6 +11798,20 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (sb.length() == 0) return;
             sb.append(", ").append(getString(R.string.AccDescrIVPullquote));
             info.setText(sb);
+        }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            if (textLayout != null) textLayout.attach(this);
+            if (textLayout2 != null) textLayout2.attach(this);
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            if (textLayout != null) textLayout.detach(this);
+            if (textLayout2 != null) textLayout2.detach(this);
         }
     }
 
@@ -11767,6 +11986,20 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (sb.length() == 0) return;
             sb.append(", ").append(getString(R.string.AccDescrIVBlockquote));
             info.setText(sb);
+        }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            if (textLayout != null) textLayout.attach(this);
+            if (textLayout2 != null) textLayout2.attach(this);
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            if (textLayout != null) textLayout.detach(this);
+            if (textLayout2 != null) textLayout2.detach(this);
         }
     }
 
@@ -12138,6 +12371,8 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             super.onDetachedFromWindow();
             imageView.onDetachedFromWindow();
             DownloadController.getInstance(parent.getCurrentAccount()).removeLoadingFileObserver(this);
+            if (captionLayout != null) captionLayout.detach(this);
+            if (creditLayout != null) creditLayout.detach(this);
         }
 
         @Override
@@ -12145,6 +12380,8 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             super.onAttachedToWindow();
             imageView.onAttachedToWindow();
             updateButtonState(false);
+            if (captionLayout != null) captionLayout.attach(this);
+            if (creditLayout != null) creditLayout.attach(this);
         }
 
         @Override
@@ -12401,6 +12638,20 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 blocks.add(creditLayout);
             }
         }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            if (captionLayout != null) captionLayout.attach(this);
+            if (creditLayout != null) creditLayout.attach(this);
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            if (captionLayout != null) captionLayout.detach(this);
+            if (creditLayout != null) creditLayout.detach(this);
+        }
     }
 
     public static class BlockChannelCell extends FrameLayout implements TextSelectionHelper.ArticleSelectableView {
@@ -12599,6 +12850,18 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (textLayout == null) return;
             info.setText(appendA11yLabel(buildAccessibilityText(parent, adapter, textLayout), R.string.AccDescrChannel));
         }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            if (textLayout != null) textLayout.attach(this);
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            if (textLayout != null) textLayout.detach(this);
+        }
     }
 
     public static class BlockAuthorDateCell extends View implements TextSelectionHelper.ArticleSelectableView, IBlock {
@@ -12734,6 +12997,18 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 blocks.add(textLayout);
             }
         }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            if (textLayout != null) textLayout.attach(this);
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            if (textLayout != null) textLayout.detach(this);
+        }
     }
 
     public static class BlockTitleCell extends View implements TextSelectionHelper.ArticleSelectableView, IBlock {
@@ -12837,6 +13112,18 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 blocks.add(textLayout);
             }
         }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            if (textLayout != null) textLayout.attach(this);
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            if (textLayout != null) textLayout.detach(this);
+        }
     }
 
     public static class BlockKickerCell extends View implements TextSelectionHelper.ArticleSelectableView, IBlock {
@@ -12939,6 +13226,18 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             info.setEnabled(true);
             if (textLayout == null) return;
             info.setText(appendA11yLabel(buildAccessibilityText(parent, adapter, textLayout), R.string.AccDescrIVKicker));
+        }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            if (textLayout != null) textLayout.attach(this);
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            if (textLayout != null) textLayout.detach(this);
         }
     }
 
@@ -13048,6 +13347,18 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             info.setEnabled(true);
             if (textLayout == null) return;
             info.setText(appendA11yLabel(buildAccessibilityText(parent, adapter, textLayout), R.string.AccDescrIVFooter));
+        }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            if (textLayout != null) textLayout.attach(this);
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            if (textLayout != null) textLayout.detach(this);
         }
     }
 
@@ -13208,6 +13519,18 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (textLayout == null) return;
             info.setText(appendA11yLabel(buildAccessibilityText(parent, adapter, textLayout), R.string.AccDescrIVCode));
         }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            if (textLayout != null) textLayout.attach(this);
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            if (textLayout != null) textLayout.detach(this);
+        }
     }
 
     public static class BlockSubheaderCell extends View implements TextSelectionHelper.ArticleSelectableView, IBlock {
@@ -13306,6 +13629,18 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (textLayout != null) {
                 blocks.add(textLayout);
             }
+        }
+
+        @Override
+        protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            if (textLayout != null) textLayout.attach(this);
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
+            if (textLayout != null) textLayout.detach(this);
         }
     }
 

@@ -13,6 +13,7 @@ Local pristine checkout: `vendor/telegram-android` at that pin.
 |---|---|
 | `9c32e06` | ArticleViewer B19: spoiler fields, `liveDrawingTexts`, spoiler draw/hit |
 | `d70d193` | ArticleViewer B20a: search menu header height reset |
+| *(this pass)* | ArticleViewer B20b: Block* `DrawingText.attach/detach` + EmbedPost/Slideshow a11y |
 | `beab531` | `WindowInsetsStateHolder` restored byte-identical exact at pin |
 | `d3439c0` | `CircularProgressDrawable`, `Blur3Utils` restored pin-identical |
 | `9d8694b` | Decisions backlog doc |
@@ -27,11 +28,11 @@ Local pristine checkout: `vendor/telegram-android` at that pin.
 - Class is not vendored under `:telegram` (only lives in upstream rich-message stack).
 - **Decision:** vendor a slim typing animator for IV, permanently OMIT, or wait for a product need?
 
-### A2. Full Block*Cell `layout.attach(this)` call sites
+### A2. Full Block*Cell `layout.attach(this)` call sites — **done (B20b)**
 
-- Pin attaches every `DrawingText` from nearly all Block cells after measure/bind.
-- B19 only attaches when `createLayoutForText` sees `parentView.isAttachedToWindow()`.
-- **Decision:** bulk-wire all cell attach/detach sites now (wide mechanical diff), or only when a spoiler/emoji leak is observed?
+- Pin attaches every `DrawingText` from nearly all Block cells in `onAttachedToWindow` / `onDetachedFromWindow`.
+- B19 only attaches when `createLayoutForText` sees `parentView.isAttachedToWindow()`; B20b adds the pin cell lifecycle sites (incl. TableLayout children, Embed/Collage/Slideshow).
+- Remaining related gap: `MultiLayoutTypingAnimator` (A1), not attach wiring itself.
 
 ### A3. `TL_textSpoiler` / S1 spoiler content production
 

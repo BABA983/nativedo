@@ -114,9 +114,10 @@ Introduced `org.telegram.ui.IArticleViewer` (API surface only):
 17. [x] B16: EmbedPost static parent reshape + Embed/Collage/Slideshow helper rewire
 18. [x] B17: `IBlock` + DrawingText bounds + `buildAccessibilityText` / `appendA11yLabel` foundation
 19. [x] B18: wire remaining static parent cells to IBlock/a11y + AccDescrIV strings
-20. [x] B19: spoiler attach / liveDrawingTexts / spoiler-hit (typing + full cell attach still deferred)
+20. [x] B19: spoiler attach / liveDrawingTexts / spoiler-hit (typing still deferred)
 21. [x] B20a: WebActionBar search menu restores pin header height reset
-22. [ ] Optional: remaining media a11y; larger Sheet/WebActionBar chrome (bookmarks/open-external still host-wired)
+22. [x] B20b: pin-shaped `DrawingText.attach/detach` on all Block* `onAttachedToWindow` / `onDetachedFromWindow` sites (incl. TableLayout children); EmbedPost + Slideshow a11y labels
+23. [ ] Optional: larger Sheet/WebActionBar chrome (bookmarks/open-external still host-wired); MultiLayoutTypingAnimator; TL_textSpoiler content
 
 Do **not** full-file replace until B2 compiles with contract tests green.
 
