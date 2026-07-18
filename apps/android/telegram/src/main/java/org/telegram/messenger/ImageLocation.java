@@ -151,11 +151,6 @@ public class ImageLocation {
         return getForUserOrChat(UserConfig.selectedAccount, object, type);
     }
 
-    /**
-     * Account-scoped overload from Telegram 12.7+. NativeDo keeps the legacy
-     * photo-location logic and ignores account-specific fromMessage peers
-     * (no MTProto message-origin users).
-     */
     public static ImageLocation getForUserOrChat(int currentAccount, TLObject object, int type) {
         if (object instanceof TLRPC.User) {
             return getForUser(currentAccount, (TLRPC.User) object, type);
@@ -170,28 +165,38 @@ public class ImageLocation {
     }
 
     public static ImageLocation getForUser(int currentAccount, TLRPC.User user, int type) {
-        // Multi-account photo cache is not ported; parameter retained for Telegram 12.7+ call sites.
-        if (user == null || user.access_hash == 0 || user.photo == null) {
+        if (user == null || user.photo == null) {
             return null;
         }
         if (type == TYPE_VIDEO_BIG || type == TYPE_VIDEO_SMALL) {
             if (MessagesController.getInstance(currentAccount).isPremiumUser(user) && user.photo.has_video) {
                 final TLRPC.UserFull userFull = MessagesController.getInstance(currentAccount).getUserFull(user.id);
-                if (userFull != null && userFull.profile_photo != null && userFull.profile_photo.video_sizes != null && !userFull.profile_photo.video_sizes.isEmpty()) {
+                TLRPC.Photo photo = null;
+                if (userFull != null) {
+                    if (user.photo.personal && userFull.personal_photo != null && userFull.personal_photo.video_sizes != null && !userFull.personal_photo.video_sizes.isEmpty()) {
+                        photo = userFull.personal_photo;
+                    } else if (userFull.profile_photo != null && userFull.profile_photo.id == user.photo.photo_id && userFull.profile_photo.video_sizes != null && !userFull.profile_photo.video_sizes.isEmpty()) {
+                        photo = userFull.profile_photo;
+                    } else if (userFull.fallback_photo != null && userFull.fallback_photo.id == user.photo.photo_id && userFull.fallback_photo.video_sizes != null && !userFull.fallback_photo.video_sizes.isEmpty()) {
+                        photo = userFull.fallback_photo;
+                    } else if (userFull.profile_photo != null && userFull.profile_photo.video_sizes != null && !userFull.profile_photo.video_sizes.isEmpty()) {
+                        photo = userFull.profile_photo;
+                    }
+                }
+                if (photo != null) {
                     if (type == TYPE_VIDEO_BIG) {
-                        TLRPC.VideoSize videoSize = FileLoader.getClosestVideoSizeWithSize(userFull.profile_photo.video_sizes, 1000);
-                        return ImageLocation.getForPhoto(videoSize, userFull.profile_photo);
+                        TLRPC.VideoSize videoSize = FileLoader.getClosestVideoSizeWithSize(photo.video_sizes, 1000);
+                        return ImageLocation.getForPhoto(videoSize, photo);
                     } else {
-                        TLRPC.VideoSize videoSize = FileLoader.getClosestVideoSizeWithSize(userFull.profile_photo.video_sizes, 100);
-                        for (int i = 0; i < userFull.profile_photo.video_sizes.size(); i++) {
-                            if ("p".equals(userFull.profile_photo.video_sizes.get(i).type)) {
-                                videoSize = userFull.profile_photo.video_sizes.get(i);
+                        TLRPC.VideoSize videoSize = FileLoader.getClosestVideoSizeWithSize(photo.video_sizes, 100);
+                        for (int i = 0; i < photo.video_sizes.size(); i++) {
+                            if ("p".equals(photo.video_sizes.get(i).type)) {
+                                videoSize = photo.video_sizes.get(i);
                                 break;
                             }
                         }
-                        return ImageLocation.getForPhoto(videoSize, userFull.profile_photo);
+                        return ImageLocation.getForPhoto(videoSize, photo);
                     }
-
                 }
             }
             return null;
@@ -210,9 +215,23 @@ public class ImageLocation {
         if (fileLocation == null) {
             return null;
         }
-        TLRPC.TL_inputPeerUser inputPeer = new TLRPC.TL_inputPeerUser();
-        inputPeer.user_id = user.id;
-        inputPeer.access_hash = user.access_hash;
+        TLRPC.InputPeer inputPeer;
+        if (user.access_hash == 0) {
+            if (user.fromMessageDialogId != 0 && user.fromMessageId != 0) {
+                final TLRPC.TL_inputPeerUserFromMessage inputPeerUserFromMessage = new TLRPC.TL_inputPeerUserFromMessage();
+                inputPeerUserFromMessage.user_id = user.id;
+                inputPeerUserFromMessage.peer = MessagesController.getInstance(currentAccount).getInputPeer(user.fromMessageDialogId);
+                inputPeerUserFromMessage.msg_id = user.fromMessageId;
+                inputPeer = inputPeerUserFromMessage;
+            } else {
+                return null;
+            }
+        } else {
+            final TLRPC.TL_inputPeerUser inputPeerUser = new TLRPC.TL_inputPeerUser();
+            inputPeerUser.user_id = user.id;
+            inputPeerUser.access_hash = user.access_hash;
+            inputPeer = inputPeerUser;
+        }
         int dc_id;
         if (user.photo.dc_id != 0) {
             dc_id = user.photo.dc_id;
@@ -227,9 +246,7 @@ public class ImageLocation {
     public static ImageLocation getForChat(TLRPC.Chat chat, int type) {
         return getForChat(UserConfig.selectedAccount, chat, type);
     }
-
     public static ImageLocation getForChat(int currentAccount, TLRPC.Chat chat, int type) {
-        // currentAccount unused: local stub has no multi-account photo cache.
         if (chat == null || chat.photo == null) {
             return null;
         }
@@ -396,7 +413,17 @@ public class ImageLocation {
     }
 
     public static String getStrippedKey(Object parentObject, Object fullObject, Object strippedObject) {
-        if (parentObject instanceof TLRPC.WebPage || parentObject instanceof MessageObject && ((MessageObject) parentObject).type == MessageObject.TYPE_PAID_MEDIA) {
+        String key = getStrippedKeyInternal(parentObject, fullObject, strippedObject);
+        if (BuildVars.LOGS_ENABLED && parentObject instanceof MessageObject && ((MessageObject) parentObject).messageOwner != null && ((MessageObject) parentObject).messageOwner.rich_message != null) {
+            FileLog.d("[richmedia] strippedKey=" + key
+                + " fullObject=" + (fullObject == null ? "null" : fullObject.getClass().getSimpleName())
+                + " stripped=" + (strippedObject == null ? "null" : strippedObject.getClass().getSimpleName()));
+        }
+        return key;
+    }
+
+    private static String getStrippedKeyInternal(Object parentObject, Object fullObject, Object strippedObject) {
+        if (parentObject instanceof TLRPC.WebPage || parentObject instanceof MessageObject && (((MessageObject) parentObject).type == MessageObject.TYPE_PAID_MEDIA || ((MessageObject) parentObject).messageOwner != null && ((MessageObject) parentObject).messageOwner.rich_message != null)) {
             if (fullObject instanceof ImageLocation) {
                 ImageLocation imageLocation = (ImageLocation) fullObject;
                 if (imageLocation.document != null) {

@@ -7,6 +7,11 @@ import android.content.Context;
 
 public class AnimatedEmojiSpan {
 
+    /** Pin ImageReceiver implements this for animated-emoji invalidation. Host stub. */
+    public interface InvalidateHolder {
+        void invalidate();
+    }
+
     public static class TextViewEmojis extends TextView {
         public TextViewEmojis(Context context) {
             super(context);

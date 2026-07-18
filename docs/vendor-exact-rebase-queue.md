@@ -5,6 +5,7 @@
 - List stack: RecyclerListView, RecyclerAnimationScrollHelper
 - Utilities scheme-2
 - Utilities + RecyclerListView host-keep re-align @ 12.9.0 (blur3 restored; no-JNI documented)
+- ImageReceiver + ImageLocation restored pin-identical @ 12.9.0
 - Browser chrome scheme-2: WebMetadataCache, AddressBarList
 - WebInstantView S1 reverse-patch
 - ArticleViewer B1–B21 + A3 / A4-partial / A6 / A7 — **epic closed** (host chrome remainder + A5 wontfix)
@@ -26,7 +27,7 @@
 ## Still heavy stuck (not FF-host class)
 - WebBrowserSettings — MessagesController browser policy APIs
 - GroupedPhotosListView / TableLayout — TL_iv / CellText coupling
-- ImageReceiver / ImageLocation — legacy pin (re-sync only as a **pair** toward 12.9.0)
+- ~~ImageReceiver / ImageLocation~~ — **byte-identical @ 12.9.0** (pair re-sync; host TLRPC/emoji stubs)
 - Native host shims (Theme, MessagesController, ApplicationLoader, …) — not FF candidates
 - NativeDo ports under `app/` with stuck_reason (forced_exact reference only)
 
@@ -39,7 +40,7 @@
 ## Next global picks (priority order)
 1. ~~**Small exact+modified hygiene**~~ — **done**; then **re-aligned to pin** where possible: `ScrollSlidingTextTabStrip`, `BottomSheetWithRecyclerListView` now `modified:false`. Restored pin call shapes via `HintView2.measureCorrectly/cutInFancyHalf`, `Emoji.replaceEmoji`, `TextViewEmojis`, `AndroidUtilities.setLightStatusBar(Dialog)`. Stripped host comment noise from related files.
 2. ~~**Browser stack**~~ — **done (host keep, comments trimmed)**: WebInstantView / AddressBarList / BookmarksFragment / WebMetadataCache / RestrictedDomainsList.
-3. **ImageReceiver + ImageLocation** pair only with a named image-pipeline goal (legacy pin).
+3. ~~**ImageReceiver + ImageLocation**~~ — **done**: both `modified:false` byte-identical at pin 12.9.0; host stubs for InvalidateHolder / fromMessage / rich_message.
 4. **Not ArticleViewer** — epic closed (still host-wired; avoid new comment sprawl).
 5. ~~**Utilities + RecyclerListView**~~ — **done (host keep @ pin)**: RecyclerListView restored to pin-shaped blur3/SectionsAdapter/edge-effect with only `rectTmp2I` host delta; Utilities pin surface + no-JNI Java fallbacks, `stuck_ref=host_wiring_keep_at_pin`.
 

@@ -1316,11 +1316,10 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/ImageReceiver.java",
       "upstream": "org/telegram/messenger/ImageReceiver.java",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
-      "modified": true,
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
       "port_mode": "exact",
-      "notes": "Host wiring only: uses android.util.Log instead of upstream com.google.android.exoplayer2.util.Log so NativeDo does not need to carry the ExoPlayer util dependency for ImageReceiver logging. The previous local ScaleType compile shim was unused and removed to restore upstream API shape.",
-      "stuck_reason": "Blocked on full 12.8.1 ImageReceiver (InvalidateHolder / animated emoji path). ImageLocation now has account overloads; Receiver can be rebased later as its own task."
+      "notes": "Byte-identical to global pin 12.9.0. Host compile surface filled: AnimatedEmojiSpan.InvalidateHolder, AnimatedEmojiDrawable add/removeView stubs, ExoPlayer Log shim, TLRPC User.fromMessage* / Message.rich_message / TL_inputPeerUserFromMessage. Previous android.util.Log swap dropped (unused import at pin)."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/AnimatedFileDrawable.java",
@@ -1457,10 +1456,10 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/ImageLocation.java",
       "upstream": "org/telegram/messenger/ImageLocation.java",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
-      "modified": true,
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
       "port_mode": "exact",
-      "stuck_reason": "Not full 12.8.1 FF: kept 12.6.4 photo-location body; added account-scoped getForUserOrChat/getForUser/getForChat overloads for ImageReceiver call sites. fromMessageDialogId / TL_inputPeerUserFromMessage path intentionally omitted."
+      "notes": "Byte-identical to global pin 12.9.0. Account-scoped getForUserOrChat/getForUser/getForChat and pin photo-location body restored; host TLRPC stubs provide fromMessage peers and rich_message fields used by getStrippedKey."
     },
     {
       "local": "telegram/src/main/java/org/telegram/tgnet/AbstractSerializedData.java",
@@ -1510,7 +1509,7 @@
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
       "modified": true,
       "port_mode": "native",
-      "notes": "Minimal NativeDo TLRPC surface extended with PageBlock, RichText, WebPage/Page, BotApp, and IV request/response shells.",
+      "notes": "Minimal NativeDo TLRPC surface extended with PageBlock, RichText, WebPage/Page, BotApp, and IV request/response shells; pin ImageReceiver/ImageLocation host fields: User.fromMessageDialogId/fromMessageId, Message.rich_message, TL_inputPeerUserFromMessage.",
       "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
     },
     {

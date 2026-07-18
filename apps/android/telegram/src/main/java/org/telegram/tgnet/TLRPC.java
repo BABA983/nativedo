@@ -173,6 +173,7 @@ public class TLRPC {
         public long id;
         public long dialog_id;
         public String message;
+        public Object rich_message;
         public MessageMedia media;
         public MessageAction action;
         public Peer from_id;
@@ -237,6 +238,8 @@ public class TLRPC {
         public String username;
         public UserProfilePhoto photo;
         public boolean premium;
+        public long fromMessageDialogId;
+        public int fromMessageId;
     }
 
     public static class TL_user extends User {
@@ -282,6 +285,11 @@ public class TLRPC {
     }
 
     public static class TL_inputPeerUser extends InputPeer {
+    }
+
+    public static class TL_inputPeerUserFromMessage extends InputPeer {
+        public InputPeer peer;
+        public int msg_id;
     }
 
     public static class TL_inputPeerChat extends InputPeer {

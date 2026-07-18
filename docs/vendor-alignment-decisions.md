@@ -20,6 +20,7 @@ Previous pin `9b50143d8896` (12.8.1) retained as historical alias for un-advance
 | `9d8694b` | Decisions backlog doc |
 | *(follow-up)* | `WindowAnimatedInsetsProvider` restored pin-identical |
 | later | `HttpGetFileTask`, `AnimatedFloat`, `WindowVisibilityManager`, `UniversalRecyclerView` pin-identical; FlickerLoadingView/GraySectionCell partial re-align |
+| *(this pass)* | `ImageReceiver` + `ImageLocation` restored pin-identical @ 12.9.0 |
 
 ## ArticleViewer — epic closed (B21 + A3–A7)
 
@@ -67,8 +68,8 @@ Do not resume AV slices from the vendor queue.
 | File | Delta | Status |
 |---|---|---|
 | `ThemeColors.java` | NativeDo wallpaper/service/link colors | **keep** host_wiring_only |
-| `ImageReceiver.java` | Legacy pin + Log/AnimatedEmoji + ImageLocation arity | **pair re-sync** only with product goal |
-| `ImageLocation.java` | Legacy pin / API shape | **pair with ImageReceiver** |
+| `ImageReceiver.java` | Was legacy pin + Log/AnimatedEmoji | **done** — pin-identical @ 12.9.0 |
+| `ImageLocation.java` | Was legacy photo-location body | **done** — pin-identical @ 12.9.0 |
 | `RestrictedDomainsList.java` | Legacy pin | Re-sync with browser open-external if needed |
 
 ### B4. Larger “other” exact+modified (classify primary=other)
@@ -116,7 +117,7 @@ Then either:
 Still modified and intentionally not bulk-copied without product decisions:
 
 - `ArticleViewer.java`, `IArticleViewer.java` (epic closed; host-wired IV; not next work)
-- `ImageReceiver` / `ImageLocation` (legacy pin — **next heavy** only with image-pipeline goal)
+- ~~`ImageReceiver` / `ImageLocation`~~ — pin-identical @ 12.9.0
 - `RestrictedDomainsList` (no upstream blob; host shim, stuck documented)
 - Browser stack @ 12.9.0 host keep: `WebInstantView`, `AddressBarList`, `BookmarksFragment`, `WebMetadataCache`
 - Small host keep (see B1–B2): ThemeColors, LayoutHelper, GraySectionCell, AnimatedTextView, …
