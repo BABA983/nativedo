@@ -18,7 +18,7 @@ lives under `org.telegram.ui.web.*` + `ArticleViewer`.
 | `WebMetadataCache` | Favicon/sitename cache + offscreen WebView extract | **Scheme-2 @ pin** (host wiring kept) |
 | `AddressBarList` | Address bar list + bookmarks UI | **Scheme-2 @ pin** (WebBookmarks backend) |
 | `WebInstantView` | HTML → Instant View page model | **S1 reverse-patch @ pin** (TL_iv→TLRPC + host readHTML) |
-| `ArticleViewer` | Sheet chrome + IV display + related UI | **Epic closed at B21** (host chrome/S1 parked) |
+| `ArticleViewer` | Sheet chrome + IV display + related UI | **Epic closed at B21**; **A3 spoiler content landed** (A4–A7 parked) |
 | `Browser` (native) | URL open dispatch | Host shim (not exact FF) |
 | `WebActionBar` | Browser action bar | Already @ pin |
 | `WebBrowserSettings` | Telegram browser settings | Stuck (low product ROI) |
@@ -45,10 +45,11 @@ lives under `org.telegram.ui.web.*` + `ArticleViewer`.
 ### Do not
 - `vendor-ff` WebInstantView or ArticleViewer without an explicit product + TL plan.
 - Reintroduce MTProto bookmarks in AddressBarList.
-- Resume autonomous ArticleViewer slices (A3–A7) without a product ticket.
+- Resume autonomous ArticleViewer slices (A4–A7) without a product ticket. A3 (`TL_textSpoiler`) is landed.
 
-## ArticleViewer epic (closed at B21)
+## ArticleViewer epic (closed at B21; A3 reopened and landed)
 
-Phased parent-driven rebase **landed through B21**. Remaining host chrome and S1
-omissions are parked by design. Full history, contract tests, and reopen table:
+Phased parent-driven rebase **landed through B21**. **A3** (`TLRPC.TL_textSpoiler` content
+production) later landed on product request. Remaining host chrome and S1 omissions (A4–A7)
+stay parked by design. Full history, contract tests, and reopen table:
 [`vendor-articleviewer-plan.md`](vendor-articleviewer-plan.md).

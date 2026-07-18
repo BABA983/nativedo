@@ -705,6 +705,14 @@ public class TLRPC {
     public static class TL_textMarked extends RichText {
     }
 
+    /**
+     * Instant View / rich-text spoiler wrapper (pin: TL_iv.textSpoiler).
+     * Content production for ArticleViewer A3: getText applies
+     * {@code TextStyleSpan.FLAG_STYLE_SPOILER} on the nested text.
+     */
+    public static class TL_textSpoiler extends RichText {
+    }
+
     public static class TL_textPhone extends RichText {
         public String phone;
     }

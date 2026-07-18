@@ -15,7 +15,7 @@
     - host contract: `FlickerLoadingViewHostContractTest` (REACTED_TYPE = 50dp)
 
 ## ArticleViewer (closed)
-- See `docs/vendor-articleviewer-plan.md` — closed at B21. Do not resume AV slices without a product ticket (parked A3–A7).
+- See `docs/vendor-articleviewer-plan.md` — closed at B21; **A3 spoiler content production landed**. Do not resume AV slices without a product ticket (parked A4–A7).
 - No full-file pin; `modified:true` + stuck_reason remain by design.
 
 ## Still heavy stuck (not FF-host class)

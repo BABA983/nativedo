@@ -94,7 +94,8 @@ TYPE_MAP: dict[str, str] = {
     # Absent on local TLRPC — map to closest existing types for preview only:
     "pageBlockMath": "TL_pageBlockUnsupported",
     "textMath": "TL_textPlain",
-    "textSpoiler": "TL_textMarked",
+    # A3: local TLRPC.TL_textSpoiler exists; pin TL_iv.textSpoiler → spoiler span, not mark highlight.
+    "textSpoiler": "TL_textSpoiler",
     "RichMessage": "RichText",
     "pageBlockBlockquoteBlocks": "TL_pageBlockBlockquote",
 }

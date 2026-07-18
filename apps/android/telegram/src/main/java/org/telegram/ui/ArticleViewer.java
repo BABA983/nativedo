@@ -2845,6 +2845,8 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             return getLastRichText(((TLRPC.TL_textSuperscript) richText).text);
         } else if (richText instanceof TLRPC.TL_textMarked) {
             return getLastRichText(((TLRPC.TL_textMarked) richText).text);
+        } else if (richText instanceof TLRPC.TL_textSpoiler) {
+            return getLastRichText(((TLRPC.TL_textSpoiler) richText).text);
         } else if (richText instanceof TLRPC.TL_textPhone) {
             return getLastRichText(((TLRPC.TL_textPhone) richText).text);
         }
@@ -2970,6 +2972,15 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 spannableStringBuilder.setSpan(new TextPaintMarkSpan(innerSpans == null || innerSpans.length == 0 ? getTextPaint(parent, parentRichText, richText, parentBlock) : null), 0, spannableStringBuilder.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
             }
             return spannableStringBuilder;
+        } else if (richText instanceof TLRPC.TL_textSpoiler) {
+            // A3: pin TL_iv.textSpoiler → TextStyleSpan(FLAG_STYLE_SPOILER) for SpoilerEffect.
+            SpannableStringBuilder spannableStringBuilder = new SpannableStringBuilder(getText(parent, page, parentView, parentRichText, ((TLRPC.TL_textSpoiler) richText).text, parentBlock, maxWidth));
+            if (spannableStringBuilder.length() != 0) {
+                TextStyleSpan.TextStyleRun run = new TextStyleSpan.TextStyleRun();
+                run.flags |= TextStyleSpan.FLAG_STYLE_SPOILER;
+                spannableStringBuilder.setSpan(new TextStyleSpan(run), 0, spannableStringBuilder.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            return spannableStringBuilder;
         } else if (richText instanceof TLRPC.TL_textPhone) {
             SpannableStringBuilder spannableStringBuilder = new SpannableStringBuilder(getText(parent, page, parentView, parentRichText, ((TLRPC.TL_textPhone) richText).text, parentBlock, maxWidth));
             MetricAffectingSpan[] innerSpans = spannableStringBuilder.getSpans(0, spannableStringBuilder.length(), MetricAffectingSpan.class);
@@ -3055,6 +3066,8 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             return getPlainText(((TLRPC.TL_textSuperscript) richText).text);
         } else if (richText instanceof TLRPC.TL_textMarked) {
             return getPlainText(((TLRPC.TL_textMarked) richText).text);
+        } else if (richText instanceof TLRPC.TL_textSpoiler) {
+            return getPlainText(((TLRPC.TL_textSpoiler) richText).text);
         } else if (richText instanceof TLRPC.TL_textPhone) {
             return getPlainText(((TLRPC.TL_textPhone) richText).text);
         } else if (richText instanceof TLRPC.TL_textImage) {
@@ -6274,6 +6287,8 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 setRichTextParents(richText, ((TLRPC.TL_textSuperscript) richText).text);
             } else if (richText instanceof TLRPC.TL_textMarked) {
                 setRichTextParents(richText, ((TLRPC.TL_textMarked) richText).text);
+            } else if (richText instanceof TLRPC.TL_textSpoiler) {
+                setRichTextParents(richText, ((TLRPC.TL_textSpoiler) richText).text);
             } else if (richText instanceof TLRPC.TL_textAnchor) {
                 TLRPC.TL_textAnchor textAnchor = (TLRPC.TL_textAnchor) richText;
                 setRichTextParents(richText, textAnchor.text);

@@ -295,6 +295,91 @@ class ArticleViewerContractTest {
     }
 
     @Test
+    fun getText_textSpoilerProducesTextStyleSpoilerSpan() {
+        val isolated = ArticleViewer.Resources()
+        val host = object : IArticleViewer() {
+            override fun getCurrentAccount() = 0
+            override fun getTextColor() = 0xff111111.toInt()
+            override fun getLinkTextColor() = 0xff222222.toInt()
+            override fun getGrayTextColor() = 0xff333333.toInt()
+            override fun getThemedColor(colorKey: Int) = 0xffffffff.toInt()
+            override fun getResourcesProvider(): Theme.ResourcesProvider? = null
+            override fun getResources() = isolated
+            override fun getTextSelectionHelper(view: android.view.View?): TextSelectionHelper.ArticleTextSelectionHelper? = null
+        }
+
+        val plain = TLRPC.TL_textPlain().apply { text = "secret" }
+        val spoiler = TLRPC.TL_textSpoiler().apply {
+            text = plain
+            plain.parentRichText = this
+        }
+        val block = TLRPC.TL_pageBlockParagraph()
+
+        val built = ArticleViewer.getText(host, null as TLRPC.WebPage?, null, spoiler, spoiler, block, 320)
+        assertThat(built).isInstanceOf(android.text.Spanned::class.java)
+        val spanned = built as android.text.Spanned
+        assertThat(spanned.toString()).isEqualTo("secret")
+
+        val styleSpans = spanned.getSpans(0, spanned.length, org.telegram.ui.Components.TextStyleSpan::class.java)
+        assertThat(styleSpans).hasLength(1)
+        assertThat(styleSpans[0].isSpoiler).isTrue()
+        assertThat(spanned.getSpanStart(styleSpans[0])).isEqualTo(0)
+        assertThat(spanned.getSpanEnd(styleSpans[0])).isEqualTo(6)
+
+        val last = ArticleViewer.getLastRichText(spoiler)
+        assertThat(last).isSameInstanceAs(plain)
+        assertThat(ArticleViewer.getPlainText(spoiler).toString()).isEqualTo("secret")
+    }
+
+    @Test
+    fun createLayoutForText_textSpoilerRichTextPathBuildsSpoilerSpans() {
+        val isolated = ArticleViewer.Resources()
+        val host = object : IArticleViewer() {
+            override fun getCurrentAccount() = 0
+            override fun getTextColor() = 0xff111111.toInt()
+            override fun getLinkTextColor() = 0xff222222.toInt()
+            override fun getGrayTextColor() = 0xff333333.toInt()
+            override fun getThemedColor(colorKey: Int) = 0xffffffff.toInt()
+            override fun getResourcesProvider(): Theme.ResourcesProvider? = null
+            override fun getResources() = isolated
+            override fun getTextSelectionHelper(view: android.view.View?): TextSelectionHelper.ArticleTextSelectionHelper? = null
+        }
+
+        val plain = TLRPC.TL_textPlain().apply { text = "hidden via rich text" }
+        val spoiler = TLRPC.TL_textSpoiler().apply {
+            text = plain
+            plain.parentRichText = this
+        }
+        val block = TLRPC.TL_pageBlockParagraph()
+
+        val drawing = ArticleViewer.createLayoutForText(
+            host,
+            /* parentView = */ null,
+            /* plainText = */ null,
+            spoiler,
+            /* width = */ 320,
+            /* textY = */ 0,
+            block,
+            /* parentAdapter = */ null as ArticleViewer.WebpageAdapter?,
+        )
+
+        assertThat(drawing).isNotNull()
+        assertThat(drawing!!.textLayout).isNotNull()
+        assertThat(drawing.textLayout.text.toString()).isEqualTo("hidden via rich text")
+        assertThat(drawing.parentText).isSameInstanceAs(spoiler)
+        assertThat(drawing.spoilers).isNotNull()
+        assertThat(drawing.spoilersPool).isNotNull()
+        assertThat(drawing.spoilersPatchedLayout).isNotNull()
+
+        val laidOut = drawing.textLayout.text
+        assertThat(laidOut).isInstanceOf(android.text.Spanned::class.java)
+        val styleSpans = (laidOut as android.text.Spanned)
+            .getSpans(0, laidOut.length, org.telegram.ui.Components.TextStyleSpan::class.java)
+        assertThat(styleSpans).isNotEmpty()
+        assertThat(styleSpans.any { it.isSpoiler }).isTrue()
+    }
+
+    @Test
     fun createLayoutForText_plainTextUsesParentColoredSpecialPaints() {
         val isolated = ArticleViewer.Resources()
         val host = object : IArticleViewer() {

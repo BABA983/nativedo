@@ -132,7 +132,7 @@ S1 type omissions — re-open only with an explicit product ticket:
 
 | Parked id | Topic | Re-open when |
 |-----------|--------|--------------|
-| A3 | `TL_textSpoiler` content production | Discourse/IV emits spoilers we must render |
+| ~~A3~~ | `TL_textSpoiler` content production | **Landed:** `TLRPC.TL_textSpoiler` + pin-shaped `getText`/`getLastRichText`/`getPlainText`/`setRichTextParents`. WebInstantView still does not emit spoilers from HTML (matches pin). Discourse topic spoilers stay on the native body path. |
 | A4 | Broader Sheet / WebActionBar chrome | Product wants pin bookmarks / open-external / search panel / markdown-local |
 | A5 | Embed/Collage/Slideshow static reshape | Pin geometry bug or forced_exact audit requires it (pin is also non-static) |
 | A6 | Heading1–6 maps / `quoteLevels` | S1 gains heading levels or multi-gutter quotes |
@@ -255,11 +255,11 @@ scripts/vendor-status.sh
 - `getText(IArticleViewer, WebpageAdapter|WebPage, ...)` exposes the pinned static parent boundary;
   instance wrappers still route existing cell callers through `this`
 - Supported S1 nodes keep the recursive span construction path (style wrappers, url/email/phone,
-  anchor, concat, marked, image) and paint selection via `getTextPaint(parent, ...)`
+  anchor, concat, marked, spoiler, image) and paint selection via `getTextPaint(parent, ...)`
 - Inline image invert brightness now uses the pin-shaped
   `AndroidUtilities.computePerceivedBrightness(parent.getThemedColor(...))` path
-- Spoiler / math (`textSpoiler`, `textMath`) remain deferred with the rest of the local S1 surface
-- Contract coverage verifies parent-driven bold+url concat span construction against isolated resources
+- **A3:** `TL_textSpoiler` content production landed (see reopen table). Math (`textMath`) remains deferred.
+- Contract coverage verifies parent-driven bold+url concat and spoiler span construction against isolated resources
 
 #### B7c — Parent-driven createLayoutForText (landed)
 
@@ -406,7 +406,8 @@ scripts/vendor-status.sh
 - `DrawingText` gains pin-shaped spoiler fields, `attach`/`detach`/`isAttached`, and spoiler draw via `SpoilerEffect.renderWithRipple`
 - Static `liveDrawingTexts` registry + `createLayoutForText` tail matches pin (pool/list/replace/attach when view is attached)
 - `checkLayoutForLinks` restores pin spoiler-hit / ripple / clear
-- OMITTED (pre-B20b/B21): real AnimatedEmoji pipeline (stub no-op); `TL_textSpoiler` / S1 spoiler content production (no local TL type). Typing draw branch + cell attach sites landed in B20b/B21.
+- OMITTED (pre-B20b/B21): real AnimatedEmoji pipeline (stub no-op). Typing draw branch + cell attach sites landed in B20b/B21.
+- **A3 landed:** `TLRPC.TL_textSpoiler` + `getText` applies `TextStyleSpan.FLAG_STYLE_SPOILER` (pin `TL_iv.textSpoiler` shape). S1 preview maps `textSpoiler` → `TL_textSpoiler` (no longer wrongly → `TL_textMarked`). HTML→spoiler production is still out of scope (pin WebInstantView does not emit it either).
 - Contract: empty spoiler pools without spans; attach/detach lifecycle safe
 
 ### Phase B20a — WebActionBar search header height (landed)
