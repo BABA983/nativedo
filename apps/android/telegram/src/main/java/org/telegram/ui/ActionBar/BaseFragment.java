@@ -46,6 +46,8 @@ public abstract class BaseFragment implements ViewModelStoreOwner {
     protected INavigationLayout parentLayout;
     protected ActionBar actionBar;
     protected int currentAccount = UserConfig.selectedAccount;
+    /** Upstream-shaped request/owner id used by UniversalRecyclerView/UniversalAdapter. */
+    protected int classGuid = 0;
     public ArrayList<AttachedSheet> sheetsStack;
     private final ViewModelStore viewModelStore = new ViewModelStore();
 
@@ -256,6 +258,10 @@ public abstract class BaseFragment implements ViewModelStoreOwner {
     public Activity getParentActivity() {
         Context context = getContext();
         return context instanceof Activity ? (Activity) context : null;
+    }
+
+    public int getClassGuid() {
+        return classGuid;
     }
 
     public int getCurrentAccount() {

@@ -51,7 +51,7 @@ public class UniversalRecyclerView extends RecyclerListView {
         this(
             fragment.getContext(),
             fragment.getCurrentAccount(),
-            0,
+            fragment.getClassGuid(),
             fillItems,
             onClick,
             onLongClick,

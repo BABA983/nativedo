@@ -984,7 +984,7 @@ public class FlickerLoadingView extends View implements Theme.Colorable {
                 return dp(107);
             case REACTED_TYPE_WITH_EMOJI_HINT:
             case REACTED_TYPE:
-                return dp(50); // host: ReactedUsersListView.ITEM_HEIGHT_DP → 50dp row
+                return dp(ReactedUsersListView.ITEM_HEIGHT_DP);
             case LIMIT_REACHED_GROUPS:
                 return dp(58);
             case LIMIT_REACHED_LINKS:
@@ -1068,6 +1068,6 @@ public class FlickerLoadingView extends View implements Theme.Colorable {
         TextPaint paint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
         paint.setTypeface(AndroidUtilities.bold());
         paint.setTextSize(dp(14));
-        memberRequestButtonWidth = dp(17 + 17) + paint.measureText(isChannel ? "Add to Channel" : "Add to Group"); // ADAPTED-BACKEND: missing R.string
+        memberRequestButtonWidth = dp(17 + 17) + paint.measureText(isChannel ? LocaleController.getString(R.string.AddToChannel) : LocaleController.getString(R.string.AddToGroup));
     }
 }
