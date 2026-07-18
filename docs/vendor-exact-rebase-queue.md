@@ -4,6 +4,7 @@
 - Global pin bump 12.8.1 → **12.9.0** (`9bcf3d2769c6`): FF exact/clean + host-wire UniversalRecyclerView/BottomSheetWithRecycler; absorb small pin deltas into Utilities/LayoutHelper/RecyclerListView/FragmentSearchField; ThemeColors host colors retained
 - List stack: RecyclerListView, RecyclerAnimationScrollHelper
 - Utilities scheme-2
+- Utilities + RecyclerListView host-keep re-align @ 12.9.0 (blur3 restored; no-JNI documented)
 - Browser chrome scheme-2: WebMetadataCache, AddressBarList
 - WebInstantView S1 reverse-patch
 - ArticleViewer B1–B21 + A3 / A4-partial / A6 / A7 — **epic closed** (host chrome remainder + A5 wontfix)
@@ -40,7 +41,7 @@
 2. ~~**Browser stack**~~ — **done (host keep, comments trimmed)**: WebInstantView / AddressBarList / BookmarksFragment / WebMetadataCache / RestrictedDomainsList.
 3. **ImageReceiver + ImageLocation** pair only with a named image-pipeline goal (legacy pin).
 4. **Not ArticleViewer** — epic closed (still host-wired; avoid new comment sprawl).
-5. Remaining heavy at-pin: `Utilities`, `RecyclerListView` — product feel/bug only; align when possible, document in manifest.
+5. ~~**Utilities + RecyclerListView**~~ — **done (host keep @ pin)**: RecyclerListView restored to pin-shaped blur3/SectionsAdapter/edge-effect with only `rectTmp2I` host delta; Utilities pin surface + no-JNI Java fallbacks, `stuck_ref=host_wiring_keep_at_pin`.
 
 ## Testing policy (vendor FF)
 

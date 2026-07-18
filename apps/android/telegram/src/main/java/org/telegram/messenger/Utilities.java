@@ -9,25 +9,21 @@
 package org.telegram.messenger;
 
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.Rect;
 import android.net.Uri;
 
-import org.telegram.tgnet.ConnectionsManager;
-import org.telegram.tgnet.TLRPC;
+import com.carrotsearch.randomizedtesting.Xoroshiro128PlusRandom;
+
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FilenameFilter;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -38,7 +34,7 @@ import java.util.regex.Pattern;
 public class Utilities {
     public static Pattern pattern = Pattern.compile("[\\-0-9]+");
     public static SecureRandom random = new SecureRandom();
-    public static Random fastRandom = new Random(random.nextLong());
+    public static Random fastRandom = new Xoroshiro128PlusRandom(random.nextLong());
 
     public static volatile DispatchQueue stageQueue = new DispatchQueue("stageQueue");
     public static volatile DispatchQueue globalQueue = new DispatchQueue("globalQueue");
@@ -66,64 +62,37 @@ public class Utilities {
         }
     }
 
-    // ── Image operations (Java replacements for native image.cpp) ────────
 
-    /**
-     * Pin bitmap pixels in native memory to prevent GC relocation.
-     * Java fallback: no-op. Modern ART GC (Android 8+) handles this well.
-     */
+    // Host: no Telegram JNI — Java fallbacks / no-ops for Discourse client.
+
     public static int pinBitmap(Bitmap bitmap) {
-        // No Java equivalent of AndroidBitmap_lockPixels needed on modern ART.
-        // Returning 1 (success) to match native convention.
         return bitmap != null ? 1 : 0;
     }
 
-    /**
-     * Unpin previously pinned bitmap pixels.
-     * Java fallback: no-op.
-     */
     public static void unpinBitmap(Bitmap bitmap) {
-        // No-op counterpart to pinBitmap.
     }
 
-    /**
-     * Fast box/stack blur on a bitmap's pixel data.
-     * Matches upstream native fastBlur/fastBlurMore from image.cpp.
-     * Operates directly on ARGB_8888 pixel array for performance.
-     */
-    public static void blurBitmap(Object bitmapObj, int radius, int unpin, int width, int height, int stride) {
-        if (!(bitmapObj instanceof Bitmap)) {
+    public static void blurBitmap(Object bitmap, int radius, int unpin, int width, int height, int stride) {
+        if (!(bitmap instanceof Bitmap) || width <= 0 || height <= 0 || stride <= 0) {
             return;
         }
-        Bitmap bitmap = (Bitmap) bitmapObj;
-        if (bitmap == null || width <= 0 || height <= 0 || stride <= 0) {
-            return;
-        }
+        Bitmap b = (Bitmap) bitmap;
         int[] pixels = new int[height * (stride / 4)];
-        bitmap.getPixels(pixels, 0, stride / 4, 0, 0, width, height);
+        b.getPixels(pixels, 0, stride / 4, 0, 0, width, height);
         stackBlurPixels(pixels, stride / 4, width, height, radius);
-        bitmap.setPixels(pixels, 0, stride / 4, 0, 0, width, height);
+        b.setPixels(pixels, 0, stride / 4, 0, 0, width, height);
     }
 
-    /**
-     * Detect if an image needs color inversion (premultiplied alpha fix).
-     * Matches upstream native needInvert from image.cpp.
-     * Checks if the majority of non-transparent pixels are dark (needing inversion for light theme).
-     */
-    public static int needInvert(Object bitmapObj, int unpin, int width, int height, int stride) {
-        if (!(bitmapObj instanceof Bitmap)) {
+    public static int needInvert(Object bitmap, int unpin, int width, int height, int stride) {
+        if (!(bitmap instanceof Bitmap) || width <= 0 || height <= 0) {
             return 0;
         }
-        Bitmap bitmap = (Bitmap) bitmapObj;
-        if (bitmap == null || width <= 0 || height <= 0) {
-            return 0;
-        }
-        // Only check small images (upstream: width*height <= 150*150, stride == width*4)
         if (width * height > 150 * 150) {
             return 0;
         }
+        Bitmap b = (Bitmap) bitmap;
         int[] pixels = new int[width * height];
-        bitmap.getPixels(pixels, 0, width, 0, 0, width, height);
+        b.getPixels(pixels, 0, width, 0, 0, width, height);
         int matching = 0;
         int total = 0;
         for (int i = 0; i < pixels.length; i++) {
@@ -132,11 +101,10 @@ public class Utilities {
             if (alpha < 0.1f) {
                 continue;
             }
-            // Pre-multiplied to straight color
             int r = Math.min(255, (int) (((pixel) & 0xFF) / alpha));
             int g = Math.min(255, (int) (((pixel >> 8) & 0xFF) / alpha));
-            int b = Math.min(255, (int) (((pixel >> 16) & 0xFF) / alpha));
-            float brightness = (r * 0.299f + g * 0.587f + b * 0.114f) / 255.0f;
+            int bl = Math.min(255, (int) (((pixel >> 16) & 0xFF) / alpha));
+            float brightness = (r * 0.299f + g * 0.587f + bl * 0.114f) / 255.0f;
             if (brightness > 0.5f) {
                 matching++;
             }
@@ -148,51 +116,32 @@ public class Utilities {
         return (matching / (float) total) > 0.6f ? 1 : 0;
     }
 
-    /**
-     * CLAHE histogram equalization (photo editor enhance feature).
-     * Not needed for NativeDo — no-op.
-     */
     public static void calcCDT(ByteBuffer hsvBuffer, int width, int height, ByteBuffer buffer, ByteBuffer calcBuffer) {
-        // NativeDo: photo enhance (CLAHE) not supported without native code.
     }
 
-    /**
-     * Video frame color-space conversion.
-     * Not needed for NativeDo — no-op returning 0 (failure).
-     */
     public static int convertVideoFrame(ByteBuffer src, ByteBuffer dest, int destFormat, int width, int height, int padding, int swap) {
         return 0;
     }
 
-    // ── AES encryption (Java replacements for native jni.c + BoringSSL) ──
-
     private static void aesIgeEncryption(ByteBuffer buffer, byte[] key, byte[] iv, boolean encrypt, int offset, int length) {
-        // NativeDo: Telegram IGE encryption not applicable to Discourse.
     }
 
     private static void aesIgeEncryptionByteArray(byte[] buffer, byte[] key, byte[] iv, boolean encrypt, int offset, int length) {
-        // NativeDo: Telegram IGE encryption not applicable to Discourse.
     }
 
     public static void aesCtrDecryption(ByteBuffer buffer, byte[] key, byte[] iv, int offset, int length) {
-        // NativeDo: Telegram CTR decryption not applicable to Discourse.
     }
 
-    public static void aesCtrDecryptionByteArray(byte[] buffer, byte[] key, byte[] iv, int offset, long length, int fileOffset) {
-        // NativeDo: Telegram CTR decryption not applicable to Discourse.
-        // Leaving buffer unchanged — callers are for secret chat / encrypted media.
+    public static void aesCtrDecryptionByteArray(byte[] buffer, byte[] key, byte[] iv, int offset, long length, int n) {
     }
 
     private static void aesCbcEncryptionByteArray(byte[] buffer, byte[] key, byte[] iv, int offset, int length, int n, int encrypt) {
-        // NativeDo: Telegram CBC encryption not applicable to Discourse.
     }
 
     public static void aesCbcEncryption(ByteBuffer buffer, byte[] key, byte[] iv, int offset, int length, int encrypt) {
-        // NativeDo: Telegram CBC encryption not applicable to Discourse.
     }
 
     public static String readlink(String path) {
-        // NativeDo: Linux readlink not available. Return path unchanged.
         return path;
     }
 
@@ -200,12 +149,6 @@ public class Utilities {
         return null;
     }
 
-    // ── File/directory operations (Java replacements for native jni.c) ──
-
-    /**
-     * Calculate total size of files in a directory tree.
-     * Matches upstream native listdir() with docType filter.
-     */
     public static long getDirSize(String path, int docType, boolean subdirs) {
         File dir = new File(path);
         if (!dir.exists() || !dir.isDirectory()) {
@@ -226,7 +169,6 @@ public class Utilities {
                     size += getDirSizeInternal(file, docType, true);
                 }
             } else {
-                // docType 0 = all, 1 = other than music, 2 = music, 3 = emoji, 4 = temp, 5 = other
                 if (docType == 0) {
                     size += file.length();
                 } else {
@@ -247,11 +189,6 @@ public class Utilities {
         return size;
     }
 
-    /**
-     * Get last usage time of a file (seconds since epoch).
-     * Matches upstream native getLastUsageFileTime: prefers atim, falls back to mtim.
-     * Java fallback: uses lastModified() (mtime), as Android rarely updates atime.
-     */
     public static long getLastUsageFileTime(String path) {
         File file = new File(path);
         if (!file.exists()) {
@@ -260,10 +197,6 @@ public class Utilities {
         return file.lastModified() / 1000;
     }
 
-    /**
-     * Delete files in a directory older than the given time threshold.
-     * Matches upstream native clearDir with docType filter.
-     */
     public static void clearDir(String path, int docType, long time, boolean subdirs) {
         File dir = new File(path);
         if (!dir.exists() || !dir.isDirectory()) {
@@ -292,19 +225,11 @@ public class Utilities {
     }
 
     private static int pbkdf2(byte[] password, byte[] salt, byte[] dst, int iterations) {
-        // NativeDo: PBKDF2 handled by computePBKDF2 using javax.crypto.
         return 0;
     }
 
-    /**
-     * Stack blur algorithm — pure Java implementation matching upstream
-     * native stackBlurBitmap from image.cpp. Operates on ARGB_8888 pixels.
-     */
     public static void stackBlurBitmap(Bitmap bitmap, int radius) {
-        if (bitmap == null || bitmap.isRecycled()) {
-            return;
-        }
-        if (radius < 1) {
+        if (bitmap == null || bitmap.isRecycled() || radius < 1) {
             return;
         }
         int w = bitmap.getWidth();
@@ -315,16 +240,6 @@ public class Utilities {
         bitmap.setPixels(pixels, 0, w, 0, 0, w, h);
     }
 
-    /**
-     * Core stack blur on a pixel array. Ported from upstream image.cpp
-     * stackBlurBitmap (which itself is a standard stack blur algorithm).
-     *
-     * @param pixels  ARGB_8888 pixel array
-     * @param stride  pixels per row (= width for ARGB_8888)
-     * @param width   image width
-     * @param height  image height
-     * @param radius  blur radius (>= 1)
-     */
     private static void stackBlurPixels(int[] pixels, int stride, int width, int height, int radius) {
         int div = radius + radius + 1;
         int[] rSum = new int[width];
@@ -332,12 +247,9 @@ public class Utilities {
         int[] bSum = new int[width];
         int[] aSum = new int[width];
 
-        // Horizontal pass
         for (int y = 0; y < height; y++) {
             int rIn = 0, gIn = 0, bIn = 0, aIn = 0;
             int idx = y * stride;
-
-            // Initialize sums for the left edge
             for (int x = -radius; x <= radius; x++) {
                 int sx = Math.max(0, Math.min(width - 1, x));
                 int pixel = pixels[idx + sx];
@@ -346,39 +258,31 @@ public class Utilities {
                 gIn += (pixel >> 8) & 0xFF;
                 bIn += (pixel >> 16) & 0xFF;
             }
-
             for (int x = 0; x < width; x++) {
                 int addIdx = Math.min(x + radius + 1, width - 1);
                 int remIdx = Math.max(x - radius, 0);
                 int addPixel = pixels[idx + addIdx];
                 int remPixel = pixels[idx + remIdx];
-
                 aSum[x] = aIn / div;
                 rSum[x] = rIn / div;
                 gSum[x] = gIn / div;
                 bSum[x] = bIn / div;
-
                 aIn += ((addPixel >> 24) & 0xFF) - ((remPixel >> 24) & 0xFF);
                 rIn += (addPixel & 0xFF) - (remPixel & 0xFF);
                 gIn += ((addPixel >> 8) & 0xFF) - ((remPixel >> 8) & 0xFF);
                 bIn += ((addPixel >> 16) & 0xFF) - ((remPixel >> 16) & 0xFF);
             }
-
-            // Write back
             for (int x = 0; x < width; x++) {
                 pixels[idx + x] = (aSum[x] << 24) | (bSum[x] << 16) | (gSum[x] << 8) | rSum[x];
             }
         }
 
-        // Vertical pass
         rSum = new int[height];
         gSum = new int[height];
         bSum = new int[height];
         aSum = new int[height];
-
         for (int x = 0; x < width; x++) {
             int rIn = 0, gIn = 0, bIn = 0, aIn = 0;
-
             for (int y = -radius; y <= radius; y++) {
                 int sy = Math.max(0, Math.min(height - 1, y));
                 int pixel = pixels[sy * stride + x];
@@ -387,62 +291,83 @@ public class Utilities {
                 gIn += (pixel >> 8) & 0xFF;
                 bIn += (pixel >> 16) & 0xFF;
             }
-
             for (int y = 0; y < height; y++) {
                 int addY = Math.min(y + radius + 1, height - 1);
                 int remY = Math.max(y - radius, 0);
                 int addPixel = pixels[addY * stride + x];
                 int remPixel = pixels[remY * stride + x];
-
                 aSum[y] = aIn / div;
                 rSum[y] = rIn / div;
                 gSum[y] = gIn / div;
                 bSum[y] = bIn / div;
-
                 aIn += ((addPixel >> 24) & 0xFF) - ((remPixel >> 24) & 0xFF);
                 rIn += (addPixel & 0xFF) - (remPixel & 0xFF);
                 gIn += ((addPixel >> 8) & 0xFF) - ((remPixel >> 8) & 0xFF);
                 bIn += ((addPixel >> 16) & 0xFF) - ((remPixel >> 16) & 0xFF);
             }
-
             for (int y = 0; y < height; y++) {
                 pixels[y * stride + x] = (aSum[y] << 24) | (bSum[y] << 16) | (gSum[y] << 8) | rSum[y];
             }
         }
     }
 
-    /**
-     * Dithered gradient drawing on a bitmap.
-     * Not needed for NativeDo — no-op.
-     */
     public static void drawDitheredGradient(Bitmap bitmap, int[] colors, int startX, int startY, int endX, int endY) {
-        // NativeDo: dithered gradient not supported without native code.
     }
 
-    /**
-     * Gradient wallpaper generation with phase animation.
-     * Not needed for NativeDo — no-op.
-     */
     public static void generateGradient(Bitmap bitmap, boolean unpin, int phase, float progress, int width, int height, int stride, int[] colors) {
-        // NativeDo: gradient wallpaper generation not supported without native code.
     }
 
-    /**
-     * Soft-light blend used by Telegram MotionBackgroundPaint (12.7+).
-     * Not needed for NativeDo — no-op (MotionBackgroundPaint not ported).
-     * Signature matches upstream {@code Utilities.applySoftLight}.
-     */
     public static boolean applySoftLight(Bitmap inputBitmap, Bitmap outputBitmap, int color) {
         return false;
     }
 
-    /**
-     * Native crash listener setup via breakpad.
-     * Not applicable to NativeDo — no-op.
-     */
-    public static void setupNativeCrashesListener(String path) {
-        // NativeDo: using Firebase Crashlytics instead of breakpad.
+    public static boolean copyBitmaps(Bitmap src, Bitmap dst) {
+        if (src == null || dst == null || src.isRecycled() || dst.isRecycled()) {
+            return false;
+        }
+        Canvas canvas = new Canvas(dst);
+        canvas.drawBitmap(src, 0, 0, null);
+        return true;
     }
+
+    public static int averageBitmapColor(Bitmap bitmap, int left, int top, int right, int bottom) {
+        if (bitmap == null || bitmap.isRecycled()) {
+            return 0;
+        }
+        final int w = bitmap.getWidth();
+        final int h = bitmap.getHeight();
+        left = Math.max(0, Math.min(left, w));
+        right = Math.max(left, Math.min(right, w));
+        top = Math.max(0, Math.min(top, h));
+        bottom = Math.max(top, Math.min(bottom, h));
+        if (right <= left || bottom <= top) {
+            return 0;
+        }
+        long rSum = 0, gSum = 0, bSum = 0;
+        int count = 0;
+        final int stepX = Math.max(1, (right - left) / 16);
+        final int stepY = Math.max(1, (bottom - top) / 16);
+        for (int y = top; y < bottom; y += stepY) {
+            for (int x = left; x < right; x += stepX) {
+                final int c = bitmap.getPixel(x, y);
+                rSum += (c >> 16) & 0xff;
+                gSum += (c >> 8) & 0xff;
+                bSum += c & 0xff;
+                count++;
+            }
+        }
+        if (count == 0) {
+            return 0;
+        }
+        return 0xff000000
+                | (((int) (rSum / count)) << 16)
+                | (((int) (gSum / count)) << 8)
+                | ((int) (bSum / count));
+    }
+
+    public static void setupNativeCrashesListener(String path) {
+    }
+
 
     public static Bitmap stackBlurBitmapMax(Bitmap bitmap) {
         return stackBlurBitmapMax(bitmap, false);
@@ -505,8 +430,7 @@ public class Utilities {
     }
 
     public static void aesCbcEncryptionByteArraySafe(byte[] buffer, byte[] key, byte[] iv, int offset, int length, int n, int encrypt) {
-        // NativeDo: Telegram secret chat CBC encryption not applicable to Discourse.
-        // Leaving buffer unchanged — callers in EncryptedFileInputStream are unused.
+        aesCbcEncryptionByteArray(buffer, key, iv.clone(), offset, length, n, encrypt);
     }
 
     public static Integer parseInt(CharSequence value) {
@@ -613,7 +537,6 @@ public class Utilities {
     }
 
     public static boolean isGoodPrime(byte[] prime, int g) {
-        // V1 stub: native prime check not available, accept all
         return true;
     }
 
@@ -1008,56 +931,8 @@ public class Utilities {
         return (a + b - 1) / b;
     }
 
-    public static boolean copyBitmaps(Bitmap src, Bitmap dst) {
-        if (src == null || dst == null || src.isRecycled() || dst.isRecycled()) {
-            return false;
-        }
-        Canvas canvas = new Canvas(dst);
-        canvas.drawBitmap(src, 0, 0, null);
-        return true;
-    }
 
-    /**
-     * Pin 12.9.0 native average color. Host: sample center-ish pixels of the
-     * sub-rect without JNI (no averageBitmapColor native).
-     */
-    public static int averageBitmapColor(Bitmap bitmap, int left, int top, int right, int bottom) {
-        if (bitmap == null || bitmap.isRecycled()) {
-            return 0;
-        }
-        final int w = bitmap.getWidth();
-        final int h = bitmap.getHeight();
-        left = Math.max(0, Math.min(left, w));
-        right = Math.max(left, Math.min(right, w));
-        top = Math.max(0, Math.min(top, h));
-        bottom = Math.max(top, Math.min(bottom, h));
-        if (right <= left || bottom <= top) {
-            return 0;
-        }
-        long rSum = 0, gSum = 0, bSum = 0;
-        int count = 0;
-        // Sparse sample to keep this usable on large bitmaps without native.
-        final int stepX = Math.max(1, (right - left) / 16);
-        final int stepY = Math.max(1, (bottom - top) / 16);
-        for (int y = top; y < bottom; y += stepY) {
-            for (int x = left; x < right; x += stepX) {
-                final int c = bitmap.getPixel(x, y);
-                rSum += (c >> 16) & 0xff;
-                gSum += (c >> 8) & 0xff;
-                bSum += c & 0xff;
-                count++;
-            }
-        }
-        if (count == 0) {
-            return 0;
-        }
-        return 0xff000000
-                | (((int) (rSum / count)) << 16)
-                | (((int) (gSum / count)) << 8)
-                | ((int) (bSum / count));
-    }
 
-    /** Pin 12.9.0 libyuv scale modes; host scale path is a Canvas draw fallback. */
     public enum libyuv_ScaleFilter {
         None, Linear, Bilinear, Box
     }
@@ -1081,5 +956,5 @@ public class Utilities {
             return false;
         }
     }
-
 }
+

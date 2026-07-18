@@ -62,7 +62,8 @@
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "exact",
-      "notes": "NativeDo Java replacements for native crypto/image ops. 12.9.0 surface: averageBitmapColor + libyuvARGBSaleBitmap Java fallbacks (no JNI)."
+      "notes": "exact@12.9.0 pure-Java surface with no Telegram JNI: native image/crypto/dir methods replaced by Java fallbacks/no-ops (stack blur, copyBitmaps, averageBitmapColor, libyuvARGBSaleBitmap Canvas scale, javax.crypto PBKDF2, isGoodPrime always true). fastRandom uses vendored Xoroshiro128PlusRandom. Not eligible for clean FF without JNI.",
+      "stuck_reason": "Intentional host wiring at global pin 12.9.0 — keep modified:true; not eligible for clean FF. Product/API surface differs from pin by design (missing upstream types or NativeDo defaults). Re-sync only with a named product goal."
     },
     {
       "local": "telegram/src/main/java/org/telegram/messenger/CodeHighlighting.java",
@@ -1215,7 +1216,8 @@
         "recycling",
         "gesture"
       ],
-      "notes": "Host AndroidX notifyDataSetChangedCompat + import wiring; 12.9.0 getClipBackground(child, forceRound) absorbed."
+      "notes": "exact@12.9.0 + host: FastScroll blur tag uses AndroidUtilities.rectTmp2I (local rectTmp2 is RectF; pin rectTmp2 is Rect). blur3 FastScroll path, SectionsAdapter.notifyDataSetChanged, and edge-effect API restored to pin. forced_exact recycling/gesture.",
+      "stuck_reason": "Intentional host wiring at global pin 12.9.0 — keep modified:true; not eligible for clean FF. Product/API surface differs from pin by design (missing upstream types or NativeDo defaults). Re-sync only with a named product goal."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ScrollSlidingTextTabStrip.java",

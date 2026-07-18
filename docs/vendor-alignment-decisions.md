@@ -76,8 +76,8 @@ Do not resume AV slices from the vendor queue.
 Do not auto-overwrite. Re-sync only with a named product goal:
 
 - `ArticleViewer.java` (epic closed; stuck = host chrome only)
-- `RecyclerListView.java` (forced_exact gesture/recycling; heavy host wiring)
-- `Utilities.java` (native/no-JNI + 12.9 stubs — product goal only)
+- `RecyclerListView.java` — **host keep @ 12.9.0**: pin-shaped; only `rectTmp2I` FastScroll blur wiring (`host_wiring_keep_at_pin`)
+- `Utilities.java` — **host keep @ 12.9.0**: no JNI Java fallbacks (`host_wiring_keep_at_pin`)
 - **Browser stack (documented keep @ 12.9.0):**
   - `WebInstantView` — S1 type map + `getActionBarLayoutActivity` for readHTML
   - `AddressBarList` / `BookmarksFragment` — WebBookmarks, not MediaDataController
@@ -120,6 +120,6 @@ Still modified and intentionally not bulk-copied without product decisions:
 - `RestrictedDomainsList` (no upstream blob; host shim, stuck documented)
 - Browser stack @ 12.9.0 host keep: `WebInstantView`, `AddressBarList`, `BookmarksFragment`, `WebMetadataCache`
 - Small host keep (see B1–B2): ThemeColors, LayoutHelper, GraySectionCell, AnimatedTextView, …
-- Heavier at-pin without stuck yet: `Utilities`, `RecyclerListView` (product feel/bug only)
+- Heavier at-pin now documented host keep: `Utilities`, `RecyclerListView`
 
 See earlier sections for decision prompts.

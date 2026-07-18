@@ -63,7 +63,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.AndroidUtilities;
-
+import org.telegram.messenger.BuildConfig;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.GenericProvider;
 import org.telegram.messenger.LocaleController;
@@ -72,20 +72,18 @@ import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.Utilities;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.Components.blur3.drawable.color.BlurredBackgroundProvider;
-import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
-import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory;
-import org.telegram.ui.Components.blur3.capture.IBlur3Hash;
-import org.telegram.ui.Components.blur3.capture.IBlur3Capture;
-import org.telegram.ui.FiltersSetupActivity;
-import org.telegram.ui.Components.JoinToSendSettingsView;
-import org.telegram.messenger.BuildConfig;
 import org.telegram.ui.Cells.ChatActionCell;
 import org.telegram.ui.Cells.ChatMessageCell;
 import org.telegram.ui.Cells.CollapseTextCell;
 import org.telegram.ui.Cells.GraySectionCell;
 import org.telegram.ui.Cells.ShadowSectionCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
+import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory;
+import org.telegram.ui.Components.blur3.capture.IBlur3Capture;
+import org.telegram.ui.Components.blur3.capture.IBlur3Hash;
+import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
+import org.telegram.ui.Components.blur3.drawable.color.BlurredBackgroundProvider;
+import org.telegram.ui.FiltersSetupActivity;
 
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
@@ -358,9 +356,8 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
             cleanupCache();
         }
 
-        // ADAPTED: notifyDataSetChanged() is final in AndroidX RecyclerView.Adapter;
-        // renamed to notifyDataSetChangedCompat() to avoid override conflict.
-        public void notifyDataSetChangedCompat() {
+        @Override
+        public void notifyDataSetChanged() {
             update(false);
         }
 
@@ -563,10 +560,8 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
         Drawable fastScrollShadowDrawable;
         Drawable fastScrollBackgroundDrawable;
 
-        // OMITTED: blur3 out of scope
-        // BlurredBackgroundDrawable blurredCircleDrawable;
-        // OMITTED: blur3 out of scope
-        // BlurredBackgroundDrawable blurredTagDrawable;
+        BlurredBackgroundDrawable blurredCircleDrawable;
+        BlurredBackgroundDrawable blurredTagDrawable;
 
         boolean isRtl;
         public int topOffset;
@@ -809,20 +804,18 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
                 paint.setColor(ColorUtils.blendARGB(Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider), Color.WHITE, 0.1f));
 
                 float cy = y + AndroidUtilities.dp(12 + 15);
-                // OMITTED: blur3 out of scope
-                // if (blurredCircleDrawable != null) {
-                //     blurredCircleDrawable.setBounds(
-                //             scrollX + AndroidUtilities.dp(8 - 28),
-                //             y + AndroidUtilities.dp(12 + 15 - 28),
-                //             scrollX + AndroidUtilities.dp(8 + 28),
-                //             y + AndroidUtilities.dp(12 + 15 + 28));
-                //     blurredCircleDrawable.draw(canvas);
-                // } else {
+                if (blurredCircleDrawable != null) {
+                    blurredCircleDrawable.setBounds(
+                            scrollX + AndroidUtilities.dp(8 - 28),
+                            y + AndroidUtilities.dp(12 + 15 - 28),
+                            scrollX + AndroidUtilities.dp(8 + 28),
+                            y + AndroidUtilities.dp(12 + 15 + 28));
+                    blurredCircleDrawable.draw(canvas);
+                } else {
                     fastScrollShadowDrawable.setBounds(getMeasuredWidth() - fastScrollShadowDrawable.getIntrinsicWidth(), (int) (cy - fastScrollShadowDrawable.getIntrinsicHeight() / 2), getMeasuredWidth(), (int) (cy + fastScrollShadowDrawable.getIntrinsicHeight() / 2));
                     fastScrollShadowDrawable.draw(canvas);
                     canvas.drawCircle(scrollX + AndroidUtilities.dp(8), y + AndroidUtilities.dp(12 + 15), AndroidUtilities.dp(24), paint);
-                // OMITTED: blur3 out of scope
-                // }
+                }
 
                 paint.setColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
                 canvas.save();
@@ -896,18 +889,16 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
                     int oldAlpha2 = letterPaint.getAlpha();
                     paint2.setAlpha((int) (oldAlpha1 * floatingDateProgress));
 
-                    // OMITTED: blur3 out of scope
-                    // if (blurredTagDrawable != null) {
-                    //     rect.round(AndroidUtilities.rectTmp2);
-                    //     AndroidUtilities.rectTmp2.inset(-dp(4), -dp(4));
-                    //     blurredTagDrawable.setBounds(AndroidUtilities.rectTmp2);
-                    //     blurredTagDrawable.draw(canvas);
-                    // } else {
+                    if (blurredTagDrawable != null) {
+                        rect.round(AndroidUtilities.rectTmp2I);
+                        AndroidUtilities.rectTmp2I.inset(-dp(4), -dp(4));
+                        blurredTagDrawable.setBounds(AndroidUtilities.rectTmp2I);
+                        blurredTagDrawable.draw(canvas);
+                    } else {
                         fastScrollBackgroundDrawable.setBounds((int) rect.left, (int) rect.top, (int) rect.right, (int) rect.bottom);
                         fastScrollBackgroundDrawable.setAlpha((int) (255 * floatingDateProgress));
                         fastScrollBackgroundDrawable.draw(canvas);
-                    // OMITTED: blur3 out of scope
-                    // }
+                    }
 
                     if (replaceLayoutProgress != 1f) {
                         replaceLayoutProgress += 16f / 150f;
@@ -1064,31 +1055,27 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
         }
 
 
-        // OMITTED: blur3 out of scope
-        // public void applyBlurDrawables(
-        //         BlurredBackgroundDrawableViewFactory factory,
-        //         BlurredBackgroundProvider backgroundProvider
-        // ) {
-        //     blurredCircleDrawable = factory.create(fastScroll, backgroundProvider);
-        //     blurredCircleDrawable.setPadding(dp(4));
-        //     blurredCircleDrawable.setRadius(dp(24));
-        //
-        //     blurredTagDrawable = factory.create(fastScroll, backgroundProvider);
-        //     blurredTagDrawable.setPadding(dp(6));
-        //     blurredTagDrawable.setRadius(dp(14));
-        // }
+        public void applyBlurDrawables(
+                BlurredBackgroundDrawableViewFactory factory,
+                BlurredBackgroundProvider backgroundProvider
+        ) {
+            blurredCircleDrawable = factory.create(fastScroll, backgroundProvider);
+            blurredCircleDrawable.setPadding(dp(4));
+            blurredCircleDrawable.setRadius(dp(24));
 
-        // OMITTED: blur3 out of scope
-        // public boolean fillDrawablesRect(RectF rect) {
-        //     if (blurredCircleDrawable != null || blurredTagDrawable != null)  {
-        //         rect.set(blurredTagDrawable.getBounds());
-        //         AndroidUtilities.rectTmp.set(blurredCircleDrawable.getBounds());
-        //         rect.union(AndroidUtilities.rectTmp);
-        //         return true;
-        //     }
-        //     return false;
-        // }
+            blurredTagDrawable = factory.create(fastScroll, backgroundProvider);
+            blurredTagDrawable.setPadding(dp(6));
+            blurredTagDrawable.setThickness(dp(4));
+            blurredTagDrawable.setRadius(dp(14));
+        }
+
         public boolean fillDrawablesRect(RectF rect) {
+            if (blurredCircleDrawable != null || blurredTagDrawable != null)  {
+                rect.set(blurredTagDrawable.getBounds());
+                AndroidUtilities.rectTmp.set(blurredCircleDrawable.getBounds());
+                rect.union(AndroidUtilities.rectTmp);
+                return true;
+            }
             return false;
         }
 
@@ -1487,8 +1474,9 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
         super(context);
         this.resourcesProvider = resourcesProvider;
         this.edgeEffectTrackerFactory = new EdgeEffectTrackerFactory();
+
         setEdgeEffectFactory(edgeEffectTrackerFactory);
-        try { setGlowColor(getThemedColor(Theme.key_actionBarDefault)); } catch (Throwable ignore) {}
+        setGlowColor(getThemedColor(Theme.key_actionBarDefault));
         selectorDrawable = Theme.getSelectorDrawable(getThemedColor(Theme.key_listSelector), false);
         selectorDrawable.setCallback(this);
 
@@ -3118,12 +3106,27 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
 
 
     /* Overscroll */
-    private final @NonNull EdgeEffectTrackerFactory edgeEffectTrackerFactory;
-    public boolean hasActiveEdgeEffects() { return edgeEffectTrackerFactory.hasVisibleEdges(); }
-    public void addEdgeEffectListener(Runnable listener) { addEdgeEffectListener((d, v) -> listener.run()); }
-    public void addEdgeEffectListener(EdgeEffectTrackerFactory.OnEdgeEffectListener listener) { edgeEffectTrackerFactory.addEdgeEffectListener(listener); }
-    public void removeEdgeEffectListener(EdgeEffectTrackerFactory.OnEdgeEffectListener listener) { edgeEffectTrackerFactory.removeEdgeEffectListener(listener); }
 
+    private final @NonNull EdgeEffectTrackerFactory edgeEffectTrackerFactory;
+
+    public boolean hasActiveEdgeEffects() {
+        return edgeEffectTrackerFactory.hasVisibleEdges();
+    }
+
+    public void addEdgeEffectListener(Runnable listener) {
+        addEdgeEffectListener((direction, isVisible) -> listener.run());
+    }
+
+    public void addEdgeEffectListener(EdgeEffectTrackerFactory.OnEdgeEffectListener listener) {
+        edgeEffectTrackerFactory.addEdgeEffectListener(listener);
+    }
+
+    public void removeEdgeEffectListener(EdgeEffectTrackerFactory.OnEdgeEffectListener listener) {
+        edgeEffectTrackerFactory.removeEdgeEffectListener(listener);
+    }
+
+
+    /* Blur3 */
 
     private Matrix selfTransformationsMatrix;
 
@@ -3411,15 +3414,6 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
             parent.drawSectionsBackgrounds(canvas);
             canvas.restore();
         }
-
-        // OMITTED: blur3 out of scope
-        // @Override
-        // public void capture(Canvas canvas, RectF position) {
-        //     canvas.save();
-        //     canvas.clipRect(position);
-        //     parent.drawSectionsBackgrounds(canvas);
-        //     canvas.restore();
-        // }
     }
 
     private void drawSectionBackground(

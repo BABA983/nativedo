@@ -35,6 +35,11 @@
       "prefix": "telegram/src/main/java/com/google/zxing/",
       "bucket": "third_party_com",
       "reason": "Minimal ZXing MathUtils shim for pin SearchStateDrawable; not a Telegram UI port."
+    },
+    {
+      "prefix": "telegram/src/main/java/com/carrotsearch/",
+      "bucket": "third_party_com",
+      "reason": "Xoroshiro128PlusRandom used by Utilities.fastRandom; third-party tree from Telegram, not a per-file UI port."
     }
   ]
 }

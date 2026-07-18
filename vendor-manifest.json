@@ -103,7 +103,9 @@
         {
           "path": "org/telegram/messenger/Utilities.java",
           "modified": true,
-          "notes": "NativeDo Java replacements for native crypto/image ops. 12.9.0 surface: averageBitmapColor + libyuvARGBSaleBitmap Java fallbacks (no JNI)."
+          "notes": "exact@12.9.0 pure-Java surface with no Telegram JNI: native image/crypto/dir methods replaced by Java fallbacks/no-ops (stack blur, copyBitmaps, averageBitmapColor, libyuvARGBSaleBitmap Canvas scale, javax.crypto PBKDF2, isGoodPrime always true). fastRandom uses vendored Xoroshiro128PlusRandom. Not eligible for clean FF without JNI.",
+          "port_mode": "exact",
+          "stuck_ref": "host_wiring_keep_at_pin"
         },
         {
           "path": "org/telegram/messenger/CodeHighlighting.java",
@@ -1100,7 +1102,9 @@
             "recycling",
             "gesture"
           ],
-          "notes": "Host AndroidX notifyDataSetChangedCompat + import wiring; 12.9.0 getClipBackground(child, forceRound) absorbed."
+          "notes": "exact@12.9.0 + host: FastScroll blur tag uses AndroidUtilities.rectTmp2I (local rectTmp2 is RectF; pin rectTmp2 is Rect). blur3 FastScroll path, SectionsAdapter.notifyDataSetChanged, and edge-effect API restored to pin. forced_exact recycling/gesture.",
+          "port_mode": "exact",
+          "stuck_ref": "host_wiring_keep_at_pin"
         },
         {
           "path": "org/telegram/ui/Components/ScrollSlidingTextTabStrip.java",
