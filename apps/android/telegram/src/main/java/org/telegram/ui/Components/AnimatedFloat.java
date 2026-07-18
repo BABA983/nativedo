@@ -1,165 +1,232 @@
-/*
- * This file is part of NativeDo.
- *
- * Derived in part from Telegram for Android's
- * org/telegram/ui/Components/AnimatedFloat.java.
- *
- * Source reference:
- * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/ui/Components/AnimatedFloat.java
- *
- * Copyright (C) Telegram FZ-LLC
- * Copyright (C) 2026 NativeDo contributors
- *
- * This program is free software: you can redistribute it and/or modify
- * it under terms of GNU General Public License version 2 or later as published by
- * the Free Software Foundation.
- *
- * SPDX-License-Identifier: GPL-2.0-or-later
- */
 package org.telegram.ui.Components;
 
+
 import android.animation.TimeInterpolator;
+import android.os.SystemClock;
 import android.view.View;
 
-/**
- * Lightweight time-based value smoother. {@link #set} pushes a new target; subsequent {@link #get}
- * calls return the eased current value and invalidate the parent View so onDraw is re-entered until
- * the transition settles.
- */
+import androidx.core.math.MathUtils;
+
+import org.telegram.messenger.AndroidUtilities;
+
 public class AnimatedFloat {
 
-    private float fromValue;
+    private View parent;
+    private Runnable invalidate;
+    private float value;
     private float targetValue;
-    private float currentValue;
-    private long transitionStart;
-    private long transitionDuration = 200;
+    private boolean firstSet;
+
     private long transitionDelay = 0;
-    private TimeInterpolator interpolator;
-    private View parentToInvalidate;
-    private Runnable invalidateCallback;
-    private boolean firstSet = true;
+    private long transitionDuration = 200;
+    private TimeInterpolator transitionInterpolator = CubicBezierInterpolator.DEFAULT;
+    private boolean transition;
+    private long transitionStart;
+    private float startValue;
 
     public AnimatedFloat() {
+        this.parent = null;
+        this.firstSet = true;
     }
 
-    public AnimatedFloat(long transitionDuration, TimeInterpolator interpolator) {
+    public AnimatedFloat(long transitionDuration, TimeInterpolator transitionInterpolator) {
+        this.parent = null;
         this.transitionDuration = transitionDuration;
-        this.interpolator = interpolator;
+        this.transitionInterpolator = transitionInterpolator;
+        this.firstSet = true;
+    }
+
+    public AnimatedFloat(long transitionDelay, long transitionDuration, TimeInterpolator transitionInterpolator) {
+        this.parent = null;
+        this.transitionDelay = transitionDelay;
+        this.transitionDuration = transitionDuration;
+        this.transitionInterpolator = transitionInterpolator;
+        this.firstSet = true;
     }
 
     public AnimatedFloat(View parentToInvalidate) {
-        this.parentToInvalidate = parentToInvalidate;
+        this.parent = parentToInvalidate;
+        this.firstSet = true;
     }
 
-    /** ADAPTED: Runnable-based invalidate callback (used by Drawables that have no parent View). */
-    public AnimatedFloat(float initialValue, Runnable invalidateCallback, long transitionDelay, long transitionDuration, TimeInterpolator interpolator) {
-        this.invalidateCallback = invalidateCallback;
+    public AnimatedFloat(View parentToInvalidate, long transitionDuration, TimeInterpolator transitionInterpolator) {
+        this.parent = parentToInvalidate;
+        this.transitionDuration = transitionDuration;
+        this.transitionInterpolator = transitionInterpolator;
+        this.firstSet = true;
+    }
+
+    public AnimatedFloat(View parentToInvalidate, long transitionDelay, long transitionDuration, TimeInterpolator transitionInterpolator) {
+        this.parent = parentToInvalidate;
         this.transitionDelay = transitionDelay;
         this.transitionDuration = transitionDuration;
-        this.interpolator = interpolator;
-        this.currentValue = this.fromValue = this.targetValue = initialValue;
+        this.transitionInterpolator = transitionInterpolator;
+        this.firstSet = true;
+    }
+
+
+    public AnimatedFloat(Runnable invalidate) {
+        this.invalidate = invalidate;
+        this.firstSet = true;
+    }
+
+    public AnimatedFloat(Runnable invalidate, long transitionDuration, TimeInterpolator transitionInterpolator) {
+        this.invalidate = invalidate;
+        this.transitionDuration = transitionDuration;
+        this.transitionInterpolator = transitionInterpolator;
+        this.firstSet = true;
+    }
+
+    public AnimatedFloat(Runnable invalidate, long transitionDelay, long transitionDuration, TimeInterpolator transitionInterpolator) {
+        this.invalidate = invalidate;
+        this.transitionDelay = transitionDelay;
+        this.transitionDuration = transitionDuration;
+        this.transitionInterpolator = transitionInterpolator;
+        this.firstSet = true;
+    }
+
+    public AnimatedFloat(float initialValue, View parentToInvalidate) {
+        this.parent = parentToInvalidate;
+        this.value = targetValue = initialValue;
         this.firstSet = false;
     }
 
-    public AnimatedFloat(Runnable invalidateCallback, long transitionDelay, long transitionDuration, TimeInterpolator interpolator) {
-        this.invalidateCallback = invalidateCallback;
-        this.transitionDelay = transitionDelay;
-        this.transitionDuration = transitionDuration;
-        this.interpolator = interpolator;
-    }
-
-    public AnimatedFloat(View parentToInvalidate, long transitionDuration, TimeInterpolator interpolator) {
-        this.parentToInvalidate = parentToInvalidate;
-        this.transitionDuration = transitionDuration;
-        this.interpolator = interpolator;
-    }
-
-    public AnimatedFloat(View parentToInvalidate, long transitionDelay, long transitionDuration, TimeInterpolator interpolator) {
-        this.parentToInvalidate = parentToInvalidate;
-        this.transitionDelay = transitionDelay;
-        this.transitionDuration = transitionDuration;
-        this.interpolator = interpolator;
-    }
-
-    public AnimatedFloat(float initialValue, View parentToInvalidate, long transitionDelay, long transitionDuration, TimeInterpolator interpolator) {
-        this(parentToInvalidate, transitionDelay, transitionDuration, interpolator);
-        this.currentValue = this.fromValue = this.targetValue = initialValue;
+    public AnimatedFloat(float initialValue, Runnable invalidate) {
+        this.invalidate = invalidate;
+        this.value = targetValue = initialValue;
         this.firstSet = false;
     }
+
+    public AnimatedFloat(float initialValue, View parentToInvalidate, long transitionDelay, long transitionDuration, TimeInterpolator transitionInterpolator) {
+        this.parent = parentToInvalidate;
+        this.value = targetValue = initialValue;
+        this.transitionDelay = transitionDelay;
+        this.transitionDuration = transitionDuration;
+        this.transitionInterpolator = transitionInterpolator;
+        this.firstSet = false;
+    }
+
+    public AnimatedFloat(float initialValue, Runnable invalidate, long transitionDelay, long transitionDuration, TimeInterpolator transitionInterpolator) {
+        this.invalidate = invalidate;
+        this.value = targetValue = initialValue;
+        this.transitionDelay = transitionDelay;
+        this.transitionDuration = transitionDuration;
+        this.transitionInterpolator = transitionInterpolator;
+        this.firstSet = false;
+    }
+
+    // get() is not recommended to use (unless to minimize System.currentTimeMillis() calls)
+    @Deprecated
+    public float get() {
+        return value;
+    }
+
+    // set() must be called inside onDraw/dispatchDraw
+    // the main purpose of AnimatedFloat is to interpolate between abrupt changing states
+
 
     public float set(float mustBe) {
-        if (firstSet) {
-            currentValue = fromValue = targetValue = mustBe;
-            firstSet = false;
-            return mustBe;
-        }
-        if (mustBe != targetValue) {
-            fromValue = computeCurrent();
-            currentValue = fromValue;
-            targetValue = mustBe;
-            transitionStart = System.currentTimeMillis();
-        }
-        return get();
+        return this.set(mustBe, false);
     }
 
     public float set(boolean mustBe) {
-        return set(mustBe ? 1f : 0f);
+        return this.set(mustBe ? 1 : 0, false);
     }
 
-    /** ADAPTED: 2-arg set with optional skip-animation flag, matches upstream AnimatedFloat.set(float, boolean). */
-    public float set(float mustBe, boolean immediate) {
-        if (immediate) {
-            force(mustBe);
-            return mustBe;
-        }
-        return set(mustBe);
-    }
-
-    public float get() {
-        if (firstSet) {
-            return currentValue;
-        }
-        currentValue = computeCurrent();
-        if (currentValue != targetValue) {
-            if (parentToInvalidate != null) {
-                parentToInvalidate.invalidate();
-            }
-            if (invalidateCallback != null) {
-                invalidateCallback.run();
-            }
-        }
-        return currentValue;
-    }
-
+    // do set(value, true) when it's needed to skip animation
     public void force(float value) {
-        currentValue = fromValue = targetValue = value;
-        firstSet = false;
+        this.set(value, true);
+    }
+
+    public void force(boolean value) {
+        this.set(value ? 1 : 0, true);
+    }
+
+    public float set(boolean mustBe, boolean force) {
+        return this.set(mustBe ? 1 : 0, force);
+    }
+
+    public float set(float mustBe, boolean force) {
+        if (force || transitionDuration <= 0 || firstSet) {
+            value = targetValue = mustBe;
+            transition = false;
+            firstSet = false;
+        } else if (Math.abs(targetValue - mustBe) > 0.0001f) {
+            transition = true;
+            targetValue = mustBe;
+            startValue = value;
+            transitionStart = SystemClock.elapsedRealtime();
+        }
+
+        return getValue();
+    }
+
+    public float getValue() {
+        if (transition) {
+            final long now = SystemClock.elapsedRealtime();
+            final float t = MathUtils.clamp((now - transitionStart - transitionDelay) / (float) transitionDuration, 0, 1);
+            if (now - transitionStart >= transitionDelay) {
+                if (transitionInterpolator == null) {
+                    value = AndroidUtilities.lerp(startValue, targetValue, t);
+                } else {
+                    value = AndroidUtilities.lerp(startValue, targetValue, transitionInterpolator.getInterpolation(t));
+                }
+            }
+            if (t >= 1f) {
+                transition = false;
+            } else {
+                if (parent != null) {
+                    parent.invalidate();
+                }
+                if (invalidate != null) {
+                    invalidate.run();
+                }
+            }
+        }
+        return value;
     }
 
     public void setDuration(long duration) {
-        this.transitionDuration = duration;
+        transitionDuration = duration;
     }
 
     public void setDelay(long delay) {
-        this.transitionDelay = delay;
+        transitionDelay = delay;
+    }
+
+    public long getDuration() {
+        return transitionDuration;
     }
 
     public boolean isInProgress() {
-        return !firstSet && currentValue != targetValue;
+        return transition;
     }
 
-    private float computeCurrent() {
-        long elapsed = System.currentTimeMillis() - transitionStart - transitionDelay;
-        if (elapsed <= 0) {
-            return fromValue;
+    public float getTransitionProgress() {
+        if (!transition) {
+            return 0;
         }
-        if (elapsed >= transitionDuration || transitionDuration <= 0) {
-            return targetValue;
+        final long now = SystemClock.elapsedRealtime();
+        return MathUtils.clamp((now - transitionStart - transitionDelay) / (float) transitionDuration, 0, 1);
+    }
+
+    public float getTransitionProgressInterpolated() {
+        if (transitionInterpolator != null) {
+            return transitionInterpolator.getInterpolation(getTransitionProgress());
+        } else {
+            return getTransitionProgress();
         }
-        float p = (float) elapsed / (float) transitionDuration;
-        if (interpolator != null) {
-            p = interpolator.getInterpolation(p);
-        }
-        return fromValue + (targetValue - fromValue) * p;
+    }
+
+    public float getTargetValue() {
+        return targetValue;
+    }
+
+    public void setParent(View parent) {
+        this.parent = parent;
+    }
+
+    public void setInvalidate(Runnable invalidate) {
+        this.invalidate = invalidate;
     }
 }

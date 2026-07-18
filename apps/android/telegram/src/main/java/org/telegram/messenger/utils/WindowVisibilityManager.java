@@ -5,13 +5,6 @@ import android.view.Window;
 
 import java.lang.ref.WeakReference;
 
-/**
- * Upstream-shaped window visibility helper used by BottomSheet.
- *
- * Host notes: copied as a small exact-shaped utility (no Telegram font/MTProto
- * deps). Keeps the multi-controller hide refcount so sheet stacking can share
- * one decor-view visibility channel.
- */
 public class WindowVisibilityManager {
 
     private int reasonsToHide;
@@ -35,15 +28,15 @@ public class WindowVisibilityManager {
     private void setIsHidden(boolean isHidden) {
         if (this.isHidden != isHidden) {
             this.isHidden = isHidden;
-            if (listener != null) {
-                listener.onVisibilityChanged(!isHidden);
-            }
+            listener.onVisibilityChanged(!isHidden);
         }
     }
+
 
     public interface OnVisibilityChangedListener {
         void onVisibilityChanged(boolean isVisible);
     }
+
 
     public Controller obtainController() {
         return new ControllerImpl();
@@ -77,7 +70,6 @@ public class WindowVisibilityManager {
 
     public interface Controller {
         void setHidden(boolean hidden);
-
         void destroy();
     }
 }
