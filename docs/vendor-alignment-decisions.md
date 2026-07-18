@@ -33,6 +33,7 @@ without a product ticket. Full plan: `docs/vendor-articleviewer-plan.md`.
 | A1 / B21 | `MultiLayoutTypingAnimator` vendored pin-identical; `DrawingText` Block + draw branch (IV leaves null) |
 | A2 / B20b | Block* `DrawingText.attach/detach` lifecycle + EmbedPost/Slideshow a11y |
 | A3 | `TLRPC.TL_textSpoiler` + `getText` → `TextStyleSpan(FLAG_STYLE_SPOILER)`; S1 map fixed |
+| A7 | `CodeHighlighting` + `codelng.gzip`; preformatted highlight; table long-press selection |
 | B1–B20a | IArticleViewer, parent-driven text/paint/cells, spoiler surface, search header height |
 
 ### Parked host / S1 deltas (default: keep as-is)
@@ -42,7 +43,6 @@ without a product ticket. Full plan: `docs/vendor-articleviewer-plan.md`.
 | A4 | Sheet / WebActionBar chrome | Keep NativeDo: `WebBookmarks`, `RestrictedDomainsList`, file chooser, `capturePreviewBitmap`, ActionBarLayout dismiss fallback |
 | A5 | Embed/Collage/Slideshow static reshape | Leave non-static (matches pin) |
 | A6 | Heading1–6 maps / `quoteLevels` | Keep S1 omission |
-| A7 | CodeHighlighting / table long-press | Keep host selection model |
 
 Re-open only when product needs pin behavior for a row above.
 

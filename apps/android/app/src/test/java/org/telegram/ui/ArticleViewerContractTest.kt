@@ -9,6 +9,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.telegram.messenger.ApplicationLoader
+import org.telegram.messenger.CodeHighlighting
 import org.telegram.tgnet.TLRPC
 import org.telegram.ui.ActionBar.Theme
 import org.telegram.ui.Cells.TextSelectionHelper
@@ -377,6 +378,31 @@ class ArticleViewerContractTest {
             .getSpans(0, laidOut.length, org.telegram.ui.Components.TextStyleSpan::class.java)
         assertThat(styleSpans).isNotEmpty()
         assertThat(styleSpans.any { it.isSpoiler }).isTrue()
+    }
+
+    @Test
+    fun codeHighlighting_getHighlightedWithoutLanguageReturnsPlainSpannable() {
+        val highlighted = CodeHighlighting.getHighlighted("int x = 1;", /* language = */ null)
+        assertThat(highlighted.toString()).isEqualTo("int x = 1;")
+        // Empty language is a no-op highlight path (pin); still returns SpannableString.
+        assertThat(highlighted).isInstanceOf(android.text.SpannableString::class.java)
+    }
+
+    @Test
+    fun codeHighlighting_getHighlightedWithLanguageReturnsLockedSpannable() {
+        // Robolectric Application assets may or may not include codelng.gzip depending on
+        // module merge; the API must still return a spannable without throwing.
+        val highlighted = CodeHighlighting.getHighlighted("fun main() {}", "kotlin")
+        assertThat(highlighted.toString()).isEqualTo("fun main() {}")
+        assertThat(highlighted).isInstanceOf(android.text.Spannable::class.java)
+    }
+
+    @Test
+    fun articleViewer_canStartSelectionWhenTouchesAllowed() {
+        val viewer = ArticleViewer.getInstance()
+        // Default product path: no page-switch animation → touches allowed → selection enabled.
+        assertThat(viewer.allowTouches()).isTrue()
+        assertThat(viewer.canStartSelection(/* block = */ null)).isTrue()
     }
 
     @Test

@@ -136,7 +136,7 @@ S1 type omissions — re-open only with an explicit product ticket:
 | A4 | Broader Sheet / WebActionBar chrome | Product wants pin bookmarks / open-external / search panel / markdown-local |
 | A5 | Embed/Collage/Slideshow static reshape | Pin geometry bug or forced_exact audit requires it (pin is also non-static) |
 | A6 | Heading1–6 maps / `quoteLevels` | S1 gains heading levels or multi-gutter quotes |
-| A7 | CodeHighlighting / table long-press selection | Product needs pin selection model on IV tables/code |
+| ~~A7~~ | CodeHighlighting / table long-press selection | **Landed:** vendored `CodeHighlighting` + `codelng.gzip`; `BlockPreformattedCell` uses pin `getText` + `getHighlighted(language)`; `BlockTableCell` pin long-press selection via `canStartSelection`/`dispatchTouchEvent`. |
 
 **Default:** keep `modified:true` + `stuck_reason`; do not bulk-copy pin chrome.
 Contract gate for any future AV PR remains Phase 0 tests + manual checklist.

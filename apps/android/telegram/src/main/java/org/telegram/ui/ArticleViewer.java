@@ -78,6 +78,7 @@ import android.view.VelocityTracker;
 import android.view.View;
 import android.view.ViewConfiguration;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.view.WindowInsets;
 import android.view.WindowManager;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -120,6 +121,7 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.AnimationNotificationsLocker;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.ChatObject;
+import org.telegram.messenger.CodeHighlighting;
 import org.telegram.messenger.DownloadController;
 import org.telegram.messenger.Emoji;
 import org.telegram.messenger.FileLoader;
@@ -3610,6 +3612,16 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
     @Override
     public boolean allowTouches() {
         return pageSwitchAnimation == null;
+    }
+
+    /**
+     * A7: enable pin-shaped table long-press text selection while touches are allowed.
+     * Pin {@link IArticleViewer#canStartSelection} defaults to false (rich-message hosts opt in);
+     * NativeDo IV product path enables it for {@link BlockTableCell}.
+     */
+    @Override
+    public boolean canStartSelection(View block) {
+        return allowTouches();
     }
 
     private boolean checkLayoutForLinks(WebpageAdapter adapter, MotionEvent event, View parentView, DrawingText drawingText, int layoutX, int layoutY) {
@@ -9233,6 +9245,32 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
         private TLRPC.TL_pageBlockTable currentBlock;
 
+        private float selectionDownX, selectionDownY;
+        private boolean selectionPending;
+        private final Runnable selectionLongPress = new Runnable() {
+            @Override
+            public void run() {
+                if (!selectionPending) return;
+                selectionPending = false;
+                if (!parent.canStartSelection(BlockTableCell.this)) return;
+                final TextSelectionHelper.ArticleTextSelectionHelper helper = parent.getTextSelectionHelper(BlockTableCell.this);
+                if (helper == null) return;
+                if (helper.isInSelectionMode()) return;
+                helper.setMaybeView((int) selectionDownX, (int) selectionDownY, BlockTableCell.this);
+                helper.trySelect(BlockTableCell.this);
+                if (helper.isInSelectionMode()) {
+                    ViewParent p = getParent();
+                    while (p != null) {
+                        p.requestDisallowInterceptTouchEvent(true);
+                        p = p.getParent();
+                    }
+                    try {
+                        performHapticFeedback(HapticFeedbackConstants.LONG_PRESS, HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING);
+                    } catch (Exception ignored) {}
+                }
+            }
+        };
+
         public BlockTableCell(Context context, IArticleViewer parent, WebpageAdapter adapter) {
             super(context);
             this.parent = parent;
@@ -9389,6 +9427,32 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             tableLayout.setColumnCount(maxCols);
             firstLayout = true;
             requestLayout();
+        }
+
+        @Override
+        public boolean dispatchTouchEvent(MotionEvent ev) {
+            final int action = ev.getActionMasked();
+            if (action == MotionEvent.ACTION_DOWN) {
+                if (parent.canStartSelection(this)) {
+                    selectionDownX = ev.getX();
+                    selectionDownY = ev.getY();
+                    selectionPending = true;
+                    removeCallbacks(selectionLongPress);
+                    postDelayed(selectionLongPress, ViewConfiguration.getLongPressTimeout());
+                }
+            } else if (action == MotionEvent.ACTION_MOVE) {
+                if (selectionPending) {
+                    final float slop = ViewConfiguration.get(getContext()).getScaledTouchSlop();
+                    if (Math.abs(ev.getX() - selectionDownX) > slop || Math.abs(ev.getY() - selectionDownY) > slop) {
+                        selectionPending = false;
+                        removeCallbacks(selectionLongPress);
+                    }
+                }
+            } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+                selectionPending = false;
+                removeCallbacks(selectionLongPress);
+            }
+            return super.dispatchTouchEvent(ev);
         }
 
         @Override
@@ -13405,6 +13469,8 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         private DrawingText textLayout;
         private HorizontalScrollView scrollView;
         private View textContainer;
+        /** Cached rich text + optional {@link CodeHighlighting} result (pin: rebuild only on setBlock). */
+        private CharSequence text;
 
         private TLRPC.TL_pageBlockPreformatted currentBlock;
 
@@ -13445,7 +13511,13 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                     int height = 0;
                     int width = 1;
                     if (currentBlock != null) {
-                        textLayout = createLayoutForText(parent, this, null, currentBlock.text, dp(5000), 0, currentBlock, adapter);
+                        if (text == null) {
+                            text = getText(parent, adapter, this, currentBlock.text, currentBlock.text, currentBlock, dp(5000));
+                            if (!TextUtils.isEmpty(currentBlock.language)) {
+                                text = CodeHighlighting.getHighlighted(text, currentBlock.language);
+                            }
+                        }
+                        textLayout = createLayoutForText(parent, this, text, null, dp(5000), 0, currentBlock, adapter);
                         if (textLayout != null) {
                             height += textLayout.getHeight();
                             for (int a = 0, count = textLayout.getLineCount(); a < count; a++) {
@@ -13478,6 +13550,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             HorizontalScrollView.LayoutParams layoutParams = new HorizontalScrollView.LayoutParams(LayoutHelper.WRAP_CONTENT, LayoutHelper.MATCH_PARENT);
             layoutParams.leftMargin = layoutParams.rightMargin = dp(16);
             layoutParams.topMargin = layoutParams.bottomMargin = dp(12);
+            NotificationCenter.listenEmojiLoading(textContainer);
             scrollView.addView(textContainer, layoutParams);
 
             if (Build.VERSION.SDK_INT >= 23) {
@@ -13493,6 +13566,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
 
         public void setBlock(TLRPC.TL_pageBlockPreformatted block) {
+            text = null;
             currentBlock = block;
             scrollView.setScrollX(0);
             textContainer.requestLayout();

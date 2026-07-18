@@ -65,6 +65,14 @@
       "notes": "Scheme-2 pin baseline (12.8.1): upstream va→pin only added applySoftLight/copyBitmaps native decls. Host keeps full Java JNI surface (blur/AES/dir/pbkdf2/copyBitmaps Canvas for SpoilerEffectBitmapFactory, gradients, crash listener). fastRandom=java.util.Random. applySoftLight no-op stub (MotionBackgroundPaint not ported)."
     },
     {
+      "local": "telegram/src/main/java/org/telegram/messenger/CodeHighlighting.java",
+      "upstream": "org/telegram/messenger/CodeHighlighting.java",
+      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Vendored for ArticleViewer A7 BlockPreformattedCell syntax highlighting (CodeHighlighting.getHighlighted + codelng.gzip). Exact pin copy; Theme key_code_* and ApplicationLoader assets host wiring already present."
+    },
+    {
       "local": "telegram/src/main/java/org/telegram/messenger/FileLoader.java",
       "upstream": "org/telegram/messenger/FileLoader.java",
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
@@ -113,7 +121,7 @@
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
       "modified": true,
       "port_mode": "exact",
-      "notes": "Epic closed at B21. NativeDo preserves Sheet/BottomSheetTabs lifecycle, local WebBookmarks, pin search-menu header height reset, WebView file chooser dispatch, selection-mode dismiss gating, pin-shaped sheet radii, and the local PageLayout fallback while keeping drawing/gesture/measurement/animation bodies upstream-shaped. IArticleViewer owns shared viewer state; DrawingText uses an IArticleViewer parent with pin-shaped text bounds, spoiler fields, attach/detach, liveDrawingTexts, MultiLayoutTypingAnimator.Block + typingAnimator draw branch (IV leaves field null), and Block* onAttachedToWindow/onDetachedFromWindow attach sites (incl. TableLayout children); EmbedPost/Slideshow expose AccDescrIV a11y. Resources owns shared paint maps and pinned color/font updates; paint creation, interaction (incl. spoiler-hit), text flags, paint selection, supported S1 rich-text getText, createLayoutForText, makeProgress, drawQuoteLines, loadChannel, joinChannel, buildAccessibilityText, and appendA11yLabel use the pinned parent-driven boundary. IBlock covers simple text cells plus AuthorDate/Preformatted/Pullquote/Blockquote/List/Related header. Embed/Collage/Slideshow remain non-static (pin-matched). Parked by design (not next work): broader Sheet/WebActionBar chrome, heading1-6 maps, quoteLevels, CodeHighlighting, table long-press selection, TL_textSpoiler content. See docs/vendor-articleviewer-plan.md.",
+      "notes": "Epic closed at B21. NativeDo preserves Sheet/BottomSheetTabs lifecycle, local WebBookmarks, pin search-menu header height reset, WebView file chooser dispatch, selection-mode dismiss gating, pin-shaped sheet radii, and the local PageLayout fallback while keeping drawing/gesture/measurement/animation bodies upstream-shaped. IArticleViewer owns shared viewer state; DrawingText uses an IArticleViewer parent with pin-shaped text bounds, spoiler fields, attach/detach, liveDrawingTexts, MultiLayoutTypingAnimator.Block + typingAnimator draw branch (IV leaves field null), and Block* onAttachedToWindow/onDetachedFromWindow attach sites (incl. TableLayout children); EmbedPost/Slideshow expose AccDescrIV a11y. Resources owns shared paint maps and pinned color/font updates; paint creation, interaction (incl. spoiler-hit), text flags, paint selection, supported S1 rich-text getText, createLayoutForText, makeProgress, drawQuoteLines, loadChannel, joinChannel, buildAccessibilityText, and appendA11yLabel use the pinned parent-driven boundary. IBlock covers simple text cells plus AuthorDate/Preformatted/Pullquote/Blockquote/List/Related header. Embed/Collage/Slideshow remain non-static (pin-matched). A3 TL_textSpoiler content production and A7 CodeHighlighting + table long-press selection landed. Parked: broader Sheet/WebActionBar chrome (A4), heading1-6 maps / quoteLevels (A6); Embed/Collage/Slideshow remain non-static (A5 pin-matched). See docs/vendor-articleviewer-plan.md.",
       "stuck_reason": "Epic closed at B21 — not eligible for clean FF or further autonomous slices. Host Sheet/WebActionBar chrome (WebBookmarks, RestrictedDomainsList, file chooser, capturePreviewBitmap, ActionBarLayout dismiss) and local S1 omissions (heading1-6 maps, quoteLevels, TL_textSpoiler content) stay until a product ticket reopens parked A3–A7 in docs/vendor-articleviewer-plan.md."
     },
     {
@@ -4148,6 +4156,16 @@
       "local_glob": "apps/android/telegram/src/main/res/values",
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
       "notes": "Subset of upstream ids.xml containing IDs referenced by local vendored code: ActionBarPopupWindow tag IDs (width_tag, object_tag, fit_width_tag) plus TextSelectionHelper action menu IDs (menu_quote, menu_translate). Other upstream chat/edit/action IDs remain omitted until referenced."
+    },
+    {
+      "kind": "asset",
+      "files": [
+        "codelng.gzip"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/assets",
+      "local_glob": "apps/android/telegram/src/main/assets",
+      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "notes": "CodeHighlighting language grammar pack (gzip). Opened via ApplicationLoader.applicationContext.getAssets()."
     }
   ]
 }
