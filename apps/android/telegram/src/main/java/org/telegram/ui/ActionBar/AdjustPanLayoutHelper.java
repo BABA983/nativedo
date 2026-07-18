@@ -21,14 +21,13 @@ import android.widget.FrameLayout;
 import androidx.annotation.NonNull;
 import androidx.annotation.RequiresApi;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.recyclerview.widget.ChatListItemAnimator;
 
-
-import android.util.Log;
+import com.google.android.exoplayer2.util.Log;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.AnimationNotificationsLocker;
 import org.telegram.messenger.UserConfig;
-import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.LaunchActivity;
 
 import java.util.ArrayList;
@@ -39,12 +38,7 @@ public class AdjustPanLayoutHelper {
     public static boolean USE_ANDROID11_INSET_ANIMATOR = false;
     private boolean useInsetsAnimator;
 
-    public final static Interpolator keyboardInterpolator = new CubicBezierInterpolator(
-            0.19919472913616398,
-            0.010644531250000006,
-            0.27920937042459737,
-            0.91025390625
-    );
+    public final static Interpolator keyboardInterpolator = ChatListItemAnimator.DEFAULT_INTERPOLATOR;
     public final static long keyboardDuration = 250;
 
     private final View parent;

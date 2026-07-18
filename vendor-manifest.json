@@ -1642,12 +1642,11 @@
         },
         {
           "path": "org/telegram/ui/ActionBar/AdjustPanLayoutHelper.java",
-          "modified": true,
+          "modified": false,
           "forced_exact": [
             "animation",
             "measurement"
-          ],
-          "notes": "Fast-forwarded to 12.8.1 then restored createFrame(int,int) host overload for Kotlin call sites; upstream pin dropped the two-int overload."
+          ]
         },
         {
           "path": "org/telegram/ui/Components/inset/InAppKeyboardInsetView.java"
