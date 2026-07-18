@@ -27,6 +27,7 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.R;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Stories.recorder.HintView2;
 
 public class PullForegroundDrawable {
 
@@ -128,7 +129,6 @@ public class PullForegroundDrawable {
         releaseTooltipText = releaseText;
 
         try {
-            // OMITTED: R.drawable.msg_filled_general not present in NativeDo; topic icon is unused (isTopic always false).
             generalTopicDrawable = null;
         } catch (Exception ignore) {}
     }
@@ -149,8 +149,7 @@ public class PullForegroundDrawable {
             layoutWidth = (int) Math.ceil(textWidth);
             if (pullTooltipLayoutScale < .8f) {
                 pullTooltipLayoutScale = .8f;
-                // HOST-WIRING: HintView2.cutInFancyHalf -> simple half-width split (forces 2-line wrap).
-                layoutWidth = (int) Math.ceil(textWidth / 2f + tooltipTextPaint.getTextSize() * 2);
+                layoutWidth = HintView2.cutInFancyHalf(pullTooltipText, tooltipTextPaint);
             }
             pullTooltipLayout = new StaticLayout(pullTooltipText, tooltipTextPaint, layoutWidth, Layout.Alignment.ALIGN_CENTER, 1, 0, false);
             pullTooltipLayoutLeft = layoutWidth;
@@ -169,8 +168,7 @@ public class PullForegroundDrawable {
             layoutWidth = (int) Math.ceil(textWidth);
             if (releaseTooltipLayoutScale < .8f) {
                 releaseTooltipLayoutScale = .8f;
-                // HOST-WIRING: HintView2.cutInFancyHalf -> simple half-width split (forces 2-line wrap).
-                layoutWidth = (int) Math.ceil(textWidth / 2f + tooltipTextPaint.getTextSize() * 2);
+                layoutWidth = HintView2.cutInFancyHalf(releaseTooltipText, tooltipTextPaint);
             }
             releaseTooltipLayout = new StaticLayout(releaseTooltipText, tooltipTextPaint, layoutWidth, Layout.Alignment.ALIGN_CENTER, 1, 0, false);
             releaseTooltipLayoutLeft = layoutWidth;
@@ -232,7 +230,6 @@ public class PullForegroundDrawable {
         if (!willDraw || isOut || cell == null || listView == null) {
             return;
         }
-        // OMITTED: TopicsFragment.TopicDialogCell - NativeDo has no Telegram topic cells.
         boolean isTopic = false;
         int startPadding = AndroidUtilities.dp(isTopic ? 15 : 28);
         int smallMargin = AndroidUtilities.dp(8);
@@ -398,10 +395,6 @@ public class PullForegroundDrawable {
         }
 
         canvas.restore();
-
-        // OMITTED: Theme.dialogs_archiveAvatarDrawable (RLottieDrawable archive arrow animation).
-        // NativeDo has no Lottie pipeline; the arrow path drawn above is sufficient as the
-        // pull-down indicator. Restore this block when an RLottieDrawable port lands.
 
 //        if (isTopic) {
 //            int color = arrowDrawable.paint.getColor();
@@ -604,7 +597,6 @@ public class PullForegroundDrawable {
         outProgress = value;
         int color = ColorUtils.blendARGB(Theme.getNonAnimatedColor(avatarBackgroundColorKey), Theme.getNonAnimatedColor(backgroundActiveColorKey), 1f - outProgress);
         paintBackgroundAccent.setColor(color);
-        // OMITTED: Theme.dialogs_archiveAvatarDrawable layer recolor (no Lottie pipeline in NativeDo).
     }
 
     public void doNotShow() {

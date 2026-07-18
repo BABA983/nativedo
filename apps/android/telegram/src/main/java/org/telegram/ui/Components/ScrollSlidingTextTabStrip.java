@@ -43,10 +43,12 @@ import androidx.annotation.Keep;
 import androidx.annotation.NonNull;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.Emoji;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.NotificationCenter;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable;
+import org.telegram.ui.Stories.recorder.HintView2;
 
 import java.util.ArrayList;
 
@@ -504,9 +506,7 @@ public class ScrollSlidingTextTabStrip extends HorizontalScrollView implements T
             viewsCache.delete(id);
         }
         if (tab == null) {
-            // HOST-WIRING: AnimatedEmojiSpan.TextViewEmojis -> plain TextView
-            // (NativeDo has no AnimatedEmoji subsystem; tab labels are static text).
-            tab = new TextView(getContext()) {
+            tab = new AnimatedEmojiSpan.TextViewEmojis(getContext()) {
                 @Override
                 public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
                     super.onInitializeAccessibilityNodeInfo(info);
@@ -561,10 +561,9 @@ public class ScrollSlidingTextTabStrip extends HorizontalScrollView implements T
             });
             NotificationCenter.listenEmojiLoading(tab);
         }
-        // OMITTED: Emoji.replaceEmoji - NativeDo has no Emoji subsystem.
+        text = Emoji.replaceEmoji(text, tab.getPaint().getFontMetricsInt(), false);
         tab.setText(text);
-        // HOST-WIRING: HintView2.measureCorrectly -> Paint.measureText (no emoji/RTL adjustments needed for NativeDo tab labels).
-        int tabWidth = (int) Math.ceil(tab.getPaint().measureText(text.toString())) + dp(32);// + tab.getPaddingLeft() + tab.getPaddingRight();
+        int tabWidth = (int) Math.ceil(HintView2.measureCorrectly(text, tab.getPaint())) + dp(32);// + tab.getPaddingLeft() + tab.getPaddingRight();
         tabsContainer.addView(tab, LayoutHelper.createLinear(0, LayoutHelper.MATCH_PARENT));
         allTextWidth += tabWidth;
         positionToWidth.put(position, tabWidth);

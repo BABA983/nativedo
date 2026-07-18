@@ -1,4 +1,3 @@
-/* NativeDo stub of org.telegram.ui.Components.AnimatedEmojiSpan. */
 package org.telegram.ui.Components;
 
 import android.text.Layout;
@@ -17,7 +16,6 @@ public class AnimatedEmojiSpan {
     public static class EmojiGroupedSpans {
         public void release() {}
         public void replaceFontMetrics(android.graphics.Paint.FontMetricsInt fontMetricsInt) {}
-        /** Stub — upstream clears cached glyph positions before re-drawing. */
         public void clearPositions() {}
     }
 

@@ -325,8 +325,6 @@ public class WebMetadataCache {
 
     public static void retrieveFaviconAndSitename(String url, Utilities.Callback2<String, Bitmap> whenDone) {
         if (whenDone == null) return;
-
-        // NativeDo: LaunchActivity is a non-window stub Context; resolve the real host
         // Activity (MainActivity) via the root ActionBarLayout so the offscreen capture
         // WebView gets a real Context and a real content view to attach to.
         Activity activity = LaunchActivity.getActionBarLayoutActivity();

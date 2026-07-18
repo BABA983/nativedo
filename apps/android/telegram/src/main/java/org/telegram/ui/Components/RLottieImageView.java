@@ -138,7 +138,6 @@ public class RLottieImageView extends ImageView {
         imageReceiver.setAllowLoadingOnAttachedOnly(true);
         ImageLocation thumbLocation = null;
         String thumbFilter = null;
-        // NativeDo's TLRPC.Document shim does not expose Telegram's localThumbPath.
         TLRPC.PhotoSize thumb = FileLoader.getClosestPhotoSizeWithSize(document.thumbs, 90);
         if (onlyLastFrame) {
             imageReceiver.setImage(ImageLocation.getForDocument(document), w + "_" + h + "_lastframe", ImageLocation.getForDocument(thumb, document), w + "_" + h, thumbLocation, thumbFilter, null, 0, null, document, 1);

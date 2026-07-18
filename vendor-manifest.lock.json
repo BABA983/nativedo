@@ -257,7 +257,7 @@
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "exact",
-      "notes": "exact@12.9.0 + host: plain TextView instead of AnimatedEmojiSpan.TextViewEmojis; createThemeDescriptions omitted (no ThemeDescription system). LocaleController.isRTL kept.",
+      "notes": "exact@12.9.0 TextViewEmojis. createThemeDescriptions omitted (ThemeDescription host stub empty).",
       "stuck_reason": "Intentional host wiring at global pin 12.9.0 — keep modified:true; not eligible for clean FF. Product/API surface differs from pin by design (missing upstream types or NativeDo defaults). Re-sync only with a named product goal."
     },
     {
@@ -988,7 +988,7 @@
         "animation",
         "drawing"
       ],
-      "notes": "exact@12.9.0 minus unused Checker Framework imports (org.checkerframework.*) — not on :telegram classpath. import_only delta; pin body otherwise identical.",
+      "notes": "exact@12.9.0 minus unused Checker Framework imports (not on classpath).",
       "stuck_reason": "Intentional host wiring at global pin 12.9.0 — keep modified:true; not eligible for clean FF. Product/API surface differs from pin by design (missing upstream types or NativeDo defaults). Re-sync only with a named product goal."
     },
     {
@@ -1168,7 +1168,7 @@
         "animation",
         "drawing"
       ],
-      "notes": "exact@12.9.0 + host: omit TopicsFragment.TopicDialogCell (isTopic=false); msg_filled_general drawable null; HintView2.cutInFancyHalf replaced with simple half-width split for tooltips.",
+      "notes": "exact@12.9.0 uses HintView2.cutInFancyHalf. isTopic=false (no TopicsFragment); generalTopicDrawable null; archive Lottie omitted.",
       "stuck_reason": "Intentional host wiring at global pin 12.9.0 — keep modified:true; not eligible for clean FF. Product/API surface differs from pin by design (missing upstream types or NativeDo defaults). Re-sync only with a named product goal."
     },
     {
@@ -1221,15 +1221,13 @@
       "local": "telegram/src/main/java/org/telegram/ui/Components/ScrollSlidingTextTabStrip.java",
       "upstream": "org/telegram/ui/Components/ScrollSlidingTextTabStrip.java",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": true,
+      "modified": false,
       "port_mode": "exact",
       "forced_exact": [
         "gesture",
         "measurement",
         "drawing"
-      ],
-      "notes": "exact@12.9.0 + host: tab labels use plain TextView (no AnimatedEmojiSpan.TextViewEmojis); omit Emoji.replaceEmoji; tab width via Paint.measureText instead of HintView2.measureCorrectly.",
-      "stuck_reason": "Intentional host wiring at global pin 12.9.0 — keep modified:true; not eligible for clean FF. Product/API surface differs from pin by design (missing upstream types or NativeDo defaults). Re-sync only with a named product goal."
+      ]
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/SearchStateDrawable.java",
@@ -3552,7 +3550,8 @@
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
-      "notes": "Auto-registered unmanifested compile dependency (47 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
+      "notes": "Host View stub; static measureCorrectly/cutInFancyHalf pin-shaped for tabs and PullForegroundDrawable.",
+      "stuck_reason": "Intentional host wiring at global pin 12.9.0 — keep modified:true; not eligible for clean FF. Product/API surface differs from pin by design (missing upstream types or NativeDo defaults). Re-sync only with a named product goal."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Stories/recorder/KeyboardNotifier.java",
@@ -3639,10 +3638,8 @@
       "local": "telegram/src/main/java/org/telegram/ui/Components/BottomSheetWithRecyclerListView.java",
       "upstream": "org/telegram/ui/Components/BottomSheetWithRecyclerListView.java",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": true,
-      "port_mode": "exact",
-      "notes": "exact@12.9.0 + host: setLightStatusBar uses getWindow() because local AndroidUtilities lacks Dialog overload from pin.",
-      "stuck_reason": "Intentional host wiring at global pin 12.9.0 — keep modified:true; not eligible for clean FF. Product/API surface differs from pin by design (missing upstream types or NativeDo defaults). Re-sync only with a named product goal."
+      "modified": false,
+      "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/IArticleViewer.java",
@@ -3650,7 +3647,7 @@
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "exact",
-      "notes": "Pin-shaped abstract host API for ArticleViewer on global pin 12.9.0. openPhoto uses TLRPC.PageBlock (S1, not TL_iv); DrawingText/resources/link-selection consume this parent. Formatting/comments local; API shape matches pin + S1 type map.",
+      "notes": "Pin-shaped host API; openPhoto(TLRPC.PageBlock) for S1.",
       "stuck_reason": "Intentional host wiring at global pin 12.9.0 — keep modified:true; not eligible for clean FF. Product/API surface differs from pin by design (missing upstream types or NativeDo defaults). Re-sync only with a named product goal."
     }
   ],

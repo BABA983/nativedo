@@ -5,9 +5,6 @@
  *
  * Copyright Zark X, 2013-2018.
  *
- * NativeDo: vendored extract of Telegram IArticleViewer (global pin 12.9.0).
- * Shared host API/state lets ArticleViewer helpers and block cells take an IArticleViewer
- * parent. openPhoto uses TLRPC.PageBlock for the local S1 type mapping.
  */
 
 package org.telegram.ui;
@@ -30,12 +27,6 @@ import org.telegram.ui.Components.TextPaintUrlSpan;
 
 import java.util.ArrayList;
 
-/**
- * Shared host surface for ArticleViewer block/chrome helpers.
- * <p>
- * Fields match upstream 12.9.0 so DrawingText(IArticleViewer) and block helpers can
- * reference {@code parent.pressedLink} etc. without casting to ArticleViewer.
- */
 public abstract class IArticleViewer {
 
     public abstract int getCurrentAccount();
@@ -52,15 +43,12 @@ public abstract class IArticleViewer {
 
     public abstract Theme.ResourcesProvider getResourcesProvider();
 
-    /** Upstream-shaped paint cache; local subclasses expose their own map set here. */
     public abstract ArticleViewer.Resources getResources();
 
-    /** Horizontal content inset in dp (upstream constant 18). */
     public int padx() {
         return 18;
     }
 
-    /** Vertical content inset in dp (upstream constant 8). */
     public int pady() {
         return 8;
     }
@@ -120,7 +108,6 @@ public abstract class IArticleViewer {
         return null;
     }
 
-    /** S1: TLRPC page blocks (not TL_iv). */
     public boolean openPhoto(TLRPC.PageBlock block, ArticleViewer.WebpageAdapter adapter) {
         return false;
     }

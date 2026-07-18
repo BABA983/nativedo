@@ -415,6 +415,25 @@ public final class AndroidUtilities {
         mainHandler.removeCallbacks(runnable);
     }
 
+    public static CharSequence getTrimmedString(CharSequence src) {
+        if (src == null || src.length() == 0) {
+            return src;
+        }
+        while (src.length() > 0 && (src.charAt(0) == '\n' || src.charAt(0) == ' ')) {
+            src = src.subSequence(1, src.length());
+        }
+        while (src.length() > 0 && (src.charAt(src.length() - 1) == '\n' || src.charAt(src.length() - 1) == ' ')) {
+            src = src.subSequence(0, src.length() - 1);
+        }
+        return src;
+    }
+
+    public static void setLightStatusBar(android.app.Dialog dialog, boolean enable) {
+        if (dialog != null) {
+            setLightStatusBar(dialog.getWindow(), enable);
+        }
+    }
+
     public static void setLightStatusBar(Window window, boolean enable) {
         setLightStatusBar(window, enable, false);
     }

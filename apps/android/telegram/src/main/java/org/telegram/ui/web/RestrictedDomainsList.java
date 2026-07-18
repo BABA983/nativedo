@@ -153,7 +153,6 @@ public class RestrictedDomainsList {
 
     /**
      * Normalizes a user-entered domain string: strips scheme, www prefix,
-     * lowercases. Mirrors NativeDo BrowserStorage.normalizeRestrictedDomain.
      */
     public static String normalizeRestrictedDomain(String value) {
         String text = value == null ? "" : value.trim();
@@ -178,7 +177,6 @@ public class RestrictedDomainsList {
 
     /**
      * Returns a flat list of all restricted domains.
-     * Mirrors NativeDo BrowserStorage.getRestrictedDomains.
      */
     public ArrayList<String> getRestrictedDomainsList() {
         load();
@@ -191,7 +189,6 @@ public class RestrictedDomainsList {
 
     /**
      * Checks if a URL's host is restricted (exact or subdomain match).
-     * Mirrors NativeDo BrowserStorage.isRestricted.
      */
     public boolean isRestrictedUrl(String url) {
         load();
@@ -221,7 +218,6 @@ public class RestrictedDomainsList {
 
     /**
      * Removes a single restricted domain.
-     * Mirrors NativeDo BrowserStorage.removeRestrictedDomain.
      */
     public void removeRestrictedDomain(String domain) {
         String normalized = normalizeRestrictedDomain(domain);
@@ -244,7 +240,6 @@ public class RestrictedDomainsList {
 
     /**
      * Adds a single restricted domain (normalized).
-     * Mirrors NativeDo BrowserStorage.addRestrictedDomain.
      */
     public void addRestrictedDomain(String domain) {
         String normalized = normalizeRestrictedDomain(domain);
@@ -256,7 +251,6 @@ public class RestrictedDomainsList {
 
     /**
      * Clears all restricted domains.
-     * Mirrors NativeDo BrowserStorage.clearRestrictedDomains.
      */
     public void clearRestrictedDomains() {
         load();

@@ -22,6 +22,7 @@ import androidx.core.view.ViewCompat;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.LocaleController;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.AnimatedEmojiSpan;
 import org.telegram.ui.Components.AnimatedTextView;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.LayoutHelper;
@@ -29,8 +30,7 @@ import org.telegram.ui.Components.LayoutHelper;
 
 public class GraySectionCell extends FrameLayout implements Theme.Colorable {
 
-    // OMITTED: AnimatedEmojiSpan.TextViewEmojis replaced with plain TextView
-    private TextView textView;
+    private AnimatedEmojiSpan.TextViewEmojis textView;
     private AnimatedTextView rightTextView;
     private FrameLayout.LayoutParams rightTextViewLayoutParams;
     private final Theme.ResourcesProvider resourcesProvider;
@@ -50,7 +50,7 @@ public class GraySectionCell extends FrameLayout implements Theme.Colorable {
 
         setBackgroundColor(getThemedColor(Theme.key_graySection));
 
-        textView = new TextView(getContext());
+        textView = new AnimatedEmojiSpan.TextViewEmojis(getContext());
         textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
         textView.setTypeface(AndroidUtilities.bold());
         textView.setTextColor(getThemedColor(Theme.key_graySectionText));
@@ -146,8 +146,6 @@ public class GraySectionCell extends FrameLayout implements Theme.Colorable {
         rightTextView.setOnClickListener(onClickListener);
         rightTextView.setVisibility(VISIBLE);
     }
-
-    // OMITTED: createThemeDescriptions() (NativeDo not using ThemeDescription system)
 
     public TextView getTextView() {
         return textView;

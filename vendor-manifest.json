@@ -250,7 +250,7 @@
         {
           "path": "org/telegram/ui/Cells/GraySectionCell.java",
           "modified": true,
-          "notes": "exact@12.9.0 + host: plain TextView instead of AnimatedEmojiSpan.TextViewEmojis; createThemeDescriptions omitted (no ThemeDescription system). LocaleController.isRTL kept.",
+          "notes": "exact@12.9.0 TextViewEmojis. createThemeDescriptions omitted (ThemeDescription host stub empty).",
           "port_mode": "exact",
           "stuck_ref": "host_wiring_keep_at_pin"
         },
@@ -936,7 +936,7 @@
             "animation",
             "drawing"
           ],
-          "notes": "exact@12.9.0 minus unused Checker Framework imports (org.checkerframework.*) — not on :telegram classpath. import_only delta; pin body otherwise identical.",
+          "notes": "exact@12.9.0 minus unused Checker Framework imports (not on classpath).",
           "port_mode": "exact",
           "stuck_ref": "host_wiring_keep_at_pin"
         },
@@ -1067,7 +1067,7 @@
             "animation",
             "drawing"
           ],
-          "notes": "exact@12.9.0 + host: omit TopicsFragment.TopicDialogCell (isTopic=false); msg_filled_general drawable null; HintView2.cutInFancyHalf replaced with simple half-width split for tooltips.",
+          "notes": "exact@12.9.0 uses HintView2.cutInFancyHalf. isTopic=false (no TopicsFragment); generalTopicDrawable null; archive Lottie omitted.",
           "port_mode": "exact",
           "stuck_ref": "host_wiring_keep_at_pin"
         },
@@ -1104,15 +1104,13 @@
         },
         {
           "path": "org/telegram/ui/Components/ScrollSlidingTextTabStrip.java",
-          "modified": true,
+          "modified": false,
           "forced_exact": [
             "gesture",
             "measurement",
             "drawing"
           ],
-          "notes": "exact@12.9.0 + host: tab labels use plain TextView (no AnimatedEmojiSpan.TextViewEmojis); omit Emoji.replaceEmoji; tab width via Paint.measureText instead of HintView2.measureCorrectly.",
-          "port_mode": "exact",
-          "stuck_ref": "host_wiring_keep_at_pin"
+          "port_mode": "exact"
         },
         {
           "path": "org/telegram/ui/Components/SearchStateDrawable.java",
@@ -2656,7 +2654,8 @@
           "path": "org/telegram/ui/Stories/recorder/HintView2.java",
           "modified": true,
           "port_mode": "native",
-          "notes_ref": "auto_registered_compile_dependency_47_loc"
+          "notes": "Host View stub; static measureCorrectly/cutInFancyHalf pin-shaped for tabs and PullForegroundDrawable.",
+          "stuck_ref": "host_wiring_keep_at_pin"
         },
         {
           "path": "org/telegram/ui/Stories/recorder/KeyboardNotifier.java",
@@ -2711,15 +2710,13 @@
         },
         {
           "path": "org/telegram/ui/Components/BottomSheetWithRecyclerListView.java",
-          "modified": true,
-          "notes": "exact@12.9.0 + host: setLightStatusBar uses getWindow() because local AndroidUtilities lacks Dialog overload from pin.",
-          "port_mode": "exact",
-          "stuck_ref": "host_wiring_keep_at_pin"
+          "modified": false,
+          "port_mode": "exact"
         },
         {
           "path": "org/telegram/ui/IArticleViewer.java",
           "modified": true,
-          "notes": "Pin-shaped abstract host API for ArticleViewer on global pin 12.9.0. openPhoto uses TLRPC.PageBlock (S1, not TL_iv); DrawingText/resources/link-selection consume this parent. Formatting/comments local; API shape matches pin + S1 type map.",
+          "notes": "Pin-shaped host API; openPhoto(TLRPC.PageBlock) for S1.",
           "port_mode": "exact",
           "stuck_ref": "host_wiring_keep_at_pin"
         }

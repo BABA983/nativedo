@@ -29,12 +29,18 @@
 - Native host shims (Theme, MessagesController, ApplicationLoader, …) — not FF candidates
 - NativeDo ports under `app/` with stuck_reason (forced_exact reference only)
 
+## Alignment policy (`:telegram`)
+
+- Prefer **byte-identical pin** when host APIs exist (or can be filled with pin-shaped helpers).
+- Host wiring lives in **manifest notes / stuck**, not long `// NativeDo` / `// HOST-WIRING` comments in source.
+- Keep only unavoidable code deltas (missing types, product backends).
+
 ## Next global picks (priority order)
-1. ~~**Small exact+modified hygiene** at pin 12.9.0~~ — **done** (`host_wiring_keep_at_pin` on small UI files).
-2. ~~**Browser stack**~~ — **done (document keep)**: `WebInstantView` (S1 TL_iv→TLRPC + host Activity), `AddressBarList` / `BookmarksFragment` (WebBookmarks + BrowserHistory.Entry, no MTProto Saved Messages), `WebMetadataCache` (offscreen WebView + SitenameProxy + getActionBarLayoutActivity), `RestrictedDomainsList` (no upstream blob at pin — host shim, `native_host_no_upstream_blob`). Not clean-FF candidates.
-3. **ImageReceiver + ImageLocation** pair only with a named image-pipeline goal (still legacy pin; ImageReceiver also import_only Log/AnimatedEmoji delta on top)
-4. **Not ArticleViewer** — epic closed
-5. Remaining exact+modified at pin with heavier `other` (`Utilities`, `RecyclerListView`) — only with product feel/bug
+1. ~~**Small exact+modified hygiene**~~ — **done**; then **re-aligned to pin** where possible: `ScrollSlidingTextTabStrip`, `BottomSheetWithRecyclerListView` now `modified:false`. Restored pin call shapes via `HintView2.measureCorrectly/cutInFancyHalf`, `Emoji.replaceEmoji`, `TextViewEmojis`, `AndroidUtilities.setLightStatusBar(Dialog)`. Stripped host comment noise from related files.
+2. ~~**Browser stack**~~ — **done (host keep, comments trimmed)**: WebInstantView / AddressBarList / BookmarksFragment / WebMetadataCache / RestrictedDomainsList.
+3. **ImageReceiver + ImageLocation** pair only with a named image-pipeline goal (legacy pin).
+4. **Not ArticleViewer** — epic closed (still host-wired; avoid new comment sprawl).
+5. Remaining heavy at-pin: `Utilities`, `RecyclerListView` — product feel/bug only; align when possible, document in manifest.
 
 ## Testing policy (vendor FF)
 

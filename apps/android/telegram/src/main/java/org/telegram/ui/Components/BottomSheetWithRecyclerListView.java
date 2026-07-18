@@ -789,11 +789,9 @@ public abstract class BottomSheetWithRecyclerListView extends BottomSheet {
         if (attachedFragment != null) {
             LaunchActivity.instance.checkSystemBarColors(true, true, true);
         } else if (actionBar != null && actionBar.getTag() != null) {
-            // Host wiring: local AndroidUtilities has Window/View overloads only (no Dialog).
-            // Pin 12.9.0 passes `this` via Dialog overload; keep getWindow() path.
-            AndroidUtilities.setLightStatusBar(getWindow(), isLightStatusBar());
+            AndroidUtilities.setLightStatusBar(this, isLightStatusBar());
         } else if (baseFragment != null) {
-            AndroidUtilities.setLightStatusBar(getWindow(), baseFragment.isLightStatusBar());
+            AndroidUtilities.setLightStatusBar(this, baseFragment.isLightStatusBar());
         }
     }
 

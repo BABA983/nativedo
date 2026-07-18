@@ -484,9 +484,6 @@ public class ThemeColors {
         defaultColors[key_chat_replyPanelClose] = 0xff8e959b;
         defaultColors[key_chat_replyPanelName] = TELEGRAM_COLOR_TEXT;
         defaultColors[key_chat_replyPanelLine] = 0xffe8e8e8;
-        // Upstream derives these from the active wallpaper via
-        // AndroidUtilities.calcDrawableColor(). NativeDo's default wallpaper is
-        // #f1f1f3, which produces these exact service-message colors.
         defaultColors[key_chat_serviceBackground] = 0x6685859e;
         defaultColors[key_chat_serviceBackgroundSelected] = 0x889393af;
         defaultColors[key_chat_messagePanelBackground] = 0xffffffff;

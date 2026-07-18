@@ -1069,8 +1069,6 @@ public class AddressBarList extends FrameLayout {
     }
 
     public static class BookmarksList implements NotificationCenter.NotificationCenterDelegate {
-
-        // NativeDo: bookmarks are backed by the local WebBookmarks store (a .dat
         // file), not Telegram Saved-Messages over MTProto. Entries reuse
         // BrowserHistory.Entry so the existing BookmarkView overload renders them.
         public final ArrayList<BrowserHistory.Entry> links = new ArrayList<BrowserHistory.Entry>();

@@ -96,7 +96,6 @@ public class BookmarksFragment extends UniversalFragment {
     }
 
     public void gotoMessage() {
-        // NativeDo: the upstream "go to message" jumps to the Saved-Messages
         // ChatActivity, which is Telegram-only and has no local-bookmark analog.
         // Treated as a no-op so it cannot crash; the menu item is hidden below.
     }
@@ -152,7 +151,6 @@ public class BookmarksFragment extends UniversalFragment {
         actionMode.addView(selectedCount, LayoutHelper.createLinear(0, LayoutHelper.MATCH_PARENT, 1.0f, 65, 0, 0, 0));
 
         gotoItem = actionMode.addItemWithWidth(R.id.menu_link, R.drawable.msg_message, AndroidUtilities.dp(54), getString(R.string.AccDescrGoToMessage));
-        // NativeDo: "go to message" targets the Telegram Saved-Messages chat,
         // which has no local-bookmark equivalent; hide it.
         gotoItem.setVisibility(View.GONE);
         actionMode.addItemWithWidth(R.id.menu_delete, R.drawable.msg_delete, AndroidUtilities.dp(54), getString(R.string.Delete));

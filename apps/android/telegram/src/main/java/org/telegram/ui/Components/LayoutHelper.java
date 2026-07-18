@@ -83,8 +83,6 @@ public class LayoutHelper {
     public static FrameLayout.LayoutParams createFrameMatchParent() {
         return createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT);
     }
-
-    /** Host-retained overload used widely by Kotlin call sites (int height in dp). */
     public static FrameLayout.LayoutParams createFrame(int width, int height) {
         return new FrameLayout.LayoutParams(getSize(width), getSize(height));
     }
