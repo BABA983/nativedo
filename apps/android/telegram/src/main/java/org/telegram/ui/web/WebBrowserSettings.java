@@ -110,13 +110,13 @@ public class WebBrowserSettings extends UniversalFragment implements Notificatio
     private void loadSizes() {
         ArrayList<BrowserHistory.Entry> history = BrowserHistory.getHistory(loadedHistory -> {
             this.historySize = loadedHistory.size();
-            if (listView != null && listView.adapter != null && listView.isAttachedToWindow()) {
+            if (listView != null && listView.adapter != null) {
                 listView.adapter.update(true);
             }
         });
         if (history != null) {
             this.historySize = history.size();
-            if (listView != null && listView.adapter != null && listView.isAttachedToWindow()) {
+            if (listView != null && listView.adapter != null) {
                 listView.adapter.update(true);
             }
         }
@@ -212,7 +212,9 @@ public class WebBrowserSettings extends UniversalFragment implements Notificatio
             AndroidUtilities.runOnUIThread(() -> {
                 this.cacheSize = finalCacheSize;
                 this.cookiesSize = finalCookiesSize;
-                if (listView != null && listView.adapter != null && listView.isAttachedToWindow()) {
+                // Do not gate on isAttachedToWindow: sizes often finish before the sheet
+                // list is attached, and skipping update leaves permanent "0 KB" rows.
+                if (listView != null && listView.adapter != null) {
                     listView.adapter.update(true);
                 }
             });
@@ -250,9 +252,16 @@ public class WebBrowserSettings extends UniversalFragment implements Notificatio
         listView.setSections();
         actionBar.setAdaptiveBackground(listView);
 
-        // ((ViewGroup) fragmentView).addView(actionBar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.TOP));
-        // listView.setPadding(0, AndroidUtilities.statusBarHeight + ActionBar.getCurrentActionBarHeight(), 0, 0);
-        // actionBar.setAddToContainer(false);
+        // Sizes may have finished before the list existed; refresh once view is ready.
+        if (listView != null && listView.adapter != null && (cacheSize > 0 || cookiesSize > 0 || historySize > 0)) {
+            listView.adapter.update(true);
+        }
+        listView.post(() -> {
+            if (listView != null && listView.adapter != null) {
+                // Re-scan when opening settings so Chromium dirs written this session appear.
+                loadSizes();
+            }
+        });
 
         return fragmentView;
     }

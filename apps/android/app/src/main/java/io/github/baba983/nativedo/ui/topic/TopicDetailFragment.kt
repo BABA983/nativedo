@@ -465,9 +465,13 @@ class TopicDetailFragment @JvmOverloads constructor(
             clipToPadding = false
             setBackgroundColor(topicDetailListBackgroundColor())
             listBottomBasePadding = AndroidUtilities.dp(24f)
-            // Match Chat: list fills the host and top padding equals the ActionBar
-            // height so posts scroll under the glass bar instead of starting below it.
-            setPadding(0, 0, 0, listBottomBasePadding) // top padding applied after layout via applyTopicListChromePadding()
+            // Apply ActionBar-height top padding immediately so the first layout already
+            // matches chrome. Deferring until post{applyTopicListChromePadding} starts the
+            // list at paddingTop=0 then grows it, which looks like an automatic scroll jump.
+            val estimatedTop = topicDetailListContentTopPaddingPx(
+                AndroidUtilities.statusBarHeight + ActionBar.getCurrentActionBarHeight(),
+            )
+            setPadding(0, estimatedTop, 0, listBottomBasePadding)
             adapter = this@TopicDetailFragment.adapter
             setSwipeReplyDelegate(object : TopicSwipeReplyRecyclerView.Delegate {
                 override fun canStartSwipeReply(): Boolean {
@@ -2276,7 +2280,16 @@ class TopicDetailFragment @JvmOverloads constructor(
         val nextTop = topicDetailListContentTopPaddingPx(actionBarHeight)
         topicTopFadeView?.setFadeZoneTop(actionBarHeight + AndroidUtilities.dp(1f))
         if (listView.paddingTop != nextTop) {
+            // Preserve first-visible offset when chrome top pad is corrected after measure
+            // so content does not appear to auto-scroll.
+            val lm = listView.layoutManager as? LinearLayoutManager
+            val firstPos = lm?.findFirstVisibleItemPosition() ?: RecyclerView.NO_POSITION
+            val firstView = if (firstPos != RecyclerView.NO_POSITION) lm?.findViewByPosition(firstPos) else null
+            val offsetFromTop = if (firstView != null) firstView.top - listView.paddingTop else 0
             listView.setPadding(listView.paddingLeft, nextTop, listView.paddingRight, listView.paddingBottom)
+            if (firstPos != RecyclerView.NO_POSITION && lm != null) {
+                lm.scrollToPositionWithOffset(firstPos, offsetFromTop)
+            }
         }
     }
 
