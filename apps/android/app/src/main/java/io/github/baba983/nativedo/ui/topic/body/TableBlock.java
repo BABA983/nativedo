@@ -645,7 +645,7 @@ final class TableBlock implements EmbeddedPostBodyBlock, TableLayout.TableLayout
     }
 
     @Override
-    public void onLayoutChild(ArticleViewer.DrawingText text, int x, int y) {
+    public void onLayoutChild(TableLayout.CellText text, int x, int y) {
         // Text selection geometry is collected from TableLayout.Child after measure.
     }
 

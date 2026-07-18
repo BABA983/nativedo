@@ -41,6 +41,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.Emoji;
 import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.ImageReceiver;
 import io.github.baba983.nativedo.core.ui.DiscourseUiHelpersKt;
@@ -445,11 +446,53 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
         int timeInset = timeWidth > 0 ? timeWidth + dp(24) + (int) pinOffset : dp(16);
         nameWidth = width - nameLeft - timeInset;
         if (nameWidth < dp(20)) nameWidth = dp(20);
+        // List rows are single-line DialogCell-shaped: collapse Discourse newlines and
+        // run emoji replacement before ellipsize so emoji width is measured correctly.
+        CharSequence title = normalizeListTitle(topic.getTitle());
+        title = highlightSearchText(title.toString());
+        title = Emoji.replaceEmoji(title, Theme.dialogs_namePaint.getFontMetricsInt(), false);
         CharSequence ellipsizedName = TextUtils.ellipsize(
-            highlightSearchText(topic.getTitle() == null ? "" : topic.getTitle()),
+            title,
             Theme.dialogs_namePaint, nameWidth, TextUtils.TruncateAt.END);
         nameLayout = new StaticLayout(ellipsizedName, Theme.dialogs_namePaint, nameWidth,
             Layout.Alignment.ALIGN_NORMAL, 1f, 0f, false);
+    }
+
+    /**
+     * Topic list titles must stay one line. Discourse titles can contain newlines or
+     * odd whitespace that otherwise force StaticLayout to wrap inside the row.
+     */
+    @NonNull
+    static CharSequence normalizeListTitle(@Nullable String title) {
+        if (title == null || title.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(title.length());
+        boolean lastWasSpace = false;
+        for (int i = 0; i < title.length(); i++) {
+            char c = title.charAt(i);
+            if (c == '\n' || c == '\r' || c == '\t') {
+                c = ' ';
+            }
+            if (c == ' ') {
+                if (lastWasSpace) {
+                    continue;
+                }
+                lastWasSpace = true;
+            } else {
+                lastWasSpace = false;
+            }
+            sb.append(c);
+        }
+        int start = 0;
+        int end = sb.length();
+        while (start < end && sb.charAt(start) == ' ') {
+            start++;
+        }
+        while (end > start && sb.charAt(end - 1) == ' ') {
+            end--;
+        }
+        return sb.substring(start, end);
     }
 
     private void buildActivityLayout(int width) {
