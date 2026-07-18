@@ -114,10 +114,11 @@ Introduced `org.telegram.ui.IArticleViewer` (API surface only):
 17. [x] B16: EmbedPost static parent reshape + Embed/Collage/Slideshow helper rewire
 18. [x] B17: `IBlock` + DrawingText bounds + `buildAccessibilityText` / `appendA11yLabel` foundation
 19. [x] B18: wire remaining static parent cells to IBlock/a11y + AccDescrIV strings
-20. [x] B19: spoiler attach / liveDrawingTexts / spoiler-hit (typing still deferred)
+20. [x] B19: spoiler attach / liveDrawingTexts / spoiler-hit
 21. [x] B20a: WebActionBar search menu restores pin header height reset
 22. [x] B20b: pin-shaped `DrawingText.attach/detach` on all Block* `onAttachedToWindow` / `onDetachedFromWindow` sites (incl. TableLayout children); EmbedPost + Slideshow a11y labels
-23. [ ] Optional: larger Sheet/WebActionBar chrome (bookmarks/open-external still host-wired); MultiLayoutTypingAnimator; TL_textSpoiler content
+23. [x] B21: vendor pin-identical `MultiLayoutTypingAnimator`; `DrawingText` implements `Block`, exposes `typingAnimator`, pin draw fade branch (IV leaves field null; rich-message hosts can bind later)
+24. [ ] Optional: larger Sheet/WebActionBar chrome (bookmarks/open-external still host-wired); TL_textSpoiler content
 
 Do **not** full-file replace until B2 compiles with contract tests green.
 
@@ -126,7 +127,7 @@ Do **not** full-file replace until B2 compiles with contract tests green.
 - `DrawingText` stores `IArticleViewer parent`
 - No-arg ctor → enclosing/`getInstance()` ArticleViewer (TableBlock-safe)
 - `draw` reads `parent.searchResults` / `links` / pressed-link selection
-- Still **not** ported: MultiLayoutTypingAnimator, Spoiler, and a11y text conversion
+- Typing fade: `MultiLayoutTypingAnimator` vendored (B21); spoiler + a11y conversion landed in B18/B19
 
 ### Phase 3 — WebActionBar / bookmarks chrome
 
@@ -386,10 +387,17 @@ scripts/vendor-status.sh
 - `DrawingText` gains pin-shaped spoiler fields, `attach`/`detach`/`isAttached`, and spoiler draw via `SpoilerEffect.renderWithRipple`
 - Static `liveDrawingTexts` registry + `createLayoutForText` tail matches pin (pool/list/replace/attach when view is attached)
 - `checkLayoutForLinks` restores pin spoiler-hit / ripple / clear
-- OMITTED: `MultiLayoutTypingAnimator` draw branch; real AnimatedEmoji pipeline (stub no-op); full Block*Cell `layout.attach(this)` call sites; `TL_textSpoiler` / S1 spoiler content production (no local TL type)
+- OMITTED (pre-B20b/B21): real AnimatedEmoji pipeline (stub no-op); `TL_textSpoiler` / S1 spoiler content production (no local TL type). Typing draw branch + cell attach sites landed in B20b/B21.
 - Contract: empty spoiler pools without spans; attach/detach lifecycle safe
 
 ### Phase B20a — WebActionBar search header height (landed)
 
 - Search menu item restores pin `actionBar.setHeight(currentHeaderHeight = dp(56))` before `showSearch`
 - Broader Sheet dismiss/preview, bookmark MTProto path, and open-external alert remain host-wired NativeDo deltas (not bulk-copied)
+
+### Phase B21 — MultiLayoutTypingAnimator (landed)
+
+- Vendored pin-identical `org.telegram.ui.MultiLayoutTypingAnimator` (`exact`, `modified:false`, forced_exact animation/drawing)
+- `DrawingText` implements `MultiLayoutTypingAnimator.Block` with pin-shaped `getParentView()` / existing `StaticLayout getLayout()` (local TextLayoutBlock contract)
+- `typingAnimator` field + pin draw branch (`needDraw` early-out + `drawLayoutWithLastLineFade`); IV path leaves field null so default draw/spoiler path unchanged
+- Does **not** vendor RichMessageLayout / BotForumHelper start sites — those are the only pin producers of a non-null animator

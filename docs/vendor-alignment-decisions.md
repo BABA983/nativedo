@@ -14,6 +14,7 @@ Local pristine checkout: `vendor/telegram-android` at that pin.
 | `9c32e06` | ArticleViewer B19: spoiler fields, `liveDrawingTexts`, spoiler draw/hit |
 | `d70d193` | ArticleViewer B20a: search menu header height reset |
 | *(this pass)* | ArticleViewer B20b: Block* `DrawingText.attach/detach` + EmbedPost/Slideshow a11y |
+| *(this pass)* | ArticleViewer B21: pin-identical `MultiLayoutTypingAnimator` + DrawingText typing draw branch |
 | `beab531` | `WindowInsetsStateHolder` restored byte-identical exact at pin |
 | `d3439c0` | `CircularProgressDrawable`, `Blur3Utils` restored pin-identical |
 | `9d8694b` | Decisions backlog doc |
@@ -22,11 +23,11 @@ Local pristine checkout: `vendor/telegram-android` at that pin.
 
 ## ArticleViewer — still deferred
 
-### A1. MultiLayoutTypingAnimator
+### A1. MultiLayoutTypingAnimator — **done (B21)**
 
-- Pin `DrawingText.draw` uses typing fade via `MultiLayoutTypingAnimator`.
-- Class is not vendored under `:telegram` (only lives in upstream rich-message stack).
-- **Decision:** vendor a slim typing animator for IV, permanently OMIT, or wait for a product need?
+- Vendored pin-identical animator under `:telegram`.
+- `DrawingText` implements `Block` and uses the pin draw fade branch when `typingAnimator != null`.
+- IV path does not start an animator (no RichMessageLayout/BotForumHelper). Product can later bind one for IV open animation if desired.
 
 ### A2. Full Block*Cell `layout.attach(this)` call sites — **done (B20b)**
 

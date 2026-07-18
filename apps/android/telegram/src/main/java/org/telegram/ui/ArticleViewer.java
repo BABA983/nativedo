@@ -627,7 +627,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         private TLRPC.TL_pageBlockEmbedPost parent;
     }
 
-    public class DrawingText implements TextSelectionHelper.TextLayoutBlock {
+    public class DrawingText implements TextSelectionHelper.TextLayoutBlock, MultiLayoutTypingAnimator.Block {
         /** Pin-shaped host; B2 fields (search/links/selection) are read via this parent. */
         private final IArticleViewer parent;
         private View latestParentView;
@@ -652,6 +652,9 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         public AtomicReference<Layout> spoilersPatchedLayout;
         private boolean attached;
         private View attachedToView;
+
+        /** Optional pin-shaped typing fade; set by rich-message/bot hosts. IV path leaves null. */
+        public MultiLayoutTypingAnimator typingAnimator;
 
         /** Convenience for outer-instance sites and TableBlock: parent = enclosing ArticleViewer. */
         public DrawingText() {
@@ -688,9 +691,21 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             return attached;
         }
 
+        @Override
+        public View getParentView() {
+            return attachedToView != null ? attachedToView : latestParentView;
+        }
+
         public void draw(Canvas canvas, View view) {
             isDrawing = true;
             latestParentView = view;
+
+            final boolean typing = typingAnimator != null && typingAnimator.isRunning()
+                    && typingAnimator.indexOf(this) >= 0;
+            if (typing && !typingAnimator.needDraw(this)) {
+                isDrawing = false;
+                return;
+            }
 
             if (parent.searchResults != null && !parent.searchResults.isEmpty()) {
                 SearchResult result = parent.searchResults.get(parent.currentSearchIndex);
@@ -736,8 +751,13 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 }
                 canvas.drawRect(-dp(2) + x, 0, x + width + dp(2), getHeight(), urlPaint);
             }
-            // Typing animator omitted (MultiLayoutTypingAnimator not vendored). Spoiler path is pin-shaped.
-            if (spoilers != null && !spoilers.isEmpty()) {
+            if (typing && typingAnimator.isFadeBlock(this)) {
+                MultiLayoutTypingAnimator.drawLayoutWithLastLineFade(
+                        canvas, textLayout,
+                        typingAnimator.getFadeLineIndex(this),
+                        typingAnimator.getFadeXPosition(this)
+                );
+            } else if (spoilers != null && !spoilers.isEmpty()) {
                 SpoilerEffect.renderWithRipple(view, false, textLayout.getPaint().getColor(), 0, spoilersPatchedLayout, 0, textLayout, spoilers, canvas, false);
             } else {
                 textLayout.draw(canvas);
@@ -3569,7 +3589,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 drawingText.attach(parentView);
             }
         }
-        // MultiLayoutTypingAnimator attach lifecycle remains deferred (not vendored).
+        // Typing animator is opt-in via DrawingText.typingAnimator (rich-message hosts); IV leaves it null.
         // Block* cells also attach/detach DrawingText in onAttachedToWindow/onDetachedFromWindow (B20b).
         return drawingText;
     }
