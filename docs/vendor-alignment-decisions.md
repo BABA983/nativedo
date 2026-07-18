@@ -45,30 +45,31 @@ Do not resume AV slices from the vendor queue.
 
 ## Other exact+modified files — safe to leave, need product call to change
 
-### B1. Import / annotation host wiring (keep unless you want pin purity)
+### B1. Import / annotation host wiring (keep)
 
-| File | Delta | Risk if forced to pin |
+| File | Delta | Status |
 |---|---|---|
-| `AnimatedTextView.java` | Drop unused Checker Framework imports (classpath lacks checker) | Keep modified unless checker dep added |
-| `SimpleTextView.java` | `DialogCell.FixedWidthSpan` → `FixedWidthSpan` | High if DialogCell not wanted |
+| `AnimatedTextView.java` | Drop unused Checker Framework imports | **keep** — notes + `host_wiring_keep_at_pin` |
+| `IMessageCell.java` | Reactions types slimmed to `Object` | **keep** |
 
-### B2. Dependency substitutions (intentional)
+### B2. Dependency substitutions (keep)
 
-| File | Delta | Decision |
+| File | Delta | Status |
 |---|---|---|
-| `SearchStateDrawable.java` | `Math.hypot` instead of zxing `MathUtils` | Add zxing dep? |
-| `UniversalRecyclerView.java` | `getClassGuid()` → `0` | BaseFragment lacks classGuid? |
-| `LayoutHelper.java` | Extra `createFrame(int,int)` for Kotlin | Keep host overload forever? |
-| `WindowVisibilityManager.java` | Null listener guard + host header | Keep guard? |
+| `LayoutHelper.java` | Extra `createFrame(int,int)` for Kotlin | **keep** |
+| `UniversalRecyclerView.java` | No RichEditor.DraggingDrawable | **keep** (12.9) |
+| `BottomSheetWithRecyclerListView.java` | `setLightStatusBar(getWindow())` | **keep** (12.9) |
+| `FragmentSearchField.java` | `rectTmp2I` clipBounds | **keep** |
+| `GraySectionCell` / `RLottieImageView` / `NestedSizeNotifierLayout` / `ScrollSlidingTextTabStrip` / `PullForegroundDrawable` / `DialogsItemAnimator` / `AnimationProperties` | Missing emoji/topic/HintView2/DialogCell surfaces | **keep** — see per-file notes |
 
 ### B3. Theme / image pipeline
 
-| File | Delta | Decision |
+| File | Delta | Status |
 |---|---|---|
-| `ThemeColors.java` | Default wallpaper + service colors | Keep NativeDo defaults? |
-| `ImageReceiver.java` | Behind legacy pin; Log swap; no AnimatedEmojiSpan interface; ImageLocation arity | Full re-sync to **12.9.0** image pipeline as a pair? |
-| `ImageLocation.java` | Legacy pin / API shape | Re-sync with ImageReceiver as a pair? |
-| `RestrictedDomainsList.java` | Legacy pin | Re-sync with ArticleViewer open-external path? |
+| `ThemeColors.java` | NativeDo wallpaper/service/link colors | **keep** host_wiring_only |
+| `ImageReceiver.java` | Legacy pin + Log/AnimatedEmoji + ImageLocation arity | **pair re-sync** only with product goal |
+| `ImageLocation.java` | Legacy pin / API shape | **pair with ImageReceiver** |
+| `RestrictedDomainsList.java` | Legacy pin | Re-sync with browser open-external if needed |
 
 ### B4. Larger “other” exact+modified (classify primary=other)
 

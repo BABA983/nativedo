@@ -24,7 +24,8 @@
     },
     "stuck_reasons": {
       "native_host_reference_only": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires.",
-      "native_app_reference_only": "NativeDo port (package io.github.baba983.nativedo.*); vendored_at is an upstream reference for forced_exact hand-checks only — not eligible for vendor-ff."
+      "native_app_reference_only": "NativeDo port (package io.github.baba983.nativedo.*); vendored_at is an upstream reference for forced_exact hand-checks only — not eligible for vendor-ff.",
+      "host_wiring_keep_at_pin": "Intentional host wiring at global pin 12.9.0 — keep modified:true; not eligible for clean FF. Product/API surface differs from pin by design (missing upstream types or NativeDo defaults). Re-sync only with a named product goal."
     },
     "notes": {
       "auto_registered_on_disk_source_294_loc": "Auto-registered unmanifested on-disk source (294 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified.",
@@ -227,7 +228,9 @@
         {
           "path": "org/telegram/ui/ActionBar/ThemeColors.java",
           "modified": true,
-          "notes": "NativeDo default wallpaper/service colors + link/reply panel host colors retained through 12.9.0 pin bump (upstream also moved link/reply defaults; host values kept)."
+          "notes": "exact@12.9.0 with NativeDo default wallpaper/service colors and link/reply panel host colors retained (key_chat_wallpaper, service backgrounds, link/reply panel). host_wiring_only; upstream Telegram brand colors not adopted.",
+          "port_mode": "exact",
+          "stuck_ref": "host_wiring_keep_at_pin"
         }
       ]
     },
@@ -246,7 +249,9 @@
         {
           "path": "org/telegram/ui/Cells/GraySectionCell.java",
           "modified": true,
-          "notes": "FF to 12.8.1 + host: plain TextView instead of AnimatedEmojiSpan.TextViewEmojis; LocaleController.isRTL restored; createThemeDescriptions omitted (ThemeDescription stub)."
+          "notes": "exact@12.9.0 + host: plain TextView instead of AnimatedEmojiSpan.TextViewEmojis; createThemeDescriptions omitted (no ThemeDescription system). LocaleController.isRTL kept.",
+          "port_mode": "exact",
+          "stuck_ref": "host_wiring_keep_at_pin"
         },
         {
           "path": "org/telegram/ui/Cells/HeaderCell.java"
@@ -819,7 +824,9 @@
             "animation",
             "drawing"
           ],
-          "notes": "FF to 12.8.1 + host: omit document.localThumbPath (shim); svg thumb null (DocumentObject path not fully wired). forced_exact animation/drawing retained from pin body."
+          "notes": "exact@12.9.0 + host: omit document.localThumbPath (TLRPC.Document shim); svg thumb null (DocumentObject path not fully wired). forced_exact animation/drawing body from pin.",
+          "port_mode": "exact",
+          "stuck_ref": "host_wiring_keep_at_pin"
         },
         {
           "path": "org/telegram/ui/Components/ChatActivityEnterViewAnimatedIconView.java",
@@ -887,7 +894,9 @@
             "measurement",
             "drawing"
           ],
-          "notes": "Host rectTmp2I clipBounds; 12.9.0 SearchFilterView.setGlass() no-op + false removable ctor arg aligned to pin call sites."
+          "notes": "exact@12.9.0 + host: setClipBounds via AndroidUtilities.rectTmp2I (int Rect) because local rectTmp2 is float; SearchFilterView.setGlass no-op + removable ctor aligned at 12.9 bump.",
+          "port_mode": "exact",
+          "stuck_ref": "host_wiring_keep_at_pin"
         },
         {
           "path": "org/telegram/ui/Components/DrawingInBackgroundThreadDrawable.java",
@@ -926,7 +935,9 @@
             "animation",
             "drawing"
           ],
-          "notes": "Copied upstream AnimatedTextView; local delta removes unused Checker Framework imports that are not on the :telegram compile classpath."
+          "notes": "exact@12.9.0 minus unused Checker Framework imports (org.checkerframework.*) — not on :telegram classpath. import_only delta; pin body otherwise identical.",
+          "port_mode": "exact",
+          "stuck_ref": "host_wiring_keep_at_pin"
         },
         {
           "path": "org/telegram/ui/Components/Bulletin.java",
@@ -951,7 +962,9 @@
             "gesture",
             "measurement"
           ],
-          "notes": "FF to 12.8.1 + host: CachedMediaLayout import/branch omitted (not vendored); maxTopPadding overload dropped — single setChildLayout(ChildLayout)."
+          "notes": "exact@12.9.0 + host: CachedMediaLayout import/branch omitted (not vendored); single setChildLayout(ChildLayout) without maxTopPadding overload.",
+          "port_mode": "exact",
+          "stuck_ref": "host_wiring_keep_at_pin"
         },
         {
           "path": "org/telegram/ui/Components/CircularProgressDrawable.java",
@@ -1042,7 +1055,9 @@
           "forced_exact": [
             "measurement"
           ],
-          "notes": "Host createFrame(int,int) for Kotlin; 12.9.0 createLinear(float...) overload restored from pin."
+          "notes": "exact@12.9.0 plus host createFrame(int,int) overload for Kotlin call sites; pin createLinear(float...) overload retained from 12.9 bump.",
+          "port_mode": "exact",
+          "stuck_ref": "host_wiring_keep_at_pin"
         },
         {
           "path": "org/telegram/ui/Components/PullForegroundDrawable.java",
@@ -1050,7 +1065,10 @@
           "forced_exact": [
             "animation",
             "drawing"
-          ]
+          ],
+          "notes": "exact@12.9.0 + host: omit TopicsFragment.TopicDialogCell (isTopic=false); msg_filled_general drawable null; HintView2.cutInFancyHalf replaced with simple half-width split for tooltips.",
+          "port_mode": "exact",
+          "stuck_ref": "host_wiring_keep_at_pin"
         },
         {
           "path": "org/telegram/ui/Components/RadialProgressView.java",
@@ -1090,7 +1108,10 @@
             "gesture",
             "measurement",
             "drawing"
-          ]
+          ],
+          "notes": "exact@12.9.0 + host: tab labels use plain TextView (no AnimatedEmojiSpan.TextViewEmojis); omit Emoji.replaceEmoji; tab width via Paint.measureText instead of HintView2.measureCorrectly.",
+          "port_mode": "exact",
+          "stuck_ref": "host_wiring_keep_at_pin"
         },
         {
           "path": "org/telegram/ui/Components/SearchStateDrawable.java",
@@ -1111,7 +1132,9 @@
           "forced_exact": [
             "recycling"
           ],
-          "notes": "Host wiring for 12.9.0: drop org.telegram.ui.iv.RichEditor.DraggingDrawable reorder feedback (RichEditor not vendored)."
+          "notes": "exact@12.9.0 + host: drop org.telegram.ui.iv.RichEditor.DraggingDrawable reorder feedback (RichEditor not vendored).",
+          "port_mode": "exact",
+          "stuck_ref": "host_wiring_keep_at_pin"
         }
       ]
     },
@@ -1628,12 +1651,16 @@
           "forced_exact": [
             "animation"
           ],
-          "notes": "DialogCell type abstracted to MovableCell SPI interface (host wiring). androidx SimpleItemAnimator signatures used: animateRemove(holder), animateMove(holder,4ints), animateChange(o,n,4ints) — upstream's ItemHolderInfo overloads come from Telegram's forked RecyclerView and are not available here. listenToAnimationUpdates() dropped. DialogsAdapter.LastEmptyView and DialogsEmptyCell branches removed (types not present in NativeDo). Animation params (durations, interpolator, ObjectAnimator targets) untouched per forced_exact."
+          "notes": "exact@12.9.0 + host: DialogCell abstracted to MovableCell SPI; androidx SimpleItemAnimator signatures (animateRemove/Move/Change) vs upstream Dialogs-specific overloads.",
+          "port_mode": "exact",
+          "stuck_ref": "host_wiring_keep_at_pin"
         },
         {
           "path": "org/telegram/ui/Components/AnimationProperties.java",
           "modified": true,
-          "notes": "CLIP_DIALOG_CELL_PROGRESS retyped Property<DialogCell,Float> -> Property<MovableCell,Float>. PHOTO_VIEWER_ANIMATION_VALUE Property remains removed; NativeDo's PhotoViewer port does not expose the upstream movable-cell animation Property."
+          "notes": "exact@12.9.0 + host: CLIP_DIALOG_CELL_PROGRESS typed Property<MovableCell,Float> (not DialogCell); PHOTO_VIEWER_ANIMATION_VALUE omitted if present upstream — NativeDo PhotoViewer port surface.",
+          "port_mode": "exact",
+          "stuck_ref": "host_wiring_keep_at_pin"
         },
         {
           "path": "org/telegram/ui/Components/LineProgressView.java",
@@ -2667,17 +2694,23 @@
         {
           "path": "org/telegram/ui/Cells/IMessageCell.java",
           "modified": true,
-          "notes": "Upstream IMessageCell with host-slim types (ReactionsLayout omitted as Object; no Reactions package)."
+          "notes": "exact@12.9.0 + host-slim reactions surface: getReactionsLayout/didPressReactionFromLayout use Object instead of ReactionsLayoutInBubble/TLRPC.ReactionCount (reactions package not vendored).",
+          "port_mode": "exact",
+          "stuck_ref": "host_wiring_keep_at_pin"
         },
         {
           "path": "org/telegram/ui/Components/BottomSheetWithRecyclerListView.java",
           "modified": true,
-          "notes": "Host wiring for 12.9.0: setLightStatusBar uses getWindow() because local AndroidUtilities lacks Dialog overload from pin."
+          "notes": "exact@12.9.0 + host: setLightStatusBar uses getWindow() because local AndroidUtilities lacks Dialog overload from pin.",
+          "port_mode": "exact",
+          "stuck_ref": "host_wiring_keep_at_pin"
         },
         {
           "path": "org/telegram/ui/IArticleViewer.java",
           "modified": true,
-          "notes": "Pin-shaped abstract host API and shared link/search/video state (aligned through ArticleViewer B2+ on global pin 12.9.0). openPhoto uses TLRPC.PageBlock for local S1; DrawingText accepts IArticleViewer; getResources exposes the paint-map/color/font contract; link-touch and text-selection helpers consume parent callbacks and shared pressed-link state."
+          "notes": "Pin-shaped abstract host API for ArticleViewer on global pin 12.9.0. openPhoto uses TLRPC.PageBlock (S1, not TL_iv); DrawingText/resources/link-selection consume this parent. Formatting/comments local; API shape matches pin + S1 type map.",
+          "port_mode": "exact",
+          "stuck_ref": "host_wiring_keep_at_pin"
         }
       ]
     }

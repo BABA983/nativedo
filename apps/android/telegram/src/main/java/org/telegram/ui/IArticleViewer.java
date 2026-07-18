@@ -5,7 +5,7 @@
  *
  * Copyright Zark X, 2013-2018.
  *
- * NativeDo: vendored extract of Telegram 12.8.1 IArticleViewer.
+ * NativeDo: vendored extract of Telegram IArticleViewer (global pin 12.9.0).
  * Shared host API/state lets ArticleViewer helpers and block cells take an IArticleViewer
  * parent. openPhoto uses TLRPC.PageBlock for the local S1 type mapping.
  */
@@ -33,7 +33,7 @@ import java.util.ArrayList;
 /**
  * Shared host surface for ArticleViewer block/chrome helpers.
  * <p>
- * Fields match upstream 12.8.1 so a future DrawingText(IArticleViewer) reshape can
+ * Fields match upstream 12.9.0 so DrawingText(IArticleViewer) and block helpers can
  * reference {@code parent.pressedLink} etc. without casting to ArticleViewer.
  */
 public abstract class IArticleViewer {
