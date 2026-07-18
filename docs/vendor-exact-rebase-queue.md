@@ -22,12 +22,12 @@
 ## ArticleViewer (closed — not next work)
 - See `docs/vendor-articleviewer-plan.md`.
 - Landed: parent-driven cells, attach, typing, spoiler content, headings/quoteLevels, CodeHighlighting, table selection, partial local chrome.
-- Keep: WebBookmarks / RestrictedDomains / file chooser / preview bitmap (product host).
+- Keep: WebBookmarks / local browser settings / file chooser / preview bitmap (product host).
 - Wontfix: Embed/Collage/Slideshow static reshape (matches pin).
 - No full-file pin; `modified:true` + stuck_reason = host chrome only.
 
 ## Still heavy stuck (not FF-host class)
-- ~~WebBrowserSettings~~ — **pin-identical @ 12.9.0** (MessagesController façade → SharedConfig/RestrictedDomainsList)
+- ~~WebBrowserSettings~~ — **pin-identical @ 12.9.0** (MessagesController façade → local TL_webBrowserSettings)
 - ~~GroupedPhotosListView / TableLayout~~ — **host keep @ 12.9.0** (S1 TL_iv→TLRPC; CellText+DrawingText)
 - ~~ImageReceiver / ImageLocation~~ — **byte-identical @ 12.9.0** (pair re-sync; host TLRPC/emoji stubs)
 - Native host shims (Theme, MessagesController, ApplicationLoader, …) — not FF candidates
@@ -41,10 +41,10 @@
 
 ## Next global picks (priority order)
 1. ~~**Small exact+modified hygiene**~~ — **done**; then **re-aligned to pin** where possible: `ScrollSlidingTextTabStrip`, `BottomSheetWithRecyclerListView` now `modified:false`. Restored pin call shapes via `HintView2.measureCorrectly/cutInFancyHalf`, `Emoji.replaceEmoji`, `TextViewEmojis`, `AndroidUtilities.setLightStatusBar(Dialog)`. Stripped host comment noise from related files.
-2. ~~**Browser stack**~~ — **done (host keep, comments trimmed)**: WebInstantView / AddressBarList / BookmarksFragment / WebMetadataCache / RestrictedDomainsList.
+2. ~~**Browser stack**~~ — **done (host keep, comments trimmed)**: WebInstantView / AddressBarList / BookmarksFragment / WebMetadataCache / local TL_webBrowserSettings.
 3. ~~**ImageReceiver + ImageLocation**~~ — **done**: both `modified:false` byte-identical at pin 12.9.0; host stubs for InvalidateHolder / fromMessage / rich_message.
 4. **Not ArticleViewer** — epic closed (still host-wired; avoid new comment sprawl).
-6. ~~**WebBrowserSettings**~~ — **done**: pin-identical; single-account façade on SharedConfig + RestrictedDomainsList.
+6. ~~**WebBrowserSettings**~~ — **done**: pin-identical; single-account façade on local TL_webBrowserSettings.
 5. ~~**Utilities + RecyclerListView**~~ — **done (host keep @ pin)**: RecyclerListView restored to pin-shaped blur3/SectionsAdapter/edge-effect with only `rectTmp2I` host delta; Utilities pin surface + no-JNI Java fallbacks, `stuck_ref=host_wiring_keep_at_pin`.
 
 ## Testing policy (vendor FF)

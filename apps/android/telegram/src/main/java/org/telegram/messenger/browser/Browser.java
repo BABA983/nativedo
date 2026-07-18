@@ -28,7 +28,6 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.MessagesController;
-import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.BottomSheetTabs;
@@ -235,14 +234,13 @@ public class Browser {
      * Main URL dispatch for NativeDo.
      * <p>
      * Order: in-app browser (enabled + domain not restricted) →
-     * Custom Tabs (when not in-app and {@link SharedConfig#customTabs}) →
+     * Custom Tabs (when not in-app and enabled by MessagesController) →
      * external {@link Intent#ACTION_VIEW}.
      */
     public static void openUrl(final Context context, Uri uri, boolean allowCustom, boolean tryTelegraph, boolean forceNotInternalForApps, Progress inCaseLoading, String browser, boolean allowIntent, boolean allowInAppBrowser, boolean forceRequest) {
         if (context == null || uri == null) {
             return;
         }
-        SharedConfig.loadBrowserConfig();
         String browserPackage = getBrowserPackageName(browser);
         boolean isHttpOrHttps = false;
         String scheme = "";

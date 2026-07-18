@@ -1306,6 +1306,8 @@
     <string name="SendAsFile">Send as file</string>
     <string name="SendAsFiles">Send as files</string>
     <string name="OpenUrlTitle">Open Link</string>
+    <string name="BrowserAlwaysOpenExternal">Always open this site in Browser</string>
+    <string name="BrowserAlwaysOpenInApp">Always open this site in-app</string>
     <string name="OpenUrlAlert2">Do you want to open %1$s?</string>
     <string name="OpenUrlOption1">Log in to %1$s as **%2$s**</string>
     <string name="OpenUrlOption2">Allow **%1$s** to send me messages</string>

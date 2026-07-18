@@ -14,12 +14,14 @@ import android.text.TextUtils;
 import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.SslErrorHandler;
 import android.webkit.URLUtil;
 import android.webkit.WebBackForwardList;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -342,11 +344,55 @@ public class BotWebViewContainer extends FrameLayout {
             }
 
             @Override
+            public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse errorResponse) {
+                super.onReceivedHttpError(view, request, errorResponse);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP
+                        && (request == null || request.isForMainFrame())
+                        && errorResponse != null
+                        && TextUtils.isEmpty(errorResponse.getMimeType())) {
+                    onErrorShown(true, errorResponse.getStatusCode(), errorResponse.getReasonPhrase());
+                }
+            }
+
+            @Override
             public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
                 if (handler != null) {
                     handler.cancel();
                 }
                 onErrorShown(true, 0, error == null ? null : error.toString());
+            }
+
+            @Override
+            public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    FileLog.d("[webviewcontainer] onRenderProcessGone priority="
+                            + (detail == null ? null : detail.rendererPriorityAtExit())
+                            + " didCrash=" + (detail == null ? null : detail.didCrash()));
+                } else {
+                    FileLog.d("[webviewcontainer] onRenderProcessGone");
+                }
+                try {
+                    if (!AndroidUtilities.isSafeToShow(getContext())) {
+                        return true;
+                    }
+                    new AlertDialog.Builder(getContext(), resourcesProvider)
+                            .setTitle(LocaleController.getString(R.string.ChromeCrashTitle))
+                            .setMessage(AndroidUtilities.replaceSingleTag(
+                                    LocaleController.getString(R.string.ChromeCrashMessage),
+                                    () -> Browser.openUrl(getContext(), "https://play.google.com/store/apps/details?id=com.google.android.webview")))
+                            .setPositiveButton(LocaleController.getString(R.string.OK), null)
+                            .setOnDismissListener(dialog -> {
+                                if (delegate != null) {
+                                    delegate.onCloseRequested(null);
+                                } else if (closeRequestedListener != null) {
+                                    closeRequestedListener.run();
+                                }
+                            })
+                            .show();
+                } catch (Exception e) {
+                    FileLog.e(e);
+                }
+                return true;
             }
         });
 

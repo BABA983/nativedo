@@ -525,15 +525,10 @@ public class ActionBarPopupWindow extends PopupWindow {
                         if (rect == null) {
                             rect = new Rect();
                         }
-                        // Convert RectF to Rect with proper casting
-                        rect.set((int) AndroidUtilities.rectTmp2.right, (int) AndroidUtilities.rectTmp2.top, (int) AndroidUtilities.rectTmp2.right, (int) AndroidUtilities.rectTmp2.top);
-                        // Create temporary RectF for lerp operation
-                        RectF rectF = new RectF(rect);
-                        AndroidUtilities.lerp(rectF, AndroidUtilities.rectTmp2, reactionsEnterProgress, AndroidUtilities.rectTmp2);
+                        rect.set(AndroidUtilities.rectTmp2.right, AndroidUtilities.rectTmp2.top, AndroidUtilities.rectTmp2.right, AndroidUtilities.rectTmp2.top);
+                        AndroidUtilities.lerp(rect, AndroidUtilities.rectTmp2, reactionsEnterProgress, AndroidUtilities.rectTmp2);
                     }
-                    // Convert RectF to Rect for setBounds
-                    Rect bounds = new Rect((int) AndroidUtilities.rectTmp2.left, (int) AndroidUtilities.rectTmp2.top, (int) AndroidUtilities.rectTmp2.right, (int) AndroidUtilities.rectTmp2.bottom);
-                    backgroundDrawable.setBounds(bounds);
+                    backgroundDrawable.setBounds(AndroidUtilities.rectTmp2);
                     backgroundDrawable.draw(canvas);
                     if (clipChildren) {
                         AndroidUtilities.rectTmp2.left += bgPaddings.left;

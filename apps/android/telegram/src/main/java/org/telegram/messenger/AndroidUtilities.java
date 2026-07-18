@@ -114,10 +114,10 @@ public final class AndroidUtilities {
 
     /** Shared temporary RectF for drawing operations. Matches upstream AndroidUtilities.rectTmp. */
     public static final RectF rectTmp = new RectF();
-    /** Shared temporary RectF (second instance). Matches upstream AndroidUtilities.rectTmp2. */
-    public static final RectF rectTmp2 = new RectF();
-    public static final android.graphics.Rect rectTmp2I = new android.graphics.Rect();
+    /** Shared temporary Rect for integer bounds/hit tests. Matches upstream AndroidUtilities.rectTmp2. */
+    public static final Rect rectTmp2 = new Rect();
     private static final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private static Vibrator vibrator;
     private static int adjustOwnerClassGuid;
     private static float xdpi;
     private static float ydpi;
@@ -171,6 +171,42 @@ public final class AndroidUtilities {
                 a.top + (b.top - a.top) * f,
                 a.right + (b.right - a.right) * f,
                 a.bottom + (b.bottom - a.bottom) * f
+            );
+        }
+    }
+
+    /** Matches upstream AndroidUtilities.lerp(Rect, RectF, float, RectF). */
+    public static void lerp(Rect a, RectF b, float f, RectF to) {
+        if (to != null && a != null && b != null) {
+            to.set(
+                a.left + (b.left - a.left) * f,
+                a.top + (b.top - a.top) * f,
+                a.right + (b.right - a.right) * f,
+                a.bottom + (b.bottom - a.bottom) * f
+            );
+        }
+    }
+
+    /** Matches upstream AndroidUtilities.lerp(RectF, Rect, float, RectF). */
+    public static void lerp(RectF a, Rect b, float f, RectF to) {
+        if (to != null && a != null && b != null) {
+            to.set(
+                a.left + (b.left - a.left) * f,
+                a.top + (b.top - a.top) * f,
+                a.right + (b.right - a.right) * f,
+                a.bottom + (b.bottom - a.bottom) * f
+            );
+        }
+    }
+
+    /** Matches upstream AndroidUtilities.lerp(Rect, Rect, float, Rect). */
+    public static void lerp(Rect a, Rect b, float f, Rect to) {
+        if (to != null && a != null && b != null) {
+            to.set(
+                (int) (a.left + (b.left - a.left) * f),
+                (int) (a.top + (b.top - a.top) * f),
+                (int) (a.right + (b.right - a.right) * f),
+                (int) (a.bottom + (b.bottom - a.bottom) * f)
             );
         }
     }
@@ -996,6 +1032,13 @@ public final class AndroidUtilities {
 
     public static int blendOver(int foreground, int background) {
         return androidx.core.graphics.ColorUtils.compositeColors(foreground, background);
+    }
+
+    public static Vibrator getVibrator() {
+        if (vibrator == null) {
+            vibrator = (Vibrator) ApplicationLoader.applicationContext.getSystemService(Context.VIBRATOR_SERVICE);
+        }
+        return vibrator;
     }
 
     public static void vibrateCursor(View view) {

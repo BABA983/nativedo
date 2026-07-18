@@ -205,13 +205,7 @@ public abstract class SimpleItemAnimator extends RecyclerView.ItemAnimator {
      * @return true if a later call to {@link #runPendingAnimations()} is requested,
      * false otherwise.
      */
-    public boolean animateRemove(RecyclerView.ViewHolder holder, ItemHolderInfo info) {
-        return animateRemove(holder);
-    }
-
-    public boolean animateRemove(RecyclerView.ViewHolder holder) {
-        return false;
-    }
+    public abstract boolean animateRemove(RecyclerView.ViewHolder holder, ItemHolderInfo info);
 
     /**
      * Called when an item is added to the RecyclerView. Implementors can choose
@@ -256,14 +250,8 @@ public abstract class SimpleItemAnimator extends RecyclerView.ItemAnimator {
      * @return true if a later call to {@link #runPendingAnimations()} is requested,
      * false otherwise.
      */
-    public boolean animateMove(RecyclerView.ViewHolder holder, ItemHolderInfo info, int fromX, int fromY,
-            int toX, int toY) {
-        return animateMove(holder, fromX, fromY, toX, toY);
-    }
-
-    public boolean animateMove(RecyclerView.ViewHolder holder, int fromX, int fromY, int toX, int toY) {
-        return false;
-    }
+    public abstract boolean animateMove(RecyclerView.ViewHolder holder, ItemHolderInfo info, int fromX, int fromY,
+            int toX, int toY);
 
     /**
      * Called when an item is changed in the RecyclerView, as indicated by a call to
@@ -295,15 +283,8 @@ public abstract class SimpleItemAnimator extends RecyclerView.ItemAnimator {
      * @return true if a later call to {@link #runPendingAnimations()} is requested,
      * false otherwise.
      */
-    public boolean animateChange(RecyclerView.ViewHolder oldHolder,
-            RecyclerView.ViewHolder newHolder, ItemHolderInfo info, int fromLeft, int fromTop, int toLeft, int toTop) {
-        return animateChange(oldHolder, newHolder, fromLeft, fromTop, toLeft, toTop);
-    }
-
-    public boolean animateChange(RecyclerView.ViewHolder oldHolder,
-            RecyclerView.ViewHolder newHolder, int fromLeft, int fromTop, int toLeft, int toTop) {
-        return false;
-    }
+    public abstract boolean animateChange(RecyclerView.ViewHolder oldHolder,
+            RecyclerView.ViewHolder newHolder, ItemHolderInfo info, int fromLeft, int fromTop, int toLeft, int toTop);
 
     /**
      * Method to be called by subclasses when a remove animation is done.

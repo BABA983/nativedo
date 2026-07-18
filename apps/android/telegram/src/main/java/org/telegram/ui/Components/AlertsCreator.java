@@ -8,11 +8,14 @@ import android.app.Activity;
 import android.content.Context;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
+import android.text.TextUtils;
 import android.text.InputType;
 import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
 import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.LocaleController;
@@ -21,6 +24,7 @@ import org.telegram.messenger.Utilities;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Cells.CheckBoxCell;
 
 public final class AlertsCreator {
 
@@ -151,5 +155,75 @@ public final class AlertsCreator {
             AndroidUtilities.showKeyboard(editText);
         });
         dialog[0].show();
+    }
+
+    public static void showOpenExternalBrowserAlert(
+            Context context,
+            Theme.ResourcesProvider resourcesProvider,
+            String url,
+            boolean currentDefaultIsInApp,
+            boolean showCheckbox,
+            Utilities.Callback2<Boolean, Boolean> whenDone
+    ) {
+        if (!AndroidUtilities.isSafeToShow(context)) {
+            return;
+        }
+
+        final AlertDialog[] dialog = new AlertDialog[1];
+        final AlertDialog.Builder builder = new AlertDialog.Builder(context, resourcesProvider);
+        builder.setTitle(LocaleController.getString(R.string.OpenUrlTitle));
+
+        final TextView urlView = new TextView(context);
+        urlView.setText(url);
+        urlView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+        urlView.setTextColor(Theme.getColor(Theme.key_dialogTextBlack, resourcesProvider));
+        urlView.setGravity(Gravity.CENTER);
+        urlView.setMaxLines(5);
+        urlView.setEllipsize(TextUtils.TruncateAt.END);
+        urlView.setPadding(dp(14), dp(12), dp(14), dp(12));
+
+        final GradientDrawable urlBackground = new GradientDrawable();
+        urlBackground.setCornerRadius(dp(22));
+        urlBackground.setColor(Theme.multAlpha(
+                Theme.getColor(Theme.key_dialogTextBlack, resourcesProvider), 0.06f));
+        urlView.setBackground(urlBackground);
+
+        final CheckBoxCell cell = new CheckBoxCell(context, 1, resourcesProvider);
+        cell.setMultiline(true);
+        cell.getTextView().getLayoutParams().width = LayoutHelper.MATCH_PARENT;
+        cell.getTextView().setSingleLine(false);
+        cell.getTextView().setMaxLines(3);
+        cell.getTextView().setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+        cell.setText(getString(currentDefaultIsInApp
+                ? R.string.BrowserAlwaysOpenExternal
+                : R.string.BrowserAlwaysOpenInApp), "", false, false);
+        cell.setOnClickListener(v -> cell.setChecked(!cell.isChecked(), true));
+
+        final LinearLayout container = new LinearLayout(context);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.addView(urlView, LayoutHelper.createLinear(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT,
+                22, 4, 22, 9));
+        if (showCheckbox) {
+            container.addView(cell, LayoutHelper.createLinear(
+                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT,
+                    Gravity.LEFT, 8, 6, 8, 4));
+        }
+
+        builder.setView(container);
+        builder.setWidth(Math.min(dp(320), AndroidUtilities.displaySize.x * 85 / 100));
+        builder.setPositiveButton(LocaleController.getString(R.string.Open), (di, w) -> {
+            whenDone.run(true, cell.isChecked());
+            if (dialog[0] != null) {
+                dialog[0].dismiss();
+            }
+        });
+        builder.setNegativeButton(LocaleController.getString(R.string.Cancel), (di, w) -> {
+            whenDone.run(false, cell.isChecked());
+            if (dialog[0] != null) {
+                dialog[0].dismiss();
+            }
+        });
+        dialog[0] = builder.show();
     }
 }

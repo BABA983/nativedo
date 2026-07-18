@@ -890,9 +890,9 @@ public class RecyclerListView extends RecyclerView implements IBlur3Capture {
                     paint2.setAlpha((int) (oldAlpha1 * floatingDateProgress));
 
                     if (blurredTagDrawable != null) {
-                        rect.round(AndroidUtilities.rectTmp2I);
-                        AndroidUtilities.rectTmp2I.inset(-dp(4), -dp(4));
-                        blurredTagDrawable.setBounds(AndroidUtilities.rectTmp2I);
+                        rect.round(AndroidUtilities.rectTmp2);
+                        AndroidUtilities.rectTmp2.inset(-dp(4), -dp(4));
+                        blurredTagDrawable.setBounds(AndroidUtilities.rectTmp2);
                         blurredTagDrawable.draw(canvas);
                     } else {
                         fastScrollBackgroundDrawable.setBounds((int) rect.left, (int) rect.top, (int) rect.right, (int) rect.bottom);

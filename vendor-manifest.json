@@ -67,7 +67,7 @@
           "path": "org/telegram/messenger/AndroidUtilities.java",
           "modified": true,
           "port_mode": "native",
-          "notes": "NativeDo utility subset with upstream-shaped helpers. getCacheDir was re-aligned against 12.8.1's external-first/storageCacheDir/internal/files-cache chain, but retains null-context and java.io.tmpdir host fallbacks. Its bootstrap path intentionally never logs: FileLog.init() calls getLogsDir(), which uses Context.getCacheDir()/getFilesDir() directly so cache lookup cannot recurse into FileLog initialization. getAnimatorDurationScale() is copied for the exact WindowInsets keyboard timing path, with a null-context host guard. Font assets, full theme/wallpaper helpers, and unrelated AndroidUtilities surface remain native/adapted."
+          "notes": "NativeDo utility subset with upstream-shaped helpers. getCacheDir was re-aligned against 12.8.1's external-first/storageCacheDir/internal/files-cache chain, but retains null-context and java.io.tmpdir host fallbacks. Its bootstrap path intentionally never logs: FileLog.init() calls getLogsDir(), which uses Context.getCacheDir()/getFilesDir() directly so cache lookup cannot recurse into FileLog initialization. getAnimatorDurationScale() is copied for the exact WindowInsets keyboard timing path, with a null-context host guard. getVibrator() matches the pin API required by BotWebViewVibrationEffect. Font assets, full theme/wallpaper helpers, and unrelated AndroidUtilities surface remain native/adapted."
         },
         {
           "path": "org/telegram/messenger/Emoji.java",
@@ -97,7 +97,7 @@
           "pin": "legacy_009e97356",
           "modified": true,
           "port_mode": "native",
-          "notes": "Browser URL dispatch for NativeDo: openUrl order is in-app (MessagesController.isWebBrowserOpenInApp = SharedConfig.inappBrowser && !RestrictedDomainsList) then androidx Custom Tabs when customTabs enabled, then ACTION_VIEW. MainActivity binds/unbinds Custom Tabs service.",
+          "notes": "Browser URL dispatch for NativeDo: openUrl order is in-app (MessagesController.isWebBrowserOpenInApp over local TL_webBrowserSettings) then androidx Custom Tabs when enabled, then ACTION_VIEW. MainActivity binds/unbinds Custom Tabs service.",
           "stuck_ref": "native_host_reference_only"
         },
         {
@@ -156,8 +156,8 @@
           "path": "org/telegram/ui/ArticleViewer.java",
           "pin": "legacy_009e97356",
           "modified": true,
-          "notes": "Epic closed (B21 + A3/A4-partial/A6/A7) against global pin 12.9.0. Host-wired IV/browser sheet: Sheet/BottomSheetTabs lifecycle, WebBookmarks, RestrictedDomains open-external, WebView file chooser, selection-mode dismiss gating, pin-shaped sheet radii, PageLayout fallback, capturePreviewBitmap, ActionBarLayout dismiss. Parent-driven surface: IArticleViewer state; DrawingText bounds/spoilers/attach/liveDrawingTexts/MultiLayoutTypingAnimator.Block; Block* attach lifecycle; EmbedPost/Slideshow a11y; Resources paints incl. Heading1-6; getText/createLayoutForText with TL_textSpoiler; quoteLevels drawQuoteLines; CodeHighlighting preformatted; table long-press selection; setIsLocal transitions. Embed/Collage/Slideshow stay non-static (pin-matched, A5 wontfix). Historical vendored_at pin is legacy reference only — file is multi-slice host-wired, not FF-eligible. See docs/vendor-articleviewer-plan.md; TableLayout 12.9 CellText: DrawingText implements CellText; BlockTableCell onLayoutChild/setX path aligned.",
-          "stuck_reason": "Epic closed — not eligible for clean FF. Remaining deltas are intentional NativeDo host chrome (WebBookmarks, RestrictedDomainsList, file chooser, capturePreviewBitmap, ActionBarLayout dismiss); not pin debt. A5 static reshape wontfix. Re-open only for a product bug or host-chrome ticket. docs/vendor-articleviewer-plan.md."
+          "notes": "Epic closed (B21 + A3/A4-partial/A6/A7) against global pin 12.9.0. Host-wired IV/browser sheet: Sheet/BottomSheetTabs lifecycle, WebBookmarks, local MessagesController browser-policy facade, WebView file chooser, selection-mode dismiss gating, pin-shaped sheet radii, PageLayout fallback, capturePreviewBitmap, ActionBarLayout dismiss. Parent-driven surface: IArticleViewer state; DrawingText bounds/spoilers/attach/liveDrawingTexts/MultiLayoutTypingAnimator.Block; Block* attach lifecycle; EmbedPost/Slideshow a11y; Resources paints incl. Heading1-6; getText/createLayoutForText with TL_textSpoiler; quoteLevels drawQuoteLines; CodeHighlighting preformatted; table long-press selection; setIsLocal transitions. Embed/Collage/Slideshow stay non-static (pin-matched, A5 wontfix). Historical vendored_at pin is legacy reference only — file is multi-slice host-wired, not FF-eligible. See docs/vendor-articleviewer-plan.md; TableLayout 12.9 CellText: DrawingText implements CellText; BlockTableCell onLayoutChild/setX path aligned.",
+          "stuck_reason": "Epic closed — not eligible for clean FF. Remaining deltas are intentional NativeDo host chrome (WebBookmarks, local MessagesController browser settings, file chooser, capturePreviewBitmap, ActionBarLayout dismiss); not pin debt. A5 static reshape wontfix. Re-open only for a product bug or host-chrome ticket. docs/vendor-articleviewer-plan.md."
         },
         {
           "path": "org/telegram/ui/MultiLayoutTypingAnimator.java",
@@ -892,15 +892,14 @@
         },
         {
           "path": "org/telegram/ui/Components/FragmentSearchField.java",
-          "modified": true,
+          "modified": false,
           "forced_exact": [
             "animation",
             "measurement",
             "drawing"
           ],
-          "notes": "exact@12.9.0 + host: setClipBounds via AndroidUtilities.rectTmp2I (int Rect) because local rectTmp2 is float; SearchFilterView.setGlass no-op + removable ctor aligned at 12.9 bump.",
-          "port_mode": "exact",
-          "stuck_ref": "host_wiring_keep_at_pin"
+          "notes": "Copied verbatim from pinned upstream, including RectF clip bounds and the exact animation/measurement/drawing method shape.",
+          "port_mode": "exact"
         },
         {
           "path": "org/telegram/ui/Components/DrawingInBackgroundThreadDrawable.java",
@@ -1098,14 +1097,13 @@
         },
         {
           "path": "org/telegram/ui/Components/RecyclerListView.java",
-          "modified": true,
+          "modified": false,
           "forced_exact": [
             "recycling",
             "gesture"
           ],
-          "notes": "exact@12.9.0 + host: FastScroll blur tag uses AndroidUtilities.rectTmp2I (local rectTmp2 is RectF; pin rectTmp2 is Rect). blur3 FastScroll path, SectionsAdapter.notifyDataSetChanged, and edge-effect API restored to pin. forced_exact recycling/gesture.",
-          "port_mode": "exact",
-          "stuck_ref": "host_wiring_keep_at_pin"
+          "notes": "exact@12.9.0 pin-shaped after AndroidUtilities.rectTmp2 restored to Rect; FastScroll blur uses rectTmp2 like upstream. forced_exact recycling/gesture.",
+          "port_mode": "exact"
         },
         {
           "path": "org/telegram/ui/Components/ScrollSlidingTextTabStrip.java",
@@ -1419,11 +1417,9 @@
         },
         {
           "path": "org/telegram/ui/ActionBar/ActionBarPopupWindow.java",
-          "pin": "legacy_009e97356",
-          "modified": true,
-          "port_mode": "native",
-          "notes": "Full ActionBarPopupWindow + ActionBarPopupWindowLayout. Imports ViewOutlineProviderImpl mirroring upstream's import region but never references it in-body (rounded corners use the 9-patch background + clipPath in dispatchDraw). startAnimation/dispatchDraw/setBackScaleY animation+drawing constants kept upstream-shaped; the onItemShown() child-animation callback is commented out (not present on the NativeDo ActionBarMenuSubItem).",
-          "stuck_ref": "native_host_reference_only"
+          "modified": false,
+          "port_mode": "exact",
+          "notes": "Copied verbatim from pinned upstream. The local ActionBarMenuSubItem dependency is provided by the Telegram module host."
         },
         {
           "path": "org/telegram/ui/Components/PopupSwipeBackLayout.java",
@@ -1517,21 +1513,12 @@
         },
         {
           "path": "org/telegram/ui/web/WebMetadataCache.java",
-          "modified": true,
-          "notes": "Scheme-2 pin surface @ 12.9.0 plus NativeDo offscreen WebView favicon/sitename extraction: retrieveFaviconAndSitename resolves host Activity via LaunchActivity.getActionBarLayoutActivity(); SitenameProxy JS bridge; favicon decode guards. Pin alone lacks this host extraction path — not clean-FF eligible.",
-          "port_mode": "exact",
-          "stuck_ref": "host_wiring_keep_at_pin"
+          "modified": false,
+          "notes": "Copied verbatim from pin 12.9.0. The previous NativeDo offscreen WebView favicon/sitename extractor had no callers and was removed during browser re-alignment.",
+          "port_mode": "exact"
         },
         {
           "path": "org/telegram/ui/web/SearchEngine.java"
-        },
-        {
-          "path": "org/telegram/ui/web/RestrictedDomainsList.java",
-          "pin": "legacy_009e97356",
-          "modified": true,
-          "notes": "NativeDo host restricted-domain store under org.telegram.ui.web (mirrors BrowserStorage normalize/isRestricted/add/remove/clear). No RestrictedDomainsList.java blob at pin 12.9.0 or historical vendored_at path — not a Telegram UI port for FF. Used by ArticleViewer open-external host path. Keep modified; reclassify only if upstream gains a same-path type.",
-          "port_mode": "exact",
-          "stuck_ref": "native_host_no_upstream_blob"
         },
         {
           "path": "org/telegram/ui/web/HttpGetTask.java"
@@ -1550,14 +1537,14 @@
         },
         {
           "path": "org/telegram/ui/web/WebActionBar.java",
-          "notes": "Host wiring: call onOpenedMenu before showing ItemOptions so ArticleViewer can settle scroll/header state."
+          "notes": "Copied verbatim from pin 12.9.0, including the upstream onOpenedMenu extension hook."
         },
         {
           "path": "org/telegram/ui/web/BotWebViewContainer.java",
           "pin": "legacy_009e97356",
           "modified": true,
           "port_mode": "native",
-          "notes": "Native browser WebView host for ArticleViewer (not full pin BotWebView). http(s) in-webview; other schemes external. setPageLoaded + back/forward chrome; progress/title/favicon/error; long-press menus; DownloadManager downloads with size confirm; onCreateWindow opens nested ArticleViewer when in-app browser on; history+metadata+find. Omitted: TON proxy, Mini App bridge, full DangerousWebWarning.",
+          "notes": "Native browser WebView host for ArticleViewer (not full pin BotWebView). http(s) in-webview; other schemes external. setPageLoaded + back/forward chrome; progress/title/favicon/error; pin-shaped main-frame HTTP error and renderer-crash handling; long-press menus; DownloadManager downloads with size confirm; onCreateWindow opens nested ArticleViewer when in-app browser on; history+metadata+find. Omitted: TON proxy, Mini App bridge, full DangerousWebWarning.",
           "stuck_ref": "native_host_reference_only"
         },
         {
@@ -1574,8 +1561,8 @@
         },
         {
           "path": "org/telegram/ui/web/WebBrowserSettings.java",
-          "notes": "Pin 12.9.0 UI + single-account facade. loadSizes scans modern Chromium app_webview* / cache webview dirs plus NativeDo history/metadata/bookmarks files; always shows formatFileSize (incl. 0 KB). Cookie size matches Cookies* and Chromium network cookie state files.",
-          "modified": true,
+          "notes": "Copied verbatim from pin 12.9.0. Single-account browser policy is supplied by the existing MessagesController facade; no local settings, sizing, or clearing logic remains in this file.",
+          "modified": false,
           "port_mode": "exact"
         },
         {
@@ -1796,7 +1783,7 @@
           "modified": true,
           "port_mode": "native",
           "stuck_ref": "native_host_reference_only",
-          "notes": "Host-only TL_account surface: WebDomainException for pin WebBrowserSettings. No MTProto serialize; filled from RestrictedDomainsList + WebMetadataCache."
+          "notes": "Host-only TL_account surface for pin WebBrowserSettings. Provides the local TL_webBrowserSettings/WebDomainException model; no MTProto serialize path. MessagesController persists the model locally and WebMetadataCache supplies display titles."
         }
       ]
     },
@@ -1940,6 +1927,10 @@
         {
           "path": "org/telegram/messenger/NotchInfoUtils.java",
           "notes": "Vendored as dependency of ProfileGooeyView"
+        },
+        {
+          "path": "org/telegram/messenger/BotWebViewVibrationEffect.java",
+          "notes": "Copied verbatim from pin. Restores ItemOptions APP_ERROR haptic feedback without pulling Telegram Mini App state or UI."
         },
         {
           "path": "org/telegram/messenger/wallpaper/WallpaperGiftPatternPosition.java",
@@ -2697,12 +2688,12 @@
         {
           "path": "org/telegram/messenger/MessagesController.java",
           "pin": "legacy_009e97356",
-          "notes": "Compile shim, not a port: no Telegram source copied. The local file is a minimal stub (~150 lines) that matches the upstream public API surface used by ported animation code. Real behaviour is provided by NativeDo. Kept in the manifest so the upstream path stays discoverable for diffs and to make the shim-vs-port distinction explicit. Do not treat as vendored; no upstream field/method shapes are preserved."
+          "notes": "NativeDo compatibility shim, not a Telegram source port. Besides compile surfaces used by vendored UI, it provides the single-account browser policy facade required by pinned WebBrowserSettings, persisting the local TL_webBrowserSettings model without MTProto sync. Do not treat it as vendored or upstream-shaped implementation code."
         },
         {
           "path": "org/telegram/messenger/SharedConfig.java",
           "pin": "legacy_009e97356",
-          "notes": "Compile shim, not a port: no Telegram source copied. The local file is a minimal stub (~160 lines) that returns safe defaults for SharedConfig animations, browser settings, performance class, bubbleRadius, and fontSize surfaces used by ported UI. The previous 'port_mode: exact' was wrong — diff is ~1900 lines, not 0. Kept in the manifest so the upstream path stays discoverable; do not treat as vendored."
+          "notes": "Compile shim, not a port: no Telegram source copied. It provides animation/performance/font/search/Instant View preferences used by vendored UI; browser open policy moved to the local TL_webBrowserSettings model in MessagesController. Do not treat this as vendored or upstream-shaped implementation code."
         },
         {
           "path": "org/telegram/ui/Cells/ChatActionCell.java",

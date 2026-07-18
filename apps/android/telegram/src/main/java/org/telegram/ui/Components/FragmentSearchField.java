@@ -249,13 +249,7 @@ public class FragmentSearchField extends FrameLayout implements FactorAnimator.T
             editText.getMeasuredWidth() - pRight,
             editText.getMeasuredHeight()
         );
-        AndroidUtilities.rectTmp2I.set(
-                (int) AndroidUtilities.rectTmp2.left,
-                (int) AndroidUtilities.rectTmp2.top,
-                (int) AndroidUtilities.rectTmp2.right,
-                (int) AndroidUtilities.rectTmp2.bottom
-        );
-        editText.setClipBounds(AndroidUtilities.rectTmp2I);
+        editText.setClipBounds(AndroidUtilities.rectTmp2);
         editText.setPadding(pLeft, 0, pRight, 0);
     }
 

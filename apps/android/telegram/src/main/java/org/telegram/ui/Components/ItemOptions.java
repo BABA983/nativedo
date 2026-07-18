@@ -41,7 +41,7 @@ import androidx.annotation.Nullable;
 import androidx.core.graphics.ColorUtils;
 
 import org.telegram.messenger.AndroidUtilities;
-// import org.telegram.messenger.BotWebViewVibrationEffect; // Optional feature - commented out
+import org.telegram.messenger.BotWebViewVibrationEffect;
 import org.telegram.messenger.ChatObject;
 import org.telegram.messenger.DocumentObject;
 import org.telegram.messenger.Emoji;
@@ -736,7 +736,7 @@ public class ItemOptions {
         lastSubItem.setOnClickListener(view1 -> {
             if (onLockClick != null) {
                 AndroidUtilities.shakeViewSpring(view1, shiftDp = -shiftDp);
-                // BotWebViewVibrationEffect.APP_ERROR.vibrate();
+                BotWebViewVibrationEffect.APP_ERROR.vibrate();
                 onLockClick.run();
             }
         });

@@ -49,9 +49,7 @@ public final class SharedConfig {
 
     /** Matches upstream {@code SharedConfig.adaptableColorInBrowser}. */
     public static boolean adaptableColorInBrowser = false;
-    public static boolean inappBrowser = true;
     public static boolean onlyLocalInstantView = false;
-    public static boolean customTabs = true;
     public static int searchEngineType = 0;
     public static int fontSize = 16;
     public static int ivFontSize = 16;
@@ -63,8 +61,6 @@ public final class SharedConfig {
     public static void loadBrowserConfig() {
         SharedPreferences preferences = MessagesController.getGlobalMainSettings();
         searchEngineType = preferences.getInt("searchEngineType", 0);
-        customTabs = preferences.getBoolean("custom_tabs", true);
-        inappBrowser = preferences.getBoolean("inapp_browser", true);
         adaptableColorInBrowser = preferences.getBoolean("adaptableBrowser", false);
         onlyLocalInstantView = preferences.getBoolean("onlyLocalInstantView", false);
         ivFontSize = preferences.getInt("iv_font_size", 16);
@@ -86,16 +82,6 @@ public final class SharedConfig {
     public static void toggleLocalInstantView() {
         onlyLocalInstantView = !onlyLocalInstantView;
         browserPreferences().edit().putBoolean("onlyLocalInstantView", onlyLocalInstantView).apply();
-    }
-
-    public static void toggleInappBrowser() {
-        inappBrowser = !inappBrowser;
-        browserPreferences().edit().putBoolean("inapp_browser", inappBrowser).apply();
-    }
-
-    public static void toggleCustomTabs(boolean enabled) {
-        customTabs = enabled;
-        browserPreferences().edit().putBoolean("custom_tabs", customTabs).apply();
     }
 
     public static void setSearchEngineType(int type) {

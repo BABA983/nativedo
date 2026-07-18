@@ -157,7 +157,7 @@ public class DialogsItemAnimator extends SimpleItemAnimator {
     }
 
     @Override
-    public boolean animateRemove(final ViewHolder holder) {
+    public boolean animateRemove(final ViewHolder holder, ItemHolderInfo info) {
         resetAnimation(holder);
         mPendingRemovals.add(holder);
         int top = Integer.MIN_VALUE;
@@ -316,7 +316,7 @@ public class DialogsItemAnimator extends SimpleItemAnimator {
     }
 
     @Override
-    public boolean animateMove(final ViewHolder holder, int fromX, int fromY,
+    public boolean animateMove(final ViewHolder holder, ItemHolderInfo info, int fromX, int fromY,
                                int toX, int toY) {
         final View view = holder.itemView;
         fromX += (int) holder.itemView.getTranslationX();
@@ -424,7 +424,7 @@ public class DialogsItemAnimator extends SimpleItemAnimator {
     }
 
     @Override
-    public boolean animateChange(ViewHolder oldHolder, ViewHolder newHolder, int fromX, int fromY, int toX, int toY) {
+    public boolean animateChange(ViewHolder oldHolder, ViewHolder newHolder, ItemHolderInfo info, int fromX, int fromY, int toX, int toY) {
         if (oldHolder.itemView instanceof MovableCell) {
             resetAnimation(oldHolder);
             resetAnimation(newHolder);

@@ -524,47 +524,47 @@ public class ButtonWithCounterView extends FrameLayout implements Loadable {
 
             float lightningWidth = withCounterIcon ? AndroidUtilities.dp(12) : 0;
             float width = textWidth + lightningWidth + calculateCounterWidth((dp(5.66f + 5 + 5) + countText.getCurrentWidth()), countAlpha);
-            AndroidUtilities.rectTmp2I.set(
+            AndroidUtilities.rectTmp2.set(
                     (int) ((getMeasuredWidth() - width - getWidth()) / 2f),
                     (int) ((getMeasuredHeight() - text.getHeight()) / 2f - dp(1)),
                     (int) ((getMeasuredWidth() - width + getWidth()) / 2f + textWidth),
                     (int) ((getMeasuredHeight() + text.getHeight()) / 2f - dp(1))
             );
-            AndroidUtilities.rectTmp2I.offset(0, (int) (-dp(7) * subTextT));
+            AndroidUtilities.rectTmp2.offset(0, (int) (-dp(7) * subTextT));
             text.setAlpha((int) (globalAlpha * (1f - loadingT) * AndroidUtilities.lerp(.5f, 1f, enabledT)));
-            text.setBounds(AndroidUtilities.rectTmp2I);
+            text.setBounds(AndroidUtilities.rectTmp2);
             text.draw(canvas);
 
             if (subTextVisible) {
                 float subTextWidth = subText.getCurrentWidth();
                 width = subTextWidth;
-                AndroidUtilities.rectTmp2I.set(
+                AndroidUtilities.rectTmp2.set(
                         (int) ((getMeasuredWidth() - width - getWidth()) / 2f),
                         (int) ((getMeasuredHeight() - subText.getHeight()) / 2f - dp(1)),
                         (int) ((getMeasuredWidth() - width + getWidth()) / 2f + subTextWidth),
                         (int) ((getMeasuredHeight() + subText.getHeight()) / 2f - dp(1))
                 );
-                AndroidUtilities.rectTmp2I.offset(0, dp(11));
+                AndroidUtilities.rectTmp2.offset(0, dp(11));
                 canvas.save();
                 float scale = AndroidUtilities.lerp(.1f, 1f, subTextT);
-                canvas.scale(scale, scale, AndroidUtilities.rectTmp2I.centerX(), AndroidUtilities.rectTmp2I.bottom);
+                canvas.scale(scale, scale, AndroidUtilities.rectTmp2.centerX(), AndroidUtilities.rectTmp2.bottom);
                 subText.setAlpha((int) (subTextAlpha * (1f - loadingT) * subTextT * AndroidUtilities.lerp(.5f, 1f, enabledT)));
-                subText.setBounds(AndroidUtilities.rectTmp2I);
+                subText.setBounds(AndroidUtilities.rectTmp2);
                 subText.draw(canvas);
                 canvas.restore();
             }
 
-            AndroidUtilities.rectTmp2I.set(
+            AndroidUtilities.rectTmp2.set(
                     (int) ((getMeasuredWidth() - width) / 2f + textWidth + dp(countFilled ? 5 : 2)),
                     (int) ((getMeasuredHeight() - dp(18)) / 2f),
                     (int) ((getMeasuredWidth() - width) / 2f + textWidth + dp((countFilled ? 5 : 2) + 4 + 4) + Math.max(dp(9), countText.getCurrentWidth() + lightningWidth)),
                     (int) ((getMeasuredHeight() + dp(18)) / 2f)
             );
-            AndroidUtilities.rectTmp.set(AndroidUtilities.rectTmp2I);
+            AndroidUtilities.rectTmp.set(AndroidUtilities.rectTmp2);
 
             if (countScale != 1) {
                 canvas.save();
-                canvas.scale(countScale, countScale, AndroidUtilities.rectTmp2I.centerX(), AndroidUtilities.rectTmp2I.centerY());
+                canvas.scale(countScale, countScale, AndroidUtilities.rectTmp2.centerX(), AndroidUtilities.rectTmp2.centerY());
             }
             if (countFilled) {
                 paint.setAlpha((int) (globalAlpha * (1f - loadingT) * countAlpha * countAlpha * AndroidUtilities.lerp(.5f, 1f, enabledT)));
@@ -573,17 +573,17 @@ public class ButtonWithCounterView extends FrameLayout implements Loadable {
             }
 
             int countLength = countText.getText() != null ? countText.getText().length() : 0;
-            AndroidUtilities.rectTmp2I.offset(-dp(countLength > 1 ? .3f : 0), -dp(.4f));
+            AndroidUtilities.rectTmp2.offset(-dp(countLength > 1 ? .3f : 0), -dp(.4f));
             countText.setAlpha((int) (globalAlpha * (1f - loadingT) * countAlpha * (countFilled ? 1 : .5f)));
-            countText.setBounds(AndroidUtilities.rectTmp2I);
+            countText.setBounds(AndroidUtilities.rectTmp2);
             canvas.save();
             if (countFilled && withCounterIcon) {
                 counterDrawable.setAlpha((int) (globalAlpha * (1f - loadingT) * countAlpha * 1));
                 counterDrawable.setBounds(
-                        dp(1) + AndroidUtilities.rectTmp2I.left,
-                        dp(2) + AndroidUtilities.rectTmp2I.top,
-                        dp(1) + AndroidUtilities.rectTmp2I.left + counterDrawable.getIntrinsicWidth(),
-                        dp(2) + AndroidUtilities.rectTmp2I.top + counterDrawable.getIntrinsicHeight());
+                        dp(1) + AndroidUtilities.rectTmp2.left,
+                        dp(2) + AndroidUtilities.rectTmp2.top,
+                        dp(1) + AndroidUtilities.rectTmp2.left + counterDrawable.getIntrinsicWidth(),
+                        dp(2) + AndroidUtilities.rectTmp2.top + counterDrawable.getIntrinsicHeight());
                 counterDrawable.draw(canvas);
                 canvas.translate(lightningWidth / 2, 0);
             }

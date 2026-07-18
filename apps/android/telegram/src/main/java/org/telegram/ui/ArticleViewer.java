@@ -159,7 +159,6 @@ import org.telegram.ui.ActionBar.BottomSheetTabDialog;
 import org.telegram.ui.ActionBar.BottomSheetTabs;
 import org.telegram.ui.ActionBar.BottomSheetTabsOverlay;
 import org.telegram.ui.ActionBar.Theme;
-import org.telegram.ui.Cells.CheckBoxCell;
 import org.telegram.ui.Cells.HeaderCell;
 import org.telegram.ui.Cells.TextSelectionHelper;
 import org.telegram.ui.Components.AlertsCreator;
@@ -216,7 +215,6 @@ import org.telegram.ui.web.BotWebViewContainer;
 import org.telegram.ui.bots.ChatAttachAlertBotWebViewLayout;
 import org.telegram.ui.web.BrowserHistory;
 import org.telegram.ui.web.HistoryFragment;
-import org.telegram.ui.web.RestrictedDomainsList;
 import org.telegram.ui.web.SearchEngine;
 import org.telegram.ui.web.WebActionBar;
 import org.telegram.ui.web.WebBookmarks;
@@ -4903,17 +4901,14 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 }
             } else if (id == WebActionBar.open_item) {
                 String webPageUrl, webPageOpenUrl;
-                final FrameLayout container;
                 if (pages[0].isWeb()) {
                     if (pages[0].getWebView() == null) return;
                     webPageUrl = pages[0].getWebView().getUrl();
                     webPageOpenUrl = pages[0].getWebView().getOpenURL();
-                    container = pages[0].webViewContainer;
                 } else {
                     if (pages[0].adapter.currentPage == null) return;
                     webPageUrl = pages[0].adapter.currentPage.url;
                     webPageOpenUrl = null;
-                    container = pages[0];
                 }
                 if (parentActivity == null || parentActivity.isFinishing()) return;
                 if (webPageUrl == null) return;
@@ -4923,55 +4918,31 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                     Browser.openInExternalBrowser(parentActivity, webPageUrl, false);
                 };
                 final Utilities.Callback<Boolean> restrict = waitForResume -> {
-                    RestrictedDomainsList.getInstance().setRestricted(true, domain, !TextUtils.isEmpty(open_domain) && !TextUtils.equals(open_domain, domain) ? open_domain : null);
+                    MessagesController.getInstance(currentAccount).addWebBrowserException(domain, true);
+                    if (!TextUtils.isEmpty(open_domain) && !TextUtils.equals(open_domain, domain)) {
+                        MessagesController.getInstance(currentAccount).addWebBrowserException(open_domain, true);
+                    }
                     if (!waitForResume) {
                         showRestrictedWebsiteToast();
                     } else {
                         LaunchActivity.whenResumed = this::showRestrictedWebsiteToast;
                     }
                 };
-                if (pages[0].isWeb() && !RestrictedDomainsList.getInstance().isRestricted(domain) && RestrictedDomainsList.getInstance().incrementOpen(domain) >= 2) {
-                    AlertDialog.Builder a = new AlertDialog.Builder(activity, getResourcesProvider());
-                    a.setTitle(getString(R.string.BrowserExternalTitle));
-
-                    LinearLayout linearLayout = new LinearLayout(activity);
-                    linearLayout.setOrientation(LinearLayout.VERTICAL);
-                    TextView textView = new TextView(activity);
-                    textView.setLetterSpacing(0.025f);
-                    textView.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
-                    textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
-                    linearLayout.addView(textView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 24, 0, 24, 0));
-
-                    CheckBoxCell cell = new CheckBoxCell(activity, 1, null);
-                    cell.setMultiline(true);
-                    cell.getTextView().getLayoutParams().width = LayoutHelper.MATCH_PARENT;
-                    cell.getTextView().setSingleLine(false);
-                    cell.getTextView().setMaxLines(3);
-                    cell.getTextView().setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
-                    cell.setOnClickListener(v -> {
-                        cell.setChecked(!cell.isChecked(), true);
-                    });
-                    cell.setBackground(Theme.createRadSelectorDrawable(Theme.getColor(Theme.key_listSelector), 9, 9));
-                    linearLayout.addView(cell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.LEFT, 8, 6, 8, 4));
-
-                    textView.setText(AndroidUtilities.replaceTags(LocaleController.getString(R.string.BrowserExternalText)));
-                    cell.setText(AndroidUtilities.replaceTags(LocaleController.formatString(R.string.BrowserExternalCheck, domain)), "", false, false);
-                    a.setView(linearLayout);
-
-                    a.setPositiveButton(LocaleController.getString(R.string.Continue), (di, w) -> {
-                        if (cell.isChecked()) {
-                            restrict.run(true);
-                        }
-                       open.run();
-                    });
-                    a.setNegativeButton(LocaleController.getString(R.string.Cancel), (di, w) -> {
-                        if (cell.isChecked()) {
-                            restrict.run(false);
-                        }
-                    });
-
-                    a.show();
-                } else open.run();
+                if (pages[0].isWeb()
+                        && MessagesController.getInstance(currentAccount).isWebBrowserOpenInApp(domain)
+                        && !MessagesController.getInstance(currentAccount).isWebBrowserExceptionsLimitReached(true)) {
+                    AlertsCreator.showOpenExternalBrowserAlert(activity, getResourcesProvider(), webPageUrl,
+                            true, true, (confirmed, checked) -> {
+                                if (confirmed) {
+                                    if (checked) {
+                                        restrict.run(true);
+                                    }
+                                    open.run();
+                                }
+                            });
+                } else {
+                    open.run();
+                }
             } else if (id == WebActionBar.settings_item) {
                 if (pages[0].isWeb()) {
                     openWebSettings();

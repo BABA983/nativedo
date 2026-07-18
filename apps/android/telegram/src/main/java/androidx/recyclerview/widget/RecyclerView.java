@@ -11204,10 +11204,6 @@ public class RecyclerView extends ViewGroup implements ScrollingView,
             return mOwnerRecyclerView.getAdapterPositionFor(this);
         }
 
-        public final int getBindingAdapterPosition() {
-            return getAdapterPosition();
-        }
-
         /**
          * When LayoutManager supports animations, RecyclerView tracks 3 positions for ViewHolders
          * to perform animations.

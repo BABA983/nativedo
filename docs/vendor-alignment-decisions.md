@@ -43,7 +43,7 @@ Do not resume AV slices from the vendor queue.
 
 | Id | Topic | Default |
 |---|---|---|
-| A4 remainder | WebBookmarks / RestrictedDomains / file chooser / preview bitmap / ActionBarLayout dismiss | Keep NativeDo host backends |
+| A4 remainder | WebBookmarks / local browser settings / file chooser / preview bitmap / ActionBarLayout dismiss | Keep NativeDo host backends |
 | A5 | Embed/Collage/Slideshow static reshape | Wontfix (pin is non-static) |
 
 ## Other exact+modified files — safe to leave, need product call to change
@@ -72,7 +72,7 @@ Do not resume AV slices from the vendor queue.
 | `ThemeColors.java` | NativeDo wallpaper/service/link colors | **keep** host_wiring_only |
 | `ImageReceiver.java` | Was legacy pin + Log/AnimatedEmoji | **done** — pin-identical @ 12.9.0 |
 | `ImageLocation.java` | Was legacy photo-location body | **done** — pin-identical @ 12.9.0 |
-| `RestrictedDomainsList.java` | Legacy pin | Re-sync with browser open-external if needed |
+| `MessagesController.java` / `TL_account.java` | Local browser settings model | Keep local persistence; mirror pinned dual-list policy |
 
 ### B4. Larger “other” exact+modified (classify primary=other)
 
@@ -84,8 +84,8 @@ Do not auto-overwrite. Re-sync only with a named product goal:
 - **Browser stack (documented keep @ 12.9.0):**
   - `WebInstantView` — S1 type map + `getActionBarLayoutActivity` for readHTML
   - `AddressBarList` / `BookmarksFragment` — WebBookmarks, not MediaDataController
-  - `WebMetadataCache` — host offscreen WebView favicon/sitename extraction
-  - `RestrictedDomainsList` — **no upstream blob** at pin; host shim for open-external
+  - `WebMetadataCache` — restored byte-identical at pin
+  - `MessagesController` / `TL_account` — local equivalent of pinned `TL_webBrowserSettings`; no Telegram MTProto backend
 - Dialog cell SPI: `DialogsItemAnimator`, `AnimationProperties` (already `host_wiring_keep_at_pin`)
 
 Full list: `scripts/vendor-classify.sh --port-mode exact`.
@@ -121,8 +121,7 @@ Still modified and intentionally not bulk-copied without product decisions:
 - `ArticleViewer.java`, `IArticleViewer.java` (epic closed; host-wired IV; not next work)
 - ~~`ImageReceiver` / `ImageLocation`~~ — pin-identical @ 12.9.0
 - ~~`GroupedPhotosListView` / `TableLayout`~~ — host keep @ 12.9.0 (S1 TL_iv→TLRPC)
-- `RestrictedDomainsList` (no upstream blob; host shim, stuck documented)
-- Browser stack @ 12.9.0 host keep: `WebInstantView`, `AddressBarList`, `BookmarksFragment`, `WebMetadataCache`
+- Browser stack @ 12.9.0 host keep: `WebInstantView`, `AddressBarList`, `BookmarksFragment`, local `MessagesController` browser settings
 - Small host keep (see B1–B2): ThemeColors, LayoutHelper, GraySectionCell, AnimatedTextView, …
 - Heavier at-pin now documented host keep: `Utilities`, `RecyclerListView`
 

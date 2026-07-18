@@ -7,6 +7,9 @@ package org.telegram.messenger;
 
 import android.content.SharedPreferences;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 
@@ -179,109 +182,274 @@ public final class MessagesController {
     }
 
     // ── Single-account browser settings façade (pin WebBrowserSettings @ 12.9.0) ──
-    // Maps Telegram MessagesController browser policy APIs onto device-local
-    // SharedConfig + RestrictedDomainsList. One account only; no MTProto sync.
+    // Telegram stores this model in the account database and syncs it through
+    // account.getWebBrowserSettings. NativeDo has no MTProto backend, so the
+    // same state machine is persisted locally as JSON instead.
 
-    public boolean isWebBrowserInAppEnabled() {
-        SharedConfig.loadBrowserConfig();
-        return SharedConfig.inappBrowser;
+    private static final String WEB_BROWSER_SETTINGS_KEY = "web_browser_settings_v2";
+    private org.telegram.tgnet.tl.TL_account.TL_webBrowserSettings webBrowserSettings;
+    private boolean webBrowserSettingsLoaded;
+
+    private org.telegram.tgnet.tl.TL_account.TL_webBrowserSettings newWebBrowserSettings() {
+        org.telegram.tgnet.tl.TL_account.TL_webBrowserSettings settings =
+                new org.telegram.tgnet.tl.TL_account.TL_webBrowserSettings();
+        settings.open_external_browser = false;
+        settings.display_close_button = true;
+        return settings;
     }
 
-    public void toggleWebBrowserInAppEnabled() {
-        SharedConfig.toggleInappBrowser();
+    private static String normalizeWebDomain(String value) {
+        String text = value == null ? "" : value.trim();
+        if (android.text.TextUtils.isEmpty(text)) {
+            return "";
+        }
+        try {
+            android.net.Uri uri = android.net.Uri.parse(text);
+            if (uri.getHost() == null) {
+                uri = android.net.Uri.parse("https://" + text);
+            }
+            String host = uri.getHost();
+            if (android.text.TextUtils.isEmpty(host)) {
+                return "";
+            }
+            host = host.toLowerCase(java.util.Locale.ROOT);
+            return host.startsWith("www.") ? host.substring(4) : host;
+        } catch (Exception ignored) {
+            return "";
+        }
+    }
+
+    private static JSONObject exceptionToJson(
+            org.telegram.tgnet.tl.TL_account.WebDomainException exception) {
+        JSONObject object = new JSONObject();
+        try {
+            object.put("domain", exception.domain);
+            object.put("url", exception.url);
+            object.put("title", exception.title);
+            object.put("favicon", exception.favicon);
+        } catch (Exception ignored) {
+        }
+        return object;
+    }
+
+    private static void readExceptionList(
+            JSONArray array,
+            java.util.ArrayList<org.telegram.tgnet.tl.TL_account.WebDomainException> target) {
+        for (int i = 0; i < array.length(); i++) {
+            JSONObject object = array.optJSONObject(i);
+            if (object == null) {
+                continue;
+            }
+            String domain = normalizeWebDomain(object.optString("domain"));
+            if (android.text.TextUtils.isEmpty(domain)) {
+                continue;
+            }
+            org.telegram.tgnet.tl.TL_account.WebDomainException exception =
+                    new org.telegram.tgnet.tl.TL_account.WebDomainException();
+            exception.domain = domain;
+            exception.url = object.optString("url", "https://" + domain);
+            exception.title = object.optString("title", domain);
+            exception.favicon = object.optLong("favicon", 0L);
+            target.add(exception);
+        }
+    }
+
+    private org.telegram.tgnet.tl.TL_account.TL_webBrowserSettings readWebBrowserSettings() {
+        org.telegram.tgnet.tl.TL_account.TL_webBrowserSettings settings = newWebBrowserSettings();
+        try {
+            String serialized = getGlobalMainSettings().getString(WEB_BROWSER_SETTINGS_KEY, null);
+            if (android.text.TextUtils.isEmpty(serialized)) {
+                return settings;
+            }
+            JSONObject object = new JSONObject(serialized);
+            settings.open_external_browser = object.optBoolean("open_external_browser", false);
+            settings.display_close_button = object.optBoolean("display_close_button", true);
+            readExceptionList(object.optJSONArray("external_exceptions") == null
+                    ? new JSONArray() : object.optJSONArray("external_exceptions"), settings.external_exceptions);
+            readExceptionList(object.optJSONArray("inapp_exceptions") == null
+                    ? new JSONArray() : object.optJSONArray("inapp_exceptions"), settings.inapp_exceptions);
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
+        return settings;
+    }
+
+    private void saveWebBrowserSettings() {
+        if (webBrowserSettings == null) {
+            return;
+        }
+        try {
+            JSONObject object = new JSONObject();
+            object.put("open_external_browser", webBrowserSettings.open_external_browser);
+            object.put("display_close_button", webBrowserSettings.display_close_button);
+            JSONArray external = new JSONArray();
+            for (org.telegram.tgnet.tl.TL_account.WebDomainException exception : webBrowserSettings.external_exceptions) {
+                external.put(exceptionToJson(exception));
+            }
+            JSONArray inApp = new JSONArray();
+            for (org.telegram.tgnet.tl.TL_account.WebDomainException exception : webBrowserSettings.inapp_exceptions) {
+                inApp.put(exceptionToJson(exception));
+            }
+            object.put("external_exceptions", external);
+            object.put("inapp_exceptions", inApp);
+            getGlobalMainSettings().edit().putString(WEB_BROWSER_SETTINGS_KEY, object.toString()).apply();
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
+    }
+
+    public void loadWebBrowserConfig() {
+        loadWebBrowserConfig(false);
+    }
+
+    public void loadWebBrowserConfig(boolean force) {
+        if (webBrowserSettingsLoaded && !force) {
+            return;
+        }
+        webBrowserSettings = readWebBrowserSettings();
+        webBrowserSettingsLoaded = true;
         NotificationCenter.getInstance(UserConfig.selectedAccount)
                 .postNotificationName(NotificationCenter.webBrowserSettingsUpdate);
+    }
+
+    private org.telegram.tgnet.tl.TL_account.TL_webBrowserSettings getWebBrowserSettings() {
+        loadWebBrowserConfig(false);
+        return webBrowserSettings;
+    }
+
+    private void setWebBrowserSettings(
+            org.telegram.tgnet.tl.TL_account.TL_webBrowserSettings settings) {
+        webBrowserSettings = settings;
+        webBrowserSettingsLoaded = true;
+        saveWebBrowserSettings();
+        NotificationCenter.getInstance(UserConfig.selectedAccount)
+                .postNotificationName(NotificationCenter.webBrowserSettingsUpdate);
+    }
+
+    public boolean isWebBrowserInAppEnabled() {
+        return !getWebBrowserSettings().open_external_browser;
     }
 
     public boolean isWebBrowserUseCustomTabs() {
-        SharedConfig.loadBrowserConfig();
-        return SharedConfig.customTabs;
+        org.telegram.tgnet.tl.TL_account.TL_webBrowserSettings settings = getWebBrowserSettings();
+        return settings.open_external_browser && settings.display_close_button;
     }
 
-    public void toggleWebBrowserUseCustomTabs(boolean enabled) {
-        SharedConfig.toggleCustomTabs(enabled);
-        NotificationCenter.getInstance(UserConfig.selectedAccount)
-                .postNotificationName(NotificationCenter.webBrowserSettingsUpdate);
-    }
-
-    /**
-     * Pin-shaped: whether this URL should open in the in-app browser.
-     * Host: {@link SharedConfig#inappBrowser} AND domain not on
-     * {@link org.telegram.ui.web.RestrictedDomainsList}.
-     */
     public boolean isWebBrowserOpenInApp(String url) {
-        SharedConfig.loadBrowserConfig();
-        if (!SharedConfig.inappBrowser || url == null) {
-            return false;
-        }
-        return !org.telegram.ui.web.RestrictedDomainsList.getInstance().isRestrictedUrl(url);
+        org.telegram.tgnet.tl.TL_account.TL_webBrowserSettings settings = getWebBrowserSettings();
+        return url != null && !isWebBrowserOpenInExternal(settings, url);
     }
 
-    /**
-     * Pin {@code getWebBrowserExceptionsList(externalExceptions)}:
-     * {@code true} = never-open-in-app list (RestrictedDomainsList);
-     * {@code false} = always-open-in-app dual list (not ported — empty).
-     */
     public java.util.List<org.telegram.tgnet.tl.TL_account.WebDomainException> getWebBrowserExceptionsList(boolean externalExceptions) {
-        if (!externalExceptions) {
-            return java.util.Collections.emptyList();
-        }
-        org.telegram.ui.web.RestrictedDomainsList list =
-                org.telegram.ui.web.RestrictedDomainsList.getInstance();
-        list.load();
-        java.util.ArrayList<org.telegram.tgnet.tl.TL_account.WebDomainException> out =
-                new java.util.ArrayList<>();
-        for (String domain : list.getRestrictedDomainsList()) {
-            org.telegram.tgnet.tl.TL_account.WebDomainException e =
-                    new org.telegram.tgnet.tl.TL_account.WebDomainException();
-            e.domain = domain;
-            e.url = "https://" + domain;
-            org.telegram.ui.web.WebMetadataCache.WebMetadata meta =
-                    org.telegram.ui.web.WebMetadataCache.getInstance().get(domain);
-            if (meta != null && !android.text.TextUtils.isEmpty(meta.sitename)) {
-                e.title = meta.sitename;
-            } else if (meta != null && !android.text.TextUtils.isEmpty(meta.title)) {
-                e.title = meta.title;
-            } else {
-                e.title = domain;
-            }
-            e.favicon = 0; // host: Bitmap favicons not document ids; letter placeholder
-            out.add(e);
-        }
-        return out;
+        org.telegram.tgnet.tl.TL_account.TL_webBrowserSettings settings = getWebBrowserSettings();
+        return externalExceptions ? settings.external_exceptions : settings.inapp_exceptions;
     }
 
-    /**
-     * @param externalException {@code true}: never open in-app (RestrictedDomainsList).
-     *                          {@code false}: always-open-in-app dual list (no-op locally).
-     */
-    public void addWebBrowserException(String domain, boolean externalException) {
-        if (!externalException) {
-            return;
-        }
-        org.telegram.ui.web.RestrictedDomainsList.getInstance().addRestrictedDomain(domain);
-        NotificationCenter.getInstance(UserConfig.selectedAccount)
-                .postNotificationName(NotificationCenter.webBrowserSettingsUpdate);
+    public void toggleWebBrowserInAppEnabled() {
+        org.telegram.tgnet.tl.TL_account.TL_webBrowserSettings settings = getWebBrowserSettings();
+        settings.open_external_browser = !settings.open_external_browser;
+        setWebBrowserSettings(settings);
     }
 
-    public void removeWebBrowserException(String domain) {
-        org.telegram.ui.web.RestrictedDomainsList.getInstance().removeRestrictedDomain(domain);
-        NotificationCenter.getInstance(UserConfig.selectedAccount)
-                .postNotificationName(NotificationCenter.webBrowserSettingsUpdate);
-    }
-
-    public void clearAllWebBrowserExceptions() {
-        org.telegram.ui.web.RestrictedDomainsList.getInstance().clearRestrictedDomains();
-        NotificationCenter.getInstance(UserConfig.selectedAccount)
-                .postNotificationName(NotificationCenter.webBrowserSettingsUpdate);
+    public void toggleWebBrowserUseCustomTabs(boolean useCustomTabs) {
+        org.telegram.tgnet.tl.TL_account.TL_webBrowserSettings settings = getWebBrowserSettings();
+        settings.display_close_button = useCustomTabs;
+        setWebBrowserSettings(settings);
     }
 
     public boolean isWebBrowserExceptionsLimitReached(boolean externalExceptions) {
-        if (!externalExceptions) {
+        return getWebBrowserExceptionsList(externalExceptions).size() >= 100;
+    }
+
+    public void addWebBrowserException(String url, boolean openExternalBrowser) {
+        String domain = normalizeWebDomain(url);
+        if (android.text.TextUtils.isEmpty(domain)) {
+            return;
+        }
+        org.telegram.tgnet.tl.TL_account.TL_webBrowserSettings settings = getWebBrowserSettings();
+        org.telegram.tgnet.tl.TL_account.WebDomainException exception =
+                new org.telegram.tgnet.tl.TL_account.WebDomainException();
+        exception.domain = domain;
+        exception.url = "https://" + domain;
+        org.telegram.ui.web.WebMetadataCache.WebMetadata meta =
+                org.telegram.ui.web.WebMetadataCache.getInstance().get(domain);
+        exception.title = meta != null && !android.text.TextUtils.isEmpty(meta.sitename)
+                ? meta.sitename : meta != null && !android.text.TextUtils.isEmpty(meta.title)
+                ? meta.title : domain;
+        exception.favicon = 0;
+        java.util.ArrayList<org.telegram.tgnet.tl.TL_account.WebDomainException> target =
+                openExternalBrowser ? settings.external_exceptions : settings.inapp_exceptions;
+        java.util.ArrayList<org.telegram.tgnet.tl.TL_account.WebDomainException> other =
+                openExternalBrowser ? settings.inapp_exceptions : settings.external_exceptions;
+        addWebBrowserExceptionToList(target, exception);
+        deleteWebBrowserExceptionFromList(other, exception);
+        setWebBrowserSettings(settings);
+    }
+
+    public void removeWebBrowserException(String url) {
+        String domain = normalizeWebDomain(url);
+        if (android.text.TextUtils.isEmpty(domain)) {
+            return;
+        }
+        org.telegram.tgnet.tl.TL_account.WebDomainException exception =
+                new org.telegram.tgnet.tl.TL_account.WebDomainException();
+        exception.domain = domain;
+        org.telegram.tgnet.tl.TL_account.TL_webBrowserSettings settings = getWebBrowserSettings();
+        deleteWebBrowserExceptionFromList(settings.external_exceptions, exception);
+        deleteWebBrowserExceptionFromList(settings.inapp_exceptions, exception);
+        setWebBrowserSettings(settings);
+    }
+
+    public void clearAllWebBrowserExceptions() {
+        org.telegram.tgnet.tl.TL_account.TL_webBrowserSettings settings = getWebBrowserSettings();
+        settings.open_external_browser = true;
+        settings.display_close_button = true;
+        settings.external_exceptions.clear();
+        settings.inapp_exceptions.clear();
+        setWebBrowserSettings(settings);
+    }
+
+    private static void deleteWebBrowserExceptionFromList(
+            java.util.ArrayList<org.telegram.tgnet.tl.TL_account.WebDomainException> list,
+            org.telegram.tgnet.tl.TL_account.WebDomainException exception) {
+        for (int i = list.size() - 1; i >= 0; i--) {
+            if (org.telegram.tgnet.tl.TL_account.WebDomainException.equalsByDomain(list.get(i), exception)) {
+                list.remove(i);
+            }
+        }
+    }
+
+    private static void addWebBrowserExceptionToList(
+            java.util.ArrayList<org.telegram.tgnet.tl.TL_account.WebDomainException> list,
+            org.telegram.tgnet.tl.TL_account.WebDomainException exception) {
+        deleteWebBrowserExceptionFromList(list, exception);
+        list.add(exception);
+    }
+
+    private static boolean isWebBrowserOpenInExternal(
+            org.telegram.tgnet.tl.TL_account.TL_webBrowserSettings settings, String url) {
+        String domain = normalizeWebDomain(url);
+        if (android.text.TextUtils.isEmpty(domain)) {
             return false;
         }
-        return org.telegram.ui.web.RestrictedDomainsList.getInstance()
-                .getRestrictedDomainsList().size() >= 200;
+        boolean openExternal = settings.open_external_browser;
+        if (openExternal) {
+            return !hasWebBrowserException(settings.inapp_exceptions, domain);
+        }
+        return hasWebBrowserException(settings.external_exceptions, domain);
+    }
+
+    private static boolean hasWebBrowserException(
+            java.util.ArrayList<org.telegram.tgnet.tl.TL_account.WebDomainException> list,
+            String domain) {
+        String normalized = domain.toLowerCase(java.util.Locale.ROOT);
+        for (org.telegram.tgnet.tl.TL_account.WebDomainException exception : list) {
+            String exceptionDomain = exception.domain == null ? "" : exception.domain.toLowerCase(java.util.Locale.ROOT);
+            if (normalized.equals(exceptionDomain) || normalized.endsWith("." + exceptionDomain)) {
+                return true;
+            }
+        }
+        return false;
     }
 
 }

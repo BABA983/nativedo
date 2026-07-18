@@ -133,7 +133,7 @@ stack, or ImageReceiver pair).
 |----|--------|---------|
 | B1–B21 | Parent-driven cells, spoiler surface, attach, typing animator | **Landed** |
 | A3 | `TL_textSpoiler` content production | **Landed:** `TLRPC.TL_textSpoiler` + pin-shaped `getText` / `getLastRichText` / `getPlainText` / `setRichTextParents`. WebInstantView still does not emit spoilers from HTML (matches pin). Discourse topic spoilers stay on the native body path. |
-| A4 | Broader Sheet / WebActionBar chrome | **Partial / host keep:** pin-shaped `actionBar.setIsLocal` on transitions + `openWebpageUrl` offline confirm. **Keep forever unless product changes:** `WebBookmarks`, `RestrictedDomainsList` open-external, file chooser, `capturePreviewBitmap`, ActionBarLayout dismiss fallback; no `Page.local` File / markdown open. |
+| A4 | Broader Sheet / WebActionBar chrome | **Partial / host keep:** pin-shaped `actionBar.setIsLocal` on transitions + `openWebpageUrl` offline confirm. **Keep forever unless product changes:** `WebBookmarks`, local `MessagesController` browser settings policy, file chooser, `capturePreviewBitmap`, ActionBarLayout dismiss fallback; no `Page.local` File / markdown open. |
 | A5 | Embed/Collage/Slideshow static reshape | **Wontfix:** pin is also non-static |
 | A6 | Heading1–6 maps / `quoteLevels` | **Landed:** `PageBlock.quoteLevels` + multi-layer `drawQuoteLines`; Heading1–6 types/paints; WebInstantView h1–h6; BlockquoteBlocks flatten |
 | A7 | CodeHighlighting / table long-press | **Landed:** `CodeHighlighting` + `codelng.gzip`; preformatted highlight; table long-press selection |
