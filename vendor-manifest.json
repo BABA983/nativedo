@@ -872,7 +872,7 @@
             "measurement",
             "drawing"
           ],
-          "notes": "FF to 12.8.1 + host: RectF→Rect clip via AndroidUtilities.rectTmp2I; inputType NO_SUGGESTIONS|MULTI_LINE; IME_ACTION_DONE (product). forced_exact animation/measurement/drawing from pin."
+          "notes": "FF to 12.8.1 + host: RectF→Rect clip via AndroidUtilities.rectTmp2I because local AndroidUtilities.rectTmp2 is RectF (pin uses Rect). Input/IME options restored to pin."
         },
         {
           "path": "org/telegram/ui/Components/DrawingInBackgroundThreadDrawable.java",
@@ -1082,7 +1082,7 @@
         },
         {
           "path": "org/telegram/ui/Components/SearchStateDrawable.java",
-          "modified": true,
+          "modified": false,
           "forced_exact": [
             "animation",
             "drawing"
@@ -1389,12 +1389,11 @@
         },
         {
           "path": "org/telegram/ui/Components/PopupSwipeBackLayout.java",
-          "modified": true,
+          "modified": false,
           "forced_exact": [
             "gesture",
             "animation"
-          ],
-          "notes": "Submenu swipe-back layout used by ActionBarPopupWindow. Host wiring only: optional ActionBarMenuSlider import and its isDisallowedView instanceof branch removed (class not vendored); swipe gesture (onScroll/onFling thresholds: velocityX>=600, /6000f) and transition animation (DURATION=300, CubicBezierInterpolator, 240ms height) bodies remain upstream-shaped."
+          ]
         },
         {
           "path": "org/telegram/messenger/utils/ViewOutlineProviderImpl.java",
@@ -1456,8 +1455,7 @@
         },
         {
           "path": "org/telegram/ui/ActionBar/SimpleTextView.java",
-          "modified": true,
-          "notes": "Replaced 309-line native port with full upstream 1346-line copy. Host wiring: DialogCell.FixedWidthSpan replaced with standalone FixedWidthSpan. Inline spoiler drawing now uses the real upstream-shaped SpoilerEffect infrastructure."
+          "modified": false
         },
         {
           "path": "org/telegram/ui/CachedStaticLayout.java",
@@ -2752,6 +2750,14 @@
         {
           "path": "org/telegram/ui/Components/ReactedUsersListView.java",
           "notes": "Compile/runtime constant shim, not a full port: only ITEM_HEIGHT_DP (50) so FlickerLoadingView can keep the pin-shaped REACTED_TYPE height expression. Full reacted-users list UI is not vendored."
+        },
+        {
+          "path": "org/telegram/ui/ActionBar/ActionBarMenuSlider.java",
+          "notes": "Compile/runtime type stub for PopupSwipeBackLayout instanceof checks. Full ActionBarMenuSlider UI is not ported."
+        },
+        {
+          "path": "org/telegram/ui/Cells/DialogCell.java",
+          "notes": "Compile/runtime type shim providing DialogCell.FixedWidthSpan for pin SimpleTextView. Full DialogCell UI is not ported under :telegram."
         }
       ]
     }

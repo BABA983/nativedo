@@ -30,6 +30,11 @@
       "prefix": "telegram/src/main/java/com/google/common/",
       "bucket": "third_party_com",
       "reason": "Minimal Guava-facing shims required by vendored code; not per-file Telegram ports."
+    },
+    {
+      "prefix": "telegram/src/main/java/com/google/zxing/",
+      "bucket": "third_party_com",
+      "reason": "Minimal ZXing MathUtils shim for pin SearchStateDrawable; not a Telegram UI port."
     }
   ]
 }

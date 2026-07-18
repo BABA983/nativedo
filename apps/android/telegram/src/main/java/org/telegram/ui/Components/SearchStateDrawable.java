@@ -16,6 +16,7 @@ import androidx.annotation.IntDef;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
+import com.google.zxing.common.detector.MathUtils;
 
 import org.telegram.messenger.AndroidUtilities;
 
@@ -270,14 +271,14 @@ public class SearchStateDrawable extends Drawable {
     }
 
     private void drawLine(Canvas canvas, float x1, float y1, float x2, float y2) {
-        if ((float) Math.hypot(x2 - x1, y2 - y1) <= w(.075f)) {
+        if (MathUtils.distance(x1, y1, x2, y2) <= w(.075f)) {
             return;
         }
         canvas.drawLine(x1, y1, x2, y2, paint);
     }
 
     private void drawLines(Canvas canvas, float x1, float y1, float x2, float y2, float x3, float y3) {
-        if (Math.max((float) Math.hypot(x2 - x1, y2 - y1), (float) Math.hypot(x2 - x3, y2 - y3)) <= w(.075f)) {
+        if (Math.max(MathUtils.distance(x1, y1, x2, y2), MathUtils.distance(x3, y3, x2, y2)) <= w(.075f)) {
             return;
         }
         path.rewind();
