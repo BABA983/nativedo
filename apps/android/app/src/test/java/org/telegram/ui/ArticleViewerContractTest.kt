@@ -381,6 +381,36 @@ class ArticleViewerContractTest {
     }
 
     @Test
+    fun getTextPaint_headingBlocksUseDistinctMapsAndSizes() {
+        val isolated = ArticleViewer.Resources()
+        val host = object : IArticleViewer() {
+            override fun getCurrentAccount() = 0
+            override fun getTextColor() = 0xff111111.toInt()
+            override fun getLinkTextColor() = 0xff222222.toInt()
+            override fun getGrayTextColor() = 0xff333333.toInt()
+            override fun getThemedColor(colorKey: Int) = 0xffffffff.toInt()
+            override fun getResourcesProvider(): Theme.ResourcesProvider? = null
+            override fun getResources() = isolated
+            override fun getTextSelectionHelper(view: android.view.View?): TextSelectionHelper.ArticleTextSelectionHelper? = null
+        }
+        val plain = TLRPC.TL_textPlain().apply { text = "H" }
+        val h1 = TLRPC.TL_pageBlockHeading1().apply { text = plain }
+        val h3 = TLRPC.TL_pageBlockHeading3().apply { text = plain }
+        val h6 = TLRPC.TL_pageBlockHeading6().apply { text = plain }
+        assertThat(ArticleViewer.isHeadingBlock(h1)).isTrue()
+        assertThat(ArticleViewer.isHeadingBlock(TLRPC.TL_pageBlockHeader())).isFalse()
+
+        val paint1 = ArticleViewer.getTextPaint(host, plain, plain, h1)
+        val paint3 = ArticleViewer.getTextPaint(host, plain, plain, h3)
+        val paint6 = ArticleViewer.getTextPaint(host, plain, plain, h6)
+        // pin sizes: h1=18dp, h3=15dp, h6=12dp — distinct maps so sizes differ
+        assertThat(paint1.textSize).isGreaterThan(paint3.textSize)
+        assertThat(paint3.textSize).isGreaterThan(paint6.textSize)
+        assertThat(isolated.heading1TextPaints.size()).isAtLeast(1)
+        assertThat(isolated.heading6TextPaints.size()).isAtLeast(1)
+    }
+
+    @Test
     fun codeHighlighting_getHighlightedWithoutLanguageReturnsPlainSpannable() {
         val highlighted = CodeHighlighting.getHighlighted("int x = 1;", /* language = */ null)
         assertThat(highlighted.toString()).isEqualTo("int x = 1;")

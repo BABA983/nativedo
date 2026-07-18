@@ -50,12 +50,12 @@ TYPE_MAP: dict[str, str] = {
     "pageBlockEmbedPost": "TL_pageBlockEmbedPost",
     "pageBlockFooter": "TL_pageBlockFooter",
     "pageBlockHeader": "TL_pageBlockHeader",
-    "pageBlockHeading1": "TL_pageBlockHeader",
-    "pageBlockHeading2": "TL_pageBlockHeader",
-    "pageBlockHeading3": "TL_pageBlockSubheader",
-    "pageBlockHeading4": "TL_pageBlockSubheader",
-    "pageBlockHeading5": "TL_pageBlockSubheader",
-    "pageBlockHeading6": "TL_pageBlockSubheader",
+    "pageBlockHeading1": "TL_pageBlockHeading1",
+    "pageBlockHeading2": "TL_pageBlockHeading2",
+    "pageBlockHeading3": "TL_pageBlockHeading3",
+    "pageBlockHeading4": "TL_pageBlockHeading4",
+    "pageBlockHeading5": "TL_pageBlockHeading5",
+    "pageBlockHeading6": "TL_pageBlockHeading6",
     "pageBlockKicker": "TL_pageBlockKicker",
     "pageBlockList": "TL_pageBlockList",
     "pageBlockMap": "TL_pageBlockMap",
@@ -97,7 +97,8 @@ TYPE_MAP: dict[str, str] = {
     # A3: local TLRPC.TL_textSpoiler exists; pin TL_iv.textSpoiler → spoiler span, not mark highlight.
     "textSpoiler": "TL_textSpoiler",
     "RichMessage": "RichText",
-    "pageBlockBlockquoteBlocks": "TL_pageBlockBlockquote",
+    # A6: nested multi-block quotes now have a local type.
+    "pageBlockBlockquoteBlocks": "TL_pageBlockBlockquoteBlocks",
 }
 def apply_s1(pin: str) -> tuple[str, list[str]]:
     text = pin

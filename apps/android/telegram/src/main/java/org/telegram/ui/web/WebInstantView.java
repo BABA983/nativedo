@@ -543,32 +543,32 @@ public class WebInstantView {
                         blocks.add(p);
                         break;
                     case "h1":
-                        TLRPC.TL_pageBlockHeader h1 = new TLRPC.TL_pageBlockHeader();
+                        TLRPC.TL_pageBlockHeading1 h1 = new TLRPC.TL_pageBlockHeading1();
                         h1.text = trim(parseRichText(o, page));
                         blocks.add(h1);
                         break;
                     case "h2":
-                        TLRPC.TL_pageBlockHeader h2 = new TLRPC.TL_pageBlockHeader();
+                        TLRPC.TL_pageBlockHeading2 h2 = new TLRPC.TL_pageBlockHeading2();
                         h2.text = trim(parseRichText(o, page));
                         blocks.add(h2);
                         break;
                     case "h3":
-                        TLRPC.TL_pageBlockSubheader h3 = new TLRPC.TL_pageBlockSubheader();
+                        TLRPC.TL_pageBlockHeading3 h3 = new TLRPC.TL_pageBlockHeading3();
                         h3.text = trim(parseRichText(o, page));
                         blocks.add(h3);
                         break;
                     case "h4":
-                        TLRPC.TL_pageBlockSubheader h4 = new TLRPC.TL_pageBlockSubheader();
+                        TLRPC.TL_pageBlockHeading4 h4 = new TLRPC.TL_pageBlockHeading4();
                         h4.text = trim(parseRichText(o, page));
                         blocks.add(h4);
                         break;
                     case "h5":
-                        TLRPC.TL_pageBlockSubheader h5 = new TLRPC.TL_pageBlockSubheader();
+                        TLRPC.TL_pageBlockHeading5 h5 = new TLRPC.TL_pageBlockHeading5();
                         h5.text = trim(parseRichText(o, page));
                         blocks.add(h5);
                         break;
                     case "h6":
-                        TLRPC.TL_pageBlockSubheader h6 = new TLRPC.TL_pageBlockSubheader();
+                        TLRPC.TL_pageBlockHeading6 h6 = new TLRPC.TL_pageBlockHeading6();
                         h6.text = trim(parseRichText(o, page));
                         blocks.add(h6);
                         break;

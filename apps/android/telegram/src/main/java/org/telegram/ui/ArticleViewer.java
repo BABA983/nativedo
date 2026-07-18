@@ -420,8 +420,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
     /**
      * Pin-shaped paint cache (12.8.1 Resources). B4 bridges static paint maps onto one
      * shared instance so getResources() and legacy static field names share the same maps.
-     * Heading1–6 maps remain S1-omitted: WebInstantView collapses h1–h6 onto Header/Subheader
-     * paints; full A6 heading maps would only matter once S1 emits distinct heading blocks.
+     * A6: heading1–6 maps match pin sizes (18..12dp) for {@link TLRPC.TL_pageBlockHeading1}…6.
      */
     public static class Resources {
         public final boolean isRichMessage;
@@ -433,6 +432,12 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         public final SparseArray<TextPaint> headerTextPaints = new SparseArray<>();
         public final SparseArray<TextPaint> subtitleTextPaints = new SparseArray<>();
         public final SparseArray<TextPaint> subheaderTextPaints = new SparseArray<>();
+        public final SparseArray<TextPaint> heading1TextPaints = new SparseArray<>();
+        public final SparseArray<TextPaint> heading2TextPaints = new SparseArray<>();
+        public final SparseArray<TextPaint> heading3TextPaints = new SparseArray<>();
+        public final SparseArray<TextPaint> heading4TextPaints = new SparseArray<>();
+        public final SparseArray<TextPaint> heading5TextPaints = new SparseArray<>();
+        public final SparseArray<TextPaint> heading6TextPaints = new SparseArray<>();
         public final SparseArray<TextPaint> authorTextPaints = new SparseArray<>();
         public final SparseArray<TextPaint> footerTextPaints = new SparseArray<>();
         public final SparseArray<TextPaint> paragraphTextPaints = new SparseArray<>();
@@ -461,6 +466,12 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             setMapColors(parent, subtitleTextPaints);
             setMapColors(parent, headerTextPaints);
             setMapColors(parent, subheaderTextPaints);
+            setMapColors(parent, heading1TextPaints);
+            setMapColors(parent, heading2TextPaints);
+            setMapColors(parent, heading3TextPaints);
+            setMapColors(parent, heading4TextPaints);
+            setMapColors(parent, heading5TextPaints);
+            setMapColors(parent, heading6TextPaints);
             setMapColors(parent, quoteTextPaints);
             setMapColors(parent, preformattedTextPaints);
             setMapColors(parent, paragraphTextPaints);
@@ -1966,6 +1977,18 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         return block instanceof TL_pageBlockListItem || block instanceof TL_pageBlockOrderedListItem;
     }
 
+    /** A6: pin-shaped HTML heading blocks (h1–h6) distinct from Header/Subheader. */
+    public static boolean isHeadingBlock(TLRPC.PageBlock block) {
+        return (
+                block instanceof TLRPC.TL_pageBlockHeading1 ||
+                block instanceof TLRPC.TL_pageBlockHeading2 ||
+                block instanceof TLRPC.TL_pageBlockHeading3 ||
+                block instanceof TLRPC.TL_pageBlockHeading4 ||
+                block instanceof TLRPC.TL_pageBlockHeading5 ||
+                block instanceof TLRPC.TL_pageBlockHeading6
+        );
+    }
+
     private TLRPC.PageBlock getLastNonListPageBlock(TLRPC.PageBlock block) {
         if (block instanceof TL_pageBlockListItem) {
             TL_pageBlockListItem blockListItem = (TL_pageBlockListItem) block;
@@ -3185,6 +3208,30 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             currentMap = resources.subheaderTextPaints;
             textSize = dp(17);
             textColor = parent.getTextColor();
+        } else if (parentBlock instanceof TLRPC.TL_pageBlockHeading1) {
+            currentMap = resources.heading1TextPaints;
+            textSize = dp(18);
+            textColor = parent.getTextColor();
+        } else if (parentBlock instanceof TLRPC.TL_pageBlockHeading2) {
+            currentMap = resources.heading2TextPaints;
+            textSize = dp(16);
+            textColor = parent.getTextColor();
+        } else if (parentBlock instanceof TLRPC.TL_pageBlockHeading3) {
+            currentMap = resources.heading3TextPaints;
+            textSize = dp(15);
+            textColor = parent.getTextColor();
+        } else if (parentBlock instanceof TLRPC.TL_pageBlockHeading4) {
+            currentMap = resources.heading4TextPaints;
+            textSize = dp(14);
+            textColor = parent.getTextColor();
+        } else if (parentBlock instanceof TLRPC.TL_pageBlockHeading5) {
+            currentMap = resources.heading5TextPaints;
+            textSize = dp(13);
+            textColor = parent.getTextColor();
+        } else if (parentBlock instanceof TLRPC.TL_pageBlockHeading6) {
+            currentMap = resources.heading6TextPaints;
+            textSize = dp(12);
+            textColor = parent.getTextColor();
         } else if (parentBlock instanceof TLRPC.TL_pageBlockBlockquote) {
             TLRPC.TL_pageBlockBlockquote pageBlockBlockquote = (TLRPC.TL_pageBlockBlockquote) parentBlock;
             if (pageBlockBlockquote.text == parentRichText) {
@@ -3320,8 +3367,8 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             } else {
                 if (parentBlock instanceof TLRPC.TL_pageBlockRelatedArticles) {
                     paint.setTypeface(AndroidUtilities.bold());
-                } else if (parent.selectedFont == 1 || parentBlock instanceof TLRPC.TL_pageBlockTitle || parentBlock instanceof TLRPC.TL_pageBlockKicker || parentBlock instanceof TLRPC.TL_pageBlockHeader || parentBlock instanceof TLRPC.TL_pageBlockSubtitle || parentBlock instanceof TLRPC.TL_pageBlockSubheader) {
-                    if (parentBlock instanceof TLRPC.TL_pageBlockTitle || parentBlock instanceof TLRPC.TL_pageBlockHeader || parentBlock instanceof TLRPC.TL_pageBlockSubtitle || parentBlock instanceof TLRPC.TL_pageBlockSubheader) {
+                } else if (parent.selectedFont == 1 || parentBlock instanceof TLRPC.TL_pageBlockTitle || parentBlock instanceof TLRPC.TL_pageBlockKicker || parentBlock instanceof TLRPC.TL_pageBlockHeader || parentBlock instanceof TLRPC.TL_pageBlockSubtitle || parentBlock instanceof TLRPC.TL_pageBlockSubheader || isHeadingBlock(parentBlock)) {
+                    if (parentBlock instanceof TLRPC.TL_pageBlockTitle || parentBlock instanceof TLRPC.TL_pageBlockHeader || parentBlock instanceof TLRPC.TL_pageBlockSubtitle || parentBlock instanceof TLRPC.TL_pageBlockSubheader || isHeadingBlock(parentBlock)) {
                         paint.setTypeface(AndroidUtilities.getTypeface("fonts/mw_bold.ttf"));
                     } else {
                         if ((flags & TEXT_FLAG_MEDIUM) != 0 && (flags & TEXT_FLAG_ITALIC) != 0) {
@@ -6395,6 +6442,10 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 TLRPC.TL_pageBlockHeader pageBlockHeader = (TLRPC.TL_pageBlockHeader) block;
                 setRichTextParents(null, pageBlockHeader.text);
                 addTextBlock(pageBlockHeader.text, pageBlockHeader);
+            } else if (isHeadingBlock(block)) {
+                final TLRPC.RichText text = block.text;
+                setRichTextParents(null, text);
+                addTextBlock(text, block);
             } else if (block instanceof TLRPC.TL_pageBlockPreformatted) {
                 TLRPC.TL_pageBlockPreformatted pageBlockPreformatted = (TLRPC.TL_pageBlockPreformatted) block;
                 setRichTextParents(null, pageBlockPreformatted.text);
@@ -6537,6 +6588,13 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 anchors.put(((TLRPC.TL_pageBlockAnchor) block).name.toLowerCase(), blocks.size());
                 return;
             }
+            if (block instanceof TLRPC.TL_pageBlockTitle || block instanceof TLRPC.TL_pageBlockHeader || isHeadingBlock(block)) {
+                final TLRPC.RichText text = block.text;
+                final String anchor = getPlainText(text).toString().toLowerCase().replaceAll("[\\[\\]\\(\\)\\{\\}]", "").replaceAll(" ", "-");
+                if (!anchors.containsKey(anchor)) {
+                    anchors.put(anchor, blocks.size());
+                }
+            }
             if (!(block instanceof TLRPC.TL_pageBlockList || block instanceof TLRPC.TL_pageBlockOrderedList)) {
                 blocks.add(originalBlock);
             }
@@ -6573,6 +6631,31 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                     }
                 }
 
+            } else if (block instanceof TLRPC.TL_pageBlockBlockquoteBlocks) {
+                TLRPC.TL_pageBlockBlockquoteBlocks pageBlockBlockquoteBlocks = (TLRPC.TL_pageBlockBlockquoteBlocks) block;
+                if (!pageBlockBlockquoteBlocks.blocks.isEmpty()) {
+                    final int parentLayer = Math.max(0, block.level);
+                    final int parentQuoteLevels = block.quoteLevels;
+                    // If nothing enclosing wrote block.bottom yet, this is the outermost quote — trim the
+                    // last leaf so the line gets a rounded end.
+                    final boolean parentBottom = (block.quoteLevels == 0 && block.level <= 0) || block.bottom;
+                    block.level = -1; // skip drawing the wrapper itself
+                    final int size = pageBlockBlockquoteBlocks.blocks.size();
+                    for (int b = 0; b < size; b++) {
+                        TLRPC.PageBlock innerBlock = pageBlockBlockquoteBlocks.blocks.get(b);
+                        if (innerBlock instanceof TLRPC.TL_pageBlockUnsupported) {
+                            continue;
+                        } else if (innerBlock instanceof TLRPC.TL_pageBlockAnchor) {
+                            TLRPC.TL_pageBlockAnchor pageBlockAnchor = (TLRPC.TL_pageBlockAnchor) innerBlock;
+                            anchors.put(pageBlockAnchor.name.toLowerCase(), blocks.size());
+                            continue;
+                        }
+                        innerBlock.level = parentLayer + 1;
+                        innerBlock.quoteLevels = parentQuoteLevels | (1 << parentLayer);
+                        innerBlock.bottom = (b == size - 1) && parentBottom;
+                        addBlock(adapter, innerBlock, level, listLevel, position);
+                    }
+                }
             } else if (block instanceof TLRPC.TL_pageBlockEmbedPost) {
                 TLRPC.TL_pageBlockEmbedPost pageBlockEmbedPost = (TLRPC.TL_pageBlockEmbedPost) block;
                 if (!pageBlockEmbedPost.blocks.isEmpty()) {
@@ -7048,7 +7131,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 }
                 case 1: {
                     BlockHeaderCell cell = (BlockHeaderCell) holder.itemView;
-                    cell.setBlock((TLRPC.TL_pageBlockHeader) block);
+                    cell.setBlock(block);
                     break;
                 }
                 case 2: {
@@ -7193,7 +7276,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         private int getTypeForBlock(TLRPC.PageBlock block) {
             if (block instanceof TLRPC.TL_pageBlockParagraph) {
                 return 0;
-            } else if (block instanceof TLRPC.TL_pageBlockHeader) {
+            } else if (block instanceof TLRPC.TL_pageBlockHeader || isHeadingBlock(block)) {
                 return 1;
             } else if (block instanceof TLRPC.TL_pageBlockDivider) {
                 return 2;
@@ -11570,7 +11653,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         private int textX;
         private int textY;
 
-        private TLRPC.TL_pageBlockHeader currentBlock;
+        private TLRPC.PageBlock currentBlock;
 
         public BlockHeaderCell(Context context, IArticleViewer parent, WebpageAdapter adapter) {
             super(context);
@@ -11596,7 +11679,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             return textLayout.x + textLayout.getLastLineBoundRight() + dp(parent.padx());
         }
 
-        public void setBlock(TLRPC.TL_pageBlockHeader block) {
+        public void setBlock(TLRPC.PageBlock block) {
             currentBlock = block;
             requestLayout();
         }

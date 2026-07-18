@@ -18,7 +18,7 @@ lives under `org.telegram.ui.web.*` + `ArticleViewer`.
 | `WebMetadataCache` | Favicon/sitename cache + offscreen WebView extract | **Scheme-2 @ pin** (host wiring kept) |
 | `AddressBarList` | Address bar list + bookmarks UI | **Scheme-2 @ pin** (WebBookmarks backend) |
 | `WebInstantView` | HTML → Instant View page model | **S1 reverse-patch @ pin** (TL_iv→TLRPC + host readHTML) |
-| `ArticleViewer` | Sheet chrome + IV display + related UI | **Epic closed at B21**; **A3/A4-partial/A6-partial/A7 landed** (A5 pin-matched; A6 heading maps still S1) |
+| `ArticleViewer` | Sheet chrome + IV display + related UI | **Epic closed at B21**; **A3/A4-partial/A6/A7 landed** (A5 pin-matched) |
 | `Browser` (native) | URL open dispatch | Host shim (not exact FF) |
 | `WebActionBar` | Browser action bar | Already @ pin |
 | `WebBrowserSettings` | Telegram browser settings | Stuck (low product ROI) |
@@ -45,13 +45,13 @@ lives under `org.telegram.ui.web.*` + `ArticleViewer`.
 ### Do not
 - `vendor-ff` WebInstantView or ArticleViewer without an explicit product + TL plan.
 - Reintroduce MTProto bookmarks in AddressBarList.
-- Resume autonomous ArticleViewer heading-map / blockquoteBlocks producer work without a product ticket. A3, A4-partial, A6-partial (`quoteLevels`), and A7 are landed; A5 is pin-matched.
+- Resume autonomous ArticleViewer bulk chrome FF without a product ticket. A3, A4-partial, A6, and A7 are landed; A5 is pin-matched.
 
-## ArticleViewer epic (closed at B21; A3/A4-partial/A6-partial/A7 reopened and landed)
+## ArticleViewer epic (closed at B21; A3/A4-partial/A6/A7 reopened and landed)
 
 Phased parent-driven rebase **landed through B21**. Later product reopen:
 **A3** spoiler content, **A4** partial local-chrome (`setIsLocal` transitions + offline open confirm;
-host WebBookmarks / RestrictedDomains kept), **A6** partial (`PageBlock.quoteLevels` + multi-layer
-`drawQuoteLines`; heading1–6 paint maps still S1-omitted), **A7** CodeHighlighting + table long-press
-selection. **A5** remains pin-matched non-static Embed/Collage/Slideshow. Full history:
-[`vendor-articleviewer-plan.md`](vendor-articleviewer-plan.md).
+host WebBookmarks / RestrictedDomains kept), **A6** full remainder (`PageBlock.quoteLevels` + multi-layer
+`drawQuoteLines`, Heading1–6 types/paints, WebInstantView h1–h6 emission, BlockquoteBlocks flatten),
+**A7** CodeHighlighting + table long-press selection. **A5** remains pin-matched non-static
+Embed/Collage/Slideshow. Full history: [`vendor-articleviewer-plan.md`](vendor-articleviewer-plan.md).

@@ -516,6 +516,30 @@ public class TLRPC {
     public static class TL_pageBlockSubheader extends PageBlock {
     }
 
+    /** Instant View HTML h1 (pin: TL_iv.pageBlockHeading1). A6. */
+    public static class TL_pageBlockHeading1 extends PageBlock {
+    }
+
+    /** Instant View HTML h2 (pin: TL_iv.pageBlockHeading2). A6. */
+    public static class TL_pageBlockHeading2 extends PageBlock {
+    }
+
+    /** Instant View HTML h3 (pin: TL_iv.pageBlockHeading3). A6. */
+    public static class TL_pageBlockHeading3 extends PageBlock {
+    }
+
+    /** Instant View HTML h4 (pin: TL_iv.pageBlockHeading4). A6. */
+    public static class TL_pageBlockHeading4 extends PageBlock {
+    }
+
+    /** Instant View HTML h5 (pin: TL_iv.pageBlockHeading5). A6. */
+    public static class TL_pageBlockHeading5 extends PageBlock {
+    }
+
+    /** Instant View HTML h6 (pin: TL_iv.pageBlockHeading6). A6. */
+    public static class TL_pageBlockHeading6 extends PageBlock {
+    }
+
     public static class TL_pageBlockKicker extends PageBlock {
     }
 
@@ -537,6 +561,14 @@ public class TLRPC {
     }
 
     public static class TL_pageBlockBlockquote extends PageBlock {
+        public RichText caption;
+    }
+
+    /**
+     * Nested multi-block quote (pin: TL_iv.pageBlockBlockquoteBlocks).
+     * Children live in {@link PageBlock#blocks}; {@link PageBlock#quoteLevels} is set while flattening.
+     */
+    public static class TL_pageBlockBlockquoteBlocks extends PageBlock {
         public RichText caption;
     }
 
