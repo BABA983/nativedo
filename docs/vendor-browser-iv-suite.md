@@ -18,7 +18,7 @@ lives under `org.telegram.ui.web.*` + `ArticleViewer`.
 | `WebMetadataCache` | Favicon/sitename cache + offscreen WebView extract | **Scheme-2 @ pin** (host wiring kept) |
 | `AddressBarList` | Address bar list + bookmarks UI | **Scheme-2 @ pin** (WebBookmarks backend) |
 | `WebInstantView` | HTML → Instant View page model | **S1 reverse-patch @ pin** (TL_iv→TLRPC + host readHTML) |
-| `ArticleViewer` | Sheet chrome + IV display + related UI | **Epic closed at B21**; **A3/A7 landed** (A4–A6 parked) |
+| `ArticleViewer` | Sheet chrome + IV display + related UI | **Epic closed at B21**; **A3/A4-partial/A7 landed** (A5–A6 parked) |
 | `Browser` (native) | URL open dispatch | Host shim (not exact FF) |
 | `WebActionBar` | Browser action bar | Already @ pin |
 | `WebBrowserSettings` | Telegram browser settings | Stuck (low product ROI) |
@@ -45,11 +45,12 @@ lives under `org.telegram.ui.web.*` + `ArticleViewer`.
 ### Do not
 - `vendor-ff` WebInstantView or ArticleViewer without an explicit product + TL plan.
 - Reintroduce MTProto bookmarks in AddressBarList.
-- Resume autonomous ArticleViewer slices (A4–A6) without a product ticket. A3 (`TL_textSpoiler`) and A7 (CodeHighlighting / table selection) are landed.
+- Resume autonomous ArticleViewer slices (A5–A6) without a product ticket. A3, A4-partial, and A7 are landed.
 
-## ArticleViewer epic (closed at B21; A3/A7 reopened and landed)
+## ArticleViewer epic (closed at B21; A3/A4-partial/A7 reopened and landed)
 
-Phased parent-driven rebase **landed through B21**. **A3** (spoiler content) and **A7**
-(CodeHighlighting + table long-press selection) later landed on product request. Remaining
-host chrome and S1 omissions (A4–A6) stay parked by design. Full history, contract tests,
-and reopen table: [`vendor-articleviewer-plan.md`](vendor-articleviewer-plan.md).
+Phased parent-driven rebase **landed through B21**. Later product reopen:
+**A3** spoiler content, **A4** partial local-chrome (`setIsLocal` transitions + offline open confirm;
+host WebBookmarks / RestrictedDomains kept), **A7** CodeHighlighting + table long-press selection.
+Remaining intentional omissions: **A5** (already pin-matched non-static), **A6** (heading maps /
+`quoteLevels`). Full history: [`vendor-articleviewer-plan.md`](vendor-articleviewer-plan.md).

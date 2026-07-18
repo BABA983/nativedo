@@ -2114,6 +2114,8 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             actionBar.setMenuColors(pages[0] != null && SharedConfig.adaptableColorInBrowser ? pages[0].getBackgroundColor() : getThemedColor(Theme.key_iv_background));
             actionBar.setColors(pages[0] != null && SharedConfig.adaptableColorInBrowser ? pages[0].getActionBarColor() : getThemedColor(Theme.key_iv_background), true);
             actionBar.setIsTonsite(pages[0] != null && pages[0].isTonsite());
+            // A4: pin-shaped local chrome flag (always false until Page.local File exists).
+            actionBar.setIsLocal(pages[0] != null && pages[0].isLocal());
             AndroidUtilities.runOnUIThread(pageSwitchAnimation::start);
         }
 
@@ -2366,6 +2368,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         actionBar.setMenuColors(pages[0] != null && SharedConfig.adaptableColorInBrowser ? pages[0].getBackgroundColor() : getThemedColor(Theme.key_iv_background));
         actionBar.setColors(pages[0] != null && SharedConfig.adaptableColorInBrowser ? pages[0].getActionBarColor() : getThemedColor(Theme.key_iv_background), true);
         actionBar.setIsTonsite(pages[0] != null && pages[0].isTonsite());
+        actionBar.setIsLocal(pages[0] != null && pages[0].isLocal());
         closeAnimationInProgress = true;
     }
 
@@ -2526,6 +2529,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         actionBar.setMenuColors(pages[0] != null && SharedConfig.adaptableColorInBrowser ? pages[0].getBackgroundColor() : getThemedColor(Theme.key_iv_background));
         actionBar.setColors(pages[0] != null && SharedConfig.adaptableColorInBrowser ? pages[0].getActionBarColor() : getThemedColor(Theme.key_iv_background), true);
         actionBar.setIsTonsite(pages[0] != null && pages[0].isTonsite());
+        actionBar.setIsLocal(pages[0] != null && pages[0].isLocal());
         closeAnimationInProgress = true;
     }
 
@@ -3888,6 +3892,30 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
     @Override
     public void openWebpageUrl(String url, String anchor, Browser.Progress progress) {
+        if (parentActivity == null || parentActivity.isFinishing()) {
+            return;
+        }
+        // A4: pin-shaped offline/local page confirm before navigating away.
+        // isLocal() is currently always false (no Page.local File on local TLRPC).
+        if (pages[0] != null && pages[0].isLocal()) {
+            String format = LocaleController.getString(R.string.OpenUrlAlert2);
+            int index = format.indexOf("%");
+            SpannableStringBuilder stringBuilder = new SpannableStringBuilder(String.format(format, url));
+            if (index >= 0) {
+                stringBuilder.setSpan(new URLSpan(url), index, index + url.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+            new AlertDialog.Builder(parentActivity, getResourcesProvider())
+                    .setTitle(getString(R.string.OpenUrlTitle))
+                    .setMessage(stringBuilder)
+                    .setNegativeButton(LocaleController.getString(R.string.Cancel), null)
+                    .setPositiveButton(LocaleController.getString(R.string.Open), (di, w) -> openWebpageUrlInternal(url, anchor, progress))
+                    .show();
+            return;
+        }
+        openWebpageUrlInternal(url, anchor, progress);
+    }
+
+    private void openWebpageUrlInternal(String url, String anchor, Browser.Progress progress) {
         if (loadingProgress != null) {
             loadingProgress.cancel();
         }
@@ -5650,6 +5678,9 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             }));
         } else {
             scrolledToAnchor = addPageToStack(webUrl, openingAbove ? 1 : 0);
+        }
+        if (actionBar != null && !openingAbove) {
+            actionBar.setIsLocal(pages[0].isLocal());
         }
 
         lastInsets = null;
