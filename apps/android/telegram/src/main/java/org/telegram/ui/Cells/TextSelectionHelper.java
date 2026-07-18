@@ -1818,23 +1818,9 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
         }
 
         private void updateAutoScroll(float overlayY) {
-            if (parentRecyclerView == null || overlay == null) {
-                return;
-            }
-            parentRecyclerView.getLocationInWindow(tmpLocation);
-            overlay.getLocationInWindow(overlayLocation);
-            float yInRecycler = overlayY + overlayLocation[1] - tmpLocation[1];
-            int edge = AndroidUtilities.dp(36f);
-            boolean shouldScroll = yInRecycler < edge || yInRecycler > parentRecyclerView.getHeight() - edge;
-            if (!shouldScroll) {
-                stopAutoScroll();
-                return;
-            }
-            autoScrollDown = yInRecycler > parentRecyclerView.getHeight() - edge;
-            if (!autoScrolling) {
-                autoScrolling = true;
-                AndroidUtilities.runOnUIThread(autoScrollRunnable);
-            }
+            // Product: do not auto-scroll the topic list while dragging text selection
+            // handles near the edges (NativeDo preference; Telegram keeps this).
+            stopAutoScroll();
         }
 
         private void stopAutoScroll() {

@@ -797,7 +797,9 @@ class TopicDetailFragment @JvmOverloads constructor(
     }
 
     private fun applyInitialTopicHeaderAnchorIfNeeded(state: TopicUiState) {
-        if (initialPostNumber != null) {
+        // Product: do not programmatically scroll on ordinary topic open.
+        // Deep-link / search / page-down jumps still go through handleJumpEvent.
+        if (initialPostNumber != null || initialPostId != null) {
             topicInitialContentAnchored = true
             return
         }
@@ -813,13 +815,8 @@ class TopicDetailFragment @JvmOverloads constructor(
         ) {
             return
         }
+        // Mark anchored without scrolling so layout settles at the natural top.
         topicInitialContentAnchored = true
-        if (!::listView.isInitialized || topicListUserHasScrolled) {
-            return
-        }
-        val manager = listView.layoutManager as? LinearLayoutManager ?: return
-        manager.scrollToPositionWithOffset(0, 0)
-        updateCollapsedTitle()
     }
 
     private fun openImageViewer(
@@ -7310,6 +7307,8 @@ internal fun topicDetailShouldAnchorInitialContent(
     errorMessage: String?,
     hasJumpEvent: Boolean,
 ): Boolean {
+    // Still used as a one-shot gate for "first content ready", but the fragment no
+    // longer issues a programmatic scroll for ordinary opens (product preference).
     return !initialContentAnchored &&
         !userHasScrolled &&
         topicDetailListShowsTopicHeader(
