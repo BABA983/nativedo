@@ -21,30 +21,27 @@ Previous pin `9b50143d8896` (12.8.1) retained as historical alias for un-advance
 | *(follow-up)* | `WindowAnimatedInsetsProvider` restored pin-identical |
 | later | `HttpGetFileTask`, `AnimatedFloat`, `WindowVisibilityManager`, `UniversalRecyclerView` pin-identical; FlickerLoadingView/GraySectionCell partial re-align |
 
-## ArticleViewer — epic closed at B21
+## ArticleViewer — epic closed (B21 + A3–A7)
 
-Autonomous AV pin-alignment **stopped after B21**. Do not resume slice work
-without a product ticket. Full plan: `docs/vendor-articleviewer-plan.md`.
+Autonomous AV pin-alignment is **finished**. Full plan: `docs/vendor-articleviewer-plan.md`.
+Do not resume AV slices from the vendor queue.
 
-### Landed (no decision needed)
+### Landed
 
 | Id | Slice |
 |---|---|
-| A1 / B21 | `MultiLayoutTypingAnimator` vendored pin-identical; `DrawingText` Block + draw branch (IV leaves null) |
-| A2 / B20b | Block* `DrawingText.attach/detach` lifecycle + EmbedPost/Slideshow a11y |
-| A3 | `TLRPC.TL_textSpoiler` + `getText` → `TextStyleSpan(FLAG_STYLE_SPOILER)`; S1 map fixed |
-| A4 | Partial: `setIsLocal` on transitions + `openWebpageUrl` local confirm; host bookmarks/restrict kept |
-| A6 | `quoteLevels` + Heading1–6 types/paints + WebInstantView h1–h6 + BlockquoteBlocks flatten |
-| A7 | `CodeHighlighting` + `codelng.gzip`; preformatted highlight; table long-press selection |
-| B1–B20a | IArticleViewer, parent-driven text/paint/cells, spoiler surface, search header height |
+| B1–B21 | IArticleViewer, parent-driven cells/paint, spoiler surface, attach lifecycle, typing animator |
+| A3 | `TLRPC.TL_textSpoiler` + `getText` → `TextStyleSpan(FLAG_STYLE_SPOILER)` |
+| A4-partial | `setIsLocal` transitions + `openWebpageUrl` local confirm |
+| A6 | `quoteLevels` + Heading1–6 + WebInstantView h1–h6 + BlockquoteBlocks |
+| A7 | `CodeHighlighting` + table long-press selection |
 
-### Parked host / S1 deltas (default: keep as-is)
+### Closed by design (not next work)
 
 | Id | Topic | Default |
 |---|---|---|
-| A5 | Embed/Collage/Slideshow static reshape | Leave non-static (matches pin) |
-
-Re-open only when product needs pin behavior for a row above.
+| A4 remainder | WebBookmarks / RestrictedDomains / file chooser / preview bitmap / ActionBarLayout dismiss | Keep NativeDo host backends |
+| A5 | Embed/Collage/Slideshow static reshape | Wontfix (pin is non-static) |
 
 ## Other exact+modified files — safe to leave, need product call to change
 
@@ -69,7 +66,7 @@ Re-open only when product needs pin behavior for a row above.
 | File | Delta | Decision |
 |---|---|---|
 | `ThemeColors.java` | Default wallpaper + service colors | Keep NativeDo defaults? |
-| `ImageReceiver.java` | Behind legacy pin; Log swap; no AnimatedEmojiSpan interface; ImageLocation arity | Full re-sync to 12.8.1 image pipeline? |
+| `ImageReceiver.java` | Behind legacy pin; Log swap; no AnimatedEmojiSpan interface; ImageLocation arity | Full re-sync to **12.9.0** image pipeline as a pair? |
 | `ImageLocation.java` | Legacy pin / API shape | Re-sync with ImageReceiver as a pair? |
 | `RestrictedDomainsList.java` | Legacy pin | Re-sync with ArticleViewer open-external path? |
 
@@ -77,7 +74,7 @@ Re-open only when product needs pin behavior for a row above.
 
 Do not auto-overwrite. Re-sync only with a named product goal:
 
-- `ArticleViewer.java` (epic closed at B21; stuck host/S1 by design)
+- `ArticleViewer.java` (epic closed; stuck = host chrome only)
 - `RecyclerListView.java` (forced_exact gesture/recycling; heavy host wiring)
 - `Utilities.java`, `AnimatedFloat.java`, `PullForegroundDrawable.java`, …
 - Web stack: `WebInstantView`, `AddressBarList`, `BookmarksFragment`, `WebMetadataCache`, …
@@ -92,8 +89,9 @@ Full list: `scripts/vendor-classify.sh --port-mode exact`.
 ## Suggested default if you want zero more product risk
 
 1. Keep all host-wiring tables above as-is.
-2. **Do not continue ArticleViewer** unless a product ticket reopens a parked A3–A7 row.
-3. Do not bump global pin until `scripts/vendor-status.sh --bump-report <new>` is empty of undecided exact+modified files.
+2. **Leave ArticleViewer alone** (epic closed; host chrome is product, not pin debt).
+3. Prefer next work outside AV: small exact+modified hygiene, browser stack, or ImageReceiver+ImageLocation pair.
+4. Do not bump global pin until `scripts/vendor-status.sh --bump-report <new>` is empty of undecided exact+modified files.
 
 ## How to decide an item
 
@@ -112,7 +110,7 @@ Then either:
 
 Still modified and intentionally not bulk-copied without product decisions:
 
-- `ArticleViewer.java`, `IArticleViewer.java` (epic closed at B21; host-wired IV program parked)
+- `ArticleViewer.java`, `IArticleViewer.java` (epic closed; host-wired IV; not next work)
 - `ImageReceiver` / `ImageLocation` / `RestrictedDomainsList` (legacy pin, stuck)
 - `Utilities.java` (native/no-JNI surface)
 - `ThemeColors.java` (NativeDo default wallpaper/service colors)

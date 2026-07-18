@@ -105,7 +105,9 @@
         },
         {
           "path": "org/telegram/messenger/CodeHighlighting.java",
-          "notes": "Vendored for ArticleViewer A7 BlockPreformattedCell syntax highlighting (CodeHighlighting.getHighlighted + codelng.gzip). Exact pin copy; Theme key_code_* and ApplicationLoader assets host wiring already present."
+          "notes": "Vendored for ArticleViewer A7 BlockPreformattedCell syntax highlighting (CodeHighlighting.getHighlighted + codelng.gzip). Exact pin copy at global pin 12.9.0; Theme key_code_* and ApplicationLoader assets host wiring already present.",
+          "modified": false,
+          "port_mode": "exact"
         },
         {
           "path": "org/telegram/messenger/FileLoader.java",
@@ -150,8 +152,8 @@
           "path": "org/telegram/ui/ArticleViewer.java",
           "pin": "legacy_009e97356",
           "modified": true,
-          "notes": "Epic closed at B21. NativeDo preserves Sheet/BottomSheetTabs lifecycle, local WebBookmarks, pin search-menu header height reset, WebView file chooser dispatch, selection-mode dismiss gating, pin-shaped sheet radii, and the local PageLayout fallback while keeping drawing/gesture/measurement/animation bodies upstream-shaped. IArticleViewer owns shared viewer state; DrawingText uses an IArticleViewer parent with pin-shaped text bounds, spoiler fields, attach/detach, liveDrawingTexts, MultiLayoutTypingAnimator.Block + typingAnimator draw branch (IV leaves field null), and Block* onAttachedToWindow/onDetachedFromWindow attach sites (incl. TableLayout children); EmbedPost/Slideshow expose AccDescrIV a11y. Resources owns shared paint maps and pinned color/font updates; paint creation, interaction (incl. spoiler-hit), text flags, paint selection, supported S1 rich-text getText, createLayoutForText, makeProgress, drawQuoteLines, loadChannel, joinChannel, buildAccessibilityText, and appendA11yLabel use the pinned parent-driven boundary. IBlock covers simple text cells plus AuthorDate/Preformatted/Pullquote/Blockquote/List/Related header. Embed/Collage/Slideshow remain non-static (pin-matched). A3 spoiler content; A4-partial local chrome (setIsLocal transitions + openWebpageUrl confirm; host WebBookmarks/RestrictedDomains kept); A6 quoteLevels + Heading1-6 types/paints + WebInstantView h1-h6 + BlockquoteBlocks flatten; A7 CodeHighlighting + table long-press selection landed. A5 Embed/Collage/Slideshow remain non-static (pin-matched). See docs/vendor-articleviewer-plan.md.",
-          "stuck_reason": "Epic closed at B21 — not eligible for clean FF or further autonomous slices. Host Sheet/WebActionBar chrome (WebBookmarks, RestrictedDomainsList, file chooser, capturePreviewBitmap, ActionBarLayout dismiss) and local S1 omissions (heading1-6 maps, quoteLevels, TL_textSpoiler content) stay until a product ticket reopens parked A3–A7 in docs/vendor-articleviewer-plan.md."
+          "notes": "Epic closed (B21 + A3/A4-partial/A6/A7) against global pin 12.9.0. Host-wired IV/browser sheet: Sheet/BottomSheetTabs lifecycle, WebBookmarks, RestrictedDomains open-external, WebView file chooser, selection-mode dismiss gating, pin-shaped sheet radii, PageLayout fallback, capturePreviewBitmap, ActionBarLayout dismiss. Parent-driven surface: IArticleViewer state; DrawingText bounds/spoilers/attach/liveDrawingTexts/MultiLayoutTypingAnimator.Block; Block* attach lifecycle; EmbedPost/Slideshow a11y; Resources paints incl. Heading1-6; getText/createLayoutForText with TL_textSpoiler; quoteLevels drawQuoteLines; CodeHighlighting preformatted; table long-press selection; setIsLocal transitions. Embed/Collage/Slideshow stay non-static (pin-matched, A5 wontfix). Historical vendored_at pin is legacy reference only — file is multi-slice host-wired, not FF-eligible. See docs/vendor-articleviewer-plan.md.",
+          "stuck_reason": "Epic closed — not eligible for clean FF. Remaining deltas are intentional NativeDo host chrome (WebBookmarks, RestrictedDomainsList, file chooser, capturePreviewBitmap, ActionBarLayout dismiss); not pin debt. A5 static reshape wontfix. Re-open only for a product bug or host-chrome ticket. docs/vendor-articleviewer-plan.md."
         },
         {
           "path": "org/telegram/ui/MultiLayoutTypingAnimator.java",
@@ -2675,7 +2677,7 @@
         {
           "path": "org/telegram/ui/IArticleViewer.java",
           "modified": true,
-          "notes": "Pin-shaped 12.8.1 abstract host API and shared link/search/video state. openPhoto uses TLRPC.PageBlock for local S1; DrawingText accepts IArticleViewer; getResources exposes the paint-map/color/font contract; link-touch and text-selection helpers consume the parent callbacks and shared pressed-link state."
+          "notes": "Pin-shaped abstract host API and shared link/search/video state (aligned through ArticleViewer B2+ on global pin 12.9.0). openPhoto uses TLRPC.PageBlock for local S1; DrawingText accepts IArticleViewer; getResources exposes the paint-map/color/font contract; link-touch and text-selection helpers consume parent callbacks and shared pressed-link state."
         }
       ]
     }

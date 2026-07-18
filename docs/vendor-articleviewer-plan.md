@@ -1,10 +1,11 @@
-# ArticleViewer rebase plan (Telegram 12.8.1)
+# ArticleViewer rebase plan (Telegram 12.9.0)
 
-> **Status: epic closed at B21** (2026-07-18). Do **not** open further AV slices
-> unless a named product goal reopens one of the parked items below.
+> **Status: epic closed** (2026-07-18). Autonomous pin-alignment is finished through
+> B21 + A3 / A4-partial / A6 / A7. Global pin is `9bcf3d2769c6` (12.9.0).
 >
 > **Do not clean-FF** `ArticleViewer.java`. Full-file pin replace remains off-limits.
 > WebInstantView S1 (TL_iv→TLRPC) is done; ArticleViewer must use the **same** type map.
+> Further AV edits need a product bug or an explicit host-chrome ticket (A4 remainder).
 
 ## Why it is hard
 
@@ -122,23 +123,22 @@ Introduced `org.telegram.ui.IArticleViewer` (API surface only):
 22. [x] B20b: pin-shaped `DrawingText.attach/detach` on all Block* `onAttachedToWindow` / `onDetachedFromWindow` sites (incl. TableLayout children); EmbedPost + Slideshow a11y labels
 23. [x] B21: vendor pin-identical `MultiLayoutTypingAnimator`; `DrawingText` implements `Block`, exposes `typingAnimator`, pin draw fade branch (IV leaves field null; rich-message hosts can bind later)
 
-### Epic close (B21) — parked, not abandoned
+### Epic close — final (B21 + A3–A7)
 
-Autonomous pin-alignment of ArticleViewer **stops here**. What landed covers the
-`:app` public contract (`DrawingText`, `ErrorContainer`, `dispatchActivityResult`,
-Sheet lifecycle host wiring) and the parent-driven Block* / paint / spoiler /
-attach / typing **surface**. Remaining deltas are intentional host product or
-S1 type omissions — re-open only with an explicit product ticket:
+Autonomous ArticleViewer pin-alignment is **done**. Do not open further AV slices
+from the vendor queue; next global work is non-AV (small exact files, browser
+stack, or ImageReceiver pair).
 
-| Parked id | Topic | Re-open when |
-|-----------|--------|--------------|
-| ~~A3~~ | `TL_textSpoiler` content production | **Landed:** `TLRPC.TL_textSpoiler` + pin-shaped `getText`/`getLastRichText`/`getPlainText`/`setRichTextParents`. WebInstantView still does not emit spoilers from HTML (matches pin). Discourse topic spoilers stay on the native body path. |
-| ~~A4~~ | Broader Sheet / WebActionBar chrome | **Partial landed:** pin-shaped `actionBar.setIsLocal` on page-switch / close / open stack transitions + `openWebpageUrl` offline confirm wrapper. Host kept: `WebBookmarks`, `RestrictedDomainsList` open-external, file chooser, `capturePreviewBitmap`, no `Page.local` File / markdown open. |
-| A5 | Embed/Collage/Slideshow static reshape | Pin geometry bug or forced_exact audit requires it (pin is also non-static) |
-| ~~A6~~ | Heading1–6 maps / `quoteLevels` | **Landed:** `PageBlock.quoteLevels` + multi-layer `drawQuoteLines`; `TL_pageBlockHeading1`…`6` + Resources heading paints (18–12dp); `isHeadingBlock` / BlockHeaderCell / adapter / setRichTextParents / auto-anchor; WebInstantView emits h1–h6 as Heading*; `TL_pageBlockBlockquoteBlocks` flattens with quoteLevels mask. S1 preview maps updated. |
-| ~~A7~~ | CodeHighlighting / table long-press selection | **Landed:** vendored `CodeHighlighting` + `codelng.gzip`; `BlockPreformattedCell` uses pin `getText` + `getHighlighted(language)`; `BlockTableCell` pin long-press selection via `canStartSelection`/`dispatchTouchEvent`. |
+| Id | Topic | Outcome |
+|----|--------|---------|
+| B1–B21 | Parent-driven cells, spoiler surface, attach, typing animator | **Landed** |
+| A3 | `TL_textSpoiler` content production | **Landed:** `TLRPC.TL_textSpoiler` + pin-shaped `getText` / `getLastRichText` / `getPlainText` / `setRichTextParents`. WebInstantView still does not emit spoilers from HTML (matches pin). Discourse topic spoilers stay on the native body path. |
+| A4 | Broader Sheet / WebActionBar chrome | **Partial / host keep:** pin-shaped `actionBar.setIsLocal` on transitions + `openWebpageUrl` offline confirm. **Keep forever unless product changes:** `WebBookmarks`, `RestrictedDomainsList` open-external, file chooser, `capturePreviewBitmap`, ActionBarLayout dismiss fallback; no `Page.local` File / markdown open. |
+| A5 | Embed/Collage/Slideshow static reshape | **Wontfix:** pin is also non-static |
+| A6 | Heading1–6 maps / `quoteLevels` | **Landed:** `PageBlock.quoteLevels` + multi-layer `drawQuoteLines`; Heading1–6 types/paints; WebInstantView h1–h6; BlockquoteBlocks flatten |
+| A7 | CodeHighlighting / table long-press | **Landed:** `CodeHighlighting` + `codelng.gzip`; preformatted highlight; table long-press selection |
 
-**Default:** keep `modified:true` + `stuck_reason`; do not bulk-copy pin chrome.
+**Default:** `modified:true` + stuck_reason = host chrome only; never clean-FF the whole file.
 Contract gate for any future AV PR remains Phase 0 tests + manual checklist.
 
 ### Phase B3 — DrawingText(parent) (landed)
