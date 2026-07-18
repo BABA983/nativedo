@@ -1922,9 +1922,9 @@
       "local": "telegram/src/main/java/org/telegram/ui/web/WebBrowserSettings.java",
       "upstream": "org/telegram/ui/web/WebBrowserSettings.java",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": false,
+      "modified": true,
       "port_mode": "exact",
-      "notes": "Byte-identical to global pin 12.9.0. Browser policy calls go through MessagesController facade -> SharedConfig + RestrictedDomainsList (single account). TL_account.WebDomainException host type; AlertsCreator.showAddBrowserException host dialog; AnimatedEmojiDrawable.make/CACHE_TYPE_MESSAGES_LARGE stubs (favicon letter fallback). Dual-list external exceptions (inApp=false) return empty locally."
+      "notes": "Pin 12.9.0 UI + single-account facade. loadSizes scans modern Chromium app_webview* / cache webview dirs plus NativeDo history/metadata/bookmarks files; always shows formatFileSize (incl. 0 KB). Cookie size matches Cookies* and Chromium network cookie state files."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/HistoryFragment.java",

@@ -121,29 +121,89 @@ public class WebBrowserSettings extends UniversalFragment implements Notificatio
             }
         }
 
+        final Context appContext = ApplicationLoader.applicationContext;
+        if (appContext == null) {
+            return;
+        }
+
         Utilities.globalQueue.postRunnable(() -> {
             long cacheSize = 0;
-            File cache1 = ApplicationLoader.applicationContext.getDatabasePath("webview.db");
+            long cookieSize = 0;
+
+            // Legacy SQLite DBs (older WebView).
+            File cache1 = appContext.getDatabasePath("webview.db");
             if (cache1 != null && cache1.exists()) {
                 cacheSize += cache1.length();
             }
-            File cache2 = ApplicationLoader.applicationContext.getDatabasePath("webviewCache.db");
+            File cache2 = appContext.getDatabasePath("webviewCache.db");
             if (cache2 != null && cache2.exists()) {
                 cacheSize += cache2.length();
             }
-            File dir = new File(ApplicationLoader.applicationContext.getApplicationInfo().dataDir, "app_webview");
-            if (dir.exists()) {
-                cacheSize += getDirectorySize(dir, false);
-            }
-            File dir2 = new File(ApplicationLoader.applicationContext.getApplicationInfo().dataDir, "cache/WebView");
-            if (dir2.exists()) {
-                cacheSize += getDirectorySize(dir2, null);
+
+            final File dataDir = new File(appContext.getApplicationInfo().dataDir);
+            // Chromium WebView profiles live under app_webview / app_webview_*.
+            File[] dataChildren = dataDir.listFiles();
+            if (dataChildren != null) {
+                for (File child : dataChildren) {
+                    final String name = child.getName();
+                    if (name == null) continue;
+                    if (name.equals("app_webview") || name.startsWith("app_webview_")) {
+                        if (child.isDirectory()) {
+                            cacheSize += getDirectorySize(child, false);
+                            cookieSize += getDirectorySize(child, true);
+                        } else {
+                            cacheSize += child.length();
+                        }
+                    }
+                }
             }
 
-            long cookieSize = 0;
-            File dir3 = new File(ApplicationLoader.applicationContext.getApplicationInfo().dataDir, "app_webview");
-            if (dir3.exists()) {
-                cookieSize += getDirectorySize(dir3, true);
+            // HTTP disk cache locations used across Android/WebView versions.
+            File cacheDir = appContext.getCacheDir();
+            if (cacheDir != null) {
+                File[] cacheChildren = cacheDir.listFiles();
+                if (cacheChildren != null) {
+                    for (File child : cacheChildren) {
+                        final String name = child.getName();
+                        if (name == null) continue;
+                        String lower = name.toLowerCase();
+                        if (lower.contains("webview")
+                                || lower.contains("android_webview")
+                                || lower.contains("chromium")
+                                || lower.equals("org.chromium.android_webview")) {
+                            cacheSize += getDirectorySize(child, null);
+                        }
+                    }
+                }
+            }
+
+            // NativeDo browser metadata / history files (product cache, not Chromium).
+            try {
+                File historyFile = BrowserHistory.getHistoryFile();
+                if (historyFile != null && historyFile.exists()) {
+                    cacheSize += historyFile.length();
+                }
+            } catch (Exception ignore) {
+            }
+            try {
+                File metaFile = new File(
+                        org.telegram.messenger.FileLoader.getDirectory(
+                                org.telegram.messenger.FileLoader.MEDIA_DIR_CACHE),
+                        "webmetacache.dat");
+                if (metaFile.exists()) {
+                    cacheSize += metaFile.length();
+                }
+            } catch (Exception ignore) {
+            }
+            try {
+                File bookmarksFile = new File(
+                        org.telegram.messenger.FileLoader.getDirectory(
+                                org.telegram.messenger.FileLoader.MEDIA_DIR_CACHE),
+                        "webbookmarks_" + UserConfig.selectedAccount + ".dat");
+                if (bookmarksFile.exists()) {
+                    cacheSize += bookmarksFile.length();
+                }
+            } catch (Exception ignore) {
             }
 
             final long finalCacheSize = cacheSize;
@@ -276,9 +336,9 @@ public class WebBrowserSettings extends UniversalFragment implements Notificatio
             }
         } else {
             clearCookiesRow = items.size();
-            items.add(UItem.asButton(BUTTON_CLEAR_COOKIES, R.drawable.menu_clear_cookies, LocaleController.getString(R.string.BrowserSettingsCookiesClear), cookiesSize > 0 ? AndroidUtilities.formatFileSize(cookiesSize) : ""));
+            items.add(UItem.asButton(BUTTON_CLEAR_COOKIES, R.drawable.menu_clear_cookies, LocaleController.getString(R.string.BrowserSettingsCookiesClear), AndroidUtilities.formatFileSize(cookiesSize)));
             clearCacheRow = items.size();
-            items.add(UItem.asButton(BUTTON_CLEAR_CACHE, R.drawable.menu_clear_cache, LocaleController.getString(R.string.BrowserSettingsCacheClear), cacheSize > 0 ? AndroidUtilities.formatFileSize(cacheSize) : ""));
+            items.add(UItem.asButton(BUTTON_CLEAR_CACHE, R.drawable.menu_clear_cache, LocaleController.getString(R.string.BrowserSettingsCacheClear), AndroidUtilities.formatFileSize(cacheSize)));
             items.add(UItem.asShadow(getString(R.string.BrowserSettingsCookiesInfo)));
             if (historySize > 0) {
                 historyRow = items.size();
@@ -346,8 +406,12 @@ public class WebBrowserSettings extends UniversalFragment implements Notificatio
                 .setTitle(getString(R.string.BrowserSettingsCacheClear))
                 .setMessage(formatString(R.string.BrowserSettingsCacheClearText, cacheSize == 0 ? "" : " (" + AndroidUtilities.formatFileSize(cacheSize)+")"))
                 .setPositiveButton(getString(R.string.Clear), (di, w) -> {
-                    ApplicationLoader.applicationContext.deleteDatabase("webview.db");
-                    ApplicationLoader.applicationContext.deleteDatabase("webviewCache.db");
+                    final Context appContext = ApplicationLoader.applicationContext;
+                    if (appContext == null) {
+                        return;
+                    }
+                    appContext.deleteDatabase("webview.db");
+                    appContext.deleteDatabase("webviewCache.db");
                     WebStorage.getInstance().deleteAllData();
                     try {
                         WebView webView = new WebView(getContext());
@@ -356,17 +420,36 @@ public class WebBrowserSettings extends UniversalFragment implements Notificatio
                         webView.destroy();
                     } catch (Exception e) {}
                     try {
-                        File dir = new File(ApplicationLoader.applicationContext.getApplicationInfo().dataDir, "app_webview");
-                        if (dir.exists()) {
-                            deleteDirectory(dir, false);
+                        final File dataDir = new File(appContext.getApplicationInfo().dataDir);
+                        File[] children = dataDir.listFiles();
+                        if (children != null) {
+                            for (File child : children) {
+                                final String name = child.getName();
+                                if (name != null && (name.equals("app_webview") || name.startsWith("app_webview_"))) {
+                                    deleteDirectory(child, false);
+                                }
+                            }
                         }
                     } catch (Exception e) {
                         FileLog.e(e);
                     }
                     try {
-                        File dir = new File(ApplicationLoader.applicationContext.getApplicationInfo().dataDir, "cache/WebView");
-                        if (dir.exists()) {
-                            deleteDirectory(dir, null);
+                        File cacheDir = appContext.getCacheDir();
+                        if (cacheDir != null) {
+                            File[] children = cacheDir.listFiles();
+                            if (children != null) {
+                                for (File child : children) {
+                                    final String name = child.getName();
+                                    if (name == null) continue;
+                                    String lower = name.toLowerCase();
+                                    if (lower.contains("webview")
+                                            || lower.contains("android_webview")
+                                            || lower.contains("chromium")
+                                            || lower.equals("org.chromium.android_webview")) {
+                                        deleteDirectory(child, null);
+                                    }
+                                }
+                            }
                         }
                     } catch (Exception e) {
                         FileLog.e(e);
@@ -386,9 +469,18 @@ public class WebBrowserSettings extends UniversalFragment implements Notificatio
                     cookieManager.removeAllCookies(null);
                     cookieManager.flush();
                     try {
-                        File dir = new File(ApplicationLoader.applicationContext.getApplicationInfo().dataDir, "app_webview");
-                        if (dir.exists()) {
-                            deleteDirectory(dir, true);
+                        final Context appContext = ApplicationLoader.applicationContext;
+                        if (appContext != null) {
+                            final File dataDir = new File(appContext.getApplicationInfo().dataDir);
+                            File[] children = dataDir.listFiles();
+                            if (children != null) {
+                                for (File child : children) {
+                                    final String name = child.getName();
+                                    if (name != null && (name.equals("app_webview") || name.startsWith("app_webview_"))) {
+                                        deleteDirectory(child, true);
+                                    }
+                                }
+                            }
                         }
                     } catch (Exception e) {
                         FileLog.e(e);
@@ -642,6 +734,18 @@ public class WebBrowserSettings extends UniversalFragment implements Notificatio
         }
     }
 
+    private static boolean isCookieFileName(String name) {
+        if (name == null) {
+            return false;
+        }
+        final String lower = name.toLowerCase();
+        return name.startsWith("Cookies")
+                || lower.contains("cookie")
+                || "Network Persistent State".equals(name)
+                || "Trust Tokens".equals(name)
+                || "Trust Tokens-journal".equals(name);
+    }
+
     private static long getDirectorySize(File dir, Boolean cookies) {
         if (dir == null || !dir.exists()) {
             return 0;
@@ -655,8 +759,8 @@ public class WebBrowserSettings extends UniversalFragment implements Notificatio
                 }
             }
         } else {
-            if (cookies != null && (cookies != dir.getName().startsWith("Cookies"))) {
-                return size;
+            if (cookies != null && cookies != isCookieFileName(dir.getName())) {
+                return 0;
             }
             size += dir.length();
         }
@@ -672,7 +776,7 @@ public class WebBrowserSettings extends UniversalFragment implements Notificatio
             File[] files = dir.listFiles();
             if (files != null) {
                 for (File file : files) {
-                    if (cookies != null && (cookies != file.getName().startsWith("Cookies"))) {
+                    if (cookies != null && !file.isDirectory() && cookies != isCookieFileName(file.getName())) {
                         continue;
                     }
                     if (!deleteDirectory(file, cookies)) {
@@ -680,14 +784,16 @@ public class WebBrowserSettings extends UniversalFragment implements Notificatio
                     }
                 }
             }
-            if (allDeleted) {
+            // Only remove directory itself when wiping everything (cookies == null)
+            // or when every remaining entry was deleted.
+            if (cookies == null && allDeleted) {
                 dir.delete();
             }
         } else {
-            if (cookies != null && (cookies != dir.getName().startsWith("Cookies"))) {
+            if (cookies != null && cookies != isCookieFileName(dir.getName())) {
                 return false;
             }
-            dir.delete();
+            return dir.delete();
         }
         return true;
     }
