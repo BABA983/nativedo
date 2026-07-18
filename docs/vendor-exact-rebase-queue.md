@@ -15,7 +15,7 @@
     - host contract: `FlickerLoadingViewHostContractTest` (REACTED_TYPE = 50dp)
 
 ## ArticleViewer (closed)
-- See `docs/vendor-articleviewer-plan.md` — closed at B21; **A3 / A4-partial / A7 landed**. Parked A5 (pin-matched) and A6 (S1 headings/quoteLevels).
+- See `docs/vendor-articleviewer-plan.md` — closed at B21; **A3 / A4-partial / A6-partial / A7 landed**. A5 pin-matched non-static; A6 heading paint maps still S1-omitted.
 - No full-file pin; `modified:true` + stuck_reason remain by design.
 
 ## Still heavy stuck (not FF-host class)

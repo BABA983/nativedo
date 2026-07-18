@@ -406,6 +406,34 @@ class ArticleViewerContractTest {
     }
 
     @Test
+    fun drawQuoteLines_quoteLevelsMaskDrawsWithoutThrowing() {
+        val isolated = ArticleViewer.Resources()
+        val host = object : IArticleViewer() {
+            override fun getCurrentAccount() = 0
+            override fun getTextColor() = 0xff111111.toInt()
+            override fun getLinkTextColor() = 0xff222222.toInt()
+            override fun getGrayTextColor() = 0xff333333.toInt()
+            override fun getThemedColor(colorKey: Int) = 0xffffffff.toInt()
+            override fun getResourcesProvider(): Theme.ResourcesProvider? = null
+            override fun getResources() = isolated
+            override fun getTextSelectionHelper(view: android.view.View?): TextSelectionHelper.ArticleTextSelectionHelper? = null
+        }
+        // Ensure paint exists; createPaint initializes quoteLinePaint among others.
+        ArticleViewer.createPaint(host, true)
+        val block = TLRPC.TL_pageBlockParagraph().apply {
+            level = 0
+            // bits 0 and 2 => two gutters at padx and padx+28
+            quoteLevels = 0b101
+        }
+        val canvas = android.graphics.Canvas()
+        // Must not throw; multi-layer path is the A6 pin algorithm (legacy level path still works when mask==0).
+        ArticleViewer.drawQuoteLines(canvas, host, block, /* height = */ 100)
+        block.quoteLevels = 0
+        block.level = 2
+        ArticleViewer.drawQuoteLines(canvas, host, block, 100)
+    }
+
+    @Test
     fun createLayoutForText_plainTextUsesParentColoredSpecialPaints() {
         val isolated = ArticleViewer.Resources()
         val host = object : IArticleViewer() {

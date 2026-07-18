@@ -459,6 +459,13 @@ public class TLRPC {
     public static class PageBlock extends TLObject {
         public int level;
         public boolean bottom;
+        /**
+         * A6 (partial): pin {@code quoteLevels} bitmask — bit i set => draw a vertical
+         * quote gutter at layer i ({@code padx + i*14} dp). Local producers currently leave
+         * this at 0; {@link ArticleViewer#drawQuoteLines} falls back to single-level
+         * {@link #level} drawing (pin legacy path).
+         */
+        public int quoteLevels;
         public int mid;
         public long groupId;
         public int cachedWidth;

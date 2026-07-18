@@ -135,7 +135,7 @@ S1 type omissions — re-open only with an explicit product ticket:
 | ~~A3~~ | `TL_textSpoiler` content production | **Landed:** `TLRPC.TL_textSpoiler` + pin-shaped `getText`/`getLastRichText`/`getPlainText`/`setRichTextParents`. WebInstantView still does not emit spoilers from HTML (matches pin). Discourse topic spoilers stay on the native body path. |
 | ~~A4~~ | Broader Sheet / WebActionBar chrome | **Partial landed:** pin-shaped `actionBar.setIsLocal` on page-switch / close / open stack transitions + `openWebpageUrl` offline confirm wrapper. Host kept: `WebBookmarks`, `RestrictedDomainsList` open-external, file chooser, `capturePreviewBitmap`, no `Page.local` File / markdown open. |
 | A5 | Embed/Collage/Slideshow static reshape | Pin geometry bug or forced_exact audit requires it (pin is also non-static) |
-| A6 | Heading1–6 maps / `quoteLevels` | S1 gains heading levels or multi-gutter quotes |
+| ~~A6~~ | Heading1–6 maps / `quoteLevels` | **Partial landed:** `PageBlock.quoteLevels` + pin multi-layer `drawQuoteLines` (legacy `level` fallback kept). Heading1–6 paint maps still S1-omitted: WebInstantView collapses h1–h6 onto Header/Subheader; no `pageBlockBlockquoteBlocks` producer yet. |
 | ~~A7~~ | CodeHighlighting / table long-press selection | **Landed:** vendored `CodeHighlighting` + `codelng.gzip`; `BlockPreformattedCell` uses pin `getText` + `getHighlighted(language)`; `BlockTableCell` pin long-press selection via `canStartSelection`/`dispatchTouchEvent`. |
 
 **Default:** keep `modified:true` + `stuck_reason`; do not bulk-copy pin chrome.

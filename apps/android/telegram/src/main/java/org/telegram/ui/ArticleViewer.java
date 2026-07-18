@@ -420,7 +420,8 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
     /**
      * Pin-shaped paint cache (12.8.1 Resources). B4 bridges static paint maps onto one
      * shared instance so getResources() and legacy static field names share the same maps.
-     * Heading1–6 maps omitted: local S1 collapses headings onto Header/Subheader paints.
+     * Heading1–6 maps remain S1-omitted: WebInstantView collapses h1–h6 onto Header/Subheader
+     * paints; full A6 heading maps would only matter once S1 emits distinct heading blocks.
      */
     public static class Resources {
         public final boolean isRichMessage;
@@ -3856,8 +3857,9 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
 
     /**
      * Pin-shaped quote gutter lines for nested page blocks.
-     * Local S1 PageBlock has {@code level}/{@code bottom} only (no pin {@code quoteLevels} mask),
-     * so this draws the single-level gutter when {@code level > 0}.
+     * Decoded from {@link TLRPC.PageBlock#quoteLevels}: bit i set => draw a line at layer i
+     * ({@code padx + i*14} dp). Legacy fallback (A6 partial / S1): when quoteLevels==0 but
+     * {@code level > 0} (e.g. embedPost children), draws a single line at padx.
      */
     public static void drawQuoteLines(Canvas canvas, IArticleViewer parent, TLRPC.PageBlock block, int height) {
         if (block == null || parent == null || quoteLinePaint == null) {
@@ -3866,9 +3868,22 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         final int padxDp = parent.padx();
         final int bottomTrim = block.bottom ? AndroidUtilities.dp(6) : 0;
         final int y2 = height - bottomTrim;
-        if (block.level > 0) {
-            final int x = AndroidUtilities.dp(padxDp);
-            canvas.drawRect(x, 0, x + AndroidUtilities.dp(2), y2, quoteLinePaint);
+        int mask = block.quoteLevels;
+        if (mask == 0) {
+            if (block.level > 0) {
+                final int x = AndroidUtilities.dp(padxDp);
+                canvas.drawRect(x, 0, x + AndroidUtilities.dp(2), y2, quoteLinePaint);
+            }
+            return;
+        }
+        int i = 0;
+        while (mask != 0) {
+            if ((mask & 1) != 0) {
+                final int x = AndroidUtilities.dp(padxDp + i * 14);
+                canvas.drawRect(x, 0, x + AndroidUtilities.dp(2), y2, quoteLinePaint);
+            }
+            mask >>>= 1;
+            i++;
         }
     }
 

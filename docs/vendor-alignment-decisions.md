@@ -34,6 +34,7 @@ without a product ticket. Full plan: `docs/vendor-articleviewer-plan.md`.
 | A2 / B20b | Block* `DrawingText.attach/detach` lifecycle + EmbedPost/Slideshow a11y |
 | A3 | `TLRPC.TL_textSpoiler` + `getText` → `TextStyleSpan(FLAG_STYLE_SPOILER)`; S1 map fixed |
 | A4 | Partial: `setIsLocal` on transitions + `openWebpageUrl` local confirm; host bookmarks/restrict kept |
+| A6 | Partial: `PageBlock.quoteLevels` + multi-layer `drawQuoteLines`; heading1–6 maps still S1-omitted |
 | A7 | `CodeHighlighting` + `codelng.gzip`; preformatted highlight; table long-press selection |
 | B1–B20a | IArticleViewer, parent-driven text/paint/cells, spoiler surface, search header height |
 
@@ -42,7 +43,7 @@ without a product ticket. Full plan: `docs/vendor-articleviewer-plan.md`.
 | Id | Topic | Default |
 |---|---|---|
 | A5 | Embed/Collage/Slideshow static reshape | Leave non-static (matches pin) |
-| A6 | Heading1–6 maps / `quoteLevels` | Keep S1 omission |
+| A6 remainder | Heading1–6 paint maps / blockquoteBlocks producer | Keep S1 Header/Subheader collapse until product needs distinct heading paints |
 
 Re-open only when product needs pin behavior for a row above.
 
