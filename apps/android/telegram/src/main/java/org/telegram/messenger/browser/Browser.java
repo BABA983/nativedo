@@ -20,7 +20,9 @@ import android.text.TextUtils;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.FileLog;
+import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.SharedConfig;
+import org.telegram.messenger.UserConfig;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.BottomSheetTabs;
 import org.telegram.ui.LaunchActivity;
@@ -77,13 +79,18 @@ public class Browser {
     }
 
     /**
-     * Main URL dispatch. Simplified from upstream: no CustomTabs, no Telegram internal routing,
-     * no Telegraph/Instant View. Falls through to external browser via ACTION_VIEW.
+     * Main URL dispatch for NativeDo.
+     * <p>
+     * Honors {@link SharedConfig#inappBrowser} and {@link RestrictedDomainsList}
+     * (via {@link MessagesController#isWebBrowserOpenInApp(String)}). Custom Tabs
+     * are not vendored yet — when in-app is off or the domain is restricted, we
+     * open with {@link Intent#ACTION_VIEW} (system browser / default handler).
      */
     public static void openUrl(final Context context, Uri uri, boolean _allowCustom, boolean tryTelegraph, boolean forceNotInternalForApps, Progress inCaseLoading, String browser, boolean allowIntent, boolean allowInAppBrowser, boolean forceRequest) {
         if (context == null || uri == null) {
             return;
         }
+        SharedConfig.loadBrowserConfig();
         String browserPackage = getBrowserPackageName(browser);
         boolean isHttpOrHttps = false;
         try {
@@ -102,16 +109,22 @@ public class Browser {
         } catch (Exception e) {
             FileLog.e(e);
         }
-        if (isHttpOrHttps && allowInAppBrowser && SharedConfig.inappBrowser && TextUtils.isEmpty(browserPackage)) {
+        final String url = uri.toString();
+        final boolean openInApp = isHttpOrHttps
+                && allowInAppBrowser
+                && TextUtils.isEmpty(browserPackage)
+                && MessagesController.getInstance(UserConfig.selectedAccount).isWebBrowserOpenInApp(url);
+        if (openInApp) {
             Progress progress = inCaseLoading != null ? inCaseLoading : new Progress();
-            if (openInTelegramBrowser(context instanceof Activity ? (Activity) context : null, uri.toString(), progress)) {
+            Activity activity = context instanceof Activity
+                    ? (Activity) context
+                    : AndroidUtilities.findActivity(context);
+            if (openInTelegramBrowser(activity, url, progress)) {
                 return;
             }
         }
-        // NativeDo keeps CustomTabs and Telegram internal routing deferred. If the
-        // Telegram in-app browser cannot handle the URL, fall back to ACTION_VIEW.
         try {
-            openInExternalBrowser(context, uri.toString(), allowIntent, browserPackage);
+            openInExternalBrowser(context, url, allowIntent, browserPackage);
         } catch (Exception e) {
             FileLog.e(e);
         }

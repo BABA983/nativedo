@@ -23,7 +23,7 @@ lives under `org.telegram.ui.web.*` + `ArticleViewer`.
 | `ArticleViewer` | Sheet chrome + IV display + related UI | **Epic closed** (B21 + A3/A4p/A6/A7); host chrome kept; A5 wontfix |
 | `Browser` (native) | URL open dispatch | Host shim (not exact FF) |
 | `WebActionBar` | Browser action bar | Already @ pin |
-| `WebBrowserSettings` | Telegram browser settings | Stuck (low product ROI) |
+| `WebBrowserSettings` | Telegram browser settings | **pin-identical @ 12.9.0**; façade → SharedConfig/RestrictedDomainsList |
 
 ## Why not clean-FF everything
 
@@ -55,3 +55,10 @@ B1–B21 + **A3** spoiler content + **A4-partial** local chrome + **A6** heading
 **A7** CodeHighlighting/table selection. Host keeps WebBookmarks / RestrictedDomains / file chooser /
 preview bitmap. **A5** wontfix (pin non-static). Full history:
 [`vendor-articleviewer-plan.md`](vendor-articleviewer-plan.md).
+
+## Runtime wiring (NativeDo)
+
+- `Browser.openUrl` uses `MessagesController.isWebBrowserOpenInApp(url)` =
+  `SharedConfig.inappBrowser && !RestrictedDomainsList.isRestrictedUrl(url)`.
+- Profile → **浏览器设置** opens `WebBrowserSettings` sheet (same as ArticleViewer chrome).
+- Custom Tabs not vendored; external fallback is `ACTION_VIEW`.

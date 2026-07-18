@@ -53,7 +53,7 @@
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
       "modified": true,
       "port_mode": "native",
-      "notes": "Browser URL dispatch adapted for NativeDo: real openInExternalBrowser/openInExternalApp/hasAppToOpen/IDN_toUnicode/getBrowserPackageName/isBrowserPackageName/replace/replaceHostname; openInTelegramBrowser first restores an existing BottomSheetTabs ArticleViewer with the same fragment-normalized URL, then falls back to the current LaunchActivity/BaseFragment ArticleViewer sheet. CustomTabs and Telegram-specific internal routing (isInternalUri/openAsInternalIntent/Telegraph/Tonsite) remain no-op stubs.",
+      "notes": "Browser URL dispatch for NativeDo: openUrl honors MessagesController.isWebBrowserOpenInApp (SharedConfig.inappBrowser + RestrictedDomainsList). openInTelegramBrowser restores/reopens ArticleViewer sheet; CustomTabs deferred (ACTION_VIEW external fallback).",
       "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
     },
     {

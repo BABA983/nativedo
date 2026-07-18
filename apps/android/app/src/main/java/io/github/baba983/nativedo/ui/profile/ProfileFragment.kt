@@ -97,6 +97,7 @@ import org.telegram.messenger.ImageReceiver
 import org.telegram.messenger.MessageObject
 import org.telegram.messenger.Utilities
 import org.telegram.messenger.browser.Browser
+import org.telegram.ui.web.WebBrowserSettings
 import org.telegram.tgnet.TLRPC
 import org.telegram.ui.ActionBar.ActionBar
 import org.telegram.ui.ActionBar.ActionBarMenuItem
@@ -139,6 +140,7 @@ private const val ID_FOLLOWING = 22
 private const val ACTION_DEV_URL = 1
 private const val ACTION_TOPIC_URL = 2
 private const val ACTION_TOPIC_RENDER_FIXTURES = 6
+private const val ACTION_BROWSER_SETTINGS = 7
 private const val ACTION_RETRY_PROFILE = 3
 private const val ACTION_LOGOUT = 4
 private const val ACTION_LOGIN = 5
@@ -1855,6 +1857,19 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate, MainTabsActivity.Ta
             items.add(UItem.asShadow(null))
         }
 
+        // --- App / browser ---
+        items.add(UItem.asHeader(context?.getString(R.string.profile_app_section_title).orEmpty()))
+        items.add(
+            IconSettingFactory.of(
+                ACTION_BROWSER_SETTINGS,
+                IconSettingCell.Colors.BLUE_TOP, IconSettingCell.Colors.BLUE_BOTTOM,
+                R.drawable.settings_link,
+                context?.getString(R.string.profile_browser_settings_title).orEmpty(),
+                context?.getString(R.string.profile_browser_settings_subtitle).orEmpty(),
+            )
+        )
+        items.add(UItem.asShadow(null))
+
         // --- Debug section (last, debug builds only) ---
         // Mirrors SettingsActivity.java:737 — dev tools are gated behind a build flag so
         // anonymous/release users never see them.
@@ -1948,6 +1963,7 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate, MainTabsActivity.Ta
             ACTION_LOGOUT -> showLogoutConfirm()
             ACTION_RETRY_PROFILE -> viewModel.retry()
             ACTION_LOGIN -> presentFragment(LoginWebViewFragment())
+            ACTION_BROWSER_SETTINGS -> openBrowserSettings()
             ACTION_DEV_URL -> showUrlInputDialog(
                 title = context?.getString(R.string.profile_dev_url_title).orEmpty(),
                 message = context?.getString(R.string.profile_dev_url_message).orEmpty(),
@@ -2404,6 +2420,14 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate, MainTabsActivity.Ta
         val topicMarkerIndex = segments.indexOf("t")
         if (topicMarkerIndex < 0) return null
         return segments.drop(topicMarkerIndex + 1).firstNotNullOfOrNull { segment -> segment.toLongOrNull() }
+    }
+
+    
+    private fun openBrowserSettings() {
+        val params = BaseFragment.BottomSheetParams().apply { transitionFromLeft = true }
+        showAsSheet(WebBrowserSettings { entry ->
+            Browser.openUrl(parentActivity ?: return@WebBrowserSettings, entry.url)
+        }, params)
     }
 
     private fun openBrowser(url: String) {

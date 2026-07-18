@@ -4040,7 +4040,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                     if (res.webpage != null && res.webpage.cached_page instanceof TLRPC.TL_page) {
                         addPageToStack(res.webpage, anchor, 1);
                     } else if (!checkInternal.run()) {
-                        if (SharedConfig.inappBrowser) {
+                        if (MessagesController.getInstance(currentAccount).isWebBrowserOpenInApp(req.url)) {
                             addPageToStack(req.url, 1);
                         } else {
                             Browser.openUrl(parentActivity, req.url);
@@ -4049,7 +4049,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 } else if (response instanceof TLRPC.TL_webPage && ((TLRPC.TL_webPage) response).cached_page instanceof TLRPC.TL_page) {
                     addPageToStack((TLRPC.TL_webPage) response, anchor, 1);
                 } else if (!checkInternal.run()) {
-                    if (SharedConfig.inappBrowser) {
+                    if (MessagesController.getInstance(currentAccount).isWebBrowserOpenInApp(req.url)) {
                         addPageToStack(req.url, 1);
                     } else {
                         Browser.openUrl(parentActivity, req.url);

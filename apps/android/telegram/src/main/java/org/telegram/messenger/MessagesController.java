@@ -205,13 +205,25 @@ public final class MessagesController {
     }
 
     /**
-     * @param inAppExceptions {@code true}: domains that must NOT open in-app
-     *                        (RestrictedDomainsList). {@code false}: pin dual-list
-     *                        for "always open in-app" when browser is off — host
-     *                        returns empty (single local store).
+     * Pin-shaped: whether this URL should open in the in-app browser.
+     * Host: {@link SharedConfig#inappBrowser} AND domain not on
+     * {@link org.telegram.ui.web.RestrictedDomainsList}.
      */
-    public java.util.List<org.telegram.tgnet.tl.TL_account.WebDomainException> getWebBrowserExceptionsList(boolean inAppExceptions) {
-        if (!inAppExceptions) {
+    public boolean isWebBrowserOpenInApp(String url) {
+        SharedConfig.loadBrowserConfig();
+        if (!SharedConfig.inappBrowser || url == null) {
+            return false;
+        }
+        return !org.telegram.ui.web.RestrictedDomainsList.getInstance().isRestrictedUrl(url);
+    }
+
+    /**
+     * Pin {@code getWebBrowserExceptionsList(externalExceptions)}:
+     * {@code true} = never-open-in-app list (RestrictedDomainsList);
+     * {@code false} = always-open-in-app dual list (not ported — empty).
+     */
+    public java.util.List<org.telegram.tgnet.tl.TL_account.WebDomainException> getWebBrowserExceptionsList(boolean externalExceptions) {
+        if (!externalExceptions) {
             return java.util.Collections.emptyList();
         }
         org.telegram.ui.web.RestrictedDomainsList list =
@@ -239,9 +251,12 @@ public final class MessagesController {
         return out;
     }
 
-    public void addWebBrowserException(String domain, boolean inAppException) {
-        if (!inAppException) {
-            // Dual-list external→in-app force not ported; ignore.
+    /**
+     * @param externalException {@code true}: never open in-app (RestrictedDomainsList).
+     *                          {@code false}: always-open-in-app dual list (no-op locally).
+     */
+    public void addWebBrowserException(String domain, boolean externalException) {
+        if (!externalException) {
             return;
         }
         org.telegram.ui.web.RestrictedDomainsList.getInstance().addRestrictedDomain(domain);
@@ -261,11 +276,10 @@ public final class MessagesController {
                 .postNotificationName(NotificationCenter.webBrowserSettingsUpdate);
     }
 
-    public boolean isWebBrowserExceptionsLimitReached(boolean inAppExceptions) {
-        if (!inAppExceptions) {
+    public boolean isWebBrowserExceptionsLimitReached(boolean externalExceptions) {
+        if (!externalExceptions) {
             return false;
         }
-        // Generous local limit; pin enforces server-side cap.
         return org.telegram.ui.web.RestrictedDomainsList.getInstance()
                 .getRestrictedDomainsList().size() >= 200;
     }

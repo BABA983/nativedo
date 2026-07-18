@@ -250,4 +250,7 @@
     <string name="app_browser_settings_add_restricted_domain_hint">example.com</string>
     <string name="app_browser_settings_add_restricted_domain_invalid">Enter a valid domain</string>
     <string name="app_browser_reader_source">Source</string>
+    <string name="profile_app_section_title">应用</string>
+    <string name="profile_browser_settings_title">浏览器设置</string>
+    <string name="profile_browser_settings_subtitle">应用内浏览器、历史与例外域名</string>
 </resources>
