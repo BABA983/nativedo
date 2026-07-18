@@ -231,7 +231,7 @@
         {
           "path": "org/telegram/ui/Cells/GraySectionCell.java",
           "modified": true,
-          "notes": "FF to 12.8.1 + host: plain TextView instead of AnimatedEmojiSpan.TextViewEmojis; LocaleController.isRTL → false; createThemeDescriptions omitted."
+          "notes": "FF to 12.8.1 + host: plain TextView instead of AnimatedEmojiSpan.TextViewEmojis; LocaleController.isRTL restored; createThemeDescriptions omitted (ThemeDescription stub)."
         },
         {
           "path": "org/telegram/ui/Cells/HeaderCell.java"
@@ -900,7 +900,7 @@
         },
         {
           "path": "org/telegram/ui/Components/AnimatedFloat.java",
-          "modified": true,
+          "modified": false,
           "forced_exact": [
             "animation"
           ]
@@ -1012,12 +1012,11 @@
         },
         {
           "path": "org/telegram/ui/Components/FlickerLoadingView.java",
-          "modified": true,
+          "modified": false,
           "forced_exact": [
             "animation",
             "drawing"
-          ],
-          "notes": "FF to 12.8.1 + host: REACTED_TYPE cell height dp(50) (ReactedUsersListView const); member-request button width strings hardcoded (missing R.string). forced_exact animation/drawing from pin."
+          ]
         },
         {
           "path": "org/telegram/ui/Components/GestureDetectorFixDoubleTap.java",
@@ -1097,7 +1096,7 @@
         },
         {
           "path": "org/telegram/ui/Components/UniversalRecyclerView.java",
-          "modified": true,
+          "modified": false,
           "forced_exact": [
             "recycling"
           ]
@@ -1501,7 +1500,7 @@
         },
         {
           "path": "org/telegram/ui/web/HttpGetFileTask.java",
-          "modified": true
+          "modified": false
         },
         {
           "path": "org/telegram/ui/web/HttpPostTask.java"
@@ -1988,8 +1987,7 @@
         },
         {
           "path": "org/telegram/messenger/utils/WindowVisibilityManager.java",
-          "modified": true,
-          "notes": "BottomSheet window hide refcount helper; small host guard for null listener. Essentially upstream-shaped."
+          "modified": false
         },
         {
           "path": "me/vkryl/core/reference/ReferenceCreator.java",
@@ -2750,6 +2748,10 @@
         {
           "path": "org/telegram/ui/Components/JoinToSendSettingsView.java",
           "notes": "Stub: getBottomInfoMargin only for section geometry."
+        },
+        {
+          "path": "org/telegram/ui/Components/ReactedUsersListView.java",
+          "notes": "Compile/runtime constant shim, not a full port: only ITEM_HEIGHT_DP (50) so FlickerLoadingView can keep the pin-shaped REACTED_TYPE height expression. Full reacted-users list UI is not vendored."
         }
       ]
     }

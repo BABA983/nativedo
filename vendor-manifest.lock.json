@@ -236,7 +236,7 @@
       "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
       "modified": true,
       "port_mode": "exact",
-      "notes": "FF to 12.8.1 + host: plain TextView instead of AnimatedEmojiSpan.TextViewEmojis; LocaleController.isRTL → false; createThemeDescriptions omitted."
+      "notes": "FF to 12.8.1 + host: plain TextView instead of AnimatedEmojiSpan.TextViewEmojis; LocaleController.isRTL restored; createThemeDescriptions omitted (ThemeDescription stub)."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Cells/HeaderCell.java",
@@ -948,7 +948,7 @@
       "local": "telegram/src/main/java/org/telegram/ui/Components/AnimatedFloat.java",
       "upstream": "org/telegram/ui/Components/AnimatedFloat.java",
       "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
-      "modified": true,
+      "modified": false,
       "port_mode": "exact",
       "forced_exact": [
         "animation"
@@ -1103,13 +1103,12 @@
       "local": "telegram/src/main/java/org/telegram/ui/Components/FlickerLoadingView.java",
       "upstream": "org/telegram/ui/Components/FlickerLoadingView.java",
       "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
-      "modified": true,
+      "modified": false,
       "port_mode": "exact",
       "forced_exact": [
         "animation",
         "drawing"
-      ],
-      "notes": "FF to 12.8.1 + host: REACTED_TYPE cell height dp(50) (ReactedUsersListView const); member-request button width strings hardcoded (missing R.string). forced_exact animation/drawing from pin."
+      ]
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/GestureDetectorFixDoubleTap.java",
@@ -1226,7 +1225,7 @@
       "local": "telegram/src/main/java/org/telegram/ui/Components/UniversalRecyclerView.java",
       "upstream": "org/telegram/ui/Components/UniversalRecyclerView.java",
       "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
-      "modified": true,
+      "modified": false,
       "port_mode": "exact",
       "forced_exact": [
         "recycling"
@@ -1838,7 +1837,7 @@
       "local": "telegram/src/main/java/org/telegram/ui/web/HttpGetFileTask.java",
       "upstream": "org/telegram/ui/web/HttpGetFileTask.java",
       "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
-      "modified": true,
+      "modified": false,
       "port_mode": "exact"
     },
     {
@@ -2579,9 +2578,8 @@
       "local": "telegram/src/main/java/org/telegram/messenger/utils/WindowVisibilityManager.java",
       "upstream": "org/telegram/messenger/utils/WindowVisibilityManager.java",
       "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
-      "modified": true,
-      "port_mode": "exact",
-      "notes": "BottomSheet window hide refcount helper; small host guard for null listener. Essentially upstream-shaped."
+      "modified": false,
+      "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/me/vkryl/core/reference/ReferenceCreator.java",
@@ -3723,6 +3721,14 @@
       "modified": true,
       "port_mode": "native",
       "notes": "Stub: getBottomInfoMargin only for section geometry."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/ReactedUsersListView.java",
+      "upstream": "org/telegram/ui/Components/ReactedUsersListView.java",
+      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Compile/runtime constant shim, not a full port: only ITEM_HEIGHT_DP (50) so FlickerLoadingView can keep the pin-shaped REACTED_TYPE height expression. Full reacted-users list UI is not vendored."
     }
   ],
   "resources": [
