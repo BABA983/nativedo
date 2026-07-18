@@ -5,7 +5,7 @@
 - Utilities scheme-2
 - Browser chrome scheme-2: WebMetadataCache, AddressBarList
 - WebInstantView S1 reverse-patch
-- ArticleViewer B1–B21 (IBlock/a11y + cell attach + typing animator surface) — full body still epic
+- ArticleViewer B1–B21 — **epic closed** (parent-driven cells, attach, typing surface; host chrome/S1 parked)
 - **Cleared entire "FF clean pin fails compile" class (5 files)** — pin 12.8.1 + host re-apply:
   - GraySectionCell
   - NestedSizeNotifierLayout
@@ -14,8 +14,9 @@
   - FlickerLoadingView
     - host contract: `FlickerLoadingViewHostContractTest` (REACTED_TYPE = 50dp)
 
-## ArticleViewer (epic)
-- See `docs/vendor-articleviewer-plan.md` (B1–B21 landed; broader Sheet chrome still host-wired; no full-file pin)
+## ArticleViewer (closed)
+- See `docs/vendor-articleviewer-plan.md` — closed at B21. Do not resume AV slices without a product ticket (parked A3–A7).
+- No full-file pin; `modified:true` + stuck_reason remain by design.
 
 ## Still heavy stuck (not FF-host class)
 - WebBrowserSettings — MessagesController browser policy APIs
@@ -27,6 +28,7 @@
 ## Next global picks
 1. Other small exact files still on `vendored_at` 009e… **with** non-FF stuck reasons (triage case-by-case)
 2. Or forced_exact regression tests / product paths for the 5 just unstuck
+3. **Not** ArticleViewer — epic closed; only re-open with product ticket
 
 ## Testing policy (vendor FF)
 

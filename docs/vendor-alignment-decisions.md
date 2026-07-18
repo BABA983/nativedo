@@ -21,55 +21,30 @@ Local pristine checkout: `vendor/telegram-android` at that pin.
 | *(follow-up)* | `WindowAnimatedInsetsProvider` restored pin-identical |
 | later | `HttpGetFileTask`, `AnimatedFloat`, `WindowVisibilityManager`, `UniversalRecyclerView` pin-identical; FlickerLoadingView/GraySectionCell partial re-align |
 
-## ArticleViewer — still deferred
+## ArticleViewer — epic closed at B21
 
-### A1. MultiLayoutTypingAnimator — **done (B21)**
+Autonomous AV pin-alignment **stopped after B21**. Do not resume slice work
+without a product ticket. Full plan: `docs/vendor-articleviewer-plan.md`.
 
-- Vendored pin-identical animator under `:telegram`.
-- `DrawingText` implements `Block` and uses the pin draw fade branch when `typingAnimator != null`.
-- IV path does not start an animator (no RichMessageLayout/BotForumHelper). Product can later bind one for IV open animation if desired.
+### Landed (no decision needed)
 
-### A2. Full Block*Cell `layout.attach(this)` call sites — **done (B20b)**
+| Id | Slice |
+|---|---|
+| A1 / B21 | `MultiLayoutTypingAnimator` vendored pin-identical; `DrawingText` Block + draw branch (IV leaves null) |
+| A2 / B20b | Block* `DrawingText.attach/detach` lifecycle + EmbedPost/Slideshow a11y |
+| B1–B20a | IArticleViewer, parent-driven text/paint/cells, spoiler surface, search header height |
 
-- Pin attaches every `DrawingText` from nearly all Block cells in `onAttachedToWindow` / `onDetachedFromWindow`.
-- B19 only attaches when `createLayoutForText` sees `parentView.isAttachedToWindow()`; B20b adds the pin cell lifecycle sites (incl. TableLayout children, Embed/Collage/Slideshow).
-- Remaining related gap: `MultiLayoutTypingAnimator` (A1), not attach wiring itself.
+### Parked host / S1 deltas (default: keep as-is)
 
-### A3. `TL_textSpoiler` / S1 spoiler content production
+| Id | Topic | Default |
+|---|---|---|
+| A3 | `TL_textSpoiler` content | Structural-only; no local TL type |
+| A4 | Sheet / WebActionBar chrome | Keep NativeDo: `WebBookmarks`, `RestrictedDomainsList`, file chooser, `capturePreviewBitmap`, ActionBarLayout dismiss fallback |
+| A5 | Embed/Collage/Slideshow static reshape | Leave non-static (matches pin) |
+| A6 | Heading1–6 maps / `quoteLevels` | Keep S1 omission |
+| A7 | CodeHighlighting / table long-press | Keep host selection model |
 
-- Pin produces spoilers from `TL_iv.textSpoiler` → `TextStyleSpan(FLAG_STYLE_SPOILER)`.
-- Local S1 `TLRPC.RichText` has no spoiler type; Discourse IV may never emit one.
-- Lifecycle/hit path is ready; without content, spoilers stay empty in production.
-- **Decision:** add `TL_textSpoiler` + `getText` branch, map from Discourse, or keep structural-only?
-
-### A4. Sheet / WebActionBar broader chrome
-
-Already host-wired on purpose; do **not** bulk-copy pin without choosing:
-
-| Area | Local | Pin | Decision |
-|---|---|---|---|
-| Bookmarks | `WebBookmarks` + toast / `BookmarksFragment` | Saved Messages / MTProto `addBookmark` | Keep NativeDo store? |
-| Open external | `RestrictedDomainsList` + custom dialog | `MessagesController` exception APIs + `AlertsCreator` | Keep RestrictedDomains path? |
-| Open IV markdown file | omitted (`cached_page.local`) | opens local file | Need offline markdown open? |
-| Sheet dismiss into tabs | ActionBarLayout overlay fallback + release guard | `LaunchActivity.instance` only | Keep host fallback? |
-| Sheet preview bitmap | local `capturePreviewBitmap` | absent/different in pin head | Keep local preview capture? |
-| Search UI chrome after menu | local search panel layout differs mid-file | pin continues with searchDownButton etc. | Full re-sync of search panel? |
-
-### A5. Embed / Collage / Slideshow static reshape
-
-- Still non-static nested cells with `ArticleViewer.this` helpers.
-- Optional pin reshape; product risk if Table/media geometry drifts.
-- **Decision:** force static parent reshape now or leave?
-
-### A6. Heading1–6 resource maps / quoteLevels mask
-
-- Local S1 intentionally omits pin maps and multi-gutter quote mask.
-- **Decision:** adopt pin maps (needs TL/heading surface) or keep S1 omission?
-
-### A7. CodeHighlighting / table selection long-press
-
-- Still deferred under local S1 / host selection model.
-- **Decision:** port, stub, or never?
+Re-open only when product needs pin behavior for a row above.
 
 ## Other exact+modified files — safe to leave, need product call to change
 
@@ -102,7 +77,7 @@ Already host-wired on purpose; do **not** bulk-copy pin without choosing:
 
 Do not auto-overwrite. Re-sync only with a named product goal:
 
-- `ArticleViewer.java` (active slice program; stuck)
+- `ArticleViewer.java` (epic closed at B21; stuck host/S1 by design)
 - `RecyclerListView.java` (forced_exact gesture/recycling; heavy host wiring)
 - `Utilities.java`, `AnimatedFloat.java`, `PullForegroundDrawable.java`, …
 - Web stack: `WebInstantView`, `AddressBarList`, `BookmarksFragment`, `WebMetadataCache`, …
@@ -117,7 +92,7 @@ Full list: `scripts/vendor-classify.sh --port-mode exact`.
 ## Suggested default if you want zero more product risk
 
 1. Keep all host-wiring tables above as-is.
-2. Continue ArticleViewer only when you pick A1–A7.
+2. **Do not continue ArticleViewer** unless a product ticket reopens a parked A3–A7 row.
 3. Do not bump global pin until `scripts/vendor-status.sh --bump-report <new>` is empty of undecided exact+modified files.
 
 ## How to decide an item
@@ -137,7 +112,7 @@ Then either:
 
 Still modified and intentionally not bulk-copied without product decisions:
 
-- `ArticleViewer.java`, `IArticleViewer.java` (active host-wired IV program)
+- `ArticleViewer.java`, `IArticleViewer.java` (epic closed at B21; host-wired IV program parked)
 - `ImageReceiver` / `ImageLocation` / `RestrictedDomainsList` (legacy pin, stuck)
 - `Utilities.java` (native/no-JNI surface)
 - `ThemeColors.java` (NativeDo default wallpaper/service colors)

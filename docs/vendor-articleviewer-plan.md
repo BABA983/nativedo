@@ -1,6 +1,9 @@
 # ArticleViewer rebase plan (Telegram 12.8.1)
 
-> **Do not clean-FF** `ArticleViewer.java`. Treat as a multi-PR epic.
+> **Status: epic closed at B21** (2026-07-18). Do **not** open further AV slices
+> unless a named product goal reopens one of the parked items below.
+>
+> **Do not clean-FF** `ArticleViewer.java`. Full-file pin replace remains off-limits.
 > WebInstantView S1 (TL_iv→TLRPC) is done; ArticleViewer must use the **same** type map.
 
 ## Why it is hard
@@ -118,9 +121,25 @@ Introduced `org.telegram.ui.IArticleViewer` (API surface only):
 21. [x] B20a: WebActionBar search menu restores pin header height reset
 22. [x] B20b: pin-shaped `DrawingText.attach/detach` on all Block* `onAttachedToWindow` / `onDetachedFromWindow` sites (incl. TableLayout children); EmbedPost + Slideshow a11y labels
 23. [x] B21: vendor pin-identical `MultiLayoutTypingAnimator`; `DrawingText` implements `Block`, exposes `typingAnimator`, pin draw fade branch (IV leaves field null; rich-message hosts can bind later)
-24. [ ] Optional: larger Sheet/WebActionBar chrome (bookmarks/open-external still host-wired); TL_textSpoiler content
 
-Do **not** full-file replace until B2 compiles with contract tests green.
+### Epic close (B21) — parked, not abandoned
+
+Autonomous pin-alignment of ArticleViewer **stops here**. What landed covers the
+`:app` public contract (`DrawingText`, `ErrorContainer`, `dispatchActivityResult`,
+Sheet lifecycle host wiring) and the parent-driven Block* / paint / spoiler /
+attach / typing **surface**. Remaining deltas are intentional host product or
+S1 type omissions — re-open only with an explicit product ticket:
+
+| Parked id | Topic | Re-open when |
+|-----------|--------|--------------|
+| A3 | `TL_textSpoiler` content production | Discourse/IV emits spoilers we must render |
+| A4 | Broader Sheet / WebActionBar chrome | Product wants pin bookmarks / open-external / search panel / markdown-local |
+| A5 | Embed/Collage/Slideshow static reshape | Pin geometry bug or forced_exact audit requires it (pin is also non-static) |
+| A6 | Heading1–6 maps / `quoteLevels` | S1 gains heading levels or multi-gutter quotes |
+| A7 | CodeHighlighting / table long-press selection | Product needs pin selection model on IV tables/code |
+
+**Default:** keep `modified:true` + `stuck_reason`; do not bulk-copy pin chrome.
+Contract gate for any future AV PR remains Phase 0 tests + manual checklist.
 
 ### Phase B3 — DrawingText(parent) (landed)
 

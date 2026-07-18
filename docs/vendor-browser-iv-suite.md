@@ -18,7 +18,7 @@ lives under `org.telegram.ui.web.*` + `ArticleViewer`.
 | `WebMetadataCache` | Favicon/sitename cache + offscreen WebView extract | **Scheme-2 @ pin** (host wiring kept) |
 | `AddressBarList` | Address bar list + bookmarks UI | **Scheme-2 @ pin** (WebBookmarks backend) |
 | `WebInstantView` | HTML → Instant View page model | **S1 reverse-patch @ pin** (TL_iv→TLRPC + host readHTML) |
-| `ArticleViewer` | Sheet chrome + IV display + related UI | **Epic after TL_iv / WebInstantView** |
+| `ArticleViewer` | Sheet chrome + IV display + related UI | **Epic closed at B21** (host chrome/S1 parked) |
 | `Browser` (native) | URL open dispatch | Host shim (not exact FF) |
 | `WebActionBar` | Browser action bar | Already @ pin |
 | `WebBrowserSettings` | Telegram browser settings | Stuck (low product ROI) |
@@ -37,20 +37,18 @@ lives under `org.telegram.ui.web.*` + `ArticleViewer`.
 - Scheme-2 baseline for `WebMetadataCache` + `AddressBarList`.
 - **S1 reverse-patch** for `WebInstantView` (TL_iv→TLRPC; host Activity for readHTML).
 
-### Next (when ready for real IV pin sync)
-1. Pick **TL_iv strategy**:
-   - **S1 reverse-patch** (recommended): take pin WebInstantView, map `TL_iv.*` → `TLRPC.*` page types.
-   - **S2 thin shim**: `org.telegram.tgnet.tl.TL_iv` aliases to TLRPC.
-   - **S3 full `TL_iv.java`**: last resort (~2k LOC).
-2. Rebase `WebInstantView` with host `readHTML` Activity resolution retained.
-3. Only then plan `ArticleViewer` multi-PR rebase.
-4. Keep `GroupedPhotosListView` / `TableLayout` on same TL_iv decision (shared).
+### Next (suite, not AV)
+1. Keep `GroupedPhotosListView` / `TableLayout` on the existing S1 (TLRPC) decision unless product reopens TL_iv.
+2. Triage other browser stuck files (`WebBrowserSettings`, …) only with product ROI.
+3. **ArticleViewer** — closed; see below.
 
 ### Do not
-- `vendor-ff` WebInstantView or ArticleViewer without TL_iv plan.
+- `vendor-ff` WebInstantView or ArticleViewer without an explicit product + TL plan.
 - Reintroduce MTProto bookmarks in AddressBarList.
+- Resume autonomous ArticleViewer slices (A3–A7) without a product ticket.
 
-## ArticleViewer epic
+## ArticleViewer epic (closed at B21)
 
-See [`vendor-articleviewer-plan.md`](vendor-articleviewer-plan.md) for phased rebase,
-contract tests, and S1 preview (`scripts/vendor_articleviewer_s1_preview.py`).
+Phased parent-driven rebase **landed through B21**. Remaining host chrome and S1
+omissions are parked by design. Full history, contract tests, and reopen table:
+[`vendor-articleviewer-plan.md`](vendor-articleviewer-plan.md).
