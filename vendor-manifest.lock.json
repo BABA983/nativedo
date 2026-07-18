@@ -1818,7 +1818,8 @@
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "exact",
-      "notes": "S1 reverse-patch from 12.8.1 pin: TL_iv.* mapped to TLRPC page/text types (headings collapsed to Header/Subheader; PageCaption→TL_pageCaption). Host readHTML uses LaunchActivity.getActionBarLayoutActivity()."
+      "notes": "S1 reverse-patch @ global pin 12.9.0: pin TL_iv.* Instant View model mapped to local TLRPC page/text types (incl. TL_pageBlockHeading1–6 emission for AV A6). Host readHTML Activity via LaunchActivity.getActionBarLayoutActivity() (LaunchActivity is a non-window stub Context). Not clean-FF eligible — S1 type map + host Activity resolution are product.",
+      "stuck_reason": "Intentional host wiring at global pin 12.9.0 — keep modified:true; not eligible for clean FF. Product/API surface differs from pin by design (missing upstream types or NativeDo defaults). Re-sync only with a named product goal."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/BrowserHistory.java",
@@ -1833,7 +1834,8 @@
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "exact",
-      "notes": "Scheme-2 pin baseline (12.8.1): upstream surface ~unchanged. Host wiring retained: retrieveFaviconAndSitename via LaunchActivity.getActionBarLayoutActivity(); SitenameProxy; favicon decode guards. Pin alone lacks offscreen WebView extraction path."
+      "notes": "Scheme-2 pin surface @ 12.9.0 plus NativeDo offscreen WebView favicon/sitename extraction: retrieveFaviconAndSitename resolves host Activity via LaunchActivity.getActionBarLayoutActivity(); SitenameProxy JS bridge; favicon decode guards. Pin alone lacks this host extraction path — not clean-FF eligible.",
+      "stuck_reason": "Intentional host wiring at global pin 12.9.0 — keep modified:true; not eligible for clean FF. Product/API surface differs from pin by design (missing upstream types or NativeDo defaults). Re-sync only with a named product goal."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/SearchEngine.java",
@@ -1848,7 +1850,8 @@
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
       "modified": true,
       "port_mode": "exact",
-      "stuck_reason": "Cannot load upstream blob at vendored_at and/or pin for path mapping; triage upstream field before re-sync."
+      "notes": "NativeDo host restricted-domain store under org.telegram.ui.web (mirrors BrowserStorage normalize/isRestricted/add/remove/clear). No RestrictedDomainsList.java blob at pin 12.9.0 or historical vendored_at path — not a Telegram UI port for FF. Used by ArticleViewer open-external host path. Keep modified; reclassify only if upstream gains a same-path type.",
+      "stuck_reason": "No upstream blob at global pin (or historical vendored_at) for this path — local file is a NativeDo host surface under org.telegram.* package for compile/product wiring. Not eligible for vendor-ff; treat as host shim until product reclassifies."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/HttpGetTask.java",
@@ -1913,7 +1916,8 @@
         "drawing",
         "recycling"
       ],
-      "notes": "Scheme-2 pin baseline (12.8.1). BookmarksList uses local WebBookmarks/BrowserHistory.Entry (not MediaDataController MTProto). BookmarkView Entry+checked; titles/favicons via WebMetadataCache. Telegram Saved-Messages bookmark path not used."
+      "notes": "Scheme-2 baseline @ 12.9.0 with forced_exact measurement/drawing/recycling where applicable. BookmarksList backed by local WebBookmarks + BrowserHistory.Entry (not MediaDataController MTProto Saved Messages). BookmarkView Entry+checked; titles/favicons via WebMetadataCache. Do not reintroduce Telegram Saved-Messages bookmark path.",
+      "stuck_reason": "Intentional host wiring at global pin 12.9.0 — keep modified:true; not eligible for clean FF. Product/API surface differs from pin by design (missing upstream types or NativeDo defaults). Re-sync only with a named product goal."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/WebBrowserSettings.java",
@@ -1936,7 +1940,8 @@
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "exact",
-      "notes": "Backend adapted: list/selection retyped MessageObject -> BrowserHistory.Entry over the local WebBookmarks store; multi-select delete removes from WebBookmarks instead of MessagesController.deleteMessages (a Telegram stub); 'go to message' (Saved-Messages ChatActivity) is a no-op with its action-mode item hidden. Layout unchanged."
+      "notes": "exact@12.9.0 shape with local bookmark backend: list/selection use BrowserHistory.Entry over WebBookmarks store; multi-select delete calls WebBookmarks.remove (not MessagesController.deleteMessages); 'go to message' / Saved-Messages ChatActivity is intentional no-op. Pairs with AddressBarList WebBookmarks path.",
+      "stuck_reason": "Intentional host wiring at global pin 12.9.0 — keep modified:true; not eligible for clean FF. Product/API surface differs from pin by design (missing upstream types or NativeDo defaults). Re-sync only with a named product goal."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/bots/ChatAttachAlertBotWebViewLayout.java",

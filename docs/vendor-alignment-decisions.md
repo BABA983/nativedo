@@ -77,9 +77,13 @@ Do not auto-overwrite. Re-sync only with a named product goal:
 
 - `ArticleViewer.java` (epic closed; stuck = host chrome only)
 - `RecyclerListView.java` (forced_exact gesture/recycling; heavy host wiring)
-- `Utilities.java`, `AnimatedFloat.java`, `PullForegroundDrawable.java`, …
-- Web stack: `WebInstantView`, `AddressBarList`, `BookmarksFragment`, `WebMetadataCache`, …
-- Dialog cell SPI: `DialogsItemAnimator`, `AnimationProperties`
+- `Utilities.java` (native/no-JNI + 12.9 stubs — product goal only)
+- **Browser stack (documented keep @ 12.9.0):**
+  - `WebInstantView` — S1 type map + `getActionBarLayoutActivity` for readHTML
+  - `AddressBarList` / `BookmarksFragment` — WebBookmarks, not MediaDataController
+  - `WebMetadataCache` — host offscreen WebView favicon/sitename extraction
+  - `RestrictedDomainsList` — **no upstream blob** at pin; host shim for open-external
+- Dialog cell SPI: `DialogsItemAnimator`, `AnimationProperties` (already `host_wiring_keep_at_pin`)
 
 Full list: `scripts/vendor-classify.sh --port-mode exact`.
 
@@ -112,14 +116,10 @@ Then either:
 Still modified and intentionally not bulk-copied without product decisions:
 
 - `ArticleViewer.java`, `IArticleViewer.java` (epic closed; host-wired IV; not next work)
-- `ImageReceiver` / `ImageLocation` / `RestrictedDomainsList` (legacy pin, stuck)
-- `Utilities.java` (native/no-JNI surface)
-- `ThemeColors.java` (NativeDo default wallpaper/service colors)
-- `LayoutHelper.java` (Kotlin `createFrame(int,int)` host overload)
-- `RecyclerListView`, `DialogsItemAnimator`, `AnimationProperties`, `PullForegroundDrawable`, `RLottieImageView`, `NestedSizeNotifierLayout`, `ScrollSlidingTextTabStrip`
-- Web stack: `AddressBarList`, `BookmarksFragment`, `WebInstantView`, `WebMetadataCache`
-- `GraySectionCell` / `FragmentSearchField` (small remaining host deltas)
-- `AnimatedTextView` (checker imports)
-- `IMessageCell` (host-slim reactions types)
+- `ImageReceiver` / `ImageLocation` (legacy pin — **next heavy** only with image-pipeline goal)
+- `RestrictedDomainsList` (no upstream blob; host shim, stuck documented)
+- Browser stack @ 12.9.0 host keep: `WebInstantView`, `AddressBarList`, `BookmarksFragment`, `WebMetadataCache`
+- Small host keep (see B1–B2): ThemeColors, LayoutHelper, GraySectionCell, AnimatedTextView, …
+- Heavier at-pin without stuck yet: `Utilities`, `RecyclerListView` (product feel/bug only)
 
 See earlier sections for decision prompts.

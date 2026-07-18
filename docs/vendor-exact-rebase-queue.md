@@ -30,11 +30,11 @@
 - NativeDo ports under `app/` with stuck_reason (forced_exact reference only)
 
 ## Next global picks (priority order)
-1. ~~**Small exact+modified hygiene** at pin 12.9.0~~ — **done**: notes/stuck for host-wiring keep on AnimatedTextView, ThemeColors, LayoutHelper, GraySectionCell, FragmentSearchField, RLottieImageView, NestedSizeNotifierLayout, ScrollSlidingTextTabStrip, UniversalRecyclerView, IMessageCell, BottomSheetWithRecyclerListView, PullForegroundDrawable, DialogsItemAnimator, AnimationProperties, IArticleViewer (`stuck_ref: host_wiring_keep_at_pin`). Deltas are intentional; not FF candidates.
-2. **Browser stack** if IV/bookmarks product needs it: `WebInstantView`, `AddressBarList`, `WebMetadataCache`, `BookmarksFragment`
+1. ~~**Small exact+modified hygiene** at pin 12.9.0~~ — **done** (`host_wiring_keep_at_pin` on small UI files).
+2. ~~**Browser stack**~~ — **done (document keep)**: `WebInstantView` (S1 TL_iv→TLRPC + host Activity), `AddressBarList` / `BookmarksFragment` (WebBookmarks + BrowserHistory.Entry, no MTProto Saved Messages), `WebMetadataCache` (offscreen WebView + SitenameProxy + getActionBarLayoutActivity), `RestrictedDomainsList` (no upstream blob at pin — host shim, `native_host_no_upstream_blob`). Not clean-FF candidates.
 3. **ImageReceiver + ImageLocation** pair only with a named image-pipeline goal (still legacy pin; ImageReceiver also import_only Log/AnimatedEmoji delta on top)
 4. **Not ArticleViewer** — epic closed
-5. Remaining exact+modified at pin with heavier `other` (Utilities, RecyclerListView) — only with product feel/bug
+5. Remaining exact+modified at pin with heavier `other` (`Utilities`, `RecyclerListView`) — only with product feel/bug
 
 ## Testing policy (vendor FF)
 

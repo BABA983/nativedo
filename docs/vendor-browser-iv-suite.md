@@ -15,9 +15,11 @@ lives under `org.telegram.ui.web.*` + `ArticleViewer`.
 
 | File | Role | Status |
 |------|------|--------|
-| `WebMetadataCache` | Favicon/sitename cache + offscreen WebView extract | **Scheme-2 @ pin** (host wiring kept) |
-| `AddressBarList` | Address bar list + bookmarks UI | **Scheme-2 @ pin** (WebBookmarks backend) |
-| `WebInstantView` | HTML → Instant View page model | **S1 reverse-patch @ pin** (TL_iv→TLRPC + host readHTML) |
+| `WebMetadataCache` | Favicon/sitename cache + offscreen WebView extract | **Scheme-2 @ 12.9.0** + host extract; `host_wiring_keep_at_pin` |
+| `AddressBarList` | Address bar list + bookmarks UI | **Scheme-2 @ 12.9.0** + WebBookmarks; `host_wiring_keep_at_pin` |
+| `WebInstantView` | HTML → Instant View page model | **S1 @ 12.9.0** (TL_iv→TLRPC + host Activity); `host_wiring_keep_at_pin` |
+| `BookmarksFragment` | Bookmarks UI | **@ 12.9.0** + WebBookmarks/Entry; no Saved-Messages jump; `host_wiring_keep_at_pin` |
+| `RestrictedDomainsList` | Open-external domain allow/deny | **Host shim** (no upstream blob at pin); `native_host_no_upstream_blob` |
 | `ArticleViewer` | Sheet chrome + IV display + related UI | **Epic closed** (B21 + A3/A4p/A6/A7); host chrome kept; A5 wontfix |
 | `Browser` (native) | URL open dispatch | Host shim (not exact FF) |
 | `WebActionBar` | Browser action bar | Already @ pin |
@@ -37,10 +39,10 @@ lives under `org.telegram.ui.web.*` + `ArticleViewer`.
 - Scheme-2 baseline for `WebMetadataCache` + `AddressBarList`.
 - **S1 reverse-patch** for `WebInstantView` (TL_iv→TLRPC; host Activity for readHTML).
 
-### Next (suite, not AV)
+### Next (suite)
 1. Keep `GroupedPhotosListView` / `TableLayout` on the existing S1 (TLRPC) decision unless product reopens TL_iv.
-2. Triage browser stuck files (`WebBrowserSettings`, `WebInstantView` host deltas, …) only with product ROI.
-3. Prefer small exact+modified hygiene or ImageReceiver pair over reopening ArticleViewer.
+2. Browser core four + RestrictedDomainsList are **documented keep** — do not clean-FF.
+3. Prefer `ImageReceiver`+`ImageLocation` pair or product-driven `WebBrowserSettings` over reopening AV/browser FF.
 
 ### Do not
 - `vendor-ff` WebInstantView or ArticleViewer without an explicit product + TL plan.
