@@ -14,6 +14,7 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.lifecycleScope
 import org.telegram.messenger.AndroidUtilities
+import org.telegram.messenger.browser.Browser
 import org.telegram.ui.ActionBar.ActionBarLayout
 import org.telegram.ui.ActionBar.DrawerLayoutContainer
 import org.telegram.ui.LaunchActivity
@@ -82,6 +83,7 @@ class MainActivity : LaunchActivity() {
             ),
         )
         setContentView(rootFrameLayout)
+        Browser.bindCustomTabsService(this)
         lifecycleScope.launch {
             (applicationContext as NativeDoApp).appContainer.sessionCoordinator.start()
         }
@@ -105,10 +107,12 @@ class MainActivity : LaunchActivity() {
 
     override fun onResume() {
         super.onResume()
+        Browser.bindCustomTabsService(this)
         PhotoViewer.getInstance().onResume()
     }
 
     override fun onDestroy() {
+        Browser.unbindCustomTabsService(this)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             onBackAnimationCallback?.let {
                 onBackInvokedDispatcher.unregisterOnBackInvokedCallback(it)

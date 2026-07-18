@@ -97,7 +97,7 @@
           "pin": "legacy_009e97356",
           "modified": true,
           "port_mode": "native",
-          "notes": "Browser URL dispatch for NativeDo: openUrl honors MessagesController.isWebBrowserOpenInApp (SharedConfig.inappBrowser + RestrictedDomainsList). openInTelegramBrowser restores/reopens ArticleViewer sheet; CustomTabs deferred (ACTION_VIEW external fallback).",
+          "notes": "Browser URL dispatch for NativeDo: openUrl order is in-app (MessagesController.isWebBrowserOpenInApp = SharedConfig.inappBrowser && !RestrictedDomainsList) then androidx Custom Tabs when customTabs enabled, then ACTION_VIEW. MainActivity binds/unbinds Custom Tabs service.",
           "stuck_ref": "native_host_reference_only"
         },
         {

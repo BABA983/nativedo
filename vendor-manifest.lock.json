@@ -53,7 +53,7 @@
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
       "modified": true,
       "port_mode": "native",
-      "notes": "Browser URL dispatch for NativeDo: openUrl honors MessagesController.isWebBrowserOpenInApp (SharedConfig.inappBrowser + RestrictedDomainsList). openInTelegramBrowser restores/reopens ArticleViewer sheet; CustomTabs deferred (ACTION_VIEW external fallback).",
+      "notes": "Browser URL dispatch for NativeDo: openUrl order is in-app (MessagesController.isWebBrowserOpenInApp = SharedConfig.inappBrowser && !RestrictedDomainsList) then androidx Custom Tabs when customTabs enabled, then ACTION_VIEW. MainActivity binds/unbinds Custom Tabs service.",
       "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
     },
     {

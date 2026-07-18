@@ -61,4 +61,6 @@ preview bitmap. **A5** wontfix (pin non-static). Full history:
 - `Browser.openUrl` uses `MessagesController.isWebBrowserOpenInApp(url)` =
   `SharedConfig.inappBrowser && !RestrictedDomainsList.isRestrictedUrl(url)`.
 - Profile → **浏览器设置** opens `WebBrowserSettings` sheet (same as ArticleViewer chrome).
-- Custom Tabs not vendored; external fallback is `ACTION_VIEW`.
+- Custom Tabs via `androidx.browser`: when in-app is off (or domain restricted) and
+  `SharedConfig.customTabs` is true, `Browser.openUrl` tries Custom Tabs after
+  non-browser app handlers; else `ACTION_VIEW`. Bound from `MainActivity`.

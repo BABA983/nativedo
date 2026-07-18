@@ -45,6 +45,7 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.recyclerview)
     implementation(libs.androidx.dynamicanimation)
+    implementation(libs.androidx.browser)
     implementation(libs.jsoup)
     implementation("androidx.exifinterface:exifinterface:1.4.1")
 

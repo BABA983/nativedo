@@ -10,12 +10,19 @@ package org.telegram.messenger.browser;
 
 import android.app.Activity;
 import android.content.ActivityNotFoundException;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.text.TextUtils;
+
+import androidx.browser.customtabs.CustomTabsClient;
+import androidx.browser.customtabs.CustomTabsIntent;
+import androidx.browser.customtabs.CustomTabsServiceConnection;
+import androidx.browser.customtabs.CustomTabsSession;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.BuildVars;
@@ -25,22 +32,168 @@ import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.BottomSheetTabs;
+import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.LaunchActivity;
 
+import java.lang.ref.WeakReference;
 import java.net.IDN;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 
 public class Browser {
 
-    // --- CustomTabs session management (deferred — no support.customtabs stubs yet) ---
+    // --- CustomTabs (androidx.browser) ---
+
+    private static WeakReference<Activity> currentCustomTabsActivity;
+    private static CustomTabsClient customTabsClient;
+    private static CustomTabsSession customTabsSession;
+    private static CustomTabsServiceConnection customTabsServiceConnection;
+    private static String customTabsPackageToBind;
+
+    private static CustomTabsSession getSession() {
+        if (customTabsClient == null) {
+            customTabsSession = null;
+        } else if (customTabsSession == null) {
+            customTabsSession = customTabsClient.newSession(null);
+        }
+        return customTabsSession;
+    }
 
     public static void bindCustomTabsService(Activity activity) {
-        // CustomTabs support deferred; no-op until support.customtabs stubs exist.
+        if (activity == null) {
+            return;
+        }
+        Activity currentActivity = currentCustomTabsActivity == null ? null : currentCustomTabsActivity.get();
+        if (currentActivity != null && currentActivity != activity) {
+            unbindCustomTabsService(currentActivity);
+        }
+        if (customTabsClient != null) {
+            return;
+        }
+        currentCustomTabsActivity = new WeakReference<>(activity);
+        try {
+            if (TextUtils.isEmpty(customTabsPackageToBind)) {
+                customTabsPackageToBind = getCustomTabsPackageName(activity);
+                if (customTabsPackageToBind == null) {
+                    return;
+                }
+            }
+            customTabsServiceConnection = new CustomTabsServiceConnection() {
+                @Override
+                public void onCustomTabsServiceConnected(ComponentName name, CustomTabsClient client) {
+                    customTabsClient = client;
+                    if (MessagesController.getInstance(UserConfig.selectedAccount).isWebBrowserUseCustomTabs()
+                            && customTabsClient != null) {
+                        try {
+                            customTabsClient.warmup(0);
+                        } catch (Exception e) {
+                            FileLog.e(e);
+                        }
+                    }
+                    customTabsSession = null;
+                }
+
+                @Override
+                public void onServiceDisconnected(ComponentName name) {
+                    customTabsClient = null;
+                    customTabsSession = null;
+                }
+            };
+            if (!CustomTabsClient.bindCustomTabsService(activity, customTabsPackageToBind, customTabsServiceConnection)) {
+                customTabsServiceConnection = null;
+            }
+        } catch (Exception e) {
+            FileLog.e(e);
+            customTabsServiceConnection = null;
+        }
     }
 
     public static void unbindCustomTabsService(Activity activity) {
-        // CustomTabs support deferred; no-op until support.customtabs stubs exist.
+        if (customTabsServiceConnection == null) {
+            return;
+        }
+        Activity currentActivity = currentCustomTabsActivity == null ? null : currentCustomTabsActivity.get();
+        if (currentActivity != null && currentActivity != activity) {
+            return;
+        }
+        try {
+            if (activity != null) {
+                activity.unbindService(customTabsServiceConnection);
+            }
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
+        customTabsServiceConnection = null;
+        customTabsClient = null;
+        customTabsSession = null;
+        if (currentCustomTabsActivity != null) {
+            currentCustomTabsActivity.clear();
+        }
+    }
+
+    private static String getCustomTabsPackageName(Context context) {
+        try {
+            PackageManager pm = context.getPackageManager();
+            Intent activityIntent = new Intent(Intent.ACTION_VIEW, Uri.parse("http://www.example.com"));
+            ResolveInfo defaultViewHandlerInfo = pm.resolveActivity(activityIntent, 0);
+            String defaultViewHandlerPackageName = null;
+            if (defaultViewHandlerInfo != null && defaultViewHandlerInfo.activityInfo != null) {
+                defaultViewHandlerPackageName = defaultViewHandlerInfo.activityInfo.packageName;
+            }
+            List<ResolveInfo> resolvedActivityList = pm.queryIntentActivities(activityIntent, 0);
+            List<String> packagesSupportingCustomTabs = new ArrayList<>();
+            for (ResolveInfo info : resolvedActivityList) {
+                Intent serviceIntent = new Intent();
+                serviceIntent.setAction("android.support.customtabs.action.CustomTabsService");
+                serviceIntent.setPackage(info.activityInfo.packageName);
+                if (pm.resolveService(serviceIntent, 0) != null) {
+                    packagesSupportingCustomTabs.add(info.activityInfo.packageName);
+                }
+            }
+            if (packagesSupportingCustomTabs.isEmpty()) {
+                return null;
+            }
+            if (packagesSupportingCustomTabs.size() == 1) {
+                return packagesSupportingCustomTabs.get(0);
+            }
+            if (!TextUtils.isEmpty(defaultViewHandlerPackageName)
+                    && packagesSupportingCustomTabs.contains(defaultViewHandlerPackageName)) {
+                return defaultViewHandlerPackageName;
+            }
+            if (packagesSupportingCustomTabs.contains("com.android.chrome")) {
+                return "com.android.chrome";
+            }
+            return packagesSupportingCustomTabs.get(0);
+        } catch (Exception e) {
+            FileLog.e(e);
+            return null;
+        }
+    }
+
+    /** @return true if Custom Tab launched */
+    public static boolean openInCustomTab(Context context, Uri uri) {
+        if (context == null || uri == null) {
+            return false;
+        }
+        try {
+            CustomTabsIntent.Builder builder = new CustomTabsIntent.Builder(getSession());
+            builder.setShowTitle(true);
+            try {
+                builder.setToolbarColor(Theme.getColor(Theme.key_actionBarBrowser));
+            } catch (Throwable ignore) {
+            }
+            CustomTabsIntent intent = builder.build();
+            intent.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            if (!TextUtils.isEmpty(customTabsPackageToBind)) {
+                intent.intent.setPackage(customTabsPackageToBind);
+            }
+            intent.launchUrl(context, uri);
+            return true;
+        } catch (Exception e) {
+            FileLog.e(e);
+            return false;
+        }
     }
 
     // --- URL opening ---
@@ -81,20 +234,20 @@ public class Browser {
     /**
      * Main URL dispatch for NativeDo.
      * <p>
-     * Honors {@link SharedConfig#inappBrowser} and {@link RestrictedDomainsList}
-     * (via {@link MessagesController#isWebBrowserOpenInApp(String)}). Custom Tabs
-     * are not vendored yet — when in-app is off or the domain is restricted, we
-     * open with {@link Intent#ACTION_VIEW} (system browser / default handler).
+     * Order: in-app browser (enabled + domain not restricted) →
+     * Custom Tabs (when not in-app and {@link SharedConfig#customTabs}) →
+     * external {@link Intent#ACTION_VIEW}.
      */
-    public static void openUrl(final Context context, Uri uri, boolean _allowCustom, boolean tryTelegraph, boolean forceNotInternalForApps, Progress inCaseLoading, String browser, boolean allowIntent, boolean allowInAppBrowser, boolean forceRequest) {
+    public static void openUrl(final Context context, Uri uri, boolean allowCustom, boolean tryTelegraph, boolean forceNotInternalForApps, Progress inCaseLoading, String browser, boolean allowIntent, boolean allowInAppBrowser, boolean forceRequest) {
         if (context == null || uri == null) {
             return;
         }
         SharedConfig.loadBrowserConfig();
         String browserPackage = getBrowserPackageName(browser);
         boolean isHttpOrHttps = false;
+        String scheme = "";
         try {
-            String scheme = uri.getScheme() != null ? uri.getScheme().toLowerCase() : "";
+            scheme = uri.getScheme() != null ? uri.getScheme().toLowerCase() : "";
             if (scheme != null && scheme.contains(".")) {
                 return;
             }
@@ -110,16 +263,37 @@ public class Browser {
             FileLog.e(e);
         }
         final String url = uri.toString();
+        final MessagesController mc = MessagesController.getInstance(UserConfig.selectedAccount);
         final boolean openInApp = isHttpOrHttps
                 && allowInAppBrowser
                 && TextUtils.isEmpty(browserPackage)
-                && MessagesController.getInstance(UserConfig.selectedAccount).isWebBrowserOpenInApp(url);
+                && mc.isWebBrowserOpenInApp(url);
         if (openInApp) {
             Progress progress = inCaseLoading != null ? inCaseLoading : new Progress();
             Activity activity = context instanceof Activity
                     ? (Activity) context
                     : AndroidUtilities.findActivity(context);
             if (openInTelegramBrowser(activity, url, progress)) {
+                return;
+            }
+        }
+        if (allowCustom
+                && isHttpOrHttps
+                && TextUtils.isEmpty(browserPackage)
+                && !mc.isWebBrowserOpenInApp(url)
+                && mc.isWebBrowserUseCustomTabs()
+                && !"tel".equals(scheme)) {
+            if (!openInExternalApp(context, url, false)) {
+                Activity activity = context instanceof Activity
+                        ? (Activity) context
+                        : AndroidUtilities.findActivity(context);
+                if (activity != null) {
+                    bindCustomTabsService(activity);
+                }
+                if (openInCustomTab(context, uri)) {
+                    return;
+                }
+            } else {
                 return;
             }
         }
