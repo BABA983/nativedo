@@ -25,7 +25,7 @@ import androidx.core.view.GestureDetectorCompat;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.AnimationNotificationsLocker;
 import org.telegram.messenger.UserConfig;
-// import org.telegram.ui.ActionBar.ActionBarMenuSlider; // Optional component - commented out
+import org.telegram.ui.ActionBar.ActionBarMenuSlider;
 import org.telegram.ui.ActionBar.ActionBarPopupWindow;
 import org.telegram.ui.ActionBar.Theme;
 
@@ -459,8 +459,7 @@ public class PopupSwipeBackLayout extends FrameLayout {
      */
     private boolean isDisallowedView(MotionEvent e, View v) {
         v.getHitRect(hitRect);
-        // ActionBarMenuSlider check removed - optional component
-        if (hitRect.contains((int) e.getX(), (int) e.getY()) && v.canScrollHorizontally(-1))
+        if (hitRect.contains((int) e.getX(), (int) e.getY()) && (v.canScrollHorizontally(-1) || v instanceof ActionBarMenuSlider))
             return true;
         if (v instanceof ViewGroup) {
             ViewGroup vg = (ViewGroup) v;
