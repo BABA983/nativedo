@@ -40,7 +40,7 @@ import androidx.annotation.NonNull;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.Emoji;
-import org.telegram.ui.Cells.FixedWidthSpan;
+import org.telegram.ui.Cells.DialogCell;
 import org.telegram.ui.Components.AnimatedEmojiDrawable;
 import org.telegram.ui.Components.AnimatedEmojiSpan;
 import org.telegram.ui.Components.EmptyStubSpan;
@@ -408,7 +408,7 @@ public class SimpleTextView extends View implements Drawable.Callback {
                     replacingDrawableTextIndex = text.toString().indexOf(replacedText);
                     if (replacingDrawableTextIndex >= 0) {
                         SpannableStringBuilder builder = SpannableStringBuilder.valueOf(text);
-                        builder.setSpan(new FixedWidthSpan(replacedDrawable.getIntrinsicWidth()), replacingDrawableTextIndex, replacingDrawableTextIndex + replacedText.length(), 0);
+                        builder.setSpan(new DialogCell.FixedWidthSpan(replacedDrawable.getIntrinsicWidth()), replacingDrawableTextIndex, replacingDrawableTextIndex + replacedText.length(), 0);
                         text = builder;
                     } else {
                         width -= replacedDrawable.getIntrinsicWidth();
