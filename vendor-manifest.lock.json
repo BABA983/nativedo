@@ -1939,7 +1939,7 @@
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "exact",
-      "notes": "exact@12.9.0 shape with local bookmark backend: list/selection use BrowserHistory.Entry over WebBookmarks store; multi-select delete calls WebBookmarks.remove (not MessagesController.deleteMessages); 'go to message' / Saved-Messages ChatActivity is intentional no-op. Pairs with AddressBarList WebBookmarks path.",
+      "notes": "exact@12.9.0 shape with local bookmark backend: list/selection use BrowserHistory.Entry over WebBookmarks store; multi-select delete calls WebBookmarks.remove (not MessagesController.deleteMessages); 'go to message' / Saved-Messages ChatActivity is intentional no-op. Pairs with AddressBarList WebBookmarks path. Empty list uses StickerEmptyView(WebNoBookmarks); flicker skeletons only while loading.",
       "stuck_reason": "Intentional host wiring at global pin 12.9.0 — keep modified:true; not eligible for clean FF. Product/API surface differs from pin by design (missing upstream types or NativeDo defaults). Re-sync only with a named product goal."
     },
     {
@@ -3345,7 +3345,8 @@
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
-      "notes": "Auto-registered unmanifested compile dependency (33 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
+      "notes": "Host StickerEmptyView for Bookmarks/History empty chrome: pin-shaped centered title/subtitle/progress layout without Telegram sticker assets or MediaDataController. STICKER_TYPE_* constants match pin; SEARCH used by WebNoBookmarks/WebNoHistory.",
+      "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/SubstringLayoutAnimator.java",

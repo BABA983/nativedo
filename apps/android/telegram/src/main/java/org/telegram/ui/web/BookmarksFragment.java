@@ -228,7 +228,7 @@ public class BookmarksFragment extends UniversalFragment {
             }
         });
 
-        StickerEmptyView emptyView = new StickerEmptyView(context, null, StickerEmptyView.STICKER_TYPE_SEARCH);
+        StickerEmptyView emptyView = new StickerEmptyView(context, null, StickerEmptyView.STICKER_TYPE_SEARCH, getResourceProvider());
         emptyView.title.setText(getString(R.string.WebNoBookmarks));
         emptyView.subtitle.setVisibility(View.GONE);
         emptyView.showProgress(false, false);
@@ -270,6 +270,8 @@ public class BookmarksFragment extends UniversalFragment {
                 addedUrls.add(url);
                 items.add(AddressBarList.BookmarkView.Factory.as(entry, null).setChecked(isSelected(entry)));
             }
+            // Only skeleton while the local store is still loading; empty store must
+            // leave the adapter empty so StickerEmptyView (WebNoBookmarks) can show.
             if (!list.endReached) {
                 items.add(UItem.asFlicker(items.size(), FlickerLoadingView.BROWSER_BOOKMARK));
                 items.add(UItem.asFlicker(items.size(), FlickerLoadingView.BROWSER_BOOKMARK));
@@ -292,7 +294,7 @@ public class BookmarksFragment extends UniversalFragment {
                 addedUrls.add(url);
                 items.add(AddressBarList.BookmarkView.Factory.as(entry, query).setChecked(isSelected(entry)));
             }
-            if (!searchList.endReached) {
+            if (searchList != null && !searchList.endReached) {
                 items.add(UItem.asFlicker(items.size(), FlickerLoadingView.BROWSER_BOOKMARK));
                 items.add(UItem.asFlicker(items.size(), FlickerLoadingView.BROWSER_BOOKMARK));
                 items.add(UItem.asFlicker(items.size(), FlickerLoadingView.BROWSER_BOOKMARK));

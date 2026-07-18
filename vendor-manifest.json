@@ -1584,7 +1584,7 @@
         {
           "path": "org/telegram/ui/web/BookmarksFragment.java",
           "modified": true,
-          "notes": "exact@12.9.0 shape with local bookmark backend: list/selection use BrowserHistory.Entry over WebBookmarks store; multi-select delete calls WebBookmarks.remove (not MessagesController.deleteMessages); 'go to message' / Saved-Messages ChatActivity is intentional no-op. Pairs with AddressBarList WebBookmarks path.",
+          "notes": "exact@12.9.0 shape with local bookmark backend: list/selection use BrowserHistory.Entry over WebBookmarks store; multi-select delete calls WebBookmarks.remove (not MessagesController.deleteMessages); 'go to message' / Saved-Messages ChatActivity is intentional no-op. Pairs with AddressBarList WebBookmarks path. Empty list uses StickerEmptyView(WebNoBookmarks); flicker skeletons only while loading.",
           "port_mode": "exact",
           "stuck_ref": "host_wiring_keep_at_pin"
         },
@@ -2524,7 +2524,8 @@
           "path": "org/telegram/ui/Components/StickerEmptyView.java",
           "modified": true,
           "port_mode": "native",
-          "notes": "Auto-registered unmanifested compile dependency (33 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
+          "notes": "Host StickerEmptyView for Bookmarks/History empty chrome: pin-shaped centered title/subtitle/progress layout without Telegram sticker assets or MediaDataController. STICKER_TYPE_* constants match pin; SEARCH used by WebNoBookmarks/WebNoHistory.",
+          "stuck_ref": "native_host_reference_only"
         },
         {
           "path": "org/telegram/ui/Components/SubstringLayoutAnimator.java",

@@ -219,7 +219,7 @@ public class HistoryFragment extends UniversalFragment {
         editText.setHintTextColor(getThemedColor(Theme.key_player_time));
         editText.setCursorColor(getThemedColor(Theme.key_windowBackgroundWhiteBlackText));
 
-        emptyView = new StickerEmptyView(context, null, StickerEmptyView.STICKER_TYPE_SEARCH);
+        emptyView = new StickerEmptyView(context, null, StickerEmptyView.STICKER_TYPE_SEARCH, getResourceProvider());
         emptyView.title.setText(getString(TextUtils.isEmpty(query) ? R.string.WebNoHistory : R.string.WebNoSearchedHistory));
         emptyView.subtitle.setVisibility(View.GONE);
         emptyView.showProgress(false, false);
