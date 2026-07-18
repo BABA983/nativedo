@@ -130,3 +130,20 @@ Then either:
 
 - re-sync file with host wiring re-applied, update compact manifest + lock, compile/tests; or
 - leave `modified:true` / `stuck_reason` and mark “wontfix” here.
+
+## Remaining exact+modified snapshot (after autonomous pass)
+
+Still modified and intentionally not bulk-copied without product decisions:
+
+- `ArticleViewer.java`, `IArticleViewer.java` (active host-wired IV program)
+- `ImageReceiver` / `ImageLocation` / `RestrictedDomainsList` (legacy pin, stuck)
+- `Utilities.java` (native/no-JNI surface)
+- `ThemeColors.java` (NativeDo default wallpaper/service colors)
+- `LayoutHelper.java` (Kotlin `createFrame(int,int)` host overload)
+- `RecyclerListView`, `DialogsItemAnimator`, `AnimationProperties`, `PullForegroundDrawable`, `RLottieImageView`, `NestedSizeNotifierLayout`, `ScrollSlidingTextTabStrip`
+- Web stack: `AddressBarList`, `BookmarksFragment`, `WebInstantView`, `WebMetadataCache`
+- `GraySectionCell` / `FragmentSearchField` (small remaining host deltas)
+- `AnimatedTextView` (checker imports)
+- `IMessageCell` (host-slim reactions types)
+
+See earlier sections for decision prompts.
