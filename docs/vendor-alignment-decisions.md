@@ -17,6 +17,7 @@ Local pristine checkout: `vendor/telegram-android` at that pin.
 | `d3439c0` | `CircularProgressDrawable`, `Blur3Utils` restored pin-identical |
 | `9d8694b` | Decisions backlog doc |
 | *(follow-up)* | `WindowAnimatedInsetsProvider` restored pin-identical |
+| later | `HttpGetFileTask`, `AnimatedFloat`, `WindowVisibilityManager`, `UniversalRecyclerView` pin-identical; FlickerLoadingView/GraySectionCell partial re-align |
 
 ## ArticleViewer — still deferred
 
