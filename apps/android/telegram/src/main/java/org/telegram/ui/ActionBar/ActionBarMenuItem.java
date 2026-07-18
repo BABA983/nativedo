@@ -606,6 +606,10 @@ public class ActionBarMenuItem extends FrameLayout {
             int backgroundColor = Theme.multAlpha(textColor, selectedForDelete ? 0.16f : expanded ? 0.12f : 0.08f);
             setBackground(Theme.createSimpleSelectorRoundRectDrawable(AndroidUtilities.dp(16), backgroundColor, selectorColor, backgroundColor));
         }
+
+        /** Pin 12.9.0 glass chip styling; host SearchFilterView is a simplified chip (no-op). */
+        public void setGlass() {
+        }
     }
 
     /** Reaction-specific chip shell; NativeDo does not render reaction artwork yet. */

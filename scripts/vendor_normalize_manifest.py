@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Normalize vendoring pins and persist compact source + generated lock.
 
-Default target pin: 9b50143d8896d255d03155598937e4f3e28afd86 (Telegram 12.8.1).
+Default target pin: 9bcf3d2769c6d3f07105a992e5d9493e33ac3348 (Telegram 12.9.0).
 
 Does NOT rewrite file contents or force every vendored_at forward — only:
   - upstream.pinned_commit / pinned_date

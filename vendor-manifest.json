@@ -7,8 +7,8 @@
   ],
   "upstream": {
     "repo": "git@github.com:DrKLO/Telegram.git",
-    "pinned_commit": "9b50143d8896d255d03155598937e4f3e28afd86",
-    "pinned_date": "2026-06-16"
+    "pinned_commit": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+    "pinned_date": "2026-07-16"
   },
   "local_root": "apps/android/",
   "upstream_root": "TMessagesProj/src/main/java",
@@ -19,7 +19,8 @@
   },
   "aliases": {
     "pins": {
-      "legacy_009e97356": "009e97356f966bb81eceba113d210230bf383122"
+      "legacy_009e97356": "009e97356f966bb81eceba113d210230bf383122",
+      "pin_9b50143d8896": "9b50143d8896d255d03155598937e4f3e28afd86"
     },
     "stuck_reasons": {
       "native_host_reference_only": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires.",
@@ -100,7 +101,7 @@
         {
           "path": "org/telegram/messenger/Utilities.java",
           "modified": true,
-          "notes": "Scheme-2 pin baseline (12.8.1): upstream va→pin only added applySoftLight/copyBitmaps native decls. Host keeps full Java JNI surface (blur/AES/dir/pbkdf2/copyBitmaps Canvas for SpoilerEffectBitmapFactory, gradients, crash listener). fastRandom=java.util.Random. applySoftLight no-op stub (MotionBackgroundPaint not ported)."
+          "notes": "NativeDo Java replacements for native crypto/image ops. 12.9.0 surface: averageBitmapColor + libyuvARGBSaleBitmap Java fallbacks (no JNI)."
         },
         {
           "path": "org/telegram/messenger/CodeHighlighting.java",
@@ -154,8 +155,6 @@
         },
         {
           "path": "org/telegram/ui/MultiLayoutTypingAnimator.java",
-          "modified": false,
-          "port_mode": "exact",
           "forced_exact": [
             "animation",
             "drawing"
@@ -226,7 +225,7 @@
         {
           "path": "org/telegram/ui/ActionBar/ThemeColors.java",
           "modified": true,
-          "notes": "Upstream color table retained with NativeDo host defaults for keys normally derived dynamically by Theme wallpaper infrastructure. The default #f1f1f3 topic wallpaper is run through pinned AndroidUtilities.calcDrawableColor constants to provide chat_serviceBackground/chat_serviceBackgroundSelected instead of the missing-key red sentinel."
+          "notes": "NativeDo default wallpaper/service colors + link/reply panel host colors retained through 12.9.0 pin bump (upstream also moved link/reply defaults; host values kept)."
         }
       ]
     },
@@ -886,7 +885,7 @@
             "measurement",
             "drawing"
           ],
-          "notes": "FF to 12.8.1 + host: RectF→Rect clip via AndroidUtilities.rectTmp2I because local AndroidUtilities.rectTmp2 is RectF (pin uses Rect). Input/IME options restored to pin."
+          "notes": "Host rectTmp2I clipBounds; 12.9.0 SearchFilterView.setGlass() no-op + false removable ctor arg aligned to pin call sites."
         },
         {
           "path": "org/telegram/ui/Components/DrawingInBackgroundThreadDrawable.java",
@@ -914,7 +913,6 @@
         },
         {
           "path": "org/telegram/ui/Components/AnimatedFloat.java",
-          "modified": false,
           "forced_exact": [
             "animation"
           ]
@@ -955,7 +953,6 @@
         },
         {
           "path": "org/telegram/ui/Components/CircularProgressDrawable.java",
-          "modified": false,
           "forced_exact": [
             "animation",
             "drawing"
@@ -1026,7 +1023,6 @@
         },
         {
           "path": "org/telegram/ui/Components/FlickerLoadingView.java",
-          "modified": false,
           "forced_exact": [
             "animation",
             "drawing"
@@ -1044,7 +1040,7 @@
           "forced_exact": [
             "measurement"
           ],
-          "notes": "Fast-forwarded to 12.8.1 then restored createFrame(int,int) host overload for Kotlin call sites; upstream pin dropped the two-int overload."
+          "notes": "Host createFrame(int,int) for Kotlin; 12.9.0 createLinear(float...) overload restored from pin."
         },
         {
           "path": "org/telegram/ui/Components/PullForegroundDrawable.java",
@@ -1083,7 +1079,7 @@
             "recycling",
             "gesture"
           ],
-          "notes": "3-way rebased to 12.8.1. EdgeEffectTrackerFactory enabled. Restored: IBlur3Capture capture path, ListSectionsDecoration.capture, CollapseTextCell + FiltersSetupActivity.HintInnerCell stub + JoinToSendSettingsView stub, ViewHolder.isRemoved section animation. FastScroll letter-bar blur onDraw still partially OMITTED (fields path incomplete)."
+          "notes": "Host AndroidX notifyDataSetChangedCompat + import wiring; 12.9.0 getClipBackground(child, forceRound) absorbed."
         },
         {
           "path": "org/telegram/ui/Components/ScrollSlidingTextTabStrip.java",
@@ -1096,7 +1092,6 @@
         },
         {
           "path": "org/telegram/ui/Components/SearchStateDrawable.java",
-          "modified": false,
           "forced_exact": [
             "animation",
             "drawing"
@@ -1110,10 +1105,11 @@
         },
         {
           "path": "org/telegram/ui/Components/UniversalRecyclerView.java",
-          "modified": false,
+          "modified": true,
           "forced_exact": [
             "recycling"
-          ]
+          ],
+          "notes": "Host wiring for 12.9.0: drop org.telegram.ui.iv.RichEditor.DraggingDrawable reorder feedback (RichEditor not vendored)."
         }
       ]
     },
@@ -1403,7 +1399,6 @@
         },
         {
           "path": "org/telegram/ui/Components/PopupSwipeBackLayout.java",
-          "modified": false,
           "forced_exact": [
             "gesture",
             "animation"
@@ -1468,8 +1463,7 @@
           "stuck_ref": "native_host_reference_only"
         },
         {
-          "path": "org/telegram/ui/ActionBar/SimpleTextView.java",
-          "modified": false
+          "path": "org/telegram/ui/ActionBar/SimpleTextView.java"
         },
         {
           "path": "org/telegram/ui/CachedStaticLayout.java",
@@ -1511,8 +1505,7 @@
           "path": "org/telegram/ui/web/HttpGetBitmapTask.java"
         },
         {
-          "path": "org/telegram/ui/web/HttpGetFileTask.java",
-          "modified": false
+          "path": "org/telegram/ui/web/HttpGetFileTask.java"
         },
         {
           "path": "org/telegram/ui/web/HttpPostTask.java"
@@ -1656,7 +1649,6 @@
         },
         {
           "path": "org/telegram/ui/ActionBar/AdjustPanLayoutHelper.java",
-          "modified": false,
           "forced_exact": [
             "animation",
             "measurement"
@@ -1670,7 +1662,6 @@
         },
         {
           "path": "org/telegram/ui/Components/inset/WindowAnimatedInsetsProvider.java",
-          "modified": false,
           "forced_exact": [
             "animation",
             "measurement"
@@ -1684,7 +1675,6 @@
         },
         {
           "path": "org/telegram/ui/Components/inset/WindowInsetsStateHolder.java",
-          "modified": false,
           "forced_exact": [
             "animation"
           ]
@@ -1840,8 +1830,7 @@
           "path": "org/telegram/ui/Components/blur3/utils/BitmapMemoizedMetadata.java"
         },
         {
-          "path": "org/telegram/ui/Components/blur3/utils/Blur3Utils.java",
-          "modified": false
+          "path": "org/telegram/ui/Components/blur3/utils/Blur3Utils.java"
         },
         {
           "path": "org/telegram/ui/Components/blur3/utils/NinePatchBuilder.java"
@@ -1997,8 +1986,7 @@
           "path": "org/telegram/ui/Components/chat/layouts/ButtonOnLongClickListener.java"
         },
         {
-          "path": "org/telegram/messenger/utils/WindowVisibilityManager.java",
-          "modified": false
+          "path": "org/telegram/messenger/utils/WindowVisibilityManager.java"
         },
         {
           "path": "me/vkryl/core/reference/ReferenceCreator.java",
@@ -2681,7 +2669,8 @@
         },
         {
           "path": "org/telegram/ui/Components/BottomSheetWithRecyclerListView.java",
-          "notes": "Copied verbatim from pinned upstream. NativeDo uses it for title/action-bar RecyclerView sheets."
+          "modified": true,
+          "notes": "Host wiring for 12.9.0: setLightStatusBar uses getWindow() because local AndroidUtilities lacks Dialog overload from pin."
         },
         {
           "path": "org/telegram/ui/IArticleViewer.java",

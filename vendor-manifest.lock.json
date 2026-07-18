@@ -6,8 +6,8 @@
   ],
   "upstream": {
     "repo": "git@github.com:DrKLO/Telegram.git",
-    "pinned_commit": "9b50143d8896d255d03155598937e4f3e28afd86",
-    "pinned_date": "2026-06-16"
+    "pinned_commit": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+    "pinned_date": "2026-07-16"
   },
   "local_root": "apps/android/",
   "upstream_root": "TMessagesProj/src/main/java",
@@ -16,7 +16,7 @@
       "_comment": "core",
       "local": "telegram/src/main/java/org/telegram/messenger/AndroidUtilities.java",
       "upstream": "org/telegram/messenger/AndroidUtilities.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "NativeDo utility subset with upstream-shaped helpers. getCacheDir was re-aligned against 12.8.1's external-first/storageCacheDir/internal/files-cache chain, but retains null-context and java.io.tmpdir host fallbacks. Its bootstrap path intentionally never logs: FileLog.init() calls getLogsDir(), which uses Context.getCacheDir()/getFilesDir() directly so cache lookup cannot recurse into FileLog initialization. getAnimatorDurationScale() is copied for the exact WindowInsets keyboard timing path, with a null-context host guard. Font assets, full theme/wallpaper helpers, and unrelated AndroidUtilities surface remain native/adapted."
@@ -59,15 +59,15 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/Utilities.java",
       "upstream": "org/telegram/messenger/Utilities.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "exact",
-      "notes": "Scheme-2 pin baseline (12.8.1): upstream va→pin only added applySoftLight/copyBitmaps native decls. Host keeps full Java JNI surface (blur/AES/dir/pbkdf2/copyBitmaps Canvas for SpoilerEffectBitmapFactory, gradients, crash listener). fastRandom=java.util.Random. applySoftLight no-op stub (MotionBackgroundPaint not ported)."
+      "notes": "NativeDo Java replacements for native crypto/image ops. 12.9.0 surface: averageBitmapColor + libyuvARGBSaleBitmap Java fallbacks (no JNI)."
     },
     {
       "local": "telegram/src/main/java/org/telegram/messenger/CodeHighlighting.java",
       "upstream": "org/telegram/messenger/CodeHighlighting.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Vendored for ArticleViewer A7 BlockPreformattedCell syntax highlighting (CodeHighlighting.getHighlighted + codelng.gzip). Exact pin copy; Theme key_code_* and ApplicationLoader assets host wiring already present."
@@ -83,7 +83,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/SvgHelper.java",
       "upstream": "org/telegram/messenger/SvgHelper.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -104,7 +104,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/BottomSheet.java",
       "upstream": "org/telegram/ui/ActionBar/BottomSheet.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -127,7 +127,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/MultiLayoutTypingAnimator.java",
       "upstream": "org/telegram/ui/MultiLayoutTypingAnimator.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -172,7 +172,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/TextPaintImageReceiverSpan.java",
       "upstream": "org/telegram/ui/Components/TextPaintImageReceiverSpan.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Inline ImageReceiver span used by Telegram rich text / instant-view image rendering. Copied verbatim."
@@ -180,7 +180,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Cells/PhotoEditToolCell.java",
       "upstream": "org/telegram/ui/Cells/PhotoEditToolCell.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Photo/editor support cell copied verbatim from upstream; kept for PhotoViewer/photo-picker API surface compatibility."
@@ -188,7 +188,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Cells/PhotoPickerPhotoCell.java",
       "upstream": "org/telegram/ui/Cells/PhotoPickerPhotoCell.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -201,7 +201,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/PhotoEditorSeekBar.java",
       "upstream": "org/telegram/ui/Components/PhotoEditorSeekBar.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Photo editor seek bar copied verbatim from upstream and used by PhotoEditToolCell."
@@ -209,7 +209,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/PickerBottomLayoutViewer.java",
       "upstream": "org/telegram/ui/Components/PickerBottomLayoutViewer.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -221,7 +221,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/video/VideoPlayerHolderBase.java",
       "upstream": "org/telegram/messenger/video/VideoPlayerHolderBase.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Background video-player holder copied verbatim from upstream; retained for ArticleViewer/PhotoViewer-facing video API compatibility."
@@ -229,16 +229,16 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ThemeColors.java",
       "upstream": "org/telegram/ui/ActionBar/ThemeColors.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "exact",
-      "notes": "Upstream color table retained with NativeDo host defaults for keys normally derived dynamically by Theme wallpaper infrastructure. The default #f1f1f3 topic wallpaper is run through pinned AndroidUtilities.calcDrawableColor constants to provide chat_serviceBackground/chat_serviceBackgroundSelected instead of the missing-key red sentinel."
+      "notes": "NativeDo default wallpaper/service colors + link/reply panel host colors retained through 12.9.0 pin bump (upstream also moved link/reply defaults; host values kept)."
     },
     {
       "_comment": "cells",
       "local": "telegram/src/main/java/org/telegram/ui/Cells/BaseCell.java",
       "upstream": "org/telegram/ui/Cells/BaseCell.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Copied verbatim. Base class for all Telegram cells; provides RippleDrawableSafe (used by Switch), setDrawableBounds helpers, long-press detection, and RenderNode caching. All deps (SizeNotifierFrameLayout.IViewWithInvalidateCallback, SharedConfig) present in :telegram."
@@ -246,14 +246,14 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Cells/EmptyCell.java",
       "upstream": "org/telegram/ui/Cells/EmptyCell.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Cells/GraySectionCell.java",
       "upstream": "org/telegram/ui/Cells/GraySectionCell.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "exact",
       "notes": "FF to 12.8.1 + host: plain TextView instead of AnimatedEmojiSpan.TextViewEmojis; LocaleController.isRTL restored; createThemeDescriptions omitted (ThemeDescription stub)."
@@ -261,28 +261,28 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Cells/HeaderCell.java",
       "upstream": "org/telegram/ui/Cells/HeaderCell.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Cells/LoadingCell.java",
       "upstream": "org/telegram/ui/Cells/LoadingCell.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Cells/ShadowSectionCell.java",
       "upstream": "org/telegram/ui/Cells/ShadowSectionCell.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Cells/RadioColorCell.java",
       "upstream": "org/telegram/ui/Cells/RadioColorCell.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Verbatim upstream. Used by the WebBrowserSettings search-engine picker dialog (and other radio dialogs). Deps RadioButton/LayoutHelper/Theme/AndroidUtilities/LocaleController are all vendored. Replaces an earlier hand-rolled subset that used android.widget.RadioButton and a no-op setCheckColor."
@@ -390,7 +390,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Adapters/PaddedListAdapter.java",
       "upstream": "org/telegram/ui/Adapters/PaddedListAdapter.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -503,7 +503,7 @@
     {
       "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicSwipeReplyRecyclerView.java",
       "upstream": "org/telegram/ui/ChatActivity.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "forced_exact": [
@@ -760,7 +760,7 @@
       "_comment": "components",
       "local": "telegram/src/main/java/org/telegram/ui/Components/Switch.java",
       "upstream": "org/telegram/ui/Components/Switch.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -772,7 +772,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/TextStyleSpan.java",
       "upstream": "org/telegram/ui/Components/TextStyleSpan.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -784,7 +784,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/spoilers/SpoilerEffect.java",
       "upstream": "org/telegram/ui/Components/spoilers/SpoilerEffect.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -797,7 +797,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/spoilers/SpoilerEffectBitmapFactory.java",
       "upstream": "org/telegram/ui/Components/spoilers/SpoilerEffectBitmapFactory.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -821,7 +821,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ChatActivityEnterTopView.java",
       "upstream": "org/telegram/ui/Components/ChatActivityEnterTopView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -832,7 +832,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ChatReplyContainer.java",
       "upstream": "org/telegram/ui/Components/ChatReplyContainer.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -845,7 +845,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/RLottieImageView.java",
       "upstream": "org/telegram/ui/Components/RLottieImageView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "exact",
       "forced_exact": [
@@ -857,7 +857,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ChatActivityEnterViewAnimatedIconView.java",
       "upstream": "org/telegram/ui/Components/ChatActivityEnterViewAnimatedIconView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -924,7 +924,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/FragmentSearchField.java",
       "upstream": "org/telegram/ui/Components/FragmentSearchField.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "exact",
       "forced_exact": [
@@ -932,12 +932,12 @@
         "measurement",
         "drawing"
       ],
-      "notes": "FF to 12.8.1 + host: RectF→Rect clip via AndroidUtilities.rectTmp2I because local AndroidUtilities.rectTmp2 is RectF (pin uses Rect). Input/IME options restored to pin."
+      "notes": "Host rectTmp2I clipBounds; 12.9.0 SearchFilterView.setGlass() no-op + false removable ctor arg aligned to pin call sites."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/DrawingInBackgroundThreadDrawable.java",
       "upstream": "org/telegram/ui/Components/DrawingInBackgroundThreadDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -967,7 +967,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/AnimatedFloat.java",
       "upstream": "org/telegram/ui/Components/AnimatedFloat.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -977,7 +977,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/AnimatedTextView.java",
       "upstream": "org/telegram/ui/Components/AnimatedTextView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "exact",
       "forced_exact": [
@@ -1007,7 +1007,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/NestedSizeNotifierLayout.java",
       "upstream": "org/telegram/ui/Components/NestedSizeNotifierLayout.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "exact",
       "forced_exact": [
@@ -1019,7 +1019,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/CircularProgressDrawable.java",
       "upstream": "org/telegram/ui/Components/CircularProgressDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -1042,7 +1042,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/CombinedDrawable.java",
       "upstream": "org/telegram/ui/Components/CombinedDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -1052,7 +1052,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/MediaActionDrawable.java",
       "upstream": "org/telegram/ui/Components/MediaActionDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -1064,7 +1064,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/RadialProgress2.java",
       "upstream": "org/telegram/ui/Components/RadialProgress2.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -1076,7 +1076,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/PlayPauseDrawable.java",
       "upstream": "org/telegram/ui/Components/PlayPauseDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -1088,7 +1088,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/PathAnimator.java",
       "upstream": "org/telegram/ui/Components/PathAnimator.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -1100,7 +1100,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/VideoForwardDrawable.java",
       "upstream": "org/telegram/ui/Components/VideoForwardDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -1112,7 +1112,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/EmptyStubSpan.java",
       "upstream": "org/telegram/ui/Components/EmptyStubSpan.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -1122,7 +1122,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/FlickerLoadingView.java",
       "upstream": "org/telegram/ui/Components/FlickerLoadingView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -1133,7 +1133,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/GestureDetectorFixDoubleTap.java",
       "upstream": "org/telegram/ui/Components/GestureDetectorFixDoubleTap.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -1143,18 +1143,18 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/LayoutHelper.java",
       "upstream": "org/telegram/ui/Components/LayoutHelper.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "exact",
       "forced_exact": [
         "measurement"
       ],
-      "notes": "Fast-forwarded to 12.8.1 then restored createFrame(int,int) host overload for Kotlin call sites; upstream pin dropped the two-int overload."
+      "notes": "Host createFrame(int,int) for Kotlin; 12.9.0 createLinear(float...) overload restored from pin."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/PullForegroundDrawable.java",
       "upstream": "org/telegram/ui/Components/PullForegroundDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "exact",
       "forced_exact": [
@@ -1165,7 +1165,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/RadialProgressView.java",
       "upstream": "org/telegram/ui/Components/RadialProgressView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -1176,7 +1176,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/RecyclerAnimationScrollHelper.java",
       "upstream": "org/telegram/ui/Components/RecyclerAnimationScrollHelper.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -1188,7 +1188,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/RecyclerItemsEnterAnimator.java",
       "upstream": "org/telegram/ui/Components/RecyclerItemsEnterAnimator.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -1199,19 +1199,19 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/RecyclerListView.java",
       "upstream": "org/telegram/ui/Components/RecyclerListView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "exact",
       "forced_exact": [
         "recycling",
         "gesture"
       ],
-      "notes": "3-way rebased to 12.8.1. EdgeEffectTrackerFactory enabled. Restored: IBlur3Capture capture path, ListSectionsDecoration.capture, CollapseTextCell + FiltersSetupActivity.HintInnerCell stub + JoinToSendSettingsView stub, ViewHolder.isRemoved section animation. FastScroll letter-bar blur onDraw still partially OMITTED (fields path incomplete)."
+      "notes": "Host AndroidX notifyDataSetChangedCompat + import wiring; 12.9.0 getClipBackground(child, forceRound) absorbed."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ScrollSlidingTextTabStrip.java",
       "upstream": "org/telegram/ui/Components/ScrollSlidingTextTabStrip.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "exact",
       "forced_exact": [
@@ -1223,7 +1223,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/SearchStateDrawable.java",
       "upstream": "org/telegram/ui/Components/SearchStateDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -1234,7 +1234,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/Shaker.java",
       "upstream": "org/telegram/ui/Components/Shaker.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -1244,18 +1244,19 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/UniversalRecyclerView.java",
       "upstream": "org/telegram/ui/Components/UniversalRecyclerView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
-      "modified": false,
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": true,
       "port_mode": "exact",
       "forced_exact": [
         "recycling"
-      ]
+      ],
+      "notes": "Host wiring for 12.9.0: drop org.telegram.ui.iv.RichEditor.DraggingDrawable reorder feedback (RichEditor not vendored)."
     },
     {
       "_comment": "high-confidence coverage backfill",
       "local": "telegram/src/main/java/org/telegram/messenger/AnimationNotificationsLocker.java",
       "upstream": "org/telegram/messenger/AnimationNotificationsLocker.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "native"
     },
@@ -1286,7 +1287,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/LruCache.java",
       "upstream": "org/telegram/messenger/LruCache.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Added public trimToSize(int) overload for ImageLoader.onLowMemory()."
@@ -1339,105 +1340,105 @@
       "_comment": "exact copied support files",
       "local": "telegram/src/main/java/androidx/recyclerview/widget/LinearSmoothScrollerEnd.java",
       "upstream": "androidx/recyclerview/widget/LinearSmoothScrollerEnd.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/me/vkryl/android/AnimatorUtils.java",
       "upstream": "me/vkryl/android/AnimatorUtils.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/me/vkryl/android/ViewUtils.java",
       "upstream": "me/vkryl/android/ViewUtils.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/me/vkryl/android/animator/Animated.java",
       "upstream": "me/vkryl/android/animator/Animated.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/me/vkryl/android/animator/BoolAnimator.java",
       "upstream": "me/vkryl/android/animator/BoolAnimator.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/me/vkryl/android/animator/FactorAnimator.java",
       "upstream": "me/vkryl/android/animator/FactorAnimator.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/me/vkryl/android/animator/Animatable.java",
       "upstream": "me/vkryl/android/animator/Animatable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/me/vkryl/android/animator/VariableFloat.java",
       "upstream": "me/vkryl/android/animator/VariableFloat.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/me/vkryl/android/animator/VariableRect.java",
       "upstream": "me/vkryl/android/animator/VariableRect.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/me/vkryl/android/animator/ListAnimator.java",
       "upstream": "me/vkryl/android/animator/ListAnimator.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/me/vkryl/android/animator/ReplaceAnimator.java",
       "upstream": "me/vkryl/android/animator/ReplaceAnimator.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/me/vkryl/core/ArrayUtils.java",
       "upstream": "me/vkryl/core/ArrayUtils.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/me/vkryl/core/lambda/Destroyable.java",
       "upstream": "me/vkryl/core/lambda/Destroyable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/me/vkryl/core/BitwiseUtils.java",
       "upstream": "me/vkryl/core/BitwiseUtils.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/messenger/DispatchQueue.java",
       "upstream": "org/telegram/messenger/DispatchQueue.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
@@ -1452,42 +1453,42 @@
     {
       "local": "telegram/src/main/java/org/telegram/tgnet/AbstractSerializedData.java",
       "upstream": "org/telegram/tgnet/AbstractSerializedData.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/tgnet/InputSerializedData.java",
       "upstream": "org/telegram/tgnet/InputSerializedData.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/tgnet/NativeByteBuffer.java",
       "upstream": "org/telegram/tgnet/NativeByteBuffer.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/tgnet/OutputSerializedData.java",
       "upstream": "org/telegram/tgnet/OutputSerializedData.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/tgnet/SerializedData.java",
       "upstream": "org/telegram/tgnet/SerializedData.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/tgnet/TLDataSourceType.java",
       "upstream": "org/telegram/tgnet/TLDataSourceType.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
@@ -1503,7 +1504,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/CheckBox2.java",
       "upstream": "org/telegram/ui/Components/CheckBox2.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -1515,70 +1516,70 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ButtonBounce.java",
       "upstream": "org/telegram/ui/Components/ButtonBounce.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ColoredImageSpan.java",
       "upstream": "org/telegram/ui/Components/ColoredImageSpan.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/CornerPath.java",
       "upstream": "org/telegram/ui/Components/CornerPath.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/Easings.java",
       "upstream": "org/telegram/ui/Components/Easings.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/LinkPath.java",
       "upstream": "org/telegram/ui/Components/LinkPath.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/Loadable.java",
       "upstream": "org/telegram/ui/Components/Loadable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/NoClipCanvas.java",
       "upstream": "org/telegram/ui/Components/NoClipCanvas.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/RecyclableDrawable.java",
       "upstream": "org/telegram/ui/Components/RecyclableDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/TextViewSwitcher.java",
       "upstream": "org/telegram/ui/Components/TextViewSwitcher.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/MarqueeTextView.java",
       "upstream": "org/telegram/ui/Components/MarqueeTextView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -1603,7 +1604,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/SeekBarView.java",
       "upstream": "org/telegram/ui/Components/SeekBarView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -1617,14 +1618,14 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/VideoTimelinePlayView.java",
       "upstream": "org/telegram/ui/Components/VideoTimelinePlayView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/HideViewAfterAnimation.java",
       "upstream": "org/telegram/ui/Components/HideViewAfterAnimation.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -1635,7 +1636,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ViewHelper.java",
       "upstream": "org/telegram/ui/Components/ViewHelper.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
@@ -1650,7 +1651,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBar.java",
       "upstream": "org/telegram/ui/ActionBar/ActionBar.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "NativeDo ActionBar subset. The 9b50143d Chat glass setupGlass and dispatchDraw back/title/menu pill path is aligned to upstream for the current no-ChatAvatarContainer runtime branch, including 23dp radius, 6dp padding, 46dp surface height, glass menu margins, forced-menu width, and action-mode width interpolation. BottomSheetWithRecyclerListView support surface added: backButtonImageView is public, getTitleTextView(), and setTitleAnimated(...) delegates to setTitle because local ActionBar title animation is not ported. PhotoViewer overlay-title host wiring added: custom overlay children measure/layout across status+bar height so title/subtitle are not clipped."
@@ -1667,7 +1668,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarMenu.java",
       "upstream": "org/telegram/ui/ActionBar/ActionBarMenu.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "NativeDo ActionBarMenu subset. The 9b50143d glassMode measurement and getItemsWidth geometry are preserved for ActionBar glass pill bounds; unrelated Telegram menu features remain omitted."
@@ -1701,7 +1702,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/PopupSwipeBackLayout.java",
       "upstream": "org/telegram/ui/Components/PopupSwipeBackLayout.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -1712,7 +1713,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/utils/ViewOutlineProviderImpl.java",
       "upstream": "org/telegram/messenger/utils/ViewOutlineProviderImpl.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Outline provider helpers copied verbatim from upstream. ActionBarPopupWindow imports it mirroring upstream's import region, but the popup body does not reference it (rounded corners come from the 9-patch background + clipPath in dispatchDraw); retained to satisfy the mirrored import and stay byte-aligned with upstream."
@@ -1783,7 +1784,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/SimpleTextView.java",
       "upstream": "org/telegram/ui/ActionBar/SimpleTextView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
@@ -1802,7 +1803,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/WebInstantView.java",
       "upstream": "org/telegram/ui/web/WebInstantView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "exact",
       "notes": "S1 reverse-patch from 12.8.1 pin: TL_iv.* mapped to TLRPC page/text types (headings collapsed to Header/Subheader; PageCaption→TL_pageCaption). Host readHTML uses LaunchActivity.getActionBarLayoutActivity()."
@@ -1810,14 +1811,14 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/BrowserHistory.java",
       "upstream": "org/telegram/ui/web/BrowserHistory.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/WebMetadataCache.java",
       "upstream": "org/telegram/ui/web/WebMetadataCache.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "exact",
       "notes": "Scheme-2 pin baseline (12.8.1): upstream surface ~unchanged. Host wiring retained: retrieveFaviconAndSitename via LaunchActivity.getActionBarLayoutActivity(); SitenameProxy; favicon decode guards. Pin alone lacks offscreen WebView extraction path."
@@ -1825,7 +1826,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/SearchEngine.java",
       "upstream": "org/telegram/ui/web/SearchEngine.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
@@ -1840,42 +1841,42 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/HttpGetTask.java",
       "upstream": "org/telegram/ui/web/HttpGetTask.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/HttpGetBitmapTask.java",
       "upstream": "org/telegram/ui/web/HttpGetBitmapTask.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/HttpGetFileTask.java",
       "upstream": "org/telegram/ui/web/HttpGetFileTask.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/HttpPostTask.java",
       "upstream": "org/telegram/ui/web/HttpPostTask.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/MHTML.java",
       "upstream": "org/telegram/ui/web/MHTML.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/WebActionBar.java",
       "upstream": "org/telegram/ui/web/WebActionBar.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Host wiring: call onOpenedMenu before showing ItemOptions so ArticleViewer can settle scroll/header state."
@@ -1892,7 +1893,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/AddressBarList.java",
       "upstream": "org/telegram/ui/web/AddressBarList.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "exact",
       "forced_exact": [
@@ -1913,14 +1914,14 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/HistoryFragment.java",
       "upstream": "org/telegram/ui/web/HistoryFragment.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/BookmarksFragment.java",
       "upstream": "org/telegram/ui/web/BookmarksFragment.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "exact",
       "notes": "Backend adapted: list/selection retyped MessageObject -> BrowserHistory.Entry over the local WebBookmarks store; multi-select delete removes from WebBookmarks instead of MessagesController.deleteMessages (a Telegram stub); 'go to message' (Saved-Messages ChatActivity) is a no-op with its action-mode item hidden. Layout unchanged."
@@ -1950,7 +1951,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/bots/WebViewRequestProps.java",
       "upstream": "org/telegram/ui/bots/WebViewRequestProps.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Browser tab/WebView request state holder used by upstream BottomSheetTabs and BotWebViewContainer."
@@ -1958,21 +1959,21 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/OKLCH.java",
       "upstream": "org/telegram/ui/ActionBar/OKLCH.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/NumberTextView.java",
       "upstream": "org/telegram/ui/Components/NumberTextView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/BrowserSheet.java",
       "upstream": "org/telegram/ui/ArticleViewer.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "forced_exact": [
@@ -1986,7 +1987,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ClippingImageView.java",
       "upstream": "org/telegram/ui/Components/ClippingImageView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -1997,7 +1998,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/CubicBezierInterpolator.java",
       "upstream": "org/telegram/ui/Components/CubicBezierInterpolator.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -2008,7 +2009,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/GestureDetector2.java",
       "upstream": "org/telegram/ui/Components/GestureDetector2.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -2028,7 +2029,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/DialogsItemAnimator.java",
       "upstream": "org/telegram/ui/Components/DialogsItemAnimator.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "exact",
       "forced_exact": [
@@ -2039,7 +2040,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/AnimationProperties.java",
       "upstream": "org/telegram/ui/Components/AnimationProperties.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "exact",
       "notes": "CLIP_DIALOG_CELL_PROGRESS retyped Property<DialogCell,Float> -> Property<MovableCell,Float>. PHOTO_VIEWER_ANIMATION_VALUE Property remains removed; NativeDo's PhotoViewer port does not expose the upstream movable-cell animation Property."
@@ -2063,7 +2064,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/AdjustPanLayoutHelper.java",
       "upstream": "org/telegram/ui/ActionBar/AdjustPanLayoutHelper.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -2074,21 +2075,21 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/inset/InAppKeyboardInsetView.java",
       "upstream": "org/telegram/ui/Components/inset/InAppKeyboardInsetView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/inset/KeyboardState.java",
       "upstream": "org/telegram/ui/Components/inset/KeyboardState.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/inset/WindowAnimatedInsetsProvider.java",
       "upstream": "org/telegram/ui/Components/inset/WindowAnimatedInsetsProvider.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -2099,21 +2100,21 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/inset/WindowInsetsInAppController.java",
       "upstream": "org/telegram/ui/Components/inset/WindowInsetsInAppController.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/inset/WindowInsetsProvider.java",
       "upstream": "org/telegram/ui/Components/inset/WindowInsetsProvider.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/inset/WindowInsetsStateHolder.java",
       "upstream": "org/telegram/ui/Components/inset/WindowInsetsStateHolder.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -2123,7 +2124,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/chat/ChatActivityBottomViewsVisibilityController.java",
       "upstream": "org/telegram/ui/Components/chat/ChatActivityBottomViewsVisibilityController.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -2133,7 +2134,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/chat/ChatInputViewsContainer.java",
       "upstream": "org/telegram/ui/Components/chat/ChatInputViewsContainer.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -2154,7 +2155,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/SizeNotifierFrameLayoutPhoto.java",
       "upstream": "org/telegram/ui/Components/SizeNotifierFrameLayoutPhoto.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "native",
       "forced_exact": [
@@ -2208,189 +2209,189 @@
       "_comment": "Telegram Blur3 glass subsystem used by chat/topic chrome.",
       "local": "telegram/src/main/java/org/telegram/messenger/utils/RenderNodeEffects.java",
       "upstream": "org/telegram/messenger/utils/RenderNodeEffects.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/Blur3HashImpl.java",
       "upstream": "org/telegram/ui/Components/blur3/Blur3HashImpl.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/BlurredBackgroundDrawableViewFactory.java",
       "upstream": "org/telegram/ui/Components/blur3/BlurredBackgroundDrawableViewFactory.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/BlurredBackgroundWithFadeDrawable.java",
       "upstream": "org/telegram/ui/Components/blur3/BlurredBackgroundWithFadeDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/DownscaleScrollableNoiseSuppressor.java",
       "upstream": "org/telegram/ui/Components/blur3/DownscaleScrollableNoiseSuppressor.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/LiquidGlassEffect.java",
       "upstream": "org/telegram/ui/Components/blur3/LiquidGlassEffect.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/RenderNodeWithHash.java",
       "upstream": "org/telegram/ui/Components/blur3/RenderNodeWithHash.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/StrokeDrawable.java",
       "upstream": "org/telegram/ui/Components/blur3/StrokeDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/ViewGroupPartRenderer.java",
       "upstream": "org/telegram/ui/Components/blur3/ViewGroupPartRenderer.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/capture/IBlur3Capture.java",
       "upstream": "org/telegram/ui/Components/blur3/capture/IBlur3Capture.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/capture/IBlur3Hash.java",
       "upstream": "org/telegram/ui/Components/blur3/capture/IBlur3Hash.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/drawable/BlurredBackgroundDrawable.java",
       "upstream": "org/telegram/ui/Components/blur3/drawable/BlurredBackgroundDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/drawable/BlurredBackgroundDrawableRenderNode.java",
       "upstream": "org/telegram/ui/Components/blur3/drawable/BlurredBackgroundDrawableRenderNode.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/drawable/BlurredBackgroundDrawableSource.java",
       "upstream": "org/telegram/ui/Components/blur3/drawable/BlurredBackgroundDrawableSource.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/drawable/color/BlurredBackgroundColorProvider.java",
       "upstream": "org/telegram/ui/Components/blur3/drawable/color/BlurredBackgroundColorProvider.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/drawable/color/BlurredBackgroundColorProviderThemed.java",
       "upstream": "org/telegram/ui/Components/blur3/drawable/color/BlurredBackgroundColorProviderThemed.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/drawable/color/BlurredBackgroundProvider.java",
       "upstream": "org/telegram/ui/Components/blur3/drawable/color/BlurredBackgroundProvider.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/drawable/color/BlurredBackgroundProviderBuilder.java",
       "upstream": "org/telegram/ui/Components/blur3/drawable/color/BlurredBackgroundProviderBuilder.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/drawable/color/impl/BlurredBackgroundProviderImpl.java",
       "upstream": "org/telegram/ui/Components/blur3/drawable/color/impl/BlurredBackgroundProviderImpl.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/source/BlurredBackgroundSource.java",
       "upstream": "org/telegram/ui/Components/blur3/source/BlurredBackgroundSource.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/source/BlurredBackgroundSourceBitmap.java",
       "upstream": "org/telegram/ui/Components/blur3/source/BlurredBackgroundSourceBitmap.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/source/BlurredBackgroundSourceColor.java",
       "upstream": "org/telegram/ui/Components/blur3/source/BlurredBackgroundSourceColor.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/source/BlurredBackgroundSourceRenderNode.java",
       "upstream": "org/telegram/ui/Components/blur3/source/BlurredBackgroundSourceRenderNode.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/source/BlurredBackgroundSourceWrapped.java",
       "upstream": "org/telegram/ui/Components/blur3/source/BlurredBackgroundSourceWrapped.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/utils/BitmapMemoizedMetadata.java",
       "upstream": "org/telegram/ui/Components/blur3/utils/BitmapMemoizedMetadata.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/utils/Blur3Utils.java",
       "upstream": "org/telegram/ui/Components/blur3/utils/Blur3Utils.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/blur3/utils/NinePatchBuilder.java",
       "upstream": "org/telegram/ui/Components/blur3/utils/NinePatchBuilder.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
@@ -2430,7 +2431,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ProfileGooeyView.java",
       "upstream": "org/telegram/ui/Components/ProfileGooeyView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -2441,7 +2442,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/NotchInfoUtils.java",
       "upstream": "org/telegram/messenger/NotchInfoUtils.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Vendored as dependency of ProfileGooeyView"
@@ -2449,7 +2450,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/wallpaper/WallpaperGiftPatternPosition.java",
       "upstream": "org/telegram/messenger/wallpaper/WallpaperGiftPatternPosition.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Copied verbatim. Vendored as a dependency of the real SvgHelper SAX parser (gift-pattern <rect> element handling and the SvgResult.getGiftPatternPositions() return type). All deps already present in :telegram."
@@ -2457,7 +2458,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Cells/DialogRadioCell.java",
       "upstream": "org/telegram/ui/Cells/DialogRadioCell.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Copied verbatim. Used by the WebBrowserSettings search-engine picker dialog (and other radio dialogs). All deps (RadioButton, LayoutHelper, Theme, AndroidUtilities, LocaleController) are vendored."
@@ -2465,7 +2466,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ExtendedGridLayoutManager.java",
       "upstream": "org/telegram/ui/Components/ExtendedGridLayoutManager.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Copied verbatim. Replaces the upstream RecyclerListView.ExtendedGridLayoutManager that the local RecyclerListView stub doesn't expose."
@@ -2473,7 +2474,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ListView/AdapterWithDiffUtils.java",
       "upstream": "org/telegram/ui/Components/ListView/AdapterWithDiffUtils.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Copied verbatim. Required by UniversalAdapter; not vendored previously because no adapter had been copied in."
@@ -2499,7 +2500,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Cells/FixedWidthSpan.java",
       "upstream": "org/telegram/ui/Cells/DialogCell.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "FixedWidthSpan extracted from upstream DialogCell.FixedWidthSpan inner class to a top-level class. ReplacementSpan that reserves a fixed pixel width for SimpleTextView. Implementation mirrors the inner class; package/path is host layout.",
@@ -2508,7 +2509,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/CheckBoxBase.java",
       "upstream": "org/telegram/ui/Components/CheckBoxBase.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -2520,7 +2521,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/CounterView.java",
       "upstream": "org/telegram/ui/Components/CounterView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -2533,7 +2534,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/chat/buttons/ChatActivityBlurredRoundButton.java",
       "upstream": "org/telegram/ui/Components/chat/buttons/ChatActivityBlurredRoundButton.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -2545,7 +2546,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/chat/buttons/ChatActivityBlurredRoundPageDownButton.java",
       "upstream": "org/telegram/ui/Components/chat/buttons/ChatActivityBlurredRoundPageDownButton.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -2557,7 +2558,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/chat/layouts/ChatActivitySideControlsButtonsLayout.java",
       "upstream": "org/telegram/ui/Components/chat/layouts/ChatActivitySideControlsButtonsLayout.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -2569,7 +2570,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/chat/layouts/ChatActivityFadeView.java",
       "upstream": "org/telegram/ui/Components/chat/layouts/ChatActivityFadeView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "forced_exact": [
@@ -2580,28 +2581,28 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/chat/layouts/ButtonOnClickListener.java",
       "upstream": "org/telegram/ui/Components/chat/layouts/ButtonOnClickListener.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/chat/layouts/ButtonOnLongClickListener.java",
       "upstream": "org/telegram/ui/Components/chat/layouts/ButtonOnLongClickListener.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/messenger/utils/WindowVisibilityManager.java",
       "upstream": "org/telegram/messenger/utils/WindowVisibilityManager.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/me/vkryl/core/reference/ReferenceCreator.java",
       "upstream": "me/vkryl/core/reference/ReferenceCreator.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested compile dependency (31 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2609,7 +2610,7 @@
     {
       "local": "telegram/src/main/java/me/vkryl/core/reference/ReferenceList.java",
       "upstream": "me/vkryl/core/reference/ReferenceList.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested on-disk source (294 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -2617,7 +2618,7 @@
     {
       "local": "telegram/src/main/java/me/vkryl/core/reference/ReferenceUtils.java",
       "upstream": "me/vkryl/core/reference/ReferenceUtils.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested on-disk source (156 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -2625,7 +2626,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/AccountInstance.java",
       "upstream": "org/telegram/messenger/AccountInstance.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (65 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2633,7 +2634,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/AutoDeleteMediaTask.java",
       "upstream": "org/telegram/messenger/AutoDeleteMediaTask.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested on-disk source (123 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -2641,7 +2642,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/BaseController.java",
       "upstream": "org/telegram/messenger/BaseController.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (52 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2649,7 +2650,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/Bitmaps.java",
       "upstream": "org/telegram/messenger/Bitmaps.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested on-disk source (134 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -2657,7 +2658,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/BringAppForegroundService.java",
       "upstream": "org/telegram/messenger/BringAppForegroundService.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested compile dependency (29 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2665,7 +2666,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/ChatObject.java",
       "upstream": "org/telegram/messenger/ChatObject.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (42 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2673,7 +2674,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/DialogObject.java",
       "upstream": "org/telegram/messenger/DialogObject.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (35 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2681,7 +2682,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/DispatchQueuePriority.java",
       "upstream": "org/telegram/messenger/DispatchQueuePriority.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (37 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2689,7 +2690,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/DocumentObject.java",
       "upstream": "org/telegram/messenger/DocumentObject.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (27 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2697,7 +2698,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/DownloadController.java",
       "upstream": "org/telegram/messenger/DownloadController.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (98 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2705,7 +2706,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/ExtendedBitmapDrawable.java",
       "upstream": "org/telegram/messenger/ExtendedBitmapDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested compile dependency (32 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2713,7 +2714,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/FileLoadOperation.java",
       "upstream": "org/telegram/messenger/FileLoadOperation.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested on-disk source (223 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -2721,7 +2722,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/FileLoadOperationStream.java",
       "upstream": "org/telegram/messenger/FileLoadOperationStream.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (12 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2729,7 +2730,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/FileLoaderPriorityQueue.java",
       "upstream": "org/telegram/messenger/FileLoaderPriorityQueue.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (75 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2737,7 +2738,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/FilePathDatabase.java",
       "upstream": "org/telegram/messenger/FilePathDatabase.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (79 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2745,7 +2746,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/FileRefController.java",
       "upstream": "org/telegram/messenger/FileRefController.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (49 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2753,7 +2754,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/FileStreamLoadOperation.java",
       "upstream": "org/telegram/messenger/FileStreamLoadOperation.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (41 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2761,7 +2762,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/FileUploadOperation.java",
       "upstream": "org/telegram/messenger/FileUploadOperation.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (73 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2769,7 +2770,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/LiteMode.java",
       "upstream": "org/telegram/messenger/LiteMode.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested on-disk source (350 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -2777,7 +2778,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/MediaController.java",
       "upstream": "org/telegram/messenger/MediaController.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested on-disk source (370 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -2785,7 +2786,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/MediaDataController.java",
       "upstream": "org/telegram/messenger/MediaDataController.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (67 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2793,7 +2794,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/MessageObject.java",
       "upstream": "org/telegram/messenger/MessageObject.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested on-disk source (329 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -2801,7 +2802,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/MessagesStorage.java",
       "upstream": "org/telegram/messenger/MessagesStorage.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (20 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2809,7 +2810,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/SaveToGallerySettingsHelper.java",
       "upstream": "org/telegram/messenger/SaveToGallerySettingsHelper.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (23 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2817,7 +2818,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/SecureDocument.java",
       "upstream": "org/telegram/messenger/SecureDocument.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (25 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2825,7 +2826,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/SecureDocumentKey.java",
       "upstream": "org/telegram/messenger/SecureDocumentKey.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested compile dependency (12 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2833,7 +2834,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/SendMessagesHelper.java",
       "upstream": "org/telegram/messenger/SendMessagesHelper.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (59 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2841,7 +2842,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/Timer.java",
       "upstream": "org/telegram/messenger/Timer.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (24 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2849,7 +2850,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/TranslateController.java",
       "upstream": "org/telegram/messenger/TranslateController.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (27 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2857,7 +2858,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/UserConfig.java",
       "upstream": "org/telegram/messenger/UserConfig.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (70 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2865,7 +2866,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/UserObject.java",
       "upstream": "org/telegram/messenger/UserObject.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (59 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2873,7 +2874,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/VideoEditedInfo.java",
       "upstream": "org/telegram/messenger/VideoEditedInfo.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (70 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2881,7 +2882,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/WebFile.java",
       "upstream": "org/telegram/messenger/WebFile.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (32 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2889,7 +2890,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/secretmedia/EncryptedFileInputStream.java",
       "upstream": "org/telegram/messenger/secretmedia/EncryptedFileInputStream.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested compile dependency (85 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2897,7 +2898,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/voip/VoIPService.java",
       "upstream": "org/telegram/messenger/voip/VoIPService.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (13 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2905,7 +2906,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/wallpaper/WallpaperGiftBitmapDrawable.java",
       "upstream": "org/telegram/messenger/wallpaper/WallpaperGiftBitmapDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (25 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2913,7 +2914,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/tgnet/ConnectionsManager.java",
       "upstream": "org/telegram/tgnet/ConnectionsManager.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (88 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2921,7 +2922,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/tgnet/TLObject.java",
       "upstream": "org/telegram/tgnet/TLObject.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (16 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2929,7 +2930,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/tgnet/tl/TL_stories.java",
       "upstream": "org/telegram/tgnet/tl/TL_stories.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (21 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2937,7 +2938,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarSheet.java",
       "upstream": "org/telegram/ui/ActionBar/ActionBarSheet.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested on-disk source (264 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -2945,7 +2946,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/AlertDialog.java",
       "upstream": "org/telegram/ui/ActionBar/AlertDialog.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested on-disk source (335 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -2953,7 +2954,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/BottomSheetTabDialog.java",
       "upstream": "org/telegram/ui/ActionBar/BottomSheetTabDialog.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested on-disk source (183 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -2961,7 +2962,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Cells/CheckBoxCell.java",
       "upstream": "org/telegram/ui/Cells/CheckBoxCell.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested on-disk source (636 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -2969,7 +2970,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Cells/TextColorThemeCell.java",
       "upstream": "org/telegram/ui/Cells/TextColorThemeCell.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested compile dependency (81 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2977,7 +2978,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Charts/view_data/TransitionParams.java",
       "upstream": "org/telegram/ui/Charts/view_data/TransitionParams.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested compile dependency (23 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2985,7 +2986,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/ChatActivity.java",
       "upstream": "org/telegram/ui/ChatActivity.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (90 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -2993,7 +2994,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/AlertsCreator.java",
       "upstream": "org/telegram/ui/Components/AlertsCreator.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (20 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3001,7 +3002,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/AnchorSpan.java",
       "upstream": "org/telegram/ui/Components/AnchorSpan.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested compile dependency (35 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3009,7 +3010,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/AnimatedArrowDrawable.java",
       "upstream": "org/telegram/ui/Components/AnimatedArrowDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested on-disk source (139 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -3017,7 +3018,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/AnimatedColor.java",
       "upstream": "org/telegram/ui/Components/AnimatedColor.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested on-disk source (178 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -3025,7 +3026,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/AnimatedEmojiDrawable.java",
       "upstream": "org/telegram/ui/Components/AnimatedEmojiDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (59 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3033,7 +3034,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/AnimatedSvgDrawable.java",
       "upstream": "org/telegram/ui/Components/AnimatedSvgDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested on-disk source (1081 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -3041,7 +3042,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/AttachableDrawable.java",
       "upstream": "org/telegram/ui/Components/AttachableDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested compile dependency (12 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3049,7 +3050,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/BackgroundGradientDrawable.java",
       "upstream": "org/telegram/ui/Components/BackgroundGradientDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (40 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3057,7 +3058,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/BlurringShader.java",
       "upstream": "org/telegram/ui/Components/BlurringShader.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested on-disk source (1235 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -3065,7 +3066,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ChatActivityEnterView.java",
       "upstream": "org/telegram/ui/Components/ChatActivityEnterView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (38 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3073,7 +3074,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ChatAttachAlert.java",
       "upstream": "org/telegram/ui/Components/ChatAttachAlert.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (10 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3081,7 +3082,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/CheckBox.java",
       "upstream": "org/telegram/ui/Components/CheckBox.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested on-disk source (294 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -3089,7 +3090,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ClipRoundedDrawable.java",
       "upstream": "org/telegram/ui/Components/ClipRoundedDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested on-disk source (184 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -3097,7 +3098,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/CloseProgressDrawable2.java",
       "upstream": "org/telegram/ui/Components/CloseProgressDrawable2.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested on-disk source (178 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -3105,7 +3106,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ContentPreviewViewer.java",
       "upstream": "org/telegram/ui/Components/ContentPreviewViewer.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (18 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3113,7 +3114,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ContextProgressView.java",
       "upstream": "org/telegram/ui/Components/ContextProgressView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested compile dependency (109 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3121,7 +3122,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/CurvesToolValue.java",
       "upstream": "org/telegram/ui/Components/CurvesToolValue.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (21 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3129,7 +3130,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/FilterGLThread.java",
       "upstream": "org/telegram/ui/Components/FilterGLThread.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested on-disk source (645 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -3137,7 +3138,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/FilterShaders.java",
       "upstream": "org/telegram/ui/Components/FilterShaders.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested on-disk source (2193 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -3145,7 +3146,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/FloatSeekBarAccessibilityDelegate.java",
       "upstream": "org/telegram/ui/Components/FloatSeekBarAccessibilityDelegate.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested compile dependency (78 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3153,7 +3154,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/LinkSpanDrawable.java",
       "upstream": "org/telegram/ui/Components/LinkSpanDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested on-disk source (980 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -3161,7 +3162,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/LoadingDrawable.java",
       "upstream": "org/telegram/ui/Components/LoadingDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (59 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3169,7 +3170,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/LoadingStickerDrawable.java",
       "upstream": "org/telegram/ui/Components/LoadingStickerDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (22 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3177,7 +3178,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/MotionBackgroundDrawable.java",
       "upstream": "org/telegram/ui/Components/MotionBackgroundDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (44 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3185,7 +3186,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/MovableCell.java",
       "upstream": "org/telegram/ui/Components/MovableCell.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (11 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3193,7 +3194,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/OtherDocumentPlaceholderDrawable.java",
       "upstream": "org/telegram/ui/Components/OtherDocumentPlaceholderDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (22 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3201,7 +3202,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/Paint/Shader.java",
       "upstream": "org/telegram/ui/Components/Paint/Shader.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested on-disk source (139 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -3209,7 +3210,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/PaintingOverlay.java",
       "upstream": "org/telegram/ui/Components/PaintingOverlay.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (23 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3217,7 +3218,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/Point.java",
       "upstream": "org/telegram/ui/Components/Point.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (25 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3225,7 +3226,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/RadioButton.java",
       "upstream": "org/telegram/ui/Components/RadioButton.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested on-disk source (203 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -3233,7 +3234,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/Rect.java",
       "upstream": "org/telegram/ui/Components/Rect.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (28 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3241,7 +3242,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ScaleStateListAnimator.java",
       "upstream": "org/telegram/ui/Components/ScaleStateListAnimator.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested compile dependency (47 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3249,7 +3250,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/SeekBar.java",
       "upstream": "org/telegram/ui/Components/SeekBar.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested on-disk source (493 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -3257,7 +3258,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/SeekBarAccessibilityDelegate.java",
       "upstream": "org/telegram/ui/Components/SeekBarAccessibilityDelegate.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested compile dependency (107 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3265,7 +3266,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ShareAlert.java",
       "upstream": "org/telegram/ui/Components/ShareAlert.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested on-disk source (170 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -3273,7 +3274,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/Size.java",
       "upstream": "org/telegram/ui/Components/Size.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested compile dependency (24 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3281,7 +3282,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/SlotsDrawable.java",
       "upstream": "org/telegram/ui/Components/SlotsDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (26 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3289,7 +3290,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/SmoothScroller.java",
       "upstream": "org/telegram/ui/Components/SmoothScroller.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested compile dependency (88 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3297,7 +3298,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/SpeedIconDrawable.java",
       "upstream": "org/telegram/ui/Components/SpeedIconDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested on-disk source (139 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -3305,7 +3306,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/StaticLayoutEx.java",
       "upstream": "org/telegram/ui/Components/StaticLayoutEx.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested on-disk source (214 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -3313,7 +3314,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/StickerEmptyView.java",
       "upstream": "org/telegram/ui/Components/StickerEmptyView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (33 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3321,7 +3322,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/SubstringLayoutAnimator.java",
       "upstream": "org/telegram/ui/Components/SubstringLayoutAnimator.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested on-disk source (144 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -3329,7 +3330,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/Text.java",
       "upstream": "org/telegram/ui/Components/Text.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (29 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3337,7 +3338,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/TextPaintMarkSpan.java",
       "upstream": "org/telegram/ui/Components/TextPaintMarkSpan.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested compile dependency (49 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3345,7 +3346,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/TextPaintSpan.java",
       "upstream": "org/telegram/ui/Components/TextPaintSpan.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested compile dependency (41 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3353,7 +3354,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/TextPaintUrlSpan.java",
       "upstream": "org/telegram/ui/Components/TextPaintUrlSpan.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested compile dependency (57 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3361,7 +3362,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/TextPaintWebpageUrlSpan.java",
       "upstream": "org/telegram/ui/Components/TextPaintWebpageUrlSpan.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested compile dependency (18 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3369,7 +3370,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ThemePreviewDrawable.java",
       "upstream": "org/telegram/ui/Components/ThemePreviewDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (24 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3377,7 +3378,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/Tooltip.java",
       "upstream": "org/telegram/ui/Components/Tooltip.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested compile dependency (115 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3385,7 +3386,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/TranslateAlert2.java",
       "upstream": "org/telegram/ui/Components/TranslateAlert2.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (13 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3393,7 +3394,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/TranslateAlert3.java",
       "upstream": "org/telegram/ui/Components/TranslateAlert3.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (8 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3401,7 +3402,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/TypefaceSpan.java",
       "upstream": "org/telegram/ui/Components/TypefaceSpan.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested compile dependency (101 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3409,7 +3410,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/URLSpanNoUnderline.java",
       "upstream": "org/telegram/ui/Components/URLSpanNoUnderline.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested compile dependency (71 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3417,7 +3418,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/UndoView.java",
       "upstream": "org/telegram/ui/Components/UndoView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (18 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3425,7 +3426,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/UniversalListCallbacks.java",
       "upstream": "org/telegram/ui/Components/UniversalListCallbacks.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (19 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3433,7 +3434,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/VectorAvatarThumbDrawable.java",
       "upstream": "org/telegram/ui/Components/VectorAvatarThumbDrawable.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (56 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3441,7 +3442,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/VideoEditTextureView.java",
       "upstream": "org/telegram/ui/Components/VideoEditTextureView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (38 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3449,7 +3450,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/VideoPlayer.java",
       "upstream": "org/telegram/ui/Components/VideoPlayer.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (42 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3457,7 +3458,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/WebPlayerView.java",
       "upstream": "org/telegram/ui/Components/WebPlayerView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (34 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3465,7 +3466,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/chat/ViewPositionWatcher.java",
       "upstream": "org/telegram/ui/Components/chat/ViewPositionWatcher.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested on-disk source (249 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -3473,7 +3474,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/DialogsActivity.java",
       "upstream": "org/telegram/ui/DialogsActivity.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (26 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3481,7 +3482,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/EmptyBaseFragment.java",
       "upstream": "org/telegram/ui/EmptyBaseFragment.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested compile dependency (17 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3489,7 +3490,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/LaunchActivity.java",
       "upstream": "org/telegram/ui/LaunchActivity.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (70 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3497,7 +3498,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/PinchToZoomHelper.java",
       "upstream": "org/telegram/ui/PinchToZoomHelper.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (25 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3505,7 +3506,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Stories/DarkThemeResourceProvider.java",
       "upstream": "org/telegram/ui/Stories/DarkThemeResourceProvider.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (16 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3513,7 +3514,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Stories/StoryItem.java",
       "upstream": "org/telegram/ui/Stories/StoryItem.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (25 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3521,7 +3522,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Stories/recorder/ButtonWithCounterView.java",
       "upstream": "org/telegram/ui/Stories/recorder/ButtonWithCounterView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested on-disk source (669 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -3529,7 +3530,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Stories/recorder/HintView2.java",
       "upstream": "org/telegram/ui/Stories/recorder/HintView2.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (47 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3537,7 +3538,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Stories/recorder/KeyboardNotifier.java",
       "upstream": "org/telegram/ui/Stories/recorder/KeyboardNotifier.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested compile dependency (110 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3545,7 +3546,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Stories/recorder/StoryEntry.java",
       "upstream": "org/telegram/ui/Stories/recorder/StoryEntry.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (29 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3553,7 +3554,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/TextureViewContainer.java",
       "upstream": "org/telegram/ui/TextureViewContainer.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "Auto-registered unmanifested compile dependency (45 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3561,7 +3562,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/WrappedResourceProvider.java",
       "upstream": "org/telegram/ui/WrappedResourceProvider.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (23 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3569,7 +3570,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/bots/BotWebViewSheet.java",
       "upstream": "org/telegram/ui/bots/BotWebViewSheet.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (4 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
@@ -3577,7 +3578,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/WebBookmarks.java",
       "upstream": "org/telegram/ui/web/WebBookmarks.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested on-disk source (255 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
@@ -3585,7 +3586,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/utils/Choreographer60FpsContent.java",
       "upstream": "org/telegram/messenger/utils/Choreographer60FpsContent.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "60fps Choreographer throttle used by SpoilerEffect (12.8.1)."
@@ -3593,7 +3594,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/EdgeEffectTrackerFactory.java",
       "upstream": "org/telegram/ui/Components/EdgeEffectTrackerFactory.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "RecyclerListView overscroll tracker."
@@ -3601,7 +3602,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Cells/CollapseTextCell.java",
       "upstream": "org/telegram/ui/Cells/CollapseTextCell.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
       "notes": "For RecyclerListView setSections type filter."
@@ -3609,7 +3610,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Cells/IMessageCell.java",
       "upstream": "org/telegram/ui/Cells/IMessageCell.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "exact",
       "notes": "Upstream IMessageCell with host-slim types (ReactionsLayout omitted as Object; no Reactions package)."
@@ -3617,15 +3618,15 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/BottomSheetWithRecyclerListView.java",
       "upstream": "org/telegram/ui/Components/BottomSheetWithRecyclerListView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
-      "modified": false,
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": true,
       "port_mode": "exact",
-      "notes": "Copied verbatim from pinned upstream. NativeDo uses it for title/action-bar RecyclerView sheets."
+      "notes": "Host wiring for 12.9.0: setLightStatusBar uses getWindow() because local AndroidUtilities lacks Dialog overload from pin."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/IArticleViewer.java",
       "upstream": "org/telegram/ui/IArticleViewer.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "exact",
       "notes": "Pin-shaped 12.8.1 abstract host API and shared link/search/video state. openPhoto uses TLRPC.PageBlock for local S1; DrawingText accepts IArticleViewer; getResources exposes the paint-map/color/font contract; link-touch and text-selection helpers consume the parent callbacks and shared pressed-link state."
@@ -3659,7 +3660,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java",
       "upstream": "org/telegram/ui/Cells/ChatMessageCell.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Stub implementing IMessageCell for RecyclerAnimationScrollHelper; full ChatMessageCell not ported."
@@ -3718,7 +3719,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/messenger/utils/LeakDetector.java",
       "upstream": "org/telegram/messenger/utils/LeakDetector.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "No-op host stub for BottomSheet DEBUG_PRIVATE_VERSION leak tracking; full X-Core ReferenceMap detector not ported."
@@ -3726,7 +3727,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/FiltersSetupActivity.java",
       "upstream": "org/telegram/ui/FiltersSetupActivity.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Stub: HintInnerCell only for section predicates."
@@ -3734,7 +3735,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/JoinToSendSettingsView.java",
       "upstream": "org/telegram/ui/Components/JoinToSendSettingsView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Stub: getBottomInfoMargin only for section geometry."
@@ -3742,7 +3743,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/ReactedUsersListView.java",
       "upstream": "org/telegram/ui/Components/ReactedUsersListView.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Compile/runtime constant shim, not a full port: only ITEM_HEIGHT_DP (50) so FlickerLoadingView can keep the pin-shaped REACTED_TYPE height expression. Full reacted-users list UI is not vendored."
@@ -3750,7 +3751,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarMenuSlider.java",
       "upstream": "org/telegram/ui/ActionBar/ActionBarMenuSlider.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Compile/runtime type stub for PopupSwipeBackLayout instanceof checks. Full ActionBarMenuSlider UI is not ported."
@@ -3758,7 +3759,7 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Cells/DialogCell.java",
       "upstream": "org/telegram/ui/Cells/DialogCell.java",
-      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "notes": "Compile/runtime type shim providing DialogCell.FixedWidthSpan for pin SimpleTextView. Full DialogCell UI is not ported under :telegram."

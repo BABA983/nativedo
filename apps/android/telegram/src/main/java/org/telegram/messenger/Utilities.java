@@ -1017,4 +1017,69 @@ public class Utilities {
         return true;
     }
 
+    /**
+     * Pin 12.9.0 native average color. Host: sample center-ish pixels of the
+     * sub-rect without JNI (no averageBitmapColor native).
+     */
+    public static int averageBitmapColor(Bitmap bitmap, int left, int top, int right, int bottom) {
+        if (bitmap == null || bitmap.isRecycled()) {
+            return 0;
+        }
+        final int w = bitmap.getWidth();
+        final int h = bitmap.getHeight();
+        left = Math.max(0, Math.min(left, w));
+        right = Math.max(left, Math.min(right, w));
+        top = Math.max(0, Math.min(top, h));
+        bottom = Math.max(top, Math.min(bottom, h));
+        if (right <= left || bottom <= top) {
+            return 0;
+        }
+        long rSum = 0, gSum = 0, bSum = 0;
+        int count = 0;
+        // Sparse sample to keep this usable on large bitmaps without native.
+        final int stepX = Math.max(1, (right - left) / 16);
+        final int stepY = Math.max(1, (bottom - top) / 16);
+        for (int y = top; y < bottom; y += stepY) {
+            for (int x = left; x < right; x += stepX) {
+                final int c = bitmap.getPixel(x, y);
+                rSum += (c >> 16) & 0xff;
+                gSum += (c >> 8) & 0xff;
+                bSum += c & 0xff;
+                count++;
+            }
+        }
+        if (count == 0) {
+            return 0;
+        }
+        return 0xff000000
+                | (((int) (rSum / count)) << 16)
+                | (((int) (gSum / count)) << 8)
+                | ((int) (bSum / count));
+    }
+
+    /** Pin 12.9.0 libyuv scale modes; host scale path is a Canvas draw fallback. */
+    public enum libyuv_ScaleFilter {
+        None, Linear, Bilinear, Box
+    }
+
+    public static boolean libyuvARGBSaleBitmap(Bitmap src, Bitmap dst, libyuv_ScaleFilter mode) {
+        if (src == null || dst == null || src.isRecycled() || dst.isRecycled()) {
+            return false;
+        }
+        try {
+            Canvas canvas = new Canvas(dst);
+            android.graphics.Matrix m = new android.graphics.Matrix();
+            m.setScale(dst.getWidth() / (float) src.getWidth(), dst.getHeight() / (float) src.getHeight());
+            Paint paint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG);
+            if (mode == libyuv_ScaleFilter.None) {
+                paint.setFilterBitmap(false);
+            }
+            canvas.drawBitmap(src, m, paint);
+            return true;
+        } catch (Exception e) {
+            FileLog.e(e);
+            return false;
+        }
+    }
+
 }

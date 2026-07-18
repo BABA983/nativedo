@@ -1,6 +1,7 @@
-# Exact rebase queue (global pin 12.8.1)
+# Exact rebase queue (global pin 12.9.0)
 
 ## Done
+- Global pin bump 12.8.1 → **12.9.0** (`9bcf3d2769c6`): FF exact/clean + host-wire UniversalRecyclerView/BottomSheetWithRecycler; absorb small pin deltas into Utilities/LayoutHelper/RecyclerListView/FragmentSearchField; ThemeColors host colors retained
 - List stack: RecyclerListView, RecyclerAnimationScrollHelper
 - Utilities scheme-2
 - Browser chrome scheme-2: WebMetadataCache, AddressBarList

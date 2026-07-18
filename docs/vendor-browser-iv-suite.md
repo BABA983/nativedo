@@ -1,4 +1,4 @@
-# Browser / Instant View suite (global pin 12.8.1)
+# Browser / Instant View suite (global pin 12.9.0)
 
 ## Why this suite exists
 

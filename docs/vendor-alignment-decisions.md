@@ -3,9 +3,9 @@
 Human decisions needed. Agents should not auto-resolve these without product
 input. Each item is left open after autonomous exact-alignment passes.
 
-Global pin: `9b50143d8896` (Telegram Android 12.8.1, 2026-06-16).  
+Global pin: `9bcf3d2769c6` (Telegram Android 12.9.0, 2026-07-16).  
 Local pristine checkout: `vendor/telegram-android` at that pin.  
-`vendor-ff` dry-run: all eligible exact+unmodified files already at pin (`would_ff=0`).
+Previous pin `9b50143d8896` (12.8.1) retained as historical alias for un-advanced files.
 
 ## Recently landed (no decision needed)
 
