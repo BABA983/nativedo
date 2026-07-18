@@ -22,6 +22,7 @@ Previous pin `9b50143d8896` (12.8.1) retained as historical alias for un-advance
 | later | `HttpGetFileTask`, `AnimatedFloat`, `WindowVisibilityManager`, `UniversalRecyclerView` pin-identical; FlickerLoadingView/GraySectionCell partial re-align |
 | *(this pass)* | `ImageReceiver` + `ImageLocation` restored pin-identical @ 12.9.0 |
 | *(this pass)* | `GroupedPhotosListView` + `TableLayout` S1 reverse-patch @ 12.9.0 |
+| *(this pass)* | `WebBrowserSettings` pin-identical @ 12.9.0 (single-account browser façade) |
 
 ## ArticleViewer — epic closed (B21 + A3–A7)
 

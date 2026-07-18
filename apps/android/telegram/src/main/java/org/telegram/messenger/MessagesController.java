@@ -177,4 +177,97 @@ public final class MessagesController {
         public void loadCache() {}
         public void load() {}
     }
+
+    // ── Single-account browser settings façade (pin WebBrowserSettings @ 12.9.0) ──
+    // Maps Telegram MessagesController browser policy APIs onto device-local
+    // SharedConfig + RestrictedDomainsList. One account only; no MTProto sync.
+
+    public boolean isWebBrowserInAppEnabled() {
+        SharedConfig.loadBrowserConfig();
+        return SharedConfig.inappBrowser;
+    }
+
+    public void toggleWebBrowserInAppEnabled() {
+        SharedConfig.toggleInappBrowser();
+        NotificationCenter.getInstance(UserConfig.selectedAccount)
+                .postNotificationName(NotificationCenter.webBrowserSettingsUpdate);
+    }
+
+    public boolean isWebBrowserUseCustomTabs() {
+        SharedConfig.loadBrowserConfig();
+        return SharedConfig.customTabs;
+    }
+
+    public void toggleWebBrowserUseCustomTabs(boolean enabled) {
+        SharedConfig.toggleCustomTabs(enabled);
+        NotificationCenter.getInstance(UserConfig.selectedAccount)
+                .postNotificationName(NotificationCenter.webBrowserSettingsUpdate);
+    }
+
+    /**
+     * @param inAppExceptions {@code true}: domains that must NOT open in-app
+     *                        (RestrictedDomainsList). {@code false}: pin dual-list
+     *                        for "always open in-app" when browser is off — host
+     *                        returns empty (single local store).
+     */
+    public java.util.List<org.telegram.tgnet.tl.TL_account.WebDomainException> getWebBrowserExceptionsList(boolean inAppExceptions) {
+        if (!inAppExceptions) {
+            return java.util.Collections.emptyList();
+        }
+        org.telegram.ui.web.RestrictedDomainsList list =
+                org.telegram.ui.web.RestrictedDomainsList.getInstance();
+        list.load();
+        java.util.ArrayList<org.telegram.tgnet.tl.TL_account.WebDomainException> out =
+                new java.util.ArrayList<>();
+        for (String domain : list.getRestrictedDomainsList()) {
+            org.telegram.tgnet.tl.TL_account.WebDomainException e =
+                    new org.telegram.tgnet.tl.TL_account.WebDomainException();
+            e.domain = domain;
+            e.url = "https://" + domain;
+            org.telegram.ui.web.WebMetadataCache.WebMetadata meta =
+                    org.telegram.ui.web.WebMetadataCache.getInstance().get(domain);
+            if (meta != null && !android.text.TextUtils.isEmpty(meta.sitename)) {
+                e.title = meta.sitename;
+            } else if (meta != null && !android.text.TextUtils.isEmpty(meta.title)) {
+                e.title = meta.title;
+            } else {
+                e.title = domain;
+            }
+            e.favicon = 0; // host: Bitmap favicons not document ids; letter placeholder
+            out.add(e);
+        }
+        return out;
+    }
+
+    public void addWebBrowserException(String domain, boolean inAppException) {
+        if (!inAppException) {
+            // Dual-list external→in-app force not ported; ignore.
+            return;
+        }
+        org.telegram.ui.web.RestrictedDomainsList.getInstance().addRestrictedDomain(domain);
+        NotificationCenter.getInstance(UserConfig.selectedAccount)
+                .postNotificationName(NotificationCenter.webBrowserSettingsUpdate);
+    }
+
+    public void removeWebBrowserException(String domain) {
+        org.telegram.ui.web.RestrictedDomainsList.getInstance().removeRestrictedDomain(domain);
+        NotificationCenter.getInstance(UserConfig.selectedAccount)
+                .postNotificationName(NotificationCenter.webBrowserSettingsUpdate);
+    }
+
+    public void clearAllWebBrowserExceptions() {
+        org.telegram.ui.web.RestrictedDomainsList.getInstance().clearRestrictedDomains();
+        NotificationCenter.getInstance(UserConfig.selectedAccount)
+                .postNotificationName(NotificationCenter.webBrowserSettingsUpdate);
+    }
+
+    public boolean isWebBrowserExceptionsLimitReached(boolean inAppExceptions) {
+        if (!inAppExceptions) {
+            return false;
+        }
+        // Generous local limit; pin enforces server-side cap.
+        return org.telegram.ui.web.RestrictedDomainsList.getInstance()
+                .getRestrictedDomainsList().size() >= 200;
+    }
+
 }

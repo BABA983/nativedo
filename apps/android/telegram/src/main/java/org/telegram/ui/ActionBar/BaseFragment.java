@@ -391,4 +391,21 @@ public abstract class BaseFragment implements ViewModelStoreOwner {
         }
         return true;
     }
+
+    public org.telegram.messenger.AccountInstance getAccountInstance() {
+        return org.telegram.messenger.AccountInstance.getInstance(currentAccount);
+    }
+
+    public org.telegram.messenger.MessagesController getMessagesController() {
+        return getAccountInstance().getMessagesController();
+    }
+
+    public org.telegram.messenger.NotificationCenter getNotificationCenter() {
+        return getAccountInstance().getNotificationCenter();
+    }
+
+    /** Pin edge-to-edge hook; subclasses override. */
+    public void onInsets(int left, int top, int right, int bottom) {
+    }
+
 }

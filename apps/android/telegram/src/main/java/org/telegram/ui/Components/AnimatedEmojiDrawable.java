@@ -12,6 +12,16 @@ import org.telegram.messenger.ImageReceiver;
  */
 public class AnimatedEmojiDrawable extends Drawable {
     public static final int CACHE_TYPE_MESSAGES = 0;
+    public static final int CACHE_TYPE_MESSAGES_LARGE = 1;
+
+    /** Host stub: pin WebsiteView uses document-id favicons; return empty drawable. */
+    public static AnimatedEmojiDrawable make(int account, int cacheType, long documentId) {
+        return new AnimatedEmojiDrawable();
+    }
+
+    public static AnimatedEmojiDrawable make(int account, int cacheType, long documentId, String absolutePath) {
+        return new AnimatedEmojiDrawable();
+    }
 
     /** V1 stub: no-op for BackupImageView. */
     public void addView(Object view) {}

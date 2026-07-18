@@ -10669,4 +10669,17 @@
     <string name="AIEditorEmojify">emojify</string>
     <string name="TranslateCopy">Copy Translation</string>
     <string name="TranslateEntireChat">Translate Entire Chat</string>
+    <string name="WebBrowserShowCloseButton">Show Close Button</string>
+    <string name="WebBrowserShowCloseButtonInfo">Add a Close button when viewing websites.</string>
+    <string name="BrowserSettingsNeverOpenInTitle2">Don’t open in-app</string>
+    <string name="BrowserSettingsAlwaysOpenInTitle2">Open in-app</string>
+    <string name="BrowserSettingsNeverOpenInClearList2">Delete All Exceptions</string>
+    <string name="BrowserSettingsNeverOpenInInfo2">These sites will always be opened in external browser.</string>
+    <string name="BrowserSettingsAlwaysOpenInInfo2">These sites will still be opened in-app.</string>
+    <string name="WebBrowserDeleteAllExceptionsTitle">Delete All Exceptions</string>
+    <string name="WebBrowserDeleteAllExceptionsMessage">Are you sure you want to delete all website exceptions?</string>
+    <string name="BrowserSettingsAddTitleExternal">Add Website</string>
+    <string name="BrowserSettingsAddTextExternal">Enter a domain that you want to be opened in the in-app browser.</string>
+    <string name="WebBrowserExceptionsLimitTitle">Limit Reached</string>
+    <string name="WebBrowserExceptionsLimitMessage">You have reached the maximum number of website exceptions. Please remove some existing ones to add new ones.</string>
 </resources>

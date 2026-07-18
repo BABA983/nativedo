@@ -89,6 +89,7 @@ public final class NotificationCenter {
     // User
     public static final int mainUserInfoChanged = totalEvents++;
     public static final int webViewResolved = totalEvents++;
+    public static final int webBrowserSettingsUpdate = totalEvents++;
     public static final int messagePlayingDidStart = totalEvents++;
     public static final int messagePlayingDidReset = totalEvents++;
     public static final int messagePlayingPlayStateChanged = totalEvents++;

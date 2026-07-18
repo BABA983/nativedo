@@ -1921,11 +1921,10 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/WebBrowserSettings.java",
       "upstream": "org/telegram/ui/web/WebBrowserSettings.java",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": false,
       "port_mode": "exact",
-      "notes": "Legacy pin 009e97356: in-app browser cache/cookies/history/search-engine UI. Not FF to 12.9.0 — pin needs MessagesController web-browser policy APIs, TL_account.WebDomainException, AlertsCreator.showAddBrowserException, AnimatedEmojiDrawable.CACHE_TYPE_MESSAGES_LARGE, UniversalFragment.onInsets. Product path is NativeDo browser settings host, not full Telegram settings port.",
-      "stuck_reason": "12.8.1 needs MessagesController browser policy APIs, TL_account, AlertsCreator.showAddBrowserException, AnimatedEmojiDrawable.CACHE_TYPE_MESSAGES_LARGE, edge-to-edge onInsets. Prefer native thin settings or permanent stuck — not a full Telegram browser settings port."
+      "notes": "Byte-identical to global pin 12.9.0. Browser policy calls go through MessagesController facade -> SharedConfig + RestrictedDomainsList (single account). TL_account.WebDomainException host type; AlertsCreator.showAddBrowserException host dialog; AnimatedEmojiDrawable.make/CACHE_TYPE_MESSAGES_LARGE stubs (favicon letter fallback). Dual-list external exceptions (inApp=false) return empty locally."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/web/HistoryFragment.java",
@@ -2222,6 +2221,15 @@
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
       "modified": true,
       "port_mode": "native",
+      "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/tgnet/tl/TL_account.java",
+      "upstream": "org/telegram/tgnet/tl/TL_account.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Host-only TL_account surface: WebDomainException for pin WebBrowserSettings. No MTProto serialize; filled from RestrictedDomainsList + WebMetadataCache.",
       "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
     },
     {
@@ -3016,7 +3024,8 @@
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
-      "notes": "Auto-registered unmanifested compile dependency (20 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
+      "notes": "Host stub: showSimpleAlert real dialog; showAddBrowserException pin-shaped domain input for WebBrowserSettings; openUrl/processError still no-op.",
+      "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/AnchorSpan.java",
@@ -3048,7 +3057,7 @@
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
-      "notes": "Auto-registered unmanifested compile dependency (59 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
+      "notes": "Host stubs: CACHE_TYPE_MESSAGES_LARGE + make(account,cacheType,documentId) for WebBrowserSettings WebsiteView favicon path (returns empty drawable)."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/AnimatedSvgDrawable.java",
