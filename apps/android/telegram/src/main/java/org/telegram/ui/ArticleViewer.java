@@ -641,7 +641,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         private TLRPC.TL_pageBlockEmbedPost parent;
     }
 
-    public class DrawingText implements TextSelectionHelper.TextLayoutBlock, MultiLayoutTypingAnimator.Block {
+    public class DrawingText implements TextSelectionHelper.TextLayoutBlock, MultiLayoutTypingAnimator.Block, TableLayout.CellText {
         /** Pin-shaped host; B2 fields (search/links/selection) are read via this parent. */
         private final IArticleViewer parent;
         private View latestParentView;
@@ -9502,19 +9502,24 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
 
         @Override
-        public void onLayoutChild(DrawingText text, int x, int y) {
-            if (text != null && parent.searchResults != null && !parent.searchResults.isEmpty() && parent.searchText != null) {
+        public void onLayoutChild(TableLayout.CellText text, int x, int y) {
+            if (text instanceof DrawingText && parent.searchResults != null && !parent.searchResults.isEmpty() && parent.searchText != null) {
+                final DrawingText drawingText = (DrawingText) text;
                 final WebpageAdapter searchAdapter = adapter != null ? adapter : parent.getAdapter();
                 if (searchAdapter == null) {
                     return;
                 }
-                String lowerString = text.textLayout.getText().toString().toLowerCase();
+                final android.text.Layout layout = drawingText.getLayout();
+                if (layout == null) {
+                    return;
+                }
+                String lowerString = layout.getText().toString().toLowerCase();
                 int startIndex = 0;
                 int index;
                 while ((index = lowerString.indexOf(parent.searchText, startIndex)) >= 0) {
                     startIndex = index + parent.searchText.length();
                     if (index == 0 || AndroidUtilities.isPunctuationCharacter(lowerString.charAt(index - 1))) {
-                        searchAdapter.searchTextOffset.put(parent.searchText + currentBlock + text.parentText + index, y + text.textLayout.getLineTop(text.textLayout.getLineForOffset(index)));
+                        searchAdapter.searchTextOffset.put(parent.searchText + currentBlock + drawingText.parentText + index, y + layout.getLineTop(layout.getLineForOffset(index)));
                     }
                 }
             }
@@ -9588,7 +9593,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         public boolean onTouchEvent(MotionEvent event) {
             for (int i = 0, N = tableLayout.getChildCount(); i < N; i++) {
                 TableLayout.Child c = tableLayout.getChildAt(i);
-                if (checkLayoutForLinks(parent, adapter, event, this, c.textLayout, scrollView.getPaddingLeft() - scrollView.getScrollX() + listX + c.getTextX(), listY + c.getTextY())) {
+                if (c.textLayout instanceof DrawingText && checkLayoutForLinks(parent, adapter, event, this, (DrawingText) c.textLayout, scrollView.getPaddingLeft() - scrollView.getScrollX() + listX + c.getTextX(), listY + c.getTextY())) {
                     return true;
                 }
             }
@@ -9648,9 +9653,9 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             for (int i = 0, N = tableLayout.getChildCount(); i < N; i++) {
                 TableLayout.Child c = tableLayout.getChildAt(i);
                 if (c.textLayout != null) {
-                    c.textLayout.x = c.getTextX() + listX + dp(parent.padx()) - scrollView.getScrollX();
-                    c.textLayout.y = c.getTextY() + listY;
-                    c.textLayout.row = c.getRow();
+                    c.textLayout.setX(c.getTextX() + listX + dp(parent.padx()) - scrollView.getScrollX());
+                    c.textLayout.setY(c.getTextY() + listY);
+                    c.textLayout.setRow(c.getRow());
                     c.setSelectionIndex(count++);
                 }
             }

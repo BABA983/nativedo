@@ -6,6 +6,7 @@
 - Utilities scheme-2
 - Utilities + RecyclerListView host-keep re-align @ 12.9.0 (blur3 restored; no-JNI documented)
 - ImageReceiver + ImageLocation restored pin-identical @ 12.9.0
+- GroupedPhotosListView + TableLayout S1 reverse-patch @ 12.9.0 (TL_iv→TLRPC)
 - Browser chrome scheme-2: WebMetadataCache, AddressBarList
 - WebInstantView S1 reverse-patch
 - ArticleViewer B1–B21 + A3 / A4-partial / A6 / A7 — **epic closed** (host chrome remainder + A5 wontfix)
@@ -26,7 +27,7 @@
 
 ## Still heavy stuck (not FF-host class)
 - WebBrowserSettings — MessagesController browser policy APIs
-- GroupedPhotosListView / TableLayout — TL_iv / CellText coupling
+- ~~GroupedPhotosListView / TableLayout~~ — **host keep @ 12.9.0** (S1 TL_iv→TLRPC; CellText+DrawingText)
 - ~~ImageReceiver / ImageLocation~~ — **byte-identical @ 12.9.0** (pair re-sync; host TLRPC/emoji stubs)
 - Native host shims (Theme, MessagesController, ApplicationLoader, …) — not FF candidates
 - NativeDo ports under `app/` with stuck_reason (forced_exact reference only)
@@ -42,6 +43,7 @@
 2. ~~**Browser stack**~~ — **done (host keep, comments trimmed)**: WebInstantView / AddressBarList / BookmarksFragment / WebMetadataCache / RestrictedDomainsList.
 3. ~~**ImageReceiver + ImageLocation**~~ — **done**: both `modified:false` byte-identical at pin 12.9.0; host stubs for InvalidateHolder / fromMessage / rich_message.
 4. **Not ArticleViewer** — epic closed (still host-wired; avoid new comment sprawl).
+6. **WebBrowserSettings** — still legacy pin; needs MessagesController browser policy APIs or permanent host keep (low product urgency).
 5. ~~**Utilities + RecyclerListView**~~ — **done (host keep @ pin)**: RecyclerListView restored to pin-shaped blur3/SectionsAdapter/edge-effect with only `rectTmp2I` host delta; Utilities pin surface + no-JNI Java fallbacks, `stuck_ref=host_wiring_keep_at_pin`.
 
 ## Testing policy (vendor FF)

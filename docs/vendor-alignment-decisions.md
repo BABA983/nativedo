@@ -21,6 +21,7 @@ Previous pin `9b50143d8896` (12.8.1) retained as historical alias for un-advance
 | *(follow-up)* | `WindowAnimatedInsetsProvider` restored pin-identical |
 | later | `HttpGetFileTask`, `AnimatedFloat`, `WindowVisibilityManager`, `UniversalRecyclerView` pin-identical; FlickerLoadingView/GraySectionCell partial re-align |
 | *(this pass)* | `ImageReceiver` + `ImageLocation` restored pin-identical @ 12.9.0 |
+| *(this pass)* | `GroupedPhotosListView` + `TableLayout` S1 reverse-patch @ 12.9.0 |
 
 ## ArticleViewer — epic closed (B21 + A3–A7)
 
@@ -118,6 +119,7 @@ Still modified and intentionally not bulk-copied without product decisions:
 
 - `ArticleViewer.java`, `IArticleViewer.java` (epic closed; host-wired IV; not next work)
 - ~~`ImageReceiver` / `ImageLocation`~~ — pin-identical @ 12.9.0
+- ~~`GroupedPhotosListView` / `TableLayout`~~ — host keep @ 12.9.0 (S1 TL_iv→TLRPC)
 - `RestrictedDomainsList` (no upstream blob; host shim, stuck documented)
 - Browser stack @ 12.9.0 host keep: `WebInstantView`, `AddressBarList`, `BookmarksFragment`, `WebMetadataCache`
 - Small host keep (see B1–B2): ThemeColors, LayoutHelper, GraySectionCell, AnimatedTextView, …

@@ -156,7 +156,7 @@
           "path": "org/telegram/ui/ArticleViewer.java",
           "pin": "legacy_009e97356",
           "modified": true,
-          "notes": "Epic closed (B21 + A3/A4-partial/A6/A7) against global pin 12.9.0. Host-wired IV/browser sheet: Sheet/BottomSheetTabs lifecycle, WebBookmarks, RestrictedDomains open-external, WebView file chooser, selection-mode dismiss gating, pin-shaped sheet radii, PageLayout fallback, capturePreviewBitmap, ActionBarLayout dismiss. Parent-driven surface: IArticleViewer state; DrawingText bounds/spoilers/attach/liveDrawingTexts/MultiLayoutTypingAnimator.Block; Block* attach lifecycle; EmbedPost/Slideshow a11y; Resources paints incl. Heading1-6; getText/createLayoutForText with TL_textSpoiler; quoteLevels drawQuoteLines; CodeHighlighting preformatted; table long-press selection; setIsLocal transitions. Embed/Collage/Slideshow stay non-static (pin-matched, A5 wontfix). Historical vendored_at pin is legacy reference only — file is multi-slice host-wired, not FF-eligible. See docs/vendor-articleviewer-plan.md.",
+          "notes": "Epic closed (B21 + A3/A4-partial/A6/A7) against global pin 12.9.0. Host-wired IV/browser sheet: Sheet/BottomSheetTabs lifecycle, WebBookmarks, RestrictedDomains open-external, WebView file chooser, selection-mode dismiss gating, pin-shaped sheet radii, PageLayout fallback, capturePreviewBitmap, ActionBarLayout dismiss. Parent-driven surface: IArticleViewer state; DrawingText bounds/spoilers/attach/liveDrawingTexts/MultiLayoutTypingAnimator.Block; Block* attach lifecycle; EmbedPost/Slideshow a11y; Resources paints incl. Heading1-6; getText/createLayoutForText with TL_textSpoiler; quoteLevels drawQuoteLines; CodeHighlighting preformatted; table long-press selection; setIsLocal transitions. Embed/Collage/Slideshow stay non-static (pin-matched, A5 wontfix). Historical vendored_at pin is legacy reference only — file is multi-slice host-wired, not FF-eligible. See docs/vendor-articleviewer-plan.md; TableLayout 12.9 CellText: DrawingText implements CellText; BlockTableCell onLayoutChild/setX path aligned.",
           "stuck_reason": "Epic closed — not eligible for clean FF. Remaining deltas are intentional NativeDo host chrome (WebBookmarks, RestrictedDomainsList, file chooser, capturePreviewBitmap, ActionBarLayout dismiss); not pin debt. A5 static reshape wontfix. Re-open only for a product bug or host-chrome ticket. docs/vendor-articleviewer-plan.md."
         },
         {
@@ -177,15 +177,16 @@
         },
         {
           "path": "org/telegram/ui/Components/GroupedPhotosListView.java",
-          "pin": "legacy_009e97356",
           "forced_exact": [
             "gesture",
             "animation",
             "measurement",
             "drawing"
           ],
-          "notes": "PhotoViewer bottom grouped-photo strip copied verbatim from upstream and fed by NativeDo UrlPhotoItem/ImageLocation data through PhotoViewer's delegate.",
-          "stuck_reason": "12.8.1 moves Instant View types TLRPC→org.telegram.tgnet.tl.TL_iv (~2k LOC). Need TL_iv shim or reverse-patch TL_iv.* back to TLRPC before FF."
+          "notes": "exact@12.9.0 reverse-patched S1: TL_iv.PageBlock → TLRPC.PageBlock for host IV model (same as WebInstantView/ArticleViewer). Gesture/drawing body pin-shaped. PhotoViewer feeds NativeDo UrlPhotoItem/ImageLocation via delegate.",
+          "modified": true,
+          "port_mode": "exact",
+          "stuck_ref": "host_wiring_keep_at_pin"
         },
         {
           "path": "org/telegram/ui/Components/BackupImageView.java",
@@ -1437,13 +1438,14 @@
         },
         {
           "path": "org/telegram/ui/Components/TableLayout.java",
-          "pin": "legacy_009e97356",
           "forced_exact": [
             "measurement",
             "drawing"
           ],
-          "notes": "Full upstream table grid (Axis/Spec column-row solving, onMeasure/onLayout/onDraw, getTextX/getTextY, addChild cell text-layout via TableLayoutDelegate). Copied verbatim; delegates text layout to ArticleViewer.DrawingText and selection to TextSelectionHelper.ArticleTextSelectionHelper. Replaces an earlier 50-line compile stub that rendered Instant View tables blank.",
-          "stuck_reason": "12.8.1: TL_iv.pageTableCell + CellText interface + a11y; requires ArticleViewer.BlockTableCell sync. Product tables use native Topic TableBlock — low urgency."
+          "notes": "exact@12.9.0 reverse-patched S1: TL_iv.pageTableCell → TLRPC.TL_pageTableCell. CellText SPI retained; ArticleViewer.DrawingText implements CellText. a11y ExploreByTouchHelper path from pin kept. Product topic tables still use native TableBlock.",
+          "modified": true,
+          "port_mode": "exact",
+          "stuck_ref": "host_wiring_keep_at_pin"
         },
         {
           "path": "org/telegram/ui/ActionBar/BackDrawable.java",
@@ -1573,7 +1575,8 @@
         {
           "path": "org/telegram/ui/web/WebBrowserSettings.java",
           "pin": "legacy_009e97356",
-          "stuck_reason": "12.8.1 needs MessagesController browser policy APIs, TL_account, AlertsCreator.showAddBrowserException, AnimatedEmojiDrawable.CACHE_TYPE_MESSAGES_LARGE, edge-to-edge onInsets. Prefer native thin settings or permanent stuck — not a full Telegram browser settings port."
+          "stuck_reason": "12.8.1 needs MessagesController browser policy APIs, TL_account, AlertsCreator.showAddBrowserException, AnimatedEmojiDrawable.CACHE_TYPE_MESSAGES_LARGE, edge-to-edge onInsets. Prefer native thin settings or permanent stuck — not a full Telegram browser settings port.",
+          "notes": "Legacy pin 009e97356: in-app browser cache/cookies/history/search-engine UI. Not FF to 12.9.0 — pin needs MessagesController web-browser policy APIs, TL_account.WebDomainException, AlertsCreator.showAddBrowserException, AnimatedEmojiDrawable.CACHE_TYPE_MESSAGES_LARGE, UniversalFragment.onInsets. Product path is NativeDo browser settings host, not full Telegram settings port."
         },
         {
           "path": "org/telegram/ui/web/HistoryFragment.java"
