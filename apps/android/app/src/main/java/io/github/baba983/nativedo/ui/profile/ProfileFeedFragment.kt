@@ -13,6 +13,7 @@ import io.github.baba983.nativedo.feature.profile.data.ProfileFeedRepository
 import io.github.baba983.nativedo.feature.profile.ui.ProfileFeedType
 import io.github.baba983.nativedo.feature.profile.ui.ProfileFeedUiState
 import io.github.baba983.nativedo.feature.profile.ui.ProfileFeedViewModel
+import io.github.baba983.nativedo.ui.topic.TopicCell
 import io.github.baba983.nativedo.ui.topic.TopicDetailFragment
 import io.github.baba983.nativedo.ui.topic.TopicListAdapter
 import kotlinx.coroutines.MainScope
@@ -23,6 +24,7 @@ import org.telegram.messenger.AndroidUtilities
 import org.telegram.ui.ActionBar.BackDrawable
 import org.telegram.ui.ActionBar.BaseFragment
 import org.telegram.ui.ActionBar.Theme
+import org.telegram.ui.ActionBar.ThemeDescription
 import org.telegram.ui.Components.DialogsItemAnimator
 import org.telegram.ui.Components.RecyclerListView
 
@@ -88,15 +90,91 @@ class ProfileFeedFragment(
         return listView
     }
 
-    override fun didSetNewTheme() {
-        val context = context ?: return
-        applyCurrentTheme(context)
-        if (!::listView.isInitialized) return
-        listView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite))
-        for (index in 0 until listView.childCount) {
-            (listView.getChildAt(index) as? Theme.Colorable)?.updateColors()
+    override fun getThemeDescriptions(): java.util.ArrayList<ThemeDescription> {
+        val descriptions = java.util.ArrayList<ThemeDescription>()
+        val chromeDelegate = ThemeDescription.ThemeDescriptionDelegate {
+            val context = context ?: return@ThemeDescriptionDelegate
+            applyCurrentTheme(context)
+            if (::listView.isInitialized) {
+                listView.invalidate()
+            }
         }
-        listView.invalidate()
+        if (actionBar != null) {
+            descriptions.add(
+                ThemeDescription(
+                    actionBar,
+                    ThemeDescription.FLAG_BACKGROUND,
+                    null,
+                    null as android.graphics.Paint?,
+                    null,
+                    null,
+                    Theme.key_windowBackgroundWhite,
+                ),
+            )
+            descriptions.add(
+                ThemeDescription(
+                    actionBar,
+                    ThemeDescription.FLAG_AB_ITEMSCOLOR,
+                    null,
+                    null as android.graphics.Paint?,
+                    null,
+                    null,
+                    Theme.key_actionBarDefaultIcon,
+                ),
+            )
+            descriptions.add(
+                ThemeDescription(
+                    actionBar,
+                    ThemeDescription.FLAG_AB_TITLECOLOR,
+                    null,
+                    null as android.graphics.Paint?,
+                    null,
+                    null,
+                    Theme.key_actionBarDefaultTitle,
+                ),
+            )
+        }
+        if (::listView.isInitialized) {
+            descriptions.add(
+                ThemeDescription(
+                    listView,
+                    ThemeDescription.FLAG_BACKGROUND,
+                    null,
+                    null as android.graphics.Paint?,
+                    null,
+                    null,
+                    Theme.key_windowBackgroundWhite,
+                ),
+            )
+            descriptions.add(
+                ThemeDescription(
+                    listView,
+                    0,
+                    arrayOf(TopicCell::class.java),
+                    null as android.graphics.Paint?,
+                    null,
+                    chromeDelegate,
+                    Theme.key_windowBackgroundWhite,
+                ),
+            )
+        } else {
+            descriptions.add(
+                ThemeDescription(
+                    null,
+                    0,
+                    null,
+                    null as android.graphics.Paint?,
+                    null,
+                    chromeDelegate,
+                    Theme.key_windowBackgroundWhite,
+                ),
+            )
+        }
+        return descriptions
+    }
+
+    override fun didSetNewTheme() {
+        Theme.applyThemeDescriptions(themeDescriptions)
     }
 
     override fun onFragmentDestroy() {

@@ -106,6 +106,7 @@ import org.telegram.ui.ActionBar.BackDrawable
 import org.telegram.ui.ActionBar.BaseFragment
 import org.telegram.ui.ActionBar.SimpleTextView
 import org.telegram.ui.ActionBar.Theme
+import org.telegram.ui.ActionBar.ThemeDescription
 import org.telegram.ui.Components.BulletinFactory
 import org.telegram.ui.Components.ButtonBounce
 import org.telegram.ui.Components.AvatarDrawable
@@ -2378,11 +2379,108 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate, MainTabsActivity.Ta
             !bounds.contains(event.rawX.toInt(), event.rawY.toInt())
     }
 
-    override fun didSetNewTheme() {
+    /**
+     * Settings-shaped ThemeDescription list: UniversalRecyclerView listClasses for
+     * IconSettingCell / BioCell, chrome delegate for header TopView + name/subtitle.
+     * updateList() rebuilds UItem text (appearance day/night value) after recolor.
+     */
+    override fun getThemeDescriptions(): java.util.ArrayList<ThemeDescription> {
+        val descriptions = java.util.ArrayList<ThemeDescription>()
+        val chromeDelegate = ThemeDescription.ThemeDescriptionDelegate {
+            recolorProfileChrome()
+        }
+        if (actionBar != null) {
+            descriptions.add(
+                ThemeDescription(
+                    actionBar,
+                    ThemeDescription.FLAG_AB_ITEMSCOLOR,
+                    null,
+                    null as android.graphics.Paint?,
+                    null,
+                    null,
+                    Theme.key_actionBarDefaultIcon,
+                ),
+            )
+            descriptions.add(
+                ThemeDescription(
+                    actionBar,
+                    ThemeDescription.FLAG_AB_SELECTORCOLOR,
+                    null,
+                    null as android.graphics.Paint?,
+                    null,
+                    null,
+                    Theme.key_avatar_actionBarSelectorBlue,
+                ),
+            )
+        }
+        val list = listView
+        if (list != null) {
+            descriptions.add(
+                ThemeDescription(
+                    list,
+                    ThemeDescription.FLAG_LISTGLOWCOLOR,
+                    null,
+                    null as android.graphics.Paint?,
+                    null,
+                    null,
+                    Theme.key_actionBarDefault,
+                ),
+            )
+            descriptions.add(
+                ThemeDescription(
+                    list,
+                    ThemeDescription.FLAG_BACKGROUND,
+                    null,
+                    null as android.graphics.Paint?,
+                    null,
+                    null,
+                    Theme.key_windowBackgroundGray,
+                ),
+            )
+            descriptions.add(
+                ThemeDescription(
+                    list,
+                    0,
+                    arrayOf(
+                        IconSettingCell::class.java,
+                        BioCell::class.java,
+                    ),
+                    null as android.graphics.Paint?,
+                    null,
+                    chromeDelegate,
+                    Theme.key_windowBackgroundWhite,
+                ),
+            )
+        } else {
+            descriptions.add(
+                ThemeDescription(
+                    null,
+                    0,
+                    null,
+                    null as android.graphics.Paint?,
+                    null,
+                    chromeDelegate,
+                    Theme.key_windowBackgroundWhite,
+                ),
+            )
+        }
+        return descriptions
+    }
+
+    private fun recolorProfileChrome() {
         (fragmentView as? View)?.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray))
-        listView?.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray))
-        topView?.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray))
+        topView?.updateColors()
+        nameTextView[0]?.setTextColor(Theme.getColor(Theme.key_actionBarDefaultTitle))
+        // Expanded title is blended in scroll updates; refresh base expanded color.
+        nameTextView[1]?.setTextColor(Theme.getColor(Theme.key_profile_title))
+        subtitleView[0]?.setTextColor(Theme.getColor(Theme.key_actionBarDefaultSubtitle))
+        subtitleView[1]?.setTextColor(Theme.getColor(Theme.key_actionBarDefaultSubtitle))
+        // Rebuild settings rows so appearance subtitle reflects day/night.
         updateList()
+    }
+
+    override fun didSetNewTheme() {
+        Theme.applyThemeDescriptions(themeDescriptions)
     }
 
     override fun onFragmentDestroy() {

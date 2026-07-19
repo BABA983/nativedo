@@ -48,6 +48,7 @@ import org.telegram.ui.ActionBar.ActionBar
 import org.telegram.ui.ActionBar.ActionBarMenuItem
 import org.telegram.ui.ActionBar.BaseFragment
 import org.telegram.ui.ActionBar.Theme
+import org.telegram.ui.ActionBar.ThemeDescription
 import org.telegram.ui.Components.LayoutHelper
 import org.telegram.ui.Components.RecyclerListView
 import org.telegram.ui.Components.DialogsItemAnimator
@@ -646,12 +647,125 @@ class TopicListFragment(
     // Theme
     // ================================================================================
 
-    override fun didSetNewTheme() {
+    /**
+     * DialogsActivity-shaped: FLAG_* chrome + listClasses for TopicCell so
+     * ThemeDescription.setColor walks attached/hidden/cached/scrap. Host chrome
+     * (search pill, tabs, pull-refresh) recolors via ThemeDescriptionDelegate.
+     */
+    override fun getThemeDescriptions(): java.util.ArrayList<ThemeDescription> {
+        val descriptions = java.util.ArrayList<ThemeDescription>()
+        val chromeDelegate = ThemeDescription.ThemeDescriptionDelegate {
+            recolorTopicListChrome()
+        }
+        if (actionBar != null) {
+            descriptions.add(
+                ThemeDescription(
+                    actionBar,
+                    ThemeDescription.FLAG_BACKGROUND,
+                    null,
+                    null as android.graphics.Paint?,
+                    null,
+                    null,
+                    Theme.key_windowBackgroundWhite,
+                ),
+            )
+            descriptions.add(
+                ThemeDescription(
+                    actionBar,
+                    ThemeDescription.FLAG_AB_ITEMSCOLOR,
+                    null,
+                    null as android.graphics.Paint?,
+                    null,
+                    null,
+                    Theme.key_actionBarDefaultIcon,
+                ),
+            )
+            descriptions.add(
+                ThemeDescription(
+                    actionBar,
+                    ThemeDescription.FLAG_AB_TITLECOLOR,
+                    null,
+                    null as android.graphics.Paint?,
+                    null,
+                    null,
+                    Theme.key_actionBarDefaultTitle,
+                ),
+            )
+            descriptions.add(
+                ThemeDescription(
+                    actionBar,
+                    ThemeDescription.FLAG_AB_SELECTORCOLOR,
+                    null,
+                    null as android.graphics.Paint?,
+                    null,
+                    null,
+                    Theme.key_actionBarDefaultSelector,
+                ),
+            )
+        }
+        // Per-feed listViews: listClasses recolors TopicCell (including pool).
+        val lists = ArrayList<RecyclerListView>()
+        pagesByPosition.values.forEach { page -> lists.add(page.listView) }
+        listView?.let { lists.add(it) }
+        if (lists.isEmpty()) {
+            descriptions.add(
+                ThemeDescription(
+                    null,
+                    0,
+                    null,
+                    null as android.graphics.Paint?,
+                    null,
+                    chromeDelegate,
+                    Theme.key_windowBackgroundWhite,
+                ),
+            )
+        } else {
+            for (list in lists.distinct()) {
+                descriptions.add(
+                    ThemeDescription(
+                        list,
+                        ThemeDescription.FLAG_LISTGLOWCOLOR,
+                        null,
+                        null as android.graphics.Paint?,
+                        null,
+                        null,
+                        Theme.key_actionBarDefault,
+                    ),
+                )
+                descriptions.add(
+                    ThemeDescription(
+                        list,
+                        ThemeDescription.FLAG_BACKGROUND,
+                        null,
+                        null as android.graphics.Paint?,
+                        null,
+                        null,
+                        Theme.key_windowBackgroundWhite,
+                    ),
+                )
+                descriptions.add(
+                    ThemeDescription(
+                        list,
+                        0,
+                        arrayOf(TopicCell::class.java),
+                        null as android.graphics.Paint?,
+                        null,
+                        chromeDelegate,
+                        Theme.key_windowBackgroundWhite,
+                    ),
+                )
+            }
+        }
+        return descriptions
+    }
+
+    private fun recolorTopicListChrome() {
         val context = getContext() ?: return
         applyCurrentTheme(context)
         (fragmentView as? View)?.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite))
-        actionBar.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite))
-        actionBarDivider?.setBackgroundColor(Theme.multAlpha(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText), 0.18f))
+        actionBarDivider?.setBackgroundColor(
+            Theme.multAlpha(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText), 0.18f),
+        )
         searchStateDrawable?.setColor(Theme.getColor(Theme.key_actionBarDefaultIcon))
         searchProgressView?.setProgressColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText))
         fragmentSearchField?.updateColors()
@@ -659,7 +773,12 @@ class TopicListFragment(
         searchViewPager?.updateColors()
         tabStrip?.updateColors()
         tabStripContainer?.updateColors()
+        // StateCell / pull chrome still need page-level refresh (not TopicCell listClasses).
         pagesByPosition.values.forEach { page -> page.updateColors() }
+    }
+
+    override fun didSetNewTheme() {
+        Theme.applyThemeDescriptions(themeDescriptions)
     }
 
     // ================================================================================
