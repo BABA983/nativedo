@@ -42,14 +42,16 @@ import org.telegram.ui.ActionBar.Theme;
 public class ShareAlert extends Dialog {
 
     private final String link;
+    private final Theme.ResourcesProvider resourcesProvider;
 
     public ShareAlert(Context context, Object obj, String url, boolean publicChannel, String copyLink, boolean fullScreen) {
         this(context, obj, url, publicChannel, copyLink, fullScreen, null);
     }
 
-    public ShareAlert(Context context, Object obj, String url, boolean publicChannel, String copyLink, boolean fullScreen, Object resourcesProvider) {
+    public ShareAlert(Context context, Object obj, String url, boolean publicChannel, String copyLink, boolean fullScreen, Theme.ResourcesProvider resourcesProvider) {
         super(context);
         this.link = !TextUtils.isEmpty(copyLink) ? copyLink : url;
+        this.resourcesProvider = resourcesProvider;
 
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         setContentView(buildContent(context));
@@ -69,9 +71,9 @@ public class ShareAlert extends Dialog {
     }
 
     private View buildContent(Context context) {
-        final int bgColor = Theme.getColor(Theme.key_windowBackgroundWhite);
-        final int textColor = Theme.getColor(Theme.key_windowBackgroundWhiteBlackText);
-        final int iconColor = Theme.getColor(Theme.key_windowBackgroundWhiteGrayText);
+        final int bgColor = Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider);
+        final int textColor = Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider);
+        final int iconColor = Theme.getColor(Theme.key_windowBackgroundWhiteGrayText, resourcesProvider);
 
         final LinearLayout card = new LinearLayout(context);
         card.setOrientation(LinearLayout.VERTICAL);
@@ -111,7 +113,7 @@ public class ShareAlert extends Dialog {
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(dp(20), 0, dp(20), 0);
         row.setMinimumHeight(dp(52));
-        row.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector)));
+        row.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector, resourcesProvider)));
 
         final ImageView icon = new ImageView(context);
         icon.setImageResource(iconRes);

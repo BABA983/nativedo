@@ -1637,11 +1637,37 @@ public class ThemeColors {
         if (colorKeysStringMap == null) {
             colorKeysStringMap = createColorKeysStringMap();
         }
+        if (key == null) {
+            return -1;
+        }
         Integer i = colorKeysStringMap.get(key);
+        // Some .attheme files prefix names with "key_" (e.g. key_telegram_color_text).
+        if (i == null && key.startsWith("key_")) {
+            i = colorKeysStringMap.get(key.substring(4));
+        }
+        // Retired / alias names seen in vendored assets but not as first-class keys.
+        if (i == null) {
+            i = colorKeysStringMap.get(aliasThemeKey(key));
+        }
         if (i == null) {
             return -1;
-        } else {
-            return colorKeysStringMap.get(key);
+        }
+        return i;
+    }
+
+    /**
+     * Maps obsolete or asset-only names onto current keys so silent drops stay rare.
+     */
+    private static String aliasThemeKey(String key) {
+        switch (key) {
+            case "chat_attachLocationText":
+                return "chat_attachContactText";
+            case "avatar_actionBarSelectorGreen":
+                return "avatar_actionBarSelectorBlue";
+            case "chat_emojiPanelBadgeBackground":
+                return "chat_emojiPanelNewTrending";
+            default:
+                return key;
         }
     }
 

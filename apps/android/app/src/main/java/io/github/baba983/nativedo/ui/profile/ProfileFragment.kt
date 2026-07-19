@@ -141,6 +141,7 @@ private const val ACTION_DEV_URL = 1
 private const val ACTION_TOPIC_URL = 2
 private const val ACTION_TOPIC_RENDER_FIXTURES = 6
 private const val ACTION_BROWSER_SETTINGS = 7
+private const val ACTION_APPEARANCE = 8
 private const val ACTION_RETRY_PROFILE = 3
 private const val ACTION_LOGOUT = 4
 private const val ACTION_LOGIN = 5
@@ -1861,6 +1862,20 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate, MainTabsActivity.Ta
         items.add(UItem.asHeader(context?.getString(R.string.profile_app_section_title).orEmpty()))
         items.add(
             IconSettingFactory.of(
+                ACTION_APPEARANCE,
+                IconSettingCell.Colors.ORANGE_TOP, IconSettingCell.Colors.ORANGE_BOTTOM,
+                R.drawable.settings_refresh,
+                context?.getString(R.string.profile_appearance_title).orEmpty(),
+                context?.getString(R.string.profile_appearance_subtitle).orEmpty(),
+                if (Theme.isCurrentThemeDark()) {
+                    context?.getString(R.string.profile_appearance_value_night).orEmpty()
+                } else {
+                    context?.getString(R.string.profile_appearance_value_day).orEmpty()
+                },
+            )
+        )
+        items.add(
+            IconSettingFactory.of(
                 ACTION_BROWSER_SETTINGS,
                 IconSettingCell.Colors.BLUE_TOP, IconSettingCell.Colors.BLUE_BOTTOM,
                 R.drawable.settings_link,
@@ -1964,6 +1979,10 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate, MainTabsActivity.Ta
             ACTION_RETRY_PROFILE -> viewModel.retry()
             ACTION_LOGIN -> presentFragment(LoginWebViewFragment())
             ACTION_BROWSER_SETTINGS -> openBrowserSettings()
+            ACTION_APPEARANCE -> {
+                Theme.toggleTheme()
+                updateList()
+            }
             ACTION_DEV_URL -> showUrlInputDialog(
                 title = context?.getString(R.string.profile_dev_url_title).orEmpty(),
                 message = context?.getString(R.string.profile_dev_url_message).orEmpty(),

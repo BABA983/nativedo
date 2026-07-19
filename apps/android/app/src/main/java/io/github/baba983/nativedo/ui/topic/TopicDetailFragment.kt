@@ -178,7 +178,7 @@ class TopicDetailFragment @JvmOverloads constructor(
     private val initialTitle: String? = null,
     private val initialPostNumber: Int? = null,
     private val initialPostId: Long? = null,
-) : BaseFragment() {
+) : BaseFragment(), Theme.ThemeDelegate {
     private lateinit var viewModel: TopicViewModel
     private lateinit var adapter: TopicDetailAdapter
     private lateinit var listView: TopicSwipeReplyRecyclerView
@@ -271,6 +271,7 @@ class TopicDetailFragment @JvmOverloads constructor(
     private val textSelectionHelper = TextSelectionHelper.ArticleTextSelectionHelper()
 
     override fun createView(context: Context): View {
+        Theme.addThemeDelegate(this)
         actionBar.setBackButtonDrawable(BackDrawable(false))
         // Identity container owns the visible title; keep ActionBar title empty.
         actionBar.setTitle("")
@@ -654,7 +655,27 @@ class TopicDetailFragment @JvmOverloads constructor(
         super.onPause()
     }
 
+    override fun didSetNewTheme() {
+        applyTopicDetailTheme()
+    }
+
+    private fun applyTopicDetailTheme() {
+        val bg = topicDetailListBackgroundColor()
+        rootFrameLayout?.setBackgroundColor(bg)
+        if (::listView.isInitialized) {
+            listView.setBackgroundColor(bg)
+            for (index in 0 until listView.childCount) {
+                (listView.getChildAt(index) as? Theme.Colorable)?.updateColors()
+            }
+        }
+        actionBar.applyTheme()
+        parentActivity?.window?.let { window ->
+            AndroidUtilities.setLightStatusBar(window, !Theme.isCurrentThemeDark())
+        }
+    }
+
     override fun onFragmentDestroy() {
+        Theme.removeThemeDelegate(this)
         topicSearchJob?.cancel()
         topicSearchJob = null
         topicSearchSession.clear()

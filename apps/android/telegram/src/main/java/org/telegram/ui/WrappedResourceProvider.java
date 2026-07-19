@@ -20,4 +20,13 @@ public class WrappedResourceProvider implements Theme.ResourcesProvider {
         }
         return resourcesProvider == null ? null : resourcesProvider.getColorOrNull(key);
     }
+
+    @Override
+    public int getColor(int key) {
+        int index = sparseIntArray.indexOfKey(key);
+        if (index >= 0) {
+            return sparseIntArray.valueAt(index);
+        }
+        return resourcesProvider == null ? Theme.getColor(key) : resourcesProvider.getColor(key);
+    }
 }

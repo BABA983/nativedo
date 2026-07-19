@@ -99,7 +99,7 @@
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo Theme subset for CheckBoxBase, BottomSheet, PhotoViewer and spoilers: selector/ripple factories, required paints/keys, service/search colors, MediaActionDrawable bootstrap, safe defaults and ACTION_BAR constants. hasGradientService() intentionally returns false. OMITTED the full Telegram theme/color-animation and wallpaper pipeline.",
+      "notes": "NativeDo Theme engine subset: Blue + Dark Blue from assets (bluebubbles.attheme / darkblue.attheme); getThemeFileValues/getAssetFile; day/night prefs theme+nighttheme+activeIsNight; unknown keys (incl. retired NativeDo) fallback to Blue/Dark Blue; applyTheme loads asset, applyDialogsColors, ThemeDelegate + NotificationCenter.didSetNewTheme. ThemeColors.stringKeyToInt accepts key_ prefix and asset aliases. OMITTED accents, Arctic/Day/Night, auto-night sensors, wallpaper, ThemeActivity, full ThemeDescription, cloud themes.",
       "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
     },
     {
@@ -3252,7 +3252,7 @@
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
-      "notes": "Auto-registered unmanifested on-disk source (170 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
+      "notes": "NativeDo lightweight browser share sheet, intentionally not Telegram's chat-forward grid. Host surface now honors Theme.ResourcesProvider colors so ArticleViewer's dark browser sheet remains readable; actions are copy-link and system share chooser."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/Size.java",
@@ -3485,7 +3485,8 @@
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
-      "notes": "Auto-registered unmanifested compile dependency (16 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
+      "notes": "NativeDo dark resource provider subset. Restores upstream provider semantics for the browser share sheet: readable dark background/text/selector/divider colors, dark-theme identity, and global-theme fallback for keys outside the local sheet surface.",
+      "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Stories/recorder/ButtonWithCounterView.java",
@@ -3534,7 +3535,8 @@
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
-      "notes": "Auto-registered unmanifested compile dependency (23 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
+      "notes": "NativeDo wrapper for per-surface color overrides. Implements both getColor and getColorOrNull so Theme.getColor follows Telegram provider dispatch while AddressBarList sparse color overrides remain effective.",
+      "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/bots/BotWebViewSheet.java",
@@ -4193,6 +4195,17 @@
       "local_glob": "apps/android/telegram/src/main/assets",
       "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86",
       "notes": "CodeHighlighting language grammar pack (gzip). Opened via ApplicationLoader.applicationContext.getAssets()."
+    },
+    {
+      "kind": "asset",
+      "files": [
+        "bluebubbles.attheme",
+        "darkblue.attheme"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/assets",
+      "local_glob": "apps/android/telegram/src/main/assets",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
+      "notes": "Default day/night .attheme packs loaded by Theme.getThemeFileValues for Blue (bluebubbles) and Dark Blue (darkblue). Wallpaper blobs (WPS) and WLS links ignored until wallpaper pipeline is ported."
     }
   ]
 }
