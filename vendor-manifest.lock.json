@@ -99,7 +99,7 @@
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo Theme engine subset: Blue + Dark Blue from assets (bluebubbles.attheme / darkblue.attheme); getThemeFileValues/getAssetFile; day/night prefs theme+nighttheme+activeIsNight; unknown keys (incl. retired NativeDo) fallback to Blue/Dark Blue; applyTheme loads asset, applyDialogsColors, ThemeDelegate + NotificationCenter.didSetNewTheme. ThemeColors.stringKeyToInt accepts key_ prefix and asset aliases. OMITTED accents, Arctic/Day/Night, auto-night sensors, wallpaper, ThemeActivity, full ThemeDescription, cloud themes.",
+      "notes": "NativeDo Theme engine subset: Blue + Dark Blue from assets (bluebubbles.attheme / darkblue.attheme); getThemeFileValues/getAssetFile; day/night prefs theme+nighttheme+activeIsNight; unknown keys (incl. retired NativeDo) fallback to Blue/Dark Blue; applyTheme loads asset, applyDialogsColors, ThemeDelegate + NotificationCenter.didSetNewTheme. ThemeColors.stringKeyToInt accepts key_ prefix and asset aliases. OMITTED accents, Arctic/Day/Night, auto-night sensors, wallpaper, ThemeActivity, ActionBarLayout theme animation chain, cloud themes. ThemeDescription setColor path + applyThemeDescriptions() landed; animated transitions still omitted.",
       "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
     },
     {
@@ -234,6 +234,18 @@
       "modified": true,
       "port_mode": "exact",
       "notes": "exact@12.9.0 with NativeDo default wallpaper/service colors and link/reply panel host colors retained (key_chat_wallpaper, service backgrounds, link/reply panel). host_wiring_only; upstream Telegram brand colors not adopted.",
+      "stuck_reason": "Intentional host wiring at global pin 12.9.0 — keep modified:true; not eligible for clean FF. Product/API surface differs from pin by design (missing upstream types or NativeDo defaults). Re-sync only with a named product goal."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ThemeDescription.java",
+      "upstream": "org/telegram/ui/ActionBar/ThemeDescription.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": true,
+      "port_mode": "exact",
+      "forced_exact": [
+        "drawing"
+      ],
+      "notes": "exact ThemeDescription refresh engine: FLAG_* constants, constructors, setColor/processViewColor, ThemeDescriptionDelegate, getSetColor/setAnimatedColor. Host wiring: omit TG-only instanceof branches for ScamDrawable/EmptyTextProgressView/ChatBigEmptyView/EditTextCaption/GroupCreateSpan/LetterDrawable; skip EditTextEmoji.getEditText unwrap (local EditTextEmoji is a View stub); getSetColor uses ResourcesProvider.getColorOrNull; MessageBackgroundDrawable+GroupCreateCheckBox vendored. OMITTED ActionBarLayout theme animation chain (use Theme.applyThemeDescriptions for instant recolor).",
       "stuck_reason": "Intentional host wiring at global pin 12.9.0 — keep modified:true; not eligible for clean FF. Product/API surface differs from pin by design (missing upstream types or NativeDo defaults). Re-sync only with a named product goal."
     },
     {
@@ -1263,6 +1275,18 @@
       "stuck_reason": "Intentional host wiring at global pin 12.9.0 — keep modified:true; not eligible for clean FF. Product/API surface differs from pin by design (missing upstream types or NativeDo defaults). Re-sync only with a named product goal."
     },
     {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/MessageBackgroundDrawable.java",
+      "upstream": "org/telegram/ui/Components/MessageBackgroundDrawable.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "drawing",
+        "animation"
+      ],
+      "notes": "Pinned MessageBackgroundDrawable for ThemeDescription FLAG_BACKGROUND chat-selection path."
+    },
+    {
       "_comment": "high-confidence coverage backfill",
       "local": "telegram/src/main/java/org/telegram/messenger/AnimationNotificationsLocker.java",
       "upstream": "org/telegram/messenger/AnimationNotificationsLocker.java",
@@ -2218,6 +2242,18 @@
       "port_mode": "native",
       "notes": "Host-only TL_account surface for pin WebBrowserSettings. Provides the local TL_webBrowserSettings/WebDomainException model; no MTProto serialize path. MessagesController persists the model locally and WebMetadataCache supplies display titles.",
       "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/GroupCreateCheckBox.java",
+      "upstream": "org/telegram/ui/Components/GroupCreateCheckBox.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "drawing",
+        "animation"
+      ],
+      "notes": "Pinned GroupCreateCheckBox for ThemeDescription reflection field recolor path."
     },
     {
       "_comment": "Telegram Blur3 glass subsystem used by chat/topic chrome.",
@@ -3655,14 +3691,6 @@
       "modified": true,
       "port_mode": "native",
       "notes": "Compile-only stub for BottomSheet instanceof CameraView checks; no camera behavior ported."
-    },
-    {
-      "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ThemeDescription.java",
-      "upstream": "org/telegram/ui/ActionBar/ThemeDescription.java",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
-      "modified": true,
-      "port_mode": "native",
-      "notes": "Compile-only stub for BottomSheetWithRecyclerListView theme-description API; no theme description behavior ported."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/EditTextEmoji.java",

@@ -139,7 +139,7 @@
           "pin": "legacy_009e97356",
           "modified": true,
           "port_mode": "native",
-          "notes": "NativeDo Theme engine subset: Blue + Dark Blue from assets (bluebubbles.attheme / darkblue.attheme); getThemeFileValues/getAssetFile; day/night prefs theme+nighttheme+activeIsNight; unknown keys (incl. retired NativeDo) fallback to Blue/Dark Blue; applyTheme loads asset, applyDialogsColors, ThemeDelegate + NotificationCenter.didSetNewTheme. ThemeColors.stringKeyToInt accepts key_ prefix and asset aliases. OMITTED accents, Arctic/Day/Night, auto-night sensors, wallpaper, ThemeActivity, full ThemeDescription, cloud themes.",
+          "notes": "NativeDo Theme engine subset: Blue + Dark Blue from assets (bluebubbles.attheme / darkblue.attheme); getThemeFileValues/getAssetFile; day/night prefs theme+nighttheme+activeIsNight; unknown keys (incl. retired NativeDo) fallback to Blue/Dark Blue; applyTheme loads asset, applyDialogsColors, ThemeDelegate + NotificationCenter.didSetNewTheme. ThemeColors.stringKeyToInt accepts key_ prefix and asset aliases. OMITTED accents, Arctic/Day/Night, auto-night sensors, wallpaper, ThemeActivity, ActionBarLayout theme animation chain, cloud themes. ThemeDescription setColor path + applyThemeDescriptions() landed; animated transitions still omitted.",
           "stuck_ref": "native_host_reference_only"
         },
         {
@@ -234,6 +234,16 @@
           "modified": true,
           "notes": "exact@12.9.0 with NativeDo default wallpaper/service colors and link/reply panel host colors retained (key_chat_wallpaper, service backgrounds, link/reply panel). host_wiring_only; upstream Telegram brand colors not adopted.",
           "port_mode": "exact",
+          "stuck_ref": "host_wiring_keep_at_pin"
+        },
+        {
+          "path": "org/telegram/ui/ActionBar/ThemeDescription.java",
+          "modified": true,
+          "port_mode": "exact",
+          "forced_exact": [
+            "drawing"
+          ],
+          "notes": "exact ThemeDescription refresh engine: FLAG_* constants, constructors, setColor/processViewColor, ThemeDescriptionDelegate, getSetColor/setAnimatedColor. Host wiring: omit TG-only instanceof branches for ScamDrawable/EmptyTextProgressView/ChatBigEmptyView/EditTextCaption/GroupCreateSpan/LetterDrawable; skip EditTextEmoji.getEditText unwrap (local EditTextEmoji is a View stub); getSetColor uses ResourcesProvider.getColorOrNull; MessageBackgroundDrawable+GroupCreateCheckBox vendored. OMITTED ActionBarLayout theme animation chain (use Theme.applyThemeDescriptions for instant recolor).",
           "stuck_ref": "host_wiring_keep_at_pin"
         }
       ]
@@ -1137,6 +1147,16 @@
           "notes": "exact@12.9.0 + host: drop org.telegram.ui.iv.RichEditor.DraggingDrawable reorder feedback (RichEditor not vendored).",
           "port_mode": "exact",
           "stuck_ref": "host_wiring_keep_at_pin"
+        },
+        {
+          "path": "org/telegram/ui/Components/MessageBackgroundDrawable.java",
+          "modified": false,
+          "port_mode": "exact",
+          "forced_exact": [
+            "drawing",
+            "animation"
+          ],
+          "notes": "Pinned MessageBackgroundDrawable for ThemeDescription FLAG_BACKGROUND chat-selection path."
         }
       ]
     },
@@ -1784,6 +1804,16 @@
           "port_mode": "native",
           "stuck_ref": "native_host_reference_only",
           "notes": "Host-only TL_account surface for pin WebBrowserSettings. Provides the local TL_webBrowserSettings/WebDomainException model; no MTProto serialize path. MessagesController persists the model locally and WebMetadataCache supplies display titles."
+        },
+        {
+          "path": "org/telegram/ui/Components/GroupCreateCheckBox.java",
+          "modified": false,
+          "port_mode": "exact",
+          "forced_exact": [
+            "drawing",
+            "animation"
+          ],
+          "notes": "Pinned GroupCreateCheckBox for ThemeDescription reflection field recolor path."
         }
       ]
     },
@@ -2723,11 +2753,6 @@
           "path": "org/telegram/messenger/camera/CameraView.java",
           "pin": "legacy_009e97356",
           "notes": "Compile-only stub for BottomSheet instanceof CameraView checks; no camera behavior ported."
-        },
-        {
-          "path": "org/telegram/ui/ActionBar/ThemeDescription.java",
-          "pin": "legacy_009e97356",
-          "notes": "Compile-only stub for BottomSheetWithRecyclerListView theme-description API; no theme description behavior ported."
         },
         {
           "path": "org/telegram/ui/Components/EditTextEmoji.java",

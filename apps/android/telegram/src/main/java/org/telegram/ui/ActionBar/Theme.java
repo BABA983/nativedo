@@ -1110,6 +1110,8 @@ public final class Theme {
     private static final ArrayList<ThemeInfo> themes = new ArrayList<>();
     private static final HashMap<String, ThemeInfo> themesDict = new HashMap<>();
     private static final SparseIntArray currentColors = new SparseIntArray();
+    /** Upstream theme-transition override map; null when not animating. */
+    private static SparseIntArray animatingColors;
     private static final int[] defaultColors = ThemeColors.createDefaultColors();
     private static final Paint maskPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
@@ -1483,6 +1485,12 @@ public final class Theme {
     }
 
     public static int getColor(int key) {
+        if (animatingColors != null) {
+            int animIndex = animatingColors.indexOfKey(key);
+            if (animIndex >= 0) {
+                return animatingColors.valueAt(animIndex);
+            }
+        }
         int index = currentColors.indexOfKey(key);
         if (index >= 0) {
             int color = currentColors.valueAt(index);
@@ -1513,9 +1521,63 @@ public final class Theme {
         return androidx.core.graphics.ColorUtils.compositeColors(overlay, color);
     }
 
-    /** ADAPTED: NativeDo has no animated color blending; alias to getColor. */
+    /**
+     * Non-animated path used by ThemeDescription.startEditing / ActionBarLayout
+     * theme transitions. While animatingColors is active, still returns the
+     * settled currentColors value so start/end colors stay distinct.
+     */
     public static int getNonAnimatedColor(int key) {
+        int index = currentColors.indexOfKey(key);
+        if (index >= 0) {
+            int color = currentColors.valueAt(index);
+            if (key == key_windowBackgroundWhite || key == key_windowBackgroundGray || key == key_actionBarDefault) {
+                color |= 0xff000000;
+            }
+            return color;
+        }
+        return getDefaultColor(key);
+    }
+
+    public static int getColor(int key, boolean[] isDefault) {
+        if (isDefault != null) {
+            isDefault[0] = currentColors.indexOfKey(key) < 0;
+        }
         return getColor(key);
+    }
+
+    /** Upstream ThemeDescription / ActionBarLayout animation entry. */
+    public static void setAnimatedColor(int key, int value) {
+        if (animatingColors == null) {
+            return;
+        }
+        animatingColors.put(key, value);
+    }
+
+    /** Begin/end a theme-color animation map (null clears). */
+    public static void setAnimatingColors(SparseIntArray colors) {
+        animatingColors = colors;
+    }
+
+    public static SparseIntArray getAnimatingColors() {
+        return animatingColors;
+    }
+
+    /**
+     * Theme editor / description path: write into currentColors (or delete for default).
+     * Host subset: no wallpaper reload / service-message special cases beyond opacity.
+     */
+    public static void setColor(int key, int color, boolean useDefault) {
+        if (key == key_windowBackgroundWhite || key == key_windowBackgroundGray || key == key_actionBarDefault
+                || key == key_chat_wallpaper || key == key_chat_wallpaper_gradient_to1
+                || key == key_chat_wallpaper_gradient_to2 || key == key_chat_wallpaper_gradient_to3
+                || key == key_actionBarDefaultArchived) {
+            color = 0xff000000 | color;
+        }
+        if (useDefault) {
+            currentColors.delete(key);
+        } else {
+            currentColors.put(key, color);
+        }
     }
 
     public static int multAlpha(int color, float multiply) {
@@ -2189,6 +2251,23 @@ public final class Theme {
         // fragments/layouts that are not ThemeDelegate can react.
         NotificationCenter.getGlobalInstance().postNotificationName(
                 NotificationCenter.didSetNewTheme, false, true);
+    }
+
+    /**
+     * Apply a fragment's ThemeDescription list with current Theme colors.
+     * Instant (no ActionBarLayout animation). Call from ThemeDelegate or after applyTheme.
+     */
+    public static void applyThemeDescriptions(ArrayList<ThemeDescription> descriptions) {
+        if (descriptions == null) {
+            return;
+        }
+        for (int i = 0; i < descriptions.size(); i++) {
+            ThemeDescription description = descriptions.get(i);
+            if (description == null) {
+                continue;
+            }
+            description.setColor(Theme.getColor(description.getCurrentKey(), description.resourcesProvider), false, false);
+        }
     }
 
     /**

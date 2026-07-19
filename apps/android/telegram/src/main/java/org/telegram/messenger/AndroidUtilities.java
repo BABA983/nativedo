@@ -53,6 +53,7 @@ import android.view.WindowManager;
 import android.view.WindowInsets;
 import android.widget.EdgeEffect;
 import android.widget.HorizontalScrollView;
+import android.widget.ScrollView;
 import android.view.animation.DecelerateInterpolator;
 import android.view.animation.Interpolator;
 import android.view.inputmethod.InputMethodManager;
@@ -69,6 +70,7 @@ import android.graphics.Typeface;
 import android.text.TextPaint;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
@@ -595,6 +597,33 @@ public final class AndroidUtilities {
                 }
             } catch (Exception e) {
                 FileLog.e(e);
+            }
+        }
+    }
+
+
+    public static void setScrollViewEdgeEffectColor(ScrollView scrollView, int color) {
+        if (scrollView == null) {
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= 29) {
+            scrollView.setTopEdgeEffectColor(color);
+            scrollView.setBottomEdgeEffectColor(color);
+        } else {
+            try {
+                Field field = ScrollView.class.getDeclaredField("mEdgeGlowTop");
+                field.setAccessible(true);
+                EdgeEffect mEdgeGlowTop = (EdgeEffect) field.get(scrollView);
+                if (mEdgeGlowTop != null) {
+                    mEdgeGlowTop.setColor(color);
+                }
+                field = ScrollView.class.getDeclaredField("mEdgeGlowBottom");
+                field.setAccessible(true);
+                EdgeEffect mEdgeGlowBottom = (EdgeEffect) field.get(scrollView);
+                if (mEdgeGlowBottom != null) {
+                    mEdgeGlowBottom.setColor(color);
+                }
+            } catch (Exception ignore) {
             }
         }
     }
@@ -1462,6 +1491,24 @@ public final class AndroidUtilities {
             fileName += "." + extension;
         }
         return fileName;
+    }
+
+    /**
+     * Upstream-shaped asset copy used by {@code Theme.getAssetFile}.
+     * Writes {@code sourceFile} into {@code destFile}, creating parent dirs as needed.
+     */
+    @SuppressWarnings("ResultOfMethodCallIgnored")
+    public static boolean copyFile(InputStream sourceFile, File destFile) throws java.io.IOException {
+        if (destFile == null) {
+            return false;
+        }
+        File parent = destFile.getParentFile();
+        if (parent != null && !parent.exists()) {
+            parent.mkdirs();
+        }
+        try (FileOutputStream out = new FileOutputStream(destFile)) {
+            return copyFile(sourceFile, out);
+        }
     }
 
     @SuppressWarnings("ResultOfMethodCallIgnored")

@@ -253,6 +253,24 @@ public class ActionBarMenu extends LinearLayout {
         }
     }
 
+    public void setSearchTextColor(int color, boolean placeholder) {
+        int count = getChildCount();
+        for (int i = 0; i < count; i++) {
+            View view = getChildAt(i);
+            if (view instanceof ActionBarMenuItem) {
+                ActionBarMenuItem item = (ActionBarMenuItem) view;
+                if (item.isSearchField() && item.getSearchField() != null) {
+                    if (placeholder) {
+                        item.getSearchField().setHintTextColor(color);
+                    } else {
+                        item.getSearchField().setTextColor(color);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
     public void setOnLayoutListener(Runnable listener) {
         this.onLayoutListener = listener;
     }

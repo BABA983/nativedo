@@ -272,6 +272,16 @@ public class EditTextBoldCursor extends EditText {
         setHintTextColor(color);
     }
 
+    /** Upstream ThemeDescription FLAG_HINTTEXTCOLOR + FLAG_PROGRESSBAR path. */
+    public void setHeaderHintColor(int color) {
+        setHintTextColor(color);
+    }
+
+    /** Upstream ThemeDescription FLAG_BACKGROUNDFILTER + FLAG_PROGRESSBAR path. */
+    public void setErrorLineColor(int color) {
+        // Host EditTextBoldCursor has no separate error underline drawable yet.
+    }
+
     public void setHintText(CharSequence hint) {
         setHint(hint);
     }

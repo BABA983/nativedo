@@ -358,6 +358,34 @@ public class ActionBar extends FrameLayout {
         }
     }
 
+    /** Upstream ThemeDescription FLAG_AB_AM_TOPBACKGROUND. No separate top strip on host ActionBar. */
+    public void setActionModeTopColor(int color) {
+        // Host ActionBar has no action-mode status-bar strip drawable; keep API for ThemeDescription.
+    }
+
+    /** Upstream ThemeDescription FLAG_AB_SEARCH / FLAG_AB_SEARCHPLACEHOLDER. */
+    public void setSearchTextColor(int color, boolean placeholder) {
+        if (menu != null) {
+            menu.setSearchTextColor(color, placeholder);
+        }
+    }
+
+    /** Upstream ThemeDescription FLAG_AB_SUBMENUITEM. */
+    public void setPopupItemsColor(int color, boolean icon, boolean forActionMode) {
+        ActionBarMenu target = forActionMode ? actionMode : menu;
+        if (target != null) {
+            target.setPopupItemsColor(color, icon);
+        }
+    }
+
+    /** Upstream ThemeDescription FLAG_AB_SUBMENUBACKGROUND. */
+    public void setPopupBackgroundColor(int color, boolean forActionMode) {
+        ActionBarMenu target = forActionMode ? actionMode : menu;
+        if (target != null) {
+            target.redrawPopup(color);
+        }
+    }
+
     public ActionBarMenu createActionMode() {
         if (actionMode != null) {
             return actionMode;

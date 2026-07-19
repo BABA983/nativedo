@@ -272,6 +272,13 @@ public abstract class BaseFragment implements ViewModelStoreOwner {
         return parentLayout instanceof ViewGroup ? (ViewGroup) parentLayout : null;
     }
 
+    public ViewGroup getBulletinLayoutContainer() {
+        if (fragmentView != null && fragmentView.getParent() instanceof ViewGroup) {
+            return (ViewGroup) fragmentView.getParent();
+        }
+        return getLayoutContainer();
+    }
+
     public Theme.ResourcesProvider getResourceProvider() {
         return null;
     }
@@ -406,6 +413,15 @@ public abstract class BaseFragment implements ViewModelStoreOwner {
 
     /** Pin edge-to-edge hook; subclasses override. */
     public void onInsets(int left, int top, int right, int bottom) {
+    }
+
+    /**
+     * Upstream declarative theme recolor list. Default empty; fragments override
+     * so ActionBarLayout / ThemeDescription refresh can re-tint without manual
+     * child walks. Currently used by host call sites that opt in.
+     */
+    public ArrayList<ThemeDescription> getThemeDescriptions() {
+        return new ArrayList<>();
     }
 
 }
