@@ -476,6 +476,14 @@ public class ThemeDescription {
         for (int b = 0; b < listClasses.length; b++) {
             if (listClasses[b].isInstance(child)) {
                 child.invalidate();
+                // Host Colorable cells (TopicPostCell etc.) keep instance paints rather than
+                // shared Theme.dialogs_* paints. When listClasses matches, re-tint here so the
+                // setColor walk over attached/hidden/cached/scrap covers recycled holders
+                // (DialogsActivity uses cellDelegate + shared paints for DialogCell instead).
+                if (child instanceof Theme.Colorable && listClassesFieldName == null
+                        && (changeFlags == 0 || changeFlags == FLAG_CHECKTAG)) {
+                    ((Theme.Colorable) child).updateColors();
+                }
                 boolean passedCheck;
                 if ((changeFlags & FLAG_CHECKTAG) == 0 || checkTag(currentKey, child)) {
                     passedCheck = true;

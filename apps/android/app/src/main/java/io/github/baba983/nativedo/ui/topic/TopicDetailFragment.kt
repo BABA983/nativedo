@@ -661,13 +661,20 @@ class TopicDetailFragment @JvmOverloads constructor(
     }
 
     /**
-     * Declarative theme targets for ActionBar / list chrome. Applied via
-     * [Theme.applyThemeDescriptions]. Recycled post/header/footer cells re-tint
-     * through [Theme.applyThemeColorsIfNeeded] on bind (generation check), not only
-     * the currently attached children walk below.
+     * Upstream-shaped theme targets (DialogsActivity pattern):
+     * - ActionBar / list chrome via FLAG_* ThemeDescriptions
+     * - Colorable post cells via listClasses (flags=0): ThemeDescription.setColor walks
+     *   attached + hidden/cached/scrap and processViewColor calls Colorable.updateColors()
+     * - cellDelegate for host chrome that is not a list cell (ActionBar glass, status bar)
      */
     override fun getThemeDescriptions(): java.util.ArrayList<ThemeDescription> {
         val descriptions = java.util.ArrayList<ThemeDescription>()
+        val chromeDelegate = ThemeDescription.ThemeDescriptionDelegate {
+            actionBar?.applyTheme()
+            parentActivity?.window?.let { window ->
+                AndroidUtilities.setLightStatusBar(window, !Theme.isCurrentThemeDark())
+            }
+        }
         if (actionBar != null) {
             descriptions.add(
                 ThemeDescription(
@@ -748,7 +755,6 @@ class TopicDetailFragment @JvmOverloads constructor(
                     Theme.key_listSelector,
                 ),
             )
-            // Wallpaper / list canvas — FLAG_BACKGROUND on the RecyclerView itself.
             descriptions.add(
                 ThemeDescription(
                     listView,
@@ -760,6 +766,37 @@ class TopicDetailFragment @JvmOverloads constructor(
                     Theme.key_chat_wallpaper,
                 ),
             )
+            // listClasses forces setColor to visit pool/scrap; Colorable.updateColors is
+            // invoked from ThemeDescription.processViewColor (host extension for cells
+            // that use instance paints rather than shared Theme.dialogs_* paints).
+            descriptions.add(
+                ThemeDescription(
+                    listView,
+                    0,
+                    arrayOf(
+                        TopicPostCell::class.java,
+                        TopicHeaderCell::class.java,
+                        TopicFooterCell::class.java,
+                        TopicDateCell::class.java,
+                    ),
+                    null as android.graphics.Paint?,
+                    null,
+                    chromeDelegate,
+                    Theme.key_windowBackgroundWhite,
+                ),
+            )
+        } else {
+            descriptions.add(
+                ThemeDescription(
+                    null,
+                    0,
+                    null,
+                    null as android.graphics.Paint?,
+                    null,
+                    chromeDelegate,
+                    Theme.key_windowBackgroundWhite,
+                ),
+            )
         }
         return descriptions
     }
@@ -769,20 +806,7 @@ class TopicDetailFragment @JvmOverloads constructor(
         val bg = topicDetailListBackgroundColor()
         rootFrameLayout?.setBackgroundColor(bg)
         if (::listView.isInitialized) {
-            // Keep wallpaper key in sync for any path that doesn't go through FLAG_BACKGROUND.
             listView.setBackgroundColor(bg)
-            for (index in 0 until listView.childCount) {
-                val child = listView.getChildAt(index)
-                (child as? Theme.Colorable)?.updateColors()
-                Theme.markThemeColorsApplied(child)
-            }
-            // Cached / scrap holders are not children; they re-tint on next bind via
-            // Theme.applyThemeColorsIfNeeded in TopicDetailAdapter.onBindViewHolder.
-        }
-        // Host ActionBar chrome (glass / adaptive) beyond FLAG_* paths.
-        actionBar.applyTheme()
-        parentActivity?.window?.let { window ->
-            AndroidUtilities.setLightStatusBar(window, !Theme.isCurrentThemeDark())
         }
     }
 
@@ -2775,9 +2799,6 @@ class TopicDetailFragment @JvmOverloads constructor(
         }
 
         override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
-            // Recycled / cached Colorable cells may have missed didSetNewTheme; re-tint
-            // only when Theme.themeGeneration advanced since last apply on this view.
-            Theme.applyThemeColorsIfNeeded(holder.itemView)
             when (val row = rows[position]) {
                 TopicDetailRow.InitialSkeleton -> (holder.itemView as TopicSkeletonView).setRows(3)
                 TopicDetailRow.AppendLoading -> (holder.itemView as TopicSkeletonView).setRows(1)

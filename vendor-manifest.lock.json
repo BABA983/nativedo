@@ -245,7 +245,7 @@
       "forced_exact": [
         "drawing"
       ],
-      "notes": "exact ThemeDescription refresh engine: FLAG_* constants, constructors, setColor/processViewColor, ThemeDescriptionDelegate, getSetColor/setAnimatedColor. Host wiring: omit TG-only instanceof branches for ScamDrawable/EmptyTextProgressView/ChatBigEmptyView/EditTextCaption/GroupCreateSpan/LetterDrawable; skip EditTextEmoji.getEditText unwrap (local EditTextEmoji is a View stub); getSetColor uses ResourcesProvider.getColorOrNull; MessageBackgroundDrawable+GroupCreateCheckBox vendored. OMITTED ActionBarLayout theme animation chain (use Theme.applyThemeDescriptions for instant recolor).",
+      "notes": "exact ThemeDescription refresh engine: FLAG_* constants, constructors, setColor/processViewColor, ThemeDescriptionDelegate, getSetColor/setAnimatedColor. Host wiring: omit TG-only instanceof branches for ScamDrawable/EmptyTextProgressView/ChatBigEmptyView/EditTextCaption/GroupCreateSpan/LetterDrawable; skip EditTextEmoji.getEditText unwrap (local EditTextEmoji is a View stub); getSetColor uses ResourcesProvider.getColorOrNull; MessageBackgroundDrawable+GroupCreateCheckBox vendored. OMITTED ActionBarLayout theme animation chain (use Theme.applyThemeDescriptions for instant recolor). Host: processViewColor calls Theme.Colorable.updateColors when listClasses matches and flags are 0 (instance-paint cells like TopicPostCell).",
       "stuck_reason": "Intentional host wiring at global pin 12.9.0 — keep modified:true; not eligible for clean FF. Product/API surface differs from pin by design (missing upstream types or NativeDo defaults). Re-sync only with a named product goal."
     },
     {
