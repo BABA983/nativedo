@@ -133,20 +133,25 @@ class ThemeColorLayersContractTest {
 
     @Test
     fun useDefaultWhenAssetMissingFallsToHardcodedDefault() {
-        // Simulate a key with no asset entry: delete from both layers via useDefault
-        // after ensure noAccent is empty for a synthetic path — use a key known only
-        // in defaults if possible. key_chat_wallpaper is usually in asset; pick one
-        // that ThemeColors defines but bluebubbles may omit.
-        // Safer: temporarily clear asset base for one key by re-applying with empty colors.
-        // Contract: when noAccent lacks the key, useDefault deletes override and getColor
-        // returns getDefaultColor.
-        val key = Theme.key_windowBackgroundWhiteBlueText
+        // dialogBackground is in ThemeColors defaults but not in bluebubbles.attheme,
+        // so currentColorsNoAccent has no entry after Blue load.
+        val key = Theme.key_dialogBackground
         val hardcoded = Theme.getDefaultColor(key)
-        // After normal Blue load asset exists — already covered. This test documents
-        // the hardcoded fallback only when asset truly missing: force by setColor path
-        // when noAccent empty is hard without package-private access; assert default
-        // path for a never-asset key by checking getDefaultColor is reachable.
-        assertThat(hardcoded).isNotEqualTo(0)
         assertThat(hardcoded).isNotEqualTo(0xffff0000.toInt())
+        // Baseline is hardcoded default (no asset base).
+        assertThat(Theme.getColor(key)).isEqualTo(hardcoded)
+
+        val override = 0xffaabbcc.toInt()
+        Theme.setColor(key, override, false)
+        assertThat(Theme.getColor(key)).isEqualTo(override)
+
+        // useDefault with no asset entry must fall through to hardcoded defaultColors.
+        Theme.setColor(key, 0, true)
+        assertThat(Theme.getColor(key)).isEqualTo(hardcoded)
+        assertThat(Theme.getNonAnimatedColor(key)).isEqualTo(hardcoded)
+
+        val isDefault = booleanArrayOf(false)
+        Theme.getColor(key, isDefault)
+        assertThat(isDefault[0]).isTrue()
     }
 }

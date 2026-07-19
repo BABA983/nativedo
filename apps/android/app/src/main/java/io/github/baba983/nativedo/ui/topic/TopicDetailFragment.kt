@@ -662,8 +662,9 @@ class TopicDetailFragment @JvmOverloads constructor(
 
     /**
      * Declarative theme targets for ActionBar / list chrome. Applied via
-     * [Theme.applyThemeDescriptions] before Colorable cell walks so recycled
-     * posts and NativeDo body blocks still re-tint through Theme.Colorable.
+     * [Theme.applyThemeDescriptions]. Recycled post/header/footer cells re-tint
+     * through [Theme.applyThemeColorsIfNeeded] on bind (generation check), not only
+     * the currently attached children walk below.
      */
     override fun getThemeDescriptions(): java.util.ArrayList<ThemeDescription> {
         val descriptions = java.util.ArrayList<ThemeDescription>()
@@ -771,8 +772,12 @@ class TopicDetailFragment @JvmOverloads constructor(
             // Keep wallpaper key in sync for any path that doesn't go through FLAG_BACKGROUND.
             listView.setBackgroundColor(bg)
             for (index in 0 until listView.childCount) {
-                (listView.getChildAt(index) as? Theme.Colorable)?.updateColors()
+                val child = listView.getChildAt(index)
+                (child as? Theme.Colorable)?.updateColors()
+                Theme.markThemeColorsApplied(child)
             }
+            // Cached / scrap holders are not children; they re-tint on next bind via
+            // Theme.applyThemeColorsIfNeeded in TopicDetailAdapter.onBindViewHolder.
         }
         // Host ActionBar chrome (glass / adaptive) beyond FLAG_* paths.
         actionBar.applyTheme()
@@ -2770,6 +2775,9 @@ class TopicDetailFragment @JvmOverloads constructor(
         }
 
         override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+            // Recycled / cached Colorable cells may have missed didSetNewTheme; re-tint
+            // only when Theme.themeGeneration advanced since last apply on this view.
+            Theme.applyThemeColorsIfNeeded(holder.itemView)
             when (val row = rows[position]) {
                 TopicDetailRow.InitialSkeleton -> (holder.itemView as TopicSkeletonView).setRows(3)
                 TopicDetailRow.AppendLoading -> (holder.itemView as TopicSkeletonView).setRows(1)

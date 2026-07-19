@@ -23,7 +23,7 @@ import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.ui.ActionBar.Theme;
 
-public class TopicDateCell extends View {
+public class TopicDateCell extends View implements Theme.Colorable {
     private final TextPaint textPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
     private final Paint backgroundPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF backgroundRect = new RectF();
@@ -43,6 +43,19 @@ public class TopicDateCell extends View {
         this.floating = floating;
         textPaint.setTypeface(AndroidUtilities.bold());
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        updateColors();
+    }
+
+    @Override
+    public void updateColors() {
+        textPaint.setColor(Theme.getColor(Theme.key_chat_serviceText));
+        textPaint.linkColor = textPaint.getColor();
+        backgroundPaint.setColor(Theme.getColor(Theme.key_chat_serviceBackground));
+        // Force layout rebuild so StaticLayout uses the new TextPaint color.
+        if (previousWidth > 0 && !TextUtils.isEmpty(customText)) {
+            createLayout(previousWidth);
+        }
+        invalidate();
     }
 
     public void setCustomDate(long date) {

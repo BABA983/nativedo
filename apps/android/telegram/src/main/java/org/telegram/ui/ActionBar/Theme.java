@@ -36,6 +36,7 @@ import android.os.Build;
 import android.text.TextPaint;
 import android.util.StateSet;
 import android.util.SparseIntArray;
+import android.view.View;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -146,6 +147,43 @@ public final class Theme {
 
         default int[] getColorKeys() {
             return null;
+        }
+    }
+
+    /**
+     * Tracks which {@link Colorable} views already applied {@link #themeGeneration}.
+     * Weak keys so recycled/detached cells do not leak. Used by
+     * {@link #applyThemeColorsIfNeeded(View)} so RecyclerView cache/pool rebinds
+     * re-tint after a theme switch without paying updateColors on every bind.
+     */
+    private static final java.util.WeakHashMap<View, Integer> appliedThemeGeneration =
+            new java.util.WeakHashMap<>();
+
+    /**
+     * If {@code view} is {@link Colorable} and has not yet applied the current
+     * {@link #getThemeGeneration()}, call {@link Colorable#updateColors()} once.
+     * Safe to call from every {@code onBindViewHolder}.
+     */
+    public static void applyThemeColorsIfNeeded(View view) {
+        if (!(view instanceof Colorable)) {
+            return;
+        }
+        int generation = themeGeneration;
+        Integer applied = appliedThemeGeneration.get(view);
+        if (applied != null && applied == generation) {
+            return;
+        }
+        ((Colorable) view).updateColors();
+        appliedThemeGeneration.put(view, generation);
+    }
+
+    /**
+     * Mark a Colorable as already matching the current generation (e.g. after a
+     * visible-child walk in {@code didSetNewTheme}).
+     */
+    public static void markThemeColorsApplied(View view) {
+        if (view instanceof Colorable) {
+            appliedThemeGeneration.put(view, themeGeneration);
         }
     }
 
