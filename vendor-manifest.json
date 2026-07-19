@@ -139,7 +139,7 @@
           "pin": "legacy_009e97356",
           "modified": true,
           "port_mode": "native",
-          "notes": "NativeDo Theme engine subset: Blue + Dark Blue from assets (bluebubbles.attheme / darkblue.attheme); getThemeFileValues/getAssetFile; day/night prefs theme+nighttheme+activeIsNight; unknown keys (incl. retired NativeDo) fallback to Blue/Dark Blue; applyTheme loads asset, applyDialogsColors, ThemeDelegate + NotificationCenter.didSetNewTheme. ThemeColors.stringKeyToInt accepts key_ prefix and asset aliases. OMITTED accents, Arctic/Day/Night, auto-night sensors, wallpaper, ThemeActivity, ActionBarLayout theme animation chain, cloud themes. ThemeDescription setColor path + applyThemeDescriptions() landed; animated transitions still omitted.",
+          "notes": "NativeDo Theme engine subset: Blue + Dark Blue from assets (bluebubbles.attheme / darkblue.attheme); getThemeFileValues/getAssetFile; day/night prefs theme+nighttheme+activeIsNight; unknown keys (incl. retired NativeDo) fallback to Blue/Dark Blue; applyTheme loads asset, applyDialogsColors, ThemeDelegate + NotificationCenter.didSetNewTheme. ThemeColors.stringKeyToInt accepts key_ prefix and asset aliases. OMITTED accents, Arctic/Day/Night, auto-night sensors, wallpaper, ThemeActivity, ActionBarLayout theme animation chain, cloud themes. ThemeDescription setColor path + applyThemeDescriptions() landed; animated transitions still omitted. Dual-layer colors: currentColorsNoAccent holds .attheme base; currentColors holds overrides; setColor(useDefault=true) restores asset base.",
           "stuck_ref": "native_host_reference_only"
         },
         {

@@ -1109,7 +1109,18 @@ public final class Theme {
     private static final ArrayList<ThemeDelegate> themeDelegates = new ArrayList<>();
     private static final ArrayList<ThemeInfo> themes = new ArrayList<>();
     private static final HashMap<String, ThemeInfo> themesDict = new HashMap<>();
+    /**
+     * Resolved colors after asset load + any {@link #setColor} overrides.
+     * Lookup order in {@link #getColor(int)}: animatingColors → currentColors →
+     * currentColorsNoAccent → {@link #defaultColors}.
+     */
     private static final SparseIntArray currentColors = new SparseIntArray();
+    /**
+     * Asset-backed base for the active theme (Blue/Dark Blue .attheme), before
+     * ThemeDescription / editor overrides. Mirrors upstream currentColorsNoAccent
+     * (without accent fill until accents are ported).
+     */
+    private static final SparseIntArray currentColorsNoAccent = new SparseIntArray();
     /** Upstream theme-transition override map; null when not animating. */
     private static SparseIntArray animatingColors;
     private static final int[] defaultColors = ThemeColors.createDefaultColors();
@@ -1493,13 +1504,21 @@ public final class Theme {
         }
         int index = currentColors.indexOfKey(key);
         if (index >= 0) {
-            int color = currentColors.valueAt(index);
-            if (key == key_windowBackgroundWhite || key == key_windowBackgroundGray || key == key_actionBarDefault) {
-                color |= 0xff000000;
-            }
-            return color;
+            return forceOpaqueIfNeeded(key, currentColors.valueAt(index));
+        }
+        // Asset base (Blue/Dark Blue .attheme) before hardcoded ThemeColors defaults.
+        int assetIndex = currentColorsNoAccent.indexOfKey(key);
+        if (assetIndex >= 0) {
+            return forceOpaqueIfNeeded(key, currentColorsNoAccent.valueAt(assetIndex));
         }
         return getDefaultColor(key);
+    }
+
+    private static int forceOpaqueIfNeeded(int key, int color) {
+        if (key == key_windowBackgroundWhite || key == key_windowBackgroundGray || key == key_actionBarDefault) {
+            return color | 0xff000000;
+        }
+        return color;
     }
 
     public static int getColor(int key, ResourcesProvider resourcesProvider) {
@@ -1523,24 +1542,25 @@ public final class Theme {
 
     /**
      * Non-animated path used by ThemeDescription.startEditing / ActionBarLayout
-     * theme transitions. While animatingColors is active, still returns the
-     * settled currentColors value so start/end colors stay distinct.
+     * theme transitions. Ignores animatingColors so start/end samples stay distinct.
      */
     public static int getNonAnimatedColor(int key) {
         int index = currentColors.indexOfKey(key);
         if (index >= 0) {
-            int color = currentColors.valueAt(index);
-            if (key == key_windowBackgroundWhite || key == key_windowBackgroundGray || key == key_actionBarDefault) {
-                color |= 0xff000000;
-            }
-            return color;
+            return forceOpaqueIfNeeded(key, currentColors.valueAt(index));
+        }
+        int assetIndex = currentColorsNoAccent.indexOfKey(key);
+        if (assetIndex >= 0) {
+            return forceOpaqueIfNeeded(key, currentColorsNoAccent.valueAt(assetIndex));
         }
         return getDefaultColor(key);
     }
 
     public static int getColor(int key, boolean[] isDefault) {
         if (isDefault != null) {
-            isDefault[0] = currentColors.indexOfKey(key) < 0;
+            // True only when neither override nor asset base supplies the key.
+            isDefault[0] = currentColors.indexOfKey(key) < 0
+                    && currentColorsNoAccent.indexOfKey(key) < 0;
         }
         return getColor(key);
     }
@@ -1563,7 +1583,12 @@ public final class Theme {
     }
 
     /**
-     * Theme editor / description path: write into currentColors (or delete for default).
+     * Theme editor / description path.
+     * <ul>
+     *   <li>{@code useDefault == false}: write override into {@link #currentColors}</li>
+     *   <li>{@code useDefault == true}: drop override and restore asset base from
+     *       {@link #currentColorsNoAccent} when present (not hardcoded defaultColors)</li>
+     * </ul>
      * Host subset: no wallpaper reload / service-message special cases beyond opacity.
      */
     public static void setColor(int key, int color, boolean useDefault) {
@@ -1574,7 +1599,12 @@ public final class Theme {
             color = 0xff000000 | color;
         }
         if (useDefault) {
-            currentColors.delete(key);
+            int assetIndex = currentColorsNoAccent.indexOfKey(key);
+            if (assetIndex >= 0) {
+                currentColors.put(key, currentColorsNoAccent.valueAt(assetIndex));
+            } else {
+                currentColors.delete(key);
+            }
         } else {
             currentColors.put(key, color);
         }
@@ -2231,11 +2261,17 @@ public final class Theme {
 
     private static void applyThemeInternal(ThemeInfo themeInfo) {
         currentTheme = themeInfo;
+        // Asset base stays in currentColorsNoAccent; currentColors starts as a clone
+        // so ThemeDescription overrides can be cleared without losing .attheme values.
+        currentColorsNoAccent.clear();
         currentColors.clear();
         SparseIntArray colors = themeInfo.colors;
         if (colors != null) {
             for (int i = 0; i < colors.size(); i++) {
-                currentColors.put(colors.keyAt(i), colors.valueAt(i));
+                int key = colors.keyAt(i);
+                int value = colors.valueAt(i);
+                currentColorsNoAccent.put(key, value);
+                currentColors.put(key, value);
             }
         }
         themeGeneration++;

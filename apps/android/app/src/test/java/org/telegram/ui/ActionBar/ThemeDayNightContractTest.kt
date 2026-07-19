@@ -7,6 +7,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import java.io.File
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ApplicationLoader
 
@@ -25,7 +26,21 @@ class ThemeDayNightContractTest {
         AndroidUtilities.init(app)
         // Clear theme prefs so each test starts from a known state.
         app.getSharedPreferences("themeconfig", 0).edit().clear().commit()
+        // Robolectric does not package :telegram assets; seed files dir for .attheme loads.
+        seedAtthemeIntoFilesDir("bluebubbles.attheme")
+        seedAtthemeIntoFilesDir("darkblue.attheme")
         Theme.init(app)
+    }
+
+    private fun seedAtthemeIntoFilesDir(assetName: String) {
+        val candidates = listOf(
+            File("telegram/src/main/assets/$assetName"),
+            File("apps/android/telegram/src/main/assets/$assetName"),
+            File("../telegram/src/main/assets/$assetName"),
+        )
+        val source = candidates.firstOrNull { it.isFile }
+            ?: throw AssertionError("Missing $assetName for Theme unit tests")
+        source.copyTo(File(ApplicationLoader.getFilesDirFixed(), assetName), overwrite = true)
     }
 
     @Test

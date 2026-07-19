@@ -133,6 +133,7 @@ import org.telegram.ui.ActionBar.BaseFragment
 import org.telegram.ui.ActionBar.BottomSheet
 import org.telegram.ui.ActionBar.SimpleTextView
 import org.telegram.ui.ActionBar.Theme
+import org.telegram.ui.ActionBar.ThemeDescription
 import org.telegram.ui.PhotoViewer
 import org.telegram.ui.Cells.TextSelectionHelper
 import org.telegram.ui.Cells.LoadingCell
@@ -659,15 +660,121 @@ class TopicDetailFragment @JvmOverloads constructor(
         applyTopicDetailTheme()
     }
 
+    /**
+     * Declarative theme targets for ActionBar / list chrome. Applied via
+     * [Theme.applyThemeDescriptions] before Colorable cell walks so recycled
+     * posts and NativeDo body blocks still re-tint through Theme.Colorable.
+     */
+    override fun getThemeDescriptions(): java.util.ArrayList<ThemeDescription> {
+        val descriptions = java.util.ArrayList<ThemeDescription>()
+        if (actionBar != null) {
+            descriptions.add(
+                ThemeDescription(
+                    actionBar,
+                    ThemeDescription.FLAG_BACKGROUND,
+                    null,
+                    null as android.graphics.Paint?,
+                    null,
+                    null,
+                    Theme.key_actionBarDefault,
+                ),
+            )
+            descriptions.add(
+                ThemeDescription(
+                    actionBar,
+                    ThemeDescription.FLAG_AB_ITEMSCOLOR,
+                    null,
+                    null as android.graphics.Paint?,
+                    null,
+                    null,
+                    Theme.key_actionBarDefaultIcon,
+                ),
+            )
+            descriptions.add(
+                ThemeDescription(
+                    actionBar,
+                    ThemeDescription.FLAG_AB_TITLECOLOR,
+                    null,
+                    null as android.graphics.Paint?,
+                    null,
+                    null,
+                    Theme.key_actionBarDefaultTitle,
+                ),
+            )
+            descriptions.add(
+                ThemeDescription(
+                    actionBar,
+                    ThemeDescription.FLAG_AB_SELECTORCOLOR,
+                    null,
+                    null as android.graphics.Paint?,
+                    null,
+                    null,
+                    Theme.key_actionBarDefaultSelector,
+                ),
+            )
+            descriptions.add(
+                ThemeDescription(
+                    actionBar,
+                    ThemeDescription.FLAG_AB_SUBTITLECOLOR,
+                    null,
+                    null as android.graphics.Paint?,
+                    null,
+                    null,
+                    Theme.key_actionBarDefaultSubtitle,
+                ),
+            )
+        }
+        if (::listView.isInitialized) {
+            descriptions.add(
+                ThemeDescription(
+                    listView,
+                    ThemeDescription.FLAG_LISTGLOWCOLOR,
+                    null,
+                    null as android.graphics.Paint?,
+                    null,
+                    null,
+                    Theme.key_actionBarDefault,
+                ),
+            )
+            descriptions.add(
+                ThemeDescription(
+                    listView,
+                    ThemeDescription.FLAG_SELECTOR,
+                    null,
+                    null as android.graphics.Paint?,
+                    null,
+                    null,
+                    Theme.key_listSelector,
+                ),
+            )
+            // Wallpaper / list canvas — FLAG_BACKGROUND on the RecyclerView itself.
+            descriptions.add(
+                ThemeDescription(
+                    listView,
+                    ThemeDescription.FLAG_BACKGROUND,
+                    null,
+                    null as android.graphics.Paint?,
+                    null,
+                    null,
+                    Theme.key_chat_wallpaper,
+                ),
+            )
+        }
+        return descriptions
+    }
+
     private fun applyTopicDetailTheme() {
+        Theme.applyThemeDescriptions(themeDescriptions)
         val bg = topicDetailListBackgroundColor()
         rootFrameLayout?.setBackgroundColor(bg)
         if (::listView.isInitialized) {
+            // Keep wallpaper key in sync for any path that doesn't go through FLAG_BACKGROUND.
             listView.setBackgroundColor(bg)
             for (index in 0 until listView.childCount) {
                 (listView.getChildAt(index) as? Theme.Colorable)?.updateColors()
             }
         }
+        // Host ActionBar chrome (glass / adaptive) beyond FLAG_* paths.
         actionBar.applyTheme()
         parentActivity?.window?.let { window ->
             AndroidUtilities.setLightStatusBar(window, !Theme.isCurrentThemeDark())
