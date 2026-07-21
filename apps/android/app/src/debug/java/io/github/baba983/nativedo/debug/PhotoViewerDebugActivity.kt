@@ -1409,6 +1409,15 @@ class PhotoViewerDebugActivity : ComponentActivity() {
 
         override fun closeLastFragment(animated: Boolean, forceNoAnimation: Boolean) = Unit
 
+        override fun animateThemedValues(
+            settings: INavigationLayout.ThemeAnimationSettings,
+            onDone: Runnable?,
+        ) {
+            onDone?.run()
+        }
+
+        override fun getThemeAnimationValue(): Float = 0f
+
         override fun getFragmentStack(): List<BaseFragment> {
             return emptyList()
         }

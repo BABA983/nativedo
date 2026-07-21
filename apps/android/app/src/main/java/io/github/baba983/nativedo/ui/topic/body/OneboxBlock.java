@@ -348,7 +348,7 @@ final class OneboxBlock implements PostBodyBlock {
         } else {
             thumbnailReceiver = null;
         }
-        Theme.updateChatMessageTextPaints();
+        Theme.createChatResources(context.getHost().getContext(), false);
         domainPaint = cloneTextPaint(Theme.chat_replyNamePaint, domainColor);
         titlePaint = cloneTextPaint(Theme.chat_replyNamePaint, context.getTextColor());
         descriptionPaint = cloneTextPaint(Theme.chat_replyTextPaint, context.getTextColor());
@@ -704,7 +704,7 @@ final class OneboxBlock implements PostBodyBlock {
     @Override
     public void applyTheme() {
         int domainColor = linkLine.check(null, null, null, null, ReplyMessageLine.TYPE_LINK);
-        Theme.updateChatMessageTextPaints();
+        Theme.createChatResources(context.getHost().getContext(), false);
         copyTextPaint(domainPaint, Theme.chat_replyNamePaint, domainColor);
         copyTextPaint(titlePaint, Theme.chat_replyNamePaint, context.getTextColor());
         copyTextPaint(descriptionPaint, Theme.chat_replyTextPaint, context.getTextColor());

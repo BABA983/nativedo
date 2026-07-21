@@ -317,6 +317,18 @@ final class CollageBlock implements EmbeddedPostBodyBlock {
 
     @Override
     public void applyTheme() {
+        placeholderPaint.setColor(context.getMediaPlaceholderColor());
+        captionPaint.set(context.getMediaCaptionPaint());
+        captionPaint.setColor(context.getMediaCaptionPaint().getColor());
+        captionPaint.linkColor = context.getMediaCaptionPaint().linkColor;
+        if (captionHandle != null) {
+            captionHandle.detach();
+            captionHandle = null;
+        }
+        captionLayout = null;
+        builtCaption = null;
+        spoilersPool.addAll(spoilers);
+        spoilers.clear();
     }
 
     RectF imageBoundsInCell(int index) {

@@ -19,7 +19,7 @@
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo utility subset with upstream-shaped helpers. getCacheDir was re-aligned against 12.8.1's external-first/storageCacheDir/internal/files-cache chain, but retains null-context and java.io.tmpdir host fallbacks. Its bootstrap path intentionally never logs: FileLog.init() calls getLogsDir(), which uses Context.getCacheDir()/getFilesDir() directly so cache lookup cannot recurse into FileLog initialization. getAnimatorDurationScale() is copied for the exact WindowInsets keyboard timing path, with a null-context host guard. getVibrator() matches the pin API required by BotWebViewVibrationEffect. Font assets, full theme/wallpaper helpers, and unrelated AndroidUtilities surface remain native/adapted."
+      "notes": "NativeDo utility subset with upstream-shaped helpers. In addition to the existing cache, insets, vibration, and font host wiring, it now carries the pinned Theme closure for drawable/background color extraction, HSV conversion, file copy, wallpaper rotation, sharing directories, color distance, scaled bitmaps, and wall-character validation. Null-context/bootstrap fallbacks remain intentional NativeDo wiring; unrelated AndroidUtilities subsystems are still omitted."
     },
     {
       "local": "telegram/src/main/java/org/telegram/messenger/Emoji.java",
@@ -44,7 +44,7 @@
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo locale shim for vendored UI: exposes isRTL, getString/formatString/plural/date helpers, the pinned formatShortNumber implementation used by ReactionTabHolderView-style counters, formatDuration(int), getCurrentLocale(), and a minimal getCurrentLocaleInfo().shortName surface used by TextSelectionHelper translate target propagation plus PhotoViewer's upstream-shaped PhotoCountView and PhotoPickerPhotoCell accessibility text. formatDateChat now keeps the pinned 365-day/current-year branch and formats through the merged chatDate/chatFullDate resource patterns with the current locale for ChatActionCell-derived topic date rows. Full Telegram locale loading and account-specific i18n pipeline are not ported.",
+      "notes": "NativeDo locale shim for vendored UI: exposes isRTL, getString/formatString/plural/date helpers, the pinned formatShortNumber implementation used by ReactionTabHolderView-style counters, formatDuration(int), getCurrentLocale(), getTranslitString() pass-through, and a minimal getCurrentLocaleInfo().shortName surface used by TextSelectionHelper translate target propagation plus PhotoViewer's upstream-shaped PhotoCountView and PhotoPickerPhotoCell accessibility text. formatDateChat keeps the pinned 365-day/current-year branch and formats through merged chatDate/chatFullDate resource patterns. Full Telegram locale loading and account-specific i18n pipeline are not ported.",
       "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
     },
     {
@@ -96,11 +96,10 @@
       "_comment": "actionbar",
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/Theme.java",
       "upstream": "org/telegram/ui/ActionBar/Theme.java",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo Theme engine subset: Blue + Dark Blue from assets (bluebubbles.attheme / darkblue.attheme); getThemeFileValues/getAssetFile; day/night prefs theme+nighttheme+activeIsNight; unknown keys (incl. retired NativeDo) fallback to Blue/Dark Blue; applyTheme loads asset, applyDialogsColors, ThemeDelegate + NotificationCenter.didSetNewTheme. ThemeColors.stringKeyToInt accepts key_ prefix and asset aliases. OMITTED accents, Arctic/Day/Night, auto-night sensors, wallpaper, ThemeActivity, ActionBarLayout theme animation chain, cloud themes. ThemeDescription setColor path + applyThemeDescriptions() landed; animated transitions still omitted. Dual-layer colors: currentColorsNoAccent holds .attheme base; currentColors holds overrides; setColor(useDefault=true) restores asset base.",
-      "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
+      "notes": "Pinned 12.9.0 Theme.java is the implementation baseline: complete built-in themes, color keys/fallbacks, accent model, local theme parsing/import/export state, wallpaper state/rendering, auto-night scheduling/sensor logic, and resource factories. Modified for NativeDo through explicit ThemeHost and ThemeBackend boundaries; remote catalog/install/upload, pattern lookup, remote wallpaper lookup, and current-theme refresh all cross the backend. Capability checks prevent local editor saves and imported Telegram remote metadata from invoking an unavailable backend; direct remote catalog operations remain explicit failures. installLocalThemeFile extracts the pinned non-temporary registration block so NativeDo can register an imported file before handing normal apply/animation to ActionBarLayout. Other deltas are a ThemePreview background-position interface plus exclusion of Telegram audio-visualizer and VoIP wave helpers because NativeDo has no corresponding media/call subsystem. Navigation theme animation and the NativeDo local picker/editor/import-export host are active."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/BottomSheet.java",
@@ -245,7 +244,7 @@
       "forced_exact": [
         "drawing"
       ],
-      "notes": "exact ThemeDescription refresh engine: FLAG_* constants, constructors, setColor/processViewColor, ThemeDescriptionDelegate, getSetColor/setAnimatedColor. Host wiring: omit TG-only instanceof branches for ScamDrawable/EmptyTextProgressView/ChatBigEmptyView/EditTextCaption/GroupCreateSpan/LetterDrawable; skip EditTextEmoji.getEditText unwrap (local EditTextEmoji is a View stub); getSetColor uses ResourcesProvider.getColorOrNull; MessageBackgroundDrawable+GroupCreateCheckBox vendored. OMITTED ActionBarLayout theme animation chain (use Theme.applyThemeDescriptions for instant recolor). Host: processViewColor calls Theme.Colorable.updateColors when listClasses matches and flags are 0 (instance-paint cells like TopicPostCell).",
+      "notes": "Exact ThemeDescription refresh engine: FLAG_* constants, constructors, setColor/processViewColor, ThemeDescriptionDelegate, getSetColor/setAnimatedColor. Host wiring omits Telegram-only instanceof branches for unavailable widgets and uses ResourcesProvider.getColorOrNull. ActionBarLayout now owns the pinned animation pass and visible-tree Colorable refresh; no NativeDo listClasses updateColors extension remains.",
       "stuck_reason": "Intentional host wiring at global pin 12.9.0 — keep modified:true; not eligible for clean FF. Product/API surface differs from pin by design (missing upstream types or NativeDo defaults). Re-sync only with a named product goal."
     },
     {
@@ -498,7 +497,7 @@
         "measurement",
         "drawing"
       ],
-      "notes": "Repurposed DialogCell for Discourse topics. Native Feature, but measurement and drawing subsystems are still upstream-shaped per AGENTS.md forced-exact rules. MovableCell SPI implemented for DialogsItemAnimator: setMoving/setClipProgress/ setTopClip/setBottomClip + clipRect in onDraw mirror DialogCell upstream. SDK 24 clipRect fallback (drawRect with windowBackgroundWhite) intentionally omitted. Discourse additions over DialogCell: is_hot badge, like_count in message preview, tag pills row, excerpt-based message preview, pinned background overlay, muted-counter gray pill. Row height expands for tags row. Search presentation now binds the Discourse post blurb into DialogCell's second-line message-preview slot and highlights query terms in title/preview while keeping the same 70dp measurement and StaticLayout drawing path.",
+      "notes": "Repurposed DialogCell for Discourse topics. Native Feature, but measurement and drawing subsystems are still upstream-shaped per AGENTS.md forced-exact rules. MovableCell SPI implemented for DialogsItemAnimator: setMoving/setClipProgress/ setTopClip/setBottomClip + clipRect in onDraw mirror DialogCell upstream. SDK 24 clipRect fallback (drawRect with windowBackgroundWhite) intentionally omitted. Discourse additions over DialogCell: is_hot badge, like_count in message preview, tag pills row, excerpt-based message preview, pinned background overlay, muted-counter gray pill. Row height expands for tags row. Search presentation binds the Discourse post blurb into DialogCell's second-line message-preview slot and highlights query terms in title/preview while keeping the same 70dp measurement and StaticLayout drawing path. DialogCell.buildLayout owns shared-paint typography at SharedConfig.fontSize + 1 for title and fontSize for the second line (default 17dp/16dp); count badges remain 13dp.",
       "stuck_reason": "NativeDo port (package io.github.baba983.nativedo.*); vendored_at is an upstream reference for forced_exact hand-checks only — not eligible for vendor-ff."
     },
     {
@@ -512,7 +511,7 @@
         "drawing",
         "gesture"
       ],
-      "notes": "ChatMessageCell-shaped BaseCell (forced_exact measurement/drawing/gesture) over Discourse Post/PostBodyBlock. Reactions: 26dp height, 34dp min/36dp rail item, 30dp icon, 2/4dp gaps, 250ms CLIP_PROGRESS=.25 enter, 1500ms press with >.8 release/150ms cancel, LONG_PRESS/2x slop, and 34dp/350ms ONLY_MOVE. Keeps reply/menu arbitration, nested view/canvas split, slidingOffsetX, search and URL PhotoViewer bounds. OMITTED MTProto/full Lottie/particle/window stack; see docs/topic-detail-rewrite.md.",
+      "notes": "ChatMessageCell-shaped BaseCell (forced_exact measurement/drawing/gesture) over Discourse Post/PostBodyBlock. Reactions: 26dp height, 34dp min/36dp rail item, 30dp icon, 2/4dp gaps, 250ms CLIP_PROGRESS=.25 enter, 1500ms press with >.8 release/150ms cancel, LONG_PRESS/2x slop, and 34dp/350ms ONLY_MOVE. Keeps reply/menu arbitration, nested view/canvas split, slidingOffsetX, search and URL PhotoViewer bounds. Post chrome and PostBodyBlock paints scale from SharedConfig.fontSize while preserving relative hierarchy. OMITTED MTProto/full Lottie/particle/window stack; see docs/topic-detail-rewrite.md.",
       "stuck_reason": "NativeDo port (package io.github.baba983.nativedo.*); vendored_at is an upstream reference for forced_exact hand-checks only — not eligible for vendor-ff."
     },
     {
@@ -589,8 +588,22 @@
       "forced_exact": [
         "measurement"
       ],
-      "notes": "NativeDo topic header row with Telegram/ArticleViewer-style StaticLayout measurement/drawing: the title and metadata are measured dynamically instead of using fixed child offsets, run through Emoji.replaceEmoji with the active TextPaint metrics, and use ArticleViewer's default StaticLayout line spacing (extra dp(4), multiplier 1.0, includePad=false), while binding Discourse topic title, counts, and tags.",
+      "notes": "NativeDo topic header row with Telegram/ArticleViewer-style StaticLayout measurement/drawing: the title and metadata are measured dynamically instead of using fixed child offsets, run through Emoji.replaceEmoji with the active TextPaint metrics, use ArticleViewer's default StaticLayout line spacing (extra dp(4), multiplier 1.0, includePad=false), and scale from SharedConfig.fontSize while binding Discourse topic title, counts, and tags.",
       "stuck_reason": "NativeDo port (package io.github.baba983.nativedo.*); vendored_at is an upstream reference for forced_exact hand-checks only — not eligible for vendor-ff."
+    },
+    {
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/theme/TopicThemePreviewFragment.kt",
+      "upstream": "org/telegram/ui/ThemePreviewActivity.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": true,
+      "port_mode": "native",
+      "forced_exact": [
+        "gesture",
+        "animation",
+        "measurement",
+        "drawing"
+      ],
+      "notes": "NativeDo local theme preview port. Keeps the pinned two-page ViewPager, 48dp Cancel/dots/Apply bar, temporary apply/previous-theme transaction, back/cancel restoration, apply persistence, blur, motion/parallax, built-in pattern and intensity controls. Telegram chat/dialog preview adapters are replaced by TopicThemePreviewContent using the production TopicHeaderCell/TopicPostCell/PostBodyBlock renderer; peer wallpaper, premium and remote pattern catalog branches are omitted."
     },
     {
       "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicFooterCell.java",
@@ -1009,7 +1022,7 @@
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo lightweight visible Bulletin subset. Keeps Telegram-style show/hide/isShowing/duration/delegate/container API shape for ArticleViewer, BottomSheet, and topic post menu feedback, with bottom/top slide+fade, undo background/info colors, and static visible-bulletin replacement. Omits upstream Lottie layouts, spring physics, LaunchActivity/global-window routing, queueing, undo buttons, multi-line custom layouts, and advanced bottom-sheet/menu offset logic.",
+      "notes": "NativeDo lightweight visible Bulletin subset. Keeps Telegram-style show/hide/isShowing/duration/delegate/container API shape for ArticleViewer, BottomSheet, topic feedback, and Theme auto-night notices, including a clickable action label used to open night-theme settings. Omits upstream Lottie layouts, spring physics, LaunchActivity/global-window routing, queueing, undo layouts, and advanced bottom-sheet/menu offset logic.",
       "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
     },
     {
@@ -1018,7 +1031,7 @@
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo lightweight factory for the visible Bulletin subset. Preserves of(BaseFragment), of(ViewGroup,...), global(), photoViewer(), createSimpleBulletin(), createCopyLinkBulletin(), createCopyBulletin(), createErrorBulletin(), createDownloadBulletin(), and createInfoBulletin() entry points used by ArticleViewer, BottomSheet, and topic post copy/bookmark feedback while replacing upstream Lottie/complex layouts with text plus simple drawn info/copy/error icons. global()/photoViewer() return no-op bulletins when no container is available.",
+      "notes": "NativeDo lightweight factory for the visible Bulletin subset. Preserves the existing ArticleViewer/BottomSheet/topic entry points and adds the pinned simple-bulletin action callback shape required by Theme auto-night settings notices. Upstream Lottie and complex layouts remain replaced by text plus simple drawn icons; global()/photoViewer() return no-op bulletins when no container is available.",
       "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
     },
     {
@@ -1371,6 +1384,224 @@
     },
     {
       "_comment": "exact copied support files",
+      "local": "telegram/src/main/java/org/telegram/messenger/time/SunDate.java",
+      "upstream": "org/telegram/messenger/time/SunDate.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Copied verbatim for Theme auto-night sunrise/sunset scheduling."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/messenger/ScreenReceiver.java",
+      "upstream": "org/telegram/messenger/ScreenReceiver.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Upstream screen on/off receiver adapted to update ApplicationLoader.isScreenOn and post screenStateChanged without Telegram ConnectionsManager app-pause/network side effects."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/tgnet/Vector.java",
+      "upstream": "org/telegram/tgnet/Vector.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Copied verbatim as the pinned TL vector container required by Theme catalog data shapes."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/tgnet/TLParseException.java",
+      "upstream": "org/telegram/tgnet/TLParseException.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Copied verbatim as the pinned TL parsing exception required by the Theme data closure."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/ActionBar/RoundVideoShadow.java",
+      "upstream": "org/telegram/ui/ActionBar/RoundVideoShadow.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Copied verbatim for Theme chat-resource shadow initialization."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/RoundVideoProgressShadow.java",
+      "upstream": "org/telegram/ui/RoundVideoProgressShadow.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Copied verbatim for Theme chat-resource round-video progress shadows."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/StatusDrawable.java",
+      "upstream": "org/telegram/ui/Components/StatusDrawable.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "animation",
+        "drawing"
+      ],
+      "notes": "Copied verbatim as the base for Theme chat status drawables."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/ChoosingStickerStatusDrawable.java",
+      "upstream": "org/telegram/ui/Components/ChoosingStickerStatusDrawable.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "animation",
+        "drawing"
+      ],
+      "notes": "Copied verbatim for Theme chat status resources."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/MsgClockDrawable.java",
+      "upstream": "org/telegram/ui/Components/MsgClockDrawable.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "drawing"
+      ],
+      "notes": "Copied verbatim for Theme message status resources."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/PlayingGameDrawable.java",
+      "upstream": "org/telegram/ui/Components/PlayingGameDrawable.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "animation",
+        "drawing"
+      ],
+      "notes": "Copied verbatim for Theme chat status resources."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/RecordStatusDrawable.java",
+      "upstream": "org/telegram/ui/Components/RecordStatusDrawable.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "animation",
+        "drawing"
+      ],
+      "notes": "Copied verbatim for Theme chat status resources."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/RoundStatusDrawable.java",
+      "upstream": "org/telegram/ui/Components/RoundStatusDrawable.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "animation",
+        "drawing"
+      ],
+      "notes": "Copied verbatim for Theme chat status resources."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/ScamDrawable.java",
+      "upstream": "org/telegram/ui/Components/ScamDrawable.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "measurement",
+        "drawing"
+      ],
+      "notes": "Copied verbatim for Theme dialogs resources."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/SendingFileDrawable.java",
+      "upstream": "org/telegram/ui/Components/SendingFileDrawable.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "animation",
+        "drawing"
+      ],
+      "notes": "Copied verbatim for Theme chat status resources."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/TypingDotsDrawable.java",
+      "upstream": "org/telegram/ui/Components/TypingDotsDrawable.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact",
+      "forced_exact": [
+        "animation",
+        "drawing"
+      ],
+      "notes": "Copied verbatim for Theme chat status resources."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/ThemeEditorView.java",
+      "upstream": "org/telegram/ui/Components/ThemeEditorView.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Copied verbatim from pinned upstream for local theme color editing, wallpaper selection, save/export, and fragment rebuild."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Cells/ThemeCell.java",
+      "upstream": "org/telegram/ui/Cells/ThemeCell.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Copied verbatim from pinned upstream as the full-size local theme row with current-theme check, preview color, divider, options action, and accessibility semantics."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Cells/ThemeTypeCell.java",
+      "upstream": "org/telegram/ui/Cells/ThemeTypeCell.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Copied verbatim from pinned upstream for auto-night mode rows."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Cells/ThemesHorizontalListCell.java",
+      "upstream": "org/telegram/ui/Cells/ThemesHorizontalListCell.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": true,
+      "port_mode": "exact",
+      "forced_exact": [
+        "gesture",
+        "animation",
+        "measurement",
+        "drawing",
+        "recycling"
+      ],
+      "notes": "Pinned ThemesHorizontalListCell for local theme picker geometry, drawing, recycling, selection animation and long-press options. Host hook onThemeClick() lets NativeDo open TopicThemePreviewFragment instead of applying immediately; remote theme-document download/URL branches remain omitted until a remote catalog exists."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/SimpleThemeDescription.java",
+      "upstream": "org/telegram/ui/Components/SimpleThemeDescription.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Copied verbatim from pinned upstream for compact ThemeDescription delegate lists."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/EmptyTextProgressView.java",
+      "upstream": "org/telegram/ui/Components/EmptyTextProgressView.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Copied verbatim from pinned upstream as ThemeEditorView's empty/loading state."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/WallpaperUpdater.java",
+      "upstream": "org/telegram/ui/Components/WallpaperUpdater.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Telegram-shaped wallpaper chooser adapted to NativeDo: gallery uses ACTION_OPEN_DOCUMENT instead of PhotoAlbumPickerActivity/permissions, and camera writes to the app cache."
+    },
+    {
       "local": "telegram/src/main/java/androidx/recyclerview/widget/LinearSmoothScrollerEnd.java",
       "upstream": "androidx/recyclerview/widget/LinearSmoothScrollerEnd.java",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
@@ -1531,7 +1762,7 @@
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
       "modified": true,
       "port_mode": "native",
-      "notes": "Minimal NativeDo TLRPC surface extended with PageBlock, RichText, WebPage/Page, BotApp, and IV request/response shells; pin ImageReceiver/ImageLocation host fields: User.fromMessageDialogId/fromMessageId, Message.rich_message, TL_inputPeerUserFromMessage.",
+      "notes": "Minimal NativeDo TLRPC surface for vendored UI. In addition to PageBlock/RichText/WebPage/BotApp and ImageReceiver host fields, it now exposes the pinned Theme and WallPaper data shapes consumed by Theme.java. MTProto theme serialization/deserialization intentionally throws: remote transport and catalog behavior must cross ThemeBackend rather than the local tgnet stubs.",
       "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
     },
     {
@@ -1695,7 +1926,10 @@
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
       "modified": true,
       "port_mode": "native",
-      "notes": "Single-arg constructor (no upstream main flag) and does NOT self-register as the LaunchActivity global. MainActivity pins the root layout via LaunchActivity.setActionBarLayout(root) so sheet-owned ActionBarLayouts (ActionBarSheet) never clobber the global last-fragment / bottom-tabs provider. Fullscreen viewer draw-content gating stays in DrawerLayoutContainer, matching upstream ownership.",
+      "forced_exact": [
+        "animation"
+      ],
+      "notes": "Single-arg NativeDo host constructor and no global-layout self-registration. Embeds the pinned ThemeAnimationSettings/StartColorsProvider color interpolation, ThemeDescription delegate capture, visible BottomSheet/AlertDialog description ownership, notification locker, instant path, 200ms animator, deferred-after-navigation state machine, and hidden-fragment clearViews/setParentLayout rebuild after a full-stack theme switch. MainActivity pins the root layout via LaunchActivity.setActionBarLayout(root) so sheet-owned layouts do not clobber the global provider; existing NativeDo navigation/edge-to-edge wiring remains host delta. Telegram navigation preview mode is not present in the NativeDo host, so its previous-fragment preview branch remains outside this port.",
       "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
     },
     {
@@ -1777,6 +2011,7 @@
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
       "modified": true,
       "port_mode": "native",
+      "notes": "NativeDo navigation fragment subset with upstream-shaped clearViews lifecycle, visibleDialog ownership, show/dismiss replacement, attached-sheet routing, onPause/onBeginSlide/onDestroy cleanup, dismissal callbacks, and get/set accessors supporting ActionBarLayout theme animation. clearViews preserves the fragment ViewModelStore while releasing the host PhotoViewer wrapper with the old View tree. Telegram account, menu, story, preview, and full transition infrastructure remains omitted.",
       "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
     },
     {
@@ -1811,6 +2046,10 @@
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
       "modified": true,
       "port_mode": "native",
+      "forced_exact": [
+        "animation"
+      ],
+      "notes": "NativeDo navigation subset with the pinned ThemeAnimationSettings, StartColorsProvider, and animateThemedValues overload contract restored for ActionBarLayout and future picker/editor hosts.",
       "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
     },
     {
@@ -2240,7 +2479,7 @@
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
-      "notes": "Host-only TL_account surface for pin WebBrowserSettings. Provides the local TL_webBrowserSettings/WebDomainException model; no MTProto serialize path. MessagesController persists the model locally and WebMetadataCache supplies display titles.",
+      "notes": "Host-only TL_account surface for pinned WebBrowserSettings and Theme.java. Provides local browser settings plus the Theme install/save/upload request and response data shapes needed to compile the upstream Theme state machine. There is no MTProto serialize path; NativeDo theme transport must cross ThemeBackend.",
       "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
     },
     {
@@ -2254,6 +2493,46 @@
         "animation"
       ],
       "notes": "Pinned GroupCreateCheckBox for ThemeDescription reflection field recolor path."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/ActionBar/MenuDrawable.java",
+      "upstream": "org/telegram/ui/ActionBar/MenuDrawable.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Pinned MenuDrawable used by theme preview/editor chrome; exact copy."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Cells/PatternCell.java",
+      "upstream": "org/telegram/ui/Cells/PatternCell.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Pinned PatternCell for local theme wallpaper pattern selection; exact copy."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/ColorPicker.java",
+      "upstream": "org/telegram/ui/Components/ColorPicker.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Pinned ColorPicker for ThemeEditorView and local theme color editing; exact copy."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/WallpaperCheckBoxView.java",
+      "upstream": "org/telegram/ui/Components/WallpaperCheckBoxView.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Pinned WallpaperCheckBoxView for local theme wallpaper blur/motion/pattern toggles; exact copy."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/WallpaperParallaxEffect.java",
+      "upstream": "org/telegram/ui/Components/WallpaperParallaxEffect.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Pinned WallpaperParallaxEffect for local theme wallpaper motion; exact copy."
     },
     {
       "_comment": "Telegram Blur3 glass subsystem used by chat/topic chrome.",
@@ -2999,7 +3278,7 @@
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
-      "notes": "Auto-registered unmanifested on-disk source (335 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
+      "notes": "NativeDo AppCompat-backed AlertDialog API shim. Preserves deferred Builder configuration, button dismissal policy, loading/spinner surface, delayed show/dismiss, and the upstream nullable getThemeDescriptions base contract used by ActionBarLayout; Telegram's custom dialog renderer remains omitted."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/BottomSheetTabDialog.java",
@@ -3505,7 +3784,7 @@
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
-      "notes": "Auto-registered unmanifested compile dependency (70 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
+      "notes": "NativeDo root host facade. In addition to the existing root ActionBarLayout/bottom-tabs accessors, exposes pinned ThemeEditorView layout queries (layers/right/root all map to the NativeDo root) and rebuildAllFragments(boolean) for editor apply/rebuild."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/PinchToZoomHelper.java",
@@ -3639,7 +3918,7 @@
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo compatibility shim, not a Telegram source port. Besides compile surfaces used by vendored UI, it provides the single-account browser policy facade required by pinned WebBrowserSettings, persisting the local TL_webBrowserSettings model without MTProto sync. Do not treat it as vendored or upstream-shaped implementation code."
+      "notes": "NativeDo compatibility shim, not a Telegram source port. Besides compile surfaces used by vendored UI, it provides the single-account browser policy facade required by pinned WebBrowserSettings, persisting the local TL_webBrowserSettings model without MTProto sync. Its updateTimerProc keeps the pinned scheduled auto-night branch while MainActivity supplies the missing tgnet foreground tick. Do not treat the rest of the file as vendored or upstream-shaped implementation code."
     },
     {
       "local": "telegram/src/main/java/org/telegram/messenger/SharedConfig.java",
@@ -3647,7 +3926,7 @@
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
       "modified": true,
       "port_mode": "native",
-      "notes": "Compile shim, not a port: no Telegram source copied. It provides animation/performance/font/search/Instant View preferences used by vendored UI; browser open policy moved to the local TL_webBrowserSettings model in MessagesController. Do not treat this as vendored or upstream-shaped implementation code."
+      "notes": "Compile shim, not a port: no Telegram source copied. It provides persisted animation-reduction, global topic font size, performance, search, and Instant View preferences used by vendored and NativeDo UI; browser open policy moved to the local TL_webBrowserSettings model in MessagesController. Do not treat this as vendored or upstream-shaped implementation code."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Cells/ChatActionCell.java",
@@ -4143,6 +4422,36 @@
       "notes": "BottomSheet and BottomSheetWithRecyclerListView drawables copied byte-identical from upstream across mdpi/hdpi/xhdpi/xxhdpi."
     },
     {
+      "_comment": "Theme editor and wallpaper picker drawables copied from upstream across mdpi/hdpi/xhdpi/xxhdpi.",
+      "kind": "drawable",
+      "files": [
+        "knob_shadow.webp",
+        "smiles_inputsearch.webp",
+        "theme_picker.webp",
+        "msg_camera.webp",
+        "msg_photos.webp"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
+      "notes": "ThemeEditorView color picker/wallpaper assets and WallpaperUpdater camera/gallery actions."
+    },
+    {
+      "_comment": "Theme picker row and horizontal preview drawables copied from pinned upstream density buckets.",
+      "kind": "drawable",
+      "files": [
+        "sticker_added.webp",
+        "minibubble_in.webp",
+        "minibubble_out.webp",
+        "msg_theme.webp",
+        "preview_custom.webp"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "notes": "ThemeCell and ThemesHorizontalListCell check, chat-bubble, loading, and custom-theme preview assets. Upstream has no xxhdpi minibubble_out asset; Android density fallback is preserved."
+    },
+    {
       "kind": "anim",
       "files": [
         "popup_context_in.xml"
@@ -4215,6 +4524,145 @@
       "notes": "Subset of upstream ids.xml containing IDs referenced by local vendored code: ActionBarPopupWindow tag IDs (width_tag, object_tag, fit_width_tag) plus TextSelectionHelper action menu IDs (menu_quote, menu_translate). Other upstream chat/edit/action IDs remain omitted until referenced."
     },
     {
+      "_comment": "Pinned Theme.java direct drawable closure added with the full Theme engine baseline.",
+      "kind": "drawable",
+      "files": [
+        "bot_card.webp",
+        "bot_file.webp",
+        "bot_invite.webp",
+        "bot_lines.webp",
+        "bot_link.webp",
+        "bot_location.webp",
+        "bot_music.webp",
+        "chat_calls_incoming.webp",
+        "chat_calls_outgoing.webp",
+        "chat_calls_video.webp",
+        "chat_calls_voice.webp",
+        "chats_replies.webp",
+        "chats_saved.webp",
+        "filled_button_share.webp",
+        "filled_folder_existing.webp",
+        "filled_folder_new.webp",
+        "filled_gift_premium.webp",
+        "filled_giveaway_premium.webp",
+        "filled_giveaway_stars.webp",
+        "filled_open_message.webp",
+        "filled_unclaimed.webp",
+        "filled_unknown.webp",
+        "ghost.webp",
+        "ic_lock_header.webp",
+        "large_hidden.webp",
+        "large_notes.webp",
+        "large_repost_story.webp",
+        "list_check.webp",
+        "list_halfcheck.webp",
+        "list_mute.webp",
+        "list_pin.webp",
+        "list_reorder.webp",
+        "list_secret.webp",
+        "list_unmute.webp",
+        "list_warning_sign.webp",
+        "media_more.webp",
+        "minithumb_play.webp",
+        "msg_actions.webp",
+        "msg_arrowright.webp",
+        "msg_check_s.webp",
+        "msg_contact.webp",
+        "msg_folders_archive.webp",
+        "msg_folders_bots.webp",
+        "msg_folders_channels.webp",
+        "msg_folders_groups.webp",
+        "msg_folders_muted.webp",
+        "msg_folders_private.webp",
+        "msg_folders_read.webp",
+        "msg_folders_requests.webp",
+        "msg_halfcheck.webp",
+        "msg_halfcheck_s.webp",
+        "msg_instant.webp",
+        "msg_location.webp",
+        "msg_mini_forumarrow.webp",
+        "msg_mini_lock2.webp",
+        "msg_msgbubble2.webp",
+        "msg_psa.webp",
+        "msg_reply_small.webp",
+        "msg_round_cancel_m.webp",
+        "msg_round_file_s.webp",
+        "msg_round_load_m.webp",
+        "msg_round_pause_m.webp",
+        "msg_round_play_m.webp",
+        "msg_stories_closefriends.webp",
+        "msg_views.webp",
+        "msg_voiceclose.webp",
+        "msg_warning.webp",
+        "newyear.webp",
+        "nophotos3.9.png",
+        "permission_locked.webp",
+        "poll_right.webp",
+        "poll_wrong.webp",
+        "preview_arrow.webp",
+        "preview_back.webp",
+        "preview_dots.webp",
+        "preview_mic.webp",
+        "preview_smile.webp",
+        "search_dark.9.png",
+        "search_dark_activated.9.png",
+        "verified_area.webp",
+        "verified_check.webp",
+        "video_actions.webp",
+        "video_muted.webp"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "notes": "Byte-identical density and nodpi drawables referenced directly by pinned Theme.java. Existing tracked PNG resources with matching Android names were retained rather than replaced."
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "community_cards.xml",
+        "filled_chatlist_mention.xml",
+        "filled_chatlist_poll.xml",
+        "filled_chatlist_reaction.xml",
+        "filled_suggest_chat_avatar.xml",
+        "gradient_left.9.png",
+        "gradient_right.9.png",
+        "media_live_on.xml",
+        "mini_call_in_16.xml",
+        "mini_call_out_16.xml",
+        "mini_ephemeral_hidden_16.xml",
+        "other_chats.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/drawable",
+      "local_glob": "apps/android/telegram/src/main/res/drawable",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "notes": "Byte-identical non-density drawables referenced directly by pinned Theme.java."
+    },
+    {
+      "kind": "raw",
+      "files": [
+        "auto_night_off.json",
+        "chat_audio_record_delete.json",
+        "chats_archive.json",
+        "chats_archiveavatar.json",
+        "chats_hide.json",
+        "chats_unarchive.json",
+        "chats_unhide.json",
+        "default_pattern.svg",
+        "swipe_community_ungroup.json",
+        "swipe_delete.json",
+        "swipe_mute.json",
+        "swipe_pin.json",
+        "swipe_read.json",
+        "swipe_unmute.json",
+        "swipe_unpin.json",
+        "swipe_unread.json"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/raw",
+      "local_glob": "apps/android/telegram/src/main/res/raw",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "notes": "Byte-identical animation and default-pattern resources referenced directly by pinned Theme.java."
+    },
+    {
       "kind": "asset",
       "files": [
         "codelng.gzip"
@@ -4227,13 +4675,16 @@
     {
       "kind": "asset",
       "files": [
+        "arctic.attheme",
         "bluebubbles.attheme",
-        "darkblue.attheme"
+        "darkblue.attheme",
+        "day.attheme",
+        "night.attheme"
       ],
       "upstream_dir": "TMessagesProj/src/main/assets",
       "local_glob": "apps/android/telegram/src/main/assets",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
-      "notes": "Default day/night .attheme packs loaded by Theme.getThemeFileValues for Blue (bluebubbles) and Dark Blue (darkblue). Wallpaper blobs (WPS) and WLS links ignored until wallpaper pipeline is ported."
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "notes": "All five pinned built-in .attheme packs loaded by full Theme.java: Blue, Dark Blue, Arctic, Day, and Night. Wallpaper blobs and links are parsed by the pinned Theme model; NativeDo remote lookup remains behind ThemeBackend."
     }
   ]
 }

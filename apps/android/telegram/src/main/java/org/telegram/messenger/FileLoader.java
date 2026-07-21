@@ -32,8 +32,6 @@ import java.util.regex.Pattern;
 
 public class FileLoader extends BaseController {
 
-    public static final int TYPE_STORY = 7;
-
     private static final int PRIORITY_STREAM = 4;
     public static final int PRIORITY_HIGH = 3;
     public static final int PRIORITY_NORMAL_UP = 2;

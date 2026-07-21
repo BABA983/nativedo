@@ -403,17 +403,61 @@ public class BackupImageView extends View {
         }
     }
 
-    // V1 stub: Text class not ported. blurText feature disabled.
-    // public Text blurText;
+    public Text blurText;
     private Path blurTextClipPath;
     private ColorFilter blurTextBgColorFilter;
 
     public void setBlurredText(CharSequence str) {
-        // V1: no-op until Text class is ported
+        if (TextUtils.isEmpty(str)) {
+            blurText = null;
+            return;
+        }
+
+        blurText = new Text(str, 16.5f, AndroidUtilities.bold());
+        if (blurTextBgColorFilter == null) {
+            ColorMatrix colorMatrix = new ColorMatrix();
+            colorMatrix.setSaturation(1.2f);
+            AndroidUtilities.adjustBrightnessColorMatrix(colorMatrix, -.2f);
+            blurTextBgColorFilter = new ColorMatrixColorFilter(colorMatrix);
+        }
     }
 
     public void drawBlurredText(Canvas canvas, float alpha) {
-        // V1: no-op until Text class is ported
+        if (blurText == null) return;
+
+        if (blurTextClipPath == null) {
+            blurTextClipPath = new Path();
+        } else blurTextClipPath.rewind();
+
+        final float W, H;
+        if (width != -1 && height != -1) {
+            W = width;
+            H = height;
+        } else {
+            W = getMeasuredWidth();
+            H = getMeasuredHeight();
+        }
+
+        final float w = blurText.getCurrentWidth() + dp(18);
+        final float h = dp(28);
+        final float l = (W - w) / 2f;
+        final float cy = H / 2f;
+
+        AndroidUtilities.rectTmp.set(l, cy - h / 2f, l + w, cy + h / 2f);
+        blurTextClipPath.addRoundRect(AndroidUtilities.rectTmp, h / 2f, h / 2f, Path.Direction.CW);
+
+        canvas.save();
+        canvas.clipPath(blurTextClipPath);
+        if (blurImageReceiver != null && blurAllowed) {
+            blurImageReceiver.setColorFilter(blurTextBgColorFilter);
+            float wasAlpha = blurImageReceiver.getAlpha();
+            blurImageReceiver.setAlpha(alpha);
+            blurImageReceiver.draw(canvas);
+            blurImageReceiver.setAlpha(wasAlpha);
+            blurImageReceiver.setColorFilter(null);
+        }
+        blurText.draw(canvas, l + dp(9), cy, 0xFFFFFFFF, alpha);
+        canvas.restore();
     }
 
     @Override

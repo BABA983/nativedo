@@ -22,12 +22,13 @@ public abstract class UniversalFragment extends BaseFragment {
 
     @Override
     public View createView(Context context) {
+        Theme.ResourcesProvider resourcesProvider = getResourceProvider();
         actionBar.setBackButtonDrawable(new BackDrawable(false));
         actionBar.setTitle(getTitle());
-        actionBar.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
-        actionBar.setItemsBackgroundColor(Theme.getColor(Theme.key_actionBarActionModeDefaultSelector), false);
-        actionBar.setItemsColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), false);
-        actionBar.setTitleColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+        actionBar.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite, resourcesProvider));
+        actionBar.setItemsBackgroundColor(Theme.getColor(Theme.key_actionBarActionModeDefaultSelector, resourcesProvider), false);
+        actionBar.setItemsColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider), false);
+        actionBar.setTitleColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
         actionBar.setCastShadows(true);
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
@@ -39,7 +40,7 @@ public abstract class UniversalFragment extends BaseFragment {
         });
 
         FrameLayout contentView = new FrameLayout(context);
-        contentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
+        contentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray, resourcesProvider));
 
         listView = new UniversalRecyclerView(
             context,
@@ -48,7 +49,7 @@ public abstract class UniversalFragment extends BaseFragment {
             this::fillItems,
             this::onClick,
             this::onLongClick,
-            getResourceProvider()
+            resourcesProvider
         ) {
             @Override
             protected void onMeasure(int widthSpec, int heightSpec) {

@@ -62,6 +62,7 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.Emoji;
 import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.ImageReceiver;
+import org.telegram.messenger.SharedConfig;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.BaseCell;
 import org.telegram.ui.Cells.TextSelectionHelper;
@@ -224,13 +225,10 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
     public TopicPostCell(Context context) {
         super(context);
         dividerPaint.setStrokeWidth(AndroidUtilities.dp(1f));
-        titlePaint.setTextSize(AndroidUtilities.dp(15f));
         titlePaint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
-        metaPaint.setTextSize(AndroidUtilities.dp(13f));
-        reactionTextPaint.setTextSize(AndroidUtilities.dp(12f));
         reactionTextPaint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
-        replyTextPaint.setTextSize(AndroidUtilities.dp(13f));
         replyTextPaint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
+        applyTextSizes();
         avatarFlairBadgePaint.setStyle(Paint.Style.FILL);
         avatarFlairBadgeStrokePaint.setStyle(Paint.Style.STROKE);
         avatarFlairBadgeStrokePaint.setStrokeWidth(AndroidUtilities.dp(1f));
@@ -497,6 +495,7 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
 
     @Override
     public void updateColors() {
+        applyTextSizes();
         dividerPaint.setColor(Theme.getColor(Theme.key_divider));
         titlePaint.setColor(Theme.getColor(Theme.key_chat_messageTextIn));
         metaPaint.setColor(Theme.getColor(Theme.key_chat_inTimeText));
@@ -506,9 +505,30 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
         replyAvatarOverlapPaint.setColor(Theme.getColor(Theme.key_chat_inBubble));
         avatarFlairBadgeStrokePaint.setColor(Theme.multAlpha(Theme.getColor(Theme.key_chat_messageTextIn), 0.12f));
         replyFooterSelector = Theme.createSelectorDrawable(Theme.multAlpha(Theme.getColor(Theme.key_chat_inTimeText), 0.12f), Theme.RIPPLE_MASK_ROUNDRECT_6DP, replyFooterHeight / 2);
+        if (bodyContext != null) {
+            bodyContext.applyTheme();
+        }
+        for (PostBodyBlock block : bodyBlocks) {
+            block.applyTheme();
+        }
+        // Body text/link spans may need remeasure after painted/spanned colors change.
+        requestLayout();
+        invalidate();
+    }
+
+    public void updateTextSizes() {
+        applyTextSizes();
         rebuildBodyContext();
         requestLayout();
         invalidate();
+    }
+
+    private void applyTextSizes() {
+        float bodySize = SharedConfig.fontSize;
+        titlePaint.setTextSize(AndroidUtilities.dp(Math.max(12f, bodySize - 1f)));
+        metaPaint.setTextSize(AndroidUtilities.dp(Math.max(11f, bodySize - 3f)));
+        reactionTextPaint.setTextSize(AndroidUtilities.dp(Math.max(10f, bodySize - 4f)));
+        replyTextPaint.setTextSize(AndroidUtilities.dp(Math.max(11f, bodySize - 3f)));
     }
 
     @Override

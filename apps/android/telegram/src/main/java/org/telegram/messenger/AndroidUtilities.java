@@ -16,12 +16,16 @@ import android.content.Context;
 import android.content.ContextWrapper;
 import android.database.Cursor;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.ColorMatrix;
 import android.graphics.Matrix;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.Drawable;
 import android.media.MediaMetadataRetriever;
 import android.os.Build;
 import android.graphics.Point;
@@ -70,6 +74,7 @@ import android.graphics.Typeface;
 import android.text.TextPaint;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
@@ -89,6 +94,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.function.Consumer;
 
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.BackgroundGradientDrawable;
+import org.telegram.ui.Components.MotionBackgroundDrawable;
 
 public final class AndroidUtilities {
 
@@ -1007,6 +1014,31 @@ public final class AndroidUtilities {
     public static final String TYPEFACE_ROBOTO_MONO = "fonts/rmono.ttf";
 
     public static int screenRefreshRate = 60;
+    public static int screenMaxRefreshRate = 60;
+
+    public static int getShadowHeight() {
+        if (density >= 4.0f) {
+            return 3;
+        } else if (density >= 2.0f) {
+            return 2;
+        } else {
+            return 1;
+        }
+    }
+
+    public static void setPreferredMaxRefreshRate(WindowManager wm, View windowView, WindowManager.LayoutParams params) {
+        if (wm == null) return;
+        if (Math.abs(params.preferredRefreshRate - screenMaxRefreshRate) > 0.2) {
+            params.preferredRefreshRate = screenMaxRefreshRate;
+            if (windowView.isAttachedToWindow()) {
+                try {
+                    wm.updateViewLayout(windowView, params);
+                } catch (Exception e) {
+                    FileLog.e(e);
+                }
+            }
+        }
+    }
 
     /** Stub of upstream {@code AndroidUtilities.getPhotoSize()} — long-side cap for default photo download. */
     public static int getPhotoSize() {
@@ -2252,5 +2284,182 @@ public final class AndroidUtilities {
         m[10] *= v;
         m[11] *= v;
         m[12] *= v;
+    }
+
+    public static int calcBitmapColor(Bitmap bitmap) {
+        if (bitmap == null) {
+            return 0;
+        }
+        try {
+            Bitmap b = Bitmaps.createScaledBitmap(bitmap, 1, 1, true);
+            if (b != null) {
+                int bitmapColor = b.getPixel(0, 0);
+                if (bitmap != b) {
+                    b.recycle();
+                }
+                return bitmapColor;
+            }
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
+        return 0;
+    }
+
+    public static int[] calcDrawableColor(Drawable drawable) {
+        int bitmapColor = 0xff000000;
+        int[] result = new int[4];
+        try {
+            if (drawable instanceof BitmapDrawable) {
+                bitmapColor = calcBitmapColor(((BitmapDrawable) drawable).getBitmap());
+            } else if (drawable instanceof ColorDrawable) {
+                bitmapColor = ((ColorDrawable) drawable).getColor();
+            } else if (drawable instanceof BackgroundGradientDrawable) {
+                int[] colors = ((BackgroundGradientDrawable) drawable).getColorsList();
+                if (colors != null) {
+                    if (colors.length > 1) {
+                        bitmapColor = getAverageColor(colors[0], colors[1]);
+                    } else if (colors.length > 0) {
+                        bitmapColor = colors[0];
+                    }
+                }
+            } else if (drawable instanceof MotionBackgroundDrawable) {
+                result[0] = result[2] = Color.argb(0x2D, 0, 0, 0);
+                result[1] = result[3] = Color.argb(0x3D, 0, 0, 0);
+                return result;
+            }
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
+
+        double[] hsv = rgbToHsv(Color.red(bitmapColor), Color.green(bitmapColor), Color.blue(bitmapColor));
+        hsv[1] = Math.min(1.0, hsv[1] + 0.05 + 0.1 * (1.0 - hsv[1]));
+        int[] rgb = hsvToRgb(hsv[0], hsv[1], Math.max(0, hsv[2] * 0.65));
+        result[0] = Color.argb(0x66, rgb[0], rgb[1], rgb[2]);
+        result[1] = Color.argb(0x88, rgb[0], rgb[1], rgb[2]);
+        rgb = hsvToRgb(hsv[0], hsv[1], Math.max(0, hsv[2] * 0.72));
+        result[2] = Color.argb(0x66, rgb[0], rgb[1], rgb[2]);
+        result[3] = Color.argb(0x88, rgb[0], rgb[1], rgb[2]);
+        return result;
+    }
+
+    public static double[] rgbToHsv(int r, int g, int b) {
+        double rf = r / 255.0;
+        double gf = g / 255.0;
+        double bf = b / 255.0;
+        double max = (rf > gf && rf > bf) ? rf : Math.max(gf, bf);
+        double min = (rf < gf && rf < bf) ? rf : Math.min(gf, bf);
+        double d = max - min;
+        double s = max == 0 ? 0 : d / max;
+        double h;
+        if (max == min) {
+            h = 0;
+        } else if (rf > gf && rf > bf) {
+            h = (gf - bf) / d + (gf < bf ? 6 : 0);
+        } else if (gf > bf) {
+            h = (bf - rf) / d + 2;
+        } else {
+            h = (rf - gf) / d + 4;
+        }
+        return new double[]{h / 6, s, max};
+    }
+
+    public static int[] hsvToRgb(double h, double s, double v) {
+        double r = 0, g = 0, b = 0;
+        double i = Math.floor(h * 6);
+        double f = h * 6 - i;
+        double p = v * (1 - s);
+        double q = v * (1 - f * s);
+        double t = v * (1 - (1 - f) * s);
+        switch ((int) i % 6) {
+            case 0: r = v; g = t; b = p; break;
+            case 1: r = q; g = v; b = p; break;
+            case 2: r = p; g = v; b = t; break;
+            case 3: r = p; g = q; b = v; break;
+            case 4: r = t; g = p; b = v; break;
+            case 5: r = v; g = p; b = q; break;
+        }
+        return new int[]{(int) (r * 255), (int) (g * 255), (int) (b * 255)};
+    }
+
+    public static boolean copyFile(File sourceFile, File destFile) throws IOException {
+        if (sourceFile.equals(destFile)) {
+            return true;
+        }
+        if (!destFile.exists()) {
+            destFile.createNewFile();
+        }
+        try (FileInputStream source = new FileInputStream(sourceFile);
+             FileOutputStream destination = new FileOutputStream(destFile)) {
+            destination.getChannel().transferFrom(source.getChannel(), 0, source.getChannel().size());
+        } catch (Exception e) {
+            FileLog.e(e);
+            return false;
+        }
+        return true;
+    }
+
+    public static int getWallpaperRotation(int angle, boolean iOS) {
+        angle += iOS ? 180 : -180;
+        while (angle >= 360) angle -= 360;
+        while (angle < 0) angle += 360;
+        return angle;
+    }
+
+    public static boolean isValidWallChar(char ch) {
+        return ch == '-' || ch == '~';
+    }
+
+    public static File getSharingDirectory() {
+        return new File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE), "sharing/");
+    }
+
+    public static int getColorDistance(int color1, int color2) {
+        int r1 = Color.red(color1), g1 = Color.green(color1), b1 = Color.blue(color1);
+        int r2 = Color.red(color2), g2 = Color.green(color2), b2 = Color.blue(color2);
+        int rMean = (r1 + r2) / 2;
+        int r = r1 - r2, g = g1 - g2, b = b1 - b2;
+        return (((512 + rMean) * r * r) >> 8) + (4 * g * g) + (((767 - rMean) * b * b) >> 8);
+    }
+
+    public static Bitmap getScaledBitmap(float w, float h, String path, String streamPath, int streamOffset) {
+        FileInputStream stream = null;
+        try {
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inJustDecodeBounds = true;
+            if (path != null) {
+                BitmapFactory.decodeFile(path, options);
+            } else {
+                stream = new FileInputStream(streamPath);
+                stream.getChannel().position(streamOffset);
+                BitmapFactory.decodeStream(stream, null, options);
+            }
+            if (options.outWidth > 0 && options.outHeight > 0) {
+                if (w > h && options.outWidth < options.outHeight) {
+                    float temp = w;
+                    w = h;
+                    h = temp;
+                }
+                float scale = Math.min(options.outWidth / w, options.outHeight / h);
+                options.inSampleSize = 1;
+                while (options.inSampleSize < scale) {
+                    options.inSampleSize *= 2;
+                }
+                options.inJustDecodeBounds = false;
+                if (path != null) {
+                    return BitmapFactory.decodeFile(path, options);
+                }
+                stream.getChannel().position(streamOffset);
+                return BitmapFactory.decodeStream(stream, null, options);
+            }
+        } catch (Throwable e) {
+            FileLog.e(e);
+        } finally {
+            try {
+                if (stream != null) stream.close();
+            } catch (Exception e) {
+                FileLog.e(e);
+            }
+        }
+        return null;
     }
 }

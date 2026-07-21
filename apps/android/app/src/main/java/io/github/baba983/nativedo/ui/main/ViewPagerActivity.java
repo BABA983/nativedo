@@ -26,6 +26,8 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
+import java.util.ArrayList;
+
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
@@ -33,6 +35,7 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarLayout;
 import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.ActionBar.ThemeDescription;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.ViewPagerFixed;
 
@@ -215,6 +218,18 @@ public abstract class ViewPagerActivity extends BaseFragment {
         }
         FragmentState state = fragmentsArr.get(viewPager.getCurrentPosition());
         return state == null ? null : state.fragment;
+    }
+
+    @Override
+    public ArrayList<ThemeDescription> getThemeDescriptions() {
+        ArrayList<ThemeDescription> descriptions = new ArrayList<>();
+        for (int i = 0, count = fragmentsArr.size(); i < count; i++) {
+            FragmentState state = fragmentsArr.valueAt(i);
+            if (state != null && state.fragment.getFragmentView() != null) {
+                descriptions.addAll(state.fragment.getThemeDescriptions());
+            }
+        }
+        return descriptions;
     }
 
     @Override

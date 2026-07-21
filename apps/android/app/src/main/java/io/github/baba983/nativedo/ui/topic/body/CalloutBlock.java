@@ -438,10 +438,14 @@ final class CalloutBlock implements EmbeddedPostBodyBlock {
     @Override
     public void applyTheme() {
         titlePaint.setColor(context.getTextColor());
+        int color = parseColor(block.getColor(), context.getAccentColor());
+        linePaint.setColor(color);
+        backgroundPaint.setColor(Theme.multAlpha(color, 0.10f));
         calloutIconDrawable = resolveCalloutIconDrawable();
         if (foldArrow != null) {
             foldArrow.setColor(context.getSecondaryTextColor());
         }
+        titleBlock.applyTheme();
         for (PostBodyBlock child : bodyLayout.blocks) {
             child.applyTheme();
         }

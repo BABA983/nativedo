@@ -12,8 +12,8 @@ import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ApplicationLoader
 
 /**
- * Dual-layer color model: asset base (currentColorsNoAccent) + overrides (currentColors).
- * useDefault must restore the .attheme value, not hardcoded ThemeColors defaults.
+ * Upstream color model: asset base + accent fill produce currentColors.
+ * useDefault removes the current entry so default/fallback resolution takes over.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], manifest = Config.NONE)
@@ -29,8 +29,9 @@ class ThemeColorLayersContractTest {
         // Theme.getAssetFile / getThemeFileValues resolve Blue and Dark Blue packs.
         seedAtthemeIntoFilesDir("bluebubbles.attheme")
         seedAtthemeIntoFilesDir("darkblue.attheme")
-        Theme.init(app)
-        Theme.applyTheme(Theme.getTheme("Blue"), false, false)
+        seedAtthemeIntoFilesDir("day.attheme")
+        Theme.getActiveTheme()
+        Theme.applyTheme(Theme.getTheme("Day"), false, false)
     }
 
     private fun seedAtthemeIntoFilesDir(assetName: String) {
@@ -66,9 +67,8 @@ class ThemeColorLayersContractTest {
     }
 
     @Test
-    fun setColorOverrideThenUseDefaultRestoresAssetNotHardcodedDefault() {
+    fun setColorOverrideThenUseDefaultRestoresResolvedDefault() {
         val key = Theme.key_windowBackgroundWhiteBlueText
-        val assetColor = Theme.getColor(key)
         val hardcoded = Theme.getDefaultColor(key)
         val override = 0xff112233.toInt()
 
@@ -77,14 +77,14 @@ class ThemeColorLayersContractTest {
         assertThat(Theme.getNonAnimatedColor(key)).isEqualTo(override)
 
         Theme.setColor(key, hardcoded, true)
-        assertThat(Theme.getColor(key)).isEqualTo(assetColor)
-        assertThat(Theme.getNonAnimatedColor(key)).isEqualTo(assetColor)
+        assertThat(Theme.getColor(key)).isEqualTo(hardcoded)
+        assertThat(Theme.getNonAnimatedColor(key)).isEqualTo(hardcoded)
     }
 
     @Test
-    fun themeDescriptionSetDefaultColorRestoresAsset() {
+    fun themeDescriptionSetDefaultColorRestoresResolvedDefault() {
         val key = Theme.key_windowBackgroundWhiteBlackText
-        val assetColor = Theme.getColor(key)
+        val defaultColor = Theme.getDefaultColor(key)
         Theme.setColor(key, 0xffabcdef.toInt(), false)
         assertThat(Theme.getColor(key)).isEqualTo(0xffabcdef.toInt())
 
@@ -98,19 +98,17 @@ class ThemeColorLayersContractTest {
             key,
         )
         description.setDefaultColor()
-        assertThat(Theme.getColor(key)).isEqualTo(assetColor)
+        assertThat(Theme.getColor(key)).isEqualTo(defaultColor)
     }
 
     @Test
-    fun reinitKeepsAssetBaseAndDropsInMemoryOverrides() {
+    fun reapplyThemeRebuildsAccentColorsAndDropsInMemoryOverrides() {
         val key = Theme.key_windowBackgroundWhiteBlueText
         val assetColor = Theme.getColor(key)
         Theme.setColor(key, 0xff445566.toInt(), false)
         assertThat(Theme.getColor(key)).isEqualTo(0xff445566.toInt())
 
-        val app = RuntimeEnvironment.getApplication()
-        Theme.init(app)
-        // applyTheme reloads asset into both layers; in-memory overrides are not persisted.
+        Theme.applyTheme(Theme.getTheme("Day"), false, false)
         assertThat(Theme.getColor(key)).isEqualTo(assetColor)
     }
 
@@ -128,24 +126,19 @@ class ThemeColorLayersContractTest {
 
         Theme.setColor(key, 0, true)
         Theme.getColor(key, isDefault)
-        assertThat(isDefault[0]).isFalse() // asset base still supplies it
+        assertThat(isDefault[0]).isTrue()
     }
 
     @Test
-    fun useDefaultWhenAssetMissingFallsToHardcodedDefault() {
-        // dialogBackground is in ThemeColors defaults but not in bluebubbles.attheme,
-        // so currentColorsNoAccent has no entry after Blue load.
-        val key = Theme.key_dialogBackground
+    fun useDefaultRemovesCurrentLayerEntry() {
+        val key = Theme.key_dialogTextBlack
         val hardcoded = Theme.getDefaultColor(key)
         assertThat(hardcoded).isNotEqualTo(0xffff0000.toInt())
-        // Baseline is hardcoded default (no asset base).
-        assertThat(Theme.getColor(key)).isEqualTo(hardcoded)
 
         val override = 0xffaabbcc.toInt()
         Theme.setColor(key, override, false)
         assertThat(Theme.getColor(key)).isEqualTo(override)
 
-        // useDefault with no asset entry must fall through to hardcoded defaultColors.
         Theme.setColor(key, 0, true)
         assertThat(Theme.getColor(key)).isEqualTo(hardcoded)
         assertThat(Theme.getNonAnimatedColor(key)).isEqualTo(hardcoded)

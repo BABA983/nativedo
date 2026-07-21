@@ -1,21 +1,3 @@
-/*
- * This file is part of NativeDo.
- *
- * Derived in part from Telegram for Android's
- * org/telegram/ui/GradientClip.java.
- *
- * Source reference:
- * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/ui/GradientClip.java
- *
- * Copyright (C) Telegram FZ-LLC
- * Copyright (C) 2026 NativeDo contributors
- *
- * This program is free software: you can redistribute it and/or modify
- * it under terms of GNU General Public License version 2 or later as published by
- * the Free Software Foundation.
- *
- * SPDX-License-Identifier: GPL-2.0-or-later
- */
 package org.telegram.ui;
 
 import android.graphics.Canvas;
@@ -45,18 +27,14 @@ public class GradientClip {
     }
 
     public void draw(Canvas canvas, RectF rect, int dir, float alpha) {
-        if (alpha <= 0) {
-            return;
-        }
+        if (alpha <= 0) return;
 
         if (gradient == null) {
-            gradient = new LinearGradient(0, 0, 0, 16, new int[]{0xFFFF0000, 0x00FF0000}, new float[]{0, 1}, Shader.TileMode.CLAMP);
+            gradient = new LinearGradient(0, 0, 0, 16, new int[] { 0xFFFF0000, 0x00FF0000 }, new float[] {0, 1}, Shader.TileMode.CLAMP);
         }
         if (paint[dir] == null) {
             paint[dir] = new Paint(Paint.ANTI_ALIAS_FLAG);
-            if (!DEBUG) {
-                paint[dir].setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_OUT));
-            }
+            if (!DEBUG) paint[dir].setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_OUT));
         }
         paint[dir].setShader(gradient);
 
@@ -97,12 +75,11 @@ public class GradientClip {
         final int dir = 0;
         if (paint[dir] == null) {
             paint[dir] = new Paint(Paint.ANTI_ALIAS_FLAG);
-            if (!DEBUG) {
-                paint[dir].setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_OUT));
-            }
+            if (!DEBUG) paint[dir].setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_OUT));
         }
         paint[dir].setShader(gradient);
         paint[dir].setAlpha((int) (0xFF * alpha));
         canvas.drawRect(rect, paint[dir]);
     }
+
 }

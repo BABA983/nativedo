@@ -5,6 +5,7 @@ import android.text.TextPaint
 import android.view.View
 import androidx.annotation.ColorInt
 import org.telegram.messenger.AndroidUtilities
+import org.telegram.messenger.SharedConfig
 import org.telegram.ui.ActionBar.Theme
 
 internal class PostBodyBuildContext @JvmOverloads constructor(
@@ -13,28 +14,83 @@ internal class PostBodyBuildContext @JvmOverloads constructor(
     val delegate: PostBodyDelegate,
     val hiddenImageUrlProvider: () -> String? = { null },
     val imagePool: PostBodyImagePool = PostBodyImagePool(host),
-    @ColorInt val textColor: Int,
-    @ColorInt val secondaryTextColor: Int,
-    @ColorInt val accentColor: Int,
-    @ColorInt val chipBackgroundColor: Int,
-    @ColorInt val dividerColor: Int,
+    @ColorInt textColor: Int,
+    @ColorInt secondaryTextColor: Int,
+    @ColorInt accentColor: Int,
+    @ColorInt chipBackgroundColor: Int,
+    @ColorInt dividerColor: Int,
     val svgSpriteMarkup: String = "",
     val selectionGeometryInvalidator: () -> Unit = { host.invalidate() },
 ) {
-    @ColorInt val subtleBackgroundColor: Int = Theme.multAlpha(secondaryTextColor, 0.10f)
-    @ColorInt val mediaPlaceholderColor: Int = Theme.multAlpha(secondaryTextColor, 0.12f)
-    @ColorInt val cardStrokeColor: Int = Theme.multAlpha(dividerColor, 0.55f)
-    @ColorInt val pollBarColor: Int = Theme.multAlpha(accentColor, 0.16f)
-    @ColorInt val spoilerOverlayColor: Int = Theme.multAlpha(textColor, 0.18f)
+    @ColorInt var textColor: Int = textColor
+        private set
+    @ColorInt var secondaryTextColor: Int = secondaryTextColor
+        private set
+    @ColorInt var accentColor: Int = accentColor
+        private set
+    @ColorInt var chipBackgroundColor: Int = chipBackgroundColor
+        private set
+    @ColorInt var dividerColor: Int = dividerColor
+        private set
 
-    val paragraphPaint: TextPaint = textPaint(sizeSp = 16f, color = textColor)
-    val quotePaint: TextPaint = textPaint(sizeSp = 15f, color = textColor)
-    val mediaCaptionPaint: TextPaint = textPaint(sizeSp = 14f, color = secondaryTextColor)
-    val headingPaint: TextPaint = textPaint(sizeSp = 20f, color = textColor).apply {
+    @ColorInt var subtleBackgroundColor: Int = Theme.multAlpha(secondaryTextColor, 0.10f)
+        private set
+    @ColorInt var mediaPlaceholderColor: Int = Theme.multAlpha(secondaryTextColor, 0.12f)
+        private set
+    @ColorInt var cardStrokeColor: Int = Theme.multAlpha(dividerColor, 0.55f)
+        private set
+    @ColorInt var pollBarColor: Int = Theme.multAlpha(accentColor, 0.16f)
+        private set
+    @ColorInt var spoilerOverlayColor: Int = Theme.multAlpha(textColor, 0.18f)
+        private set
+
+    val paragraphPaint: TextPaint = textPaint(sizeSp = bodyFontSize(), color = textColor)
+    val quotePaint: TextPaint = textPaint(sizeSp = (bodyFontSize() - 1f).coerceAtLeast(12f), color = textColor)
+    val mediaCaptionPaint: TextPaint = textPaint(sizeSp = (bodyFontSize() - 2f).coerceAtLeast(11f), color = secondaryTextColor)
+    val headingPaint: TextPaint = textPaint(sizeSp = bodyFontSize() + 4f, color = textColor).apply {
         typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
     }
-    val monoPaint: TextPaint = textPaint(sizeSp = 14f, color = textColor).apply {
+    val monoPaint: TextPaint = textPaint(sizeSp = (bodyFontSize() - 2f).coerceAtLeast(11f), color = textColor).apply {
         typeface = AndroidUtilities.getTypeface(AndroidUtilities.TYPEFACE_ROBOTO_MONO)
+    }
+
+    /**
+     * Re-sample theme keys and push them into shared paints so attached body
+     * blocks can recolor without rebuilding the full block tree / image pool.
+     */
+    fun applyTheme() {
+        textColor = Theme.getColor(Theme.key_chat_messageTextIn)
+        secondaryTextColor = Theme.getColor(Theme.key_chat_inTimeText)
+        accentColor = Theme.getColor(Theme.key_chat_inReplyLine)
+        chipBackgroundColor = Theme.multAlpha(accentColor, 0.15f)
+        dividerColor = Theme.getColor(Theme.key_divider)
+        subtleBackgroundColor = Theme.multAlpha(secondaryTextColor, 0.10f)
+        mediaPlaceholderColor = Theme.multAlpha(secondaryTextColor, 0.12f)
+        cardStrokeColor = Theme.multAlpha(dividerColor, 0.55f)
+        pollBarColor = Theme.multAlpha(accentColor, 0.16f)
+        spoilerOverlayColor = Theme.multAlpha(textColor, 0.18f)
+        applyPaint(paragraphPaint, textColor)
+        applyPaint(quotePaint, textColor)
+        applyPaint(mediaCaptionPaint, secondaryTextColor)
+        applyPaint(headingPaint, textColor)
+        applyPaint(monoPaint, textColor)
+        applyTextSizes()
+    }
+
+    private fun applyTextSizes() {
+        val bodySize = bodyFontSize()
+        paragraphPaint.textSize = AndroidUtilities.dp(bodySize).toFloat()
+        quotePaint.textSize = AndroidUtilities.dp((bodySize - 1f).coerceAtLeast(12f)).toFloat()
+        mediaCaptionPaint.textSize = AndroidUtilities.dp((bodySize - 2f).coerceAtLeast(11f)).toFloat()
+        headingPaint.textSize = AndroidUtilities.dp(bodySize + 4f).toFloat()
+        monoPaint.textSize = AndroidUtilities.dp((bodySize - 2f).coerceAtLeast(11f)).toFloat()
+    }
+
+    private fun bodyFontSize(): Float = SharedConfig.fontSize.toFloat()
+
+    private fun applyPaint(paint: TextPaint, @ColorInt color: Int) {
+        paint.color = color
+        paint.linkColor = accentColor
     }
 
     private fun textPaint(sizeSp: Float, @ColorInt color: Int): TextPaint {

@@ -35,6 +35,7 @@ import org.telegram.ui.ActionBar.BackDrawable
 import org.telegram.ui.ActionBar.ActionBar
 import org.telegram.ui.ActionBar.BaseFragment
 import org.telegram.ui.ActionBar.Theme
+import org.telegram.ui.ActionBar.ThemeDescription
 import org.telegram.ui.ArticleViewer
 import org.telegram.ui.Components.LayoutHelper
 import org.telegram.ui.Components.LineProgressView
@@ -676,6 +677,29 @@ class LoginWebViewFragment : BaseFragment() {
         }
         webView?.onPause()
         super.onPause()
+    }
+
+    override fun getThemeDescriptions(): java.util.ArrayList<ThemeDescription> {
+        val descriptions = java.util.ArrayList<ThemeDescription>()
+        actionBar?.let { bar ->
+            descriptions.add(ThemeDescription(bar, ThemeDescription.FLAG_BACKGROUND, null, null as android.graphics.Paint?, null, null, Theme.key_actionBarDefault))
+            descriptions.add(ThemeDescription(bar, ThemeDescription.FLAG_AB_ITEMSCOLOR, null, null as android.graphics.Paint?, null, null, Theme.key_actionBarDefaultIcon))
+            descriptions.add(ThemeDescription(bar, ThemeDescription.FLAG_AB_TITLECOLOR, null, null as android.graphics.Paint?, null, null, Theme.key_actionBarDefaultTitle))
+            descriptions.add(ThemeDescription(bar, ThemeDescription.FLAG_AB_SELECTORCOLOR, null, null as android.graphics.Paint?, null, null, Theme.key_actionBarDefaultSelector))
+        }
+        webRoot?.let { root ->
+            descriptions.add(ThemeDescription(root, ThemeDescription.FLAG_BACKGROUND, null, null as android.graphics.Paint?, null, null, Theme.key_windowBackgroundWhite))
+        }
+        progressView?.let { progress ->
+            descriptions.add(ThemeDescription(progress, ThemeDescription.FLAG_PROGRESSBAR, null, null as android.graphics.Paint?, null, null, Theme.key_featuredStickers_addButton))
+        }
+        val errorDelegate = ThemeDescription.ThemeDescriptionDelegate {
+            val background = Theme.getColor(Theme.key_windowBackgroundWhite)
+            errorContainer?.setBackgroundColor(background)
+            errorContainer?.setDark(AndroidUtilities.computePerceivedBrightness(background) <= 0.721f, false)
+        }
+        descriptions.add(ThemeDescription(null, 0, null, null as android.graphics.Paint?, null, errorDelegate, Theme.key_windowBackgroundWhite))
+        return descriptions
     }
 
     override fun onBackPressed(): Boolean {

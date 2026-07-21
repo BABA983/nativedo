@@ -4,16 +4,20 @@ import com.google.common.truth.Truth.assertThat
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import android.os.Looper
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.io.File
+import java.util.Calendar
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ApplicationLoader
+import org.telegram.messenger.MessagesController
+import org.telegram.messenger.NotificationCenter
 
 /**
- * Contract tests for the host Theme day/night pipeline:
- * Blue / Dark Blue assets, prefs slots, toggle, and unknown-key fallback.
+ * Contract tests for the upstream Theme day/night pipeline and host toggle bridge.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], manifest = Config.NONE)
@@ -29,7 +33,8 @@ class ThemeDayNightContractTest {
         // Robolectric does not package :telegram assets; seed files dir for .attheme loads.
         seedAtthemeIntoFilesDir("bluebubbles.attheme")
         seedAtthemeIntoFilesDir("darkblue.attheme")
-        Theme.init(app)
+        Theme.getActiveTheme()
+        Theme.applyTheme(Theme.getTheme("Blue"), false, false)
     }
 
     private fun seedAtthemeIntoFilesDir(assetName: String) {
@@ -55,42 +60,36 @@ class ThemeDayNightContractTest {
     }
 
     @Test
-    fun toggleThemeSwitchesToDarkBlueAndBack() {
-        Theme.toggleTheme()
+    fun applyingNightAndDaySlotsSwitchesThemes() {
+        Theme.applyTheme(Theme.getCurrentNightTheme(), true)
+        Theme.saveAutoNightThemeConfig()
         assertThat(Theme.isCurrentThemeDark()).isTrue()
         assertThat(Theme.getActiveTheme()?.name).isEqualTo("Dark Blue")
         assertThat(Theme.getCurrentNightTheme()?.name).isEqualTo("Dark Blue")
 
-        Theme.toggleTheme()
+        Theme.applyTheme(Theme.getCurrentTheme(), false)
         assertThat(Theme.isCurrentThemeDark()).isFalse()
         assertThat(Theme.getActiveTheme()?.name).isEqualTo("Blue")
     }
 
     @Test
-    fun prefsPersistNightSlotAcrossReinit() {
-        Theme.toggleTheme()
+    fun saveAutoNightConfigPersistsNightSlot() {
+        Theme.applyTheme(Theme.getCurrentNightTheme(), true)
+        Theme.saveAutoNightThemeConfig()
         assertThat(Theme.isCurrentThemeDark()).isTrue()
 
         val app = RuntimeEnvironment.getApplication()
-        Theme.init(app)
-        assertThat(Theme.isCurrentThemeDark()).isTrue()
-        assertThat(Theme.getActiveTheme()?.name).isEqualTo("Dark Blue")
+        assertThat(app.getSharedPreferences("global", 0).getString("nighttheme", null))
+            .isEqualTo("Dark Blue")
     }
 
     @Test
-    fun unknownThemeKeyFallsBackToBlue() {
-        val app = RuntimeEnvironment.getApplication()
-        app.getSharedPreferences("themeconfig", 0)
-            .edit()
-            .putString("theme", "NativeDo")
-            .putString("nighttheme", "NotARealTheme")
-            .putBoolean("activeIsNight", false)
-            .commit()
-
-        Theme.init(app)
-        assertThat(Theme.getActiveTheme()?.name).isEqualTo("Blue")
-        assertThat(Theme.getCurrentTheme()?.name).isEqualTo("Blue")
-        assertThat(Theme.getCurrentNightTheme()?.name).isEqualTo("Dark Blue")
+    fun completeBuiltInCatalogIncludesFiveThemes() {
+        assertThat(Theme.getTheme("Blue")).isNotNull()
+        assertThat(Theme.getTheme("Dark Blue")).isNotNull()
+        assertThat(Theme.getTheme("Arctic Blue")).isNotNull()
+        assertThat(Theme.getTheme("Day")).isNotNull()
+        assertThat(Theme.getTheme("Night")).isNotNull()
     }
 
     @Test
@@ -101,5 +100,35 @@ class ThemeDayNightContractTest {
         // Either from asset or default — must not be the missing-key red sentinel 0xffff0000
         // unless that is intentionally the value (it is not in defaults).
         assertThat(color).isNotEqualTo(0xffff0000.toInt())
+    }
+
+    @Test
+    fun scheduledAutoNight_isCheckedFromMessagesControllerTimerProc() {
+        val calendar = Calendar.getInstance()
+        Theme.autoNightDayStartTime = calendar.get(Calendar.HOUR_OF_DAY) * 60 + calendar.get(Calendar.MINUTE)
+        Theme.autoNightDayEndTime = Theme.autoNightDayStartTime
+        Theme.selectedAutoNightType = Theme.AUTO_NIGHT_TYPE_SCHEDULED
+        MessagesController::class.java.getDeclaredField("lastThemeCheckTime")
+            .apply { isAccessible = true }
+            .setLong(null, 0L)
+        Theme::class.java.getDeclaredField("switchNightThemeDelay")
+            .apply { isAccessible = true }
+            .setInt(null, 0)
+        var requestedNightTheme: Boolean? = null
+        val observer = NotificationCenter.NotificationCenterDelegate { id, _, args ->
+            if (id == NotificationCenter.needSetDayNightTheme) {
+                requestedNightTheme = args.getOrNull(1) as? Boolean
+            }
+        }
+        NotificationCenter.getGlobalInstance().addObserver(observer, NotificationCenter.needSetDayNightTheme)
+
+        try {
+            MessagesController.getInstance(0).updateTimerProc()
+            shadowOf(Looper.getMainLooper()).idle()
+            assertThat(requestedNightTheme).isTrue()
+        } finally {
+            NotificationCenter.getGlobalInstance().removeObserver(observer, NotificationCenter.needSetDayNightTheme)
+            Theme.selectedAutoNightType = Theme.AUTO_NIGHT_TYPE_NONE
+        }
     }
 }

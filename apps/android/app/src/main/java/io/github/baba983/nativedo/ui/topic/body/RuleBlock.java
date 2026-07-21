@@ -26,7 +26,10 @@ final class RuleBlock implements PostBodyBlock {
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final int measuredHeight = measuredHeightPx();
 
+    private final PostBodyBuildContext context;
+
     RuleBlock(PostBodyBuildContext context) {
+        this.context = context;
         paint.setColor(context.getDividerColor());
     }
 
@@ -86,6 +89,7 @@ final class RuleBlock implements PostBodyBlock {
 
     @Override
     public void applyTheme() {
+        paint.setColor(context.getDividerColor());
     }
 
     static int measuredHeightPx() {

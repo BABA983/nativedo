@@ -14,9 +14,9 @@ import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ApplicationLoader
 
 /**
- * listClasses (flags=0) must re-tint Theme.Colorable cells during setColor via
- * processViewColor (host hook for instance-paint cells). Uses a plain ViewGroup
- * host so the test does not depend on RecyclerView LayoutManager wiring.
+ * listClasses (flags=0) keeps the upstream child invalidation/delegate contract.
+ * Colorable refresh is owned by ActionBarLayout's visible-tree animation pass,
+ * not by a ThemeDescription host extension.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], manifest = Config.NONE)
@@ -29,7 +29,7 @@ class ThemeDescriptionListClassesContractTest {
         context = RuntimeEnvironment.getApplication()
         ApplicationLoader.init(context)
         AndroidUtilities.init(context)
-        Theme.init(context)
+        Theme.getActiveTheme()
     }
 
     private class ColorableCell(context: Context) : View(context), Theme.Colorable {
@@ -42,7 +42,7 @@ class ThemeDescriptionListClassesContractTest {
     }
 
     @Test
-    fun listClassesDescriptionUpdatesColorableChildren() {
+    fun listClassesDescriptionInvalidatesChildrenWithoutColorableExtension() {
         val host = FrameLayout(context)
         val a = ColorableCell(context)
         val b = ColorableCell(context)
@@ -60,13 +60,13 @@ class ThemeDescriptionListClassesContractTest {
                 Theme.key_windowBackgroundWhite,
             ),
         )
-        Theme.applyThemeDescriptions(descriptions)
-        assertThat(a.updateCount).isEqualTo(1)
-        assertThat(b.updateCount).isEqualTo(1)
+        descriptions.forEach { it.setColor(Theme.getColor(it.currentKey), false, false) }
+        assertThat(a.updateCount).isEqualTo(0)
+        assertThat(b.updateCount).isEqualTo(0)
 
         // setColor always re-applies (no generation cache).
-        Theme.applyThemeDescriptions(descriptions)
-        assertThat(a.updateCount).isEqualTo(2)
+        descriptions.forEach { it.setColor(Theme.getColor(it.currentKey), false, false) }
+        assertThat(a.updateCount).isEqualTo(0)
     }
 
     @Test
@@ -86,8 +86,8 @@ class ThemeDescriptionListClassesContractTest {
                 Theme.key_windowBackgroundWhite,
             ),
         )
-        Theme.applyThemeDescriptions(descriptions)
+        descriptions.forEach { it.setColor(Theme.getColor(it.currentKey), false, false) }
         assertThat(chrome).isEqualTo(1)
-        assertThat(cell.updateCount).isEqualTo(1)
+        assertThat(cell.updateCount).isEqualTo(0)
     }
 }

@@ -11,6 +11,8 @@ import org.telegram.messenger.ImageLoader as TelegramImageLoader
 import org.telegram.messenger.LocaleController
 import org.telegram.messenger.SharedConfig
 import io.github.baba983.nativedo.core.di.AppContainer
+import org.telegram.tgnet.ConnectionsManager
+import org.telegram.tgnet.tl.TL_account
 import org.telegram.ui.ActionBar.Theme
 import java.io.File
 import java.io.RandomAccessFile
@@ -24,7 +26,8 @@ class NativeDoApp : Application(), SingletonImageLoader.Factory {
         SharedConfig.loadBrowserConfig()
         LocaleController.init(this)
         AndroidUtilities.init(this)
-        Theme.init(this)
+        Theme.setThemeBackend(NativeDoThemeBackend)
+        Theme.createDialogsResources(this)
 
         // Take over Telegram ImageLoader's HTTP transfer with the app's OkHttp
         // client. Product-specific concerns (auth cookies, Cloudflare clearance,
@@ -43,6 +46,43 @@ class NativeDoApp : Application(), SingletonImageLoader.Factory {
     override fun newImageLoader(context: Context): ImageLoader {
         return appContainer.newImageLoader(context)
     }
+}
+
+private object NativeDoThemeBackend : Theme.ThemeBackend {
+    private fun unsupported(): Nothing = throw UnsupportedOperationException(
+        "linux.do does not provide a remote theme catalog; use local theme import/export",
+    )
+
+    override fun supportsRemoteThemes(): Boolean = false
+
+    override fun installRemoteTheme(
+        theme: Theme.ThemeInfo,
+        accent: Theme.ThemeAccent?,
+        nightTheme: Boolean,
+        remove: Boolean,
+    ) = unsupported()
+
+    override fun uploadTheme(theme: Theme.ThemeInfo, accent: Theme.ThemeAccent?) = unsupported()
+
+    override fun loadRemoteThemes(account: Int, force: Boolean) = unsupported()
+
+    override fun loadWallpaperPatterns(
+        account: Int,
+        request: TL_account.getMultiWallPapers,
+        callback: ConnectionsManager.RequestDelegate,
+    ) = unsupported()
+
+    override fun loadRemoteWallpaper(
+        account: Int,
+        request: TL_account.getWallPaper,
+        callback: ConnectionsManager.RequestDelegate,
+    ) = unsupported()
+
+    override fun refreshCurrentRemoteTheme(
+        account: Int,
+        request: TL_account.getTheme,
+        callback: ConnectionsManager.RequestDelegate,
+    ) = unsupported()
 }
 
 private class NativeDoImageDownloader(

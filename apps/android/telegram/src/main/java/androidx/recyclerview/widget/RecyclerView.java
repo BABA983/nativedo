@@ -11205,6 +11205,24 @@ public class RecyclerView extends ViewGroup implements ScrollingView,
         }
 
         /**
+         * Host shim for modern AndroidX / Kotlin {@code bindingAdapterPosition}.
+         * Telegram's vendored RecyclerView predates this API; without it app code
+         * that uses {@code holder.bindingAdapterPosition} crashes with
+         * {@link NoSuchMethodError} at runtime (see TopicDetailAdapter.isEnabled).
+         */
+        public final int getBindingAdapterPosition() {
+            return getAdapterPosition();
+        }
+
+        /**
+         * Host shim matching modern AndroidX {@code getAbsoluteAdapterPosition()}.
+         * On this single-adapter fork it is equivalent to {@link #getAdapterPosition()}.
+         */
+        public final int getAbsoluteAdapterPosition() {
+            return getAdapterPosition();
+        }
+
+        /**
          * When LayoutManager supports animations, RecyclerView tracks 3 positions for ViewHolders
          * to perform animations.
          * <p>

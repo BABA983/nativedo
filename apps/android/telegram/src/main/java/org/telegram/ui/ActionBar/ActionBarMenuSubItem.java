@@ -25,6 +25,7 @@ public class ActionBarMenuSubItem extends FrameLayout {
     private int iconColor;
     private int selectorColor;
     private int iconResId;
+    private boolean isRTL;
 
     // Rounded selector state — mirrors upstream ActionBarMenuSubItem.
     private boolean top, bottom;
@@ -38,6 +39,7 @@ public class ActionBarMenuSubItem extends FrameLayout {
         super(context);
         this.top = top;
         this.bottom = bottom;
+        isRTL = LocaleController.isRTL;
         textColor = Theme.getColor(Theme.key_actionBarDefaultSubmenuItem, resourcesProvider);
         iconColor = Theme.getColor(Theme.key_actionBarDefaultSubmenuItemIcon, resourcesProvider);
         selectorColor = Theme.getColor(Theme.key_dialogButtonSelector, resourcesProvider);
@@ -47,25 +49,25 @@ public class ActionBarMenuSubItem extends FrameLayout {
         imageView = new ImageView(context);
         imageView.setScaleType(ImageView.ScaleType.CENTER);
         imageView.setColorFilter(new PorterDuffColorFilter(iconColor, PorterDuff.Mode.MULTIPLY));
-        addView(imageView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 40, Gravity.LEFT | Gravity.CENTER_VERTICAL));
+        addView(imageView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 40, (isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL));
 
         textView = new TextView(context);
         textView.setLines(1);
         textView.setSingleLine(true);
-        textView.setGravity(Gravity.LEFT);
+        textView.setGravity(isRTL ? Gravity.RIGHT : Gravity.LEFT);
         textView.setEllipsize(TextUtils.TruncateAt.END);
         textView.setTextColor(textColor);
         textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
-        addView(textView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.LEFT | Gravity.CENTER_VERTICAL));
+        addView(textView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, (isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL));
 
         subtextView = new TextView(context);
         subtextView.setLines(1);
         subtextView.setSingleLine(true);
-        subtextView.setGravity(Gravity.LEFT);
+        subtextView.setGravity(isRTL ? Gravity.RIGHT : Gravity.LEFT);
         subtextView.setEllipsize(TextUtils.TruncateAt.MIDDLE);
         subtextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
-        subtextView.setPadding(AndroidUtilities.dp(43), 0, 0, 0);
-        FrameLayout.LayoutParams subtextParams = LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.LEFT | Gravity.CENTER_VERTICAL);
+        subtextView.setPadding(isRTL ? 0 : AndroidUtilities.dp(43), 0, isRTL ? AndroidUtilities.dp(43) : 0, 0);
+        FrameLayout.LayoutParams subtextParams = LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, (isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL);
         subtextParams.topMargin = AndroidUtilities.dp(10);
         addView(subtextView, subtextParams);
     }
@@ -82,13 +84,13 @@ public class ActionBarMenuSubItem extends FrameLayout {
             imageView.setColorFilter(null);
             imageView.setImageDrawable(iconDrawable);
             imageView.setVisibility(VISIBLE);
-            textView.setPadding(AndroidUtilities.dp(43), 0, 0, 0);
+            textView.setPadding(isRTL ? 0 : AndroidUtilities.dp(43), 0, isRTL ? AndroidUtilities.dp(43) : 0, 0);
         } else if (icon != 0) {
             iconResId = icon;
             imageView.setColorFilter(new PorterDuffColorFilter(iconColor, PorterDuff.Mode.MULTIPLY));
             imageView.setImageResource(icon);
             imageView.setVisibility(VISIBLE);
-            textView.setPadding(AndroidUtilities.dp(43), 0, 0, 0);
+            textView.setPadding(isRTL ? 0 : AndroidUtilities.dp(43), 0, isRTL ? AndroidUtilities.dp(43) : 0, 0);
         } else {
             iconResId = 0;
             imageView.setVisibility(INVISIBLE);
@@ -182,5 +184,21 @@ public class ActionBarMenuSubItem extends FrameLayout {
 
     public void updateBackground() {
         setBackground(Theme.createRadSelectorDrawable(selectorColor, top ? selectorRad : 0, bottom ? selectorRad : 0));
+    }
+
+    public void updateRTL() {
+        if (isRTL == LocaleController.isRTL) {
+            return;
+        }
+        isRTL = LocaleController.isRTL;
+        imageView.setLayoutParams(LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 40, (isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL));
+        textView.setGravity(isRTL ? Gravity.RIGHT : Gravity.LEFT);
+        subtextView.setGravity(isRTL ? Gravity.RIGHT : Gravity.LEFT);
+        ((FrameLayout.LayoutParams) textView.getLayoutParams()).gravity = (isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL;
+        ((FrameLayout.LayoutParams) subtextView.getLayoutParams()).gravity = (isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL;
+        int iconPadding = imageView.getVisibility() == VISIBLE ? AndroidUtilities.dp(43) : 0;
+        textView.setPadding(isRTL ? 0 : iconPadding, 0, isRTL ? iconPadding : 0, 0);
+        subtextView.setPadding(isRTL ? 0 : AndroidUtilities.dp(43), 0, isRTL ? AndroidUtilities.dp(43) : 0, 0);
+        requestLayout();
     }
 }

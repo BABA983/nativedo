@@ -536,6 +536,16 @@ public class CheckBoxCell extends FrameLayout {
         }
     }
 
+    public void setIcon(int icon) {
+        if (checkBoxRound != null) {
+            checkBoxRound.setIcon(icon);
+        }
+    }
+
+    public boolean hasIcon() {
+        return checkBoxRound != null && checkBoxRound.hasIcon();
+    }
+
     @Override
     protected void onDraw(Canvas canvas) {
         if (needDivider) {
@@ -543,7 +553,11 @@ public class CheckBoxCell extends FrameLayout {
             if (currentType == TYPE_CHECK_BOX_USER) {
                 offset += dp(39);
             }
-            canvas.drawLine(LocaleController.isRTL ? 0 : offset, getMeasuredHeight() - 1, getMeasuredWidth() - (LocaleController.isRTL ? offset : 0), getMeasuredHeight() - 1, Theme.dividerPaint);
+            Paint paint = resourcesProvider != null ? resourcesProvider.getPaint(Theme.key_paint_divider) : null;
+            if (paint == null) {
+                paint = Theme.dividerPaint;
+            }
+            canvas.drawLine(LocaleController.isRTL ? 0 : offset, getMeasuredHeight() - 1, getMeasuredWidth() - (LocaleController.isRTL ? offset : 0), getMeasuredHeight() - 1, paint);
         }
     }
 

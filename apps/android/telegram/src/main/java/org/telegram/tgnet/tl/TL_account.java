@@ -6,6 +6,7 @@
 package org.telegram.tgnet.tl;
 
 import org.telegram.tgnet.TLObject;
+import org.telegram.tgnet.TLRPC;
 
 /**
  * Local data model for the browser settings surface from Telegram 12.9.0.
@@ -14,6 +15,30 @@ import org.telegram.tgnet.TLObject;
  */
 public final class TL_account {
     private TL_account() {}
+
+    public static class getMultiWallPapers extends TLObject {
+        public java.util.ArrayList<TLRPC.InputWallPaper> wallpapers = new java.util.ArrayList<>();
+    }
+
+    public static class getWallPaper extends TLObject {
+        public TLRPC.InputWallPaper wallpaper;
+    }
+
+    public static class getTheme extends TLObject {
+        public String format;
+        public TLRPC.InputTheme theme;
+        public long document_id;
+    }
+
+    public static class getThemes extends TLObject {
+        public String format;
+        public long hash;
+    }
+
+    public static class TL_themes extends TLObject {
+        public long hash;
+        public java.util.ArrayList<TLRPC.TL_theme> themes = new java.util.ArrayList<>();
+    }
 
     public static class WebBrowserSettings extends TLObject {
     }

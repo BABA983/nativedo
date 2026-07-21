@@ -1,24 +1,11 @@
 /*
- * This file is part of NativeDo.
+ * This is the source code of Telegram for Android v. 5.x.x.
+ * It is licensed under GNU GPL v. 2 or later.
+ * You should have received a copy of the license in this archive (see LICENSE).
  *
- * Derived in part from Telegram for Android's
- * org/telegram/ui/ActionBar/BackDrawable.java.
- *
- * Source reference:
- * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/BackDrawable.java
- *
- * NativeDo milestone slice: keeps the back/close drawable drawing and rotation behavior;
- * omits unused Telegram debug paint and setRotated().
- *
- * Copyright (C) Telegram FZ-LLC
- * Copyright (C) 2026 NativeDo contributors
- *
- * This program is free software: you can redistribute it and/or modify
- * it under terms of GNU General Public License version 2 or later as published by
- * the Free Software Foundation.
- *
- * SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright Nikolai Kudashov, 2013-2018.
  */
+
 package org.telegram.ui.ActionBar;
 
 import android.graphics.Canvas;
@@ -29,23 +16,28 @@ import android.graphics.PixelFormat;
 import android.graphics.drawable.Drawable;
 import android.view.animation.DecelerateInterpolator;
 
+import androidx.annotation.NonNull;
 import androidx.core.graphics.ColorUtils;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.Utilities;
 
 public class BackDrawable extends Drawable {
 
-    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private Paint prevPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private boolean reverseAngle;
     private long lastFrameTime;
+    private boolean animationInProgress;
     private float finalRotation;
     private float currentRotation;
     private int currentAnimationTime;
-    private final boolean alwaysClose;
-    private final DecelerateInterpolator interpolator = new DecelerateInterpolator();
+    private boolean alwaysClose;
+    private DecelerateInterpolator interpolator = new DecelerateInterpolator();
     private int color = 0xffffffff;
     private int rotatedColor = 0xff757575;
     private float animationTime = 300.0f;
+    private boolean rotated = true;
     private int arrowRotation;
 
     public float getRotation() {
@@ -56,6 +48,8 @@ public class BackDrawable extends Drawable {
         super();
         paint.setStrokeWidth(AndroidUtilities.dp(2));
         paint.setStrokeCap(Paint.Cap.ROUND);
+        prevPaint.setStrokeWidth(AndroidUtilities.dp(2));
+        prevPaint.setColor(Color.RED);
         alwaysClose = close;
     }
 
@@ -81,6 +75,7 @@ public class BackDrawable extends Drawable {
         } else if (currentRotation == 0) {
             reverseAngle = false;
         }
+        lastFrameTime = 0;
         if (animated) {
             if (currentRotation < rotation) {
                 currentAnimationTime = (int) (currentRotation * animationTime);
@@ -99,18 +94,25 @@ public class BackDrawable extends Drawable {
         animationTime = value;
     }
 
+    public void setRotated(boolean value) {
+        rotated = value;
+    }
+
     @Override
-    public void draw(Canvas canvas) {
+    public void draw(@NonNull Canvas canvas) {
         if (currentRotation != finalRotation) {
             if (lastFrameTime != 0) {
                 long dt = System.currentTimeMillis() - lastFrameTime;
-                currentAnimationTime += dt;
+
+                currentAnimationTime += (int) dt;
                 if (currentAnimationTime >= animationTime) {
                     currentRotation = finalRotation;
-                } else if (currentRotation < finalRotation) {
-                    currentRotation = interpolator.getInterpolation(currentAnimationTime / animationTime) * finalRotation;
                 } else {
-                    currentRotation = 1.0f - interpolator.getInterpolation(currentAnimationTime / animationTime);
+                    if (currentRotation < finalRotation) {
+                        currentRotation = interpolator.getInterpolation(currentAnimationTime / animationTime) * finalRotation;
+                    } else {
+                        currentRotation = 1.0f - interpolator.getInterpolation(currentAnimationTime / animationTime);
+                    }
                 }
             }
             lastFrameTime = System.currentTimeMillis();
@@ -120,11 +122,12 @@ public class BackDrawable extends Drawable {
         paint.setColor(ColorUtils.blendARGB(color, rotatedColor, currentRotation));
 
         canvas.save();
-        canvas.translate(getIntrinsicWidth() / 2, getIntrinsicHeight() / 2);
+        canvas.translate(getIntrinsicWidth() / 2f, getIntrinsicHeight() / 2f);
         if (arrowRotation != 0) {
             canvas.rotate(arrowRotation);
         }
         float rotation = currentRotation;
+        canvas.translate(-AndroidUtilities.dp(0.66f)/* * (rotation)*/, 0);
         if (!alwaysClose) {
             canvas.rotate(currentRotation * (reverseAngle ? -225 : 135));
         } else {

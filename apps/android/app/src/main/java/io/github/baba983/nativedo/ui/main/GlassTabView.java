@@ -48,7 +48,7 @@ import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.LayoutHelper;
 
-public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab {
+public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, Theme.Colorable {
 
     public enum TabIcon {
         HOME,

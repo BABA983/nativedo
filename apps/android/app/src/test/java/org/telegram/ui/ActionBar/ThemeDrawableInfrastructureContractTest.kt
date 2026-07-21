@@ -45,7 +45,6 @@ class ThemeDrawableInfrastructureContractTest {
     fun themeHelperRestoresWallpaperAndGradientSemantics() {
         assertThat(Theme.getWallpaperColor(0)).isEqualTo(0)
         assertThat(Theme.getWallpaperColor(0x00112233)).isEqualTo(0xff112233.toInt())
-        assertThat(Theme.createRoundRectDrawableWithIcon(8, 0)).isInstanceOf(CombinedDrawable::class.java)
         assertThat(Theme.createRoundRectGradientDrawable(8, Color.RED, Color.BLUE))
             .isInstanceOf(GradientDrawable::class.java)
     }

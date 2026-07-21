@@ -217,13 +217,14 @@ class OneboxBlockTest {
             assertThat(block.textPaintForTest("descriptionPaint").typeface).isEqualTo(Theme.chat_replyTextPaint.typeface)
         } finally {
             SharedConfig.fontSize = oldFontSize
-            Theme.updateChatMessageTextPaints()
+            Theme.createChatResources(RuntimeEnvironment.getApplication(), false)
         }
     }
 
     @Test
     fun replyMessageLineTypeLinkBackgroundAlpha_matchesChatMessageCellLinkPreviewBranch() {
         val darkProvider = object : Theme.ResourcesProvider {
+            override fun getColor(key: Int): Int = Theme.getColor(key)
             override fun isDark(): Boolean = true
         }
         val linkLine = ReplyMessageLine(View(RuntimeEnvironment.getApplication()))

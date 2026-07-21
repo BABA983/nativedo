@@ -17,7 +17,7 @@ import org.telegram.messenger.ApplicationLoader
 
 /**
  * Contract: ThemeDescription can recolor a simple FLAG_TEXTCOLOR/BACKGROUND target
- * and Theme.applyThemeDescriptions drives a list after setColor updates.
+ * and a caller can apply a list of descriptions without a NativeDo-only helper.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], manifest = Config.NONE)
@@ -30,7 +30,7 @@ class ThemeDescriptionContractTest {
         context = RuntimeEnvironment.getApplication()
         ApplicationLoader.init(context)
         AndroidUtilities.init(context)
-        Theme.init(context)
+        Theme.getActiveTheme()
     }
 
     @Test
@@ -85,14 +85,14 @@ class ThemeDescriptionContractTest {
                 Theme.key_windowBackgroundWhiteBlackText,
             ),
         )
-        Theme.applyThemeDescriptions(descriptions)
+        descriptions.forEach { it.setColor(Theme.getColor(it.currentKey), false, false) }
         assertThat(text.currentTextColor)
             .isEqualTo(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText))
     }
 
     @Test
     fun setColorWithSaveWritesCurrentColors() {
-        val key = Theme.key_windowBackgroundWhiteBlackText
+        val key = Theme.key_chat_wallpaper
         val original = Theme.getNonAnimatedColor(key)
         val override = 0xff112233.toInt()
         val description = ThemeDescription(

@@ -8,11 +8,15 @@
 package org.telegram.messenger;
 
 import android.annotation.SuppressLint;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.telephony.TelephonyManager;
 
 import java.io.File;
@@ -33,6 +37,7 @@ public final class ApplicationLoader {
     public static volatile Handler applicationHandler;
     public static volatile boolean mainInterfacePaused = true;
     public static volatile boolean mainInterfaceStopped = true;
+    public static volatile boolean isScreenOn;
 
     /** {@code System.currentTimeMillis()} when the process started. */
     public static long startTime;
@@ -40,6 +45,7 @@ public final class ApplicationLoader {
     private static volatile ConnectivityManager connectivityManager;
     private static volatile NetworkInfo currentNetworkInfo;
     private static long lastNetworkCheck;
+    private static BroadcastReceiver screenReceiver;
 
     private static void ensureCurrentNetworkGet(boolean force) {
         if (force || currentNetworkInfo == null) {
@@ -175,6 +181,18 @@ public final class ApplicationLoader {
         applicationContext = appContext.getApplicationContext();
         applicationHandler = new Handler(Looper.getMainLooper());
         startTime = System.currentTimeMillis();
+        PowerManager powerManager = (PowerManager) applicationContext.getSystemService(Context.POWER_SERVICE);
+        isScreenOn = powerManager == null || powerManager.isInteractive();
+        if (screenReceiver == null) {
+            screenReceiver = new ScreenReceiver();
+            IntentFilter filter = new IntentFilter(Intent.ACTION_SCREEN_ON);
+            filter.addAction(Intent.ACTION_SCREEN_OFF);
+            try {
+                applicationContext.registerReceiver(screenReceiver, filter);
+            } catch (Exception e) {
+                FileLog.e(e);
+            }
+        }
         FileLog.d("ApplicationLoader.init packageName=" + applicationContext.getPackageName()
                 + " networkOnline=" + isNetworkOnline()
                 + " roaming=" + isRoaming()

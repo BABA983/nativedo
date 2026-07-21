@@ -12,6 +12,7 @@ import static org.telegram.messenger.AndroidUtilities.dp;
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
+import android.animation.ValueAnimator;
 import android.content.Context;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -45,7 +46,12 @@ public class StickerEmptyView extends FrameLayout {
     private RadialProgressView progressBar;
     private boolean progressShowing;
     private boolean animateLayoutChange;
+    private boolean preventMoving;
+    private int keyboardSize;
     private int lastH;
+    private ValueAnimator visibilityAnimator;
+    private float visibilityFactor;
+    private boolean visibilityValue;
 
     public StickerEmptyView(@NonNull Context context, View progressView, int type) {
         this(context, progressView, type, null);
@@ -63,12 +69,15 @@ public class StickerEmptyView extends FrameLayout {
         title = new TextView(context);
         title.setTypeface(AndroidUtilities.bold());
         title.setTextColor(getThemedColor(Theme.key_windowBackgroundWhiteBlackText));
+        title.setTag(Theme.key_windowBackgroundWhiteBlackText);
         title.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 20);
         title.setGravity(Gravity.CENTER);
         title.setPadding(dp(16), 0, dp(16), 0);
 
         subtitle = new LinkSpanDrawable.LinksTextView(context);
         subtitle.setTextColor(getThemedColor(Theme.key_windowBackgroundWhiteGrayText));
+        subtitle.setLinkTextColor(getThemedColor(Theme.key_windowBackgroundWhiteLinkText));
+        subtitle.setTag(Theme.key_windowBackgroundWhiteGrayText);
         subtitle.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
         subtitle.setGravity(Gravity.CENTER);
         subtitle.setPadding(dp(24), 0, dp(24), 0);
@@ -92,8 +101,18 @@ public class StickerEmptyView extends FrameLayout {
         }
     }
 
+    public void showProgress(boolean show) {
+        showProgress(show, true);
+    }
+
     public void showProgress(boolean show, boolean animated) {
+        if (progressShowing == show) {
+            return;
+        }
         progressShowing = show;
+        if (getVisibility() != View.VISIBLE) {
+            return;
+        }
         if (show) {
             linearLayout.animate().cancel();
             if (animated) {
@@ -157,30 +176,173 @@ public class StickerEmptyView extends FrameLayout {
         animateLayoutChange = value;
     }
 
+    public void setKeyboardHeight(int keyboardSize, boolean animated) {
+        if (this.keyboardSize == keyboardSize) {
+            return;
+        }
+        if (getVisibility() != View.VISIBLE) {
+            animated = false;
+        }
+        this.keyboardSize = keyboardSize;
+        float y = -(keyboardSize >> 1) + (keyboardSize > 0 ? dp(20) : 0);
+        if (animated) {
+            linearLayout.animate().translationY(y).setInterpolator(CubicBezierInterpolator.DEFAULT).setDuration(250);
+            if (progressBar != null) {
+                progressBar.animate().translationY(y).setInterpolator(CubicBezierInterpolator.DEFAULT).setDuration(250);
+            }
+        } else {
+            linearLayout.setTranslationY(y);
+            if (progressBar != null) {
+                progressBar.setTranslationY(y);
+            }
+        }
+    }
+
+    public void setPreventMoving(boolean preventMoving) {
+        this.preventMoving = preventMoving;
+        if (!preventMoving) {
+            linearLayout.setTranslationY(0);
+            if (progressBar != null) {
+                progressBar.setTranslationY(0);
+            }
+        }
+    }
+
     /** Pin-compatible helpers used by some call sites. */
     public void title(CharSequence text) {
         title.setText(text);
     }
 
     public void subtitle(CharSequence text) {
+        setSubtitle(text);
+    }
+
+    public void setSubtitle(CharSequence text) {
+        int whitespaceCount = getWhitespaceCount(text);
+        if (whitespaceCount > 4 && text.length() > 20) {
+            int closestToCenterWhitespace = -1;
+            int closestValue = 0;
+            int centerIndex = text.length() >> 1;
+            for (int i = 0; i < text.length(); i++) {
+                if (Character.isWhitespace(text.charAt(i))) {
+                    int value = Math.abs(centerIndex - i);
+                    if (closestToCenterWhitespace == -1 || value < closestValue) {
+                        closestValue = value;
+                        closestToCenterWhitespace = i;
+                    }
+                }
+            }
+            if (closestToCenterWhitespace > 0) {
+                text = text.subSequence(0, closestToCenterWhitespace) + "\n" + text.subSequence(closestToCenterWhitespace + 1, text.length());
+            }
+        }
         subtitle.setText(text);
     }
 
+    private int getWhitespaceCount(CharSequence text) {
+        int count = 0;
+        for (int i = 0; i < text.length(); i++) {
+            if (Character.isWhitespace(text.charAt(i))) {
+                count++;
+            }
+        }
+        return count;
+    }
+
     public void setColors(int titleKey, int subtitleKey, int key1, int key2) {
+        title.setTag(titleKey);
         title.setTextColor(getThemedColor(titleKey));
+        subtitle.setTag(subtitleKey);
         subtitle.setTextColor(getThemedColor(subtitleKey));
+    }
+
+    @Override
+    public void setVisibility(int visibility) {
+        setVisibility(visibility, true);
+    }
+
+    public void setVisibility(int visibility, boolean animated) {
+        setVisibility(visibility == VISIBLE, animated, false);
+
+        if (getVisibility() != visibility && visibility == VISIBLE) {
+            if (progressShowing) {
+                linearLayout.animate().alpha(0f).scaleY(0.8f).scaleX(0.8f).setDuration(150).start();
+                showProgressView(false);
+            } else {
+                linearLayout.animate().alpha(1f).scaleY(1f).scaleX(1f).setDuration(150).start();
+                hideProgressView(true);
+            }
+        }
+        super.setVisibility(visibility);
+        if (visibility != VISIBLE) {
+            lastH = 0;
+            linearLayout.animate().cancel();
+            linearLayout.setAlpha(0f);
+            linearLayout.setScaleX(0.8f);
+            linearLayout.setScaleY(0.8f);
+            hideProgressView(true);
+        }
+    }
+
+    private void showProgressView(boolean animated) {
+        if (progressView != null) {
+            progressView.animate().setListener(null).cancel();
+            progressView.setVisibility(VISIBLE);
+            if (animated) {
+                progressView.animate().alpha(1f).setDuration(150).start();
+            } else {
+                progressView.setAlpha(1f);
+            }
+        } else if (progressBar != null) {
+            if (animated) {
+                progressBar.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(150).start();
+            } else {
+                progressBar.setAlpha(1f);
+                progressBar.setScaleX(1f);
+                progressBar.setScaleY(1f);
+            }
+        }
+    }
+
+    private void hideProgressView(boolean animated) {
+        if (progressView != null) {
+            progressView.animate().setListener(null).cancel();
+            if (animated) {
+                progressView.animate().alpha(0f).setDuration(150).setListener(new AnimatorListenerAdapter() {
+                    @Override
+                    public void onAnimationEnd(Animator animation) {
+                        progressView.setVisibility(GONE);
+                    }
+                }).start();
+            } else {
+                progressView.setAlpha(0f);
+                progressView.setVisibility(GONE);
+            }
+        } else if (progressBar != null) {
+            if (animated) {
+                progressBar.animate().alpha(0f).scaleX(0.5f).scaleY(0.5f).setDuration(150).start();
+            } else {
+                progressBar.setAlpha(0f);
+                progressBar.setScaleX(0.5f);
+                progressBar.setScaleY(0.5f);
+            }
+        }
     }
 
     @Override
     protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
         super.onLayout(changed, left, top, right, bottom);
-        if ((animateLayoutChange) && lastH > 0 && lastH != getMeasuredHeight()) {
+        if ((animateLayoutChange || preventMoving) && lastH > 0 && lastH != getMeasuredHeight()) {
             float y = (lastH - getMeasuredHeight()) / 2f;
             linearLayout.setTranslationY(linearLayout.getTranslationY() + y);
-            linearLayout.animate().translationY(0).setDuration(250).start();
+            if (!preventMoving) {
+                linearLayout.animate().translationY(0).setInterpolator(CubicBezierInterpolator.DEFAULT).setDuration(250);
+            }
             if (progressBar != null) {
                 progressBar.setTranslationY(progressBar.getTranslationY() + y);
-                progressBar.animate().translationY(0).setDuration(250).start();
+                if (!preventMoving) {
+                    progressBar.animate().translationY(0).setInterpolator(CubicBezierInterpolator.DEFAULT).setDuration(250);
+                }
             }
         }
         lastH = getMeasuredHeight();
@@ -188,5 +350,42 @@ public class StickerEmptyView extends FrameLayout {
 
     private int getThemedColor(int key) {
         return Theme.getColor(key, resourcesProvider);
+    }
+
+    public float getVisibilityFactor() {
+        return visibilityFactor;
+    }
+
+    private void setVisibility(boolean visibility, boolean animated, boolean force) {
+        if (visibilityValue == visibility && !force) {
+            return;
+        }
+
+        visibilityValue = visibility;
+        setEnabled(visibility);
+
+        if (visibilityAnimator != null) {
+            visibilityAnimator.cancel();
+            visibilityAnimator = null;
+        }
+
+        if (!animated) {
+            visibilityFactor = visibility ? 1 : 0;
+            onVisibilityChange(visibilityFactor);
+            return;
+        }
+
+        visibilityAnimator = ValueAnimator.ofFloat(visibilityFactor, visibility ? 1 : 0);
+        visibilityAnimator.setDuration(480L);
+        visibilityAnimator.setInterpolator(CubicBezierInterpolator.EASE_OUT_QUINT);
+        visibilityAnimator.addUpdateListener(a -> {
+            visibilityFactor = (float) a.getAnimatedValue();
+            onVisibilityChange(visibilityFactor);
+        });
+        visibilityAnimator.start();
+    }
+
+    protected void onVisibilityChange(float factor) {
+        invalidate();
     }
 }

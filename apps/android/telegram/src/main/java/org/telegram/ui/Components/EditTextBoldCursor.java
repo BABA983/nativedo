@@ -18,6 +18,8 @@ import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.SystemClock;
 import android.text.Layout;
+import android.text.TextPaint;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.EditText;
@@ -40,6 +42,8 @@ public class EditTextBoldCursor extends EditText {
     private boolean forceCursorEnd;
     private boolean textWatchersSuppressed;
     private Runnable delegate;
+    private boolean transformHintToHeader;
+    private final TextPaint headerHintPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
 
     private static Method getVerticalOffsetMethod;
     private static boolean getVerticalOffsetMethodResolved;
@@ -80,6 +84,14 @@ public class EditTextBoldCursor extends EditText {
 
     public void setAllowDrawCursor(boolean value) {
         allowDrawCursor = value;
+        invalidate();
+    }
+
+    public void setTransformHintToHeader(boolean value) {
+        if (transformHintToHeader == value) {
+            return;
+        }
+        transformHintToHeader = value;
         invalidate();
     }
 
@@ -188,6 +200,11 @@ public class EditTextBoldCursor extends EditText {
 
     @Override
     protected void onDraw(Canvas canvas) {
+        if (transformHintToHeader && !TextUtils.isEmpty(getHint()) && (isFocused() || length() > 0)) {
+            headerHintPaint.setColor(getCurrentHintTextColor());
+            headerHintPaint.setTextSize(AndroidUtilities.dp(11));
+            canvas.drawText(getHint().toString(), getScrollX() + getCompoundPaddingLeft(), AndroidUtilities.dp(11), headerHintPaint);
+        }
         if (offsetY == 0) {
             super.onDraw(canvas);
             drawTelegramCursor(canvas);

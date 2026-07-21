@@ -24,6 +24,8 @@ import android.widget.ProgressBar;
 
 import org.telegram.messenger.AndroidUtilities;
 
+import java.util.ArrayList;
+
 public class AlertDialog extends Dialog {
 
     public static final int ALERT_TYPE_MESSAGE = 0;
@@ -36,6 +38,7 @@ public class AlertDialog extends Dialog {
     // Backing dialog created on demand from the Builder state (or for the spinner type).
     private androidx.appcompat.app.AlertDialog delegate;
     private Runnable delegateConfigurator;
+    private Runnable delegateOnShowConfigurator;
 
     private DialogInterface.OnDismissListener dismissListener;
     private DialogInterface.OnShowListener showListener;
@@ -46,6 +49,11 @@ public class AlertDialog extends Dialog {
 
     private boolean delayedShowScheduled;
     private final Runnable showDelayedRunnable = this::showInternal;
+    private long shownAt;
+    private CharSequence currentTitle;
+    private CharSequence currentMessage;
+    private ProgressBar progressBar;
+    private boolean canCancel = true;
 
     public AlertDialog(Context context, int progressViewStyle) {
         this(context, progressViewStyle, null);
@@ -61,6 +69,10 @@ public class AlertDialog extends Dialog {
         this.delegateConfigurator = configurator;
     }
 
+    void setDelegateOnShowConfigurator(Runnable configurator) {
+        this.delegateOnShowConfigurator = configurator;
+    }
+
     void setWidth(int width, boolean unused) {
         this.width = width;
     }
@@ -69,14 +81,20 @@ public class AlertDialog extends Dialog {
         androidx.appcompat.app.AlertDialog.Builder b = new androidx.appcompat.app.AlertDialog.Builder(context);
         if (progressViewStyle == ALERT_TYPE_SPINNER || progressViewStyle == ALERT_TYPE_LOADING) {
             FrameLayout container = new FrameLayout(context);
-            ProgressBar progressBar = new ProgressBar(context);
+            progressBar = new ProgressBar(context);
             int pad = AndroidUtilities.dp(24);
             container.setPadding(pad, pad, pad, pad);
             FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER);
             container.addView(progressBar, lp);
             b.setView(container);
-            b.setCancelable(false);
+            b.setCancelable(canCancel);
+        }
+        if (currentTitle != null) {
+            b.setTitle(currentTitle);
+        }
+        if (currentMessage != null) {
+            b.setMessage(currentMessage);
         }
         if (delegateConfigurator != null) {
             // Configurator is set by Builder.create(); it applies title/message/view/buttons.
@@ -102,6 +120,10 @@ public class AlertDialog extends Dialog {
                 }
             });
             delegate.setOnShowListener(d -> {
+                shownAt = System.currentTimeMillis();
+                if (delegateOnShowConfigurator != null) {
+                    delegateOnShowConfigurator.run();
+                }
                 if (showListener != null) {
                     showListener.onShow(d);
                 }
@@ -119,6 +141,7 @@ public class AlertDialog extends Dialog {
         try {
             androidx.appcompat.app.AlertDialog d = ensureDelegate();
             d.show();
+            shownAt = System.currentTimeMillis();
             if (width > 0 && d.getWindow() != null) {
                 WindowManager.LayoutParams lp = new WindowManager.LayoutParams();
                 lp.copyFrom(d.getWindow().getAttributes());
@@ -166,10 +189,33 @@ public class AlertDialog extends Dialog {
         cancelListener = listener;
     }
 
-    public void setMessage(CharSequence message) {}
-    public void setTitle(CharSequence title) {}
-    public void setProgress(int progress) {}
-    public void setCanCancel(boolean cancel) {}
+    public void setMessage(CharSequence message) {
+        currentMessage = message;
+        if (delegate != null) {
+            delegate.setMessage(message);
+        }
+    }
+
+    public void setTitle(CharSequence title) {
+        currentTitle = title;
+        if (delegate != null) {
+            delegate.setTitle(title);
+        }
+    }
+
+    public void setProgress(int progress) {
+        if (progressBar != null) {
+            progressBar.setProgress(progress);
+        }
+    }
+
+    public void setCanCancel(boolean cancel) {
+        canCancel = cancel;
+        if (delegate != null) {
+            delegate.setCancelable(cancel);
+            delegate.setCanceledOnTouchOutside(cancel);
+        }
+    }
 
     public void showDelayed(int delay) {
         delayedShowScheduled = true;
@@ -178,11 +224,25 @@ public class AlertDialog extends Dialog {
     }
 
     public void dismissUnless(int delay) {
-        dismiss();
+        if (!isShowing() || delay <= 0) {
+            dismiss();
+            return;
+        }
+        long remaining = delay - (System.currentTimeMillis() - shownAt);
+        if (remaining <= 0) {
+            dismiss();
+        } else {
+            AndroidUtilities.cancelRunOnUIThread(showDelayedRunnable);
+            AndroidUtilities.runOnUIThread(this::dismiss, remaining);
+        }
     }
 
     public void setDismissDialogByButtons(boolean value) {
         dismissDialogByButtons = value;
+    }
+
+    public ArrayList<ThemeDescription> getThemeDescriptions() {
+        return null;
     }
 
     public static class Builder {
@@ -267,6 +327,9 @@ public class AlertDialog extends Dialog {
                 if (title != null) {
                     b.setTitle(title);
                 }
+                if (message != null) {
+                    b.setMessage(message);
+                }
                 if (view != null) {
                     if (view.getParent() instanceof ViewGroup) {
                         ((ViewGroup) view.getParent()).removeView(view);
@@ -278,44 +341,35 @@ public class AlertDialog extends Dialog {
                             itemsListener.onClick(d, which);
                         }
                     });
-                } else if (message != null) {
-                    b.setMessage(message);
                 }
-                if (positiveLabel != null) {
-                    b.setPositiveButton(positiveLabel, (d, which) -> {
-                        if (positiveListener != null) {
-                            positiveListener.onClick(d, AlertDialog.BUTTON_POSITIVE);
-                        }
-                    });
-                }
-                if (negativeLabel != null) {
-                    b.setNegativeButton(negativeLabel, (d, which) -> {
-                        if (negativeListener != null) {
-                            negativeListener.onClick(d, AlertDialog.BUTTON_NEGATIVE);
-                        }
-                    });
-                }
-                if (neutralLabel != null) {
-                    b.setNeutralButton(neutralLabel, (d, which) -> {
-                        if (neutralListener != null) {
-                            neutralListener.onClick(d, AlertDialog.BUTTON_NEUTRAL);
-                        }
-                    });
-                }
+                if (positiveLabel != null) b.setPositiveButton(positiveLabel, null);
+                if (negativeLabel != null) b.setNegativeButton(negativeLabel, null);
+                if (neutralLabel != null) b.setNeutralButton(neutralLabel, null);
                 b.setCancelable(cancelable);
             });
-            if (redButton != Integer.MIN_VALUE) {
-                final int which = redButton;
-                dialog.setOnShowListener(d -> {
-                    if (d instanceof androidx.appcompat.app.AlertDialog) {
-                        Button btn = ((androidx.appcompat.app.AlertDialog) d).getButton(which);
-                        if (btn != null) {
-                            btn.setTextColor(0xFFE53935);
-                        }
-                    }
-                });
-            }
+            dialog.setDelegateOnShowConfigurator(() -> {
+                if (dialog.delegate == null) return;
+                configureButton(dialog.delegate.getButton(AlertDialog.BUTTON_POSITIVE), positiveListener, AlertDialog.BUTTON_POSITIVE);
+                configureButton(dialog.delegate.getButton(AlertDialog.BUTTON_NEGATIVE), negativeListener, AlertDialog.BUTTON_NEGATIVE);
+                configureButton(dialog.delegate.getButton(AlertDialog.BUTTON_NEUTRAL), neutralListener, AlertDialog.BUTTON_NEUTRAL);
+                if (redButton != Integer.MIN_VALUE) {
+                    Button button = dialog.delegate.getButton(redButton);
+                    if (button != null) button.setTextColor(0xFFE53935);
+                }
+            });
             return dialog;
+        }
+
+        private void configureButton(Button button, DialogInterface.OnClickListener listener, int which) {
+            if (button == null) return;
+            button.setOnClickListener(v -> {
+                if (listener != null) {
+                    listener.onClick(dialog, which);
+                }
+                if (dialog.dismissDialogByButtons && dialog.isShowing()) {
+                    dialog.dismiss();
+                }
+            });
         }
 
         public AlertDialog show() {

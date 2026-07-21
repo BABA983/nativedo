@@ -64,6 +64,11 @@ public class MediaController {
         return null;
     }
 
+    /** NativeDo has no voice-record/proximity playback subsystem. */
+    public boolean isRecordingOrListeningByProximity() {
+        return false;
+    }
+
     public boolean playMessage(MessageObject messageObject) {
         return false;
     }

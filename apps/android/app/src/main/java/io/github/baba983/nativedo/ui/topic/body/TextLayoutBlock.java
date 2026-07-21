@@ -244,6 +244,25 @@ abstract class TextLayoutBlock implements PostBodyBlock {
 
     @Override
     public void applyTheme() {
+        // Shared TextPaint instances are updated by PostBodyBuildContext.applyTheme().
+        // Link/chip spans bake accent colors, so force a remeasure rebuild.
+        int accent = context.getAccentColor();
+        pressedPaint.setColor(Color.argb(
+                36,
+                Color.red(accent),
+                Color.green(accent),
+                Color.blue(accent)
+        ));
+        if (handle != null) {
+            handle.detach();
+            handle = null;
+        }
+        layout = null;
+        measuredWidth = 0;
+        measuredHeight = 0;
+        builtText = null;
+        spoilersPool.addAll(spoilers);
+        spoilers.clear();
     }
 
     protected int topPaddingPx() {

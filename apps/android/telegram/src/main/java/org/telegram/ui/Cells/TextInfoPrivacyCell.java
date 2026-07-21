@@ -11,30 +11,36 @@ package org.telegram.ui.Cells;
 import android.animation.Animator;
 import android.animation.ObjectAnimator;
 import android.content.Context;
+import android.graphics.Canvas;
 import android.text.SpannableString;
 import android.text.TextUtils;
+import android.text.method.LinkMovementMethod;
 import android.text.style.AbsoluteSizeSpan;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.LocaleController;
-import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.LinkSpanDrawable;
 
 import java.util.ArrayList;
 
 public class TextInfoPrivacyCell extends FrameLayout {
 
-    // OMITTED: upstream uses LinkSpanDrawable.LinksTextView for tappable links and emoji.
-    // NativeDo browser shadow rows are plain informational text, so a plain TextView is used.
-    private final TextView textView;
+    private LinkSpanDrawable.LinksTextView textView;
+    private LinkSpanDrawable.LinkCollector links;
+    private int linkTextColorKey = Theme.key_windowBackgroundWhiteLinkText;
+    private Integer linkTextRippleColor;
     private int topPadding = 10;
     private int bottomPadding = 17;
     private int fixedSize;
+    private boolean isRTL;
 
     private CharSequence text;
     private final Theme.ResourcesProvider resourcesProvider;
@@ -55,15 +61,72 @@ public class TextInfoPrivacyCell extends FrameLayout {
         super(context);
         this.resourcesProvider = resourcesProvider;
 
-        textView = new TextView(context);
+        textView = new LinkSpanDrawable.LinksTextView(context, links = new LinkSpanDrawable.LinkCollector(this), resourcesProvider) {
+            @Override
+            protected void onDraw(Canvas canvas) {
+                onTextDraw();
+                super.onDraw(canvas);
+                afterTextDraw();
+            }
+
+            @Override
+            public int overrideColor() {
+                if (linkTextRippleColor != null) {
+                    return linkTextRippleColor;
+                }
+                return super.overrideColor();
+            }
+        };
         textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
         textView.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
         textView.setPadding(0, AndroidUtilities.dp(10), 0, AndroidUtilities.dp(17));
-        textView.setTextColor(getThemedColor(Theme.key_windowBackgroundWhiteGrayText));
+        textView.setMovementMethod(LinkMovementMethod.getInstance());
+        textView.setTextColor(getThemedColor(Theme.key_windowBackgroundWhiteGrayText4));
+        textView.setEmojiColor(getThemedColor(Theme.key_windowBackgroundWhiteGrayText4));
+        textView.setLinkTextColor(getThemedColor(linkTextColorKey));
         textView.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
         addView(textView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP, padding, 0, padding, 0));
 
+        isRTL = LocaleController.isRTL;
+
         setWillNotDraw(false);
+    }
+
+    public void updateRTL() {
+        if (isRTL == LocaleController.isRTL) {
+            return;
+        }
+        isRTL = LocaleController.isRTL;
+
+        textView.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
+        FrameLayout.LayoutParams layoutParams = (FrameLayout.LayoutParams) textView.getLayoutParams();
+        layoutParams.gravity = (LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.TOP;
+        textView.setLayoutParams(layoutParams);
+    }
+
+    @Override
+    protected void onDraw(Canvas canvas) {
+        if (links != null) {
+            canvas.save();
+            canvas.translate(textView.getLeft(), textView.getTop());
+            if (links.draw(canvas)) {
+                invalidate();
+            }
+            canvas.restore();
+        }
+        super.onDraw(canvas);
+    }
+
+    protected void onTextDraw() {
+
+    }
+
+    protected void afterTextDraw() {
+
+    }
+
+    public void setLinkTextColorKey(int key) {
+        linkTextColorKey = key;
     }
 
     @Override
@@ -129,8 +192,12 @@ public class TextInfoPrivacyCell extends FrameLayout {
         textView.setTag(key);
     }
 
-    public TextView getTextView() {
+    public LinkSpanDrawable.LinksTextView getTextView() {
         return textView;
+    }
+
+    public void setLinkTextRippleColor(Integer color) {
+        linkTextRippleColor = color;
     }
 
     public int length() {
@@ -147,6 +214,13 @@ public class TextInfoPrivacyCell extends FrameLayout {
 
     public void setTextGravity(int gravity) {
         textView.setGravity(gravity);
+    }
+
+    @Override
+    public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
+        super.onInitializeAccessibilityNodeInfo(info);
+        info.setClassName(TextView.class.getName());
+        info.setText(text);
     }
 
     private int getThemedColor(int key) {

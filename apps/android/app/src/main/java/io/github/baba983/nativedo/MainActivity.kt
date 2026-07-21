@@ -14,8 +14,14 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.lifecycle.lifecycleScope
 import org.telegram.messenger.AndroidUtilities
+import org.telegram.messenger.ApplicationLoader
+import org.telegram.messenger.MessagesController
+import org.telegram.messenger.NotificationCenter
+import org.telegram.messenger.SharedConfig
+import org.telegram.messenger.UserConfig
 import org.telegram.messenger.browser.Browser
 import org.telegram.ui.ActionBar.ActionBarLayout
+import org.telegram.ui.ActionBar.Theme
 import org.telegram.ui.ActionBar.DrawerLayoutContainer
 import org.telegram.ui.LaunchActivity
 import org.telegram.ui.ArticleViewer
@@ -24,7 +30,10 @@ import io.github.baba983.nativedo.core.session.SessionSnapshot
 import io.github.baba983.nativedo.core.ui.avatarImageFilter
 import io.github.baba983.nativedo.core.ui.resolveAvatarUrl
 import io.github.baba983.nativedo.ui.main.MainTabsActivity
+import io.github.baba983.nativedo.ui.theme.ThemeSettingsFragment
 import org.telegram.ui.PhotoViewer
+import org.telegram.ui.ActionBar.BaseFragment
+import org.telegram.ui.Components.ThemeEditorView
 import kotlinx.coroutines.launch
 
 private const val LAZY_START = 0.015f
@@ -32,18 +41,26 @@ private const val LAZY_START = 0.015f
 // Profile tab avatar is drawn at 24dp; request a larger source for crispness on
 // high-density screens.
 private const val AVATAR_TAB_SIZE = 120
+private const val THEME_TIMER_INTERVAL_MS = 1_000L
 
-class MainActivity : LaunchActivity() {
+class MainActivity : LaunchActivity(), NotificationCenter.NotificationCenterDelegate, Theme.ThemeHost {
 
     private lateinit var actionBarLayout: ActionBarLayout
     private lateinit var mainTabsActivity: MainTabsActivity
     private var onBackAnimationCallback: OnBackAnimationCallback? = null
     private var onBackInvokedCallback: OnBackInvokedCallback? = null
+    private val themeTimerRunnable = object : Runnable {
+        override fun run() {
+            MessagesController.getInstance(UserConfig.selectedAccount).updateTimerProc()
+            AndroidUtilities.runOnUIThread(this, THEME_TIMER_INTERVAL_MS)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AndroidUtilities.init(this)
         LaunchActivity.instance = this
+        Theme.setThemeHost(this)
         enableEdgeToEdge()
 
         mainTabsActivity = MainTabsActivity()
@@ -83,6 +100,8 @@ class MainActivity : LaunchActivity() {
             ),
         )
         setContentView(rootFrameLayout)
+        NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.needSetDayNightTheme)
+        NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.fontSizeChanged)
         Browser.bindCustomTabsService(this)
         lifecycleScope.launch {
             (applicationContext as NativeDoApp).appContainer.sessionCoordinator.start()
@@ -94,24 +113,78 @@ class MainActivity : LaunchActivity() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         AndroidUtilities.init(this)
+        if (Theme.selectedAutoNightType == Theme.AUTO_NIGHT_TYPE_SYSTEM) {
+            Theme.checkAutoNightThemeConditions()
+        }
+        ThemeEditorView.getInstance()?.onConfigurationChanged()
         PhotoViewer.getInstance().onConfigurationChanged(newConfig)
     }
 
     @Deprecated("Deprecated in Android")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == 10 || requestCode == 11) {
+            ThemeEditorView.getInstance()?.onActivityResult(requestCode, resultCode, data)
+            return
+        }
+        if (::actionBarLayout.isInitialized) {
+            val fragment = actionBarLayout.lastFragment
+            if (fragment is ThemeSettingsFragment && fragment.handleActivityResult(requestCode, resultCode, data)) {
+                return
+            }
+        }
         if (ArticleViewer.dispatchActivityResult(requestCode, resultCode, data)) {
             return
         }
         super.onActivityResult(requestCode, resultCode, data)
     }
 
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>,
+        grantResults: IntArray,
+    ) {
+        if (::actionBarLayout.isInitialized) {
+            val fragment = actionBarLayout.lastFragment
+            if (fragment is ThemeSettingsFragment) {
+                fragment.onRequestPermissionsResultFragment(requestCode, permissions, grantResults)
+            }
+        }
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    }
+
     override fun onResume() {
         super.onResume()
+        ApplicationLoader.mainInterfacePaused = false
+        ApplicationLoader.mainInterfaceStopped = false
+        if (Theme.selectedAutoNightType == Theme.AUTO_NIGHT_TYPE_SYSTEM) {
+            Theme.checkAutoNightThemeConditions()
+        }
+        AndroidUtilities.cancelRunOnUIThread(themeTimerRunnable)
+        AndroidUtilities.runOnUIThread(themeTimerRunnable)
         Browser.bindCustomTabsService(this)
         PhotoViewer.getInstance().onResume()
     }
 
+    override fun onPause() {
+        AndroidUtilities.cancelRunOnUIThread(themeTimerRunnable)
+        ApplicationLoader.mainInterfacePaused = true
+        super.onPause()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        ApplicationLoader.mainInterfaceStopped = false
+    }
+
+    override fun onStop() {
+        ApplicationLoader.mainInterfaceStopped = true
+        super.onStop()
+    }
+
     override fun onDestroy() {
+        AndroidUtilities.cancelRunOnUIThread(themeTimerRunnable)
+        NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.needSetDayNightTheme)
+        NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.fontSizeChanged)
         Browser.unbindCustomTabsService(this)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             onBackAnimationCallback?.let {
@@ -130,8 +203,42 @@ class MainActivity : LaunchActivity() {
             fragments.clear()
         }
         PhotoViewer.getInstance().destroyPhotoViewer()
+        ThemeEditorView.getInstance()?.destroy()
+        Theme.setThemeHost(null)
         LaunchActivity.instance = null
         super.onDestroy()
+    }
+
+    override fun destroyThemeEditor() {
+        ThemeEditorView.getInstance()?.destroy()
+    }
+
+    override fun onThemeApplied() {
+        drawerLayoutContainer?.setBehindKeyboardColor(Theme.getColor(Theme.key_windowBackgroundWhite))
+    }
+
+    override fun openNightThemeSettings(fragment: BaseFragment) {
+        fragment.presentFragment(ThemeSettingsFragment())
+    }
+
+    override fun didReceivedNotification(id: Int, account: Int, vararg args: Any?) {
+        if (!::actionBarLayout.isInitialized) {
+            return
+        }
+        if (id == NotificationCenter.fontSizeChanged) {
+            actionBarLayout.rebuildAllFragmentViews(false)
+            return
+        }
+        if (id != NotificationCenter.needSetDayNightTheme) return
+        val theme = args.getOrNull(0) as? Theme.ThemeInfo ?: return
+        val nightTheme = args.getOrNull(1) as? Boolean ?: false
+        val accentId = args.getOrNull(3) as? Int ?: -1
+        actionBarLayout.animateThemedValues(
+            theme,
+            accentId,
+            nightTheme,
+            !SharedConfig.animationsEnabled(),
+        )
     }
 
     /**

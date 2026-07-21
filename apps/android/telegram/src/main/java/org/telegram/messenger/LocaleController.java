@@ -176,6 +176,11 @@ public final class LocaleController {
         return Locale.getDefault();
     }
 
+    /** NativeDo locale shim: no transliteration table is loaded, so preserve the source. */
+    public String getTranslitString(String src) {
+        return src;
+    }
+
     public static final class LocaleInfo {
         public final String shortName;
 

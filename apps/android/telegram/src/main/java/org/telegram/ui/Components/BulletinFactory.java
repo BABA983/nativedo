@@ -44,11 +44,15 @@ public final class BulletinFactory {
     }
 
     public Bulletin createSimpleBulletin(int iconRawId, CharSequence text) {
-        return create(text, Bulletin.ICON_INFO, textLengthDuration(text));
+        return create(text, Bulletin.ICON_INFO, textLengthDuration(text), iconRawId);
     }
 
     public Bulletin createSimpleBulletin(int iconRawId, CharSequence text, int type) {
-        return create(text, Bulletin.ICON_INFO, textLengthDuration(text));
+        return create(text, type == 1 ? Bulletin.ICON_ERROR : Bulletin.ICON_INFO, textLengthDuration(text), iconRawId);
+    }
+
+    public Bulletin createSimpleBulletin(int iconRawId, CharSequence text, CharSequence button, int duration, Runnable onButtonClick) {
+        return create(text, Bulletin.ICON_INFO, duration, iconRawId).setAction(button, onButtonClick);
     }
 
     public Bulletin createCopyLinkBulletin() {
@@ -58,7 +62,8 @@ public final class BulletinFactory {
         return create(
                 LocaleController.getString("LinkCopied", R.string.LinkCopied),
                 Bulletin.ICON_COPY,
-                Bulletin.DURATION_SHORT
+                Bulletin.DURATION_SHORT,
+                0
         );
     }
 
@@ -66,11 +71,11 @@ public final class BulletinFactory {
         if (!AndroidUtilities.shouldShowClipboardToast()) {
             return new Bulletin();
         }
-        return create(text, Bulletin.ICON_COPY, Bulletin.DURATION_SHORT);
+        return create(text, Bulletin.ICON_COPY, Bulletin.DURATION_SHORT, 0);
     }
 
     public Bulletin createErrorBulletin(CharSequence text) {
-        return create(text, Bulletin.ICON_ERROR, Bulletin.DURATION_LONG);
+        return create(text, Bulletin.ICON_ERROR, Bulletin.DURATION_LONG, 0);
     }
 
     public Bulletin createDownloadBulletin(int type) {
@@ -78,22 +83,22 @@ public final class BulletinFactory {
     }
 
     public Bulletin createInfoBulletin(CharSequence text) {
-        return create(text, Bulletin.ICON_INFO, textLengthDuration(text));
+        return create(text, Bulletin.ICON_INFO, textLengthDuration(text), 0);
     }
 
-    private Bulletin create(CharSequence text, int iconType, int duration) {
+    private Bulletin create(CharSequence text, int iconType, int duration, int iconRawId) {
         ViewGroup container = containerLayout();
         if (container == null) {
             return new Bulletin();
         }
-        return new Bulletin(container, text, iconType, duration, resourcesProvider);
+        return new Bulletin(container, text, iconType, duration, resourcesProvider, iconRawId);
     }
 
     private ViewGroup containerLayout() {
         if (containerLayout != null) {
             return containerLayout;
         }
-        return fragment != null ? fragment.getLayoutContainer() : null;
+        return fragment != null ? fragment.getBulletinLayoutContainer() : null;
     }
 
     private static int textLengthDuration(CharSequence text) {

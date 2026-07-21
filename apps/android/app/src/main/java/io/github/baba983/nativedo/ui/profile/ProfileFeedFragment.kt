@@ -31,14 +31,13 @@ import org.telegram.ui.Components.RecyclerListView
 class ProfileFeedFragment(
     private val username: String,
     private val feedType: ProfileFeedType,
-) : BaseFragment(), Theme.ThemeDelegate {
+) : BaseFragment() {
     private val collectorScope = MainScope()
     private lateinit var viewModel: ProfileFeedViewModel
     private lateinit var listView: RecyclerListView
     private lateinit var adapter: TopicListAdapter
 
     override fun createView(context: Context): View {
-        Theme.addThemeDelegate(this)
         actionBar.setBackButtonDrawable(BackDrawable(false))
         actionBar.setTitle(context.getString(feedType.screenTitleRes))
         actionBar.setCastShadows(false)
@@ -170,15 +169,26 @@ class ProfileFeedFragment(
                 ),
             )
         }
+        intArrayOf(
+            Theme.key_iv_background,
+            Theme.key_windowBackgroundGray,
+        ).forEach { key ->
+            descriptions.add(
+                ThemeDescription(
+                    null,
+                    0,
+                    null,
+                    null as android.graphics.Paint?,
+                    null,
+                    chromeDelegate,
+                    key,
+                ),
+            )
+        }
         return descriptions
     }
 
-    override fun didSetNewTheme() {
-        Theme.applyThemeDescriptions(themeDescriptions)
-    }
-
     override fun onFragmentDestroy() {
-        Theme.removeThemeDelegate(this)
         collectorScope.cancel()
         super.onFragmentDestroy()
     }

@@ -12,6 +12,7 @@ import org.json.JSONObject;
 
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.ui.ActionBar.Theme;
 
 /**
  * Minimal shim matching Telegram's {@code MessagesController} API surface
@@ -20,11 +21,15 @@ import org.telegram.tgnet.TLRPC;
 public final class MessagesController {
 
     private static final MessagesController[] Instance = new MessagesController[1];
+    private volatile static long lastThemeCheckTime;
+    private final Runnable themeCheckRunnable = Theme::checkAutoNightThemeConditions;
 
     public int mapProvider = 0;
     public boolean premiumLocked = true;
     public int maxGroupCount = 200;
     public int maxBroadcastCount = 100;
+    public int largeQueueMaxActiveOperations = 2;
+    public int smallQueueMaxActiveOperations = 5;
 
     public final BlurConfig config = new BlurConfig();
 
@@ -62,6 +67,14 @@ public final class MessagesController {
      */
     public static SharedPreferences getGlobalMainSettings() {
         return ApplicationLoader.applicationContext.getSharedPreferences("global", 0);
+    }
+
+    public void updateTimerProc() {
+        long currentTime = System.currentTimeMillis();
+        if (Theme.selectedAutoNightType == Theme.AUTO_NIGHT_TYPE_SCHEDULED && Math.abs(currentTime - lastThemeCheckTime) >= 60) {
+            AndroidUtilities.runOnUIThread(themeCheckRunnable);
+            lastThemeCheckTime = currentTime;
+        }
     }
 
     public SharedPreferences getMainSettings() {

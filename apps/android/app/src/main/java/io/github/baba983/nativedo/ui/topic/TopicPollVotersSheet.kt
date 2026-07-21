@@ -430,7 +430,6 @@ internal class TopicPollVotersSheet(
         private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG)
         private val backgroundRect = RectF()
         private val titleView = TextView(context).apply {
-            setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText))
             textSize = 20f
             setTypeface(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
             setPadding(AndroidUtilities.dp(18f), AndroidUtilities.dp(6f), AndroidUtilities.dp(18f), 0)
@@ -439,7 +438,6 @@ internal class TopicPollVotersSheet(
         private val tabsView = PollOptionTabsView(context, onOptionSelected)
         private val shadowView = View(context).apply {
             alpha = 0f
-            setBackgroundColor(Theme.getColor(Theme.key_dialogShadowLine))
         }
 
         init {
@@ -447,6 +445,13 @@ internal class TopicPollVotersSheet(
             addView(titleView)
             addView(tabsView)
             addView(shadowView)
+            applyThemeColors()
+        }
+
+        private fun applyThemeColors() {
+            titleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText))
+            shadowView.setBackgroundColor(Theme.getColor(Theme.key_dialogShadowLine))
+            tabsView.applyThemeColors()
         }
 
         fun bind(title: String, options: List<PollOptionRef>, selectedId: String?) {
@@ -488,6 +493,7 @@ internal class TopicPollVotersSheet(
         }
 
         override fun onDraw(canvas: Canvas) {
+            applyThemeColors()
             backgroundPaint.color = Theme.getColor(Theme.key_dialogBackground)
             backgroundRect.set(horizontalInset.toFloat(), 0f, (measuredWidth - horizontalInset).toFloat(), measuredHeight.toFloat())
             canvas.drawRect(backgroundRect, backgroundPaint)
@@ -594,6 +600,12 @@ internal class TopicPollVotersSheet(
             post {
                 val selectedChip = chips.firstOrNull { chip -> chip.optionId == optionId } ?: return@post
                 scrollTo(centeredScrollFor(selectedChip), 0)
+            }
+        }
+
+        fun applyThemeColors() {
+            for (chip in chips) {
+                chip.invalidate()
             }
         }
 

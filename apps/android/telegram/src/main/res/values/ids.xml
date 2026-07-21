@@ -8,6 +8,7 @@
     <item name="width_tag" type="id"/>
     <item name="object_tag" type="id"/>
     <item name="fit_width_tag" type="id"/>
+    <item name="index_tag" type="id"/>
 
     <!-- Tag IDs for AndroidUtilities.shakeViewSpring (upstream ids.xml) -->
     <item name="spring_tag" type="id"/>

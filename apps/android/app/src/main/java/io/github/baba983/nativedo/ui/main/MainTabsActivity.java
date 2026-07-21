@@ -21,6 +21,7 @@ package io.github.baba983.nativedo.ui.main;
 import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Canvas;
+import android.graphics.Paint;
 import android.os.Build;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -37,6 +38,7 @@ import org.telegram.messenger.LiteMode;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.ActionBar.ThemeDescription;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory;
@@ -50,7 +52,7 @@ import org.telegram.ui.Components.chat.ViewPositionWatcher;
 import io.github.baba983.nativedo.ui.profile.ProfileFragment;
 import io.github.baba983.nativedo.ui.topic.TopicListFragment;
 
-public class MainTabsActivity extends ViewPagerActivity implements Theme.ThemeDelegate, MainTabsController {
+public class MainTabsActivity extends ViewPagerActivity implements MainTabsController {
 
     public static final int TABS_COUNT = 2;
     public static final int POSITION_HOME = 0;
@@ -209,7 +211,6 @@ public class MainTabsActivity extends ViewPagerActivity implements Theme.ThemeDe
     @Override
     public void onResume() {
         super.onResume();
-        Theme.addThemeDelegate(this);
         blur3UpdateColors();
         checkUiTabsPosition();
         checkUiFadeView();
@@ -217,7 +218,6 @@ public class MainTabsActivity extends ViewPagerActivity implements Theme.ThemeDe
 
     @Override
     public void onPause() {
-        Theme.removeThemeDelegate(this);
         super.onPause();
     }
 
@@ -356,16 +356,30 @@ public class MainTabsActivity extends ViewPagerActivity implements Theme.ThemeDe
     }
 
     @Override
-    public void didSetNewTheme() {
-        if (contentView != null) {
-            contentView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray));
-        }
-        blur3UpdateColors();
-        if (tabs != null) {
-            for (GlassTabView tab : tabs) {
-                tab.updateColors();
+    public java.util.ArrayList<ThemeDescription> getThemeDescriptions() {
+        java.util.ArrayList<ThemeDescription> descriptions = super.getThemeDescriptions();
+        ThemeDescription.ThemeDescriptionDelegate chromeDelegate = new ThemeDescription.ThemeDescriptionDelegate() {
+            @Override
+            public void didSetColor() {
+                blur3UpdateColors();
             }
+        };
+        if (contentView != null) {
+            descriptions.add(new ThemeDescription(contentView, ThemeDescription.FLAG_BACKGROUND, null,
+                    (Paint[]) null, null, chromeDelegate, Theme.key_windowBackgroundGray, null));
         }
+        View tabView = tabs != null && tabs.length > 0 ? tabs[0] : contentView;
+        if (tabView != null) {
+            descriptions.add(new ThemeDescription(tabView, 0, null,
+                    (Paint[]) null, null, chromeDelegate, Theme.key_windowBackgroundWhite, null));
+            descriptions.add(new ThemeDescription(tabView, 0, null,
+                    (Paint[]) null, null, chromeDelegate, Theme.key_glass_tabUnselected, null));
+            descriptions.add(new ThemeDescription(tabView, 0, null,
+                    (Paint[]) null, null, chromeDelegate, Theme.key_glass_tabSelected, null));
+            descriptions.add(new ThemeDescription(tabView, 0, null,
+                    (Paint[]) null, null, chromeDelegate, Theme.key_glass_tabSelectedText, null));
+        }
+        return descriptions;
     }
 
     /**

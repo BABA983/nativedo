@@ -578,6 +578,13 @@ public class WebBrowserSettings extends UniversalFragment implements Notificatio
                 animatedEmojiDrawable.addView(imageView);
                 imageView.setImageDrawable(animatedEmojiDrawable);
             } else {
+                final WebMetadataCache.WebMetadata cachedMetadata = WebMetadataCache.getInstance().get(domain);
+                if (cachedMetadata != null && cachedMetadata.favicon != null) {
+                    imageView.setImageBitmap(cachedMetadata.favicon);
+                    needDivider = divider;
+                    invalidate();
+                    return;
+                }
                 CombinedDrawable drawable = new CombinedDrawable(
                     Theme.createRoundRectDrawable(dp(6), Theme.multAlpha(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText), .1f)),
                     new Drawable() {

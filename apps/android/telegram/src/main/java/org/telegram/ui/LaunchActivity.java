@@ -11,6 +11,7 @@ import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.BottomSheetTabs;
 import org.telegram.ui.ActionBar.BottomSheetTabsOverlay;
 import org.telegram.ui.ActionBar.DrawerLayoutContainer;
+import org.telegram.ui.ActionBar.INavigationLayout;
 
 /**
  * NativeDo host facade for Telegram-derived root services.
@@ -24,6 +25,24 @@ public class LaunchActivity extends ComponentActivity {
 
     public static void setActionBarLayout(ActionBarLayout layout) {
         actionBarLayout = layout;
+    }
+
+    public INavigationLayout getActionBarLayout() {
+        return actionBarLayout;
+    }
+
+    public INavigationLayout getLayersActionBarLayout() {
+        return actionBarLayout;
+    }
+
+    public INavigationLayout getRightActionBarLayout() {
+        return actionBarLayout;
+    }
+
+    public void rebuildAllFragments(boolean last) {
+        if (actionBarLayout != null) {
+            actionBarLayout.rebuildAllFragmentViews(last);
+        }
     }
 
     public static Activity getActionBarLayoutActivity() {

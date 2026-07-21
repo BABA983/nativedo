@@ -23,7 +23,7 @@ import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.LayoutHelper;
 
-public class TopicMentionCell extends LinearLayout {
+public class TopicMentionCell extends LinearLayout implements Theme.Colorable {
     public static final int HEIGHT_DP = 36;
 
     private final BackupImageView imageView;
@@ -34,7 +34,6 @@ public class TopicMentionCell extends LinearLayout {
     public TopicMentionCell(@NonNull Context context) {
         super(context);
         setOrientation(HORIZONTAL);
-        setBackground(Theme.getSelectorDrawable(false));
 
         avatarDrawable = new AvatarDrawable();
         avatarDrawable.setTextSize(AndroidUtilities.dp(18));
@@ -50,7 +49,6 @@ public class TopicMentionCell extends LinearLayout {
                 super.setText(text, type);
             }
         };
-        nameTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
         nameTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
         nameTextView.setSingleLine(true);
         nameTextView.setGravity(Gravity.LEFT);
@@ -58,12 +56,20 @@ public class TopicMentionCell extends LinearLayout {
         addView(nameTextView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_VERTICAL, 12, 0, 0, 0));
 
         usernameTextView = new TextView(context);
-        usernameTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText3));
         usernameTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
         usernameTextView.setSingleLine(true);
         usernameTextView.setGravity(Gravity.LEFT);
         usernameTextView.setEllipsize(TextUtils.TruncateAt.END);
         addView(usernameTextView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_VERTICAL, 12, 0, 8, 0));
+        updateColors();
+    }
+
+    @Override
+    public void updateColors() {
+        setBackground(Theme.getSelectorDrawable(false));
+        nameTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+        usernameTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText3));
+        invalidate();
     }
 
     @Override

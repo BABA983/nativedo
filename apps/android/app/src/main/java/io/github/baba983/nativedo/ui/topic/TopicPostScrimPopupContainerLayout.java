@@ -276,12 +276,17 @@ public class TopicPostScrimPopupContainerLayout extends LinearLayout {
             setWillNotDraw(false);
             setClipChildren(false);
             setClipToPadding(false);
+            bubbleShadow = context.getResources().getDrawable(org.telegram.messenger.R.drawable.reactions_bubble_shadow).mutate();
+            applyThemeColors();
+            setPadding(0, AndroidUtilities.dp(RAIL_TOP_PADDING_DP), 0, AndroidUtilities.dp(RAIL_BOTTOM_PADDING_DP));
+        }
+
+        private void applyThemeColors() {
             int backgroundColor = Theme.getColor(Theme.key_actionBarDefaultSubmenuBackground);
             backgroundPaint.setColor(backgroundColor);
             bubblePaint.setColor(backgroundColor);
-            bubbleShadow = context.getResources().getDrawable(org.telegram.messenger.R.drawable.reactions_bubble_shadow).mutate();
-            bubbleShadow.setColorFilter(new PorterDuffColorFilter(Theme.getColor(Theme.key_chat_messagePanelShadow), PorterDuff.Mode.MULTIPLY));
-            setPadding(0, AndroidUtilities.dp(RAIL_TOP_PADDING_DP), 0, AndroidUtilities.dp(RAIL_BOTTOM_PADDING_DP));
+            bubbleShadow.setColorFilter(new PorterDuffColorFilter(
+                    Theme.getColor(Theme.key_chat_messagePanelShadow), PorterDuff.Mode.MULTIPLY));
         }
 
         void setTransitionProgress(float progress) {
@@ -318,6 +323,8 @@ public class TopicPostScrimPopupContainerLayout extends LinearLayout {
             if (getWidth() <= 0 || getHeight() <= 0) {
                 return;
             }
+            // Re-sample on draw so an open rail survives day/night switches.
+            applyThemeColors();
             float progress = Math.max(0f, transitionProgress);
             float pivotX = LocaleController.isRTL ? getWidth() * 0.125f : getWidth() * 0.875f;
             float clipGate = Math.max(CLIP_PROGRESS, Math.min(1f, progress));

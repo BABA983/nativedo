@@ -24,7 +24,7 @@ public class NestedSizeNotifierLayout extends SizeNotifierFrameLayout implements
     ChildLayout childLayout;
     BottomSheet.ContainerView bottomSheetContainerView;
 
-    int maxTop;
+    int maxTop, maxTopPadding;
     boolean attached;
 
     private boolean childAttached() {
@@ -39,7 +39,11 @@ public class NestedSizeNotifierLayout extends SizeNotifierFrameLayout implements
 
     private void updateMaxTop() {
         if (targetListView != null && childLayout != null) {
-            maxTop = targetListView.getMeasuredHeight() - targetListView.getPaddingBottom() - childLayout.getMeasuredHeight();
+            if (maxTopPadding != 0) {
+                maxTop = targetListView.getPaddingTop() + maxTopPadding;
+            } else {
+                maxTop = targetListView.getMeasuredHeight() - targetListView.getPaddingBottom() - childLayout.getMeasuredHeight();
+            }
         }
     }
 
@@ -123,6 +127,11 @@ public class NestedSizeNotifierLayout extends SizeNotifierFrameLayout implements
     }
 
     public void setChildLayout(ChildLayout childLayout) {
+        setChildLayout(childLayout, 0);
+    }
+
+    public void setChildLayout(ChildLayout childLayout, int maxTopPadding) {
+        this.maxTopPadding = maxTopPadding;
         if (this.childLayout != childLayout) {
             this.childLayout = childLayout;
             if (attached && childLayout != null && childLayout.getListView() != null) {

@@ -179,7 +179,7 @@ class TopicDetailFragment @JvmOverloads constructor(
     private val initialTitle: String? = null,
     private val initialPostNumber: Int? = null,
     private val initialPostId: Long? = null,
-) : BaseFragment(), Theme.ThemeDelegate {
+) : BaseFragment() {
     private lateinit var viewModel: TopicViewModel
     private lateinit var adapter: TopicDetailAdapter
     private lateinit var listView: TopicSwipeReplyRecyclerView
@@ -272,7 +272,6 @@ class TopicDetailFragment @JvmOverloads constructor(
     private val textSelectionHelper = TextSelectionHelper.ArticleTextSelectionHelper()
 
     override fun createView(context: Context): View {
-        Theme.addThemeDelegate(this)
         actionBar.setBackButtonDrawable(BackDrawable(false))
         // Identity container owns the visible title; keep ActionBar title empty.
         actionBar.setTitle("")
@@ -656,21 +655,17 @@ class TopicDetailFragment @JvmOverloads constructor(
         super.onPause()
     }
 
-    override fun didSetNewTheme() {
-        applyTopicDetailTheme()
-    }
-
     /**
      * Upstream-shaped theme targets (DialogsActivity pattern):
      * - ActionBar / list chrome via FLAG_* ThemeDescriptions
-     * - Colorable post cells via listClasses (flags=0): ThemeDescription.setColor walks
-     *   attached + hidden/cached/scrap and processViewColor calls Colorable.updateColors()
-     * - cellDelegate for host chrome that is not a list cell (ActionBar glass, status bar)
+     * - Colorable post cells are refreshed by ActionBarLayout's visible-tree pass
+     * - explicit tracks cover every key consumed by topic chrome and post body blocks
      */
     override fun getThemeDescriptions(): java.util.ArrayList<ThemeDescription> {
         val descriptions = java.util.ArrayList<ThemeDescription>()
         val chromeDelegate = ThemeDescription.ThemeDescriptionDelegate {
             actionBar?.applyTheme()
+            rootFrameLayout?.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite))
             parentActivity?.window?.let { window ->
                 AndroidUtilities.setLightStatusBar(window, !Theme.isCurrentThemeDark())
             }
@@ -766,9 +761,6 @@ class TopicDetailFragment @JvmOverloads constructor(
                     Theme.key_chat_wallpaper,
                 ),
             )
-            // listClasses forces setColor to visit pool/scrap; Colorable.updateColors is
-            // invoked from ThemeDescription.processViewColor (host extension for cells
-            // that use instance paints rather than shared Theme.dialogs_* paints).
             descriptions.add(
                 ThemeDescription(
                     listView,
@@ -798,20 +790,67 @@ class TopicDetailFragment @JvmOverloads constructor(
                 ),
             )
         }
+        intArrayOf(
+            Theme.key_actionBarDefaultSubmenuBackground,
+            Theme.key_actionBarDefaultSubmenuItem,
+            Theme.key_actionBarDefaultSubmenuItemIcon,
+            Theme.key_chat_TextSelectionCursor,
+            Theme.key_chat_emojiPanelBackground,
+            Theme.key_chat_emojiPanelIcon,
+            Theme.key_chat_emojiPanelIconSelected,
+            Theme.key_chat_emojiPanelShadowLine,
+            Theme.key_chat_inReactionButtonBackground,
+            Theme.key_chat_inReactionButtonText,
+            Theme.key_chat_inReactionButtonTextSelected,
+            Theme.key_chat_inAudioSeekbarFill,
+            Theme.key_chat_inPreviewInstantText,
+            Theme.key_chat_inTextSelectionHighlight,
+            Theme.key_chat_messageLinkIn,
+            Theme.key_chat_messageLinkOut,
+            Theme.key_chat_messagePanelBackground,
+            Theme.key_chat_messagePanelCursor,
+            Theme.key_chat_messagePanelHint,
+            Theme.key_chat_messagePanelSend,
+            Theme.key_chat_messagePanelShadow,
+            Theme.key_chat_messagePanelText,
+            Theme.key_chat_replyPanelClose,
+            Theme.key_chat_searchPanelText,
+            Theme.key_chat_serviceBackground,
+            Theme.key_chat_serviceText,
+            Theme.key_checkboxCheck,
+            Theme.key_dialogBackground,
+            Theme.key_dialogButtonSelector,
+            Theme.key_dialogFloatingIcon,
+            Theme.key_dialogShadowLine,
+            Theme.key_divider,
+            Theme.key_emptyListPlaceholder,
+            Theme.key_glass_defaultIcon,
+            Theme.key_text_RedRegular,
+            Theme.key_windowBackgroundGray,
+            Theme.key_windowBackgroundWhiteBlackText,
+            Theme.key_windowBackgroundWhiteGrayText,
+            Theme.key_windowBackgroundWhiteGrayText2,
+            Theme.key_chat_messageTextIn,
+            Theme.key_chat_inTimeText,
+            Theme.key_chat_inReplyLine,
+            Theme.key_chat_inBubble,
+        ).forEach { key ->
+            descriptions.add(
+                ThemeDescription(
+                    null,
+                    0,
+                    null,
+                    null as android.graphics.Paint?,
+                    null,
+                    chromeDelegate,
+                    key,
+                ),
+            )
+        }
         return descriptions
     }
 
-    private fun applyTopicDetailTheme() {
-        Theme.applyThemeDescriptions(themeDescriptions)
-        val bg = topicDetailListBackgroundColor()
-        rootFrameLayout?.setBackgroundColor(bg)
-        if (::listView.isInitialized) {
-            listView.setBackgroundColor(bg)
-        }
-    }
-
     override fun onFragmentDestroy() {
-        Theme.removeThemeDelegate(this)
         topicSearchJob?.cancel()
         topicSearchJob = null
         topicSearchSession.clear()

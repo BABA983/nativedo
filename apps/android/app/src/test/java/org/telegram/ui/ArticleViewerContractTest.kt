@@ -36,7 +36,8 @@ class ArticleViewerContractTest {
     @Before
     fun setUp() {
         ApplicationLoader.init(RuntimeEnvironment.getApplication())
-        // Avoid Theme.init(): pulls media action drawables not on the unit-test classpath.
+        // Avoid forcing Theme class initialization: it pulls media action drawables
+        // that are not on this narrow unit-test classpath.
     }
     @Test
     fun getInstance_returnsSingleton() {

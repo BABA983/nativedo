@@ -7,8 +7,8 @@
  * Source reference:
  * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/ui/ActionBar/BaseFragment.java
  *
- * NativeDo milestone slice: keeps fragment view, action bar, parent layout, attached sheets,
- * and navigation lifecycle hooks; omits Telegram dialogs, themes, menus, stories, and arguments.
+ * NativeDo milestone slice: keeps fragment view, action bar, parent layout, dialog ownership,
+ * attached sheets, and navigation lifecycle hooks; omits Telegram menus, stories, and arguments.
  *
  * Copyright (C) Telegram FZ-LLC
  * Copyright (C) 2026 NativeDo contributors
@@ -36,6 +36,7 @@ import androidx.lifecycle.ViewModelStoreOwner;
 import java.util.ArrayList;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.FileLog;
 import org.telegram.messenger.UserConfig;
 import org.telegram.ui.ArticleViewer;
 
@@ -46,6 +47,7 @@ public abstract class BaseFragment implements ViewModelStoreOwner {
     protected INavigationLayout parentLayout;
     protected ActionBar actionBar;
     protected int currentAccount = UserConfig.selectedAccount;
+    public Dialog visibleDialog;
     /** Upstream-shaped request/owner id used by UniversalRecyclerView/UniversalAdapter. */
     protected int classGuid = 0;
     public ArrayList<AttachedSheet> sheetsStack;
@@ -104,6 +106,42 @@ public abstract class BaseFragment implements ViewModelStoreOwner {
 
     public boolean onFragmentCreate() {
         return true;
+    }
+
+    public void clearViews() {
+        if (fragmentView != null) {
+            ViewGroup parent = (ViewGroup) fragmentView.getParent();
+            if (parent != null) {
+                try {
+                    onRemoveFromParent();
+                    parent.removeViewInLayout(fragmentView);
+                } catch (Exception e) {
+                    FileLog.e(e);
+                }
+            }
+            fragmentView = null;
+        }
+        photoViewerScaleView = null;
+        if (actionBar != null) {
+            ViewGroup parent = (ViewGroup) actionBar.getParent();
+            if (parent != null) {
+                try {
+                    parent.removeViewInLayout(actionBar);
+                } catch (Exception e) {
+                    FileLog.e(e);
+                }
+            }
+            actionBar = null;
+        }
+        clearSheets();
+        parentLayout = null;
+    }
+
+    public void onRemoveFromParent() {
+        if (sheetsStack == null || sheetsStack.isEmpty()) {
+            return;
+        }
+        updateSheetsVisibility();
     }
 
     public void setParentLayout(INavigationLayout layout) {
@@ -205,15 +243,20 @@ public abstract class BaseFragment implements ViewModelStoreOwner {
     }
 
     public void onBeginSlide() {
+        dismissCurrentDialog();
     }
 
     public void onPause() {
+        if (visibleDialog != null && visibleDialog.isShowing() && dismissDialogOnPause(visibleDialog)) {
+            dismissCurrentDialog();
+        }
     }
 
     public void onResume() {
     }
 
     public void onFragmentDestroy() {
+        dismissCurrentDialog();
         clearSheets();
         viewModelStore.clear();
     }
@@ -392,11 +435,59 @@ public abstract class BaseFragment implements ViewModelStoreOwner {
         }
     }
 
-    public boolean showDialog(Dialog dialog) {
-        if (dialog != null) {
-            dialog.show();
+    public Dialog showDialog(Dialog dialog) {
+        return showDialog(dialog, null);
+    }
+
+    public Dialog showDialog(Dialog dialog, final Dialog.OnDismissListener onDismissListener) {
+        if (dialog == null) {
+            return null;
         }
+        if (sheetsStack != null) {
+            for (int i = sheetsStack.size() - 1; i >= 0; i--) {
+                AttachedSheet sheet = sheetsStack.get(i);
+                if (sheet.isShown() && sheet.showDialog(dialog)) {
+                    return dialog;
+                }
+            }
+        }
+        dismissCurrentDialog();
+        visibleDialog = dialog;
+        visibleDialog.setCanceledOnTouchOutside(true);
+        visibleDialog.setOnDismissListener(dismissed -> {
+            if (onDismissListener != null) {
+                onDismissListener.onDismiss(dismissed);
+            }
+            onDialogDismiss((Dialog) dismissed);
+            if (dismissed == visibleDialog) {
+                visibleDialog = null;
+            }
+        });
+        visibleDialog.show();
+        return visibleDialog;
+    }
+
+    public void dismissCurrentDialog() {
+        Dialog dialog = visibleDialog;
+        visibleDialog = null;
+        if (dialog != null) {
+            dialog.dismiss();
+        }
+    }
+
+    public boolean dismissDialogOnPause(Dialog dialog) {
         return true;
+    }
+
+    protected void onDialogDismiss(Dialog dialog) {
+    }
+
+    public Dialog getVisibleDialog() {
+        return visibleDialog;
+    }
+
+    public void setVisibleDialog(Dialog dialog) {
+        visibleDialog = dialog;
     }
 
     public org.telegram.messenger.AccountInstance getAccountInstance() {

@@ -19,6 +19,7 @@ import android.view.View;
 import java.util.List;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.Emoji;
+import org.telegram.messenger.SharedConfig;
 import org.telegram.ui.ActionBar.Theme;
 
 public final class TopicHeaderCell extends View implements Theme.Colorable {
@@ -35,9 +36,8 @@ public final class TopicHeaderCell extends View implements Theme.Colorable {
 
     public TopicHeaderCell(Context context) {
         super(context);
-        titlePaint.setTextSize(AndroidUtilities.dp(22f));
         titlePaint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
-        metaPaint.setTextSize(AndroidUtilities.dp(13f));
+        updateTextSizes();
         updateColors();
     }
 
@@ -101,8 +101,17 @@ public final class TopicHeaderCell extends View implements Theme.Colorable {
 
     @Override
     public void updateColors() {
+        updateTextSizes();
         titlePaint.setColor(Theme.getColor(Theme.key_chat_messageTextIn));
         metaPaint.setColor(Theme.getColor(Theme.key_chat_inTimeText));
+        invalidate();
+    }
+
+    public void updateTextSizes() {
+        float bodySize = SharedConfig.fontSize;
+        titlePaint.setTextSize(AndroidUtilities.dp(bodySize + 6f));
+        metaPaint.setTextSize(AndroidUtilities.dp(Math.max(11f, bodySize - 3f)));
+        requestLayout();
         invalidate();
     }
 

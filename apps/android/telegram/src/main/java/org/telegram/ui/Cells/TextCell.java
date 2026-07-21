@@ -24,6 +24,7 @@ import android.widget.TextView;
 import androidx.annotation.Nullable;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.LocaleController;
 import org.telegram.ui.ActionBar.Theme;
 
 public class TextCell extends FrameLayout {
@@ -37,6 +38,7 @@ public class TextCell extends FrameLayout {
     private int rightPadding = 23;
     private boolean needDivider;
     private boolean subtitleVisible;
+    private boolean isRTL;
     private final Theme.ResourcesProvider resourcesProvider;
 
     public TextCell(Context context) {
@@ -60,7 +62,7 @@ public class TextCell extends FrameLayout {
         titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
         titleView.setSingleLine(true);
         titleView.setEllipsize(TextUtils.TruncateAt.END);
-        titleView.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
+        titleView.setGravity((LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL);
         addView(titleView);
 
         subtitleView = new TextView(context);
@@ -68,7 +70,7 @@ public class TextCell extends FrameLayout {
         subtitleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
         subtitleView.setSingleLine(true);
         subtitleView.setEllipsize(TextUtils.TruncateAt.END);
-        subtitleView.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
+        subtitleView.setGravity((LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL);
         addView(subtitleView);
 
         valueView = new TextView(context);
@@ -76,10 +78,11 @@ public class TextCell extends FrameLayout {
         valueView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
         valueView.setSingleLine(true);
         valueView.setEllipsize(TextUtils.TruncateAt.END);
-        valueView.setGravity(Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        valueView.setGravity((LocaleController.isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.CENTER_VERTICAL);
         addView(valueView);
 
         dividerPaint.setColor(getThemedColor(Theme.key_divider));
+        isRTL = LocaleController.isRTL;
     }
 
     public TextView getTextView() {
@@ -228,18 +231,22 @@ public class TextCell extends FrameLayout {
     @Override
     protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
         int height = bottom - top;
-        int textLeft = AndroidUtilities.dp(leftPadding);
+        int textWidth = titleView.getMeasuredWidth();
+        int textLeft = isRTL ? getMeasuredWidth() - AndroidUtilities.dp(leftPadding) - textWidth : AndroidUtilities.dp(leftPadding);
         if (subtitleVisible) {
-            titleView.layout(textLeft, AndroidUtilities.dp(11), textLeft + titleView.getMeasuredWidth(), AndroidUtilities.dp(33));
+            titleView.layout(textLeft, AndroidUtilities.dp(11), textLeft + textWidth, AndroidUtilities.dp(33));
             subtitleView.layout(textLeft, AndroidUtilities.dp(34), textLeft + subtitleView.getMeasuredWidth(), AndroidUtilities.dp(54));
         } else {
             int titleTop = (height - titleView.getMeasuredHeight()) / 2;
-            titleView.layout(textLeft, titleTop, textLeft + titleView.getMeasuredWidth(), titleTop + titleView.getMeasuredHeight());
+            titleView.layout(textLeft, titleTop, textLeft + textWidth, titleTop + titleView.getMeasuredHeight());
             subtitleView.layout(textLeft, titleTop, textLeft, titleTop);
         }
-        int valueLeft = getMeasuredWidth() - AndroidUtilities.dp(23) - valueView.getMeasuredWidth();
+        int valueLeft = isRTL
+                ? AndroidUtilities.dp(23)
+                : getMeasuredWidth() - AndroidUtilities.dp(23) - valueView.getMeasuredWidth();
         valueView.layout(valueLeft, 0, valueLeft + valueView.getMeasuredWidth(), height);
-        iconView.layout(0, (height - iconView.getMeasuredHeight()) / 2, iconView.getMeasuredWidth(), (height + iconView.getMeasuredHeight()) / 2);
+        int iconLeft = isRTL ? getMeasuredWidth() - iconView.getMeasuredWidth() : 0;
+        iconView.layout(iconLeft, (height - iconView.getMeasuredHeight()) / 2, iconLeft + iconView.getMeasuredWidth(), (height + iconView.getMeasuredHeight()) / 2);
     }
 
     @Override
@@ -247,8 +254,23 @@ public class TextCell extends FrameLayout {
         super.onDraw(canvas);
         if (needDivider) {
             int start = AndroidUtilities.dp(iconView.getVisibility() == VISIBLE ? 68 : 20);
-            canvas.drawRect(start, getMeasuredHeight() - 1, getMeasuredWidth(), getMeasuredHeight(), dividerPaint);
+            if (isRTL) {
+                canvas.drawRect(0, getMeasuredHeight() - 1, getMeasuredWidth() - start, getMeasuredHeight(), dividerPaint);
+            } else {
+                canvas.drawRect(start, getMeasuredHeight() - 1, getMeasuredWidth(), getMeasuredHeight(), dividerPaint);
+            }
         }
+    }
+
+    public void updateRTL() {
+        if (isRTL == LocaleController.isRTL) {
+            return;
+        }
+        isRTL = LocaleController.isRTL;
+        titleView.setGravity((isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL);
+        subtitleView.setGravity((isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL);
+        valueView.setGravity((isRTL ? Gravity.LEFT : Gravity.RIGHT) | Gravity.CENTER_VERTICAL);
+        requestLayout();
     }
 
     private int getThemedColor(int key) {

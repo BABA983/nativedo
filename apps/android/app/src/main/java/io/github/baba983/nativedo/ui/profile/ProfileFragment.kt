@@ -85,6 +85,7 @@ import io.github.baba983.nativedo.ui.auth.LoginWebViewFragment
 import io.github.baba983.nativedo.ui.main.MainTabsActivity
 import io.github.baba983.nativedo.ui.profile.IconSettingCell.Factory as IconSettingFactory
 import io.github.baba983.nativedo.ui.topic.TopicDetailFragment
+import io.github.baba983.nativedo.ui.theme.ThemeSettingsFragment
 import java.util.ArrayList
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -170,7 +171,7 @@ private val COPYABLE_ROW_IDS = setOf(
  * - Avatar uses scaleX/Y with ProfileGooeyView for waterdrop absorption effect
  * - TopView draws the cover background from y=0 (covers status bar)
  */
-class ProfileFragment : BaseFragment(), Theme.ThemeDelegate, MainTabsActivity.TabFragmentDelegate {
+class ProfileFragment : BaseFragment(), MainTabsActivity.TabFragmentDelegate {
     private val fragmentScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var viewModel: ProfileViewModel
     private lateinit var appContainer: AppContainer
@@ -236,7 +237,6 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate, MainTabsActivity.Ta
     }
 
     override fun createView(context: Context): View {
-        Theme.addThemeDelegate(this)
         actionBar.setCastShadows(false)
         actionBar.setAddToContainer(false)
         actionBar.setClipContent(true)
@@ -1867,7 +1867,7 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate, MainTabsActivity.Ta
                 IconSettingCell.Colors.ORANGE_TOP, IconSettingCell.Colors.ORANGE_BOTTOM,
                 R.drawable.settings_refresh,
                 context?.getString(R.string.profile_appearance_title).orEmpty(),
-                context?.getString(R.string.profile_appearance_subtitle).orEmpty(),
+                appearanceThemeSummary(),
                 if (Theme.isCurrentThemeDark()) {
                     context?.getString(R.string.profile_appearance_value_night).orEmpty()
                 } else {
@@ -1894,6 +1894,12 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate, MainTabsActivity.Ta
         // --- Version footer (mirrors SettingsActivity.versionView, L745) ---
         // Centered gray build string at the very bottom, shown in every session state.
         items.add(UItem.asCenterShadow("NativeDo v${BuildConfig.VERSION_NAME}"))
+    }
+
+    private fun appearanceThemeSummary(): String {
+        val dayName = Theme.getCurrentTheme()?.getName().orEmpty()
+        val nightName = Theme.getCurrentNightTheme()?.getName().orEmpty()
+        return context?.getString(R.string.profile_appearance_subtitle, dayName, nightName).orEmpty()
     }
 
     private fun addDevToolsItems(items: ArrayList<UItem>) {
@@ -1980,10 +1986,7 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate, MainTabsActivity.Ta
             ACTION_RETRY_PROFILE -> viewModel.retry()
             ACTION_LOGIN -> presentFragment(LoginWebViewFragment())
             ACTION_BROWSER_SETTINGS -> openBrowserSettings()
-            ACTION_APPEARANCE -> {
-                Theme.toggleTheme()
-                updateList()
-            }
+            ACTION_APPEARANCE -> presentFragment(ThemeSettingsFragment())
             ACTION_DEV_URL -> showUrlInputDialog(
                 title = context?.getString(R.string.profile_dev_url_title).orEmpty(),
                 message = context?.getString(R.string.profile_dev_url_message).orEmpty(),
@@ -2382,7 +2385,7 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate, MainTabsActivity.Ta
     /**
      * Settings-shaped ThemeDescription list: UniversalRecyclerView listClasses for
      * IconSettingCell / BioCell, chrome delegate for header TopView + name/subtitle.
-     * updateList() rebuilds UItem text (appearance day/night value) after recolor.
+     * Theme keys used by the header and settings cells are explicit animation tracks.
      */
     override fun getThemeDescriptions(): java.util.ArrayList<ThemeDescription> {
         val descriptions = java.util.ArrayList<ThemeDescription>()
@@ -2464,6 +2467,31 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate, MainTabsActivity.Ta
                 ),
             )
         }
+        intArrayOf(
+            Theme.key_actionBarDefaultTitle,
+            Theme.key_profile_title,
+            Theme.key_profile_actionBackground,
+            Theme.key_profile_actionIcon,
+            Theme.key_actionBarDefaultSubtitle,
+            Theme.key_divider,
+            Theme.key_text_RedBold,
+            Theme.key_windowBackgroundWhiteBlackText,
+            Theme.key_windowBackgroundWhiteBlueText,
+            Theme.key_windowBackgroundWhiteGrayText,
+            Theme.key_windowBackgroundWhiteLinkSelection,
+        ).forEach { key ->
+            descriptions.add(
+                ThemeDescription(
+                    null,
+                    0,
+                    null,
+                    null as android.graphics.Paint?,
+                    null,
+                    chromeDelegate,
+                    key,
+                ),
+            )
+        }
         return descriptions
     }
 
@@ -2475,18 +2503,18 @@ class ProfileFragment : BaseFragment(), Theme.ThemeDelegate, MainTabsActivity.Ta
         nameTextView[1]?.setTextColor(Theme.getColor(Theme.key_profile_title))
         subtitleView[0]?.setTextColor(Theme.getColor(Theme.key_actionBarDefaultSubtitle))
         subtitleView[1]?.setTextColor(Theme.getColor(Theme.key_actionBarDefaultSubtitle))
-        // Rebuild settings rows so appearance subtitle reflects day/night.
-        updateList()
+        profileActionsView?.invalidate()
     }
 
-    override fun didSetNewTheme() {
-        Theme.applyThemeDescriptions(themeDescriptions)
+    override fun onResume() {
+        super.onResume()
+        recolorProfileChrome()
+        updateList()
     }
 
     override fun onFragmentDestroy() {
         topicFixtureSheet?.dismiss()
         topicFixtureSheet = null
-        Theme.removeThemeDelegate(this)
         fragmentScope.cancel()
         super.onFragmentDestroy()
     }

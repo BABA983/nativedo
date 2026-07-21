@@ -18,6 +18,7 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
@@ -54,14 +55,18 @@ public class Bulletin {
     private Delegate currentDelegate;
 
     public Bulletin() {
-        this(null, null, ICON_INFO, DURATION_SHORT, null);
+        this(null, null, ICON_INFO, DURATION_SHORT, null, 0);
     }
 
     Bulletin(ViewGroup containerLayout, CharSequence text, int iconType, int duration, Theme.ResourcesProvider resourcesProvider) {
+        this(containerLayout, text, iconType, duration, resourcesProvider, 0);
+    }
+
+    Bulletin(ViewGroup containerLayout, CharSequence text, int iconType, int duration, Theme.ResourcesProvider resourcesProvider, int iconRawId) {
         this.containerLayout = containerLayout;
         this.duration = duration;
         Context context = containerLayout != null ? containerLayout.getContext() : null;
-        layout = context != null ? new BulletinView(context, resourcesProvider, text, iconType) : null;
+        layout = context != null ? new BulletinView(context, resourcesProvider, text, iconType, iconRawId) : null;
     }
 
     public static Bulletin getVisibleBulletin() {
@@ -164,6 +169,18 @@ public class Bulletin {
         return this;
     }
 
+    public Bulletin setAction(CharSequence text, Runnable action) {
+        if (layout != null) {
+            layout.setAction(text, () -> {
+                hide();
+                if (action != null) {
+                    action.run();
+                }
+            });
+        }
+        return this;
+    }
+
     public void updatePosition() {
         if (layout == null) {
             return;
@@ -188,9 +205,14 @@ public class Bulletin {
     }
 
     private Delegate findDelegate() {
-        Delegate delegate = delegates.get(containerLayout);
-        if (delegate != null) {
-            return delegate;
+        View current = containerLayout;
+        while (current != null) {
+            Delegate delegate = delegates.get(current);
+            if (delegate != null) {
+                return delegate;
+            }
+            ViewParent parent = current.getParent();
+            current = parent instanceof View ? (View) parent : null;
         }
         return null;
     }
@@ -203,18 +225,19 @@ public class Bulletin {
 
     private static final class BulletinView extends FrameLayout {
         private final Theme.ResourcesProvider resourcesProvider;
+        private final TextView textView;
 
-        BulletinView(Context context, Theme.ResourcesProvider resourcesProvider, CharSequence text, int iconType) {
+        BulletinView(Context context, Theme.ResourcesProvider resourcesProvider, CharSequence text, int iconType, int iconRawId) {
             super(context);
             this.resourcesProvider = resourcesProvider;
             setMinimumHeight(dp(48));
             setClipToOutline(true);
             updateBackground();
 
-            IconView iconView = new IconView(context, resourcesProvider, iconType);
+            IconView iconView = new IconView(context, resourcesProvider, iconType, iconRawId);
             addView(iconView, LayoutHelper.createFrame(24, 24, Gravity.LEFT | Gravity.CENTER_VERTICAL, 16, 12, 16, 12));
 
-            TextView textView = new TextView(context);
+            textView = new TextView(context);
             textView.setSingleLine(false);
             textView.setMaxLines(2);
             textView.setEllipsize(TextUtils.TruncateAt.END);
@@ -225,6 +248,20 @@ public class Bulletin {
             addView(textView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.LEFT | Gravity.CENTER_VERTICAL, 56, 8, 16, 8));
         }
 
+        void setAction(CharSequence text, Runnable action) {
+            TextView actionView = new TextView(getContext());
+            actionView.setText(text);
+            actionView.setTextColor(Theme.getColor(Theme.key_undo_cancelColor, resourcesProvider));
+            actionView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+            actionView.setGravity(Gravity.CENTER);
+            actionView.setTypeface(AndroidUtilities.bold());
+            actionView.setOnClickListener(view -> action.run());
+            addView(actionView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 40, Gravity.RIGHT | Gravity.CENTER_VERTICAL, 8, 4, 12, 4));
+            FrameLayout.LayoutParams textParams = (FrameLayout.LayoutParams) textView.getLayoutParams();
+            textParams.rightMargin = dp(96);
+            textView.setLayoutParams(textParams);
+        }
+
         private void updateBackground() {
             setBackground(Theme.createRoundRectDrawable(dp(6), Theme.getColor(Theme.key_undo_background, resourcesProvider)));
         }
@@ -233,13 +270,15 @@ public class Bulletin {
     private static final class IconView extends View {
         private final Theme.ResourcesProvider resourcesProvider;
         private final int iconType;
+        private final int iconRawId;
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final RectF rect = new RectF();
 
-        IconView(Context context, Theme.ResourcesProvider resourcesProvider, int iconType) {
+        IconView(Context context, Theme.ResourcesProvider resourcesProvider, int iconType, int iconRawId) {
             super(context);
             this.resourcesProvider = resourcesProvider;
             this.iconType = iconType;
+            this.iconRawId = iconRawId;
         }
 
         @Override
@@ -253,7 +292,12 @@ public class Bulletin {
             paint.setStrokeWidth(dp(2));
             float cx = getWidth() / 2f;
             float cy = getHeight() / 2f;
-            if (iconType == ICON_COPY) {
+            if (iconRawId == org.telegram.messenger.R.raw.saved_messages) {
+                rect.set(dp(5), dp(4), dp(19), dp(19));
+                canvas.drawRoundRect(rect, dp(2), dp(2), paint);
+                canvas.drawLine(dp(8), dp(8), dp(16), dp(8), paint);
+                canvas.drawLine(dp(8), dp(12), dp(16), dp(12), paint);
+            } else if (iconType == ICON_COPY) {
                 rect.set(dp(7), dp(5), dp(18), dp(16));
                 canvas.drawRoundRect(rect, dp(2), dp(2), paint);
                 rect.set(dp(4), dp(8), dp(15), dp(19));

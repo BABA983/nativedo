@@ -1,5 +1,11 @@
 package org.telegram.tgnet;
 
+import android.graphics.Path;
+import android.graphics.Bitmap;
+import android.graphics.drawable.Drawable;
+
+import org.telegram.messenger.SvgHelper;
+
 import java.util.ArrayList;
 
 /**
@@ -56,7 +62,23 @@ public class TLRPC {
     }
 
     public static class TL_photoPathSize extends PhotoSize {
-        public byte[] stripped;
+        public static final int constructor = 0xd8214d41;
+        public Path svgPath;
+
+        @Override
+        public void readParams(InputSerializedData stream, boolean exception) {
+            type = stream.readString(exception);
+            bytes = stream.readByteArray(exception);
+            w = h = 512;
+            svgPath = SvgHelper.doPath(SvgHelper.decompress(bytes));
+        }
+
+        @Override
+        public void serializeToStream(OutputSerializedData stream) {
+            stream.writeInt32(constructor);
+            stream.writeString(type);
+            stream.writeByteArray(bytes);
+        }
     }
 
     public static class TL_photoCachedSize extends PhotoSize {
@@ -129,6 +151,7 @@ public class TLRPC {
         public byte[] iv;
         public String ext;
         public String localPath;
+        public String localThumbPath;
         public String file_name;
         public String file_name_fixed;
         public int version;
@@ -363,13 +386,28 @@ public class TLRPC {
 
     public static class WallPaper extends TLObject {
         public long id;
+        public int flags;
+        public boolean creator;
+        public boolean isDefault;
         public Document document;
         public WallPaperSettings settings;
         public boolean pattern;
         public boolean dark;
+        public long access_hash;
+        public String slug;
+        public String uploadingImage;
+        public Bitmap stripedThumb;
+        public Drawable thumbDrawable;
     }
 
-    public static class WallPaperSettings {
+    public static class TL_wallPaper extends WallPaper {
+    }
+
+    public static class TL_wallPaperNoFile extends WallPaper {
+    }
+
+    public static class WallPaperSettings extends TLObject {
+        public int flags;
         public int background_color;
         public int second_background_color;
         public int third_background_color;
@@ -381,15 +419,80 @@ public class TLRPC {
     }
 
     public static class ThemeSettings extends TLObject {
+        public int flags;
         public int accent_color;
         public int outbox_accent_color;
         public ArrayList<Integer> message_colors = new ArrayList<>();
         public WallPaper wallpaper;
         public BaseTheme base_theme;
         public boolean animate_outgoing;
+        public boolean message_colors_animated;
+    }
+
+    public static class TL_themeSettings extends ThemeSettings {
     }
 
     public static class BaseTheme extends TLObject {
+    }
+
+    public static class TL_baseThemeClassic extends BaseTheme {
+    }
+
+    public static class TL_baseThemeDay extends BaseTheme {
+    }
+
+    public static class TL_baseThemeNight extends BaseTheme {
+    }
+
+    public static class TL_baseThemeTinted extends BaseTheme {
+    }
+
+    public static class TL_baseThemeArctic extends BaseTheme {
+    }
+
+    public static class InputWallPaper extends TLObject {
+    }
+
+    public static class TL_inputWallPaperSlug extends InputWallPaper {
+        public String slug;
+    }
+
+    public static class InputTheme extends TLObject {
+    }
+
+    public static class TL_inputTheme extends InputTheme {
+        public long id;
+        public long access_hash;
+    }
+
+    public static abstract class Theme extends TLObject {
+        public static TL_theme TLdeserialize(InputSerializedData stream, int constructor, boolean exception) {
+            throw new UnsupportedOperationException("NativeDo remote themes must be decoded by ThemeBackend");
+        }
+    }
+
+    public static class TL_theme extends Theme {
+        public int flags;
+        public boolean creator;
+        public boolean isDefault;
+        public boolean for_chat;
+        public long id;
+        public long access_hash;
+        public String slug;
+        public String title;
+        public Document document;
+        public ArrayList<ThemeSettings> settings = new ArrayList<>();
+        public String emoticon;
+        public int installs_count;
+
+        public static TL_theme TLdeserialize(InputSerializedData stream, int constructor, boolean exception) {
+            return Theme.TLdeserialize(stream, constructor, exception);
+        }
+
+        @Override
+        public void serializeToStream(OutputSerializedData stream) {
+            throw new UnsupportedOperationException("NativeDo remote themes must be encoded by ThemeBackend");
+        }
     }
 
     public static class InputFile extends TLObject {

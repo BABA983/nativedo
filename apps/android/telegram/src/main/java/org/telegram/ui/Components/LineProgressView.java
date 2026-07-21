@@ -1,99 +1,137 @@
 /*
- * This file is part of NativeDo.
+ * This is the source code of Telegram for Android v. 2.0.x.
+ * It is licensed under GNU GPL v. 2 or later.
+ * You should have received a copy of the license in this archive (see LICENSE).
  *
- * Derived in part from Telegram for Android's
- * org/telegram/ui/Components/LineProgressView.java.
- *
- * Source reference:
- * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/ui/Components/LineProgressView.java
- *
- * Copyright (C) Telegram FZ-LLC
- * Copyright (C) 2026 NativeDo contributors
- *
- * This program is free software: you can redistribute it and/or modify
- * it under terms of GNU General Public License version 2 or later as published by
- * the Free Software Foundation.
- *
- * SPDX-License-Identifier: GPL-2.0-or-later
+ * Copyright Nikolai Kudashov, 2013-2018.
  */
+
 package org.telegram.ui.Components;
 
 import android.content.Context;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.RectF;
+import android.util.Log;
 import android.view.View;
+import android.view.animation.DecelerateInterpolator;
 
-/**
- * Thin horizontal progress line that smoothly chases the latest target value and fades out once
- * the page reports completion. Mirrors Telegram's WebActionBar progress strip.
- */
+import org.telegram.messenger.AndroidUtilities;
+import org.telegram.ui.Components.voip.CellFlickerDrawable;
+
 public class LineProgressView extends View {
 
-    private final Paint progressPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint backPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final AnimatedFloat progressFloat = new AnimatedFloat(this, 0, 200, CubicBezierInterpolator.EASE_OUT_QUINT);
-    private final AnimatedFloat alphaFloat = new AnimatedFloat(this, 0, 200, CubicBezierInterpolator.EASE_OUT_QUINT);
+    private long lastUpdateTime;
+    private float currentProgress;
+    private float animationProgressStart;
+    private long currentProgressTime;
+    private float animatedProgressValue;
+    private float animatedAlphaValue = 1.0f;
 
-    private float targetProgress;
-    private boolean visibleTarget;
+    private int backColor;
+    private int progressColor;
+
+    private static DecelerateInterpolator decelerateInterpolator;
+    private static Paint progressPaint;
+
+    private RectF rect = new RectF();
+
+    CellFlickerDrawable cellFlickerDrawable;
 
     public LineProgressView(Context context) {
         super(context);
-        progressPaint.setColor(0xff58a8ed);
-        backPaint.setColor(Color.TRANSPARENT);
+
+        if (decelerateInterpolator == null) {
+            decelerateInterpolator = new DecelerateInterpolator();
+            progressPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            progressPaint.setStrokeCap(Paint.Cap.ROUND);
+            progressPaint.setStrokeWidth(AndroidUtilities.dp(2));
+        }
+    }
+
+    private void updateAnimation() {
+        long newTime = System.currentTimeMillis();
+        long dt = newTime - lastUpdateTime;
+        lastUpdateTime = newTime;
+
+        if (animatedProgressValue != 1 && animatedProgressValue != currentProgress) {
+            float progressDiff = currentProgress - animationProgressStart;
+            if (progressDiff > 0) {
+                currentProgressTime += dt;
+                if (currentProgressTime >= 300) {
+                    animatedProgressValue = currentProgress;
+                    animationProgressStart = currentProgress;
+                    currentProgressTime = 0;
+                } else {
+                    animatedProgressValue = animationProgressStart + progressDiff * decelerateInterpolator.getInterpolation(currentProgressTime / 300.0f);
+                }
+            }
+            invalidate();
+        }
+        if (animatedProgressValue >= 1 && animatedProgressValue == 1 && animatedAlphaValue != 0) {
+            animatedAlphaValue -= dt / 200.0f;
+            if (animatedAlphaValue <= 0) {
+                animatedAlphaValue = 0.0f;
+            }
+            invalidate();
+        }
     }
 
     public void setProgressColor(int color) {
-        progressPaint.setColor(color);
-        invalidate();
+        progressColor = color;
     }
 
     public void setBackColor(int color) {
-        backPaint.setColor(color);
-        invalidate();
+        backColor = color;
     }
 
     public void setProgress(float value, boolean animated) {
-        float clamped = Math.max(0f, Math.min(1f, value));
-        targetProgress = clamped;
-        boolean nextVisible = clamped > 0f && clamped < 1f;
-        if (visibleTarget != nextVisible) {
-            visibleTarget = nextVisible;
-        }
         if (!animated) {
-            progressFloat.force(clamped);
-            alphaFloat.force(visibleTarget ? 1f : 0f);
+            animatedProgressValue = value;
+            animationProgressStart = value;
+        } else {
+            animationProgressStart = animatedProgressValue;
         }
+        if (value != 1) {
+            animatedAlphaValue = 1;
+        }
+        currentProgress = value;
+        currentProgressTime = 0;
+
+        lastUpdateTime = System.currentTimeMillis();
         invalidate();
     }
 
     public float getCurrentProgress() {
-        return progressFloat.get();
+        return currentProgress;
     }
 
-    @Override
-    protected void onDraw(Canvas canvas) {
-        float a = alphaFloat.set(visibleTarget ? 1f : 0f);
-        if (a <= 0f) {
-            // Reset filled progress once the alpha has settled at 0 so the next show starts clean.
-            progressFloat.force(0f);
-            return;
-        }
-        float p = progressFloat.set(targetProgress);
-        int width = getWidth();
-        int height = getHeight();
-        int alpha = (int) (0xFF * a);
-
-        if ((backPaint.getColor() & 0xFF000000) != 0) {
-            int prev = backPaint.getAlpha();
-            backPaint.setAlpha((int) (prev * a));
-            canvas.drawRect(0, 0, width, height, backPaint);
-            backPaint.setAlpha(prev);
+    public void onDraw(Canvas canvas) {
+        if (backColor != 0 && animatedProgressValue != 1) {
+            progressPaint.setColor(backColor);
+            progressPaint.setAlpha((int) (255 * animatedAlphaValue));
+            int start = (int) (getWidth() * animatedProgressValue);
+            rect.set(0, 0, getWidth(), getHeight());
+            canvas.drawRoundRect(rect, getHeight() / 2f, getHeight() / 2f, progressPaint);
         }
 
-        progressPaint.setAlpha(alpha);
-        canvas.drawRect(0, 0, width * p, height, progressPaint);
-        progressPaint.setAlpha(0xFF);
+        progressPaint.setColor(progressColor);
+        progressPaint.setAlpha((int) (255 * animatedAlphaValue));
+        rect.set(0, 0, getWidth() * animatedProgressValue, getHeight());
+        canvas.drawRoundRect(rect, getHeight() / 2f, getHeight() / 2f, progressPaint);
+
+        if (animatedAlphaValue > 0) {
+            if (cellFlickerDrawable == null) {
+                cellFlickerDrawable = new CellFlickerDrawable(160, 0);
+                cellFlickerDrawable.drawFrame = false;
+                cellFlickerDrawable.animationSpeedScale = 0.8f;
+                cellFlickerDrawable.repeatProgress = 1.2f;
+            }
+            cellFlickerDrawable.setParentWidth(getMeasuredWidth());
+            cellFlickerDrawable.draw(canvas, rect, getHeight() / 2f, null);
+            invalidate();
+        }
+
+        updateAnimation();
     }
 }

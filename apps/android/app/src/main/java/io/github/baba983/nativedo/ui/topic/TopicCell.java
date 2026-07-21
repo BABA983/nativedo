@@ -44,6 +44,7 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.Emoji;
 import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.ImageReceiver;
+import org.telegram.messenger.SharedConfig;
 import io.github.baba983.nativedo.core.ui.DiscourseUiHelpersKt;
 import io.github.baba983.nativedo.core.model.CategorySummary;
 import io.github.baba983.nativedo.core.model.TopicSummary;
@@ -378,6 +379,10 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
     }
 
     private void buildLayout(int width) {
+        // DialogCell.buildLayout() owns these shared paint sizes upstream.
+        Theme.dialogs_namePaint[0].setTextSize(dp(SharedConfig.fontSize + 1));
+        Theme.dialogs_messagePaint[0].setTextSize(dp(SharedConfig.fontSize));
+
         buildAvatarLayout();
         buildTimeLayout(width);
         buildCountLayout(width);
@@ -415,8 +420,8 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
         countTop = dp(35);
         if (unread > 0) {
             String countString = unread > 99 ? "99+" : String.valueOf(unread);
-            countWidth = Math.max(dp(BADGE_TEXT_MIN_WIDTH), (int) Math.ceil(Theme.dialogs_countTextPaint.measureText(countString)));
-            countLayout = new StaticLayout(countString, Theme.dialogs_countTextPaint, countWidth,
+            countWidth = Math.max(dp(BADGE_TEXT_MIN_WIDTH), (int) Math.ceil(Theme.dialogs_countTextPaint2.measureText(countString)));
+            countLayout = new StaticLayout(countString, Theme.dialogs_countTextPaint2, countWidth,
                 Layout.Alignment.ALIGN_CENTER, 1f, 0f, false);
             countLeft = width - dp(BADGE_MARGIN) - (countWidth + dp(BADGE_TEXT_PADDING * 2));
             drawCount = true;
@@ -424,8 +429,8 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
         } else if (replies > 0) {
             // Show reply count as a subtle badge (not the bold unread pill).
             String countString = formatCount(replies);
-            countWidth = Math.max(dp(BADGE_TEXT_MIN_WIDTH), (int) Math.ceil(Theme.dialogs_countTextPaint.measureText(countString)));
-            countLayout = new StaticLayout(countString, Theme.dialogs_countTextPaint, countWidth,
+            countWidth = Math.max(dp(BADGE_TEXT_MIN_WIDTH), (int) Math.ceil(Theme.dialogs_countTextPaint2.measureText(countString)));
+            countLayout = new StaticLayout(countString, Theme.dialogs_countTextPaint2, countWidth,
                 Layout.Alignment.ALIGN_CENTER, 1f, 0f, false);
             countLeft = width - dp(BADGE_MARGIN) - (countWidth + dp(BADGE_TEXT_PADDING * 2));
             drawCount = true;
@@ -450,11 +455,11 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
         // run emoji replacement before ellipsize so emoji width is measured correctly.
         CharSequence title = normalizeListTitle(topic.getTitle());
         title = highlightSearchText(title.toString());
-        title = Emoji.replaceEmoji(title, Theme.dialogs_namePaint.getFontMetricsInt(), false);
+        title = Emoji.replaceEmoji(title, Theme.dialogs_namePaint[0].getFontMetricsInt(), false);
         CharSequence ellipsizedName = TextUtils.ellipsize(
             title,
-            Theme.dialogs_namePaint, nameWidth, TextUtils.TruncateAt.END);
-        nameLayout = new StaticLayout(ellipsizedName, Theme.dialogs_namePaint, nameWidth,
+            Theme.dialogs_namePaint[0], nameWidth, TextUtils.TruncateAt.END);
+        nameLayout = new StaticLayout(ellipsizedName, Theme.dialogs_namePaint[0], nameWidth,
             Layout.Alignment.ALIGN_NORMAL, 1f, 0f, false);
     }
 
@@ -508,8 +513,8 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
         if (activityWidth < dp(20)) activityWidth = dp(20);
         CharSequence activity = TextUtils.ellipsize(
             buildActivityLine(),
-            Theme.dialogs_messagePaint, activityWidth, TextUtils.TruncateAt.END);
-        activityLayout = new StaticLayout(activity, Theme.dialogs_messagePaint, activityWidth,
+            Theme.dialogs_messagePaint[0], activityWidth, TextUtils.TruncateAt.END);
+        activityLayout = new StaticLayout(activity, Theme.dialogs_messagePaint[0], activityWidth,
             Layout.Alignment.ALIGN_NORMAL, 1f, 0f, false);
     }
 
@@ -680,7 +685,7 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
             } else {
                 // Reply count: subtle background pill. Hot topics get orange tint.
                 hotBadgePaint.setColor(0x1AFF6D3F);
-                Paint bgPaint = countIsHot ? hotBadgePaint : Theme.dialogs_pinnedBgPaint;
+                Paint bgPaint = countIsHot ? hotBadgePaint : Theme.dialogs_pinnedPaint;
                 canvas.drawRoundRect(rect, radius, radius, bgPaint);
                 Paint textPaint = countLayout.getPaint();
                 int origColor = textPaint.getColor();

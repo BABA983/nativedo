@@ -48,6 +48,14 @@ public final class NotificationCenter {
 
     // Theme / UI
     public static final int didSetNewTheme = totalEvents++;
+    public static final int needSetDayNightTheme = totalEvents++;
+    public static final int screenStateChanged = totalEvents++;
+    public static final int didSetNewWallpapper = totalEvents++;
+    public static final int goingToPreviewTheme = totalEvents++;
+    public static final int themeAccentListUpdated = totalEvents++;
+    public static final int themeListUpdated = totalEvents++;
+    public static final int fontSizeChanged = totalEvents++;
+    public static final int tlSchemeParseException = totalEvents++;
     public static final int updateInterfaces = totalEvents++;
     public static final int needCheckSystemBarColors = totalEvents++;
     public static final int invalidateMotionBackground = totalEvents++;

@@ -50,9 +50,9 @@ public class AnimatedArrowDrawable extends Drawable {
             path.lineTo(AndroidUtilities.dp(8), AndroidUtilities.dp(6) + AndroidUtilities.dp(2) * p);
             path.lineTo(AndroidUtilities.dp(13), AndroidUtilities.dp(6) - AndroidUtilities.dp(2) * p);
         } else {
-            path.moveTo(AndroidUtilities.dp(4.5f), AndroidUtilities.dp(12) - AndroidUtilities.dp(4) * p);
-            path.lineTo(AndroidUtilities.dp(13), AndroidUtilities.dp(12) + AndroidUtilities.dp(4) * p);
-            path.lineTo(AndroidUtilities.dp(21.5f), AndroidUtilities.dp(12) - AndroidUtilities.dp(4) * p);
+            path.moveTo(AndroidUtilities.dp(4.5f), AndroidUtilities.dp(12) - AndroidUtilities.dp(4) * p + AndroidUtilities.dp(2) * animProgress);
+            path.lineTo(AndroidUtilities.dp(13), AndroidUtilities.dp(12) + AndroidUtilities.dp(4) * p + AndroidUtilities.dp(2) * animProgress);
+            path.lineTo(AndroidUtilities.dp(21.5f), AndroidUtilities.dp(12) - AndroidUtilities.dp(4) * p + AndroidUtilities.dp(2) * animProgress);
         }
     }
 
@@ -105,7 +105,11 @@ public class AnimatedArrowDrawable extends Drawable {
     }
 
     public void setRotation(float rotation, boolean animated) {
-        setAnimationProgress(animated ? rotation : rotation);
+        if (animated) {
+            setAnimationProgressAnimated(rotation);
+        } else {
+            setAnimationProgress(rotation);
+        }
     }
 
     public float getRotation() {

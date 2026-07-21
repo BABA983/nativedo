@@ -20,12 +20,14 @@ import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
 import androidx.annotation.Nullable;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.LocaleController;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.Switch;
@@ -50,6 +52,8 @@ public class TextCheckCell extends FrameLayout {
     private ObjectAnimator animator;
 
     private final Theme.ResourcesProvider resourcesProvider;
+    private boolean attached;
+    private boolean isRTL;
 
     public TextCheckCell(Context context) {
         this(context, null);
@@ -67,7 +71,7 @@ public class TextCheckCell extends FrameLayout {
         titleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
         titleView.setSingleLine(true);
         titleView.setEllipsize(TextUtils.TruncateAt.END);
-        titleView.setGravity(Gravity.LEFT | Gravity.CENTER_VERTICAL);
+        titleView.setGravity((LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL);
         addView(titleView);
 
         switchView = new Switch(context, resourcesProvider);
@@ -75,11 +79,12 @@ public class TextCheckCell extends FrameLayout {
         addView(switchView);
 
         dividerPaint.setColor(getThemedColor(Theme.key_divider));
+        isRTL = LocaleController.isRTL;
     }
 
     public void setTextAndCheck(CharSequence text, boolean checked, boolean divider) {
         titleView.setText(text);
-        switchView.setChecked(checked, false);
+        switchView.setChecked(checked, attached);
         needDivider = divider;
         invalidate();
     }
@@ -100,6 +105,12 @@ public class TextCheckCell extends FrameLayout {
     public void setDrawCheckRipple(boolean value) {
         drawCheckRipple = value;
         switchView.setDrawRipple(value);
+    }
+
+    @Override
+    public void setEnabled(boolean enabled) {
+        super.setEnabled(enabled);
+        switchView.setEnabled(enabled);
     }
 
     public void setHeight(int value) {
@@ -135,6 +146,7 @@ public class TextCheckCell extends FrameLayout {
     @Override
     public void setBackgroundColor(int color) {
         if (animatedColorBackground != color) {
+            clearAnimation();
             animatedColorBackground = 0;
             super.setBackgroundColor(color);
         }
@@ -151,6 +163,7 @@ public class TextCheckCell extends FrameLayout {
         if (animationPaint == null) {
             animationPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         }
+        switchView.setOverrideColor(checked ? 1 : 2);
         animatedColorBackground = color;
         animationPaint.setColor(animatedColorBackground);
         animationProgress = 0.0f;
@@ -170,8 +183,7 @@ public class TextCheckCell extends FrameLayout {
     private static final android.util.Property<TextCheckCell, Float> ANIMATION_PROGRESS = new android.util.Property<TextCheckCell, Float>(Float.class, "animationProgress") {
         @Override
         public void set(TextCheckCell object, Float value) {
-            object.animationProgress = value;
-            object.invalidate();
+            object.setAnimationProgress(value);
         }
 
         @Override
@@ -179,6 +191,14 @@ public class TextCheckCell extends FrameLayout {
             return object.animationProgress;
         }
     };
+
+    private void setAnimationProgress(float value) {
+        animationProgress = value;
+        float tx = lastTouchX;
+        float rad = Math.max(tx, getMeasuredWidth() - tx) + AndroidUtilities.dp(40);
+        switchView.setOverrideColorProgress(tx, getMeasuredHeight() / 2, rad * animationProgress);
+        invalidate();
+    }
 
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
@@ -198,8 +218,13 @@ public class TextCheckCell extends FrameLayout {
     @Override
     protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
         int h = bottom - top;
-        titleView.layout(AndroidUtilities.dp(21), 0, AndroidUtilities.dp(21) + titleView.getMeasuredWidth(), h);
-        int switchLeft = getMeasuredWidth() - AndroidUtilities.dp(21) - switchView.getMeasuredWidth();
+        int titleLeft = isRTL
+                ? getMeasuredWidth() - AndroidUtilities.dp(21) - titleView.getMeasuredWidth()
+                : AndroidUtilities.dp(21);
+        titleView.layout(titleLeft, 0, titleLeft + titleView.getMeasuredWidth(), h);
+        int switchLeft = isRTL
+                ? AndroidUtilities.dp(21)
+                : getMeasuredWidth() - AndroidUtilities.dp(21) - switchView.getMeasuredWidth();
         int switchTop = (h - switchView.getMeasuredHeight()) / 2;
         switchView.layout(switchLeft, switchTop, switchLeft + switchView.getMeasuredWidth(), switchTop + switchView.getMeasuredHeight());
     }
@@ -215,8 +240,40 @@ public class TextCheckCell extends FrameLayout {
         }
         super.onDraw(canvas);
         if (needDivider) {
-            canvas.drawRect(AndroidUtilities.dp(20), getMeasuredHeight() - 1, getMeasuredWidth(), getMeasuredHeight(), dividerPaint);
+            int start = isRTL ? 0 : AndroidUtilities.dp(20);
+            int end = isRTL ? getMeasuredWidth() - AndroidUtilities.dp(20) : getMeasuredWidth();
+            canvas.drawRect(start, getMeasuredHeight() - 1, end, getMeasuredHeight(), dividerPaint);
         }
+    }
+
+    public void updateRTL() {
+        if (isRTL == LocaleController.isRTL) {
+            return;
+        }
+        isRTL = LocaleController.isRTL;
+        titleView.setGravity((isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL);
+        requestLayout();
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        attached = true;
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
+        attached = false;
+    }
+
+    @Override
+    public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
+        super.onInitializeAccessibilityNodeInfo(info);
+        info.setClassName("android.widget.Switch");
+        info.setCheckable(true);
+        info.setChecked(switchView.isChecked());
+        info.setContentDescription(titleView.getText());
     }
 
     private int getThemedColor(int key) {

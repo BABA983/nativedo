@@ -19,6 +19,8 @@ import android.content.SharedPreferences;
 
 import java.io.File;
 
+import org.telegram.ui.ActionBar.Theme;
+
 /**
  * Minimal shim matching Telegram's {@code SharedConfig} API surface.
  * Returns safe defaults for animation and UI feature flags.
@@ -30,7 +32,7 @@ public final class SharedConfig {
 
     /** Matches upstream {@code SharedConfig.animationsEnabled()}. */
     public static boolean animationsEnabled() {
-        return true;
+        return !reduceAnimations;
     }
 
     /** Matches upstream {@code SharedConfig.shadowsInSections}. */
@@ -53,6 +55,8 @@ public final class SharedConfig {
     public static int searchEngineType = 0;
     public static int fontSize = 16;
     public static int ivFontSize = 16;
+    public static boolean fontSizeIsDefault = true;
+    public static boolean reduceAnimations;
 
     public static boolean drawActionBarShadow = true;
 
@@ -64,6 +68,12 @@ public final class SharedConfig {
         adaptableColorInBrowser = preferences.getBoolean("adaptableBrowser", false);
         onlyLocalInstantView = preferences.getBoolean("onlyLocalInstantView", false);
         ivFontSize = preferences.getInt("iv_font_size", 16);
+        int storedFontSize = preferences.contains("font_size")
+                ? preferences.getInt("font_size", 16)
+                : preferences.getInt("fons_size", 16);
+        fontSize = Math.max(12, Math.min(30, storedFontSize));
+        fontSizeIsDefault = !preferences.contains("font_size") && !preferences.contains("fons_size");
+        reduceAnimations = preferences.getBoolean("reduce_animations", false);
         browserConfigLoaded = true;
     }
 
@@ -92,6 +102,30 @@ public final class SharedConfig {
     public static void setIvFontSize(int size) {
         ivFontSize = size;
         browserPreferences().edit().putInt("iv_font_size", ivFontSize).apply();
+    }
+
+    public static boolean setFontSize(int size) {
+        int clamped = Math.max(12, Math.min(30, size));
+        if (fontSize == clamped) {
+            return false;
+        }
+        fontSize = clamped;
+        fontSizeIsDefault = false;
+        browserPreferences().edit()
+                .putInt("font_size", fontSize)
+                .remove("fons_size")
+                .apply();
+        Theme.createCommonMessageResources();
+        return true;
+    }
+
+    public static void notifyFontSizeChanged() {
+        NotificationCenter.getGlobalInstance().postNotificationName(NotificationCenter.fontSizeChanged, fontSize);
+    }
+
+    public static void setReduceAnimations(boolean reduce) {
+        reduceAnimations = reduce;
+        browserPreferences().edit().putBoolean("reduce_animations", reduceAnimations).apply();
     }
 
     /** Matches upstream {@code SharedConfig.PERFORMANCE_CLASS_LOW / AVERAGE / HIGH}. */
@@ -185,6 +219,14 @@ public final class SharedConfig {
     private static int lastLocalIdCounter = 0;
     public static synchronized int getLastLocalId() {
         return --lastLocalIdCounter;
+    }
+
+    public static void saveConfig() {
+        MessagesController.getGlobalMainSettings().edit()
+                .putInt("lastLocalId", lastLocalIdCounter)
+                .putInt("font_size", fontSize)
+                .putInt("iv_font_size", ivFontSize)
+                .apply();
     }
 
 

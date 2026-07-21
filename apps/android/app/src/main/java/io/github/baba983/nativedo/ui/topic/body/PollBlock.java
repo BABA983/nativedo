@@ -815,6 +815,7 @@ final class PollBlock implements PostBodyBlock {
         }
         pollInstantButtonDrawable.setButtonText(instantButtonText(), false);
         pollInstantButtonDrawable.setButtonTextColor(Theme.getColor(Theme.key_chat_inPreviewInstantText));
+        pollInstantButtonDrawable.setLoading(isPollActionInFlight(), true);
         pollInstantButtonDrawable.setBounds(
                 Math.round(instantButtonBounds.left),
                 Math.round(instantButtonBounds.top),

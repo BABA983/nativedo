@@ -18,10 +18,10 @@ import android.view.Gravity;
 import android.view.View;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.FrameLayout;
-import android.widget.TextView;
 
 import org.telegram.messenger.LocaleController;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.LinkSpanDrawable;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
@@ -39,15 +39,24 @@ public class TextDetailCell extends FrameLayout {
 
     public static final int VIEW_TYPE = 10_002;
 
-    private final Paint dividerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final TextView textView;
-    private final TextView valueTextView;
+    private final LinkSpanDrawable.LinksTextView textView;
+    private final LinkSpanDrawable.LinksTextView valueTextView;
+    private final Theme.ResourcesProvider resourcesProvider;
     private boolean needDivider;
     private boolean contentDescriptionValueFirst;
 
     public TextDetailCell(Context context) {
+        this(context, null);
+    }
+
+    public TextDetailCell(Context context, Theme.ResourcesProvider resourcesProvider) {
+        this(context, 23, resourcesProvider);
+    }
+
+    public TextDetailCell(Context context, int horizPadding, Theme.ResourcesProvider resourcesProvider) {
         super(context);
-        textView = new TextView(context);
+        this.resourcesProvider = resourcesProvider;
+        textView = new LinkSpanDrawable.LinksTextView(context, resourcesProvider);
         textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
         textView.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
         textView.setLines(1);
@@ -58,10 +67,10 @@ public class TextDetailCell extends FrameLayout {
         addView(textView, LayoutHelper.createFrame(
             LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT,
             LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT,
-            17, 8 - 2, 17, 0
+            horizPadding - 6, 8 - 2, horizPadding - 6, 0
         ));
 
-        valueTextView = new TextView(context);
+        valueTextView = new LinkSpanDrawable.LinksTextView(context, resourcesProvider);
         valueTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
         valueTextView.setGravity(LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT);
         valueTextView.setEllipsize(TextUtils.TruncateAt.END);
@@ -71,8 +80,9 @@ public class TextDetailCell extends FrameLayout {
         addView(valueTextView, LayoutHelper.createFrame(
             LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT,
             LocaleController.isRTL ? Gravity.RIGHT : Gravity.LEFT,
-            17, 33 - 1, 17, 10 - 6
+            horizPadding, 33 - 1, horizPadding, 10 - 6
         ));
+        updateColors();
     }
 
     @Override
@@ -107,7 +117,10 @@ public class TextDetailCell extends FrameLayout {
     @Override
     protected void onDraw(Canvas canvas) {
         if (needDivider) {
-            Paint paint = dividerPaint;
+            Paint paint = resourcesProvider != null ? resourcesProvider.getPaint(Theme.key_paint_divider) : Theme.dividerPaint;
+            if (paint == null) {
+                paint = Theme.dividerPaint;
+            }
             canvas.drawLine(
                 LocaleController.isRTL ? 0 : dp(20),
                 getMeasuredHeight() - 1,
@@ -119,9 +132,12 @@ public class TextDetailCell extends FrameLayout {
     }
 
     public void updateColors() {
-        textView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
-        valueTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2));
-        dividerPaint.setColor(Theme.getColor(Theme.key_divider));
+        textView.setTag(Theme.key_windowBackgroundWhiteBlackText);
+        textView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider));
+        textView.setLinkTextColor(Theme.getColor(Theme.key_chat_messageLinkIn, resourcesProvider));
+        valueTextView.setTag(Theme.key_windowBackgroundWhiteGrayText2);
+        valueTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2, resourcesProvider));
+        valueTextView.setLinkTextColor(Theme.getColor(Theme.key_chat_messageLinkIn, resourcesProvider));
     }
 
     public static final class Factory extends UItem.UItemFactory<TextDetailCell> {
@@ -129,11 +145,12 @@ public class TextDetailCell extends FrameLayout {
 
         @Override
         public TextDetailCell createView(Context context, org.telegram.ui.Components.RecyclerListView listView, int currentAccount, int classGuid, Theme.ResourcesProvider resourcesProvider) {
-            return new TextDetailCell(context);
+            return new TextDetailCell(context, 18, resourcesProvider);
         }
 
         @Override
         public void bindView(View view, UItem item, boolean divider, UniversalAdapter adapter, org.telegram.ui.Components.UniversalRecyclerView listView) {
+            view.setId(item.id);
             ((TextDetailCell) view).setTextAndValue(item.text, item.subtext, divider);
             ((TextDetailCell) view).updateColors();
         }

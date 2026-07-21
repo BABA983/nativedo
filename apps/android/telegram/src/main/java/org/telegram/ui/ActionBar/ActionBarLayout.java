@@ -32,6 +32,7 @@ import android.view.WindowInsets;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 
+import androidx.annotation.Keep;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
@@ -40,10 +41,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.AnimationNotificationsLocker;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.LayoutHelper;
 
-public class ActionBarLayout extends FrameLayout implements INavigationLayout, Theme.ThemeDelegate {
+public class ActionBarLayout extends FrameLayout implements INavigationLayout {
 
     public class LayoutContainer extends FrameLayout {
 
@@ -169,6 +171,24 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
     private VelocityTracker velocityTracker;
     private View layoutToIgnore;
     private boolean beginTrackingSent;
+
+    private final ArrayList<int[]> animateStartColors = new ArrayList<>();
+    private final ArrayList<int[]> animateEndColors = new ArrayList<>();
+    private final StartColorsProvider startColorsProvider = new StartColorsProvider();
+    public Theme.MessageDrawable messageDrawableOutStart;
+    public Theme.MessageDrawable messageDrawableOutMediaStart;
+    public ThemeAnimationSettings.onAnimationProgress animationProgressListener;
+    private final ArrayList<ArrayList<ThemeDescription>> themeAnimatorDescriptions = new ArrayList<>();
+    private ArrayList<ThemeDescription> presentingFragmentDescriptions;
+    private final ArrayList<ThemeDescription.ThemeDescriptionDelegate> themeAnimatorDelegate = new ArrayList<>();
+    private AnimatorSet themeAnimatorSet;
+    private final AnimationNotificationsLocker notificationsLocker = new AnimationNotificationsLocker();
+    private float themeAnimationValue;
+    private boolean animateThemeAfterAnimation;
+    private Theme.ThemeInfo animateSetThemeAfterAnimation;
+    private boolean animateSetThemeAfterAnimationApply;
+    private boolean animateSetThemeNightAfterAnimation;
+    private int animateSetThemeAccentIdAfterAnimation;
 
     private boolean animationInProgress;
     private boolean predictiveInput;
@@ -829,6 +849,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
                 oldFragment = null;
                 newFragment = null;
                 animationInProgress = false;
+                runDeferredThemeAnimation();
                 bottomSheetAnimator = null;
             }
         });
@@ -879,6 +900,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
                 oldFragment = null;
                 newFragment = null;
                 animationInProgress = false;
+                runDeferredThemeAnimation();
                 bottomSheetAnimator = null;
             }
         });
@@ -910,6 +932,17 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
 
     public BaseFragment getLastFragment() {
         return fragmentsStack.isEmpty() ? null : fragmentsStack.get(fragmentsStack.size() - 1);
+    }
+
+    public void rebuildAllFragmentViews(boolean last) {
+        BaseFragment fragment = getLastFragment();
+        if (fragment == null) {
+            return;
+        }
+        containerView.removeAllViews();
+        attachView(fragment);
+        fragment.onResume();
+        updateSystemBars();
     }
 
     void setRootDismissRunnable(Runnable rootDismissRunnable) {
@@ -992,16 +1025,262 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
         return WindowInsetsCompat.CONSUMED;
     }
 
+    @Keep
+    public void setThemeAnimationValue(float value) {
+        themeAnimationValue = value;
+        for (int j = 0, N = themeAnimatorDescriptions.size(); j < N; j++) {
+            ArrayList<ThemeDescription> descriptions = themeAnimatorDescriptions.get(j);
+            int[] startColors = animateStartColors.get(j);
+            int[] endColors = animateEndColors.get(j);
+            int rE, gE, bE, aE, rS, gS, bS, aS, a, r, g, b;
+            for (int i = 0, N2 = descriptions.size(); i < N2; i++) {
+                rE = Color.red(endColors[i]);
+                gE = Color.green(endColors[i]);
+                bE = Color.blue(endColors[i]);
+                aE = Color.alpha(endColors[i]);
+
+                rS = Color.red(startColors[i]);
+                gS = Color.green(startColors[i]);
+                bS = Color.blue(startColors[i]);
+                aS = Color.alpha(startColors[i]);
+
+                a = Math.min(255, (int) (aS + (aE - aS) * value));
+                r = Math.min(255, (int) (rS + (rE - rS) * value));
+                g = Math.min(255, (int) (gS + (gE - gS) * value));
+                b = Math.min(255, (int) (bS + (bE - bS) * value));
+                int color = Color.argb(a, r, g, b);
+                ThemeDescription description = descriptions.get(i);
+                description.setAnimatedColor(color);
+                description.setColor(color, false, false);
+            }
+        }
+        for (int j = 0, N = themeAnimatorDelegate.size(); j < N; j++) {
+            ThemeDescription.ThemeDescriptionDelegate delegate = themeAnimatorDelegate.get(j);
+            if (delegate != null) {
+                delegate.didSetColor();
+                delegate.onAnimationProgress(value);
+            }
+        }
+        if (presentingFragmentDescriptions != null) {
+            for (int i = 0, N = presentingFragmentDescriptions.size(); i < N; i++) {
+                ThemeDescription description = presentingFragmentDescriptions.get(i);
+                int key = description.getCurrentKey();
+                description.setColor(Theme.getColor(key, description.resourcesProvider), false, false);
+            }
+        }
+        if (animationProgressListener != null) {
+            animationProgressListener.setProgress(value);
+        }
+        globallyUpdateColors(this);
+    }
+
+    @Keep
+    @Override
+    public float getThemeAnimationValue() {
+        return themeAnimationValue;
+    }
+
+    private void addStartDescriptions(ArrayList<ThemeDescription> descriptions) {
+        if (descriptions == null) {
+            return;
+        }
+        themeAnimatorDescriptions.add(descriptions);
+        int[] startColors = new int[descriptions.size()];
+        animateStartColors.add(startColors);
+        for (int a = 0, N = descriptions.size(); a < N; a++) {
+            ThemeDescription description = descriptions.get(a);
+            startColors[a] = description.getSetColor();
+            ThemeDescription.ThemeDescriptionDelegate delegate = description.setDelegateDisabled();
+            if (delegate != null && !themeAnimatorDelegate.contains(delegate)) {
+                themeAnimatorDelegate.add(delegate);
+            }
+        }
+    }
+
+    private void addEndDescriptions(ArrayList<ThemeDescription> descriptions) {
+        if (descriptions == null) {
+            return;
+        }
+        int[] endColors = new int[descriptions.size()];
+        animateEndColors.add(endColors);
+        for (int a = 0, N = descriptions.size(); a < N; a++) {
+            endColors[a] = descriptions.get(a).getSetColor();
+        }
+    }
+
+    @Override
+    public void animateThemedValues(ThemeAnimationSettings settings, Runnable onDone) {
+        if (animationInProgress || startedTracking) {
+            animateThemeAfterAnimation = true;
+            animateSetThemeAfterAnimation = settings.theme;
+            animateSetThemeNightAfterAnimation = settings.nightTheme;
+            animateSetThemeAccentIdAfterAnimation = settings.accentId;
+            animateSetThemeAfterAnimationApply = settings.applyTrulyTheme;
+            if (onDone != null) {
+                onDone.run();
+            }
+            return;
+        }
+        if (themeAnimatorSet != null) {
+            themeAnimatorSet.cancel();
+            themeAnimatorSet = null;
+        }
+        final int fragmentCount = settings.onlyTopFragment ? 1 : fragmentsStack.size();
+        Runnable next = () -> {
+            boolean startAnimation = false;
+            for (int i = 0; i < fragmentCount; i++) {
+                BaseFragment fragment;
+                if (i == 0) {
+                    fragment = getLastFragment();
+                } else {
+                    continue;
+                }
+                if (fragment != null) {
+                    startAnimation = true;
+                    if (settings.resourcesProvider != null) {
+                        if (messageDrawableOutStart == null) {
+                            messageDrawableOutStart = new Theme.MessageDrawable(Theme.MessageDrawable.TYPE_TEXT, true, false, startColorsProvider);
+                            messageDrawableOutStart.isCrossfadeBackground = true;
+                            messageDrawableOutMediaStart = new Theme.MessageDrawable(Theme.MessageDrawable.TYPE_MEDIA, true, false, startColorsProvider);
+                            messageDrawableOutMediaStart.isCrossfadeBackground = true;
+                        }
+                        startColorsProvider.saveColors(settings.resourcesProvider);
+                    }
+                    ArrayList<ThemeDescription> descriptions = fragment.getThemeDescriptions();
+                    addStartDescriptions(descriptions);
+                    if (fragment.visibleDialog instanceof BottomSheet) {
+                        addStartDescriptions(((BottomSheet) fragment.visibleDialog).getThemeDescriptions());
+                    } else if (fragment.visibleDialog instanceof AlertDialog) {
+                        addStartDescriptions(((AlertDialog) fragment.visibleDialog).getThemeDescriptions());
+                    }
+                    if (i == 0 && settings.afterStartDescriptionsAddedRunnable != null) {
+                        settings.afterStartDescriptionsAddedRunnable.run();
+                    }
+                    addEndDescriptions(descriptions);
+                    if (fragment.visibleDialog instanceof BottomSheet) {
+                        addEndDescriptions(((BottomSheet) fragment.visibleDialog).getThemeDescriptions());
+                    } else if (fragment.visibleDialog instanceof AlertDialog) {
+                        addEndDescriptions(((AlertDialog) fragment.visibleDialog).getThemeDescriptions());
+                    }
+                }
+            }
+            if (startAnimation) {
+                if (!settings.onlyTopFragment) {
+                    int count = fragmentsStack.size() - 1;
+                    for (int a = 0; a < count; a++) {
+                        BaseFragment fragment = fragmentsStack.get(a);
+                        fragment.clearViews();
+                        fragment.setParentLayout(this);
+                    }
+                }
+                if (settings.instant) {
+                    setThemeAnimationValue(1.0f);
+                    clearThemeAnimationState();
+                    if (settings.afterAnimationRunnable != null) {
+                        settings.afterAnimationRunnable.run();
+                    }
+                    updateShellBackgroundColor();
+                    updateSystemBars();
+                    if (onDone != null) {
+                        onDone.run();
+                    }
+                    return;
+                }
+                Theme.setAnimatingColor(true);
+                setThemeAnimationValue(0f);
+                if (settings.beforeAnimationRunnable != null) {
+                    settings.beforeAnimationRunnable.run();
+                }
+                animationProgressListener = settings.animationProgress;
+                if (animationProgressListener != null) {
+                    animationProgressListener.setProgress(0);
+                }
+                notificationsLocker.lock();
+                themeAnimatorSet = new AnimatorSet();
+                themeAnimatorSet.addListener(new AnimatorListenerAdapter() {
+                    @Override
+                    public void onAnimationEnd(Animator animation) {
+                        notificationsLocker.unlock();
+                        if (animation.equals(themeAnimatorSet)) {
+                            clearThemeAnimationState();
+                            Theme.setAnimatingColor(false);
+                            themeAnimatorSet = null;
+                            updateShellBackgroundColor();
+                            updateSystemBars();
+                            if (settings.afterAnimationRunnable != null) {
+                                settings.afterAnimationRunnable.run();
+                            }
+                        }
+                    }
+
+                    @Override
+                    public void onAnimationCancel(Animator animation) {
+                        if (animation.equals(themeAnimatorSet)) {
+                            clearThemeAnimationState();
+                            Theme.setAnimatingColor(false);
+                            themeAnimatorSet = null;
+                            updateShellBackgroundColor();
+                            updateSystemBars();
+                            if (settings.afterAnimationRunnable != null) {
+                                settings.afterAnimationRunnable.run();
+                            }
+                        }
+                    }
+                });
+                themeAnimatorSet.playTogether(ObjectAnimator.ofFloat(this, "themeAnimationValue", 0.0f, 1.0f));
+                themeAnimatorSet.setDuration(settings.duration);
+                themeAnimatorSet.start();
+            }
+            if (onDone != null) {
+                onDone.run();
+            }
+        };
+        if (fragmentCount >= 1 && settings.applyTheme && settings.applyTrulyTheme) {
+            if (settings.accentId != -1 && settings.theme != null) {
+                settings.theme.setCurrentAccentId(settings.accentId);
+                Theme.saveThemeAccents(settings.theme, true, false, true, false);
+            }
+            if (onDone == null) {
+                Theme.applyTheme(settings.theme, settings.nightTheme);
+                next.run();
+            } else {
+                Theme.applyThemeInBackground(settings.theme, settings.nightTheme, () -> AndroidUtilities.runOnUIThread(next));
+            }
+        } else {
+            next.run();
+        }
+    }
+
+    private void clearThemeAnimationState() {
+        themeAnimatorDescriptions.clear();
+        animateStartColors.clear();
+        animateEndColors.clear();
+        themeAnimatorDelegate.clear();
+        presentingFragmentDescriptions = null;
+        animationProgressListener = null;
+    }
+
+    private void globallyUpdateColors(ViewGroup parent) {
+        if (parent == null) return;
+        for (int i = 0; i < parent.getChildCount(); ++i) {
+            View child = parent.getChildAt(i);
+            if (child instanceof Theme.Colorable) {
+                ((Theme.Colorable) child).updateColors();
+            }
+            if (child instanceof ViewGroup) {
+                globallyUpdateColors((ViewGroup) child);
+            }
+        }
+    }
+
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
-        Theme.addThemeDelegate(this);
         updateShellBackgroundColor();
     }
 
     @Override
     protected void onDetachedFromWindow() {
-        Theme.removeThemeDelegate(this);
         super.onDetachedFromWindow();
         maybeStartTracking = false;
         startedTracking = false;
@@ -1011,12 +1290,6 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
             velocityTracker.recycle();
             velocityTracker = null;
         }
-    }
-
-    @Override
-    public void didSetNewTheme() {
-        updateShellBackgroundColor();
-        updateSystemBars();
     }
 
     private void updateShellBackgroundColor() {
@@ -1126,6 +1399,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
         oldFragment = null;
         newFragment = null;
         animationInProgress = false;
+        runDeferredThemeAnimation();
         updateSystemBars();
     }
 
@@ -1153,6 +1427,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
         containerViewBack.setVisibility(INVISIBLE);
         startedTracking = false;
         animationInProgress = false;
+        runDeferredThemeAnimation();
         containerView.setTranslationX(0);
         containerViewBack.setTranslationX(0);
         containerView.setLayerType(LAYER_TYPE_NONE, null);
@@ -1162,6 +1437,22 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout, T
         predictiveBackHasProgress = false;
         layoutToIgnore = null;
         updateSystemBars();
+    }
+
+    private void runDeferredThemeAnimation() {
+        if (!animateThemeAfterAnimation) {
+            return;
+        }
+        ThemeAnimationSettings settings = new ThemeAnimationSettings(
+                animateSetThemeAfterAnimation,
+                animateSetThemeAccentIdAfterAnimation,
+                animateSetThemeNightAfterAnimation,
+                false
+        );
+        settings.applyTheme = settings.applyTrulyTheme = animateSetThemeAfterAnimationApply;
+        animateSetThemeAfterAnimation = null;
+        animateThemeAfterAnimation = false;
+        animateThemedValues(settings, null);
     }
 
     private void attachView(BaseFragment fragment) {

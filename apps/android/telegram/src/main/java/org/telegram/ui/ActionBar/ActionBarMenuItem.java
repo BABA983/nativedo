@@ -48,6 +48,10 @@ import java.util.ArrayList;
 
 public class ActionBarMenuItem extends FrameLayout {
 
+    public interface ActionBarMenuItemDelegate {
+        void onItemClick(int id);
+    }
+
     public static class ActionBarMenuItemSearchListener {
         public void onSearchExpand() {
         }
@@ -81,6 +85,9 @@ public class ActionBarMenuItem extends FrameLayout {
     private ActionBarMenuItemSearchListener searchListener;
     private AnimatorSet searchContainerAnimator;
     private float transitionOffset;
+    private ActionBarMenuItemDelegate delegate;
+    private int subMenuOpenSide;
+    private int additionalYOffset;
 
     public ActionBarMenuItem(Context context, ActionBarMenu menu, int backgroundColor, int iconColor) {
         this(context, menu, backgroundColor, iconColor, false);
@@ -135,7 +142,9 @@ public class ActionBarMenuItem extends FrameLayout {
             if (popupWindow != null && popupWindow.isShowing()) {
                 popupWindow.dismiss();
             }
-            if (parentMenu != null) {
+            if (delegate != null) {
+                delegate.onItemClick((Integer) view.getTag());
+            } else if (parentMenu != null) {
                 parentMenu.onItemClick((Integer) view.getTag());
             }
         });
@@ -152,7 +161,9 @@ public class ActionBarMenuItem extends FrameLayout {
             if (popupWindow != null && popupWindow.isShowing()) {
                 popupWindow.dismiss();
             }
-            if (parentMenu != null) {
+            if (delegate != null) {
+                delegate.onItemClick((Integer) view.getTag());
+            } else if (parentMenu != null) {
                 parentMenu.onItemClick((Integer) view.getTag());
             }
         });
@@ -177,7 +188,9 @@ public class ActionBarMenuItem extends FrameLayout {
             if (popupWindow != null && popupWindow.isShowing()) {
                 popupWindow.dismiss();
             }
-            if (parentMenu != null) {
+            if (delegate != null) {
+                delegate.onItemClick((Integer) view.getTag());
+            } else if (parentMenu != null) {
                 parentMenu.onItemClick((Integer) view.getTag());
             }
         });
@@ -186,6 +199,34 @@ public class ActionBarMenuItem extends FrameLayout {
 
     public boolean hasSubMenu() {
         return popupLayout != null && popupLayout.getChildCount() > 0;
+    }
+
+    public void setLongClickEnabled(boolean value) {
+        setLongClickable(value);
+    }
+
+    public void setDelegate(ActionBarMenuItemDelegate delegate) {
+        this.delegate = delegate;
+    }
+
+    public void setSubMenuOpenSide(int side) {
+        subMenuOpenSide = side;
+    }
+
+    public void setAdditionalYOffset(int value) {
+        additionalYOffset = value;
+    }
+
+    public void setIcon(Drawable drawable) {
+        if (iconView != null) {
+            iconView.setImageDrawable(drawable);
+        }
+    }
+
+    public void setIcon(int resId) {
+        if (iconView != null) {
+            iconView.setImageResource(resId);
+        }
     }
 
     public ActionBarMenuItem setSearchPaddingStart(int padding) {
@@ -390,12 +431,14 @@ public class ActionBarMenuItem extends FrameLayout {
         View anchor;
         if (parentMenu != null) {
             anchor = parentMenu.parentActionBar;
-            xOffset = getLeft() + parentMenu.getLeft() + getMeasuredWidth() - popupLayout.getMeasuredWidth() + (int) getTranslationX() + menuXOffset;
-            yOffset = -parentMenu.parentActionBar.getMeasuredHeight() + parentMenu.getTop() + parentMenu.getPaddingTop() + menuYOffset;
+            xOffset = subMenuOpenSide == 2
+                    ? getLeft() + parentMenu.getLeft() + (int) getTranslationX() + menuXOffset
+                    : getLeft() + parentMenu.getLeft() + getMeasuredWidth() - popupLayout.getMeasuredWidth() + (int) getTranslationX() + menuXOffset;
+            yOffset = -parentMenu.parentActionBar.getMeasuredHeight() + parentMenu.getTop() + parentMenu.getPaddingTop() + menuYOffset + additionalYOffset;
         } else {
             anchor = this;
-            xOffset = getMeasuredWidth() - popupLayout.getMeasuredWidth() + menuXOffset;
-            yOffset = menuYOffset;
+            xOffset = subMenuOpenSide == 2 ? menuXOffset : getMeasuredWidth() - popupLayout.getMeasuredWidth() + menuXOffset;
+            yOffset = menuYOffset + additionalYOffset;
         }
         popupWindow.showAsDropDown(anchor, xOffset, yOffset);
         popupWindow.startAnimation();

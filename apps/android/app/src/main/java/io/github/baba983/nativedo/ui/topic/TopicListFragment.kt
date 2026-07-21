@@ -34,6 +34,7 @@ import io.github.baba983.nativedo.R
 import io.github.baba983.nativedo.core.model.CategorySummary
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.LiteMode
+import org.telegram.messenger.SharedConfig
 import org.telegram.messenger.browser.Browser
 import io.github.baba983.nativedo.feature.home.data.HomeRepository
 import io.github.baba983.nativedo.feature.home.ui.HomeFeedTab
@@ -49,6 +50,7 @@ import org.telegram.ui.ActionBar.ActionBarMenuItem
 import org.telegram.ui.ActionBar.BaseFragment
 import org.telegram.ui.ActionBar.Theme
 import org.telegram.ui.ActionBar.ThemeDescription
+import org.telegram.ui.ActionBar.INavigationLayout
 import org.telegram.ui.Components.LayoutHelper
 import org.telegram.ui.Components.RecyclerListView
 import org.telegram.ui.Components.DialogsItemAnimator
@@ -124,7 +126,7 @@ internal enum class SearchFilter {
  */
 class TopicListFragment(
     private val mainTabsController: MainTabsController? = null,
-) : BaseFragment(), FactorAnimator.Target, Theme.ThemeDelegate, MainTabsActivity.TabFragmentDelegate {
+) : BaseFragment(), FactorAnimator.Target, MainTabsActivity.TabFragmentDelegate {
 
     // --- ViewModel & data -----------------------------------------------------------
 
@@ -203,7 +205,6 @@ class TopicListFragment(
     // ================================================================================
 
     override fun createView(context: Context): View {
-        Theme.addThemeDelegate(this)
         val ctxString = { id: Int -> context.getString(id) }
         actionBar.setTitle(ctxString(R.string.screen_topic_list))
         actionBar.setBackButtonDrawable(null)
@@ -251,8 +252,24 @@ class TopicListFragment(
                     if (id == MENU_SEARCH) {
                         enterSearchMode()
                     } else if (id == MENU_SWITCH_THEME) {
-                        Theme.toggleTheme()
-                        actionBar.menu?.getItem(0)?.setSubItemText(MENU_SWITCH_THEME, themeModeText())
+                        val target = if (Theme.isCurrentThemeNight() || Theme.isCurrentThemeDark()) {
+                            Theme.getCurrentTheme()
+                        } else {
+                            Theme.getCurrentNightTheme()
+                        }
+                        if (target != null) {
+                            val settings = INavigationLayout.ThemeAnimationSettings(
+                                target,
+                                -1,
+                                target === Theme.getCurrentNightTheme(),
+                                !SharedConfig.animationsEnabled(),
+                            )
+                            settings.afterAnimationRunnable = Runnable {
+                                Theme.saveAutoNightThemeConfig()
+                                actionBar.menu?.getItem(0)?.setSubItemText(MENU_SWITCH_THEME, themeModeText())
+                            }
+                            parentLayout?.animateThemedValues(settings, null)
+                        }
                     }
                 }
             },
@@ -756,6 +773,26 @@ class TopicListFragment(
                 )
             }
         }
+        intArrayOf(
+            Theme.key_windowBackgroundWhiteGrayText,
+            Theme.key_windowBackgroundWhiteBlueText,
+            Theme.key_actionBarTabActiveText,
+            Theme.key_actionBarTabUnactiveText,
+            Theme.key_iv_background,
+            Theme.key_windowBackgroundGray,
+        ).forEach { key ->
+            descriptions.add(
+                ThemeDescription(
+                    null,
+                    0,
+                    null,
+                    null as android.graphics.Paint?,
+                    null,
+                    chromeDelegate,
+                    key,
+                ),
+            )
+        }
         return descriptions
     }
 
@@ -775,10 +812,6 @@ class TopicListFragment(
         tabStripContainer?.updateColors()
         // StateCell / pull chrome still need page-level refresh (not TopicCell listClasses).
         pagesByPosition.values.forEach { page -> page.updateColors() }
-    }
-
-    override fun didSetNewTheme() {
-        Theme.applyThemeDescriptions(themeDescriptions)
     }
 
     // ================================================================================
@@ -984,7 +1017,6 @@ class TopicListFragment(
         searchSession.clear()
         mainTabsController?.setTabsVisible(true, false)
         pagesByPosition.values.forEach { page -> page.saveScrollPosition() }
-        Theme.removeThemeDelegate(this)
         super.onFragmentDestroy()
         collectorScope.cancel()
     }

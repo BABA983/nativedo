@@ -1,10 +1,3 @@
-/*
- * This file is part of NativeDo.
- *
- * NativeDo-scoped subset of Telegram for Android's PollButtonDrawableBase.
- *
- * SPDX-License-Identifier: GPL-2.0-or-later
- */
 package org.telegram.ui.Components.poll.buttons;
 
 import android.graphics.ColorFilter;
@@ -24,10 +17,11 @@ public abstract class PollButtonDrawableBase extends Drawable {
     protected final Drawable selectorDrawable;
     protected int selectorDrawableColor;
 
+
     public PollButtonDrawableBase(Theme.ResourcesProvider resourcesProvider) {
-        selectorDrawableColor = Theme.getColor(Theme.key_listSelector, resourcesProvider);
+        this.selectorDrawableColor = Theme.getColor(Theme.key_listSelector, resourcesProvider);
         this.resourcesProvider = resourcesProvider;
-        selectorDrawable = Theme.createRadSelectorDrawable(selectorDrawableColor, 0, 0);
+        this.selectorDrawable = Theme.createRadSelectorDrawable(selectorDrawableColor, 0, 0);
     }
 
     public Drawable getSelectorDrawable() {
@@ -90,6 +84,7 @@ public abstract class PollButtonDrawableBase extends Drawable {
 
     @Override
     public void setColorFilter(@Nullable ColorFilter colorFilter) {
+
     }
 
     @Override

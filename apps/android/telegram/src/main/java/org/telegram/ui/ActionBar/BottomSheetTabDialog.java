@@ -49,7 +49,7 @@ public class BottomSheetTabDialog extends Dialog {
         super(sheet.getWindowView().getContext(), R.style.TransparentDialog);
 
         this.sheet = sheet;
-        this.sheetView = (BottomSheetTabsOverlay.SheetView) sheet.getWindowView();
+        this.sheetView = sheet.getWindowView();
 
         navigationBar = new View(getContext()) {
             @Override

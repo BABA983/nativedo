@@ -3,23 +3,25 @@ package org.telegram.messenger.wallpaper;
 import android.graphics.Bitmap;
 import android.graphics.drawable.BitmapDrawable;
 
-import androidx.annotation.NonNull;
-import androidx.annotation.Nullable;
+import java.util.List;
 
-/**
- * Minimal stub of upstream WallpaperGiftBitmapDrawable for v1.
- * Only the static factory method signature is needed so ImageLoader compiles.
- */
-public final class WallpaperGiftBitmapDrawable {
+public class WallpaperGiftBitmapDrawable extends BitmapDrawable {
+    public final List<WallpaperGiftPatternPosition> patternPositions;
 
-    private WallpaperGiftBitmapDrawable() {
+    public WallpaperGiftBitmapDrawable(Bitmap bitmap, List<WallpaperGiftPatternPosition> positions) {
+        super(bitmap);
+        this.patternPositions = positions;
     }
 
-    @NonNull
-    public static BitmapDrawable create(@Nullable Bitmap bitmap, @Nullable Object positions) {
-        if (bitmap != null) {
-            return new BitmapDrawable(bitmap);
+    public static BitmapDrawable create(Bitmap bitmap, List<WallpaperGiftPatternPosition> positions) {
+        if (bitmap == null) {
+            return null;
         }
-        return new BitmapDrawable(Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888));
+
+        if (positions == null || positions.isEmpty()) {
+            return new BitmapDrawable(bitmap);
+        } else {
+            return new WallpaperGiftBitmapDrawable(bitmap, positions);
+        }
     }
 }
