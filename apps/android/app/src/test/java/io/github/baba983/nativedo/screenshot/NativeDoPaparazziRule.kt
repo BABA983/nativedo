@@ -83,6 +83,21 @@ internal class NativeDoPaparazziRule(
         firstFailure?.let { throw it }
     }
 
+    fun verify(assertions: (Context) -> Unit) {
+        val testDescription = requireNotNull(description) {
+            "NativeDoPaparazziRule must be applied as a JUnit rule"
+        }
+        paparazzi.apply(
+            object : Statement() {
+                override fun evaluate() {
+                    initializeEnvironment(paparazzi.context)
+                    assertions(paparazzi.context)
+                }
+            },
+            testDescription,
+        ).evaluate()
+    }
+
     private fun initializeEnvironment(context: Context) {
         val applicationContext = PaparazziApplicationContext(context)
         applicationContext.seedThemeAsset("bluebubbles.attheme")

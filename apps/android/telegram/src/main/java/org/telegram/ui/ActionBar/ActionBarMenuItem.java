@@ -69,6 +69,7 @@ public class ActionBarMenuItem extends FrameLayout {
     protected ImageView iconView;
     protected TextView textView;
     private final ActionBarMenu parentMenu;
+    private final Theme.ResourcesProvider resourcesProvider;
     private ActionBarPopupWindow.ActionBarPopupWindowLayout popupLayout;
     private ActionBarPopupWindow popupWindow;
     private final Rect rect = new Rect();
@@ -93,12 +94,21 @@ public class ActionBarMenuItem extends FrameLayout {
         this(context, menu, backgroundColor, iconColor, false);
     }
 
+    public ActionBarMenuItem(Context context, ActionBarMenu menu, int backgroundColor, int iconColor, Theme.ResourcesProvider resourcesProvider) {
+        this(context, menu, backgroundColor, iconColor, false, resourcesProvider);
+    }
+
     public ActionBarMenuItem(Context context, ActionBarMenu menu, int backgroundColor, int iconColor, boolean text) {
+        this(context, menu, backgroundColor, iconColor, text, null);
+    }
+
+    public ActionBarMenuItem(Context context, ActionBarMenu menu, int backgroundColor, int iconColor, boolean text, Theme.ResourcesProvider resourcesProvider) {
         super(context);
         parentMenu = menu;
-        popupItemsColor = Theme.getColor(Theme.key_actionBarDefaultSubmenuItem);
-        popupItemsSelectorColor = Theme.getColor(Theme.key_listSelector);
-        popupBackgroundColor = Theme.getColor(Theme.key_actionBarDefaultSubmenuBackground);
+        this.resourcesProvider = resourcesProvider;
+        popupItemsColor = Theme.getColor(Theme.key_actionBarDefaultSubmenuItem, resourcesProvider);
+        popupItemsSelectorColor = Theme.getColor(Theme.key_listSelector, resourcesProvider);
+        popupBackgroundColor = Theme.getColor(Theme.key_actionBarDefaultSubmenuBackground, resourcesProvider);
         if (backgroundColor != 0) {
             setBackground(Theme.createSelectorDrawable(backgroundColor));
         }
@@ -153,7 +163,7 @@ public class ActionBarMenuItem extends FrameLayout {
 
     public ActionBarMenuSubItem addSubItem(int id, Drawable iconDrawable, CharSequence text) {
         createPopupLayout();
-        ActionBarMenuSubItem item = new ActionBarMenuSubItem(getContext(), false, false, null);
+        ActionBarMenuSubItem item = new ActionBarMenuSubItem(getContext(), false, false, resourcesProvider);
         item.setTag(id);
         item.setTextAndIcon(text, 0, iconDrawable);
         item.setMinimumWidth(AndroidUtilities.dp(196));
@@ -181,7 +191,7 @@ public class ActionBarMenuItem extends FrameLayout {
     // ProfileActivity's addSubItem(id, R.drawable.msg_*, text) usage.
     public ActionBarMenuSubItem addSubItem(int id, int icon, CharSequence text) {
         createPopupLayout();
-        ActionBarMenuSubItem item = new ActionBarMenuSubItem(getContext(), false, false, null);
+        ActionBarMenuSubItem item = new ActionBarMenuSubItem(getContext(), false, false, resourcesProvider);
         item.setTag(id);
         item.setTextAndIcon(text, icon);
         item.setMinimumWidth(AndroidUtilities.dp(196));
@@ -200,7 +210,7 @@ public class ActionBarMenuItem extends FrameLayout {
     }
 
     public boolean hasSubMenu() {
-        return popupLayout != null && popupLayout.getChildCount() > 0;
+        return popupLayout != null && popupLayout.getItemsCount() > 0;
     }
 
     public void setLongClickEnabled(boolean value) {
@@ -541,9 +551,9 @@ public class ActionBarMenuItem extends FrameLayout {
         if (popupLayout == null) {
             return;
         }
-        int count = popupLayout.getChildCount();
+        int count = popupLayout.getItemsCount();
         for (int i = 0; i < count; i++) {
-            View view = popupLayout.getChildAt(i);
+            View view = popupLayout.getItemAt(i);
             if (view instanceof TextView) {
                 ((TextView) view).setTextColor(color);
             } else if (view instanceof ActionBarMenuSubItem) {
@@ -562,9 +572,9 @@ public class ActionBarMenuItem extends FrameLayout {
         if (popupLayout == null) {
             return;
         }
-        int count = popupLayout.getChildCount();
+        int count = popupLayout.getItemsCount();
         for (int i = 0; i < count; i++) {
-            View child = popupLayout.getChildAt(i);
+            View child = popupLayout.getItemAt(i);
             if (child instanceof ActionBarMenuSubItem) {
                 ((ActionBarMenuSubItem) child).setSelectorColor(color);
             } else {
@@ -725,13 +735,13 @@ public class ActionBarMenuItem extends FrameLayout {
             protected int getCurrentColor() {
                 return parentMenu != null && parentMenu.parentActionBar != null
                     ? parentMenu.parentActionBar.itemsColor
-                    : Theme.getColor(Theme.key_actionBarDefaultIcon);
+                    : Theme.getColor(Theme.key_actionBarDefaultIcon, resourcesProvider);
             }
         });
         clearButton.setBackground(Theme.createSelectorDrawable(
             parentMenu != null && parentMenu.parentActionBar != null
                 ? parentMenu.parentActionBar.itemsBackgroundColor
-                : Theme.getColor(Theme.key_actionBarDefaultSelector),
+                : Theme.getColor(Theme.key_actionBarDefaultSelector, resourcesProvider),
             Theme.RIPPLE_MASK_CIRCLE_20DP));
         clearButton.setScaleType(ImageView.ScaleType.CENTER);
         clearButton.setVisibility(INVISIBLE);
@@ -757,12 +767,12 @@ public class ActionBarMenuItem extends FrameLayout {
         if (searchField == null) {
             return;
         }
-        int searchColor = Theme.getColor(Theme.key_actionBarDefaultSearch);
+        int searchColor = Theme.getColor(Theme.key_actionBarDefaultSearch, resourcesProvider);
         searchField.setCursorColor(searchColor);
         searchField.setTextColor(searchColor);
-        searchField.setHintTextColor(Theme.getColor(Theme.key_actionBarDefaultSearchPlaceholder));
-        searchField.setHighlightColor(Theme.getColor(Theme.key_chat_inTextSelectionHighlight));
-        searchField.setHandlesColor(Theme.getColor(Theme.key_chat_TextSelectionCursor));
+        searchField.setHintTextColor(Theme.getColor(Theme.key_actionBarDefaultSearchPlaceholder, resourcesProvider));
+        searchField.setHighlightColor(Theme.getColor(Theme.key_chat_inTextSelectionHighlight, resourcesProvider));
+        searchField.setHandlesColor(Theme.getColor(Theme.key_chat_TextSelectionCursor, resourcesProvider));
     }
 
     private void updateClearButton(boolean animated) {
@@ -814,7 +824,7 @@ public class ActionBarMenuItem extends FrameLayout {
         // the finalScaleY = backScaleY + invalidateTransforms() branch. The default
         // popup_fixed_alert2 was a smaller 9-patch that made the menu look wrong.
         popupLayout = new ActionBarPopupWindow.ActionBarPopupWindowLayout(getContext(),
-                R.drawable.popup_fixed_alert4, null,
+                R.drawable.popup_fixed_alert4, resourcesProvider,
                 ActionBarPopupWindow.ActionBarPopupWindowLayout.FLAG_USE_SWIPEBACK);
         popupLayout.setOnTouchListener((v, event) -> {
             if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
@@ -834,14 +844,6 @@ public class ActionBarMenuItem extends FrameLayout {
         if (popupLayout == null) {
             return;
         }
-        // Only tint the existing popup_fixed_alert4 background; do NOT swap it back
-        // to popup_fixed_alert2 (the constructor already set alert4). Mirrors
-        // upstream's themed submenu background color application.
-        Drawable background = popupLayout.getBackground();
-        if (background != null) {
-            background = background.mutate();
-            background.setColorFilter(new PorterDuffColorFilter(popupBackgroundColor, PorterDuff.Mode.MULTIPLY));
-            background.setAlpha(255);
-        }
+        popupLayout.setBackgroundColor(popupBackgroundColor);
     }
 }

@@ -539,26 +539,32 @@ public class ActionBar extends FrameLayout {
     }
 
     public void applyTheme() {
-        itemsColor = Theme.getColor(Theme.key_actionBarDefaultIcon);
-        itemsBackgroundColor = Theme.getColor(Theme.key_actionBarDefaultSelector);
+        itemsColor = getThemedColor(Theme.key_actionBarDefaultIcon);
+        itemsBackgroundColor = getThemedColor(Theme.key_actionBarDefaultSelector);
         if (itemsActionModeColor == 0) {
             itemsActionModeColor = itemsColor;
         }
         if (itemsActionModeBackgroundColor == 0) {
             itemsActionModeBackgroundColor = itemsBackgroundColor;
         }
-        titleColor = Theme.getColor(Theme.key_actionBarDefaultTitle);
+        titleColor = getThemedColor(Theme.key_actionBarDefaultTitle);
         titleTextView.setTextColor(titleColor);
         backButtonImageView.setBackground(Theme.createSelectorDrawable(itemsBackgroundColor));
         applyBackButtonColor(backButtonImageView.getDrawable());
         if (menu != null) {
             menu.updateItemsBackgroundColor();
             menu.updateItemsColor();
-            menu.setPopupItemsColor(Theme.getColor(Theme.key_actionBarDefaultSubmenuItem), true);
-            menu.setPopupItemsSelectorColor(Theme.getColor(Theme.key_listSelector));
-            menu.redrawPopup(Theme.getColor(Theme.key_actionBarDefaultSubmenuBackground));
+            int popupItemsColor = getThemedColor(Theme.key_actionBarDefaultSubmenuItem);
+            menu.setPopupItemsColor(popupItemsColor, false);
+            menu.setPopupItemsColor(popupItemsColor, true);
+            menu.setPopupItemsSelectorColor(getThemedColor(Theme.key_listSelector));
+            menu.redrawPopup(getThemedColor(Theme.key_actionBarDefaultSubmenuBackground));
         }
         updateAdaptiveBackground();
+    }
+
+    private int getThemedColor(int key) {
+        return Theme.getColor(key, resourcesProvider);
     }
 
     public void setItemsColor(int color, boolean isActionMode) {

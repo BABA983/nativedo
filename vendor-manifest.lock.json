@@ -1995,7 +1995,7 @@
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo ActionBar subset. The 12.9.0 title/subtitle/additional-subtitle, back-button state/content description, title overlay, animated title, search, touch interception, lifecycle, canOpenMenu, and ActionMode API shapes are restored. ActionMode keeps a reduced NativeDo animation for the current consumers while exposing the upstream alpha factor contract. NativeDo retains the 23dp glass setupGlass/dispatchDraw surfaces, resource provider, and no-ChatAvatarContainer host branch. PhotoViewer overlay-title wiring keeps custom overlay children inside the status+bar bounds."
+      "notes": "NativeDo ActionBar subset. The 12.9.0 title/subtitle/additional-subtitle, back-button state/content description, title overlay, animated title, search, touch interception, lifecycle, canOpenMenu, and ActionMode API shapes are restored. ActionMode keeps a reduced NativeDo animation for the current consumers while exposing the upstream alpha factor contract. Theme refresh updates submenu text, icons, selectors, and backgrounds through the ActionBar resource provider. NativeDo retains the 23dp glass setupGlass/dispatchDraw surfaces and no-ChatAvatarContainer host branch. PhotoViewer overlay-title wiring keeps custom overlay children inside the status+bar bounds."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java",
@@ -2015,7 +2015,7 @@
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo ActionBarMenu subset. The 9b50143d glassMode measurement and getItemsWidth geometry are preserved for ActionBar glass pill bounds; unrelated Telegram menu features remain omitted."
+      "notes": "NativeDo ActionBarMenu subset. The 9b50143d glassMode measurement and getItemsWidth geometry are preserved for ActionBar glass pill bounds, and the upstream ResourcesProvider overload is forwarded into menu items; unrelated Telegram menu features remain omitted."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarMenuSlider.java",
@@ -2031,7 +2031,7 @@
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo ActionBarMenuItem popup/search subset for PhotoViewer and menus: outside-touch/clipping behavior, offsets/translation anchoring, scroll reset, selector colors, popup_fixed_alert4 plus swipeback, tinted addSubItem icons with Telegram's 196dp minimum width, and 1.5dp action-bar cursor. Platform popup animations are disabled like the host path. Unused Telegram menu surface is omitted.",
+      "notes": "NativeDo ActionBarMenuItem popup/search subset for PhotoViewer and menus: outside-touch/clipping behavior, offsets/translation anchoring, scroll reset, inner-item theme refresh, selector colors, popup_fixed_alert4 plus swipeback, stateful popup background tint, ResourcesProvider propagation, tinted addSubItem icons with Telegram's 196dp minimum width, and 1.5dp action-bar cursor. Platform popup animations are disabled like the host path. Unused Telegram menu surface is omitted.",
       "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
     },
     {

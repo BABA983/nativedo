@@ -713,10 +713,10 @@ public class PhotoViewer {
         ActionBarMenu menu = actionBar.createMenu();
         menuItem = menu.addItem(0, R.drawable.ic_ab_other);
         menuItem.setContentDescription(containerView.getContext().getString(R.string.AccDescrMoreOptions));
-        menuItem.addSubItem(GALLERY_MENU_SAVE, containerView.getResources().getDrawable(R.drawable.msg_gallery), containerView.getContext().getString(R.string.SaveToGallery)).setColors(Color.WHITE, Color.WHITE);
-        menuItem.addSubItem(GALLERY_MENU_SHARE, containerView.getResources().getDrawable(R.drawable.msg_share), containerView.getContext().getString(R.string.ShareFile)).setColors(Color.WHITE, Color.WHITE);
-        menuItem.addSubItem(GALLERY_MENU_COPY, containerView.getResources().getDrawable(R.drawable.msg_copy), containerView.getContext().getString(R.string.CopyLink)).setColors(Color.WHITE, Color.WHITE);
-        menuItem.addSubItem(GALLERY_MENU_OPEN_IN, containerView.getResources().getDrawable(R.drawable.msg_openin), containerView.getContext().getString(R.string.OpenInExternalApp)).setColors(Color.WHITE, Color.WHITE);
+        menuItem.addSubItem(GALLERY_MENU_SAVE, R.drawable.msg_gallery, containerView.getContext().getString(R.string.SaveToGallery)).setColors(Color.WHITE, Color.WHITE);
+        menuItem.addSubItem(GALLERY_MENU_SHARE, R.drawable.msg_share, containerView.getContext().getString(R.string.ShareFile)).setColors(Color.WHITE, Color.WHITE);
+        menuItem.addSubItem(GALLERY_MENU_COPY, R.drawable.msg_copy, containerView.getContext().getString(R.string.CopyLink)).setColors(Color.WHITE, Color.WHITE);
+        menuItem.addSubItem(GALLERY_MENU_OPEN_IN, R.drawable.msg_openin, containerView.getContext().getString(R.string.OpenInExternalApp)).setColors(Color.WHITE, Color.WHITE);
         menuItem.setPopupItemsSelectorColor(0x0fffffff);
         menuItem.redrawPopup(0xf9222222);
         actionBarContainer = new PhotoViewerActionBarContainer(activity);

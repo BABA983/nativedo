@@ -89,7 +89,7 @@ public class ActionBarMenu extends LinearLayout {
     }
 
     public ActionBarMenuItem addItem(int id, int icon, org.telegram.ui.ActionBar.Theme.ResourcesProvider resourcesProvider) {
-        return addItem(id, icon, null, parentActionBar.getItemsBackgroundColor(this), null, AndroidUtilities.dp(48), null);
+        return addItem(id, icon, null, parentActionBar.getItemsBackgroundColor(this), null, AndroidUtilities.dp(48), null, resourcesProvider);
     }
 
     public ActionBarMenuItem addItemWithWidth(int id, int icon, int width, CharSequence title) {
@@ -97,7 +97,11 @@ public class ActionBarMenu extends LinearLayout {
     }
 
     public ActionBarMenuItem addItem(int id, int icon, CharSequence text, int backgroundColor, Drawable drawable, int width, CharSequence title) {
-        ActionBarMenuItem menuItem = new ActionBarMenuItem(getContext(), this, backgroundColor, parentActionBar.getItemsColor(this), text != null);
+        return addItem(id, icon, text, backgroundColor, drawable, width, title, null);
+    }
+
+    public ActionBarMenuItem addItem(int id, int icon, CharSequence text, int backgroundColor, Drawable drawable, int width, CharSequence title, Theme.ResourcesProvider resourcesProvider) {
+        ActionBarMenuItem menuItem = new ActionBarMenuItem(getContext(), this, backgroundColor, parentActionBar.getItemsColor(this), text != null, resourcesProvider);
         menuItem.setTag(id);
         if (text != null) {
             menuItem.textView.setText(text);
