@@ -145,6 +145,19 @@ public final class AndroidUtilities {
         return null;
     }
 
+    public static int getThumbForNameOrMime(String name, String mime, boolean media) {
+        return R.drawable.msg_round_file_s;
+    }
+
+    public static void makeGlobalBlurBitmap(Utilities.Callback<Bitmap> onBitmapDone, float amount) {
+        if (onBitmapDone == null) {
+            return;
+        }
+        Bitmap bitmap = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888);
+        bitmap.eraseColor(Color.TRANSPARENT);
+        onBitmapDone.run(bitmap);
+    }
+
     public static void init(Context context) {
         if (context == null) {
             return;

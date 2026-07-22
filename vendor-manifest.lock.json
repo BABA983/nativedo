@@ -19,7 +19,7 @@
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo utility subset with upstream-shaped helpers. In addition to the existing cache, insets, vibration, and font host wiring, it now carries the pinned Theme closure for drawable/background color extraction, HSV conversion, file copy, wallpaper rotation, sharing directories, color distance, scaled bitmaps, and wall-character validation. Null-context/bootstrap fallbacks remain intentional NativeDo wiring; unrelated AndroidUtilities subsystems are still omitted."
+      "notes": "NativeDo utility subset with upstream-shaped helpers. In addition to the existing cache, insets, vibration, and font host wiring, it carries the pinned Theme closure for drawable/background color extraction, HSV conversion, file copy, wallpaper rotation, sharing directories, color distance, scaled bitmaps, and wall-character validation. ActionBarMenuSlider and OtherDocumentPlaceholderDrawable use host fallbacks for global blur capture and file-type thumbnails; the blur fallback returns a valid transparent bitmap because NativeDo has no global blur-capture owner. Null-context/bootstrap fallbacks remain intentional NativeDo wiring; unrelated AndroidUtilities subsystems are still omitted."
     },
     {
       "local": "telegram/src/main/java/org/telegram/messenger/XiaomiUtilities.java",
@@ -86,7 +86,7 @@
       "local": "telegram/src/main/java/org/telegram/messenger/FileLoader.java",
       "upstream": "org/telegram/messenger/FileLoader.java",
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
-      "modified": true,
+      "modified": false,
       "port_mode": "native",
       "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
     },
@@ -172,11 +172,9 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/BackupImageView.java",
       "upstream": "org/telegram/ui/Components/BackupImageView.java",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
-      "modified": true,
-      "port_mode": "native",
-      "notes": "Telegram image-view wrapper used by vendored cells and viewer-related UI. NativeDo keeps ImageReceiver-backed loading/drawing API but stubs BackupImageView.blurText because the upstream Text helper is not ported.",
-      "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/TextPaintImageReceiverSpan.java",
@@ -314,7 +312,7 @@
       "local": "telegram/src/main/java/org/telegram/ui/Cells/TextInfoPrivacyCell.java",
       "upstream": "org/telegram/ui/Cells/TextInfoPrivacyCell.java",
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
-      "modified": true,
+      "modified": false,
       "port_mode": "native",
       "notes": "Faithful subset used by UniversalAdapter VIEW_TYPE_SHADOW: keeps upstream setText (double-newline AbsoluteSizeSpan), setFixedSize/getFixedSize, onMeasure fixedSize -1/0/n branches, top/bottom padding, getText/getTextView/setTextGravity/setEnabled. OMITTED: LinkSpanDrawable.LinksTextView (tappable links / emoji) replaced by a plain TextView, so getTextView returns TextView not LinksTextView; key_windowBackgroundWhiteGrayText4 -> key_windowBackgroundWhiteGrayText (key not in local Theme).",
       "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
@@ -883,7 +881,7 @@
       "local": "telegram/src/main/java/org/telegram/ui/Components/RLottieImageView.java",
       "upstream": "org/telegram/ui/Components/RLottieImageView.java",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": true,
+      "modified": false,
       "port_mode": "exact",
       "forced_exact": [
         "animation",
@@ -908,7 +906,7 @@
       "local": "telegram/src/main/java/org/telegram/ui/Components/poll/buttons/PollButtonDrawableBase.java",
       "upstream": "org/telegram/ui/Components/poll/buttons/PollButtonDrawableBase.java",
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
-      "modified": true,
+      "modified": false,
       "port_mode": "native",
       "forced_exact": [
         "drawing",
@@ -1374,7 +1372,7 @@
       "local": "telegram/src/main/java/org/telegram/messenger/GenericProvider.java",
       "upstream": "org/telegram/messenger/GenericProvider.java",
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
-      "modified": true,
+      "modified": false,
       "port_mode": "native",
       "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
     },
@@ -1955,7 +1953,7 @@
       "local": "telegram/src/main/java/org/telegram/ui/GradientClip.java",
       "upstream": "org/telegram/ui/GradientClip.java",
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
-      "modified": true,
+      "modified": false,
       "port_mode": "native",
       "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
     },
@@ -1986,6 +1984,14 @@
       "modified": true,
       "port_mode": "native",
       "notes": "NativeDo ActionBarMenu subset. The 9b50143d glassMode measurement and getItemsWidth geometry are preserved for ActionBar glass pill bounds; unrelated Telegram menu features remain omitted."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarMenuSlider.java",
+      "upstream": "org/telegram/ui/ActionBar/ActionBarMenuSlider.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact",
+      "notes": "Pinned 12.9.0 slider implementation copied verbatim; NativeDo supplies its global blur API through AndroidUtilities host wiring."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarMenuItem.java",
@@ -2363,16 +2369,15 @@
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/LineProgressView.java",
       "upstream": "org/telegram/ui/Components/LineProgressView.java",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
-      "modified": true,
-      "port_mode": "native",
-      "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/SimpleFloatPropertyCompat.java",
       "upstream": "org/telegram/ui/Components/SimpleFloatPropertyCompat.java",
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
-      "modified": true,
+      "modified": false,
       "port_mode": "native",
       "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
     },
@@ -2580,6 +2585,49 @@
       "modified": false,
       "port_mode": "exact",
       "notes": "Pinned WallpaperParallaxEffect for local theme wallpaper motion; exact copy."
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/messenger/utils/ColorShader.java",
+      "upstream": "org/telegram/messenger/utils/ColorShader.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact"
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/messenger/utils/DrawableUtils.java",
+      "upstream": "org/telegram/messenger/utils/DrawableUtils.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact"
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/IntSize.java",
+      "upstream": "org/telegram/ui/Components/IntSize.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact"
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/MotionBackgroundPaint.java",
+      "upstream": "org/telegram/ui/Components/MotionBackgroundPaint.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact"
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/RadialProgress.java",
+      "upstream": "org/telegram/ui/Components/RadialProgress.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": false,
+      "port_mode": "exact"
+    },
+    {
+      "local": "telegram/src/main/java/org/telegram/ui/Components/voip/CellFlickerDrawable.java",
+      "upstream": "org/telegram/ui/Components/voip/CellFlickerDrawable.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": true,
+      "port_mode": "native",
+      "notes": "Telegram-derived CellFlickerDrawable with NativeDo host drawing differences; used by LineProgressView."
     },
     {
       "_comment": "Telegram Blur3 glass subsystem used by chat/topic chrome.",
@@ -2867,7 +2915,7 @@
       "local": "telegram/src/main/java/org/telegram/ui/Cells/TextSettingsCell.java",
       "upstream": "org/telegram/ui/Cells/TextSettingsCell.java",
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
-      "modified": true,
+      "modified": false,
       "port_mode": "native",
       "notes": "Verbatim upstream except RLottieImageView replaced with android.widget.ImageView (RLottie is not vendored). Used by UniversalAdapter VIEW_TYPE_TEXT_SETTINGS. Deps (BackupImageView, CubicBezierInterpolator, LayoutHelper) are vendored.",
       "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
@@ -3077,7 +3125,7 @@
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
-      "notes": "Auto-registered unmanifested compile dependency (98 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
+      "notes": "NativeDo download-controller compatibility surface. The two-argument loading observer overload delegates to the existing host observer API so pinned document placeholders compile; Telegram account/download business remains unported."
     },
     {
       "local": "telegram/src/main/java/org/telegram/messenger/ExtendedBitmapDrawable.java",
@@ -3099,7 +3147,7 @@
       "local": "telegram/src/main/java/org/telegram/messenger/FileLoadOperationStream.java",
       "upstream": "org/telegram/messenger/FileLoadOperationStream.java",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": true,
+      "modified": false,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (12 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
     },
@@ -3107,7 +3155,7 @@
       "local": "telegram/src/main/java/org/telegram/messenger/FileLoaderPriorityQueue.java",
       "upstream": "org/telegram/messenger/FileLoaderPriorityQueue.java",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": true,
+      "modified": false,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (75 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
     },
@@ -3283,7 +3331,7 @@
       "local": "telegram/src/main/java/org/telegram/messenger/wallpaper/WallpaperGiftBitmapDrawable.java",
       "upstream": "org/telegram/messenger/wallpaper/WallpaperGiftBitmapDrawable.java",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": true,
+      "modified": false,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (25 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
     },
@@ -3331,7 +3379,7 @@
       "local": "telegram/src/main/java/org/telegram/ui/ActionBar/BottomSheetTabDialog.java",
       "upstream": "org/telegram/ui/ActionBar/BottomSheetTabDialog.java",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": true,
+      "modified": false,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested on-disk source (183 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
     },
@@ -3420,7 +3468,7 @@
       "local": "telegram/src/main/java/org/telegram/ui/Components/BackgroundGradientDrawable.java",
       "upstream": "org/telegram/ui/Components/BackgroundGradientDrawable.java",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": true,
+      "modified": false,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (40 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
     },
@@ -3508,7 +3556,7 @@
       "local": "telegram/src/main/java/org/telegram/ui/Components/LinkSpanDrawable.java",
       "upstream": "org/telegram/ui/Components/LinkSpanDrawable.java",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": true,
+      "modified": false,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested on-disk source (980 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
     },
@@ -3516,7 +3564,7 @@
       "local": "telegram/src/main/java/org/telegram/ui/Components/LoadingDrawable.java",
       "upstream": "org/telegram/ui/Components/LoadingDrawable.java",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": true,
+      "modified": false,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (59 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
     },
@@ -3524,7 +3572,7 @@
       "local": "telegram/src/main/java/org/telegram/ui/Components/LoadingStickerDrawable.java",
       "upstream": "org/telegram/ui/Components/LoadingStickerDrawable.java",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": true,
+      "modified": false,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (22 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
     },
@@ -3540,9 +3588,8 @@
       "local": "telegram/src/main/java/org/telegram/ui/Components/OtherDocumentPlaceholderDrawable.java",
       "upstream": "org/telegram/ui/Components/OtherDocumentPlaceholderDrawable.java",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": true,
-      "port_mode": "native",
-      "notes": "Auto-registered unmanifested compile dependency (22 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
+      "modified": false,
+      "port_mode": "exact"
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/Paint/Shader.java",
@@ -3596,7 +3643,7 @@
       "local": "telegram/src/main/java/org/telegram/ui/Components/SeekBar.java",
       "upstream": "org/telegram/ui/Components/SeekBar.java",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": true,
+      "modified": false,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested on-disk source (493 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
     },
@@ -3652,7 +3699,7 @@
       "local": "telegram/src/main/java/org/telegram/ui/Components/StaticLayoutEx.java",
       "upstream": "org/telegram/ui/Components/StaticLayoutEx.java",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": true,
+      "modified": false,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested on-disk source (214 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
     },
@@ -3677,7 +3724,7 @@
       "local": "telegram/src/main/java/org/telegram/ui/Components/Text.java",
       "upstream": "org/telegram/ui/Components/Text.java",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": true,
+      "modified": false,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested compile dependency (29 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
     },
@@ -3805,7 +3852,7 @@
       "local": "telegram/src/main/java/org/telegram/ui/Components/chat/ViewPositionWatcher.java",
       "upstream": "org/telegram/ui/Components/chat/ViewPositionWatcher.java",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": true,
+      "modified": false,
       "port_mode": "native",
       "notes": "Auto-registered unmanifested on-disk source (249 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified."
     },
@@ -4065,14 +4112,6 @@
       "modified": true,
       "port_mode": "native",
       "notes": "Compile/runtime constant shim, not a full port: only ITEM_HEIGHT_DP (50) so FlickerLoadingView can keep the pin-shaped REACTED_TYPE height expression. Full reacted-users list UI is not vendored."
-    },
-    {
-      "local": "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarMenuSlider.java",
-      "upstream": "org/telegram/ui/ActionBar/ActionBarMenuSlider.java",
-      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": true,
-      "port_mode": "native",
-      "notes": "Compile/runtime type stub for PopupSwipeBackLayout instanceof checks. Full ActionBarMenuSlider UI is not ported."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Cells/DialogCell.java",

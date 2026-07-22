@@ -93,6 +93,9 @@ public class DownloadController {
 
     public static int generateObserverTag() { return 0; }
     public int getCurrentDownloadMask() { return 0; }
+    public void addLoadingFileObserver(String fileName, FileDownloadProgressListener listener) {
+        addLoadingFileObserver(fileName, listener, listener);
+    }
     public void addLoadingFileObserver(String fileName, Object parentObject, FileDownloadProgressListener listener) {}
     public void removeLoadingFileObserver(FileDownloadProgressListener listener) {}
 }
