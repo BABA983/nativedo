@@ -14,6 +14,10 @@ public class AnimatedEmojiDrawable extends Drawable {
     public static final int CACHE_TYPE_MESSAGES = 0;
     public static final int CACHE_TYPE_MESSAGES_LARGE = 1;
 
+    public static int getCacheTypeForEnterView() {
+        return CACHE_TYPE_MESSAGES;
+    }
+
     /** Host stub: pin WebsiteView uses document-id favicons; return empty drawable. */
     public static AnimatedEmojiDrawable make(int account, int cacheType, long documentId) {
         return new AnimatedEmojiDrawable();

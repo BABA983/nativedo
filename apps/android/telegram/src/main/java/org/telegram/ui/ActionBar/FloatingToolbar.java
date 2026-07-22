@@ -33,6 +33,8 @@ import android.widget.TextView;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.R;
+import org.telegram.messenger.Utilities;
+import org.telegram.ui.Components.blur3.BlurredBackgroundDrawableViewFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -74,6 +76,8 @@ public final class FloatingToolbar {
     private boolean hidden;
     private boolean overflowOpen;
     private boolean orientationHandlerRegistered;
+    private Runnable premiumLockClickListener;
+    private Utilities.Callback0Return<Boolean> quoteShowCallback;
 
     public FloatingToolbar(Context context, View windowView, int style, Theme.ResourcesProvider resourcesProvider) {
         this.context = context;
@@ -124,6 +128,18 @@ public final class FloatingToolbar {
         popupWindow.setClippingEnabled(false);
         popupWindow.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         popupWindow.setAnimationStyle(0);
+    }
+
+    public FloatingToolbar(Context context, View windowView, int style, Theme.ResourcesProvider resourcesProvider, BlurredBackgroundDrawableViewFactory factory) {
+        this(context, windowView, style, resourcesProvider);
+    }
+
+    public void setOnPremiumLockClick(Runnable listener) {
+        premiumLockClickListener = listener;
+    }
+
+    public void setQuoteShowVisible(Utilities.Callback0Return<Boolean> callback) {
+        quoteShowCallback = callback;
     }
 
     public FloatingToolbar setMenu(Menu menu) {

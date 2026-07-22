@@ -22,6 +22,7 @@ public class AnimatedEmojiSpan {
         public void release() {}
         public void replaceFontMetrics(android.graphics.Paint.FontMetricsInt fontMetricsInt) {}
         public void clearPositions() {}
+        public void recordPositions(boolean save) {}
     }
 
     public static EmojiGroupedSpans update(int cacheType, View parent, EmojiGroupedSpans drawables, Layout layout) {

@@ -28,6 +28,7 @@ class NativeDoApp : Application(), SingletonImageLoader.Factory {
         AndroidUtilities.init(this)
         Theme.setThemeBackend(NativeDoThemeBackend)
         Theme.createDialogsResources(this)
+        Theme.createChatResources(this, false)
 
         // Take over Telegram ImageLoader's HTTP transfer with the app's OkHttp
         // client. Product-specific concerns (auth cookies, Cloudflare clearance,

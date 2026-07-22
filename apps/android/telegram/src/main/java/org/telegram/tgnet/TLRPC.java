@@ -233,9 +233,13 @@ public class TLRPC {
         public int offset;
         public int length;
         public String url;
+        public boolean collapsed;
     }
 
     public static class TL_messageEntityUrl extends MessageEntity {
+    }
+
+    public static class TL_messageEntityBlockquote extends MessageEntity {
     }
 
     public static class Peer extends TLObject {

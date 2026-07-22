@@ -70,6 +70,14 @@
           "notes": "NativeDo utility subset with upstream-shaped helpers. In addition to the existing cache, insets, vibration, and font host wiring, it now carries the pinned Theme closure for drawable/background color extraction, HSV conversion, file copy, wallpaper rotation, sharing directories, color distance, scaled bitmaps, and wall-character validation. Null-context/bootstrap fallbacks remain intentional NativeDo wiring; unrelated AndroidUtilities subsystems are still omitted."
         },
         {
+          "path": "org/telegram/messenger/XiaomiUtilities.java",
+          "pin": "legacy_009e97356",
+          "modified": false,
+          "port_mode": "exact",
+          "notes": "Pinned MIUI detection and permission surface used by EditTextBoldCursor handle tinting. System-property lookup is supplied by the local AndroidUtilities host; permission-manager methods remain upstream-shaped compatibility helpers.",
+          "stuck_ref": "host_wiring_keep_at_pin"
+        },
+        {
           "path": "org/telegram/messenger/Emoji.java",
           "pin": "legacy_009e97356",
           "modified": true,
@@ -318,7 +326,7 @@
             "measurement",
             "drawing"
           ],
-          "notes": "NativeDo text-selection toolbar: keeps upstream setMenu/setOnMenuItemClickListener/setContentRect/show/updateLayout/hide/dismiss API used by FloatingActionMode, and now mirrors Telegram's main-panel plus overflow-panel interaction with PopupWindow positioning, show/open animations, 48dp action rows, 12dp rounded toolbar background, localized back-row overflow panel chrome, label-measured overflow width, animated-vector overflow/back arrows from upstream resources, and layout-change relayout while showing. Still omits upstream blur, premium-lock, suggested-width machinery, and full touchable-region plumbing.",
+          "notes": "NativeDo text-selection toolbar: keeps upstream setMenu/setOnMenuItemClickListener/setContentRect/show/updateLayout/hide/dismiss API used by FloatingActionMode, and now mirrors Telegram's main-panel plus overflow-panel interaction with PopupWindow positioning, show/open animations, 48dp action rows, 12dp rounded toolbar background, localized back-row overflow panel chrome, label-measured overflow width, animated-vector overflow/back arrows from upstream resources, and layout-change relayout while showing. Adds the five-argument blurred-background constructor plus premium-lock/quote-visibility callback surface required by the restored EditTextBoldCursor; blur rendering and full touchable-region plumbing remain host omissions.",
           "stuck_ref": "native_host_reference_only"
         },
         {
@@ -898,10 +906,40 @@
         {
           "path": "org/telegram/ui/Components/QuoteSpan.java",
           "pin": "legacy_009e97356",
-          "modified": true,
-          "port_mode": "native",
-          "notes": "Minimal shell exposing QuoteSpan.Block.top/bottom for SpoilerEffect quote-boundary checks. Full Telegram quote chrome/editing/collapse behavior is intentionally deferred to the topic quote/reply alignment phase.",
-          "stuck_ref": "native_host_reference_only"
+          "modified": false,
+          "port_mode": "exact",
+          "forced_exact": [
+            "measurement",
+            "drawing",
+            "gesture",
+            "animation"
+          ],
+          "notes": "Restored from the legacy pin for EditTextEffects quote measurement, collapse-button drawing/gesture, newline-hack stripping, and spoiler quote boundaries. NativeDo keeps the local TLRPC blockquote shim and density resources; Telegram message transport remains out of scope.",
+          "stuck_ref": "host_wiring_keep_at_pin"
+        },
+        {
+          "path": "org/telegram/ui/Components/EditTextEffects.java",
+          "pin": "legacy_009e97356",
+          "modified": false,
+          "port_mode": "exact",
+          "forced_exact": [
+            "drawing",
+            "gesture",
+            "animation"
+          ],
+          "notes": "Restored pinned spoiler, animated-emoji, quote, and clipping effect lifecycle used by EditTextBoldCursor. AnimatedEmojiSpan remains a NativeDo fallback surface; the effect method/branch structure stays at the legacy pin.",
+          "stuck_ref": "host_wiring_keep_at_pin"
+        },
+        {
+          "path": "org/telegram/ui/Components/spoilers/SpoilersClickDetector.java",
+          "pin": "legacy_009e97356",
+          "modified": false,
+          "port_mode": "exact",
+          "forced_exact": [
+            "gesture"
+          ],
+          "notes": "Copied from the legacy pin for EditTextEffects spoiler tap hit testing and ripple reveal callbacks.",
+          "stuck_ref": "host_wiring_keep_at_pin"
         },
         {
           "path": "org/telegram/ui/Adapters/FiltersView.java",
@@ -935,7 +973,13 @@
           "pin": "legacy_009e97356",
           "modified": true,
           "port_mode": "native",
-          "notes": "Native subset required by FragmentSearchField and TopicReplyComposerPanel. Preserves upstream-shaped setCursorColor/setCursorWidth/setCursorSize/setAllowDrawCursor/setForceCursorEnd/setHandlesColor/setHintColor/setWindowView plus ChatActivityEnterView/EditTextCaption-style getOffsetY/setOffsetY/getTextToUse/invalidateForce/invalidateEffects/setTextWatchersSuppressed/setDelegate/setAllowTextEntitiesIntersection/closeCreationLinkDialog API surface. Cursor color/width now use Telegram-style fixed-height self drawing over the active Layout/selection, with Android Q+ system cursor made transparent to avoid double drawing; Android Q+ selection-handle tint, window-view wiring, and offsetY draw translation for composer line-height animation are wired locally while TopicReplyComposerPanel drives list bottom padding from a ChatActivityEnterView-style animated visible input-island height. The full EditTextEffects/floating-toolbar/hint animation system remains omitted.",
+          "forced_exact": [
+            "measurement",
+            "drawing",
+            "animation",
+            "gesture"
+          ],
+          "notes": "Restored the legacy EditTextEffects-backed cursor/editor, hint/header, line, floating-action-mode, selection-handle, and watcher lifecycle. NativeDo host wiring retains setDelegate/invalidateForce/windowView and composer-facing allow-text-entities/creation-link contracts; FloatingToolbar and AnimatedEmojiSpan provide local compatibility surfaces while preserving the pinned editor branch structure.",
           "stuck_ref": "native_host_reference_only"
         },
         {
@@ -1736,8 +1780,8 @@
         },
         {
           "path": "org/telegram/ui/web/WebBrowserSettings.java",
-          "notes": "Copied verbatim from pin 12.9.0. Single-account browser policy is supplied by the existing MessagesController facade; no local settings, sizing, or clearing logic remains in this file.",
-          "modified": false,
+          "notes": "Pinned 12.9.0 UI, measurement, drawing, and interaction shape. Single-account browser policy is supplied by the MessagesController facade; WebsiteView additionally reads NativeDo's WebMetadataCache for locally persisted favicons.",
+          "modified": true,
           "port_mode": "exact"
         },
         {
@@ -2539,7 +2583,7 @@
           "path": "org/telegram/ui/Components/AnimatedEmojiDrawable.java",
           "modified": true,
           "port_mode": "native",
-          "notes": "Host stubs: CACHE_TYPE_MESSAGES_LARGE + make(account,cacheType,documentId) for WebBrowserSettings WebsiteView favicon path (returns empty drawable)."
+          "notes": "Host stub used by WebBrowserSettings favicon compatibility and EditTextEffects emoji-cache selection. Adds the pinned enter-view cache-type API; animated emoji rendering remains unported."
         },
         {
           "path": "org/telegram/ui/Components/AttachableDrawable.java",
@@ -2618,8 +2662,8 @@
         {
           "path": "org/telegram/ui/Components/MotionBackgroundDrawable.java",
           "modified": true,
-          "port_mode": "native",
-          "notes": "Auto-registered unmanifested compile dependency (44 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port."
+          "port_mode": "exact",
+          "notes": "Near-full pinned motion-wallpaper implementation used by Theme.MessageDrawable animated gradients. Host deltas are AndroidX FastOutSlowInInterpolator and the local Utilities.Callback2 callback surface."
         },
         {
           "path": "org/telegram/ui/Components/OtherDocumentPlaceholderDrawable.java",
@@ -3531,6 +3575,26 @@
       "local_glob": "apps/android/telegram/src/main/res/drawable-*",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "notes": "Byte-identical density and nodpi drawables referenced directly by pinned Theme.java. Existing tracked PNG resources with matching Android names were retained rather than replaced."
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "mini_quote.png"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/drawable-*",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
+      "notes": "Density variants restored with QuoteSpan for pinned quote chrome and collapse-button drawing."
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "field_carret_empty.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/drawable",
+      "local_glob": "apps/android/telegram/src/main/res/drawable",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
+      "notes": "Transparent cursor resource used by the pinned EditTextBoldCursor reflection fallback."
     },
     {
       "kind": "drawable",

@@ -7,6 +7,7 @@
  */
 package org.telegram.messenger;
 
+import android.annotation.SuppressLint;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
@@ -132,6 +133,16 @@ public final class AndroidUtilities {
     private static float ydpi;
 
     private AndroidUtilities() {
+    }
+
+    @SuppressLint("PrivateApi")
+    public static String getSystemProperty(String key) {
+        try {
+            Class<?> props = Class.forName("android.os.SystemProperties");
+            return (String) props.getMethod("get", String.class).invoke(null, key);
+        } catch (Exception ignore) {
+        }
+        return null;
     }
 
     public static void init(Context context) {
