@@ -1498,7 +1498,7 @@ class TopicDetailFragment @JvmOverloads constructor(
                 }
             })
             .apply {
-                setSearchPaddingStart(12)
+                setSearchPaddingStart(7)
                 setSearchFieldHint(context.getString(R.string.topic_search_hint))
                 contentDescription = context.getString(R.string.topic_search_hint)
                 visibility = View.GONE
@@ -1507,7 +1507,7 @@ class TopicDetailFragment @JvmOverloads constructor(
         topicHeaderItem = menu.addItem(TOPIC_MENU_OTHER, TelegramR.drawable.ic_ab_other).apply {
             setContentDescription(context.getString(R.string.action_more_options))
             addSubItem(TOPIC_MENU_SEARCH, TelegramR.drawable.msg_search, context.getString(R.string.topic_menu_search))
-            addSubItem(TOPIC_MENU_REFRESH, R.drawable.settings_refresh, context.getString(R.string.topic_menu_refresh))
+            addSubItem(TOPIC_MENU_REFRESH, TelegramR.drawable.menu_browser_refresh, context.getString(R.string.topic_menu_refresh))
         }
 
         actionBar.setActionBarMenuOnItemClick(

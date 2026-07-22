@@ -156,6 +156,7 @@ public class ActionBarMenuItem extends FrameLayout {
         ActionBarMenuSubItem item = new ActionBarMenuSubItem(getContext(), false, false, null);
         item.setTag(id);
         item.setTextAndIcon(text, 0, iconDrawable);
+        item.setMinimumWidth(AndroidUtilities.dp(196));
         popupLayout.addView(item, new LinearLayout.LayoutParams(LayoutHelper.MATCH_PARENT, AndroidUtilities.dp(48)));
         item.setOnClickListener(view -> {
             if (popupWindow != null && popupWindow.isShowing()) {
@@ -183,6 +184,7 @@ public class ActionBarMenuItem extends FrameLayout {
         ActionBarMenuSubItem item = new ActionBarMenuSubItem(getContext(), false, false, null);
         item.setTag(id);
         item.setTextAndIcon(text, icon);
+        item.setMinimumWidth(AndroidUtilities.dp(196));
         popupLayout.addView(item, new LinearLayout.LayoutParams(LayoutHelper.MATCH_PARENT, AndroidUtilities.dp(48)));
         item.setOnClickListener(view -> {
             if (popupWindow != null && popupWindow.isShowing()) {

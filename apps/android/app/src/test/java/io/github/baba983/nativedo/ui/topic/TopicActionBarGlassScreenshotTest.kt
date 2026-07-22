@@ -6,6 +6,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import com.google.common.truth.Truth.assertThat
 import io.github.baba983.nativedo.screenshot.NativeDoPaparazziRule
 import io.github.baba983.nativedo.screenshot.SystemAppearance
 import org.junit.Rule
@@ -73,8 +74,14 @@ internal class TopicActionBarGlassScreenshotTest {
         setBackButtonDrawable(BackDrawable(false))
         setTitle(if (withIdentity) "" else "Topic title")
         setOccupyStatusBar(withIdentity)
-        // Menu pill: single ⋯ (search lives under overflow in production).
-        createMenu().addItem(0, R.drawable.ic_ab_other, null)
+        // Menu pill with the same Search/Refresh submenu used in production.
+        val overflow = createMenu().addItem(0, R.drawable.ic_ab_other, null)
+        val search = overflow.addSubItem(1, R.drawable.msg_search, "Search")
+        val refresh = overflow.addSubItem(2, R.drawable.menu_browser_refresh, "Refresh")
+        assertThat(search.minimumWidth).isEqualTo(AndroidUtilities.dp(196f))
+        assertThat(refresh.minimumWidth).isEqualTo(AndroidUtilities.dp(196f))
+        assertThat(search.iconResId).isEqualTo(R.drawable.msg_search)
+        assertThat(refresh.iconResId).isEqualTo(R.drawable.menu_browser_refresh)
         val source = BlurredBackgroundSourceColor().apply {
             setColor(Color.rgb(103, 157, 213))
         }

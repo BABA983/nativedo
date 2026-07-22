@@ -178,7 +178,7 @@
           "pin": "legacy_009e97356",
           "modified": true,
           "port_mode": "native",
-          "notes": "NativeDo topic-detail/ArticleViewer URL-only image viewer port. Keeps upstream singleton/API entry points, PageBlocksAdapter, EmptyPhotoViewerProvider/PlaceProviderObject provider lifecycle hooks, WindowManager overlay, SizeNotifierFrameLayoutPhoto/FrameLayoutDrawer container, ImageReceiver-backed left/center/right gallery, GroupedPhotosListView, PhotoViewerActionBarContainer/PhotoCountView, CaptionTextViewSwitcher/CaptionScrollView, PhotoProgressView, GestureDetector2 tap/double-tap/edge navigation, pinch/pan/drag-dismiss thresholds, ActionBarToggleParams chrome animation shape, checkProgress-style three-slot loading state, and ClippingImageView source/fallback open-close transitions with URL/ImageLocation host wiring. Intentionally omits Telegram message/media/video/editor/story/webview/picker/caption-edit/translate/text-selection stacks; those are not part of the current URL-only photo surface.",
+          "notes": "NativeDo topic-detail/ArticleViewer URL-only image viewer port. Keeps upstream singleton/API entry points, PageBlocksAdapter, EmptyPhotoViewerProvider/PlaceProviderObject provider lifecycle hooks, WindowManager overlay, SizeNotifierFrameLayoutPhoto/FrameLayoutDrawer container, ImageReceiver-backed left/center/right gallery, GroupedPhotosListView, PhotoViewerActionBarContainer/PhotoCountView, CaptionTextViewSwitcher/CaptionScrollView, PhotoProgressView, GestureDetector2 tap/double-tap/edge navigation, pinch/pan/drag-dismiss thresholds, ActionBarToggleParams chrome animation shape, checkProgress-style three-slot loading state, and ClippingImageView source/fallback open-close transitions with URL/ImageLocation host wiring. The 12.9.0 PhotoViewer ActionBar alpha invalidation, status-bar occupancy, selector/back icon, title-container padding, and subtitle orientation state are aligned; URL menu right padding and corrected right-padding animation remain host adaptations. Intentionally omits Telegram message/media/video/editor/story/webview/picker/caption-edit/translate/text-selection stacks; those are not part of the current URL-only photo surface.",
           "stuck_ref": "native_host_reference_only"
         },
         {
@@ -1648,7 +1648,7 @@
           "pin": "legacy_009e97356",
           "modified": true,
           "port_mode": "native",
-          "notes": "NativeDo ActionBarMenuItem popup/search subset for PhotoViewer and menus: outside-touch/clipping behavior, offsets/translation anchoring, scroll reset, selector colors, popup_fixed_alert4 plus swipeback, tinted addSubItem icons, and 1.5dp action-bar cursor. Platform popup animations are disabled like the host path. Unused Telegram menu surface is omitted.",
+          "notes": "NativeDo ActionBarMenuItem popup/search subset for PhotoViewer and menus: outside-touch/clipping behavior, offsets/translation anchoring, scroll reset, selector colors, popup_fixed_alert4 plus swipeback, tinted addSubItem icons with Telegram's 196dp minimum width, and 1.5dp action-bar cursor. Platform popup animations are disabled like the host path. Unused Telegram menu surface is omitted.",
           "stuck_ref": "native_host_reference_only"
         },
         {

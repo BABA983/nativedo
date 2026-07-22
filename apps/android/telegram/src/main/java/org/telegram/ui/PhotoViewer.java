@@ -84,7 +84,6 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenu;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
-import org.telegram.ui.ActionBar.BackDrawable;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.SimpleTextView;
 import org.telegram.ui.ActionBar.Theme;
@@ -677,19 +676,22 @@ public class PhotoViewer {
             }
         });
 
-        actionBar = new ActionBar(activity);
+        actionBar = new ActionBar(activity) {
+            @Override
+            public void setAlpha(float alpha) {
+                super.setAlpha(alpha);
+                containerView.invalidate();
+            }
+        };
         actionBar.setOverlayTitleAnimation(true);
-        actionBar.setOccupyStatusBar(true);
+        actionBar.setOccupyStatusBar(isStatusBarVisible());
         actionBar.setBackgroundColor(Theme.ACTION_BAR_PHOTO_VIEWER_COLOR);
         actionBar.setTitle("");
         actionBar.setTitleColor(Color.WHITE);
         actionBar.setSubtitleColor(Color.WHITE);
         actionBar.setItemsColor(Color.WHITE, false);
-        actionBar.setItemsBackgroundColor(0x30ffffff, false);
-        BackDrawable backDrawable = new BackDrawable(false);
-        backDrawable.setColor(Color.WHITE);
-        backDrawable.setRotatedColor(Color.WHITE);
-        actionBar.setBackButtonDrawable(backDrawable);
+        actionBar.setItemsBackgroundColor(Theme.ACTION_BAR_WHITE_SELECTOR_COLOR, false);
+        actionBar.setBackButtonImage(R.drawable.ic_ab_back);
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
             public void onItemClick(int id) {
@@ -4172,7 +4174,7 @@ public class PhotoViewer {
         PhotoViewerActionBarContainer(Context context) {
             super(context);
             container = new FrameLayout(context);
-            container.setPadding(AndroidUtilities.dp((AndroidUtilities.isTablet() ? 80 : 72) - 16), 0, 0, 0);
+            container.setPadding(AndroidUtilities.dp(72 - 16), 0, 0, 0);
             addView(container, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.FILL));
 
             titleLayout = new FrameLayout(context) {
@@ -4206,7 +4208,6 @@ public class PhotoViewer {
             subtitleTextView.setEllipsizeByGradient(true);
             subtitleTextView.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
             subtitleTextView.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
-            subtitleTextView.setAlpha(0f);
             container.addView(subtitleTextView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 20, Gravity.LEFT | Gravity.TOP, 16, 0, 0, 0));
         }
 
@@ -4294,7 +4295,7 @@ public class PhotoViewer {
                     subtitleAnimator.cancel();
                 }
                 boolean isLandscape = AndroidUtilities.displaySize.x > AndroidUtilities.displaySize.y;
-                int subtitleTranslation = AndroidUtilities.dp((haveSubtitle ? 30 : 33) - (isLandscape ? (AndroidUtilities.isTablet() ? -4 : 6) : 0));
+                int subtitleTranslation = AndroidUtilities.dp((haveSubtitle ? 30 : 33) - (isLandscape ? 6 : 0));
                 if (animated) {
                     ArrayList<Animator> animators = new ArrayList<>();
                     animators.add(ObjectAnimator.ofFloat(subtitleTextView, View.ALPHA, haveSubtitle ? 1f : 0f));
