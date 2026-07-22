@@ -133,6 +133,24 @@ public class ActionBarMenu extends LinearLayout {
         }
     }
 
+    public void clearItems() {
+        removeAllViews();
+    }
+
+    public void onMenuButtonPressed() {
+        for (int i = 0; i < getChildCount(); i++) {
+            View view = getChildAt(i);
+            if (!(view instanceof ActionBarMenuItem) || view.getVisibility() != VISIBLE) {
+                continue;
+            }
+            ActionBarMenuItem item = (ActionBarMenuItem) view;
+            if (item.hasSubMenu()) {
+                item.toggleSubMenu();
+                return;
+            }
+        }
+    }
+
     public void closeSearchField(boolean closeKeyboard) {
         int count = getChildCount();
         for (int i = 0; i < count; i++) {
@@ -144,6 +162,50 @@ public class ActionBarMenu extends LinearLayout {
                     item.toggleSearch(closeKeyboard);
                     break;
                 }
+            }
+        }
+    }
+
+    public void setSearchCursorColor(int color) {
+        for (int i = 0; i < getChildCount(); i++) {
+            View view = getChildAt(i);
+            if (view instanceof ActionBarMenuItem && ((ActionBarMenuItem) view).isSearchField()) {
+                ((ActionBarMenuItem) view).getSearchField().setCursorColor(color);
+                return;
+            }
+        }
+    }
+
+    public void setSearchFieldText(String text) {
+        for (int i = 0; i < getChildCount(); i++) {
+            View view = getChildAt(i);
+            if (view instanceof ActionBarMenuItem && ((ActionBarMenuItem) view).isSearchField()) {
+                ((ActionBarMenuItem) view).setSearchFieldText(text, false);
+                return;
+            }
+        }
+    }
+
+    public void onSearchPressed() {
+        for (int i = 0; i < getChildCount(); i++) {
+            View view = getChildAt(i);
+            if (view instanceof ActionBarMenuItem && ((ActionBarMenuItem) view).isSearchField()) {
+                ((ActionBarMenuItem) view).onSearchPressed();
+                return;
+            }
+        }
+    }
+
+    public void openSearchField(boolean toggle, boolean showKeyboard, String text, boolean animated) {
+        for (int i = 0; i < getChildCount(); i++) {
+            View view = getChildAt(i);
+            if (view instanceof ActionBarMenuItem && ((ActionBarMenuItem) view).isSearchField()) {
+                ActionBarMenuItem item = (ActionBarMenuItem) view;
+                if (toggle) {
+                    parentActionBar.onSearchFieldVisibilityChanged(item.toggleSearch(showKeyboard));
+                }
+                item.setSearchFieldText(text, animated);
+                return;
             }
         }
     }

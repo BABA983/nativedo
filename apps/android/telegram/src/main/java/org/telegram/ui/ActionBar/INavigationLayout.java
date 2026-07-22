@@ -55,6 +55,15 @@ public interface INavigationLayout {
         return false;
     }
 
+    enum BackButtonState {
+        BACK,
+        MENU
+    }
+
+    interface IBackButtonDrawable {
+        BackButtonState getBackButtonState();
+    }
+
     class NavigationParams {
         public BaseFragment fragment;
         public boolean removeLast;

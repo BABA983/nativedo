@@ -45,7 +45,8 @@ final class ActionBarSheet implements BaseFragment.AttachedSheet {
         this.params = params;
 
         Context context = hostFragment.getContext();
-        actionBarLayout = new ActionBarLayout(context);
+        actionBarLayout = new ActionBarLayout(context, false);
+        actionBarLayout.setIsSheet(true);
         actionBarLayout.setRootDismissRunnable(this::dismiss);
         actionBarLayout.addFragmentToStack(rootFragment);
 
@@ -109,10 +110,7 @@ final class ActionBarSheet implements BaseFragment.AttachedSheet {
             openAnimator.cancel();
             openAnimator = null;
         }
-        BaseFragment current = actionBarLayout.getLastFragment();
-        if (current != null) {
-            current.onPause();
-        }
+        actionBarLayout.onPause();
         actionBarLayout.setRootDismissRunnable(null);
         removeFromParent(windowView);
         hostFragment.removeSheet(this);

@@ -24,6 +24,7 @@ package org.telegram.ui.ActionBar;
 import android.app.Dialog;
 import android.app.Activity;
 import android.content.Context;
+import android.content.res.Configuration;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -253,6 +254,15 @@ public abstract class BaseFragment implements ViewModelStoreOwner {
     }
 
     public void onResume() {
+    }
+
+    public void onConfigurationChanged(Configuration configuration) {
+    }
+
+    public void onUserLeaveHint() {
+    }
+
+    public void onLowMemory() {
     }
 
     public void onFragmentDestroy() {

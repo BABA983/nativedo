@@ -75,6 +75,7 @@ class MainActivity : LaunchActivity(), NotificationCenter.NotificationCenterDele
         // consult the root ActionBarLayout. Required for DrawerLayoutContainer's
         // IME-driven requestLayout that AdjustPanLayoutHelper depends on.
         drawerLayoutContainer.setParentActionBarLayout(actionBarLayout)
+        actionBarLayout.setDrawerLayoutContainer(drawerLayoutContainer)
         // Upstream LaunchActivity paints the strip behind IME with windowBackgroundWhite.
         // Without this, AdjustPan height freezes can flash a grey/default gap under tabs.
         drawerLayoutContainer.setBehindKeyboardColor(
@@ -117,6 +118,9 @@ class MainActivity : LaunchActivity(), NotificationCenter.NotificationCenterDele
             Theme.checkAutoNightThemeConditions()
         }
         ThemeEditorView.getInstance()?.onConfigurationChanged()
+        if (::actionBarLayout.isInitialized) {
+            actionBarLayout.onConfigurationChanged(newConfig)
+        }
         PhotoViewer.getInstance().onConfigurationChanged(newConfig)
     }
 
@@ -162,13 +166,33 @@ class MainActivity : LaunchActivity(), NotificationCenter.NotificationCenterDele
         AndroidUtilities.cancelRunOnUIThread(themeTimerRunnable)
         AndroidUtilities.runOnUIThread(themeTimerRunnable)
         Browser.bindCustomTabsService(this)
+        if (::actionBarLayout.isInitialized) {
+            actionBarLayout.onResume()
+        }
         PhotoViewer.getInstance().onResume()
     }
 
     override fun onPause() {
         AndroidUtilities.cancelRunOnUIThread(themeTimerRunnable)
         ApplicationLoader.mainInterfacePaused = true
+        if (::actionBarLayout.isInitialized) {
+            actionBarLayout.onPause()
+        }
         super.onPause()
+    }
+
+    override fun onUserLeaveHint() {
+        if (::actionBarLayout.isInitialized) {
+            actionBarLayout.onUserLeaveHint()
+        }
+        super.onUserLeaveHint()
+    }
+
+    override fun onLowMemory() {
+        if (::actionBarLayout.isInitialized) {
+            actionBarLayout.onLowMemory()
+        }
+        super.onLowMemory()
     }
 
     override fun onStart() {

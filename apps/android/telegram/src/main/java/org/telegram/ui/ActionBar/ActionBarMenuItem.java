@@ -273,6 +273,20 @@ public class ActionBarMenuItem extends FrameLayout {
         return isSearchField;
     }
 
+    public void setSearchFieldText(CharSequence text, boolean animated) {
+        checkCreateSearchField();
+        if (searchField != null) {
+            searchField.setText(text == null ? "" : text);
+            searchField.setSelection(searchField.length());
+        }
+    }
+
+    public void onSearchPressed() {
+        if (searchListener != null && searchField != null) {
+            searchListener.onSearchPressed(searchField);
+        }
+    }
+
     public void openSearch(boolean openKeyboard) {
         checkCreateSearchField();
         if (searchContainer == null || searchContainer.getVisibility() == VISIBLE || parentMenu == null) {

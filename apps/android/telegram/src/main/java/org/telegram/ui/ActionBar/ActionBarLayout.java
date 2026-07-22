@@ -13,6 +13,7 @@ import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
 import android.app.Activity;
 import android.content.Context;
+import android.content.res.Configuration;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -21,6 +22,7 @@ import android.graphics.Rect;
 import android.graphics.RectF;
 import android.os.Build;
 import android.view.Gravity;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.RoundedCorner;
 import android.view.VelocityTracker;
@@ -208,9 +210,21 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
     private boolean withShadow;
     private Runnable rootDismissRunnable;
     private final DecelerateInterpolator decelerateInterpolator = new DecelerateInterpolator(1.5f);
+    private boolean mainLayout = true;
+    private boolean sheetLayout;
+    private Runnable fragmentStackChangedListener;
+    private DrawerLayoutContainer drawerLayoutContainer;
+    private Window attachedWindow;
+    private int lastNavigationBarColor;
+    private boolean lifecycleResumed = true;
 
     public ActionBarLayout(Context context) {
+        this(context, true);
+    }
+
+    public ActionBarLayout(Context context, boolean main) {
         super(context);
+        mainLayout = main;
         // Root layout is registered as the global by MainActivity. Sheets (ActionBarSheet)
         // create their own ActionBarLayout and must NOT clobber LaunchActivity.actionBarLayout.
         AndroidUtilities.init(context);
@@ -218,10 +232,12 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
         setClipToPadding(false);
         updateShellBackgroundColor();
 
-        bottomSheetTabs = new BottomSheetTabs(context, this);
-        bottomSheetTabsClip = new BottomSheetTabs.ClipTools(bottomSheetTabs);
-        bottomSheetTabs.listen(this::invalidate, this::relayout);
-        addView(bottomSheetTabs, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 68 + 8, Gravity.BOTTOM | Gravity.START));
+        if (mainLayout) {
+            bottomSheetTabs = new BottomSheetTabs(context, this);
+            bottomSheetTabsClip = new BottomSheetTabs.ClipTools(bottomSheetTabs);
+            bottomSheetTabs.listen(this::invalidate, this::relayout);
+            addView(bottomSheetTabs, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 68 + 8, Gravity.BOTTOM | Gravity.START));
+        }
 
         containerViewBack = new LayoutContainer(context);
         containerViewBack.setVisibility(INVISIBLE);
@@ -231,9 +247,11 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
         addView(containerView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.START));
         sheetContainer = containerView;
 
-        bottomSheetTabsOverlay = new BottomSheetTabsOverlay(context);
-        bottomSheetTabsOverlay.setTabsView(bottomSheetTabs);
-        addView(bottomSheetTabsOverlay, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.START));
+        if (mainLayout) {
+            bottomSheetTabsOverlay = new BottomSheetTabsOverlay(context);
+            bottomSheetTabsOverlay.setTabsView(bottomSheetTabs);
+            addView(bottomSheetTabsOverlay, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.TOP | Gravity.START));
+        }
 
         ViewCompat.setOnApplyWindowInsetsListener(this, this::onApplyWindowInsets);
     }
@@ -263,7 +281,79 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
             fragment.onResume();
             updateSystemBars();
         }
+        onFragmentStackChanged();
         return true;
+    }
+
+    public void setFragmentStack(List<BaseFragment> stack) {
+        BaseFragment previous = getLastFragment();
+        BaseFragment next = stack == null || stack.isEmpty() ? null : stack.get(stack.size() - 1);
+        if (previous != null && previous != next) {
+            previous.onPause();
+        }
+        fragmentsStack.clear();
+        if (stack != null) {
+            for (BaseFragment fragment : stack) {
+                if (fragment != null) {
+                    fragment.setParentLayout(this);
+                    fragmentsStack.add(fragment);
+                }
+            }
+        }
+        showLastFragment();
+        onFragmentStackChanged();
+    }
+
+    public void setFragmentStackChangedListener(Runnable listener) {
+        fragmentStackChangedListener = listener;
+    }
+
+    private void onFragmentStackChanged() {
+        if (fragmentStackChangedListener != null) {
+            fragmentStackChangedListener.run();
+        }
+    }
+
+    public boolean bringToFront(int position) {
+        if (position < 0 || position >= fragmentsStack.size()) return false;
+        BaseFragment previous = getLastFragment();
+        BaseFragment fragment = fragmentsStack.remove(position);
+        fragmentsStack.add(fragment);
+        if (previous != null && previous != fragment) previous.onPause();
+        showLastFragment();
+        onFragmentStackChanged();
+        return true;
+    }
+
+    public void showLastFragment() {
+        BaseFragment fragment = getLastFragment();
+        if (fragment == null) return;
+        containerView.removeAllViews();
+        attachView(fragment);
+        fragment.onResume();
+        updateSystemBars();
+    }
+
+    public boolean removeFragmentFromStack(BaseFragment fragment, boolean allowFinishFragment) {
+        boolean wasLast = fragment != null && fragment == getLastFragment();
+        if (fragment == null || !fragmentsStack.remove(fragment)) return false;
+        fragment.onPause();
+        fragment.onFragmentDestroy();
+        if (wasLast) showLastFragment();
+        onFragmentStackChanged();
+        return true;
+    }
+
+    public void removeAllFragments() {
+        for (BaseFragment fragment : fragmentsStack) {
+            fragment.onPause();
+            fragment.onFragmentDestroy();
+        }
+        fragmentsStack.clear();
+        containerView.removeAllViews();
+        containerViewBack.removeAllViews();
+        updateSystemBars();
+        onFragmentStackChanged();
     }
 
     public boolean canHandleBack() {
@@ -330,6 +420,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
             attachView(fragment);
             fragment.onResume();
             updateSystemBars();
+            onFragmentStackChanged();
             return true;
         }
 
@@ -350,6 +441,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
         newFragment = fragment;
         updateSystemBars();
         startLayoutAnimation(true, true);
+        onFragmentStackChanged();
         return true;
     }
 
@@ -384,6 +476,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
         newFragment = fragment;
         updateSystemBars();
         startBottomOpenAnimation();
+        onFragmentStackChanged();
         return true;
     }
 
@@ -920,6 +1013,115 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
         return bottomSheetTabsOverlay;
     }
 
+    public void setIsSheet(boolean value) {
+        sheetLayout = value;
+    }
+
+    public boolean isSheet() {
+        return sheetLayout;
+    }
+
+    public void setWindow(Window window) {
+        attachedWindow = window;
+    }
+
+    public Window getWindow() {
+        return attachedWindow;
+    }
+
+    public void setDrawerLayoutContainer(DrawerLayoutContainer drawerLayoutContainer) {
+        this.drawerLayoutContainer = drawerLayoutContainer;
+        if (drawerLayoutContainer != null) {
+            drawerLayoutContainer.setParentActionBarLayout(this);
+        }
+    }
+
+    public DrawerLayoutContainer getDrawerLayoutContainer() {
+        return drawerLayoutContainer;
+    }
+
+    public void onResume() {
+        BaseFragment fragment = getLastFragment();
+        if (lifecycleResumed) {
+            if (fragment != null && fragment.getActionBar() != null) {
+                fragment.getActionBar().onResume();
+            }
+            updateSystemBars();
+            return;
+        }
+        lifecycleResumed = true;
+        if (fragment != null) {
+            fragment.onResume();
+            if (fragment.getActionBar() != null) {
+                fragment.getActionBar().onResume();
+            }
+        }
+        updateSystemBars();
+    }
+
+    public void onPause() {
+        if (!lifecycleResumed) {
+            return;
+        }
+        lifecycleResumed = false;
+        BaseFragment fragment = getLastFragment();
+        if (fragment != null) {
+            if (fragment.getActionBar() != null) {
+                fragment.getActionBar().onPause();
+            }
+            fragment.onPause();
+        }
+    }
+
+    public void onUserLeaveHint() {
+        BaseFragment fragment = getLastFragment();
+        if (fragment != null) fragment.onUserLeaveHint();
+    }
+
+    public void onLowMemory() {
+        BaseFragment fragment = getLastFragment();
+        if (fragment != null) fragment.onLowMemory();
+    }
+
+    public void onConfigurationChanged(Configuration configuration) {
+        requestLayout();
+        ViewCompat.requestApplyInsets(this);
+        BaseFragment fragment = getLastFragment();
+        if (fragment != null) {
+            fragment.onConfigurationChanged(configuration);
+        }
+    }
+
+    public boolean dispatchKeyEventPreIme(KeyEvent event) {
+        return super.dispatchKeyEventPreIme(event);
+    }
+
+    public boolean onKeyUp(int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_MENU) {
+            BaseFragment fragment = getLastFragment();
+            if (fragment != null && fragment.getActionBar() != null) {
+                fragment.getActionBar().onMenuButtonPressed();
+                return true;
+            }
+        }
+        return super.onKeyUp(keyCode, event);
+    }
+
+    public void setNavigationBarColor(int color) {
+        lastNavigationBarColor = color;
+        if (bottomSheetTabs != null) {
+            bottomSheetTabs.setNavigationBarColor(color, !(startedTracking || animationInProgress));
+        }
+        Window target = attachedWindow != null ? attachedWindow : getContext() instanceof Activity ? ((Activity) getContext()).getWindow() : null;
+        if (target != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            target.setNavigationBarColor(color);
+        }
+    }
+
+    public int getNavigationBarColor() {
+        return lastNavigationBarColor;
+    }
+
     /** Upstream DrawerLayoutContainer keyboard path; NativeDo has no story viewer yet. */
     public boolean storyViewerAttached() {
         return false;
@@ -935,14 +1137,27 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
     }
 
     public void rebuildAllFragmentViews(boolean last) {
-        BaseFragment fragment = getLastFragment();
-        if (fragment == null) {
-            return;
+        rebuildAllFragmentViews(last, true);
+    }
+
+    public void rebuildAllFragmentViews(boolean last, boolean showLastAfter) {
+        int start = last ? Math.max(0, fragmentsStack.size() - 1) : 0;
+        for (int i = start; i < fragmentsStack.size(); i++) {
+            BaseFragment fragment = fragmentsStack.get(i);
+            fragment.clearViews();
+            fragment.setParentLayout(this);
         }
         containerView.removeAllViews();
-        attachView(fragment);
-        fragment.onResume();
-        updateSystemBars();
+        containerViewBack.removeAllViews();
+        if (showLastAfter) {
+            showLastFragment();
+        } else {
+            updateSystemBars();
+        }
+    }
+
+    public void rebuildLogout() {
+        rebuildAllFragmentViews(false, true);
     }
 
     void setRootDismissRunnable(Runnable rootDismissRunnable) {
@@ -1301,10 +1516,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
     }
 
     public void updateSystemBars() {
-        if (!(getContext() instanceof Activity)) {
-            return;
-        }
-        Window window = ((Activity) getContext()).getWindow();
+        Window window = attachedWindow != null ? attachedWindow : getContext() instanceof Activity ? ((Activity) getContext()).getWindow() : null;
         if (window == null) {
             return;
         }
@@ -1314,9 +1526,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
         int navigationBarColor = fragment == null ? Theme.getColor(Theme.key_windowBackgroundGray) : fragment.getNavigationBarColor();
         AndroidUtilities.setLightStatusBar(window, lightStatusBar, forceTransparentStatusBar);
         AndroidUtilities.setLightNavigationBar(window, AndroidUtilities.computePerceivedBrightness(navigationBarColor) >= .721f);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && window.getNavigationBarColor() != navigationBarColor) {
-            window.setNavigationBarColor(navigationBarColor);
-        }
+        setNavigationBarColor(navigationBarColor);
     }
 
     private void bringBrowserTabViewsToFront() {
@@ -1401,6 +1611,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
         animationInProgress = false;
         runDeferredThemeAnimation();
         updateSystemBars();
+        onFragmentStackChanged();
     }
 
     private void onSlideAnimationEnd(boolean backAnimation) {
@@ -1437,6 +1648,7 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
         predictiveBackHasProgress = false;
         layoutToIgnore = null;
         updateSystemBars();
+        onFragmentStackChanged();
     }
 
     private void runDeferredThemeAnimation() {

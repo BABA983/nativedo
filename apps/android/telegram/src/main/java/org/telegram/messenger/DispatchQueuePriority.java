@@ -34,4 +34,12 @@ public class DispatchQueuePriority {
     public void cancelRunnable(Runnable runnable) {
         Utilities.globalQueue.cancelRunnable(runnable);
     }
+
+    public void pause() {
+        // NativeDo shares a global queue and cannot suspend it for one owner.
+    }
+
+    public void resume() {
+        // Paired host API for Telegram callers; see pause().
+    }
 }

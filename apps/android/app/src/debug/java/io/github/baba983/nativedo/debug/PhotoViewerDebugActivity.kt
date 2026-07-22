@@ -27,6 +27,7 @@ import io.github.baba983.nativedo.core.html.parseCookedPostBody
 import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.PostReaction
 import io.github.baba983.nativedo.ui.topic.TopicDetailFragment
+import io.github.baba983.nativedo.ui.topic.TopicSwipeReplyRecyclerView
 import io.github.baba983.nativedo.ui.topic.body.PostBodyBlockState
 import io.github.baba983.nativedo.ui.topic.cell.TopicPostCell
 import io.github.baba983.nativedo.ui.topic.cell.TopicPostCellDelegate
@@ -148,21 +149,8 @@ class PhotoViewerDebugActivity : ComponentActivity() {
     private fun setupTopicDetailInteractionScenario(root: DebugRootLayout) {
         val fragment = TopicDetailFragment(1L, "Debug Topic")
         fragment.setParentLayout(root)
-        val fragmentRoot = SizeNotifierFrameLayout(this).apply {
-            setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite))
-        }
-        val actionBar = fragment.actionBar
-        fragmentRoot.addView(
-            actionBar,
-            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.TOP),
-        )
-        val listView = RecyclerListView(this).apply {
-            setPadding(0, AndroidUtilities.dp(8f), 0, AndroidUtilities.dp(24f))
-        }
-        fragmentRoot.addView(
-            listView,
-            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT, Gravity.TOP),
-        )
+        val fragmentRoot = fragment.createView(this) as SizeNotifierFrameLayout
+        val listView = reflectedField(fragment, "listView") as TopicSwipeReplyRecyclerView
         val anchor = View(this).apply {
             setBackgroundColor(0x2200aaff)
         }
@@ -175,12 +163,9 @@ class PhotoViewerDebugActivity : ComponentActivity() {
             FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT),
         )
         statusView.bringToFront()
-        fragment.setFragmentView(fragmentRoot)
         setReflectedField(fragment, "baseUrl", DEBUG_BASE_URL)
         setReflectedField(fragment, "validReactionIds", listOf("heart", "rocket", "eyes", "tada"))
         setReflectedField(fragment, "emojiCatalog", emptyMap<String, String>())
-        setReflectedField(fragment, "listView", listView)
-        setReflectedField(fragment, "listBottomBasePadding", AndroidUtilities.dp(24f))
 
         val post = Post(
             id = 1001L,
@@ -214,7 +199,7 @@ class PhotoViewerDebugActivity : ComponentActivity() {
             val replyClicked = replyItem?.performClick() == true
             anchor.postDelayed({
                 val replyPanel = reflectedField(fragment, "replyComposerPanel") as? View
-                val replyAttached = replyPanel?.parent === fragmentRoot
+                val replyAttached = replyPanel?.isAttachedToWindow == true
                 val bottomPaddingAfterReply = listView.paddingBottom
                 dismissReflectedReplyPanel(replyPanel)
                 invokeReflectedMethod(
@@ -241,7 +226,7 @@ class PhotoViewerDebugActivity : ComponentActivity() {
                 val checks = listOf(
                     "postPopupShown" to postPopupShownBeforeReply,
                     "postRail" to (postRailCount > 0),
-                    "postActions" to (postActionCount == 3),
+                    "postActions" to (postActionCount == 4),
                     "replyClicked" to replyClicked,
                     "replyAttached" to replyAttached,
                     "replyBottomPadding" to (bottomPaddingAfterReply >= AndroidUtilities.dp(24f)),

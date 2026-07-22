@@ -788,6 +788,32 @@
       "comment": "components",
       "entries": [
         {
+          "path": "org/telegram/ui/Components/SectionsScrollView.java",
+          "modified": false,
+          "port_mode": "exact",
+          "forced_exact": [
+            "measurement",
+            "drawing"
+          ],
+          "notes": "Copied byte-identical from pinned 12.9.0. Provides Telegram section grouping, rounded backgrounds, clipping, and scroll callbacks for settings-style surfaces."
+        },
+        {
+          "path": "org/telegram/ui/Components/EllipsizeSpanAnimator.java",
+          "modified": false,
+          "port_mode": "exact",
+          "forced_exact": [
+            "animation",
+            "drawing"
+          ],
+          "notes": "Copied byte-identical from pinned 12.9.0. Animates three-dot ellipses used by ActionBar title/status surfaces."
+        },
+        {
+          "path": "org/telegram/ui/Components/Reactions/HwEmojis.java",
+          "modified": false,
+          "port_mode": "exact",
+          "notes": "Copied byte-identical from pinned 12.9.0 as EllipsizeSpanAnimator's hardware-emoji gate dependency."
+        },
+        {
           "path": "org/telegram/ui/Components/Switch.java",
           "forced_exact": [
             "drawing",
@@ -1592,7 +1618,7 @@
           "path": "org/telegram/ui/ActionBar/ActionBar.java",
           "modified": true,
           "port_mode": "native",
-          "notes": "NativeDo ActionBar subset. The 9b50143d Chat glass setupGlass and dispatchDraw back/title/menu pill path is aligned to upstream for the current no-ChatAvatarContainer runtime branch, including 23dp radius, 6dp padding, 46dp surface height, glass menu margins, forced-menu width, and action-mode width interpolation. BottomSheetWithRecyclerListView support surface added: backButtonImageView is public, getTitleTextView(), and setTitleAnimated(...) delegates to setTitle because local ActionBar title animation is not ported. PhotoViewer overlay-title host wiring added: custom overlay children measure/layout across status+bar height so title/subtitle are not clipped."
+          "notes": "NativeDo ActionBar subset. The 12.9.0 title/subtitle/additional-subtitle, back-button state/content description, title overlay, animated title, search, touch interception, lifecycle, canOpenMenu, and ActionMode API shapes are restored. ActionMode keeps a reduced NativeDo animation for the current consumers while exposing the upstream alpha factor contract. NativeDo retains the 23dp glass setupGlass/dispatchDraw surfaces, resource provider, and no-ChatAvatarContainer host branch. PhotoViewer overlay-title wiring keeps custom overlay children inside the status+bar bounds."
         },
         {
           "path": "org/telegram/ui/ActionBar/ActionBarLayout.java",
@@ -1602,7 +1628,7 @@
           "forced_exact": [
             "animation"
           ],
-          "notes": "Single-arg NativeDo host constructor and no global-layout self-registration. Embeds the pinned ThemeAnimationSettings/StartColorsProvider color interpolation, ThemeDescription delegate capture, visible BottomSheet/AlertDialog description ownership, notification locker, instant path, 200ms animator, deferred-after-navigation state machine, and hidden-fragment clearViews/setParentLayout rebuild after a full-stack theme switch. MainActivity pins the root layout via LaunchActivity.setActionBarLayout(root) so sheet-owned layouts do not clobber the global provider; existing NativeDo navigation/edge-to-edge wiring remains host delta. Telegram navigation preview mode is not present in the NativeDo host, so its previous-fragment preview branch remains outside this port.",
+          "notes": "12.9.0 API-shaped NativeDo navigation host. Restores fragment-stack setters/removers/show/bring APIs, lifecycle/configuration/user-leave/low-memory forwarding, menu/key/touch dispatch, sheet/window/navigation-bar hooks, and two-argument theme rebuild while preserving predictive back, DrawerLayoutContainer, BottomSheetTabs, ActionBarSheet, and Discourse fragment stack wiring. Embeds the pinned ThemeAnimationSettings/StartColorsProvider interpolation, visible BottomSheet/AlertDialog ownership, notification locker, instant path, 200ms animator, deferred-after-navigation state machine, and hidden-fragment rebuild. Telegram preview, Stories, group calls, BackButtonMenu, and Telegram MainTabsActivity remain host-excluded.",
           "stuck_ref": "native_host_reference_only"
         },
         {
@@ -3047,7 +3073,7 @@
         {
           "path": "org/telegram/messenger/DispatchQueuePriority.java",
           "upstream": "org/telegram/DispatchQueuePriority.java",
-          "notes": "Runtime queue shim, not a port. It preserves only the API needed by NativeDo and routes all priorities to Utilities.globalQueue; upstream owns a real priority queue pool in the root org.telegram package."
+          "notes": "Runtime queue shim, not a port. It routes priorities to Utilities.globalQueue and exposes no-op pause/resume host APIs for pinned HwEmojis because the shared NativeDo queue cannot be suspended for one owner; upstream owns a real priority queue pool in the root org.telegram package."
         },
         {
           "path": "org/telegram/ui/Components/AnimatedSvgDrawable.java",

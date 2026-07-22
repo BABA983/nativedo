@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.graphics.Paint
 import android.os.Looper
+import android.view.KeyEvent
 import android.view.View
 import android.widget.TextView
 import com.google.common.truth.Truth.assertThat
@@ -110,6 +111,29 @@ class ActionBarLayoutThemeAnimationContractTest {
         assertThat(fragment.visibleDialog).isNull()
     }
 
+    @Test
+    fun activityLifecycleDoesNotResumeInitialFragmentTwice() {
+        assertThat(fragment.resumeCount).isEqualTo(1)
+
+        layout.onResume()
+        assertThat(fragment.resumeCount).isEqualTo(1)
+
+        layout.onPause()
+        assertThat(fragment.pauseCount).isEqualTo(1)
+        layout.onResume()
+        assertThat(fragment.resumeCount).isEqualTo(2)
+    }
+
+    @Test
+    fun preImeBackDoesNotPopNavigationStack() {
+        assertThat(layout.addFragmentToStack(ThemeFragment())).isTrue()
+
+        val handled = layout.dispatchKeyEventPreIme(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BACK))
+
+        assertThat(handled).isFalse()
+        assertThat(layout.fragmentStack).hasSize(2)
+    }
+
     private fun seedAttheme(assetName: String) {
         val candidates = listOf(
             File("telegram/src/main/assets/$assetName"),
@@ -123,6 +147,16 @@ class ActionBarLayoutThemeAnimationContractTest {
 
     private class ThemeFragment : BaseFragment() {
         lateinit var text: TextView
+        var resumeCount = 0
+        var pauseCount = 0
+
+        override fun onResume() {
+            resumeCount++
+        }
+
+        override fun onPause() {
+            pauseCount++
+        }
 
         override fun setParentLayout(layout: INavigationLayout?) {
             parentLayout = layout
