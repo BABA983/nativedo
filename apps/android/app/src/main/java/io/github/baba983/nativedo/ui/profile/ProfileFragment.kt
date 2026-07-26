@@ -22,15 +22,12 @@
  */
 package io.github.baba983.nativedo.ui.profile
 
-import android.app.Dialog
 import android.animation.ValueAnimator
 import android.content.Context
 import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.Typeface
-import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.SystemClock
@@ -43,13 +40,10 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.VelocityTracker
-import android.view.Window
-import android.view.WindowManager
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
-import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.graphics.ColorUtils
 import androidx.core.view.NestedScrollingParent3
@@ -2221,7 +2215,7 @@ class ProfileFragment : BaseFragment(), MainTabsActivity.TabFragmentDelegate {
 
     private fun showLogoutConfirm() {
         val parentActivity = getParentActivity() ?: return
-        AlertDialog.Builder(parentActivity, getResourceProvider())
+        val dialog = AlertDialog.Builder(parentActivity, getResourceProvider())
             .setTitle(parentActivity.getString(R.string.profile_logout_confirm_title))
             .setMessage(parentActivity.getString(R.string.profile_logout_confirm_message))
             .setPositiveButton(parentActivity.getString(R.string.profile_logout_action)) { _, _ ->
@@ -2231,7 +2225,8 @@ class ProfileFragment : BaseFragment(), MainTabsActivity.TabFragmentDelegate {
             }
             .setNegativeButton(parentActivity.getString(R.string.action_cancel), null)
             .makeRed(AlertDialog.BUTTON_POSITIVE)
-            .show()
+            .create()
+        showDialog(dialog)
     }
 
     // --- Edge-to-edge support (mirrors ProfileActivity) ---
@@ -2819,7 +2814,65 @@ class ProfileFragment : BaseFragment(), MainTabsActivity.TabFragmentDelegate {
         onSubmit: (String) -> Unit,
     ) {
         val context = getContext() ?: return
-        UrlInputDialog(context, title, message, hint, initialText, actionText, invalidText, parser, onSubmit).show()
+        val input = EditTextBoldCursor(context).apply {
+            this.hint = hint
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            imeOptions = EditorInfo.IME_ACTION_GO
+            setSingleLine(true)
+            setTextColor(Theme.getColor(Theme.key_dialogTextBlack, getResourceProvider()))
+            setHintTextColor(
+                ColorUtils.setAlphaComponent(
+                    Theme.getColor(Theme.key_dialogIcon, getResourceProvider()),
+                    180,
+                ),
+            )
+            setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16f)
+            background = inputBackground()
+            setPadding(AndroidUtilities.dp(14f), 0, AndroidUtilities.dp(14f), 0)
+            if (initialText.isNotEmpty()) {
+                setText(initialText)
+                setSelection(initialText.length)
+            }
+        }
+        val inputContainer = FrameLayout(context).apply {
+            setPadding(AndroidUtilities.dp(24f), 0, AndroidUtilities.dp(24f), AndroidUtilities.dp(4f))
+            addView(input, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, 50, Gravity.TOP))
+        }
+        fun submit(currentDialog: android.content.DialogInterface) {
+            val parsed = parser(input.text?.toString().orEmpty())
+            if (parsed == null) {
+                input.error = invalidText
+            } else {
+                currentDialog.dismiss()
+                onSubmit(parsed)
+            }
+        }
+        val dialog = AlertDialog.Builder(context, getResourceProvider())
+            .setTitle(title)
+            .setMessage(message)
+            .setView(inputContainer)
+            .setNegativeButton(context.getString(android.R.string.cancel)) { currentDialog, _ ->
+                currentDialog.dismiss()
+            }
+            .setPositiveButton(actionText) { currentDialog, _ ->
+                submit(currentDialog)
+            }
+            .create()
+        dialog.setDismissDialogByButtons(false)
+        input.setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_GO) {
+                submit(dialog)
+                true
+            } else {
+                false
+            }
+        }
+        showDialog(dialog)
+        input.post {
+            input.requestFocus()
+            context.getSystemService(InputMethodManager::class.java)
+                ?.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
+        }
     }
 
     private fun normalizeHttpUrl(value: String): String? {
@@ -2857,149 +2910,19 @@ class ProfileFragment : BaseFragment(), MainTabsActivity.TabFragmentDelegate {
         Browser.openUrl(context, url)
     }
 
-    private inner class UrlInputDialog(
-        context: Context,
-        private val titleText: String,
-        private val messageText: String,
-        private val hintText: String,
-        private val initialText: String,
-        private val actionText: String,
-        private val invalidText: String,
-        private val parser: (String) -> String?,
-        private val onSubmit: (String) -> Unit,
-    ) : Dialog(context) {
-        private val input = EditTextBoldCursor(context)
-
-        override fun show() {
-            requestWindowFeature(Window.FEATURE_NO_TITLE)
-            setContentView(createContentView())
-            window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
-            window?.setDimAmount(0.32f)
-            window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-            super.show()
-            window?.setLayout(
-                context.resources.displayMetrics.widthPixels - AndroidUtilities.dp(48f),
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            )
-            input.post {
-                input.requestFocus()
-                context.getSystemService(InputMethodManager::class.java)?.showSoftInput(input, InputMethodManager.SHOW_IMPLICIT)
-            }
-        }
-
-        private fun createContentView(): View {
-            val content = LinearLayout(context)
-            content.orientation = LinearLayout.VERTICAL
-            content.background = dialogBackground()
-            content.setPadding(
-                AndroidUtilities.dp(22f),
-                AndroidUtilities.dp(20f),
-                AndroidUtilities.dp(22f),
-                AndroidUtilities.dp(10f),
-            )
-
-            val title = createText(context, 20f, true)
-            title.text = titleText
-
-            val message = createText(context, 14f)
-            message.text = messageText
-            message.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText))
-
-            input.hint = hintText
-            input.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-            input.imeOptions = EditorInfo.IME_ACTION_GO
-            input.setSingleLine(true)
-            input.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText))
-            input.setHintTextColor(ColorUtils.setAlphaComponent(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText), 180))
-            input.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-            input.background = inputBackground()
-            input.setPadding(AndroidUtilities.dp(14f), 0, AndroidUtilities.dp(14f), 0)
-            if (initialText.isNotEmpty()) {
-                input.setText(initialText)
-                input.setSelection(initialText.length)
-            }
-
-            fun submit() {
-                val parsed = parser(input.text?.toString().orEmpty())
-                if (parsed == null) {
-                    input.error = invalidText
-                    return
-                }
-                dismiss()
-                onSubmit(parsed)
-            }
-            input.setOnEditorActionListener { _, actionId, _ ->
-                if (actionId == EditorInfo.IME_ACTION_GO) {
-                    submit()
-                    true
-                } else {
-                    false
-                }
-            }
-
-            val titleLp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            content.addView(title, titleLp)
-
-            val messageLp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT)
-            (messageLp as ViewGroup.MarginLayoutParams).topMargin = AndroidUtilities.dp(10f)
-            content.addView(message, messageLp)
-
-            val inputLp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(50f))
-            (inputLp as ViewGroup.MarginLayoutParams).topMargin = AndroidUtilities.dp(18f)
-            content.addView(input, inputLp)
-
-            val buttonsRow = LinearLayout(context)
-            buttonsRow.gravity = Gravity.END or Gravity.CENTER_VERTICAL
-            buttonsRow.addView(createButton(context, context.getString(android.R.string.cancel), false) { dismiss() })
-            buttonsRow.addView(createButton(context, actionText, true) { submit() })
-            val buttonsLp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(56f))
-            (buttonsLp as ViewGroup.MarginLayoutParams).topMargin = AndroidUtilities.dp(8f)
-            content.addView(buttonsRow, buttonsLp)
-
-            return content
-        }
-    }
-
-    private fun dialogBackground(): GradientDrawable = GradientDrawable().apply {
-        color = android.content.res.ColorStateList.valueOf(Theme.getColor(Theme.key_windowBackgroundWhite))
-        cornerRadius = AndroidUtilities.dpf2(14f)
-    }
-
     private fun inputBackground(): GradientDrawable {
         val d = GradientDrawable()
-        d.setColor(Theme.getColor(Theme.key_windowBackgroundGray))
+        d.setColor(Theme.getColor(Theme.key_dialogBackgroundGray, getResourceProvider()))
         d.cornerRadius = AndroidUtilities.dpf2(10f)
         val strokeWidth = AndroidUtilities.dp(1f)
-        val strokeColor = ColorUtils.setAlphaComponent(Theme.getColor(Theme.key_divider), 210)
+        val strokeColor = ColorUtils.setAlphaComponent(
+            Theme.getColor(Theme.key_dialogIcon, getResourceProvider()),
+            96,
+        )
         d.setStroke(strokeWidth, strokeColor)
         return d
     }
 
-    private fun createText(context: Context, sizeSp: Float, bold: Boolean = false): TextView = TextView(context).apply {
-        setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
-        setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText))
-        if (bold) typeface = Typeface.DEFAULT_BOLD
-    }
-
-    private fun createButton(context: Context, text: String, primary: Boolean, onClick: () -> Unit): TextView {
-        val primaryColor = Theme.getColor(Theme.key_windowBackgroundWhiteBlueText)
-        val btn = TextView(context)
-        btn.text = text.uppercase()
-        btn.gravity = Gravity.CENTER
-        btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
-        btn.typeface = Typeface.DEFAULT_BOLD
-        btn.setTextColor(if (primary) primaryColor else Theme.getColor(Theme.key_windowBackgroundWhiteGrayText))
-        val btnView = btn as View
-        btnView.minimumWidth = AndroidUtilities.dp(64f)
-        btnView.minimumHeight = AndroidUtilities.dp(40f)
-        btnView.setPadding(AndroidUtilities.dp(12f), 0, AndroidUtilities.dp(12f), 0)
-        btn.background = Theme.createSelectorDrawable(
-            ColorUtils.setAlphaComponent(primaryColor, if (primary) 28 else 18),
-            Theme.RIPPLE_MASK_ALL,
-        )
-        btn.setOnClickListener { onClick() }
-        return btn
-    }
 }
 
 internal enum class ProfileHeaderReleaseTarget {

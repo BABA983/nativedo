@@ -2609,7 +2609,7 @@
           "path": "org/telegram/ui/ActionBar/AlertDialog.java",
           "modified": true,
           "port_mode": "native",
-          "notes": "NativeDo AppCompat-backed AlertDialog API shim. Preserves deferred Builder configuration, button dismissal policy, loading/spinner surface, delayed show/dismiss, and the upstream nullable getThemeDescriptions base contract used by ActionBarLayout; Telegram's custom dialog renderer remains omitted."
+          "notes": "NativeDo native port of Telegram AlertDialog. Uses the upstream single TransparentDialog window lifecycle and applies content plus final geometry in onCreate before first attach; the message surface follows upstream dialog background, width, title/message typography, item rows, custom-view focus handling, 52dp button rail with 40dp actions, theme keys, and RLottie top-animation contract. Preserves loading/spinner, delayed show/dismiss, button dismissal policy, and the nullable getThemeDescriptions base contract used by ActionBarLayout; upstream blur, stars, spoiler/effects text, line progress, and secondary button variants remain omitted."
         },
         {
           "path": "org/telegram/ui/ActionBar/BottomSheetTabDialog.java",
@@ -3556,6 +3556,16 @@
       "local_glob": "apps/android/telegram/src/main/res/values",
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
       "notes": "Subset of upstream ids.xml containing IDs referenced by local vendored code: ActionBarPopupWindow tag IDs (width_tag, object_tag, fit_width_tag) plus TextSelectionHelper action menu IDs (menu_quote, menu_translate). Other upstream chat/edit/action IDs remain omitted until referenced."
+    },
+    {
+      "kind": "values",
+      "files": [
+        "styles.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/values",
+      "local_glob": "apps/android/telegram/src/main/res/values",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "notes": "NativeDo subset of upstream styles.xml. TransparentDialog keeps Telegram's Theme.Dialog parent plus transparent, floating, translucent, no-title window contract so AlertDialog is measured and centered before first attach; unrelated application/activity themes remain omitted."
     },
     {
       "_comment": "Pinned Theme.java direct drawable closure added with the full Theme engine baseline.",
