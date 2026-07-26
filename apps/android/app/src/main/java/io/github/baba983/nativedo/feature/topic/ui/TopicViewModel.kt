@@ -308,6 +308,8 @@ class TopicViewModel(
                             endReached = endReached,
                             errorMessage = null,
                         ),
+                        replyPreviewsBySourcePostId = _uiState.value.replyPreviewsBySourcePostId +
+                            (sheet.sourcePost.id to merged),
                     )
                 },
                 onFailure = { error ->

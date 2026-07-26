@@ -39,6 +39,7 @@ data class TopicUiState(
     val pollVoters: TopicPollVotersUiState = TopicPollVotersUiState(),
     val postRepliesSheet: TopicPostRepliesSheetUiState? = null,
     val postReplies: TopicPostRepliesUiState = TopicPostRepliesUiState(),
+    val replyPreviewsBySourcePostId: Map<Long, List<Post>> = emptyMap(),
     val pollActionFailure: PollActionFailure? = null,
     val jumpEvent: TopicJumpEvent? = null,
     val jumpHighlight: TopicJumpHighlight? = null,

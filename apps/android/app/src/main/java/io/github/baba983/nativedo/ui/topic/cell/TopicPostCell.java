@@ -132,6 +132,7 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
     private final TextPaint replyTextPaint = new TextPaint(TextPaint.ANTI_ALIAS_FLAG);
     private final Paint highlightPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint replyAvatarOverlapPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint replyAvatarPlaceholderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint avatarFlairBadgePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint avatarFlairBadgeStrokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint avatarFlairIconPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
@@ -503,6 +504,7 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
         replyTextPaint.setColor(Theme.getColor(Theme.key_chat_inTimeText));
         highlightPaint.setColor(Theme.getColor(Theme.key_chat_inReplyLine));
         replyAvatarOverlapPaint.setColor(Theme.getColor(Theme.key_chat_inBubble));
+        replyAvatarPlaceholderPaint.setColor(Theme.multAlpha(Theme.getColor(Theme.key_chat_inTimeText), 0.16f));
         avatarFlairBadgeStrokePaint.setColor(Theme.multAlpha(Theme.getColor(Theme.key_chat_messageTextIn), 0.12f));
         replyFooterSelector = Theme.createSelectorDrawable(Theme.multAlpha(Theme.getColor(Theme.key_chat_inTimeText), 0.12f), Theme.RIPPLE_MASK_ROUNDRECT_6DP, replyFooterHeight / 2);
         if (bodyContext != null) {
@@ -1597,7 +1599,8 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
     }
 
     private void drawReplyFooter(Canvas canvas) {
-        int avatarsWidth = replyAvatarsWidth(replyAvatars.size());
+        int slotCount = replyAvatarSlotCount(replyCount, recentReplyParticipants.size());
+        int leadingWidth = replyAvatarsWidth(slotCount);
         String label = replyFooterLabel();
         updateReplyFooterSelectorRect();
         float scale = replyBounce.getScale(0.0125f);
@@ -1613,19 +1616,25 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
             replyFooterSelector.draw(canvas);
         }
         int contentLeft = replyContentLeftPx();
-        for (int i = replyAvatars.size() - 1; i >= 0; i--) {
-            ReplyAvatar avatar = replyAvatars.get(i);
+        float avatarCenterY = replyFooterHeight / 2f;
+        for (int i = slotCount - 1; i >= 0; i--) {
             int left = contentLeft + replyAvatarOffset(i);
-            avatar.receiver.setImageCoords(left, (replyFooterHeight - replyAvatarSize) / 2f, replyAvatarSize, replyAvatarSize);
-            if (i != replyAvatars.size() - 1) {
-                canvas.drawCircle(avatar.receiver.getCenterX(), avatar.receiver.getCenterY(), replyAvatarOverlapMaskRadiusPx(), replyAvatarOverlapPaint);
+            float centerX = left + replyAvatarSize / 2f;
+            if (i != slotCount - 1) {
+                canvas.drawCircle(centerX, avatarCenterY, replyAvatarOverlapMaskRadiusPx(), replyAvatarOverlapPaint);
             }
-            avatar.receiver.draw(canvas);
+            if (i < replyAvatars.size()) {
+                ReplyAvatar avatar = replyAvatars.get(i);
+                avatar.receiver.setImageCoords(left, (replyFooterHeight - replyAvatarSize) / 2f, replyAvatarSize, replyAvatarSize);
+                avatar.receiver.draw(canvas);
+            } else {
+                canvas.drawCircle(centerX, avatarCenterY, replyAvatarSize / 2f, replyAvatarPlaceholderPaint);
+            }
         }
         replyTextPaint.setTextSize(AndroidUtilities.dp(13f));
         replyTextPaint.setColor(replyColor);
         float textY = replyFooterHeight / 2f - (replyTextPaint.ascent() + replyTextPaint.descent()) / 2f;
-        canvas.drawText(label, contentLeft + avatarsWidth + replyTextGapPx(), textY, replyTextPaint);
+        canvas.drawText(label, contentLeft + leadingWidth + replyTextGapPx(), textY, replyTextPaint);
         if (restoreCount >= 0) {
             canvas.restoreToCount(restoreCount);
         }
@@ -1713,8 +1722,8 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
     }
 
     private void updateReplyFooterSelectorRect() {
-        int avatarsWidth = replyAvatarsWidth(replyAvatars.size());
-        float selectorRight = Math.min(replyContentLeftPx() + avatarsWidth + replyTextGapPx() + replyTextPaint.measureText(replyFooterLabel()) + replySelectorRightPaddingPx(), chromeWidth);
+        int slotCount = replyAvatarSlotCount(replyCount, recentReplyParticipants.size());
+        float selectorRight = Math.min(replyContentLeftPx() + replyAvatarsWidth(slotCount) + replyTextGapPx() + replyTextPaint.measureText(replyFooterLabel()) + replySelectorRightPaddingPx(), chromeWidth);
         replyFooterSelectorRect.set(0, 0, selectorRight, replyFooterHeight);
     }
 
@@ -2269,6 +2278,10 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
             return 0;
         }
         return replyAvatarLeadingOffsetPx() + replyAvatarSizePx() + Math.max(avatarCount - 1, 0) * replyAvatarStepPx();
+    }
+
+    static int replyAvatarSlotCount(int replyCount, int participantCount) {
+        return Math.min(3, Math.max(0, Math.max(replyCount, participantCount)));
     }
 
     static int replyContentLeftPx() {

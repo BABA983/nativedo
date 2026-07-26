@@ -55,7 +55,7 @@ internal class DiscourseUserCellScreenshotTest {
         users: List<UserFixture>,
     ): RecyclerListView {
         val rowHeight = AndroidUtilities.dp(DiscourseUserCell.ITEM_HEIGHT_DP.toFloat())
-        val viewportHeight = StableUserListSheetSizePolicy(rowHeight).minimumHeight()
+        val viewportHeight = StableUserListSheetSizePolicy(rowHeight).rowsHeight()
         return RecyclerListView(context).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,

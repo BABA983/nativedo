@@ -2,13 +2,13 @@ package io.github.baba983.nativedo.ui.topic
 
 internal class StableUserListSheetSizePolicy(
     private val rowHeightPx: Int,
-    private val minimumVisibleRows: Int = DEFAULT_MINIMUM_VISIBLE_ROWS,
-    private val maximumSizingRows: Int = DEFAULT_MAXIMUM_SIZING_ROWS,
+    private val fallbackVisibleRows: Int = DEFAULT_FALLBACK_VISIBLE_ROWS,
+    private val maximumVisibleRows: Int = DEFAULT_MAXIMUM_VISIBLE_ROWS,
 ) {
     init {
         require(rowHeightPx > 0)
-        require(minimumVisibleRows > 0)
-        require(maximumSizingRows >= minimumVisibleRows)
+        require(fallbackVisibleRows > 0)
+        require(maximumVisibleRows > 0)
     }
 
     fun rowsHeight(userCount: Int? = null): Int {
@@ -19,9 +19,7 @@ internal class StableUserListSheetSizePolicy(
     }
 
     fun minimumHeight(): Int {
-        return (minimumVisibleRows.toLong() * rowHeightPx)
-            .coerceAtMost(MAX_SAFE_CONTENT_HEIGHT_PX.toLong())
-            .toInt()
+        return rowHeightPx
     }
 
     fun skeletonRows(predictedCount: Int?): Int {
@@ -29,13 +27,14 @@ internal class StableUserListSheetSizePolicy(
     }
 
     private fun normalizedRows(userCount: Int?): Int {
-        return maxOf(minimumVisibleRows, userCount?.coerceAtLeast(0) ?: 0)
-            .coerceAtMost(maximumSizingRows)
+        return (userCount ?: fallbackVisibleRows)
+            .coerceAtLeast(1)
+            .coerceAtMost(maximumVisibleRows)
     }
 
     private companion object {
-        private const val DEFAULT_MINIMUM_VISIBLE_ROWS = 6
-        private const val DEFAULT_MAXIMUM_SIZING_ROWS = DEFAULT_MINIMUM_VISIBLE_ROWS
+        private const val DEFAULT_FALLBACK_VISIBLE_ROWS = 6
+        private const val DEFAULT_MAXIMUM_VISIBLE_ROWS = 6
         private const val MAX_SAFE_CONTENT_HEIGHT_PX = Int.MAX_VALUE / 4
     }
 }

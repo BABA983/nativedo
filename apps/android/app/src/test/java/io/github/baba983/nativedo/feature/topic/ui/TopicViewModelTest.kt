@@ -336,6 +336,9 @@ class TopicViewModelTest {
 
         assertThat(viewModel.uiState.value.postRepliesSheet?.totalCount).isEqualTo(2)
         assertThat(viewModel.uiState.value.postReplies.posts.map { it.id }).containsExactly(1002L, 1003L).inOrder()
+        assertThat(viewModel.uiState.value.replyPreviewsBySourcePostId[1001L]?.map { it.id })
+            .containsExactly(1002L, 1003L)
+            .inOrder()
         assertThat(viewModel.uiState.value.postReplies.endReached).isTrue()
         assertThat(repository.postRepliesRequests).containsExactly(1001L to 1)
     }

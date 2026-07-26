@@ -10,6 +10,7 @@ import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.PostReaction
 import io.github.baba983.nativedo.core.model.PostReactionUser
 import io.github.baba983.nativedo.core.model.PostReactionUsersGroup
+import io.github.baba983.nativedo.core.model.TopicSummary
 import io.github.baba983.nativedo.feature.topic.ui.TOPIC_REACTION_ALL_FILTER_ID
 import org.junit.Before
 import org.junit.Test
@@ -114,6 +115,8 @@ class TopicDetailFragmentTest {
 
         assertThat(topicReplyFooterCount(post, loadedPreviewCount = 0)).isEqualTo(80)
         assertThat(topicReplyFooterCount(post.copy(replyCount = 0), loadedPreviewCount = 3)).isEqualTo(3)
+        assertThat(topicReplySkeletonRows(totalCount = 1)).isEqualTo(1)
+        assertThat(topicReplySkeletonRows(totalCount = 80)).isEqualTo(6)
     }
 
     @Test
@@ -555,6 +558,19 @@ class TopicDetailFragmentTest {
                 fallbackTitle = "Topic",
             ),
         ).isEqualTo("baba")
+    }
+
+    @Test
+    fun initialTopicIdentityUsesListAvatarWithSharedCacheKey() {
+        val initialIdentity = TopicSummary(
+            id = 1,
+            title = "Topic",
+            authorUsername = "initial-author",
+            authorAvatarTemplate = "/user_avatar/linux.do/initial/{size}/1.png",
+        ).toTopicInitialIdentity()
+        assertThat(topicDetailIdentityDisplayName(null, "Topic", initialIdentity)).isEqualTo("initial-author")
+        assertThat(topicDetailIdentityAvatarUrl("https://linux.do", null, initialIdentity))
+            .isEqualTo("https://linux.do/user_avatar/linux.do/initial/96/1.png")
     }
 
     @Test

@@ -174,11 +174,24 @@ import kotlin.math.roundToInt
 
 private const val TOPIC_SEARCH_HIGHLIGHT_PAYLOAD = "topic_search_highlight"
 
+data class TopicInitialIdentity(
+    val username: String,
+    val avatarTemplate: String,
+    val animatedAvatarUrl: String,
+)
+
+internal fun TopicSummary.toTopicInitialIdentity(): TopicInitialIdentity = TopicInitialIdentity(
+    username = authorUsername,
+    avatarTemplate = authorAvatarTemplate,
+    animatedAvatarUrl = authorAnimatedAvatarUrl,
+)
+
 class TopicDetailFragment @JvmOverloads constructor(
     private val topicId: Long,
     private val initialTitle: String? = null,
     private val initialPostNumber: Int? = null,
     private val initialPostId: Long? = null,
+    private val initialIdentity: TopicInitialIdentity? = null,
 ) : BaseFragment() {
     private lateinit var viewModel: TopicViewModel
     private lateinit var adapter: TopicDetailAdapter
@@ -1528,11 +1541,13 @@ class TopicDetailFragment @JvmOverloads constructor(
     private fun createTopicIdentityContainer(context: Context) {
         if (topicIdentityContainer != null) return
         val container = TopicIdentityContainer(context).apply {
+            val initialDisplayName = initialIdentity?.username?.takeIf { it.isNotBlank() }
+                ?: topicTitle.ifBlank { initialTitle.orEmpty() }
             bind(
                 title = topicTitle.ifBlank { initialTitle.orEmpty() },
                 subtitle = "",
-                avatarUrl = "",
-                displayName = topicTitle.ifBlank { initialTitle.orEmpty() },
+                avatarUrl = topicDetailIdentityAvatarUrl(baseUrl, null, initialIdentity),
+                displayName = initialDisplayName,
             )
             // Always-on Chat-style identity capsule (not scroll-collapsed).
             setIdentityVisible(true)
@@ -1575,15 +1590,22 @@ class TopicDetailFragment @JvmOverloads constructor(
             avatarUrl = topicDetailIdentityAvatarUrl(
                 baseUrl = baseUrl,
                 firstPost = firstPost,
+                initialIdentity = initialIdentity,
             ),
-            displayName = topicDetailIdentityDisplayName(firstPost, state.title.ifBlank { topicTitle }),
+            displayName = topicDetailIdentityDisplayName(
+                firstPost,
+                state.title.ifBlank { topicTitle },
+                initialIdentity,
+            ),
         )
         updateTopicIdentityVisibility()
     }
 
     private fun openTopicIdentity() {
         val activity = parentActivity ?: return
-        val username = latestTopicState.posts.firstOrNull()?.authorUsername?.trim().orEmpty()
+        val username = latestTopicState.posts.firstOrNull()?.authorUsername?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: initialIdentity?.username?.trim().orEmpty()
         if (username.isBlank()) {
             showTopicInfoSheet()
             return
@@ -2925,7 +2947,10 @@ class TopicDetailFragment @JvmOverloads constructor(
             topicPostDateEntries(state.posts).forEach { entry ->
                 val post = entry.post
                 entry.header?.let { date -> rows += TopicDetailRow.DateSeparator(date) }
-                val replies = post.postNumber?.let { repliesByNumber[it] }.orEmpty()
+                val replies = (
+                    post.postNumber?.let { repliesByNumber[it] }.orEmpty() +
+                        state.replyPreviewsBySourcePostId[post.id].orEmpty()
+                    ).distinctBy(Post::id)
                 rows += TopicDetailRow.PostRow(
                     post = post,
                     date = entry.date,
@@ -3925,45 +3950,23 @@ class TopicDetailFragment @JvmOverloads constructor(
             }
         }
 
-        private class ReactionUsersSkeletonView(context: Context) : View(context) {
-            private val rect = RectF()
-            private val clipRect = Rect()
-            private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-            private val rowHeight = AndroidUtilities.dp(DiscourseUserCell.ITEM_HEIGHT_DP.toFloat())
-            private var rowCount = 5
-            private val avatarSize = AndroidUtilities.dp(36f)
-            private val horizontalInset = AndroidUtilities.dp(8f)
+        private class ReactionUsersSkeletonView(context: Context) : FlickerLoadingView(context) {
+            private var rowCount = 1
+
+            init {
+                setIsSingleCell(true)
+                setIgnoreHeightCheck(true)
+                setViewType(FlickerLoadingView.REACTED_TYPE)
+                setColors(Theme.key_actionBarDefaultSubmenuBackground, Theme.key_listSelector, -1)
+            }
 
             fun setRowCount(rowCount: Int) {
                 val normalized = rowCount.coerceAtLeast(1)
                 if (this.rowCount == normalized) return
                 this.rowCount = normalized
+                setItemsCount(normalized)
                 requestLayout()
                 invalidate()
-            }
-
-            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-                setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), rowHeight * rowCount)
-            }
-
-            override fun onDraw(canvas: Canvas) {
-                paint.color = Theme.multAlpha(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText), 0.12f)
-                canvas.getClipBounds(clipRect)
-                val firstRow = (clipRect.top / rowHeight).coerceIn(0, rowCount)
-                val lastRow = ((clipRect.bottom + rowHeight - 1) / rowHeight).coerceIn(firstRow, rowCount)
-                for (index in firstRow until lastRow) {
-                    val top = index * rowHeight
-                    val centerY = top + rowHeight / 2f
-                    canvas.drawCircle(horizontalInset + avatarSize / 2f, centerY, avatarSize / 2f, paint)
-                    val textLeft = AndroidUtilities.dp(58f)
-                    drawRound(canvas, textLeft, top + AndroidUtilities.dp(20f), width - AndroidUtilities.dp(53f), top + AndroidUtilities.dp(28f), 8f)
-                }
-            }
-
-            private fun drawRound(canvas: Canvas, left: Int, top: Int, right: Int, bottom: Int, radiusDp: Float) {
-                rect.set(left.toFloat(), top.toFloat(), right.toFloat(), bottom.toFloat())
-                val radius = AndroidUtilities.dp(radiusDp).toFloat()
-                canvas.drawRoundRect(rect, radius, radius, paint)
             }
         }
 
@@ -4365,7 +4368,7 @@ class TopicDetailFragment @JvmOverloads constructor(
         private sealed interface Row {
             data class Header(val sourcePost: Post, val count: Int) : Row
             data class Reply(val item: TopicReplySheetItem, val divider: Boolean) : Row
-            data object Loading : Row
+            data class Loading(val rowCount: Int) : Row
             data object LoadingMore : Row
             data class State(val message: String, val onRetry: (() -> Unit)?) : Row
         }
@@ -4390,7 +4393,7 @@ class TopicDetailFragment @JvmOverloads constructor(
                 rows = buildList {
                     add(Row.Header(sourcePost, totalCount))
                     if (state.isLoading) {
-                        add(Row.Loading)
+                        add(Row.Loading(topicReplySkeletonRows(totalCount)))
                         return@buildList
                     }
                     if (replies.isEmpty()) {
@@ -4418,7 +4421,8 @@ class TopicDetailFragment @JvmOverloads constructor(
                 return when (rows[position]) {
                     is Row.Header -> SHEET_ROW_REPLY_HEADER
                     is Row.Reply -> SHEET_ROW_REPLY
-                    Row.Loading, Row.LoadingMore -> SHEET_ROW_LOADING
+                    is Row.Loading -> SHEET_ROW_LOADING
+                    Row.LoadingMore -> SHEET_ROW_LOADING_MORE
                     is Row.State -> SHEET_ROW_EMPTY
                 }
             }
@@ -4427,7 +4431,8 @@ class TopicDetailFragment @JvmOverloads constructor(
                 val view = when (viewType) {
                     SHEET_ROW_REPLY_HEADER -> ReplySheetHeaderView(parent.context)
                     SHEET_ROW_REPLY -> ReplySheetRowView(parent.context, baseUrl)
-                    SHEET_ROW_LOADING -> LoadingCell(parent.context)
+                    SHEET_ROW_LOADING -> ReplyRowsSkeletonView(parent.context)
+                    SHEET_ROW_LOADING_MORE -> LoadingCell(parent.context)
                     else -> TopicFooterCell(parent.context)
                 }
                 return RecyclerListView.Holder(view)
@@ -4440,12 +4445,89 @@ class TopicDetailFragment @JvmOverloads constructor(
                         (holder.itemView as ReplySheetRowView).bind(row.item, row.divider)
                         holder.itemView.setOnClickListener { onReplySelected(row.item) }
                     }
-                    Row.Loading, Row.LoadingMore -> Unit
+                    is Row.Loading -> (holder.itemView as ReplyRowsSkeletonView).setRowCount(row.rowCount)
+                    Row.LoadingMore -> Unit
                     is Row.State -> (holder.itemView as TopicFooterCell).bind(
                         row.message,
                         row.onRetry?.let { retry -> Runnable(retry) },
                     )
                 }
+            }
+        }
+
+        private class ReplyRowsSkeletonView(context: Context) : FlickerLoadingView(context) {
+            private val rect = RectF()
+            private val rowHeight = AndroidUtilities.dp(REPLY_SKELETON_ROW_HEIGHT_DP)
+            private var rowCount = 1
+
+            init {
+                setColors(Theme.key_actionBarDefaultSubmenuBackground, Theme.key_listSelector, -1)
+            }
+
+            fun setRowCount(rowCount: Int) {
+                val normalized = rowCount.coerceAtLeast(1)
+                if (this.rowCount == normalized) return
+                this.rowCount = normalized
+                requestLayout()
+                invalidate()
+            }
+
+            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), rowHeight * rowCount)
+            }
+
+            override fun onDraw(canvas: Canvas) {
+                updateColors()
+                updateGradient()
+                val paint = getPaint()
+                repeat(rowCount) { index ->
+                    val top = index * rowHeight
+                    canvas.drawCircle(
+                        AndroidUtilities.dp(36f).toFloat(),
+                        (top + AndroidUtilities.dp(26f)).toFloat(),
+                        AndroidUtilities.dp(18f).toFloat(),
+                        paint,
+                    )
+                    drawRound(
+                        canvas,
+                        paint,
+                        AndroidUtilities.dp(66f),
+                        top + AndroidUtilities.dp(13f),
+                        width - AndroidUtilities.dp(72f),
+                        top + AndroidUtilities.dp(21f),
+                    )
+                    drawRound(
+                        canvas,
+                        paint,
+                        AndroidUtilities.dp(66f),
+                        top + AndroidUtilities.dp(31f),
+                        AndroidUtilities.dp(160f),
+                        top + AndroidUtilities.dp(37f),
+                    )
+                    drawRound(
+                        canvas,
+                        paint,
+                        AndroidUtilities.dp(66f),
+                        top + AndroidUtilities.dp(54f),
+                        width - AndroidUtilities.dp(24f),
+                        top + AndroidUtilities.dp(62f),
+                    )
+                    drawRound(
+                        canvas,
+                        paint,
+                        AndroidUtilities.dp(66f),
+                        top + AndroidUtilities.dp(70f),
+                        width - AndroidUtilities.dp(76f),
+                        top + AndroidUtilities.dp(78f),
+                    )
+                }
+                invalidate()
+            }
+
+            private fun drawRound(canvas: Canvas, paint: Paint, left: Int, top: Int, right: Int, bottom: Int) {
+                rect.set(left.toFloat(), top.toFloat(), right.coerceAtLeast(left).toFloat(), bottom.toFloat())
+                val radius = AndroidUtilities.dp(4f).toFloat()
+                canvas.drawRoundRect(rect, radius, radius, paint)
             }
         }
 
@@ -7100,6 +7182,7 @@ class TopicDetailFragment @JvmOverloads constructor(
         private const val SHEET_ROW_USER = 13
         private const val SHEET_ROW_REPLY_HEADER = 20
         private const val SHEET_ROW_REPLY = 21
+        private const val SHEET_ROW_LOADING_MORE = 22
         private const val SHEET_ROW_REACTION_PICKER_HEADER = 30
         private const val SHEET_ROW_REACTION_PICKER_ITEM = 31
         private const val REACTION_PICKER_RAIL_ENTER_DURATION_MS = 250L
@@ -7604,6 +7687,10 @@ private const val TOPIC_MENU_OTHER = 2
 private const val TOPIC_MENU_SEARCH = 3
 private const val TOPIC_MENU_REFRESH = 4
 private const val TOPIC_IDENTITY_AVATAR_SIZE_DP = 42
+private const val TOPIC_AVATAR_REQUEST_SIZE = 96
+private const val TOPIC_AVATAR_FILTER_SIZE = 50
+private const val REPLY_SKELETON_ROW_HEIGHT_DP = 88f
+private const val REPLY_SKELETON_MAX_VISIBLE_ROWS = 6
 /** ChatActivity avatarContainer left margin (back button zone). */
 private const val TOPIC_IDENTITY_HOST_LEFT_GUTTER_DP = 53f
 /**
@@ -10137,6 +10224,9 @@ internal fun topicReactionUsersForFilter(
 internal fun topicReplyFooterCount(post: Post, loadedPreviewCount: Int): Int =
     maxOf(post.replyCount, loadedPreviewCount)
 
+internal fun topicReplySkeletonRows(totalCount: Int): Int =
+    totalCount.coerceIn(1, REPLY_SKELETON_MAX_VISIBLE_ROWS)
+
 internal fun topicDetailShouldUpdateCollapsedTitle(searchOpen: Boolean, searchFieldVisible: Boolean): Boolean {
     return !searchOpen && !searchFieldVisible
 }
@@ -10163,19 +10253,32 @@ internal fun topicDetailIdentitySubtitle(
     }
 }
 
-internal fun topicDetailIdentityDisplayName(firstPost: Post?, fallbackTitle: String): String {
+internal fun topicDetailIdentityDisplayName(
+    firstPost: Post?,
+    fallbackTitle: String,
+    initialIdentity: TopicInitialIdentity? = null,
+): String {
     val display = firstPost?.authorDisplayName?.takeIf { it.isNotBlank() }
     val username = firstPost?.authorUsername?.takeIf { it.isNotBlank() }
-    return display ?: username ?: fallbackTitle
+    val initialUsername = initialIdentity?.username?.takeIf { it.isNotBlank() }
+    return display ?: username ?: initialUsername ?: fallbackTitle
 }
 
-internal fun topicDetailIdentityAvatarUrl(baseUrl: String, firstPost: Post?): String {
-    if (firstPost == null) return ""
+internal fun topicDetailIdentityAvatarUrl(
+    baseUrl: String,
+    firstPost: Post?,
+    initialIdentity: TopicInitialIdentity? = null,
+): String {
+    val avatarTemplate = firstPost?.authorAvatarTemplate?.takeIf { it.isNotBlank() }
+        ?: initialIdentity?.avatarTemplate.orEmpty()
+    val animatedAvatarUrl = firstPost?.authorAnimatedAvatarUrl?.takeIf { it.isNotBlank() }
+        ?: initialIdentity?.animatedAvatarUrl.orEmpty()
+    if (avatarTemplate.isBlank() && animatedAvatarUrl.isBlank()) return ""
     return resolveAvatarUrl(
         baseUrl = baseUrl,
-        avatarTemplate = firstPost.authorAvatarTemplate,
-        animatedAvatarUrl = firstPost.authorAnimatedAvatarUrl,
-        size = AndroidUtilities.dp(TOPIC_IDENTITY_AVATAR_SIZE_DP.toFloat()),
+        avatarTemplate = avatarTemplate,
+        animatedAvatarUrl = animatedAvatarUrl,
+        size = TOPIC_AVATAR_REQUEST_SIZE,
     )
 }
 
@@ -10345,7 +10448,7 @@ internal class TopicIdentityContainer(context: Context) : FrameLayout(context) {
                 remoteAvatarView.visibility = VISIBLE
                 remoteAvatarView.setImage(
                     ImageLocation.getForPath(avatarUrl),
-                    avatarImageFilter(avatarUrl, AndroidUtilities.dp(TOPIC_IDENTITY_AVATAR_SIZE_DP.toFloat())),
+                    avatarImageFilter(avatarUrl, TOPIC_AVATAR_FILTER_SIZE),
                     avatarDrawable,
                     null,
                 )

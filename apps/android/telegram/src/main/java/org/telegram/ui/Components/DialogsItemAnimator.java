@@ -742,7 +742,10 @@ public class DialogsItemAnimator extends SimpleItemAnimator {
 
     @Override
     public boolean canReuseUpdatedViewHolder(ViewHolder viewHolder, List<Object> payloads) {
-        // Upstream returns true only for DialogsEmptyCell (not present in NativeDo); always false here.
-        return false;
+        // NativeDo's TopicCell is a MovableCell so it can participate in list
+        // reordering. Payload updates still need to stay in the same holder;
+        // crossfading two movable holders makes text rows appear offset while
+        // their StaticLayouts are being rebound.
+        return viewHolder.itemView instanceof MovableCell;
     }
 }

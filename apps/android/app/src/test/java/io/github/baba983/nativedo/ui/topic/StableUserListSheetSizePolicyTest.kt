@@ -5,17 +5,17 @@ import org.junit.Test
 
 class StableUserListSheetSizePolicyTest {
     @Test
-    fun singleUserKeepsTelegramSixRowViewport() {
+    fun singleUserShrinksWithinTelegramSixRowViewport() {
         val policy = StableUserListSheetSizePolicy(rowHeightPx = 50)
 
-        assertThat(policy.minimumHeight()).isEqualTo(300)
+        assertThat(policy.minimumHeight()).isEqualTo(50)
         assertThat(policy.rowsHeight()).isEqualTo(300)
-        assertThat(policy.rowsHeight(userCount = 1)).isEqualTo(300)
-        assertThat(policy.skeletonRows(predictedCount = 1)).isEqualTo(6)
+        assertThat(policy.rowsHeight(userCount = 1)).isEqualTo(50)
+        assertThat(policy.skeletonRows(predictedCount = 1)).isEqualTo(1)
     }
 
     @Test
-    fun knownCountKeepsTelegramSixRowViewport() {
+    fun knownCountIsCappedByTelegramSixRowViewport() {
         val policy = StableUserListSheetSizePolicy(rowHeightPx = 50)
 
         assertThat(policy.rowsHeight(userCount = 8)).isEqualTo(300)
@@ -23,11 +23,11 @@ class StableUserListSheetSizePolicyTest {
     }
 
     @Test
-    fun loadedCountCanReturnToMinimumViewport() {
+    fun loadedCountCanShrinkAfterLoading() {
         val policy = StableUserListSheetSizePolicy(rowHeightPx = 50)
 
         assertThat(policy.rowsHeight(userCount = 12)).isEqualTo(300)
-        assertThat(policy.rowsHeight(userCount = 1)).isEqualTo(300)
+        assertThat(policy.rowsHeight(userCount = 1)).isEqualTo(50)
     }
 
     @Test

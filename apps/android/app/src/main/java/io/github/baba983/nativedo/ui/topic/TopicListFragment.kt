@@ -54,7 +54,6 @@ import org.telegram.ui.ActionBar.INavigationLayout
 import org.telegram.ui.Components.LayoutHelper
 import org.telegram.ui.Components.RecyclerListView
 import org.telegram.ui.Components.DialogsItemAnimator
-import org.telegram.ui.Components.RecyclerItemsEnterAnimator
 import org.telegram.ui.Components.SearchStateDrawable
 import org.telegram.ui.Components.SizeNotifierFrameLayout
 import org.telegram.ui.Components.PullForegroundDrawable
@@ -457,6 +456,7 @@ class TopicListFragment(
                         initialTitle = topic.title,
                         initialPostNumber = if (isPost) topic.targetPostNumber else null,
                         initialPostId = if (isPost) topic.targetPostId else null,
+                        initialIdentity = if (isPost) null else topic.toTopicInitialIdentity(),
                     ),
                 )
             },
@@ -1124,6 +1124,12 @@ class TopicListFragment(
         fun updateColors() { pullDrawable.updateColors(); invalidate(); headerView.invalidate() }
 
         override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+            if (ev.actionMasked == MotionEvent.ACTION_DOWN && listView.itemAnimator?.isRunning == true) {
+                // Telegram lets the list finish its current item animation before the
+                // pull container can take over the gesture.
+                dragging = false
+                return false
+            }
             when (ev.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     downX = ev.x; downY = ev.y; dragging = false
@@ -1201,12 +1207,10 @@ class TopicListFragment(
     private inner class TopicListPage(context: Context, baseUrl: String) : FrameLayout(context) {
         val listView: RecyclerListView = RecyclerListView(context)
         val adapter: TopicListAdapter = TopicListAdapter(context, baseUrl)
-        private val itemsEnterAnimator: RecyclerItemsEnterAnimator
         private val pullRefreshLayout = PullRefreshLayout(context, listView, viewModel::onRefresh)
         var position: Int = -1
             private set
         private var pendingScrollRestore = false
-        private var lastTopicCount = 0
 
         init {
             listView.layoutManager = LinearLayoutManager(context)
@@ -1214,15 +1218,21 @@ class TopicListFragment(
             // Padding for pill + tab strip space above the list.
             listView.setPadding(0, AndroidUtilities.dp(SEARCH_FIELD_HEIGHT_DP + TAB_STRIP_HEIGHT_DP), 0, 0)
             listView.clipToPadding = false
-            itemsEnterAnimator = RecyclerItemsEnterAnimator(listView, true)
             listView.adapter = adapter
             listView.setOnItemClickListener { _, position ->
                 val topic = adapter.getTopicAt(position) ?: return@setOnItemClickListener
                 viewModel.markTopicSeen(topic.id)
-                presentFragment(TopicDetailFragment(topic.id, topic.title))
+                presentFragment(
+                    TopicDetailFragment(
+                        topicId = topic.id,
+                        initialTitle = topic.title,
+                        initialIdentity = topic.toTopicInitialIdentity(),
+                    ),
+                )
             }
             listView.addOnScrollListener(object : RecyclerView.OnScrollListener() {
                 override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
+                    (recyclerView.itemAnimator as? DialogsItemAnimator)?.onListScroll(-dy)
                     saveScrollPosition()
                     if (position == viewPager?.currentPosition) updateSearchPillOffset(this@TopicListPage)
                     if (dy <= 0 || position != viewPager?.currentPosition) return
@@ -1244,7 +1254,6 @@ class TopicListFragment(
 
         fun submit(feed: HomeFeedState, categories: Map<Int, CategorySummary>) {
             pullRefreshLayout.currentFeed = feed
-            val previousTopicCount = lastTopicCount
             val context = getContext()
             adapter.submit(
                 feed.items,
@@ -1259,8 +1268,6 @@ class TopicListFragment(
                 viewModel::retrySelectedFeed,
                 viewModel::loadNextPage,
             )
-            lastTopicCount = feed.items.size
-            if (previousTopicCount > 0 && feed.items.size > previousTopicCount && !feed.isLoading) listView.post { itemsEnterAnimator.showItemsAnimated(previousTopicCount) }
             restoreScrollPositionIfNeeded()
         }
 

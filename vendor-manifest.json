@@ -358,7 +358,7 @@
             "drawing",
             "gesture"
           ],
-          "notes": "NativeDo fixed-header RecyclerView sheet shell split from pinned StickersAlert: preserves its natural-content measurement threshold, top-padding calculation, rounded sheet/handle/status-bar drawing, outside-tap dismissal, non-swipe dismissal, and first-child scroll-offset/header translation shape. Host wiring now permits a pinned-ChatActivity-style ViewPager whose independently scrolling pages share the same calculated padding; horizontal transitions interpolate the two page offsets so the fixed header, sheet background, handle, shadow, and outside-tap boundary remain synchronized. It also exposes a shared minimum-content-height contract used by asynchronous reaction and poll user lists so loading and loaded states cannot collapse below the six-row ReactedUsersListView-sized viewport. Fixed-height voter sheets can opt into a stationary sheet top edge while their list scrolls, avoiding a visible top-padding jump. Sticker/account data, preview content, and product rows remain app-owned.",
+          "notes": "NativeDo fixed-header RecyclerView sheet shell split from pinned StickersAlert: preserves its natural-content measurement threshold, top-padding calculation, rounded sheet/handle/status-bar drawing, outside-tap dismissal, non-swipe dismissal, and first-child scroll-offset/header translation shape. Host wiring now permits a pinned-ChatActivity-style ViewPager whose independently scrolling pages share the same calculated padding; horizontal transitions interpolate the two page offsets so the fixed header, sheet background, handle, shadow, and outside-tap boundary remain synchronized. It also exposes caller-controlled content and minimum-height contracts: asynchronous reaction and poll user lists use predicted counts with a six-row maximum viewport and may shrink to shorter known results. Fixed-height voter sheets can opt into a stationary sheet top edge while their list scrolls, avoiding a visible top-padding jump. Sticker/account data, preview content, and product rows remain app-owned.",
           "stuck_ref": "native_app_reference_only"
         },
         {
@@ -450,6 +450,18 @@
           "port_mode": "native",
           "notes": "NativeDo profile subset of TextDetailCell: 3-arg setTextAndValue, combined/value-first accessibility, fixed 60dp measure, 20dp divider inset, 17dp padding, VIEW_TYPE=10002 and non-clickable UItemFactory. Plain TextView replaces Spoilers/Links. OMITTED image/right-value/emoji/multiline/link-hit/color hooks and upstream overloads; supersedes the deprecated app ProfileDetailCell.",
           "stuck_ref": "native_host_reference_only"
+        },
+        {
+          "path": "org/telegram/ui/Cells/AboutLinkCell.java",
+          "modified": true,
+          "port_mode": "exact",
+          "forced_exact": [
+            "measurement",
+            "gesture",
+            "animation"
+          ],
+          "notes": "Pinned AboutLinkCell measurement, link hit paths, long-press menu, three-line collapse, spring expansion, dynamic height and accessibility are retained. Host wiring accepts CharSequence so Discourse HTML spans survive, uses the available Android Linkify path instead of MessageObject.addLinks, routes all URL spans through didPressUrl, implements Theme.Colorable, and gives the more label a solid themed backing so the host-rendered nine-patch fade cannot leave text overlapping it. Drawing is therefore intentionally not forced-exact.",
+          "stuck_ref": "host_wiring_keep_at_pin"
         }
       ]
     },
@@ -459,16 +471,25 @@
         {
           "path": "io/github/baba983/nativedo/ui/profile/ProfileFragment.kt",
           "upstream": "org/telegram/ui/ProfileActivity.java",
-          "pin": "legacy_009e97356",
           "modified": true,
           "port_mode": "native",
-          "forced_exact": [
-            "measurement",
-            "drawing",
-            "gesture",
-            "animation"
-          ],
-          "notes": "NativeDo profile keeps ProfileActivity-style collapsible header, avatar gooey effect, first-click avatar expansion followed by PhotoViewer opening, direct long-press PhotoViewer opening, title/subtitle layout, and screen-reader pull-expand guard while binding to linux.do session/profile data. Authenticated profiles now restore pinned actions-height structure: 152dp header-only + 74dp action strip = 226dp, calculateHeaderExtraDiff starts after the actions segment, expanded title/subtitle endpoints subtract 74dp, and release settling preserves Telegram's 0dp / 74dp / 226dp snap branches and velocity threshold. The action destinations are NativeDo/Discourse host wiring.",
+          "notes": "NativeDo profile port against the 12.9 ProfileActivity reference. It retains the 152dp header + 74dp action strip, 0dp/74dp/226dp release targets, -1000f velocity threshold, dy/2 pull damping, 0.33f avatar expansion threshold, exact zero-margin ProfileGooeyView child geometry, key title/subtitle interpolation constants, 250ms EASE_BOTH/EASE_OUT_QUINT timing, first-layout viewport fallback, and the NestedFrameLayout-shaped outer/active-inner vertical scroll handoff. Avatar progress and the optional first-row settle share one animation clock; because Discourse supplies one profile image rather than a gallery, that image remains visible as the full-expand media successor. The non-transition host displays only ProfileActivity's primary title/subtitle layer. The 150ms shared-content pin transition keeps the ActionBar transparent while TopView reveals key_windowBackgroundWhite from bottom to top, matching ProfileActivity's no-peer-color branch and status-bar luminance switch. Profile information uses the upstream full-width white cell surface, headerless AboutLinkCell-to-TextDetailCell ordering, one terminal shadow, and the exact About link theme keys. NativeDo owns the list/status-bar coordinate system, dynamic session remapping, Discourse actions, AboutLinkCell HTML wiring, URL-only PhotoViewer handoff, and which Discourse identity, flair/group, statistics, and activity rows populate that block.",
+          "stuck_ref": "native_app_reference_only"
+        },
+        {
+          "path": "io/github/baba983/nativedo/ui/profile/ProfileContentLayout.kt",
+          "upstream": "org/telegram/ui/Components/SharedMediaLayout.java",
+          "modified": true,
+          "port_mode": "native",
+          "notes": "Narrow NativeDo profile-content port of the pinned SharedMediaLayout shape. It keeps the vendored ScrollSlidingTextTabStrip's liquid-glass branch: a centered 50dp minimal-width strip, 18dp Blur3 top-panel background, 6.666dp drawable padding, 7dp vertical content padding, and unpinned/pinned setOpen transition. It also retains two simultaneously retained feed pages, continuous tab-indicator progress, synchronized 320ms tab-click transitions, same-tab scroll-to-top, independent RecyclerListView scroll positions, and full-page FlickerLoadingView/StickerEmptyView state overlays. It delegates Telegram's 0.3cm/3000px/s/3500px/s/one-third-width/150-600ms EASE_OUT_QUINT swipe semantics to the vendored ViewPagerFixed. Discourse ProfileFeedViewModel state, TopicListAdapter rows, pagination callbacks, topic navigation, main-tabs bottom inset, solid-color Blur3 source fallback, theme wiring, and the omission of Telegram media/search/action-mode/stories/gifts types are host-owned.",
+          "stuck_ref": "native_app_reference_only"
+        },
+        {
+          "path": "io/github/baba983/nativedo/ui/profile/IconSettingCell.java",
+          "upstream": "org/telegram/ui/SettingsActivity.java",
+          "modified": true,
+          "port_mode": "native",
+          "notes": "NativeDo profile port of the pinned SettingsActivity.SettingCell nested class and SettingCell.Background. Keeps the normal-mode icon/text/subtitle/value layout, 50dp/60dp measurement, gradient icon background, dark-theme border, and UItem color packing. Omits ResourcesProvider, mini/44dp mode, setValue, upstream UItemFactory signatures, and ofBot; adds profile-only colors, selector, ellipsize, and a fixed local ViewFactory type.",
           "stuck_ref": "native_app_reference_only"
         },
         {
@@ -509,7 +530,7 @@
             "drawing",
             "gesture"
           ],
-          "notes": "ChatMessageCell-shaped BaseCell (forced_exact measurement/drawing/gesture) over Discourse Post/PostBodyBlock. Reactions: 26dp height, 34dp min/36dp rail item, 30dp icon, 2/4dp gaps, 250ms CLIP_PROGRESS=.25 enter, 1500ms press with >.8 release/150ms cancel, LONG_PRESS/2x slop, and 34dp/350ms ONLY_MOVE. Keeps reply/menu arbitration, nested view/canvas split, slidingOffsetX, search and URL PhotoViewer bounds. Post chrome and PostBodyBlock paints scale from SharedConfig.fontSize while preserving relative hierarchy. OMITTED MTProto/full Lottie/particle/window stack; see docs/topic-detail-rewrite.md.",
+          "notes": "ChatMessageCell-shaped BaseCell (forced_exact measurement/drawing/gesture) over Discourse Post/PostBodyBlock. Reactions: 26dp height, 34dp min/36dp rail item, 30dp icon, 2/4dp gaps, 250ms CLIP_PROGRESS=.25 enter, 1500ms press with >.8 release/150ms cancel, LONG_PRESS/2x slop, and 34dp/350ms ONLY_MOVE. Keeps reply/menu arbitration, nested view/canvas split, slidingOffsetX, search and URL PhotoViewer bounds. Reply footer keeps the 24dp/+17dp recent-avatar stack and reserves up to three neutral avatar circles when Discourse provides a reply count without participant identities; fetched participants replace those slots in place. Post chrome and PostBodyBlock paints scale from SharedConfig.fontSize while preserving relative hierarchy. OMITTED MTProto/full Lottie/particle/window stack; see docs/topic-detail-rewrite.md.",
           "stuck_ref": "native_app_reference_only"
         },
         {
@@ -3657,6 +3678,7 @@
         "filled_chatlist_poll.xml",
         "filled_chatlist_reaction.xml",
         "filled_suggest_chat_avatar.xml",
+        "gradient_bottom.webp",
         "gradient_left.9.png",
         "gradient_right.9.png",
         "media_live_on.xml",
@@ -3680,6 +3702,7 @@
         "chats_hide.json",
         "chats_unarchive.json",
         "chats_unhide.json",
+        "copy.json",
         "default_pattern.svg",
         "swipe_community_ungroup.json",
         "swipe_delete.json",

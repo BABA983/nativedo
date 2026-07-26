@@ -15,6 +15,7 @@ import io.github.baba983.nativedo.feature.profile.ui.ProfileFeedUiState
 import io.github.baba983.nativedo.feature.profile.ui.ProfileFeedViewModel
 import io.github.baba983.nativedo.ui.topic.TopicCell
 import io.github.baba983.nativedo.ui.topic.TopicDetailFragment
+import io.github.baba983.nativedo.ui.topic.toTopicInitialIdentity
 import io.github.baba983.nativedo.ui.topic.TopicListAdapter
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
@@ -69,6 +70,7 @@ class ProfileFeedFragment(
                         topic.title,
                         if (feedType == ProfileFeedType.Replies) topic.targetPostNumber else null,
                         if (feedType == ProfileFeedType.Replies) topic.targetPostId else null,
+                        if (feedType == ProfileFeedType.Topics) topic.toTopicInitialIdentity() else null,
                     ),
                 )
             }
@@ -232,7 +234,7 @@ class ProfileFeedFragment(
     }
 }
 
-private class ProfileFeedViewModelFactory(
+internal class ProfileFeedViewModelFactory(
     private val username: String,
     private val feedType: ProfileFeedType,
     private val repository: ProfileFeedRepository,

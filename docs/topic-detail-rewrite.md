@@ -927,6 +927,12 @@ checklist below.**
       `actionBar.setTitle(post.title)`. The View shell now clears the ActionBar
       title while the topic header/first post are visible and restores the topic
       title once the first post scrolls under the ActionBar.
+- [x] Initial topic identity: trusted topic-list/search/profile-topic rows pass a
+      lightweight author snapshot into the detail fragment so the ActionBar can
+      bind before the first post response. Post-search/profile-reply rows are
+      excluded because their author is the matched reply author, not necessarily
+      the topic author. List and ActionBar avatars share the 96-size URL and
+      `50_50` filter so Telegram's global image cache can satisfy the first frame.
 - [x] Image viewer hand-off: `TopicPostCellDelegate.didPressImage` →
       `openImageViewer(...)` → telegram-module `PhotoViewer` NativeDo port.
 - [x] Reactions users sheet UI: app-side
@@ -936,9 +942,11 @@ checklist below.**
       rounded background/handle/status-bar drawing, and fixed-header scroll
       translation; reaction and poll sheets provide their own tabs, loading /
       empty states, and user rows. Their user-list geometry follows pinned
-      `ReactedUsersListView` / `ReactedUserHolderView`: 50dp rows in a fixed
-      six-row viewport, enforced by the shared sheet, so loading, a one-user
-      result, and larger scrollable result sets do not resize the sheet. Failed reaction-user loads expose an
+      `ReactedUsersListView` / `ReactedUserHolderView`: 50dp rows with a
+      six-row maximum viewport. Loading uses the known reaction count when
+      available, unknown counts fall back to six rows, and one-to-five-user
+      results shrink to their natural height. The shared sheet caps larger
+      result sets into a scrollable viewport. Failed reaction-user loads expose an
       in-sheet tap-to-retry state instead of being rendered as an empty result.
       Multi-reaction posts now expose a real All tab followed by reaction tabs
       in Telegram's fixed 44dp horizontal strip; the 32dp pills use the pinned
@@ -1207,7 +1215,12 @@ The rewrite is functionally complete, but several rows are deliberately
       shape. The avatar stack now follows Telegram's comment button geometry
       and drawing order: 24dp avatars, first avatar +2dp, subsequent +17dp,
       right-to-left draw order, and a dp(13) background mask circle between
-      overlapping avatars. Remaining visual content is still NativeDo-shaped
+      overlapping avatars. Because Discourse supplies `reply_count` without
+      recent participant identities, the footer reserves `min(reply_count, 3)`
+      neutral avatar circles and replaces them in place as reply participants
+      become known. Replies fetched by the sheet are retained as footer previews
+      without being inserted into the main topic stream.
+      Remaining visual content is still NativeDo-shaped
       rather than upstream's exact `commentLayout` / unread-dot drawing.
 - [x] `CodeBlock` / `TableBlock`: top-level blocks now use embedded
       `HorizontalScrollView` child views, matching the structural shape of
