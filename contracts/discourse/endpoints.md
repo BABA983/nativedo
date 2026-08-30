@@ -6,7 +6,7 @@ Android v1 uses standard Discourse JSON endpoints and homepage bootstrap HTML.
 - `GET /new.json?page={page}` - new topic feed with optional `topic_list.more_topics_url`
 - `GET /top.json?page={page}` - top topic feed with optional `topic_list.more_topics_url`
 - `GET /site.json` - site metadata including category definitions for category badge rendering
-- `GET /t/{id}.json` - topic detail with `posts_count`, `post_stream.stream`, and optional server-ranked `details.participants` used for immediate composer mention candidates
+- `GET /t/{id}.json` - topic detail with `posts_count`, `post_stream.stream`, and optional server-ranked `details.participants` used for immediate composer mention candidates. Authenticated responses also carry `highest_post_number` and `last_read_post_number` (the caller's Discourse read position; absent/0 when anonymous), which drive the page-down button's unread counter.
 - `GET /t/{id}/posts.json?post_ids[]={id}` - incremental topic post chunk fetch
 - `GET /posts/{postId}/replies?after={postNumber}` - direct replies to one post, returned as a JSON post array. The topic-detail reply sheet starts with `after=1`, then advances using the greatest returned `post_number`; the source post's `reply_count` is the authoritative total. Fixture at `fixtures/discourse/post-replies.json`.
 - `GET /search.json?q={query}&page={page}` - grouped topic, post, and user search; post hits include `topic_id` and may include `post_number` for native in-topic jumps

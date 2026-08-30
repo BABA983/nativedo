@@ -260,17 +260,7 @@ class TopicDetailFragment @JvmOverloads constructor(
     private var pageDownDistanceFromLatestPx: Int = 0
     private var pageDownInitialized: Boolean = false
     private var pageDownLastKnownBelowPosts: Int = 0
-    private var pageDownSubmittedBelowPosts: Int = 0
-    private var pageDownQueuedBelowPosts: Int? = null
-    private var pageDownCountAnimationRunning: Boolean = false
-    private val pageDownCountAnimationEndRunnable = Runnable {
-        pageDownCountAnimationRunning = false
-        val queuedCount = pageDownQueuedBelowPosts
-        pageDownQueuedBelowPosts = null
-        if (queuedCount != null && queuedCount != pageDownSubmittedBelowPosts) {
-            setPageDownCounter(queuedCount, animated = true)
-        }
-    }
+    private var pageDownSubmittedUnreadCount: Int = -1
     private var floatingDateController: TopicFloatingDateController? = null
     private var topicSearchItem: ActionBarMenuItem? = null
     private var topicHeaderItem: ActionBarMenuItem? = null
@@ -907,9 +897,6 @@ class TopicDetailFragment @JvmOverloads constructor(
         mentionBlurSourceColor = null
         mentionBlurPositions.clear()
         clearReplyComposerWaitingForKeyboardOpenAfterEmoji()
-        AndroidUtilities.cancelRunOnUIThread(pageDownCountAnimationEndRunnable)
-        pageDownCountAnimationRunning = false
-        pageDownQueuedBelowPosts = null
         postOptions?.dismiss()
         postOptions = null
         unlockPostOptionsListScroll()
@@ -2205,7 +2192,10 @@ class TopicDetailFragment @JvmOverloads constructor(
         if (below != null) {
             pageDownLastKnownBelowPosts = below
             if (below == 0) {
-                pageDownReachedLatest = true
+                if (!pageDownReachedLatest) {
+                    pageDownReachedLatest = true
+                    viewModel.markLoadedPostsRead()
+                }
                 pageDownDistanceFromLatestPx = 0
             } else if (pageDownReachedLatest && dy < 0) {
                 pageDownDistanceFromLatestPx += kotlin.math.abs(dy)
@@ -2232,7 +2222,7 @@ class TopicDetailFragment @JvmOverloads constructor(
             distanceFromLatestPx = pageDownDistanceFromLatestPx,
             revealThresholdPx = AndroidUtilities.dp(100f),
         )
-        setPageDownCounter(pageDownLastKnownBelowPosts, animated)
+        setPageDownUnreadCount(latestTopicState.unreadPosts, animated)
         controls.setButtonLoading(
             ChatActivitySideControlsButtonsLayout.BUTTON_PAGE_DOWN,
             latestTopicState.isJumpingToLatest,
@@ -2241,36 +2231,13 @@ class TopicDetailFragment @JvmOverloads constructor(
         controls.showButton(ChatActivitySideControlsButtonsLayout.BUTTON_PAGE_DOWN, show, animated)
     }
 
-    private fun setPageDownCounter(count: Int, animated: Boolean) {
+    private fun setPageDownUnreadCount(count: Int, animated: Boolean) {
         val controls = pageDownControls ?: return
-        val nextCount = count.coerceAtLeast(0)
-        if (!animated) {
-            AndroidUtilities.cancelRunOnUIThread(pageDownCountAnimationEndRunnable)
-            pageDownCountAnimationRunning = false
-            pageDownQueuedBelowPosts = null
-            pageDownSubmittedBelowPosts = nextCount
-            controls.setButtonCount(ChatActivitySideControlsButtonsLayout.BUTTON_PAGE_DOWN, nextCount, false)
-            return
-        }
-        if (nextCount == pageDownSubmittedBelowPosts) {
-            if (pageDownQueuedBelowPosts == nextCount) {
-                pageDownQueuedBelowPosts = null
-            }
-            return
-        }
-        if (pageDownCountAnimationRunning) {
-            pageDownQueuedBelowPosts = nextCount
-            return
-        }
-        val previousCount = pageDownSubmittedBelowPosts
-        pageDownSubmittedBelowPosts = nextCount
-        controls.setButtonCount(ChatActivitySideControlsButtonsLayout.BUTTON_PAGE_DOWN, nextCount, true)
-        pageDownCountAnimationRunning = true
-        AndroidUtilities.cancelRunOnUIThread(pageDownCountAnimationEndRunnable)
-        AndroidUtilities.runOnUIThread(
-            pageDownCountAnimationEndRunnable,
-            topicPageDownCounterAnimationDurationMs(previousCount, nextCount),
-        )
+        if (count == pageDownSubmittedUnreadCount) return
+        pageDownSubmittedUnreadCount = count
+        // The vendored CounterView owns the roll animation (and snaps on
+        // jumps larger than 99), so push semantic changes only.
+        controls.setButtonCount(ChatActivitySideControlsButtonsLayout.BUTTON_PAGE_DOWN, count, animated)
     }
 
     private fun pageDownPostsBelowViewport(manager: LinearLayoutManager): Int? {
@@ -10304,13 +10271,6 @@ internal fun topicPostsBelowViewport(streamPostIds: List<Long>, lastVisiblePostI
     return topicPostsBelowViewportOrNull(streamPostIds, lastVisiblePostId) ?: 0
 }
 
-internal fun topicPageDownCounterAnimationDurationMs(previousCount: Int, nextCount: Int): Long {
-    return when {
-        previousCount <= 0 && nextCount > 0 -> 220L
-        previousCount > 0 && nextCount <= 0 -> 150L
-        else -> 430L
-    }
-}
 
 internal fun topicShouldShowPageDown(
     postsBelowViewport: Int,

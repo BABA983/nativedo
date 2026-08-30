@@ -73,6 +73,8 @@ class TopicViewModel(
                         emojiCategories = detail.emojiCategories,
                         totalPosts = detail.totalPosts,
                         posts = detail.posts,
+                        highestPostNumber = detail.highestPostNumber,
+                        lastReadPostNumber = detail.lastReadPostNumber,
                         participants = detail.participants,
                         streamPostIds = streamPostIds,
                         isLoading = false,
@@ -90,6 +92,22 @@ class TopicViewModel(
                 },
             )
         }
+    }
+
+    /**
+     * Clears the page-down unread counter once the user reaches the bottom of
+     * the loaded stream — the vendor chat clears `newUnreadMessageCount` at the
+     * same boundary. Reading position is kept local; server sync (timings) is
+     * a separate concern.
+     */
+    fun markLoadedPostsRead() {
+        val state = _uiState.value
+        // Anonymous sessions carry no Discourse read position — nothing to mark.
+        if (state.lastReadPostNumber <= 0) return
+        val highestLoaded = state.posts.maxOfOrNull { it.postNumber ?: 0 } ?: 0
+        val effective = maxOf(state.lastReadPostNumber, highestLoaded)
+        if (effective == state.lastReadPostNumber) return
+        _uiState.value = state.copy(lastReadPostNumber = effective)
     }
 
     fun loadMore() {

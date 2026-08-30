@@ -49,6 +49,61 @@ class TopicViewModelTest {
     }
 
     @Test
+    fun unreadCounterMirrorsDiscourseReadPositionAndClearsAtBottom() = runTest {
+        val repository = FakeTopicRepository(
+            detail = topicDetail(
+                loadedPostIds = listOf(1001L, 1002L),
+                streamPostIds = listOf(1001L, 1002L, 1003L, 1004L),
+                highestPostNumber = 4,
+                lastReadPostNumber = 2,
+            ),
+            posts = Result.success(
+                listOf(
+                    post(id = 1003L, postNumber = 3),
+                    post(id = 1004L, postNumber = 4),
+                ),
+            ),
+        )
+        viewModel = TopicViewModel(repository = repository, topicId = 101L)
+
+        val state = viewModel.awaitState { !it.isLoading }
+        assertThat(state.unreadPosts).isEqualTo(2)
+
+        // Marking read with an unloaded tail is a no-op: nothing was emitted,
+        // and the unread counter still covers the unloaded tail.
+        viewModel.markLoadedPostsRead()
+        val readState = viewModel.uiState.value
+        assertThat(readState.lastReadPostNumber).isEqualTo(2)
+        assertThat(readState.unreadPosts).isEqualTo(2)
+
+        viewModel.loadMore()
+        val loadedState = viewModel.awaitState { it.posts.size == 4 }
+        viewModel.markLoadedPostsRead()
+        val caughtUp = viewModel.awaitState { it.unreadPosts == 0 }
+        assertThat(caughtUp.lastReadPostNumber).isEqualTo(4)
+    }
+
+    @Test
+    fun anonymousSessionNeverBuildsAnUnreadCounter() = runTest {
+        val repository = FakeTopicRepository(
+            detail = topicDetail(
+                loadedPostIds = listOf(1001L),
+                streamPostIds = listOf(1001L, 1002L, 1003L),
+                highestPostNumber = 3,
+                lastReadPostNumber = 0,
+            ),
+        )
+        viewModel = TopicViewModel(repository = repository, topicId = 101L)
+
+        val state = viewModel.awaitState { !it.isLoading }
+        assertThat(state.unreadPosts).isEqualTo(0)
+
+        viewModel.markLoadedPostsRead()
+        assertThat(viewModel.uiState.value.lastReadPostNumber).isEqualTo(0)
+        assertThat(viewModel.uiState.value.unreadPosts).isEqualTo(0)
+    }
+
+    @Test
     fun replyDraftTextAndTargetUseOnePersistedState() = runTest {
         val key = TopicReplyDraftKey("https://linux.do", "alice", 101L)
         val persistence = FakeReplyDraftPersistence()
@@ -906,6 +961,8 @@ class TopicViewModelTest {
         loadedPostIds: List<Long>,
         streamPostIds: List<Long>,
         participants: List<MentionCandidate> = emptyList(),
+        highestPostNumber: Int = 0,
+        lastReadPostNumber: Int = 0,
     ): Result<TopicDetail> = Result.success(
         TopicDetail(
             id = 101L,
@@ -916,6 +973,8 @@ class TopicViewModelTest {
             posts = loadedPostIds.mapIndexed { index, id -> post(id = id, postNumber = index + 1) },
             totalPosts = streamPostIds.size,
             streamPostIds = streamPostIds,
+            highestPostNumber = highestPostNumber,
+            lastReadPostNumber = lastReadPostNumber,
         ),
     )
 

@@ -20,6 +20,8 @@ data class TopicUiState(
     val emojiCategories: List<DiscourseEmojiCategory> = emptyList(),
     val totalPosts: Int = 0,
     val posts: List<Post> = emptyList(),
+    val highestPostNumber: Int = 0,
+    val lastReadPostNumber: Int = 0,
     val participants: List<MentionCandidate> = emptyList(),
     val streamPostIds: List<Long> = emptyList(),
     val isLoading: Boolean = true,
@@ -46,6 +48,18 @@ data class TopicUiState(
 ) {
     val canRetry: Boolean
         get() = errorMessage != null && posts.isEmpty()
+
+    /** Posts after the user's read position; 0 when anonymous or fully read. */
+    val unreadPosts: Int
+        get() = topicUnreadPostsCount(
+            highestPostNumber = highestPostNumber,
+            lastReadPostNumber = lastReadPostNumber,
+        )
+}
+
+internal fun topicUnreadPostsCount(highestPostNumber: Int, lastReadPostNumber: Int): Int {
+    if (lastReadPostNumber <= 0) return 0
+    return (highestPostNumber - lastReadPostNumber).coerceAtLeast(0)
 }
 
 data class TopicReactionSheetUiState(

@@ -372,6 +372,10 @@ data class TopicResponseDto(
     val title: String,
     @SerialName("posts_count")
     val postsCount: Int = 0,
+    @SerialName("highest_post_number")
+    val highestPostNumber: Int = 0,
+    @SerialName("last_read_post_number")
+    val lastReadPostNumber: Int = 0,
     @SerialName("created_at")
     val createdAt: String = "",
     @SerialName("last_posted_at")
@@ -815,6 +819,8 @@ internal fun TopicResponseDto.toModel(
     return TopicDetail(
         id = id,
         title = title,
+        highestPostNumber = highestPostNumber,
+        lastReadPostNumber = lastReadPostNumber,
         posts = postStream.posts.map { post -> post.toModel(emojiCatalog = emojiCatalog) },
         participants = details?.participants.orEmpty().mapNotNull { participant ->
             participant.username.takeIf(String::isNotBlank)?.let { username ->

@@ -12,6 +12,7 @@ import io.github.baba983.nativedo.core.model.PostReactionUser
 import io.github.baba983.nativedo.core.model.PostReactionUsersGroup
 import io.github.baba983.nativedo.core.model.TopicSummary
 import io.github.baba983.nativedo.feature.topic.ui.TOPIC_REACTION_ALL_FILTER_ID
+import io.github.baba983.nativedo.feature.topic.ui.topicUnreadPostsCount
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -349,11 +350,13 @@ class TopicDetailFragmentTest {
     }
 
     @Test
-    fun pageDownCountQueueUsesCounterViewAnimationDurations() {
-        assertThat(topicPageDownCounterAnimationDurationMs(previousCount = 0, nextCount = 30)).isEqualTo(220L)
-        assertThat(topicPageDownCounterAnimationDurationMs(previousCount = 30, nextCount = 20)).isEqualTo(430L)
-        assertThat(topicPageDownCounterAnimationDurationMs(previousCount = 20, nextCount = 28)).isEqualTo(430L)
-        assertThat(topicPageDownCounterAnimationDurationMs(previousCount = 28, nextCount = 0)).isEqualTo(150L)
+    fun pageDownUnreadCountMirrorsDiscourseReadPosition() {
+        // Anonymous sessions carry no read position — no counter, vendor parity.
+        assertThat(topicUnreadPostsCount(highestPostNumber = 30, lastReadPostNumber = 0)).isEqualTo(0)
+        assertThat(topicUnreadPostsCount(highestPostNumber = 30, lastReadPostNumber = 12)).isEqualTo(18)
+        // Fully read and server positions beyond the stream both clamp at zero.
+        assertThat(topicUnreadPostsCount(highestPostNumber = 30, lastReadPostNumber = 30)).isEqualTo(0)
+        assertThat(topicUnreadPostsCount(highestPostNumber = 30, lastReadPostNumber = 34)).isEqualTo(0)
     }
 
     @Test
