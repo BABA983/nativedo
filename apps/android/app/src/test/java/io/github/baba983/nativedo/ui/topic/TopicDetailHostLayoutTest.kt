@@ -25,6 +25,11 @@ class TopicDetailHostLayoutTest {
         host.addView(fixedTopView, FrameLayout.LayoutParams(400, 56))
         host.setFixedTopView(fixedTopView)
         activity.setContentView(host)
+        // Production resolves the resizable root by walking up to the
+        // DrawerLayoutContainer; point the helper at this tree explicitly and
+        // run the attach it would normally reach via the posted UI runnable.
+        host.adjustPanLayoutHelper.setResizableView(FrameLayout(activity))
+        host.adjustPanLayoutHelper.onAttach()
     }
 
     @Test

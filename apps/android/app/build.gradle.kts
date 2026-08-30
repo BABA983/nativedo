@@ -58,6 +58,16 @@ android {
         compose = true
     }
 
+    testOptions {
+        unitTests {
+            // Robolectric needs the AGP-generated test_config.properties and the
+            // merged app/:telegram resource table; without this the tests run
+            // under the org.robolectric.default manifest and every resource
+            // lookup fails with Resources$NotFoundException.
+            isIncludeAndroidResources = true
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

@@ -291,6 +291,9 @@ final class PollBlock implements PostBodyBlock {
         this.inlineState = inlineState;
         this.stateIndex = stateIndex;
         this.inlineStateKey = inlineStateKey;
+        // Poll rows copy chat paints, so make sure they exist first — the
+        // same lazy init OneboxBlock performs before cloning reply paints.
+        Theme.createChatResources(context.getHost().getContext(), false);
         pressedPaint.setColor(Theme.multAlpha(context.getAccentColor(), 0.10f));
         checkStrokePaint.setStyle(Paint.Style.STROKE);
         checkStrokePaint.setStrokeWidth(checkStrokeWidthPx());
