@@ -1,20 +1,7 @@
 /*
- * This file is part of NativeDo.
- *
- * Derived in part from Telegram for Android's
- * org/telegram/ui/MainTabsActivity.java.
- *
- * Source reference:
- * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/ui/MainTabsActivity.java
- *
- * Copyright (C) Telegram FZ-LLC
- * Copyright (C) 2026 NativeDo contributors
- *
- * This program is free software: you can redistribute it and/or modify
- * it under terms of GNU General Public License version 2 or later as published by
- * the Free Software Foundation.
- *
  * SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ * Native port of org/telegram/ui/MainTabsActivity.java.
  */
 package io.github.baba983.nativedo.ui.main;
 
@@ -30,6 +17,7 @@ import android.widget.FrameLayout;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.core.math.MathUtils;
 import androidx.core.view.WindowInsetsCompat;
 
 import io.github.baba983.nativedo.R;
@@ -50,18 +38,23 @@ import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceColor;
 import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceRenderNode;
 import org.telegram.ui.Components.chat.ViewPositionWatcher;
 import io.github.baba983.nativedo.ui.profile.ProfileFragment;
+import io.github.baba983.nativedo.ui.settings.SettingsFragment;
 import io.github.baba983.nativedo.ui.topic.TopicListFragment;
 
 public class MainTabsActivity extends ViewPagerActivity implements MainTabsController {
 
-    public static final int TABS_COUNT = 2;
+    public static final int TABS_COUNT = 3;
     public static final int POSITION_HOME = 0;
-    public static final int POSITION_PROFILE = 1;
+    public static final int POSITION_SETTINGS = 1;
+    public static final int POSITION_PROFILE = 2;
     public static final int MAIN_TABS_HEIGHT = 56;
     public static final int MAIN_TABS_MARGIN = 8;
     public static final int MAIN_TABS_HEIGHT_WITH_MARGINS = MAIN_TABS_HEIGHT + MAIN_TABS_MARGIN * 2;
-    private static final int MAIN_TABS_MIN_CONTENT_WIDTH = 160;
-    private static final int MAIN_TABS_WIDTH_WITH_MARGINS = MAIN_TABS_MIN_CONTENT_WIDTH + (MAIN_TABS_MARGIN + 4) * 2;
+    // Telegram keeps the main glass pill at a stable width across the four-tab
+    // and reduced-tab variants. Keep that width for NativeDo's three roots too;
+    // the visible tab count must not make the chrome collapse.
+    static final int MAIN_TABS_MIN_CONTENT_WIDTH = 320;
+    static final int MAIN_TABS_MAX_WIDTH = 328 + MAIN_TABS_MARGIN * 2;
 
     public GlassTabView[] tabs;
     private MainTabsLayout tabsView;
@@ -135,9 +128,11 @@ public class MainTabsActivity extends ViewPagerActivity implements MainTabsContr
                 AndroidUtilities.dp(MAIN_TABS_MARGIN + 4f),
                 AndroidUtilities.dp(MAIN_TABS_MARGIN + 4f)
         );
+        tabsView.setMaxWidth(AndroidUtilities.dp(MAIN_TABS_MAX_WIDTH));
 
         tabs = new GlassTabView[TABS_COUNT];
         tabs[POSITION_HOME] = GlassTabView.createMainTab(context, GlassTabView.TabIcon.HOME, R.string.tab_home);
+        tabs[POSITION_SETTINGS] = GlassTabView.createMainTab(context, GlassTabView.TabIcon.SETTINGS, R.string.tab_settings);
         tabs[POSITION_PROFILE] = GlassTabView.createMainTab(context, GlassTabView.TabIcon.PROFILE, R.string.tab_profile);
         for (int index = 0; index < tabs.length; index++) {
             final int position = index;
@@ -193,7 +188,7 @@ public class MainTabsActivity extends ViewPagerActivity implements MainTabsContr
         tabsViewWrapper.setClipToPadding(false);
         tabsViewWrapper.addView(
                 tabsView,
-                LayoutHelper.createFrame(MAIN_TABS_WIDTH_WITH_MARGINS, MAIN_TABS_HEIGHT_WITH_MARGINS, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL)
+                LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, MAIN_TABS_HEIGHT_WITH_MARGINS, Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL)
         );
         contentView.addView(tabsViewWrapper, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM));
 
@@ -309,6 +304,9 @@ public class MainTabsActivity extends ViewPagerActivity implements MainTabsContr
 
     @Override
     protected BaseFragment createBaseFragmentAt(int position) {
+        if (position == POSITION_SETTINGS) {
+            return new SettingsFragment();
+        }
         if (position == POSITION_PROFILE) {
             return new ProfileFragment();
         }
@@ -353,6 +351,9 @@ public class MainTabsActivity extends ViewPagerActivity implements MainTabsContr
                 selectTab(Math.round(position), true);
             }
         }
+        // Fade and blur depend on the pager's animated position.
+        checkUiFadeView();
+        blur3InvalidateBlur();
     }
 
     @Override
@@ -447,7 +448,7 @@ public class MainTabsActivity extends ViewPagerActivity implements MainTabsContr
     }
 
     private void checkUiFadeView() {
-        if (fadeView == null) {
+        if (viewPager == null || fadeView == null) {
             return;
         }
         int height = navigationBarHeight + AndroidUtilities.dp(MAIN_TABS_HEIGHT_WITH_MARGINS);
@@ -456,8 +457,14 @@ public class MainTabsActivity extends ViewPagerActivity implements MainTabsContr
             lp.height = height;
             fadeView.setLayoutParams(lp);
         }
-        fadeView.setAlpha(tabsVisibilityFactor);
-        fadeView.setVisibility(tabsVisibilityFactor > 0f ? View.VISIBLE : View.GONE);
+        // Let profile content own this area while gesture navigation is active.
+        final float animatedPosition = viewPager.getPositionAnimated();
+        final float isProfile = 1f - MathUtils.clamp(Math.abs(POSITION_PROFILE - animatedPosition), 0, 1);
+        final float hide = 1f - AndroidUtilities.getNavigationBarThirdButtonsFactor(navigationBarHeight);
+        float alpha = (1f - isProfile * hide) * tabsVisibilityFactor;
+        fadeView.setAlpha(alpha);
+        fadeView.setTranslationY(isProfile * AndroidUtilities.dp(48));
+        fadeView.setVisibility(alpha > 0 ? View.VISIBLE : View.GONE);
     }
 
     public interface TabFragmentDelegate {

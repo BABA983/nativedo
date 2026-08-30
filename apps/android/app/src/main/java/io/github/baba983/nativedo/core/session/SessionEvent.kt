@@ -11,6 +11,8 @@ sealed interface SessionEvent {
 
     data object LogoutCompleted : SessionEvent
 
+    data object LoginRequired : SessionEvent
+
     data class SessionExpired(
         val reason: SessionExpiredReason,
     ) : SessionEvent

@@ -52,6 +52,28 @@ class ProfileFeedViewModelTest {
     }
 
     @Test
+    fun serverPageLargerThanRequestedUsesRawCountAsTheNextOffset() = runTest {
+        val repository = FakeProfileFeedRepository(
+            0 to page(actions(1..30), rawCount = 30),
+            30 to page(listOf(action(31, null))),
+        )
+        val viewModel = ProfileFeedViewModel("baba", ProfileFeedType.Replies, repository)
+
+        val initial = viewModel.awaitState { !it.isLoading }
+        assertThat(initial.hasMore).isTrue()
+        assertThat(initial.nextOffset).isEqualTo(30)
+
+        viewModel.loadNextPage()
+        val loaded = viewModel.awaitState { it.items.size == 31 }
+
+        assertThat(loaded.nextOffset).isEqualTo(31)
+        assertThat(repository.requests).containsExactly(
+            Request("baba", "5", 0),
+            Request("baba", "5", 30),
+        ).inOrder()
+    }
+
+    @Test
     fun missingPostNumbersKeepDistinctActivityRows() = runTest {
         val repository = FakeProfileFeedRepository(
             0 to page(
@@ -119,7 +141,7 @@ class ProfileFeedViewModelTest {
         viewModel.awaitState { !it.isLoading }
 
         viewModel.loadNextPage()
-        val state = viewModel.awaitState { !it.isLoadingMore && it.nextOffset == 40 }
+        val state = viewModel.awaitState { !it.isLoadingMore && it.nextOffset == 22 }
 
         assertThat(state.items.filter { it.id == 101L }.map { it.targetPostNumber })
             .containsExactly(3, 8)

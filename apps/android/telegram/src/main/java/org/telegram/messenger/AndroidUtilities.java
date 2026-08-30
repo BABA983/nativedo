@@ -64,6 +64,7 @@ import android.view.animation.Interpolator;
 import android.view.inputmethod.InputMethodManager;
 
 import androidx.annotation.NonNull;
+import androidx.core.content.FileProvider;
 import androidx.core.view.WindowCompat;
 import androidx.dynamicanimation.animation.DynamicAnimation;
 import androidx.dynamicanimation.animation.SpringAnimation;
@@ -246,6 +247,10 @@ public final class AndroidUtilities {
 
     public static float lerp(float from, float to, float progress) {
         return from + (to - from) * progress;
+    }
+
+    public static float lerp(float[] ab, float f) {
+        return lerp(ab[0], ab[1], f);
     }
 
     public static int lerp(int a, int b, float f) {
@@ -1308,11 +1313,31 @@ public final class AndroidUtilities {
         return null;
     }
 
+    public static Uri getBitmapShareUri(Bitmap bitmap, String fileName, Bitmap.CompressFormat format) {
+        File cachePath = getCacheDir();
+        if (!cachePath.isDirectory()) {
+            try {
+                cachePath.mkdirs();
+            } catch (Exception e) {
+                FileLog.e(e);
+                return null;
+            }
+        }
+        File file = new File(cachePath, fileName);
+        try (FileOutputStream out = new FileOutputStream(file)) {
+            bitmap.compress(format, 87, out);
+            out.close();
+            return FileProvider.getUriForFile(ApplicationLoader.applicationContext, ApplicationLoader.getApplicationId() + ".provider", file);
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
+        return null;
+    }
+
     public static File getCacheDir() {
         if (ApplicationLoader.applicationContext == null) {
             return new File(System.getProperty("java.io.tmpdir", "/tmp"));
         }
-
         String state = null;
         try {
             state = Environment.getExternalStorageState();

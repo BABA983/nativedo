@@ -10,28 +10,73 @@ import io.github.baba983.nativedo.core.model.TopicListPage
 import io.github.baba983.nativedo.core.model.TopicSummary
 import io.github.baba983.nativedo.core.model.UserProfile
 import io.github.baba983.nativedo.core.model.UserActionPage
+import io.github.baba983.nativedo.core.session.LoginRequiredException
 import io.github.baba983.nativedo.core.session.SessionBootstrapClient
+import io.github.baba983.nativedo.core.session.SessionExpiredReason
 import io.github.baba983.nativedo.core.session.SessionLoggedOutException
+import io.github.baba983.nativedo.core.session.SessionRequestAuth
+import io.github.baba983.nativedo.core.session.SessionRequestContext
 import io.github.baba983.nativedo.core.session.SessionUserSummary
+import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.util.Locale
 import org.jsoup.Jsoup
 import retrofit2.HttpException
 
 class DiscourseApiClient(
     private val service: DiscourseApiService,
 ) : SessionBootstrapClient {
+    private var sessionContextProvider: () -> SessionRequestContext = {
+        SessionRequestContext(
+            generation = 0,
+            auth = SessionRequestAuth.Authenticated,
+        )
+    }
+    private var onSessionInvalidated: suspend (SessionExpiredReason, Int) -> Unit = { _, _ -> }
+    private var onLoginRequired: suspend () -> Unit = {}
+
+    /**
+     * Injects the session boundary this client reports to: every request
+     * resolves its [SessionRequestContext] up front, and a proven logout is
+     * reported back with the generation that started the request so a stale
+     * response cannot invalidate a newer WebView login.
+     */
+    fun setSessionBoundary(
+        contextProvider: () -> SessionRequestContext,
+        onSessionInvalidated: suspend (SessionExpiredReason, Int) -> Unit,
+        onLoginRequired: suspend () -> Unit,
+    ) {
+        sessionContextProvider = contextProvider
+        this.onSessionInvalidated = onSessionInvalidated
+        this.onLoginRequired = onLoginRequired
+    }
+
     override suspend fun fetchBootstrap(): ParsedBootstrap =
         runWithSessionBoundary {
             service.bootstrap().use { responseBody ->
-                BootstrapHtmlParser.parse(responseBody.string())
+                val html = responseBody.string()
+                BootstrapHtmlParser.parse(html)
             }
         }
 
     override suspend fun fetchCurrentUser(): SessionUserSummary? =
         runWithSessionBoundary {
-            service.currentSession().currentUser?.toSessionUserSummary()
+            try {
+                val currentUser = service.currentSession().currentUser
+                currentUser?.toSessionUserSummary()
+                    ?: run {
+                        // Discourse uses a 200 response with current_user=null
+                        // for an authenticated session that has been revoked.
+                        // Treat it like the explicit logout headers below so
+                        // every caller reaches the same cookie-clearing path.
+                        throw SessionLoggedOutException()
+                    }
+            } catch (error: SerializationException) {
+                throw SessionRecoveryRequiredException(cause = error)
+            }
         }
 
     override suspend fun fetchCurrentUsername(): String? =
@@ -42,16 +87,18 @@ class DiscourseApiClient(
     }
 
     suspend fun fetchLatestPage(page: Int): TopicListPage =
-        service.latest(page).toModel()
+        runWithSessionBoundary { service.latest(page).toModel() }
 
     suspend fun fetchNewPage(page: Int): TopicListPage =
-        service.newTopics(page).toModel()
+        runWithSessionBoundary { service.newTopics(page).toModel() }
 
     suspend fun fetchTopPage(page: Int): TopicListPage =
-        service.topTopics(page).toModel()
+        runWithSessionBoundary { service.topTopics(page).toModel() }
 
     suspend fun search(query: String, page: Int = 0, typeFilter: String? = null): SearchResult =
-        service.search(query = query, page = page, typeFilter = typeFilter).toModel()
+        runWithSessionBoundary {
+            service.search(query = query, page = page, typeFilter = typeFilter).toModel()
+        }
 
     suspend fun searchMentionUsers(term: String, topicId: Long): MentionSearchResult =
         runWithSessionBoundary {
@@ -59,7 +106,7 @@ class DiscourseApiClient(
         }
 
     suspend fun fetchCategories(): List<CategorySummary> =
-        service.site().toModel()
+        runWithSessionBoundary { service.site().toModel() }
 
     suspend fun fetchTopic(topicId: Long): TopicDetail =
         runWithSessionBoundary {
@@ -92,7 +139,7 @@ class DiscourseApiClient(
         }
 
     suspend fun createPost(topicId: Long, raw: String, replyToPostNumber: Int?): Post =
-        runWithSessionBoundary {
+        runWithSessionBoundary(requiresAuthentication = true) {
             val csrfToken = service.csrf().csrf
             service.createPost(
                 topicId = topicId,
@@ -125,7 +172,7 @@ class DiscourseApiClient(
         }
 
     suspend fun toggleReaction(postId: Long, reactionId: String) =
-        runWithSessionBoundary {
+        runWithSessionBoundary(requiresAuthentication = true) {
             val csrfToken = service.csrf().csrf
             service.toggleReaction(
                 postId = postId,
@@ -135,7 +182,7 @@ class DiscourseApiClient(
         }
 
     suspend fun setPostBookmark(postId: Long, bookmarked: Boolean) =
-        runWithSessionBoundary {
+        runWithSessionBoundary(requiresAuthentication = true) {
             val csrfToken = service.csrf().csrf
             if (bookmarked) {
                 service.createBookmark(
@@ -153,7 +200,7 @@ class DiscourseApiClient(
         }
 
     suspend fun votePoll(postId: Long, pollName: String, optionIds: List<String>) =
-        runWithSessionBoundary {
+        runWithSessionBoundary(requiresAuthentication = true) {
             val csrfToken = service.csrf().csrf
             service.votePoll(
                 postId = postId,
@@ -164,7 +211,7 @@ class DiscourseApiClient(
         }
 
     suspend fun removePollVote(postId: Long, pollName: String) =
-        runWithSessionBoundary {
+        runWithSessionBoundary(requiresAuthentication = true) {
             val csrfToken = service.csrf().csrf
             service.removePollVote(
                 postId = postId,
@@ -193,35 +240,91 @@ class DiscourseApiClient(
             ).toModel()
         }
 
-    private suspend fun <T> runWithSessionBoundary(block: suspend () -> T): T {
+    private suspend fun <T> runWithSessionBoundary(
+        requiresAuthentication: Boolean = false,
+        block: suspend () -> T,
+    ): T {
+        val requestContext = sessionContextProvider()
         return try {
             block()
-        } catch (error: HttpException) {
-            if (error.isLoggedOutResponse() || error.isNotLoggedInPayload()) {
-                throw SessionLoggedOutException(cause = error)
-            }
+        } catch (error: CancellationException) {
             throw error
+        } catch (error: LoginRequiredException) {
+            throw error
+        } catch (error: SessionLoggedOutException) {
+            handleLoggedOutResponse(requestContext, requiresAuthentication, error)
+        } catch (error: HttpException) {
+            // ResponseBody is one-shot. Read it once so a JSON logout check
+            // cannot consume the Cloudflare challenge evidence that follows.
+            val errorBody = error.response()?.errorBody()?.string().orEmpty()
+            when {
+                error.isLoggedOutResponse() || error.isNotLoggedInPayload(errorBody) -> {
+                    handleLoggedOutResponse(requestContext, requiresAuthentication, error)
+                }
+                error.isCloudflareChallengeResponse(errorBody) -> {
+                    throw SessionRecoveryRequiredException(cause = error)
+                }
+                else -> throw error
+            }
         }
+    }
+
+    private suspend fun handleLoggedOutResponse(
+        requestContext: SessionRequestContext,
+        requiresAuthentication: Boolean,
+        cause: Throwable,
+    ): Nothing {
+        if (requestContext.canUseAuthenticatedSession) {
+            onSessionInvalidated(SessionExpiredReason.ServerLoggedOut, requestContext.generation)
+            throw SessionLoggedOutException(cause = cause)
+        }
+        if (requiresAuthentication || requestContext.auth == SessionRequestAuth.Anonymous) {
+            onLoginRequired()
+        }
+        throw LoginRequiredException(cause = cause)
     }
 
     private fun HttpException.isLoggedOutResponse(): Boolean {
         val headerValue = response()?.headers()?.get("discourse-logged-out").orEmpty()
-        return headerValue.equals("true", ignoreCase = true) || headerValue == "1"
+        return headerValue.equals("true", ignoreCase = true) ||
+            headerValue == "1" ||
+            code() == 401
     }
 
-    private fun HttpException.isNotLoggedInPayload(): Boolean {
-        val errorBody = response()?.errorBody()?.string().orEmpty()
+    private fun HttpException.isNotLoggedInPayload(errorBody: String): Boolean {
         if (errorBody.isBlank()) {
             return false
         }
         return runCatching {
-            NetworkJson.instance.parseToJsonElement(errorBody)
-                .jsonObject["error_type"]
-                ?.jsonPrimitive
-                ?.contentOrNull == "not_logged_in"
+            val payload = NetworkJson.instance.parseToJsonElement(errorBody).jsonObject
+            val errorType = payload["error_type"]?.jsonPrimitive?.contentOrNull
+            val errorName = payload["error"]?.jsonPrimitive?.contentOrNull
+            errorType.equals("not_logged_in", ignoreCase = true) ||
+                errorType.equals("logged_out", ignoreCase = true) ||
+                errorName.equals("not_logged_in", ignoreCase = true) ||
+                errorName.equals("logged_out", ignoreCase = true)
         }.getOrDefault(false)
     }
+
+    private fun HttpException.isCloudflareChallengeResponse(errorBody: String): Boolean {
+        if (code() !in setOf(403, 429, 503)) return false
+        val headers = response()?.headers() ?: return false
+        val server = headers["server"].orEmpty()
+        val mitigated = headers["cf-mitigated"].orEmpty()
+        val contentType = headers["content-type"].orEmpty()
+        val body = errorBody.lowercase(Locale.US)
+        return mitigated.contains("challenge", ignoreCase = true) ||
+            (server.contains("cloudflare", ignoreCase = true) &&
+                (contentType.contains("text/html", ignoreCase = true) || body.contains("challenge"))) ||
+            looksLikeCloudflareChallenge(body)
+    }
 }
+
+internal fun looksLikeCloudflareChallenge(bodyLowercased: String): Boolean =
+    bodyLowercased.contains("just a moment") ||
+        bodyLowercased.contains("cf-chl-") ||
+        bodyLowercased.contains("challenge-platform") ||
+        bodyLowercased.contains("checking your browser")
 
 data class ParsedBootstrap(
     val currentUsername: String?,
@@ -229,6 +332,9 @@ data class ParsedBootstrap(
 
 object BootstrapHtmlParser {
     fun parse(html: String): ParsedBootstrap {
+        if (looksLikeCloudflareChallenge(html.lowercase(Locale.US))) {
+            throw SessionRecoveryRequiredException()
+        }
         val document = Jsoup.parse(html)
         val username = document.selectFirst("meta[name=current-username]")
             ?.attr("content")
@@ -246,11 +352,13 @@ object BootstrapHtmlParser {
         val currentUserJson = runCatching {
             NetworkJson.instance.parseToJsonElement(this)
                 .jsonObject["currentUser"]
-                ?.jsonPrimitive
-                ?.contentOrNull
         }.getOrNull()
-        return currentUserJson
-            ?.let { value ->
+        return when {
+            currentUserJson == null -> null
+            currentUserJson is kotlinx.serialization.json.JsonObject ->
+                currentUserJson["username"]?.jsonPrimitive?.contentOrNull
+                    ?.takeIf { it.isNotBlank() }
+            else -> currentUserJson.jsonPrimitive.contentOrNull?.let { value ->
                 runCatching {
                     NetworkJson.instance.parseToJsonElement(value)
                         .jsonObject["username"]
@@ -259,5 +367,6 @@ object BootstrapHtmlParser {
                         ?.takeIf { username -> username.isNotBlank() }
                 }.getOrNull()
             }
+        }
     }
 }

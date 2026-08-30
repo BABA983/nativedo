@@ -1,20 +1,7 @@
 /*
- * This file is part of NativeDo.
- *
- * Derived in part from Telegram for Android's
- * org/telegram/ui/Components/glass/GlassTabView.java.
- *
- * Source reference:
- * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/ui/Components/glass/GlassTabView.java
- *
- * Copyright (C) Telegram FZ-LLC
- * Copyright (C) 2026 NativeDo contributors
- *
- * This program is free software: you can redistribute it and/or modify
- * it under terms of GNU General Public License version 2 or later as published by
- * the Free Software Foundation.
- *
  * SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ * Native port of org/telegram/ui/Components/glass/GlassTabView.java.
  */
 package io.github.baba983.nativedo.ui.main;
 
@@ -52,6 +39,7 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, The
 
     public enum TabIcon {
         HOME,
+        SETTINGS,
         PROFILE
     }
 
@@ -60,14 +48,13 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, The
     private final BackupImageView avatarView;
     private final AvatarDrawable avatarDrawable = new AvatarDrawable();
     private boolean hasAvatar;
-    private final Paint avatarRingPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final TextPaint defaultTextPaint;
     private final Paint selectedPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint counterPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint counterTextPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF tmpRectF = new RectF();
-    private static final Typeface DEFAULT_TYPEFACE = Typeface.create(Typeface.DEFAULT, 500, false);
-    private static final Typeface SELECTED_TYPEFACE = Typeface.create(Typeface.DEFAULT, 800, false);
+    private static final Typeface DEFAULT_TYPEFACE = AndroidUtilities.bold();
+    private static final Typeface SELECTED_TYPEFACE = AndroidUtilities.getTypeface("fonts/rextrabold.ttf");
 
     private float selectedFactor;
     private boolean selected;
@@ -94,16 +81,13 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, The
         addView(iconView, LayoutHelper.createFrame(24, 24, Gravity.CENTER_HORIZONTAL | Gravity.TOP));
         ((LayoutParams) iconView.getLayoutParams()).topMargin = AndroidUtilities.dp(4);
 
-        // Avatar overlay: shown in place of the static icon when the user is logged
-        // in, so the profile tab renders the account avatar (Telegram-style).
+        // Show the signed-in account avatar in place of the static profile icon.
         avatarView = new BackupImageView(context);
-        avatarView.setRoundRadius(AndroidUtilities.dp(12));
+        avatarView.setRoundRadius(AndroidUtilities.dp(11));
         avatarView.setVisibility(GONE);
-        addView(avatarView, LayoutHelper.createFrame(24, 24, Gravity.CENTER_HORIZONTAL | Gravity.TOP));
-        ((LayoutParams) avatarView.getLayoutParams()).topMargin = AndroidUtilities.dp(4);
+        addView(avatarView, LayoutHelper.createFrame(22, 22, Gravity.CENTER_HORIZONTAL | Gravity.TOP));
+        ((LayoutParams) avatarView.getLayoutParams()).topMargin = AndroidUtilities.dp(5);
 
-        avatarRingPaint.setStyle(Paint.Style.STROKE);
-        avatarRingPaint.setStrokeWidth(AndroidUtilities.dpf2(1.5f));
 
         textView = new TextView(context);
         textView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12f);
@@ -149,9 +133,6 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, The
     }
 
     public void clearAvatar() {
-        if (!hasAvatar) {
-            return;
-        }
         hasAvatar = false;
         avatarView.setImageDrawable(null);
         avatarView.setVisibility(GONE);
@@ -213,7 +194,7 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, The
         final float drawingSelectedFactor = hasGestureSelectedOverride ? gestureSelectedOverride : selectedFactor;
         if (drawingSelectedFactor > 0f) {
             final float alpha = CubicBezierInterpolator.DEFAULT.getInterpolation(drawingSelectedFactor);
-            selectedPaint.setColor(ColorUtils.setAlphaComponent(colorSelected, (int) (23 * alpha)));
+            selectedPaint.setColor(Theme.multAlpha(colorSelected, 0.09f * alpha));
             tmpRectF.set(0, 0, viewWidth, getHeight());
             final float radius = Math.min(tmpRectF.width(), tmpRectF.height()) / 2f;
             final float scale = AndroidUtilities.lerp(0.6f, 1f, drawingSelectedFactor);
@@ -223,16 +204,6 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, The
             canvas.restore();
         }
 
-        // Selection ring around the avatar, so the profile tab reads as "selected"
-        // when the account avatar has replaced the tintable icon.
-        if (hasAvatar && drawingSelectedFactor > 0f) {
-            final float cx = avatarView.getX() + avatarView.getWidth() / 2f;
-            final float cy = avatarView.getY() + avatarView.getHeight() / 2f;
-            final float ringRadius = avatarView.getWidth() / 2f + AndroidUtilities.dpf2(2.5f);
-            avatarRingPaint.setColor(colorSelected);
-            avatarRingPaint.setAlpha((int) (255 * CubicBezierInterpolator.DEFAULT.getInterpolation(drawingSelectedFactor)));
-            canvas.drawCircle(cx, cy, ringRadius, avatarRingPaint);
-        }
 
         super.dispatchDraw(canvas);
 
@@ -316,6 +287,9 @@ public class GlassTabView extends FrameLayout implements MainTabsLayout.Tab, The
     private static int iconResId(TabIcon tabIcon) {
         if (tabIcon == TabIcon.PROFILE) {
             return R.drawable.ic_main_tab_profile_24;
+        }
+        if (tabIcon == TabIcon.SETTINGS) {
+            return org.telegram.messenger.R.drawable.msg_settings_old;
         }
         return R.drawable.ic_main_tab_home_24;
     }

@@ -1,22 +1,10 @@
 /*
- * This file is part of NativeDo.
- *
- * Derived in part from Telegram for Android's
- * org/telegram/ui/SettingsActivity.SettingCell and its inner Background class.
- *
- * Source reference:
- * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/ui/SettingsActivity.java
- *
- * Copyright (C) Telegram FZ-LLC
- * Copyright (C) 2026 NativeDo contributors
- *
- * This program is free software: you can redistribute it and/or modify
- * it under terms of GNU General Public License version 2 or later as published by
- * the Free Software Foundation.
- *
  * SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ * Native port of org/telegram/ui/SettingsActivity.java (SettingCell and its
+ * icon background), bound to NativeDo settings rows.
  */
-package io.github.baba983.nativedo.ui.profile;
+package io.github.baba983.nativedo.ui.settings;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
 import static org.telegram.messenger.AndroidUtilities.dpf2;
@@ -25,7 +13,6 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.ColorFilter;
 import android.graphics.LinearGradient;
-import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.PixelFormat;
 import android.graphics.Shader;
@@ -48,11 +35,6 @@ import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
 
-/**
- * Native port of Telegram's SettingsActivity.SettingCell.
- * A horizontal row with a gradient-background icon, title, optional subtitle, and optional value.
- * The icon sits inside a rounded-rect with a vertical LinearGradient + optional stroke border.
- */
 public class IconSettingCell extends LinearLayout implements Theme.Colorable {
 
     private final Background iconBackground;
@@ -121,9 +103,6 @@ public class IconSettingCell extends LinearLayout implements Theme.Colorable {
         iconBackground.setDrawBorder(Theme.isCurrentThemeDark());
     }
 
-    /**
-     * Bind data to this cell — mirrors upstream SettingCell.set().
-     */
     public void set(int iconColorTop, int iconColorBottom, int icon,
                     CharSequence title,
                     CharSequence subtitle,
@@ -149,11 +128,6 @@ public class IconSettingCell extends LinearLayout implements Theme.Colorable {
         );
     }
 
-    /**
-     * Gradient icon background — native port of SettingsActivity.SettingCell.Background.
-     * Draws a rounded-rect with a vertical LinearGradient fill and an optional stroke border
-     * (white-to-transparent gradient) for dark theme.
-     */
     public static class Background extends Drawable {
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Paint strokePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -206,10 +180,6 @@ public class IconSettingCell extends LinearLayout implements Theme.Colorable {
         }
     }
 
-    /**
-     * Color pairs for gradient icon backgrounds — simplified from upstream IconBackgroundColors.
-     * Only the colors we actually use in the profile page.
-     */
     public static final class Colors {
         public static final int BLUE_TOP    = 0xFF1CA5ED;
         public static final int BLUE_BOTTOM = 0xFF1488E1;
@@ -226,8 +196,6 @@ public class IconSettingCell extends LinearLayout implements Theme.Colorable {
         public static final int PINK_TOP    = 0xFFFF85A0;
         public static final int PINK_BOTTOM = 0xFFFF5580;
     }
-
-    // --- UItem Factory ---
 
     private static final int VIEW_TYPE = 10_005;
 
@@ -262,10 +230,6 @@ public class IconSettingCell extends LinearLayout implements Theme.Colorable {
             return true;
         }
 
-        /**
-         * Create a UItem for this cell. Icon color top/bottom are packed into longValue
-         * to match upstream SettingsActivity.SettingCell.Factory packing convention.
-         */
         public static UItem of(int id, int iconColorTop, int iconColorBottom, int icon, CharSequence title) {
             return of(id, iconColorTop, iconColorBottom, icon, title, null, null);
         }

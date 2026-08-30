@@ -15,10 +15,12 @@ class CookieStore(
 
     private var cookies: Map<String, List<Cookie>> = loadPersistedCookies()
 
+    @Synchronized
     fun hasAuthenticatedCookies(): Boolean = allCookies()
         .filterNotExpired()
         .any { it.name == "_t" && it.value.isNotBlank() }
 
+    @Synchronized
     fun load(url: HttpUrl): List<Cookie> {
         val compactedCookies = compactCookies()
         val validCookies = compactedCookies.filter { cookie -> cookie.matches(url) }
@@ -29,26 +31,29 @@ class CookieStore(
         return validCookies
     }
 
+    @Synchronized
     fun save(url: HttpUrl, cookies: List<Cookie>) {
         val mergedCookies = LinkedHashMap<String, Cookie>()
         compactCookies().forEach { cookie ->
             mergedCookies[cookie.storageKey()] = cookie
         }
-        cookies.filterNotExpired().forEach { cookie ->
-            mergedCookies[cookie.storageKey()] = cookie
+        val now = System.currentTimeMillis()
+        cookies.forEach { cookie ->
+            val key = cookie.storageKey()
+            if (cookie.expiresAt <= now) {
+                // OkHttp passes Max-Age=0/expired Set-Cookie values here.
+                // Keeping the previous value would resurrect a revoked _t
+                // token on the next request.
+                mergedCookies.remove(key)
+            } else {
+                mergedCookies[key] = cookie
+            }
         }
         this.cookies = rebuildBuckets(mergedCookies.values.toList())
         persistCookies()
     }
 
-    fun replace(url: HttpUrl, cookies: List<Cookie>) {
-        val retainedCookies = compactCookies().filterNot { cookie ->
-            cookie.domain.removePrefix(".") == url.host
-        }
-        this.cookies = rebuildBuckets(retainedCookies + cookies.filterNotExpired())
-        persistCookies()
-    }
-
+    @Synchronized
     fun clear() {
         cookies = emptyMap()
         persistCookies()
@@ -57,7 +62,7 @@ class CookieStore(
     private fun loadPersistedCookies(): Map<String, List<Cookie>> {
         return persistence.load()
             .mapValues { (host, rawCookies) ->
-                val hostUrl = "https://$host/".toHttpUrl()
+                val hostUrl = "https://${host.removePrefix(".")}/".toHttpUrl()
                 rawCookies.mapNotNull { rawCookie ->
                     Cookie.parse(hostUrl, rawCookie)
                 }.filterNotExpired()
@@ -96,7 +101,7 @@ class CookieStore(
         return filter { cookie -> cookie.expiresAt > now }
     }
 
-    private fun Cookie.storageKey(): String = "$name|$domain|$path"
+    private fun Cookie.storageKey(): String = "$name|${domain.removePrefix(".")}|$path"
 }
 
 interface CookieStorePersistence {

@@ -1678,6 +1678,9 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
             contentView = fragment.createView(getContext());
             fragment.setFragmentView(contentView);
         }
+        if (contentView != null && fragment.isSupportEdgeToEdge() && fragment.drawEdgeNavigationBar()) {
+            ViewCompat.setOnApplyWindowInsetsListener(contentView, fragment::onInsetsInternal);
+        }
         removeFromParent(contentView);
 
         ActionBar actionBar = fragment.getActionBar();

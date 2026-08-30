@@ -1,20 +1,7 @@
 /*
- * This file is part of NativeDo.
- *
- * Derived in part from Telegram for Android's
- * org/telegram/ui/MainTabsLayout.java.
- *
- * Source reference:
- * https://github.com/DrKLO/Telegram/blob/master/TMessagesProj/src/main/java/org/telegram/ui/MainTabsLayout.java
- *
- * Copyright (C) Telegram FZ-LLC
- * Copyright (C) 2026 NativeDo contributors
- *
- * This program is free software: you can redistribute it and/or modify
- * it under terms of GNU General Public License version 2 or later as published by
- * the Free Software Foundation.
- *
  * SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ * Native port of org/telegram/ui/MainTabsLayout.java.
  */
 package io.github.baba983.nativedo.ui.main;
 
@@ -26,6 +13,7 @@ import org.telegram.messenger.AndroidUtilities;
 
 public class MainTabsLayout extends LinearLayout {
 
+    private int maxWidthPx;
     private float[] tabsTextWidth;
     private float[] tabsTextWidthWithMargin;
     private int[] tabsWeight;
@@ -37,16 +25,31 @@ public class MainTabsLayout extends LinearLayout {
         setOrientation(HORIZONTAL);
     }
 
+    public void setMaxWidth(int maxWidthPx) {
+        if (this.maxWidthPx == maxWidthPx) {
+            return;
+        }
+        this.maxWidthPx = maxWidthPx;
+        requestLayout();
+    }
+
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-        final int width = MeasureSpec.getSize(widthMeasureSpec);
+        int width = MeasureSpec.getSize(widthMeasureSpec);
         final int height = MeasureSpec.getSize(heightMeasureSpec);
         final int tabHeight = height - getPaddingTop() - getPaddingBottom();
+
+        if (maxWidthPx > 0 && width > maxWidthPx) {
+            width = maxWidthPx;
+        }
 
         measureTabTexts();
 
         final int maxTotalWidthForTabs = width - getPaddingLeft() - getPaddingRight();
-        final int minTotalWidthForTabs = Math.min(AndroidUtilities.dp(160), maxTotalWidthForTabs);
+        final int minTotalWidthForTabs = Math.min(
+                AndroidUtilities.dp(MainTabsActivity.MAIN_TABS_MIN_CONTENT_WIDTH),
+                maxTotalWidthForTabs
+        );
         final int tabPadding = AndroidUtilities.dp(16);
         if (visibleChildCount == 0) {
             setMeasuredDimension(getPaddingLeft() + getPaddingRight(), height);

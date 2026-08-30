@@ -3,8 +3,6 @@ package io.github.baba983.nativedo.ui.auth
 import android.annotation.SuppressLint
 import android.app.DownloadManager
 import android.content.Context
-import android.content.Intent
-import android.graphics.Color
 import android.net.http.SslError
 import android.net.Uri
 import android.os.Build
@@ -17,7 +15,6 @@ import android.webkit.RenderProcessGoneDetail
 import android.webkit.SslErrorHandler
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
-import android.webkit.WebSettings
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -28,9 +25,6 @@ import android.widget.Toast
 import io.github.baba983.nativedo.NativeDoApp
 import io.github.baba983.nativedo.R
 import io.github.baba983.nativedo.core.di.AppContainer
-import io.github.baba983.nativedo.core.network.NetworkJson
-import io.github.baba983.nativedo.core.session.AppSessionState
-import io.github.baba983.nativedo.core.session.SessionUserSummary
 import org.telegram.ui.ActionBar.BackDrawable
 import org.telegram.ui.ActionBar.ActionBar
 import org.telegram.ui.ActionBar.BaseFragment
@@ -41,187 +35,23 @@ import org.telegram.ui.Components.LayoutHelper
 import org.telegram.ui.Components.LineProgressView
 import org.telegram.messenger.browser.Browser
 import org.telegram.messenger.AndroidUtilities
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.decodeFromString
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
 import io.github.baba983.nativedo.core.web.DISCOURSE_ASSETS_ICONS_SCRIPT
 import io.github.baba983.nativedo.core.web.decodeJavascriptString
 import io.github.baba983.nativedo.core.web.isDiscourseSameOrigin
 import io.github.baba983.nativedo.core.web.saveDiscourseSvgSpriteMarkup
-import kotlinx.coroutines.suspendCancellableCoroutine
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
-import kotlin.coroutines.resume
-import java.util.Collections
 import java.util.IdentityHashMap
-
-private const val LOGIN_COOKIE_READY_MAX_ATTEMPTS = 20
-private const val LOGIN_COOKIE_READY_DELAY_MILLIS = 500L
-
-internal enum class LoginWebBackAction {
-    CONSUME_RESTORE,
-    GO_WEB_HISTORY,
-    COMPLETE_SESSION,
-    POP_FRAGMENT,
-}
-
-internal fun loginWebBackAction(
-    isRestoringSession: Boolean,
-    canGoBack: Boolean,
-    hasAuthenticatedCookies: Boolean,
-): LoginWebBackAction = when {
-    isRestoringSession -> LoginWebBackAction.CONSUME_RESTORE
-    canGoBack -> LoginWebBackAction.GO_WEB_HISTORY
-    hasAuthenticatedCookies -> LoginWebBackAction.COMPLETE_SESSION
-    else -> LoginWebBackAction.POP_FRAGMENT
-}
-
-internal sealed interface LoginWebNavigationDecision {
-    data object LoadInWebView : LoginWebNavigationDecision
-    data class LoadFallback(val url: String) : LoginWebNavigationDecision
-    data object OpenExternal : LoginWebNavigationDecision
-    data object Block : LoginWebNavigationDecision
-}
-
-internal fun loginWebNavigationDecision(url: String?): LoginWebNavigationDecision {
-    val normalized = url?.trim().orEmpty()
-    if (normalized.isEmpty()) return LoginWebNavigationDecision.Block
-    val uri = runCatching { Uri.parse(normalized) }.getOrNull() ?: return LoginWebNavigationDecision.Block
-    val scheme = uri.scheme?.lowercase().orEmpty()
-    if (scheme == "http" || scheme == "https") return LoginWebNavigationDecision.LoadInWebView
-    if (scheme == "intent") {
-        val fallback = runCatching {
-            Intent.parseUri(normalized, Intent.URI_INTENT_SCHEME)
-                .getStringExtra("browser_fallback_url")
-        }.getOrNull()
-        if (fallback != null && loginWebNavigationDecision(fallback) == LoginWebNavigationDecision.LoadInWebView) {
-            return LoginWebNavigationDecision.LoadFallback(fallback)
-        }
-        return LoginWebNavigationDecision.OpenExternal
-    }
-    if (scheme in setOf("javascript", "data", "file", "content", "about", "blob")) {
-        return LoginWebNavigationDecision.Block
-    }
-    return LoginWebNavigationDecision.OpenExternal
-}
-
-internal fun loginWebShouldShowMainFrameError(
-    isForMainFrame: Boolean,
-    httpStatusCode: Int? = null,
-): Boolean = isForMainFrame && (httpStatusCode == null || httpStatusCode >= 400)
-
-internal fun loginWebCanCompleteNavigation(
-    navigationGeneration: Int,
-    failedNavigationGeneration: Int,
-): Boolean = navigationGeneration != failedNavigationGeneration
-
-internal enum class LoginWebDownloadDecision {
-    AUTHENTICATED_SAME_ORIGIN,
-    OPEN_EXTERNAL,
-    BLOCK,
-}
-
-internal fun loginWebDownloadDecision(url: String?, baseUrl: String): LoginWebDownloadDecision {
-    val normalized = url?.trim().orEmpty()
-    if (normalized.isEmpty() || normalized.startsWith("blob:", ignoreCase = true)) {
-        return LoginWebDownloadDecision.BLOCK
-    }
-    return when (loginWebNavigationDecision(normalized)) {
-        LoginWebNavigationDecision.LoadInWebView -> {
-            if (isDiscourseSameOrigin(normalized, baseUrl)) {
-                LoginWebDownloadDecision.AUTHENTICATED_SAME_ORIGIN
-            } else {
-                LoginWebDownloadDecision.OPEN_EXTERNAL
-            }
-        }
-        LoginWebNavigationDecision.OpenExternal,
-        is LoginWebNavigationDecision.LoadFallback,
-        -> LoginWebDownloadDecision.OPEN_EXTERNAL
-        LoginWebNavigationDecision.Block -> LoginWebDownloadDecision.BLOCK
-    }
-}
-private const val CURRENT_USER_SCRIPT = """
-    (function() {
-      function normalizeUser(currentUser) {
-        if (!currentUser) {
-          return null;
-        }
-        if (typeof currentUser === 'string') {
-          try {
-            currentUser = JSON.parse(currentUser);
-          } catch (error) {
-            return null;
-          }
-        }
-        var username = currentUser.username || '';
-        if (!username) {
-          return null;
-        }
-        return {
-          username: username,
-          name: currentUser.name || '',
-          avatar_template: currentUser.avatar_template || ''
-        };
-      }
-      var meta = document.querySelector('meta[name="current-username"]');
-      var metaUsername = meta && meta.content || '';
-      var preloaded = document.querySelector('#data-preloaded');
-      var user = null;
-      try {
-        var payload = JSON.parse(preloaded.getAttribute('data-preloaded') || '{}');
-        user = normalizeUser(payload.currentUser);
-      } catch (error) {
-      }
-      if (!user && metaUsername) {
-        user = {
-          username: metaUsername,
-          name: '',
-          avatar_template: ''
-        };
-      }
-      if (!user) {
-        return '';
-      }
-      return JSON.stringify(user);
-    })();
-"""
-
-@Serializable
-private data class LoginCurrentUserPayload(
-    val username: String = "",
-    val name: String = "",
-    @SerialName("avatar_template")
-    val avatarTemplate: String = "",
-) {
-    fun toSessionUserSummary(): SessionUserSummary? {
-        val normalizedUsername = username.takeIf { it.isNotBlank() } ?: return null
-        return SessionUserSummary(
-            username = normalizedUsername,
-            displayName = name.takeIf { it.isNotBlank() } ?: normalizedUsername,
-            avatarTemplate = avatarTemplate,
-        )
-    }
-}
-
-internal fun decodeCurrentUserPayload(rawValue: String?): SessionUserSummary? {
-    val payload = decodeJavascriptString(rawValue).trim()
-    if (payload.isBlank()) {
-        return null
-    }
-    return runCatching {
-        NetworkJson.instance.decodeFromString<LoginCurrentUserPayload>(payload)
-            .toSessionUserSummary()
-    }.getOrNull()
-}
+import java.util.Collections
 
 class LoginWebViewFragment : BaseFragment() {
     private val fragmentScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private lateinit var autofillManager: LoginAutofillManager
     private lateinit var appContainer: AppContainer
     private var webView: WebView? = null
     private var webRoot: FrameLayout? = null
@@ -252,6 +82,7 @@ class LoginWebViewFragment : BaseFragment() {
         })
 
         appContainer = (context.applicationContext as NativeDoApp).appContainer
+        autofillManager = LoginAutofillManager(appContainer.credentialStore)
 
         val root = FrameLayout(context).apply {
             setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite))
@@ -278,42 +109,13 @@ class LoginWebViewFragment : BaseFragment() {
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun createLoginWebView(context: Context, root: FrameLayout): WebView {
-        val loginWebView = WebView(context).apply {
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-            )
-            setBackgroundColor(Color.TRANSPARENT)
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            settings.userAgentString = appContainer.userAgent
-            settings.loadWithOverviewMode = false
-            settings.useWideViewPort = false
-            settings.builtInZoomControls = false
-            settings.displayZoomControls = false
-            settings.allowFileAccess = false
-            settings.allowContentAccess = false
-            settings.javaScriptCanOpenWindowsAutomatically = true
-            settings.setSupportMultipleWindows(true)
-            settings.mediaPlaybackRequiresUserGesture = true
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-                settings.layoutAlgorithm = WebSettings.LayoutAlgorithm.TEXT_AUTOSIZING
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
-            }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                settings.safeBrowsingEnabled = true
-            }
-        }
+        val loginWebView = LoginWebViewFactory.create(context, appContainer.userAgent)
+        LoginWebViewFactory.configureCookies(loginWebView)
+        autofillManager.attach(loginWebView)
+
         webView = loginWebView
         rendererGone = false
         hasWebHistory = false
-
-        CookieManager.getInstance().setAcceptCookie(true)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            CookieManager.getInstance().setAcceptThirdPartyCookies(loginWebView, true)
-        }
 
         loginWebView.webChromeClient = createLoginWebChromeClient(loginWebView)
         loginWebView.webViewClient = createLoginWebViewClient()
@@ -447,6 +249,7 @@ class LoginWebViewFragment : BaseFragment() {
             if (!loginWebCanCompleteNavigation(navigationGeneration, failedNavigationGeneration)) {
                 return
             }
+            autofillManager.onPageFinished(view, url)
             captureDiscourseAssetsIcons(webView = view, currentUrl = url)
             maybeCompleteLogin(webView = view, currentUrl = url)
         }
@@ -802,76 +605,11 @@ class LoginWebViewFragment : BaseFragment() {
 
     private fun startLoginCompletion(webView: WebView, currentUrl: String) {
         restoreJob = fragmentScope.launch {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                CookieManager.getInstance().flush()
-            }
-            val authenticated = awaitAuthenticatedSession(
-                hasAuthenticatedCookies = {
-                    appContainer.cookieSyncBridge.hasAuthenticatedCookiesInWebView(appContainer.baseUrl)
-                },
-                completeLogin = {
-                    val liveUrl = webView.url.orEmpty().ifBlank { currentUrl }
-                    val currentUser = if (isDiscourseSameOrigin(liveUrl, appContainer.baseUrl)) {
-                        webView.readCurrentUser()
-                    } else {
-                        null
-                    }
-                    if (currentUser != null) {
-                        appContainer.sessionCoordinator.completeLoginFromWebViewWithKnownUsername(
-                            username = currentUser.username,
-                            displayName = currentUser.displayName,
-                            avatarTemplate = currentUser.avatarTemplate,
-                        )
-                    } else {
-                        appContainer.sessionCoordinator.completeLoginFromWebView()
-                    }
-                    appContainer.sessionCoordinator.sessionState.value is AppSessionState.Authenticated
-                },
-            )
+            val authenticated = appContainer.completeLoginUseCase(webView, currentUrl)
             if (authenticated) {
                 hasFinished = true
                 finishFragment()
             }
-        }
-    }
-}
-
-internal fun shouldAttemptLoginSessionRestore(
-    currentUrl: String,
-    baseUrl: String,
-    hasFinished: Boolean,
-    isRestoringSession: Boolean,
-): Boolean {
-    if (hasFinished || isRestoringSession) {
-        return false
-    }
-    val current = currentUrl.toHttpUrlOrNull() ?: return false
-    return isDiscourseSameOrigin(currentUrl = currentUrl, baseUrl = baseUrl) &&
-        current.encodedPath != "/login" &&
-        !current.encodedPath.startsWith("/login/")
-}
-
-internal suspend fun awaitAuthenticatedSession(
-    hasAuthenticatedCookies: () -> Boolean,
-    completeLogin: suspend () -> Boolean,
-    maxAttempts: Int = LOGIN_COOKIE_READY_MAX_ATTEMPTS,
-    delayMillis: Long = LOGIN_COOKIE_READY_DELAY_MILLIS,
-): Boolean {
-    repeat(maxAttempts) { attempt ->
-        if (hasAuthenticatedCookies() && completeLogin()) {
-            return true
-        }
-        if (attempt != maxAttempts - 1) {
-            delay(delayMillis)
-        }
-    }
-    return false
-}
-
-private suspend fun WebView.readCurrentUser(): SessionUserSummary? = suspendCancellableCoroutine { continuation ->
-    evaluateJavascript(CURRENT_USER_SCRIPT) { rawValue ->
-        if (continuation.isActive) {
-            continuation.resume(decodeCurrentUserPayload(rawValue))
         }
     }
 }

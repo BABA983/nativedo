@@ -90,7 +90,11 @@ internal class TopicThemePreviewContent(context: Context) : FrameLayout(context)
         private var wallpaper: Drawable? = null
 
         fun updateWallpaper() {
-            wallpaper = Theme.getCachedWallpaper()
+            // getCachedWallpaper() parks on a themeQueue latch that never
+            // completes under Robolectric. The onDraw null branch already falls
+            // back to the solid chat-wallpaper color until the next
+            // updateColors(), so the non-blocking lookup is enough here.
+            wallpaper = Theme.getCachedWallpaperNonBlocking()
             invalidate()
         }
 

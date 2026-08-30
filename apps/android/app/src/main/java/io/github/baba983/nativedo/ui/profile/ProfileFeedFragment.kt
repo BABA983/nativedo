@@ -33,7 +33,7 @@ class ProfileFeedFragment(
     private val username: String,
     private val feedType: ProfileFeedType,
 ) : BaseFragment() {
-    private val collectorScope = MainScope()
+    private var collectorScope = MainScope()
     private lateinit var viewModel: ProfileFeedViewModel
     private lateinit var listView: RecyclerListView
     private lateinit var adapter: TopicListAdapter
@@ -89,6 +89,12 @@ class ProfileFeedFragment(
             viewModel.uiState.collectLatest(::render)
         }
         return listView
+    }
+
+    override fun clearViews() {
+        collectorScope.cancel()
+        collectorScope = MainScope()
+        super.clearViews()
     }
 
     override fun getThemeDescriptions(): java.util.ArrayList<ThemeDescription> {

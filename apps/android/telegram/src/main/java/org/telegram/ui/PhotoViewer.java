@@ -1354,6 +1354,7 @@ public class PhotoViewer {
         public int clipBottomAddition;
         public float scale = 1.0f;
         public boolean fadeIn;
+        public boolean keepImageReceiverVisible;
         public ClippingImageView animatingImageView;
         public int animatingImageViewYOffset;
     }
@@ -2330,7 +2331,9 @@ public class PhotoViewer {
         }
         if (!init && currentPlaceObject != null && currentPlaceObject.imageReceiver != null) {
             if (animationInProgress == 0) {
-                currentPlaceObject.imageReceiver.setVisible(false, true);
+                if (!currentPlaceObject.keepImageReceiverVisible) {
+                    currentPlaceObject.imageReceiver.setVisible(false, true);
+                }
             } else {
                 hideAfterAnimation = currentPlaceObject;
             }
@@ -2856,13 +2859,13 @@ public class PhotoViewer {
             clippingImageProgress = 0f;
             containerView.setLayerType(View.LAYER_TYPE_NONE, null);
             clearClippingImage();
-            if (clippingOpen && openingPlace != null && openingPlace == currentPlaceObject && openingPlace.imageReceiver != null) {
+            if (clippingOpen && openingPlace != null && openingPlace == currentPlaceObject && openingPlace.imageReceiver != null && !openingPlace.keepImageReceiverVisible) {
                 openingPlace.imageReceiver.setVisible(false, true);
             }
             if (showAfterAnimation != null && showAfterAnimation.imageReceiver != null) {
                 showAfterAnimation.imageReceiver.setVisible(true, true);
             }
-            if (hideAfterAnimation != null && hideAfterAnimation.imageReceiver != null) {
+            if (hideAfterAnimation != null && hideAfterAnimation.imageReceiver != null && !hideAfterAnimation.keepImageReceiverVisible) {
                 hideAfterAnimation.imageReceiver.setVisible(false, true);
             }
             showAfterAnimation = null;
@@ -2916,7 +2919,7 @@ public class PhotoViewer {
                     containerView.setAlpha(0);
                     navigationBar.setAlpha(0);
                     backgroundDrawable.drawRunnable = () -> {
-                        if (openingPlace == currentPlaceObject && openingPlace.imageReceiver != null) {
+                        if (openingPlace == currentPlaceObject && openingPlace.imageReceiver != null && !openingPlace.keepImageReceiverVisible) {
                             openingPlace.imageReceiver.setVisible(false, true);
                         }
                     };
@@ -2972,7 +2975,7 @@ public class PhotoViewer {
         boolean clippingClose;
         try {
             place = placeProvider == null ? null : placeProvider.getPlaceForPhoto(null, null, currentIndex, true, true);
-            clippingClose = prepareClippingImage(place, false);
+            clippingClose = place != null && prepareClippingImage(place, false);
             closeToPlace = clippingClose;
             if (!clippingClose) {
                 releasePlaceThumb(place);
@@ -2984,17 +2987,18 @@ public class PhotoViewer {
             }
         }
         closing = true;
-        if (clippingClose && place != null && place.imageReceiver != null) {
+        if (clippingClose && place != null && place.imageReceiver != null && !place.keepImageReceiverVisible) {
             place.imageReceiver.setVisible(false, true);
         }
-        final ClippingImageView[] animatingImageViews = clippingClose ? getAnimatingImageViews(place) : new ClippingImageView[]{animatingImageView};
-        animationInProgress = clippingClose ? 3 : 2;
+        final boolean offscreenClose = place == null && prepareOffscreenCloseImage();
+        final ClippingImageView[] animatingImageViews = (clippingClose || offscreenClose) ? getAnimatingImageViews(place) : new ClippingImageView[]{animatingImageView};
+        animationInProgress = clippingClose || offscreenClose ? 3 : 2;
         transitionAnimationStartTime = System.currentTimeMillis();
         clippingImageProgress = 0f;
         if (clippingClose) {
             setParentAllowDrawContent(true);
         }
-        centerImage.setAlpha(clippingClose ? 0f : 1f);
+        centerImage.setAlpha((clippingClose || offscreenClose) ? 0f : 1f);
         if (!closeToPlace) {
             containerView.setPivotX(containerView.getWidth() / 2f);
             containerView.setPivotY(containerView.getHeight() / 2f);
@@ -3009,7 +3013,7 @@ public class PhotoViewer {
         progressAnimator.addUpdateListener(animation -> {
             float progress = (float) animation.getAnimatedValue();
             clippingImageProgress = progress;
-            if (clippingClose) {
+            if (clippingClose || offscreenClose) {
                 centerImage.setAlpha(0f);
             } else if (!closeToPlace) {
                 float scale = lerp(1f, 0.9f, progress);
@@ -3029,6 +3033,11 @@ public class PhotoViewer {
             for (int i = 1; i < animatingImageViews.length; i++) {
                 animators.add(ObjectAnimator.ofFloat(animatingImageViews[i], AnimationProperties.CLIPPING_IMAGE_VIEW_PROGRESS, 0f, 1f));
             }
+        } else if (offscreenClose) {
+            int height = getContainerViewHeight() + AndroidUtilities.getStatusBarHeight(parentActivity);
+            animators.add(ObjectAnimator.ofFloat(animatingImageView, View.ALPHA, 0f));
+            animators.add(ObjectAnimator.ofFloat(animatingImageView, View.TRANSLATION_Y, translationY >= 0f ? height : -height));
+            animators.add(ObjectAnimator.ofFloat(containerView, View.ALPHA, 0f));
         }
         animators.add(ObjectAnimator.ofInt(backgroundDrawable, AnimationProperties.COLOR_DRAWABLE_ALPHA, 0));
         animators.add(ObjectAnimator.ofFloat(navigationBar, View.ALPHA, 0f));
@@ -3127,6 +3136,47 @@ public class PhotoViewer {
         for (ClippingImageView view : animatingImageViews) {
             view.setAnimationProgress(0f);
         }
+        return true;
+    }
+
+    private boolean prepareOffscreenCloseImage() {
+        if (targetImageRect.isEmpty()) {
+            releaseCurrentThumb();
+            return false;
+        }
+        ImageReceiver.BitmapHolder bitmapHolder = bitmapHolderForAnimation(null);
+        if (bitmapHolder == null || bitmapHolder.isRecycled()) {
+            if (bitmapHolder != null) {
+                bitmapHolder.release();
+            }
+            return false;
+        }
+        int width = Math.round(centerImage.getImageWidth());
+        int height = Math.round(centerImage.getImageHeight());
+        if (width <= 0 || height <= 0) {
+            width = centerImage.getBitmapWidth();
+            height = centerImage.getBitmapHeight();
+        }
+        width = Math.max(1, width);
+        height = Math.max(1, height);
+        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) animatingImageView.getLayoutParams();
+        if (params.width != width || params.height != height) {
+            params.width = width;
+            params.height = height;
+            animatingImageView.setLayoutParams(params);
+        }
+        animatingImageView.setPivotX(0f);
+        animatingImageView.setPivotY(0f);
+        animatingImageView.setAdditionalTranslationX(0f);
+        animatingImageView.setAdditionalTranslationY(0f);
+        animatingImageView.setOrientation(centerImage.getOrientation(), centerImage.getInvert());
+        animatingImageView.setImageBitmap(bitmapHolder);
+        animatingImageView.setAnimationValues(animationValues, false, false);
+        animatingImageView.setVisibility(View.VISIBLE);
+        animatingImageView.setAlpha(1f);
+        fillClippingAnimationValues(0, null, null, width, height, false);
+        System.arraycopy(animationValues[0], 0, animationValues[1], 0, animationValues[0].length);
+        animatingImageView.setAnimationProgress(0f);
         return true;
     }
 

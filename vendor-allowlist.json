@@ -34,7 +34,7 @@
     {
       "prefix": "telegram/src/main/java/com/google/zxing/",
       "bucket": "third_party_com",
-      "reason": "Minimal ZXing MathUtils shim for pin SearchStateDrawable; not a Telegram UI port."
+      "reason": "ZXing QR encoder closure (qrcode writer/encoder, common bit matrices, reedsolomon) vendored from Telegram's tree for the profile QRCodeBottomSheet; QRCodeWriter patched to drop Telegram's qr_logo center branding."
     },
     {
       "prefix": "telegram/src/main/java/com/carrotsearch/",

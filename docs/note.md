@@ -29,3 +29,5 @@ auto scroll issue
 https://linux.do/t/topic/2501882
 emoji title
 https://linux.do/t/topic/2503776
+发掘论坛的渲染极限:今天的主角是bbcode以及HTML标签
+https://linux.do/t/topic/2790689

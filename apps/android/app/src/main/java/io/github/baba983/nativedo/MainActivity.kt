@@ -21,19 +21,21 @@ import org.telegram.messenger.SharedConfig
 import org.telegram.messenger.UserConfig
 import org.telegram.messenger.browser.Browser
 import org.telegram.ui.ActionBar.ActionBarLayout
+import org.telegram.ui.ActionBar.BaseFragment
 import org.telegram.ui.ActionBar.Theme
 import org.telegram.ui.ActionBar.DrawerLayoutContainer
 import org.telegram.ui.LaunchActivity
 import org.telegram.ui.ArticleViewer
+import org.telegram.ui.PhotoViewer
 import io.github.baba983.nativedo.core.session.AppSessionState
-import io.github.baba983.nativedo.core.session.SessionSnapshot
+import io.github.baba983.nativedo.core.session.SessionEvent
 import io.github.baba983.nativedo.core.ui.avatarImageFilter
 import io.github.baba983.nativedo.core.ui.resolveAvatarUrl
+import io.github.baba983.nativedo.ui.auth.LoginWebViewFragment
 import io.github.baba983.nativedo.ui.main.MainTabsActivity
 import io.github.baba983.nativedo.ui.theme.ThemeSettingsFragment
-import org.telegram.ui.PhotoViewer
-import org.telegram.ui.ActionBar.BaseFragment
 import org.telegram.ui.Components.ThemeEditorView
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 private const val LAZY_START = 0.015f
@@ -103,11 +105,13 @@ class MainActivity : LaunchActivity(), NotificationCenter.NotificationCenterDele
         setContentView(rootFrameLayout)
         NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.needSetDayNightTheme)
         NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.fontSizeChanged)
+        NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.needCheckSystemBarColors)
         Browser.bindCustomTabsService(this)
         lifecycleScope.launch {
             (applicationContext as NativeDoApp).appContainer.sessionCoordinator.start()
         }
         observeProfileTabAvatar()
+        observeSessionEvents()
         registerBackCallbacks()
     }
 
@@ -209,6 +213,7 @@ class MainActivity : LaunchActivity(), NotificationCenter.NotificationCenterDele
         AndroidUtilities.cancelRunOnUIThread(themeTimerRunnable)
         NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.needSetDayNightTheme)
         NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.fontSizeChanged)
+        NotificationCenter.getGlobalInstance().removeObserver(this, NotificationCenter.needCheckSystemBarColors)
         Browser.unbindCustomTabsService(this)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             onBackAnimationCallback?.let {
@@ -253,6 +258,11 @@ class MainActivity : LaunchActivity(), NotificationCenter.NotificationCenterDele
             actionBarLayout.rebuildAllFragmentViews(false)
             return
         }
+        if (id == NotificationCenter.needCheckSystemBarColors) {
+            // Re-read icon contrast from the visible fragment after header transitions.
+            actionBarLayout.updateSystemBars()
+            return
+        }
         if (id != NotificationCenter.needSetDayNightTheme) return
         val theme = args.getOrNull(0) as? Theme.ThemeInfo ?: return
         val nightTheme = args.getOrNull(1) as? Boolean ?: false
@@ -266,23 +276,24 @@ class MainActivity : LaunchActivity(), NotificationCenter.NotificationCenterDele
     }
 
     /**
-     * Mirror the signed-in account's avatar onto the bottom profile tab. Shows the
-     * avatar whenever a session snapshot carries a non-blank avatar template
-     * (authenticated, restoring, or expired-with-cache), and falls back to the
-     * static profile icon otherwise.
+     * Mirror an authenticated account's avatar onto the bottom profile tab.
+     * Restoring keeps a cached identity visible during startup; anonymous and
+     * expired sessions use the static profile icon.
      */
     private fun observeProfileTabAvatar() {
         val container = (applicationContext as NativeDoApp).appContainer
         lifecycleScope.launch {
             container.sessionCoordinator.sessionState.collect { state ->
-                val snapshot: SessionSnapshot? = when (state) {
+                val snapshot = when (state) {
                     is AppSessionState.Authenticated -> state.snapshot
                     is AppSessionState.Restoring -> state.snapshot
-                    is AppSessionState.Expired -> state.snapshot
                     else -> null
+                } ?: run {
+                    mainTabsActivity.clearProfileAvatar()
+                    return@collect
                 }
-                val template = snapshot?.avatarTemplate.orEmpty()
-                if (snapshot != null && template.isNotBlank()) {
+                val template = snapshot.avatarTemplate
+                if (template.isNotBlank()) {
                     val url = resolveAvatarUrl(container.baseUrl, template, size = AVATAR_TAB_SIZE)
                     val name = snapshot.displayName.ifBlank { snapshot.username }
                     mainTabsActivity.setProfileAvatar(url, avatarImageFilter("", AVATAR_TAB_SIZE), name)
@@ -291,6 +302,26 @@ class MainActivity : LaunchActivity(), NotificationCenter.NotificationCenterDele
                 }
             }
         }
+    }
+
+    private fun observeSessionEvents() {
+        val container = (applicationContext as NativeDoApp).appContainer
+        lifecycleScope.launch {
+            container.sessionCoordinator.events.collect { event ->
+                when (event) {
+                    SessionEvent.LoginRequired -> presentLoginGate()
+                    else -> Unit
+                }
+            }
+        }
+    }
+
+    private fun presentLoginGate() {
+        if (!::actionBarLayout.isInitialized) return
+        if (actionBarLayout.lastFragment is LoginWebViewFragment) {
+            return
+        }
+        actionBarLayout.presentFragment(LoginWebViewFragment())
     }
 
     private fun registerBackCallbacks() {

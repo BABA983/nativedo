@@ -2,20 +2,18 @@ package io.github.baba983.nativedo.ui.auth
 
 import com.google.common.truth.Truth.assertThat
 import kotlinx.coroutines.test.runTest
+import io.github.baba983.nativedo.core.session.CurrentUserExtractor
+import io.github.baba983.nativedo.core.session.awaitAuthenticatedSession
 import io.github.baba983.nativedo.core.web.decodeJavascriptString
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
-import org.robolectric.annotation.Config
 
-@RunWith(RobolectricTestRunner::class)
-@Config(sdk = [28], manifest = Config.NONE)
 class LoginWebViewFragmentTest {
     @Test
-    fun backPrioritizesRestoreThenWebHistoryThenSessionCompletion() {
+    fun backPrioritizesRestoreThenSessionThenWebHistoryThenPop() {
         assertThat(loginWebBackAction(true, true, true)).isEqualTo(LoginWebBackAction.CONSUME_RESTORE)
-        assertThat(loginWebBackAction(false, true, true)).isEqualTo(LoginWebBackAction.GO_WEB_HISTORY)
+        assertThat(loginWebBackAction(false, true, true)).isEqualTo(LoginWebBackAction.COMPLETE_SESSION)
         assertThat(loginWebBackAction(false, false, true)).isEqualTo(LoginWebBackAction.COMPLETE_SESSION)
+        assertThat(loginWebBackAction(false, true, false)).isEqualTo(LoginWebBackAction.GO_WEB_HISTORY)
         assertThat(loginWebBackAction(false, false, false)).isEqualTo(LoginWebBackAction.POP_FRAGMENT)
     }
 
@@ -175,7 +173,7 @@ class LoginWebViewFragmentTest {
 
     @Test
     fun decodeCurrentUserPayload_readsAvatarTemplate() {
-        val currentUser = decodeCurrentUserPayload(
+        val currentUser = CurrentUserExtractor.decodeCurrentUserPayload(
             "\"{\\\"username\\\":\\\"baba\\\",\\\"name\\\":\\\"Baba\\\",\\\"avatar_template\\\":\\\"/user_avatar/linux.do/baba/{size}/1.png\\\"}\"",
         )
 

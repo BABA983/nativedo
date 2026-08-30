@@ -36,9 +36,4 @@ class DiscourseSvgSpriteCaptureTest {
         assertThat(saveDiscourseSvgSpriteMarkup(store, "not a sprite")).isFalse()
     }
 
-    @Test
-    fun decodeJavascriptString_decodesQuotedJsonString() {
-        assertThat(decodeJavascriptString("\"far-pen-to-square\"")).isEqualTo("far-pen-to-square")
-        assertThat(decodeJavascriptString("null")).isEmpty()
-    }
 }

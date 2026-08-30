@@ -9,6 +9,7 @@ import io.github.baba983.nativedo.core.storage.CategoryStore
 import io.github.baba983.nativedo.feature.home.ui.readableMessage
 import io.github.baba983.nativedo.feature.profile.data.ProfileFeedRepository
 import io.github.baba983.nativedo.feature.profile.data.ProfileRepository
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,13 +22,23 @@ class ProfileViewModel(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(ProfileUiState())
     val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
-
     private var currentUsername: String? = null
 
+    private var profileLoadJob: Job? = null
+    private var profileLoadUsername: String? = null
+    private var profileLoadGeneration = 0
+    private var feedRequestUsername: String? = null
+    private var feedRequestGeneration = 0
     fun onSessionStateChanged(sessionState: AppSessionState) {
         val username = (sessionState as? AppSessionState.Authenticated)?.username
         if (username == null) {
             currentUsername = null
+            profileLoadJob?.cancel()
+            profileLoadJob = null
+            profileLoadUsername = null
+            profileLoadGeneration++
+            feedRequestUsername = null
+            feedRequestGeneration++
             _uiState.value = ProfileUiState()
             return
         }
@@ -35,59 +46,92 @@ class ProfileViewModel(
             return
         }
         currentUsername = username
-        load(username)
+        val cached = repository.cachedProfile(username)
+        if (cached != null) {
+            _uiState.value = ProfileUiState(
+                username = username,
+                profile = cached,
+                isLoading = false,
+            )
+            loadFeed(username)
+        }
+        load(username, forceRefresh = cached != null)
     }
 
     fun retry() {
-        currentUsername?.let(::load)
+        currentUsername?.let { username -> load(username, forceRefresh = true) }
     }
 
     fun retryFeed() {
-        currentUsername?.let(::loadFeed)
+        currentUsername?.let { username -> loadFeed(username, forceRefresh = true) }
     }
 
     // Java-interop bridge: expose profile state as LiveData for Java Fragments
     fun getStateLiveData(): LiveData<ProfileUiState> = uiState.asLiveData()
 
-    private fun load(username: String) {
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(
-                username = username,
-                isLoading = true,
-                errorMessage = null,
-                recentTopics = emptyList(),
-                recentReplies = emptyList(),
-                isFeedLoading = false,
-                feedErrorMessage = null,
-            )
-            repository.load(username).fold(
-                onSuccess = { profile ->
-                    if (username != currentUsername) {
-                        return@launch
-                    }
-                    _uiState.value = ProfileUiState(
+    private fun load(username: String, forceRefresh: Boolean = false) {
+        if (profileLoadUsername == username && profileLoadJob?.isActive == true) return
+        profileLoadJob?.cancel()
+        profileLoadUsername = username
+        val generation = ++profileLoadGeneration
+        profileLoadJob = viewModelScope.launch {
+            try {
+                val hasCachedProfile = forceRefresh &&
+                    _uiState.value.username == username &&
+                    _uiState.value.profile != null
+                _uiState.value = if (hasCachedProfile) {
+                    _uiState.value.copy(
                         username = username,
-                        profile = profile,
                         isLoading = false,
+                        errorMessage = null,
                     )
-                    loadFeed(username)
-                },
-                onFailure = { error ->
-                    if (username != currentUsername) {
-                        return@launch
-                    }
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        errorMessage = error.readableMessage(),
+                } else {
+                    _uiState.value.copy(
+                        username = username,
+                        isLoading = true,
+                        errorMessage = null,
+                        recentTopics = emptyList(),
+                        recentReplies = emptyList(),
                         isFeedLoading = false,
+                        feedErrorMessage = null,
                     )
-                },
-            )
+                }
+                val result = if (forceRefresh) repository.refresh(username) else repository.load(username)
+                result.fold(
+                    onSuccess = { profile ->
+                        if (username != currentUsername) return@fold
+                        _uiState.value = _uiState.value.copy(
+                            username = username,
+                            profile = profile,
+                            isLoading = false,
+                            errorMessage = null,
+                        )
+                        loadFeed(username)
+                    },
+                    onFailure = { error ->
+                        if (username != currentUsername) return@fold
+                        _uiState.value = _uiState.value.copy(
+                            isLoading = false,
+                            errorMessage = error.readableMessage(),
+                            isFeedLoading = false,
+                        )
+                    },
+                )
+            } finally {
+                if (generation == profileLoadGeneration && profileLoadUsername == username) {
+                    profileLoadJob = null
+                    profileLoadUsername = null
+                }
+            }
         }
     }
 
-    private fun loadFeed(username: String) {
+
+    private fun loadFeed(username: String, forceRefresh: Boolean = false) {
         val feedRepository = feedRepository ?: return
+        if (!forceRefresh && feedRequestUsername == username) return
+        feedRequestUsername = username
+        val generation = ++feedRequestGeneration
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 isFeedLoading = true,
@@ -109,7 +153,7 @@ class ProfileViewModel(
                 offset = 0,
             )
 
-            if (username != currentUsername) {
+            if (username != currentUsername || generation != feedRequestGeneration) {
                 return@launch
             }
 

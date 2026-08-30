@@ -1,9 +1,8 @@
 /*
  * SPDX-License-Identifier: GPL-2.0-or-later
  *
- * Native port of Telegram's org/telegram/ui/Components/ProfileActionsView.java.
- * It preserves the upstream measurement, drawing, touch, animation, and
- * accessibility shape while binding to NativeDo profile destinations.
+ * Native port of org/telegram/ui/Components/ProfileActionsView.java, bound to
+ * Discourse profile actions.
  */
 package io.github.baba983.nativedo.ui.profile;
 
@@ -16,16 +15,16 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.ColorFilter;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.graphics.RenderNode;
 import android.graphics.drawable.Drawable;
+import android.os.Build;
 import android.os.Bundle;
 import android.text.Layout;
-import android.text.StaticLayout;
-import android.text.TextPaint;
-import android.text.TextUtils;
 import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
@@ -39,14 +38,17 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 import androidx.core.graphics.ColorUtils;
-import androidx.core.math.MathUtils;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.Utilities;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.AnimatedFloat;
 import org.telegram.ui.Components.ButtonBounce;
 import org.telegram.ui.Components.CubicBezierInterpolator;
+import org.telegram.ui.ProfileActivity;
+import org.telegram.ui.Components.ProfileGalleryBlurView;
+import org.telegram.ui.Components.Text;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -54,7 +56,7 @@ import java.util.List;
 import java.util.Map;
 
 @SuppressLint("ViewConstructor")
-public class DiscourseProfileActionsView extends View {
+public class DiscourseProfileActionsView extends View implements ProfileGalleryBlurView.ActionBlurTarget {
 
     public static final int KEY_EDIT_PROFILE = 1;
     public static final int KEY_TOPICS = 2;
@@ -80,15 +82,17 @@ public class DiscourseProfileActionsView extends View {
     }
 
     private final List<Action> actions = new ArrayList<>();
-    private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final float xpadding = dpf2(14);
-    private final float ypadding = dpf2(12);
-    private final float top = dpf2(8);
+    private final Paint paint = new Paint();
+    final float xpadding;
+    final float ypadding;
+    final float top;
+    final float textPadding;
     private final int targetHeight;
 
     private int activeCount;
     private float currentHeight;
     private float parentExpanded;
+    private int actionColor = Color.BLACK;
     private boolean openingLayout = true;
     private OnActionClickListener onActionClickListener;
     private ColorFilter iconColorFilter;
@@ -98,12 +102,26 @@ public class DiscourseProfileActionsView extends View {
     private float downY;
     private long downTime;
     private AccessibilityNodeProvider accessibilityNodeProvider;
+    private final Path blurClipPath = new Path();
+    private final Path avatarClipPath = new Path();
+    private RenderNode blurRenderNode;
+    private ProfileActivity.AvatarImageView blurAvatarView;
+    private float blurRenderNodeScale;
+    private float blurRenderNodeTranslationY;
+    private boolean suppressSolidBackground;
 
     public DiscourseProfileActionsView(@NonNull Context context, int targetHeight) {
         super(context);
+        paint.setColor(Color.BLACK);
+        paint.setAlpha(40);
+
+        xpadding = dpf2(14);
+        ypadding = dpf2(12);
+        top = dpf2(8);
+        textPadding = dpf2(4);
+
         this.targetHeight = (int) (targetHeight - ypadding - top);
         setBackgroundColor(Color.TRANSPARENT);
-        setLayerType(LAYER_TYPE_SOFTWARE, null);
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
     }
 
@@ -111,11 +129,48 @@ public class DiscourseProfileActionsView extends View {
         onActionClickListener = listener;
     }
 
+    @Override
+    public void drawingBlur(boolean drawing) {
+        if (suppressSolidBackground != drawing || blurRenderNode != null) {
+            suppressSolidBackground = drawing;
+            blurRenderNode = null;
+            blurAvatarView = null;
+            invalidate();
+        }
+    }
+
+    @Override
+    public void drawingBlur(
+            @NonNull RenderNode renderNode,
+            @Nullable ProfileActivity.AvatarImageView avatarView,
+            float scale,
+            float translationY
+    ) {
+        suppressSolidBackground = false;
+        blurRenderNode = renderNode;
+        blurAvatarView = avatarView;
+        blurRenderNodeScale = scale;
+        blurRenderNodeTranslationY = translationY;
+        invalidate();
+    }
+
     public void setParentExpanded(float expanded) {
         if (parentExpanded != expanded) {
             parentExpanded = expanded;
             invalidate();
         }
+    }
+
+    public void setActionsColor(int color) {
+        if (actionColor != color) {
+            actionColor = color;
+            paint.setColor(actionColor);
+            invalidate();
+        }
+    }
+
+    private boolean isButtonColorLight() {
+        return AndroidUtilities.computePerceivedBrightness(actionColor) > .72f;
     }
 
     public void setActions(@NonNull List<ActionSpec> specs, boolean animated) {
@@ -167,11 +222,9 @@ public class DiscourseProfileActionsView extends View {
     }
 
     private float getItemWidth() {
-        if (activeCount <= 0) {
-            return 0f;
-        }
+        int w = getMeasuredWidth();
         float betweenPadding = xpadding / 2f;
-        return (getMeasuredWidth() - betweenPadding * (activeCount - 1) - xpadding * 2f) / activeCount;
+        return (w - betweenPadding * (activeCount - 1) - xpadding * 2f) / activeCount;
     }
 
     @Override
@@ -184,6 +237,9 @@ public class DiscourseProfileActionsView extends View {
         float betweenPadding = xpadding / 2f;
         float width = getItemWidth();
         float left = xpadding;
+        if (blurRenderNode != null) {
+            blurClipPath.rewind();
+        }
         for (Action action : actions) {
             if (action.isDeleted) {
                 continue;
@@ -193,6 +249,20 @@ public class DiscourseProfileActionsView extends View {
                 left += width + betweenPadding;
             }
             action.updatePosition();
+            if (blurRenderNode != null) {
+                AndroidUtilities.rectTmp.set(action.rect);
+                AndroidUtilities.rectTmp.inset(
+                        action.rect.width() / 2f * (1f - action.getScale()),
+                        action.rect.height() / 2f * (1f - action.getScale())
+                );
+                AndroidUtilities.rectTmp.inset(-1, -1);
+                blurClipPath.addRoundRect(
+                        AndroidUtilities.rectTmp,
+                        getRoundRadius(),
+                        getRoundRadius(),
+                        Path.Direction.CCW
+                );
+            }
         }
 
         float fraction = Utilities.clamp01(height / targetHeight);
@@ -201,25 +271,39 @@ public class DiscourseProfileActionsView extends View {
             return;
         }
 
-        paint.setColor(Theme.getColor(Theme.key_profile_actionBackground));
-        paint.setStyle(Paint.Style.FILL);
-        for (Action action : actions) {
-            if (action.isDeleted) {
-                continue;
+        if (!suppressSolidBackground) {
+            paint.setStyle(Paint.Style.FILL);
+            for (Action action : actions) {
+                if (action.isDeleted) {
+                    continue;
+                }
+                AndroidUtilities.rectTmp.set(action.rect);
+                AndroidUtilities.rectTmp.inset(
+                        action.rect.width() / 2f * (1f - action.getScale()),
+                        action.rect.height() / 2f * (1f - action.getScale())
+                );
+                int wasAlpha = paint.getAlpha();
+                int newAlpha = (int) (action.getAlpha() * backgroundAlpha * wasAlpha);
+                paint.setAlpha(newAlpha);
+                if (SharedConfig.shadowsInSections && isButtonColorLight() && parentExpanded < .5f) {
+                    paint.setShadowLayer(
+                            dpf2(1.5f),
+                            0,
+                            0,
+                            Theme.multAlpha(
+                                    Color.BLACK & 0x20FFFFFF,
+                                    newAlpha / 255f
+                            )
+                    );
+                } else {
+                    paint.clearShadowLayer();
+                }
+                canvas.drawRoundRect(AndroidUtilities.rectTmp, getRoundRadius(), getRoundRadius(), paint);
+                paint.setAlpha(wasAlpha);
             }
-            AndroidUtilities.rectTmp.set(action.rect);
-            AndroidUtilities.rectTmp.inset(
-                    action.rect.width() / 2f * (1f - action.getScale()),
-                    action.rect.height() / 2f * (1f - action.getScale())
-            );
-            paint.setAlpha((int) (255 * action.getAlpha() * backgroundAlpha));
-            if (parentExpanded < .5f) {
-                paint.setShadowLayer(dpf2(1.5f), 0, 0, 0x20000000);
-            } else {
-                paint.clearShadowLayer();
-            }
-            canvas.drawRoundRect(AndroidUtilities.rectTmp, getRoundRadius(), getRoundRadius(), paint);
         }
+
+        drawBlurRenderNode(canvas);
 
         float contentAlpha = Utilities.clamp01((fraction - 0.4f) / 0.6f);
         if (contentAlpha > 0f) {
@@ -239,12 +323,13 @@ public class DiscourseProfileActionsView extends View {
         if (action.isDeleted) {
             return;
         }
-        float useWhiteIcon = MathUtils.clamp((parentExpanded - .75f) / .25f, 0f, 1f);
-        int contentColor = ColorUtils.blendARGB(
-                Theme.getColor(Theme.key_profile_actionIcon),
-                Color.WHITE,
-                useWhiteIcon
-        );
+        boolean buttonColorLight = isButtonColorLight();
+        float useWhiteIcon = buttonColorLight
+                ? (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+                    ? Utilities.clamp01((parentExpanded - .75f) / .25f)
+                    : 0f)
+                : 1f;
+        int contentColor = ColorUtils.blendARGB(Color.BLACK, Color.WHITE, useWhiteIcon);
         if (iconColorFilter == null || iconColorFilterColor != contentColor) {
             iconColorFilterColor = contentColor;
             iconColorFilter = new PorterDuffColorFilter(contentColor, PorterDuff.Mode.SRC_IN);
@@ -258,21 +343,59 @@ public class DiscourseProfileActionsView extends View {
         canvas.scale(scale, scale, cx, cy);
         canvas.clipRect(action.rect);
 
-        action.updateBounds();
+        updateBounds(action);
+        float textHeight = action.text.getHeight();
+        float textY = action.bounds.bottom + action.bounds.top
+                - textHeight * action.textScale / 2f - dp(4.66f);
+        canvas.save();
+        canvas.scale(
+                action.textScale,
+                action.textScale,
+                cx,
+                textY + textHeight * action.textScale / 2f
+        );
+        action.text.draw(canvas, cx - action.text.getWidth() / 2f, textY, contentColor, alpha);
+        canvas.restore();
+
         float outlineAlpha = (1f - useWhiteIcon) * alpha;
         float filledAlpha = useWhiteIcon * alpha;
         drawActionDrawable(canvas, action.drawableOutline, outlineAlpha);
         drawActionDrawable(canvas, action.drawableFilled, filledAlpha);
+        canvas.restore();
+    }
 
-        if (action.textLayout != null) {
-            float textTop = action.bounds.bottom + dpf2(2.5f);
-            canvas.save();
-            canvas.translate(cx - action.textLayout.getWidth() / 2f, textTop);
-            action.textPaint.setColor(contentColor);
-            action.textPaint.setAlpha((int) (255 * alpha));
-            action.textLayout.draw(canvas);
-            canvas.restore();
+    private void drawBlurRenderNode(@NonNull Canvas canvas) {
+        if (
+                blurRenderNode == null ||
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+                !blurRenderNode.hasDisplayList() ||
+                !canvas.isHardwareAccelerated()
+        ) {
+            return;
         }
+        canvas.save();
+        if (blurAvatarView != null && blurAvatarView.getParent() instanceof View) {
+            View host = (View) blurAvatarView.getParent();
+            float left = host.getX();
+            float top = host.getY() - getTranslationY();
+            float width = host.getWidth() * host.getScaleX();
+            float height = host.getHeight() * host.getScaleY();
+            avatarClipPath.rewind();
+            avatarClipPath.addRoundRect(
+                    left,
+                    top,
+                    left + width,
+                    top + height,
+                    blurAvatarView.getRoundRadiusForExpand() * host.getScaleX(),
+                    blurAvatarView.getRoundRadiusForExpand() * host.getScaleY(),
+                    Path.Direction.CCW
+            );
+            canvas.clipPath(avatarClipPath);
+        }
+        canvas.clipPath(blurClipPath);
+        canvas.translate(0f, blurRenderNodeTranslationY);
+        canvas.scale(blurRenderNodeScale, blurRenderNodeScale);
+        canvas.drawRenderNode(blurRenderNode);
         canvas.restore();
     }
 
@@ -283,6 +406,29 @@ public class DiscourseProfileActionsView extends View {
         drawable.setColorFilter(iconColorFilter);
         drawable.setAlpha((int) (255 * alpha));
         drawable.draw(canvas);
+    }
+
+    private void updateBounds(Action action) {
+        final float cx = action.rect.centerX();
+        final float cy = action.rect.centerY();
+        final int drawableSize = dp(24);
+        final float drawableR = drawableSize * .5f;
+
+        int textWidth = Math.max(1, (int) (action.rect.width() - dp(2)));
+        action.ensureTextLayout(textWidth);
+        float textHeight = action.text.getHeight();
+        int lineCount = action.text.getLineCount();
+        action.textScale = lineCount >= 3 ? .75f : lineCount >= 2 ? .85f : 1f;
+        final float drawableTop = Math.max(
+                0,
+                (targetHeight - textHeight * action.textScale) / 3f + dpf2(1.33f)
+        );
+        action.setBounds(
+                (int) (cx - drawableR),
+                (int) drawableTop,
+                (int) (cx + drawableR),
+                (int) (drawableTop + drawableSize)
+        );
     }
 
     public float getRoundRadius() {
@@ -446,61 +592,49 @@ public class DiscourseProfileActionsView extends View {
                 250,
                 CubicBezierInterpolator.DEFAULT
         );
-        final TextPaint textPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+        Text text;
         CharSequence title;
         Drawable drawableFilled;
         Drawable drawableOutline;
-        StaticLayout textLayout;
         int textLayoutWidth;
+        float textScale = 1f;
         boolean isOpening;
         boolean isDeleting;
         boolean isDeleted;
 
         Action(@NonNull ActionSpec spec) {
             key = spec.key;
-            textPaint.setTextSize(dp(11));
-            textPaint.setTypeface(AndroidUtilities.bold());
             update(spec);
         }
 
         void update(@NonNull ActionSpec spec) {
             title = spec.title;
+            text = new Text(title, 11, AndroidUtilities.bold())
+                    .multiline(3)
+                    .align(Layout.Alignment.ALIGN_CENTER);
             drawableFilled = ContextCompat.getDrawable(getContext(), spec.filledIcon);
             drawableOutline = ContextCompat.getDrawable(getContext(), spec.outlineIcon);
             if (drawableFilled != null) drawableFilled = drawableFilled.mutate();
             if (drawableOutline != null) drawableOutline = drawableOutline.mutate();
-            textLayout = null;
             textLayoutWidth = 0;
         }
 
-        void updateBounds() {
-            int iconSize = dp(24);
-            int textWidth = Math.max(1, (int) actionTextWidth());
-            ensureTextLayout(textWidth);
-            int textHeight = textLayout == null ? 0 : textLayout.getHeight();
-            float drawableTop = Math.max(0, (targetHeight - textHeight) / 3f + dpf2(1.33f));
-            int cx = (int) rect.centerX();
-            bounds.set(cx - iconSize / 2, (int) drawableTop, cx + iconSize / 2, (int) drawableTop + iconSize);
+        public void setBounds(int left, int top, int right, int bottom) {
+            bounds.set(left, top, right, bottom);
+            checkBounds();
+        }
+
+        private void checkBounds() {
             if (drawableFilled != null) drawableFilled.setBounds(bounds);
             if (drawableOutline != null) drawableOutline.setBounds(bounds);
         }
 
-        float actionTextWidth() {
-            return Math.max(1f, rect.width() - dp(2));
-        }
-
         void ensureTextLayout(int width) {
-            if (textLayout != null && textLayoutWidth == width) {
+            if (textLayoutWidth == width) {
                 return;
             }
             textLayoutWidth = width;
-            textLayout = StaticLayout.Builder.obtain(title, 0, title.length(), textPaint, width)
-                    .setAlignment(Layout.Alignment.ALIGN_CENTER)
-                    .setEllipsize(TextUtils.TruncateAt.END)
-                    .setEllipsizedWidth(width)
-                    .setIncludePad(false)
-                    .setMaxLines(3)
-                    .build();
+            text.setMaxWidth(width);
         }
 
         float getScale() {

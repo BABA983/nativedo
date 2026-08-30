@@ -14,6 +14,7 @@ import android.graphics.RectF;
 import android.util.Log;
 import android.util.Pair;
 import android.view.View;
+import android.view.animation.Interpolator;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -36,6 +37,25 @@ public class UniversalRecyclerView extends RecyclerListView {
     public LinearLayoutManager layoutManager;
     public final UniversalAdapter adapter;
     public ItemTouchHelper itemTouchHelper;
+
+    public void setFlingerStoppingEnabled(boolean enabled) {
+        canStopFlinger = enabled;
+    }
+
+    public boolean isFlingerRunning() {
+        return isFlingerWorking();
+    }
+
+    // Expose the fork-only API across the :telegram/:app module boundary.
+    @Override
+    public void setTopGlowOffset(int offset) {
+        super.setTopGlowOffset(offset);
+    }
+
+    public void smoothScrollBy(int dx, int dy, int duration, @Nullable Interpolator interpolator, boolean canStop) {
+        super.smoothScrollBy(dx, dy, duration, interpolator);
+        canStopFlinger = canStop;
+    }
 
     private boolean doNotDetachViews;
     public void doNotDetachViews() {

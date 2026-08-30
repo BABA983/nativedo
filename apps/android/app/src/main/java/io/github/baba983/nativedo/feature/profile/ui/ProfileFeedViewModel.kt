@@ -77,8 +77,8 @@ class ProfileFeedViewModel(
                     _uiState.value = _uiState.value.copy(
                         items = page.items.distinctActions(),
                         isLoading = false,
-                        hasMore = page.rawCount == ProfileFeedRepository.PAGE_SIZE,
-                        nextOffset = ProfileFeedRepository.PAGE_SIZE,
+                        hasMore = page.rawCount >= ProfileFeedRepository.PAGE_SIZE,
+                        nextOffset = page.rawCount,
                     )
                 },
                 onFailure = { error ->
@@ -110,8 +110,8 @@ class ProfileFeedViewModel(
                     _uiState.value = _uiState.value.copy(
                         items = (_uiState.value.items + page.items).distinctActions(),
                         isLoadingMore = false,
-                        hasMore = page.rawCount == ProfileFeedRepository.PAGE_SIZE,
-                        nextOffset = offset + ProfileFeedRepository.PAGE_SIZE,
+                        hasMore = page.rawCount >= ProfileFeedRepository.PAGE_SIZE,
+                        nextOffset = offset + page.rawCount,
                     )
                 },
                 onFailure = { error ->

@@ -771,6 +771,9 @@ public class AboutLinkCell extends FrameLayout implements Theme.Colorable {
             }
         }
         showMoreTextView.setVisibility(shouldExpand ? View.VISIBLE : View.GONE);
+        final float collapseChromeAlpha = shouldExpand ? 1f - expandT : 0f;
+        showMoreTextBackgroundView.setAlpha(collapseChromeAlpha);
+        bottomShadow.setAlpha(shouldExpand ? (float) Math.pow(collapseChromeAlpha, 2f) : 0f);
         if (!shouldExpand && container.getBackground() == null) {
             container.setBackground(rippleBackground);
         }

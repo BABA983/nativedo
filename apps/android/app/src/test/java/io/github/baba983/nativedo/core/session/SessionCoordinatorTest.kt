@@ -4,14 +4,16 @@ import com.google.common.truth.Truth.assertThat
 import io.github.baba983.nativedo.core.network.ParsedBootstrap
 import io.github.baba983.nativedo.core.storage.CookieStore
 import io.github.baba983.nativedo.core.storage.SessionStore
-import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import okhttp3.Cookie
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Test
-
 class SessionCoordinatorTest {
     private val baseUrl = "https://linux.do/"
 
@@ -80,7 +82,7 @@ class SessionCoordinatorTest {
 
         val startup = launch { coordinator.start() }
         runCurrent()
-        coordinator.completeLoginFromWebViewWithKnownUsername("new-user")
+        coordinator.completeLoginFromWebViewStaged("new-user")
         startupUser.complete(SessionUserSummary(username = "stale-user"))
         startup.join()
 
@@ -136,11 +138,10 @@ class SessionCoordinatorTest {
     }
 
     @Test
-    fun startupWithStaleCookiesAndNoCache_marksRecoveryFailedAndClearsCookies() = runTest {
+    fun startupWithStaleCookiesAndNoCache_requiresRecoveryWithoutClearingCookies() = runTest {
         // A bootstrap response with no current-user could be a Cloudflare
-        // challenge or a transient parse miss; on startup we still wipe the
-        // stale cookies (clearInvalidWebViewCookies = true) but the reason is
-        // RecoveryFailed because the server never explicitly said logged-out.
+        // challenge or a transient parse miss. Keep the cookies so the next
+        // WebView attempt can complete the challenge.
         val cookieStore = CookieStore()
         cookieStore.save(
             baseUrl.toHttpUrl(),
@@ -174,10 +175,10 @@ class SessionCoordinatorTest {
 
         coordinator.start()
 
-        assertThat(cookieStore.hasAuthenticatedCookies()).isFalse()
-        assertThat(webViewCookiesCleared).isTrue()
+        assertThat(cookieStore.hasAuthenticatedCookies()).isTrue()
+        assertThat(webViewCookiesCleared).isFalse()
         assertThat(coordinator.sessionState.value).isEqualTo(
-            AppSessionState.Expired(SessionExpiredReason.RecoveryFailed),
+            AppSessionState.Expired(SessionExpiredReason.ChallengeRequired),
         )
     }
 
@@ -322,8 +323,15 @@ class SessionCoordinatorTest {
 
         coordinator.completeLoginFromWebView()
 
-        assertThat(cookieStore.hasAuthenticatedCookies()).isFalse()
-        assertThat(sessionStore.snapshot()).isNull()
+        assertThat(cookieStore.hasAuthenticatedCookies()).isTrue()
+        assertThat(sessionStore.snapshot()).isEqualTo(
+            SessionSnapshot(
+                username = "baba",
+                displayName = "Baba",
+                avatarTemplate = "",
+                lastValidatedAt = 1L,
+            ),
+        )
         assertThat(webViewCookiesCleared).isFalse()
         assertThat(coordinator.sessionState.value).isEqualTo(
             AppSessionState.Expired(
@@ -369,7 +377,110 @@ class SessionCoordinatorTest {
     }
 
     @Test
-    fun completeLoginFromWebViewWithKnownUsername_marksAuthenticatedWithoutHittingApi() = runTest {
+    fun repeatedServerLogoutKeepsTheOriginalExpiredSnapshot() = runTest {
+        val snapshot = SessionSnapshot(
+            username = "baba",
+            displayName = "Baba",
+            avatarTemplate = "/user_avatar/linux.do/baba/{size}/1.png",
+            lastValidatedAt = 1L,
+        )
+        val sessionStore = SessionStore().apply { save(snapshot) }
+        val coordinator = SessionCoordinator(
+            cookieStore = CookieStore(),
+            sessionStore = sessionStore,
+            apiClient = FakeSessionBootstrapClient(),
+        )
+
+        coordinator.markExpired(SessionExpiredReason.ServerLoggedOut)
+        coordinator.markExpired(SessionExpiredReason.ServerLoggedOut)
+
+        assertThat(coordinator.sessionState.value).isEqualTo(
+            AppSessionState.Expired(
+                reason = SessionExpiredReason.ServerLoggedOut,
+                snapshot = snapshot,
+            ),
+        )
+    }
+
+    @Test
+    fun recoveryFailureDoesNotClearCookiesOrCachedIdentity() = runTest {
+        val cookieStore = CookieStore().apply {
+            save(
+                baseUrl.toHttpUrl(),
+                listOf(Cookie.Builder().name("_t").value("token").domain("linux.do").path("/").build()),
+            )
+        }
+        val snapshot = SessionSnapshot(
+            username = "baba",
+            displayName = "Baba",
+            avatarTemplate = "",
+            lastValidatedAt = 1L,
+        )
+        val sessionStore = SessionStore().apply { save(snapshot) }
+        val coordinator = SessionCoordinator(
+            cookieStore = cookieStore,
+            sessionStore = sessionStore,
+            apiClient = FakeSessionBootstrapClient(),
+        )
+
+        coordinator.markExpired(SessionExpiredReason.RecoveryFailed)
+
+        assertThat(cookieStore.hasAuthenticatedCookies()).isTrue()
+        assertThat(sessionStore.snapshot()).isEqualTo(snapshot)
+        assertThat(coordinator.sessionState.value).isEqualTo(
+            AppSessionState.Expired(
+                reason = SessionExpiredReason.RecoveryFailed,
+                snapshot = snapshot,
+            ),
+        )
+    }
+
+    @Test
+    fun staleRequestLogoutCannotExpireANewerWebViewLogin() = runTest {
+        val cookieStore = CookieStore().apply {
+            save(
+                baseUrl.toHttpUrl(),
+                listOf(Cookie.Builder().name("_t").value("old-token").domain("linux.do").path("/").build()),
+            )
+        }
+        val coordinator = SessionCoordinator(
+            cookieStore = cookieStore,
+            sessionStore = SessionStore(),
+            apiClient = FakeSessionBootstrapClient(),
+            now = { 42L },
+            cookieSyncBridge = CookieSyncBridge(
+                baseUrl = baseUrl,
+                cookieStore = cookieStore,
+                readCookieHeader = { "_t=new-token" },
+                writeCookieToWebView = { _, _ -> },
+                flushCookies = {},
+                clearCookies = { onComplete -> onComplete?.invoke() },
+            ),
+        )
+        val staleRequestGeneration = coordinator.currentOperationGeneration()
+
+        coordinator.completeLoginFromWebViewStaged("new-user")
+        coordinator.markExpiredIfCurrent(
+            reason = SessionExpiredReason.ServerLoggedOut,
+            expectedGeneration = staleRequestGeneration,
+        )
+
+        assertThat(cookieStore.hasAuthenticatedCookies()).isTrue()
+        assertThat(coordinator.sessionState.value).isEqualTo(
+            AppSessionState.Authenticated(
+                snapshot = SessionSnapshot(
+                    username = "new-user",
+                    displayName = "new-user",
+                    avatarTemplate = "",
+                    lastValidatedAt = 42L,
+                ),
+                freshness = SessionFreshness.WebView,
+            ),
+        )
+    }
+
+    @Test
+    fun completeLoginFromWebViewStaged_marksAuthenticatedWithoutHittingApi() = runTest {
         val cookieStore = CookieStore()
         val bridge = CookieSyncBridge(
             baseUrl = baseUrl,
@@ -388,7 +499,7 @@ class SessionCoordinatorTest {
             now = { 99L },
         )
 
-        coordinator.completeLoginFromWebViewWithKnownUsername(username = "baba")
+        coordinator.completeLoginFromWebViewStaged(username = "baba")
 
         assertThat(cookieStore.hasAuthenticatedCookies()).isTrue()
         assertThat(coordinator.sessionState.value).isEqualTo(
@@ -399,13 +510,13 @@ class SessionCoordinatorTest {
                     avatarTemplate = "",
                     lastValidatedAt = 99L,
                 ),
-                freshness = SessionFreshness.Verified,
+                freshness = SessionFreshness.WebView,
             ),
         )
     }
 
     @Test
-    fun completeLoginFromWebViewWithKnownUsername_usesWebViewProfilePayload() = runTest {
+    fun completeLoginFromWebViewStaged_usesWebViewProfilePayload() = runTest {
         val cookieStore = CookieStore()
         val bridge = CookieSyncBridge(
             baseUrl = baseUrl,
@@ -423,7 +534,7 @@ class SessionCoordinatorTest {
             now = { 100L },
         )
 
-        coordinator.completeLoginFromWebViewWithKnownUsername(
+        coordinator.completeLoginFromWebViewStaged(
             username = "baba",
             displayName = "Baba",
             avatarTemplate = "/user_avatar/linux.do/baba/{size}/1.png",
@@ -437,13 +548,13 @@ class SessionCoordinatorTest {
                     avatarTemplate = "/user_avatar/linux.do/baba/{size}/1.png",
                     lastValidatedAt = 100L,
                 ),
-                freshness = SessionFreshness.Verified,
+                freshness = SessionFreshness.WebView,
             ),
         )
     }
 
     @Test
-    fun completeLoginFromWebViewWithKnownUsername_keepsCachedDisplayNameAndAvatarWhenUsernameMatches() = runTest {
+    fun completeLoginFromWebViewStaged_keepsCachedDisplayNameAndAvatarWhenUsernameMatches() = runTest {
         val cookieStore = CookieStore()
         val cachedSnapshot = SessionSnapshot(
             username = "baba",
@@ -468,7 +579,7 @@ class SessionCoordinatorTest {
             now = { 200L },
         )
 
-        coordinator.completeLoginFromWebViewWithKnownUsername(username = "baba")
+        coordinator.completeLoginFromWebViewStaged(username = "baba")
 
         val state = coordinator.sessionState.value
         check(state is AppSessionState.Authenticated) { "expected Authenticated, got $state" }
@@ -478,7 +589,7 @@ class SessionCoordinatorTest {
     }
 
     @Test
-    fun completeLoginFromWebViewWithKnownUsername_fallsBackToAnonymousWhenCookiesMissing() = runTest {
+    fun completeLoginFromWebViewStaged_fallsBackToAnonymousWhenCookiesMissing() = runTest {
         val cookieStore = CookieStore()
         val bridge = CookieSyncBridge(
             baseUrl = baseUrl,
@@ -495,11 +606,59 @@ class SessionCoordinatorTest {
             cookieSyncBridge = bridge,
         )
 
-        coordinator.completeLoginFromWebViewWithKnownUsername(username = "baba")
+        coordinator.completeLoginFromWebViewStaged(username = "baba")
 
         assertThat(coordinator.sessionState.value).isEqualTo(AppSessionState.Anonymous)
     }
 
+    @Test
+    fun logoutClearsDurableIdentityBeforeWebViewCallbackAndSurvivesCallerCancellation() = runTest {
+        val cookieStore = CookieStore().apply {
+            save(
+                baseUrl.toHttpUrl(),
+                listOf(Cookie.Builder().name("_t").value("token").domain("linux.do").path("/").build()),
+            )
+        }
+        val sessionStore = SessionStore().apply {
+            save(
+                SessionSnapshot(
+                    username = "baba",
+                    displayName = "Baba",
+                    avatarTemplate = "",
+                    lastValidatedAt = 1L,
+                ),
+            )
+        }
+        var clearCallback: (() -> Unit)? = null
+        val bridge = CookieSyncBridge(
+            baseUrl = baseUrl,
+            cookieStore = cookieStore,
+            readCookieHeader = { "_t=token" },
+            writeCookieToWebView = { _, _ -> },
+            flushCookies = {},
+            clearCookies = { callback -> clearCallback = callback },
+        )
+        val applicationScope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
+        val coordinator = SessionCoordinator(
+            cookieStore = cookieStore,
+            sessionStore = sessionStore,
+            apiClient = FakeSessionBootstrapClient(),
+            cookieSyncBridge = bridge,
+            applicationScope = applicationScope,
+        )
+
+        val logoutJob = coordinator.onLogout()
+        runCurrent()
+
+        assertThat(coordinator.sessionState.value).isEqualTo(AppSessionState.Anonymous)
+        assertThat(sessionStore.snapshot()).isNull()
+        assertThat(cookieStore.hasAuthenticatedCookies()).isFalse()
+
+        val caller = launch { logoutJob.join() }
+        caller.cancel()
+        clearCallback?.invoke()
+        logoutJob.join()
+    }
     private class FakeSessionBootstrapClient(
         private val currentUser: SessionUserSummary? = null,
         private val currentUsername: String? = null,

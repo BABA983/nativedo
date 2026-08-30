@@ -1,8 +1,11 @@
 package io.github.baba983.nativedo
 
+import coil3.ImageLoader
 import android.app.Application
 import android.content.Context
-import coil3.ImageLoader
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import coil3.SingletonImageLoader
 import okhttp3.Request
 import org.telegram.messenger.AndroidUtilities
@@ -18,7 +21,10 @@ import java.io.File
 import java.io.RandomAccessFile
 
 class NativeDoApp : Application(), SingletonImageLoader.Factory {
-    val appContainer: AppContainer by lazy { AppContainer(context = this) }
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    val appContainer: AppContainer by lazy {
+        AppContainer(context = this, applicationScope = applicationScope)
+    }
 
     override fun onCreate() {
         super.onCreate()

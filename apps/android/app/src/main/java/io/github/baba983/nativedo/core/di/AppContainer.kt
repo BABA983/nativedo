@@ -17,6 +17,8 @@ import io.github.baba983.nativedo.core.network.RequestHeadersInterceptor
 import io.github.baba983.nativedo.core.network.resolveNativeDoUserAgent
 import io.github.baba983.nativedo.core.session.CookieSyncBridge
 import io.github.baba983.nativedo.core.session.SessionCoordinator
+import io.github.baba983.nativedo.core.session.CredentialStore
+import io.github.baba983.nativedo.core.session.CompleteLoginUseCase
 import io.github.baba983.nativedo.core.storage.CategoryStore
 import io.github.baba983.nativedo.core.storage.CookieStore
 import io.github.baba983.nativedo.core.storage.SessionStore
@@ -27,6 +29,7 @@ import io.github.baba983.nativedo.core.storage.SvgSpriteStore
 import io.github.baba983.nativedo.core.web.DiscourseSvgSpriteLoader
 import io.github.baba983.nativedo.feature.topic.data.SharedPreferencesTopicReplyDraftPersistence
 import io.github.baba983.nativedo.feature.topic.data.TopicReplyDraftStore
+import io.github.baba983.nativedo.feature.profile.data.ProfileRepository
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -36,12 +39,14 @@ class AppContainer(
     context: Context? = null,
     val baseUrl: String = "https://linux.do/",
     userAgent: String? = null,
+    applicationScope: kotlinx.coroutines.CoroutineScope? = null,
 ) {
     private val json: Json = NetworkJson.instance
     private val appContext = context?.applicationContext
     val userAgent: String = userAgent ?: resolveNativeDoUserAgent(appContext)
     private val cookiePreferences = appContext?.getSharedPreferences(COOKIE_STORE_PREFS, Context.MODE_PRIVATE)
     private val sessionPreferences = appContext?.getSharedPreferences(SESSION_STORE_PREFS, Context.MODE_PRIVATE)
+    private val profileCachePreferences = appContext?.getSharedPreferences(PROFILE_CACHE_PREFS, Context.MODE_PRIVATE)
     private val svgSpritePreferences = appContext?.getSharedPreferences(SVG_SPRITE_STORE_PREFS, Context.MODE_PRIVATE)
     private val topicReplyDraftPreferences = appContext?.getSharedPreferences(TOPIC_REPLY_DRAFT_STORE_PREFS, Context.MODE_PRIVATE)
     val cookieStore: CookieStore = cookiePreferences
@@ -105,15 +110,35 @@ class AppContainer(
     val discourseApiClient: DiscourseApiClient = DiscourseApiClient(
         service = apiService,
     )
+    val profileRepository: ProfileRepository = ProfileRepository(
+        client = discourseApiClient,
+        preferences = profileCachePreferences,
+        json = json,
+    )
     val categoryStore: CategoryStore = CategoryStore(
         client = discourseApiClient,
     )
+    val credentialStore: CredentialStore = CredentialStore(appContext)
     val sessionCoordinator: SessionCoordinator = SessionCoordinator(
         cookieStore = cookieStore,
         sessionStore = sessionStore,
         apiClient = discourseApiClient,
         cookieSyncBridge = cookieSyncBridge,
+        applicationScope = applicationScope,
     )
+    val completeLoginUseCase: CompleteLoginUseCase = CompleteLoginUseCase(
+        sessionCoordinator = sessionCoordinator,
+        cookieSyncBridge = cookieSyncBridge,
+        baseUrl = baseUrl,
+    )
+
+    init {
+        discourseApiClient.setSessionBoundary(
+            contextProvider = sessionCoordinator::currentRequestContext,
+            onSessionInvalidated = sessionCoordinator::markExpiredIfCurrent,
+            onLoginRequired = sessionCoordinator::requestLogin,
+        )
+    }
 
     fun newImageLoader(context: Context): ImageLoader {
         return ImageLoader.Builder(context)
@@ -140,6 +165,7 @@ class AppContainer(
     private companion object {
         const val COOKIE_STORE_PREFS: String = "nativedo.cookie_store"
         const val SESSION_STORE_PREFS: String = "nativedo.session_store"
+        const val PROFILE_CACHE_PREFS: String = "nativedo.profile_cache"
         const val SVG_SPRITE_STORE_PREFS: String = "nativedo.svg_sprite_store"
         const val TOPIC_REPLY_DRAFT_STORE_PREFS: String = "nativedo.topic_reply_drafts"
     }

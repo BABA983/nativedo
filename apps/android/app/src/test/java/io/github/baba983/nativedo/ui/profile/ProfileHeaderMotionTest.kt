@@ -1,7 +1,13 @@
 package io.github.baba983.nativedo.ui.profile
 
-import android.view.View
 import com.google.common.truth.Truth.assertThat
+import io.github.baba983.nativedo.core.session.AppSessionState
+import io.github.baba983.nativedo.core.session.SessionExpiredReason
+import io.github.baba983.nativedo.core.session.SessionFreshness
+import io.github.baba983.nativedo.core.session.SessionSnapshot
+import io.github.baba983.nativedo.core.model.TopicSummary
+import io.github.baba983.nativedo.feature.profile.ui.ProfileFeedUiState
+import io.github.baba983.nativedo.ui.settings.profileVersionFooterReplacesTerminalShadow
 import org.junit.Test
 import org.telegram.ui.Components.UniversalAdapter
 
@@ -30,6 +36,50 @@ class ProfileHeaderMotionTest {
     }
 
     @Test
+    fun listKeepsTelegramFullPortraitScrollRange() {
+        assertThat(
+            profileListTopPadding(
+                viewportWidth = 360,
+                actionsExtraHeight = 74,
+            ),
+        ).isEqualTo(434)
+        assertThat(
+            profileInitialRowOffset(
+                headerExtraHeight = 226,
+                listTopPadding = 434,
+            ),
+        ).isEqualTo(-208)
+    }
+
+    @Test
+    fun sessionOnlyPageDoesNotReserveProfileHeaderSpace() {
+        assertThat(profileSessionListTopPadding(profileChromeVisible = false, profileTopPadding = 434))
+            .isEqualTo(0)
+        assertThat(profileSessionListTopPadding(profileChromeVisible = true, profileTopPadding = 434))
+            .isEqualTo(434)
+    }
+
+    @Test
+    fun shortInitialContentGetsEnoughBottomPaddingToPreserveHeaderAnchor() {
+        assertThat(
+            profileOuterListBottomPadding(
+                baseInset = 96,
+                visibleHeight = 900,
+                headerExtraHeight = 226,
+                contentHeight = 140,
+            ),
+        ).isEqualTo(534)
+        assertThat(
+            profileOuterListBottomPadding(
+                baseInset = 96,
+                visibleHeight = 900,
+                headerExtraHeight = 226,
+                contentHeight = 800,
+            ),
+        ).isEqualTo(96)
+    }
+
+    @Test
     fun releaseKeepsPinnedThreeStageSnapTargets() {
         assertThat(profileHeaderReleaseTarget(20f, 226, 74, 0f))
             .isEqualTo(ProfileHeaderReleaseTarget.COLLAPSED)
@@ -39,10 +89,12 @@ class ProfileHeaderMotionTest {
             .isEqualTo(ProfileHeaderReleaseTarget.HEADER)
         assertThat(profileHeaderReleaseTarget(180f, 226, 74, -1200f))
             .isEqualTo(ProfileHeaderReleaseTarget.ACTIONS)
+        assertThat(profileHeaderReleaseTarget(0f, 226, 74, -1200f))
+            .isEqualTo(ProfileHeaderReleaseTarget.NONE)
     }
 
     @Test
-    fun fullExpandPositionsFirstRowBelowActionBarAndActions() {
+    fun fullExpandPositionsFirstRowAtViewportAndActionsBoundary() {
         assertThat(
             profileHeaderExpandedTargetTop(
                 listWidth = 1080,
@@ -53,38 +105,60 @@ class ProfileHeaderMotionTest {
     }
 
     @Test
-    fun fullExpandKeepsSingleDiscourseAvatarVisibleWithoutGallerySuccessor() {
-        assertThat(
-            profileAvatarContainerVisibility(
-                expandValue = 1f,
-                hasExpandedMediaSuccessor = false,
-            ),
-        ).isEqualTo(View.VISIBLE)
-        assertThat(
-            profileAvatarContainerVisibility(
-                expandValue = 1f,
-                hasExpandedMediaSuccessor = true,
-            ),
-        ).isEqualTo(View.GONE)
+    fun expandedAvatarZoneEndsAtTelegramPullThreshold() {
+        assertThat(profileKeepsAvatarExpanded(true, openingAvatar = false, expandProgress = 0.33f)).isTrue()
+        assertThat(profileKeepsAvatarExpanded(true, openingAvatar = false, expandProgress = 0.329f)).isFalse()
+        assertThat(profileKeepsAvatarExpanded(false, openingAvatar = false, expandProgress = 1f)).isFalse()
     }
 
     @Test
-    fun partialPullSettlesAgainstHeaderIncludingActionBarOffset() {
-        assertThat(
-            profileHeaderSettleDy(
-                viewTop = 430,
-                headerTopOffset = 120,
-                headerExtraHeight = 226,
-            ),
-        ).isEqualTo(84)
+    fun clickOpeningEntersExpandedZoneBeforePullThreshold() {
+        assertThat(profileKeepsAvatarExpanded(true, openingAvatar = true, expandProgress = 0f)).isTrue()
+        assertThat(profileKeepsAvatarExpanded(false, openingAvatar = true, expandProgress = 1f)).isFalse()
     }
 
     @Test
-    fun normalScrollUsesOneTitleLayerAndMediaPinFadesOnlySubtitle() {
+    fun ordinaryPullKeepsCircularAvatarUntilGalleryMorphCompletes() {
+        assertThat(profileUsesFullAvatarGeometry(isPulledDown = false, expandAnimatorValue = 1f)).isFalse()
+        assertThat(profileUsesFullAvatarGeometry(isPulledDown = true, expandAnimatorValue = 0.998f)).isFalse()
+        assertThat(profileUsesFullAvatarGeometry(isPulledDown = true, expandAnimatorValue = 0.999f)).isTrue()
+    }
+
+    @Test
+    fun expandedAvatarCloseUsesPhotoViewerFlyOutPath() {
+        assertThat(profileAvatarCloseUsesFlyOut(closing = true, avatarScale = 0.96f)).isFalse()
+        assertThat(profileAvatarCloseUsesFlyOut(closing = true, avatarScale = 0.9601f)).isTrue()
+        assertThat(profileAvatarCloseUsesFlyOut(closing = false, avatarScale = 1f)).isFalse()
+    }
+
+    @Test
+    fun normalScrollCrossfadesOnlineSubtitleAndMediaCounter() {
         assertThat(profileHeaderTitleLayerAlpha(0)).isEqualTo(0f)
         assertThat(profileHeaderTitleLayerAlpha(1)).isEqualTo(1f)
         assertThat(profileHeaderSubtitleLayerAlpha(0, 0.5f)).isEqualTo(0f)
         assertThat(profileHeaderSubtitleLayerAlpha(1, 0.5f)).isEqualTo(0.5f)
+        assertThat(profileMediaCounterAlpha(0.5f)).isEqualTo(0.5f)
+        assertThat(profileMediaCounterAlpha(2f)).isEqualTo(1f)
+    }
+
+    @Test
+    fun mediaCounterDistinguishesUnknownEmptyAndLoadedFeedCounts() {
+        assertThat(profileFeedSubtitleCount(ProfileFeedUiState(isLoading = true))).isNull()
+        assertThat(
+            profileFeedSubtitleCount(
+                ProfileFeedUiState(isLoading = false, errorMessage = "failed"),
+            ),
+        ).isNull()
+        assertThat(profileFeedSubtitleCount(ProfileFeedUiState(isLoading = false))).isEqualTo(0)
+        assertThat(
+            profileFeedSubtitleCount(
+                ProfileFeedUiState(
+                    items = listOf(TopicSummary(id = 1L, title = "Topic", authorUsername = "user")),
+                    isLoading = false,
+                    hasMore = true,
+                ),
+            ),
+        ).isEqualTo(1)
     }
 
     @Test
@@ -108,42 +182,79 @@ class ProfileHeaderMotionTest {
     }
 
     @Test
-    fun nestedContentConsumesOuterCollapseBeforeInnerScroll() {
+    fun outerRemainderMovesInnerOnlyAfterContentReachesPinLine() {
         assertThat(
-            profileOuterScrollRequest(
-                dy = 80,
-                contentTop = 220,
+            profileInnerScrollFromOuter(
+                dyUnconsumed = 40,
+                contentTop = 181,
                 pinTop = 180,
-                innerCanScrollUp = false,
             ),
-        ).isEqualTo(40)
+        ).isEqualTo(0)
         assertThat(
-            profileOuterScrollRequest(
-                dy = 80,
+            profileInnerScrollFromOuter(
+                dyUnconsumed = 40,
                 contentTop = 180,
                 pinTop = 180,
-                innerCanScrollUp = false,
+            ),
+        ).isEqualTo(40)
+    }
+
+    @Test
+    fun sharedContentFillsTheViewportBelowTheActionBarPinLine() {
+        assertThat(profileContentViewportHeight(outerHeight = 800, pinTop = 120)).isEqualTo(680)
+        assertThat(profileContentViewportHeight(outerHeight = 100, pinTop = 120)).isEqualTo(0)
+    }
+
+    @Test
+    fun downwardScrollMovesInnerPreciselyBackToItsFirstRow() {
+        assertThat(
+            profileInnerScrollBackToTopRequest(
+                dy = -48,
+                firstPosition = 3,
+                firstTop = -12,
+                paddingTop = 0,
+            ),
+        ).isEqualTo(-48)
+        assertThat(
+            profileInnerScrollBackToTopRequest(
+                dy = -48,
+                firstPosition = 0,
+                firstTop = -20,
+                paddingTop = 0,
+            ),
+        ).isEqualTo(-20)
+        assertThat(
+            profileInnerScrollBackToTopRequest(
+                dy = -48,
+                firstPosition = 0,
+                firstTop = 0,
+                paddingTop = 0,
             ),
         ).isEqualTo(0)
     }
 
     @Test
-    fun nestedContentReturnsDownwardScrollOnlyAfterInnerReachesTop() {
+    fun identityChromeRequiresCurrentOrRestoringAccount() {
+        val snapshot = SessionSnapshot(
+            username = "baba",
+            displayName = "Baba",
+            avatarTemplate = "",
+            lastValidatedAt = 1L,
+        )
+
+        assertThat(profileShowsIdentityChrome(AppSessionState.Unknown)).isFalse()
+        assertThat(profileShowsIdentityChrome(AppSessionState.Anonymous)).isFalse()
         assertThat(
-            profileOuterScrollRequest(
-                dy = -48,
-                contentTop = 180,
-                pinTop = 180,
-                innerCanScrollUp = true,
+            profileShowsIdentityChrome(
+                AppSessionState.Expired(SessionExpiredReason.ServerLoggedOut, snapshot),
             ),
-        ).isEqualTo(0)
+        ).isFalse()
+        assertThat(profileShowsIdentityChrome(AppSessionState.Restoring(null))).isFalse()
+        assertThat(profileShowsIdentityChrome(AppSessionState.Restoring(snapshot))).isTrue()
         assertThat(
-            profileOuterScrollRequest(
-                dy = -48,
-                contentTop = 180,
-                pinTop = 180,
-                innerCanScrollUp = false,
+            profileShowsIdentityChrome(
+                AppSessionState.Authenticated(snapshot, SessionFreshness.Verified),
             ),
-        ).isEqualTo(-48)
+        ).isTrue()
     }
 }

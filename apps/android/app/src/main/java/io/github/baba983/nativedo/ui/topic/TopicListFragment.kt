@@ -132,7 +132,7 @@ class TopicListFragment(
     private lateinit var viewModel: HomeViewModel
     private lateinit var searchRepository: TopicSearchRepository
     private var baseUrl: String = ""
-    private val collectorScope = MainScope()
+    private var collectorScope = MainScope()
 
     // --- Views ----------------------------------------------------------------------
 
@@ -1011,6 +1011,12 @@ class TopicListFragment(
     // Fragment lifecycle
     // ================================================================================
 
+    override fun clearViews() {
+        collectorScope.cancel()
+        collectorScope = MainScope()
+        searchJob = null
+        super.clearViews()
+    }
     override fun onFragmentDestroy() {
         searchJob?.cancel()
         searchJob = null

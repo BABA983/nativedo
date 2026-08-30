@@ -1,5 +1,8 @@
 package io.github.baba983.nativedo.core.model
 
+import kotlinx.serialization.Serializable
+
+@Serializable
 data class UserProfile(
     val username: String,
     val displayName: String,

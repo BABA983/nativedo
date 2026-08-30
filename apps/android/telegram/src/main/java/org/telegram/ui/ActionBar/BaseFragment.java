@@ -30,6 +30,7 @@ import android.view.View;
 import android.view.ViewGroup;
 
 import androidx.annotation.NonNull;
+import androidx.core.graphics.Insets;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.lifecycle.ViewModelStore;
 import androidx.lifecycle.ViewModelStoreOwner;
@@ -211,7 +212,7 @@ public abstract class BaseFragment implements ViewModelStoreOwner {
     }
 
     public boolean drawEdgeNavigationBar() {
-        return true;
+        return isSupportEdgeToEdge();
     }
 
     public boolean isLightStatusBar() {
@@ -239,8 +240,16 @@ public abstract class BaseFragment implements ViewModelStoreOwner {
         return color;
     }
 
-    public WindowInsetsCompat onInsetsInternal(View view, WindowInsetsCompat insets) {
-        return insets;
+    public WindowInsetsCompat onInsetsInternal(@NonNull View view, @NonNull WindowInsetsCompat windowInsets) {
+        final Insets insets = windowInsets.getInsets(WindowInsetsCompat.Type.navigationBars() | WindowInsetsCompat.Type.statusBars());
+        onInsets(insets.left, insets.top, insets.right, bottomInset = insets.bottom);
+        return WindowInsetsCompat.CONSUMED;
+    }
+
+    private int bottomInset;
+
+    public int getBottomInset() {
+        return bottomInset;
     }
 
     public void onBeginSlide() {

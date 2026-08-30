@@ -10,6 +10,7 @@ import org.junit.Before
 import org.junit.Test
 import retrofit2.Retrofit
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
+import io.github.baba983.nativedo.core.session.SessionExpiredReason
 import io.github.baba983.nativedo.core.session.SessionLoggedOutException
 import okhttp3.MediaType.Companion.toMediaType
 
@@ -543,6 +544,96 @@ class DiscourseApiClientTest {
         assertThat(currentUser?.displayName).isEqualTo("Baba")
         assertThat(currentUser?.avatarTemplate).isEqualTo("/user_avatar/linux.do/baba/{size}/1.png")
         assertThat(server.takeRequest().path).isEqualTo("/session/current.json")
+    }
+
+    @Test
+    fun fetchCurrentUser_mapsHttp401ToSessionLoggedOutAndNotifiesCoordinator() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(401)
+                .setHeader("content-type", "application/json")
+                .setBody("{\"error\":\"unauthorized\"}"),
+        )
+        var invalidationReason: SessionExpiredReason? = null
+        client.setSessionBoundary(
+            contextProvider = { io.github.baba983.nativedo.core.session.SessionRequestContext(0, io.github.baba983.nativedo.core.session.SessionRequestAuth.Authenticated) },
+            onSessionInvalidated = { reason, _ -> invalidationReason = reason },
+            onLoginRequired = {},
+        )
+
+        val result = runCatching { client.fetchCurrentUser() }
+
+        assertThat(result.exceptionOrNull()).isInstanceOf(SessionLoggedOutException::class.java)
+        assertThat(invalidationReason).isEqualTo(SessionExpiredReason.ServerLoggedOut)
+    }
+
+    @Test
+    fun anonymousAuthenticatedWriteMaps401ToLoginRequiredWithoutInvalidatingSession() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(401)
+                .setHeader("content-type", "application/json")
+                .setBody("{\"error\":\"unauthorized\"}"),
+        )
+        val context = io.github.baba983.nativedo.core.session.SessionRequestContext(
+            generation = 7,
+            auth = io.github.baba983.nativedo.core.session.SessionRequestAuth.Anonymous,
+        )
+        var invalidationReason: SessionExpiredReason? = null
+        var loginRequiredCount = 0
+        client.setSessionBoundary(
+            contextProvider = { context },
+            onSessionInvalidated = { reason, _ -> invalidationReason = reason },
+            onLoginRequired = { loginRequiredCount += 1 },
+        )
+
+        val result = runCatching {
+            client.createPost(topicId = 42L, raw = "reply", replyToPostNumber = null)
+        }
+
+        assertThat(result.exceptionOrNull()).isInstanceOf(
+            io.github.baba983.nativedo.core.session.LoginRequiredException::class.java,
+        )
+        assertThat(invalidationReason).isNull()
+        assertThat(loginRequiredCount).isEqualTo(1)
+    }
+
+    @Test
+    fun fetchCurrentUser_mapsNullCurrentUserToSessionLoggedOut() = runTest {
+        server.enqueue(jsonResponse("{\"current_user\":null}"))
+        var invalidationReason: SessionExpiredReason? = null
+        client.setSessionBoundary(
+            contextProvider = { io.github.baba983.nativedo.core.session.SessionRequestContext(0, io.github.baba983.nativedo.core.session.SessionRequestAuth.Authenticated) },
+            onSessionInvalidated = { reason, _ -> invalidationReason = reason },
+            onLoginRequired = {},
+        )
+
+        val result = runCatching { client.fetchCurrentUser() }
+
+        assertThat(result.exceptionOrNull()).isInstanceOf(SessionLoggedOutException::class.java)
+        assertThat(invalidationReason).isEqualTo(SessionExpiredReason.ServerLoggedOut)
+    }
+
+    @Test
+    fun fetchCurrentUser_mapsCloudflareChallengeToRecoveryRequiredWithoutInvalidatingSession() = runTest {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(403)
+                .setHeader("server", "cloudflare")
+                .setHeader("content-type", "text/html; charset=UTF-8")
+                .setBody("<html><title>Just a moment...</title><body>challenge-platform</body></html>"),
+        )
+        var invalidationReason: SessionExpiredReason? = null
+        client.setSessionBoundary(
+            contextProvider = { io.github.baba983.nativedo.core.session.SessionRequestContext(0, io.github.baba983.nativedo.core.session.SessionRequestAuth.Authenticated) },
+            onSessionInvalidated = { reason, _ -> invalidationReason = reason },
+            onLoginRequired = {},
+        )
+
+        val result = runCatching { client.fetchCurrentUser() }
+
+        assertThat(result.exceptionOrNull()).isInstanceOf(SessionRecoveryRequiredException::class.java)
+        assertThat(invalidationReason).isNull()
     }
 
     @Test

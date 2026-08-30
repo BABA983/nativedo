@@ -460,8 +460,32 @@
             "gesture",
             "animation"
           ],
-          "notes": "Pinned AboutLinkCell measurement, link hit paths, long-press menu, three-line collapse, spring expansion, dynamic height and accessibility are retained. Host wiring accepts CharSequence so Discourse HTML spans survive, uses the available Android Linkify path instead of MessageObject.addLinks, routes all URL spans through didPressUrl, implements Theme.Colorable, and gives the more label a solid themed backing so the host-rendered nine-patch fade cannot leave text overlapping it. Drawing is therefore intentionally not forced-exact.",
+          "notes": "Pinned AboutLinkCell measurement, link hit paths, long-press menu, three-line collapse, spring expansion, dynamic height and accessibility are retained. Host wiring accepts CharSequence so Discourse HTML spans survive, uses the available Android Linkify path instead of MessageObject.addLinks, routes all URL spans through didPressUrl, implements Theme.Colorable, gives the more label a solid themed backing, and suppresses collapse gradients when text does not require expansion. Drawing is therefore intentionally not forced-exact.",
           "stuck_ref": "host_wiring_keep_at_pin"
+        },
+        {
+          "path": "org/telegram/ui/Components/ProfileGalleryView.java",
+          "upstream": "org/telegram/ui/Components/ProfileGalleryView.java",
+          "modified": true,
+          "port_mode": "native",
+          "notes": "NativeDo single-avatar gallery port. Retains upstream expanded-media ownership, action-strip inset, ImageReceiver/page-listener/blur contracts, async invalidate callback, and list-directed touch stream. The single item is pinned to position 0; MTProto multi-photo, upload, indicators, video, and NotificationCenter backends are omitted. PinchToZoomHelper is exposed through the upstream setPinchToZoomHelper/checkPinchToZoom surface, with the carrier AvatarImageView forwarding the collapsed-state stream."
+        },
+        {
+          "path": "org/telegram/ui/Components/ProfileGalleryBlurView.java",
+          "upstream": "org/telegram/ui/Components/ProfileGalleryBlurView.java",
+          "modified": true,
+          "port_mode": "native",
+          "forced_exact": [
+            "measurement"
+          ],
+          "notes": "NativeDo single-avatar adaptation of ProfileGalleryBlurView. Retains upstream measurement and blur capture contracts: the 3-slot ring buffer, invalidate listeners, AnimatedFloat, page listener, software blur, and RenderNode paths. Host wiring uses ProfileActivity.AvatarImageView and DiscourseProfileActionsView; Telegram suggestion/music branches are omitted, so drawing and animation are host adaptations."
+        },
+        {
+          "path": "org/telegram/ui/Components/ProfileMetaballView.java",
+          "upstream": "org/telegram/ui/Components/ProfileMetaballView.java",
+          "modified": false,
+          "port_mode": "exact",
+          "notes": "Pinned ProfileMetaballView retained as shared blur infrastructure for ProfileGalleryBlurView; NativeDo uses the ProfileActivity.AvatarImageView carrier and does not instantiate the metaball surface directly."
         }
       ]
     },
@@ -473,7 +497,15 @@
           "upstream": "org/telegram/ui/ProfileActivity.java",
           "modified": true,
           "port_mode": "native",
-          "notes": "NativeDo profile port against the 12.9 ProfileActivity reference. It retains the 152dp header + 74dp action strip, 0dp/74dp/226dp release targets, -1000f velocity threshold, dy/2 pull damping, 0.33f avatar expansion threshold, exact zero-margin ProfileGooeyView child geometry, key title/subtitle interpolation constants, 250ms EASE_BOTH/EASE_OUT_QUINT timing, first-layout viewport fallback, and the NestedFrameLayout-shaped outer/active-inner vertical scroll handoff. Avatar progress and the optional first-row settle share one animation clock; because Discourse supplies one profile image rather than a gallery, that image remains visible as the full-expand media successor. The non-transition host displays only ProfileActivity's primary title/subtitle layer. The 150ms shared-content pin transition keeps the ActionBar transparent while TopView reveals key_windowBackgroundWhite from bottom to top, matching ProfileActivity's no-peer-color branch and status-bar luminance switch. Profile information uses the upstream full-width white cell surface, headerless AboutLinkCell-to-TextDetailCell ordering, one terminal shadow, and the exact About link theme keys. NativeDo owns the list/status-bar coordinate system, dynamic session remapping, Discourse actions, AboutLinkCell HTML wiring, URL-only PhotoViewer handoff, and which Discourse identity, flair/group, statistics, and activity rows populate that block.",
+          "notes": "NativeDo profile screen adapted from pinned ProfileActivity. Keeps Telegram header/list geometry, pull and expansion gesture thresholds, animator timing, stable rows, gallery/blur handoff, and profile-tab navigation. Discourse profile/session/feed/actions replace Telegram peer, MTProto media, stories, gifts, music, upload, and QR backends; ProfileActivity supplies reusable nested classes while this fragment owns host layout and data. Telegram does not render main tabs while logged out: LaunchActivity routes directly to IntroActivity/LoginActivity. NativeDo keeps its Profile tab, and only the logged-out CTA adapts IntroActivity.startMessagingButton geometry, gradient, text, press, and flicker behavior.",
+          "stuck_ref": "native_app_reference_only"
+        },
+        {
+          "path": "io/github/baba983/nativedo/ui/settings/SettingsFragment.kt",
+          "upstream": "org/telegram/ui/SettingsActivity.java",
+          "modified": true,
+          "port_mode": "native",
+          "notes": "NativeDo settings root adapted from pinned SettingsActivity/MainTabsActivity shape: sectioned UniversalRecyclerView, main-tab inset, same-tab scroll-to-top, debug gating, version footer, and secondary-page routing. Discourse account/activity, appearance, browser, and local session flows replace Telegram backends.",
           "stuck_ref": "native_app_reference_only"
         },
         {
@@ -481,15 +513,15 @@
           "upstream": "org/telegram/ui/Components/SharedMediaLayout.java",
           "modified": true,
           "port_mode": "native",
-          "notes": "Narrow NativeDo profile-content port of the pinned SharedMediaLayout shape. It keeps the vendored ScrollSlidingTextTabStrip's liquid-glass branch: a centered 50dp minimal-width strip, 18dp Blur3 top-panel background, 6.666dp drawable padding, 7dp vertical content padding, and unpinned/pinned setOpen transition. It also retains two simultaneously retained feed pages, continuous tab-indicator progress, synchronized 320ms tab-click transitions, same-tab scroll-to-top, independent RecyclerListView scroll positions, and full-page FlickerLoadingView/StickerEmptyView state overlays. It delegates Telegram's 0.3cm/3000px/s/3500px/s/one-third-width/150-600ms EASE_OUT_QUINT swipe semantics to the vendored ViewPagerFixed. Discourse ProfileFeedViewModel state, TopicListAdapter rows, pagination callbacks, topic navigation, main-tabs bottom inset, solid-color Blur3 source fallback, theme wiring, and the omission of Telegram media/search/action-mode/stories/gifts types are host-owned.",
+          "notes": "NativeDo profile-content adaptation of SharedMediaLayout. Retains Telegram tab-strip geometry, ViewPagerFixed swipe thresholds/timing, two retained feed pages, scroll-to-top, loading/empty overlays, and visible-height measurement. The localized two-tab strip uses vendor's text-width-based minimal sizing with no fixed minimum width; visible height follows ProfileActivity without subtracting the feed's bottom inset twice. Discourse feed/recycler/navigation and glass source are host wiring; Telegram media/search/action-mode/stories/gifts backends are omitted.",
           "stuck_ref": "native_app_reference_only"
         },
         {
-          "path": "io/github/baba983/nativedo/ui/profile/IconSettingCell.java",
+          "path": "io/github/baba983/nativedo/ui/settings/IconSettingCell.java",
           "upstream": "org/telegram/ui/SettingsActivity.java",
           "modified": true,
           "port_mode": "native",
-          "notes": "NativeDo profile port of the pinned SettingsActivity.SettingCell nested class and SettingCell.Background. Keeps the normal-mode icon/text/subtitle/value layout, 50dp/60dp measurement, gradient icon background, dark-theme border, and UItem color packing. Omits ResourcesProvider, mini/44dp mode, setValue, upstream UItemFactory signatures, and ofBot; adds profile-only colors, selector, ellipsize, and a fixed local ViewFactory type.",
+          "notes": "NativeDo SettingsActivity.SettingCell port. Keeps the normal icon/text/subtitle/value layout, 50dp/60dp measurement, gradient icon background, dark-theme border, and UItem color packing; omits Telegram ResourcesProvider/mini-mode and binds the local settings ViewFactory.",
           "stuck_ref": "native_app_reference_only"
         },
         {
@@ -499,11 +531,9 @@
           "modified": true,
           "port_mode": "native",
           "forced_exact": [
-            "measurement",
-            "gesture",
-            "animation"
+            "measurement"
           ],
-          "notes": "NativeDo my-profile action strip. Keeps the pinned 74dp measurement, 14dp horizontal and 8dp/12dp vertical geometry, 7dp inter-item spacing, 16dp cards, 24dp icons, 11dp bold up-to-three-line labels, height-fraction background/content reveal, ButtonBounce hit lifecycle, 250ms action insertion/removal movement, and virtual accessibility nodes. Replaces Telegram peer actions and MTProto callbacks with edit-profile, user-actions topics/replies, and Android share destinations. Its drawing is intentionally not forced-exact: the host omits upstream blur RenderNode, dynamic peer-color shader, RLottie/loading action states, call transition, music row, and Telegram mode arbitration.",
+          "notes": "NativeDo profile action strip adapted from ProfileActionsView. Keeps the pinned measurement geometry, hit lifecycle, layout surface, accessibility contract, and blur target hook. Discourse actions replace Telegram peer/MTProto callbacks; loading/RLottie, call, music, and mode-arbitration branches are omitted, so gesture, animation, and drawing are host adaptations. The upstream color-by-id radial button gradient is not ported: NativeDo draws a single flat action color, so the shader paint/matrix branch is absent.",
           "stuck_ref": "native_app_reference_only"
         },
         {
@@ -608,6 +638,13 @@
           ],
           "notes": "NativeDo topic header row with Telegram/ArticleViewer-style StaticLayout measurement/drawing: the title and metadata are measured dynamically instead of using fixed child offsets, run through Emoji.replaceEmoji with the active TextPaint metrics, use ArticleViewer's default StaticLayout line spacing (extra dp(4), multiplier 1.0, includePad=false), and scale from SharedConfig.fontSize while binding Discourse topic title, counts, and tags.",
           "stuck_ref": "native_app_reference_only"
+        },
+        {
+          "path": "io/github/baba983/nativedo/ui/theme/ThemeSettingsFragment.java",
+          "upstream": "org/telegram/ui/ThemeActivity.java",
+          "modified": true,
+          "port_mode": "native",
+          "notes": "NativeDo local appearance and theme settings port of pinned ThemeActivity. It retains Telegram theme selection, accent, font-size, auto-night, wallpaper, import/export/edit workflows, sectioned list styling, and the pinned edge-to-edge bottom-inset handling while adapting preview content, storage, resources, and product-specific labels to NativeDo."
         },
         {
           "path": "io/github/baba983/nativedo/ui/theme/TopicThemePreviewFragment.kt",
@@ -1243,7 +1280,7 @@
           "forced_exact": [
             "recycling"
           ],
-          "notes": "exact@12.9.0 + host: drop org.telegram.ui.iv.RichEditor.DraggingDrawable reorder feedback (RichEditor not vendored).",
+          "notes": "exact@12.9.0 + host: drop org.telegram.ui.iv.RichEditor.DraggingDrawable reorder feedback (RichEditor not vendored); expose the inherited flinger-running state and canStopFlinger controls used by NativeDo's ProfileActivity-shaped avatar transition.",
           "port_mode": "exact",
           "stuck_ref": "host_wiring_keep_at_pin"
         },
@@ -1649,7 +1686,7 @@
           "forced_exact": [
             "animation"
           ],
-          "notes": "12.9.0 API-shaped NativeDo navigation host. Restores fragment-stack setters/removers/show/bring APIs, lifecycle/configuration/user-leave/low-memory forwarding, menu/key/touch dispatch, sheet/window/navigation-bar hooks, and two-argument theme rebuild while preserving predictive back, DrawerLayoutContainer, BottomSheetTabs, ActionBarSheet, and Discourse fragment stack wiring. Embeds the pinned ThemeAnimationSettings/StartColorsProvider interpolation, visible BottomSheet/AlertDialog ownership, notification locker, instant path, 200ms animator, deferred-after-navigation state machine, and hidden-fragment rebuild. Telegram preview, Stories, group calls, BackButtonMenu, and Telegram MainTabsActivity remain host-excluded.",
+          "notes": "12.9.0 API-shaped NativeDo navigation host. Restores fragment-stack setters/removers/show/bring APIs, lifecycle/configuration/user-leave/low-memory forwarding, menu/key/touch dispatch, sheet/window/navigation-bar hooks, and two-argument theme rebuild while preserving predictive back, DrawerLayoutContainer, BottomSheetTabs, ActionBarSheet, and Discourse fragment stack wiring. Edge-to-edge fragments receive the pinned root-view WindowInsets listener while LayoutContainer applies the matching navigation-bar margin policy. Embeds the pinned ThemeAnimationSettings/StartColorsProvider interpolation, visible BottomSheet/AlertDialog ownership, notification locker, instant path, 200ms animator, deferred-after-navigation state machine, and hidden-fragment rebuild. Telegram preview, Stories, group calls, BackButtonMenu, and Telegram MainTabsActivity remain host-excluded.",
           "stuck_ref": "native_host_reference_only"
         },
         {
@@ -1719,7 +1756,7 @@
           "pin": "legacy_009e97356",
           "modified": true,
           "port_mode": "native",
-          "notes": "NativeDo navigation fragment subset with upstream-shaped clearViews lifecycle, visibleDialog ownership, show/dismiss replacement, attached-sheet routing, onPause/onBeginSlide/onDestroy cleanup, dismissal callbacks, and get/set accessors supporting ActionBarLayout theme animation. clearViews preserves the fragment ViewModelStore while releasing the host PhotoViewer wrapper with the old View tree. Telegram account, menu, story, preview, and full transition infrastructure remains omitted.",
+          "notes": "NativeDo navigation fragment subset with upstream-shaped clearViews lifecycle, visibleDialog ownership, show/dismiss replacement, attached-sheet routing, onPause/onBeginSlide/onDestroy cleanup, dismissal callbacks, and get/set accessors supporting ActionBarLayout theme animation. The pinned edge-to-edge contract is restored: drawEdgeNavigationBar follows isSupportEdgeToEdge, system-bar insets dispatch through onInsets, and bottomInset remains queryable. clearViews preserves the fragment ViewModelStore while releasing the host PhotoViewer wrapper with the old View tree. Telegram account, menu, story, preview, and full transition infrastructure remains omitted.",
           "stuck_ref": "native_host_reference_only"
         },
         {
@@ -2222,6 +2259,7 @@
           "pin": "legacy_009e97356",
           "modified": true,
           "port_mode": "native",
+          "notes": "NativeDo main-tab pager host retaining Telegram's child-fragment page lifecycle, inset dispatch, and system-bar delegation. The pinned drawEdgeNavigationBar=false contract keeps the pager's own WindowInsets listener authoritative instead of replacing it with BaseFragment's list-page listener.",
           "stuck_ref": "native_app_reference_only"
         },
         {
@@ -2230,7 +2268,7 @@
           "pin": "legacy_009e97356",
           "modified": true,
           "port_mode": "native",
-          "notes": "NativeDo two-tab host using Telegram's main-tab pager and visibility animation shape. Current-tab taps delegate scroll-to-top to Home/Profile; child delegates arbitrate outer paging against Home's nested feed pager, search state, and Profile avatar touches; TopicList receives an app-side controller so search mode drives the existing 380ms EASE_OUT_QUINT tabs visibility animation. The bottom tab surface now uses Telegram's Blur3 main-tabs provider, RenderNode source, ViewPositionWatcher, 28dp radius, 7.666dp padding, and 60dp BlurredBackgroundWithFadeDrawable instead of the former translucent hand-drawn approximation. NativeDo records the live ViewPager subtree as the glass source so TopicList/Profile content and their horizontal transition are sampled together; pre-Android-12 and non-hardware rendering fall back to BlurredBackgroundSourceColor.",
+          "notes": "NativeDo three-tab host (Home, Settings, Profile) using Telegram's main-tab pager and visibility animation shape. Settings and Profile remain separate root tabs as in pinned MainTabsActivity. Current-tab taps delegate scroll-to-top to all three roots; child delegates arbitrate outer paging against Home's nested feed pager, search state, and Profile avatar touches. TopicList receives an app-side controller so search mode drives the existing 380ms EASE_OUT_QUINT tabs visibility animation. The bottom tab surface uses Telegram's Blur3 main-tabs provider, RenderNode source, ViewPositionWatcher, 28dp radius, 7.666dp padding, and 60dp BlurredBackgroundWithFadeDrawable. NativeDo keeps Telegram's 320dp content minimum inside the same 344dp capped view with 12dp padding on each side, even with three visible roots. NativeDo records the live ViewPager subtree as the glass source so tab content and horizontal transitions are sampled together; pre-Android-12 and non-hardware rendering fall back to BlurredBackgroundSourceColor.",
           "stuck_ref": "native_app_reference_only"
         },
         {
@@ -2936,7 +2974,7 @@
           "path": "org/telegram/ui/PinchToZoomHelper.java",
           "modified": true,
           "port_mode": "native",
-          "notes_ref": "auto_registered_compile_dependency_25_loc"
+          "notes": "NativeDo image-only PinchToZoomHelper partial port. Keeps the upstream pinch state machine, overlay transition, transform/drawing, and callback surface; Telegram video, spoiler, media-controller, and MTProto image-location backends are omitted."
         },
         {
           "path": "org/telegram/ui/Stories/DarkThemeResourceProvider.java",
@@ -3015,6 +3053,19 @@
           "notes": "Pin-shaped host API; openPhoto(TLRPC.PageBlock) for S1.",
           "port_mode": "exact",
           "stuck_ref": "host_wiring_keep_at_pin"
+        },
+        {
+          "path": "org/telegram/ui/ProfileActivity.java",
+          "upstream": "org/telegram/ui/ProfileActivity.java",
+          "modified": true,
+          "port_mode": "native",
+          "notes": "NativeDo carrier for ProfileActivity.AvatarImageView, TopView, and OverlaysView. The reusable nested classes retain the self-profile image handoff (including drawable- or bitmap-backed BitmapHolder foregrounds), solid header, and overlay drawing shape while exposing host fields for the app module; the activity/BaseFragment body is not ported. ProfileFragment owns NativeDo layout, Discourse data, and gesture orchestration, so peer-color gradients/emoji and Telegram peer, stories, gifts, music, upload, and MTProto branches are omitted."
+        },
+        {
+          "path": "org/telegram/ui/Components/QRCodeBottomSheet.java",
+          "modified": true,
+          "port_mode": "exact",
+          "notes": "Profile QR share sheet (Telegram 12.9). Host wiring: bitmap share via AndroidUtilities.getBitmapShareUri (FileProvider cache-path); NativeDo overlays the user avatar with setCenterImage instead of Telegram's qr_logo lottie."
         }
       ]
     }
@@ -3751,6 +3802,27 @@
       "local_glob": "apps/android/telegram/src/main/assets",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "notes": "All five pinned built-in .attheme packs loaded by full Theme.java: Blue, Dark Blue, Arctic, Day, and Night. Wallpaper blobs and links are parsed by the pinned Theme model; NativeDo remote lookup remains behind ThemeBackend."
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "settings_account.xml",
+        "settings_chat.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/drawable",
+      "local_glob": "apps/android/app/src/main/res/drawable",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "notes": "Pinned Telegram SettingsActivity account and chat-settings icons reused by NativeDo's account/activity and appearance rows."
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "outline_header_qr_24.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "notes": "Profile back-slot QR entry icon (Telegram 12.9 profile QR affordance)."
     }
   ]
 }

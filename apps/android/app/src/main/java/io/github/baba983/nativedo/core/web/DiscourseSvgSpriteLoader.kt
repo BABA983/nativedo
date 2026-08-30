@@ -85,12 +85,13 @@ class DiscourseSvgSpriteLoader(
     }
 
     @SuppressLint("SetJavaScriptEnabled")
-    private suspend fun loadSpriteViaHiddenWebView(): Boolean = suspendCancellableCoroutine { continuation ->
+    private suspend fun loadSpriteViaHiddenWebView(): Boolean {
         cookieSyncBridge.syncToWebView()
-        val webView = WebView(appContext)
-        var finished = false
-        var captureAttempts = 0
-        lateinit var timeoutRunnable: Runnable
+        return suspendCancellableCoroutine { continuation ->
+            var finished = false
+            var captureAttempts = 0
+            val webView = WebView(appContext)
+            lateinit var timeoutRunnable: Runnable
 
         fun complete(success: Boolean, reason: String) {
             if (finished) {
@@ -170,6 +171,7 @@ class DiscourseSvgSpriteLoader(
         val loadUrl = baseUrl.trimEnd('/') + "/"
         svgSpriteDebugLog("loadSprite: loadUrl=$loadUrl")
         webView.loadUrl(loadUrl)
+        }
     }
 
     private companion object {

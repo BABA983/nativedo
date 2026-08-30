@@ -1,8 +1,8 @@
 /*
- * NativeDo host for Telegram Android's local ThemeActivity workflow.
- * Upstream reference: org/telegram/ui/ThemeActivity.java.
- *
  * SPDX-License-Identifier: GPL-2.0-or-later
+ *
+ * Native port of org/telegram/ui/ThemeActivity.java, bound to NativeDo's
+ * local theme workflow.
  */
 package io.github.baba983.nativedo.ui.theme;
 
@@ -76,10 +76,6 @@ import org.telegram.ui.Components.UItem;
 import org.telegram.ui.Components.UniversalAdapter;
 import org.telegram.ui.Components.UniversalFragment;
 
-/**
- * NativeDo host for Telegram ThemeActivity local theme workflow.
- * Uses the pinned ThemesHorizontalListCell and TopicThemePreviewFragment path.
- */
 public class ThemeSettingsFragment extends UniversalFragment {
 
     public static final int REQUEST_IMPORT_THEME = 4201;
@@ -189,6 +185,17 @@ public class ThemeSettingsFragment extends UniversalFragment {
     @Override
     protected CharSequence getTitle() {
         return getString(R.string.theme_settings_title);
+    }
+
+    @Override
+    public boolean isSupportEdgeToEdge() {
+        return true;
+    }
+
+    @Override
+    public void onInsets(int left, int top, int right, int bottom) {
+        listView.setPadding(0, 0, 0, bottom);
+        listView.setClipToPadding(false);
     }
 
     @Override

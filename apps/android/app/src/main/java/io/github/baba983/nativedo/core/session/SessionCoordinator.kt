@@ -1,14 +1,25 @@
 package io.github.baba983.nativedo.core.session
 
 import io.github.baba983.nativedo.core.network.ParsedBootstrap
+import io.github.baba983.nativedo.core.network.SessionRecoveryRequiredException
 import io.github.baba983.nativedo.core.storage.CookieStore
 import io.github.baba983.nativedo.core.storage.SessionStore
+import java.io.IOException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 interface SessionBootstrapClient {
     suspend fun fetchBootstrap(): ParsedBootstrap
@@ -27,123 +38,273 @@ class SessionCoordinator(
     private val apiClient: SessionBootstrapClient,
     private val cookieSyncBridge: CookieSyncBridge? = null,
     private val now: () -> Long = System::currentTimeMillis,
+    applicationScope: CoroutineScope? = null,
 ) {
+    private val coordinatorScope = applicationScope
+        ?: CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _sessionState = MutableStateFlow<AppSessionState>(AppSessionState.Unknown)
     val sessionState: StateFlow<AppSessionState> = _sessionState.asStateFlow()
-
     private val _events = MutableSharedFlow<SessionEvent>(extraBufferCapacity = 4)
     val events: SharedFlow<SessionEvent> = _events.asSharedFlow()
+    private val operationLock = Any()
+    private val cookieOperationMutex = Mutex()
     private var operationGeneration = 0
+    private var logoutJob: Job? = null
 
     suspend fun start() {
-        val generation = ++operationGeneration
+        val generation = beginOperation()
         restore(
             generation = generation,
             allowCachedFallback = true,
-            clearInvalidWebViewCookies = true,
         )
     }
 
     suspend fun completeLoginFromWebView(cookieUrl: String? = null) {
-        val generation = ++operationGeneration
-        if (cookieUrl == null) {
-            cookieSyncBridge?.syncFromWebView()
-        } else {
-            cookieSyncBridge?.syncFromWebView(cookieUrl)
+        val generation = cookieOperationMutex.withLock {
+            val nextGeneration = beginOperation()
+            if (cookieUrl == null) {
+                cookieSyncBridge?.syncFromWebView()
+            } else {
+                cookieSyncBridge?.syncFromWebView(cookieUrl)
+            }
+            nextGeneration
         }
         restore(
             generation = generation,
             loginCompletion = true,
             allowCachedFallback = false,
-            clearInvalidWebViewCookies = false,
         )
     }
 
     /**
-     * Skip the bootstrap/current-session API hop and trust the username we
-     * just read directly from the WebView DOM (e.g. `meta[name=current-username]`).
+     * Staged login completion — trusts the username just read from the
+     * same-origin WebView DOM and syncs only the auth cookies
+     * ([CookieSyncBridge.AUTH_COOKIE_NAMES]); the non-auth and runtime cookie
+     * stages are orchestrated by [CompleteLoginUseCase].
      *
      * This is the preferred login-completion path because Cloudflare may
      * reject native OkHttp requests even when the WebView session is valid:
      * `cf_clearance` is bound to the WebView's TLS fingerprint and does not
-     * always survive when replayed from OkHttp.
+     * always survive when replayed from OkHttp. The identity is stored with
+     * [SessionFreshness.WebView] so normal startup verifies it natively later.
      */
-    suspend fun completeLoginFromWebViewWithKnownUsername(
+    suspend fun completeLoginFromWebViewStaged(
         username: String,
         displayName: String? = null,
         avatarTemplate: String? = null,
         cookieUrl: String? = null,
     ) {
-        val generation = ++operationGeneration
-        if (cookieUrl == null) {
-            cookieSyncBridge?.syncFromWebView()
-        } else {
-            cookieSyncBridge?.syncFromWebView(cookieUrl)
+        val generation = cookieOperationMutex.withLock {
+            val nextGeneration = beginOperation()
+            if (cookieUrl == null) {
+                cookieSyncBridge?.syncFromWebViewByName(
+                    names = CookieSyncBridge.AUTH_COOKIE_NAMES,
+                )
+            } else {
+                cookieSyncBridge?.syncFromWebViewByName(
+                    url = cookieUrl,
+                    names = CookieSyncBridge.AUTH_COOKIE_NAMES,
+                )
+            }
+            nextGeneration
         }
-        if (generation != operationGeneration) return
-        if (!cookieStore.hasAuthenticatedCookies()) {
-            sessionStore.clear()
+        if (generation != currentOperationGeneration()) return
+        val normalizedUsername = username.trim().takeIf(String::isNotBlank)
+        if (normalizedUsername == null) {
             _sessionState.value = AppSessionState.Anonymous
             return
         }
-        val cachedSnapshot = sessionStore.snapshot()
-        val matchingCachedSnapshot = cachedSnapshot?.takeIf { it.username == username }
-        val snapshot = SessionSnapshot(
-            username = username,
-            displayName = displayName?.takeIf { it.isNotBlank() }
-                ?: matchingCachedSnapshot?.displayName
-                ?: username,
-            avatarTemplate = avatarTemplate?.takeIf { it.isNotBlank() }
-                ?: matchingCachedSnapshot?.avatarTemplate.orEmpty(),
-            lastValidatedAt = now(),
+        if (!cookieStore.hasAuthenticatedCookies()) {
+            applyMissingAuthenticatedCookies()
+            return
+        }
+        val snapshot = mergeCachedIdentity(
+            username = normalizedUsername,
+            displayName = displayName,
+            avatarTemplate = avatarTemplate,
         )
         sessionStore.save(snapshot)
         _sessionState.value = AppSessionState.Authenticated(
             snapshot = snapshot,
-            freshness = SessionFreshness.Verified,
+            freshness = SessionFreshness.WebView,
         )
         _events.emit(SessionEvent.LoginCompleted(snapshot))
     }
 
-    suspend fun markExpired(reason: SessionExpiredReason) {
-        ++operationGeneration
-        val snapshot = sessionStore.snapshot()
-        clearCookies()
-        sessionStore.clear()
-        _sessionState.value = AppSessionState.Expired(reason = reason, snapshot = snapshot)
-        _events.emit(SessionEvent.SessionExpired(reason))
+    /**
+     * Auth cookies vanished but a persisted identity may exist — keep it long
+     * enough to render a useful re-login state; an explicit logout clears the
+     * snapshot before reaching here.
+     */
+    private fun applyMissingAuthenticatedCookies() {
+        val cachedSnapshot = sessionStore.snapshot()
+        _sessionState.value = if (cachedSnapshot == null) {
+            sessionStore.clear()
+            AppSessionState.Anonymous
+        } else {
+            AppSessionState.Expired(
+                reason = SessionExpiredReason.CookieMissing,
+                snapshot = cachedSnapshot,
+            )
+        }
     }
 
-    suspend fun onLogout() {
-        ++operationGeneration
-        clearCookies()
-        sessionStore.clear()
-        _sessionState.value = AppSessionState.Anonymous
-        _events.emit(SessionEvent.LogoutCompleted)
+    /** Fresh identity, enriched with a matching cached display name/avatar. */
+    private fun mergeCachedIdentity(
+        username: String,
+        displayName: String?,
+        avatarTemplate: String?,
+    ): SessionSnapshot {
+        val matchingCachedSnapshot = sessionStore.snapshot()?.takeIf { it.username == username }
+        return SessionSnapshot(
+            username = username,
+            displayName = displayName?.takeIf(String::isNotBlank)
+                ?: matchingCachedSnapshot?.displayName
+                ?: username,
+            avatarTemplate = avatarTemplate?.takeIf(String::isNotBlank)
+                ?: matchingCachedSnapshot?.avatarTemplate.orEmpty(),
+            lastValidatedAt = now(),
+        )
+    }
+
+    suspend fun markExpired(reason: SessionExpiredReason) {
+        markExpired(reason = reason, expectedGeneration = null)
+    }
+
+    suspend fun markExpiredIfCurrent(
+        reason: SessionExpiredReason,
+        expectedGeneration: Int,
+    ) {
+        markExpired(reason = reason, expectedGeneration = expectedGeneration)
+    }
+
+    fun currentRequestContext(): SessionRequestContext = synchronized(operationLock) {
+        val auth = when (_sessionState.value) {
+            is AppSessionState.Authenticated -> SessionRequestAuth.Authenticated
+            is AppSessionState.Restoring -> SessionRequestAuth.Restoring
+            AppSessionState.Anonymous,
+            AppSessionState.Unknown,
+            is AppSessionState.Expired,
+            -> SessionRequestAuth.Anonymous
+        }
+        SessionRequestContext(generation = operationGeneration, auth = auth)
+    }
+
+    suspend fun requestLogin() {
+        _events.emit(SessionEvent.LoginRequired)
+    }
+
+    private suspend fun markExpired(
+        reason: SessionExpiredReason,
+        expectedGeneration: Int?,
+    ) {
+        val transition = suspend {
+            val shouldEmit = synchronized(operationLock) {
+                if (expectedGeneration != null && expectedGeneration != operationGeneration) {
+                    return@synchronized false
+                }
+                val currentState = _sessionState.value
+                if (currentState is AppSessionState.Expired && currentState.reason == reason) {
+                    return@synchronized false
+                }
+                // Requests capture their auth context before starting. Only
+                // an authenticated/restoring request may invalidate a session;
+                // anonymous, unknown, and already-expired requests are local
+                // login-required failures.
+                if (reason == SessionExpiredReason.ServerLoggedOut &&
+                    expectedGeneration != null &&
+                    currentState !is AppSessionState.Authenticated &&
+                    currentState !is AppSessionState.Restoring
+                ) {
+                    return@synchronized false
+                }
+                val snapshot = currentSnapshot()
+                operationGeneration += 1
+                _sessionState.value = AppSessionState.Expired(reason = reason, snapshot = snapshot)
+                true
+            }
+            if (shouldEmit && reason == SessionExpiredReason.ServerLoggedOut) {
+                withContext(kotlinx.coroutines.NonCancellable) {
+                    sessionStore.clear()
+                    clearCookiesAsync()
+                }
+            }
+            shouldEmit
+        }
+        val shouldEmit = if (reason == SessionExpiredReason.ServerLoggedOut) {
+            cookieOperationMutex.withLock { transition() }
+        } else {
+            transition()
+        }
+        if (shouldEmit) {
+            _events.emit(SessionEvent.SessionExpired(reason))
+        }
+    }
+
+    fun onLogout(): Job {
+        synchronized(operationLock) {
+            logoutJob?.takeIf(Job::isActive)?.let { return it }
+            val job = coordinatorScope.launch {
+                withContext(kotlinx.coroutines.NonCancellable) {
+                    cookieOperationMutex.withLock {
+                        synchronized(operationLock) {
+                            operationGeneration += 1
+                            _sessionState.value = AppSessionState.Anonymous
+                        }
+                        sessionStore.clear()
+                        clearCookiesAsync()
+                    }
+                }
+                _events.emit(SessionEvent.LogoutCompleted)
+            }
+            logoutJob = job
+            job.invokeOnCompletion {
+                synchronized(operationLock) {
+                    if (logoutJob === job) logoutJob = null
+                }
+            }
+            return job
+        }
     }
 
     private suspend fun restore(
         generation: Int,
         loginCompletion: Boolean = false,
         allowCachedFallback: Boolean,
-        clearInvalidWebViewCookies: Boolean,
     ) {
-        if (generation != operationGeneration) return
+        if (generation != currentOperationGeneration()) return
         if (!cookieStore.hasAuthenticatedCookies()) {
-            sessionStore.clear()
-            _sessionState.value = AppSessionState.Anonymous
+            applyMissingAuthenticatedCookies()
             return
         }
         val cachedSnapshot = sessionStore.snapshot()
         _sessionState.value = AppSessionState.Restoring(snapshot = cachedSnapshot)
-        runCatching {
-            val currentUser = apiClient.fetchCurrentUser()
-            val username = currentUser?.username ?: apiClient.fetchBootstrap().currentUsername
+        try {
+            // A temporary failure of /session/current.json should not prevent
+            // the documented homepage bootstrap fallback. An explicit logout
+            // signal is the one exception: it must terminate recovery now.
+            var currentUserFailure: Throwable? = null
+            val currentUser = try {
+                apiClient.fetchCurrentUser()
+            } catch (error: SessionLoggedOutException) {
+                throw error
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Throwable) {
+                currentUserFailure = error
+                null
+            }
+            val bootstrap = if (currentUser == null) apiClient.fetchBootstrap() else null
+            val username = currentUser?.username ?: bootstrap?.currentUsername
             if (username.isNullOrBlank()) {
-                throw SessionNotAuthenticatedException
+                // Do not turn a real network/decoder failure into a generic
+                // Cloudflare state merely because the bootstrap fallback had
+                // no identity either. The UI can then offer the right retry
+                // action while keeping the cookies intact in both cases.
+                throw currentUserFailure ?: SessionRecoveryRequiredException()
             }
             val matchingCachedSnapshot = cachedSnapshot?.takeIf { it.username == username }
-            SessionSnapshot(
+            val snapshot = SessionSnapshot(
                 username = username,
                 displayName = currentUser?.displayName?.takeIf { it.isNotBlank() }
                     ?: matchingCachedSnapshot?.displayName
@@ -152,64 +313,92 @@ class SessionCoordinator(
                     ?: matchingCachedSnapshot?.avatarTemplate.orEmpty(),
                 lastValidatedAt = now(),
             )
-        }.fold(
-            onSuccess = { snapshot ->
-                if (generation != operationGeneration) return@fold
-                sessionStore.save(snapshot)
-                _sessionState.value = AppSessionState.Authenticated(
-                    snapshot = snapshot,
-                    freshness = SessionFreshness.Verified,
-                )
-                _events.emit(
-                    if (loginCompletion) {
-                        SessionEvent.LoginCompleted(snapshot)
-                    } else {
-                        SessionEvent.SessionVerified(snapshot)
-                    },
-                )
-            },
-            onFailure = { error ->
-                if (generation != operationGeneration) return@fold
-                _sessionState.value = cachedSnapshot?.takeIf { allowCachedFallback }?.let { snapshot ->
-                        AppSessionState.Authenticated(
-                            snapshot = snapshot,
-                            freshness = SessionFreshness.Cached,
-                        )
-                    }?.takeUnless { error.isServerLoggedOut() } ?: run {
-                    if (clearInvalidWebViewCookies || error.isServerLoggedOut()) {
-                        clearCookies()
-                    } else {
-                        cookieStore.clear()
-                    }
-                    sessionStore.clear()
-                    AppSessionState.Expired(
-                        reason = if (error.isServerLoggedOut()) {
-                            SessionExpiredReason.ServerLoggedOut
-                        } else {
-                            SessionExpiredReason.RecoveryFailed
-                        },
-                        snapshot = cachedSnapshot,
-                    )
-                }
-            },
+            if (generation != currentOperationGeneration()) return
+            sessionStore.save(snapshot)
+            _sessionState.value = AppSessionState.Authenticated(
+                snapshot = snapshot,
+                freshness = SessionFreshness.Verified,
+            )
+            _events.emit(
+                if (loginCompletion) {
+                    SessionEvent.LoginCompleted(snapshot)
+                } else {
+                    SessionEvent.SessionVerified(snapshot)
+                },
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: SessionLoggedOutException) {
+            markExpiredIfCurrent(
+                reason = SessionExpiredReason.ServerLoggedOut,
+                expectedGeneration = generation,
+            )
+        } catch (error: SessionRecoveryRequiredException) {
+            if (generation != currentOperationGeneration()) return
+            keepSessionForRecovery(
+                cachedSnapshot = cachedSnapshot,
+                allowCachedFallback = allowCachedFallback,
+                reason = SessionExpiredReason.ChallengeRequired,
+            )
+        } catch (error: IOException) {
+            if (generation != currentOperationGeneration()) return
+            keepSessionForRecovery(
+                cachedSnapshot = cachedSnapshot,
+                allowCachedFallback = allowCachedFallback,
+                reason = SessionExpiredReason.RecoveryFailed,
+            )
+        } catch (error: Throwable) {
+            if (generation != currentOperationGeneration()) return
+            keepSessionForRecovery(
+                cachedSnapshot = cachedSnapshot,
+                allowCachedFallback = allowCachedFallback,
+                reason = SessionExpiredReason.RecoveryFailed,
+            )
+        }
+    }
+
+    private fun keepSessionForRecovery(
+        cachedSnapshot: SessionSnapshot?,
+        allowCachedFallback: Boolean,
+        reason: SessionExpiredReason,
+    ) {
+        if (allowCachedFallback && cachedSnapshot != null) {
+            _sessionState.value = AppSessionState.Authenticated(
+                snapshot = cachedSnapshot,
+                freshness = SessionFreshness.Cached,
+            )
+            return
+        }
+        // Keep both stores intact. The WebView can solve a challenge or a
+        // transient outage on the next attempt, and the native jar must still
+        // contain the cookies that made that attempt possible.
+        _sessionState.value = AppSessionState.Expired(
+            reason = reason,
+            snapshot = cachedSnapshot,
         )
     }
 
-    private fun clearCookies() {
-        cookieSyncBridge?.clear() ?: cookieStore.clear()
+    private suspend fun clearCookiesAsync() {
+        cookieSyncBridge?.clearAsync() ?: cookieStore.clear()
     }
 
-    private data object SessionNotAuthenticatedException : Throwable()
+    internal fun currentOperationGeneration(): Int = synchronized(operationLock) {
+        operationGeneration
+    }
 
-    /**
-     * Only treat the server's explicit "logged out" signal (via
-     * [SessionLoggedOutException]) as confirmation that cookies are dead.
-     *
-     * A null username from bootstrap/current-session ([SessionNotAuthenticatedException])
-     * may simply mean Cloudflare returned a challenge HTML or the page structure
-     * changed — wiping WebView cookies in that case would destroy a legitimate
-     * fresh login. See contracts/discourse/auth-flow.md rule 11.
-     */
-    private fun Throwable.isServerLoggedOut(): Boolean =
-        this is SessionLoggedOutException
+    private fun beginOperation(): Int = synchronized(operationLock) {
+        operationGeneration += 1
+        operationGeneration
+    }
+
+    private fun currentSnapshot(): SessionSnapshot? =
+        when (val state = _sessionState.value) {
+            is AppSessionState.Authenticated -> state.snapshot
+            is AppSessionState.Restoring -> state.snapshot
+            is AppSessionState.Expired -> state.snapshot
+            AppSessionState.Anonymous,
+            AppSessionState.Unknown,
+            -> null
+        } ?: sessionStore.snapshot()
+
 }

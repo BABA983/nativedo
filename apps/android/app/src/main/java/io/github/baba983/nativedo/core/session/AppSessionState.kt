@@ -26,6 +26,8 @@ sealed interface AppSessionState {
 enum class SessionFreshness {
     Cached,
     Verified,
+    /** Identity was read from the same-origin login WebView and awaits native verification. */
+    WebView,
 }
 
 enum class SessionExpiredReason {

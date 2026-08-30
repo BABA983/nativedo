@@ -13,7 +13,7 @@ class CookieSyncBridgeTest {
     private val baseUrl = "https://linux.do/"
 
     @Test
-    fun syncToWebView_writesCookiesFromStoreToWebView() {
+    fun syncToWebView_writesCookiesFromStoreToWebView() = runTest {
         val cookieStore = CookieStore()
         val writtenCookies = mutableListOf<Pair<String, String>>()
         val bridge = CookieSyncBridge(
@@ -127,7 +127,7 @@ class CookieSyncBridgeTest {
     }
 
     @Test
-    fun syncFromWebView_writesCookiesToStore() {
+    fun syncFromWebView_writesCookiesToStore() = runTest {
         val cookieStore = CookieStore()
         val bridge = CookieSyncBridge(
             baseUrl = baseUrl,
@@ -146,7 +146,7 @@ class CookieSyncBridgeTest {
     }
 
     @Test
-    fun syncFromWebView_replacesStoredCookiesWithCurrentWebViewCookies() {
+    fun syncFromWebView_mergesVisibleCookiesWithoutTreatingMissingNamesAsDeletion() = runTest {
         val cookieStore = CookieStore()
         cookieStore.save(
             baseUrl.toHttpUrl(),
@@ -170,9 +170,63 @@ class CookieSyncBridgeTest {
 
         val result = bridge.syncFromWebView()
 
-        assertThat(result).isFalse()
+        assertThat(result).isTrue()
         assertThat(cookieStore.load(baseUrl.toHttpUrl()).map { it.name })
-            .containsExactly("_forum_session")
+            .containsExactly("_t", "_forum_session")
+    }
+
+    @Test
+    fun syncFromWebView_blankHeaderKeepsNativeCookiesUntilWebViewIsReady() = runTest {
+        val cookieStore = CookieStore()
+        cookieStore.save(
+            baseUrl.toHttpUrl(),
+            listOf(
+                Cookie.Builder()
+                    .name("_t")
+                    .value("native_token")
+                    .domain("linux.do")
+                    .path("/")
+                    .build(),
+            ),
+        )
+        val bridge = CookieSyncBridge(
+            baseUrl = baseUrl,
+            cookieStore = cookieStore,
+            readCookieHeader = { "" },
+            writeCookieToWebView = { _, _ -> },
+            flushCookies = {},
+            clearCookies = { onComplete -> onComplete?.invoke() },
+        )
+
+        assertThat(bridge.syncFromWebView()).isTrue()
+        assertThat(cookieStore.hasAuthenticatedCookies()).isTrue()
+    }
+
+    @Test
+    fun syncFromWebView_nullHeaderKeepsNativeCookiesUntilWebViewIsReady() = runTest {
+        val cookieStore = CookieStore()
+        cookieStore.save(
+            baseUrl.toHttpUrl(),
+            listOf(
+                Cookie.Builder()
+                    .name("_t")
+                    .value("native_token")
+                    .domain("linux.do")
+                    .path("/")
+                    .build(),
+            ),
+        )
+        val bridge = CookieSyncBridge(
+            baseUrl = baseUrl,
+            cookieStore = cookieStore,
+            readCookieHeader = { null },
+            writeCookieToWebView = { _, _ -> },
+            flushCookies = {},
+            clearCookies = { onComplete -> onComplete?.invoke() },
+        )
+
+        assertThat(bridge.syncFromWebView()).isTrue()
+        assertThat(cookieStore.hasAuthenticatedCookies()).isTrue()
     }
 
     @Test
@@ -206,7 +260,7 @@ class CookieSyncBridgeTest {
     }
 
     @Test
-    fun syncToWebView_emptyStore_doesNotWriteOrFlush() {
+    fun syncToWebView_emptyStore_doesNotWriteOrFlush() = runTest {
         val cookieStore = CookieStore()
         val writtenCookies = mutableListOf<Pair<String, String>>()
         var flushed = false
@@ -223,5 +277,73 @@ class CookieSyncBridgeTest {
 
         assertThat(writtenCookies).isEmpty()
         assertThat(flushed).isFalse()
+    }
+
+    @Test
+    fun clearAsync_waitsForWebViewDeletionCallback() = runTest {
+        val cookieStore = CookieStore().apply {
+            save(
+                baseUrl.toHttpUrl(),
+                listOf(Cookie.Builder().name("_t").value("token").domain("linux.do").path("/").build()),
+            )
+        }
+        var completion: (() -> Unit)? = null
+        val bridge = CookieSyncBridge(
+            baseUrl = baseUrl,
+            cookieStore = cookieStore,
+            readCookieHeader = { null },
+            writeCookieToWebView = { _, _ -> },
+            flushCookies = {},
+            clearCookies = { onComplete -> completion = onComplete },
+        )
+
+        val clearing = async { bridge.clearAsync() }
+        runCurrent()
+
+        assertThat(clearing.isCompleted).isFalse()
+        assertThat(cookieStore.hasAuthenticatedCookies()).isFalse()
+
+        requireNotNull(completion).invoke()
+        clearing.await()
+    }
+
+    @Test
+    fun syncFromWebViewByName_syncsOnlySpecifiedCookies() = runTest {
+        val cookieStore = CookieStore()
+        val bridge = CookieSyncBridge(
+            baseUrl = baseUrl,
+            cookieStore = cookieStore,
+            readCookieHeader = { "_t=auth_token; _forum_session=session_value; cf_clearance=cf_value" },
+            writeCookieToWebView = { _, _ -> },
+            flushCookies = {},
+            clearCookies = { onComplete -> onComplete?.invoke() },
+        )
+
+        val result = bridge.syncFromWebViewByName(names = setOf("_t"))
+
+        assertThat(result).isTrue()
+        assertThat(cookieStore.load(baseUrl.toHttpUrl()).map { it.name })
+            .containsExactly("_t")
+    }
+
+    @Test
+    fun syncFromWebViewExcluding_syncsAllButExcludedCookies() = runTest {
+        val cookieStore = CookieStore()
+        val bridge = CookieSyncBridge(
+            baseUrl = baseUrl,
+            cookieStore = cookieStore,
+            readCookieHeader = { "_t=auth_token; _forum_session=session_value; cf_clearance=cf_value" },
+            writeCookieToWebView = { _, _ -> },
+            flushCookies = {},
+            clearCookies = { onComplete -> onComplete?.invoke() },
+        )
+
+        val result = bridge.syncFromWebViewExcluding(
+            excludeNames = setOf("_t", "_forum_session"),
+        )
+
+        assertThat(result).isFalse()
+        assertThat(cookieStore.load(baseUrl.toHttpUrl()).map { it.name })
+            .containsExactly("cf_clearance")
     }
 }

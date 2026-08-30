@@ -110,6 +110,7 @@ import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.telegram.messenger.AndroidUtilities
@@ -198,7 +199,7 @@ class TopicDetailFragment @JvmOverloads constructor(
     private lateinit var listView: TopicSwipeReplyRecyclerView
     private lateinit var topicSearchRepository: TopicSearchRepository
     private lateinit var baseUrl: String
-    private val collectorScope = MainScope()
+    private var collectorScope = MainScope()
     private var reactionUsersSheet: TopicReactionUsersSheet? = null
     private var pollVotersSheet: TopicPollVotersSheet? = null
     private var postOptions: ActionBarPopupWindow? = null
@@ -650,6 +651,13 @@ class TopicDetailFragment @JvmOverloads constructor(
 
         fragmentView = root
         return root
+    }
+
+    override fun clearViews() {
+        collectorScope.cancel()
+        collectorScope = MainScope()
+        topicSearchJob = null
+        super.clearViews()
     }
 
     override fun onResume() {
@@ -2616,6 +2624,10 @@ class TopicDetailFragment @JvmOverloads constructor(
 
     override fun isSupportEdgeToEdge(): Boolean {
         return true
+    }
+
+    override fun drawEdgeNavigationBar(): Boolean {
+        return false
     }
 
     private sealed interface TopicDetailRow {
