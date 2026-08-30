@@ -23,12 +23,13 @@ internal class NativeDoPaparazziRule(
     vararg configOptions: List<PaparazziConfigOption>,
     private val theme: String = "Theme.NativeDo",
     private val contentWidthDp: Float = 360f,
+    private val maxPercentDifference: Double = 0.001,
 ) : TestRule {
     private val testCases = configOptions.toTestCases()
     private val defaultDeviceConfig = DeviceConfig.PIXEL_6.copy(softButtons = false)
     private val paparazzi = Paparazzi(
         deviceConfig = defaultDeviceConfig,
-        maxPercentDifference = 0.001,
+        maxPercentDifference = maxPercentDifference,
         renderingMode = SessionParams.RenderingMode.SHRINK,
         showSystemUi = false,
         theme = theme,

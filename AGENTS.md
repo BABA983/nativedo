@@ -151,6 +151,11 @@ measurement code by guessing.
 - Do not run gradlew commands in parallel; add `--quiet` when possible.
 - **All unit tests:** `./apps/android/gradlew -p apps/android :app:testDebugUnitTest --quiet`
 - **Single test class:** `./apps/android/gradlew -p apps/android :app:testDebugUnitTest --tests 'io.github.baba983.nativedo.feature.home.ui.HomeViewModelTest' --quiet`
+- **Paparazzi screenshots:** plain `testDebugUnitTest` only exercises rendering; pixel
+  verification runs via `./apps/android/gradlew -p apps/android :app:verifyPaparazziDebug`.
+  Goldens live in `apps/android/app/src/test/snapshots/images` and are committed. After an
+  intentional UI change, re-record with `:app:recordPaparazziDebug` and include the updated
+  goldens in the same commit. Snapshot names follow `<package>_<Class>_<method>[Theme].png`.
 - **Assemble (runtime/resource changes):** `./apps/android/gradlew -p apps/android :app:assembleDebug --quiet`
 - For docs-only changes, verification can be limited to checking the edited Markdown for accuracy and consistency.
 

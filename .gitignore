@@ -25,8 +25,9 @@ captures/
 .agents/
 skills-lock.json
 
-# Local Paparazzi baselines; not a repository/CI source of truth yet.
-apps/android/app/src/test/snapshots/
+# Paparazzi golden images are committed; only the unused video baseline
+# directory stays local.
+apps/android/app/src/test/snapshots/videos/
 
 .tmp-home/
 .tmp-robolectric/
