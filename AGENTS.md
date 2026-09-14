@@ -29,8 +29,9 @@ must be discoverable.
 - **`docs/code-layout.md`** — directory layout, language choice (Java vs
   Kotlin), façade/Bridge pattern, stub-vs-throw policy. Read this before
   moving files between directories or starting a new façade.
-- **`scripts/vendor-setup.sh`** — clone/fetch/checkout `vendor/telegram-android`
-  at `upstream.pinned_commit`.
+- **`scripts/vendor-setup.sh`** — clone/fetch/checkout the pristine Telegram
+  tree (a sibling of the repo by default; `--print-dir` shows where) at
+  `upstream.pinned_commit`.
 - **`scripts/vendor-status.sh`** — manifest health, isolation, unmanifested
   files, behind-pin report; `--bump-report <sha>` for pin-bump surface;
   `--check-modified` for byte-level `modified` verification.
@@ -161,7 +162,7 @@ measurement code by guessing.
 
 ## Project reference
 
-- `./vendor/telegram-android` — primary reference for UI components, animations, gesture interactions (swipe, long-press, pull-to-refresh), navigation transitions, and list performance patterns.
+- `../telegram` — pristine Telegram checkout (`scripts/vendor-setup.sh --print-dir`); primary reference for UI components, animations, gesture interactions (swipe, long-press, pull-to-refresh), navigation transitions, and list performance patterns.
 - `/Users/baba/Documents/workspace_github/stripe-android` — modern Android SDK reference for architecture and code patterns.
 - `/Users/baba/Documents/workspace_github/fluxdo` — reference for linux.do-specific Discourse features and flows.
 - <https://docs.discourse.org/> — canonical Discourse API documentation.

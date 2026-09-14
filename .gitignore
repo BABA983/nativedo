@@ -47,5 +47,7 @@ apps/android/app/src/test/snapshots/videos/
 .tmp-robolectric/
 .vendor-manifest.write.lock
 
-# Local pristine Telegram checkout created by scripts/vendor-setup.sh.
+# Legacy location of the pristine Telegram checkout. scripts/vendor-setup.sh
+# now clones it next to the repo (default ../telegram); keep the rule so
+# a leftover in-repo tree is never committed.
 /vendor/

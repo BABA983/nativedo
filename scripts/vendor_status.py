@@ -15,6 +15,7 @@ from vendorlib import (  # noqa: E402
     CURRENT_PIN,
     compare_to_upstream,
     collect_on_disk_telegram_java,
+    display_path,
     git_log_paths,
     git_rev_parse,
     load_manifest,
@@ -67,7 +68,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--check-modified",
         action="store_true",
-        help="byte-compare each file to vendored_at (requires vendor/telegram-android)",
+        help="byte-compare each file to vendored_at (requires the pristine checkout)",
     )
     p.add_argument(
         "--bump-report",
@@ -115,7 +116,7 @@ def main() -> int:
     vd = vendor_dir(root)
     if not vd.exists():
         report["warnings"].append(
-            f"pristine tree missing: {vd.relative_to(root)} "
+            f"pristine tree missing: {display_path(vd, root)} "
             "(run scripts/vendor-setup.sh)"
         )
         vendor_head = None
@@ -126,7 +127,7 @@ def main() -> int:
             # Allow prefix match for short pins.
             if normalize_sha(vendor_head) != pin and not vendor_head.startswith(str(pin)[:12]):
                 report["warnings"].append(
-                    f"vendor/telegram-android HEAD={vendor_head[:12]} "
+                    f"{display_path(vd, root)} HEAD={vendor_head[:12]} "
                     f"!= pinned_commit={str(pin)[:12]} "
                     "(checkout pin with scripts/vendor-setup.sh)"
                 )
@@ -292,7 +293,10 @@ def main() -> int:
     # optional modified byte-check
     if args.check_modified:
         if not vd.exists():
-            report["errors"].append("cannot --check-modified without vendor/telegram-android")
+            report["errors"].append(
+                "cannot --check-modified without a pristine tree at "
+                f"{display_path(vd, root)}"
+            )
         else:
             mismatches = []
             unavailable = []
@@ -334,7 +338,10 @@ def main() -> int:
         new_ref = args.bump_report
         new_sha = git_rev_parse(new_ref, vd) if vd.exists() else None
         if not vd.exists():
-            report["errors"].append("cannot --bump-report without vendor/telegram-android")
+            report["errors"].append(
+                "cannot --bump-report without a pristine tree at "
+                f"{display_path(vd, root)}"
+            )
         elif not pin:
             report["errors"].append("cannot --bump-report without pinned_commit")
         elif not new_sha:

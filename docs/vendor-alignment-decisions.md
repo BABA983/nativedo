@@ -4,7 +4,7 @@ Human decisions needed. Agents should not auto-resolve these without product
 input. Each item is left open after autonomous exact-alignment passes.
 
 Global pin: `9bcf3d2769c6` (Telegram Android 12.9.0, 2026-07-16).  
-Local pristine checkout: `vendor/telegram-android` at that pin.  
+Local pristine checkout: `../telegram` (sibling of the repo; see `scripts/vendor-setup.sh --print-dir`) at that pin.  
 Previous pin `9b50143d8896` (12.8.1) retained as historical alias for un-advanced files.
 
 ## Recently landed (no decision needed)

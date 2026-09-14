@@ -124,7 +124,7 @@ def main() -> int:
 
     if args.stat:
         if not vd.exists():
-            print("ERROR: vendor/telegram-android missing; run scripts/vendor-setup.sh", file=sys.stderr)
+            print(f"ERROR: pristine Telegram tree missing at {vd}; run scripts/vendor-setup.sh", file=sys.stderr)
             return 1
         n_mis = 0
         n_ok = 0
@@ -157,7 +157,7 @@ def main() -> int:
         return 2
 
     if not vd.exists():
-        print("ERROR: vendor/telegram-android missing; run scripts/vendor-setup.sh", file=sys.stderr)
+        print(f"ERROR: pristine Telegram tree missing at {vd}; run scripts/vendor-setup.sh", file=sys.stderr)
         return 1
 
     entry = resolve_entry(manifest, args.path, root)

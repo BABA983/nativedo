@@ -60,7 +60,8 @@ buys three concrete things:
    io.github.baba983.nativedo.*` inside vendored code. The "vendor isolation"
    rule isn't an honor system anymore.
 2. **Package parity with upstream.** Files in `:telegram` stay in `org.telegram.*`.
-   That means a vendored file diffs cleanly against `vendor/telegram-android/...`
+   That means a vendored file diffs cleanly against the pristine checkout
+   (`../telegram/...` by default; `scripts/vendor-setup.sh --print-dir`)
    — only host wiring (imports the host doesn't have, theme keys, AndroidX
    substitutions) shows up as drift, never a global package rewrite.
 3. **Incremental build win.** When you only edit NativeDo product code, the
@@ -226,9 +227,11 @@ import lines that slip in through comments or copy-paste.
 
 ## Migration checklist (when adding or moving a vendored file)
 
-When you `cp` a new file from `vendor/telegram-android/` into `:telegram`:
+When you `cp` a new file from the pristine Telegram checkout
+(`scripts/vendor-setup.sh --print-dir`, default `../telegram`) into
+`:telegram`:
 
-1. `cp vendor/telegram-android/TMessagesProj/src/main/java/org/telegram/<path>
+1. `cp <checkout>/TMessagesProj/src/main/java/org/telegram/<path>
        apps/android/telegram/src/main/java/org/telegram/<path>`
 2. No `sed` package rewrite needed — package stays `org.telegram.*`.
 3. Drop any upstream import the host can't satisfy (or replace with the

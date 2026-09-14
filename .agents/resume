@@ -29,5 +29,10 @@ if [[ ! -f "$local_props" ]] || ! grep -q '^sdk\.dir=' "$local_props"; then
   printf 'sdk.dir=%s\n' "$ANDROID_SDK_DIR" >"$local_props"
 fi
 
-[[ -d "$REPO_ROOT/vendor/telegram-android/.git" ]] ||
-  echo "orb resume: vendor/telegram-android missing; run scripts/vendor-setup.sh for vendor diffs"
+VENDOR_DIR="$(
+  PYTHONPATH="$REPO_ROOT/scripts" NATIVEDO_ROOT="$REPO_ROOT" python3 -c \
+    'from vendorlib import vendor_dir; print(vendor_dir())' 2>/dev/null ||
+    echo "$REPO_ROOT/../telegram"
+)"
+[[ -d "$VENDOR_DIR/.git" || -f "$VENDOR_DIR/.git" ]] ||
+  echo "orb resume: pristine Telegram tree missing at $VENDOR_DIR; run scripts/vendor-setup.sh for vendor diffs"

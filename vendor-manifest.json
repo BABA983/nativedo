@@ -8,7 +8,8 @@
   "upstream": {
     "repo": "git@github.com:DrKLO/Telegram.git",
     "pinned_commit": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-    "pinned_date": "2026-07-16"
+    "pinned_date": "2026-07-16",
+    "local_checkout": "../telegram"
   },
   "local_root": "apps/android/",
   "upstream_root": "TMessagesProj/src/main/java",

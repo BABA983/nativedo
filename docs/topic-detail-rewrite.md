@@ -58,9 +58,10 @@ in-place as phases land.
   reaction theme keys, plus a local subset of `recordDrawingState()` /
   `animateChange()` style update transitions.
 - **Do not** treat `apps/android/telegram` stubs as the source of truth for
-  non-trivial UI behavior. When you want Telegram behavior, diff against
-  `vendor/telegram-android` and then either copy the component into `:telegram`
-  or copy/port the algorithm into a NativeDo block.
+  non-trivial UI behavior. When you want Telegram behavior, diff against the
+  pristine checkout (`../telegram`, see
+  `scripts/vendor-setup.sh --print-dir`) and then either copy the component into
+  `:telegram` or copy/port the algorithm into a NativeDo block.
 - Telegram-derived blocks are split into three buckets:
   1. exact/native ports of `ArticleViewer` block geometry and rendering,
   2. selective native ports inspired by chat/webpage/poll/spoiler code,

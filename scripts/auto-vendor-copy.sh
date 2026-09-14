@@ -26,7 +26,13 @@ elif [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   exit 0
 fi
 
-VENDOR_JAVA="$ROOT/vendor/telegram-android/TMessagesProj/src/main/java"
+VENDOR_JAVA="$(
+PYTHONPATH="$ROOT/scripts" NATIVEDO_ROOT="$ROOT" python3 -c '
+from vendorlib import load_manifest, vendor_dir
+m = load_manifest()
+print(vendor_dir() / m.get("upstream_root", "TMessagesProj/src/main/java"))
+'
+)"
 DEST_JAVA="$ROOT/apps/android/telegram/src/main/java"
 MAX_LINES=800
 MAX_IMPORTS=10

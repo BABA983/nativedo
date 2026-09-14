@@ -1,19 +1,26 @@
 #!/usr/bin/env bash
 # scripts/vendor-setup.sh
 #
-# Ensure vendor/telegram-android exists and is checked out at the manifest pin
-# (or a ref passed on the CLI).
+# Ensure the pristine Telegram checkout exists and is checked out at the
+# manifest pin (or a ref passed on the CLI).
+#
+# The checkout lives outside this repo — a sibling directory by default
+# (`../telegram`). Override it with NATIVEDO_TELEGRAM_VENDOR_DIR or
+# `upstream.local_checkout` in vendor-manifest.json. A leftover in-repo
+# `vendor/telegram-android` is still detected, but move it out and delete the
+# `vendor/` directory once you have switched.
 #
 # Usage:
 #   scripts/vendor-setup.sh              # clone/fetch + checkout pinned_commit
 #   scripts/vendor-setup.sh --fetch      # fetch only, keep current HEAD
 #   scripts/vendor-setup.sh <commit>     # checkout a specific commit
 #   scripts/vendor-setup.sh --status     # print pin vs HEAD (exit 1 on drift)
+#   scripts/vendor-setup.sh --print-dir  # print the resolved checkout path
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export NATIVEDO_ROOT="$ROOT"
 MANIFEST="$ROOT/vendor-manifest.json"
-VENDOR_DIR="$ROOT/vendor/telegram-android"
 DEFAULT_HTTPS="https://github.com/DrKLO/Telegram.git"
 
 if [[ ! -f "$MANIFEST" ]]; then
@@ -21,15 +28,15 @@ if [[ ! -f "$MANIFEST" ]]; then
   exit 1
 fi
 
+vendor_python() {
+  PYTHONPATH="$ROOT/scripts" NATIVEDO_ROOT="$ROOT" python3 -c "$1"
+}
+
+VENDOR_DIR="$(vendor_python 'from vendorlib import vendor_dir; print(vendor_dir())')"
+LEGACY_DIR="$ROOT/vendor/telegram-android"
+
 PIN="$(
-  python3 -c "
-import sys
-sys.path.insert(0, '${ROOT}/scripts')
-from vendorlib import load_manifest, normalize_sha
-m = load_manifest('${ROOT}')
-raw = m.get('upstream', {}).get('pinned_commit')
-print(normalize_sha(raw) or raw or '')
-"
+  vendor_python "from vendorlib import load_manifest, normalize_sha; m = load_manifest('${ROOT}'); raw = m.get('upstream', {}).get('pinned_commit'); print(normalize_sha(raw) or raw or '')"
 )"
 REPO="$(
   python3 -c "
@@ -53,12 +60,14 @@ fi
 
 MODE="checkout"
 TARGET_REF="$PIN"
+PRINT_DIR=0
 for arg in "$@"; do
   case "$arg" in
     --fetch) MODE="fetch" ;;
     --status) MODE="status" ;;
+    --print-dir) PRINT_DIR=1 ;;
     --help|-h)
-      sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     -*)
@@ -72,12 +81,23 @@ for arg in "$@"; do
   esac
 done
 
+if (( PRINT_DIR )); then
+  echo "$VENDOR_DIR"
+  exit 0
+fi
+
 if [[ -z "$PIN" && "$MODE" != "fetch" && "$TARGET_REF" == "$PIN" ]]; then
   echo "ERROR: upstream.pinned_commit missing in manifest" >&2
   exit 1
 fi
 
-mkdir -p "$ROOT/vendor"
+if [[ "$VENDOR_DIR" == "$LEGACY_DIR" ]]; then
+  echo "NOTE: using the legacy in-repo checkout $LEGACY_DIR" >&2
+  echo "      Move it next to this repo ($(dirname "$ROOT")/telegram) to match" >&2
+  echo "      the default, or set NATIVEDO_TELEGRAM_VENDOR_DIR." >&2
+fi
+
+mkdir -p "$(dirname "$VENDOR_DIR")"
 
 if [[ "$MODE" == "status" ]]; then
   if [[ ! -d "$VENDOR_DIR/.git" && ! -f "$VENDOR_DIR/.git" ]]; then
@@ -88,6 +108,7 @@ if [[ "$MODE" == "status" ]]; then
   HEAD="$(git -C "$VENDOR_DIR" rev-parse HEAD)"
   RESOLVED_PIN="$(git -C "$VENDOR_DIR" rev-parse "$PIN" 2>/dev/null || true)"
   echo "manifest pin: ${PIN:-<none>}"
+  echo "vendor dir:   $VENDOR_DIR"
   echo "vendor HEAD:  $HEAD"
   if [[ -n "$RESOLVED_PIN" && "$HEAD" == "$RESOLVED_PIN" ]]; then
     echo "OK: HEAD matches pin"
@@ -102,7 +123,7 @@ if [[ ! -d "$VENDOR_DIR/.git" && ! -f "$VENDOR_DIR/.git" ]]; then
     echo "ERROR: $VENDOR_DIR exists but is not a git repo" >&2
     exit 1
   fi
-  echo "Cloning Telegram into vendor/telegram-android ..."
+  echo "Cloning Telegram into $VENDOR_DIR ..."
   echo "  url: $CLONE_URL"
   git clone --filter=blob:none "$CLONE_URL" "$VENDOR_DIR"
 fi
@@ -112,6 +133,7 @@ git -C "$VENDOR_DIR" fetch --tags origin 2>/dev/null || git -C "$VENDOR_DIR" fet
 
 HEAD="$(git -C "$VENDOR_DIR" rev-parse HEAD)"
 echo "manifest pin: ${PIN:-<none>}"
+echo "vendor dir:   $VENDOR_DIR"
 echo "vendor HEAD:  $HEAD"
 echo "target:       ${TARGET_REF:-<none>}"
 

@@ -116,14 +116,23 @@ if ! "$GRADLEW" -p "$GRADLE_PROJECT" --no-daemon :app:testDebugUnitTest; then
 fi
 
 # --- Pristine Telegram tree (optional, used by scripts/vendor-*.sh) ----------
-if [[ ! -d "$REPO_ROOT/vendor/telegram-android/.git" && ! -f "$REPO_ROOT/vendor/telegram-android/.git" ]]; then
-  log "Cloning pristine Telegram tree for vendor tooling"
+# It lives outside the repo (default: a sibling `../telegram`) so the
+# large checkout never bloats the working tree. scripts/vendor-setup.sh owns
+# the resolution; NATIVEDO_TELEGRAM_VENDOR_DIR overrides it.
+VENDOR_DIR="$(
+  PYTHONPATH="$REPO_ROOT/scripts" NATIVEDO_ROOT="$REPO_ROOT" python3 -c \
+    'from vendorlib import vendor_dir; print(vendor_dir())'
+)"
+if [[ ! -d "$VENDOR_DIR/.git" && ! -f "$VENDOR_DIR/.git" ]]; then
+  log "Cloning pristine Telegram tree for vendor tooling into $VENDOR_DIR"
   if ! "$REPO_ROOT/scripts/vendor-setup.sh"; then
-    rm -rf "$REPO_ROOT/vendor/telegram-android"
+    if [[ -n "$VENDOR_DIR" ]]; then
+      rm -rf "$VENDOR_DIR"
+    fi
     echo "WARNING: vendor clone failed; run scripts/vendor-setup.sh when the network allows."
   fi
 else
-  log "Vendor tree present: $(git -C "$REPO_ROOT/vendor/telegram-android" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  log "Vendor tree present: $(git -C "$VENDOR_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 fi
 
 # --- Orb-specific agent notes -------------------------------------------------
@@ -140,7 +149,7 @@ if ! grep -qF "$guidance_marker" "$guidance" 2>/dev/null; then
 - Android toolchain is preinstalled: JDK 17, Android SDK in `$HOME/Android/Sdk` (`ANDROID_HOME` exported for login shells), and `apps/android/local.properties` already points at it. Gradle, AndroidX, Robolectric, and Paparazzi artifacts are cached in `~/.gradle` / `~/.m2`; keep those caches.
 - Orbs have no emulator or device (no KVM): `adb` and instrumentation tests cannot run. Verify with `:app:testDebugUnitTest` and Paparazzi instead.
 - Paparazzi goldens were recorded on macOS; on Linux orbs `:app:verifyPaparazziDebug` can fail on ~0.03% pixel drift in a few snapshots. Inspect the diff before re-recording, and record only intentional UI changes.
-- `vendor/telegram-android` is already cloned at the manifest pin, so `scripts/vendor-diff.sh` and the other vendor scripts work immediately.
+- `../telegram` (sibling of the repo, override with `NATIVEDO_TELEGRAM_VENDOR_DIR`) holds the pristine Telegram checkout at the manifest pin, so `scripts/vendor-diff.sh` and the other vendor scripts work immediately.
 EOF
 fi
 

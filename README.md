@@ -9,7 +9,7 @@ NativeDo for Linux.do. This repository keeps the Android app as the active imple
 - `contracts/discourse` - Shared API and auth contracts.
 - `fixtures` - Sample payloads used by tests.
 - `apps/android/telegram` - Vendored Telegram-derived sources compiled as the `:telegram` module (committed; enough to build).
-- `vendor/telegram-android` - Local pristine Telegram checkout for diff / re-sync tooling only (gitignored; not required to build).
+- `../telegram` - Local pristine Telegram checkout for diff / re-sync tooling only (outside the repo, gitignored; not required to build).
 
 ## Setup
 
@@ -39,8 +39,9 @@ Paparazzi baselines live in `apps/android/app/src/test/snapshots/images` and are
 Only needed when you change, audit, or re-sync Telegram-derived code (`:telegram` or native ports in `:app`).
 
 ```bash
-# Clone DrKLO/Telegram into vendor/telegram-android and check out the pinned commit
+# Clone DrKLO/Telegram next to this repo (default ../telegram) and check out the pinned commit
 scripts/vendor-setup.sh
+scripts/vendor-setup.sh --print-dir   # where the checkout lives
 
 # Day-to-day health (manifest lock, isolation, on-disk completeness)
 scripts/vendor-manifest.sh --check

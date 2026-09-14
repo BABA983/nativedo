@@ -3,7 +3,9 @@
 
 Manifest source: vendor-manifest.json at repo root.
 Generated flat lock: vendor-manifest.lock.json.
-Pristine upstream tree: vendor/telegram-android/ (gitignored).
+Pristine upstream tree: a separate checkout outside the repo (gitignored,
+default `../telegram`, named after the upstream repo); resolve it with
+vendor_dir().
 Local copies: apps/android/ relative paths in each file entry.
 """
 from __future__ import annotations
@@ -48,6 +50,14 @@ SOURCE_DIGEST_KEY = "_vendor_source_digest"
 
 TELEGRAM_JAVA_PREFIX = "telegram/src/main/java/"
 APP_JAVA_PREFIX = "app/src/main/java/"
+
+# Pristine Telegram checkout location. It is intentionally outside the repo:
+# override with the env var, otherwise `upstream.local_checkout` (default
+# `../telegram`, the upstream repo name) applies; the legacy in-repo path is
+# still detected.
+VENDOR_DIR_ENV = "NATIVEDO_TELEGRAM_VENDOR_DIR"
+DEFAULT_VENDOR_DIRNAME = "telegram"
+LEGACY_VENDOR_DIR_PARTS = ("vendor", "telegram-android")
 
 FILE_ENTRY_KEYS = {
     "_comment",
@@ -119,8 +129,90 @@ def manifest_lock_path(root: Optional[PathLike] = None) -> Path:
     return _as_path(root) / LOCK_MANIFEST_NAME
 
 
+def default_vendor_dir(root: Optional[PathLike] = None) -> Path:
+    """Default pristine checkout: a sibling of the repo, `../telegram`."""
+    sibling = _as_path(root).parent / DEFAULT_VENDOR_DIRNAME
+    return Path(os.path.normpath(sibling))
+
+
+def legacy_vendor_dir(root: Optional[PathLike] = None) -> Path:
+    """Pre-move in-repo checkout: `<repo>/vendor/telegram-android`."""
+    return _as_path(root).joinpath(*LEGACY_VENDOR_DIR_PARTS)
+
+
+def _manifest_local_checkout(root: Optional[PathLike] = None) -> Optional[Path]:
+    """`upstream.local_checkout` from the compact manifest, when declared.
+
+    Relative values are resolved against the repo root; absolute values are
+    taken as-is. Never raises: a malformed manifest is reported elsewhere.
+    """
+    try:
+        source = _read_json(manifest_path(root))
+    except (OSError, json.JSONDecodeError):
+        return None
+    value = (source.get("upstream") or {}).get("local_checkout")
+    if not isinstance(value, str) or not value.strip():
+        return None
+    candidate = Path(value).expanduser()
+    if candidate.is_absolute():
+        return candidate
+    return Path(os.path.normpath(_as_path(root) / candidate))
+
+
+def _case_insensitive_sibling(path: Path) -> Optional[Path]:
+    """`path` when it exists, else a sibling whose name matches ignoring case.
+
+    `git clone https://github.com/DrKLO/Telegram.git` creates `Telegram/`, so a
+    case-sensitive filesystem would otherwise miss an existing checkout named
+    after the upstream repo.
+    """
+    if path.exists():
+        return path
+    parent = path.parent
+    if not parent.is_dir():
+        return None
+    wanted = path.name.casefold()
+    for candidate in sorted(parent.iterdir()):
+        if candidate.name.casefold() == wanted:
+            return candidate
+    return None
+
+
 def vendor_dir(root: Optional[PathLike] = None) -> Path:
-    return _as_path(root) / "vendor" / "telegram-android"
+    """Resolve the pristine Telegram checkout used as the upstream reference.
+
+    The tree lives outside the repo (it is large and never committed).
+    Resolution order:
+
+    1. `NATIVEDO_TELEGRAM_VENDOR_DIR` — explicit override, authoritative even
+       when it does not exist yet (vendor-setup clones there).
+    2. `upstream.local_checkout` in `vendor-manifest.json`, else the sibling
+       default `../telegram` (the upstream repo name, case-insensitively
+       matched so a `git clone` of `DrKLO/Telegram` resolves too).
+    3. The legacy in-repo `vendor/telegram-android` when the configured path is
+       absent, so existing checkouts keep working until they are moved.
+    """
+    r = _as_path(root)
+    env = os.environ.get(VENDOR_DIR_ENV, "").strip()
+    if env:
+        return Path(env).expanduser()
+    configured = _manifest_local_checkout(r) or default_vendor_dir(r)
+    sibling = _case_insensitive_sibling(configured)
+    if sibling is not None:
+        return sibling
+    legacy = legacy_vendor_dir(r)
+    if legacy.exists():
+        return legacy
+    return configured
+
+
+def display_path(path: PathLike, root: Optional[PathLike] = None) -> str:
+    """Repo-relative path when inside the repo, else the absolute path."""
+    p = Path(path)
+    try:
+        return p.relative_to(_as_path(root)).as_posix()
+    except ValueError:
+        return str(p)
 
 
 def _read_json(path: Path) -> dict[str, Any]:

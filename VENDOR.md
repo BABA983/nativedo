@@ -22,19 +22,42 @@ live in `AGENTS.md` (Telegram-Derived Code → Rules). This file describes
 
 - Upstream repo: <https://github.com/DrKLO/Telegram>
 - Pinned commit: see `vendor-manifest.json` (`upstream.pinned_commit`)
-- Pristine working copy: `vendor/telegram-android/` (read-only, do not edit)
+- Pristine working copy: `../telegram`, a sibling of this repo
+  (read-only, do not edit)
 
 The pristine copy is a `git clone` (or worktree) of the upstream repo checked
-out at `upstream.pinned_commit`. It is **not** committed to this repo. The pin
-in the compact, human-owned `vendor-manifest.json` is the single source of
-truth. `vendor-manifest.lock.json` is its generated flat expansion.
+out at `upstream.pinned_commit`. It is **not** committed to this repo, and it
+does **not** live inside it: the checkout stays a sibling of the repo so the
+working tree, IDE indexes, repo-wide searches, and CodeGraph never have to walk
+~1 GB of upstream source. The pin in the compact, human-owned
+`vendor-manifest.json` is the single source of truth.
+`vendor-manifest.lock.json` is its generated flat expansion.
+
+### Where the pristine checkout lives
+
+Every vendor tool resolves the checkout through one helper
+(`scripts/vendorlib.py` → `vendor_dir()`), so `NATIVEDO_TELEGRAM_VENDOR_DIR` is
+the only thing you ever need to set. Resolution order:
+
+1. `NATIVEDO_TELEGRAM_VENDOR_DIR` — explicit override, used as-is.
+2. `upstream.local_checkout` in `vendor-manifest.json` (relative to the repo
+   root; committed default `../telegram`, the upstream repo name). A sibling
+   named `Telegram` also matches (case-insensitive), so a plain
+   `git clone https://github.com/DrKLO/Telegram.git` next to the repo works.
+3. A leftover in-repo `vendor/telegram-android` from before the move, so older
+   checkouts keep working until the directory is moved out.
+
+```bash
+scripts/vendor-setup.sh --print-dir   # resolved checkout path
+```
 
 Bootstrap / refresh it with:
 
 ```bash
-scripts/vendor-setup.sh            # clone if needed, fetch, checkout pin
-scripts/vendor-setup.sh --status   # pin vs HEAD
-scripts/vendor-setup.sh --fetch    # fetch only
+scripts/vendor-setup.sh              # clone if needed, fetch, checkout pin
+scripts/vendor-setup.sh --status     # pin vs HEAD
+scripts/vendor-setup.sh --fetch      # fetch only
+scripts/vendor-setup.sh --print-dir  # print the resolved checkout location
 ```
 
 ## Manifest
@@ -90,7 +113,7 @@ that:
 | Script | Purpose |
 |---|---|
 | `scripts/vendor-manifest.sh` | Generate/check the flat lock from the compact source manifest |
-| `scripts/vendor-setup.sh` | Clone/fetch/checkout `vendor/telegram-android` at the pin |
+| `scripts/vendor-setup.sh` | Clone/fetch/checkout the pristine Telegram tree outside the repo; `--print-dir` shows where |
 | `scripts/vendor-status.sh` | Manifest health, isolation, unmanifested files, behind-pin |
 | `scripts/vendor-diff.sh` | `diff -u` local file vs upstream blob |
 | `scripts/vendor-ff.sh` | Fast-forward `exact` + `modified:false` files to the pin |
@@ -100,6 +123,8 @@ that:
 | `vendor-allowlist.json` | Prefixes allowed on disk without a per-file manifest entry |
 
 Shared helpers live in `scripts/vendorlib.py`. Prefer the shell wrappers above.
+Vendor tooling unit tests (pure Python, no pristine tree needed):
+`python3 -m unittest discover -s scripts/tests -t scripts/tests`.
 
 ### Daily checks
 
@@ -269,10 +294,11 @@ is a regression signal.
 ## Re-syncing one file to a newer upstream
 
 1. `scripts/vendor-setup.sh --fetch` (or full setup).
-2. Look at upstream activity:
+2. Look at upstream activity (`$VD` = `scripts/vendor-setup.sh --print-dir`):
 
    ```bash
-   git -C vendor/telegram-android log <vendored_at>..origin/master -- <upstream-path>
+   VD="$(scripts/vendor-setup.sh --print-dir)"
+   git -C "$VD" log <vendored_at>..origin/master -- <upstream-path>
    scripts/vendor-diff.sh <local-path> --at origin/master
    ```
 

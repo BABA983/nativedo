@@ -131,7 +131,7 @@ def main() -> int:
     manifest = load_manifest(root)
     vd = vendor_dir(root)
     if not vd.exists():
-        print("ERROR: vendor/telegram-android missing; run scripts/vendor-setup.sh", file=sys.stderr)
+        print(f"ERROR: pristine Telegram tree missing at {vd}; run scripts/vendor-setup.sh", file=sys.stderr)
         return 1
 
     rows = []
