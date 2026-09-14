@@ -116,6 +116,12 @@
           "stuck_ref": "host_wiring_keep_at_pin"
         },
         {
+          "path": "org/telegram/messenger/utils/RectFMergeBounding.java",
+          "modified": true,
+          "port_mode": "exact",
+          "notes": "Pinned 12.9.0 rectangle merging utility used by TopicDetail's shared glass/frosted blur capture. Runtime code is upstream-exact; one source comment uses ASCII punctuation to match the local source policy."
+        },
+        {
           "path": "org/telegram/messenger/CodeHighlighting.java",
           "notes": "Vendored for ArticleViewer A7 BlockPreformattedCell syntax highlighting (CodeHighlighting.getHighlighted + codelng.gzip). Exact pin copy at global pin 12.9.0; Theme key_code_* and ApplicationLoader assets host wiring already present.",
           "modified": false,

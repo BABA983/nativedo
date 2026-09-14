@@ -75,6 +75,14 @@
       "stuck_reason": "Intentional host wiring at global pin 12.9.0 — keep modified:true; not eligible for clean FF. Product/API surface differs from pin by design (missing upstream types or NativeDo defaults). Re-sync only with a named product goal."
     },
     {
+      "local": "telegram/src/main/java/org/telegram/messenger/utils/RectFMergeBounding.java",
+      "upstream": "org/telegram/messenger/utils/RectFMergeBounding.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": true,
+      "port_mode": "exact",
+      "notes": "Pinned 12.9.0 rectangle merging utility used by TopicDetail's shared glass/frosted blur capture. Runtime code is upstream-exact; one source comment uses ASCII punctuation to match the local source policy."
+    },
+    {
       "local": "telegram/src/main/java/org/telegram/messenger/CodeHighlighting.java",
       "upstream": "org/telegram/messenger/CodeHighlighting.java",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
