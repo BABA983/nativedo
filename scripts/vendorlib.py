@@ -635,6 +635,38 @@ def load_index(
     return derive_index(root, with_modified=with_modified)
 
 
+def prefetch_specs(root: Optional[PathLike] = None) -> list[str]:
+    """`<commit>:<path>` specs for every blob the index compares.
+
+    Used by `vendor-setup.sh --prefetch` to warm a blob-filtered clone (the
+    lazy per-object fetch would otherwise make the first index run slow).
+    """
+    r = _as_path(root)
+    overlay = load_overlay(r)
+    local_root = overlay.get("local_root", DEFAULT_LOCAL_ROOT)
+    upstream_root = overlay.get("upstream_root", DEFAULT_UPSTREAM_ROOT)
+    pin = normalize_sha((overlay.get("upstream") or {}).get("pinned_commit"))
+    if not pin:
+        raise ManifestError(f"{OVERLAY_NAME}: upstream.pinned_commit is invalid")
+    reference = overlay.get("reference") or {}
+    reference_commit = normalize_sha(reference.get("commit")) if reference else None
+    reference_paths = set(reference.get("paths") or [])
+    derived_from = overlay.get("derived_from") or {}
+    meta = {"upstream_root": upstream_root, "local_root": local_root}
+
+    paths: list[str] = []
+    for local in scan_managed_sources(r):
+        upstream = derived_from.get(local, local[len(TELEGRAM_JAVA_PREFIX) :])
+        git_path = upstream_git_path({"upstream": upstream}, meta)
+        baseline = reference_commit if local in reference_paths else pin
+        paths.append(f"{baseline}:{git_path}")
+    for local, upstream in (overlay.get("upstream_ports") or {}).items():
+        git_path = upstream_git_path({"upstream": upstream}, meta)
+        baseline = reference_commit if local in reference_paths else pin
+        paths.append(f"{baseline}:{git_path}")
+    return sorted(set(paths))
+
+
 def compare_to_upstream(
     entry: dict[str, Any],
     manifest: dict[str, Any],

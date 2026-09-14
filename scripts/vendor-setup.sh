@@ -106,18 +106,9 @@ prefetch_blobs() {
   # The vendor tools compare files against the pin and the historical
   # reference commit; a blob-filtered clone fetches those bytes lazily unless
   # we warm them once here.
-  local refs=("$PIN")
-  local ref_commit
-  ref_commit="$(vendor_python "from vendorlib import load_overlay; print((load_overlay('${ROOT}').get('reference') or {}).get('commit') or '')")"
-  [[ -n "$ref_commit" ]] && refs+=("$ref_commit")
-  local ref
-  for ref in "${refs[@]}"; do
-    [[ -n "$ref" ]] || continue
-    echo "Prefetching blob contents at ${ref:0:12} ..."
-    git -C "$VENDOR_DIR" ls-tree -r "$ref" -- TMessagesProj/src/main/java |
-      awk '{print $3}' |
-      git -C "$VENDOR_DIR" cat-file --batch >/dev/null
-  done
+  echo "Prefetching blob contents for the tracked files ..."
+  vendor_python "from vendorlib import prefetch_specs; print(chr(10).join(prefetch_specs('${ROOT}')))" |
+    git -C "$VENDOR_DIR" cat-file --batch >/dev/null
 }
 
 if [[ "$MODE" == "status" ]]; then
@@ -149,6 +140,14 @@ if [[ ! -d "$VENDOR_DIR/.git" && ! -f "$VENDOR_DIR/.git" ]]; then
   git clone --filter=blob:none "$CLONE_URL" "$VENDOR_DIR"
 fi
 
+# CI fetches commits without a working tree; --prefetch only needs the object
+# database, so it runs before the fetch/HEAD bookkeeping.
+if [[ "$MODE" == "prefetch" ]]; then
+  prefetch_blobs
+  echo "OK: blob contents available for the vendor tools"
+  exit 0
+fi
+
 echo "Fetching origin ..."
 git -C "$VENDOR_DIR" fetch --tags origin 2>/dev/null || git -C "$VENDOR_DIR" fetch origin
 
@@ -160,12 +159,6 @@ echo "target:       ${TARGET_REF:-<none>}"
 
 if [[ "$MODE" == "fetch" ]]; then
   echo "OK: fetch complete (HEAD unchanged)"
-  exit 0
-fi
-
-if [[ "$MODE" == "prefetch" ]]; then
-  prefetch_blobs
-  echo "OK: blob contents available for the vendor tools"
   exit 0
 fi
 

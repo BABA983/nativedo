@@ -15,19 +15,26 @@ jobs:
         with:
           python-version: "3.11"
 
-      # Partial clone: vendor-index reads trees at the pin + reference commit
-      # and fetches only the blobs it compares (~6 MB).
-      - name: Pristine Telegram checkout (blobless)
+      # Blobless sparse clone: materializing the two baselines is one batched
+      # fetch each (~100 MB), which keeps the guard at ~0.3s instead of paying
+      # a lazy fetch per compared blob.
+      - name: Pristine Telegram checkout (blobless, sparse)
         run: |
           PIN="$(python3 -c "import json;print(json.load(open('vendor-overlay.json'))['upstream']['pinned_commit'])")"
           REF="$(python3 -c "import json;print((json.load(open('vendor-overlay.json')).get('reference') or {}).get('commit') or '')")"
           git init -q ../telegram
           git -C ../telegram remote add origin https://github.com/DrKLO/Telegram.git
           git -C ../telegram config extensions.partialClone origin
+          git -C ../telegram config remote.origin.promisor true
+          git -C ../telegram config remote.origin.partialclonefilter blob:none
+          git -C ../telegram sparse-checkout init --cone
+          git -C ../telegram sparse-checkout set TMessagesProj/src/main/java
           git -C ../telegram fetch -q --depth=1 --filter=blob:none origin "$PIN"
           if [ -n "$REF" ] && [ "$REF" != "$PIN" ]; then
             git -C ../telegram fetch -q --depth=1 --filter=blob:none origin "$REF"
+            git -C ../telegram checkout -q "$REF"
           fi
+          git -C ../telegram checkout -q "$PIN"
 
       - name: Vendor tooling unit tests
         run: python3 -m unittest discover -s scripts/tests -t scripts/tests
