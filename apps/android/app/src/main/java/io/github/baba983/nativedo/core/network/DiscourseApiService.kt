@@ -35,6 +35,7 @@ import okhttp3.ResponseBody
 import org.jsoup.Jsoup
 import retrofit2.http.DELETE
 import retrofit2.http.Field
+import retrofit2.http.FieldMap
 import retrofit2.http.FormUrlEncoded
 import retrofit2.http.GET
 import retrofit2.http.HTTP
@@ -80,6 +81,12 @@ interface DiscourseApiService {
     @GET("t/{id}.json")
     suspend fun topic(@Path("id") id: Long): TopicResponseDto
 
+    @GET("t/{id}/{postNumber}.json")
+    suspend fun topicAtPost(
+        @Path("id") id: Long,
+        @Path("postNumber") postNumber: Int,
+    ): TopicResponseDto
+
     @GET("t/{id}/posts.json")
     suspend fun topicPosts(
         @Path("id") id: Long,
@@ -106,6 +113,15 @@ interface DiscourseApiService {
         @Field("reply_to_post_number") replyToPostNumber: Int?,
         @Header("X-CSRF-Token") csrfToken: String,
     ): PostDto
+
+    @FormUrlEncoded
+    @POST("topics/timings")
+    suspend fun postTimings(
+        @Field("topic_id") topicId: Long,
+        @Field("topic_time") topicTime: Long,
+        @FieldMap timings: Map<String, String>,
+        @Header("X-CSRF-Token") csrfToken: String,
+    )
 
     @FormUrlEncoded
     @POST("bookmarks.json")
@@ -375,7 +391,9 @@ data class TopicResponseDto(
     @SerialName("highest_post_number")
     val highestPostNumber: Int = 0,
     @SerialName("last_read_post_number")
-    val lastReadPostNumber: Int = 0,
+    val lastReadPostNumber: Int? = null,
+    @SerialName("last_read_post_id")
+    val lastReadPostId: Long? = null,
     @SerialName("created_at")
     val createdAt: String = "",
     @SerialName("last_posted_at")
@@ -820,7 +838,8 @@ internal fun TopicResponseDto.toModel(
         id = id,
         title = title,
         highestPostNumber = highestPostNumber,
-        lastReadPostNumber = lastReadPostNumber,
+        lastReadPostNumber = lastReadPostNumber ?: 0,
+        lastReadPostId = lastReadPostId,
         posts = postStream.posts.map { post -> post.toModel(emojiCatalog = emojiCatalog) },
         participants = details?.participants.orEmpty().mapNotNull { participant ->
             participant.username.takeIf(String::isNotBlank)?.let { username ->

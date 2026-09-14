@@ -16,8 +16,24 @@ open class TopicRepository protected constructor() {
         client.fetchTopic(topicId = topicId)
     }
 
+    open suspend fun loadAtPostNumber(topicId: Long, postNumber: Int): Result<TopicDetail> = runCatching {
+        client.fetchTopic(topicId = topicId, postNumber = postNumber)
+    }
+
     open suspend fun loadPosts(topicId: Long, postIds: List<Long>): Result<List<Post>> = runCatching {
         client.fetchTopicPosts(topicId = topicId, postIds = postIds)
+    }
+
+    open suspend fun markTopicRead(
+        topicId: Long,
+        topicTimeMillis: Long,
+        postTimings: Map<Int, Int>,
+    ): Result<Unit> = runCatching {
+        client.markTopicRead(
+            topicId = topicId,
+            topicTimeMillis = topicTimeMillis,
+            postTimings = postTimings,
+        )
     }
 
     open suspend fun loadPostByNumber(topicId: Long, postNumber: Int): Result<Post> = runCatching {

@@ -22,16 +22,21 @@ data class TopicUiState(
     val posts: List<Post> = emptyList(),
     val highestPostNumber: Int = 0,
     val lastReadPostNumber: Int = 0,
+    val lastReadPostId: Long? = null,
+    val canTrackReadPosition: Boolean = false,
     val participants: List<MentionCandidate> = emptyList(),
     val streamPostIds: List<Long> = emptyList(),
     val isLoading: Boolean = true,
     val isRefreshing: Boolean = false,
+    val isLoadingPrevious: Boolean = false,
     val isLoadingMore: Boolean = false,
     val isSubmittingReply: Boolean = false,
     val isJumpingToLatest: Boolean = false,
     val replyDraft: TopicReplyDraft = TopicReplyDraft(),
+    val hasPrevious: Boolean = false,
     val hasMore: Boolean = false,
     val errorMessage: String? = null,
+    val loadPreviousErrorMessage: String? = null,
     val loadMoreErrorMessage: String? = null,
     val replySubmitErrorMessage: String? = null,
     val jumpToLatestErrorMessage: String? = null,
@@ -46,19 +51,31 @@ data class TopicUiState(
     val jumpEvent: TopicJumpEvent? = null,
     val jumpHighlight: TopicJumpHighlight? = null,
 ) {
-    val canRetry: Boolean
-        get() = errorMessage != null && posts.isEmpty()
-
-    /** Posts after the user's read position; 0 when anonymous or fully read. */
     val unreadPosts: Int
         get() = topicUnreadPostsCount(
             highestPostNumber = highestPostNumber,
             lastReadPostNumber = lastReadPostNumber,
+            canTrackReadPosition = canTrackReadPosition,
         )
+
+    val canRetry: Boolean
+        get() = errorMessage != null && posts.isEmpty()
 }
 
-internal fun topicUnreadPostsCount(highestPostNumber: Int, lastReadPostNumber: Int): Int {
-    if (lastReadPostNumber <= 0) return 0
+internal fun TopicUiState.isReadPositionOnlyUpdateFrom(previous: TopicUiState): Boolean {
+    return (lastReadPostNumber != previous.lastReadPostNumber || lastReadPostId != previous.lastReadPostId) &&
+        copy(
+            lastReadPostNumber = previous.lastReadPostNumber,
+            lastReadPostId = previous.lastReadPostId,
+        ) == previous
+}
+
+internal fun topicUnreadPostsCount(
+    highestPostNumber: Int,
+    lastReadPostNumber: Int,
+    canTrackReadPosition: Boolean = lastReadPostNumber > 0,
+): Int {
+    if (!canTrackReadPosition) return 0
     return (highestPostNumber - lastReadPostNumber).coerceAtLeast(0)
 }
 

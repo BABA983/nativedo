@@ -83,6 +83,23 @@ class DiscourseApiClient(
         service.csrf().csrf
     }
 
+    /**
+     * Reports read progress to Discourse (`topics/timings`), advancing the
+     * server-side `last_read_post_number` the same way the web client does.
+     * [postTimings] maps post_number to dwell milliseconds.
+     */
+    suspend fun markTopicRead(topicId: Long, topicTimeMillis: Long, postTimings: Map<Int, Int>) =
+        runWithSessionBoundary(requiresAuthentication = true) {
+            val csrfToken = service.csrf().csrf
+            service.postTimings(
+                topicId = topicId,
+                topicTime = topicTimeMillis,
+                timings = postTimings.mapKeys { (postNumber, _) -> "timings[$postNumber]" }
+                    .mapValues { (_, millis) -> millis.toString() },
+                csrfToken = csrfToken,
+            )
+        }
+
     suspend fun fetchLatestPage(page: Int): TopicListPage =
         runWithSessionBoundary { service.latest(page).toModel() }
 
@@ -105,11 +122,16 @@ class DiscourseApiClient(
     suspend fun fetchCategories(): List<CategorySummary> =
         runWithSessionBoundary { service.site().toModel() }
 
-    suspend fun fetchTopic(topicId: Long): TopicDetail =
+    suspend fun fetchTopic(topicId: Long, postNumber: Int? = null): TopicDetail =
         runWithSessionBoundary {
             val emojiGroups = service.emojis()
             val emojiCatalog = emojiGroups.toEmojiCatalog()
-            service.topic(topicId).toModel(
+            val response = if (postNumber == null) {
+                service.topic(topicId)
+            } else {
+                service.topicAtPost(topicId, postNumber)
+            }
+            response.toModel(
                 emojiCatalog = emojiCatalog,
                 emojiCategories = emojiGroups.toEmojiCategories(),
             )

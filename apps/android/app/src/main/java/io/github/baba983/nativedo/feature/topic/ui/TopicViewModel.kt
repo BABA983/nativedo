@@ -11,12 +11,22 @@ import io.github.baba983.nativedo.feature.topic.data.TopicRepository
 import io.github.baba983.nativedo.feature.topic.data.TopicReplyDraft
 import io.github.baba983.nativedo.feature.topic.data.TopicReplyDraftKey
 import io.github.baba983.nativedo.feature.topic.data.TopicReplyDraftStore
+import io.github.baba983.nativedo.feature.topic.data.TopicReadPositionKey
+import io.github.baba983.nativedo.feature.topic.data.TopicReadPositionStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 private const val TOPIC_POST_PAGE_SIZE = 20
+
+// Nominal dwell reported per newly read post; Discourse only needs a
+// positive timing to advance the reader's position.
+private const val TOPIC_READ_TIMING_MS_PER_POST = 1_000
+private const val TOPIC_READ_REPORT_DEBOUNCE_MS = 250L
 private const val TOPIC_JUMP_TO_LATEST_PAGE_SIZE = 20
 private const val POLL_VOTERS_PAGE_SIZE = 50
 
@@ -25,13 +35,22 @@ class TopicViewModel(
     private val topicId: Long,
     private val replyDraftStore: TopicReplyDraftStore = TopicReplyDraftStore(),
     private val replyDraftKey: TopicReplyDraftKey? = null,
+    private val readPositionStore: TopicReadPositionStore = TopicReadPositionStore(),
+    private val readPositionKey: TopicReadPositionKey? = null,
+    private val readReportScope: CoroutineScope? = null,
+    private val canTrackReadPosition: Boolean = false,
+    private val initialPostNumber: Int? = null,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(
-        TopicUiState(replyDraft = replyDraftKey?.let(replyDraftStore::load) ?: TopicReplyDraft()),
+        TopicUiState(
+            replyDraft = replyDraftKey?.let(replyDraftStore::load) ?: TopicReplyDraft(),
+            canTrackReadPosition = canTrackReadPosition,
+        ),
     )
     val uiState: StateFlow<TopicUiState> = _uiState.asStateFlow()
 
-    private var remainingPostIds: List<Long> = emptyList()
+    private var remainingPreviousPostIds: List<Long> = emptyList()
+    private var remainingNextPostIds: List<Long> = emptyList()
     private var streamPostIds: List<Long> = emptyList()
     private var jumpToLatestGeneration: Int = 0
     private var jumpNonce: Int = 0
@@ -40,6 +59,10 @@ class TopicViewModel(
     private var reactionUsersRequestGeneration: Int = 0
     private var pollVotersRequestGeneration: Int = 0
     private var postRepliesRequestGeneration: Int = 0
+    private var lastReportedReadPostNumber: Int = 0
+    private var pendingReadReportPostNumber: Int = 0
+    private var readReportJob: Job? = null
+    private var readReportIsDebouncing: Boolean = false
 
     init {
         refresh()
@@ -52,16 +75,81 @@ class TopicViewModel(
             _uiState.value = _uiState.value.copy(
                 isLoading = !hasExistingPosts,
                 isRefreshing = hasExistingPosts,
+                isLoadingPrevious = false,
                 isLoadingMore = false,
                 errorMessage = null,
+                loadPreviousErrorMessage = null,
                 loadMoreErrorMessage = null,
             )
-            repository.load(topicId).fold(
-                onSuccess = { detail ->
+            val requestedPostNumber = initialPostNumber?.takeIf { it > 0 }
+            val initialResult = if (requestedPostNumber == null) {
+                repository.load(topicId)
+            } else {
+                repository.loadAtPostNumber(topicId, requestedPostNumber)
+            }
+            initialResult.fold(
+                onSuccess = { initialDetail ->
+                    val persistedReadPostNumber = if (canTrackReadPosition) {
+                        readPositionKey?.let(readPositionStore::load).orZero()
+                    } else {
+                        0
+                    }
+                    val initialServerReadPostNumber = clampReadPosition(
+                        initialDetail.lastReadPostNumber,
+                        initialDetail.highestPostNumber,
+                    )
+                    val initialEffectiveReadPostNumber = clampReadPosition(
+                        maxOf(initialServerReadPostNumber, persistedReadPostNumber),
+                        initialDetail.highestPostNumber,
+                    )
+                    val restorePostNumber = initialEffectiveReadPostNumber.takeIf { postNumber ->
+                        requestedPostNumber == null &&
+                            canTrackReadPosition &&
+                            postNumber > 1
+                    }
+                    val detail = restorePostNumber
+                        ?.let { postNumber ->
+                            repository.loadAtPostNumber(topicId, postNumber).getOrElse { initialDetail }
+                        }
+                        ?: initialDetail
+                    val highestPostNumber = maxOf(
+                        initialDetail.highestPostNumber,
+                        detail.highestPostNumber,
+                        detail.posts.maxOfOrNull { post -> post.postNumber ?: 0 } ?: 0,
+                    )
+                    val serverReadPostNumber = clampReadPosition(
+                        maxOf(initialDetail.lastReadPostNumber, detail.lastReadPostNumber),
+                        highestPostNumber,
+                    )
+                    val effectiveReadPostNumber = clampReadPosition(
+                        maxOf(serverReadPostNumber, persistedReadPostNumber),
+                        highestPostNumber,
+                    )
+                    val effectiveReadPostId = if (effectiveReadPostNumber > 0) {
+                        (detail.posts + initialDetail.posts)
+                            .firstOrNull { post -> post.postNumber == effectiveReadPostNumber }
+                            ?.id
+                            ?: detail.lastReadPostId.takeIf {
+                                detail.lastReadPostNumber == effectiveReadPostNumber
+                            }
+                            ?: initialDetail.lastReadPostId.takeIf {
+                                initialDetail.lastReadPostNumber == effectiveReadPostNumber
+                            }
+                    } else {
+                        null
+                    }
                     val replyDraft = _uiState.value.replyDraft
+                    readReportJob?.cancel()
+                    readReportJob = null
+                    readReportIsDebouncing = false
+                    lastReportedReadPostNumber = serverReadPostNumber
+                    pendingReadReportPostNumber = effectiveReadPostNumber
+                    persistReadPosition(effectiveReadPostNumber)
                     streamPostIds = detail.streamPostIds
-                    val loadedIds = detail.posts.map(Post::id).toSet()
-                    remainingPostIds = streamPostIds.filterNot(loadedIds::contains)
+                    resetRemainingPostIds(
+                        loadedPosts = detail.posts,
+                        anchorPostNumber = requestedPostNumber ?: restorePostNumber,
+                    )
                     _uiState.value = TopicUiState(
                         title = detail.title,
                         createdAt = detail.createdAt,
@@ -73,15 +161,21 @@ class TopicViewModel(
                         emojiCategories = detail.emojiCategories,
                         totalPosts = detail.totalPosts,
                         posts = detail.posts,
-                        highestPostNumber = detail.highestPostNumber,
-                        lastReadPostNumber = detail.lastReadPostNumber,
+                        highestPostNumber = highestPostNumber,
+                        lastReadPostNumber = effectiveReadPostNumber,
+                        lastReadPostId = effectiveReadPostId,
+                        canTrackReadPosition = canTrackReadPosition,
                         participants = detail.participants,
                         streamPostIds = streamPostIds,
                         isLoading = false,
                         isRefreshing = false,
-                        hasMore = remainingPostIds.isNotEmpty(),
+                        hasPrevious = remainingPreviousPostIds.isNotEmpty(),
+                        hasMore = remainingNextPostIds.isNotEmpty(),
                         replyDraft = replyDraft,
                     )
+                    if (effectiveReadPostNumber > serverReadPostNumber) {
+                        enqueueReadReport(effectiveReadPostNumber)
+                    }
                 },
                 onFailure = { error ->
                     _uiState.value = _uiState.value.copy(
@@ -95,28 +189,113 @@ class TopicViewModel(
     }
 
     /**
-     * Clears the page-down unread counter once the user reaches the bottom of
-     * the loaded stream — the vendor chat clears `newUnreadMessageCount` at the
-     * same boundary. Reading position is kept local; server sync (timings) is
-     * a separate concern.
+     * Advances the read position to the loaded boundary once the user reaches
+     * the bottom. Server timing reports are merged by [enqueueReadReport].
      */
     fun markLoadedPostsRead() {
         val state = _uiState.value
-        // Anonymous sessions carry no Discourse read position — nothing to mark.
-        if (state.lastReadPostNumber <= 0) return
+        if (!state.canTrackReadPosition) return
         val highestLoaded = state.posts.maxOfOrNull { it.postNumber ?: 0 } ?: 0
-        val effective = maxOf(state.lastReadPostNumber, highestLoaded)
-        if (effective == state.lastReadPostNumber) return
-        _uiState.value = state.copy(lastReadPostNumber = effective)
+        advanceAndReportRead(state, maxOf(state.lastReadPostNumber, highestLoaded))
     }
+
+    /**
+     * Advances the read position as the bottom of the viewport scrolls past
+     * posts — the per-scroll analog of the vendor chat's `updateUnreadCount`,
+     * which marks visible messages read and decrements the counter as you
+     * scroll. Monotonic, anonymous-guarded, clamped to the server truth.
+     */
+    fun advanceReadPositionTo(postNumber: Int) {
+        val state = _uiState.value
+        if (!state.canTrackReadPosition) return
+        if (postNumber <= state.lastReadPostNumber) return
+        advanceAndReportRead(state, postNumber.coerceAtMost(state.highestPostNumber))
+    }
+
+    private fun advanceAndReportRead(state: TopicUiState, newLastRead: Int) {
+        if (newLastRead <= state.lastReadPostNumber) return
+        val newLastReadPostId = state.posts
+            .firstOrNull { post -> post.postNumber == newLastRead }
+            ?.id
+        _uiState.value = state.copy(
+            lastReadPostNumber = newLastRead,
+            lastReadPostId = newLastReadPostId ?: state.lastReadPostId,
+        )
+        persistReadPosition(newLastRead)
+        enqueueReadReport(newLastRead)
+    }
+
+    private fun enqueueReadReport(newLastRead: Int) {
+        pendingReadReportPostNumber = maxOf(pendingReadReportPostNumber, newLastRead)
+        if (readReportJob?.isActive == true) return
+        launchReadReport(TOPIC_READ_REPORT_DEBOUNCE_MS)
+    }
+
+    fun flushReadPosition() {
+        if (!canTrackReadPosition || pendingReadReportPostNumber <= lastReportedReadPostNumber) return
+        if (readReportJob?.isActive == true && !readReportIsDebouncing) return
+        if (readReportIsDebouncing) {
+            readReportJob?.cancel()
+        }
+        launchReadReport(initialDelayMillis = 0L)
+    }
+
+    private fun launchReadReport(initialDelayMillis: Long) {
+        val scope = readReportScope ?: viewModelScope
+        readReportIsDebouncing = initialDelayMillis > 0
+        readReportJob = scope.launch {
+            try {
+                if (initialDelayMillis > 0) {
+                    delay(initialDelayMillis)
+                    readReportIsDebouncing = false
+                }
+                reportPendingReadPositions()
+            } finally {
+                readReportIsDebouncing = false
+            }
+        }
+    }
+
+    private suspend fun reportPendingReadPositions() {
+        while (pendingReadReportPostNumber > lastReportedReadPostNumber) {
+            val targetPostNumber = pendingReadReportPostNumber
+            val newlyRead = (lastReportedReadPostNumber + 1)..targetPostNumber
+            val result = repository.markTopicRead(
+                topicId = topicId,
+                topicTimeMillis = newlyRead.count().toLong() * TOPIC_READ_TIMING_MS_PER_POST,
+                postTimings = newlyRead.associateWith { TOPIC_READ_TIMING_MS_PER_POST },
+            )
+            if (result.isFailure) break
+            lastReportedReadPostNumber = targetPostNumber
+            if (pendingReadReportPostNumber > lastReportedReadPostNumber) {
+                delay(TOPIC_READ_REPORT_DEBOUNCE_MS)
+            }
+        }
+    }
+
+    private fun persistReadPosition(postNumber: Int) {
+        if (!canTrackReadPosition) return
+        readPositionKey?.let { key -> readPositionStore.save(key, postNumber) }
+    }
+
+    private fun clampReadPosition(postNumber: Int, highestPostNumber: Int): Int {
+        val normalized = postNumber.coerceAtLeast(0)
+        return if (highestPostNumber > 0) {
+            normalized.coerceAtMost(highestPostNumber)
+        } else {
+            normalized
+        }
+    }
+
+    private fun Int?.orZero(): Int = this ?: 0
 
     fun loadMore() {
         val state = _uiState.value
-        if (state.isLoading || state.isRefreshing || state.isLoadingMore || remainingPostIds.isEmpty()) {
+        if (state.isLoading || state.isRefreshing || state.isLoadingMore || remainingNextPostIds.isEmpty()) {
             return
         }
 
-        val nextChunk = remainingPostIds.take(TOPIC_POST_PAGE_SIZE)
+        val nextChunk = remainingNextPostIds.take(TOPIC_POST_PAGE_SIZE)
         viewModelScope.launch {
             _uiState.value = state.copy(
                 isLoadingMore = true,
@@ -124,17 +303,48 @@ class TopicViewModel(
             )
             repository.loadPosts(topicId, nextChunk).fold(
                 onSuccess = { posts ->
-                    remainingPostIds = remainingPostIds.drop(nextChunk.size)
+                    remainingNextPostIds = remainingNextPostIds.drop(nextChunk.size)
                     _uiState.value = _uiState.value.copy(
                         posts = mergePostsInStreamOrder(_uiState.value.posts, posts),
                         isLoadingMore = false,
-                        hasMore = remainingPostIds.isNotEmpty(),
+                        hasMore = remainingNextPostIds.isNotEmpty(),
                     )
                 },
                 onFailure = { error ->
                     _uiState.value = _uiState.value.copy(
                         isLoadingMore = false,
                         loadMoreErrorMessage = error.readableMessage(),
+                    )
+                },
+            )
+        }
+    }
+
+    fun loadPrevious() {
+        val state = _uiState.value
+        if (state.isLoading || state.isRefreshing || state.isLoadingPrevious || remainingPreviousPostIds.isEmpty()) {
+            return
+        }
+
+        val previousChunk = remainingPreviousPostIds.takeLast(TOPIC_POST_PAGE_SIZE)
+        viewModelScope.launch {
+            _uiState.value = state.copy(
+                isLoadingPrevious = true,
+                loadPreviousErrorMessage = null,
+            )
+            repository.loadPosts(topicId, previousChunk).fold(
+                onSuccess = { posts ->
+                    remainingPreviousPostIds = remainingPreviousPostIds.dropLast(previousChunk.size)
+                    _uiState.value = _uiState.value.copy(
+                        posts = mergePostsInStreamOrder(_uiState.value.posts, posts),
+                        isLoadingPrevious = false,
+                        hasPrevious = remainingPreviousPostIds.isNotEmpty(),
+                    )
+                },
+                onFailure = { error ->
+                    _uiState.value = _uiState.value.copy(
+                        isLoadingPrevious = false,
+                        loadPreviousErrorMessage = error.readableMessage(),
                     )
                 },
             )
@@ -529,7 +739,7 @@ class TopicViewModel(
                     if (!streamPostIds.contains(createdPost.id)) {
                         streamPostIds = streamPostIds + createdPost.id
                     }
-                    remainingPostIds = remainingPostIds.filterNot { postId -> postId == createdPost.id }
+                    removeLoadedPostIds(setOf(createdPost.id))
                     val current = _uiState.value
                     val alreadyLoaded = current.posts.any { post -> post.id == createdPost.id }
                     val updatedExistingPosts = current.posts
@@ -565,6 +775,10 @@ class TopicViewModel(
                         posts = nextPosts,
                         streamPostIds = streamPostIds,
                         totalPosts = if (alreadyLoaded) current.totalPosts else maxOf(current.totalPosts + 1, nextPosts.size),
+                        // A new reply extends the server-truth newest post number so
+                        // the page-down counter sees it (vendor processNewMessages
+                        // increments newUnreadMessageCount at the same point).
+                        highestPostNumber = maxOf(current.highestPostNumber, createdPost.postNumber ?: 0),
                         isSubmittingReply = false,
                         replySubmitErrorMessage = null,
                         postRepliesSheet = updatedRepliesSheet,
@@ -634,9 +848,11 @@ class TopicViewModel(
                 val loadedPost = repository.loadPostByNumber(topicId = topicId, postNumber = postNumber).getOrNull()
                 pendingJumpPostNumbers.remove(postNumber)
                 if (loadedPost != null) {
-                    remainingPostIds = remainingPostIds.filterNot { id -> id == loadedPost.id }
+                    removeLoadedPostIds(setOf(loadedPost.id))
                     _uiState.value = _uiState.value.copy(
                         posts = mergePostsInStreamOrder(_uiState.value.posts, listOf(loadedPost)),
+                        hasPrevious = remainingPreviousPostIds.isNotEmpty(),
+                        hasMore = remainingNextPostIds.isNotEmpty(),
                     )
                     requestJumpToReplyTarget(postNumber)
                 }
@@ -657,6 +873,27 @@ class TopicViewModel(
         )
     }
 
+    /** Jumps to the first post after the server's read position. */
+    fun requestJumpToUnread() {
+        val state = _uiState.value
+        if (!state.canTrackReadPosition || state.unreadPosts <= 0) {
+            requestJumpToLatest()
+            return
+        }
+        requestJumpToReplyTarget(state.lastReadPostNumber + 1)
+    }
+
+    /** Restores the server's last-read post when opening a topic normally. */
+    fun requestJumpToReadPosition() {
+        val state = _uiState.value
+        if (!state.canTrackReadPosition) return
+        state.lastReadPostId?.let {
+            requestJumpToPostId(it)
+            return
+        }
+        state.lastReadPostNumber.takeIf { it > 0 }?.let(::requestJumpToReplyTarget)
+    }
+
     fun requestJumpToPostId(postId: Long) {
         val loadedIndex = _uiState.value.posts.indexOfFirst { post -> post.id == postId }
         if (loadedIndex >= 0) {
@@ -670,10 +907,11 @@ class TopicViewModel(
                 ?.firstOrNull { post -> post.id == postId }
             pendingJumpPostIds.remove(postId)
             if (loadedPost != null) {
-                remainingPostIds = remainingPostIds.filterNot { id -> id == loadedPost.id }
+                removeLoadedPostIds(setOf(loadedPost.id))
                 _uiState.value = _uiState.value.copy(
                     posts = mergePostsInStreamOrder(_uiState.value.posts, listOf(loadedPost)),
-                    hasMore = remainingPostIds.isNotEmpty(),
+                    hasPrevious = remainingPreviousPostIds.isNotEmpty(),
+                    hasMore = remainingNextPostIds.isNotEmpty(),
                 )
                 requestJumpToPostId(postId)
             }
@@ -698,14 +936,15 @@ class TopicViewModel(
             repository.loadPosts(topicId, tailIds).fold(
                 onSuccess = { posts ->
                     if (requestGeneration != jumpToLatestGeneration) return@fold
-                    remainingPostIds = remainingPostIds.filterNot(posts.map(Post::id).toSet()::contains)
+                    removeLoadedPostIds(posts.map(Post::id).toSet())
                     val merged = mergePostsInStreamOrder(_uiState.value.posts, posts)
                     val targetIndex = merged.indexOfFirst { it.id == targetPostId }
                     _uiState.value = _uiState.value.copy(
                         posts = merged,
                         isJumpingToLatest = false,
                         jumpToLatestErrorMessage = null,
-                        hasMore = remainingPostIds.isNotEmpty(),
+                        hasPrevious = remainingPreviousPostIds.isNotEmpty(),
+                        hasMore = remainingNextPostIds.isNotEmpty(),
                     )
                     if (targetIndex >= 0) {
                         emitJumpToPost(targetPostId, targetIndex)
@@ -767,6 +1006,32 @@ class TopicViewModel(
                 .thenBy { it.postNumber ?: Int.MAX_VALUE }
                 .thenBy(Post::id),
         )
+    }
+
+    private fun resetRemainingPostIds(loadedPosts: List<Post>, anchorPostNumber: Int?) {
+        val loadedIds = loadedPosts.map(Post::id).toSet()
+        val anchorId = anchorPostNumber?.let { number ->
+            loadedPosts.firstOrNull { post -> post.postNumber == number }?.id
+        }
+        val anchorIndex = anchorId
+            ?.let(streamPostIds::indexOf)
+            ?.takeIf { it >= 0 }
+            ?: loadedPosts.firstNotNullOfOrNull { post ->
+                streamPostIds.indexOf(post.id).takeIf { it >= 0 }
+            }
+            ?: 0
+        remainingPreviousPostIds = streamPostIds
+            .take(anchorIndex)
+            .filterNot(loadedIds::contains)
+        remainingNextPostIds = streamPostIds
+            .drop(anchorIndex + 1)
+            .filterNot(loadedIds::contains)
+    }
+
+    private fun removeLoadedPostIds(loadedIds: Set<Long>) {
+        if (loadedIds.isEmpty()) return
+        remainingPreviousPostIds = remainingPreviousPostIds.filterNot(loadedIds::contains)
+        remainingNextPostIds = remainingNextPostIds.filterNot(loadedIds::contains)
     }
 
     private var pollActionFailureNonce = 0

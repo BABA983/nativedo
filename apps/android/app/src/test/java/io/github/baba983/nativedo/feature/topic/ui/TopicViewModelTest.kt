@@ -13,8 +13,12 @@ import io.github.baba983.nativedo.feature.topic.data.TopicReplyDraft
 import io.github.baba983.nativedo.feature.topic.data.TopicReplyDraftKey
 import io.github.baba983.nativedo.feature.topic.data.TopicReplyDraftPersistence
 import io.github.baba983.nativedo.feature.topic.data.TopicReplyDraftStore
+import io.github.baba983.nativedo.feature.topic.data.TopicReadPositionKey
+import io.github.baba983.nativedo.feature.topic.data.TopicReadPositionPersistence
+import io.github.baba983.nativedo.feature.topic.data.TopicReadPositionStore
 import io.github.baba983.nativedo.test.MainDispatcherRule
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withTimeout
@@ -49,7 +53,7 @@ class TopicViewModelTest {
     }
 
     @Test
-    fun unreadCounterMirrorsDiscourseReadPositionAndClearsAtBottom() = runTest {
+    fun readPositionMirrorsServerAndClearsAtBottom() = runTest {
         val repository = FakeTopicRepository(
             detail = topicDetail(
                 loadedPostIds = listOf(1001L, 1002L),
@@ -64,27 +68,32 @@ class TopicViewModelTest {
                 ),
             ),
         )
-        viewModel = TopicViewModel(repository = repository, topicId = 101L)
+        viewModel = TopicViewModel(
+            repository = repository,
+            topicId = 101L,
+            canTrackReadPosition = true,
+        )
 
         val state = viewModel.awaitState { !it.isLoading }
+        assertThat(state.lastReadPostNumber).isEqualTo(2)
         assertThat(state.unreadPosts).isEqualTo(2)
 
         // Marking read with an unloaded tail is a no-op: nothing was emitted,
-        // and the unread counter still covers the unloaded tail.
+        // and the read position stays behind the unloaded tail.
         viewModel.markLoadedPostsRead()
         val readState = viewModel.uiState.value
         assertThat(readState.lastReadPostNumber).isEqualTo(2)
-        assertThat(readState.unreadPosts).isEqualTo(2)
 
         viewModel.loadMore()
         val loadedState = viewModel.awaitState { it.posts.size == 4 }
         viewModel.markLoadedPostsRead()
-        val caughtUp = viewModel.awaitState { it.unreadPosts == 0 }
+        val caughtUp = viewModel.awaitState { it.lastReadPostNumber == 4 }
         assertThat(caughtUp.lastReadPostNumber).isEqualTo(4)
+        assertThat(caughtUp.unreadPosts).isEqualTo(0)
     }
 
     @Test
-    fun anonymousSessionNeverBuildsAnUnreadCounter() = runTest {
+    fun anonymousSessionNeverAdvancesReadPosition() = runTest {
         val repository = FakeTopicRepository(
             detail = topicDetail(
                 loadedPostIds = listOf(1001L),
@@ -93,17 +102,213 @@ class TopicViewModelTest {
                 lastReadPostNumber = 0,
             ),
         )
-        viewModel = TopicViewModel(repository = repository, topicId = 101L)
+        viewModel = TopicViewModel(
+            repository = repository,
+            topicId = 101L,
+            canTrackReadPosition = false,
+        )
 
         val state = viewModel.awaitState { !it.isLoading }
+        assertThat(state.lastReadPostNumber).isEqualTo(0)
         assertThat(state.unreadPosts).isEqualTo(0)
 
         viewModel.markLoadedPostsRead()
         assertThat(viewModel.uiState.value.lastReadPostNumber).isEqualTo(0)
-        assertThat(viewModel.uiState.value.unreadPosts).isEqualTo(0)
+        viewModel.advanceReadPositionTo(1)
+        advanceTimeBy(250L)
+        runCurrent()
+        assertThat(repository.readReportRequests).isEmpty()
     }
 
     @Test
+    fun authenticatedSessionAtZeroReadPositionShowsUnreadAndReportsAdvances() = runTest {
+        val repository = FakeTopicRepository(
+            detail = topicDetail(
+                loadedPostIds = listOf(1001L, 1002L, 1003L),
+                streamPostIds = listOf(1001L, 1002L, 1003L),
+                highestPostNumber = 3,
+                lastReadPostNumber = 0,
+            ),
+        )
+        viewModel = TopicViewModel(
+            repository = repository,
+            topicId = 101L,
+            canTrackReadPosition = true,
+        )
+
+        val state = viewModel.awaitState { !it.isLoading }
+        assertThat(state.unreadPosts).isEqualTo(3)
+
+        viewModel.advanceReadPositionTo(2)
+        val updated = viewModel.awaitState { it.lastReadPostNumber == 2 }
+        assertThat(updated.unreadPosts).isEqualTo(1)
+
+        advanceTimeBy(250L)
+        runCurrent()
+        assertThat(repository.readReportRequests).containsExactly(
+            ReadReportRequest(
+                topicId = 101L,
+                topicTimeMillis = 2_000L,
+                postTimings = mapOf(1 to 1_000, 2 to 1_000),
+            ),
+        )
+    }
+
+    @Test
+    fun advanceReadPositionToAdvancesPerScrollClampedToServerTruth() = runTest {
+        val repository = FakeTopicRepository(
+            detail = topicDetail(
+                loadedPostIds = listOf(1001L, 1002L, 1003L),
+                streamPostIds = listOf(1001L, 1002L, 1003L, 1004L),
+                highestPostNumber =4,
+                lastReadPostNumber =1,
+            ),
+        )
+        viewModel = TopicViewModel(
+            repository = repository,
+            topicId = 101L,
+            canTrackReadPosition = true,
+        )
+
+        val state = viewModel.awaitState { !it.isLoading }
+        assertThat(state.lastReadPostNumber).isEqualTo(1)
+
+        // Per-scroll advance (vendor updateVisibleMessagesPart marks visible
+        // messages read and decrements newUnreadMessageCount at the same point).
+        viewModel.advanceReadPositionTo(2)
+        var updated = viewModel.awaitState { it.lastReadPostNumber == 2 }
+        assertThat(updated.lastReadPostNumber).isEqualTo(2)
+
+        // Monotonic: scrolling back up never rewinds the read position.
+        viewModel.advanceReadPositionTo(1)
+        assertThat(viewModel.uiState.value.lastReadPostNumber).isEqualTo(2)
+
+        // Clamped to the server highest post number, and reported once per range.
+        viewModel.advanceReadPositionTo(9)
+        updated = viewModel.awaitState { it.lastReadPostNumber == 4 }
+        assertThat(updated.lastReadPostNumber).isEqualTo(4)
+    }
+
+    @Test
+    fun readReportsConflateRapidScrollAdvancesIntoOneRequest() = runTest {
+        val repository = FakeTopicRepository(
+            detail = topicDetail(
+                loadedPostIds = listOf(1001L, 1002L, 1003L, 1004L),
+                streamPostIds = listOf(1001L, 1002L, 1003L, 1004L),
+                highestPostNumber = 4,
+                lastReadPostNumber = 1,
+            ),
+        )
+        viewModel = TopicViewModel(
+            repository = repository,
+            topicId = 101L,
+            canTrackReadPosition = true,
+        )
+        viewModel.awaitState { !it.isLoading }
+
+        viewModel.advanceReadPositionTo(2)
+        viewModel.advanceReadPositionTo(3)
+        viewModel.advanceReadPositionTo(4)
+        advanceTimeBy(249L)
+        runCurrent()
+        assertThat(repository.readReportRequests).isEmpty()
+
+        advanceTimeBy(1L)
+        runCurrent()
+        assertThat(repository.readReportRequests).containsExactly(
+            ReadReportRequest(
+                topicId = 101L,
+                topicTimeMillis = 3_000L,
+                postTimings = mapOf(2 to 1_000, 3 to 1_000, 4 to 1_000),
+            ),
+        )
+    }
+
+    @Test
+    fun localReadPositionWinsStaleServerAndFlushesImmediately() = runTest {
+        val key = TopicReadPositionKey("https://linux.do", "alice", 101L)
+        val readPersistence = FakeReadPositionPersistence(mutableMapOf(key to 4))
+        val repository = FakeTopicRepository(
+            detail = topicDetail(
+                loadedPostIds = listOf(1001L, 1002L),
+                streamPostIds = listOf(1001L, 1002L, 1003L, 1004L, 1005L),
+                highestPostNumber = 5,
+                lastReadPostNumber = 1,
+                lastReadPostId = 1001L,
+            ),
+            detailAtPostNumber = topicDetail(
+                loadedPostIds = listOf(1003L, 1004L, 1005L),
+                streamPostIds = listOf(1001L, 1002L, 1003L, 1004L, 1005L),
+                highestPostNumber = 5,
+                lastReadPostNumber = 1,
+                lastReadPostId = 1001L,
+            ),
+        )
+        viewModel = TopicViewModel(
+            repository = repository,
+            topicId = 101L,
+            readPositionStore = TopicReadPositionStore(readPersistence),
+            readPositionKey = key,
+            canTrackReadPosition = true,
+        )
+
+        val state = viewModel.awaitState { !it.isLoading }
+        assertThat(repository.loadAtPostNumberRequests).containsExactly(101L to 4)
+        assertThat(state.lastReadPostNumber).isEqualTo(4)
+        assertThat(state.lastReadPostId).isEqualTo(1004L)
+        assertThat(state.posts.map(Post::id)).containsExactly(1003L, 1004L, 1005L).inOrder()
+
+        viewModel.flushReadPosition()
+        runCurrent()
+
+        assertThat(repository.readReportRequests).containsExactly(
+            ReadReportRequest(
+                topicId = 101L,
+                topicTimeMillis = 3_000L,
+                postTimings = mapOf(2 to 1_000, 3 to 1_000, 4 to 1_000),
+            ),
+        )
+    }
+
+    @Test
+    fun scrollAdvancePersistsBeforeDebouncedServerReport() = runTest {
+        val key = TopicReadPositionKey("https://linux.do", "alice", 101L)
+        val readPersistence = FakeReadPositionPersistence()
+        val repository = FakeTopicRepository(
+            detail = topicDetail(
+                loadedPostIds = listOf(1001L, 1002L, 1003L),
+                streamPostIds = listOf(1001L, 1002L, 1003L),
+                highestPostNumber = 3,
+                lastReadPostNumber = 1,
+                lastReadPostId = 1001L,
+            ),
+        )
+        viewModel = TopicViewModel(
+            repository = repository,
+            topicId = 101L,
+            readPositionStore = TopicReadPositionStore(readPersistence),
+            readPositionKey = key,
+            canTrackReadPosition = true,
+        )
+        viewModel.awaitState { !it.isLoading }
+
+        viewModel.advanceReadPositionTo(2)
+
+        assertThat(readPersistence.values[key]).isEqualTo(2)
+        assertThat(viewModel.uiState.value.lastReadPostId).isEqualTo(1002L)
+        assertThat(repository.readReportRequests).isEmpty()
+        viewModel.flushReadPosition()
+        viewModel.flushReadPosition()
+        runCurrent()
+        assertThat(repository.readReportRequests).containsExactly(
+            ReadReportRequest(
+                topicId = 101L,
+                topicTimeMillis = 1_000L,
+                postTimings = mapOf(2 to 1_000),
+            ),
+        )
+    }
+
     fun replyDraftTextAndTargetUseOnePersistedState() = runTest {
         val key = TopicReplyDraftKey("https://linux.do", "alice", 101L)
         val persistence = FakeReplyDraftPersistence()
@@ -485,7 +690,28 @@ class TopicViewModelTest {
         assertThat(state.posts.first().replyCount).isEqualTo(1)
         assertThat(state.posts.last().replyToPostNumber).isEqualTo(1)
         assertThat(state.totalPosts).isEqualTo(2)
+        assertThat(state.highestPostNumber).isEqualTo(2)
         assertThat(state.replyDraft).isEqualTo(TopicReplyDraft())
+    }
+
+    @Test
+    fun submitReplyKeepsHighestPostNumberMonotonic() = runTest {
+        val createdPost = post(id = 1002L, postNumber = 1)
+        val repository = FakeTopicRepository(
+            detail = topicDetail(
+                loadedPostIds = listOf(1001L),
+                streamPostIds = listOf(1001L),
+                highestPostNumber = 7,
+            ),
+            createReplyResult = Result.success(createdPost),
+        )
+        viewModel = TopicViewModel(repository = repository, topicId = 101L)
+        viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
+
+        viewModel.submitReply(raw = "reply", replyToPostNumber = null)
+        runCurrent()
+
+        assertThat(viewModel.uiState.value.highestPostNumber).isEqualTo(7)
     }
 
     @Test
@@ -725,6 +951,199 @@ class TopicViewModelTest {
     }
 
     @Test
+    fun requestJumpToUnreadTargetsFirstPostAfterReadPosition() = runTest {
+        val repository = FakeTopicRepository(
+            detail = topicDetail(
+                loadedPostIds = listOf(1001L, 1002L, 1003L),
+                streamPostIds = listOf(1001L, 1002L, 1003L),
+                highestPostNumber = 3,
+                lastReadPostNumber = 1,
+            ),
+        )
+        viewModel = TopicViewModel(
+            repository = repository,
+            topicId = 101L,
+            canTrackReadPosition = true,
+        )
+        viewModel.awaitState { state -> !state.isLoading && state.posts.size == 3 }
+
+        viewModel.requestJumpToUnread()
+
+        assertThat(viewModel.uiState.value.jumpEvent?.postId).isEqualTo(1002L)
+        assertThat(viewModel.uiState.value.jumpEvent?.itemIndex).isEqualTo(2)
+    }
+
+    @Test
+    fun requestJumpToUnreadLoadsFirstUnreadPostWhenItIsNotLoaded() = runTest {
+        val repository = FakeTopicRepository(
+            detail = topicDetail(
+                loadedPostIds = listOf(1001L),
+                streamPostIds = listOf(1001L, 1002L, 1003L),
+                highestPostNumber = 3,
+                lastReadPostNumber = 1,
+            ),
+            postByNumber = Result.success(post(id = 1002L, postNumber = 2)),
+        )
+        viewModel = TopicViewModel(
+            repository = repository,
+            topicId = 101L,
+            canTrackReadPosition = true,
+        )
+        viewModel.awaitState { state -> !state.isLoading && state.posts.size == 1 }
+
+        viewModel.requestJumpToUnread()
+        runCurrent()
+
+        assertThat(repository.loadPostByNumberRequests).containsExactly(101L to 2)
+        assertThat(viewModel.uiState.value.jumpEvent?.postId).isEqualTo(1002L)
+    }
+
+    @Test
+    fun requestJumpToReadPositionUsesServerReadPostId() = runTest {
+        val repository = FakeTopicRepository(
+            detail = topicDetail(
+                loadedPostIds = listOf(1001L, 1002L),
+                streamPostIds = listOf(1001L, 1002L),
+                highestPostNumber = 2,
+                lastReadPostNumber = 1,
+                lastReadPostId = 1001L,
+            ),
+        )
+        viewModel = TopicViewModel(
+            repository = repository,
+            topicId = 101L,
+            canTrackReadPosition = true,
+        )
+        viewModel.awaitState { state -> !state.isLoading && state.posts.size == 2 }
+
+        viewModel.requestJumpToReadPosition()
+
+        assertThat(viewModel.uiState.value.jumpEvent?.postId).isEqualTo(1001L)
+        assertThat(viewModel.uiState.value.jumpEvent?.itemIndex).isEqualTo(1)
+    }
+
+    @Test
+    fun requestJumpToReadPositionFallsBackToServerReadPostNumber() = runTest {
+        val repository = FakeTopicRepository(
+            detail = topicDetail(
+                loadedPostIds = listOf(1001L),
+                streamPostIds = listOf(1001L, 1002L),
+                highestPostNumber = 2,
+                lastReadPostNumber = 2,
+            ),
+            postByNumber = Result.success(post(id = 1002L, postNumber = 2)),
+        )
+        viewModel = TopicViewModel(
+            repository = repository,
+            topicId = 101L,
+            canTrackReadPosition = true,
+        )
+        viewModel.awaitState { state -> !state.isLoading && state.posts.size == 1 }
+
+        viewModel.requestJumpToReadPosition()
+        runCurrent()
+
+        assertThat(repository.loadPostByNumberRequests).containsExactly(101L to 2)
+        assertThat(viewModel.uiState.value.jumpEvent?.postId).isEqualTo(1002L)
+    }
+
+    @Test
+    fun initialLoadPublishesReadPositionWindowInsteadOfFirstFloor() = runTest {
+        val repository = FakeTopicRepository(
+            detail = topicDetail(
+                loadedPostIds = listOf(1001L, 1002L, 1003L, 1004L),
+                streamPostIds = listOf(1001L, 1002L, 1003L, 1004L, 1005L),
+                highestPostNumber = 5,
+                lastReadPostNumber = 4,
+                lastReadPostId = 1004L,
+            ),
+            detailAtPostNumber = topicDetail(
+                loadedPostIds = listOf(1003L, 1004L, 1005L),
+                streamPostIds = listOf(1001L, 1002L, 1003L, 1004L, 1005L),
+                highestPostNumber = 5,
+                lastReadPostNumber = 4,
+                lastReadPostId = 1004L,
+            ),
+        )
+        viewModel = TopicViewModel(
+            repository = repository,
+            topicId = 101L,
+            canTrackReadPosition = true,
+        )
+
+        val state = viewModel.awaitState { !it.isLoading }
+
+        assertThat(repository.loadRequests).containsExactly(101L)
+        assertThat(repository.loadAtPostNumberRequests).containsExactly(101L to 4)
+        assertThat(state.posts.map(Post::id)).containsExactly(1003L, 1004L, 1005L).inOrder()
+        assertThat(state.posts.mapNotNull(Post::postNumber)).doesNotContain(1)
+        assertThat(state.hasPrevious).isTrue()
+        assertThat(state.hasMore).isFalse()
+    }
+
+    @Test
+    fun initialExplicitPostNumberLoadsCenteredWindowDirectly() = runTest {
+        val repository = FakeTopicRepository(
+            detail = topicDetail(
+                loadedPostIds = listOf(1001L),
+                streamPostIds = listOf(1001L),
+            ),
+            detailAtPostNumber = topicDetail(
+                loadedPostIds = listOf(1003L, 1004L),
+                streamPostIds = listOf(1001L, 1002L, 1003L, 1004L, 1005L),
+            ),
+        )
+        viewModel = TopicViewModel(
+            repository = repository,
+            topicId = 101L,
+            initialPostNumber = 4,
+        )
+
+        val state = viewModel.awaitState { !it.isLoading }
+
+        assertThat(repository.loadRequests).isEmpty()
+        assertThat(repository.loadAtPostNumberRequests).containsExactly(101L to 4)
+        assertThat(state.posts.map(Post::id)).containsExactly(1003L, 1004L).inOrder()
+    }
+
+    @Test
+    fun loadPreviousFetchesAdjacentIdsBeforeReadPositionWindow() = runTest {
+        val repository = FakeTopicRepository(
+            detail = topicDetail(
+                loadedPostIds = listOf(1001L),
+                streamPostIds = listOf(1001L, 1002L, 1003L, 1004L, 1005L),
+                lastReadPostNumber = 4,
+                lastReadPostId = 1004L,
+            ),
+            detailAtPostNumber = topicDetail(
+                loadedPostIds = listOf(1003L, 1004L, 1005L),
+                streamPostIds = listOf(1001L, 1002L, 1003L, 1004L, 1005L),
+                lastReadPostNumber = 4,
+                lastReadPostId = 1004L,
+            ),
+            posts = Result.success(
+                listOf(
+                    post(id = 1001L, postNumber = 1),
+                    post(id = 1002L, postNumber = 2),
+                ),
+            ),
+        )
+        viewModel = TopicViewModel(
+            repository = repository,
+            topicId = 101L,
+            canTrackReadPosition = true,
+        )
+        viewModel.awaitState { !it.isLoading }
+
+        viewModel.loadPrevious()
+        val state = viewModel.awaitState { it.posts.size == 5 }
+
+        assertThat(repository.loadPostRequests).containsExactly(101L to listOf(1001L, 1002L))
+        assertThat(state.posts.map(Post::id)).containsExactly(1001L, 1002L, 1003L, 1004L, 1005L).inOrder()
+        assertThat(state.hasPrevious).isFalse()
+    }
+
+    @Test
     fun requestJumpToUnloadedReplyFetchesPostBeforeEmittingJump() = runTest {
         val repository = FakeTopicRepository(
             detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L, 1002L)),
@@ -831,6 +1250,9 @@ class TopicViewModelTest {
 
     private class FakeTopicRepository(
         private val detail: Result<TopicDetail>,
+        private val detailAtPostNumber: Result<TopicDetail> = Result.failure(
+            IllegalStateException("topic window not configured"),
+        ),
         private val posts: Result<List<Post>> = Result.success(emptyList()),
         private val postByNumber: Result<Post> = Result.failure(IllegalStateException("post not configured")),
         private val postReplies: Result<List<Post>> = Result.success(emptyList()),
@@ -844,6 +1266,7 @@ class TopicViewModelTest {
         private val createReplyResult: Result<Post> = Result.failure(IllegalStateException("reply not configured")),
     ) : TopicRepository() {
         val loadRequests = mutableListOf<Long>()
+        val loadAtPostNumberRequests = mutableListOf<Pair<Long, Int>>()
         val loadPostRequests = mutableListOf<Pair<Long, List<Long>>>()
         val loadPostByNumberRequests = mutableListOf<Pair<Long, Int>>()
         val postRepliesRequests = mutableListOf<Pair<Long, Int>>()
@@ -854,15 +1277,30 @@ class TopicViewModelTest {
         val votePollRequests = mutableListOf<PollVoteRequest>()
         val removePollVoteRequests = mutableListOf<PollRemoveVoteRequest>()
         val pollVotersRequests = mutableListOf<PollVotersRequest>()
+        val readReportRequests = mutableListOf<ReadReportRequest>()
 
         override suspend fun load(topicId: Long): Result<TopicDetail> {
             loadRequests += topicId
             return detail
         }
 
+        override suspend fun loadAtPostNumber(topicId: Long, postNumber: Int): Result<TopicDetail> {
+            loadAtPostNumberRequests += topicId to postNumber
+            return detailAtPostNumber
+        }
+
         override suspend fun loadPosts(topicId: Long, postIds: List<Long>): Result<List<Post>> {
             loadPostRequests += topicId to postIds
             return posts
+        }
+
+        override suspend fun markTopicRead(
+            topicId: Long,
+            topicTimeMillis: Long,
+            postTimings: Map<Int, Int>,
+        ): Result<Unit> {
+            readReportRequests += ReadReportRequest(topicId, topicTimeMillis, postTimings)
+            return Result.success(Unit)
         }
 
         override suspend fun loadPostByNumber(topicId: Long, postNumber: Int): Result<Post> {
@@ -924,6 +1362,12 @@ class TopicViewModelTest {
         val optionIds: List<String>,
     )
 
+    private data class ReadReportRequest(
+        val topicId: Long,
+        val topicTimeMillis: Long,
+        val postTimings: Map<Int, Int>,
+    )
+
     private data class PollRemoveVoteRequest(
         val postId: Long,
         val pollName: String,
@@ -957,12 +1401,23 @@ class TopicViewModelTest {
         }
     }
 
+    private class FakeReadPositionPersistence(
+        val values: MutableMap<TopicReadPositionKey, Int> = mutableMapOf(),
+    ) : TopicReadPositionPersistence {
+        override fun load(key: TopicReadPositionKey): Int = values[key] ?: 0
+
+        override fun save(key: TopicReadPositionKey, postNumber: Int) {
+            values[key] = postNumber
+        }
+    }
+
     private fun topicDetail(
         loadedPostIds: List<Long>,
         streamPostIds: List<Long>,
         participants: List<MentionCandidate> = emptyList(),
         highestPostNumber: Int = 0,
         lastReadPostNumber: Int = 0,
+        lastReadPostId: Long? = null,
     ): Result<TopicDetail> = Result.success(
         TopicDetail(
             id = 101L,
@@ -970,11 +1425,14 @@ class TopicViewModelTest {
             validReactions = listOf("heart"),
             emojiCatalog = mapOf("heart" to "heart.png"),
             participants = participants,
-            posts = loadedPostIds.mapIndexed { index, id -> post(id = id, postNumber = index + 1) },
+            posts = loadedPostIds.map { id ->
+                post(id = id, postNumber = streamPostIds.indexOf(id).takeIf { it >= 0 }?.plus(1))
+            },
             totalPosts = streamPostIds.size,
             streamPostIds = streamPostIds,
             highestPostNumber = highestPostNumber,
             lastReadPostNumber = lastReadPostNumber,
+            lastReadPostId = lastReadPostId,
         ),
     )
 

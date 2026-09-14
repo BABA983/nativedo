@@ -155,6 +155,8 @@ class DiscourseApiClientTest {
         assertThat(topic.posts).isNotEmpty()
         assertThat(topic.posts.first().cookedHtml).isNotEmpty()
         assertThat(topic.posts.first().replyCount).isEqualTo(80)
+        assertThat(topic.lastReadPostNumber).isEqualTo(1)
+        assertThat(topic.lastReadPostId).isEqualTo(1001L)
         assertThat(topic.participants.map { it.username }).containsExactly("orchid.hu", "quiet-user").inOrder()
         assertThat(topic.participants.first().postCount).isEqualTo(4)
         assertThat(topic.participants.last().displayName).isEmpty()
@@ -166,6 +168,18 @@ class DiscourseApiClientTest {
         assertThat(topic.emojiCategories.first().emojis.first().name).isEqualTo("heart")
         assertThat(server.takeRequest().path).isEqualTo("/emojis.json")
         assertThat(server.takeRequest().path).isEqualTo("/t/1.json")
+    }
+
+    @Test
+    fun fetchTopicAtPostUsesDiscourseCenteredWindowRoute() = runTest {
+        server.enqueue(jsonResponse("""{"discourse_reactions":[]}"""))
+        server.enqueue(jsonResponse(fixture("discourse/topic-detail.json")))
+
+        val topic = client.fetchTopic(topicId = 101L, postNumber = 144)
+
+        assertThat(topic.id).isEqualTo(101L)
+        assertThat(server.takeRequest().path).isEqualTo("/emojis.json")
+        assertThat(server.takeRequest().path).isEqualTo("/t/101/144.json")
     }
 
     @Test
@@ -274,6 +288,29 @@ class DiscourseApiClientTest {
         assertThat(body).contains("topic_id=101")
         assertThat(body).contains("raw=hello")
         assertThat(body).contains("reply_to_post_number=1")
+    }
+
+    @Test
+    fun markTopicReadPostsTimingsFormWithCsrfToken() = runTest {
+        server.enqueue(jsonResponse("""{"csrf":"csrf-token"}"""))
+        server.enqueue(jsonResponse("{}"))
+
+        client.markTopicRead(
+            topicId = 101L,
+            topicTimeMillis = 2_000L,
+            postTimings = mapOf(3 to 1_000, 4 to 1_000),
+        )
+
+        assertThat(server.takeRequest().path).isEqualTo("/session/csrf")
+        val request = server.takeRequest()
+        assertThat(request.method).isEqualTo("POST")
+        assertThat(request.path).isEqualTo("/topics/timings")
+        assertThat(request.getHeader("X-CSRF-Token")).isEqualTo("csrf-token")
+        val body = request.body.readUtf8()
+        assertThat(body).contains("topic_id=101")
+        assertThat(body).contains("topic_time=2000")
+        assertThat(body).contains("timings%5B3%5D=1000")
+        assertThat(body).contains("timings%5B4%5D=1000")
     }
 
     @Test

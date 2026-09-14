@@ -15,7 +15,7 @@ These are screen-facing model semantics shared between Android today and iOS lat
   - Feed topics include `last_poster_username` for richer list rendering
 - `CategorySummary` - category badge metadata for list rendering, including `name`, `slug`, `color`, optional `textColor`, and optional parent linkage
 - `TopicListPage` - topic summaries plus `moreTopicsUrl` for feed pagination
-- `TopicDetail` - topic header metadata (`createdAt`, `lastPostedAt`, `viewCount`, `tags`) plus ordered `Post` items, `totalPosts`, full `streamPostIds`, and `details.participants` mapped as ranked mention candidates. `highestPostNumber`/`lastReadPostNumber` carry the server read state: unread posts = `highest_post_number - last_read_post_number` (0 when anonymous or fully read), rendered as the topic-detail page-down counter and cleared locally once the bottom of the loaded stream is reached. Composer autocomplete uses these server-ranked participants before supplementing them with loaded post authors.
+- `TopicDetail` - topic header metadata (`createdAt`, `lastPostedAt`, `viewCount`, `tags`) plus ordered `Post` items, `totalPosts`, full `streamPostIds`, and `details.participants` mapped as ranked mention candidates. `highestPostNumber`, `lastReadPostNumber`, and optional `lastReadPostId` carry the server read state. For authenticated sessions, `lastReadPostNumber = 0` means the user has no recorded reads, so the page-down counter starts at `highestPostNumber`; anonymous sessions do not show or advance the counter. Opening a topic restores `lastReadPostId` (or loads `lastReadPostNumber`), and the page-down button targets `lastReadPostNumber + 1` when unread posts remain. Scrolling advances `lastReadPostNumber` monotonically and reports it back as `topics/timings`. Composer autocomplete uses server-ranked participants before supplementing them with loaded post authors.
 - `Post` - post number, optional replied floor target, authoritative direct `replyCount`, author username, optional display name/title/flair icon metadata, created timestamp, optional edit timestamp/edit count metadata, cooked HTML body, and extracted image URLs
 - `PostReactionUsersGroup` - one reaction id, its server-wide `count`, and only the users included by the endpoint. `users.size` is not the total: the current discourse-reactions controller returns at most 27 recent users per group, so UI completeness and pagination must never be inferred from list length.
 - `PollOptionRef` - poll option digest/label plus the poll payload's authoritative vote total. Voter pages do not include totals, so the UI must keep this value instead of replacing it with the current page's `users.size`.
@@ -23,3 +23,14 @@ These are screen-facing model semantics shared between Android today and iOS lat
 - `MentionSearchResult` / `MentionCandidate` - ordered topic-aware composer candidates from `/u/search/users`; candidates preserve user avatar and `priority_group` metadata or a mentionable group identity. They remain separate from generic `SearchResult` because server ordering and group semantics are part of the composer contract.
 - `UserProfile` - profile header data for user and self pages, including optional avatar flair metadata
 - `AppError` - normalized error surface for API and parsing failures
+
+## Local topic viewport
+
+The highest read post remains monotonic and is reported through topic timings.
+The local exit viewport is separate: site/account/topic scoped post number and
+pixel offset relative to list content padding. It may move backward and is never
+sent as a lower read position. Explicit post links override this viewport; list
+navigation restores it before falling back to read progress. Position restoration
+must yield to a user drag. Debug builds offer a from-top entry that ignores and
+does not overwrite the stored viewport; `NativeDoTopicScroll` logs programmatic
+positioning and layout movement without post content or account identity.

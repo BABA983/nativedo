@@ -28,8 +28,11 @@ import io.github.baba983.nativedo.core.storage.SharedPreferencesSvgSpriteStorePe
 import io.github.baba983.nativedo.core.storage.SvgSpriteStore
 import io.github.baba983.nativedo.core.web.DiscourseSvgSpriteLoader
 import io.github.baba983.nativedo.feature.topic.data.SharedPreferencesTopicReplyDraftPersistence
+import io.github.baba983.nativedo.feature.topic.data.SharedPreferencesTopicReadPositionPersistence
 import io.github.baba983.nativedo.feature.topic.data.TopicReplyDraftStore
+import io.github.baba983.nativedo.feature.topic.data.TopicReadPositionStore
 import io.github.baba983.nativedo.feature.profile.data.ProfileRepository
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -49,6 +52,8 @@ class AppContainer(
     private val profileCachePreferences = appContext?.getSharedPreferences(PROFILE_CACHE_PREFS, Context.MODE_PRIVATE)
     private val svgSpritePreferences = appContext?.getSharedPreferences(SVG_SPRITE_STORE_PREFS, Context.MODE_PRIVATE)
     private val topicReplyDraftPreferences = appContext?.getSharedPreferences(TOPIC_REPLY_DRAFT_STORE_PREFS, Context.MODE_PRIVATE)
+    private val topicReadPositionPreferences = appContext?.getSharedPreferences(TOPIC_READ_POSITION_STORE_PREFS, Context.MODE_PRIVATE)
+    val applicationScope: CoroutineScope? = applicationScope
     val cookieStore: CookieStore = cookiePreferences
         ?.let { preferences ->
             CookieStore(persistence = SharedPreferencesCookieStorePersistence(preferences))
@@ -69,6 +74,12 @@ class AppContainer(
             TopicReplyDraftStore(SharedPreferencesTopicReplyDraftPersistence(preferences))
         }
         ?: TopicReplyDraftStore()
+    val topicViewportStore = io.github.baba983.nativedo.feature.topic.data.TopicViewportStore(topicReadPositionPreferences)
+    val topicReadPositionStore: TopicReadPositionStore = topicReadPositionPreferences
+        ?.let { preferences ->
+            TopicReadPositionStore(SharedPreferencesTopicReadPositionPersistence(preferences))
+        }
+        ?: TopicReadPositionStore()
     val cookieSyncBridge: CookieSyncBridge = CookieSyncBridge(
         baseUrl = baseUrl,
         cookieStore = cookieStore,
@@ -168,5 +179,6 @@ class AppContainer(
         const val PROFILE_CACHE_PREFS: String = "nativedo.profile_cache"
         const val SVG_SPRITE_STORE_PREFS: String = "nativedo.svg_sprite_store"
         const val TOPIC_REPLY_DRAFT_STORE_PREFS: String = "nativedo.topic_reply_drafts"
+        const val TOPIC_READ_POSITION_STORE_PREFS: String = "nativedo.topic_read_positions"
     }
 }

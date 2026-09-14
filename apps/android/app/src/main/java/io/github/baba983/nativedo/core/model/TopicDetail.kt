@@ -16,8 +16,10 @@ data class TopicDetail(
     val streamPostIds: List<Long> = posts.map { it.id },
     /** Server-truth newest post number (`highest_post_number`). */
     val highestPostNumber: Int = 0,
-    /** The user's Discourse read position (`last_read_post_number`); 0 when anonymous. */
+    /** The user's Discourse read position (`last_read_post_number`); 0 also means no recorded reads. */
     val lastReadPostNumber: Int = 0,
+    /** The post id at the user's Discourse read position, when the server provides it. */
+    val lastReadPostId: Long? = null,
 )
 
 data class DiscourseEmojiCategory(
