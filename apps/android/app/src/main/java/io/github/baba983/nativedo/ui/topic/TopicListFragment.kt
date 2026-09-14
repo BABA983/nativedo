@@ -61,6 +61,7 @@ import org.telegram.ui.Components.RadialProgressView
 import org.telegram.ui.Components.CubicBezierInterpolator
 import org.telegram.ui.Components.FragmentSearchField
 import org.telegram.ui.Components.FragmentFloatingButton
+import org.telegram.ui.Components.FlickerLoadingView
 import org.telegram.ui.Components.ViewPagerFixed
 import me.vkryl.android.animator.BoolAnimator
 import me.vkryl.android.animator.FactorAnimator
@@ -336,9 +337,10 @@ class TopicListFragment(
 
         val pillContainer = PillTabContainer(context)
         val strip = BubbleTabStrip(context)
-        strip.setTabs(feedTabs(context), TAB_ID_LATEST, false)
-        strip.setDelegate { id, forward ->
+        strip.setTabs(feedTabs(context), tabToId(viewModel.uiState.value.selectedTab), false)
+        strip.setDelegate { id, _ ->
             if (searchExpanded) {
+                strip.selectTab(id, true)
                 selectedSearchFilter = when (id) {
                     TAB_ID_SEARCH_POSTS -> SearchFilter.Posts
                     TAB_ID_SEARCH_USERS -> SearchFilter.Users
@@ -348,10 +350,15 @@ class TopicListFragment(
                 renderSearchSnapshot()
                 return@setDelegate
             }
+            val feedPager = viewPager ?: return@setDelegate
+            if (feedPager.isManualScrolling || feedPager.isTouch ||
+                feedPager.currentView?.translationX != 0f
+            ) return@setDelegate
             val position = idToPosition(id)
-            val changed = viewPager?.scrollToPosition(position) == true
+            val changed = feedPager.scrollToPosition(position)
             if (!changed) {
                 viewModel.onFeedSelected(idToTab(id))
+                strip.selectTab(id, false)
             }
         }
         pillContainer.addView(
@@ -405,6 +412,18 @@ class TopicListFragment(
                 viewModel.onFeedSelected(positionToTab(position))
             }
 
+            override fun onTabAnimationUpdate(manual: Boolean) {
+                if (!tabStripInSearchMode) {
+                    val nextPage = viewPages[1] as? TopicListPage
+                    strip.setPageProgress(
+                        positionToId(currentPosition),
+                        positionToId(nextPage?.position ?: currentPosition),
+                        feedPageScrollProgress(this),
+                    )
+                }
+                updateSearchPillOffset(this)
+            }
+
             override fun onScrollEnd() {
                 val id = positionToId(currentPosition)
                 strip.selectTab(id, false)
@@ -412,10 +431,12 @@ class TopicListFragment(
                 pagesByPosition[currentPosition]?.let { currentPage ->
                     listView = currentPage.listView
                     this@TopicListFragment.adapter = currentPage.adapter
-                    updateSearchPillOffset(currentPage)
+                    updateSearchPillOffset(this)
                 }
             }
         }
+        viewPager = pager
+        pager.setPosition(tabToPosition(viewModel.uiState.value.selectedTab))
         pager.setAdapter(object : ViewPagerFixed.Adapter() {
             override fun getItemCount(): Int = HomeFeedTab.entries.size
             override fun createView(viewType: Int): View = TopicListPage(context, appContainer.baseUrl)
@@ -426,14 +447,12 @@ class TopicListFragment(
                 if (position == pager.currentPosition) {
                     listView = page.listView
                     this@TopicListFragment.adapter = page.adapter
-                    updateSearchPillOffset(page)
                 }
                 viewModel.uiState.value.let { state ->
                     page.submit(state.feedState(positionToTab(position)), state.categories)
                 }
             }
         })
-        viewPager = pager
         body.addView(
             pager,
             LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT),
@@ -487,12 +506,6 @@ class TopicListFragment(
         // ---- Observe state ----
         collectorScope.launch {
             viewModel.uiState.collectLatest { state ->
-                val currentTabId = tabToId(state.selectedTab)
-                val currentPosition = tabToPosition(state.selectedTab)
-                if (pager.currentPosition != currentPosition && !pager.isManualScrolling) {
-                    pager.setPosition(currentPosition)
-                }
-                strip.selectTab(currentTabId, false)
                 pagesByPosition.forEach { (position, page) ->
                     page.submit(state.feedState(positionToTab(position)), state.categories)
                 }
@@ -645,18 +658,22 @@ class TopicListFragment(
     // Scroll-driven pill offset
     // ================================================================================
 
-    private fun updateSearchPillOffset(page: TopicListPage? = pagesByPosition[viewPager?.currentPosition ?: 0]) {
+    private fun feedPageScrollProgress(pager: ViewPagerFixed): Float {
+        val currentPage = pager.currentView ?: return 0f
+        if (pager.viewPages[1] == null || currentPage.width == 0) return 0f
+        return (kotlin.math.abs(currentPage.translationX) / currentPage.width).coerceIn(0f, 1f)
+    }
+
+    private fun updateSearchPillOffset(pager: ViewPagerFixed? = viewPager) {
         val pill = fragmentSearchField ?: return
         if (searchExpanded) return
 
-        val scrollOffset = page?.listView?.computeVerticalScrollOffset() ?: 0
-        val maxOffset = AndroidUtilities.dp(SEARCH_FIELD_HEIGHT_DP)
-
-        val progress = (scrollOffset / maxOffset.toFloat()).coerceIn(0f, 1f)
-
-        // Store scroll progress for checkUi to read.
-        pill.tag = progress
-
+        val currentPage = pager?.currentView as? TopicListPage
+        val nextPage = pager?.viewPages?.get(1) as? TopicListPage
+        val from = currentPage?.searchCollapseProgress() ?: 0f
+        val to = nextPage?.searchCollapseProgress() ?: from
+        val progress = pager?.let(::feedPageScrollProgress) ?: 0f
+        pill.tag = from + (to - from) * progress
         checkUi_searchFieldVisibility()
     }
 
@@ -1099,7 +1116,7 @@ class TopicListFragment(
 
     private inner class PullRefreshLayout(
         context: Context,
-        private val listView: RecyclerListView,
+        private val listView: TopicDialogsRecyclerView,
         private val onRefresh: () -> Unit,
     ) : FrameLayout(context) {
         private val maxPull = PullForegroundDrawable.getMaxOverscroll().toFloat()
@@ -1130,6 +1147,10 @@ class TopicListFragment(
         fun updateColors() { pullDrawable.updateColors(); invalidate(); headerView.invalidate() }
 
         override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+            if (ev.actionMasked == MotionEvent.ACTION_DOWN && currentFeed.isLoadingMore) {
+                dragging = false
+                return false
+            }
             if (ev.actionMasked == MotionEvent.ACTION_DOWN && listView.itemAnimator?.isRunning == true) {
                 // Telegram lets the list finish its current item animation before the
                 // pull container can take over the gesture.
@@ -1146,7 +1167,7 @@ class TopicListFragment(
                 MotionEvent.ACTION_MOVE -> {
                     val dx = kotlin.math.abs(ev.x - downX)
                     val dy = ev.y - downY
-                    if (dy > touchSlop && dy > dx && !listView.canScrollVertically(-1)) {
+                    if (dy > touchSlop && dy > dx && !currentFeed.isLoadingMore && !listView.canScrollVertically(-1)) {
                         dragging = true; parent?.requestDisallowInterceptTouchEvent(true); return true
                     }
                 }
@@ -1162,14 +1183,20 @@ class TopicListFragment(
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dy = event.y - downY
-                    if (dy > 0 && !listView.canScrollVertically(-1)) {
+                    if (dy > 0 && !currentFeed.isLoadingMore && !listView.canScrollVertically(-1)) {
                         dragging = true; parent?.requestDisallowInterceptTouchEvent(true)
                         setPullDistance(dampenPull(dy)); return true
                     }
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     if (dragging || pullDistance > 0f) {
-                        if (pullDrawable.pullProgress >= PullForegroundDrawable.SNAP_HEIGHT && !currentFeed.isLoading && !currentFeed.isRefreshing) onRefresh()
+                        if (pullDrawable.pullProgress >= PullForegroundDrawable.SNAP_HEIGHT &&
+                            !currentFeed.isLoading &&
+                            !currentFeed.isRefreshing &&
+                            !currentFeed.isLoadingMore
+                        ) {
+                            onRefresh()
+                        }
                         pullDrawable.doNotShow(); pullDrawable.colorize(false); thresholdReached = false
                         animatePullBack(); dragging = false; parent?.requestDisallowInterceptTouchEvent(false); return true
                     }
@@ -1182,7 +1209,7 @@ class TopicListFragment(
 
         private fun setPullDistance(distance: Float) {
             pullDistance = distance.coerceIn(0f, maxPull)
-            listView.translationY = pullDistance; headerView.translationY = 0f
+            listView.setViewsOffset(pullDistance); headerView.translationY = 0f
             val progress = (pullDistance / maxPull).coerceIn(0f, 1f)
             val reached = progress >= PullForegroundDrawable.SNAP_HEIGHT
             if (thresholdReached != reached) { thresholdReached = reached; pullDrawable.colorize(reached) }
@@ -1211,16 +1238,31 @@ class TopicListFragment(
     // ================================================================================
 
     private inner class TopicListPage(context: Context, baseUrl: String) : FrameLayout(context) {
-        val listView: RecyclerListView = RecyclerListView(context)
+        val listView = TopicDialogsRecyclerView(context)
         val adapter: TopicListAdapter = TopicListAdapter(context, baseUrl)
         private val pullRefreshLayout = PullRefreshLayout(context, listView, viewModel::onRefresh)
+        private val initialLoadingView = FlickerLoadingView(context).apply {
+            setIsSingleCell(false)
+            setItemsCount(7)
+            setViewType(FlickerLoadingView.DIALOG_CELL_TYPE)
+            setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite))
+            visibility = View.GONE
+        }
+        private val stateView = TopicListAdapter.StateCell(context, false).apply {
+            visibility = View.GONE
+        }
+        private val loadTransition = TopicListLoadTransition(listView, initialLoadingView) {
+            saveScrollPosition()
+            updateSearchPillOffset()
+        }
         var position: Int = -1
             private set
         private var pendingScrollRestore = false
+        private var submittedFeed: HomeFeedState? = null
+        private var submittedCategories: Map<Int, CategorySummary>? = null
 
         init {
             listView.layoutManager = LinearLayoutManager(context)
-            listView.itemAnimator = DialogsItemAnimator(listView)
             // Padding for pill + tab strip space above the list.
             listView.setPadding(0, AndroidUtilities.dp(SEARCH_FIELD_HEIGHT_DP + TAB_STRIP_HEIGHT_DP), 0, 0)
             listView.clipToPadding = false
@@ -1240,7 +1282,7 @@ class TopicListFragment(
                 override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) {
                     (recyclerView.itemAnimator as? DialogsItemAnimator)?.onListScroll(-dy)
                     saveScrollPosition()
-                    if (position == viewPager?.currentPosition) updateSearchPillOffset(this@TopicListPage)
+                    if (position == viewPager?.currentPosition) updateSearchPillOffset()
                     if (dy <= 0 || position != viewPager?.currentPosition) return
                     val lm = recyclerView.layoutManager as? LinearLayoutManager ?: return
                     val total = lm.itemCount
@@ -1249,43 +1291,99 @@ class TopicListFragment(
                 }
             })
             addView(pullRefreshLayout, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT))
+            val stateTop = SEARCH_FIELD_HEIGHT_DP + TAB_STRIP_HEIGHT_DP
+            addView(
+                initialLoadingView,
+                LayoutHelper.createFrame(
+                    LayoutHelper.MATCH_PARENT,
+                    LayoutHelper.MATCH_PARENT.toFloat(),
+                    Gravity.TOP,
+                    0f,
+                    stateTop,
+                    0f,
+                    0f,
+                ),
+            )
+            addView(
+                stateView,
+                LayoutHelper.createFrame(
+                    LayoutHelper.MATCH_PARENT,
+                    LayoutHelper.MATCH_PARENT.toFloat(),
+                    Gravity.TOP,
+                    0f,
+                    stateTop,
+                    0f,
+                    0f,
+                ),
+            )
         }
 
         fun bindPosition(position: Int) {
             if (this.position == position) return
             saveScrollPosition()
             if (this.position >= 0 && pagesByPosition[this.position] === this) pagesByPosition.remove(this.position)
-            this.position = position; pendingScrollRestore = true
+            listView.stopScroll()
+            loadTransition.reset()
+            this.position = position
+            pendingScrollRestore = true
+            submittedFeed = null
         }
 
         fun submit(feed: HomeFeedState, categories: Map<Int, CategorySummary>) {
+            if (submittedFeed == feed && submittedCategories == categories) return
+            submittedFeed = feed
+            submittedCategories = categories
             pullRefreshLayout.currentFeed = feed
             val context = getContext()
-            adapter.submit(
-                feed.items,
-                categories,
-                feed.isLoadingMore && feed.loadMoreErrorMessage == null,
-                feed.isLoading && feed.items.isEmpty(),
-                if (feed.isEmpty) context?.getString(R.string.topic_list_empty_title) else null,
-                if (feed.isEmpty) context?.getString(R.string.topic_list_empty_message) else null,
-                if (feed.errorMessage != null) context?.getString(R.string.topic_list_error_title) else null,
-                feed.errorMessage,
-                feed.loadMoreErrorMessage?.let { message -> context?.getString(R.string.topic_list_load_more_error) ?: message },
-                viewModel::retrySelectedFeed,
-                viewModel::loadNextPage,
-            )
-            restoreScrollPositionIfNeeded()
+            val showInitialLoading = feed.isLoading && feed.items.isEmpty()
+            loadTransition.submit(feed.items.isNotEmpty(), showInitialLoading) {
+                adapter.submit(
+                    feed.items,
+                    categories,
+                    feed.isLoadingMore && feed.loadMoreErrorMessage == null,
+                    false,
+                    null,
+                    null,
+                    null,
+                    null,
+                    feed.loadMoreErrorMessage?.let { message -> context?.getString(R.string.topic_list_load_more_error) ?: message },
+                    null,
+                    viewModel::loadNextPage,
+                )
+                restoreScrollPositionIfNeeded()
+            }
+            val showInitialError = feed.items.isEmpty() && feed.errorMessage != null
+            val showEmpty = feed.isEmpty
+            stateView.visibility = if (showInitialError || showEmpty) View.VISIBLE else View.GONE
+            if (showInitialError) {
+                stateView.bind(
+                    context?.getString(R.string.topic_list_error_title),
+                    feed.errorMessage,
+                    viewModel::retrySelectedFeed,
+                    context?.getString(R.string.action_retry),
+                )
+            } else if (showEmpty) {
+                stateView.bind(
+                    context?.getString(R.string.topic_list_empty_title),
+                    context?.getString(R.string.topic_list_empty_message),
+                    null,
+                    null,
+                )
+            }
         }
 
         fun updateColors() {
             pullRefreshLayout.updateColors()
             listView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite))
+            initialLoadingView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite))
+            initialLoadingView.updateColors()
+            stateView.updateColors()
             for (index in 0 until listView.childCount) { (listView.getChildAt(index) as? Theme.Colorable)?.updateColors() }
             listView.invalidate(); invalidate()
         }
 
         fun saveScrollPosition() {
-            if (position < 0) return
+            if (position < 0 || pendingScrollRestore || !loadTransition.isContentReady) return
             val lm = listView.layoutManager as? LinearLayoutManager ?: return
             val first = lm.findFirstVisibleItemPosition()
             if (first == RecyclerView.NO_POSITION) return
@@ -1294,12 +1392,27 @@ class TopicListFragment(
         }
 
         private fun restoreScrollPositionIfNeeded() {
-            if (!pendingScrollRestore) return
-            val saved = scrollPositions[position] ?: run { pendingScrollRestore = false; return }
-            listView.post {
-                val lm = listView.layoutManager as? LinearLayoutManager ?: return@post
-                if (adapter.itemCount > saved.position) { lm.scrollToPositionWithOffset(saved.position, saved.offset); pendingScrollRestore = false }
+            if (!pendingScrollRestore || adapter.itemCount == 0) return
+            val saved = scrollPositions[position] ?: ScrollPosition(0, 0)
+            val lm = listView.layoutManager as? LinearLayoutManager ?: return
+            lm.scrollToPositionWithOffset(saved.position.coerceAtMost(adapter.itemCount - 1), saved.offset)
+            pendingScrollRestore = false
+        }
+
+        fun searchCollapseProgress(): Float {
+            val saved = scrollPositions[position]
+            if (pendingScrollRestore || !loadTransition.isContentReady) {
+                if (saved == null) return 0f
+                return if (saved.position > 0) 1f else
+                    (-saved.offset / AndroidUtilities.dp(SEARCH_FIELD_HEIGHT_DP).toFloat()).coerceIn(0f, 1f)
             }
+            val lm = listView.layoutManager as? LinearLayoutManager ?: return 0f
+            val first = lm.findFirstVisibleItemPosition()
+            if (first == RecyclerView.NO_POSITION) return 0f
+            if (first > 0) return 1f
+            val firstView = lm.findViewByPosition(first) ?: return 0f
+            return ((listView.paddingTop - firstView.top) /
+                AndroidUtilities.dp(SEARCH_FIELD_HEIGHT_DP).toFloat()).coerceIn(0f, 1f)
         }
     }
 }
@@ -1329,7 +1442,7 @@ private class MoreDrawable : Drawable() {
     override fun getIntrinsicHeight(): Int = AndroidUtilities.dp(24f)
 }
 
-private data class BubbleTab(val id: Int, val title: CharSequence)
+internal data class BubbleTab(val id: Int, val title: CharSequence)
 
 private fun feedTabs(context: Context): List<BubbleTab> = listOf(
     BubbleTab(TAB_ID_LATEST, context.getString(R.string.home_tab_latest)),
@@ -1343,16 +1456,21 @@ private fun searchTabs(context: Context): List<BubbleTab> = listOf(
     BubbleTab(TAB_ID_SEARCH_USERS, context.getString(R.string.search_filter_users)),
 )
 
-private class BubbleTabStrip(context: Context) : FrameLayout(context), Theme.Colorable {
-    private val tabsContainer = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
+internal class BubbleTabStrip(context: Context) : FrameLayout(context), Theme.Colorable {
+    private val tabsContainer = LinearLayout(context).apply {
+        orientation = LinearLayout.HORIZONTAL
+        setPadding(AndroidUtilities.dp(11f), 0, AndroidUtilities.dp(11f), 0)
+    }
     private val selectorPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val selectorTextPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val selectorRect = RectF()
     private val selectorFrom = RectF()
     private val selectorTo = RectF()
     private val tabs = mutableListOf<BubbleTab>()
     private var selectedId = -1
     private var selectedIndex = 0
+    private var indicatorFromIndex = 0
+    private var indicatorToIndex = 0
+    private var indicatorProgress = 1f
     private var selectorAnimator: ValueAnimator? = null
     private var delegate: ((Int, Boolean) -> Unit)? = null
     private var activeTextColor = 0
@@ -1412,14 +1530,10 @@ private class BubbleTabStrip(context: Context) : FrameLayout(context), Theme.Col
         tabs.forEachIndexed { index, tab ->
             tabsContainer.addView(
                 createTabView(tab, index),
-                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f),
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.MATCH_PARENT, 1f),
             )
         }
-        updateTextColors(1f, selectedIndex, selectedIndex)
-        post {
-            updateSelectorTarget(selectedIndex, selectorRect)
-            invalidate()
-        }
+        updateIndicator(selectedIndex, selectedIndex, 1f)
     }
 
     fun selectTab(id: Int, animated: Boolean) {
@@ -1431,6 +1545,18 @@ private class BubbleTabStrip(context: Context) : FrameLayout(context), Theme.Col
         animateSelector(oldIndex, newIndex, animated)
     }
 
+    fun setPageProgress(fromId: Int, toId: Int, progress: Float) {
+        val fromIndex = tabs.indexOfFirst { it.id == fromId }
+        val toIndex = tabs.indexOfFirst { it.id == toId }
+        if (fromIndex < 0 || toIndex < 0) return
+        selectorAnimator?.cancel()
+        selectorAnimator = null
+        val fraction = progress.coerceIn(0f, 1f)
+        selectedIndex = if (fraction == 1f) toIndex else fromIndex
+        selectedId = tabs[selectedIndex].id
+        updateIndicator(fromIndex, toIndex, fraction)
+    }
+
     private fun createTabView(tab: BubbleTab, index: Int): TextView {
         return TextView(context).apply {
             gravity = Gravity.CENTER
@@ -1439,44 +1565,44 @@ private class BubbleTabStrip(context: Context) : FrameLayout(context), Theme.Col
             typeface = AndroidUtilities.bold()
             text = tab.title
             includeFontPadding = false
-            setPadding(AndroidUtilities.dp(12f), 0, AndroidUtilities.dp(12f), 0)
+            setPadding(AndroidUtilities.dp(16f), 0, AndroidUtilities.dp(16f), 0)
             background = null
             setOnClickListener {
-                val previous = selectedIndex
-                if (tab.id != selectedId) {
-                    selectTab(tab.id, true)
-                }
-                delegate?.invoke(tab.id, index > previous)
+                delegate?.invoke(tab.id, index > selectedIndex)
             }
         }
     }
 
     private fun animateSelector(oldIndex: Int, newIndex: Int, animated: Boolean) {
         selectorAnimator?.cancel()
-        updateSelectorTarget(oldIndex, selectorFrom)
-        updateSelectorTarget(newIndex, selectorTo)
         if (!animated || width == 0) {
-            selectorRect.set(selectorTo)
-            updateTextColors(1f, oldIndex, newIndex)
-            invalidate()
+            updateIndicator(oldIndex, newIndex, 1f)
             return
         }
         selectorAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = 220
             interpolator = CubicBezierInterpolator.EASE_OUT_QUINT
             addUpdateListener { animator ->
-                val progress = animator.animatedValue as Float
-                selectorRect.set(
-                    lerp(selectorFrom.left, selectorTo.left, progress),
-                    lerp(selectorFrom.top, selectorTo.top, progress),
-                    lerp(selectorFrom.right, selectorTo.right, progress),
-                    lerp(selectorFrom.bottom, selectorTo.bottom, progress),
-                )
-                updateTextColors(progress, oldIndex, newIndex)
-                invalidate()
+                updateIndicator(oldIndex, newIndex, animator.animatedValue as Float)
             }
             start()
         }
+    }
+
+    private fun updateIndicator(fromIndex: Int, toIndex: Int, progress: Float) {
+        indicatorFromIndex = fromIndex
+        indicatorToIndex = toIndex
+        indicatorProgress = progress
+        updateSelectorTarget(fromIndex, selectorFrom)
+        updateSelectorTarget(toIndex, selectorTo)
+        selectorRect.set(
+            lerp(selectorFrom.left, selectorTo.left, progress),
+            lerp(selectorFrom.top, selectorTo.top, progress),
+            lerp(selectorFrom.right, selectorTo.right, progress),
+            lerp(selectorFrom.bottom, selectorTo.bottom, progress),
+        )
+        updateTextColors(progress, fromIndex, toIndex)
+        invalidate()
     }
 
     private fun updateSelectorTarget(index: Int, out: RectF) {
@@ -1485,10 +1611,7 @@ private class BubbleTabStrip(context: Context) : FrameLayout(context), Theme.Col
             out.setEmpty()
             return
         }
-        val text = (child as TextView).text.toString()
-        selectorTextPaint.textSize = child.textSize
-        selectorTextPaint.typeface = child.typeface
-        val halfWidth = selectorTextPaint.measureText(text) / 2f + AndroidUtilities.dp(12.5f)
+        val halfWidth = child.width / 2f - (AndroidUtilities.dp(16f) - AndroidUtilities.dp(12.5f))
         val centerX = child.left + child.width / 2f
         val top = height / 2f - AndroidUtilities.dp(14f)
         out.set(
@@ -1502,10 +1625,11 @@ private class BubbleTabStrip(context: Context) : FrameLayout(context), Theme.Col
     private fun updateTextColors(progress: Float, oldIndex: Int, newIndex: Int) {
         for (i in 0 until tabsContainer.childCount) {
             val child = tabsContainer.getChildAt(i) as TextView
-            child.setTextColor(when (i) {
-                oldIndex -> blend(activeTextColor, inactiveTextColor, progress)
-                newIndex -> blend(inactiveTextColor, activeTextColor, progress)
-                selectedIndex -> activeTextColor
+            child.isSelected = i == selectedIndex
+            child.setTextColor(when {
+                oldIndex == newIndex && i == newIndex -> activeTextColor
+                i == oldIndex -> blend(activeTextColor, inactiveTextColor, progress)
+                i == newIndex -> blend(inactiveTextColor, activeTextColor, progress)
                 else -> inactiveTextColor
             })
         }
@@ -1513,12 +1637,13 @@ private class BubbleTabStrip(context: Context) : FrameLayout(context), Theme.Col
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
         super.onLayout(changed, left, top, right, bottom)
-        updateSelectorTarget(selectedIndex, selectorRect)
+        updateIndicator(indicatorFromIndex, indicatorToIndex, indicatorProgress)
     }
 
     override fun dispatchDraw(canvas: Canvas) {
         if (!selectorRect.isEmpty) {
-            canvas.drawRoundRect(selectorRect, selectorRect.height() / 2f, selectorRect.height() / 2f, selectorPaint)
+            val radius = AndroidUtilities.dpf2(13f)
+            canvas.drawRoundRect(selectorRect, radius, radius, selectorPaint)
         }
         super.dispatchDraw(canvas)
     }
@@ -1526,8 +1651,8 @@ private class BubbleTabStrip(context: Context) : FrameLayout(context), Theme.Col
     override fun updateColors() {
         activeTextColor = Theme.getColor(Theme.key_actionBarTabActiveText)
         inactiveTextColor = Theme.getColor(Theme.key_actionBarTabUnactiveText)
-        selectorPaint.color = Theme.multAlpha(activeTextColor, 31f / 255f)
-        updateTextColors(1f, selectedIndex, selectedIndex)
+        selectorPaint.color = Theme.multAlpha(Theme.getColor(Theme.key_actionBarTabLine), 31f / 255f)
+        updateTextColors(indicatorProgress, indicatorFromIndex, indicatorToIndex)
         invalidate()
     }
 
@@ -1543,7 +1668,7 @@ private class BubbleTabStrip(context: Context) : FrameLayout(context), Theme.Col
     }
 }
 
-private class PillTabContainer(context: Context) : FrameLayout(context), Theme.Colorable {
+internal class PillTabContainer(context: Context) : FrameLayout(context), Theme.Colorable {
 
     private val clipPath = Path()
     private val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG)

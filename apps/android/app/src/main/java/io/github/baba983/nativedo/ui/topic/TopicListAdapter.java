@@ -7,6 +7,7 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -36,11 +37,10 @@ import java.util.Objects;
 public class TopicListAdapter extends RecyclerListView.SelectionAdapter {
 
     public static final int VIEW_TYPE_TOPIC = 0;
-    public static final int VIEW_TYPE_FOOTER_LOADING = 1;
+    public static final int VIEW_TYPE_FOOTER = 1;
     public static final int VIEW_TYPE_SKELETON = 2;
     public static final int VIEW_TYPE_EMPTY = 3;
     public static final int VIEW_TYPE_ERROR = 4;
-    public static final int VIEW_TYPE_FOOTER_ERROR = 5;
 
     private static final int SKELETON_ROW_COUNT = 7;
 
@@ -183,7 +183,7 @@ public class TopicListAdapter extends RecyclerListView.SelectionAdapter {
 
     @Override
     public boolean isEnabled(RecyclerView.ViewHolder holder) {
-        return holder.getItemViewType() == VIEW_TYPE_TOPIC || holder.getItemViewType() == VIEW_TYPE_ERROR || holder.getItemViewType() == VIEW_TYPE_FOOTER_ERROR;
+        return holder.getItemViewType() == VIEW_TYPE_TOPIC || holder.getItemViewType() == VIEW_TYPE_ERROR;
     }
 
     @Override
@@ -205,7 +205,7 @@ public class TopicListAdapter extends RecyclerListView.SelectionAdapter {
         if (topicCount == 0 && hasInitialError()) return VIEW_TYPE_ERROR;
         if (topicCount == 0 && hasEmptyState()) return VIEW_TYPE_EMPTY;
         if (position >= topicCount) {
-            return hasLoadMoreError() ? VIEW_TYPE_FOOTER_ERROR : VIEW_TYPE_FOOTER_LOADING;
+            return VIEW_TYPE_FOOTER;
         }
         return VIEW_TYPE_TOPIC;
     }
@@ -233,13 +233,11 @@ public class TopicListAdapter extends RecyclerListView.SelectionAdapter {
     public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
         View view;
         switch (viewType) {
-            case VIEW_TYPE_FOOTER_LOADING: {
-                FlickerLoadingView flicker = new FlickerLoadingView(context);
-                flicker.setIsSingleCell(true);
-                flicker.setViewType(FlickerLoadingView.DIALOG_CELL_TYPE);
-                flicker.setLayoutParams(new RecyclerView.LayoutParams(
+            case VIEW_TYPE_FOOTER: {
+                FooterCell footer = new FooterCell(context);
+                footer.setLayoutParams(new RecyclerView.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(72)));
-                view = flicker;
+                view = footer;
                 break;
             }
             case VIEW_TYPE_SKELETON: {
@@ -256,13 +254,6 @@ public class TopicListAdapter extends RecyclerListView.SelectionAdapter {
                 StateCell cell = new StateCell(context, false);
                 cell.setLayoutParams(new RecyclerView.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(260)));
-                view = cell;
-                break;
-            }
-            case VIEW_TYPE_FOOTER_ERROR: {
-                StateCell cell = new StateCell(context, true);
-                cell.setLayoutParams(new RecyclerView.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
                 view = cell;
                 break;
             }
@@ -289,8 +280,12 @@ public class TopicListAdapter extends RecyclerListView.SelectionAdapter {
             ((StateCell) holder.itemView).bind(errorTitle, errorMessage, retryCallback, context.getString(R.string.action_retry));
             return;
         }
-        if (viewType == VIEW_TYPE_FOOTER_ERROR) {
-            ((StateCell) holder.itemView).bind(loadMoreErrorMessage, null, loadMoreRetryCallback, context.getString(R.string.action_retry));
+        if (viewType == VIEW_TYPE_FOOTER) {
+            ((FooterCell) holder.itemView).bind(
+                showLoadingFooter,
+                loadMoreErrorMessage,
+                loadMoreRetryCallback,
+                context.getString(R.string.action_retry));
             return;
         }
         if (viewType != VIEW_TYPE_TOPIC) return;
@@ -431,8 +426,9 @@ public class TopicListAdapter extends RecyclerListView.SelectionAdapter {
                     return TextUtils.equals(oldSnapshot.errorTitle, newSnapshot.errorTitle) &&
                         TextUtils.equals(oldSnapshot.errorMessage, newSnapshot.errorMessage) &&
                         oldSnapshot.retryCallback == newSnapshot.retryCallback;
-                case VIEW_TYPE_FOOTER_ERROR:
-                    return TextUtils.equals(oldSnapshot.loadMoreErrorMessage, newSnapshot.loadMoreErrorMessage) &&
+                case VIEW_TYPE_FOOTER:
+                    return oldSnapshot.showLoadingFooter == newSnapshot.showLoadingFooter &&
+                        TextUtils.equals(oldSnapshot.loadMoreErrorMessage, newSnapshot.loadMoreErrorMessage) &&
                         oldSnapshot.loadMoreRetryCallback == newSnapshot.loadMoreRetryCallback;
                 default:
                     return true;
@@ -497,7 +493,7 @@ public class TopicListAdapter extends RecyclerListView.SelectionAdapter {
             if (topicCount == 0 && hasInitialError()) return VIEW_TYPE_ERROR;
             if (topicCount == 0 && hasEmptyState()) return VIEW_TYPE_EMPTY;
             if (position >= topicCount) {
-                return hasLoadMoreError() ? VIEW_TYPE_FOOTER_ERROR : VIEW_TYPE_FOOTER_LOADING;
+                return VIEW_TYPE_FOOTER;
             }
             return VIEW_TYPE_TOPIC;
         }
@@ -515,12 +511,12 @@ public class TopicListAdapter extends RecyclerListView.SelectionAdapter {
         }
     }
 
-    private static final class StateCell extends LinearLayout implements Theme.Colorable {
+    public static final class StateCell extends LinearLayout implements Theme.Colorable {
         private final TextView titleView;
         private final TextView messageView;
         private final TextView actionView;
 
-        StateCell(@NonNull Context context, boolean footer) {
+        public StateCell(@NonNull Context context, boolean footer) {
             super(context);
             setOrientation(VERTICAL);
             setGravity(footer ? Gravity.CENTER_VERTICAL : Gravity.CENTER);
@@ -567,7 +563,7 @@ public class TopicListAdapter extends RecyclerListView.SelectionAdapter {
             updateColors();
         }
 
-        void bind(@Nullable CharSequence title, @Nullable CharSequence message, @Nullable Runnable action, @Nullable CharSequence actionText) {
+        public void bind(@Nullable CharSequence title, @Nullable CharSequence message, @Nullable Runnable action, @Nullable CharSequence actionText) {
             titleView.setText(title);
             titleView.setVisibility(TextUtils.isEmpty(title) ? GONE : VISIBLE);
             messageView.setText(message);
@@ -581,6 +577,81 @@ public class TopicListAdapter extends RecyclerListView.SelectionAdapter {
         public void updateColors() {
             setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
             titleView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+            messageView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
+            actionView.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText));
+            actionView.setBackground(Theme.createSimpleSelectorRoundRectDrawable(
+                AndroidUtilities.dp(18f),
+                Theme.getColor(Theme.key_featuredStickers_addButton),
+                Theme.getColor(Theme.key_featuredStickers_addButtonPressed),
+                Theme.getColor(Theme.key_featuredStickers_addButton)));
+        }
+    }
+
+    private static final class FooterCell extends FrameLayout implements Theme.Colorable {
+        private final FlickerLoadingView loadingView;
+        private final LinearLayout errorRow;
+        private final TextView messageView;
+        private final TextView actionView;
+
+        FooterCell(@NonNull Context context) {
+            super(context);
+            loadingView = new FlickerLoadingView(context);
+            loadingView.setIsSingleCell(true);
+            loadingView.setViewType(FlickerLoadingView.DIALOG_CELL_TYPE);
+            addView(loadingView, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+
+            errorRow = new LinearLayout(context);
+            errorRow.setOrientation(LinearLayout.HORIZONTAL);
+            errorRow.setGravity(Gravity.CENTER_VERTICAL);
+            errorRow.setPadding(
+                AndroidUtilities.dp(24f),
+                0,
+                AndroidUtilities.dp(18f),
+                0);
+            addView(errorRow, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+
+            messageView = new TextView(context);
+            messageView.setSingleLine(true);
+            messageView.setEllipsize(TextUtils.TruncateAt.END);
+            messageView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+            errorRow.addView(messageView, new LinearLayout.LayoutParams(
+                0,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                1f));
+
+            actionView = new TextView(context);
+            actionView.setGravity(Gravity.CENTER);
+            actionView.setTypeface(Typeface.DEFAULT_BOLD);
+            actionView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+            actionView.setPadding(AndroidUtilities.dp(14f), 0, AndroidUtilities.dp(14f), 0);
+            LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                AndroidUtilities.dp(36f));
+            actionParams.leftMargin = AndroidUtilities.dp(12f);
+            errorRow.addView(actionView, actionParams);
+            updateColors();
+        }
+
+        void bind(boolean loading,
+                  @Nullable CharSequence message,
+                  @Nullable Runnable retry,
+                  @Nullable CharSequence retryText) {
+            loadingView.setVisibility(loading ? VISIBLE : GONE);
+            errorRow.setVisibility(loading ? GONE : VISIBLE);
+            messageView.setText(message);
+            actionView.setText(retryText);
+            actionView.setOnClickListener(retry == null ? null : view -> retry.run());
+            actionView.setVisibility(retry == null || TextUtils.isEmpty(retryText) ? GONE : VISIBLE);
+        }
+
+        @Override
+        public void updateColors() {
+            setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+            loadingView.updateColors();
             messageView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
             actionView.setTextColor(Theme.getColor(Theme.key_featuredStickers_buttonText));
             actionView.setBackground(Theme.createSimpleSelectorRoundRectDrawable(

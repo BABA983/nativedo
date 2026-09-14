@@ -556,6 +556,18 @@
           "stuck_ref": "native_app_reference_only"
         },
         {
+          "path": "io/github/baba983/nativedo/ui/topic/TopicDialogsRecyclerView.java",
+          "upstream": "org/telegram/ui/DialogsActivity.java",
+          "modified": true,
+          "port_mode": "native",
+          "forced_exact": [
+            "drawing",
+            "recycling"
+          ],
+          "notes": "Focused NativeDo port of DialogsActivity.DialogsRecyclerView for the topic feed. Keeps setViewsOffset propagation to attached and newly recycled children, resets transforms on removal, skips moving MovableCell rows in normal draw order, then redraws each over an opaque windowBackgroundWhite surface while DialogsItemAnimator is running. Dialog-specific selection, right-pane, stories, blur, poller, and transition-support branches are omitted.",
+          "stuck_ref": "native_app_reference_only"
+        },
+        {
           "path": "io/github/baba983/nativedo/ui/topic/cell/TopicPostCell.java",
           "upstream": "org/telegram/ui/Cells/ChatMessageCell.java",
           "pin": "legacy_009e97356",

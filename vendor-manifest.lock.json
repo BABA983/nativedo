@@ -576,6 +576,19 @@
       "stuck_reason": "NativeDo port (package io.github.baba983.nativedo.*); vendored_at is an upstream reference for forced_exact hand-checks only — not eligible for vendor-ff."
     },
     {
+      "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicDialogsRecyclerView.java",
+      "upstream": "org/telegram/ui/DialogsActivity.java",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "modified": true,
+      "port_mode": "native",
+      "forced_exact": [
+        "drawing",
+        "recycling"
+      ],
+      "notes": "Focused NativeDo port of DialogsActivity.DialogsRecyclerView for the topic feed. Keeps setViewsOffset propagation to attached and newly recycled children, resets transforms on removal, skips moving MovableCell rows in normal draw order, then redraws each over an opaque windowBackgroundWhite surface while DialogsItemAnimator is running. Dialog-specific selection, right-pane, stories, blur, poller, and transition-support branches are omitted.",
+      "stuck_reason": "NativeDo port (package io.github.baba983.nativedo.*); vendored_at is an upstream reference for forced_exact hand-checks only — not eligible for vendor-ff."
+    },
+    {
       "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicPostCell.java",
       "upstream": "org/telegram/ui/Cells/ChatMessageCell.java",
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
