@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+# Orb setup for linuxdo-native.
+#
+# Runs once per fresh orb (and again when a stale snapshot is refreshed), then
+# the resulting filesystem is snapshotted. Installs the Android toolchain,
+# warms the Gradle/Maven/Robolectric caches so agents can build and test
+# without downloads, and checks out the pristine Telegram tree used by the
+# vendor tooling.
+#
+# Non-interactive, idempotent, no long-lived processes.
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+GRADLE_PROJECT="$REPO_ROOT/apps/android"
+GRADLEW="$GRADLE_PROJECT/gradlew"
+ANDROID_SDK_DIR="${ANDROID_HOME:-$HOME/Android/Sdk}"
+CMDLINE_TOOLS_URL="https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip"
+ANDROID_PLATFORM="platforms;android-35"
+ANDROID_BUILD_TOOLS="build-tools;34.0.0"
+JDK_PACKAGE="openjdk-17-jdk-headless"
+
+SECONDS=0
+log() { printf '\n[%s +%ss] %s\n' "$(date +%H:%M:%S)" "$SECONDS" "$*"; }
+
+# --- System packages ---------------------------------------------------------
+# AGP 8.6 and Kotlin 2.1 both target JVM 17, so a JDK 17+ is required.
+need_jdk=1
+if command -v javac >/dev/null 2>&1; then
+  javac_major="$(javac -version 2>&1 | awk '{print $2}' | cut -d. -f1)"
+  if [[ "$javac_major" =~ ^[0-9]+$ ]] && (( javac_major >= 17 )); then
+    need_jdk=0
+  fi
+fi
+if (( need_jdk )) || ! command -v unzip >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1; then
+  log "Installing system packages (${JDK_PACKAGE}, unzip)"
+  sudo apt-get update -qq
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$JDK_PACKAGE" unzip curl
+else
+  log "JDK present: $(javac -version 2>&1)"
+fi
+
+# --- Android SDK -------------------------------------------------------------
+sdkmanager_missing() { [[ ! -x "$ANDROID_SDK_DIR/cmdline-tools/latest/bin/sdkmanager" ]]; }
+sdk_packages_missing() {
+  [[ ! -d "$ANDROID_SDK_DIR/platform-tools" ||
+     ! -d "$ANDROID_SDK_DIR/platforms/android-35" ||
+     ! -d "$ANDROID_SDK_DIR/build-tools/34.0.0" ]]
+}
+
+if sdkmanager_missing || sdk_packages_missing; then
+  export ANDROID_HOME="$ANDROID_SDK_DIR" ANDROID_SDK_ROOT="$ANDROID_SDK_DIR"
+  if sdkmanager_missing; then
+    log "Installing Android command-line tools into $ANDROID_SDK_DIR"
+    mkdir -p "$ANDROID_SDK_DIR/cmdline-tools"
+    tmp_dir="$(mktemp -d)"
+    curl -fsSL -o "$tmp_dir/cmdline-tools.zip" "$CMDLINE_TOOLS_URL"
+    unzip -q -o "$tmp_dir/cmdline-tools.zip" -d "$ANDROID_SDK_DIR/cmdline-tools"
+    rm -rf "$tmp_dir" "$ANDROID_SDK_DIR/cmdline-tools/latest"
+    mv "$ANDROID_SDK_DIR/cmdline-tools/cmdline-tools" "$ANDROID_SDK_DIR/cmdline-tools/latest"
+  fi
+  sdkmanager="$ANDROID_SDK_DIR/cmdline-tools/latest/bin/sdkmanager"
+  log "Installing SDK packages: $ANDROID_PLATFORM $ANDROID_BUILD_TOOLS platform-tools"
+  # `yes` gets SIGPIPE once sdkmanager has read the licenses it needs; pipefail
+  # would turn that into a spurious failure. The install below is the real check.
+  set +o pipefail
+  yes | "$sdkmanager" --licenses >/dev/null 2>&1 || true
+  set -o pipefail
+  "$sdkmanager" --install "$ANDROID_PLATFORM" "$ANDROID_BUILD_TOOLS" "platform-tools" 2>&1 |
+    tr '\r' '\n' | tail -n 2
+else
+  log "Android SDK present at $ANDROID_SDK_DIR"
+fi
+
+# Gradle needs either ANDROID_HOME or sdk.dir; local.properties is gitignored
+# and makes builds work in shells that never sourced a profile.
+local_props="$GRADLE_PROJECT/local.properties"
+if [[ -f "$local_props" ]] && grep -q '^sdk\.dir=' "$local_props"; then
+  if ! grep -qxF "sdk.dir=$ANDROID_SDK_DIR" "$local_props"; then
+    sed -i -E "s|^sdk\.dir=.*$|sdk.dir=$ANDROID_SDK_DIR|" "$local_props"
+  fi
+else
+  mkdir -p "$(dirname "$local_props")"
+  printf 'sdk.dir=%s\n' "$ANDROID_SDK_DIR" >>"$local_props"
+fi
+
+# --- Persist the toolchain environment for later login shells ----------------
+# Amp and supervised services start in fresh non-interactive login shells, which
+# would otherwise not see the SDK.
+env_marker="# linuxdo-native orb toolchain (managed by .agents/setup)"
+env_block="$env_marker
+export ANDROID_HOME=\"${ANDROID_SDK_DIR}\"
+export ANDROID_SDK_ROOT=\"${ANDROID_SDK_DIR}\"
+export PATH=\"\$ANDROID_HOME/platform-tools:\$ANDROID_HOME/cmdline-tools/latest/bin:\$PATH\"
+if command -v javac >/dev/null 2>&1; then
+  export JAVA_HOME=\"\$(dirname \"\$(dirname \"\$(readlink -f \"\$(command -v javac)\")\")\")\"
+fi"
+for profile in "$HOME/.bash_profile" "$HOME/.bashrc"; do
+  if ! grep -qF "$env_marker" "$profile" 2>/dev/null; then
+    printf '\n%s\n' "$env_block" >>"$profile"
+  fi
+done
+log "Toolchain environment exported to ~/.bash_profile and ~/.bashrc"
+
+# --- Warm Gradle, Maven, and Robolectric caches ------------------------------
+# A cold build downloads the Gradle distribution, the AndroidX/Compose
+# dependency set, and the Robolectric android-all jars. Doing that here keeps
+# the results in the orb snapshot instead of in an agent's first task.
+log "Warming Gradle caches (:app:assembleDebug, cold run takes several minutes)"
+"$GRADLEW" -p "$GRADLE_PROJECT" --no-daemon :app:assembleDebug
+
+log "Warming unit-test toolchain (:app:testDebugUnitTest)"
+# The warm-up exists to populate caches; a failing test in the checkout must not
+# block the snapshot, so report it and continue.
+if ! "$GRADLEW" -p "$GRADLE_PROJECT" --no-daemon :app:testDebugUnitTest; then
+  echo "WARNING: warm-up test run reported failures above; dependencies are cached anyway."
+fi
+
+# --- Pristine Telegram tree (optional, used by scripts/vendor-*.sh) ----------
+if [[ ! -d "$REPO_ROOT/vendor/telegram-android/.git" && ! -f "$REPO_ROOT/vendor/telegram-android/.git" ]]; then
+  log "Cloning pristine Telegram tree for vendor tooling"
+  if ! "$REPO_ROOT/scripts/vendor-setup.sh"; then
+    rm -rf "$REPO_ROOT/vendor/telegram-android"
+    echo "WARNING: vendor clone failed; run scripts/vendor-setup.sh when the network allows."
+  fi
+else
+  log "Vendor tree present: $(git -C "$REPO_ROOT/vendor/telegram-android" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+fi
+
+# --- Orb-specific agent notes -------------------------------------------------
+guidance="$HOME/.config/amp/AGENTS.md"
+guidance_marker="<!-- linuxdo-native orb toolchain (managed by .agents/setup) -->"
+if ! grep -qF "$guidance_marker" "$guidance" 2>/dev/null; then
+  log "Writing orb toolchain notes to $guidance"
+  mkdir -p "$(dirname "$guidance")"
+  cat >>"$guidance" <<'EOF'
+
+<!-- linuxdo-native orb toolchain (managed by .agents/setup) -->
+## linuxdo-native orb notes
+
+- Android toolchain is preinstalled: JDK 17, Android SDK in `$HOME/Android/Sdk` (`ANDROID_HOME` exported for login shells), and `apps/android/local.properties` already points at it. Gradle, AndroidX, Robolectric, and Paparazzi artifacts are cached in `~/.gradle` / `~/.m2`; keep those caches.
+- Orbs have no emulator or device (no KVM): `adb` and instrumentation tests cannot run. Verify with `:app:testDebugUnitTest` and Paparazzi instead.
+- Paparazzi goldens were recorded on macOS; on Linux orbs `:app:verifyPaparazziDebug` can fail on ~0.03% pixel drift in a few snapshots. Inspect the diff before re-recording, and record only intentional UI changes.
+- `vendor/telegram-android` is already cloned at the manifest pin, so `scripts/vendor-diff.sh` and the other vendor scripts work immediately.
+EOF
+fi
+
+log "Orb setup complete in ${SECONDS}s"

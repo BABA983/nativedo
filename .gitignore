@@ -26,8 +26,18 @@ captures/
 .pi/
 .claude/
 .openclaude/
-.agents/
 skills-lock.json
+
+# Orb lifecycle: only the committed setup/resume hooks, the rest is local state.
+.agents/*
+!.agents/setup
+!.agents/resume
+
+# Orb portal registration files (generated at runtime).
+.amp/portals/
+
+# Python bytecode from the scripts/ vendor tooling.
+__pycache__/
 
 # Paparazzi golden images are committed; only the unused video baseline
 # directory stays local.
