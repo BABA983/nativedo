@@ -18,6 +18,10 @@ captures/
 
 .ace-tool/
 .superpowers/
+
+# pi-lens runtime state (generated). lsp.json is intentional config — kept tracked.
+.pi-lens/*
+!.pi-lens/lsp.json
 .codex/
 .pi/
 .claude/

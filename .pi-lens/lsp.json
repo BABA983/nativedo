@@ -1,0 +1,12 @@
+{
+  "servers": {
+    "kmp-lsp": {
+      "name": "kmp-lsp (Kotlin/Java)",
+      "extensions": [".kt", ".kts", ".java"],
+      "command": "kmp-lsp",
+      "args": ["--stdio"],
+      "rootMarkers": ["settings.gradle.kts", "settings.gradle", "build.gradle.kts", "build.gradle", "pom.xml", ".git"]
+    }
+  },
+  "disabledServers": ["kotlin", "java"]
+}
