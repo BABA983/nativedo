@@ -145,7 +145,7 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
     private int activityWidth;
     private int row2Top;
 
-    // Pinned — time-left pin bubble (mirrors DialogCell upstream).
+    // Pinned - time-left pin bubble (mirrors DialogCell upstream).
     private boolean drawPin;
     private static final int PIN_BUBBLE_HEIGHT = 17;
     private static final int PIN_BUBBLE_RADIUS = PIN_BUBBLE_HEIGHT / 2;
@@ -400,14 +400,11 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
     private void buildTimeLayout(int width) {
         drawPin = topic.isPinned();
 
-        // ===== Pin bubble (left of time, mirrors DialogCell pinnedDrawable2) =====
-
         // ===== Row 1 right: last activity time =====
         String timeText = formatTime(topic.getLastPostedAt());
         timeWidth = (int) Math.ceil(Theme.dialogs_timePaint.measureText(timeText));
         timeTop = dp(16);
-        // Pinned: time shifts right by dp(20) to make room for pin bubble — mirrors DialogCell.
-        float pinOffset = drawPin ? dp(20) : 0;
+        float pinOffset = drawPin ? dp(24) : 0;
         timeLeft = width - dp(15) - timeWidth - (int) pinOffset;
         timeLayout = new StaticLayout(timeText, Theme.dialogs_timePaint, Math.max(0, timeWidth + dp(2)),
             Layout.Alignment.ALIGN_NORMAL, 1f, 0f, false);
@@ -446,9 +443,8 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
     private void buildNameLayout(int width) {
         // ===== Row 1: Title (left, ends before time+pin area) =====
         nameLeft = dp(messagePaddingStart + 4);
-        // Pinned: time + pin bubble together occupy more right-side space.
-        float pinOffset = drawPin ? dp(20) : 0;
-        int timeInset = timeWidth > 0 ? timeWidth + dp(24) + (int) pinOffset : dp(16);
+        float pinOffset = drawPin ? dp(24) : 0;
+        int timeInset = timeWidth > 0 ? timeWidth + dp(22) + (int) pinOffset : dp(16);
         nameWidth = width - nameLeft - timeInset;
         if (nameWidth < dp(20)) nameWidth = dp(20);
         // List rows are single-line DialogCell-shaped: collapse Discourse newlines and
@@ -639,11 +635,9 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
             canvas.save();
             canvas.translate(timeLeft, timeTop);
 
-            // Pinned: draw pin bubble to the left of time text — mirrors
-            // DialogCell upstream which draws dialogs_pinnedDrawable2 + alpha-27
-            // roundRect at timeLeft - dp(20).
-            if (drawPin && pinnedDrawable != null) {
-                // Half-transparent background bubble.
+            if (drawPin) {
+                canvas.translate(dp(20), 0);
+
                 float y = timeLayout.getHeight() / 2f - dp(PIN_BUBBLE_HEIGHT / 2f);
                 float l = -dp(20);
                 float r = timeLayout.getWidth() + dp(6);
@@ -653,15 +647,15 @@ public class TopicCell extends View implements MovableCell, Theme.Colorable {
                     dp(PIN_BUBBLE_RADIUS), dp(PIN_BUBBLE_RADIUS), Theme.dialogs_timePaint);
                 Theme.dialogs_timePaint.setAlpha(timeAlpha);
 
-                // Pin icon (vendored msg_pin_mini) — mirrors upstream
-                // DialogCell which draws dialogs_pinnedDrawable2.
                 final Drawable pd = pinnedDrawable;
-                final int dy = (int) (y + (dp(PIN_BUBBLE_HEIGHT) - pd.getIntrinsicHeight()) / 2f);
-                final int dx = (int) l + dp(4);
-                pd.setBounds(dx, dy,
-                    dx + pd.getIntrinsicWidth(),
-                    dy + pd.getIntrinsicHeight());
-                pd.draw(canvas);
+                if (pd != null) {
+                    final int dy = (int) (y + (dp(PIN_BUBBLE_HEIGHT) - pd.getIntrinsicHeight()) / 2f);
+                    final int dx = (int) l + dp(4);
+                    pd.setBounds(dx, dy,
+                        dx + pd.getIntrinsicWidth(),
+                        dy + pd.getIntrinsicHeight());
+                    pd.draw(canvas);
+                }
             }
 
             timeLayout.draw(canvas);
