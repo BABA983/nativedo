@@ -3100,13 +3100,13 @@
       "local": "telegram/src/main/java/org/telegram/ui/Components/chat/layouts/ChatActivitySideControlsButtonsLayout.java",
       "upstream": "org/telegram/ui/Components/chat/layouts/ChatActivitySideControlsButtonsLayout.java",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-      "modified": false,
+      "modified": true,
       "port_mode": "exact",
       "forced_exact": [
         "animation",
         "measurement"
       ],
-      "notes": "Copied verbatim as reusable Telegram side-controls infrastructure. TopicDetail wires page-down plus topic-search previous/next, and its buttons sample the topic root's RenderNode Blur3 source with a ViewPositionWatcher; lower API levels retain the color-source fallback. Mention/reaction/poll buttons remain available for later host integrations."
+      "notes": "Copied as reusable Telegram side-controls infrastructure. TopicDetail wires page-down, return-to-top, and topic-search previous/next; a host-only content-description setter keeps the reused arrow semantics accessible without changing upstream animation or measurement. Buttons sample the topic root's RenderNode Blur3 source with a ViewPositionWatcher; lower API levels retain the color-source fallback."
     },
     {
       "local": "telegram/src/main/java/org/telegram/ui/Components/chat/layouts/ChatActivityFadeView.java",

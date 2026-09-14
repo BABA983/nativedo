@@ -128,6 +128,11 @@ public class ChatActivitySideControlsButtonsLayout extends FrameLayout implement
         holder.button.showLoading(loading, animated);
     }
 
+    public void setButtonContentDescription(final int buttonId, CharSequence description) {
+        final ButtonHolder holder = getOrCreateButtonHolder(buttonId);
+        holder.button.setContentDescription(description);
+    }
+
     public boolean isButtonVisible(final int buttonId) {
         final ButtonHolder holder = getButtonHolder(buttonId);
 
