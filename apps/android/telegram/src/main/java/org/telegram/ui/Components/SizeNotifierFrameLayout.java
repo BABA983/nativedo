@@ -8,7 +8,14 @@
 package org.telegram.ui.Components;
 
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Rect;
+import android.graphics.Shader;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
 import android.view.View;
 import android.widget.FrameLayout;
 
@@ -21,6 +28,10 @@ public class SizeNotifierFrameLayout extends FrameLayout {
     protected int keyboardHeight;
     private int bottomClip;
     private final Rect rect = new Rect();
+    private Drawable backgroundDrawable;
+    private boolean backgroundMotion;
+    public View backgroundView;
+    private boolean attached;
     protected SizeNotifierFrameLayoutDelegate delegate;
     protected final ArrayList<SizeNotifierFrameLayoutDelegate> delegates = new ArrayList<>();
 
@@ -44,6 +55,116 @@ public class SizeNotifierFrameLayout extends FrameLayout {
     public SizeNotifierFrameLayout(Context context) {
         super(context);
         setFitsSystemWindows(false);
+        setWillNotDraw(false);
+    }
+
+    /**
+     * Telegram keeps the wallpaper in a child below the chat content.  Keeping
+     * that layer here is important: a RecyclerView must stay transparent so
+     * the wallpaper remains visible between rows and behind translucent chrome.
+     */
+    private final class BackgroundView extends View {
+        BackgroundView(Context context) {
+            super(context);
+            setWillNotDraw(false);
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            Drawable drawable = backgroundDrawable;
+            if (drawable == null || getWidth() <= 0 || getHeight() <= 0) {
+                return;
+            }
+
+            int width = getWidth();
+            int height = getHeight();
+            if (drawable instanceof BitmapDrawable) {
+                BitmapDrawable bitmapDrawable = (BitmapDrawable) drawable;
+                Bitmap bitmap = bitmapDrawable.getBitmap();
+                if (bitmap != null && bitmapDrawable.getTileModeX() != Shader.TileMode.REPEAT
+                        && bitmapDrawable.getTileModeY() != Shader.TileMode.REPEAT
+                        && bitmap.getWidth() > 0 && bitmap.getHeight() > 0) {
+                    float scale = Math.max(
+                            width / (float) bitmap.getWidth(),
+                            height / (float) bitmap.getHeight());
+                    int scaledWidth = (int) Math.ceil(bitmap.getWidth() * scale);
+                    int scaledHeight = (int) Math.ceil(bitmap.getHeight() * scale);
+                    int left = (width - scaledWidth) / 2;
+                    int top = (height - scaledHeight) / 2;
+                    drawable.setBounds(left, top, left + scaledWidth, top + scaledHeight);
+                } else {
+                    drawable.setBounds(0, 0, width, height);
+                }
+            } else if (drawable instanceof ColorDrawable || drawable instanceof GradientDrawable
+                    || drawable instanceof MotionBackgroundDrawable) {
+                drawable.setBounds(0, 0, width, height);
+            } else {
+                drawable.setBounds(0, 0, width, height);
+            }
+            drawable.draw(canvas);
+        }
+    }
+
+    public void setBackgroundImage(Drawable drawable, boolean motion) {
+        if (backgroundView != null && backgroundDrawable == drawable && backgroundMotion == motion) {
+            backgroundView.invalidate();
+            return;
+        }
+        if (backgroundView == null) {
+            backgroundView = new BackgroundView(getContext());
+            addView(backgroundView, 0, new FrameLayout.LayoutParams(
+                    LayoutParams.MATCH_PARENT,
+                    LayoutParams.MATCH_PARENT
+            ));
+        }
+
+        if (attached && backgroundDrawable instanceof MotionBackgroundDrawable) {
+            ((MotionBackgroundDrawable) backgroundDrawable).onDetachedFromWindow();
+        }
+        if (backgroundDrawable != null) {
+            backgroundDrawable.setCallback(null);
+        }
+
+        backgroundDrawable = drawable;
+        backgroundMotion = motion;
+        if (backgroundDrawable != null) {
+            backgroundDrawable.setCallback(backgroundView);
+            if (backgroundDrawable instanceof MotionBackgroundDrawable) {
+                MotionBackgroundDrawable motionDrawable = (MotionBackgroundDrawable) backgroundDrawable;
+                motionDrawable.setParentView(backgroundView);
+                if (attached) {
+                    motionDrawable.onAttachedToWindow();
+                }
+            }
+        }
+        backgroundView.invalidate();
+    }
+
+    public Drawable getBackgroundImage() {
+        return backgroundDrawable;
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        attached = true;
+        if (backgroundDrawable instanceof MotionBackgroundDrawable) {
+            ((MotionBackgroundDrawable) backgroundDrawable).onAttachedToWindow();
+        }
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        if (backgroundDrawable instanceof MotionBackgroundDrawable) {
+            ((MotionBackgroundDrawable) backgroundDrawable).onDetachedFromWindow();
+        }
+        attached = false;
+        super.onDetachedFromWindow();
+    }
+
+    @Override
+    protected boolean verifyDrawable(Drawable who) {
+        return who == backgroundDrawable || super.verifyDrawable(who);
     }
 
     public void setDelegate(SizeNotifierFrameLayoutDelegate delegate) {

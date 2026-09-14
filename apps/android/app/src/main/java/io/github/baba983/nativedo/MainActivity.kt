@@ -103,6 +103,9 @@ class MainActivity : LaunchActivity(), NotificationCenter.NotificationCenterDele
             ),
         )
         setContentView(rootFrameLayout)
+        // Upstream LaunchActivity starts the wallpaper lifecycle after the root UI is
+        // attached. It also derives and applies the translucent chat service colors.
+        Theme.loadWallpaper(true)
         NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.needSetDayNightTheme)
         NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.fontSizeChanged)
         NotificationCenter.getGlobalInstance().addObserver(this, NotificationCenter.needCheckSystemBarColors)

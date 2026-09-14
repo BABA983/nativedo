@@ -2569,7 +2569,7 @@
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo SizeNotifierFrameLayout subset. Keeps upstream-facing delegate/delegates, getKeyboardHeight(), measureKeyboardHeight(), setBottomClip(int), notifyHeightChanged(), and SimplerCanvas marker API used by BottomSheet, SizeNotifierFrameLayoutPhoto, and SpoilerEffect layout drawing. Full Telegram blur/wallpaper/chat-background machinery remains unported.",
+      "notes": "NativeDo SizeNotifierFrameLayout port. Keeps upstream-facing delegate/delegates, getKeyboardHeight(), measureKeyboardHeight(), setBottomClip(int), notifyHeightChanged(), and SimplerCanvas marker API used by BottomSheet, SizeNotifierFrameLayoutPhoto, and SpoilerEffect layout drawing. Restores Telegram's wallpaper host layer (setBackgroundImage/getBackgroundImage, drawable lifecycle, transparent child ordering, and ColorDrawable/GradientDrawable/BitmapDrawable/MotionBackgroundDrawable drawing) without importing the unrelated full blur/chat-background machinery.",
       "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
     },
     {
