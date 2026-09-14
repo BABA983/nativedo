@@ -32,6 +32,7 @@ import org.telegram.ui.Components.ProfileGalleryView
 import org.telegram.ui.Components.RecyclerListView
 import org.telegram.ui.Components.ScrollSlidingTextTabStrip
 import org.telegram.ui.Components.StickerEmptyView
+import org.telegram.ui.Components.ViewPagerFixed
 
 internal class ProfileComponentsScreenshotTest {
     @get:Rule
@@ -380,8 +381,10 @@ internal class ProfileComponentsScreenshotTest {
                 View.MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(360f), View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(640f), View.MeasureSpec.EXACTLY),
             )
-            val profileTabs = content.getChildAt(0) as ScrollSlidingTextTabStrip
+            val profileTabs = content.getChildAt(content.childCount - 1) as ScrollSlidingTextTabStrip
             val topicsList = content.currentListView()
+            assertThat(content.getChildAt(0)).isInstanceOf(ViewPagerFixed::class.java)
+            assertThat(content.getChildAt(content.childCount - 1)).isSameInstanceAs(profileTabs)
             // Upstream SharedMediaLayout draws no own background: the content
             // layout and the feed list stay transparent; white section cards are
             // drawn by the list sections over the gray outer surface.

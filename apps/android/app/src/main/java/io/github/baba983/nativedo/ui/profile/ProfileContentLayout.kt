@@ -198,18 +198,6 @@ internal class ProfileContentLayout(
         tabStrip.setBlurredBackground(tabBackground)
         tabStrip.setOpen(false)
         addView(
-            tabStrip,
-            LayoutHelper.createFrame(
-                LayoutHelper.WRAP_CONTENT.toFloat(),
-                50f,
-                Gravity.CENTER_HORIZONTAL or Gravity.TOP,
-                -2f,
-                0f,
-                -2f,
-                0f,
-            ),
-        )
-        addView(
             pager,
             LayoutHelper.createFrame(
                 LayoutHelper.MATCH_PARENT.toFloat(),
@@ -218,6 +206,21 @@ internal class ProfileContentLayout(
                 0f,
                 0f,
                 0f,
+                0f,
+            ),
+        )
+        // SharedMediaLayout adds the page containers before the tab strip. The
+        // strip must be the topmost child so it stays visible over the feed and
+        // receives tab clicks while the feed is pinned at the action bar.
+        addView(
+            tabStrip,
+            LayoutHelper.createFrame(
+                LayoutHelper.WRAP_CONTENT.toFloat(),
+                50f,
+                Gravity.CENTER_HORIZONTAL or Gravity.TOP,
+                -2f,
+                0f,
+                -2f,
                 0f,
             ),
         )
