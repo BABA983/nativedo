@@ -942,6 +942,7 @@ public final class AndroidUtilities {
     }
 
     private static Typeface typefaceBold;
+    private static final HashMap<String, Typeface> typefaceCache = new HashMap<>();
 
     /**
      * Returns a bold typeface. Matches upstream {@code AndroidUtilities.bold()}.
@@ -949,7 +950,10 @@ public final class AndroidUtilities {
      */
     public static Typeface bold() {
         if (typefaceBold == null) {
-            typefaceBold = Typeface.create(Typeface.DEFAULT, Typeface.BOLD);
+            typefaceBold = getTypeface(TYPEFACE_ROBOTO_MEDIUM);
+            if (typefaceBold == null) {
+                typefaceBold = Typeface.create("sans-serif-medium", Typeface.NORMAL);
+            }
         }
         return typefaceBold;
     }
@@ -960,22 +964,52 @@ public final class AndroidUtilities {
 
     /**
      * Returns a medium typeface. Matches upstream {@code AndroidUtilities.medium()}.
-     * Falls back to bold on Android versions without a distinct medium weight.
      */
     public static Typeface medium() {
         if (typefaceMedium == null) {
-            typefaceMedium = Typeface.create(Typeface.DEFAULT, Typeface.BOLD);
+            typefaceMedium = getTypeface(TYPEFACE_ROBOTO_MEDIUM);
+            if (typefaceMedium == null) {
+                typefaceMedium = Typeface.create("sans-serif-medium", Typeface.NORMAL);
+            }
         }
         return typefaceMedium;
     }
 
     /**
-     * Returns a typeface with the given style. NativeDo does not bundle
-     * Telegram's font assets, so map Telegram font names to system styles.
+     * Returns a typeface with the given style. The Telegram medium face is bundled;
+     * font assets not used by NativeDo continue to map to system styles.
      */
     public static Typeface getTypeface(String fontName) {
         if (fontName == null) {
             return Typeface.DEFAULT;
+        }
+        if (TYPEFACE_ROBOTO_MEDIUM.equals(fontName)) {
+            synchronized (typefaceCache) {
+                Typeface cached = typefaceCache.get(fontName);
+                if (cached != null) {
+                    return cached;
+                }
+                if (ApplicationLoader.applicationContext == null) {
+                    return null;
+                }
+                try {
+                    Typeface typeface;
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        typeface = new Typeface.Builder(
+                            ApplicationLoader.applicationContext.getAssets(), fontName
+                        ).setWeight(700).build();
+                    } else {
+                        typeface = Typeface.createFromAsset(
+                            ApplicationLoader.applicationContext.getAssets(), fontName
+                        );
+                    }
+                    typefaceCache.put(fontName, typeface);
+                    return typeface;
+                } catch (Exception e) {
+                    FileLog.e("Could not get typeface '" + fontName + "' because " + e.getMessage());
+                    return null;
+                }
+            }
         }
         if (fontName.endsWith("rmono.ttf")) {
             return Typeface.MONOSPACE;
@@ -992,7 +1026,7 @@ public final class AndroidUtilities {
             }
             return typefaceItalic;
         }
-        if (fontName.endsWith("rmedium.ttf") || fontName.endsWith("rextrabold.ttf") || fontName.endsWith("mw_bold.ttf")) {
+        if (fontName.endsWith("rextrabold.ttf") || fontName.endsWith("mw_bold.ttf")) {
             return bold();
         }
         return Typeface.DEFAULT;
@@ -1035,7 +1069,7 @@ public final class AndroidUtilities {
     public static final android.view.animation.AccelerateInterpolator accelerateInterpolator = new android.view.animation.AccelerateInterpolator();
     public static final String TYPEFACE_ROBOTO_MEDIUM = "fonts/rmedium.ttf";
     /**
-     * Upstream name for bold-italic. NativeDo does not ship Telegram font files;
+     * Upstream name for bold-italic. NativeDo does not ship this italic font asset;
      * {@link #getTypeface(String)} maps this path suffix to system BOLD_ITALIC.
      */
     public static final String TYPEFACE_ROBOTO_MEDIUM_ITALIC = "fonts/rmediumitalic.ttf";

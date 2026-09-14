@@ -4910,6 +4910,16 @@
     {
       "kind": "asset",
       "files": [
+        "fonts/rmedium.ttf"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/assets",
+      "local_glob": "apps/android/telegram/src/main/assets",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "notes": "Telegram Roboto Medium face used by AndroidUtilities.bold()/medium() and CounterView so digit metrics and rolling-counter rendering match upstream."
+    },
+    {
+      "kind": "asset",
+      "files": [
         "arctic.attheme",
         "bluebubbles.attheme",
         "darkblue.attheme",
