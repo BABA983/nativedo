@@ -168,7 +168,7 @@ Some vendored files reference MTProto types we don't use (`TLObject`,
 
 | Situation | What to do |
 |---|---|
-| Empty type needed for compile (e.g. `TLObject`) | Stub: empty abstract class or interface, no methods, no fields. Place under the corresponding upstream package in `:telegram`. Track scratch stubs under `compat_shim_groups`; copied upstream types remain ordinary vendored entries. |
+| Empty type needed for compile (e.g. `TLObject`) | Stub: empty abstract class or interface, no methods, no fields. Place under the corresponding upstream package in `:telegram`. Scratch stubs are derived automatically (no upstream counterpart at the pin = shim); list a stub in the overlay's `native` array only when it shadows a real upstream path. |
 | Vendored method that takes `TLObject` and we never call it (e.g. `setForUserOrChat`) | **Keep upstream body unchanged**. Don't stub the method. The dead branch is harmless and re-sync stays clean. |
 | Same as above, but a misroute would cause a silent-but-wrong UI (e.g. blank avatar) | Replace the method body with `throw new UnsupportedOperationException("nativedo: use AvatarImageBinder")`. Manifest `notes` must record this. |
 | A vendored helper returns a hardcoded default just to "make tests pass" | **Forbidden**. Either keep upstream behavior, or delete the method and switch the file to `port_mode = native` with `notes`. |
@@ -236,10 +236,10 @@ When you `cp` a new file from the pristine Telegram checkout
 2. No `sed` package rewrite needed — package stays `org.telegram.*`.
 3. Drop any upstream import the host can't satisfy (or replace with the
    AndroidX/host equivalent).
-4. Add a compact `file_groups` entry under `vendor-manifest.json`. For the
-   normal `telegram/src/main/java/` group, only `path` is required at the
-   global pin; add `modified: true` for import/theme/resource host wiring.
-5. `scripts/vendor-manifest.sh --write` followed by `--check`.
+4. Nothing to register: provenance is derived (no upstream counterpart → shim;
+   otherwise it is tracked against the pin). Add the file to the overlay's
+   `native` array only if it is our code rather than a copy.
+5. `scripts/vendor-guard.sh --compile`.
 6. `scripts/vendor-isolation-check.sh` — must exit 0.
 7. `./apps/android/gradlew -p apps/android :telegram:compileDebugJavaWithJavac --quiet`
 8. Commit source + compact manifest + generated lock in **one commit**.

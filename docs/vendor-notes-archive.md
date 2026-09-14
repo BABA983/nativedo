@@ -1,0 +1,755 @@
+# Telegram vendoring notes archive
+
+Snapshot of the per-file notes that lived in the retired `vendor-manifest.json`
+(pin `9bcf3d2769c6`, 2026-07-16).
+
+Historical only — **not maintained**. The live record is `vendor-overlay.json`
+(classification) plus the files themselves. If a note below is still load-bearing,
+move that sentence into the overlay's `_comment`/policy or keep it in the commit
+message that touches the file.
+
+## Per-file notes
+
+- `app/src/main/java/io/github/baba983/nativedo/ui/components/DiscourseUserCell.java`
+  - NativeDo URL-shaped identity row shared by reaction users, poll voters, and search users. It keeps the 50dp RecyclerView row, RTL offsets, selector overlay, emoji-aware title, and combined accessibility description, while using TopicPostCell's 42dp avatar, 10dp avatar-to-text gap, 15sp bold display name, 13sp metadata, and a 6dp/26dp two-line origin so sheet identities visually match topic-floor headers with a readable name-to-username gap. NativeDo has no reaction-tail image, status badge, story ring, Telegram peer/account model, or MTProto avatar location; URL-shaped Discourse avatars and @usernames are bound locally.
+- `app/src/main/java/io/github/baba983/nativedo/ui/components/FixedHeaderRecyclerBottomSheet.java`
+  - NativeDo fixed-header RecyclerView sheet shell split from pinned StickersAlert: preserves its natural-content measurement threshold, top-padding calculation, rounded sheet/handle/status-bar drawing, outside-tap dismissal, non-swipe dismissal, and first-child scroll-offset/header translation shape. Host wiring now permits a pinned-ChatActivity-style ViewPager whose independently scrolling pages share the same calculated padding; horizontal transitions interpolate the two page offsets so the fixed header, sheet background, handle, shadow, and outside-tap boundary remain synchronized. It also exposes caller-controlled content and minimum-height contracts: asynchronous reaction and poll user lists use predicted counts with a six-row maximum viewport and may shrink to shorter known results. Fixed-height voter sheets can opt into a stationary sheet top edge while their list scrolls, avoiding a visible top-padding jump. Sticker/account data, preview content, and product rows remain app-owned.
+- `app/src/main/java/io/github/baba983/nativedo/ui/main/GlassTabView.java`
+  - NativeDo main-tab pager host retaining Telegram's child-fragment page lifecycle, inset dispatch, and system-bar delegation. The pinned drawEdgeNavigationBar=false contract keeps the pager's own WindowInsets listener authoritative instead of replacing it with BaseFragment's list-page listener.
+- `app/src/main/java/io/github/baba983/nativedo/ui/main/MainTabsActivity.java`
+  - NativeDo three-tab host (Home, Settings, Profile) using Telegram's main-tab pager and visibility animation shape. Settings and Profile remain separate root tabs as in pinned MainTabsActivity. Current-tab taps delegate scroll-to-top to all three roots; child delegates arbitrate outer paging against Home's nested feed pager, search state, and Profile avatar touches. TopicList receives an app-side controller so search mode drives the existing 380ms EASE_OUT_QUINT tabs visibility animation. The bottom tab surface uses Telegram's Blur3 main-tabs provider, RenderNode source, ViewPositionWatcher, 28dp radius, 7.666dp padding, and 60dp BlurredBackgroundWithFadeDrawable. NativeDo keeps Telegram's 320dp content minimum inside the same 344dp capped view with 12dp padding on each side, even with three visible roots. NativeDo records the live ViewPager subtree as the glass source so tab content and horizontal transitions are sampled together; pre-Android-12 and non-hardware rendering fall back to BlurredBackgroundSourceColor.
+- `app/src/main/java/io/github/baba983/nativedo/ui/main/MainTabsLayout.java`
+  - NativeDo port (package io.github.baba983.nativedo.*); vendored_at is an upstream reference for forced_exact hand-checks only — not eligible for vendor-ff.
+- `app/src/main/java/io/github/baba983/nativedo/ui/main/ViewPagerActivity.java`
+  - NativeDo port (package io.github.baba983.nativedo.*); vendored_at is an upstream reference for forced_exact hand-checks only — not eligible for vendor-ff.
+- `app/src/main/java/io/github/baba983/nativedo/ui/profile/DiscourseProfileActionsView.java`
+  - NativeDo profile action strip adapted from ProfileActionsView. Keeps the pinned measurement geometry, hit lifecycle, layout surface, accessibility contract, and blur target hook. Discourse actions replace Telegram peer/MTProto callbacks; loading/RLottie, call, music, and mode-arbitration branches are omitted, so gesture, animation, and drawing are host adaptations. The upstream color-by-id radial button gradient is not ported: NativeDo draws a single flat action color, so the shader paint/matrix branch is absent.
+- `app/src/main/java/io/github/baba983/nativedo/ui/profile/ProfileContentLayout.kt`
+  - NativeDo profile-content adaptation of SharedMediaLayout. Retains Telegram tab-strip geometry, ViewPagerFixed swipe thresholds/timing, two retained feed pages, scroll-to-top, loading/empty overlays, and visible-height measurement. The localized two-tab strip uses vendor's text-width-based minimal sizing with no fixed minimum width; visible height follows ProfileActivity without subtracting the feed's bottom inset twice. Discourse feed/recycler/navigation and glass source are host wiring; Telegram media/search/action-mode/stories/gifts backends are omitted.
+- `app/src/main/java/io/github/baba983/nativedo/ui/profile/ProfileDetailCell.java`
+  - DEPRECATED: superseded by telegram module TextDetailCell. ProfileFragment now uses org.telegram.ui.Cells.TextDetailCell directly. Simplified: plain TextView instead of SpoilersTextView/LinksTextView. Includes Factory inner class for UItem integration.
+- `app/src/main/java/io/github/baba983/nativedo/ui/profile/ProfileFragment.kt`
+  - NativeDo profile screen adapted from pinned ProfileActivity. Keeps Telegram header/list geometry, pull and expansion gesture thresholds, animator timing, stable rows, gallery/blur handoff, and profile-tab navigation. Discourse profile/session/feed/actions replace Telegram peer, MTProto media, stories, gifts, music, upload, and QR backends; ProfileActivity supplies reusable nested classes while this fragment owns host layout and data. Telegram does not render main tabs while logged out: LaunchActivity routes directly to IntroActivity/LoginActivity. NativeDo keeps its Profile tab, and only the logged-out CTA adapts IntroActivity.startMessagingButton geometry, gradient, text, press, and flicker behavior.
+- `app/src/main/java/io/github/baba983/nativedo/ui/settings/IconSettingCell.java`
+  - NativeDo SettingsActivity.SettingCell port. Keeps the normal icon/text/subtitle/value layout, 50dp/60dp measurement, gradient icon background, dark-theme border, and UItem color packing; omits Telegram ResourcesProvider/mini-mode and binds the local settings ViewFactory.
+- `app/src/main/java/io/github/baba983/nativedo/ui/settings/SettingsFragment.kt`
+  - NativeDo settings root adapted from pinned SettingsActivity/MainTabsActivity shape: sectioned UniversalRecyclerView, main-tab inset, same-tab scroll-to-top, debug gating, version footer, and secondary-page routing. Discourse account/activity, appearance, browser, and local session flows replace Telegram backends.
+- `app/src/main/java/io/github/baba983/nativedo/ui/theme/ThemeSettingsFragment.java`
+  - NativeDo local appearance and theme settings port of pinned ThemeActivity. It retains Telegram theme selection, accent, font-size, auto-night, wallpaper, import/export/edit workflows, sectioned list styling, and the pinned edge-to-edge bottom-inset handling while adapting preview content, storage, resources, and product-specific labels to NativeDo.
+- `app/src/main/java/io/github/baba983/nativedo/ui/theme/TopicThemePreviewFragment.kt`
+  - NativeDo local theme preview port. Keeps the pinned two-page ViewPager, 48dp Cancel/dots/Apply bar, temporary apply/previous-theme transaction, back/cancel restoration, apply persistence, blur, motion/parallax, built-in pattern and intensity controls. Telegram chat/dialog preview adapters are replaced by TopicThemePreviewContent using the production TopicHeaderCell/TopicPostCell/PostBodyBlock renderer; peer wallpaper, premium and remote pattern catalog branches are omitted.
+- `app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicCell.java`
+  - Repurposed DialogCell for Discourse topics. Native Feature, but measurement and drawing subsystems are still upstream-shaped per AGENTS.md forced-exact rules. MovableCell SPI implemented for DialogsItemAnimator: setMoving/setClipProgress/ setTopClip/setBottomClip + clipRect in onDraw mirror DialogCell upstream. SDK 24 clipRect fallback (drawRect with windowBackgroundWhite) intentionally omitted. Discourse additions over DialogCell: is_hot badge, like_count in message preview, tag pills row, excerpt-based message preview, pinned background overlay, muted-counter gray pill. Row height expands for tags row. Search presentation binds the Discourse post blurb into DialogCell's second-line message-preview slot and highlights query terms in title/preview while keeping the same 70dp measurement and StaticLayout drawing path. DialogCell.buildLayout owns shared-paint typography at SharedConfig.fontSize + 1 for title and fontSize for the second line (default 17dp/16dp); count badges remain 13dp.
+- `app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicDialogsRecyclerView.java`
+  - Focused NativeDo port of DialogsActivity.DialogsRecyclerView for the topic feed. Keeps setViewsOffset propagation to attached and newly recycled children, resets transforms on removal, skips moving MovableCell rows in normal draw order, then redraws each over an opaque windowBackgroundWhite surface while DialogsItemAnimator is running. Dialog-specific selection, right-pane, stories, blur, poller, and transition-support branches are omitted.
+- `app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicFloatingDateController.kt`
+  - NativeDo topic floating-date controller port aligned to ChatActivity 12.9.0. Keeps the 150ms alpha animation, 500ms/1000ms hide delays, drag/idle lifecycle, translated-child visible-row selection, date-separator alpha handoff, terminal-separator branch, one-cell-height push-off, list-parent translation formula, and top clipping while adapting message/action rows to TopicPostCell/TopicDateCell and respecting NativeDo selection, popup, composer, and scrim ownership.
+- `app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicMentionCell.java`
+  - NativeDo Discourse-user binding for Telegram's MentionCell. Keeps the exact 36dp row, 28dp avatar with 14dp radius, 12dp/4dp avatar margins, 12dp text gaps, 15sp single-line name and username typography, 8dp trailing margin, Emoji replacement for display names, and selector. TLRPC peer binding is replaced by URL-shaped avatar data.
+- `app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicMentionSuggestionsView.kt`
+  - NativeDo mention-only container port. Keeps ChatActivity's bottom-aligned 110dp host, exact PaddedListAdapter padding row, min(126dp, screenHeight*0.22) list measure padding, scroll-range-driven visible height, size-change visible-position restore, padded-row touch exclusion, container-owned round-rect clipping, 22dp Blur3 radius/5dp bounds padding, 150ms item animator durations, and SpringForce NO_BOUNCY/stiffness 550 hide-at-end lifecycle. Telegram bot, sticker, hashtag, inline-media, and TLRPC query paths are omitted. Discourse details.participants plus loaded post authors provide immediate candidates while a 200ms debounced /u/search/users request supplies authoritative topic-aware user/group ordering with stale-generation cancellation. The topic root exposes an Android 12+ RenderNode Blur3 source sampling the post list; older systems retain the same drawable bounds/clip with a themed color source fallback.
+- `app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicPostScrimHostLayout.java`
+  - NativeDo topic-detail host port of ChatActivity's selected-message scrim. Keeps the 0.2 black scrim, 320ms EASE_OUT_QUINT animation, selected-cell redraw above the dim, viewport clipping, invalidation forwarding, and delayed release on dismiss while adapting the selected view to TopicPostCell and using popup owner tokens to prevent stale dismiss callbacks from clearing a newer menu. Telegram's optional ScrimOptions blur and grouped-message drawing are intentionally omitted.
+- `app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicPostScrimPopupContainerLayout.java`
+  - NativeDo app-side port for topic post long-press menus. Preserves ChatScrimPopupContainerLayout's popupWindowLayout/maxHeight/popupLayoutLeftOffset/progressToSwipeBack/setPopupWindowLayout/setMaxHeight/setPopupAlpha/setReactionsTransitionProgress shape while adapting ReactionsContainerLayout to a small ReactionRail delegate backed by Discourse reaction ids. addPopupMenu follows ChatActivity's reaction-available relative margins (start 16dp, end 36dp) so the action menu sits under the reaction bubble like Telegram. The internal ReactionRailFrame owns the Telegram-style popup_fixed_alert4/reactions_bubble_shadow background, CLIP_PROGRESS=0.25 reveal, 36dp tail offset, and two-circle bubble drawing that previously lived as a Kotlin inner class in TopicDetailFragment.
+- `app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicSearchViewPager.kt`
+  - Discourse-native search pager using the vendored ViewPagerFixed interaction/recycling subsystem. Mirrors SearchViewPager's independently scrolling result pages, drag-to-hide-keyboard behavior, per-page adapters, tab/page synchronization, and scroll-triggered pagination while binding one /search.json response stream to NativeDo topic, post, and user rows. Telegram dialog/contact/forum request adapters and account-scoped search storage are replaced by TopicSearchSession generation guards and Discourse page aggregation.
+- `app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicSwipeReplyRecyclerView.java`
+  - NativeDo topic-detail swipe-to-reply host port rechecked against ChatActivity in 12.8.1. It keeps physical-left direction, -80dp clamp, 0.4cm/3:1 takeover gate, 50dp reply/haptic threshold, pointer/cancel lifecycle, vertical-layout-manager lock during takeover, 180ms decelerate return, and the three FloatValueHolder/SpringAnimation systems. Reply rendering follows the upstream service-background arc, 0.6/0.4 fill, clear-scale, and outer-ring order using NativeDo Theme paints. Drawing is not forced-exact because NativeDo has no Telegram wallpaper service-gradient pipeline.
+- `app/src/main/java/io/github/baba983/nativedo/ui/topic/body/CodeBlock.java`
+  - NativeDo ArticleViewer.BlockPreformattedCell port (forced_exact measurement/drawing/gesture): background y=8dp..height-8dp with LinkSelection alpha-20, scroll padding 8dp, text margins 16dp/12dp, longest-line width plus 32dp, rmono ArticleTextLayout, and horizontal takeover arbitration. Top-level blocks use FrameLayout+HorizontalScrollView; nested blocks use canvas fallback. Syntax highlighting and IV rich links are omitted; details: docs/topic-detail-rewrite.md.
+- `app/src/main/java/io/github/baba983/nativedo/ui/topic/body/CollageBlock.java`
+  - NativeDo BlockCollageCell/grouped-media port: 2dp tile gaps, optimal 2/3/4-line layouts for 5-12 images, listTop 8dp/bottom 16dp, joined ArticleTextLayout caption, per-tile URL source bounds and placeholders. Top-level blocks embed a non-scrolling RecyclerListView; nested blocks use canvas fallback. OMITTED exact TLRPC page-block holders and per-tile captions; details: docs/topic-detail-rewrite.md.
+- `app/src/main/java/io/github/baba983/nativedo/ui/topic/body/DetailsBlock.java`
+  - NativeDo TL_pageBlockDetails/BlockDetailsCell port: currentBlock.open state, arrow at 18dp, title x=50dp, 39dp minimum header, divider, natural title height, AnimatedArrowDrawable toggle, child-owned spacing, and top-level embedded ViewGroup with nested canvas fallback. Discourse CookedPostBlock children replace WebpageAdapter rows; details-wide rail and BlockDetailsBottom spacer remain omitted; details: docs/topic-detail-rewrite.md.
+- `app/src/main/java/io/github/baba983/nativedo/ui/topic/body/HeadingBlock.java`
+  - NativeDo heading block corresponding to ArticleViewer BlockTitleCell/BlockHeaderCell/BlockSubheaderCell with local Discourse heading levels; it inherits the upstream textY=dp(8)/vertical dp(16) text-cell padding from TextLayoutBlock instead of adding an extra local 18dp top gap, and maps Discourse h1/h2/h3+ to ArticleViewer-style 23dp/20dp/17dp heading text sizes while still rendering through one NativeDo HeadingBlock class rather than separate adapter row types.
+- `app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ImageBlock.java`
+  - NativeDo ArticleViewer.BlockPhotoCell port using ImageReceiver: aspect/max-height measurement, 18dp caption inset, width-minus-36dp layout, 8dp non-first/image-caption/bottom spacing, ArticleTextLayout caption, loading placeholder/RadialProgress2, and URL-keyed PhotoViewer source bounds. Top-level blocks embed a View; nested blocks use canvas fallback. OMITTED Telegram media models and DownloadController progress/cancel; details: docs/topic-detail-rewrite.md.
+- `app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ListBlock.java`
+  - NativeDo ArticleViewer BlockListItem/BlockOrderedListItem port: measured marker StaticLayouts and selection prefixes, top-level-only 10dp first padding, 8dp row bottom, marker/text x from 18+6dp plus max marker width, trailing 18dp, and nested indents of 12dp unordered/20dp ordered. Top-level lists embed a ViewGroup; nested lists use canvas fallback. CookedPostBlock children replace exact RecyclerView holders; details: docs/topic-detail-rewrite.md.
+- `app/src/main/java/io/github/baba983/nativedo/ui/topic/body/OneboxBlock.java`
+  - NativeDo ChatMessageCell link-preview port over OneboxPreview: ReplyMessageLine.TYPE_LINK chrome, ButtonBounce(2,2)/0.01 scale, selector/hit bounds, 48dp small-image branch, 4/6-line title/description limits, force-small/large ordering, RTL geometry, and 2.66dp large-media tail. Uses ArticleTextLayout/spoiler state and URL PhotoViewer for large media. OMITTED MessageObject/TLRPC.WebPage, CTA and small-thumbnail PhotoViewer; details: docs/topic-detail-rewrite.md.
+- `app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ParagraphBlock.java`
+  - NativeDo paragraph block corresponding to ArticleViewer.BlockParagraphCell, backed by TextLayoutBlock.
+- `app/src/main/java/io/github/baba983/nativedo/ui/topic/body/PollBlock.java`
+  - NativeDo ChatMessageCell poll port (forced_exact animation/drawing/gesture) over Discourse PollOption. Keeps PollButton fields, 18dp inset, selector cancellation, percent-before-title, remainder normalization, 5dp bars, 300ms transition, CheckBoxBase and selectable rich text. Votes use TopicViewModel POST /polls/vote; option voter pages are lazy. OMITTED TLRPC media/downloads, voter avatars, quiz/timer/todo and number-poll voter UI; details: docs/topic-detail-rewrite.md.
+- `app/src/main/java/io/github/baba983/nativedo/ui/topic/body/QuoteBlock.java`
+  - NativeDo ArticleViewer.BlockBlockquoteCell port: 18-20dp rail, 14dp text inset, 8dp top/title-body/bottom spacing, nested level continuation, separate selectable title/body layouts, active child touch streams and nested PhotoViewer bounds. Top-level quotes embed a ViewGroup; nested quotes use canvas fallback. Discourse data-topic/data-post expansion routes through TopicViewModel; ChatMessageCell rounded ReplyMessageLine chrome is omitted; details: docs/topic-detail-rewrite.md.
+- `app/src/main/java/io/github/baba983/nativedo/ui/topic/body/RuleBlock.java`
+  - NativeDo divider block corresponding to ArticleViewer.BlockDividerCell; keeps upstream full-width 18dp measured cell and centered rounded bar from one-third to two-thirds of the available width, so it opts out of the normal 18dp text-block horizontal inset.
+- `app/src/main/java/io/github/baba983/nativedo/ui/topic/body/SpoilerTextLayout.java`
+  - NativeDo helper for inline text spoiler drawing and tap-to-reveal over StaticLayout-backed body text. It follows SpoilersTextView/SpoilersClickDetector semantics around SpoilerEffect collection, clipping, ripple reveal, click sound, and TextStyleSpan.FLAG_STYLE_SPOILER_REVEALED state, while omitting TextView-specific padding/editor/animated-emoji plumbing and all SpoilerEffect2 media masking.
+- `app/src/main/java/io/github/baba983/nativedo/ui/topic/body/TableBlock.java`
+  - NativeDo BlockTableCell/TableLayout port: standard cells map to TL_pageTableCell with rowspan/colspan; top-level tables use HorizontalScrollView padding 18dp, listY/bottom 8dp, viewport-minus-36dp scroll checks and clipped selection. Inline cells keep BuiltText/ArticleLinkPressState; mixed CookedPostBlock cells use recursive fallback and receive ACTION_CANCEL on horizontal takeover. Exact mixed-cell adapter-row parity is omitted; details: docs/topic-detail-rewrite.md.
+- `app/src/main/java/io/github/baba983/nativedo/ui/topic/body/TextLayoutBlock.java`
+  - ArticleViewer-derived StaticLayout base (forced_exact measurement/drawing/gesture): dp(8)/dp(16) geometry, ArticleTextLayout spacing 1.0+4dp without font pad, Emoji ALIGN_BASELINE, merged TextStyleSpan segments, post-layout inline receivers, persistent spoiler state, and ArticleLinkPressState wider-span/custom-bounds hit testing. NativeDo PostBodyTextBuilder supplies Discourse rich text; details: docs/topic-detail-rewrite.md.
+- `app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicDateCell.java`
+  - Date-only NativeDo port of ChatActionCell aligned to 12.9.0 custom-date layout and service drawing. Keeps maxWidth=width-30dp, textY=7dp, measured height=textHeight+14dp, the 8dp/4dp/6dp/11dp single-line action path, Theme chatAction background and darken paints, service shader matrix, a single translucent service-color contrast overlay for light wallpaper shader cases, bold service text, 75% floating alpha, and floating top clip. Telegram message actions, gifts, stories, peers, multiline action paths, and MTProto branches are omitted.
+- `app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicFooterCell.java`
+  - Small centered topic footer/retry row now subclasses the vendored Telegram TextInfoPrivacyCell and keeps NativeDo retry/end/empty click binding.
+- `app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicHeaderCell.java`
+  - NativeDo topic header row with Telegram/ArticleViewer-style StaticLayout measurement/drawing: the title and metadata are measured dynamically instead of using fixed child offsets, run through Emoji.replaceEmoji with the active TextPaint metrics, use ArticleViewer's default StaticLayout line spacing (extra dp(4), multiplier 1.0, includePad=false), and scale from SharedConfig.fontSize while binding Discourse topic title, counts, and tags.
+- `app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicPostCell.java`
+  - ChatMessageCell-shaped BaseCell (forced_exact measurement/drawing/gesture) over Discourse Post/PostBodyBlock. Reactions: 26dp height, 34dp min/36dp rail item, 30dp icon, 2/4dp gaps, 250ms CLIP_PROGRESS=.25 enter, 1500ms press with >.8 release/150ms cancel, LONG_PRESS/2x slop, and 34dp/350ms ONLY_MOVE. Keeps reply/menu arbitration, nested view/canvas split, slidingOffsetX, search and URL PhotoViewer bounds. Reply footer keeps the 24dp/+17dp recent-avatar stack and reserves up to three neutral avatar circles when Discourse provides a reply count without participant identities; fetched participants replace those slots in place. Post chrome and PostBodyBlock paints scale from SharedConfig.fontSize while preserving relative hierarchy. OMITTED MTProto/full Lottie/particle/window stack; see docs/topic-detail-rewrite.md.
+- `telegram/src/main/java/me/vkryl/core/reference/ReferenceCreator.java`
+  - Auto-registered unmanifested compile dependency (31 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/me/vkryl/core/reference/ReferenceList.java`
+  - Auto-registered unmanifested on-disk source (294 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified.
+- `telegram/src/main/java/me/vkryl/core/reference/ReferenceUtils.java`
+  - Auto-registered unmanifested on-disk source (156 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified.
+- `telegram/src/main/java/org/telegram/messenger/AccountInstance.java`
+  - Auto-registered unmanifested compile dependency (65 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/messenger/AndroidUtilities.java`
+  - NativeDo utility subset with upstream-shaped helpers. In addition to the existing cache, insets, vibration, and font host wiring, it carries the pinned Theme closure for drawable/background color extraction, HSV conversion, file copy, wallpaper rotation, sharing directories, color distance, scaled bitmaps, and wall-character validation. ActionBarMenuSlider and OtherDocumentPlaceholderDrawable use host fallbacks for global blur capture and file-type thumbnails; the blur fallback returns a valid transparent bitmap because NativeDo has no global blur-capture owner. Null-context/bootstrap fallbacks remain intentional NativeDo wiring; unrelated AndroidUtilities subsystems are still omitted.
+- `telegram/src/main/java/org/telegram/messenger/ApplicationLoader.java`
+  - Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires.
+- `telegram/src/main/java/org/telegram/messenger/AutoDeleteMediaTask.java`
+  - Auto-registered unmanifested on-disk source (123 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified.
+- `telegram/src/main/java/org/telegram/messenger/BaseController.java`
+  - Auto-registered unmanifested compile dependency (52 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/messenger/Bitmaps.java`
+  - Auto-registered unmanifested on-disk source (134 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified.
+- `telegram/src/main/java/org/telegram/messenger/BotWebViewVibrationEffect.java`
+  - Copied verbatim from pin. Restores ItemOptions APP_ERROR haptic feedback without pulling Telegram Mini App state or UI.
+- `telegram/src/main/java/org/telegram/messenger/BringAppForegroundService.java`
+  - Auto-registered unmanifested compile dependency (29 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/messenger/BuildVars.java`
+  - Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires.
+- `telegram/src/main/java/org/telegram/messenger/ChatObject.java`
+  - Auto-registered unmanifested compile dependency (42 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/messenger/CodeHighlighting.java`
+  - Vendored for ArticleViewer A7 BlockPreformattedCell syntax highlighting (CodeHighlighting.getHighlighted + codelng.gzip). Exact pin copy at global pin 12.9.0; Theme key_code_* and ApplicationLoader assets host wiring already present.
+- `telegram/src/main/java/org/telegram/messenger/DialogObject.java`
+  - Auto-registered unmanifested compile dependency (35 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/messenger/DispatchQueuePriority.java`
+  - Runtime queue shim, not a port. It routes priorities to Utilities.globalQueue and exposes no-op pause/resume host APIs for pinned HwEmojis because the shared NativeDo queue cannot be suspended for one owner; upstream owns a real priority queue pool in the root org.telegram package.
+- `telegram/src/main/java/org/telegram/messenger/DocumentObject.java`
+  - Auto-registered unmanifested compile dependency (27 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/messenger/DownloadController.java`
+  - NativeDo download-controller compatibility surface. The two-argument loading observer overload delegates to the existing host observer API so pinned document placeholders compile; Telegram account/download business remains unported.
+- `telegram/src/main/java/org/telegram/messenger/Emoji.java`
+  - NativeDo Emoji shim preserving EmojiDrawable/EmojiSpan/EmojiSpanRange and replaceEmoji/parseEmojis APIs used by ArticleViewer/topic text. Keeps the upstream-shaped char parser, int[] emojiOnly, alignment/scale/minusLimit/span cap/exception guards, TextPaint metrics, baseline/bottom bounds and TextSelectionBoundsProvider while drawing system-font emoji. OMITTED Telegram atlas, EmojiData, recent/restricted and animated emoji pipelines.
+- `telegram/src/main/java/org/telegram/messenger/ExtendedBitmapDrawable.java`
+  - Auto-registered unmanifested compile dependency (32 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/messenger/FileLoadOperation.java`
+  - Auto-registered unmanifested on-disk source (223 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified.
+- `telegram/src/main/java/org/telegram/messenger/FileLoadOperationStream.java`
+  - Auto-registered unmanifested compile dependency (12 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/messenger/FileLoader.java`
+  - Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires.
+- `telegram/src/main/java/org/telegram/messenger/FileLoaderPriorityQueue.java`
+  - Auto-registered unmanifested compile dependency (75 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/messenger/FileLog.java`
+  - Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires.
+- `telegram/src/main/java/org/telegram/messenger/FilePathDatabase.java`
+  - Auto-registered unmanifested compile dependency (79 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/messenger/FileRefController.java`
+  - Auto-registered unmanifested compile dependency (49 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/messenger/FileStreamLoadOperation.java`
+  - Auto-registered unmanifested compile dependency (41 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/messenger/FileUploadOperation.java`
+  - Auto-registered unmanifested compile dependency (73 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/messenger/GenericProvider.java`
+  - Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires.
+- `telegram/src/main/java/org/telegram/messenger/ImageLoader.java`
+  - Adds HttpImageDownloader SPI: when the host app registers a downloader, HttpFileTask and HttpImageTask delegate the transfer to it; otherwise the upstream HttpURLConnection path runs verbatim. Lets :app handle product concerns (auth cookies, Cloudflare clearance, UA, Referer) via OkHttp interceptors without leaking that knowledge into vendored code. NativeDo also treats URL paths ending in .svg/.svgz as IMAGE_TYPE_SVG so Discourse image-backed avatar flairs render through SvgHelper instead of falling through to BitmapFactory. Animated CSS-keyframes SVGs are routed to NativeDo's AnimatedSvgDrawable before falling back to the static SvgHelper bitmap path.
+- `telegram/src/main/java/org/telegram/messenger/ImageLocation.java`
+  - Byte-identical to global pin 12.9.0. Account-scoped getForUserOrChat/getForUser/getForChat and pin photo-location body restored; host TLRPC stubs provide fromMessage peers and rich_message fields used by getStrippedKey.
+- `telegram/src/main/java/org/telegram/messenger/ImageReceiver.java`
+  - Byte-identical to global pin 12.9.0. Host compile surface filled: AnimatedEmojiSpan.InvalidateHolder, AnimatedEmojiDrawable add/removeView stubs, ExoPlayer Log shim, TLRPC User.fromMessage* / Message.rich_message / TL_inputPeerUserFromMessage. Previous android.util.Log swap dropped (unused import at pin).
+- `telegram/src/main/java/org/telegram/messenger/LiteMode.java`
+  - Auto-registered unmanifested on-disk source (350 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified.
+- `telegram/src/main/java/org/telegram/messenger/LocaleController.java`
+  - NativeDo locale shim for vendored UI: exposes isRTL, getString/formatString/plural/date helpers, the pinned formatShortNumber implementation used by ReactionTabHolderView-style counters, formatDuration(int), getCurrentLocale(), getTranslitString() pass-through, and a minimal getCurrentLocaleInfo().shortName surface used by TextSelectionHelper translate target propagation plus PhotoViewer's upstream-shaped PhotoCountView and PhotoPickerPhotoCell accessibility text. formatDateChat keeps the pinned 365-day/current-year branch and formats through merged chatDate/chatFullDate resource patterns. Full Telegram locale loading and account-specific i18n pipeline are not ported.
+- `telegram/src/main/java/org/telegram/messenger/LruCache.java`
+  - Added public trimToSize(int) overload for ImageLoader.onLowMemory().
+- `telegram/src/main/java/org/telegram/messenger/MediaController.java`
+  - Auto-registered unmanifested on-disk source (370 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified.
+- `telegram/src/main/java/org/telegram/messenger/MediaDataController.java`
+  - Auto-registered unmanifested compile dependency (67 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/messenger/MessageObject.java`
+  - Auto-registered unmanifested on-disk source (329 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified.
+- `telegram/src/main/java/org/telegram/messenger/MessagesController.java`
+  - NativeDo compatibility shim, not a Telegram source port. Besides compile surfaces used by vendored UI, it provides the single-account browser policy facade required by pinned WebBrowserSettings, persisting the local TL_webBrowserSettings model without MTProto sync. Its updateTimerProc keeps the pinned scheduled auto-night branch while MainActivity supplies the missing tgnet foreground tick. Do not treat the rest of the file as vendored or upstream-shaped implementation code.
+- `telegram/src/main/java/org/telegram/messenger/MessagesStorage.java`
+  - Auto-registered unmanifested compile dependency (20 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/messenger/NotchInfoUtils.java`
+  - Vendored as dependency of ProfileGooeyView
+- `telegram/src/main/java/org/telegram/messenger/NotificationCenter.java`
+  - Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires.
+- `telegram/src/main/java/org/telegram/messenger/SaveToGallerySettingsHelper.java`
+  - Auto-registered unmanifested compile dependency (23 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/messenger/ScreenReceiver.java`
+  - Upstream screen on/off receiver adapted to update ApplicationLoader.isScreenOn and post screenStateChanged without Telegram ConnectionsManager app-pause/network side effects.
+- `telegram/src/main/java/org/telegram/messenger/SecureDocument.java`
+  - Auto-registered unmanifested compile dependency (25 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/messenger/SecureDocumentKey.java`
+  - Auto-registered unmanifested compile dependency (12 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/messenger/SendMessagesHelper.java`
+  - Auto-registered unmanifested compile dependency (59 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/messenger/SharedConfig.java`
+  - Compile shim, not a port: no Telegram source copied. It provides persisted animation-reduction, global topic font size, performance, search, and Instant View preferences used by vendored and NativeDo UI; browser open policy moved to the local TL_webBrowserSettings model in MessagesController. Do not treat this as vendored or upstream-shaped implementation code.
+- `telegram/src/main/java/org/telegram/messenger/SvgHelper.java`
+  - Real SAX SVG parser; getBitmap(InputStream) drives Instant View SVG. Copied from upstream (keeps the Larva Labs / Apache-2.0 header); replaces an 87-line compile stub whose getBitmap(...) returned null and rendered IV SVGs blank. Host-wiring only: all deps present in :telegram, plus localName-empty SAX compatibility falls back to qName so Discourse sprite symbols parse outside upstream's Android runtime assumptions. Real deps DrawingInBackgroundThreadDrawable and wallpaper/WallpaperGiftPatternPosition were vendored verbatim alongside it.
+- `telegram/src/main/java/org/telegram/messenger/Timer.java`
+  - Auto-registered unmanifested compile dependency (24 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/messenger/TranslateController.java`
+  - Auto-registered unmanifested compile dependency (27 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/messenger/UserConfig.java`
+  - Auto-registered unmanifested compile dependency (70 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/messenger/UserObject.java`
+  - Auto-registered unmanifested compile dependency (59 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/messenger/Utilities.java`
+  - exact@12.9.0 pure-Java surface with no Telegram JNI: native image/crypto/dir methods replaced by Java fallbacks/no-ops (stack blur, copyBitmaps, averageBitmapColor, libyuvARGBSaleBitmap Canvas scale, javax.crypto PBKDF2, isGoodPrime always true). fastRandom uses vendored Xoroshiro128PlusRandom. Not eligible for clean FF without JNI.
+- `telegram/src/main/java/org/telegram/messenger/VideoEditedInfo.java`
+  - Auto-registered unmanifested compile dependency (70 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/messenger/WebFile.java`
+  - Auto-registered unmanifested compile dependency (32 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/messenger/XiaomiUtilities.java`
+  - Pinned MIUI detection and permission surface used by EditTextBoldCursor handle tinting. System-property lookup is supplied by the local AndroidUtilities host; permission-manager methods remain upstream-shaped compatibility helpers.
+- `telegram/src/main/java/org/telegram/messenger/browser/Browser.java`
+  - Browser URL dispatch for NativeDo: openUrl order is in-app (MessagesController.isWebBrowserOpenInApp over local TL_webBrowserSettings) then androidx Custom Tabs when enabled, then ACTION_VIEW. MainActivity binds/unbinds Custom Tabs service.
+- `telegram/src/main/java/org/telegram/messenger/camera/CameraView.java`
+  - Compile-only stub for BottomSheet instanceof CameraView checks; no camera behavior ported.
+- `telegram/src/main/java/org/telegram/messenger/secretmedia/EncryptedFileInputStream.java`
+  - Auto-registered unmanifested compile dependency (85 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/messenger/time/SunDate.java`
+  - Copied verbatim for Theme auto-night sunrise/sunset scheduling.
+- `telegram/src/main/java/org/telegram/messenger/utils/BitmapsCache.java`
+  - NativeDo lightweight in-memory frame cache compatible with the upstream CacheOptions/Cacheable call surface. It does not implement Telegram's pcache2 disk format or native animation cache generation pipeline.
+- `telegram/src/main/java/org/telegram/messenger/utils/Choreographer60FpsContent.java`
+  - 60fps Choreographer throttle used by SpoilerEffect (12.8.1).
+- `telegram/src/main/java/org/telegram/messenger/utils/LeakDetector.java`
+  - No-op host stub for BottomSheet DEBUG_PRIVATE_VERSION leak tracking; full X-Core ReferenceMap detector not ported.
+- `telegram/src/main/java/org/telegram/messenger/utils/RectFMergeBounding.java`
+  - Pinned 12.9.0 rectangle merging utility used by TopicDetail's shared glass/frosted blur capture. Runtime code is upstream-exact; one source comment uses ASCII punctuation to match the local source policy.
+- `telegram/src/main/java/org/telegram/messenger/utils/ViewOutlineProviderImpl.java`
+  - Outline provider helpers copied verbatim from upstream. ActionBarPopupWindow imports it mirroring upstream's import region, but the popup body does not reference it (rounded corners come from the 9-patch background + clipPath in dispatchDraw); retained to satisfy the mirrored import and stay byte-aligned with upstream.
+- `telegram/src/main/java/org/telegram/messenger/video/VideoPlayerHolderBase.java`
+  - Background video-player holder copied verbatim from upstream; retained for ArticleViewer/PhotoViewer-facing video API compatibility.
+- `telegram/src/main/java/org/telegram/messenger/voip/VoIPService.java`
+  - Auto-registered unmanifested compile dependency (13 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/messenger/wallpaper/WallpaperGiftBitmapDrawable.java`
+  - Auto-registered unmanifested compile dependency (25 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/messenger/wallpaper/WallpaperGiftPatternPosition.java`
+  - Copied verbatim. Vendored as a dependency of the real SvgHelper SAX parser (gift-pattern <rect> element handling and the SvgResult.getGiftPatternPositions() return type). All deps already present in :telegram.
+- `telegram/src/main/java/org/telegram/tgnet/ConnectionsManager.java`
+  - Auto-registered unmanifested compile dependency (88 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/tgnet/TLObject.java`
+  - Auto-registered unmanifested compile dependency (16 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/tgnet/TLParseException.java`
+  - Copied verbatim as the pinned TL parsing exception required by the Theme data closure.
+- `telegram/src/main/java/org/telegram/tgnet/TLRPC.java`
+  - Minimal NativeDo TLRPC surface for vendored UI. In addition to PageBlock/RichText/WebPage/BotApp and ImageReceiver host fields, it now exposes the pinned Theme and WallPaper data shapes consumed by Theme.java. MTProto theme serialization/deserialization intentionally throws: remote transport and catalog behavior must cross ThemeBackend rather than the local tgnet stubs.
+- `telegram/src/main/java/org/telegram/tgnet/Vector.java`
+  - Copied verbatim as the pinned TL vector container required by Theme catalog data shapes.
+- `telegram/src/main/java/org/telegram/tgnet/tl/TL_account.java`
+  - Host-only TL_account surface for pinned WebBrowserSettings and Theme.java. Provides local browser settings plus the Theme install/save/upload request and response data shapes needed to compile the upstream Theme state machine. There is no MTProto serialize path; NativeDo theme transport must cross ThemeBackend.
+- `telegram/src/main/java/org/telegram/tgnet/tl/TL_stories.java`
+  - Auto-registered unmanifested compile dependency (21 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/ActionBar/ActionBar.java`
+  - NativeDo ActionBar subset. The 12.9.0 title/subtitle/additional-subtitle, back-button state/content description, title overlay, animated title, search, touch interception, lifecycle, canOpenMenu, and ActionMode API shapes are restored. ActionMode keeps a reduced NativeDo animation for the current consumers while exposing the upstream alpha factor contract. Theme refresh updates submenu text, icons, selectors, and backgrounds through the ActionBar resource provider. NativeDo retains the 23dp glass setupGlass/dispatchDraw surfaces and no-ChatAvatarContainer host branch. PhotoViewer overlay-title wiring keeps custom overlay children inside the status+bar bounds.
+- `telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java`
+  - 12.9.0 API-shaped NativeDo navigation host. Restores fragment-stack setters/removers/show/bring APIs, lifecycle/configuration/user-leave/low-memory forwarding, menu/key/touch dispatch, sheet/window/navigation-bar hooks, and two-argument theme rebuild while preserving predictive back, DrawerLayoutContainer, BottomSheetTabs, ActionBarSheet, and Discourse fragment stack wiring. Edge-to-edge fragments receive the pinned root-view WindowInsets listener while LayoutContainer applies the matching navigation-bar margin policy. Embeds the pinned ThemeAnimationSettings/StartColorsProvider interpolation, visible BottomSheet/AlertDialog ownership, notification locker, instant path, 200ms animator, deferred-after-navigation state machine, and hidden-fragment rebuild. Telegram preview, Stories, group calls, BackButtonMenu, and Telegram MainTabsActivity remain host-excluded.
+- `telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarMenu.java`
+  - NativeDo ActionBarMenu subset. The 9b50143d glassMode measurement and getItemsWidth geometry are preserved for ActionBar glass pill bounds, and the upstream ResourcesProvider overload is forwarded into menu items; unrelated Telegram menu features remain omitted.
+- `telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarMenuItem.java`
+  - NativeDo ActionBarMenuItem popup/search subset for PhotoViewer and menus: outside-touch/clipping behavior, offsets/translation anchoring, scroll reset, inner-item theme refresh, selector colors, popup_fixed_alert4 plus swipeback, stateful popup background tint, ResourcesProvider propagation, tinted addSubItem icons with Telegram's 196dp minimum width, and 1.5dp action-bar cursor. Platform popup animations are disabled like the host path. Unused Telegram menu surface is omitted.
+- `telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarMenuSlider.java`
+  - Pinned 12.9.0 slider implementation copied verbatim; NativeDo supplies its global blur API through AndroidUtilities host wiring.
+- `telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarMenuSubItem.java`
+  - Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires.
+- `telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarPopupWindow.java`
+  - Copied verbatim from pinned upstream. The local ActionBarMenuSubItem dependency is provided by the Telegram module host.
+- `telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarSheet.java`
+  - NativeDo top-level sheet host substantially adapted from BaseFragment.showAsSheet and BottomSheet right-transition structure. Keeps AttachedSheet lifecycle, ActionBarLayout ownership, scrim/window drawing, and open/dismiss animation while omitting Telegram activity/navigation integration.
+- `telegram/src/main/java/org/telegram/ui/ActionBar/AlertDialog.java`
+  - NativeDo native port of Telegram AlertDialog. Uses the upstream single TransparentDialog window lifecycle and applies content plus final geometry in onCreate before first attach; the message surface follows upstream dialog background, width, title/message typography, item rows, custom-view focus handling, 52dp button rail with 40dp actions, theme keys, and RLottie top-animation contract. Preserves loading/spinner, delayed show/dismiss, button dismissal policy, and the nullable getThemeDescriptions base contract used by ActionBarLayout; upstream blur, stars, spoiler/effects text, line progress, and secondary button variants remain omitted.
+- `telegram/src/main/java/org/telegram/ui/ActionBar/BackDrawable.java`
+  - Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires.
+- `telegram/src/main/java/org/telegram/ui/ActionBar/BaseFragment.java`
+  - NativeDo navigation fragment subset with upstream-shaped clearViews lifecycle, visibleDialog ownership, show/dismiss replacement, attached-sheet routing, onPause/onBeginSlide/onDestroy cleanup, dismissal callbacks, and get/set accessors supporting ActionBarLayout theme animation. The pinned edge-to-edge contract is restored: drawEdgeNavigationBar follows isSupportEdgeToEdge, system-bar insets dispatch through onInsets, and bottomInset remains queryable. clearViews preserves the fragment ViewModelStore while releasing the host PhotoViewer wrapper with the old View tree. Telegram account, menu, story, preview, and full transition infrastructure remains omitted.
+- `telegram/src/main/java/org/telegram/ui/ActionBar/BottomSheet.java`
+  - Copied verbatim from pinned upstream. Replaces the earlier NativeDo Dialog-backed subset so sheet container layout, dim/back drawable, swipe-dismiss physics, keyboard/status/navigation-bar handling, and nested ActionBar behavior stay upstream-shaped.
+- `telegram/src/main/java/org/telegram/ui/ActionBar/BottomSheetTabDialog.java`
+  - Auto-registered unmanifested on-disk source (183 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified.
+- `telegram/src/main/java/org/telegram/ui/ActionBar/BottomSheetTabs.java`
+  - WebTabData.destroy also destroys the retained WebView, matching upstream ownership. NativeDo keeps a BrowserSheet bridge while restoring upstream WebTabData.props for Browser/WebView tab state migration. The URL-shaped tryReopenTab(String) path is restored for ArticleViewer CachedWeb tabs so repeated links resume the saved WebView and scroll state instead of creating duplicate sheets.
+- `telegram/src/main/java/org/telegram/ui/ActionBar/BottomSheetTabsOverlay.java`
+  - Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires.
+- `telegram/src/main/java/org/telegram/ui/ActionBar/BrowserSheet.java`
+  - SPI abstract BrowserSheet in :telegram so BottomSheetTabs does not depend on :app. Host impl under io.github.baba983.nativedo.ui.browser.BrowserSheet is planned (Browser/IV rollup). Bridge shape follows ArticleViewer.Sheet / BottomSheetTabs browser-tab integration; only methods called by BottomSheetTabs are declared.
+- `telegram/src/main/java/org/telegram/ui/ActionBar/DrawerLayoutContainer.java`
+  - NativeDo root keeps Telegram's allowDrawContent draw gate for fullscreen viewers while omitting drawer gestures and menu behavior.
+- `telegram/src/main/java/org/telegram/ui/ActionBar/FloatingActionMode.java`
+  - Compact NativeDo bridge for topic text selection: keeps upstream ActionMode.Callback2 + FloatingToolbar contract, invalidateContentRect/updateViewLocationInWindow/hide/finish lifecycle shape, and now mirrors Telegram's FloatingToolbarVisibilityHelper states for hide requests, moving content rects, out-of-bounds content, and window-focus changes. Still omits NotificationCenter account-scoped reactions and full display/window metric machinery.
+- `telegram/src/main/java/org/telegram/ui/ActionBar/FloatingToolbar.java`
+  - NativeDo text-selection toolbar: keeps upstream setMenu/setOnMenuItemClickListener/setContentRect/show/updateLayout/hide/dismiss API used by FloatingActionMode, and now mirrors Telegram's main-panel plus overflow-panel interaction with PopupWindow positioning, show/open animations, 48dp action rows, 12dp rounded toolbar background, localized back-row overflow panel chrome, label-measured overflow width, animated-vector overflow/back arrows from upstream resources, and layout-change relayout while showing. Adds the five-argument blurred-background constructor plus premium-lock/quote-visibility callback surface required by the restored EditTextBoldCursor; blur rendering and full touchable-region plumbing remain host omissions.
+- `telegram/src/main/java/org/telegram/ui/ActionBar/INavigationLayout.java`
+  - NativeDo navigation subset with the pinned ThemeAnimationSettings, StartColorsProvider, and animateThemedValues overload contract restored for ActionBarLayout and future picker/editor hosts.
+- `telegram/src/main/java/org/telegram/ui/ActionBar/MenuDrawable.java`
+  - Pinned MenuDrawable used by theme preview/editor chrome; exact copy.
+- `telegram/src/main/java/org/telegram/ui/ActionBar/RoundVideoShadow.java`
+  - Copied verbatim for Theme chat-resource shadow initialization.
+- `telegram/src/main/java/org/telegram/ui/ActionBar/Theme.java`
+  - Pinned 12.9.0 Theme.java is the implementation baseline: complete built-in themes, color keys/fallbacks, accent model, local theme parsing/import/export state, wallpaper state/rendering, auto-night scheduling/sensor logic, and resource factories. Modified for NativeDo through explicit ThemeHost and ThemeBackend boundaries; remote catalog/install/upload, pattern lookup, remote wallpaper lookup, and current-theme refresh all cross the backend. Capability checks prevent local editor saves and imported Telegram remote metadata from invoking an unavailable backend; direct remote catalog operations remain explicit failures. installLocalThemeFile extracts the pinned non-temporary registration block so NativeDo can register an imported file before handing normal apply/animation to ActionBarLayout. Other deltas are a ThemePreview background-position interface plus exclusion of Telegram audio-visualizer and VoIP wave helpers because NativeDo has no corresponding media/call subsystem. Navigation theme animation and the NativeDo local picker/editor/import-export host are active.
+- `telegram/src/main/java/org/telegram/ui/ActionBar/ThemeColors.java`
+  - exact@12.9.0 with NativeDo default wallpaper/service colors and link/reply panel host colors retained (key_chat_wallpaper, service backgrounds, link/reply panel). host_wiring_only; upstream Telegram brand colors not adopted.
+- `telegram/src/main/java/org/telegram/ui/ActionBar/ThemeDescription.java`
+  - Exact ThemeDescription refresh engine: FLAG_* constants, constructors, setColor/processViewColor, ThemeDescriptionDelegate, getSetColor/setAnimatedColor. Host wiring omits Telegram-only instanceof branches for unavailable widgets and uses ResourcesProvider.getColorOrNull. ActionBarLayout now owns the pinned animation pass and visible-tree Colorable refresh; no NativeDo listClasses updateColors extension remains.
+- `telegram/src/main/java/org/telegram/ui/Adapters/FiltersView.java`
+  - Minimal MediaFilterData shell for FragmentSearchField; list UI omitted until filters are wired.
+- `telegram/src/main/java/org/telegram/ui/Adapters/PaddedListAdapter.java`
+  - Byte-identical upstream adapter used by the topic mention container to represent the transparent host-height padding row and forward wrapped-adapter updates without index drift.
+- `telegram/src/main/java/org/telegram/ui/ArticleViewer.java`
+  - CachedWeb recreates destroyed renderers from the saved URL. Epic closed (B21 + A3/A4-partial/A6/A7) against global pin 12.9.0. Host-wired IV/browser sheet: Sheet/BottomSheetTabs lifecycle, WebBookmarks, local MessagesController browser-policy facade, WebView file chooser, selection-mode dismiss gating, pin-shaped sheet radii, PageLayout fallback, capturePreviewBitmap, ActionBarLayout dismiss. Parent-driven surface: IArticleViewer state; DrawingText bounds/spoilers/attach/liveDrawingTexts/MultiLayoutTypingAnimator.Block; Block* attach lifecycle; EmbedPost/Slideshow a11y; Resources paints incl. Heading1-6; getText/createLayoutForText with TL_textSpoiler; quoteLevels drawQuoteLines; CodeHighlighting preformatted; table long-press selection; setIsLocal transitions. Embed/Collage/Slideshow stay non-static (pin-matched, A5 wontfix). Historical vendored_at pin is legacy reference only — file is multi-slice host-wired, not FF-eligible. See docs/vendor-articleviewer-plan.md; TableLayout 12.9 CellText: DrawingText implements CellText; BlockTableCell onLayoutChild/setX path aligned.
+- `telegram/src/main/java/org/telegram/ui/CachedStaticLayout.java`
+  - Lightweight NativeDo subset for SpoilerEffect.renderWithRipple(...): wraps StaticLayout and exposes upstream method names used by the patched-layout path while omitting RenderNode/emoji cache invalidation.
+- `telegram/src/main/java/org/telegram/ui/Cells/AboutLinkCell.java`
+  - Pinned AboutLinkCell measurement, link hit paths, long-press menu, three-line collapse, spring expansion, dynamic height and accessibility are retained. Host wiring accepts CharSequence so Discourse HTML spans survive, uses the available Android Linkify path instead of MessageObject.addLinks, routes all URL spans through didPressUrl, implements Theme.Colorable, gives the more label a solid themed backing, and suppresses collapse gradients when text does not require expansion. Drawing is therefore intentionally not forced-exact.
+- `telegram/src/main/java/org/telegram/ui/Cells/BaseCell.java`
+  - Copied verbatim. Base class for all Telegram cells; provides RippleDrawableSafe (used by Switch), setDrawableBounds helpers, long-press detection, and RenderNode caching. All deps (SizeNotifierFrameLayout.IViewWithInvalidateCallback, SharedConfig) present in :telegram.
+- `telegram/src/main/java/org/telegram/ui/Cells/ChatActionCell.java`
+  - Compile-only stub; full Telegram measurement/drawing not ported.
+- `telegram/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java`
+  - Stub implementing IMessageCell for RecyclerAnimationScrollHelper; full ChatMessageCell not ported.
+- `telegram/src/main/java/org/telegram/ui/Cells/CheckBoxCell.java`
+  - Auto-registered unmanifested on-disk source (636 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified.
+- `telegram/src/main/java/org/telegram/ui/Cells/CollapseTextCell.java`
+  - For RecyclerListView setSections type filter.
+- `telegram/src/main/java/org/telegram/ui/Cells/DialogCell.java`
+  - Compile/runtime type shim providing DialogCell.FixedWidthSpan for pin SimpleTextView. Full DialogCell UI is not ported under :telegram.
+- `telegram/src/main/java/org/telegram/ui/Cells/DialogRadioCell.java`
+  - Copied verbatim. Used by the WebBrowserSettings search-engine picker dialog (and other radio dialogs). All deps (RadioButton, LayoutHelper, Theme, AndroidUtilities, LocaleController) are vendored.
+- `telegram/src/main/java/org/telegram/ui/Cells/FixedWidthSpan.java`
+  - FixedWidthSpan extracted from upstream DialogCell.FixedWidthSpan inner class to a top-level class. ReplacementSpan that reserves a fixed pixel width for SimpleTextView. Implementation mirrors the inner class; package/path is host layout.
+- `telegram/src/main/java/org/telegram/ui/Cells/GraySectionCell.java`
+  - exact@12.9.0 TextViewEmojis. createThemeDescriptions omitted (ThemeDescription host stub empty).
+- `telegram/src/main/java/org/telegram/ui/Cells/IMessageCell.java`
+  - exact@12.9.0 + host-slim reactions surface: getReactionsLayout/didPressReactionFromLayout use Object instead of ReactionsLayoutInBubble/TLRPC.ReactionCount (reactions package not vendored).
+- `telegram/src/main/java/org/telegram/ui/Cells/PatternCell.java`
+  - Pinned PatternCell for local theme wallpaper pattern selection; exact copy.
+- `telegram/src/main/java/org/telegram/ui/Cells/PhotoEditToolCell.java`
+  - Photo/editor support cell copied verbatim from upstream; kept for PhotoViewer/photo-picker API surface compatibility.
+- `telegram/src/main/java/org/telegram/ui/Cells/PhotoPickerPhotoCell.java`
+  - Photo picker grid cell copied verbatim from upstream to replace the former NativeDo stub; retained as PhotoViewer/photo-picker/editor support infrastructure.
+- `telegram/src/main/java/org/telegram/ui/Cells/RadioColorCell.java`
+  - Verbatim upstream. Used by the WebBrowserSettings search-engine picker dialog (and other radio dialogs). Deps RadioButton/LayoutHelper/Theme/AndroidUtilities/LocaleController are all vendored. Replaces an earlier hand-rolled subset that used android.widget.RadioButton and a no-op setCheckColor.
+- `telegram/src/main/java/org/telegram/ui/Cells/TextCell.java`
+  - Faithful subset used by UniversalAdapter VIEW_TYPE_TEXT and cast in WebBrowserSettings.onClick. Keeps upstream public API the adapter/fragments call: setText/setTextAndIcon(res|Drawable)/setTextAndValue/setTextAndValueAndIcon(res|Drawable)/setValue/setColors(icon,text)/getTextView/getImageView, plus the static applyNewSpan. Rendering (icon + title + subtitle + right value, dp(50)/dp(64) height, 68/20 divider inset) ported from the NativeDo UniversalCells.TextCell layout rather than upstream's SimpleTextView/AnimatedTextView path. OMITTED: Switch checkbox, RLottieImageView/RLottieDrawable animation, AnimatedEmojiDrawable sticker values, loading shimmer, SettingsActivity colorful-icon background, FilterCreateActivity.NewSpan (applyNewSpan is pass-through), spoilers value view, RTL mirroring.
+- `telegram/src/main/java/org/telegram/ui/Cells/TextCheckCell.java`
+  - Faithful subset used by UniversalAdapter VIEW_TYPE_CHECK and cast in WebBrowserSettings.onClick. Keeps upstream public API the adapter/fragments call: itemId field, setTextAndCheck/setChecked/isChecked/setDivider/setDrawCheckRipple/setHeight/setTypeface/setColors/setEnabled(boolean,List<Animator>), and the setBackgroundColorAnimated radial reveal (CubicBezierInterpolator.EASE_OUT, 240ms, ANIMATION_PROGRESS property, lastTouchX-anchored circle) used by the in-app-browser toggle. OMITTED: org.telegram.ui.Components.Switch (available but intentionally replaced by a plain track+thumb SwitchView using key_switchTrack/key_switchTrackChecked; AvatarSpan, RLottieImageView colorful icon, valueTextView multiline/value rows, setBackgroundColorAnimatedReverse, Switch.setOverrideColor crossfade, RTL mirroring.
+- `telegram/src/main/java/org/telegram/ui/Cells/TextColorThemeCell.java`
+  - Auto-registered unmanifested compile dependency (81 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Cells/TextDetailCell.java`
+  - NativeDo profile subset of TextDetailCell: 3-arg setTextAndValue, combined/value-first accessibility, fixed 60dp measure, 20dp divider inset, 17dp padding, VIEW_TYPE=10002 and non-clickable UItemFactory. Plain TextView replaces Spoilers/Links. OMITTED image/right-value/emoji/multiline/link-hit/color hooks and upstream overloads; supersedes the deprecated app ProfileDetailCell.
+- `telegram/src/main/java/org/telegram/ui/Cells/TextInfoPrivacyCell.java`
+  - Faithful subset used by UniversalAdapter VIEW_TYPE_SHADOW: keeps upstream setText (double-newline AbsoluteSizeSpan), setFixedSize/getFixedSize, onMeasure fixedSize -1/0/n branches, top/bottom padding, getText/getTextView/setTextGravity/setEnabled. OMITTED: LinkSpanDrawable.LinksTextView (tappable links / emoji) replaced by a plain TextView, so getTextView returns TextView not LinksTextView; key_windowBackgroundWhiteGrayText4 -> key_windowBackgroundWhiteGrayText (key not in local Theme).
+- `telegram/src/main/java/org/telegram/ui/Cells/TextSelectionHelper.java`
+  - NativeDo ArticleTextSelectionHelper port (forced_exact drawing/gesture): ArticleSelectableView/TextLayoutBlock APIs, long-press/word selection, recycled cross-cell endpoints, row/custom-span hit tests, rounded paths/RTL handles, magnifier/haptics, multi-cell drag, edge auto-scroll, viewport clips and FloatingToolbar actions. NativeDo callbacks replace ArticleViewer wiring; ML Kit source detection and the full upstream hierarchy are omitted; details: docs/topic-detail-rewrite.md.
+- `telegram/src/main/java/org/telegram/ui/Cells/TextSettingsCell.java`
+  - Verbatim upstream except RLottieImageView replaced with android.widget.ImageView (RLottie is not vendored). Used by UniversalAdapter VIEW_TYPE_TEXT_SETTINGS. Deps (BackupImageView, CubicBezierInterpolator, LayoutHelper) are vendored.
+- `telegram/src/main/java/org/telegram/ui/Cells/ThemeCell.java`
+  - Copied verbatim from pinned upstream as the full-size local theme row with current-theme check, preview color, divider, options action, and accessibility semantics.
+- `telegram/src/main/java/org/telegram/ui/Cells/ThemeTypeCell.java`
+  - Copied verbatim from pinned upstream for auto-night mode rows.
+- `telegram/src/main/java/org/telegram/ui/Cells/ThemesHorizontalListCell.java`
+  - Pinned ThemesHorizontalListCell for local theme picker geometry, drawing, recycling, selection animation and long-press options. Host hook onThemeClick() lets NativeDo open TopicThemePreviewFragment instead of applying immediately; remote theme-document download/URL branches remain omitted until a remote catalog exists.
+- `telegram/src/main/java/org/telegram/ui/Charts/view_data/TransitionParams.java`
+  - Auto-registered unmanifested compile dependency (23 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/ChatActivity.java`
+  - Auto-registered unmanifested compile dependency (90 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/AlertsCreator.java`
+  - Host stub: showSimpleAlert real dialog; showAddBrowserException pin-shaped domain input for WebBrowserSettings; openUrl/processError still no-op.
+- `telegram/src/main/java/org/telegram/ui/Components/AnchorSpan.java`
+  - Auto-registered unmanifested compile dependency (35 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/AnimatedArrowDrawable.java`
+  - Auto-registered unmanifested on-disk source (139 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified.
+- `telegram/src/main/java/org/telegram/ui/Components/AnimatedColor.java`
+  - Auto-registered unmanifested on-disk source (178 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified.
+- `telegram/src/main/java/org/telegram/ui/Components/AnimatedEmojiDrawable.java`
+  - Host stub used by WebBrowserSettings favicon compatibility and EditTextEffects emoji-cache selection. Adds the pinned enter-view cache-type API; animated emoji rendering remains unported.
+- `telegram/src/main/java/org/telegram/ui/Components/AnimatedEmojiSpan.java`
+  - Compile-only stub for animated emoji API surfaces used by ported UI. Added TextViewEmojis as a plain TextView subclass for BottomSheetWithRecyclerListView title/header checks; no animated emoji rendering is ported here.
+- `telegram/src/main/java/org/telegram/ui/Components/AnimatedFileDrawable.java`
+  - NativeDo keeps Telegram's AnimatedFileDrawable API surface for ImageReceiver but replaces upstream ffmpeg/JNI frame decoding with Android Movie-backed GIF decoding for URL-based Discourse animated avatars. Video/webm streaming and Telegram's full native decoder pipeline are intentionally not ported.
+- `telegram/src/main/java/org/telegram/ui/Components/AnimatedSvgDrawable.java`
+  - NativeDo-authored CSS-keyframes SVG runtime surface for Discourse avatar flairs. It extends the vendored AnimatedFileDrawable API but does not copy a same-name Telegram class.
+- `telegram/src/main/java/org/telegram/ui/Components/AnimatedTextView.java`
+  - exact@12.9.0 minus unused Checker Framework imports (not on classpath).
+- `telegram/src/main/java/org/telegram/ui/Components/AnimationProperties.java`
+  - exact@12.9.0 + host: CLIP_DIALOG_CELL_PROGRESS typed Property<MovableCell,Float> (not DialogCell); PHOTO_VIEWER_ANIMATION_VALUE omitted if present upstream — NativeDo PhotoViewer port surface.
+- `telegram/src/main/java/org/telegram/ui/Components/AttachableDrawable.java`
+  - Auto-registered unmanifested compile dependency (12 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/AudioPlayerAlert.java`
+  - NativeDo shim containing only upstream AudioPlayerAlert.ClippingTextViewSwitcher for SeekBarView. The full Telegram audio-player sheet, playlist, cast, and message/download business remain unported.
+- `telegram/src/main/java/org/telegram/ui/Components/AvatarDrawable.java`
+  - Structurally vendored AVATAR_TYPE_NORMAL path. Preserves upstream namePaint config, StaticLayout layout, dp(50) scale ratio, gradient shader caching, canvas save/translate/scale order, and drawCircle/drawRoundRect branch. Removed: all non-NORMAL avatar types and Theme.avatarDrawables icons, drawDeleted, customIconDrawable, isProfile, archivedAvatarProgress, rotate45Background, hasAdvancedGradient/GradientTools, needApplyColorAccent, Emoji.parseEmojis/replaceEmoji, all TLRPC setInfo overloads, setPeerColor, getNameColorNameForId, getProfile*ForId, getButton*/getIcon*ForId, and the Theme.ResourcesProvider parameter (NativeDo Theme.getColor takes no provider). Palette and background paint now go through Theme: Theme.keys_avatar_background[] and Theme.avatar_backgroundPaint match upstream wiring exactly. Added setRoundRadius(int[]) overload for legacy call sites; first element wins.
+- `telegram/src/main/java/org/telegram/ui/Components/BackgroundGradientDrawable.java`
+  - Auto-registered unmanifested compile dependency (40 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/BlurringShader.java`
+  - Auto-registered unmanifested on-disk source (1235 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified.
+- `telegram/src/main/java/org/telegram/ui/Components/Bulletin.java`
+  - NativeDo lightweight visible Bulletin subset. Keeps Telegram-style show/hide/isShowing/duration/delegate/container API shape for ArticleViewer, BottomSheet, topic feedback, and Theme auto-night notices, including a clickable action label used to open night-theme settings. Omits upstream Lottie layouts, spring physics, LaunchActivity/global-window routing, queueing, undo layouts, and advanced bottom-sheet/menu offset logic.
+- `telegram/src/main/java/org/telegram/ui/Components/BulletinFactory.java`
+  - NativeDo lightweight factory for the visible Bulletin subset. Preserves the existing ArticleViewer/BottomSheet/topic entry points and adds the pinned simple-bulletin action callback shape required by Theme auto-night settings notices. Upstream Lottie and complex layouts remain replaced by text plus simple drawn icons; global()/photoViewer() return no-op bulletins when no container is available.
+- `telegram/src/main/java/org/telegram/ui/Components/ChatActivityEnterTopView.java`
+  - Copied verbatim. Small upstream container for ChatActivityEnterView top reply/edit panels; TopicReplyComposerPanel uses it so the reply preview layers match Telegram's ChatActivity topView + replyLayout + clear button structure.
+- `telegram/src/main/java/org/telegram/ui/Components/ChatActivityEnterView.java`
+  - Auto-registered unmanifested compile dependency (38 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/ChatActivityEnterViewAnimatedIconView.java`
+  - Copied verbatim. This is Telegram's smile/keyboard/sticker/gif/voice/video state icon used by ChatActivityEnterView; TopicReplyComposerPanel now uses it for the emoji/keyboard button, backed by the local RLottieDrawable smile/keyboard fallback until the full Telegram lottie engine is ported.
+- `telegram/src/main/java/org/telegram/ui/Components/ChatAttachAlert.java`
+  - Auto-registered unmanifested compile dependency (10 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/ChatReplyContainer.java`
+  - Copied verbatim. TopicReplyComposerPanel uses ChatReplyContainer.current() for the reply preview's 52dp icon column, name/object text rows, colors, and switch-layout animation while keeping Discourse reply data and clear/open callbacks in app-side host wiring.
+- `telegram/src/main/java/org/telegram/ui/Components/CheckBox.java`
+  - Auto-registered unmanifested on-disk source (294 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified.
+- `telegram/src/main/java/org/telegram/ui/Components/CheckBox2.java`
+  - Copied verbatim. Thin wrapper over the vendored CheckBoxBase (the previous NativeDo inline rewrite was 206 lines against the upstream 153-line wrapper; merging required vendoring CheckBoxBase too). Drawing/animation bodies live in CheckBoxBase; this class only forwards. Deps (CubicBezierInterpolator, GenericProvider, AndroidUtilities, Theme.ResourcesProvider) are vendored.
+- `telegram/src/main/java/org/telegram/ui/Components/CheckBoxBase.java`
+  - Copied verbatim. Drawing/animation helper that upstream CheckBox2 delegates to. Required for the CheckBox2 vendoring below; the previous NativeDo inline rewrite dropped cutCheck, MessageDrawable, setNum, setDuration, setResourcesProvider, and the iconDrawable path. Deps (CubicBezierInterpolator.EASE_OUT, ColorUtils.blendARGB, LocaleController, GenericProvider, AndroidUtilities.dp/lerp) are all vendored.
+- `telegram/src/main/java/org/telegram/ui/Components/CheckBoxSquare.java`
+  - Upstream CheckBoxSquare (Components/, 193 lines) uses a bitmap-cached drawBitmap/drawCanvas path. Replaced with a Path/RectF stroke-based draw (86 lines) because the upstream approach depends on CheckBoxSquare/Theme.bitmap-resource machinery that the local Theme doesn't expose. Public API (setChecked/checked/colors/key paths) is preserved.
+- `telegram/src/main/java/org/telegram/ui/Components/ChoosingStickerStatusDrawable.java`
+  - Copied verbatim for Theme chat status resources.
+- `telegram/src/main/java/org/telegram/ui/Components/ClipRoundedDrawable.java`
+  - Auto-registered unmanifested on-disk source (184 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified.
+- `telegram/src/main/java/org/telegram/ui/Components/ClippingImageView.java`
+  - Copied verbatim from pinned upstream. Used by PhotoViewer source/fallback open-close transitions.
+- `telegram/src/main/java/org/telegram/ui/Components/CloseProgressDrawable2.java`
+  - Auto-registered unmanifested on-disk source (178 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified.
+- `telegram/src/main/java/org/telegram/ui/Components/ColorPicker.java`
+  - Pinned ColorPicker for ThemeEditorView and local theme color editing; exact copy.
+- `telegram/src/main/java/org/telegram/ui/Components/ContentPreviewViewer.java`
+  - Compile-only no-op facade for the upstream ContentPreviewViewer touch API; sticker/GIF preview behavior is not ported.
+- `telegram/src/main/java/org/telegram/ui/Components/ContextProgressView.java`
+  - Auto-registered unmanifested compile dependency (109 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/CounterView.java`
+  - Copied verbatim for ChatActivity page-down counters. Theme service-gradient support is provided by safe host defaults and is inactive in NativeDo.
+- `telegram/src/main/java/org/telegram/ui/Components/CubicBezierInterpolator.java`
+  - Copied verbatim from pinned upstream. Shared easing constants used by PhotoViewer and vendored cells.
+- `telegram/src/main/java/org/telegram/ui/Components/CurvesToolValue.java`
+  - Compile shim extracted from PhotoFilterView.CurvesToolValue for MediaController serialization fields; filter curve behavior is not ported.
+- `telegram/src/main/java/org/telegram/ui/Components/DialogsItemAnimator.java`
+  - exact@12.9.0 + host: DialogCell abstracted to MovableCell SPI; androidx SimpleItemAnimator signatures (animateRemove/Move/Change) vs upstream Dialogs-specific overloads.
+- `telegram/src/main/java/org/telegram/ui/Components/DrawingInBackgroundThreadDrawable.java`
+  - Copied verbatim. Vendored as a dependency of SvgHelper.SvgDrawable (THREAD_COUNT array sizing + background draw thread). All deps already present in :telegram.
+- `telegram/src/main/java/org/telegram/ui/Components/EdgeEffectTrackerFactory.java`
+  - RecyclerListView overscroll tracker.
+- `telegram/src/main/java/org/telegram/ui/Components/EditTextBoldCursor.java`
+  - Restored the legacy EditTextEffects-backed cursor/editor, hint/header, line, floating-action-mode, selection-handle, and watcher lifecycle. NativeDo host wiring retains setDelegate/invalidateForce/windowView and composer-facing allow-text-entities/creation-link contracts; FloatingToolbar and AnimatedEmojiSpan provide local compatibility surfaces while preserving the pinned editor branch structure.
+- `telegram/src/main/java/org/telegram/ui/Components/EditTextEffects.java`
+  - Restored pinned spoiler, animated-emoji, quote, and clipping effect lifecycle used by EditTextBoldCursor. AnimatedEmojiSpan remains a NativeDo fallback surface; the effect method/branch structure stays at the legacy pin.
+- `telegram/src/main/java/org/telegram/ui/Components/EditTextEmoji.java`
+  - Compile-only stub for BottomSheetWithRecyclerListView keyboard/emoji hooks; returns safe defaults because topic sheets do not host Telegram's emoji composer.
+- `telegram/src/main/java/org/telegram/ui/Components/EllipsizeSpanAnimator.java`
+  - Copied byte-identical from pinned 12.9.0. Animates three-dot ellipses used by ActionBar title/status surfaces.
+- `telegram/src/main/java/org/telegram/ui/Components/EmojiView.java`
+  - Compile-only View stub for BottomSheetWithRecyclerListView emoji-popup type checks; no emoji picker behavior ported.
+- `telegram/src/main/java/org/telegram/ui/Components/EmptyTextProgressView.java`
+  - Copied verbatim from pinned upstream as ThemeEditorView's empty/loading state.
+- `telegram/src/main/java/org/telegram/ui/Components/ExtendedGridLayoutManager.java`
+  - Copied verbatim. Replaces the upstream RecyclerListView.ExtendedGridLayoutManager that the local RecyclerListView stub doesn't expose.
+- `telegram/src/main/java/org/telegram/ui/Components/FilterGLThread.java`
+  - Auto-registered unmanifested on-disk source (645 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified.
+- `telegram/src/main/java/org/telegram/ui/Components/FilterShaders.java`
+  - Auto-registered unmanifested on-disk source (2193 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified.
+- `telegram/src/main/java/org/telegram/ui/Components/FloatSeekBarAccessibilityDelegate.java`
+  - Auto-registered unmanifested compile dependency (78 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/FragmentFloatingButton.java`
+  - Minimal animated visibility helper required by FragmentSearchField.
+- `telegram/src/main/java/org/telegram/ui/Components/FragmentSearchField.java`
+  - Copied verbatim from pinned upstream, including RectF clip bounds and the exact animation/measurement/drawing method shape.
+- `telegram/src/main/java/org/telegram/ui/Components/GestureDetector2.java`
+  - Copied verbatim from pinned upstream and now used by PhotoViewer tap/double-tap handling.
+- `telegram/src/main/java/org/telegram/ui/Components/GroupCreateCheckBox.java`
+  - Pinned GroupCreateCheckBox for ThemeDescription reflection field recolor path.
+- `telegram/src/main/java/org/telegram/ui/Components/GroupedPhotosListView.java`
+  - exact@12.9.0 reverse-patched S1: TL_iv.PageBlock → TLRPC.PageBlock for host IV model (same as WebInstantView/ArticleViewer). Gesture/drawing body pin-shaped. PhotoViewer feeds NativeDo UrlPhotoItem/ImageLocation via delegate.
+- `telegram/src/main/java/org/telegram/ui/Components/HideViewAfterAnimation.java`
+  - Tiny animator listener copied verbatim from upstream so shared visibility animations use Telegram's goneOnHide semantics.
+- `telegram/src/main/java/org/telegram/ui/Components/ItemOptions.java`
+  - Browser three-dot menu host (used by WebActionBar). Chat/profile-only decorations commented out for the :telegram subset: blur3 scrim (scrimBlur3SourceBitmap/Blur3Utils/BlurredBackground*/BlurredBackgroundProviderImpl/ScrimOptions), UserCell/ProfileActivity/SharedPhotoVideoCell2 scrim branches, HintView2.cutInFancyHalf — dim/scrim fall back to drawColor + generic scrimView draw. Core menu API (add/addText/addGap/addView/show/setGravity/translate/setupRadialSelectors) preserved. DimView rectTmp2 is RectF locally vs upstream Rect (host-wiring type difference; default setBounds path).
+- `telegram/src/main/java/org/telegram/ui/Components/JoinToSendSettingsView.java`
+  - Stub: getBottomInfoMargin only for section geometry.
+- `telegram/src/main/java/org/telegram/ui/Components/LayoutHelper.java`
+  - exact@12.9.0 plus host createFrame(int,int) overload for Kotlin call sites; pin createLinear(float...) overload retained from 12.9 bump.
+- `telegram/src/main/java/org/telegram/ui/Components/LinkSpanDrawable.java`
+  - Auto-registered unmanifested on-disk source (980 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified.
+- `telegram/src/main/java/org/telegram/ui/Components/ListView/AdapterWithDiffUtils.java`
+  - Copied verbatim. Required by UniversalAdapter; not vendored previously because no adapter had been copied in.
+- `telegram/src/main/java/org/telegram/ui/Components/LoadingDrawable.java`
+  - Auto-registered unmanifested compile dependency (59 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/LoadingStickerDrawable.java`
+  - Auto-registered unmanifested compile dependency (22 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/MarqueeTextView.java`
+  - Copied verbatim from pinned upstream as SeekBarView timestamp label/marquee support.
+- `telegram/src/main/java/org/telegram/ui/Components/MediaActionDrawable.java`
+  - Replaces the earlier NativeDo empty draw stub with the upstream media-action drawable used by RadialProgress2 and PhotoViewer/media button infrastructure.
+- `telegram/src/main/java/org/telegram/ui/Components/MessageBackgroundDrawable.java`
+  - Pinned MessageBackgroundDrawable for ThemeDescription FLAG_BACKGROUND chat-selection path.
+- `telegram/src/main/java/org/telegram/ui/Components/MotionBackgroundDrawable.java`
+  - Near-full pinned motion-wallpaper implementation used by Theme.MessageDrawable animated gradients. Host deltas are AndroidX FastOutSlowInInterpolator and the local Utilities.Callback2 callback surface.
+- `telegram/src/main/java/org/telegram/ui/Components/MovableCell.java`
+  - Host SPI exposing the DialogCell movement and clipping methods consumed by DialogsItemAnimator so NativeDo topic cells can participate without vendoring full DialogCell.
+- `telegram/src/main/java/org/telegram/ui/Components/MsgClockDrawable.java`
+  - Copied verbatim for Theme message status resources.
+- `telegram/src/main/java/org/telegram/ui/Components/NestedSizeNotifierLayout.java`
+  - exact@12.9.0 + host: CachedMediaLayout import/branch omitted (not vendored); single setChildLayout(ChildLayout) without maxTopPadding overload.
+- `telegram/src/main/java/org/telegram/ui/Components/Paint/Shader.java`
+  - Auto-registered unmanifested on-disk source (139 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified.
+- `telegram/src/main/java/org/telegram/ui/Components/PaintingOverlay.java`
+  - Auto-registered unmanifested compile dependency (23 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/PathAnimator.java`
+  - Copied verbatim from pinned upstream as PlayPauseDrawable support infrastructure.
+- `telegram/src/main/java/org/telegram/ui/Components/PhotoEditorSeekBar.java`
+  - Photo editor seek bar copied verbatim from upstream and used by PhotoEditToolCell.
+- `telegram/src/main/java/org/telegram/ui/Components/PickerBottomLayoutViewer.java`
+  - PhotoViewer/photo-picker bottom action bar copied verbatim from upstream. Replaces an 18-line compile stub and uses upstream photobadge/bluecounter drawables plus picker/audio selector colors.
+- `telegram/src/main/java/org/telegram/ui/Components/PlayPauseDrawable.java`
+  - Copied verbatim from pinned upstream for PhotoViewer PhotoProgressView/play-pause visual state infrastructure. Theme.playPauseAnimator remains a NativeDo shim until the full Telegram theme animator bootstrap is ported.
+- `telegram/src/main/java/org/telegram/ui/Components/PlayingGameDrawable.java`
+  - Copied verbatim for Theme chat status resources.
+- `telegram/src/main/java/org/telegram/ui/Components/Point.java`
+  - Standalone Components.Point was removed after the legacy pin; retained byte-identical for legacy port call sites.
+- `telegram/src/main/java/org/telegram/ui/Components/ProfileGalleryBlurView.java`
+  - NativeDo single-avatar adaptation of ProfileGalleryBlurView. Retains upstream measurement and blur capture contracts: the 3-slot ring buffer, invalidate listeners, AnimatedFloat, page listener, software blur, and RenderNode paths. Host wiring uses ProfileActivity.AvatarImageView and DiscourseProfileActionsView; Telegram suggestion/music branches are omitted, so drawing and animation are host adaptations.
+- `telegram/src/main/java/org/telegram/ui/Components/ProfileGalleryView.java`
+  - NativeDo single-avatar gallery port. Retains upstream expanded-media ownership, action-strip inset, ImageReceiver/page-listener/blur contracts, async invalidate callback, and list-directed touch stream. The single item is pinned to position 0; MTProto multi-photo, upload, indicators, video, and NotificationCenter backends are omitted. PinchToZoomHelper is exposed through the upstream setPinchToZoomHelper/checkPinchToZoom surface, with the carrier AvatarImageView forwarding the collapsed-state stream.
+- `telegram/src/main/java/org/telegram/ui/Components/ProfileGooeyView.java`
+  - Vendored for ProfileActivity-style gooey/waterdrop absorption effect
+- `telegram/src/main/java/org/telegram/ui/Components/ProfileMetaballView.java`
+  - Pinned ProfileMetaballView retained as shared blur infrastructure for ProfileGalleryBlurView; NativeDo uses the ProfileActivity.AvatarImageView carrier and does not instantiate the metaball surface directly.
+- `telegram/src/main/java/org/telegram/ui/Components/PullForegroundDrawable.java`
+  - exact@12.9.0 uses HintView2.cutInFancyHalf. isTopic=false (no TopicsFragment); generalTopicDrawable null; archive Lottie omitted.
+- `telegram/src/main/java/org/telegram/ui/Components/QRCodeBottomSheet.java`
+  - Profile QR share sheet (Telegram 12.9). Host wiring: bitmap share via AndroidUtilities.getBitmapShareUri (FileProvider cache-path); NativeDo overlays the user avatar with setCenterImage instead of Telegram's qr_logo lottie.
+- `telegram/src/main/java/org/telegram/ui/Components/QuoteSpan.java`
+  - Restored from the legacy pin for EditTextEffects quote measurement, collapse-button drawing/gesture, newline-hack stripping, and spoiler quote boundaries. NativeDo keeps the local TLRPC blockquote shim and density resources; Telegram message transport remains out of scope.
+- `telegram/src/main/java/org/telegram/ui/Components/RLottieDrawable.java`
+  - NativeDo compile/runtime stub for Telegram RLottieDrawable. Preserves the upstream public API surface required by ImageReceiver, RLottieImageView, and ChatActivityEnterViewAnimatedIconView, including raw-resource constructors, progress/end-frame/layer-color/master-parent/listener methods. It does not port Telegram's JNI lottie decoder; it adds a narrow smile/keyboard fallback renderer so TopicReplyComposerPanel can use ChatActivityEnterViewAnimatedIconView without blank input icons.
+- `telegram/src/main/java/org/telegram/ui/Components/RLottieImageView.java`
+  - exact@12.9.0 + host: omit document.localThumbPath (TLRPC.Document shim); svg thumb null (DocumentObject path not fully wired). forced_exact animation/drawing body from pin.
+- `telegram/src/main/java/org/telegram/ui/Components/RadialProgress2.java`
+  - Copied verbatim from pinned upstream; now backed by upstream MediaActionDrawable instead of the former empty draw stub.
+- `telegram/src/main/java/org/telegram/ui/Components/RadioButton.java`
+  - Auto-registered unmanifested on-disk source (203 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified.
+- `telegram/src/main/java/org/telegram/ui/Components/ReactedUsersListView.java`
+  - Compile/runtime constant shim, not a full port: only ITEM_HEIGHT_DP (50) so FlickerLoadingView can keep the pin-shaped REACTED_TYPE height expression. Full reacted-users list UI is not vendored.
+- `telegram/src/main/java/org/telegram/ui/Components/Reactions/HwEmojis.java`
+  - Copied byte-identical from pinned 12.9.0 as EllipsizeSpanAnimator's hardware-emoji gate dependency.
+- `telegram/src/main/java/org/telegram/ui/Components/RecordStatusDrawable.java`
+  - Copied verbatim for Theme chat status resources.
+- `telegram/src/main/java/org/telegram/ui/Components/Rect.java`
+  - Standalone Components.Rect was removed after the legacy pin; retained byte-identical for legacy port call sites.
+- `telegram/src/main/java/org/telegram/ui/Components/RecyclerAnimationScrollHelper.java`
+  - Synced to 12.8.1 pin; uses public mChildHelper/prepareForFastScroll from AndroidX fork and IMessageCell.
+- `telegram/src/main/java/org/telegram/ui/Components/RecyclerListView.java`
+  - exact@12.9.0 pin-shaped after AndroidUtilities.rectTmp2 restored to Rect; FastScroll blur uses rectTmp2 like upstream. forced_exact recycling/gesture.
+- `telegram/src/main/java/org/telegram/ui/Components/ReplyMessageLine.java`
+  - NativeDo ReplyMessageLine subset (forced_exact drawing): upstream constants, color/background checks, bubbleRadius/3f rail clipping, left/bottom radii, TYPE_LINK preview color/0.10 alpha and dark-mode reply alpha. Used by TopicPostCell reply footer and OneboxBlock preview; QuoteBlock intentionally keeps a simple line. OMITTED peer-color resolution, animated emoji/stickers, sponsored/loading gradients and MessageObject branches.
+- `telegram/src/main/java/org/telegram/ui/Components/RoundStatusDrawable.java`
+  - Copied verbatim for Theme chat status resources.
+- `telegram/src/main/java/org/telegram/ui/Components/ScaleStateListAnimator.java`
+  - Auto-registered unmanifested compile dependency (47 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/ScamDrawable.java`
+  - Copied verbatim for Theme dialogs resources.
+- `telegram/src/main/java/org/telegram/ui/Components/SectionsScrollView.java`
+  - Copied byte-identical from pinned 12.9.0. Provides Telegram section grouping, rounded backgrounds, clipping, and scroll callbacks for settings-style surfaces.
+- `telegram/src/main/java/org/telegram/ui/Components/SeekBar.java`
+  - Auto-registered unmanifested on-disk source (493 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified.
+- `telegram/src/main/java/org/telegram/ui/Components/SeekBarAccessibilityDelegate.java`
+  - Auto-registered unmanifested compile dependency (107 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/SeekBarView.java`
+  - Replaces the earlier 26-line NativeDo progress-only stub with upstream seekbar behavior used by ArticleViewer and future PhotoViewer audio/video controls.
+- `telegram/src/main/java/org/telegram/ui/Components/SendingFileDrawable.java`
+  - Copied verbatim for Theme chat status resources.
+- `telegram/src/main/java/org/telegram/ui/Components/ShareAlert.java`
+  - NativeDo lightweight browser share sheet, intentionally not Telegram's chat-forward grid. Host surface now honors Theme.ResourcesProvider colors so ArticleViewer's dark browser sheet remains readable; actions are copy-link and system share chooser.
+- `telegram/src/main/java/org/telegram/ui/Components/SimpleFloatPropertyCompat.java`
+  - Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires.
+- `telegram/src/main/java/org/telegram/ui/Components/SimpleThemeDescription.java`
+  - Copied verbatim from pinned upstream for compact ThemeDescription delegate lists.
+- `telegram/src/main/java/org/telegram/ui/Components/Size.java`
+  - Auto-registered unmanifested compile dependency (24 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/SizeNotifierFrameLayout.java`
+  - NativeDo SizeNotifierFrameLayout port. Keeps upstream-facing delegate/delegates, getKeyboardHeight(), measureKeyboardHeight(), setBottomClip(int), notifyHeightChanged(), and SimplerCanvas marker API used by BottomSheet, SizeNotifierFrameLayoutPhoto, and SpoilerEffect layout drawing. Restores Telegram's wallpaper host layer (setBackgroundImage/getBackgroundImage, drawable lifecycle, transparent child ordering, and ColorDrawable/GradientDrawable/BitmapDrawable/MotionBackgroundDrawable drawing) without importing the unrelated full blur/chat-background machinery.
+- `telegram/src/main/java/org/telegram/ui/Components/SizeNotifierFrameLayoutPhoto.java`
+  - PhotoViewer container infrastructure copied from upstream and host-wired to the local SizeNotifierFrameLayout subset. Keyboard/window measurement branch structure is preserved, with null/without-window guards for the NativeDo WindowManager overlay host.
+- `telegram/src/main/java/org/telegram/ui/Components/SlotsDrawable.java`
+  - Auto-registered unmanifested compile dependency (26 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/SmoothScroller.java`
+  - Auto-registered unmanifested compile dependency (88 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/SpeedIconDrawable.java`
+  - Auto-registered unmanifested on-disk source (139 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified.
+- `telegram/src/main/java/org/telegram/ui/Components/StaticLayoutEx.java`
+  - Auto-registered unmanifested on-disk source (214 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified.
+- `telegram/src/main/java/org/telegram/ui/Components/StatusDrawable.java`
+  - Copied verbatim as the base for Theme chat status drawables.
+- `telegram/src/main/java/org/telegram/ui/Components/StickerEmptyView.java`
+  - Host StickerEmptyView for Bookmarks/History empty chrome: pin-shaped centered title/subtitle/progress layout without Telegram sticker assets or MediaDataController. STICKER_TYPE_* constants match pin; SEARCH used by WebNoBookmarks/WebNoHistory.
+- `telegram/src/main/java/org/telegram/ui/Components/SubstringLayoutAnimator.java`
+  - Auto-registered unmanifested on-disk source (144 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified.
+- `telegram/src/main/java/org/telegram/ui/Components/Switch.java`
+  - Copied verbatim. Custom toggle switch with BoolAnimator, BaseCell.RippleDrawableSafe, and themed track/thumb drawing. All deps (AndroidUtilities, Theme, BoolAnimator, BaseCell, CubicBezierInterpolator) present in :telegram.
+- `telegram/src/main/java/org/telegram/ui/Components/TableLayout.java`
+  - exact@12.9.0 reverse-patched S1: TL_iv.pageTableCell → TLRPC.TL_pageTableCell. CellText SPI retained; ArticleViewer.DrawingText implements CellText. a11y ExploreByTouchHelper path from pin kept. Product topic tables still use native TableBlock.
+- `telegram/src/main/java/org/telegram/ui/Components/Text.java`
+  - Auto-registered unmanifested compile dependency (29 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/TextPaintImageReceiverSpan.java`
+  - Inline ImageReceiver span used by Telegram rich text / instant-view image rendering. Copied verbatim.
+- `telegram/src/main/java/org/telegram/ui/Components/TextPaintMarkSpan.java`
+  - Auto-registered unmanifested compile dependency (49 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/TextPaintSpan.java`
+  - Auto-registered unmanifested compile dependency (41 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/TextPaintUrlSpan.java`
+  - Auto-registered unmanifested compile dependency (57 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/TextPaintWebpageUrlSpan.java`
+  - Auto-registered unmanifested compile dependency (18 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/TextStyleSpan.java`
+  - Copied from upstream so inline spoiler text can be marked with FLAG_STYLE_SPOILER and discovered by SpoilerEffect.addSpoilers(...).
+- `telegram/src/main/java/org/telegram/ui/Components/ThemeEditorView.java`
+  - Copied verbatim from pinned upstream for local theme color editing, wallpaper selection, save/export, and fragment rebuild.
+- `telegram/src/main/java/org/telegram/ui/Components/ThemePreviewDrawable.java`
+  - Auto-registered unmanifested compile dependency (24 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/Tooltip.java`
+  - Auto-registered unmanifested compile dependency (115 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/TranslateAlert2.java`
+  - Auto-registered unmanifested compile dependency (13 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/TranslateAlert3.java`
+  - Auto-registered unmanifested compile dependency (8 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/TypefaceSpan.java`
+  - Auto-registered unmanifested compile dependency (101 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/TypingDotsDrawable.java`
+  - Copied verbatim for Theme chat status resources.
+- `telegram/src/main/java/org/telegram/ui/Components/UItem.java`
+  - Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires.
+- `telegram/src/main/java/org/telegram/ui/Components/URLSpanNoUnderline.java`
+  - Auto-registered unmanifested compile dependency (71 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/UndoView.java`
+  - Auto-registered unmanifested compile dependency (18 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/UniversalAdapter.java`
+  - Small NativeDo UniversalAdapter: HEADER, GRAY_SECTION, TEXT, CHECK and SHADOW bind upstream HeaderCell/GraySectionCell/TextCell/TextCheckCell/TextInfoPrivacyCell; custom factories cover bookmark/website/setting/info/space/radio/flicker rows. OMITTED Telegram listView/dialog/sections/reorder/chart machinery and related layering fields.
+- `telegram/src/main/java/org/telegram/ui/Components/UniversalCells.java`
+  - Small NativeDo universal cells derived from Telegram settings/browser list cell patterns rather than a one-to-one upstream file copy.
+- `telegram/src/main/java/org/telegram/ui/Components/UniversalFragment.java`
+  - Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires.
+- `telegram/src/main/java/org/telegram/ui/Components/UniversalListCallbacks.java`
+  - Host callback aliases matching UniversalRecyclerView fill/click/long-click shapes; upstream uses Utilities.Callback* directly and has no standalone type.
+- `telegram/src/main/java/org/telegram/ui/Components/UniversalRecyclerView.java`
+  - exact@12.9.0 + host: drop org.telegram.ui.iv.RichEditor.DraggingDrawable reorder feedback (RichEditor not vendored); expose the inherited flinger-running state and canStopFlinger controls used by NativeDo's ProfileActivity-shaped avatar transition.
+- `telegram/src/main/java/org/telegram/ui/Components/VectorAvatarThumbDrawable.java`
+  - Auto-registered unmanifested compile dependency (56 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/VideoEditTextureView.java`
+  - Auto-registered unmanifested compile dependency (38 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/VideoForwardDrawable.java`
+  - Copied verbatim from pinned upstream for PhotoViewer video double-tap seek feedback infrastructure.
+- `telegram/src/main/java/org/telegram/ui/Components/VideoPlayer.java`
+  - Auto-registered unmanifested compile dependency (42 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/ViewPagerFixed.java`
+  - Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires.
+- `telegram/src/main/java/org/telegram/ui/Components/WallpaperCheckBoxView.java`
+  - Pinned WallpaperCheckBoxView for local theme wallpaper blur/motion/pattern toggles; exact copy.
+- `telegram/src/main/java/org/telegram/ui/Components/WallpaperParallaxEffect.java`
+  - Pinned WallpaperParallaxEffect for local theme wallpaper motion; exact copy.
+- `telegram/src/main/java/org/telegram/ui/Components/WallpaperUpdater.java`
+  - Telegram-shaped wallpaper chooser adapted to NativeDo: gallery uses ACTION_OPEN_DOCUMENT instead of PhotoAlbumPickerActivity/permissions, and camera writes to the app cache.
+- `telegram/src/main/java/org/telegram/ui/Components/WebPlayerView.java`
+  - Auto-registered unmanifested compile dependency (34 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Components/chat/ViewPositionWatcher.java`
+  - Auto-registered unmanifested on-disk source (249 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified.
+- `telegram/src/main/java/org/telegram/ui/Components/chat/layouts/ChatActivityFadeView.java`
+  - Copied verbatim. TopicDetail host-wires its top drawable to the frosted chat RenderNode source so status-bar content is blurred and fades into the list without a hard divider.
+- `telegram/src/main/java/org/telegram/ui/Components/chat/layouts/ChatActivitySideControlsButtonsLayout.java`
+  - Copied as reusable Telegram side-controls infrastructure. TopicDetail wires page-down, return-to-top, and topic-search previous/next; a host-only content-description setter keeps the reused arrow semantics accessible without changing upstream animation or measurement. Buttons sample the topic root's RenderNode Blur3 source with a ViewPositionWatcher; lower API levels retain the color-source fallback.
+- `telegram/src/main/java/org/telegram/ui/Components/poll/buttons/PollButtonDrawable.java`
+  - NativeDo-scoped subset exposing upstream PollButtonDrawable API used by ChatMessageCell.PollButton: setVotersVisible(), attach()/detach(), setVotersCountTextColor(), setHasMediaPadding(), setMedia(), isHasMedia(), getImageReceiver(), setVotersCount(), setRecentVoters(), getVotersCountTargetWidth(), draw(), and verifyDrawable(). Media answers, DownloadController progress, recent voter avatars, RadialProgress2 media chrome, and Telegram MessageObject/TLRPC media binding are intentionally no-op/omitted for Discourse polls.
+- `telegram/src/main/java/org/telegram/ui/Components/poll/buttons/PollButtonDrawableBase.java`
+  - NativeDo-scoped subset copied from upstream shape: selectorDrawable, getSelectorDrawable(), setupCallbacks(), verifyDrawable(), setSelectorsColor(), resetSelectors(), alpha propagation, and selector color retinting are kept so poll row selectors can use upstream method names without pulling full Telegram poll media infrastructure.
+- `telegram/src/main/java/org/telegram/ui/Components/poll/buttons/PollInstantButtonDrawable.java`
+  - NativeDo-scoped subset of upstream PollInstantButtonDrawable used by PollBlock footer actions: AnimatedTextView.AnimatedTextDrawable button label, PollButtonDrawableBase selector ripple, setButtonText(), setButtonTextColor(), setupCallbacks(), and draw(). RadialProgress loading animation and DrawableUtils scale crossfade are intentionally omitted for Discourse polls.
+- `telegram/src/main/java/org/telegram/ui/Components/spoilers/SpoilerEffect.java`
+  - Replaces the previous no-op stub with the upstream text spoiler particle/ripple drawable. This is for inline text spoilers; SpoilerEffect2 media/GL masking remains out of scope.
+- `telegram/src/main/java/org/telegram/ui/Components/spoilers/SpoilerEffectBitmapFactory.java`
+  - Copied from upstream as SpoilerEffect's shared moving particle texture backend. Uses local Utilities.copyBitmaps Java fallback instead of Telegram JNI.
+- `telegram/src/main/java/org/telegram/ui/Components/spoilers/SpoilersClickDetector.java`
+  - Copied from the legacy pin for EditTextEffects spoiler tap hit testing and ripple reveal callbacks.
+- `telegram/src/main/java/org/telegram/ui/Components/voip/CellFlickerDrawable.java`
+  - Telegram-derived CellFlickerDrawable with NativeDo host drawing differences; used by LineProgressView.
+- `telegram/src/main/java/org/telegram/ui/DialogsActivity.java`
+  - Auto-registered unmanifested compile dependency (26 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/EmptyBaseFragment.java`
+  - Auto-registered unmanifested compile dependency (17 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/FiltersSetupActivity.java`
+  - Stub: HintInnerCell only for section predicates.
+- `telegram/src/main/java/org/telegram/ui/GradientClip.java`
+  - Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires.
+- `telegram/src/main/java/org/telegram/ui/IArticleViewer.java`
+  - Pin-shaped host API; openPhoto(TLRPC.PageBlock) for S1.
+- `telegram/src/main/java/org/telegram/ui/LaunchActivity.java`
+  - NativeDo root host facade. In addition to the existing root ActionBarLayout/bottom-tabs accessors, exposes pinned ThemeEditorView layout queries (layers/right/root all map to the NativeDo root) and rebuildAllFragments(boolean) for editor apply/rebuild.
+- `telegram/src/main/java/org/telegram/ui/MultiLayoutTypingAnimator.java`
+  - Pin 12.8.1 MultiLayoutTypingAnimator for ArticleViewer DrawingText typing fade (B21). Shared with upstream rich-message/bot draft paths but only IV DrawingText consume is wired locally; no RichMessageLayout/BotForumHelper vendors.
+- `telegram/src/main/java/org/telegram/ui/PhotoViewer.java`
+  - NativeDo topic-detail/ArticleViewer URL-only image viewer port. Keeps upstream singleton/API entry points, PageBlocksAdapter, EmptyPhotoViewerProvider/PlaceProviderObject provider lifecycle hooks, WindowManager overlay, SizeNotifierFrameLayoutPhoto/FrameLayoutDrawer container, ImageReceiver-backed left/center/right gallery, GroupedPhotosListView, PhotoViewerActionBarContainer/PhotoCountView, CaptionTextViewSwitcher/CaptionScrollView, PhotoProgressView, GestureDetector2 tap/double-tap/edge navigation, pinch/pan/drag-dismiss thresholds, ActionBarToggleParams chrome animation shape, checkProgress-style three-slot loading state, and ClippingImageView source/fallback open-close transitions with URL/ImageLocation host wiring. The 12.9.0 PhotoViewer ActionBar alpha invalidation, status-bar occupancy, selector/back icon, title-container padding, and subtitle orientation state are aligned; URL menu right padding and corrected right-padding animation remain host adaptations. Intentionally omits Telegram message/media/video/editor/story/webview/picker/caption-edit/translate/text-selection stacks; those are not part of the current URL-only photo surface.
+- `telegram/src/main/java/org/telegram/ui/PinchToZoomHelper.java`
+  - NativeDo image-only PinchToZoomHelper partial port. Keeps the upstream pinch state machine, overlay transition, transform/drawing, and callback surface; Telegram video, spoiler, media-controller, and MTProto image-location backends are omitted.
+- `telegram/src/main/java/org/telegram/ui/ProfileActivity.java`
+  - NativeDo carrier for ProfileActivity.AvatarImageView, TopView, and OverlaysView. The reusable nested classes retain the self-profile image handoff (including drawable- or bitmap-backed BitmapHolder foregrounds), solid header, and overlay drawing shape while exposing host fields for the app module; the activity/BaseFragment body is not ported. ProfileFragment owns NativeDo layout, Discourse data, and gesture orchestration, so peer-color gradients/emoji and Telegram peer, stories, gifts, music, upload, and MTProto branches are omitted.
+- `telegram/src/main/java/org/telegram/ui/RoundVideoProgressShadow.java`
+  - Copied verbatim for Theme chat-resource round-video progress shadows.
+- `telegram/src/main/java/org/telegram/ui/Stories/DarkThemeResourceProvider.java`
+  - NativeDo dark resource provider subset. Restores upstream provider semantics for the browser share sheet: readable dark background/text/selector/divider colors, dark-theme identity, and global-theme fallback for keys outside the local sheet surface.
+- `telegram/src/main/java/org/telegram/ui/Stories/StoryItem.java`
+  - Compile-only story parent-object shim for FileLoader/ImageLoader branches. LinuxDo has no Stories; upstream StoryItem is nested under TL_stories.
+- `telegram/src/main/java/org/telegram/ui/Stories/recorder/ButtonWithCounterView.java`
+  - Auto-registered unmanifested on-disk source (669 LOC). Was present under :telegram without a manifest entry; treat as native until re-classified.
+- `telegram/src/main/java/org/telegram/ui/Stories/recorder/HintView2.java`
+  - Host View stub; static measureCorrectly/cutInFancyHalf pin-shaped for tabs and PullForegroundDrawable.
+- `telegram/src/main/java/org/telegram/ui/Stories/recorder/KeyboardNotifier.java`
+  - Auto-registered unmanifested compile dependency (110 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/Stories/recorder/StoryEntry.java`
+  - Auto-registered unmanifested compile dependency (29 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/TextureViewContainer.java`
+  - Auto-registered unmanifested compile dependency (45 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/WrappedResourceProvider.java`
+  - NativeDo wrapper for per-surface color overrides. Implements both getColor and getColorOrNull so Theme.getColor follows Telegram provider dispatch while AddressBarList sparse color overrides remain effective.
+- `telegram/src/main/java/org/telegram/ui/bots/BotWebViewAttachedSheet.java`
+  - Minimal WebViewType constants/annotation shell required by WebViewRequestProps; full attached sheet UI remains deferred.
+- `telegram/src/main/java/org/telegram/ui/bots/BotWebViewSheet.java`
+  - Auto-registered unmanifested compile dependency (4 LOC). Typically a host stub or thin shim; triage port_mode if this becomes a real port.
+- `telegram/src/main/java/org/telegram/ui/bots/ChatAttachAlertBotWebViewLayout.java`
+  - Outer class (bot WebView attachment layout) stripped to a stub; inner classes WebViewSwipeContainer and WebProgressView preserved in upstream structure. Host wiring: setWebView accepts base WebView (works with both MyWebView and standard WebView), allowingScroll uses instanceof MyWebView check for injectedJS, topActionBarOffsetY default uses ActionBar.getCurrentActionBarHeight(), Bulletin.getVisibleBulletin() returns null (no-op path).
+- `telegram/src/main/java/org/telegram/ui/bots/WebViewRequestProps.java`
+  - Browser tab/WebView request state holder used by upstream BottomSheetTabs and BotWebViewContainer.
+- `telegram/src/main/java/org/telegram/ui/web/AddressBarList.java`
+  - Scheme-2 baseline @ 12.9.0 with forced_exact measurement/drawing/recycling where applicable. BookmarksList backed by local WebBookmarks + BrowserHistory.Entry (not MediaDataController MTProto Saved Messages). BookmarkView Entry+checked; titles/favicons via WebMetadataCache. Do not reintroduce Telegram Saved-Messages bookmark path.
+- `telegram/src/main/java/org/telegram/ui/web/BookmarksFragment.java`
+  - exact@12.9.0 shape with local bookmark backend: list/selection use BrowserHistory.Entry over WebBookmarks store; multi-select delete calls WebBookmarks.remove (not MessagesController.deleteMessages); 'go to message' / Saved-Messages ChatActivity is intentional no-op. Pairs with AddressBarList WebBookmarks path. Empty list uses StickerEmptyView(WebNoBookmarks); flicker skeletons only while loading.
+- `telegram/src/main/java/org/telegram/ui/web/BotWebViewContainer.java`
+  - Native browser WebView host for ArticleViewer (not full pin BotWebView). http(s) in-webview; other schemes external. setPageLoaded + back/forward chrome; progress/title/favicon/error; pin-shaped main-frame HTTP error and renderer-crash handling; long-press menus; DownloadManager downloads with size confirm; onCreateWindow opens nested ArticleViewer when in-app browser on; history+metadata+find. Upstream-shaped non-creating getter and preserved-view reset; cached ownership transfers without reattaching old instances. Per-view media pause on hide/detach; dead renderers are destroyed without background crash dialogs. Omitted: TON proxy, Mini App bridge, full DangerousWebWarning.
+- `telegram/src/main/java/org/telegram/ui/web/WebActionBar.java`
+  - Copied verbatim from pin 12.9.0, including the upstream onOpenedMenu extension hook.
+- `telegram/src/main/java/org/telegram/ui/web/WebBookmarks.java`
+  - NativeDo-authored local bookmark persistence backend used by the host-wired AddressBarList and BookmarksFragment instead of Telegram Saved Messages.
+- `telegram/src/main/java/org/telegram/ui/web/WebBrowserSettings.java`
+  - Pinned 12.9.0 UI, measurement, drawing, and interaction shape. Single-account browser policy is supplied by the MessagesController facade; WebsiteView additionally reads NativeDo's WebMetadataCache for locally persisted favicons.
+- `telegram/src/main/java/org/telegram/ui/web/WebInstantView.java`
+  - S1 reverse-patch @ global pin 12.9.0: pin TL_iv.* Instant View model mapped to local TLRPC page/text types (incl. TL_pageBlockHeading1–6 emission for AV A6). Host readHTML Activity via LaunchActivity.getActionBarLayoutActivity() (LaunchActivity is a non-window stub Context). Not clean-FF eligible — S1 type map + host Activity resolution are product.
+- `telegram/src/main/java/org/telegram/ui/web/WebMetadataCache.java`
+  - Copied verbatim from pin 12.9.0. The previous NativeDo offscreen WebView favicon/sitename extractor had no callers and was removed during browser re-alignment.
+
+## Group comments
+
+
+## Allowlisted trees
+
+- `telegram/src/main/java/androidx/` — Telegram's patched AndroidX RecyclerView stack lives under :telegram for RecyclerListView. Tracked as a tree, not per-file Telegram ports.
+- `telegram/src/main/java/com/google/android/exoplayer2/` — Minimal ExoPlayer API surface / shims required by PhotoViewer/ArticleViewer video paths. Not one-to-one Telegram UI ports.
+- `telegram/src/main/java/com/google/android/exoplayer2/ui/` — ExoPlayer UI helpers (e.g. AspectRatioFrameLayout) vendored as compile surface.
+- `telegram/src/main/java/com/google/android/gms/` — Compile-only GMS cast/vision stubs for upstream API surface; not Telegram UI ports.
+- `telegram/src/main/java/com/google/common/` — Minimal Guava-facing shims required by vendored code; not per-file Telegram ports.
+- `telegram/src/main/java/com/google/zxing/` — ZXing QR encoder closure (qrcode writer/encoder, common bit matrices, reedsolomon) vendored from Telegram's tree for the profile QRCodeBottomSheet; QRCodeWriter patched to drop Telegram's qr_logo center branding.
+- `telegram/src/main/java/com/carrotsearch/` — Xoroshiro128PlusRandom used by Utilities.fastRandom; third-party tree from Telegram, not a per-file UI port.

@@ -1,0 +1,51 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  vendor-tooling:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # Partial clone: vendor-index reads trees at the pin + reference commit
+      # and fetches only the blobs it compares (~6 MB).
+      - name: Pristine Telegram checkout (blobless)
+        run: |
+          PIN="$(python3 -c "import json;print(json.load(open('vendor-overlay.json'))['upstream']['pinned_commit'])")"
+          REF="$(python3 -c "import json;print((json.load(open('vendor-overlay.json')).get('reference') or {}).get('commit') or '')")"
+          git init -q ../telegram
+          git -C ../telegram remote add origin https://github.com/DrKLO/Telegram.git
+          git -C ../telegram config extensions.partialClone origin
+          git -C ../telegram fetch -q --depth=1 --filter=blob:none origin "$PIN"
+          if [ -n "$REF" ] && [ "$REF" != "$PIN" ]; then
+            git -C ../telegram fetch -q --depth=1 --filter=blob:none origin "$REF"
+          fi
+
+      - name: Vendor tooling unit tests
+        run: python3 -m unittest discover -s scripts/tests -t scripts/tests
+
+      - name: Vendor guard
+        run: scripts/vendor-guard.sh
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platforms;android-35 build-tools;34.0.0 platform-tools"
+
+      - name: Unit tests
+        run: ./apps/android/gradlew -p apps/android :app:testDebugUnitTest --quiet

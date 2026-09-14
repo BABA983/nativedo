@@ -6,7 +6,7 @@
 #
 # The checkout lives outside this repo — a sibling directory by default
 # (`../telegram`). Override it with NATIVEDO_TELEGRAM_VENDOR_DIR or
-# `upstream.local_checkout` in vendor-manifest.json. A leftover in-repo
+# `upstream.local_checkout` in vendor-overlay.json. A leftover in-repo
 # `vendor/telegram-android` is still detected, but move it out and delete the
 # `vendor/` directory once you have switched.
 #
@@ -16,11 +16,13 @@
 #   scripts/vendor-setup.sh <commit>     # checkout a specific commit
 #   scripts/vendor-setup.sh --status     # print pin vs HEAD (exit 1 on drift)
 #   scripts/vendor-setup.sh --print-dir  # print the resolved checkout path
+#   scripts/vendor-setup.sh --prefetch   # materialize blob contents for the pin
+#                                        # and reference commits (vendor-index)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export NATIVEDO_ROOT="$ROOT"
-MANIFEST="$ROOT/vendor-manifest.json"
+MANIFEST="$ROOT/vendor-overlay.json"
 DEFAULT_HTTPS="https://github.com/DrKLO/Telegram.git"
 
 if [[ ! -f "$MANIFEST" ]]; then
@@ -36,7 +38,7 @@ VENDOR_DIR="$(vendor_python 'from vendorlib import vendor_dir; print(vendor_dir(
 LEGACY_DIR="$ROOT/vendor/telegram-android"
 
 PIN="$(
-  vendor_python "from vendorlib import load_manifest, normalize_sha; m = load_manifest('${ROOT}'); raw = m.get('upstream', {}).get('pinned_commit'); print(normalize_sha(raw) or raw or '')"
+  vendor_python "from vendorlib import load_overlay, normalize_sha; raw = (load_overlay('${ROOT}').get('upstream') or {}).get('pinned_commit'); print(normalize_sha(raw) or raw or '')"
 )"
 REPO="$(
   python3 -c "
@@ -66,6 +68,7 @@ for arg in "$@"; do
     --fetch) MODE="fetch" ;;
     --status) MODE="status" ;;
     --print-dir) PRINT_DIR=1 ;;
+    --prefetch) MODE="prefetch" ;;
     --help|-h)
       sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
@@ -86,7 +89,7 @@ if (( PRINT_DIR )); then
   exit 0
 fi
 
-if [[ -z "$PIN" && "$MODE" != "fetch" && "$TARGET_REF" == "$PIN" ]]; then
+if [[ -z "$PIN" && "$MODE" != "fetch" && "$MODE" != "prefetch" && "$TARGET_REF" == "$PIN" ]]; then
   echo "ERROR: upstream.pinned_commit missing in manifest" >&2
   exit 1
 fi
@@ -98,6 +101,24 @@ if [[ "$VENDOR_DIR" == "$LEGACY_DIR" ]]; then
 fi
 
 mkdir -p "$(dirname "$VENDOR_DIR")"
+
+prefetch_blobs() {
+  # The vendor tools compare files against the pin and the historical
+  # reference commit; a blob-filtered clone fetches those bytes lazily unless
+  # we warm them once here.
+  local refs=("$PIN")
+  local ref_commit
+  ref_commit="$(vendor_python "from vendorlib import load_overlay; print((load_overlay('${ROOT}').get('reference') or {}).get('commit') or '')")"
+  [[ -n "$ref_commit" ]] && refs+=("$ref_commit")
+  local ref
+  for ref in "${refs[@]}"; do
+    [[ -n "$ref" ]] || continue
+    echo "Prefetching blob contents at ${ref:0:12} ..."
+    git -C "$VENDOR_DIR" ls-tree -r "$ref" -- TMessagesProj/src/main/java |
+      awk '{print $3}' |
+      git -C "$VENDOR_DIR" cat-file --batch >/dev/null
+  done
+}
 
 if [[ "$MODE" == "status" ]]; then
   if [[ ! -d "$VENDOR_DIR/.git" && ! -f "$VENDOR_DIR/.git" ]]; then
@@ -142,6 +163,12 @@ if [[ "$MODE" == "fetch" ]]; then
   exit 0
 fi
 
+if [[ "$MODE" == "prefetch" ]]; then
+  prefetch_blobs
+  echo "OK: blob contents available for the vendor tools"
+  exit 0
+fi
+
 if [[ -z "$TARGET_REF" ]]; then
   echo "ERROR: no target ref" >&2
   exit 1
@@ -157,3 +184,4 @@ git -C "$VENDOR_DIR" checkout --detach "$TARGET_REF"
 NEW_HEAD="$(git -C "$VENDOR_DIR" rev-parse HEAD)"
 echo "OK: checked out $NEW_HEAD"
 git -C "$VENDOR_DIR" log -1 --oneline
+prefetch_blobs

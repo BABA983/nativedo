@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Repo hook: run the vendor guard before every commit.
+#
+# Installed by `git config core.hooksPath .githooks` (scripts/vendor-setup.sh
+# and .agents/setup do this automatically). Keep it fast: the full check
+# (`--compile`, upstream drift) belongs in CI, not here.
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+exec "$ROOT/scripts/vendor-guard.sh" --quick

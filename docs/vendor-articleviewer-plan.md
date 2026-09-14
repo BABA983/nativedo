@@ -1,3 +1,7 @@
+> **Historical plan (retired manifest model).** Current workflow: `scripts/vendor-guard.sh` + [VENDOR.md](../VENDOR.md).
+> Terms like `stuck_reason`, `modified:true`, and `vendor-manifest.json` below refer to the
+> pre-overlay model; provenance is now derived.
+
 # ArticleViewer rebase plan (Telegram 12.9.0)
 
 > **Status: epic closed** (2026-07-18). Autonomous pin-alignment is finished through

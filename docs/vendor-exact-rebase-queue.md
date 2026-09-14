@@ -1,3 +1,7 @@
+> **Historical plan (retired manifest model).** Current workflow: `scripts/vendor-guard.sh` + [VENDOR.md](../VENDOR.md).
+> Terms like `stuck_reason`, `modified:true`, and `vendor-manifest.json` below refer to the
+> pre-overlay model; provenance is now derived.
+
 # Exact rebase queue (global pin 12.9.0)
 
 ## Done

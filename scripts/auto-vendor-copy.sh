@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # scripts/auto-vendor-copy.sh
-# Automatically copy missing vendor classes that javac complains about, and
-# register each copy in compact vendor-manifest.json and regenerate the lock.
+# Copy missing vendor classes that javac complains about into :telegram.
+#
+# Provenance is derived (scripts/vendor-index.sh), so there is nothing to
+# register here: a copied file is automatically tracked as an exact copy of its
+# upstream path at the pin.
 #
 # Skips: classes > MAX_LINES or with > MAX_IMPORTS telegram imports.
 #

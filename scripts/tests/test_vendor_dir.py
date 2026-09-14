@@ -34,7 +34,7 @@ class VendorDirResolutionTest(unittest.TestCase):
         os.environ.pop(VENDOR_DIR_ENV, None)
 
     def write_manifest(self, manifest: dict) -> None:
-        (self.root / "vendor-manifest.json").write_text(
+        (self.root / "vendor-overlay.json").write_text(
             json.dumps(manifest, indent=2) + "\n",
             encoding="utf-8",
         )
@@ -75,7 +75,7 @@ class VendorDirResolutionTest(unittest.TestCase):
         self.assertEqual(sibling, vendor_dir(self.root))
 
     def test_missing_manifest_falls_back_to_sibling(self) -> None:
-        (self.root / "vendor-manifest.json").unlink()
+        (self.root / "vendor-overlay.json").unlink()
         self.assertEqual(default_vendor_dir(self.root), vendor_dir(self.root))
 
 

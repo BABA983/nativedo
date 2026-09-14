@@ -9,6 +9,7 @@ NativeDo for Linux.do. This repository keeps the Android app as the active imple
 - `contracts/discourse` - Shared API and auth contracts.
 - `fixtures` - Sample payloads used by tests.
 - `apps/android/telegram` - Vendored Telegram-derived sources compiled as the `:telegram` module (committed; enough to build).
+- `vendor-overlay.json` - The only hand-maintained vendor file: upstream pin, sync policy, and the exceptions to derived provenance.
 - `../telegram` - Local pristine Telegram checkout for diff / re-sync tooling only (outside the repo, gitignored; not required to build).
 
 ## Setup
@@ -43,12 +44,11 @@ Only needed when you change, audit, or re-sync Telegram-derived code (`:telegram
 scripts/vendor-setup.sh
 scripts/vendor-setup.sh --print-dir   # where the checkout lives
 
-# Day-to-day health (manifest lock, isolation, on-disk completeness)
-scripts/vendor-manifest.sh --check
+# Pre-flight (provenance index, isolation, forced-exact, optional compile)
+scripts/vendor-guard.sh --compile
 scripts/vendor-status.sh
-scripts/vendor-isolation-check.sh
 ```
 
-Requires network access to GitHub on first setup. After that: `scripts/vendor-diff.sh`, `scripts/vendor-ff.sh`, and related tools work against the local tree.
+Requires network access to GitHub on first setup. After that `scripts/vendor-diff.sh`, `scripts/vendor-ff.sh`, and the other tools derive everything from the overlay + the pristine tree; there is no lock file to regenerate.
 
 Full workflow (manifest, pin bumps, adding files, host-wiring rules): [`VENDOR.md`](VENDOR.md) and [`AGENTS.md`](AGENTS.md).

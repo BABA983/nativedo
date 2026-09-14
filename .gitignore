@@ -39,13 +39,15 @@ skills-lock.json
 # Python bytecode from the scripts/ vendor tooling.
 __pycache__/
 
+# Atomic-write temp files from the vendor overlay writers.
+.vendor-overlay.json.*.tmp
+
 # Paparazzi golden images are committed; only the unused video baseline
 # directory stays local.
 apps/android/app/src/test/snapshots/videos/
 
 .tmp-home/
 .tmp-robolectric/
-.vendor-manifest.write.lock
 
 # Legacy location of the pristine Telegram checkout. scripts/vendor-setup.sh
 # now clones it next to the repo (default ../telegram); keep the rule so

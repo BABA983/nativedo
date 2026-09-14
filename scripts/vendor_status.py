@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""vendor-status: manifest health, isolation, optional modified checks, bump report."""
+"""vendor-status: provenance, isolation, and upstream-drift report.
+
+Everything is derived (overlay + pristine tree + disk): there are no flags to
+maintain, so this tool only reports state.
+"""
 from __future__ import annotations
 
 import argparse
@@ -12,72 +16,31 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from vendorlib import (  # noqa: E402
-    CURRENT_PIN,
-    compare_to_upstream,
-    collect_on_disk_telegram_java,
+    ManifestError,
     display_path,
     git_log_paths,
     git_rev_parse,
-    load_manifest,
-    local_abs,
+    load_index,
     normalize_sha,
     repo_root,
     run_isolation_check,
+    third_party_bucket,
     upstream_git_path,
     vendor_dir,
 )
 
 
-
-def load_allowlist(root: Path) -> list[dict]:
-    path = root / "vendor-allowlist.json"
-    if not path.is_file():
-        return []
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return []
-    return list(data.get("prefixes") or [])
-
-
-def is_allowlisted(rel: str, prefixes: list[dict]) -> bool:
-    return any(rel.startswith(p.get("prefix") or "") for p in prefixes)
-
-
-def bucket_path(rel: str) -> str:
-    if "/androidx/" in rel:
-        return "androidx_fork"
-    if "/com/google/" in rel or "/com/android/" in rel:
-        return "third_party_com"
-    if "/me/vkryl/" in rel:
-        return "me_vkryl"
-    if "/org/telegram/tgnet/" in rel:
-        return "tgnet"
-    if "/org/telegram/messenger/" in rel:
-        return "messenger"
-    if "/org/telegram/ui/" in rel:
-        return "ui"
-    if "/org/telegram/" in rel:
-        return "telegram_other"
-    return "other"
-
-
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--strict", action="store_true", help="warnings also fail the run")
-    p.add_argument(
-        "--check-modified",
-        action="store_true",
-        help="byte-compare each file to vendored_at (requires the pristine checkout)",
-    )
+    p.add_argument("--json", action="store_true", help="machine-readable summary")
     p.add_argument(
         "--bump-report",
         nargs="?",
-        const="HEAD",
+        const="origin/master",
         metavar="NEW_SHA",
-        help="list manifest files touched between global pin and NEW_SHA (default HEAD)",
+        help="list tracked files upstream touched between the pin and NEW_SHA",
     )
-    p.add_argument("--json", action="store_true", help="machine-readable summary")
     p.add_argument(
         "--sample",
         type=int,
@@ -90,393 +53,141 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     root = repo_root()
-    manifest = load_manifest(root)
-    report: dict = {
-        "errors": [],
-        "warnings": [],
-        "info": [],
-        "stats": {},
-    }
-
-    up = manifest.get("upstream") or {}
-    pin_raw = up.get("pinned_commit")
-    pin = normalize_sha(pin_raw)
-    report["stats"]["pinned_commit"] = pin
-    report["stats"]["pinned_commit_raw"] = pin_raw
-    report["stats"]["pinned_date"] = up.get("pinned_date")
-
-    if not pin:
-        report["errors"].append("upstream.pinned_commit is missing")
-    elif pin != CURRENT_PIN and pin_raw != CURRENT_PIN:
-        # Informational: tooling's expected current pin vs manifest.
-        report["info"].append(
-            f"manifest pin is {pin}; tooling CURRENT_PIN is {CURRENT_PIN}"
-        )
-
+    report: dict = {"errors": [], "warnings": [], "info": [], "stats": {}}
     vd = vendor_dir(root)
-    if not vd.exists():
-        report["warnings"].append(
-            f"pristine tree missing: {display_path(vd, root)} "
-            "(run scripts/vendor-setup.sh)"
+
+    try:
+        index = load_index(root)
+    except ManifestError as e:
+        report["errors"].append(str(e))
+        if not vd.exists():
+            report["errors"].append(
+                f"pristine Telegram checkout missing at {display_path(vd, root)} "
+                "(run scripts/vendor-setup.sh)"
+            )
+        index = None
+
+    if index is not None:
+        files = index.get("files") or []
+        shims = index.get("compat_shims") or []
+        resources = index.get("resources") or []
+        pin = normalize_sha((index.get("upstream") or {}).get("pinned_commit"))
+        report["stats"]["pinned_commit"] = pin
+        report["stats"]["pinned_date"] = (index.get("upstream") or {}).get("pinned_date")
+        report["stats"]["files"] = len(files)
+        report["stats"]["compat_shims"] = len(shims)
+        report["stats"]["resources"] = len(resources)
+        report["stats"]["port_mode"] = dict(Counter(e.get("port_mode") for e in files))
+        modified = Counter(bool(e.get("modified")) for e in files)
+        report["stats"]["modified"] = {
+            "true": modified[True],
+            "false": modified[False],
+        }
+        buckets = Counter(
+            b for b in (third_party_bucket(e["local"]) for e in files) if b
         )
-        vendor_head = None
-    else:
+        report["stats"]["third_party"] = dict(buckets)
+        report["stats"]["forced_exact"] = sum(1 for e in files if e.get("forced_exact"))
+        reference = index.get("reference") or {}
+        report["stats"]["reference_paths"] = len(reference.get("paths") or [])
+        report["info"].append(
+            f"{len(files)} tracked file(s), {len(shims)} scratch shim(s), "
+            f"{len(resources)} resource group(s)"
+        )
+        if reference.get("paths"):
+            report["info"].append(
+                f"{len(reference['paths'])} file(s) reference "
+                f"{str(reference.get('commit'))[:12]} (historical baseline)"
+            )
+        if buckets:
+            report["info"].append(f"third-party trees carried: {dict(buckets)}")
+
         vendor_head = git_rev_parse("HEAD", vd)
         report["stats"]["vendor_HEAD"] = vendor_head
-        if pin and vendor_head and not vendor_head.startswith(pin[:9]) and vendor_head != pin:
-            # Allow prefix match for short pins.
-            if normalize_sha(vendor_head) != pin and not vendor_head.startswith(str(pin)[:12]):
-                report["warnings"].append(
-                    f"{display_path(vd, root)} HEAD={vendor_head[:12]} "
-                    f"!= pinned_commit={str(pin)[:12]} "
-                    "(checkout pin with scripts/vendor-setup.sh)"
-                )
-
-    files = manifest.get("files") or []
-    compat_shims = manifest.get("compat_shims") or []
-    tracked_entries = [(entry, "file") for entry in files] + [
-        (entry, "compat_shim") for entry in compat_shims
-    ]
-    resources = manifest.get("resources") or []
-    report["stats"]["file_entries"] = len(files)
-    report["stats"]["compat_shims"] = len(compat_shims)
-    report["stats"]["resource_groups"] = len(resources)
-
-    mode_c = Counter(e.get("port_mode") or "?" for e in files)
-    mod_c = Counter(bool(e.get("modified")) for e in files)
-    report["stats"]["port_mode"] = dict(mode_c)
-    report["stats"]["modified"] = {"true": mod_c[True], "false": mod_c[False]}
-
-    # --- per-file structural checks ---
-    missing_disk: list[str] = []
-    null_vendored: list[str] = []
-    bad_port: list[str] = []
-    pin_dist: Counter[str] = Counter()
-    behind_global: list[str] = []
-    no_stuck: list[str] = []
-    local_set: set[str] = set()
-    dup_local: list[str] = []
-
-    shim_bad_mode: list[str] = []
-    shim_bad_modified: list[str] = []
-
-    for entry, kind in tracked_entries:
-        local = entry.get("local") or ""
-        if not local:
-            report["errors"].append("file entry missing 'local'")
-            continue
-        if local in local_set:
-            dup_local.append(local)
-        local_set.add(local)
-
-        if not local_abs(entry, manifest, root).is_file():
-            missing_disk.append(local)
-
-        va_raw = entry.get("vendored_at")
-        va = normalize_sha(va_raw)
-        if va is None:
-            null_vendored.append(local)
-            pin_dist["<null>"] += 1
-        else:
-            pin_dist[va[:12]] += 1
-            if (
-                kind == "file"
-                and pin
-                and va != pin
-                and not str(pin).startswith(va)
-                and not va.startswith(str(pin)[:12])
-            ):
-                behind_global.append(local)
-                if not entry.get("stuck_reason"):
-                    no_stuck.append(local)
-
-        pm = entry.get("port_mode")
-        if pm not in ("exact", "native"):
-            bad_port.append(local)
-
-        if kind == "compat_shim":
-            if pm != "native":
-                shim_bad_mode.append(local)
-            if entry.get("modified") is not True:
-                shim_bad_modified.append(local)
-
-        if entry.get("modified") is None:
-            report["warnings"].append(f"missing modified flag: {local}")
-
-    report["stats"]["vendored_at_distribution"] = dict(pin_dist)
-
-    if dup_local:
-        report["errors"].append(f"duplicate local entries ({len(dup_local)})")
-        report["stats"]["duplicate_locals"] = dup_local[: args.sample]
-    if missing_disk:
-        report["errors"].append(f"manifest paths missing on disk ({len(missing_disk)})")
-        report["stats"]["missing_on_disk"] = missing_disk[: args.sample]
-        report["stats"]["missing_on_disk_count"] = len(missing_disk)
-    if null_vendored:
-        report["errors"].append(f"entries with null/missing vendored_at ({len(null_vendored)})")
-        report["stats"]["null_vendored_at"] = null_vendored
-    if bad_port:
-        report["errors"].append(f"invalid port_mode ({len(bad_port)})")
-        report["stats"]["bad_port_mode"] = bad_port[: args.sample]
-    if shim_bad_mode:
-        report["errors"].append(
-            f"compat shims must use port_mode=native ({len(shim_bad_mode)})"
-        )
-        report["stats"]["compat_shim_bad_mode"] = shim_bad_mode[: args.sample]
-    if shim_bad_modified:
-        report["errors"].append(
-            f"compat shims must declare modified=true ({len(shim_bad_modified)})"
-        )
-        report["stats"]["compat_shim_bad_modified"] = shim_bad_modified[: args.sample]
-    if behind_global:
-        report["info"].append(
-            f"{len(behind_global)} file(s) vendored_at behind global pin "
-            f"({len(no_stuck)} without stuck_reason)"
-        )
-        report["stats"]["behind_global_count"] = len(behind_global)
-        report["stats"]["behind_global_sample"] = behind_global[: args.sample]
-        report["stats"]["behind_without_stuck_sample"] = no_stuck[: args.sample]
-        # Policy: warn, not error — historical pins are expected until re-sync.
-        if no_stuck:
+        if pin and vendor_head and vendor_head != pin:
             report["warnings"].append(
-                f"{len(no_stuck)} file(s) behind global pin without stuck_reason"
+                f"pristine checkout HEAD={vendor_head[:12]} != pin={pin[:12]} "
+                "(fine for reading upstream; run scripts/vendor-setup.sh to reset)"
             )
 
-    # --- disk files not in manifest (:telegram only; report, not always error) ---
-    on_disk = collect_on_disk_telegram_java(root)
-    allow_prefixes = load_allowlist(root)
-    allowlisted = []
-    unmanifested = []
-    for pth in on_disk:
-        if pth in local_set:
-            continue
-        if is_allowlisted(pth, allow_prefixes):
-            allowlisted.append(pth)
-        else:
-            unmanifested.append(pth)
-    bucket_counts = Counter(bucket_path(p) for p in unmanifested)
-    allow_bucket_counts = Counter(bucket_path(p) for p in allowlisted)
-    report["stats"]["telegram_java_on_disk"] = len(on_disk)
-    report["stats"]["telegram_unmanifested"] = len(unmanifested)
-    report["stats"]["telegram_allowlisted"] = len(allowlisted)
-    report["stats"]["unmanifested_buckets"] = dict(bucket_counts)
-    report["stats"]["allowlisted_buckets"] = dict(allow_bucket_counts)
-    if unmanifested:
-        report["warnings"].append(
-            f"{len(unmanifested)} :telegram .java file(s) on disk not in manifest "
-            f"(buckets={dict(bucket_counts)}; register or extend vendor-allowlist.json)"
-        )
-        report["stats"]["unmanifested_sample"] = unmanifested[: args.sample]
-    if allowlisted:
-        report["info"].append(
-            f"{len(allowlisted)} on-disk path(s) covered by vendor-allowlist.json "
-            f"(buckets={dict(allow_bucket_counts)})"
-        )
-
-    # resources: only check vendored_at present
-    res_null = []
-    for i, res in enumerate(resources):
-        if not res.get("vendored_at"):
-            res_null.append(i)
-    if res_null:
-        report["errors"].append(f"resource groups missing vendored_at: {res_null}")
-
-    # isolation
-    iso_code, iso_out = run_isolation_check(root)
-    report["stats"]["isolation_ok"] = iso_code == 0
-    if iso_code != 0:
+    code, out = run_isolation_check(root)
+    report["stats"]["isolation_ok"] = code == 0
+    if code != 0:
         report["errors"].append("vendor-isolation-check failed")
-        report["stats"]["isolation_output"] = iso_out
+        report["stats"]["isolation_output"] = out
     else:
-        report["info"].append(iso_out or "vendor isolation clean")
+        report["info"].append(out or "vendor isolation clean")
 
-    # optional modified byte-check
-    if args.check_modified:
-        if not vd.exists():
-            report["errors"].append(
-                "cannot --check-modified without a pristine tree at "
-                f"{display_path(vd, root)}"
-            )
-        else:
-            mismatches = []
-            unavailable = []
-            checked = 0
-            for entry, _kind in tracked_entries:
-                if not local_abs(entry, manifest, root).is_file():
-                    continue
-                cmp = compare_to_upstream(entry, manifest, root)
-                checked += 1
-                if cmp.get("error") == "upstream_blob_missing" or not cmp.get("upstream_available"):
-                    if cmp.get("error") not in (None, "missing_on_disk"):
-                        unavailable.append(entry.get("local"))
-                    continue
-                if cmp.get("modified_mismatch"):
-                    mismatches.append(
-                        {
-                            "local": entry.get("local"),
-                            "error": cmp.get("error"),
-                            "declared_modified": cmp.get("declared_modified"),
-                            "byte_equal": cmp.get("byte_equal"),
-                        }
-                    )
-            report["stats"]["modified_checked"] = checked
-            report["stats"]["modified_mismatches"] = len(mismatches)
-            report["stats"]["upstream_unavailable"] = len(unavailable)
-            if mismatches:
-                report["errors"].append(
-                    f"modified flag mismatches vs bytes ({len(mismatches)})"
-                )
-                report["stats"]["modified_mismatch_sample"] = mismatches[: args.sample]
-            if unavailable:
-                report["warnings"].append(
-                    f"could not load upstream blob for {len(unavailable)} file(s)"
-                )
-                report["stats"]["upstream_unavailable_sample"] = unavailable[: args.sample]
-
-    # bump report
-    if args.bump_report is not None:
-        new_ref = args.bump_report
-        new_sha = git_rev_parse(new_ref, vd) if vd.exists() else None
-        if not vd.exists():
-            report["errors"].append(
-                "cannot --bump-report without a pristine tree at "
-                f"{display_path(vd, root)}"
-            )
+    if args.bump_report is not None and index is not None:
+        ref = args.bump_report
+        pin = report["stats"].get("pinned_commit")
+        new_sha = git_rev_parse(ref, vd)
+        if not new_sha:
+            report["errors"].append(f"cannot resolve {ref}")
         elif not pin:
-            report["errors"].append("cannot --bump-report without pinned_commit")
-        elif not new_sha:
-            report["errors"].append(f"cannot resolve NEW_SHA={new_ref}")
+            report["errors"].append("cannot --bump-report without a pinned commit")
         else:
-            up_paths = []
-            path_to_local = {}
-            for entry in files:
-                gp = upstream_git_path(entry, manifest)
-                if gp:
-                    up_paths.append(gp)
-                    path_to_local[gp] = entry.get("local")
-            # git log pathspec can be huge; chunk it.
-            touched: list[str] = []
-            chunk = 80
-            for i in range(0, len(up_paths), chunk):
-                part = git_log_paths(pin, new_sha, up_paths[i : i + chunk], vd)
-                touched.extend(part)
-            # de-dupe preserve order
-            seen = set()
-            touched_u = []
-            for t in touched:
-                if t not in seen:
-                    seen.add(t)
-                    touched_u.append(t)
-            rows = []
-            for gp in touched_u:
-                local = path_to_local.get(gp)
-                entry = next((e for e in files if e.get("local") == local), {})
-                rows.append(
-                    {
-                        "local": local,
-                        "upstream": gp,
-                        "port_mode": entry.get("port_mode"),
-                        "modified": entry.get("modified"),
-                        "vendored_at": entry.get("vendored_at"),
-                        "stuck_reason": entry.get("stuck_reason"),
-                    }
-                )
-            report["stats"]["bump"] = {
-                "old": pin,
-                "new": new_sha,
-                "touched_count": len(rows),
-                "touched": rows,
+            files = index.get("files") or []
+            paths = [p for p in (upstream_git_path(e, index) for e in files) if p]
+            touched = set(git_log_paths(pin, new_sha, paths, vd))
+            rows = [
+                e
+                for e in files
+                if upstream_git_path(e, index) in touched
+            ]
+            tracks = Counter(
+                ("exact/clean" if e.get("modified") is False else
+                 "exact/modified" if e.get("port_mode") == "exact" else
+                 "native")
+                for e in rows
+            )
+            report["stats"]["bump_report"] = {
+                "ref": new_sha,
+                "touched": len(rows),
+                "tracks": dict(tracks),
             }
             report["info"].append(
-                f"bump report {pin[:12]}..{new_sha[:12]}: "
-                f"{len(rows)}/{len(files)} manifest file(s) touched upstream"
+                f"bump report {pin[:12]}..{new_sha[:12]}: {len(rows)}/{len(files)} "
+                f"tracked file(s) touched by upstream {dict(tracks)}"
             )
+            for e in rows:
+                report["stats"].setdefault("bump_paths", []).append(e["local"])
+            if tracks.get("exact/modified"):
+                report["warnings"].append(
+                    f"{tracks['exact/modified']} exact file(s) need a manual rebase "
+                    "when the pin moves (scripts/vendor-classify.sh lists the drift)"
+                )
 
-    # output
     if args.json:
         print(json.dumps(report, indent=2, ensure_ascii=False))
-    else:
-        _print_human(report, args.sample)
+        return 1 if report["errors"] or (args.strict and report["warnings"]) else 0
 
-    n_err = len(report["errors"])
-    n_warn = len(report["warnings"])
-    if n_err:
-        return 1
-    if args.strict and n_warn:
-        return 1
-    return 0
-
-
-def _print_human(report: dict, sample: int) -> None:
-    stats = report.get("stats") or {}
     print("=== vendor-status ===")
-    print(
-        f"pin: {stats.get('pinned_commit')}  date: {stats.get('pinned_date')}  "
-        f"vendor_HEAD: {stats.get('vendor_HEAD')}"
-    )
-    print(
-        f"files: {stats.get('file_entries')}  "
-        f"compat_shims: {stats.get('compat_shims')}  "
-        f"resources: {stats.get('resource_groups')}  "
-        f"port_mode: {stats.get('port_mode')}  "
-        f"modified: {stats.get('modified')}"
-    )
-    print(f"vendored_at dist: {stats.get('vendored_at_distribution')}")
-    print(
-        f":telegram java on disk: {stats.get('telegram_java_on_disk')}  "
-        f"unmanifested: {stats.get('telegram_unmanifested')}  "
-        f"allowlisted: {stats.get('telegram_allowlisted')}"
-    )
-    if stats.get("unmanifested_buckets"):
-        print(f"unmanifested buckets: {stats.get('unmanifested_buckets')}")
-    if stats.get("allowlisted_buckets"):
-        print(f"allowlisted buckets: {stats.get('allowlisted_buckets')}")
-    if "behind_global_count" in stats:
+    stats = report["stats"]
+    if stats.get("pinned_commit"):
         print(
-            f"behind global pin: {stats['behind_global_count']}  "
-            f"(sample without stuck_reason: {stats.get('behind_without_stuck_sample')})"
+            f"pin: {stats['pinned_commit'][:12]}  date: {stats.get('pinned_date')}  "
+            f"vendor_HEAD: {str(stats.get('vendor_HEAD'))[:12]}"
         )
-    for msg in report.get("info") or []:
-        print(f"INFO  {msg}")
-    for msg in report.get("warnings") or []:
-        print(f"WARN  {msg}")
-    for msg in report.get("errors") or []:
-        print(f"ERROR {msg}")
-
-    # samples
-    for key, label in [
-        ("missing_on_disk", "missing on disk"),
-        ("null_vendored_at", "null vendored_at"),
-        ("unmanifested_sample", "unmanifested sample"),
-        ("modified_mismatch_sample", "modified mismatches"),
-    ]:
-        val = stats.get(key)
-        if not val:
-            continue
-        print(f"-- {label} --")
-        if isinstance(val, list):
-            for item in val[:sample]:
-                print(f"  {item}")
-        else:
-            print(f"  {val}")
-
-    bump = stats.get("bump")
-    if bump:
         print(
-            f"-- bump {bump['old'][:12]}..{bump['new'][:12]} "
-            f"({bump['touched_count']} files) --"
+            f"files: {stats.get('files')}  shims: {stats.get('compat_shims')}  "
+            f"resources: {stats.get('resources')}  "
+            f"port_mode: {stats.get('port_mode')}"
         )
-        for row in bump["touched"][:sample]:
-            print(
-                f"  [{row.get('port_mode')}/{'mod' if row.get('modified') else 'clean'}] "
-                f"{row.get('local')}"
-            )
-        if bump["touched_count"] > sample:
-            print(f"  ... +{bump['touched_count'] - sample} more")
-
-    n_err = len(report.get("errors") or [])
-    n_warn = len(report.get("warnings") or [])
-    print(f"=== result: errors={n_err} warnings={n_warn} ===")
+        print(
+            f"modified vs baseline: {stats.get('modified')}  "
+            f"forced_exact: {stats.get('forced_exact')}  "
+            f"reference: {stats.get('reference_paths')}"
+        )
+    for line in report["info"]:
+        print(f"INFO  {line}")
+    for line in report["warnings"]:
+        print(f"WARN  {line}")
+    for line in report["errors"]:
+        print(f"ERROR {line}")
+    failed = bool(report["errors"]) or (args.strict and report["warnings"])
+    print(f"=== result: errors={len(report['errors'])} warnings={len(report['warnings'])} ===")
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

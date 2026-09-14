@@ -38,7 +38,7 @@ in-place as phases land.
 - Follow [`AGENTS.md`](../AGENTS.md) and [`docs/code-layout.md`](./code-layout.md):
   - Native ports of Telegram measurement / drawing / gesture code in `:app`
     get SPDX `GPL-2.0-or-later` header + one-line attribution **and** a
-    `vendor-manifest.json` entry (`port_mode: native`, `forced_exact:
+    `vendor-overlay.json` entry (`native` list, `forced_exact`:
     [measurement, drawing, gesture]` as appropriate).
   - Telegram UI components that do not bind NativeDo models should live in
     `:telegram` with upstream `org.telegram.*` packages. `:app` may consume

@@ -21,7 +21,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from vendorlib import CURRENT_PIN, git_show, load_manifest, repo_root  # noqa: E402
+from vendorlib import (  # noqa: E402
+    git_show,
+    load_index,
+    load_overlay,
+    normalize_sha,
+    repo_root,
+)
 
 # Shared with WebInstantView S1 (keep in sync when extending).
 TYPE_MAP: dict[str, str] = {
@@ -131,8 +137,9 @@ def main() -> int:
     args = ap.parse_args()
 
     root = repo_root()
+    overlay_pin = normalize_sha(load_overlay(root)["upstream"]["pinned_commit"])
     pin = git_show(
-        CURRENT_PIN,
+        overlay_pin,
         "TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java",
     )
     if not pin:
@@ -178,7 +185,7 @@ def main() -> int:
             host_hits.append({"line": i, "text": line.strip()[:160]})
 
     report = {
-        "pin": CURRENT_PIN,
+        "pin": overlay_pin,
         "pin_lines": pin_t.count("\n"),
         "mapped_lines": mapped.count("\n"),
         "tl_iv_refs_in_pin": len(refs),
@@ -201,7 +208,7 @@ def main() -> int:
         print(json.dumps(report, indent=2, ensure_ascii=False))
     else:
         print("=== ArticleViewer S1 preview (no main-tree write) ===")
-        print(f"pin {CURRENT_PIN[:12]}  lines={report['pin_lines']}  TL_iv refs={report['tl_iv_refs_in_pin']}")
+        print(f"pin {overlay_pin[:12]}  lines={report['pin_lines']}  TL_iv refs={report['tl_iv_refs_in_pin']}")
         print(f"after map: remaining TL_iv types={remaining or '[]'}")
         print(f"unmapped types present in pin: {unmapped_in_pin or '[]'}")
         print(f"map targets missing from local TLRPC: {mapped_miss_tlrpc or '[]'}")

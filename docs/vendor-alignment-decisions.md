@@ -1,3 +1,7 @@
+> **Historical plan (retired manifest model).** Current workflow: `scripts/vendor-guard.sh` + [VENDOR.md](../VENDOR.md).
+> Terms like `stuck_reason`, `modified:true`, and `vendor-manifest.json` below refer to the
+> pre-overlay model; provenance is now derived.
+
 # Vendor alignment decisions backlog
 
 Human decisions needed. Agents should not auto-resolve these without product

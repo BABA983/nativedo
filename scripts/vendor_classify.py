@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from vendorlib import (  # noqa: E402
     compare_to_upstream,
     git_show,
-    load_manifest,
+    load_index,
     local_abs,
     normalize_sha,
     repo_root,
@@ -128,14 +128,13 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     root = repo_root()
-    manifest = load_manifest(root)
+    manifest = load_index(root)
     vd = vendor_dir(root)
     if not vd.exists():
         print(f"ERROR: pristine Telegram tree missing at {vd}; run scripts/vendor-setup.sh", file=sys.stderr)
         return 1
 
     rows = []
-    mismatches = []
     skipped = Counter()
 
     for entry in manifest.get("files") or []:
@@ -145,17 +144,6 @@ def main() -> int:
         if args.only and not any(s in local for s in args.only):
             continue
         if not args.all_entries and entry.get("modified") is not True:
-            # still check clean flags for mismatch when modified false
-            if entry.get("modified") is False:
-                cmp = compare_to_upstream(entry, manifest, root)
-                if cmp.get("modified_mismatch"):
-                    mismatches.append(
-                        {
-                            "local": local,
-                            "error": cmp.get("error"),
-                            "port_mode": entry.get("port_mode"),
-                        }
-                    )
             continue
 
         path = local_abs(entry, manifest, root)
@@ -200,7 +188,6 @@ def main() -> int:
         "primary_distribution": dict(primary_c),
         "port_mode_distribution": dict(port_c),
         "skipped": dict(skipped),
-        "modified_flag_mismatches": mismatches,
         "files": rows,
     }
 
@@ -212,12 +199,6 @@ def main() -> int:
     print(f"classified={len(rows)}  primary={dict(primary_c)}  port={dict(port_c)}")
     if skipped:
         print(f"skipped={dict(skipped)}")
-    if mismatches:
-        print(f"modified-flag mismatches ({len(mismatches)}):")
-        for m in mismatches[:30]:
-            print(f"  [{m.get('error')}] {m['local']}")
-        if len(mismatches) > 30:
-            print(f"  ... +{len(mismatches) - 30} more")
 
     # group listing by primary
     by_primary: dict[str, list] = {}

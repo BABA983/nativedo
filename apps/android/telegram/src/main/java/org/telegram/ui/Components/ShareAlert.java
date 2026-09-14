@@ -9,7 +9,8 @@
 // and "Share via…" (the system ACTION_SEND chooser). Depends only on core Android +
 // Theme colors, so it has no fragile vendored dependencies.
 //
-// This is NativeDo code, not a Telegram copy; do not add a vendor-manifest entry
+// This is NativeDo code, not a Telegram copy; it is listed in vendor-overlay.json
+// under `native`, so provenance tracking will not treat it as an upstream copy.
 // (same convention as WebBookmarks.java and the AlertDialog shim).
 package org.telegram.ui.Components;
 

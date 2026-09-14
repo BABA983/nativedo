@@ -11,9 +11,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from vendorlib import (  # noqa: E402
-    compare_to_upstream,
     git_show,
-    load_manifest,
+    load_index,
     local_abs,
     normalize_sha,
     repo_root,
@@ -42,7 +41,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--stat",
         action="store_true",
-        help="scan all entries: print modified-flag mismatches",
+        help="list tracked files that differ from their upstream baseline",
     )
     p.add_argument(
         "--name-only",
@@ -52,7 +51,7 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def resolve_entry(manifest: dict, path_arg: str, root: Path) -> dict:
+def resolve_entry(manifest: dict, path_arg: str, root: Path) -> dict:  # noqa: D401
     files = list(manifest.get("files") or []) + list(
         manifest.get("compat_shims") or []
     )
@@ -119,38 +118,31 @@ def resolve_entry(manifest: dict, path_arg: str, root: Path) -> dict:
 def main() -> int:
     args = parse_args()
     root = repo_root()
-    manifest = load_manifest(root)
+    manifest = load_index(root)
     vd = vendor_dir(root)
 
     if args.stat:
-        if not vd.exists():
-            print(f"ERROR: pristine Telegram tree missing at {vd}; run scripts/vendor-setup.sh", file=sys.stderr)
-            return 1
-        n_mis = 0
-        n_ok = 0
+        n_drift = 0
+        n_clean = 0
         n_skip = 0
         entries = list(manifest.get("files") or []) + list(
             manifest.get("compat_shims") or []
         )
         for entry in entries:
-            if not local_abs(entry, manifest, root).is_file():
+            if entry.get("modified") is None:
                 n_skip += 1
                 continue
-            cmp = compare_to_upstream(entry, manifest, root)
-            if cmp.get("error") in ("upstream_blob_missing", "no_upstream_ref", "missing_on_disk"):
-                n_skip += 1
-                continue
-            if cmp.get("modified_mismatch"):
-                n_mis += 1
+            if entry["modified"]:
+                n_drift += 1
                 if args.name_only:
                     print(entry.get("local"))
                 else:
-                    print(f"MISMATCH [{cmp.get('error')}] {entry.get('local')}")
+                    print(f"DIFFERS  {entry.get('local')}")
             else:
-                n_ok += 1
+                n_clean += 1
         if not args.name_only:
-            print(f"ok={n_ok} mismatch={n_mis} skipped={n_skip}")
-        return 1 if n_mis else 0
+            print(f"clean={n_clean} differs={n_drift} skipped={n_skip}")
+        return 0
 
     if not args.path:
         print("ERROR: path required (or use --stat)", file=sys.stderr)

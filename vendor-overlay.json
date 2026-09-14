@@ -1,0 +1,1470 @@
+{
+  "schema_version": 1,
+  "_comment": [
+    "Human-owned overlay for Telegram-derived code.",
+    "Provenance is DERIVED (scripts/vendor-index.sh) from this file + the pristine",
+    "checkout + the files on disk. Add a path here only when the derived default is",
+    "wrong:",
+    "  native        file is our code living at an upstream path (no parity claim)",
+    "  upstream_ports :app port -> the upstream file it was derived from (native)",
+    "  derived_from  :telegram file whose real upstream source differs from its path",
+    "  forced_exact  hand-feel subsystems that must stay upstream-shaped",
+    "  resources     copied resource groups (not per-file tracked)",
+    "Never list byte-clean copies: they are derived from the pristine tree."
+  ],
+  "upstream": {
+    "repo": "git@github.com:DrKLO/Telegram.git",
+    "pinned_commit": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+    "pinned_date": "2026-07-16",
+    "subject": "update to 12.9.0 (6966)",
+    "local_checkout": "../telegram"
+  },
+  "policy": {
+    "sync": "on-demand",
+    "why": "NativeDo is a linux.do client, not a Telegram fork: the snapshot advances only when a product goal needs upstream code, never on every upstream release.",
+    "third_party_prefixes": [
+      "androidx/",
+      "com/google/",
+      "com/carrotsearch/"
+    ]
+  },
+  "reference": {
+    "commit": "009e97356f966bb81eceba113d210230bf383122",
+    "why": "Carried from the first vendoring pass (Telegram 12.6.x). Historical reference only: these files are not re-synced against the current pin, so both vendor-diff and the derived `modified` flag use this commit as their baseline.",
+    "paths": [
+      "app/src/main/java/io/github/baba983/nativedo/ui/components/DiscourseUserCell.java",
+      "app/src/main/java/io/github/baba983/nativedo/ui/components/FixedHeaderRecyclerBottomSheet.java",
+      "app/src/main/java/io/github/baba983/nativedo/ui/main/GlassTabView.java",
+      "app/src/main/java/io/github/baba983/nativedo/ui/main/MainTabsActivity.java",
+      "app/src/main/java/io/github/baba983/nativedo/ui/main/MainTabsLayout.java",
+      "app/src/main/java/io/github/baba983/nativedo/ui/main/ViewPagerActivity.java",
+      "app/src/main/java/io/github/baba983/nativedo/ui/profile/DiscourseProfileActionsView.java",
+      "app/src/main/java/io/github/baba983/nativedo/ui/profile/ProfileDetailCell.java",
+      "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicCell.java",
+      "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicMentionCell.java",
+      "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicMentionSuggestionsView.kt",
+      "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicPostScrimHostLayout.java",
+      "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicPostScrimPopupContainerLayout.java",
+      "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicSearchViewPager.kt",
+      "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/CodeBlock.java",
+      "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/CollageBlock.java",
+      "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/DetailsBlock.java",
+      "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/HeadingBlock.java",
+      "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ImageBlock.java",
+      "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ListBlock.java",
+      "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/OneboxBlock.java",
+      "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ParagraphBlock.java",
+      "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/PollBlock.java",
+      "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/QuoteBlock.java",
+      "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/RuleBlock.java",
+      "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/SpoilerTextLayout.java",
+      "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/TableBlock.java",
+      "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/TextLayoutBlock.java",
+      "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicFooterCell.java",
+      "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicHeaderCell.java",
+      "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicPostCell.java",
+      "telegram/src/main/java/org/telegram/messenger/ApplicationLoader.java",
+      "telegram/src/main/java/org/telegram/messenger/BuildVars.java",
+      "telegram/src/main/java/org/telegram/messenger/Emoji.java",
+      "telegram/src/main/java/org/telegram/messenger/FileLoader.java",
+      "telegram/src/main/java/org/telegram/messenger/FileLog.java",
+      "telegram/src/main/java/org/telegram/messenger/GenericProvider.java",
+      "telegram/src/main/java/org/telegram/messenger/ImageLoader.java",
+      "telegram/src/main/java/org/telegram/messenger/LocaleController.java",
+      "telegram/src/main/java/org/telegram/messenger/MessagesController.java",
+      "telegram/src/main/java/org/telegram/messenger/NotificationCenter.java",
+      "telegram/src/main/java/org/telegram/messenger/SharedConfig.java",
+      "telegram/src/main/java/org/telegram/messenger/XiaomiUtilities.java",
+      "telegram/src/main/java/org/telegram/messenger/browser/Browser.java",
+      "telegram/src/main/java/org/telegram/messenger/camera/CameraView.java",
+      "telegram/src/main/java/org/telegram/messenger/utils/BitmapsCache.java",
+      "telegram/src/main/java/org/telegram/tgnet/TLRPC.java",
+      "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java",
+      "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarMenuItem.java",
+      "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarMenuSubItem.java",
+      "telegram/src/main/java/org/telegram/ui/ActionBar/BackDrawable.java",
+      "telegram/src/main/java/org/telegram/ui/ActionBar/BaseFragment.java",
+      "telegram/src/main/java/org/telegram/ui/ActionBar/BottomSheetTabs.java",
+      "telegram/src/main/java/org/telegram/ui/ActionBar/BottomSheetTabsOverlay.java",
+      "telegram/src/main/java/org/telegram/ui/ActionBar/DrawerLayoutContainer.java",
+      "telegram/src/main/java/org/telegram/ui/ActionBar/FloatingActionMode.java",
+      "telegram/src/main/java/org/telegram/ui/ActionBar/FloatingToolbar.java",
+      "telegram/src/main/java/org/telegram/ui/ActionBar/INavigationLayout.java",
+      "telegram/src/main/java/org/telegram/ui/Adapters/FiltersView.java",
+      "telegram/src/main/java/org/telegram/ui/ArticleViewer.java",
+      "telegram/src/main/java/org/telegram/ui/CachedStaticLayout.java",
+      "telegram/src/main/java/org/telegram/ui/Cells/ChatActionCell.java",
+      "telegram/src/main/java/org/telegram/ui/Cells/TextCell.java",
+      "telegram/src/main/java/org/telegram/ui/Cells/TextCheckCell.java",
+      "telegram/src/main/java/org/telegram/ui/Cells/TextDetailCell.java",
+      "telegram/src/main/java/org/telegram/ui/Cells/TextInfoPrivacyCell.java",
+      "telegram/src/main/java/org/telegram/ui/Cells/TextSelectionHelper.java",
+      "telegram/src/main/java/org/telegram/ui/Cells/TextSettingsCell.java",
+      "telegram/src/main/java/org/telegram/ui/Components/AnimatedEmojiSpan.java",
+      "telegram/src/main/java/org/telegram/ui/Components/AnimatedFileDrawable.java",
+      "telegram/src/main/java/org/telegram/ui/Components/AudioPlayerAlert.java",
+      "telegram/src/main/java/org/telegram/ui/Components/AvatarDrawable.java",
+      "telegram/src/main/java/org/telegram/ui/Components/Bulletin.java",
+      "telegram/src/main/java/org/telegram/ui/Components/BulletinFactory.java",
+      "telegram/src/main/java/org/telegram/ui/Components/CheckBoxSquare.java",
+      "telegram/src/main/java/org/telegram/ui/Components/EditTextBoldCursor.java",
+      "telegram/src/main/java/org/telegram/ui/Components/EditTextEffects.java",
+      "telegram/src/main/java/org/telegram/ui/Components/EditTextEmoji.java",
+      "telegram/src/main/java/org/telegram/ui/Components/EmojiView.java",
+      "telegram/src/main/java/org/telegram/ui/Components/FragmentFloatingButton.java",
+      "telegram/src/main/java/org/telegram/ui/Components/ItemOptions.java",
+      "telegram/src/main/java/org/telegram/ui/Components/Point.java",
+      "telegram/src/main/java/org/telegram/ui/Components/QuoteSpan.java",
+      "telegram/src/main/java/org/telegram/ui/Components/RLottieDrawable.java",
+      "telegram/src/main/java/org/telegram/ui/Components/Rect.java",
+      "telegram/src/main/java/org/telegram/ui/Components/ReplyMessageLine.java",
+      "telegram/src/main/java/org/telegram/ui/Components/SimpleFloatPropertyCompat.java",
+      "telegram/src/main/java/org/telegram/ui/Components/SizeNotifierFrameLayout.java",
+      "telegram/src/main/java/org/telegram/ui/Components/UItem.java",
+      "telegram/src/main/java/org/telegram/ui/Components/UniversalAdapter.java",
+      "telegram/src/main/java/org/telegram/ui/Components/UniversalCells.java",
+      "telegram/src/main/java/org/telegram/ui/Components/UniversalFragment.java",
+      "telegram/src/main/java/org/telegram/ui/Components/ViewPagerFixed.java",
+      "telegram/src/main/java/org/telegram/ui/Components/poll/buttons/PollButtonDrawable.java",
+      "telegram/src/main/java/org/telegram/ui/Components/poll/buttons/PollButtonDrawableBase.java",
+      "telegram/src/main/java/org/telegram/ui/Components/poll/buttons/PollInstantButtonDrawable.java",
+      "telegram/src/main/java/org/telegram/ui/Components/spoilers/SpoilersClickDetector.java",
+      "telegram/src/main/java/org/telegram/ui/GradientClip.java",
+      "telegram/src/main/java/org/telegram/ui/PhotoViewer.java",
+      "telegram/src/main/java/org/telegram/ui/bots/BotWebViewAttachedSheet.java",
+      "telegram/src/main/java/org/telegram/ui/bots/ChatAttachAlertBotWebViewLayout.java",
+      "telegram/src/main/java/org/telegram/ui/web/BotWebViewContainer.java"
+    ]
+  },
+  "native": [
+    "telegram/src/main/java/org/telegram/messenger/AccountInstance.java",
+    "telegram/src/main/java/org/telegram/messenger/AndroidUtilities.java",
+    "telegram/src/main/java/org/telegram/messenger/AnimationNotificationsLocker.java",
+    "telegram/src/main/java/org/telegram/messenger/ApplicationLoader.java",
+    "telegram/src/main/java/org/telegram/messenger/AutoDeleteMediaTask.java",
+    "telegram/src/main/java/org/telegram/messenger/BaseController.java",
+    "telegram/src/main/java/org/telegram/messenger/BuildVars.java",
+    "telegram/src/main/java/org/telegram/messenger/ChatObject.java",
+    "telegram/src/main/java/org/telegram/messenger/DialogObject.java",
+    "telegram/src/main/java/org/telegram/messenger/DispatchQueuePriority.java",
+    "telegram/src/main/java/org/telegram/messenger/DocumentObject.java",
+    "telegram/src/main/java/org/telegram/messenger/DownloadController.java",
+    "telegram/src/main/java/org/telegram/messenger/Emoji.java",
+    "telegram/src/main/java/org/telegram/messenger/FileLoadOperation.java",
+    "telegram/src/main/java/org/telegram/messenger/FileLoadOperationStream.java",
+    "telegram/src/main/java/org/telegram/messenger/FileLoader.java",
+    "telegram/src/main/java/org/telegram/messenger/FileLoaderPriorityQueue.java",
+    "telegram/src/main/java/org/telegram/messenger/FileLog.java",
+    "telegram/src/main/java/org/telegram/messenger/FilePathDatabase.java",
+    "telegram/src/main/java/org/telegram/messenger/FileRefController.java",
+    "telegram/src/main/java/org/telegram/messenger/FileStreamLoadOperation.java",
+    "telegram/src/main/java/org/telegram/messenger/FileUploadOperation.java",
+    "telegram/src/main/java/org/telegram/messenger/GenericProvider.java",
+    "telegram/src/main/java/org/telegram/messenger/ImageLoader.java",
+    "telegram/src/main/java/org/telegram/messenger/LiteMode.java",
+    "telegram/src/main/java/org/telegram/messenger/LocaleController.java",
+    "telegram/src/main/java/org/telegram/messenger/MediaController.java",
+    "telegram/src/main/java/org/telegram/messenger/MediaDataController.java",
+    "telegram/src/main/java/org/telegram/messenger/MessageObject.java",
+    "telegram/src/main/java/org/telegram/messenger/MessagesController.java",
+    "telegram/src/main/java/org/telegram/messenger/MessagesStorage.java",
+    "telegram/src/main/java/org/telegram/messenger/NotificationCenter.java",
+    "telegram/src/main/java/org/telegram/messenger/SaveToGallerySettingsHelper.java",
+    "telegram/src/main/java/org/telegram/messenger/ScreenReceiver.java",
+    "telegram/src/main/java/org/telegram/messenger/SecureDocument.java",
+    "telegram/src/main/java/org/telegram/messenger/SendMessagesHelper.java",
+    "telegram/src/main/java/org/telegram/messenger/SharedConfig.java",
+    "telegram/src/main/java/org/telegram/messenger/Timer.java",
+    "telegram/src/main/java/org/telegram/messenger/TranslateController.java",
+    "telegram/src/main/java/org/telegram/messenger/UserConfig.java",
+    "telegram/src/main/java/org/telegram/messenger/UserObject.java",
+    "telegram/src/main/java/org/telegram/messenger/VideoEditedInfo.java",
+    "telegram/src/main/java/org/telegram/messenger/WebFile.java",
+    "telegram/src/main/java/org/telegram/messenger/browser/Browser.java",
+    "telegram/src/main/java/org/telegram/messenger/camera/CameraView.java",
+    "telegram/src/main/java/org/telegram/messenger/utils/BitmapsCache.java",
+    "telegram/src/main/java/org/telegram/messenger/utils/LeakDetector.java",
+    "telegram/src/main/java/org/telegram/messenger/voip/VoIPService.java",
+    "telegram/src/main/java/org/telegram/messenger/wallpaper/WallpaperGiftBitmapDrawable.java",
+    "telegram/src/main/java/org/telegram/tgnet/ConnectionsManager.java",
+    "telegram/src/main/java/org/telegram/tgnet/TLObject.java",
+    "telegram/src/main/java/org/telegram/tgnet/TLRPC.java",
+    "telegram/src/main/java/org/telegram/tgnet/tl/TL_account.java",
+    "telegram/src/main/java/org/telegram/tgnet/tl/TL_stories.java",
+    "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBar.java",
+    "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java",
+    "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarMenu.java",
+    "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarMenuItem.java",
+    "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarMenuSubItem.java",
+    "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarSheet.java",
+    "telegram/src/main/java/org/telegram/ui/ActionBar/AlertDialog.java",
+    "telegram/src/main/java/org/telegram/ui/ActionBar/BackDrawable.java",
+    "telegram/src/main/java/org/telegram/ui/ActionBar/BaseFragment.java",
+    "telegram/src/main/java/org/telegram/ui/ActionBar/BottomSheetTabDialog.java",
+    "telegram/src/main/java/org/telegram/ui/ActionBar/BottomSheetTabs.java",
+    "telegram/src/main/java/org/telegram/ui/ActionBar/BottomSheetTabsOverlay.java",
+    "telegram/src/main/java/org/telegram/ui/ActionBar/BrowserSheet.java",
+    "telegram/src/main/java/org/telegram/ui/ActionBar/DrawerLayoutContainer.java",
+    "telegram/src/main/java/org/telegram/ui/ActionBar/FloatingActionMode.java",
+    "telegram/src/main/java/org/telegram/ui/ActionBar/FloatingToolbar.java",
+    "telegram/src/main/java/org/telegram/ui/ActionBar/INavigationLayout.java",
+    "telegram/src/main/java/org/telegram/ui/ActionBar/Theme.java",
+    "telegram/src/main/java/org/telegram/ui/Adapters/FiltersView.java",
+    "telegram/src/main/java/org/telegram/ui/CachedStaticLayout.java",
+    "telegram/src/main/java/org/telegram/ui/Cells/ChatActionCell.java",
+    "telegram/src/main/java/org/telegram/ui/Cells/ChatMessageCell.java",
+    "telegram/src/main/java/org/telegram/ui/Cells/CheckBoxCell.java",
+    "telegram/src/main/java/org/telegram/ui/Cells/DialogCell.java",
+    "telegram/src/main/java/org/telegram/ui/Cells/FixedWidthSpan.java",
+    "telegram/src/main/java/org/telegram/ui/Cells/TextCell.java",
+    "telegram/src/main/java/org/telegram/ui/Cells/TextCheckCell.java",
+    "telegram/src/main/java/org/telegram/ui/Cells/TextDetailCell.java",
+    "telegram/src/main/java/org/telegram/ui/Cells/TextInfoPrivacyCell.java",
+    "telegram/src/main/java/org/telegram/ui/Cells/TextSelectionHelper.java",
+    "telegram/src/main/java/org/telegram/ui/Cells/TextSettingsCell.java",
+    "telegram/src/main/java/org/telegram/ui/ChatActivity.java",
+    "telegram/src/main/java/org/telegram/ui/Components/AlertsCreator.java",
+    "telegram/src/main/java/org/telegram/ui/Components/AnimatedArrowDrawable.java",
+    "telegram/src/main/java/org/telegram/ui/Components/AnimatedEmojiDrawable.java",
+    "telegram/src/main/java/org/telegram/ui/Components/AnimatedEmojiSpan.java",
+    "telegram/src/main/java/org/telegram/ui/Components/AnimatedFileDrawable.java",
+    "telegram/src/main/java/org/telegram/ui/Components/AnimatedSvgDrawable.java",
+    "telegram/src/main/java/org/telegram/ui/Components/AudioPlayerAlert.java",
+    "telegram/src/main/java/org/telegram/ui/Components/AvatarDrawable.java",
+    "telegram/src/main/java/org/telegram/ui/Components/BackgroundGradientDrawable.java",
+    "telegram/src/main/java/org/telegram/ui/Components/Bulletin.java",
+    "telegram/src/main/java/org/telegram/ui/Components/BulletinFactory.java",
+    "telegram/src/main/java/org/telegram/ui/Components/ChatActivityEnterView.java",
+    "telegram/src/main/java/org/telegram/ui/Components/ChatAttachAlert.java",
+    "telegram/src/main/java/org/telegram/ui/Components/CheckBoxSquare.java",
+    "telegram/src/main/java/org/telegram/ui/Components/ContentPreviewViewer.java",
+    "telegram/src/main/java/org/telegram/ui/Components/CurvesToolValue.java",
+    "telegram/src/main/java/org/telegram/ui/Components/EditTextBoldCursor.java",
+    "telegram/src/main/java/org/telegram/ui/Components/EditTextEmoji.java",
+    "telegram/src/main/java/org/telegram/ui/Components/EmojiView.java",
+    "telegram/src/main/java/org/telegram/ui/Components/FilterShaders.java",
+    "telegram/src/main/java/org/telegram/ui/Components/FragmentFloatingButton.java",
+    "telegram/src/main/java/org/telegram/ui/Components/ItemOptions.java",
+    "telegram/src/main/java/org/telegram/ui/Components/JoinToSendSettingsView.java",
+    "telegram/src/main/java/org/telegram/ui/Components/LinkSpanDrawable.java",
+    "telegram/src/main/java/org/telegram/ui/Components/LoadingDrawable.java",
+    "telegram/src/main/java/org/telegram/ui/Components/LoadingStickerDrawable.java",
+    "telegram/src/main/java/org/telegram/ui/Components/MovableCell.java",
+    "telegram/src/main/java/org/telegram/ui/Components/PaintingOverlay.java",
+    "telegram/src/main/java/org/telegram/ui/Components/ProfileGalleryBlurView.java",
+    "telegram/src/main/java/org/telegram/ui/Components/ProfileGalleryView.java",
+    "telegram/src/main/java/org/telegram/ui/Components/RLottieDrawable.java",
+    "telegram/src/main/java/org/telegram/ui/Components/ReactedUsersListView.java",
+    "telegram/src/main/java/org/telegram/ui/Components/ReplyMessageLine.java",
+    "telegram/src/main/java/org/telegram/ui/Components/SeekBar.java",
+    "telegram/src/main/java/org/telegram/ui/Components/ShareAlert.java",
+    "telegram/src/main/java/org/telegram/ui/Components/SimpleFloatPropertyCompat.java",
+    "telegram/src/main/java/org/telegram/ui/Components/SizeNotifierFrameLayout.java",
+    "telegram/src/main/java/org/telegram/ui/Components/SizeNotifierFrameLayoutPhoto.java",
+    "telegram/src/main/java/org/telegram/ui/Components/SlotsDrawable.java",
+    "telegram/src/main/java/org/telegram/ui/Components/StaticLayoutEx.java",
+    "telegram/src/main/java/org/telegram/ui/Components/StickerEmptyView.java",
+    "telegram/src/main/java/org/telegram/ui/Components/Text.java",
+    "telegram/src/main/java/org/telegram/ui/Components/ThemePreviewDrawable.java",
+    "telegram/src/main/java/org/telegram/ui/Components/TranslateAlert2.java",
+    "telegram/src/main/java/org/telegram/ui/Components/TranslateAlert3.java",
+    "telegram/src/main/java/org/telegram/ui/Components/UItem.java",
+    "telegram/src/main/java/org/telegram/ui/Components/UndoView.java",
+    "telegram/src/main/java/org/telegram/ui/Components/UniversalAdapter.java",
+    "telegram/src/main/java/org/telegram/ui/Components/UniversalCells.java",
+    "telegram/src/main/java/org/telegram/ui/Components/UniversalFragment.java",
+    "telegram/src/main/java/org/telegram/ui/Components/UniversalListCallbacks.java",
+    "telegram/src/main/java/org/telegram/ui/Components/VectorAvatarThumbDrawable.java",
+    "telegram/src/main/java/org/telegram/ui/Components/VideoEditTextureView.java",
+    "telegram/src/main/java/org/telegram/ui/Components/VideoPlayer.java",
+    "telegram/src/main/java/org/telegram/ui/Components/ViewPagerFixed.java",
+    "telegram/src/main/java/org/telegram/ui/Components/WallpaperUpdater.java",
+    "telegram/src/main/java/org/telegram/ui/Components/WebPlayerView.java",
+    "telegram/src/main/java/org/telegram/ui/Components/chat/ViewPositionWatcher.java",
+    "telegram/src/main/java/org/telegram/ui/Components/poll/buttons/PollButtonDrawable.java",
+    "telegram/src/main/java/org/telegram/ui/Components/poll/buttons/PollButtonDrawableBase.java",
+    "telegram/src/main/java/org/telegram/ui/Components/poll/buttons/PollInstantButtonDrawable.java",
+    "telegram/src/main/java/org/telegram/ui/Components/voip/CellFlickerDrawable.java",
+    "telegram/src/main/java/org/telegram/ui/DialogsActivity.java",
+    "telegram/src/main/java/org/telegram/ui/FiltersSetupActivity.java",
+    "telegram/src/main/java/org/telegram/ui/GradientClip.java",
+    "telegram/src/main/java/org/telegram/ui/LaunchActivity.java",
+    "telegram/src/main/java/org/telegram/ui/PhotoViewer.java",
+    "telegram/src/main/java/org/telegram/ui/PinchToZoomHelper.java",
+    "telegram/src/main/java/org/telegram/ui/ProfileActivity.java",
+    "telegram/src/main/java/org/telegram/ui/Stories/DarkThemeResourceProvider.java",
+    "telegram/src/main/java/org/telegram/ui/Stories/StoryItem.java",
+    "telegram/src/main/java/org/telegram/ui/Stories/recorder/ButtonWithCounterView.java",
+    "telegram/src/main/java/org/telegram/ui/Stories/recorder/HintView2.java",
+    "telegram/src/main/java/org/telegram/ui/Stories/recorder/StoryEntry.java",
+    "telegram/src/main/java/org/telegram/ui/WrappedResourceProvider.java",
+    "telegram/src/main/java/org/telegram/ui/bots/BotWebViewAttachedSheet.java",
+    "telegram/src/main/java/org/telegram/ui/bots/BotWebViewSheet.java",
+    "telegram/src/main/java/org/telegram/ui/bots/ChatAttachAlertBotWebViewLayout.java",
+    "telegram/src/main/java/org/telegram/ui/web/BotWebViewContainer.java",
+    "telegram/src/main/java/org/telegram/ui/web/WebBookmarks.java"
+  ],
+  "upstream_ports": {
+    "app/src/main/java/io/github/baba983/nativedo/ui/components/FixedHeaderRecyclerBottomSheet.java": "org/telegram/ui/Components/StickersAlert.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/components/DiscourseUserCell.java": "org/telegram/ui/Cells/ReactedUserHolderView.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicSearchViewPager.kt": "org/telegram/ui/Components/SearchViewPager.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicMentionSuggestionsView.kt": "org/telegram/ui/Components/MentionsContainerView.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicMentionCell.java": "org/telegram/ui/Cells/MentionCell.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/profile/ProfileDetailCell.java": "org/telegram/ui/Cells/TextDetailCell.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/profile/ProfileFragment.kt": "org/telegram/ui/ProfileActivity.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/settings/SettingsFragment.kt": "org/telegram/ui/SettingsActivity.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/profile/ProfileContentLayout.kt": "org/telegram/ui/Components/SharedMediaLayout.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/settings/IconSettingCell.java": "org/telegram/ui/SettingsActivity.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/profile/DiscourseProfileActionsView.java": "org/telegram/ui/Components/ProfileActionsView.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicCell.java": "org/telegram/ui/Cells/DialogCell.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicDialogsRecyclerView.java": "org/telegram/ui/DialogsActivity.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicPostCell.java": "org/telegram/ui/Cells/ChatMessageCell.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicSwipeReplyRecyclerView.java": "org/telegram/ui/ChatActivity.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicPostScrimHostLayout.java": "org/telegram/ui/ChatActivity.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicPostScrimPopupContainerLayout.java": "org/telegram/ui/Components/ChatScrimPopupContainerLayout.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicFloatingDateController.kt": "org/telegram/ui/ChatActivity.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicDateCell.java": "org/telegram/ui/Cells/ChatActionCell.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicHeaderCell.java": "org/telegram/ui/ArticleViewer.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/theme/ThemeSettingsFragment.java": "org/telegram/ui/ThemeActivity.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/theme/TopicThemePreviewFragment.kt": "org/telegram/ui/ThemePreviewActivity.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicFooterCell.java": "org/telegram/ui/Cells/TextInfoPrivacyCell.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/TextLayoutBlock.java": "org/telegram/ui/ArticleViewer.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/SpoilerTextLayout.java": "org/telegram/ui/Components/spoilers/SpoilersTextView.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ParagraphBlock.java": "org/telegram/ui/ArticleViewer.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/HeadingBlock.java": "org/telegram/ui/ArticleViewer.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/RuleBlock.java": "org/telegram/ui/ArticleViewer.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ImageBlock.java": "org/telegram/ui/ArticleViewer.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/CollageBlock.java": "org/telegram/ui/ArticleViewer.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/OneboxBlock.java": "org/telegram/ui/Cells/ChatMessageCell.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/QuoteBlock.java": "org/telegram/ui/ArticleViewer.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/CodeBlock.java": "org/telegram/ui/ArticleViewer.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ListBlock.java": "org/telegram/ui/ArticleViewer.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/TableBlock.java": "org/telegram/ui/ArticleViewer.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/DetailsBlock.java": "org/telegram/ui/ArticleViewer.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/PollBlock.java": "org/telegram/ui/Cells/ChatMessageCell.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/main/GlassTabView.java": "org/telegram/ui/Components/glass/GlassTabView.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/main/MainTabsActivity.java": "org/telegram/ui/MainTabsActivity.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/main/MainTabsLayout.java": "org/telegram/ui/MainTabsLayout.java",
+    "app/src/main/java/io/github/baba983/nativedo/ui/main/ViewPagerActivity.java": "org/telegram/ui/ViewPagerActivity.java"
+  },
+  "derived_from": {
+    "telegram/src/main/java/org/telegram/messenger/DispatchQueuePriority.java": "org/telegram/DispatchQueuePriority.java",
+    "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarSheet.java": "org/telegram/ui/ActionBar/BaseFragment.java",
+    "telegram/src/main/java/org/telegram/ui/ActionBar/BrowserSheet.java": "org/telegram/ui/ArticleViewer.java",
+    "telegram/src/main/java/org/telegram/ui/Cells/FixedWidthSpan.java": "org/telegram/ui/Cells/DialogCell.java",
+    "telegram/src/main/java/org/telegram/ui/Components/AnimatedSvgDrawable.java": "org/telegram/ui/Components/AnimatedFileDrawable.java",
+    "telegram/src/main/java/org/telegram/ui/Components/ContentPreviewViewer.java": "org/telegram/ui/ContentPreviewViewer.java",
+    "telegram/src/main/java/org/telegram/ui/Components/CurvesToolValue.java": "org/telegram/ui/Components/PhotoFilterView.java",
+    "telegram/src/main/java/org/telegram/ui/Components/MovableCell.java": "org/telegram/ui/Cells/DialogCell.java",
+    "telegram/src/main/java/org/telegram/ui/Components/UniversalCells.java": "org/telegram/ui/Components/UniversalAdapter.java",
+    "telegram/src/main/java/org/telegram/ui/Components/UniversalListCallbacks.java": "org/telegram/ui/Components/UniversalRecyclerView.java",
+    "telegram/src/main/java/org/telegram/ui/Stories/StoryItem.java": "org/telegram/tgnet/tl/TL_stories.java",
+    "telegram/src/main/java/org/telegram/ui/web/WebBookmarks.java": "org/telegram/ui/web/AddressBarList.java"
+  },
+  "forced_exact": {
+    "app/src/main/java/io/github/baba983/nativedo/ui/components/DiscourseUserCell.java": [
+      "measurement"
+    ],
+    "app/src/main/java/io/github/baba983/nativedo/ui/components/FixedHeaderRecyclerBottomSheet.java": [
+      "drawing",
+      "gesture",
+      "measurement"
+    ],
+    "app/src/main/java/io/github/baba983/nativedo/ui/profile/DiscourseProfileActionsView.java": [
+      "measurement"
+    ],
+    "app/src/main/java/io/github/baba983/nativedo/ui/theme/TopicThemePreviewFragment.kt": [
+      "animation",
+      "drawing",
+      "gesture",
+      "measurement"
+    ],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicCell.java": [
+      "drawing",
+      "measurement"
+    ],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicDialogsRecyclerView.java": [
+      "drawing",
+      "recycling"
+    ],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicFloatingDateController.kt": [
+      "animation"
+    ],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicMentionCell.java": [
+      "measurement"
+    ],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicMentionSuggestionsView.kt": [
+      "animation",
+      "drawing",
+      "measurement",
+      "recycling"
+    ],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicPostScrimHostLayout.java": [
+      "animation",
+      "drawing"
+    ],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicPostScrimPopupContainerLayout.java": [
+      "animation",
+      "drawing",
+      "gesture",
+      "measurement"
+    ],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicSwipeReplyRecyclerView.java": [
+      "animation",
+      "gesture"
+    ],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/CodeBlock.java": [
+      "drawing",
+      "gesture",
+      "measurement"
+    ],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/HeadingBlock.java": [
+      "drawing",
+      "measurement"
+    ],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ImageBlock.java": [
+      "drawing",
+      "gesture",
+      "measurement"
+    ],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/OneboxBlock.java": [
+      "drawing",
+      "gesture",
+      "measurement"
+    ],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ParagraphBlock.java": [
+      "drawing",
+      "measurement"
+    ],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/PollBlock.java": [
+      "animation",
+      "drawing",
+      "gesture"
+    ],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/RuleBlock.java": [
+      "drawing",
+      "measurement"
+    ],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/SpoilerTextLayout.java": [
+      "drawing",
+      "gesture"
+    ],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/TextLayoutBlock.java": [
+      "drawing",
+      "gesture",
+      "measurement"
+    ],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicDateCell.java": [
+      "drawing",
+      "measurement"
+    ],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicFooterCell.java": [
+      "measurement"
+    ],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicHeaderCell.java": [
+      "measurement"
+    ],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicPostCell.java": [
+      "drawing",
+      "gesture",
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/messenger/SvgHelper.java": [
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java": [
+      "animation"
+    ],
+    "telegram/src/main/java/org/telegram/ui/ActionBar/AdjustPanLayoutHelper.java": [
+      "animation",
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/ActionBar/BottomSheet.java": [
+      "animation",
+      "drawing",
+      "gesture",
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/ActionBar/BrowserSheet.java": [
+      "animation",
+      "drawing",
+      "gesture",
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/ActionBar/FloatingActionMode.java": [
+      "gesture"
+    ],
+    "telegram/src/main/java/org/telegram/ui/ActionBar/FloatingToolbar.java": [
+      "drawing",
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/ActionBar/INavigationLayout.java": [
+      "animation"
+    ],
+    "telegram/src/main/java/org/telegram/ui/ActionBar/ThemeDescription.java": [
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Adapters/PaddedListAdapter.java": [
+      "measurement",
+      "recycling"
+    ],
+    "telegram/src/main/java/org/telegram/ui/CachedStaticLayout.java": [
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Cells/AboutLinkCell.java": [
+      "animation",
+      "gesture",
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Cells/PhotoPickerPhotoCell.java": [
+      "animation",
+      "drawing",
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Cells/TextSelectionHelper.java": [
+      "drawing",
+      "gesture"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Cells/ThemesHorizontalListCell.java": [
+      "animation",
+      "drawing",
+      "gesture",
+      "measurement",
+      "recycling"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/AnimatedFloat.java": [
+      "animation"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/AnimatedTextView.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/AudioPlayerAlert.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/AvatarDrawable.java": [
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/ChatActivityEnterTopView.java": [
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/ChatActivityEnterViewAnimatedIconView.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/ChatReplyContainer.java": [
+      "animation",
+      "drawing",
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/CheckBox2.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/CheckBoxBase.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/ChoosingStickerStatusDrawable.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/CircularProgressDrawable.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/ClippingImageView.java": [
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/CombinedDrawable.java": [
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/CounterView.java": [
+      "animation",
+      "drawing",
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/CubicBezierInterpolator.java": [
+      "animation"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/DialogsItemAnimator.java": [
+      "animation"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/DrawingInBackgroundThreadDrawable.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/EditTextBoldCursor.java": [
+      "animation",
+      "drawing",
+      "gesture",
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/EditTextEffects.java": [
+      "animation",
+      "drawing",
+      "gesture"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/EllipsizeSpanAnimator.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/EmptyStubSpan.java": [
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/FlickerLoadingView.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/FragmentSearchField.java": [
+      "animation",
+      "drawing",
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/GestureDetector2.java": [
+      "gesture"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/GestureDetectorFixDoubleTap.java": [
+      "gesture"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/GroupCreateCheckBox.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/GroupedPhotosListView.java": [
+      "animation",
+      "drawing",
+      "gesture",
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/HideViewAfterAnimation.java": [
+      "animation"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/LayoutHelper.java": [
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/MarqueeTextView.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/MediaActionDrawable.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/MessageBackgroundDrawable.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/MsgClockDrawable.java": [
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/NestedSizeNotifierLayout.java": [
+      "gesture",
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/PathAnimator.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/PickerBottomLayoutViewer.java": [
+      "drawing",
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/PlayPauseDrawable.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/PlayingGameDrawable.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/PopupSwipeBackLayout.java": [
+      "animation",
+      "gesture"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/ProfileGalleryBlurView.java": [
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/ProfileGooeyView.java": [
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/PullForegroundDrawable.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/QuoteSpan.java": [
+      "animation",
+      "drawing",
+      "gesture",
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/RLottieDrawable.java": [
+      "animation"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/RLottieImageView.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/RadialProgress2.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/RadialProgressView.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/RecordStatusDrawable.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/RecyclerAnimationScrollHelper.java": [
+      "animation",
+      "recycling"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/RecyclerItemsEnterAnimator.java": [
+      "animation",
+      "recycling"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/RecyclerListView.java": [
+      "gesture",
+      "recycling"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/ReplyMessageLine.java": [
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/RoundStatusDrawable.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/ScamDrawable.java": [
+      "drawing",
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/ScrollSlidingTextTabStrip.java": [
+      "drawing",
+      "gesture",
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/SearchStateDrawable.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/SectionsScrollView.java": [
+      "drawing",
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/SeekBarView.java": [
+      "animation",
+      "drawing",
+      "gesture",
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/SendingFileDrawable.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/Shaker.java": [
+      "animation"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/SizeNotifierFrameLayoutPhoto.java": [
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/StatusDrawable.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/Switch.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/TableLayout.java": [
+      "drawing",
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/TextStyleSpan.java": [
+      "drawing",
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/TypingDotsDrawable.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/UniversalRecyclerView.java": [
+      "recycling"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/VideoForwardDrawable.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/chat/ChatActivityBottomViewsVisibilityController.java": [
+      "animation"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/chat/ChatInputViewsContainer.java": [
+      "animation",
+      "drawing",
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/chat/buttons/ChatActivityBlurredRoundButton.java": [
+      "animation",
+      "drawing",
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/chat/buttons/ChatActivityBlurredRoundPageDownButton.java": [
+      "animation",
+      "drawing",
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/chat/layouts/ChatActivityFadeView.java": [
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/chat/layouts/ChatActivitySideControlsButtonsLayout.java": [
+      "animation",
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/inset/WindowAnimatedInsetsProvider.java": [
+      "animation",
+      "measurement"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/inset/WindowInsetsStateHolder.java": [
+      "animation"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/poll/buttons/PollButtonDrawable.java": [
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/poll/buttons/PollButtonDrawableBase.java": [
+      "drawing",
+      "gesture"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/poll/buttons/PollInstantButtonDrawable.java": [
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/spoilers/SpoilerEffect.java": [
+      "animation",
+      "drawing",
+      "gesture"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/spoilers/SpoilerEffectBitmapFactory.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/Components/spoilers/SpoilersClickDetector.java": [
+      "gesture"
+    ],
+    "telegram/src/main/java/org/telegram/ui/MultiLayoutTypingAnimator.java": [
+      "animation",
+      "drawing"
+    ],
+    "telegram/src/main/java/org/telegram/ui/bots/ChatAttachAlertBotWebViewLayout.java": [
+      "animation",
+      "gesture"
+    ],
+    "telegram/src/main/java/org/telegram/ui/web/AddressBarList.java": [
+      "drawing",
+      "measurement",
+      "recycling"
+    ]
+  },
+  "resources": [
+    {
+      "kind": "drawable",
+      "files": [
+        "calendar_date.9.png",
+        "fast_scroll_shadow.png",
+        "greydivider.9.png",
+        "greydivider_bottom.9.png",
+        "greydivider_top.9.png"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/app/src/main/res/drawable-*",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "circle_big.png",
+        "cancel_big.png",
+        "load_big.png"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "popup_fixed_alert2.9.png",
+        "popup_fixed_alert4.9.png"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "filled_fire.png",
+        "msg_round_gif_m.png"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "photobadge.9.png",
+        "bluecounter.9.png"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "ic_video.png",
+        "nophotos.9.png"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "msg_pin_mini.png"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "menu_browser_refresh.png",
+        "menu_browser_search.png",
+        "menu_browser_bookmark.png",
+        "menu_browser_arrowup.png",
+        "mini_browser_iv.png",
+        "bot_webview.png"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "msg_link.webp"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "menu_reply.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/drawable",
+      "local_glob": "apps/android/telegram/src/main/res/drawable",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "input_clear.webp"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "ic_ab_reply.png"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "send_plane_24.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/drawable",
+      "local_glob": "apps/android/telegram/src/main/res/drawable",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "reactions_bubble_shadow.9.png"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "msg_reactions_expand.webp"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "filled_button_reply.png"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "msg_reactions_filled.png"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "pagedown.png",
+        "msg_input_attach2.png",
+        "mentionbutton.png",
+        "reactionbutton.png",
+        "menu_poll_notify.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable*",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "msg_select.png"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "filled_profile_edit_24.xml",
+        "outline_profile_edit_24.xml",
+        "tabs_chats_active_24.xml",
+        "tabs_chats_24.xml",
+        "filled_profile_message_24.xml",
+        "outline_profile_message_24.xml",
+        "action_share.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/drawable",
+      "local_glob": "apps/android/telegram/src/main/res/drawable",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "msg_emoji_smiles.webp",
+        "msg_emoji_cat.webp",
+        "msg_emoji_food.webp",
+        "msg_emoji_activities.webp",
+        "msg_emoji_travel.webp",
+        "msg_emoji_objects.webp",
+        "msg_emoji_other.webp",
+        "msg_emoji_flags.webp"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "raw",
+      "files": [
+        "webview_app_ext.js",
+        "webview_share.js"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/raw",
+      "local_glob": "apps/android/telegram/src/main/res/raw",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "raw",
+      "files": [
+        "gif_to_keyboard.json",
+        "gif_to_smile.json",
+        "keyboard_to_gif.json",
+        "keyboard_to_smile.json",
+        "keyboard_to_sticker.json",
+        "smile_to_gif.json",
+        "smile_to_keyboard.json",
+        "smile_to_sticker.json",
+        "sticker_to_keyboard.json",
+        "sticker_to_smile.json",
+        "voice_and_video.json"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/raw",
+      "local_glob": "apps/android/telegram/src/main/res/raw",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "outline_search_1_24.xml",
+        "miniplayer_close.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/drawable",
+      "local_glob": "apps/android/telegram/src/main/res/drawable",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "transparent.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/drawable",
+      "local_glob": "apps/android/app/src/main/res/drawable",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "arrow_more.png",
+        "attach_arrow_right.png",
+        "ic_ab_back.png",
+        "menu_instant_view.png",
+        "msg_arrow_forward.png"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "checkbig.png",
+        "header_shadow.png",
+        "sheet_shadow_round.9.png"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "knob_shadow.webp",
+        "smiles_inputsearch.webp",
+        "theme_picker.webp",
+        "msg_camera.webp",
+        "msg_photos.webp"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "sticker_added.webp",
+        "minibubble_in.webp",
+        "minibubble_out.webp",
+        "msg_theme.webp",
+        "preview_custom.webp"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348"
+    },
+    {
+      "kind": "anim",
+      "files": [
+        "popup_context_in.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/anim",
+      "local_glob": "apps/android/telegram/src/main/res/anim",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "ft_avd_toarrow.xml",
+        "ft_avd_tooverflow.xml",
+        "ft_avd_toarrow_animation.xml",
+        "ft_avd_tooverflow_animation.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/drawable",
+      "local_glob": "apps/android/telegram/src/main/res/drawable",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "anim",
+      "files": [
+        "ft_avd_toarrow_rectangle_path_5_animation.xml",
+        "ft_avd_toarrow_rectangle_4_animation.xml",
+        "ft_avd_toarrow_rectangle_2_pivot_0_animation.xml",
+        "ft_avd_toarrow_rectangle_path_6_animation.xml",
+        "ft_avd_toarrow_rectangle_3_pivot_0_animation.xml",
+        "ft_avd_toarrow_rectangle_1_pivot_0_animation.xml",
+        "ft_avd_toarrow_rectangle_6_animation.xml",
+        "ft_avd_toarrow_rectangle_5_animation.xml",
+        "ft_avd_toarrow_rectangle_path_4_animation.xml",
+        "ft_avd_tooverflow_rectangle_path_1_animation.xml",
+        "ft_avd_tooverflow_rectangle_path_2_animation.xml",
+        "ft_avd_tooverflow_rectangle_2_animation.xml",
+        "ft_avd_tooverflow_rectangle_1_animation.xml",
+        "ft_avd_tooverflow_rectangle_3_animation.xml",
+        "ft_avd_tooverflow_rectangle_path_3_animation.xml",
+        "ft_avd_tooverflow_rectangle_3_pivot_animation.xml",
+        "ft_avd_tooverflow_rectangle_2_pivot_animation.xml",
+        "ft_avd_tooverflow_rectangle_1_pivot_animation.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/anim",
+      "local_glob": "apps/android/telegram/src/main/res/anim",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "interpolator",
+      "files": [
+        "ft_avd_toarrow_animation_interpolator_1.xml",
+        "ft_avd_toarrow_animation_interpolator_2.xml",
+        "ft_avd_toarrow_animation_interpolator_5.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/interpolator",
+      "local_glob": "apps/android/telegram/src/main/res/interpolator",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "values",
+      "files": [
+        "ids.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/values",
+      "local_glob": "apps/android/telegram/src/main/res/values",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "values",
+      "files": [
+        "styles.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/values",
+      "local_glob": "apps/android/telegram/src/main/res/values",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "bot_card.webp",
+        "bot_file.webp",
+        "bot_invite.webp",
+        "bot_lines.webp",
+        "bot_link.webp",
+        "bot_location.webp",
+        "bot_music.webp",
+        "chat_calls_incoming.webp",
+        "chat_calls_outgoing.webp",
+        "chat_calls_video.webp",
+        "chat_calls_voice.webp",
+        "chats_replies.webp",
+        "chats_saved.webp",
+        "filled_button_share.webp",
+        "filled_folder_existing.webp",
+        "filled_folder_new.webp",
+        "filled_gift_premium.webp",
+        "filled_giveaway_premium.webp",
+        "filled_giveaway_stars.webp",
+        "filled_open_message.webp",
+        "filled_unclaimed.webp",
+        "filled_unknown.webp",
+        "ghost.webp",
+        "ic_lock_header.webp",
+        "large_hidden.webp",
+        "large_notes.webp",
+        "large_repost_story.webp",
+        "list_check.webp",
+        "list_halfcheck.webp",
+        "list_mute.webp",
+        "list_pin.webp",
+        "list_reorder.webp",
+        "list_secret.webp",
+        "list_unmute.webp",
+        "list_warning_sign.webp",
+        "media_more.webp",
+        "minithumb_play.webp",
+        "msg_actions.webp",
+        "msg_arrowright.webp",
+        "msg_check_s.webp",
+        "msg_contact.webp",
+        "msg_folders_archive.webp",
+        "msg_folders_bots.webp",
+        "msg_folders_channels.webp",
+        "msg_folders_groups.webp",
+        "msg_folders_muted.webp",
+        "msg_folders_private.webp",
+        "msg_folders_read.webp",
+        "msg_folders_requests.webp",
+        "msg_halfcheck.webp",
+        "msg_halfcheck_s.webp",
+        "msg_instant.webp",
+        "msg_location.webp",
+        "msg_mini_forumarrow.webp",
+        "msg_mini_lock2.webp",
+        "msg_msgbubble2.webp",
+        "msg_psa.webp",
+        "msg_reply_small.webp",
+        "msg_round_cancel_m.webp",
+        "msg_round_file_s.webp",
+        "msg_round_load_m.webp",
+        "msg_round_pause_m.webp",
+        "msg_round_play_m.webp",
+        "msg_stories_closefriends.webp",
+        "msg_views.webp",
+        "msg_voiceclose.webp",
+        "msg_warning.webp",
+        "newyear.webp",
+        "nophotos3.9.png",
+        "permission_locked.webp",
+        "poll_right.webp",
+        "poll_wrong.webp",
+        "preview_arrow.webp",
+        "preview_back.webp",
+        "preview_dots.webp",
+        "preview_mic.webp",
+        "preview_smile.webp",
+        "search_dark.9.png",
+        "search_dark_activated.9.png",
+        "verified_area.webp",
+        "verified_check.webp",
+        "video_actions.webp",
+        "video_muted.webp"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "mini_quote.png"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/drawable-*",
+      "local_glob": "apps/android/telegram/src/main/res/drawable-*",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "field_carret_empty.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/drawable",
+      "local_glob": "apps/android/telegram/src/main/res/drawable",
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "community_cards.xml",
+        "filled_chatlist_mention.xml",
+        "filled_chatlist_poll.xml",
+        "filled_chatlist_reaction.xml",
+        "filled_suggest_chat_avatar.xml",
+        "gradient_bottom.webp",
+        "gradient_left.9.png",
+        "gradient_right.9.png",
+        "media_live_on.xml",
+        "mini_call_in_16.xml",
+        "mini_call_out_16.xml",
+        "mini_ephemeral_hidden_16.xml",
+        "other_chats.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/drawable",
+      "local_glob": "apps/android/telegram/src/main/res/drawable",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348"
+    },
+    {
+      "kind": "raw",
+      "files": [
+        "auto_night_off.json",
+        "chat_audio_record_delete.json",
+        "chats_archive.json",
+        "chats_archiveavatar.json",
+        "chats_hide.json",
+        "chats_unarchive.json",
+        "chats_unhide.json",
+        "copy.json",
+        "default_pattern.svg",
+        "swipe_community_ungroup.json",
+        "swipe_delete.json",
+        "swipe_mute.json",
+        "swipe_pin.json",
+        "swipe_read.json",
+        "swipe_unmute.json",
+        "swipe_unpin.json",
+        "swipe_unread.json"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/raw",
+      "local_glob": "apps/android/telegram/src/main/res/raw",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348"
+    },
+    {
+      "kind": "asset",
+      "files": [
+        "codelng.gzip"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/assets",
+      "local_glob": "apps/android/telegram/src/main/assets",
+      "vendored_at": "9b50143d8896d255d03155598937e4f3e28afd86"
+    },
+    {
+      "kind": "asset",
+      "files": [
+        "fonts/rmedium.ttf"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/assets",
+      "local_glob": "apps/android/telegram/src/main/assets",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348"
+    },
+    {
+      "kind": "asset",
+      "files": [
+        "arctic.attheme",
+        "bluebubbles.attheme",
+        "darkblue.attheme",
+        "day.attheme",
+        "night.attheme"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/assets",
+      "local_glob": "apps/android/telegram/src/main/assets",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "settings_account.xml",
+        "settings_chat.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/drawable",
+      "local_glob": "apps/android/app/src/main/res/drawable",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "outline_header_qr_24.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/telegram/src/main/res/drawable",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348"
+    }
+  ]
+}

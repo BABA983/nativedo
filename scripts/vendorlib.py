@@ -1,33 +1,55 @@
 #!/usr/bin/env python3
 """Shared helpers for Telegram vendoring tooling.
 
-Manifest source: vendor-manifest.json at repo root.
-Generated flat lock: vendor-manifest.lock.json.
+Human-owned overlay: vendor-overlay.json at repo root.
+Derived provenance index: built on demand from the overlay + pristine tree +
+the files on disk (scripts/vendor-index.sh). There is no committed lock file and
+no per-file `modified` flag: both are computed here.
+
 Pristine upstream tree: a separate checkout outside the repo (gitignored,
 default `../telegram`, named after the upstream repo); resolve it with
 vendor_dir().
-Local copies: apps/android/ relative paths in each file entry.
+Local copies: paths relative to `local_root` (`apps/android/`).
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import os
-import re
 import subprocess
 import sys
-import tempfile
-from collections import Counter
-from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Optional, Union
 
-import fcntl
-
 PathLike = Union[Path, str]
 
-# Known short / full pins that appear in historical manifests.
+OVERLAY_NAME = "vendor-overlay.json"
+OVERLAY_SCHEMA_VERSION = 1
+
+DEFAULT_UPSTREAM_ROOT = "TMessagesProj/src/main/java"
+DEFAULT_LOCAL_ROOT = "apps/android/"
+TELEGRAM_JAVA_PREFIX = "telegram/src/main/java/"
+APP_JAVA_PREFIX = "app/src/main/java/"
+SOURCE_SUFFIXES = (".java", ".kt")
+
+# Reporting buckets only: third-party trees carried along with Telegram's
+# source (patched AndroidX, ExoPlayer/GMS shims, tiny utilities).
+THIRD_PARTY_PREFIXES = (
+    "androidx/",
+    "com/google/",
+    "com/carrotsearch/",
+)
+
+FORCED_EXACT_VALUES = {
+    "gesture",
+    "animation",
+    "measurement",
+    "drawing",
+    "recycling",
+}
+
+# Known historical pins; short prefixes are expanded through the pristine tree.
 PIN_ALIASES = {
     "009e97356": "009e97356f966bb81eceba113d210230bf383122",
     "009e97356f966bb81eceba113d210230bf383122": "009e97356f966bb81eceba113d210230bf383122",
@@ -37,20 +59,6 @@ PIN_ALIASES = {
     "9bcf3d2769c6d3f07105a992e5d9493e33ac3348": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
 }
 
-CURRENT_PIN = "9bcf3d2769c6d3f07105a992e5d9493e33ac3348"
-CURRENT_PIN_DATE = "2026-07-16"
-CURRENT_PIN_SUBJECT = "update to 12.9.0 (6966)"
-
-LEGACY_PIN = "009e97356f966bb81eceba113d210230bf383122"
-
-SOURCE_SCHEMA_VERSION = 1
-SOURCE_MANIFEST_NAME = "vendor-manifest.json"
-LOCK_MANIFEST_NAME = "vendor-manifest.lock.json"
-SOURCE_DIGEST_KEY = "_vendor_source_digest"
-
-TELEGRAM_JAVA_PREFIX = "telegram/src/main/java/"
-APP_JAVA_PREFIX = "app/src/main/java/"
-
 # Pristine Telegram checkout location. It is intentionally outside the repo:
 # override with the env var, otherwise `upstream.local_checkout` (default
 # `../telegram`, the upstream repo name) applies; the legacy in-repo path is
@@ -59,51 +67,9 @@ VENDOR_DIR_ENV = "NATIVEDO_TELEGRAM_VENDOR_DIR"
 DEFAULT_VENDOR_DIRNAME = "telegram"
 LEGACY_VENDOR_DIR_PARTS = ("vendor", "telegram-android")
 
-FILE_ENTRY_KEYS = {
-    "_comment",
-    "local",
-    "upstream",
-    "vendored_at",
-    "modified",
-    "port_mode",
-    "forced_exact",
-    "notes",
-    "stuck_reason",
-}
-COMPACT_ENTRY_KEYS = {
-    "path",
-    "upstream",
-    "pin",
-    "modified",
-    "port_mode",
-    "forced_exact",
-    "notes",
-    "notes_ref",
-    "stuck_reason",
-    "stuck_ref",
-}
-GROUP_KEYS = {"comment", "local_prefix", "upstream_prefix", "entries"}
-FORCED_EXACT_VALUES = {
-    "gesture",
-    "animation",
-    "measurement",
-    "drawing",
-    "recycling",
-}
-
-NATIVE_HOST_STUCK = (
-    "Native host shim/port under :telegram; diverged from Telegram semantics. "
-    "vendored_at is historical reference only — not eligible for vendor-ff; "
-    "re-sync only when product requires."
-)
-NATIVE_APP_STUCK = (
-    "NativeDo port (package io.github.baba983.nativedo.*); vendored_at is an "
-    "upstream reference for forced_exact hand-checks only — not eligible for vendor-ff."
-)
-
 
 class ManifestError(RuntimeError):
-    """Invalid source schema or a stale generated lock."""
+    """Invalid overlay or an index that cannot be derived."""
 
 
 def repo_root() -> Path:
@@ -119,14 +85,9 @@ def _as_path(root: Optional[PathLike] = None) -> Path:
     return root if isinstance(root, Path) else Path(root)
 
 
-def manifest_path(root: Optional[PathLike] = None) -> Path:
-    """Path to the compact, human-owned manifest source."""
-    return _as_path(root) / SOURCE_MANIFEST_NAME
-
-
-def manifest_lock_path(root: Optional[PathLike] = None) -> Path:
-    """Path to the generated flat manifest consumed by legacy tooling."""
-    return _as_path(root) / LOCK_MANIFEST_NAME
+def overlay_path(root: Optional[PathLike] = None) -> Path:
+    """Path to the human-owned overlay."""
+    return _as_path(root) / OVERLAY_NAME
 
 
 def default_vendor_dir(root: Optional[PathLike] = None) -> Path:
@@ -141,13 +102,13 @@ def legacy_vendor_dir(root: Optional[PathLike] = None) -> Path:
 
 
 def _manifest_local_checkout(root: Optional[PathLike] = None) -> Optional[Path]:
-    """`upstream.local_checkout` from the compact manifest, when declared.
+    """`upstream.local_checkout` from the overlay, when declared.
 
     Relative values are resolved against the repo root; absolute values are
-    taken as-is. Never raises: a malformed manifest is reported elsewhere.
+    taken as-is. Never raises: a malformed overlay is reported elsewhere.
     """
     try:
-        source = _read_json(manifest_path(root))
+        source = _read_json(overlay_path(root))
     except (OSError, json.JSONDecodeError):
         return None
     value = (source.get("upstream") or {}).get("local_checkout")
@@ -186,9 +147,9 @@ def vendor_dir(root: Optional[PathLike] = None) -> Path:
 
     1. `NATIVEDO_TELEGRAM_VENDOR_DIR` — explicit override, authoritative even
        when it does not exist yet (vendor-setup clones there).
-    2. `upstream.local_checkout` in `vendor-manifest.json`, else the sibling
-       default `../telegram` (the upstream repo name, case-insensitively
-       matched so a `git clone` of `DrKLO/Telegram` resolves too).
+    2. `upstream.local_checkout` in the overlay, else the sibling default
+       `../telegram` (the upstream repo name, case-insensitively matched so a
+       `git clone` of `DrKLO/Telegram` resolves too).
     3. The legacy in-repo `vendor/telegram-android` when the configured path is
        absent, so existing checkouts keep working until they are moved.
     """
@@ -223,566 +184,117 @@ def _read_json(path: Path) -> dict[str, Any]:
     return data
 
 
-def _json_text(data: dict[str, Any]) -> str:
-    return json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+# ---------------------------------------------------------------------------
+# Overlay (human-owned)
+# ---------------------------------------------------------------------------
 
 
-def _source_digest(data: dict[str, Any]) -> str:
-    return hashlib.sha256(_json_text(data).encode("utf-8")).hexdigest()
-
-
-def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    text = _json_text(data)
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        encoding="utf-8",
-        dir=path.parent,
-        prefix=f".{path.name}.",
-        suffix=".tmp",
-        delete=False,
-    ) as tmp:
-        tmp.write(text)
-        tmp.flush()
-        os.fsync(tmp.fileno())
-        tmp_path = Path(tmp.name)
-    os.replace(tmp_path, path)
-
-
-@contextmanager
-def _manifest_write_lock(root: Optional[PathLike] = None):
-    path = _as_path(root) / ".vendor-manifest.write.lock"
-    with path.open("a+", encoding="utf-8") as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-        try:
-            yield
-        finally:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-
-
-def load_source_manifest(root: Optional[PathLike] = None) -> dict[str, Any]:
-    source = _read_json(manifest_path(root))
-    if source.get("schema_version") != SOURCE_SCHEMA_VERSION:
-        raise ManifestError(
-            f"{SOURCE_MANIFEST_NAME}: expected schema_version={SOURCE_SCHEMA_VERSION}; "
-            "run scripts/vendor-manifest.sh --bootstrap for a legacy flat manifest"
-        )
-    return source
-
-
-def _safe_rel_path(value: str, field_name: str) -> str:
-    path = str(value or "")
-    if not path or path.startswith("/") or ".." in Path(path).parts:
-        raise ManifestError(f"invalid {field_name}: {value!r}")
-    return path
-
-
-def _resolve_alias(
-    aliases: dict[str, Any],
-    category: str,
-    name: Optional[str],
-    *,
-    field_name: str,
-) -> Optional[str]:
-    if name is None:
-        return None
-    values = aliases.get(category) or {}
-    value = values.get(name)
+def _require_str_list(value: Any, field_name: str) -> list[str]:
     if value is None:
-        raise ManifestError(f"unknown {field_name} alias: {name!r}")
-    if not isinstance(value, str):
-        raise ManifestError(f"{field_name} alias {name!r} must resolve to a string")
-    return value
-
-
-def _expand_groups(
-    source: dict[str, Any],
-    *,
-    group_key: str,
-    kind: str,
-) -> list[dict[str, Any]]:
-    aliases = source.get("aliases") or {}
-    defaults = source.get("defaults") or {}
-    pin = (source.get("upstream") or {}).get("pinned_commit")
-    default_modified = (
-        True if kind == "compat_shims" else defaults.get("modified", False)
-    )
-    default_mode = (
-        "native" if kind == "compat_shims" else defaults.get("port_mode", "exact")
-    )
-    out: list[dict[str, Any]] = []
-
-    groups = source.get(group_key) or []
-    if not isinstance(groups, list):
-        raise ManifestError(f"{group_key} must be an array")
-    for group in groups:
-        if not isinstance(group, dict):
-            raise ManifestError(f"{group_key} entries must be objects")
-        unknown_group = set(group) - GROUP_KEYS
-        if unknown_group:
-            raise ManifestError(
-                f"{group_key}: unsupported group fields {sorted(unknown_group)}"
-            )
-        local_prefix = str(group.get("local_prefix") or "")
-        upstream_prefix = group.get("upstream_prefix")
-        entries = group.get("entries") or []
-        if not isinstance(entries, list) or not entries:
-            raise ManifestError(f"{group_key} group must contain entries")
-
-        for index, compact in enumerate(entries):
-            if not isinstance(compact, dict):
-                raise ManifestError(f"{group_key}.entries values must be objects")
-            unknown_entry = set(compact) - COMPACT_ENTRY_KEYS
-            if unknown_entry:
-                raise ManifestError(
-                    f"{group_key}: unsupported entry fields {sorted(unknown_entry)}"
-                )
-            path = _safe_rel_path(compact.get("path"), "path")
-            local = _safe_rel_path(f"{local_prefix}{path}", "local")
-            upstream = compact.get("upstream")
-            if upstream is None:
-                if upstream_prefix is None:
-                    raise ManifestError(f"{local}: explicit upstream is required")
-                upstream = f"{upstream_prefix}{path}"
-            upstream = _safe_rel_path(str(upstream), "upstream")
-
-            pin_alias = compact.get("pin")
-            vendored_at = (
-                _resolve_alias(aliases, "pins", pin_alias, field_name="pin")
-                if pin_alias is not None
-                else defaults.get("vendored_at", pin)
-            )
-            if vendored_at == "$upstream":
-                vendored_at = pin
-            if not vendored_at:
-                raise ManifestError(f"{local}: vendored_at is required")
-
-            entry: dict[str, Any] = {
-                "local": local,
-                "upstream": upstream,
-                "vendored_at": vendored_at,
-                "modified": compact.get("modified", default_modified),
-                "port_mode": compact.get("port_mode", default_mode),
-            }
-            if index == 0 and group.get("comment"):
-                entry = {"_comment": group["comment"], **entry}
-            forced_exact = compact.get("forced_exact")
-            if forced_exact:
-                if not isinstance(forced_exact, list) or not set(forced_exact) <= FORCED_EXACT_VALUES:
-                    raise ManifestError(f"{local}: invalid forced_exact")
-                entry["forced_exact"] = forced_exact
-
-            notes = compact.get("notes")
-            if compact.get("notes_ref") is not None:
-                if notes is not None:
-                    raise ManifestError(f"{local}: use notes or notes_ref, not both")
-                notes = _resolve_alias(
-                    aliases,
-                    "notes",
-                    compact.get("notes_ref"),
-                    field_name="notes_ref",
-                )
-            if notes is not None and not isinstance(notes, str):
-                raise ManifestError(f"{local}: notes must be a string")
-            if notes:
-                entry["notes"] = notes
-
-            stuck = compact.get("stuck_reason")
-            if compact.get("stuck_ref") is not None:
-                if stuck is not None:
-                    raise ManifestError(f"{local}: use stuck_reason or stuck_ref, not both")
-                stuck = _resolve_alias(
-                    aliases,
-                    "stuck_reasons",
-                    compact.get("stuck_ref"),
-                    field_name="stuck_ref",
-                )
-            if stuck:
-                entry["stuck_reason"] = stuck
-            out.append(entry)
+        return []
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        raise ManifestError(f"{field_name} must be an array of strings")
+    out = []
+    for item in value:
+        rel = str(item).strip().lstrip("/")
+        if not rel:
+            raise ManifestError(f"{field_name}: empty path")
+        out.append(rel)
+    if len(set(out)) != len(out):
+        raise ManifestError(f"{field_name}: duplicate path")
     return out
 
 
-def expand_source_manifest(source: dict[str, Any]) -> dict[str, Any]:
-    if source.get("schema_version") != SOURCE_SCHEMA_VERSION:
+def load_overlay(root: Optional[PathLike] = None) -> dict[str, Any]:
+    """Load and validate the human-owned overlay."""
+    path = overlay_path(root)
+    if not path.is_file():
+        raise ManifestError(f"{OVERLAY_NAME} missing at {path}")
+    data = _read_json(path)
+    if data.get("schema_version") != OVERLAY_SCHEMA_VERSION:
         raise ManifestError(
-            f"source schema_version must be {SOURCE_SCHEMA_VERSION}"
+            f"{OVERLAY_NAME}: expected schema_version={OVERLAY_SCHEMA_VERSION}"
         )
-    upstream = source.get("upstream")
+    upstream = data.get("upstream")
     if not isinstance(upstream, dict) or not upstream.get("pinned_commit"):
-        raise ManifestError("upstream.pinned_commit is required")
+        raise ManifestError(f"{OVERLAY_NAME}: upstream.pinned_commit is required")
 
-    resources = source.get("resources") or []
+    data["native"] = _require_str_list(data.get("native"), "native")
+
+    ports = data.get("upstream_ports") or {}
+    if not isinstance(ports, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in ports.items()
+    ):
+        raise ManifestError("upstream_ports must be an object of local -> upstream")
+    data["upstream_ports"] = {k.lstrip("/"): v.lstrip("/") for k, v in ports.items()}
+
+    reference = data.get("reference") or {}
+    if reference:
+        if not isinstance(reference, dict) or not reference.get("commit"):
+            raise ManifestError("reference must be an object with a commit")
+        reference["paths"] = _require_str_list(reference.get("paths"), "reference.paths")
+    data["reference"] = reference
+
+    derived_from = data.get("derived_from") or {}
+    if not isinstance(derived_from, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in derived_from.items()
+    ):
+        raise ManifestError("derived_from must be an object of local -> upstream")
+    data["derived_from"] = {
+        k.lstrip("/"): v.lstrip("/") for k, v in derived_from.items()
+    }
+
+    forced = data.get("forced_exact") or {}
+    if not isinstance(forced, dict):
+        raise ManifestError("forced_exact must be an object of local -> [subsystem]")
+    for local, subsystems in forced.items():
+        if not isinstance(subsystems, list) or not set(subsystems) <= FORCED_EXACT_VALUES:
+            raise ManifestError(
+                f"forced_exact[{local}]: must be a subset of "
+                f"{sorted(FORCED_EXACT_VALUES)}"
+            )
+    data["forced_exact"] = {
+        str(k).lstrip("/"): sorted(set(v)) for k, v in forced.items()
+    }
+
+    resources = data.get("resources") or []
     if not isinstance(resources, list):
         raise ManifestError("resources must be an array")
-    for index, resource in enumerate(resources):
-        if not isinstance(resource, dict):
-            raise ManifestError(f"resources[{index}] must be an object")
-        if not resource.get("kind"):
-            raise ManifestError(f"resources[{index}].kind is required")
-        if not resource.get("vendored_at"):
-            raise ManifestError(f"resources[{index}].vendored_at is required")
-
-    manifest: dict[str, Any] = {
-        "_comment": [
-            "GENERATED FILE — edit vendor-manifest.json, then run scripts/vendor-manifest.sh --write.",
-            "Flat per-file provenance is retained here for tooling and audits.",
-            "Do not edit this lock directly.",
-        ],
-        "upstream": upstream,
-        "local_root": source.get("local_root", "apps/android/"),
-        "upstream_root": source.get(
-            "upstream_root", "TMessagesProj/src/main/java"
-        ),
-        "files": _expand_groups(source, group_key="file_groups", kind="files"),
-        "compat_shims": _expand_groups(
-            source,
-            group_key="compat_shim_groups",
-            kind="compat_shims",
-        ),
-        "resources": resources,
-    }
-
-    seen: dict[str, str] = {}
-    for kind in ("files", "compat_shims"):
-        for entry in manifest[kind]:
-            local = entry["local"]
-            previous = seen.get(local)
-            if previous:
-                raise ManifestError(f"duplicate local {local!r} in {previous} and {kind}")
-            seen[local] = kind
-            if entry.get("port_mode") not in ("exact", "native"):
-                raise ManifestError(f"{local}: invalid port_mode")
-            if not isinstance(entry.get("modified"), bool):
-                raise ManifestError(f"{local}: modified must be boolean")
-            if kind == "compat_shims" and (
-                entry.get("port_mode") != "native" or entry.get("modified") is not True
-            ):
-                raise ManifestError(
-                    f"{local}: compat shim must be native and modified=true"
-                )
-    return manifest
+    for i, res in enumerate(resources):
+        if not isinstance(res, dict) or not res.get("kind") or not res.get("files"):
+            raise ManifestError(f"resources[{i}]: kind and files are required")
+    data["resources"] = resources
+    return data
 
 
-def _normalized_note(value: Any) -> Optional[str]:
-    if value is None:
-        return None
-    if isinstance(value, list):
-        return " ".join(str(part).strip() for part in value if str(part).strip())
-    text = str(value).strip()
-    return text or None
-
-
-def _alias_name(prefix: str, value: str) -> str:
-    return f"{prefix}_{hashlib.sha256(value.encode('utf-8')).hexdigest()[:8]}"
-
-
-def _unique_alias_name(preferred: str, existing: dict[str, str], value: str) -> str:
-    name = preferred
-    suffix = 2
-    while name in existing and existing[name] != value:
-        name = f"{preferred}_{suffix}"
-        suffix += 1
-    return name
-
-
-def _build_aliases(manifest: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str], dict[str, str], dict[str, str]]:
-    all_entries = list(manifest.get("files") or []) + list(
-        manifest.get("compat_shims") or []
-    )
-    global_pin = str((manifest.get("upstream") or {}).get("pinned_commit") or "")
-
-    pins: dict[str, str] = {}
-    pin_lookup: dict[str, str] = {}
-    for value in dict.fromkeys(str(e.get("vendored_at") or "") for e in all_entries):
-        if not value or value == global_pin:
-            continue
-        preferred = "legacy_009e97356" if value == LEGACY_PIN else f"pin_{value[:12]}"
-        name = _unique_alias_name(preferred, pins, value)
-        pins[name] = value
-        pin_lookup[value] = name
-
-    stuck_values = [
-        str(e["stuck_reason"])
-        for e in all_entries
-        if e.get("stuck_reason")
+def _overlay_paths_must_exist(
+    root: Path, local_root: str, overlay: dict[str, Any]
+) -> None:
+    """Dead overlay entries are the one kind of rot we can still catch."""
+    declared: list[tuple[str, str]] = []
+    declared += [(p, "native") for p in overlay.get("native") or []]
+    declared += [(p, "upstream_ports") for p in (overlay.get("upstream_ports") or {})]
+    declared += [(p, "derived_from") for p in (overlay.get("derived_from") or {})]
+    declared += [
+        (p, "reference.paths") for p in (overlay.get("reference") or {}).get("paths") or []
     ]
-    stuck_counts = Counter(stuck_values)
-    stuck_aliases: dict[str, str] = {}
-    stuck_lookup: dict[str, str] = {}
-    for value in dict.fromkeys(stuck_values):
-        if stuck_counts[value] < 2:
-            continue
-        if value == NATIVE_HOST_STUCK:
-            preferred = "native_host_reference_only"
-        elif value == NATIVE_APP_STUCK:
-            preferred = "native_app_reference_only"
-        else:
-            preferred = _alias_name("stuck", value)
-        name = _unique_alias_name(preferred, stuck_aliases, value)
-        stuck_aliases[name] = value
-        stuck_lookup[value] = name
-
-    note_values = [
-        note
-        for e in all_entries
-        if (note := _normalized_note(e.get("notes"))) is not None
+    declared += [(p, "forced_exact") for p in (overlay.get("forced_exact") or {})]
+    missing = [
+        (rel, field_name)
+        for rel, field_name in declared
+        if not (root / local_root / rel).is_file()
     ]
-    note_counts = Counter(note_values)
-    note_aliases: dict[str, str] = {}
-    note_lookup: dict[str, str] = {}
-    for value in dict.fromkeys(note_values):
-        if note_counts[value] < 2:
-            continue
-        auto_dependency = re.match(
-            r"^Auto-registered unmanifested compile dependency \((\d+) LOC\)\.",
-            value,
-        )
-        auto_source = re.match(
-            r"^Auto-registered unmanifested on-disk source \((\d+) LOC\)\.",
-            value,
-        )
-        if value == "auto-vendor-copy: registered from javac missing-symbol":
-            preferred = "auto_vendor_copy"
-        elif auto_dependency:
-            preferred = (
-                f"auto_registered_compile_dependency_{auto_dependency.group(1)}_loc"
-            )
-        elif auto_source:
-            preferred = f"auto_registered_on_disk_source_{auto_source.group(1)}_loc"
-        else:
-            if note_counts[value] < 3:
-                continue
-            preferred = _alias_name("note", value)
-        name = _unique_alias_name(preferred, note_aliases, value)
-        note_aliases[name] = value
-        note_lookup[value] = name
-
-    aliases: dict[str, Any] = {}
-    if pins:
-        aliases["pins"] = pins
-    if stuck_aliases:
-        aliases["stuck_reasons"] = stuck_aliases
-    if note_aliases:
-        aliases["notes"] = note_aliases
-    return aliases, pin_lookup, stuck_lookup, note_lookup
-
-
-def _entry_prefix(local: str) -> tuple[str, Optional[str]]:
-    if local.startswith(TELEGRAM_JAVA_PREFIX):
-        return TELEGRAM_JAVA_PREFIX, ""
-    if local.startswith(APP_JAVA_PREFIX):
-        return APP_JAVA_PREFIX, None
-    return "", None
-
-
-def _compact_groups(
-    entries: list[dict[str, Any]],
-    *,
-    global_pin: str,
-    pin_lookup: dict[str, str],
-    stuck_lookup: dict[str, str],
-    note_lookup: dict[str, str],
-    kind: str,
-) -> list[dict[str, Any]]:
-    groups: list[dict[str, Any]] = []
-    current: Optional[dict[str, Any]] = None
-    default_modified = kind == "compat_shims"
-    default_mode = "native" if kind == "compat_shims" else "exact"
-
-    for raw in entries:
-        unknown = set(raw) - FILE_ENTRY_KEYS
-        if unknown:
-            raise ManifestError(
-                f"{raw.get('local')}: unsupported flat fields {sorted(unknown)}"
-            )
-        local = _safe_rel_path(raw.get("local"), "local")
-        local_prefix, upstream_prefix = _entry_prefix(local)
-        comment = raw.get("_comment")
-        if (
-            current is None
-            or current.get("local_prefix") != local_prefix
-            or comment is not None
-        ):
-            current = {"local_prefix": local_prefix}
-            if upstream_prefix is not None:
-                current["upstream_prefix"] = upstream_prefix
-            if comment:
-                current["comment"] = comment
-            current["entries"] = []
-            groups.append(current)
-
-        path = local[len(local_prefix) :] if local_prefix else local
-        compact: dict[str, Any] = {"path": path}
-        upstream = _safe_rel_path(raw.get("upstream"), "upstream")
-        if upstream_prefix is None or upstream != f"{upstream_prefix}{path}":
-            compact["upstream"] = upstream
-
-        vendored_at = str(raw.get("vendored_at") or "")
-        if vendored_at != global_pin:
-            alias = pin_lookup.get(vendored_at)
-            if not alias:
-                raise ManifestError(f"{local}: missing pin alias for {vendored_at}")
-            compact["pin"] = alias
-        if raw.get("modified") is not default_modified:
-            compact["modified"] = raw.get("modified")
-        if raw.get("port_mode") != default_mode:
-            compact["port_mode"] = raw.get("port_mode")
-        if raw.get("forced_exact"):
-            compact["forced_exact"] = raw["forced_exact"]
-
-        note = _normalized_note(raw.get("notes"))
-        if note:
-            note_ref = note_lookup.get(note)
-            if note_ref:
-                compact["notes_ref"] = note_ref
-            else:
-                compact["notes"] = note
-
-        stuck = raw.get("stuck_reason")
-        if stuck and kind != "compat_shims":
-            stuck_ref = stuck_lookup.get(str(stuck))
-            if stuck_ref:
-                compact["stuck_ref"] = stuck_ref
-            else:
-                compact["stuck_reason"] = stuck
-        current["entries"].append(compact)
-    return groups
-
-
-def compact_manifest(
-    manifest: dict[str, Any],
-    *,
-    compat_shim_locals: Optional[set[str]] = None,
-) -> dict[str, Any]:
-    """Convert a flat lock into the compact human-owned source schema."""
-    files = list(manifest.get("files") or [])
-    shims = list(manifest.get("compat_shims") or [])
-    if compat_shim_locals:
-        kept = []
-        for entry in files:
-            if entry.get("local") in compat_shim_locals:
-                shims.append(entry)
-            else:
-                kept.append(entry)
-        files = kept
-        found = {e.get("local") for e in shims}
-        missing = sorted(compat_shim_locals - found)
-        if missing:
-            raise ManifestError(f"compat shim paths not found: {missing}")
-
-    flat_for_aliases = {**manifest, "files": files, "compat_shims": shims}
-    aliases, pin_lookup, stuck_lookup, note_lookup = _build_aliases(flat_for_aliases)
-    global_pin = str((manifest.get("upstream") or {}).get("pinned_commit") or "")
-    if not global_pin:
-        raise ManifestError("upstream.pinned_commit is required")
-
-    return {
-        "schema_version": SOURCE_SCHEMA_VERSION,
-        "_comment": [
-            "Human-owned compact vendoring manifest.",
-            "Run scripts/vendor-manifest.sh --write after edits.",
-            "vendor-manifest.lock.json is generated; do not edit it directly.",
-        ],
-        "upstream": manifest.get("upstream") or {},
-        "local_root": manifest.get("local_root", "apps/android/"),
-        "upstream_root": manifest.get(
-            "upstream_root", "TMessagesProj/src/main/java"
-        ),
-        "defaults": {
-            "vendored_at": "$upstream",
-            "modified": False,
-            "port_mode": "exact",
-        },
-        "aliases": aliases,
-        "file_groups": _compact_groups(
-            files,
-            global_pin=global_pin,
-            pin_lookup=pin_lookup,
-            stuck_lookup=stuck_lookup,
-            note_lookup=note_lookup,
-            kind="files",
-        ),
-        "compat_shim_groups": _compact_groups(
-            shims,
-            global_pin=global_pin,
-            pin_lookup=pin_lookup,
-            stuck_lookup=stuck_lookup,
-            note_lookup=note_lookup,
-            kind="compat_shims",
-        ),
-        "resources": manifest.get("resources") or [],
-    }
-
-
-def check_manifest_lock(root: Optional[PathLike] = None) -> tuple[bool, str]:
-    source = load_source_manifest(root)
-    expected = expand_source_manifest(source)
-    path = manifest_lock_path(root)
-    if not path.is_file():
-        return False, f"{LOCK_MANIFEST_NAME} is missing"
-    actual = _read_json(path)
-    if actual != expected:
-        return (
-            False,
-            f"{LOCK_MANIFEST_NAME} is stale; run scripts/vendor-manifest.sh --write",
-        )
-    return True, "manifest lock is current"
-
-
-def regenerate_manifest_lock(root: Optional[PathLike] = None) -> dict[str, Any]:
-    with _manifest_write_lock(root):
-        source = load_source_manifest(root)
-        expanded = expand_source_manifest(source)
-        _atomic_write_json(manifest_lock_path(root), expanded)
-        return expanded
-
-
-def bootstrap_manifest_source(
-    root: Optional[PathLike] = None,
-    *,
-    compat_shim_locals: Optional[set[str]] = None,
-) -> dict[str, Any]:
-    path = manifest_path(root)
-    legacy = _read_json(path)
-    if legacy.get("schema_version") == SOURCE_SCHEMA_VERSION:
-        raise ManifestError(f"{SOURCE_MANIFEST_NAME} is already compact")
-    source = compact_manifest(legacy, compat_shim_locals=compat_shim_locals)
-    with _manifest_write_lock(root):
-        _atomic_write_json(path, source)
-        _atomic_write_json(manifest_lock_path(root), expand_source_manifest(source))
-    return source
-
-
-def load_manifest(root: Optional[PathLike] = None) -> dict[str, Any]:
-    source = load_source_manifest(root)
-    expanded = expand_source_manifest(source)
-    lock = manifest_lock_path(root)
-    if not lock.is_file() or _read_json(lock) != expanded:
+    if missing:
+        first = missing[0]
         raise ManifestError(
-            f"{LOCK_MANIFEST_NAME} is stale; run scripts/vendor-manifest.sh --write"
+            f"{OVERLAY_NAME}: {len(missing)} declared path(s) are not on disk; "
+            f"e.g. {first[0]} ({first[1]}) — remove the entry or restore the file"
         )
-    expanded[SOURCE_DIGEST_KEY] = _source_digest(source)
-    return expanded
 
 
-def save_manifest(data: dict[str, Any], root: Optional[PathLike] = None) -> None:
-    """Persist a mutated flat manifest through the compact source and lock."""
-    with _manifest_write_lock(root):
-        expected_digest = data.get(SOURCE_DIGEST_KEY)
-        if expected_digest is not None:
-            current_source = load_source_manifest(root)
-            if _source_digest(current_source) != expected_digest:
-                raise ManifestError(
-                    f"{SOURCE_MANIFEST_NAME} changed after it was loaded; "
-                    "reload and retry instead of overwriting another writer"
-                )
-        flat = dict(data)
-        flat.pop(SOURCE_DIGEST_KEY, None)
-        source = compact_manifest(flat)
-        expanded = expand_source_manifest(source)
-        _atomic_write_json(manifest_path(root), source)
-        _atomic_write_json(manifest_lock_path(root), expanded)
+# ---------------------------------------------------------------------------
+# Git helpers (pristine tree)
+# ---------------------------------------------------------------------------
 
 
 def normalize_sha(sha: Optional[str]) -> Optional[str]:
@@ -824,6 +336,61 @@ def git_show(commit: str, path: str, cwd: Optional[PathLike] = None) -> Optional
         return None
 
 
+def git_tree_blobs(
+    commit: str, tree_prefix: str, cwd: Optional[PathLike] = None
+) -> dict[str, str]:
+    """`{path: blob_oid}` for one subtree of `commit` (single git call)."""
+    vd = _as_path(cwd) if cwd is not None else vendor_dir()
+    try:
+        out = subprocess.check_output(
+            ["git", "-C", str(vd), "ls-tree", "-r", commit, "--", tree_prefix],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return {}
+    blobs: dict[str, str] = {}
+    for line in out.splitlines():
+        meta, _, path = line.partition("\t")
+        parts = meta.split()
+        if len(parts) >= 3 and parts[1] == "blob":
+            blobs[path] = parts[2]
+    return blobs
+
+
+def git_blob_bytes(
+    oids: Iterable[str], cwd: Optional[PathLike] = None
+) -> dict[str, Optional[bytes]]:
+    """`{oid: content_or_None}` via one `git cat-file --batch` call."""
+    unique = list(dict.fromkeys(oids))
+    if not unique:
+        return {}
+    vd = _as_path(cwd) if cwd is not None else vendor_dir()
+    proc = subprocess.run(
+        ["git", "-C", str(vd), "cat-file", "--batch"],
+        input="".join(f"{oid}\n" for oid in unique).encode(),
+        capture_output=True,
+    )
+    out = proc.stdout
+    blobs: dict[str, Optional[bytes]] = {}
+    pos = 0
+    for oid in unique:
+        end = out.find(b"\n", pos)
+        if end < 0:
+            blobs[oid] = None
+            continue
+        header = out[pos:end].decode("utf-8", "replace").split()
+        if len(header) < 3 or header[1] != "blob":
+            blobs[oid] = None
+            pos = end + 1
+            continue
+        size = int(header[2])
+        start = end + 1
+        blobs[oid] = out[start : start + size]
+        pos = start + size + 1  # trailing newline
+    return blobs
+
+
 def git_log_paths(
     old: str,
     new: str,
@@ -835,25 +402,28 @@ def git_log_paths(
     path_list = list(paths)
     if not path_list:
         return []
-    try:
-        out = subprocess.check_output(
-            [
-                "git",
-                "-C",
-                str(vd),
-                "log",
-                "--name-only",
-                "--pretty=format:",
-                f"{old}..{new}",
-                "--",
-                *path_list,
-            ],
-            stderr=subprocess.DEVNULL,
-            text=True,
-        )
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return []
-    touched = {line.strip() for line in out.splitlines() if line.strip()}
+    touched: set[str] = set()
+    chunk = 120
+    for i in range(0, len(path_list), chunk):
+        try:
+            out = subprocess.check_output(
+                [
+                    "git",
+                    "-C",
+                    str(vd),
+                    "log",
+                    "--name-only",
+                    "--pretty=format:",
+                    f"{old}..{new}",
+                    "--",
+                    *path_list[i : i + chunk],
+                ],
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return []
+        touched.update(line.strip() for line in out.splitlines() if line.strip())
     return [p for p in path_list if p in touched]
 
 
@@ -861,20 +431,23 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def upstream_git_path(entry: dict[str, Any], manifest: dict[str, Any]) -> Optional[str]:
-    """Map a file entry to path inside the Telegram git tree."""
-    upstream = entry.get("upstream")
-    if not upstream:
-        return None
-    # Manifest convention: upstream is under upstream_root (TMessagesProj/src/main/java)
-    # and stored without that prefix, e.g. org/telegram/ui/Foo.java
-    root = manifest.get("upstream_root", "TMessagesProj/src/main/java").rstrip("/")
-    u = str(upstream).lstrip("/")
-    if u.startswith("TMessagesProj/"):
-        return u
-    if u.startswith(("org/", "com/", "me/", "androidx/")):
-        return f"{root}/{u}"
-    return f"{root}/{u}"
+# ---------------------------------------------------------------------------
+# Derived provenance index
+# ---------------------------------------------------------------------------
+
+
+def scan_managed_sources(root: Optional[PathLike] = None) -> list[str]:
+    """`local_root`-relative sources under `:telegram` (java + kotlin)."""
+    r = _as_path(root)
+    base = r / DEFAULT_LOCAL_ROOT / TELEGRAM_JAVA_PREFIX
+    if not base.is_dir():
+        return []
+    out = [
+        (TELEGRAM_JAVA_PREFIX + p.relative_to(base).as_posix())
+        for p in sorted(base.rglob("*"))
+        if p.is_file() and p.suffix in SOURCE_SUFFIXES
+    ]
+    return out
 
 
 def local_abs(
@@ -883,8 +456,183 @@ def local_abs(
     root: Optional[PathLike] = None,
 ) -> Path:
     r = _as_path(root)
-    local_root = manifest.get("local_root", "apps/android/")
+    local_root = manifest.get("local_root", DEFAULT_LOCAL_ROOT)
     return r / local_root / entry["local"]
+
+
+def upstream_git_path(entry: dict[str, Any], manifest: dict[str, Any]) -> Optional[str]:
+    """Map a file entry to its path inside the Telegram git tree."""
+    upstream = entry.get("upstream")
+    if not upstream:
+        return None
+    root = manifest.get("upstream_root", DEFAULT_UPSTREAM_ROOT).rstrip("/")
+    u = str(upstream).lstrip("/")
+    if u.startswith("TMessagesProj/"):
+        return u
+    return f"{root}/{u}"
+
+
+def third_party_bucket(local: str) -> Optional[str]:
+    """Bucket name for allowlisted/third-party trees, else None."""
+    rel = local
+    if rel.startswith(TELEGRAM_JAVA_PREFIX):
+        rel = rel[len(TELEGRAM_JAVA_PREFIX) :]
+    for prefix in THIRD_PARTY_PREFIXES:
+        if rel.startswith(prefix):
+            return prefix.rstrip("/").replace("/", "_")
+    return None
+
+
+def derive_index(
+    root: Optional[PathLike] = None, *, with_modified: bool = True
+) -> dict[str, Any]:
+    """Build the flat provenance index from overlay + pristine tree + disk.
+
+    Entry shape (kept compatible with the vendor tools):
+
+    - `files`        — sources with an upstream counterpart at the pin
+    - `compat_shims` — `:telegram` sources with no upstream blob at the pin
+    - `resources`    — declared resource copies
+    """
+    r = _as_path(root)
+    overlay = load_overlay(r)
+    local_root = overlay.get("local_root", DEFAULT_LOCAL_ROOT)
+    upstream_root = overlay.get("upstream_root", DEFAULT_UPSTREAM_ROOT)
+    pin = normalize_sha((overlay.get("upstream") or {}).get("pinned_commit"))
+    if not pin:
+        raise ManifestError(f"{OVERLAY_NAME}: upstream.pinned_commit is invalid")
+    _overlay_paths_must_exist(r, local_root, overlay)
+
+    native = set(overlay.get("native") or [])
+    forced_exact = overlay.get("forced_exact") or {}
+    derived_from = overlay.get("derived_from") or {}
+    reference = overlay.get("reference") or {}
+    reference_commit = normalize_sha(reference.get("commit")) if reference else None
+    reference_paths = set(reference.get("paths") or [])
+    ports = overlay.get("upstream_ports") or {}
+
+    manifest_meta = {
+        "upstream": overlay.get("upstream") or {},
+        "local_root": local_root,
+        "upstream_root": upstream_root,
+        "policy": overlay.get("policy") or {},
+        "reference": reference,
+        "resources": overlay.get("resources") or [],
+        "overlay": str(overlay_path(r)),
+    }
+
+    pending: list[dict[str, Any]] = []
+    for local in scan_managed_sources(r):
+        upstream = derived_from.get(local, local[len(TELEGRAM_JAVA_PREFIX) :])
+        pending.append({"local": local, "upstream": upstream, "origin": "vendored"})
+    for local, upstream in sorted(ports.items()):
+        pending.append({"local": local, "upstream": upstream, "origin": "port"})
+
+    # One tree listing per baseline gives existence + blob ids for every path.
+    vd = vendor_dir(r)
+    if not vd.exists():
+        raise ManifestError(
+            f"pristine Telegram checkout missing at {vd} — run scripts/vendor-setup.sh"
+        )
+    trees: dict[str, dict[str, str]] = {}
+    for commit in {pin, reference_commit} - {None}:
+        trees[commit] = git_tree_blobs(commit, upstream_root, vd)
+    blob_bytes: dict[str, Optional[bytes]] = {}
+    if with_modified:
+        wanted = []
+        for entry in pending:
+            baseline = (
+                reference_commit
+                if reference_commit and entry["local"] in reference_paths
+                else pin
+            )
+            oid = trees.get(baseline, {}).get(upstream_git_path(entry, manifest_meta))
+            if oid:
+                wanted.append(oid)
+        blob_bytes = git_blob_bytes(wanted, vd)
+
+    files: list[dict[str, Any]] = []
+    shims: list[dict[str, Any]] = []
+    for entry in pending:
+        local = entry["local"]
+        up_rel = entry["upstream"]
+        baseline = reference_commit if local in reference_paths else pin
+        git_path = upstream_git_path(entry, manifest_meta)
+        oid = trees.get(baseline, {}).get(git_path) if git_path else None
+        item: dict[str, Any] = {
+            "local": local,
+            "upstream": up_rel,
+            "vendored_at": baseline or pin,
+            "port_mode": "native" if local in native else "exact",
+        }
+        if entry["origin"] == "port":
+            item["port_mode"] = "native"
+        if local in forced_exact:
+            item["forced_exact"] = forced_exact[local]
+        if entry["origin"] == "shim" or oid is None:
+            # Declared upstream path, but nothing at that path at the pin:
+            # a scratch host surface, not a copy.
+            item["port_mode"] = "native"
+            item["origin"] = "shim"
+            shims.append(item)
+            continue
+        item["origin"] = "vendored"
+        if with_modified:
+            blob = blob_bytes.get(oid)
+            path = local_abs(item, manifest_meta, r)
+            item["modified"] = (
+                None if blob is None or not path.is_file() else path.read_bytes() != blob
+            )
+        files.append(item)
+
+    files.sort(key=lambda e: e["local"])
+    shims.sort(key=lambda e: e["local"])
+    manifest_meta["files"] = files
+    manifest_meta["compat_shims"] = shims
+    return manifest_meta
+
+
+def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
+    import tempfile
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    text = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as tmp:
+        tmp.write(text)
+        tmp.flush()
+        os.fsync(tmp.fileno())
+        tmp_path = Path(tmp.name)
+    os.replace(tmp_path, path)
+
+
+def update_overlay_upstream(
+    root: Optional[PathLike],
+    commit: str,
+    *,
+    date: Optional[str] = None,
+) -> None:
+    """Move the overlay's pinned commit (used by vendor-ff after --apply)."""
+    path = overlay_path(root)
+    data = _read_json(path)
+    upstream = data.setdefault("upstream", {})
+    upstream["pinned_commit"] = commit
+    if date:
+        upstream["pinned_date"] = date
+    _atomic_write_json(path, data)
+
+
+def load_index(
+    root: Optional[PathLike] = None, *, with_modified: bool = True
+) -> dict[str, Any]:
+    """Alias for :func:`derive_index` — the vendor tools' entry point."""
+    return derive_index(root, with_modified=with_modified)
 
 
 def compare_to_upstream(
@@ -892,14 +640,12 @@ def compare_to_upstream(
     manifest: dict[str, Any],
     root: Optional[PathLike] = None,
 ) -> dict[str, Any]:
-    """Compare local file bytes to git show of vendored_at:upstream_path."""
+    """Compare one local file to its upstream blob at `vendored_at`."""
     result: dict[str, Any] = {
         "local": entry.get("local"),
         "exists": False,
         "upstream_available": False,
         "byte_equal": None,
-        "declared_modified": bool(entry.get("modified")),
-        "modified_mismatch": False,
         "error": None,
     }
     path = local_abs(entry, manifest, root)
@@ -922,14 +668,7 @@ def compare_to_upstream(
         return result
     result["upstream_available"] = True
     result["upstream_sha256"] = sha256_bytes(remote)
-    equal = local_bytes == remote
-    result["byte_equal"] = equal
-    if entry.get("modified") is False and not equal:
-        result["modified_mismatch"] = True
-        result["error"] = "declared_clean_but_differs"
-    elif entry.get("modified") is True and equal:
-        result["modified_mismatch"] = True
-        result["error"] = "declared_modified_but_identical"
+    result["byte_equal"] = local_bytes == remote
     return result
 
 
@@ -950,18 +689,6 @@ class StatusReport:
         self.info.append(msg)
 
 
-def collect_on_disk_telegram_java(root: Optional[PathLike] = None) -> list[str]:
-    r = _as_path(root)
-    base = r / "apps" / "android" / "telegram" / "src" / "main" / "java"
-    if not base.is_dir():
-        return []
-    out = []
-    for p in base.rglob("*.java"):
-        rel = p.relative_to(r / "apps" / "android").as_posix()
-        out.append(rel)
-    return sorted(out)
-
-
 def run_isolation_check(root: Optional[PathLike] = None) -> tuple[int, str]:
     r = _as_path(root)
     script = r / "scripts" / "vendor-isolation-check.sh"
@@ -979,114 +706,19 @@ def run_isolation_check(root: Optional[PathLike] = None) -> tuple[int, str]:
         return 1, str(e)
 
 
-def upsert_file_entry(
-    manifest: dict[str, Any],
-    *,
-    local: str,
-    upstream: str,
-    vendored_at: str,
-    modified: bool = False,
-    port_mode: str = "exact",
-    notes: Optional[str] = None,
-    forced_exact: Optional[list[str]] = None,
-) -> str:
-    """Insert or update a files[] entry. Returns 'inserted' | 'updated' | 'unchanged'."""
-    files = manifest.setdefault("files", [])
-    for entry in files:
-        if entry.get("local") == local:
-            changed = False
-            for k, v in {
-                "upstream": upstream,
-                "vendored_at": vendored_at,
-                "modified": modified,
-                "port_mode": port_mode,
-            }.items():
-                if entry.get(k) != v:
-                    entry[k] = v
-                    changed = True
-            if notes is not None and entry.get("notes") != notes:
-                entry["notes"] = notes
-                changed = True
-            if forced_exact is not None and entry.get("forced_exact") != forced_exact:
-                entry["forced_exact"] = forced_exact
-                changed = True
-            return "updated" if changed else "unchanged"
-    new_entry: dict[str, Any] = {
-        "local": local,
-        "upstream": upstream,
-        "vendored_at": vendored_at,
-        "modified": modified,
-        "port_mode": port_mode,
-    }
-    if forced_exact:
-        new_entry["forced_exact"] = forced_exact
-    if notes:
-        new_entry["notes"] = notes
-    files.append(new_entry)
-    return "inserted"
-
-
-def normalize_manifest_pins(
-    manifest: dict[str, Any],
-    *,
-    set_global_pin: Optional[str] = None,
-    set_global_date: Optional[str] = None,
-    fill_null_with: Optional[str] = None,
-) -> dict[str, int]:
-    """Expand short SHAs; optionally set global pin and fill null vendored_at."""
-    counts = {
-        "files_normalized": 0,
-        "files_null_filled": 0,
-        "compat_shims_normalized": 0,
-        "compat_shims_null_filled": 0,
-        "resources_normalized": 0,
-        "global_pin_set": 0,
-    }
-    if set_global_pin:
-        up = manifest.setdefault("upstream", {})
-        if up.get("pinned_commit") != set_global_pin:
-            up["pinned_commit"] = set_global_pin
-            counts["global_pin_set"] = 1
-        if set_global_date:
-            up["pinned_date"] = set_global_date
-
-    for entry in manifest.get("files", []):
-        raw = entry.get("vendored_at")
-        if raw is None or raw == "" or raw == "null":
-            if fill_null_with:
-                entry["vendored_at"] = fill_null_with
-                counts["files_null_filled"] += 1
+def changed_since_head(root: Optional[PathLike] = None) -> set[str]:
+    """Repo-relative paths changed in the working tree (staged + unstaged)."""
+    r = _as_path(root)
+    changed: set[str] = set()
+    for args in (["diff", "--name-only"], ["diff", "--cached", "--name-only"]):
+        try:
+            out = subprocess.check_output(
+                ["git", "-C", str(r), *args], stderr=subprocess.DEVNULL, text=True
+            )
+        except (subprocess.CalledProcessError, FileNotFoundError):
             continue
-        norm = normalize_sha(raw)
-        if norm and norm != raw:
-            entry["vendored_at"] = norm
-            counts["files_normalized"] += 1
-
-    for entry in manifest.get("compat_shims", []):
-        raw = entry.get("vendored_at")
-        if raw is None or raw == "" or raw == "null":
-            if fill_null_with:
-                entry["vendored_at"] = fill_null_with
-                counts["compat_shims_null_filled"] += 1
-            continue
-        norm = normalize_sha(raw)
-        if norm and norm != raw:
-            entry["vendored_at"] = norm
-            counts["compat_shims_normalized"] += 1
-
-    for res in manifest.get("resources", []) or []:
-        raw = res.get("vendored_at")
-        if raw is None:
-            if fill_null_with:
-                res["vendored_at"] = fill_null_with
-                counts["resources_normalized"] += 1
-            continue
-        norm = normalize_sha(raw)
-        if norm and norm != raw:
-            res["vendored_at"] = norm
-            counts["resources_normalized"] += 1
-
-    return counts
+        changed.update(line.strip() for line in out.splitlines() if line.strip())
+    return changed
 
 
 def eprint(*args: object) -> None:

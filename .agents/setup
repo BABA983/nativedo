@@ -135,6 +135,14 @@ else
   log "Vendor tree present: $(git -C "$VENDOR_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 fi
 
+# --- Repo git hooks ----------------------------------------------------------
+# .githooks/pre-commit runs the vendor guard, so agent commits are checked even
+# though .git/hooks itself is never committed.
+if [[ -d "$REPO_ROOT/.githooks" ]]; then
+  git -C "$REPO_ROOT" config core.hooksPath .githooks
+  log "Installed repo git hooks (.githooks/pre-commit)"
+fi
+
 # --- Orb-specific agent notes -------------------------------------------------
 guidance="$HOME/.config/amp/AGENTS.md"
 guidance_marker="<!-- linuxdo-native orb toolchain (managed by .agents/setup) -->"
@@ -149,7 +157,8 @@ if ! grep -qF "$guidance_marker" "$guidance" 2>/dev/null; then
 - Android toolchain is preinstalled: JDK 17, Android SDK in `$HOME/Android/Sdk` (`ANDROID_HOME` exported for login shells), and `apps/android/local.properties` already points at it. Gradle, AndroidX, Robolectric, and Paparazzi artifacts are cached in `~/.gradle` / `~/.m2`; keep those caches.
 - Orbs have no emulator or device (no KVM): `adb` and instrumentation tests cannot run. Verify with `:app:testDebugUnitTest` and Paparazzi instead.
 - Paparazzi goldens were recorded on macOS; on Linux orbs `:app:verifyPaparazziDebug` can fail on ~0.03% pixel drift in a few snapshots. Inspect the diff before re-recording, and record only intentional UI changes.
-- `../telegram` (sibling of the repo, override with `NATIVEDO_TELEGRAM_VENDOR_DIR`) holds the pristine Telegram checkout at the manifest pin, so `scripts/vendor-diff.sh` and the other vendor scripts work immediately.
+- `../telegram` (sibling of the repo, override with `NATIVEDO_TELEGRAM_VENDOR_DIR`) holds the pristine Telegram checkout at the pinned commit, with blob contents prefetched, so `scripts/vendor-index.sh` / `vendor-diff.sh` / the guard work immediately.
+- Vendor provenance is derived: `vendor-overlay.json` is the only hand-edited file, and `.githooks/pre-commit` (installed by this setup) runs `scripts/vendor-guard.sh --quick` on every commit.
 EOF
 fi
 
