@@ -214,8 +214,8 @@ adapted.
 
 ## Image loading — single channel via ImageReceiver
 
-The app already routes the upstream `ImageLoader` HTTP path through our
-OkHttp + `PersistentCookieJar`:
+The app already routes the upstream `ImageLoader` HTTP path through our OkHttp
+client with the session cookie interceptor (`SessionCookieInterceptor`):
 
 - [`NativeDoApp.kt`](../apps/android/app/src/main/java/io/github/baba983/nativedo/NativeDoApp.kt)
   installs `NativeDoImageDownloader` via
