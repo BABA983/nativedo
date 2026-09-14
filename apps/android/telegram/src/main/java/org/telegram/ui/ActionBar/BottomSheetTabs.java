@@ -584,6 +584,10 @@ public class BottomSheetTabs extends FrameLayout {
 
         public void destroy() {
             try {
+                if (webView != null) {
+                    webView.destroy();
+                    webView = null;
+                }
                 if (browserSheet != null) {
                     browserSheet.destroyFromTabs();
                     browserSheet = null;

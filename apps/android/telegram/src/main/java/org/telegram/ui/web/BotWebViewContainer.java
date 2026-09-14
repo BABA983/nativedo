@@ -190,6 +190,10 @@ public class BotWebViewContainer extends FrameLayout {
 
     @SuppressLint("SetJavaScriptEnabled")
     public MyWebView getWebView() {
+        return webView;
+    }
+
+    private MyWebView createWebViewIfNeeded() {
         if (webView == null) {
             webView = new MyWebView(getContext());
             webView.setContainers(this, scrollListener);
@@ -371,26 +375,19 @@ public class BotWebViewContainer extends FrameLayout {
                 } else {
                     FileLog.d("[webviewcontainer] onRenderProcessGone");
                 }
-                try {
-                    if (!AndroidUtilities.isSafeToShow(getContext())) {
-                        return true;
-                    }
-                    new AlertDialog.Builder(getContext(), resourcesProvider)
-                            .setTitle(LocaleController.getString(R.string.ChromeCrashTitle))
-                            .setMessage(AndroidUtilities.replaceSingleTag(
-                                    LocaleController.getString(R.string.ChromeCrashMessage),
-                                    () -> Browser.openUrl(getContext(), "https://play.google.com/store/apps/details?id=com.google.android.webview")))
-                            .setPositiveButton(LocaleController.getString(R.string.OK), null)
-                            .setOnDismissListener(dialog -> {
-                                if (delegate != null) {
-                                    delegate.onCloseRequested(null);
-                                } else if (closeRequestedListener != null) {
-                                    closeRequestedListener.run();
-                                }
-                            })
-                            .show();
-                } catch (Exception e) {
-                    FileLog.e(e);
+                // A renderer may be shared by cached tabs. Clean up each dead view;
+                // background/system reclamation is not a foreground crash dialog.
+                boolean visible = view.isShown() && view.getWindowVisibility() == VISIBLE;
+                if (view instanceof MyWebView) {
+                    ((MyWebView) view).rendererGone = true;
+                }
+                AndroidUtilities.removeFromParent(view);
+                view.destroy();
+                if (webView == view) {
+                    webView = null;
+                    webViewProxy = null;
+                    isPageLoaded = false;
+                    if (visible) onErrorShown(true, 0, "Web page stopped. Reload to continue.");
                 }
                 return true;
             }
@@ -588,15 +585,11 @@ public class BotWebViewContainer extends FrameLayout {
         onURLChanged(webView.getUrl(), first, last);
     }
 
-    public void checkCreateWebView() { getWebView(); }
+    public void checkCreateWebView() { createWebViewIfNeeded(); }
     public void resetWebView() {
+        webView = null;
+        webViewProxy = null;
         preserving = false;
-        if (webView != null) {
-            AndroidUtilities.removeFromParent(webView);
-            addView(webView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
-            onWebViewCreated(webView);
-            notifyUrlChanged();
-        }
     }
     public void destroyWebView() {
         if (webView == null) {
@@ -609,7 +602,6 @@ public class BotWebViewContainer extends FrameLayout {
         if (webViewProxy != null) {
             webViewProxy.setContainer(null);
         }
-        webView.destroyed = true;
         webView.clearSearchState();
         webView.clearSearchListener();
         webView.stopLoading();
@@ -623,13 +615,6 @@ public class BotWebViewContainer extends FrameLayout {
     }
     public void preserveWebView() {
         preserving = true;
-        if (webViewProxy != null) {
-            webViewProxy.setContainer(null);
-        }
-        if (webView != null) {
-            webView.setContainers(null, null);
-            AndroidUtilities.removeFromParent(webView);
-        }
     }
     public void replaceWebView(int account, MyWebView webView, Object proxy) {
         preserving = false;
@@ -649,6 +634,7 @@ public class BotWebViewContainer extends FrameLayout {
         }
         if (this.webView != null) {
             AndroidUtilities.removeFromParent(this.webView);
+            this.webView.destroy();
         }
         this.webView = webView;
         this.webViewProxy = webView == null ? null : proxy instanceof WebViewProxy ? (WebViewProxy) proxy : new WebViewProxy(webView, this);
@@ -665,13 +651,14 @@ public class BotWebViewContainer extends FrameLayout {
     }
     public WebViewProxy getProxy() { return webViewProxy; }
     public void loadUrl(int account, String url) {
-        MyWebView view = getWebView();
+        MyWebView view = createWebViewIfNeeded();
         if (view.destroyed) {
             webView = null;
-            view = getWebView();
+            view = createWebViewIfNeeded();
         }
         isPageLoaded = false;
         mUrl = url;
+        view.onResume();
         view.loadUrl(url);
     }
     public void invalidateViewPortHeight() {}
@@ -736,6 +723,43 @@ public class BotWebViewContainer extends FrameLayout {
         private WebViewScrollListener webViewScrollListener;
         private boolean pageLoaded;
         private boolean destroyed;
+        private boolean rendererGone;
+
+        @Override
+        public void onPause() {
+            if (destroyed || rendererGone) return;
+            evaluateJavascript("document.querySelectorAll('audio,video').forEach(function(m){m.pause();});", null);
+            super.onPause();
+        }
+
+        @Override
+        protected void onWindowVisibilityChanged(int visibility) {
+            super.onWindowVisibilityChanged(visibility);
+            if (destroyed) return;
+            if (visibility == VISIBLE) onResume(); else onPause();
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            onPause();
+            super.onDetachedFromWindow();
+        }
+
+        @Override
+        public void onResume() {
+            if (!destroyed) super.onResume();
+        }
+
+        public boolean isDestroyed() { return destroyed; }
+
+        @Override
+        public void destroy() {
+            if (destroyed) return;
+            destroyed = true;
+            clearSearchListener();
+            setContainers(null, null);
+            super.destroy();
+        }
 
         public MyWebView(Context context) {
             super(context);

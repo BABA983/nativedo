@@ -130,7 +130,7 @@
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
       "modified": true,
       "port_mode": "exact",
-      "notes": "Epic closed (B21 + A3/A4-partial/A6/A7) against global pin 12.9.0. Host-wired IV/browser sheet: Sheet/BottomSheetTabs lifecycle, WebBookmarks, local MessagesController browser-policy facade, WebView file chooser, selection-mode dismiss gating, pin-shaped sheet radii, PageLayout fallback, capturePreviewBitmap, ActionBarLayout dismiss. Parent-driven surface: IArticleViewer state; DrawingText bounds/spoilers/attach/liveDrawingTexts/MultiLayoutTypingAnimator.Block; Block* attach lifecycle; EmbedPost/Slideshow a11y; Resources paints incl. Heading1-6; getText/createLayoutForText with TL_textSpoiler; quoteLevels drawQuoteLines; CodeHighlighting preformatted; table long-press selection; setIsLocal transitions. Embed/Collage/Slideshow stay non-static (pin-matched, A5 wontfix). Historical vendored_at pin is legacy reference only — file is multi-slice host-wired, not FF-eligible. See docs/vendor-articleviewer-plan.md; TableLayout 12.9 CellText: DrawingText implements CellText; BlockTableCell onLayoutChild/setX path aligned.",
+      "notes": "CachedWeb recreates destroyed renderers from the saved URL. Epic closed (B21 + A3/A4-partial/A6/A7) against global pin 12.9.0. Host-wired IV/browser sheet: Sheet/BottomSheetTabs lifecycle, WebBookmarks, local MessagesController browser-policy facade, WebView file chooser, selection-mode dismiss gating, pin-shaped sheet radii, PageLayout fallback, capturePreviewBitmap, ActionBarLayout dismiss. Parent-driven surface: IArticleViewer state; DrawingText bounds/spoilers/attach/liveDrawingTexts/MultiLayoutTypingAnimator.Block; Block* attach lifecycle; EmbedPost/Slideshow a11y; Resources paints incl. Heading1-6; getText/createLayoutForText with TL_textSpoiler; quoteLevels drawQuoteLines; CodeHighlighting preformatted; table long-press selection; setIsLocal transitions. Embed/Collage/Slideshow stay non-static (pin-matched, A5 wontfix). Historical vendored_at pin is legacy reference only — file is multi-slice host-wired, not FF-eligible. See docs/vendor-articleviewer-plan.md; TableLayout 12.9 CellText: DrawingText implements CellText; BlockTableCell onLayoutChild/setX path aligned.",
       "stuck_reason": "Epic closed — not eligible for clean FF. Remaining deltas are intentional NativeDo host chrome (WebBookmarks, local MessagesController browser settings, file chooser, capturePreviewBitmap, ActionBarLayout dismiss); not pin debt. A5 static reshape wontfix. Re-open only for a product bug or host-chrome ticket. docs/vendor-articleviewer-plan.md."
     },
     {
@@ -2173,7 +2173,7 @@
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
       "modified": true,
       "port_mode": "native",
-      "notes": "NativeDo keeps a BrowserSheet bridge while restoring upstream WebTabData.props for Browser/WebView tab state migration. The URL-shaped tryReopenTab(String) path is restored for ArticleViewer CachedWeb tabs so repeated links resume the saved WebView and scroll state instead of creating duplicate sheets.",
+      "notes": "WebTabData.destroy also destroys the retained WebView, matching upstream ownership. NativeDo keeps a BrowserSheet bridge while restoring upstream WebTabData.props for Browser/WebView tab state migration. The URL-shaped tryReopenTab(String) path is restored for ArticleViewer CachedWeb tabs so repeated links resume the saved WebView and scroll state instead of creating duplicate sheets.",
       "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
     },
     {
@@ -2304,7 +2304,7 @@
       "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
       "modified": true,
       "port_mode": "native",
-      "notes": "Native browser WebView host for ArticleViewer (not full pin BotWebView). http(s) in-webview; other schemes external. setPageLoaded + back/forward chrome; progress/title/favicon/error; pin-shaped main-frame HTTP error and renderer-crash handling; long-press menus; DownloadManager downloads with size confirm; onCreateWindow opens nested ArticleViewer when in-app browser on; history+metadata+find. Omitted: TON proxy, Mini App bridge, full DangerousWebWarning.",
+      "notes": "Native browser WebView host for ArticleViewer (not full pin BotWebView). http(s) in-webview; other schemes external. setPageLoaded + back/forward chrome; progress/title/favicon/error; pin-shaped main-frame HTTP error and renderer-crash handling; long-press menus; DownloadManager downloads with size confirm; onCreateWindow opens nested ArticleViewer when in-app browser on; history+metadata+find. Upstream-shaped non-creating getter and preserved-view reset; cached ownership transfers without reattaching old instances. Per-view media pause on hide/detach; dead renderers are destroyed without background crash dialogs. Omitted: TON proxy, Mini App bridge, full DangerousWebWarning.",
       "stuck_reason": "Native host shim/port under :telegram; diverged from Telegram semantics. vendored_at is historical reference only — not eligible for vendor-ff; re-sync only when product requires."
     },
     {

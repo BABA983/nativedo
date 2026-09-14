@@ -15109,6 +15109,10 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         public void attach(PageLayout pageLayout) {
             if (pageLayout == null) return;
 
+            if (webView != null && webView.isDestroyed()) {
+                webView = null;
+                proxy = null;
+            }
             if (webView != null) {
                 webView.onResume();
                 pageLayout.webViewContainer.replaceWebView(UserConfig.selectedAccount, webView, proxy);
