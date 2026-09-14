@@ -14,18 +14,18 @@ class TopicFloatingDateControllerTest {
         val clipTop = 100
         val height = 28
 
-        assertThat(topicFloatingDatePushOffset(156, clipTop, height)).isEqualTo(0)
-        assertThat(topicFloatingDatePushOffset(150, clipTop, height)).isEqualTo(-6)
-        assertThat(topicFloatingDatePushOffset(129, clipTop, height)).isEqualTo(-27)
-        assertThat(topicFloatingDatePushOffset(128, clipTop, height)).isEqualTo(0)
+        assertThat(topicFloatingDatePushOffset(156f, clipTop.toFloat(), height)).isEqualTo(0)
+        assertThat(topicFloatingDatePushOffset(150f, clipTop.toFloat(), height)).isEqualTo(-6)
+        assertThat(topicFloatingDatePushOffset(129f, clipTop.toFloat(), height)).isEqualTo(-27)
+        assertThat(topicFloatingDatePushOffset(128f, clipTop.toFloat(), height)).isEqualTo(0)
     }
 
     @Test
     fun terminalSeparatorNeverPushesFloatingDate() {
         assertThat(
             topicFloatingDatePushOffset(
-                separatorBottom = 150,
-                clipTop = 100,
+                separatorBottom = 150f,
+                clipTop = 100f,
                 floatingHeight = 28,
                 isTerminalSeparator = true,
             ),
@@ -33,26 +33,46 @@ class TopicFloatingDateControllerTest {
     }
 
     @Test
-    fun translationAccountsForHostLayoutTopInsteadOfDoublingActionBarInset() {
+    fun translationMatchesListParentCoordinatesAndListTranslation() {
         org.telegram.messenger.AndroidUtilities.density = 1f
 
         assertThat(
             topicFloatingDateTranslationY(
-                viewTop = 180,
-                parentWindowTop = 0,
-                insetWindowTop = 0,
-                insetHeight = 180,
+                listTop = 0f,
+                listTranslationY = 0f,
+                listPaddingTop = 180,
                 viewOffset = 0,
             ),
-        ).isEqualTo(-4f)
+        ).isEqualTo(176f)
         assertThat(
             topicFloatingDateTranslationY(
-                viewTop = 4,
-                parentWindowTop = 63,
-                insetWindowTop = 63,
-                insetHeight = 180,
+                listTop = 12f,
+                listTranslationY = -9f,
+                listPaddingTop = 180,
                 viewOffset = -12,
             ),
-        ).isEqualTo(160f)
+        ).isEqualTo(167f)
+    }
+
+    @Test
+    fun topClipTracksSeparatorPushWithoutClippingTheRestingDate() {
+        org.telegram.messenger.AndroidUtilities.density = 1f
+
+        assertThat(
+            topicFloatingDateTopClip(
+                listTop = 0f,
+                listTranslationY = 0f,
+                listPaddingTop = 180,
+                floatingViewY = 180f,
+            ),
+        ).isEqualTo(0f)
+        assertThat(
+            topicFloatingDateTopClip(
+                listTop = 0f,
+                listTranslationY = 0f,
+                listPaddingTop = 180,
+                floatingViewY = 168f,
+            ),
+        ).isEqualTo(8f)
     }
 }

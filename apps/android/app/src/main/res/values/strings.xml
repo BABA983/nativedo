@@ -25,6 +25,7 @@
     <string name="topic_detail_info_topic_id">Topic ID</string>
     <string name="topic_detail_info_empty">—</string>
     <string name="topic_search_count_description">Topic search results</string>
+    <string name="topic_return_to_top">Return to top</string>
     <string name="search_filter_topics">Topics</string>
     <string name="search_filter_posts">Posts</string>
     <string name="search_filter_users">Users</string>

@@ -77,6 +77,7 @@ import io.github.baba983.nativedo.feature.topic.data.TopicRepository
 import io.github.baba983.nativedo.feature.topic.data.TopicSearchRepository
 import io.github.baba983.nativedo.feature.topic.data.TopicReplyDraft
 import io.github.baba983.nativedo.feature.topic.data.TopicReplyDraftKey
+import io.github.baba983.nativedo.feature.topic.data.TopicReadPositionKey
 import io.github.baba983.nativedo.feature.topic.data.TopicMentionRepository
 import io.github.baba983.nativedo.feature.topic.ui.TopicReplySheetItem
 import io.github.baba983.nativedo.feature.topic.ui.TopicReplyTargetResolver
@@ -92,6 +93,7 @@ import io.github.baba983.nativedo.feature.topic.ui.topicScopedSearchQuery
 import io.github.baba983.nativedo.feature.topic.ui.TOPIC_REACTION_ALL_FILTER_ID
 import io.github.baba983.nativedo.feature.topic.ui.TopicUiState
 import io.github.baba983.nativedo.feature.topic.ui.TopicViewModel
+import io.github.baba983.nativedo.feature.topic.ui.isReadPositionOnlyUpdateFrom
 import io.github.baba983.nativedo.feature.topic.ui.TopicDateHeader
 import io.github.baba983.nativedo.feature.topic.ui.topicFloorLabelForPostNumber
 import io.github.baba983.nativedo.feature.topic.ui.topicPostDateEntries
@@ -112,7 +114,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.Emoji
 import org.telegram.messenger.ImageLocation
@@ -120,6 +121,7 @@ import org.telegram.messenger.ImageReceiver
 import org.telegram.messenger.LocaleController
 import org.telegram.messenger.LiteMode
 import org.telegram.messenger.MessageObject
+import org.telegram.messenger.NotificationCenter
 import org.telegram.messenger.SharedConfig
 import org.telegram.messenger.browser.Browser
 import org.telegram.tgnet.TLRPC
@@ -160,6 +162,7 @@ import org.telegram.ui.Components.blur3.ViewGroupPartRenderer
 import org.telegram.ui.Components.blur3.drawable.BlurredBackgroundDrawable
 import org.telegram.ui.Components.blur3.drawable.color.BlurredBackgroundColorProviderThemed
 import org.telegram.ui.Components.blur3.drawable.color.impl.BlurredBackgroundProviderImpl
+import org.telegram.ui.Components.blur3.source.BlurredBackgroundSource
 import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceColor
 import org.telegram.ui.Components.blur3.source.BlurredBackgroundSourceRenderNode
 import org.telegram.ui.Components.chat.layouts.ChatActivitySideControlsButtonsLayout
@@ -169,6 +172,7 @@ import org.telegram.ui.Components.chat.ChatInputViewsContainer
 import org.telegram.ui.Components.chat.ViewPositionWatcher
 import org.telegram.ui.Components.inset.WindowAnimatedInsetsProvider
 import org.telegram.ui.Components.inset.WindowInsetsStateHolder
+import org.telegram.messenger.utils.RectFMergeBounding
 import org.telegram.messenger.R as TelegramR
 import java.net.URLEncoder
 import kotlin.math.roundToInt
@@ -193,7 +197,12 @@ class TopicDetailFragment @JvmOverloads constructor(
     private val initialPostNumber: Int? = null,
     private val initialPostId: Long? = null,
     private val initialIdentity: TopicInitialIdentity? = null,
-) : BaseFragment() {
+    private val debugFromTop: Boolean = false,
+) : BaseFragment(), NotificationCenter.NotificationCenterDelegate {
+    private var viewportStore: io.github.baba983.nativedo.feature.topic.data.TopicViewportStore? = null
+    private var viewportKey: TopicReadPositionKey? = null
+    private var initialViewport: io.github.baba983.nativedo.feature.topic.data.TopicViewport? = null
+    private var initialAnchorApplied = false
     private lateinit var viewModel: TopicViewModel
     private lateinit var adapter: TopicDetailAdapter
     private lateinit var listView: TopicSwipeReplyRecyclerView
@@ -223,6 +232,7 @@ class TopicDetailFragment @JvmOverloads constructor(
     private var mentionBlurNoiseSuppressor: DownscaleScrollableNoiseSuppressor? = null
     private var mentionBlurCapture: ViewGroupPartRenderer? = null
     private val mentionBlurPositions = ArrayList<RectF>()
+    private val mentionBlurPositionsMerged = ArrayList<RectF>()
     private var mentionBlurWatcher: ViewPositionWatcher? = null
     private var mentionBackground: BlurredBackgroundDrawable? = null
     private var topicTopFadeView: ChatActivityFadeView? = null
@@ -257,11 +267,19 @@ class TopicDetailFragment @JvmOverloads constructor(
     private var latestTopicState: TopicUiState = TopicUiState()
     private var pageDownControls: ChatActivitySideControlsButtonsLayout? = null
     private var pageDownReachedLatest: Boolean = false
-    private var pageDownDistanceFromLatestPx: Int = 0
     private var pageDownInitialized: Boolean = false
     private var pageDownLastKnownBelowPosts: Int = 0
-    private var pageDownSubmittedUnreadCount: Int = -1
+    private var pageDownLastKnownAbovePosts: Int = 0
+    private var pageDownSubmittedCount: Int = -1
+
+    // Telegram ChatActivity's page-down state machine: canShowPagedownButton,
+    // pagedownButtonShowedByScroll, totalDy, and scrollValue.
+    private val pageDownScrollThresholdPx: Int get() = AndroidUtilities.dp(100f)
+    private var pageDownCanShowFromScroll: Boolean = true
+    private var pageDownShownByScroll: Boolean = false
+    private var pageDownScrollAccumPx: Int = 0
     private var floatingDateController: TopicFloatingDateController? = null
+    private var floatingDateView: TopicDateCell? = null
     private var topicSearchItem: ActionBarMenuItem? = null
     private var topicHeaderItem: ActionBarMenuItem? = null
     private var topicIdentityContainer: TopicIdentityContainer? = null
@@ -274,6 +292,17 @@ class TopicDetailFragment @JvmOverloads constructor(
     private var topicSearchQuery = ""
     private var topicSearchPendingNext = false
     private val textSelectionHelper = TextSelectionHelper.ArticleTextSelectionHelper()
+
+    override fun onFragmentCreate(): Boolean {
+        if (!super.onFragmentCreate()) {
+            return false
+        }
+        NotificationCenter.getGlobalInstance().addObserver(
+            this,
+            NotificationCenter.didSetNewWallpapper,
+        )
+        return true
+    }
 
     override fun createView(context: Context): View {
         actionBar.setBackButtonDrawable(BackDrawable(false))
@@ -291,15 +320,29 @@ class TopicDetailFragment @JvmOverloads constructor(
         mentionRepository = TopicMentionRepository(appContainer.discourseApiClient)
         svgSpriteMarkup = appContainer.svgSpriteStore.sprite.value
         createTopicActionBarMenu(context)
+        val sessionSnapshot = appContainer.sessionStore.snapshot()
+        val sessionUsername = sessionSnapshot?.username?.takeIf { it.isNotBlank() }
+        viewportStore = appContainer.topicViewportStore
+        viewportKey = TopicReadPositionKey(baseUrl, sessionUsername.orEmpty(), topicId)
+        initialViewport = if (initialPostNumber == null && initialPostId == null && !debugFromTop) {
+            viewportKey?.let { viewportStore?.load(it) }
+        } else null
         viewModel = ViewModelProvider(
             this,
             TopicViewModelFactory(
                 repository = TopicRepository(appContainer.discourseApiClient),
                 topicId = topicId,
                 replyDraftStore = appContainer.topicReplyDraftStore,
-                replyDraftKey = appContainer.sessionStore.snapshot()?.username?.takeIf { it.isNotBlank() }?.let { username ->
+                replyDraftKey = sessionUsername?.let { username ->
                     TopicReplyDraftKey(baseUrl = appContainer.baseUrl, username = username, topicId = topicId)
                 },
+                readPositionStore = appContainer.topicReadPositionStore,
+                readPositionKey = sessionUsername?.let { username ->
+                    TopicReadPositionKey(baseUrl = appContainer.baseUrl, username = username, topicId = topicId)
+                },
+                readReportScope = appContainer.applicationScope,
+                canTrackReadPosition = sessionSnapshot != null,
+                initialPostNumber = if (debugFromTop) 1 else initialPostNumber ?: initialViewport?.postNumber,
             ),
         )[TopicViewModel::class.java]
 
@@ -338,6 +381,10 @@ class TopicDetailFragment @JvmOverloads constructor(
             }
         }.apply {
             setBackgroundColor(topicDetailListBackgroundColor())
+            setBackgroundImage(
+                Theme.getCachedWallpaperNonBlocking(),
+                Theme.isWallpaperMotion(),
+            )
             replyComposerLastKeyboardHeight = topicReplyComposerRememberedKeyboardHeight(context)
         }
         rootFrameLayout = root
@@ -468,7 +515,9 @@ class TopicDetailFragment @JvmOverloads constructor(
             layoutManager = TopicSwipeReplyRecyclerView.SwipeReplyLayoutManager(context)
             itemAnimator = null
             clipToPadding = false
-            setBackgroundColor(topicDetailListBackgroundColor())
+            // Telegram draws the wallpaper on the parent content view. Keeping the
+            // recycler transparent lets the wallpaper remain visible between posts.
+            setBackgroundColor(Color.TRANSPARENT)
             listBottomBasePadding = AndroidUtilities.dp(24f)
             // Apply ActionBar-height top padding immediately so the first layout already
             // matches chrome. Deferring until post{applyTopicListChromePadding} starts the
@@ -503,6 +552,7 @@ class TopicDetailFragment @JvmOverloads constructor(
                         }
                         RecyclerView.SCROLL_STATE_IDLE -> {
                             topicListUserScrollActive = false
+                            saveViewport()
                             textSelectionHelper.stopScrolling()
                             floatingDateController?.onScrollStateChanged(newState)
                             val manager = recyclerView.layoutManager as? LinearLayoutManager
@@ -522,6 +572,12 @@ class TopicDetailFragment @JvmOverloads constructor(
                         root.invalidate()
                     }
                     val manager = recyclerView.layoutManager as? LinearLayoutManager ?: return
+                    if (dy != 0 && !topicListUserScrollActive) {
+                        val first = manager.findFirstVisibleItemPosition()
+                        val child = manager.findViewByPosition(first)
+                        topicScrollLog("layout_or_programmatic_scroll", this@TopicDetailFragment.adapter.postNumberAtAdapterPosition(first) ?: 0,
+                            (child?.top ?: listView.paddingTop) - listView.paddingTop)
+                    }
                     updatePageDownScrollState(manager, dy)
                     if (topicDetailShouldLoadMoreFromScroll(
                             dy = dy,
@@ -531,6 +587,14 @@ class TopicDetailFragment @JvmOverloads constructor(
                         )
                     ) {
                         viewModel.loadMore()
+                    }
+                    if (topicDetailShouldLoadPreviousFromScroll(
+                            dy = dy,
+                            userScrollActive = topicListUserScrollActive,
+                            firstVisibleItemPosition = manager.findFirstVisibleItemPosition(),
+                        )
+                    ) {
+                        viewModel.loadPrevious()
                     }
                 }
             })
@@ -547,6 +611,7 @@ class TopicDetailFragment @JvmOverloads constructor(
             alpha = 0f
             visibility = View.INVISIBLE
         }
+        this.floatingDateView = floatingDateView
         root.addView(
             floatingDateView,
             LayoutHelper.createFrame(
@@ -562,7 +627,6 @@ class TopicDetailFragment @JvmOverloads constructor(
         floatingDateController = TopicFloatingDateController(
             dateView = floatingDateView,
             listView = listView,
-            topInsetView = actionBar,
             rowAt = adapter::floatingDateRowAt,
             interactionsBlocked = ::floatingDateInteractionBlocked,
         )
@@ -596,7 +660,12 @@ class TopicDetailFragment @JvmOverloads constructor(
 
         collectorScope.launch {
             viewModel.uiState.collectLatest { state ->
+                val readPositionOnlyUpdate = state.isReadPositionOnlyUpdateFrom(latestTopicState)
                 latestTopicState = state
+                if (readPositionOnlyUpdate) {
+                    updatePageDownControls(animated = pageDownInitialized)
+                    return@collectLatest
+                }
                 mentionSuggestionsView?.setParticipants(state.participants, state.posts)
                 topicTitle = state.title.ifBlank { initialTitle.orEmpty() }
                 state.pollActionFailure?.let { failure ->
@@ -608,10 +677,12 @@ class TopicDetailFragment @JvmOverloads constructor(
                 applyInitialTopicHeaderAnchorIfNeeded(state)
                 if (!initialPostJumpRequested && !state.isLoading && state.posts.isNotEmpty()) {
                     initialPostJumpRequested = true
-                    if (initialPostId != null) {
+                    if (topicListUserHasScrolled) {
+                        topicScrollLog("skip_initial_jump_after_gesture", 0, 0)
+                    } else if (initialPostId != null) {
                         viewModel.requestJumpToPostId(initialPostId)
-                    } else {
-                        initialPostNumber?.let(viewModel::requestJumpToReplyTarget)
+                    } else if (initialPostNumber != null) {
+                        viewModel.requestJumpToReplyTarget(initialPostNumber)
                     }
                 }
                 updateTopicIdentity(state)
@@ -660,6 +731,7 @@ class TopicDetailFragment @JvmOverloads constructor(
 
     override fun onPause() {
         topicFragmentPaused = true
+        captureAndFlushReadPosition()
         // Chat disables pan while paused; also drop any in-flight transition so a
         // browser-sheet / tabs height change cannot leave a residual translation.
         rootFrameLayout?.stopPanTransition()
@@ -676,7 +748,7 @@ class TopicDetailFragment @JvmOverloads constructor(
         val descriptions = java.util.ArrayList<ThemeDescription>()
         val chromeDelegate = ThemeDescription.ThemeDescriptionDelegate {
             actionBar?.applyTheme()
-            rootFrameLayout?.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite))
+            updateTopicWallpaperBackground()
             parentActivity?.window?.let { window ->
                 AndroidUtilities.setLightStatusBar(window, !Theme.isCurrentThemeDark())
             }
@@ -862,6 +934,11 @@ class TopicDetailFragment @JvmOverloads constructor(
     }
 
     override fun onFragmentDestroy() {
+        NotificationCenter.getGlobalInstance().removeObserver(
+            this,
+            NotificationCenter.didSetNewWallpapper,
+        )
+        captureAndFlushReadPosition()
         topicSearchJob?.cancel()
         topicSearchJob = null
         topicSearchSession.clear()
@@ -896,6 +973,7 @@ class TopicDetailFragment @JvmOverloads constructor(
         mentionBlurSource = null
         mentionBlurSourceColor = null
         mentionBlurPositions.clear()
+        mentionBlurPositionsMerged.clear()
         clearReplyComposerWaitingForKeyboardOpenAfterEmoji()
         postOptions?.dismiss()
         postOptions = null
@@ -906,8 +984,17 @@ class TopicDetailFragment @JvmOverloads constructor(
         replyComposerPanel = null
         listView.cancelSwipeReply(false)
         pageDownControls = null
+        pageDownReachedLatest = false
+        pageDownInitialized = false
+        pageDownLastKnownBelowPosts = 0
+        pageDownLastKnownAbovePosts = 0
+        pageDownSubmittedCount = -1
+        pageDownCanShowFromScroll = true
+        pageDownShownByScroll = false
+        pageDownScrollAccumPx = 0
         floatingDateController?.release()
         floatingDateController = null
+        floatingDateView = null
         topicInsetsStateHolder?.let { holder ->
             topicAnimatedInsetsProvider?.unsubscribeFromWindowInsetsAnimation(holder)
         }
@@ -924,6 +1011,27 @@ class TopicDetailFragment @JvmOverloads constructor(
         rootFrameLayout = null
         AndroidUtilities.removeAdjustResize(parentActivity, topicAdjustResizeOwnerClassGuid)
         super.onFragmentDestroy()
+    }
+
+    override fun didReceivedNotification(id: Int, account: Int, vararg args: Any?) {
+        if (id != NotificationCenter.didSetNewWallpapper) {
+            return
+        }
+        updateTopicWallpaperBackground()
+        floatingDateView?.invalidate()
+        if (::listView.isInitialized) {
+            listView.invalidateViews()
+        }
+    }
+
+    private fun updateTopicWallpaperBackground() {
+        val root = rootFrameLayout ?: return
+        root.setBackgroundColor(topicDetailListBackgroundColor())
+        root.setBackgroundImage(
+            Theme.getCachedWallpaperNonBlocking(),
+            Theme.isWallpaperMotion(),
+        )
+        root.invalidate()
     }
 
     override fun onBackPressed(): Boolean {
@@ -958,6 +1066,7 @@ class TopicDetailFragment @JvmOverloads constructor(
             replyComposerPanel?.let(::closeReplyComposerKeyboard)
             return false
         }
+        captureAndFlushReadPosition()
         return super.onBackPressed()
     }
 
@@ -1005,8 +1114,33 @@ class TopicDetailFragment @JvmOverloads constructor(
     }
 
     private fun applyInitialTopicHeaderAnchorIfNeeded(state: TopicUiState) {
-        // Product: do not programmatically scroll on ordinary topic open.
-        // Deep-link / search / page-down jumps still go through handleJumpEvent.
+        if (topicListUserHasScrolled) {
+            topicInitialContentAnchored = true
+            return
+        }
+        if (debugFromTop && !topicInitialContentAnchored && !state.isLoading && state.posts.isNotEmpty()) {
+            (listView.layoutManager as? LinearLayoutManager)?.scrollToPositionWithOffset(0, 0)
+            topicInitialContentAnchored = true
+            topicScrollLog("debug_from_top", 1, 0)
+            return
+        }
+        if (topicListUserHasScrolled) {
+            topicInitialContentAnchored = true
+            return
+        }
+        if (!initialAnchorApplied && !state.isLoading && state.posts.isNotEmpty() && initialViewport != null) {
+            val viewport = initialViewport!!
+            val post = state.posts.firstOrNull { it.postNumber == viewport.postNumber }
+            val position = post?.id?.let(adapter::adapterPositionForPostId)
+            if (position != null) {
+                (listView.layoutManager as? LinearLayoutManager)
+                    ?.scrollToPositionWithOffset(position, viewport.offsetPx)
+                topicScrollLog("restore_viewport", viewport.postNumber, viewport.offsetPx)
+            }
+            initialAnchorApplied = true
+            topicInitialContentAnchored = true
+            return
+        }
         if (initialPostNumber != null || initialPostId != null) {
             topicInitialContentAnchored = true
             return
@@ -1023,8 +1157,65 @@ class TopicDetailFragment @JvmOverloads constructor(
         ) {
             return
         }
-        // Mark anchored without scrolling so layout settles at the natural top.
+        val targetPostId = topicInitialReadAnchorPostId(
+            posts = state.posts,
+            lastReadPostNumber = state.lastReadPostNumber,
+            lastReadPostId = state.lastReadPostId,
+        )
+        val adapterPosition = targetPostId?.let(adapter::adapterPositionForPostId)
+        val manager = listView.layoutManager as? LinearLayoutManager
+        if (adapterPosition != null && manager != null && state.lastReadPostNumber > 1) {
+            manager.scrollToPositionWithOffset(adapterPosition, AndroidUtilities.dp(8f))
+            topicScrollLog("restore_read_progress", state.lastReadPostNumber, AndroidUtilities.dp(8f))
+            listView.post { floatingDateController?.showForProgrammaticUpdate() }
+        } else if (state.lastReadPostNumber > 1) {
+            viewModel.requestJumpToReadPosition()
+        }
         topicInitialContentAnchored = true
+    }
+
+    private fun topicScrollLog(reason: String, postNumber: Int, offset: Int) {
+        if (io.github.baba983.nativedo.BuildConfig.DEBUG) {
+            android.util.Log.d("NativeDoTopicScroll", "reason=$reason topic=$topicId post=$postNumber offset=$offset")
+        }
+    }
+
+    private fun saveViewport() {
+        if (debugFromTop || !::listView.isInitialized || !::adapter.isInitialized || latestTopicState.isLoading ||
+            !topicInitialContentAnchored) return
+        val manager = listView.layoutManager as? LinearLayoutManager ?: return
+        val first = manager.findFirstVisibleItemPosition()
+        val last = manager.findLastVisibleItemPosition()
+        if (first < 0 || last < first) return
+        for (position in first..last) {
+            val number = adapter.postNumberAtAdapterPosition(position) ?: continue
+            val view = manager.findViewByPosition(position) ?: continue
+            val offset = manager.getDecoratedTop(view) - listView.paddingTop
+            viewportKey?.let { viewportStore?.save(it,
+                io.github.baba983.nativedo.feature.topic.data.TopicViewport(number, offset)) }
+            topicScrollLog("save_viewport", number, offset)
+            break
+        }
+    }
+
+    private fun captureAndFlushReadPosition() {
+        saveViewport()
+        if (!::viewModel.isInitialized) return
+        if (::listView.isInitialized) {
+            val manager = listView.layoutManager as? LinearLayoutManager
+            if (manager != null) {
+                val firstVisible = manager.findFirstVisibleItemPosition()
+                val lastVisible = manager.findLastVisibleItemPosition()
+                if (firstVisible != RecyclerView.NO_POSITION && lastVisible >= firstVisible) {
+                    val postNumber = (lastVisible downTo firstVisible)
+                        .firstNotNullOfOrNull(adapter::postNumberAtAdapterPosition)
+                    if (postNumber != null) {
+                        viewModel.advanceReadPositionTo(postNumber)
+                    }
+                }
+            }
+        }
+        viewModel.flushReadPosition()
     }
 
     private fun openImageViewer(
@@ -1304,8 +1495,22 @@ class TopicDetailFragment @JvmOverloads constructor(
             clipChildren = false
             clipToPadding = false
             setWindowInsetsProvider(insetsStateHolder)
-            setInputIslandBubbleDrawable(createTopicInputIslandBackground(this, root))
-            setUnderKeyboardBackgroundDrawable(createTopicInputIslandBackground(this, root))
+            setInputIslandBubbleDrawable(
+                createTopicInputIslandBackground(
+                    view = this,
+                    root = root,
+                    source = mentionBlurSource,
+                    liquidGlassEffectAllowed = true,
+                ),
+            )
+            setUnderKeyboardBackgroundDrawable(
+                createTopicInputIslandBackground(
+                    view = this,
+                    root = root,
+                    source = mentionBlurSourceFrosted,
+                    liquidGlassEffectAllowed = false,
+                ),
+            )
         }
         topicInsetsStateHolder = insetsStateHolder
         topicInputViewsContainer = container
@@ -1516,6 +1721,9 @@ class TopicDetailFragment @JvmOverloads constructor(
             setContentDescription(context.getString(R.string.action_more_options))
             addSubItem(TOPIC_MENU_SEARCH, TelegramR.drawable.msg_search, context.getString(R.string.topic_menu_search))
             addSubItem(TOPIC_MENU_REFRESH, TelegramR.drawable.menu_browser_refresh, context.getString(R.string.topic_menu_refresh))
+            if (io.github.baba983.nativedo.BuildConfig.DEBUG) {
+                addSubItem(90, TelegramR.drawable.menu_browser_refresh, "调试：从顶部重新打开")
+            }
         }
 
         actionBar.setActionBarMenuOnItemClick(
@@ -1527,6 +1735,9 @@ class TopicDetailFragment @JvmOverloads constructor(
                         -1 -> finishFragment()
                         TOPIC_MENU_SEARCH -> topicSearchItem?.openSearch(true)
                         TOPIC_MENU_REFRESH -> viewModel.refresh()
+                        90 -> if (io.github.baba983.nativedo.BuildConfig.DEBUG) {
+                            presentFragment(TopicDetailFragment(topicId, initialTitle = topicTitle, debugFromTop = true))
+                        }
                     }
                 }
             },
@@ -1725,13 +1936,17 @@ class TopicDetailFragment @JvmOverloads constructor(
     private fun createTopicInputIslandBackground(
         view: View,
         root: ViewGroup,
+        source: BlurredBackgroundSource?,
+        liquidGlassEffectAllowed: Boolean,
     ): BlurredBackgroundDrawable {
-        val source = mentionBlurSource ?: mentionBlurSourceColor ?: BlurredBackgroundSourceColor().apply {
+        val resolvedSource = source ?: mentionBlurSourceColor ?: BlurredBackgroundSourceColor().apply {
             setColor(topicDetailListBackgroundColor())
         }
-        val factory = BlurredBackgroundDrawableViewFactory(source).apply {
+        val factory = BlurredBackgroundDrawableViewFactory(resolvedSource).apply {
             mentionBlurWatcher?.let { setSourceRootView(it, root) }
-            setLiquidGlassEffectAllowed(LiteMode.isEnabled(LiteMode.FLAG_LIQUID_GLASS))
+            setLiquidGlassEffectAllowed(
+                liquidGlassEffectAllowed && LiteMode.isEnabled(LiteMode.FLAG_LIQUID_GLASS),
+            )
         }
         return factory.create(
             view,
@@ -1914,6 +2129,14 @@ class TopicDetailFragment @JvmOverloads constructor(
     private fun updateTopicSearchControls(animated: Boolean) {
         val controls = pageDownControls ?: return
         val showSearch = topicSearchOpen && topicSearchNavigator.matches.isNotEmpty()
+        controls.setButtonContentDescription(
+            ChatActivitySideControlsButtonsLayout.BUTTON_SEARCH_UP,
+            LocaleController.getString(TelegramR.string.AccDescrSearchPrev),
+        )
+        controls.setButtonContentDescription(
+            ChatActivitySideControlsButtonsLayout.BUTTON_SEARCH_DOWN,
+            LocaleController.getString(TelegramR.string.AccDescrSearchNext),
+        )
         controls.showButton(ChatActivitySideControlsButtonsLayout.BUTTON_SEARCH_UP, showSearch, animated)
         controls.showButton(ChatActivitySideControlsButtonsLayout.BUTTON_SEARCH_DOWN, showSearch, animated)
         controls.setButtonEnabled(
@@ -2033,7 +2256,8 @@ class TopicDetailFragment @JvmOverloads constructor(
         ) {
             return
         }
-        val source = mentionBlurSource ?: return
+        val glassSource = mentionBlurSource ?: return
+        val frostedSource = mentionBlurSourceFrosted
         val noiseSuppressor = mentionBlurNoiseSuppressor ?: return
         val capture = mentionBlurCapture ?: return
         if (listView.height <= 0) return
@@ -2049,27 +2273,42 @@ class TopicDetailFragment @JvmOverloads constructor(
             width.toFloat(),
             actionBar.measuredHeight + AndroidUtilities.dp(48f).toFloat(),
         )
-        val positionsCount = 1 + source.getVisiblePositions(
+        var positionsCount = 1
+        if (frostedSource != null) {
+            positionsCount += frostedSource.getVisiblePositions(
+                mentionBlurPositions,
+                positionsCount,
+                AndroidUtilities.dp(48f),
+            )
+        }
+        if (glassSource !== frostedSource) {
+            positionsCount += glassSource.getVisiblePositions(
+                mentionBlurPositions,
+                positionsCount,
+                AndroidUtilities.dp(8f),
+            )
+        }
+        val mergedPositionsCount = RectFMergeBounding.mergeOverlapping(
             mentionBlurPositions,
-            1,
-            AndroidUtilities.dp(8f),
+            positionsCount,
+            mentionBlurPositionsMerged,
         )
         val maxX = width.toFloat()
         val listTop = listView.y
         val listBottom = listView.y + listView.height
-        for (index in 0 until positionsCount) {
-            val position = mentionBlurPositions[index]
+        for (index in 0 until mergedPositionsCount) {
+            val position = mentionBlurPositionsMerged[index]
             position.left = position.left.coerceIn(0f, maxX)
             position.top = maxOf(listTop, position.top)
             position.right = position.right.coerceIn(0f, maxX)
             position.bottom = minOf(listBottom, position.bottom)
         }
 
-        noiseSuppressor.setupRenderNodes(mentionBlurPositions, positionsCount)
+        noiseSuppressor.setupRenderNodes(mentionBlurPositionsMerged, mergedPositionsCount)
         if (noiseSuppressor.invalidateResultRenderNodes(capture, width, height)) {
-            source.invalidateDisplayListForDrawables()
-            if (mentionBlurSourceFrosted !== source) {
-                mentionBlurSourceFrosted?.invalidateDisplayListForDrawables()
+            glassSource.invalidateDisplayListForDrawables()
+            if (frostedSource !== glassSource) {
+                frostedSource?.invalidateDisplayListForDrawables()
             }
         }
     }
@@ -2092,7 +2331,11 @@ class TopicDetailFragment @JvmOverloads constructor(
             setOnClickListener { buttonId, _ ->
                 when (buttonId) {
                     ChatActivitySideControlsButtonsLayout.BUTTON_SEARCH_UP -> {
-                        moveTopicSearch(previous = true)
+                        if (topicSearchOpen) {
+                            moveTopicSearch(previous = true)
+                        } else {
+                            scrollToTopicTop()
+                        }
                     }
                     ChatActivitySideControlsButtonsLayout.BUTTON_SEARCH_DOWN -> {
                         moveTopicSearch(previous = false)
@@ -2101,11 +2344,16 @@ class TopicDetailFragment @JvmOverloads constructor(
                         if (textSelectionHelper.isInSelectionMode) {
                             textSelectionHelper.clear(true)
                         }
-                        viewModel.requestJumpToLatest()
+                        viewModel.requestJumpToUnread()
                     }
                 }
             }
+            setButtonContentDescription(
+                ChatActivitySideControlsButtonsLayout.BUTTON_SEARCH_UP,
+                context.getString(R.string.topic_return_to_top),
+            )
             setButtonCount(ChatActivitySideControlsButtonsLayout.BUTTON_PAGE_DOWN, 0, false)
+            showButton(ChatActivitySideControlsButtonsLayout.BUTTON_SEARCH_UP, false, false)
             showButton(ChatActivitySideControlsButtonsLayout.BUTTON_PAGE_DOWN, false, false)
         }
         pageDownControls = controls
@@ -2188,17 +2436,64 @@ class TopicDetailFragment @JvmOverloads constructor(
     }
 
     private fun updatePageDownScrollState(manager: LinearLayoutManager, dy: Int) {
-        val below = pageDownPostsBelowViewport(manager)
-        if (below != null) {
-            pageDownLastKnownBelowPosts = below
-            if (below == 0) {
-                if (!pageDownReachedLatest) {
-                    pageDownReachedLatest = true
-                    viewModel.markLoadedPostsRead()
+        val snapshot = pageDownScrollSnapshot(manager)
+        if (snapshot == null) {
+            updatePageDownControls(animated = pageDownInitialized)
+            return
+        }
+        pageDownLastKnownBelowPosts = snapshot.below
+        pageDownLastKnownAbovePosts = snapshot.above
+        if (snapshot.below == 0) {
+            // Telegram: at the bottom (firstVisibleItem == 0 && forwardEndReached)
+            // canShowPagedownButton=false and the pending unread count drains.
+            if (!pageDownReachedLatest) {
+                pageDownReachedLatest = true
+                viewModel.markLoadedPostsRead()
+            }
+            pageDownCanShowFromScroll = false
+            pageDownShownByScroll = false
+            pageDownScrollAccumPx = 0
+        } else {
+            // Scrolling toward the latest passes posts under the bottom of the
+            // viewport — advance the read position per scroll, matching the vendor
+            // chat's updateMessagesVisiblePart, which marks visible messages read
+            // and decrements newUnreadMessageCount on every scroll (not only after
+            // the first bottom-reach). Monotonic in the ViewModel.
+            if (dy > 0 && topicListUserScrollActive) {
+                val lastVisiblePostNumber = snapshot.lastVisiblePostId.let { id ->
+                    latestTopicState.posts.firstOrNull { post -> post.id == id }?.postNumber
+                        ?.takeIf { number -> number > 0 }
                 }
-                pageDownDistanceFromLatestPx = 0
-            } else if (pageDownReachedLatest && dy < 0) {
-                pageDownDistanceFromLatestPx += kotlin.math.abs(dy)
+                if (lastVisiblePostNumber != null) {
+                    viewModel.advanceReadPositionTo(lastVisiblePostNumber)
+                }
+            }
+
+            // Telegram's totalDy machine: scrolling away from the latest accumulates
+            // toward the reveal threshold; scrolling back while shown by scroll
+            // accumulates the other way and hides. Signs are flipped vs upstream
+            // because their chat list is inverted, our topic list heads at post 1.
+            if (pageDownReachedLatest) {
+                val visible = pageDownControls?.isButtonVisible(
+                    ChatActivitySideControlsButtonsLayout.BUTTON_PAGE_DOWN,
+                ) ?: false
+                if (dy < 0) {
+                    if (!visible) {
+                        pageDownScrollAccumPx += -dy
+                        if (pageDownScrollAccumPx >= pageDownScrollThresholdPx) {
+                            pageDownScrollAccumPx = 0
+                            pageDownCanShowFromScroll = true
+                            pageDownShownByScroll = true
+                        }
+                    }
+                } else if (dy > 0 && pageDownShownByScroll && visible) {
+                    pageDownScrollAccumPx += -dy
+                    if (pageDownScrollAccumPx <= -pageDownScrollThresholdPx) {
+                        pageDownScrollAccumPx = 0
+                        pageDownCanShowFromScroll = false
+                        pageDownShownByScroll = false
+                    }
+                }
             }
         }
         updatePageDownControls(animated = pageDownInitialized)
@@ -2211,18 +2506,30 @@ class TopicDetailFragment @JvmOverloads constructor(
             return
         }
         val manager = listView.layoutManager as? LinearLayoutManager
-        val measuredBelow = manager?.let(::pageDownPostsBelowViewport)
-        if (measuredBelow != null) {
-            pageDownLastKnownBelowPosts = measuredBelow
+        val measuredSnapshot = manager?.let(::pageDownScrollSnapshot)
+        if (measuredSnapshot != null) {
+            pageDownLastKnownBelowPosts = measuredSnapshot.below
+            pageDownLastKnownAbovePosts = measuredSnapshot.above
         }
         val show = topicShouldShowPageDown(
             postsBelowViewport = pageDownLastKnownBelowPosts,
             selectionActive = textSelectionHelper.isInSelectionMode,
-            hasReachedLatest = pageDownReachedLatest,
-            distanceFromLatestPx = pageDownDistanceFromLatestPx,
-            revealThresholdPx = AndroidUtilities.dp(100f),
+            canShowFromScroll = pageDownCanShowFromScroll,
         )
-        setPageDownUnreadCount(latestTopicState.unreadPosts, animated)
+        val showReturnToTop = topicShouldShowReturnToTop(
+            postsAboveViewport = pageDownLastKnownAbovePosts,
+            selectionActive = textSelectionHelper.isInSelectionMode,
+        )
+        controls.setButtonContentDescription(
+            ChatActivitySideControlsButtonsLayout.BUTTON_SEARCH_UP,
+            controls.context.getString(R.string.topic_return_to_top),
+        )
+        controls.showButton(
+            ChatActivitySideControlsButtonsLayout.BUTTON_SEARCH_UP,
+            showReturnToTop,
+            animated,
+        )
+        setPageDownCounter(latestTopicState.unreadPosts, animated)
         controls.setButtonLoading(
             ChatActivitySideControlsButtonsLayout.BUTTON_PAGE_DOWN,
             latestTopicState.isJumpingToLatest,
@@ -2231,23 +2538,55 @@ class TopicDetailFragment @JvmOverloads constructor(
         controls.showButton(ChatActivitySideControlsButtonsLayout.BUTTON_PAGE_DOWN, show, animated)
     }
 
-    private fun setPageDownUnreadCount(count: Int, animated: Boolean) {
+    private fun setPageDownCounter(count: Int, animated: Boolean) {
         val controls = pageDownControls ?: return
-        if (count == pageDownSubmittedUnreadCount) return
-        pageDownSubmittedUnreadCount = count
-        // The vendored CounterView owns the roll animation (and snaps on
-        // jumps larger than 99), so push semantic changes only.
+        if (count == pageDownSubmittedCount) return
+        pageDownSubmittedCount = count
         controls.setButtonCount(ChatActivitySideControlsButtonsLayout.BUTTON_PAGE_DOWN, count, animated)
     }
 
-    private fun pageDownPostsBelowViewport(manager: LinearLayoutManager): Int? {
+    private fun scrollToTopicTop() {
+        if (textSelectionHelper.isInSelectionMode) {
+            textSelectionHelper.clear(true)
+        }
+        listView.stopScroll()
+        if (latestTopicState.posts.firstOrNull()?.postNumber != 1) {
+            viewModel.requestJumpToReplyTarget(1)
+            return
+        }
+        val manager = listView.layoutManager as? LinearLayoutManager ?: return
+        manager.scrollToPositionWithOffset(0, 0)
+        listView.post {
+            floatingDateController?.showForProgrammaticUpdate()
+            updatePageDownControls(animated = pageDownInitialized)
+        }
+    }
+
+    private data class PageDownScrollSnapshot(
+        val above: Int,
+        val below: Int,
+        val lastVisiblePostId: Long,
+    )
+
+    private fun pageDownScrollSnapshot(manager: LinearLayoutManager): PageDownScrollSnapshot? {
+        val firstVisiblePosition = manager.findFirstVisibleItemPosition()
         val lastVisiblePosition = manager.findLastVisibleItemPosition()
-        if (lastVisiblePosition == RecyclerView.NO_POSITION) {
+        if (firstVisiblePosition == RecyclerView.NO_POSITION || lastVisiblePosition == RecyclerView.NO_POSITION) {
             return null
         }
-        val lastVisiblePostId = (lastVisiblePosition downTo 0)
-            .firstNotNullOfOrNull(adapter::postIdAtAdapterPosition)
-        return topicPostsBelowViewportOrNull(latestTopicState.streamPostIds, lastVisiblePostId)
+        val firstVisiblePostId = (firstVisiblePosition..lastVisiblePosition)
+            .firstNotNullOfOrNull(adapter::postIdAtAdapterPosition) ?: return null
+        val lastVisiblePostId = (lastVisiblePosition downTo firstVisiblePosition)
+            .firstNotNullOfOrNull(adapter::postIdAtAdapterPosition) ?: return null
+        val above = topicPostsAboveViewportOrNull(latestTopicState.streamPostIds, firstVisiblePostId)
+            ?: return null
+        val below = topicPostsBelowViewportOrNull(latestTopicState.streamPostIds, lastVisiblePostId)
+            ?: return null
+        return PageDownScrollSnapshot(
+            above = above,
+            below = below,
+            lastVisiblePostId = lastVisiblePostId,
+        )
     }
 
     private fun handleReplyComposerKeyboardRequested(keyboardTarget: View) {
@@ -2481,6 +2820,7 @@ class TopicDetailFragment @JvmOverloads constructor(
             val offsetFromTop = if (firstView != null) firstView.top - listView.paddingTop else 0
             listView.setPadding(listView.paddingLeft, nextTop, listView.paddingRight, listView.paddingBottom)
             if (firstPos != RecyclerView.NO_POSITION && lm != null) {
+                topicScrollLog("chrome_padding_changed", adapter.postNumberAtAdapterPosition(firstPos) ?: 0, offsetFromTop)
                 lm.scrollToPositionWithOffset(firstPos, offsetFromTop)
             }
         }
@@ -2580,7 +2920,10 @@ class TopicDetailFragment @JvmOverloads constructor(
         val event = state.jumpEvent ?: return
         val manager = listView.layoutManager as? LinearLayoutManager ?: return
         val adapterPosition = adapter.adapterPositionForPostId(event.postId) ?: event.itemIndex
-        manager.scrollToPositionWithOffset(adapterPosition, AndroidUtilities.dp(8f))
+        val firstPost = adapter.postNumberAtAdapterPosition(adapterPosition) == 1
+        manager.scrollToPositionWithOffset(if (firstPost) 0 else adapterPosition,
+            if (firstPost) 0 else AndroidUtilities.dp(8f))
+        topicScrollLog("jump_event", adapter.postNumberAtAdapterPosition(adapterPosition) ?: 0, AndroidUtilities.dp(8f))
         listView.post { floatingDateController?.showForProgrammaticUpdate() }
         viewModel.consumeJumpEvent(event.nonce)
     }
@@ -2634,6 +2977,14 @@ class TopicDetailFragment @JvmOverloads constructor(
             val jumpHighlightNonce: Int,
         ) : TopicDetailRow {
             override val stableId: Long = post.id
+        }
+
+        data object PrependLoading : TopicDetailRow {
+            override val stableId: Long = -8L
+        }
+
+        data class PrependError(val text: String) : TopicDetailRow {
+            override val stableId: Long = -9L
         }
 
         data object AppendLoading : TopicDetailRow {
@@ -2756,6 +3107,10 @@ class TopicDetailFragment @JvmOverloads constructor(
             return (rows.getOrNull(position) as? TopicDetailRow.PostRow)?.post?.id
         }
 
+        fun postNumberAtAdapterPosition(position: Int): Int? {
+            return (rows.getOrNull(position) as? TopicDetailRow.PostRow)?.post?.postNumber
+        }
+
         fun adapterPositionForPostId(postId: Long): Int? {
             return rows.indexOfFirst { row -> row is TopicDetailRow.PostRow && row.post.id == postId }
                 .takeIf { position -> position >= 0 }
@@ -2796,6 +3151,7 @@ class TopicDetailFragment @JvmOverloads constructor(
             return when (rows.getOrNull(holder.bindingAdapterPosition)) {
                 is TopicDetailRow.PostRow,
                 is TopicDetailRow.InitialError,
+                is TopicDetailRow.PrependError,
                 is TopicDetailRow.AppendError -> true
                 else -> false
             }
@@ -2808,9 +3164,11 @@ class TopicDetailFragment @JvmOverloads constructor(
         override fun getItemViewType(position: Int): Int {
             return when (rows[position]) {
                 TopicDetailRow.InitialSkeleton -> VIEW_TYPE_SKELETON
+                TopicDetailRow.PrependLoading -> VIEW_TYPE_SKELETON
                 TopicDetailRow.AppendLoading -> VIEW_TYPE_SKELETON
                 is TopicDetailRow.InitialError,
                 TopicDetailRow.Empty,
+                is TopicDetailRow.PrependError,
                 is TopicDetailRow.AppendError,
                 TopicDetailRow.EndOfList -> VIEW_TYPE_FOOTER
                 is TopicDetailRow.Header -> VIEW_TYPE_HEADER
@@ -2841,9 +3199,11 @@ class TopicDetailFragment @JvmOverloads constructor(
         override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
             when (val row = rows[position]) {
                 TopicDetailRow.InitialSkeleton -> (holder.itemView as TopicSkeletonView).setRows(3)
+                TopicDetailRow.PrependLoading -> (holder.itemView as TopicSkeletonView).setRows(1)
                 TopicDetailRow.AppendLoading -> (holder.itemView as TopicSkeletonView).setRows(1)
                 is TopicDetailRow.InitialError -> (holder.itemView as TopicFooterCell).bind(row.text, viewModel::refresh)
                 TopicDetailRow.Empty -> (holder.itemView as TopicFooterCell).bind("No posts", null)
+                is TopicDetailRow.PrependError -> (holder.itemView as TopicFooterCell).bind(row.text, viewModel::loadPrevious)
                 is TopicDetailRow.AppendError -> (holder.itemView as TopicFooterCell).bind(row.text, viewModel::loadMore)
                 TopicDetailRow.EndOfList -> (holder.itemView as TopicFooterCell).bind("End of topic", null)
                 is TopicDetailRow.Header -> (holder.itemView as TopicHeaderCell).bind(row.title, row.totalPosts, row.viewCount, row.tags)
@@ -2920,6 +3280,11 @@ class TopicDetailFragment @JvmOverloads constructor(
                 return listOf(TopicDetailRow.Empty)
             }
             val rows = mutableListOf<TopicDetailRow>()
+            if (state.isLoadingPrevious) {
+                rows += TopicDetailRow.PrependLoading
+            } else if (state.loadPreviousErrorMessage != null) {
+                rows += TopicDetailRow.PrependError(state.loadPreviousErrorMessage)
+            }
             // Topic chrome (title / meta) lives in the always-on ActionBar identity
             // capsule — do not also render a list Header cell (felt redundant).
             val repliesByNumber = state.posts.groupBy { post -> post.replyToPostNumber }
@@ -2973,9 +3338,11 @@ class TopicDetailFragment @JvmOverloads constructor(
             return when (row) {
                 TopicDetailRow.InitialSkeleton,
                 TopicDetailRow.Empty,
+                TopicDetailRow.PrependLoading,
                 TopicDetailRow.AppendLoading,
                 TopicDetailRow.EndOfList -> row
                 is TopicDetailRow.InitialError -> row.text
+                is TopicDetailRow.PrependError -> row.text
                 is TopicDetailRow.AppendError -> row.text
                 is TopicDetailRow.Header -> row
                 is TopicDetailRow.DateSeparator -> row.date
@@ -7556,6 +7923,18 @@ internal fun topicDetailShouldLoadMoreFromScroll(
     return lastVisibleItemPosition >= (itemCount - threshold.coerceAtLeast(1)).coerceAtLeast(0)
 }
 
+internal fun topicDetailShouldLoadPreviousFromScroll(
+    dy: Int,
+    userScrollActive: Boolean,
+    firstVisibleItemPosition: Int,
+    threshold: Int = 4,
+): Boolean {
+    if (!userScrollActive || dy >= 0 || firstVisibleItemPosition < 0) {
+        return false
+    }
+    return firstVisibleItemPosition < threshold.coerceAtLeast(1)
+}
+
 internal fun topicRepliesSheetShouldLoadMore(
     dy: Int,
     canLoadMore: Boolean,
@@ -7578,8 +7957,6 @@ internal fun topicDetailShouldAnchorInitialContent(
     errorMessage: String?,
     hasJumpEvent: Boolean,
 ): Boolean {
-    // Still used as a one-shot gate for "first content ready", but the fragment no
-    // longer issues a programmatic scroll for ordinary opens (product preference).
     return !initialContentAnchored &&
         !userHasScrolled &&
         topicDetailListShowsTopicHeader(
@@ -7589,6 +7966,16 @@ internal fun topicDetailShouldAnchorInitialContent(
         ) &&
         !isRefreshing &&
         !hasJumpEvent
+}
+
+internal fun topicInitialReadAnchorPostId(
+    posts: List<Post>,
+    lastReadPostNumber: Int,
+    lastReadPostId: Long?,
+): Long? {
+    if (lastReadPostNumber <= 0) return null
+    return posts.firstOrNull { post -> post.postNumber == lastReadPostNumber }?.id
+        ?: lastReadPostId?.takeIf { postId -> posts.any { post -> post.id == postId } }
 }
 
 internal fun topicDetailListShowsTopicHeader(
@@ -10267,21 +10654,28 @@ internal fun topicPostsBelowViewportOrNull(streamPostIds: List<Long>, lastVisibl
     return if (index < 0) null else (streamPostIds.lastIndex - index).coerceAtLeast(0)
 }
 
-internal fun topicPostsBelowViewport(streamPostIds: List<Long>, lastVisiblePostId: Long?): Int {
-    return topicPostsBelowViewportOrNull(streamPostIds, lastVisiblePostId) ?: 0
+internal fun topicPostsAboveViewportOrNull(streamPostIds: List<Long>, firstVisiblePostId: Long?): Int? {
+    if (firstVisiblePostId == null || streamPostIds.isEmpty()) return null
+    val index = streamPostIds.indexOf(firstVisiblePostId)
+    return index.takeIf { it >= 0 }
 }
-
 
 internal fun topicShouldShowPageDown(
     postsBelowViewport: Int,
     selectionActive: Boolean,
-    hasReachedLatest: Boolean,
-    distanceFromLatestPx: Int,
-    revealThresholdPx: Int,
+    canShowFromScroll: Boolean,
 ): Boolean {
     if (postsBelowViewport <= 0 || selectionActive) return false
-    return !hasReachedLatest || distanceFromLatestPx >= revealThresholdPx
+    // Telegram's canShowPagedownButton: initially true (the topic opens at the
+    // oldest post, so the page-down button invites the jump before the first
+    // bottom-reach), then the scroll machine (totalDy threshold) owns it.
+    return canShowFromScroll
 }
+
+internal fun topicShouldShowReturnToTop(
+    postsAboveViewport: Int,
+    selectionActive: Boolean,
+): Boolean = postsAboveViewport > 0 && !selectionActive
 
 internal fun topicPageDownControlsBottomOffset(panelHeight: Int, panelBottomInset: Int): Int {
     return panelHeight.coerceAtLeast(0) + panelBottomInset.coerceAtLeast(0) + AndroidUtilities.dp(4f)
@@ -10309,6 +10703,11 @@ private class TopicViewModelFactory(
     private val topicId: Long,
     private val replyDraftStore: io.github.baba983.nativedo.feature.topic.data.TopicReplyDraftStore,
     private val replyDraftKey: TopicReplyDraftKey?,
+    private val readPositionStore: io.github.baba983.nativedo.feature.topic.data.TopicReadPositionStore,
+    private val readPositionKey: TopicReadPositionKey?,
+    private val readReportScope: kotlinx.coroutines.CoroutineScope?,
+    private val canTrackReadPosition: Boolean,
+    private val initialPostNumber: Int?,
 ) : ViewModelProvider.Factory {
     @Suppress("UNCHECKED_CAST")
     override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
@@ -10317,6 +10716,11 @@ private class TopicViewModelFactory(
             topicId = topicId,
             replyDraftStore = replyDraftStore,
             replyDraftKey = replyDraftKey,
+            readPositionStore = readPositionStore,
+            readPositionKey = readPositionKey,
+            readReportScope = readReportScope,
+            canTrackReadPosition = canTrackReadPosition,
+            initialPostNumber = initialPostNumber,
         ) as T
     }
 }

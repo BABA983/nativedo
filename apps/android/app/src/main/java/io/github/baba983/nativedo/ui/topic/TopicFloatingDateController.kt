@@ -32,7 +32,6 @@ internal data class TopicFloatingDateRow(
 internal class TopicFloatingDateController(
     private val dateView: TopicDateCell,
     private val listView: RecyclerListView,
-    private val topInsetView: View,
     private val rowAt: (Int) -> TopicFloatingDateRow?,
     private val interactionsBlocked: () -> Boolean,
 ) {
@@ -42,8 +41,6 @@ internal class TopicFloatingDateController(
     private var currentTopIsNotMessage = false
     private var scrolling = false
     private var hideDelay = HIDE_DELAY_MS
-    private val parentLocation = IntArray(2)
-    private val insetLocation = IntArray(2)
 
     fun onScrollStateChanged(state: Int) {
         if (state == RecyclerView.SCROLL_STATE_DRAGGING) {
@@ -80,39 +77,41 @@ internal class TopicFloatingDateController(
             return
         }
 
-        val listLocation = IntArray(2)
-        val insetLocation = IntArray(2)
-        listView.getLocationInWindow(listLocation)
-        topInsetView.getLocationInWindow(insetLocation)
-        val clipTop = (insetLocation[1] + topInsetView.measuredHeight - listLocation[1]).coerceAtLeast(0)
+        val clipTop = listView.paddingTop.toFloat()
 
         var topRow: TopicFloatingDateRow? = null
-        var topRowBottom = Int.MAX_VALUE
+        var topRowBottom = Float.MAX_VALUE
         var topDate: TopicDateHeader? = null
-        var topDateBottom = Int.MAX_VALUE
+        var topDateBottom = Float.MAX_VALUE
         var approachingDateCell: TopicDateCell? = null
         var approachingDateRow: TopicFloatingDateRow? = null
-        var approachingDateTop = Int.MAX_VALUE
+        var approachingDateBottom = Float.MAX_VALUE
 
         for (index in 0 until listView.childCount) {
             val child = listView.getChildAt(index)
             val position = listView.getChildAdapterPosition(child)
             val row = rowAt(position) ?: continue
+            val childTop = child.y
+            val childBottom = childTop + child.measuredHeight
             if (row.kind == TopicFloatingDateRowKind.DATE) {
-                child.alpha = 1f
-                if (child.top < approachingDateTop && child.bottom > clipTop) {
-                    approachingDateTop = child.top
-                    approachingDateCell = child as? TopicDateCell
-                    approachingDateRow = row
+                if (childBottom <= clipTop) {
+                    child.alpha = 0f
+                } else {
+                    child.alpha = 1f
+                    if (childBottom < approachingDateBottom) {
+                        approachingDateBottom = childBottom
+                        approachingDateCell = child as? TopicDateCell
+                        approachingDateRow = row
+                    }
                 }
             }
-            if (child.bottom <= clipTop) continue
-            if (child.bottom < topRowBottom) {
-                topRowBottom = child.bottom
+            if (childBottom <= clipTop) continue
+            if (childBottom < topRowBottom) {
+                topRowBottom = childBottom
                 topRow = row
             }
-            if (row.date != null && child.bottom < topDateBottom) {
-                topDateBottom = child.bottom
+            if (row.date != null && childBottom < topDateBottom) {
+                topDateBottom = childBottom
                 topDate = row.date
             }
         }
@@ -128,34 +127,42 @@ internal class TopicFloatingDateController(
         }
         dateView.setCustomDate(date.epochSeconds)
         currentTopIsNotMessage = topRow?.kind == TopicFloatingDateRowKind.OTHER
+        currentDateOnScreen = false
+        viewOffset = 0
 
         val separator = approachingDateCell
-        if (separator != null && approachingDateRow?.isTerminalDateSeparator == true) {
-            separator.alpha = 1f
-            viewOffset = 0
-            currentDateOnScreen = false
-            updatePosition()
-            hide(animated = false, force = true)
-            return
-        }
-        val separatorTop = separator?.top ?: Int.MAX_VALUE
-        val height = dateView.measuredHeight.takeIf { it > 0 } ?: AndroidUtilities.dp(28f)
-        currentDateOnScreen = separator != null && separatorTop <= clipTop + height
-        viewOffset = if (separator != null) {
-            topicFloatingDatePushOffset(
-                separatorBottom = separator.bottom,
-                clipTop = clipTop,
-                floatingHeight = height,
-                isTerminalSeparator = approachingDateRow?.isTerminalDateSeparator == true,
-            )
-        } else {
-            0
-        }
-        if (separator != null && separator.top <= clipTop) {
-            separator.alpha = 0f
+        var showFloatingView = false
+        if (separator != null) {
+            val separatorTop = separator.y
+            val terminalSeparator = approachingDateRow?.isTerminalDateSeparator == true
+            if (separatorTop > clipTop || currentTopIsNotMessage) {
+                separator.alpha = 1f
+                if (terminalSeparator) {
+                    hide(animated = false, force = true)
+                } else {
+                    hide(animated = !currentTopIsNotMessage)
+                }
+            } else {
+                separator.alpha = 0f
+                showFloatingView = true
+            }
+
+            val floatingHeight = dateView.measuredHeight.takeIf { it > 0 } ?: AndroidUtilities.dp(28f)
+            val separatorBottom = separatorTop + separator.measuredHeight
+            val offset = separatorBottom - clipTop
+            if (offset > floatingHeight && offset < floatingHeight * 2) {
+                if (terminalSeparator) {
+                    showFloatingView = false
+                    separator.alpha = 1f
+                    hide(animated = false, force = true)
+                } else {
+                    viewOffset = -floatingHeight * 2 + offset.toInt()
+                }
+            }
         }
         updatePosition()
-        if (currentDateOnScreen) {
+        if (showFloatingView) {
+            currentDateOnScreen = true
             forceVisible()
         }
     }
@@ -225,15 +232,19 @@ internal class TopicFloatingDateController(
     }
 
     private fun updatePosition() {
-        val parentView = dateView.parent as? View ?: return
-        parentView.getLocationInWindow(parentLocation)
-        topInsetView.getLocationInWindow(insetLocation)
         dateView.translationY = topicFloatingDateTranslationY(
-            viewTop = dateView.top,
-            parentWindowTop = parentLocation[1],
-            insetWindowTop = insetLocation[1],
-            insetHeight = topInsetView.measuredHeight,
+            listTop = listView.y,
+            listTranslationY = listView.translationY,
+            listPaddingTop = listView.paddingTop,
             viewOffset = viewOffset,
+        )
+        dateView.setFloatingTopClip(
+            topicFloatingDateTopClip(
+                listTop = listView.y,
+                listTranslationY = listView.translationY,
+                listPaddingTop = listView.paddingTop,
+                floatingViewY = dateView.y,
+            ),
         )
     }
 
@@ -245,27 +256,34 @@ internal class TopicFloatingDateController(
 }
 
 internal fun topicFloatingDatePushOffset(
-    separatorBottom: Int,
-    clipTop: Int,
+    separatorBottom: Float,
+    clipTop: Float,
     floatingHeight: Int,
     isTerminalSeparator: Boolean = false,
 ): Int {
     if (isTerminalSeparator) return 0
     val offset = separatorBottom - clipTop
     return if (offset > floatingHeight && offset < 2 * floatingHeight) {
-        -2 * floatingHeight + offset
+        -2 * floatingHeight + offset.toInt()
     } else {
         0
     }
 }
 
 internal fun topicFloatingDateTranslationY(
-    viewTop: Int,
-    parentWindowTop: Int,
-    insetWindowTop: Int,
-    insetHeight: Int,
+    listTop: Float,
+    listTranslationY: Float,
+    listPaddingTop: Int,
     viewOffset: Int,
 ): Float {
-    val desiredTopInParent = insetWindowTop - parentWindowTop + insetHeight + viewOffset - AndroidUtilities.dp(4f)
-    return desiredTopInParent - viewTop.toFloat()
+    return listTop + listTranslationY + listPaddingTop + viewOffset - AndroidUtilities.dp(4f)
 }
+
+internal fun topicFloatingDateTopClip(
+    listTop: Float,
+    listTranslationY: Float,
+    listPaddingTop: Int,
+    floatingViewY: Float,
+): Float = (
+    listTop + listTranslationY + listPaddingTop - floatingViewY - AndroidUtilities.dp(4f)
+).coerceAtLeast(0f)

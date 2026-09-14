@@ -1,5 +1,7 @@
 package io.github.baba983.nativedo.ui.topic
 
+import android.content.Context
+import android.graphics.Paint
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewConfiguration
@@ -12,7 +14,10 @@ import io.github.baba983.nativedo.core.model.PostReactionUser
 import io.github.baba983.nativedo.core.model.PostReactionUsersGroup
 import io.github.baba983.nativedo.core.model.TopicSummary
 import io.github.baba983.nativedo.feature.topic.ui.TOPIC_REACTION_ALL_FILTER_ID
+import io.github.baba983.nativedo.feature.topic.ui.TopicUiState
+import io.github.baba983.nativedo.feature.topic.ui.isReadPositionOnlyUpdateFrom
 import io.github.baba983.nativedo.feature.topic.ui.topicUnreadPostsCount
+import io.github.baba983.nativedo.ui.topic.cell.TopicDateCell
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -20,6 +25,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.telegram.messenger.AndroidUtilities
+import org.telegram.messenger.ApplicationLoader
+import org.telegram.messenger.NotificationCenter
 import org.telegram.ui.ActionBar.Theme
 
 @RunWith(RobolectricTestRunner::class)
@@ -27,6 +34,7 @@ import org.telegram.ui.ActionBar.Theme
 class TopicDetailFragmentTest {
     @Before
     fun setUp() {
+        ApplicationLoader.init(RuntimeEnvironment.getApplication())
         AndroidUtilities.density = 1f
         AndroidUtilities.statusBarHeight = 0
         AndroidUtilities.navigationBarHeight = 0
@@ -53,6 +61,50 @@ class TopicDetailFragmentTest {
         assertThat(TopicDetailFragment.topicDetailListBackgroundColor()).isEqualTo(0xfff1f1f3.toInt())
         assertThat(Theme.getDefaultColor(Theme.key_chat_serviceBackground)).isEqualTo(0x6685859e)
         assertThat(Theme.getDefaultColor(Theme.key_chat_serviceBackgroundSelected)).isEqualTo(0x889393af.toInt())
+    }
+
+    @Test
+    fun wallpaperReadyNotificationInvalidatesFloatingDateDisplayList() {
+        val fragment = TopicDetailFragment(topicId = 1L)
+        val dateCell = InvalidatingTopicDateCell(RuntimeEnvironment.getApplication())
+        TopicDetailFragment::class.java.getDeclaredField("floatingDateView").apply {
+            isAccessible = true
+            set(fragment, dateCell)
+        }
+        dateCell.invalidationCount = 0
+
+        assertThat(fragment.onFragmentCreate()).isTrue()
+        try {
+            NotificationCenter.getGlobalInstance().postNotificationName(
+                NotificationCenter.didSetNewWallpapper,
+            )
+            assertThat(dateCell.invalidationCount).isGreaterThan(0)
+        } finally {
+            NotificationCenter.getGlobalInstance().removeObserver(
+                fragment,
+                NotificationCenter.didSetNewWallpapper,
+            )
+        }
+    }
+
+    @Test
+    fun pageDownCounterFontKeepsDecimalDigitsTabular() {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            typeface = AndroidUtilities.bold()
+            textSize = 13f
+        }
+        val widths = ('0'..'9').map { digit -> paint.measureText(digit.toString()) }
+
+        assertThat(widths.maxOrNull()!! - widths.minOrNull()!!).isLessThan(0.01f)
+    }
+
+    private class InvalidatingTopicDateCell(context: Context) : TopicDateCell(context, true) {
+        var invalidationCount = 0
+
+        override fun invalidate() {
+            invalidationCount += 1
+            super.invalidate()
+        }
     }
 
     @Test
@@ -157,6 +209,38 @@ class TopicDetailFragmentTest {
     }
 
     @Test
+    fun topicDetailLoadPrevious_requiresUpwardUserScrollNearStart() {
+        assertThat(
+            topicDetailShouldLoadPreviousFromScroll(
+                dy = -12,
+                userScrollActive = true,
+                firstVisibleItemPosition = 2,
+            ),
+        ).isTrue()
+        assertThat(
+            topicDetailShouldLoadPreviousFromScroll(
+                dy = -12,
+                userScrollActive = false,
+                firstVisibleItemPosition = 2,
+            ),
+        ).isFalse()
+        assertThat(
+            topicDetailShouldLoadPreviousFromScroll(
+                dy = 12,
+                userScrollActive = true,
+                firstVisibleItemPosition = 2,
+            ),
+        ).isFalse()
+        assertThat(
+            topicDetailShouldLoadPreviousFromScroll(
+                dy = -12,
+                userScrollActive = true,
+                firstVisibleItemPosition = 8,
+            ),
+        ).isFalse()
+    }
+
+    @Test
     fun repliesSheetLoadMore_countsTelegramPaddingRowInOuterAdapter() {
         assertThat(topicRepliesSheetShouldLoadMore(1, true, 5, outerItemCount = 8)).isTrue()
         assertThat(topicRepliesSheetShouldLoadMore(1, true, 4, outerItemCount = 8)).isFalse()
@@ -232,6 +316,36 @@ class TopicDetailFragmentTest {
                 hasJumpEvent = false,
             ),
         ).isFalse()
+    }
+
+    @Test
+    fun topicInitialReadAnchorPrefersThePostMatchingMergedReadNumber() {
+        val posts = listOf(
+            Post(id = 1003L, postNumber = 3, authorUsername = "alice", cookedHtml = ""),
+            Post(id = 1004L, postNumber = 4, authorUsername = "alice", cookedHtml = ""),
+        )
+
+        assertThat(
+            topicInitialReadAnchorPostId(
+                posts = posts,
+                lastReadPostNumber = 4,
+                lastReadPostId = 1003L,
+            ),
+        ).isEqualTo(1004L)
+        assertThat(
+            topicInitialReadAnchorPostId(
+                posts = posts,
+                lastReadPostNumber = 2,
+                lastReadPostId = 1003L,
+            ),
+        ).isEqualTo(1003L)
+        assertThat(
+            topicInitialReadAnchorPostId(
+                posts = posts,
+                lastReadPostNumber = 0,
+                lastReadPostId = 1003L,
+            ),
+        ).isNull()
     }
 
     @Test
@@ -341,41 +455,46 @@ class TopicDetailFragmentTest {
     fun pageDownCountUsesCanonicalStreamInsteadOfAdapterRowDistance() {
         val stream = listOf(1001L, 1002L, 1003L, 1004L)
 
-        assertThat(topicPostsBelowViewport(stream, 1001L)).isEqualTo(3)
-        assertThat(topicPostsBelowViewport(stream, 1003L)).isEqualTo(1)
-        assertThat(topicPostsBelowViewport(stream, 1004L)).isEqualTo(0)
-        assertThat(topicPostsBelowViewport(stream, null)).isEqualTo(0)
+        assertThat(topicPostsBelowViewportOrNull(stream, 1001L)).isEqualTo(3)
+        assertThat(topicPostsBelowViewportOrNull(stream, 1003L)).isEqualTo(1)
+        assertThat(topicPostsBelowViewportOrNull(stream, 1004L)).isEqualTo(0)
         assertThat(topicPostsBelowViewportOrNull(stream, 9999L)).isNull()
         assertThat(topicPostsBelowViewportOrNull(stream, null)).isNull()
+        assertThat(topicPostsAboveViewportOrNull(stream, 1001L)).isEqualTo(0)
+        assertThat(topicPostsAboveViewportOrNull(stream, 1003L)).isEqualTo(2)
+        assertThat(topicPostsAboveViewportOrNull(stream, 9999L)).isNull()
     }
 
     @Test
-    fun pageDownUnreadCountMirrorsDiscourseReadPosition() {
-        // Anonymous sessions carry no read position — no counter, vendor parity.
-        assertThat(topicUnreadPostsCount(highestPostNumber = 30, lastReadPostNumber = 0)).isEqualTo(0)
-        assertThat(topicUnreadPostsCount(highestPostNumber = 30, lastReadPostNumber = 12)).isEqualTo(18)
-        // Fully read and server positions beyond the stream both clamp at zero.
-        assertThat(topicUnreadPostsCount(highestPostNumber = 30, lastReadPostNumber = 30)).isEqualTo(0)
-        assertThat(topicUnreadPostsCount(highestPostNumber = 30, lastReadPostNumber = 34)).isEqualTo(0)
+    fun pageDownVisibilityFollowsTelegramScrollMachine() {
+        // Before the first bottom-reach the button invites the jump; after that the
+        // scroll machine (canShow from totalDy threshold) owns visibility.
+
+        assertThat(topicShouldShowPageDown(5, selectionActive = false, canShowFromScroll = true)).isTrue()
+        assertThat(topicShouldShowPageDown(5, selectionActive = false, canShowFromScroll = false)).isFalse()
+        assertThat(topicShouldShowPageDown(5, selectionActive = true, canShowFromScroll = true)).isFalse()
+        assertThat(topicShouldShowPageDown(0, selectionActive = false, canShowFromScroll = true)).isFalse()
+        assertThat(topicShouldShowReturnToTop(2, selectionActive = false)).isTrue()
+        assertThat(topicShouldShowReturnToTop(0, selectionActive = false)).isFalse()
+        assertThat(topicShouldShowReturnToTop(2, selectionActive = true)).isFalse()
     }
 
     @Test
-    fun pageDownVisibilityShowsInitiallyButUsesTelegramHundredDpThresholdAfterLatest() {
-        assertThat(
-            topicShouldShowPageDown(5, selectionActive = false, hasReachedLatest = false, distanceFromLatestPx = 0, revealThresholdPx = 100),
-        ).isTrue()
-        assertThat(
-            topicShouldShowPageDown(5, selectionActive = false, hasReachedLatest = true, distanceFromLatestPx = 99, revealThresholdPx = 100),
-        ).isFalse()
-        assertThat(
-            topicShouldShowPageDown(5, selectionActive = false, hasReachedLatest = true, distanceFromLatestPx = 100, revealThresholdPx = 100),
-        ).isTrue()
-        assertThat(
-            topicShouldShowPageDown(5, selectionActive = true, hasReachedLatest = false, distanceFromLatestPx = 100, revealThresholdPx = 100),
-        ).isFalse()
-        assertThat(
-            topicShouldShowPageDown(0, selectionActive = false, hasReachedLatest = false, distanceFromLatestPx = 100, revealThresholdPx = 100),
-        ).isFalse()
+    fun pageDownUnreadCountUsesSessionAndDiscourseReadPosition() {
+        assertThat(topicUnreadPostsCount(30, 0, canTrackReadPosition = false)).isEqualTo(0)
+        assertThat(topicUnreadPostsCount(30, 0, canTrackReadPosition = true)).isEqualTo(30)
+        assertThat(topicUnreadPostsCount(30, 12, canTrackReadPosition = true)).isEqualTo(18)
+        assertThat(topicUnreadPostsCount(30, 34, canTrackReadPosition = true)).isEqualTo(0)
+    }
+
+    @Test
+    fun readPositionOnlyStateUpdateCanSkipFullTopicRender() {
+        val previous = TopicUiState(highestPostNumber = 8, lastReadPostNumber = 3, lastReadPostId = 1003L)
+
+        assertThat(TopicUiState(highestPostNumber = 8, lastReadPostNumber = 4, lastReadPostId = 1004L)
+            .isReadPositionOnlyUpdateFrom(previous)).isTrue()
+        assertThat(TopicUiState(highestPostNumber = 9, lastReadPostNumber = 4, lastReadPostId = 1004L)
+            .isReadPositionOnlyUpdateFrom(previous)).isFalse()
     }
 
     @Test

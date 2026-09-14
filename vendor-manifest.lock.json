@@ -632,26 +632,26 @@
     {
       "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicFloatingDateController.kt",
       "upstream": "org/telegram/ui/ChatActivity.java",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "forced_exact": [
         "animation"
       ],
-      "notes": "NativeDo topic floating-date controller port. Keeps ChatActivity's 150ms alpha animation, 500ms/1000ms hide delays, drag/idle visibility lifecycle, visible-row date selection, real-separator alpha handoff, and the exact one-cell-height push-off formula while adapting ChatMessageCell/ChatActionCell rows to TopicPostCell/TopicDateCell and respecting NativeDo selection, popup, composer, and scrim ownership.",
+      "notes": "NativeDo topic floating-date controller port aligned to ChatActivity 12.9.0. Keeps the 150ms alpha animation, 500ms/1000ms hide delays, drag/idle lifecycle, translated-child visible-row selection, date-separator alpha handoff, terminal-separator branch, one-cell-height push-off, list-parent translation formula, and top clipping while adapting message/action rows to TopicPostCell/TopicDateCell and respecting NativeDo selection, popup, composer, and scrim ownership.",
       "stuck_reason": "NativeDo port (package io.github.baba983.nativedo.*); vendored_at is an upstream reference for forced_exact hand-checks only — not eligible for vendor-ff."
     },
     {
       "local": "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicDateCell.java",
       "upstream": "org/telegram/ui/Cells/ChatActionCell.java",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
       "modified": true,
       "port_mode": "native",
       "forced_exact": [
         "measurement",
         "drawing"
       ],
-      "notes": "Date-only NativeDo port of ChatActionCell custom-date layout and service bubble. Keeps maxWidth=width-30dp, textY=7dp, measured height=textHeight+14dp, 8dp horizontal bubble inset, 4dp top, 6dp bottom, 11dp single-line radius, bold service text, and 75% floating background alpha. Telegram message actions, gifts, stories, peers, multiline action paths, and MTProto branches are omitted.",
+      "notes": "Date-only NativeDo port of ChatActionCell aligned to 12.9.0 custom-date layout and service drawing. Keeps maxWidth=width-30dp, textY=7dp, measured height=textHeight+14dp, the 8dp/4dp/6dp/11dp single-line action path, Theme chatAction background and darken paints, service shader matrix, a single translucent service-color contrast overlay for light wallpaper shader cases, bold service text, 75% floating alpha, and floating top clip. Telegram message actions, gifts, stories, peers, multiline action paths, and MTProto branches are omitted.",
       "stuck_reason": "NativeDo port (package io.github.baba983.nativedo.*); vendored_at is an upstream reference for forced_exact hand-checks only — not eligible for vendor-ff."
     },
     {
