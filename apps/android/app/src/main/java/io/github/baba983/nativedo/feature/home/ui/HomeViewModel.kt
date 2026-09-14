@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.baba983.nativedo.core.storage.CategoryStore
 import io.github.baba983.nativedo.feature.home.data.HomeRepository
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,6 +16,9 @@ class HomeViewModel(
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
+    private val refreshJobs = mutableMapOf<HomeFeedTab, Job>()
+    private val loadMoreJobs = mutableMapOf<HomeFeedTab, Job>()
+    private val requestGenerations = HomeFeedTab.entries.associateWith { 0L }.toMutableMap()
 
     init {
         loadCategories()
@@ -68,15 +72,19 @@ class HomeViewModel(
             return
         }
 
-        viewModelScope.launch {
-            _uiState.value = state.updateFeed(selectedTab) { currentFeed ->
-                currentFeed.copy(
-                    isLoadingMore = true,
-                    loadMoreErrorMessage = null,
-                )
-            }
+        val generation = requestGenerations.getValue(selectedTab)
+        _uiState.value = state.updateFeed(selectedTab) { currentFeed ->
+            currentFeed.copy(
+                isLoadingMore = true,
+                loadMoreErrorMessage = null,
+            )
+        }
+        loadMoreJobs[selectedTab] = viewModelScope.launch {
             repository.load(selectedTab, nextPage).fold(
                 onSuccess = { page ->
+                    if (requestGenerations.getValue(selectedTab) != generation) {
+                        return@fold
+                    }
                     _uiState.value = _uiState.value.updateFeed(selectedTab) { currentFeed ->
                         currentFeed.copy(
                             items = (currentFeed.items + page.items).distinctBy { it.id },
@@ -87,6 +95,9 @@ class HomeViewModel(
                     }
                 },
                 onFailure = { error ->
+                    if (requestGenerations.getValue(selectedTab) != generation) {
+                        return@fold
+                    }
                     _uiState.value = _uiState.value.updateFeed(selectedTab) { currentFeed ->
                         currentFeed.copy(
                             isLoadingMore = false,
@@ -99,24 +110,32 @@ class HomeViewModel(
     }
 
     private fun refresh(tab: HomeFeedTab, initial: Boolean) {
-        viewModelScope.launch {
-            val currentState = _uiState.value
-            _uiState.value = currentState
-                .copy(selectedTab = tab)
-                .updateFeed(tab) { feed ->
-                    feed.copy(
-                        items = if (initial) emptyList() else feed.items,
-                        isLoading = initial,
-                        isRefreshing = !initial,
-                        isLoadingMore = false,
-                        hasMore = if (initial) false else feed.hasMore,
-                        nextPage = if (initial) null else feed.nextPage,
-                        errorMessage = null,
-                        loadMoreErrorMessage = null,
-                    )
-                }
+        val generation = requestGenerations.getValue(tab) + 1L
+        requestGenerations[tab] = generation
+        refreshJobs.remove(tab)?.cancel()
+        loadMoreJobs.remove(tab)?.cancel()
+
+        val currentState = _uiState.value
+        _uiState.value = currentState
+            .copy(selectedTab = tab)
+            .updateFeed(tab) { feed ->
+                feed.copy(
+                    items = if (initial) emptyList() else feed.items,
+                    isLoading = initial,
+                    isRefreshing = !initial,
+                    isLoadingMore = false,
+                    hasMore = if (initial) false else feed.hasMore,
+                    nextPage = if (initial) null else feed.nextPage,
+                    errorMessage = null,
+                    loadMoreErrorMessage = null,
+                )
+            }
+        refreshJobs[tab] = viewModelScope.launch {
             repository.load(tab, page = 0).fold(
                 onSuccess = { page ->
+                    if (requestGenerations.getValue(tab) != generation) {
+                        return@fold
+                    }
                     _uiState.value = _uiState.value.updateFeed(tab) { feed ->
                         feed.copy(
                             items = page.items,
@@ -128,6 +147,9 @@ class HomeViewModel(
                     }
                 },
                 onFailure = { error ->
+                    if (requestGenerations.getValue(tab) != generation) {
+                        return@fold
+                    }
                     _uiState.value = _uiState.value.updateFeed(tab) { feed ->
                         feed.copy(
                             isLoading = false,

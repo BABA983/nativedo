@@ -5,8 +5,11 @@ import io.github.baba983.nativedo.core.model.TopicSummary
 import io.github.baba983.nativedo.feature.home.data.HomeRepository
 import io.github.baba983.nativedo.feature.home.data.HomeFeedPage
 import io.github.baba983.nativedo.test.MainDispatcherRule
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.junit.Rule
 import org.junit.Test
@@ -123,6 +126,58 @@ class HomeViewModelTest {
         assertThat(state.loadMoreErrorMessage).isNotEmpty()
     }
 
+    @Test
+    fun refreshSupersedesInFlightPaginationAndIgnoresItsLateResponse() = runTest {
+        val pageResponse = CompletableDeferred<Result<HomeFeedPage>>()
+        val refreshResponse = CompletableDeferred<Result<HomeFeedPage>>()
+        val repository = SequencedHomeRepository(
+            page(topicIds = listOf(101L), nextPage = 1),
+            pageResponse,
+            refreshResponse,
+        )
+        viewModel = HomeViewModel(repository)
+        viewModel.awaitState { state -> !state.isLoading && state.items.isNotEmpty() }
+
+        viewModel.loadNextPage()
+        assertThat(viewModel.uiState.value.isLoadingMore).isTrue()
+        viewModel.onRefresh()
+
+        assertThat(viewModel.uiState.value.isLoadingMore).isFalse()
+        assertThat(viewModel.uiState.value.isRefreshing).isTrue()
+        pageResponse.complete(page(topicIds = listOf(202L), nextPage = null))
+        refreshResponse.complete(page(topicIds = listOf(303L), nextPage = null))
+
+        val state = viewModel.awaitState { state -> !state.isRefreshing }
+        assertThat(state.items.map { it.id }).containsExactly(303L)
+        assertThat(repository.requests).containsExactly(
+            HomeFeedTab.Latest to 0,
+            HomeFeedTab.Latest to 1,
+            HomeFeedTab.Latest to 0,
+        ).inOrder()
+    }
+
+    @Test
+    fun duplicatePaginationRequestIsBlockedBeforeTheFirstCoroutineReturns() = runTest {
+        val pageResponse = CompletableDeferred<Result<HomeFeedPage>>()
+        val repository = SequencedHomeRepository(
+            page(topicIds = listOf(101L), nextPage = 1),
+            pageResponse,
+        )
+        viewModel = HomeViewModel(repository)
+        viewModel.awaitState { state -> !state.isLoading && state.items.isNotEmpty() }
+
+        viewModel.loadNextPage()
+        viewModel.loadNextPage()
+
+        assertThat(repository.requests).containsExactly(
+            HomeFeedTab.Latest to 0,
+            HomeFeedTab.Latest to 1,
+        ).inOrder()
+        pageResponse.complete(page(topicIds = listOf(202L), nextPage = null))
+        val state = viewModel.awaitState { state -> !state.isLoadingMore }
+        assertThat(state.items.map { it.id }).containsExactly(101L, 202L).inOrder()
+    }
+
     private suspend fun HomeViewModel.awaitState(
         predicate: (HomeUiState) -> Boolean,
     ): HomeUiState = withTimeout(2_000L) {
@@ -139,6 +194,24 @@ class HomeViewModelTest {
             val request = tab to page
             requests += request
             return responses.getValue(request)
+        }
+    }
+
+    private class SequencedHomeRepository(
+        initialResponse: Result<HomeFeedPage>,
+        vararg pendingResponses: CompletableDeferred<Result<HomeFeedPage>>,
+    ) : HomeRepository() {
+        private val responses = ArrayDeque<suspend () -> Result<HomeFeedPage>>().apply {
+            addLast { initialResponse }
+            pendingResponses.forEach { response ->
+                addLast { withContext(NonCancellable) { response.await() } }
+            }
+        }
+        val requests = mutableListOf<Pair<HomeFeedTab, Int>>()
+
+        override suspend fun load(tab: HomeFeedTab, page: Int): Result<HomeFeedPage> {
+            requests += tab to page
+            return responses.removeFirst().invoke()
         }
     }
 
