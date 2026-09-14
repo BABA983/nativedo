@@ -86,8 +86,9 @@ class DiscourseSvgSpriteLoader(
 
     @SuppressLint("SetJavaScriptEnabled")
     private suspend fun loadSpriteViaHiddenWebView(): Boolean {
-        cookieSyncBridge.syncToWebView()
-        return suspendCancellableCoroutine { continuation ->
+        val revision = cookieSyncBridge.revision()
+        if (!cookieSyncBridge.syncToWebViewAsync()) return false
+        val loaded = suspendCancellableCoroutine<Boolean> { continuation ->
             var finished = false
             var captureAttempts = 0
             val webView = WebView(appContext)
@@ -172,6 +173,9 @@ class DiscourseSvgSpriteLoader(
         svgSpriteDebugLog("loadSprite: loadUrl=$loadUrl")
         webView.loadUrl(loadUrl)
         }
+        // Homepage requests can rotate _t even when this WebView only loads icons.
+        cookieSyncBridge.syncFromWebViewIfCurrent(revision)
+        return loaded
     }
 
     private companion object {

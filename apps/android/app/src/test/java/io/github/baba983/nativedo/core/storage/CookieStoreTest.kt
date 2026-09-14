@@ -11,6 +11,24 @@ class CookieStoreTest {
     private val siteUrl = "https://linux.do/".toHttpUrl()
 
     @Test
+    fun recreatedStoreRetainsImportedSessionTokenAndDeletion() {
+        val persistence = object : CookieStorePersistence {
+            var data = emptyMap<String, List<String>>()
+            override fun load() = data
+            override fun save(snapshot: Map<String, List<String>>) { data = snapshot }
+        }
+        val first = CookieStore(persistence)
+        first.save(siteUrl, listOf(Cookie.Builder().name("_t").value("token")
+            .hostOnlyDomain("linux.do").path("/").secure().httpOnly().build()))
+        first.flush()
+        val reopened = CookieStore(persistence)
+        assertThat(reopened.hasAuthenticatedCookies()).isTrue()
+        assertThat(reopened.load(siteUrl).single().hostOnly).isTrue()
+        reopened.clear()
+        assertThat(CookieStore(persistence).hasAuthenticatedCookies()).isFalse()
+    }
+
+    @Test
     fun expiredSetCookieRemovesThePreviousValue() {
         val store = CookieStore()
         store.save(

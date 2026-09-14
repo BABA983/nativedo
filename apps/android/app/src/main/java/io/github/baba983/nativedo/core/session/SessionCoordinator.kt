@@ -39,6 +39,7 @@ class SessionCoordinator(
     private val cookieSyncBridge: CookieSyncBridge? = null,
     private val now: () -> Long = System::currentTimeMillis,
     applicationScope: CoroutineScope? = null,
+    private val persistenceDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO,
 ) {
     private val coordinatorScope = applicationScope
         ?: CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -52,10 +53,28 @@ class SessionCoordinator(
     private var logoutJob: Job? = null
 
     suspend fun start() {
-        val generation = beginOperation()
+        var recoveredFromWebView = false
+        val generation = cookieOperationMutex.withLock {
+            val next = beginOperation()
+            // No cached identity after explicit logout: never resurrect browser cookies.
+            if (!cookieStore.hasAuthenticatedCookies() && sessionStore.snapshot() != null) {
+                try {
+                    cookieSyncBridge?.syncFromWebViewIfCurrent(cookieStore.revision())
+                    recoveredFromWebView = cookieStore.hasAuthenticatedCookies()
+                    SessionDiagnostics.record("startup_browser_recovery", cookieStore.revision(),
+                        accepted = recoveredFromWebView)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    SessionDiagnostics.record("startup_browser_unavailable", cookieStore.revision(), accepted = false)
+                }
+            }
+            next
+        }
         restore(
             generation = generation,
-            allowCachedFallback = true,
+            // Browser cookies can belong to a different account. Verify before using cached identity.
+            allowCachedFallback = !recoveredFromWebView,
         )
     }
 
@@ -123,11 +142,19 @@ class SessionCoordinator(
             displayName = displayName,
             avatarTemplate = avatarTemplate,
         )
-        sessionStore.save(snapshot)
-        _sessionState.value = AppSessionState.Authenticated(
-            snapshot = snapshot,
-            freshness = SessionFreshness.WebView,
-        )
+        cookieOperationMutex.withLock {
+            if (generation != currentOperationGeneration()) return
+            sessionStore.save(snapshot)
+            withContext(persistenceDispatcher) {
+                cookieStore.flush()
+                sessionStore.flush()
+            }
+            _sessionState.value = AppSessionState.Authenticated(
+                snapshot = snapshot,
+                freshness = SessionFreshness.WebView,
+            )
+            SessionDiagnostics.record("login_committed", cookieStore.revision())
+        }
         _events.emit(SessionEvent.LoginCompleted(snapshot))
     }
 
@@ -138,6 +165,7 @@ class SessionCoordinator(
      */
     private fun applyMissingAuthenticatedCookies() {
         val cachedSnapshot = sessionStore.snapshot()
+        SessionDiagnostics.record("auth_cookie_missing", cookieStore.revision(), accepted = false)
         _sessionState.value = if (cachedSnapshot == null) {
             sessionStore.clear()
             AppSessionState.Anonymous
@@ -221,11 +249,17 @@ class SessionCoordinator(
                 val snapshot = currentSnapshot()
                 operationGeneration += 1
                 _sessionState.value = AppSessionState.Expired(reason = reason, snapshot = snapshot)
+                SessionDiagnostics.record("expired_${reason.name}", cookieStore.revision(), accepted = false)
                 true
             }
             if (shouldEmit && reason == SessionExpiredReason.ServerLoggedOut) {
                 withContext(kotlinx.coroutines.NonCancellable) {
                     sessionStore.clear()
+                    cookieStore.clear()
+                    withContext(persistenceDispatcher) {
+                        sessionStore.flush()
+                        cookieStore.flush()
+                    }
                     clearCookiesAsync()
                 }
             }
@@ -252,6 +286,11 @@ class SessionCoordinator(
                             _sessionState.value = AppSessionState.Anonymous
                         }
                         sessionStore.clear()
+                        cookieStore.clear()
+                        withContext(persistenceDispatcher) {
+                            sessionStore.flush()
+                            cookieStore.flush()
+                        }
                         clearCookiesAsync()
                     }
                 }
@@ -314,7 +353,15 @@ class SessionCoordinator(
                 lastValidatedAt = now(),
             )
             if (generation != currentOperationGeneration()) return
-            sessionStore.save(snapshot)
+            cookieOperationMutex.withLock {
+                if (generation != currentOperationGeneration()) return
+                sessionStore.save(snapshot)
+                withContext(persistenceDispatcher) {
+                    cookieStore.flush()
+                    sessionStore.flush()
+                }
+            }
+            if (generation != currentOperationGeneration()) return
             _sessionState.value = AppSessionState.Authenticated(
                 snapshot = snapshot,
                 freshness = SessionFreshness.Verified,
@@ -387,6 +434,7 @@ class SessionCoordinator(
     }
 
     private fun beginOperation(): Int = synchronized(operationLock) {
+        cookieStore.advanceRevision()
         operationGeneration += 1
         operationGeneration
     }

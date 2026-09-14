@@ -12,7 +12,7 @@ import io.github.baba983.nativedo.core.network.DiscourseApiClient
 import io.github.baba983.nativedo.core.network.DiscourseApiService
 import io.github.baba983.nativedo.core.network.ImageRequestHeadersInterceptor
 import io.github.baba983.nativedo.core.network.NetworkJson
-import io.github.baba983.nativedo.core.network.PersistentCookieJar
+import io.github.baba983.nativedo.core.network.SessionCookieInterceptor
 import io.github.baba983.nativedo.core.network.RequestHeadersInterceptor
 import io.github.baba983.nativedo.core.network.resolveNativeDoUserAgent
 import io.github.baba983.nativedo.core.session.CookieSyncBridge
@@ -84,7 +84,7 @@ class AppContainer(
     }
 
     private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .cookieJar(PersistentCookieJar(cookieStore))
+        .addNetworkInterceptor(SessionCookieInterceptor(cookieStore))
         .addInterceptor(
             RequestHeadersInterceptor(
                 baseUrl = baseUrl,
@@ -95,7 +95,7 @@ class AppContainer(
         .build()
 
     val imageOkHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .cookieJar(PersistentCookieJar(cookieStore))
+        .addNetworkInterceptor(SessionCookieInterceptor(cookieStore))
         .addInterceptor(ImageRequestHeadersInterceptor(baseUrl = baseUrl))
         .build()
 

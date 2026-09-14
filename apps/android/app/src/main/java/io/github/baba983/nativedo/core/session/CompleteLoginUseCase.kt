@@ -33,22 +33,27 @@ class CompleteLoginUseCase(
     suspend operator fun invoke(webView: WebView, currentUrl: String): Boolean {
         CookieManager.getInstance().flush()
 
-        // 1. Read DOM identity
-        val currentUser = CurrentUserExtractor.readCurrentUser(webView)
-        val liveUrl = webView.url.orEmpty().ifBlank { currentUrl }
-        val sameOrigin = isDiscourseSameOrigin(liveUrl, baseUrl)
-        val cookieUrl = liveUrl.takeIf { sameOrigin }
-
-        return if (currentUser != null) {
-            completeWithKnownUsername(
-                username = currentUser.username,
-                displayName = currentUser.displayName,
-                avatarTemplate = currentUser.avatarTemplate,
-                cookieUrl = cookieUrl,
-            )
-        } else {
-            completeWithBootstrap(cookieUrl = cookieUrl)
-        }
+        return awaitAuthenticatedSession(
+            hasAuthenticatedCookies = { cookieSyncBridge.hasAuthenticatedCookiesInWebView(baseUrl) },
+            completeLogin = {
+                val liveUrl = webView.url.orEmpty().ifBlank { currentUrl }
+                if (!isDiscourseSameOrigin(liveUrl, baseUrl)) {
+                    false
+                } else {
+                    val currentUser = CurrentUserExtractor.readCurrentUser(webView)
+                    // Navigation can change while evaluateJavascript is pending.
+                    if (!isDiscourseSameOrigin(webView.url.orEmpty().ifBlank { currentUrl }, baseUrl)) {
+                        false
+                    } else if (currentUser != null) {
+                        completeWithKnownUsername(currentUser.username, currentUser.displayName,
+                            currentUser.avatarTemplate, liveUrl)
+                    } else {
+                        sessionCoordinator.completeLoginFromWebView(liveUrl)
+                        sessionCoordinator.sessionState.value is AppSessionState.Authenticated
+                    }
+                }
+            },
+        )
     }
 
     private suspend fun completeWithKnownUsername(
@@ -58,12 +63,10 @@ class CompleteLoginUseCase(
         cookieUrl: String?,
     ): Boolean {
         // Stage 2: sync non-auth cookies (cf_clearance etc.)
-        runCatching {
-            cookieSyncBridge.syncFromWebViewExcluding(
-                url = cookieUrl ?: baseUrl,
-                excludeNames = CookieSyncBridge.AUTH_COOKIE_NAMES,
-            )
-        }
+        cookieSyncBridge.syncFromWebViewExcluding(
+            url = cookieUrl ?: baseUrl,
+            excludeNames = CookieSyncBridge.AUTH_COOKIE_NAMES,
+        )
 
         // Stage 3: advance generation + sync auth cookies + state transition
         sessionCoordinator.completeLoginFromWebViewStaged(
@@ -74,26 +77,14 @@ class CompleteLoginUseCase(
         )
 
         // Stage 4: sync runtime cookies (_rt)
-        runCatching {
-            cookieSyncBridge.syncFromWebViewByName(
-                url = cookieUrl ?: baseUrl,
-                names = CookieSyncBridge.RUNTIME_COOKIE_NAMES,
-            )
-        }
+        cookieSyncBridge.syncFromWebViewByName(
+            url = cookieUrl ?: baseUrl,
+            names = CookieSyncBridge.RUNTIME_COOKIE_NAMES,
+        )
 
         return sessionCoordinator.sessionState.value is AppSessionState.Authenticated
     }
 
-    private suspend fun completeWithBootstrap(cookieUrl: String?): Boolean =
-        awaitAuthenticatedSession(
-            hasAuthenticatedCookies = {
-                cookieSyncBridge.hasAuthenticatedCookiesInWebView(baseUrl)
-            },
-            completeLogin = {
-                sessionCoordinator.completeLoginFromWebView(cookieUrl)
-                sessionCoordinator.sessionState.value is AppSessionState.Authenticated
-            },
-        )
 }
 
 private const val LOGIN_COOKIE_READY_MAX_ATTEMPTS = 20
@@ -111,8 +102,10 @@ internal suspend fun awaitAuthenticatedSession(
     delayMillis: Long = LOGIN_COOKIE_READY_DELAY_MILLIS,
 ): Boolean {
     repeat(maxAttempts) { attempt ->
-        if (hasAuthenticatedCookies() && completeLogin()) {
-            return true
+        try {
+            if (hasAuthenticatedCookies() && completeLogin()) return true
+        } catch (error: io.github.baba983.nativedo.core.network.SessionRecoveryRequiredException) {
+            // An ambiguous browser cookie read may settle on a later callback.
         }
         if (attempt != maxAttempts - 1) {
             delay(delayMillis)

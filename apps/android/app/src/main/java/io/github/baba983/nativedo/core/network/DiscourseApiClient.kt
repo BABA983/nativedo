@@ -19,6 +19,8 @@ import io.github.baba983.nativedo.core.session.SessionRequestContext
 import io.github.baba983.nativedo.core.session.SessionUserSummary
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -66,14 +68,9 @@ class DiscourseApiClient(
         runWithSessionBoundary {
             try {
                 val currentUser = service.currentSession().currentUser
-                currentUser?.toSessionUserSummary()
-                    ?: run {
-                        // Discourse uses a 200 response with current_user=null
-                        // for an authenticated session that has been revoked.
-                        // Treat it like the explicit logout headers below so
-                        // every caller reaches the same cookie-clearing path.
-                        throw SessionLoggedOutException()
-                    }
+                if (currentUser == JsonNull) throw SessionLoggedOutException()
+                NetworkJson.instance.decodeFromJsonElement<CurrentUserDto>(currentUser)
+                    .toSessionUserSummary() ?: throw SessionRecoveryRequiredException()
             } catch (error: SerializationException) {
                 throw SessionRecoveryRequiredException(cause = error)
             }
@@ -257,14 +254,15 @@ class DiscourseApiClient(
             // ResponseBody is one-shot. Read it once so a JSON logout check
             // cannot consume the Cloudflare challenge evidence that follows.
             val errorBody = error.response()?.errorBody()?.string().orEmpty()
-            when {
-                error.isLoggedOutResponse() || error.isNotLoggedInPayload(errorBody) -> {
-                    handleLoggedOutResponse(requestContext, requiresAuthentication, error)
-                }
-                error.isCloudflareChallengeResponse(errorBody) -> {
-                    throw SessionRecoveryRequiredException(cause = error)
-                }
-                else -> throw error
+            val evidence = SessionResponseEvidence.classify(error.code(),
+                error.response()?.headers() ?: okhttp3.Headers.Builder().build(), errorBody)
+            when (evidence) {
+                SessionResponseEvidence.Challenge -> throw SessionRecoveryRequiredException(cause = error)
+                SessionResponseEvidence.LoggedOut -> handleLoggedOutResponse(requestContext, requiresAuthentication, error)
+                SessionResponseEvidence.Csrf -> throw java.io.IOException("请求验证已过期，请重试；无需重新登录", error)
+                SessionResponseEvidence.Forbidden -> throw java.io.IOException("请求被拒绝（403），尚不能确认是权限限制还是站点验证", error)
+                SessionResponseEvidence.RateLimited -> throw java.io.IOException("请求过于频繁，请稍后重试", error)
+                SessionResponseEvidence.Other -> throw error
             }
         }
     }
@@ -284,40 +282,7 @@ class DiscourseApiClient(
         throw LoginRequiredException(cause = cause)
     }
 
-    private fun HttpException.isLoggedOutResponse(): Boolean {
-        val headerValue = response()?.headers()?.get("discourse-logged-out").orEmpty()
-        return headerValue.equals("true", ignoreCase = true) ||
-            headerValue == "1" ||
-            code() == 401
-    }
 
-    private fun HttpException.isNotLoggedInPayload(errorBody: String): Boolean {
-        if (errorBody.isBlank()) {
-            return false
-        }
-        return runCatching {
-            val payload = NetworkJson.instance.parseToJsonElement(errorBody).jsonObject
-            val errorType = payload["error_type"]?.jsonPrimitive?.contentOrNull
-            val errorName = payload["error"]?.jsonPrimitive?.contentOrNull
-            errorType.equals("not_logged_in", ignoreCase = true) ||
-                errorType.equals("logged_out", ignoreCase = true) ||
-                errorName.equals("not_logged_in", ignoreCase = true) ||
-                errorName.equals("logged_out", ignoreCase = true)
-        }.getOrDefault(false)
-    }
-
-    private fun HttpException.isCloudflareChallengeResponse(errorBody: String): Boolean {
-        if (code() !in setOf(403, 429, 503)) return false
-        val headers = response()?.headers() ?: return false
-        val server = headers["server"].orEmpty()
-        val mitigated = headers["cf-mitigated"].orEmpty()
-        val contentType = headers["content-type"].orEmpty()
-        val body = errorBody.lowercase(Locale.US)
-        return mitigated.contains("challenge", ignoreCase = true) ||
-            (server.contains("cloudflare", ignoreCase = true) &&
-                (contentType.contains("text/html", ignoreCase = true) || body.contains("challenge"))) ||
-            looksLikeCloudflareChallenge(body)
-    }
 }
 
 internal fun looksLikeCloudflareChallenge(bodyLowercased: String): Boolean =

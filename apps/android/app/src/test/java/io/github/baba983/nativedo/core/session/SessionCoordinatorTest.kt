@@ -18,6 +18,59 @@ class SessionCoordinatorTest {
     private val baseUrl = "https://linux.do/"
 
     @Test
+    fun startupRecoversBrowserTokenAndVerifiesItsAccount() = runTest {
+        val cookies = CookieStore()
+        val sessions = SessionStore().apply {
+            save(SessionSnapshot("old-account", "Old", "", 1L))
+        }
+        val bridge = CookieSyncBridge(baseUrl, cookies,
+            readCookieHeader = { "_t=browser-token" }, flushCookies = {})
+        val coordinator = SessionCoordinator(cookies, sessions,
+            FakeSessionBootstrapClient(currentUsername = "browser-account"), bridge)
+
+        coordinator.start()
+
+        assertThat(cookies.hasAuthenticatedCookies()).isTrue()
+        val state = coordinator.sessionState.value as AppSessionState.Authenticated
+        assertThat(state.snapshot.username).isEqualTo("browser-account")
+        assertThat(state.freshness).isEqualTo(SessionFreshness.Verified)
+    }
+
+    @Test
+    fun startupAfterLogoutDoesNotImportBrowserToken() = runTest {
+        val cookies = CookieStore()
+        var browserReads = 0
+        val bridge = CookieSyncBridge(baseUrl, cookies,
+            readCookieHeader = { browserReads++; "_t=stale-browser-token" }, flushCookies = {})
+        val coordinator = SessionCoordinator(cookies, SessionStore(),
+            FakeSessionBootstrapClient(currentUsername = "baba"), bridge)
+
+        coordinator.start()
+
+        assertThat(browserReads).isEqualTo(0)
+        assertThat(coordinator.sessionState.value).isEqualTo(AppSessionState.Anonymous)
+        assertThat(cookies.hasAuthenticatedCookies()).isFalse()
+    }
+
+    @Test
+    fun startupDoesNotReplaceNativeRotationWithStaleBrowserToken() = runTest {
+        val cookies = CookieStore().apply {
+            save(baseUrl.toHttpUrl(), listOf(Cookie.Builder().name("_t").value("native-new")
+                .hostOnlyDomain("linux.do").path("/").build()))
+        }
+        var browserReads = 0
+        val bridge = CookieSyncBridge(baseUrl, cookies,
+            readCookieHeader = { browserReads++; "_t=browser-old" }, flushCookies = {})
+        val coordinator = SessionCoordinator(cookies, SessionStore(),
+            FakeSessionBootstrapClient(currentUsername = "baba"), bridge)
+
+        coordinator.start()
+
+        assertThat(browserReads).isEqualTo(0)
+        assertThat(cookies.load(baseUrl.toHttpUrl()).single().value).isEqualTo("native-new")
+    }
+
+    @Test
     fun completeLoginFromWebView_syncsWebViewCookiesBeforeRestore() = runTest {
         val cookieStore = CookieStore()
         val bridge = CookieSyncBridge(
@@ -645,6 +698,7 @@ class SessionCoordinatorTest {
             apiClient = FakeSessionBootstrapClient(),
             cookieSyncBridge = bridge,
             applicationScope = applicationScope,
+            persistenceDispatcher = StandardTestDispatcher(testScheduler),
         )
 
         val logoutJob = coordinator.onLogout()

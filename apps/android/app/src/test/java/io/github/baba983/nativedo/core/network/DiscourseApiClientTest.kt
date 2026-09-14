@@ -599,6 +599,64 @@ class DiscourseApiClientTest {
     }
 
     @Test
+    fun forbiddenResponsesDistinguishChallengeCsrfAndPermissionWithoutInvalidation() = runTest {
+        val cases = listOf(
+            MockResponse().setResponseCode(403).setHeader("server", "cloudflare")
+                .setHeader("content-type", "application/json").setBody("{\"error_type\":\"invalid_access\"}") to "请求被拒绝",
+            MockResponse().setResponseCode(403).setBody("[\"BAD CSRF\"]") to "请求验证已过期",
+            MockResponse().setResponseCode(403).setHeader("cf-mitigated", "challenge")
+                .setHeader("discourse-logged-out", "true").setBody("<html>challenge</html>") to "登录状态暂时无法验证",
+        )
+        var invalidated = false
+        client.setSessionBoundary(
+            contextProvider = { io.github.baba983.nativedo.core.session.SessionRequestContext(
+                1, io.github.baba983.nativedo.core.session.SessionRequestAuth.Authenticated) },
+            onSessionInvalidated = { _, _ -> invalidated = true }, onLoginRequired = {})
+        for ((response, message) in cases) {
+            server.enqueue(response)
+            val error = runCatching { client.fetchCurrentUser() }.exceptionOrNull()
+            assertThat(error?.message).contains(message)
+            assertThat(invalidated).isFalse()
+        }
+    }
+
+    @Test
+    fun currentSession404CanRecoverThroughHomepageWithoutInvalidation() = runTest {
+        server.enqueue(MockResponse().setResponseCode(404))
+        server.enqueue(MockResponse().setHeader("Content-Type", "text/html")
+            .setBody("<meta name=\"current-username\" content=\"baba\">"))
+        val cookies = io.github.baba983.nativedo.core.storage.CookieStore().apply {
+            save(server.url("/"), listOf(okhttp3.Cookie.Builder().name("_t").value("token")
+                .hostOnlyDomain(server.url("/").host).path("/").build()))
+        }
+        val coordinator = io.github.baba983.nativedo.core.session.SessionCoordinator(
+            cookies, io.github.baba983.nativedo.core.storage.SessionStore(), client)
+        client.setSessionBoundary(coordinator::currentRequestContext,
+            coordinator::markExpiredIfCurrent, coordinator::requestLogin)
+        coordinator.start()
+        assertThat(coordinator.sessionState.value)
+            .isInstanceOf(io.github.baba983.nativedo.core.session.AppSessionState.Authenticated::class.java)
+        assertThat(cookies.hasAuthenticatedCookies()).isTrue()
+    }
+
+    @Test
+    fun incompleteCurrentUserPayloadRequiresRecoveryWithoutClearingCookies() = runTest {
+        for (body in listOf("{}", "{\"current_user\":{}}", "{\"current_user\":{\"username\":\" \"}}")) {
+            server.enqueue(jsonResponse(body))
+            var invalidated = false
+            client.setSessionBoundary(
+                contextProvider = { io.github.baba983.nativedo.core.session.SessionRequestContext(
+                    1, io.github.baba983.nativedo.core.session.SessionRequestAuth.Restoring) },
+                onSessionInvalidated = { _, _ -> invalidated = true },
+                onLoginRequired = {},
+            )
+            assertThat(runCatching { client.fetchCurrentUser() }.exceptionOrNull())
+                .isInstanceOf(SessionRecoveryRequiredException::class.java)
+            assertThat(invalidated).isFalse()
+        }
+    }
+
+    @Test
     fun fetchCurrentUser_mapsNullCurrentUserToSessionLoggedOut() = runTest {
         server.enqueue(jsonResponse("{\"current_user\":null}"))
         var invalidationReason: SessionExpiredReason? = null

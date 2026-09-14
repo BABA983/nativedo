@@ -37,6 +37,13 @@ class CookieSyncBridge(
         CookieManager.getInstance().setCookie(url, cookie, onComplete)
     },
 ) {
+    fun revision(): Long = cookieStore.revision()
+
+    suspend fun syncFromWebViewIfCurrent(expectedRevision: Long): Boolean = operationMutex.withLock {
+        awaitPendingClear()
+        syncFromWebViewFiltered(baseUrl, expectedRevision) { true }
+    }
+
     private val operationMutex = Mutex()
     private val pendingClear = AtomicReference<CompletableDeferred<Unit>?>(null)
 
@@ -61,7 +68,7 @@ class CookieSyncBridge(
         syncFromWebViewFiltered(url) { it.name !in excludeNames }
     }
 
-    private fun syncFromWebViewFiltered(url: String, predicate: (Cookie) -> Boolean): Boolean {
+    private fun syncFromWebViewFiltered(url: String, expectedRevision: Long? = null, predicate: (Cookie) -> Boolean): Boolean {
         val cookieUrl = url.toHttpUrl()
         val cookieHeader = readCookieHeader(url)
         val baseHeader = if (url == baseUrl) null else readCookieHeader(baseUrl)
@@ -72,7 +79,13 @@ class CookieSyncBridge(
             .distinctBy { cookie -> "${cookie.name}|${cookie.domain}|${cookie.path}" }
             .filter(predicate)
         if (cookies.isEmpty()) return cookieStore.hasAuthenticatedCookies()
-        cookieStore.save(baseUrl.toHttpUrl(), cookies)
+        if (expectedRevision == null) {
+            cookieStore.save(baseUrl.toHttpUrl(), cookies)
+        } else if (!cookieStore.saveIfCurrent(baseUrl.toHttpUrl(), cookies, expectedRevision)) {
+            SessionDiagnostics.record("webview_import_stale", expectedRevision, accepted = false)
+            return false
+        }
+        SessionDiagnostics.record("webview_import", cookieStore.revision())
         flushCookies()
         return cookieStore.hasAuthenticatedCookies()
     }
@@ -83,13 +96,20 @@ class CookieSyncBridge(
             cookieHeader = readCookieHeader(url),
         ).any { cookie -> cookie.name == "_t" && cookie.value.isNotBlank() }
 
+    // getCookie omits attributes. Do not round-trip unchanged browser cookies:
+    // that would turn persistent/HttpOnly cookies into synthesized session cookies.
+    private fun cookiesToExport(url: String): List<Cookie> {
+        val visible = readCookieHeader(url).orEmpty().split(';').map { it.trim() }
+        return cookieStore.load(url.toHttpUrl()).filter { "${it.name}=${it.value}" !in visible }
+    }
+
     suspend fun syncToWebView(url: String = baseUrl) = operationMutex.withLock {
         awaitPendingClear()
         syncToWebViewNow(url)
     }
 
     private fun syncToWebViewNow(url: String) {
-        val cookies = cookieStore.load(url.toHttpUrl())
+        val cookies = cookiesToExport(url)
         if (cookies.isEmpty()) return
         cookies.forEach { cookie -> writeCookieToWebView(url, cookie.toString()) }
         flushCookies()
@@ -100,7 +120,7 @@ class CookieSyncBridge(
         timeoutMillis: Long = DEFAULT_ASYNC_COOKIE_TIMEOUT_MILLIS,
     ): Boolean = operationMutex.withLock {
         awaitPendingClear()
-        val cookies = cookieStore.load(url.toHttpUrl())
+        val cookies = cookiesToExport(url)
         if (cookies.isEmpty()) return@withLock true
         withTimeoutOrNull(timeoutMillis) {
             suspendCancellableCoroutine { continuation ->
@@ -149,25 +169,34 @@ class CookieSyncBridge(
         pendingClear.compareAndSet(completion, null)
     }
 
-    internal fun parseCookieHeader(url: HttpUrl, cookieHeader: String?): List<Cookie> =
-        cookieHeader
-            .orEmpty()
-            .split(';')
-            .map { segment -> segment.trim() }
-            .filter { segment -> segment.contains('=') }
-            .mapNotNull { segment ->
-                val name = segment.substringBefore('=').trim()
-                val value = segment.substringAfter('=').trim()
-                runCatching {
-                    Cookie.Builder()
-                        .name(name)
-                        .value(value)
-                        .domain(url.host)
-                        .path("/")
-                        .apply { if (url.isHttps) secure() }
-                        .build()
-                }.getOrNull()
-            }
+    internal fun parseCookieHeader(url: HttpUrl, cookieHeader: String?): List<Cookie> {
+        val pairs = cookieHeader.orEmpty().split(';').map { it.trim() }
+            .filter { it.contains('=') }.map { it.substringBefore('=').trim() to it.substringAfter('=').trim() }
+        if (pairs.filter { it.first in AUTH_COOKIE_NAMES }.groupBy { it.first }
+                .any { (_, values) -> values.map { it.second }.distinct().size > 1 }) {
+            throw io.github.baba983.nativedo.core.network.SessionRecoveryRequiredException()
+        }
+        val existing = cookieStore.load(url)
+        return pairs.mapNotNull { (name, value) ->
+            val known = existing.firstOrNull { it.name == name }
+            runCatching {
+                Cookie.Builder().name(name).value(value).apply {
+                    if (known != null) {
+                        if (known.hostOnly) hostOnlyDomain(known.domain) else domain(known.domain)
+                        path(known.path)
+                        if (known.secure) secure()
+                        if (known.httpOnly) httpOnly()
+                        if (known.value == value && known.persistent) expiresAt(known.expiresAt)
+                    } else {
+                        hostOnlyDomain(url.host)
+                        path("/")
+                        if (url.isHttps) secure()
+                        if (name in AUTH_COOKIE_NAMES) httpOnly()
+                    }
+                }.build()
+            }.getOrNull()
+        }
+    }
 
     companion object {
         val AUTH_COOKIE_NAMES = setOf("_t", "_forum_session")

@@ -13,6 +13,42 @@ class CookieSyncBridgeTest {
     private val baseUrl = "https://linux.do/"
 
     @Test
+    fun browserRoundTripPreservesKnownAttributesAndDoesNotRewriteUnchangedCookie() = runTest {
+        val store = CookieStore()
+        val token = Cookie.Builder().name("_t").value("token").hostOnlyDomain("linux.do")
+            .path("/").secure().httpOnly().expiresAt(System.currentTimeMillis() + 60000).build()
+        store.save(baseUrl.toHttpUrl(), listOf(token))
+        var writes = 0
+        val bridge = CookieSyncBridge(baseUrl, store, readCookieHeader = { "_t=token" },
+            flushCookies = {}, writeCookieToWebView = { _, _ -> writes++ })
+        bridge.syncFromWebView()
+        bridge.syncToWebView()
+        assertThat(store.load(baseUrl.toHttpUrl()).single()).isEqualTo(token)
+        assertThat(writes).isEqualTo(0)
+    }
+
+    @Test
+    fun staleHiddenBrowserImportCannotOverwriteNativeRotation() = runTest {
+        val store = CookieStore()
+        val revision = store.revision()
+        store.save(baseUrl.toHttpUrl(), listOf(Cookie.Builder().name("_t").value("new")
+            .hostOnlyDomain("linux.do").path("/").build()))
+        val bridge = CookieSyncBridge(baseUrl, store, readCookieHeader = { "_t=old" }, flushCookies = {})
+        assertThat(bridge.syncFromWebViewIfCurrent(revision)).isFalse()
+        assertThat(store.load(baseUrl.toHttpUrl()).single().value).isEqualTo("new")
+    }
+
+    @Test
+    fun conflictingSameNameBrowserTokensRequireRecovery() = runTest {
+        val store = CookieStore()
+        val bridge = CookieSyncBridge(baseUrl, store,
+            readCookieHeader = { "_t=one; _t=two" }, flushCookies = {})
+        assertThat(runCatching { bridge.syncFromWebView() }.exceptionOrNull())
+            .isInstanceOf(io.github.baba983.nativedo.core.network.SessionRecoveryRequiredException::class.java)
+        assertThat(store.hasAuthenticatedCookies()).isFalse()
+    }
+
+    @Test
     fun syncToWebView_writesCookiesFromStoreToWebView() = runTest {
         val cookieStore = CookieStore()
         val writtenCookies = mutableListOf<Pair<String, String>>()

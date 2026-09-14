@@ -10,6 +10,8 @@ class SessionStore(
 ) {
     constructor() : this(persistence = NoOpSessionStorePersistence())
 
+    fun flush() = persistence.flush()
+
     private var snapshot: SessionSnapshot? = persistence.load()
 
     fun save(snapshot: SessionSnapshot) {
@@ -26,6 +28,8 @@ class SessionStore(
 }
 
 interface SessionStorePersistence {
+    fun flush() = Unit
+
     fun load(): SessionSnapshot?
 
     fun save(snapshot: SessionSnapshot?)
@@ -34,6 +38,10 @@ interface SessionStorePersistence {
 class SharedPreferencesSessionStorePersistence(
     private val sharedPreferences: SharedPreferences,
 ) : SessionStorePersistence {
+    override fun flush() {
+        check(sharedPreferences.edit().commit()) { "Unable to persist session" }
+    }
+
     override fun load(): SessionSnapshot? {
         val rawSnapshot = sharedPreferences.getString(KEY_SNAPSHOT, null).orEmpty()
         if (rawSnapshot.isBlank()) {

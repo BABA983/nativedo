@@ -572,7 +572,7 @@ data class EmojiDto(
 @Serializable
 data class CurrentSessionResponseDto(
     @SerialName("current_user")
-    val currentUser: CurrentUserDto? = null,
+    val currentUser: kotlinx.serialization.json.JsonElement,
 )
 
 @Serializable

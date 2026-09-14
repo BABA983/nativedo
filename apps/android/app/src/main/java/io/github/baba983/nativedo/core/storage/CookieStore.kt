@@ -13,7 +13,28 @@ class CookieStore(
 ) {
     constructor() : this(persistence = NoOpCookieStorePersistence())
 
+    fun flush() = persistence.flush()
+
     private var cookies: Map<String, List<Cookie>> = loadPersistedCookies()
+
+    private var revision = 0L
+
+    @Synchronized
+    fun revision(): Long = revision
+
+    @Synchronized
+    fun requestSnapshot(url: HttpUrl): Pair<Long, List<Cookie>> = revision to load(url)
+
+    @Synchronized
+    fun saveIfCurrent(url: HttpUrl, cookies: List<Cookie>, expectedRevision: Long): Boolean {
+        if (revision != expectedRevision) return false
+        save(url, cookies)
+        return true
+    }
+
+    // Login/logout must fence in-flight responses even if the token did not change.
+    @Synchronized
+    fun advanceRevision() { revision += 1 }
 
     @Synchronized
     fun hasAuthenticatedCookies(): Boolean = allCookies()
@@ -33,6 +54,7 @@ class CookieStore(
 
     @Synchronized
     fun save(url: HttpUrl, cookies: List<Cookie>) {
+        val previousAuth = authCookies()
         val mergedCookies = LinkedHashMap<String, Cookie>()
         compactCookies().forEach { cookie ->
             mergedCookies[cookie.storageKey()] = cookie
@@ -50,11 +72,16 @@ class CookieStore(
             }
         }
         this.cookies = rebuildBuckets(mergedCookies.values.toList())
+        if (previousAuth != authCookies()) revision += 1
         persistCookies()
     }
 
+    private fun authCookies() = allCookies().filter { it.name == "_t" }
+        .associate { it.storageKey() to it.value }
+
     @Synchronized
     fun clear() {
+        revision += 1
         cookies = emptyMap()
         persistCookies()
     }
@@ -105,6 +132,8 @@ class CookieStore(
 }
 
 interface CookieStorePersistence {
+    fun flush() = Unit
+
     fun load(): Map<String, List<String>>
 
     fun save(snapshot: Map<String, List<String>>)
@@ -113,6 +142,10 @@ interface CookieStorePersistence {
 class SharedPreferencesCookieStorePersistence(
     private val sharedPreferences: SharedPreferences,
 ) : CookieStorePersistence {
+    override fun flush() {
+        check(sharedPreferences.edit().commit()) { "Unable to persist session" }
+    }
+
     override fun load(): Map<String, List<String>> {
         val snapshot = sharedPreferences.getString(KEY_SNAPSHOT, null).orEmpty()
         if (snapshot.isBlank()) {

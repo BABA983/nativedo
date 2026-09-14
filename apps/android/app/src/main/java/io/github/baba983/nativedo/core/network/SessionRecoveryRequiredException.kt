@@ -11,4 +11,4 @@ import java.io.IOException
  */
 class SessionRecoveryRequiredException(
     cause: Throwable? = null,
-) : IOException("Session recovery required", cause)
+) : IOException("登录状态暂时无法验证，请在登录页面完成网站验证后重试", cause)
