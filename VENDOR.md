@@ -2,8 +2,8 @@
 
 This project vendors selected source files from
 [Telegram for Android](https://github.com/DrKLO/Telegram) into a standalone
-Gradle module, **`:telegram`**, located at
-`apps/android/telegram/src/main/java/org/telegram/...`. A smaller class of
+Gradle module, **`:TMessagesProj`**, located at
+`apps/android/TMessagesProj/src/main/java/org/telegram/...`. A smaller class of
 Telegram-derived code lives in `:app` as **native ports** (upstream component
 shape, NativeDo data models).
 
@@ -36,9 +36,9 @@ The overlay only lists what the derivation cannot infer:
 |---|---|
 | `upstream` | repo, `pinned_commit`, `pinned_date`, `subject`, `local_checkout` |
 | `policy` | `sync: on-demand` plus the rationale, third-party prefixes |
-| `native` | `:telegram` files that are *our* code (no upstream parity claim) |
+| `native` | `:TMessagesProj` files that are *our* code (no upstream parity claim) |
 | `upstream_ports` | `:app` ports → the upstream file they were derived from (always native) |
-| `derived_from` | a `:telegram` file whose real upstream source differs from its path |
+| `derived_from` | a `:TMessagesProj` file whose real upstream source differs from its path |
 | `forced_exact` | subsystem lists (`gesture`, `animation`, `measurement`, `drawing`, `recycling`) that must stay upstream-shaped |
 | `reference` | paths that intentionally track an older commit (historical baseline) |
 | `resources` | copied resource groups (not per-file tracked) |
@@ -61,8 +61,8 @@ of rot the tools can still catch).
 | `scripts/vendor-ff.sh [--to REF] [--apply]` | advance byte-clean `exact` files to a ref |
 | `scripts/vendor-classify.sh` | bucket drift on modified files into import/theme/resource/other |
 | `scripts/vendor-setup.sh [--status\|--fetch\|--prefetch\|--print-dir]` | manage the pristine checkout |
-| `scripts/auto-vendor-copy.sh <javac-log>` | bulk-copy javac's missing classes into `:telegram` |
-| `scripts/vendor-isolation-check.sh` | `:telegram` must not import `io.github.baba983.nativedo.*` |
+| `scripts/auto-vendor-copy.sh <javac-log>` | bulk-copy javac's missing classes into `:TMessagesProj` |
+| `scripts/vendor-isolation-check.sh` | `:TMessagesProj` must not import `io.github.baba983.nativedo.*` |
 
 Shared helpers live in `scripts/vendorlib.py`. Vendor tooling unit tests:
 `python3 -m unittest discover -s scripts/tests -t scripts/tests`.
@@ -70,7 +70,7 @@ Shared helpers live in `scripts/vendorlib.py`. Vendor tooling unit tests:
 ## Daily use
 
 ```bash
-# Before committing anything under apps/android/telegram/** or the overlay
+# Before committing anything under apps/android/TMessagesProj/** or the overlay
 scripts/vendor-guard.sh --compile
 
 # Look at one file's provenance

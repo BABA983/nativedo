@@ -9,9 +9,18 @@ and [`VENDOR.md`](../VENDOR.md).
 
 ## Two-module layout
 
-Vendored Telegram code lives in a **standalone Gradle module**, `:telegram`.
-NativeDo product code lives in `:app`. `:app` depends on `:telegram`; the
+Vendored Telegram code lives in a **standalone Gradle module**, `:TMessagesProj`.
+NativeDo product code lives in `:app`. `:app` depends on `:TMessagesProj`; the
 reverse is forbidden by Gradle and by `scripts/vendor-isolation-check.sh`.
+
+The directory name mirrors the upstream project on purpose: a vendored file's
+path reads the same in both trees
+(`apps/android/TMessagesProj/src/main/java/org/telegram/...` vs
+`../telegram/TMessagesProj/src/main/java/org/telegram/...`), so diffs and
+overlay paths line up without a translation table. `telegram` is reserved for
+*our* Telegram-derived code (native ports and facades that bind NativeDo
+models) if we ever grow a module for them; the upstream mirror never takes that
+name again.
 
 ```
 apps/android/
@@ -35,7 +44,9 @@ apps/android/
 │           │                             Cloudflare fallback.
 │           └── …
 │
-└── telegram/                           ← Vendored Telegram code (:telegram module)
+└── TMessagesProj/                      ← Vendored Telegram code (:TMessagesProj module).
+    │                                     The directory mirrors the upstream project name,
+    │                                     so a vendored path reads the same in both trees.
     └── src/main/java/org/telegram/     ← Upstream package preserved verbatim.
         ├── messenger/                  ← org.telegram.messenger.*
         │                                 (AndroidUtilities, ImageLoader,
@@ -52,21 +63,21 @@ apps/android/
 
 ## Why a separate module?
 
-Putting vendored code in `:telegram` instead of inside `:app/.../telegram/`
+Putting vendored code in `:TMessagesProj` instead of inside `:app/.../telegram/`
 buys three concrete things:
 
-1. **Mechanical dependency direction.** `:telegram` has no `implementation
+1. **Mechanical dependency direction.** `:TMessagesProj` has no `implementation
    project(":app")`, so the Java compiler refuses any `import
    io.github.baba983.nativedo.*` inside vendored code. The "vendor isolation"
    rule isn't an honor system anymore.
-2. **Package parity with upstream.** Files in `:telegram` stay in `org.telegram.*`.
+2. **Package parity with upstream.** Files in `:TMessagesProj` stay in `org.telegram.*`.
    That means a vendored file diffs cleanly against the pristine checkout
    (`../telegram/...` by default; `scripts/vendor-setup.sh --print-dir`)
    — only host wiring (imports the host doesn't have, theme keys, AndroidX
    substitutions) shows up as drift, never a global package rewrite.
 3. **Incremental build win.** When you only edit NativeDo product code, the
-   `:telegram` classpath is up-to-date and `:app` recompiles in seconds even
-   though `:telegram` is large.
+   `:TMessagesProj` classpath is up-to-date and `:app` recompiles in seconds even
+   though `:TMessagesProj` is large.
 
 ## What goes where: decision tree
 
@@ -89,17 +100,17 @@ buys three concrete things:
                     │                 │   ui/              │
         ╭───────────┴───────────╮     │                     │
        NO                      YES    │ No GPL header.      │
-        │                       │     │ No manifest entry.  │
+        │                       │     │ No registration.    │
         ▼                       ▼     ╰─────────────────────╯
 ╭───────────────╮     ╭───────────────────╮
-│ :telegram     │     │ :app native port  │
+│ TMessagesProj │     │ :app native port  │
 │ module.       │     │   io.github.…ui.* │
 │ Package stays │     │ Mirrors upstream  │
 │ org.telegram* │     │ measurement/draw/ │
-│ Manifest +    │     │ animation shape,  │
-│ GPL header.   │     │ binds NativeDo    │
-│               │     │ data. Manifest +  │
-│               │     │ GPL header.       │
+│ Tracked       │     │ animation shape,  │
+│ against the   │     │ binds NativeDo    │
+│ pin; GPL      │     │ data. Overlay +   │
+│ header.       │     │ GPL header.       │
 ╰───────────────╯     ╰───────────────────╯
 ```
 
@@ -112,7 +123,7 @@ vendored-adapted. If you only borrowed the *idea*, it's NativeDo-original.
 
 | Code | Language | Rule |
 |---|---|---|
-| Anything in `:telegram` | **Java** | Mandatory. Upstream is Java. Kotlin-ising vendored code breaks diff/re-sync. |
+| Anything in `:TMessagesProj` | **Java** | Mandatory. Upstream is Java. Kotlin-ising vendored code breaks diff/re-sync. |
 | Business logic in `:app` (ViewModel, Repository, Discourse models, parsers) | **Kotlin** | Mandatory. Use coroutines/Flow, `data class`, `sealed`. |
 | Native ports in `:app/ui/**` (Telegram-derived custom views) | **Java** | If you're authoring `dp(...)`, `onMeasure`, `onDraw`, and want to read side-by-side with upstream Cell sources, stay in Java. Kotlin's property access (`paint.color =` vs `paint.setColor(...)`) slows comparison. |
 | Façades over vendored APIs (no measurement/draw code) | **Kotlin** by default | Switch to Java only if the façade must `implements` a vendored Java interface heavy on callbacks. |
@@ -130,7 +141,7 @@ NativeDo business code must **NOT** call these directly. Instead:
 
 1. Pick a NativeDo-side façade location: `ui/avatar/AvatarImageBinder`,
    `ui/photo/NativeDoPhotoViewer`, etc. (Always in `:app`, never in
-   `:telegram`.)
+   `:TMessagesProj`.)
 2. Façade exposes a NativeDo-shaped API (URL strings, `PhotoSpec`,
    `AvatarSpec`).
 3. Inside the façade, call the **URL-shaped overloads** of vendored APIs
@@ -139,7 +150,7 @@ NativeDo business code must **NOT** call these directly. Instead:
 
 ```diagram
 ╭─────────────────────╮     ╭──────────────────────╮     ╭──────────────────╮
-│ feature/ ViewModel  │────▶│ ui/<purpose>/ Façade │────▶│ :telegram        │
+│ feature/ ViewModel  │────▶│ ui/<purpose>/ Façade │────▶│ :TMessagesProj   │
 │ Repository          │     │ (URL-shaped only,    │     │ org.telegram.*   │
 │ (Kotlin)            │     │  no MTProto types)   │     │ (Java, vendored) │
 ╰─────────────────────╯     ╰──────────────────────╯     ╰──────────────────╯
@@ -148,14 +159,14 @@ NativeDo business code must **NOT** call these directly. Instead:
 Rationale: when we bump the vendored pin and a method signature changes,
 the blast radius is the façade only.
 
-### When `:telegram` needs NativeDo data
+### When `:TMessagesProj` needs NativeDo data
 
-Define an **SPI interface inside `:telegram`** and implement it in `:app`.
-Inject the impl at app start, never import the impl from inside `:telegram`.
+Define an **SPI interface inside `:TMessagesProj`** and implement it in `:app`.
+Inject the impl at app start, never import the impl from inside `:TMessagesProj`.
 
 | Need | Pattern | Example |
 |---|---|---|
-| Image loader (Coil) | SPI interface in `:telegram`, Coil impl in `:app` | `ImageReceiver.Host` ← `CoilImageReceiverHost` |
+| Image loader (Coil) | SPI interface in `:TMessagesProj`, Coil impl in `:app` | `ImageReceiver.Host` ← `CoilImageReceiverHost` |
 | Theme/locale colors that NativeDo overrides | Same SPI pattern | `Theme.ResourcesProvider` |
 | Callback to business logic | Use vendored callback mechanism; NativeDo implements the interface | `PhotoViewerProvider`, `PageBlocksAdapter` |
 | Network stack | Keep vendored code's own HTTP path; don't cross-reference NativeDo's | `ImageLoader` uses its own OkHttp |
@@ -168,10 +179,10 @@ Some vendored files reference MTProto types we don't use (`TLObject`,
 
 | Situation | What to do |
 |---|---|
-| Empty type needed for compile (e.g. `TLObject`) | Stub: empty abstract class or interface, no methods, no fields. Place under the corresponding upstream package in `:telegram`. Scratch stubs are derived automatically (no upstream counterpart at the pin = shim); list a stub in the overlay's `native` array only when it shadows a real upstream path. |
+| Empty type needed for compile (e.g. `TLObject`) | Stub: empty abstract class or interface, no methods, no fields. Place under the corresponding upstream package in `:TMessagesProj`. Scratch stubs are derived automatically (no upstream counterpart at the pin = shim); list a stub in the overlay's `native` array only when it shadows a real upstream path. |
 | Vendored method that takes `TLObject` and we never call it (e.g. `setForUserOrChat`) | **Keep upstream body unchanged**. Don't stub the method. The dead branch is harmless and re-sync stays clean. |
-| Same as above, but a misroute would cause a silent-but-wrong UI (e.g. blank avatar) | Replace the method body with `throw new UnsupportedOperationException("nativedo: use AvatarImageBinder")`. Manifest `notes` must record this. |
-| A vendored helper returns a hardcoded default just to "make tests pass" | **Forbidden**. Either keep upstream behavior, or delete the method and switch the file to `port_mode = native` with `notes`. |
+| Same as above, but a misroute would cause a silent-but-wrong UI (e.g. blank avatar) | Replace the method body with `throw new UnsupportedOperationException("nativedo: use AvatarImageBinder")`, and say why in a one-line comment at the call site (AGENTS.md rule 7). |
+| A vendored helper returns a hardcoded default just to "make tests pass" | **Forbidden**. Either keep upstream behavior, or delete the method and add the file to the overlay's `native` array — our code must not hide at an upstream path. |
 
 **No-op stubs that return `null`/`0`/empty are the worst option** — they
 turn build-time errors into runtime silent failures. Avoid them.
@@ -200,7 +211,7 @@ turn build-time errors into runtime silent failures. Avoid them.
                  │
                  ▼
 ╭──────────────────────────────────╮
-│ :telegram                        │  Java only, vendored
+│ :TMessagesProj                   │  Java only, vendored
 │   org.telegram.{messenger,tgnet, │  GPL-2.0+ headers
 │                 ui.*}            │  mirrors upstream paths
 ╰────────────────┬─────────────────╯
@@ -211,28 +222,28 @@ turn build-time errors into runtime silent failures. Avoid them.
 ╰──────────────────────────────────╯
 ```
 
-**Hard rule: `:telegram` MUST NOT import any `io.github.baba983.nativedo.*`
-package.** The Java compiler enforces this because `:telegram` doesn't
+**Hard rule: `:TMessagesProj` MUST NOT import any `io.github.baba983.nativedo.*`
+package.** The Java compiler enforces this because `:TMessagesProj` doesn't
 declare a dep on `:app`. `scripts/vendor-isolation-check.sh` catches stray
 import lines that slip in through comments or copy-paste.
 
 ### Why this matters
 
 1. **Re-sync safety** — when you `cp` a new upstream version into
-   `:telegram`, any NativeDo import you added gets wiped out. If the
+   `:TMessagesProj`, any NativeDo import you added gets wiped out. If the
    rule is violated, the next sync silently breaks.
 2. **No circular deps** — Gradle enforces the DAG at the module boundary.
-3. **GPL boundary** — `:telegram` is GPL-2.0+ derivative. If it imported
+3. **GPL boundary** — `:TMessagesProj` is GPL-2.0+ derivative. If it imported
    NativeDo-original code, the boundary blurs and license audit gets harder.
 
 ## Migration checklist (when adding or moving a vendored file)
 
 When you `cp` a new file from the pristine Telegram checkout
 (`scripts/vendor-setup.sh --print-dir`, default `../telegram`) into
-`:telegram`:
+`:TMessagesProj`:
 
 1. `cp <checkout>/TMessagesProj/src/main/java/org/telegram/<path>
-       apps/android/telegram/src/main/java/org/telegram/<path>`
+       apps/android/TMessagesProj/src/main/java/org/telegram/<path>`
 2. No `sed` package rewrite needed — package stays `org.telegram.*`.
 3. Drop any upstream import the host can't satisfy (or replace with the
    AndroidX/host equivalent).
@@ -241,10 +252,10 @@ When you `cp` a new file from the pristine Telegram checkout
    `native` array only if it is our code rather than a copy.
 5. `scripts/vendor-guard.sh --compile`.
 6. `scripts/vendor-isolation-check.sh` — must exit 0.
-7. `./apps/android/gradlew -p apps/android :telegram:compileDebugJavaWithJavac --quiet`
-8. Commit source + compact manifest + generated lock in **one commit**.
+7. `./apps/android/gradlew -p apps/android :TMessagesProj:compileDebugJavaWithJavac --quiet`
+8. Commit the source (and any overlay edit) in **one commit**; provenance is derived.
 
-When you `git mv` a vendored file within `:telegram` (rare — only happens
+When you `git mv` a vendored file within `:TMessagesProj` (rare — only happens
 if upstream itself moved the file): repeat the above with the new path,
 plus `sed` over `import` statements in any file that referenced the old
 location.
@@ -252,17 +263,17 @@ location.
 ## Anti-patterns to avoid
 
 - Two copies of the same vendored file (e.g., one in `:app` and one in
-  `:telegram`). Pick `:telegram`, delete the other.
+  `:TMessagesProj`). Pick `:TMessagesProj`, delete the other.
 - Vendored code with package `io.github.baba983.nativedo.*`. It belongs in
-  `:telegram` with package `org.telegram.*`.
+  `:TMessagesProj` with package `org.telegram.*`.
 - NativeDo-original file with a GPL header. Remove the header; AGENTS.md
   is explicit that originality is not signaled by the header, vendoring is.
-- Kotlin file inside `:telegram`. Convert back to Java.
+- Kotlin file inside `:TMessagesProj`. Convert back to Java.
 - Façade that exposes vendored types in its public signature (e.g.,
   `NativeDoPhotoViewer.open(List<PhotoViewer.PhotoEntry>)`). Use NativeDo
   types in public signatures and translate inside the façade.
-- `:telegram` calling back into `:app` directly. Use an SPI interface
-  defined in `:telegram` and inject the impl from `:app` at app start.
+- `:TMessagesProj` calling back into `:app` directly. Use an SPI interface
+  defined in `:TMessagesProj` and inject the impl from `:app` at app start.
 
 ## When in doubt
 

@@ -7,7 +7,7 @@ has to read the workflow doc to fix it.
 Modes:
   --quick     overlay/index + isolation + forced-exact edits (< 1s; hook)
   default     quick + upstream drift report
-  --compile   default + `:telegram:compileDebugJavaWithJavac`
+  --compile   default + `:TMessagesProj:compileDebugJavaWithJavac`
 """
 from __future__ import annotations
 
@@ -20,7 +20,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from vendorlib import (  # noqa: E402
     ManifestError,
-    changed_since_head,
+    changed_with_head_source,
+    comment_only_edit,
     display_path,
     git_log_paths,
     git_rev_parse,
@@ -40,11 +41,25 @@ FORCED_EXACT_TESTS = [
 
 LEGACY_ARTIFACTS = ("vendor-manifest.json", "vendor-manifest.lock.json")
 
+# Terms that only exist in the retired manifest model. Docs may keep them only
+# when they declare themselves historical (see HISTORICAL_DOC_MARKER); VENDOR.md
+# documents the retirement itself and the notes archive quotes the old file
+# names, so those two are always allowed.
+RETIRED_TERMS = (
+    "vendor-manifest",
+    "vendor-allowlist",
+    "stuck_reason",
+    "compat_shim_groups",
+)
+RETIRED_TERM_ALLOWLIST = ("VENDOR.md", "docs/vendor-notes-archive.md")
+HISTORICAL_DOC_MARKER = "Historical plan (retired manifest model)"
+LIVE_DOCS = ("*.md", "docs/**/*.md")
+
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--quick", action="store_true", help="overlay + isolation only")
-    p.add_argument("--compile", action="store_true", help="also compile :telegram")
+    p.add_argument("--compile", action="store_true", help="also compile :TMessagesProj")
     return p.parse_args()
 
 
@@ -69,17 +84,57 @@ def check_legacy_artifacts(root: Path, guard: Guard) -> None:
             )
 
 
+def check_retired_terms(root: Path, guard: Guard) -> None:
+    """Live docs must not describe the retired manifest model.
+
+    Docs rot after a model change, and prose cannot be re-derived like the
+    index is — so the one thing the guard can do is refuse to let a live doc
+    reference artifacts that no longer exist. Historical plan docs opt out by
+    keeping their banner.
+    """
+    for pattern in LIVE_DOCS:
+        for path in sorted(root.glob(pattern)):
+            if not path.is_file():
+                continue
+            rel = path.relative_to(root).as_posix()
+            if rel in RETIRED_TERM_ALLOWLIST:
+                continue
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            if HISTORICAL_DOC_MARKER in text:
+                continue
+            hits = [term for term in RETIRED_TERMS if term in text]
+            if hits:
+                guard.error(
+                    f"{rel} mentions retired vendor artifact(s): {', '.join(hits)}. "
+                    "Provenance is derived from vendor-overlay.json now — rewrite the "
+                    'doc, or add the "Historical plan (retired manifest model)" banner '
+                    "if the file is kept for history."
+                )
+
+
 def check_forced_exact(index: dict, root: Path, guard: Guard) -> None:
-    changed = changed_since_head(root)
+    sources = changed_with_head_source(root)
     local_root = index.get("local_root", "apps/android/")
     entries = [
         e for e in (index.get("files") or []) if e.get("forced_exact")
     ]
-    hits = [
-        e
-        for e in entries
-        if f"{local_root}{e['local']}" in changed or e["local"] in changed
-    ]
+    hits = []
+    for e in entries:
+        changed_path = next(
+            (
+                p
+                for p in (f"{local_root}{e['local']}", e["local"])
+                if p in sources
+            ),
+            None,
+        )
+        if changed_path is None:
+            continue
+        # A comment-only edit cannot move a gesture/measurement/drawing number,
+        # so it does not deserve the "verify with these tests" prompt.
+        if comment_only_edit(root, changed_path, sources[changed_path]):
+            continue
+        hits.append(e)
     if not hits:
         return
     guard.error(
@@ -118,15 +173,15 @@ def check_drift(index: dict, root: Path, guard: Guard) -> None:
 def check_compile(root: Path, guard: Guard) -> None:
     gradlew = root / "apps" / "android" / "gradlew"
     if not gradlew.is_file():
-        guard.info("gradlew missing; skipped :telegram compile")
+        guard.info("gradlew missing; skipped :TMessagesProj compile")
         return
     proc = subprocess.run(
         [str(gradlew), "-p", str(root / "apps" / "android"),
-         ":telegram:compileDebugJavaWithJavac", "--quiet"],
+         ":TMessagesProj:compileDebugJavaWithJavac", "--quiet"],
         cwd=str(root),
     )
     if proc.returncode != 0:
-        guard.error(":telegram:compileDebugJavaWithJavac failed (see above)")
+        guard.error(":TMessagesProj:compileDebugJavaWithJavac failed (see above)")
 
 
 def main() -> int:
@@ -135,6 +190,7 @@ def main() -> int:
     guard = Guard()
 
     check_legacy_artifacts(root, guard)
+    check_retired_terms(root, guard)
 
     index: dict | None = None
     try:

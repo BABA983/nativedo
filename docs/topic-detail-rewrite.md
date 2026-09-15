@@ -8,7 +8,7 @@ The list shell should follow NativeDo's existing Telegram-style container
 patterns in `TopicListFragment` / `TopicCell`, while the per-floor body should
 borrow the measurement, drawing, and hit-testing ideas from Telegram's
 `ChatMessageCell` / `ArticleViewer` family. Where Telegram already has a good
-public component in `:telegram`, use it directly. Where the implementation is
+public component in `:TMessagesProj`, use it directly. Where the implementation is
 Telegram-coupled but the UX is right, copy/port the algorithm into a NativeDo
 body block or local sheet.
 
@@ -41,10 +41,10 @@ in-place as phases land.
     `vendor-overlay.json` entry (`native` list, `forced_exact`:
     [measurement, drawing, gesture]` as appropriate).
   - Telegram UI components that do not bind NativeDo models should live in
-    `:telegram` with upstream `org.telegram.*` packages. `:app` may consume
+    `:TMessagesProj` with upstream `org.telegram.*` packages. `:app` may consume
     them directly.
   - From-scratch NativeDo code needs neither a header nor a manifest entry.
-- Reuse `:telegram` infrastructure (`RecyclerListView`, `BaseCell`,
+- Reuse `:TMessagesProj` infrastructure (`RecyclerListView`, `BaseCell`,
   `SizeNotifierFrameLayout`, `ImageReceiver`, `LinkSpanDrawable`, `LinkPath`,
   `AnimatedFloat`, `Theme`, `AndroidUtilities`, `BottomSheet`,
   `BottomSheetWithRecyclerListView`, ...).
@@ -57,11 +57,11 @@ in-place as phases land.
   26dp button height, 20dp image slot, 4dp spacing, wrapping measurement, and
   reaction theme keys, plus a local subset of `recordDrawingState()` /
   `animateChange()` style update transitions.
-- **Do not** treat `apps/android/telegram` stubs as the source of truth for
+- **Do not** treat `apps/android/TMessagesProj` stubs as the source of truth for
   non-trivial UI behavior. When you want Telegram behavior, diff against the
   pristine checkout (`../telegram`, see
   `scripts/vendor-setup.sh --print-dir`) and then either copy the component into
-  `:telegram` or copy/port the algorithm into a NativeDo block.
+  `:TMessagesProj` or copy/port the algorithm into a NativeDo block.
 - Telegram-derived blocks are split into three buckets:
   1. exact/native ports of `ArticleViewer` block geometry and rendering,
   2. selective native ports inspired by chat/webpage/poll/spoiler code,
@@ -206,9 +206,9 @@ model into NativeDo.
 | Table | `ArticleViewer.BlockTableCell`, `TableLayout` | partial native-port; adapt algorithm to `CookedTableBlock` |
 | Spoiler | `TextStyleSpan`, `SpoilerEffect`, `SpoilersTextView`, `SpoilersClickDetector` | trimmed NativeDo renderer; no `SpoilerEffect2` media/GL port |
 | Poll | upstream `ChatMessageCell` poll button/result behavior + `Components/poll/buttons/PollButtonDrawable*` + `CheckBoxBase` | NativeDo Discourse model; native-port PollButton state, choice controls, result bars, voter-count/check drawable subsets, and 300ms result animation |
-| Reaction picker/users/replies sheets | `BottomSheet`, `BottomSheetWithRecyclerListView`, reaction-user row/tab concepts | use/copy generic sheet components into `:telegram`; NativeDo sheet contents in `:app` |
+| Reaction picker/users/replies sheets | `BottomSheet`, `BottomSheetWithRecyclerListView`, reaction-user row/tab concepts | use/copy generic sheet components into `:TMessagesProj`; NativeDo sheet contents in `:app` |
 
-Directly usable generic components belong in `:telegram` under `org.telegram.*`.
+Directly usable generic components belong in `:TMessagesProj` under `org.telegram.*`.
 NativeDo-bound renderers belong in `:app` under `io.github.baba983.nativedo.*`
 and get manifest entries when Telegram algorithms are copied or substantially
 adapted.
@@ -416,7 +416,7 @@ No selection in this phase.
 - [x] Extend `PostBodyDelegate` with `onLinkLongPress(url)`. Long-press on
       a link calls it; Phase 7 may wire a context menu.
 - [x] **Selection is handled in Phase 8.** `ArticleTextSelectionHelper` in
-      `:telegram` now has a trimmed NativeDo topic-detail port; Phase 3 stays
+      `:TMessagesProj` now has a trimmed NativeDo topic-detail port; Phase 3 stays
       link-only except for the long-press hand-off.
 
 **Validate:** harness — tapping links shows ripple, fires delegate; no
@@ -1107,7 +1107,7 @@ screenshots capture a black screen.
 Standalone, no longer blocks the rewrite.
 
 - [x] Replace the no-op `TextSelectionHelper.ArticleTextSelectionHelper` stub
-      with a trimmed NativeDo topic-detail port in `:telegram`. Manifest entry:
+      with a trimmed NativeDo topic-detail port in `:TMessagesProj`. Manifest entry:
       `port_mode: native`, `forced_exact: [gesture, drawing]`. This is not a
       full exact upstream port.
 - [x] Wire `TopicPostCell` through `fillTextLayoutBlocks(...)`, including nested
@@ -1369,7 +1369,7 @@ The rewrite is functionally complete, but several rows are deliberately
   sheet content rows) gets neither header nor manifest
   entry unless actual Telegram source or branch structure was copied.
 - Generic Telegram UI components such as `BottomSheet` and
-  `BottomSheetWithRecyclerListView` should be copied into `:telegram` with
+  `BottomSheetWithRecyclerListView` should be copied into `:TMessagesProj` with
   upstream packages whenever the dependency surface is manageable. NativeDo-
   bound sheet contents stay in `:app` and talk in NativeDo-shaped models.
 - Cell sub-area constants (`dp(...)`, animation durations, snap thresholds)

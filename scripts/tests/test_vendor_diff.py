@@ -18,7 +18,7 @@ class VendorDiffResolveEntryTest(unittest.TestCase):
             "upstream": {"pinned_commit": "a" * 40},
             "files": [
                 {
-                    "local": "telegram/src/main/java/org/telegram/ui/ArticleViewer.java",
+                    "local": "TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java",
                     "upstream": "org/telegram/ui/ArticleViewer.java",
                 },
                 {
@@ -30,12 +30,12 @@ class VendorDiffResolveEntryTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             resolved = resolve_entry(
                 manifest,
-                "apps/android/telegram/src/main/java/org/telegram/ui/ArticleViewer.java",
+                "apps/android/TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java",
                 Path(directory),
             )
 
         self.assertEqual(
-            "telegram/src/main/java/org/telegram/ui/ArticleViewer.java",
+            "TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java",
             resolved["local"],
         )
 

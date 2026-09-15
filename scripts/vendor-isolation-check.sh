@@ -1,17 +1,17 @@
 #!/bin/bash
 # scripts/vendor-isolation-check.sh
 #
-# Enforces the rule: vendored Telegram code in :telegram MUST NOT import any
+# Enforces the rule: vendored Telegram code in :TMessagesProj MUST NOT import any
 # NativeDo package (io.github.baba983.nativedo.*). See docs/code-layout.md
 # "Dependency direction".
 #
-# Note: the :telegram Gradle module does not declare a dependency on :app, so
+# Note: the :TMessagesProj Gradle module does not declare a dependency on :app, so
 # the Java compiler already prevents these imports from resolving. This script
 # is a belt-and-suspenders check that also catches stray refs in comments,
 # unused imports, and so on.
 set -euo pipefail
 
-TELEGRAM_DIR="apps/android/telegram/src/main/java"
+TELEGRAM_DIR="apps/android/TMessagesProj/src/main/java"
 
 if [ ! -d "$TELEGRAM_DIR" ]; then
   echo "OK: $TELEGRAM_DIR not found (nothing to check)"
@@ -28,8 +28,8 @@ fi
 
 echo "FAIL: vendor-isolation violations found"
 echo ""
-echo ":telegram files MUST NOT import io.github.baba983.nativedo.*"
-echo "Define an SPI interface in :telegram and inject the impl from :app instead."
+echo ":TMessagesProj files MUST NOT import io.github.baba983.nativedo.*"
+echo "Define an SPI interface in :TMessagesProj and inject the impl from :app instead."
 echo "See docs/code-layout.md 'Dependency direction'."
 echo ""
 echo "$VIOLATIONS"

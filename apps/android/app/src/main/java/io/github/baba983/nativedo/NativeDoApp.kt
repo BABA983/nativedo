@@ -38,7 +38,7 @@ class NativeDoApp : Application(), SingletonImageLoader.Factory {
 
         // Take over Telegram ImageLoader's HTTP transfer with the app's OkHttp
         // client. Product-specific concerns (auth cookies, Cloudflare clearance,
-        // UA pinning, Referer) live in the OkHttp interceptor chain — :telegram
+        // UA pinning, Referer) live in the OkHttp interceptor chain — :TMessagesProj
         // doesn't need to know about them.
         TelegramImageLoader.setHttpImageDownloader(
             NativeDoImageDownloader(appContainer)

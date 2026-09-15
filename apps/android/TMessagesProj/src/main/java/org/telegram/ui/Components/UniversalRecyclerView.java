@@ -46,7 +46,7 @@ public class UniversalRecyclerView extends RecyclerListView {
         return isFlingerWorking();
     }
 
-    // Expose the fork-only API across the :telegram/:app module boundary.
+    // Expose the fork-only API across the :TMessagesProj/:app module boundary.
     @Override
     public void setTopGlowOffset(int offset) {
         super.setTopGlowOffset(offset);

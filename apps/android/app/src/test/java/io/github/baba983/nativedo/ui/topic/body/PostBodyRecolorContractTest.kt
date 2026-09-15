@@ -93,9 +93,9 @@ class PostBodyRecolorContractTest {
 
     private fun seedAtthemeIntoFilesDir(assetName: String) {
         val candidates = listOf(
-            File("telegram/src/main/assets/$assetName"),
-            File("apps/android/telegram/src/main/assets/$assetName"),
-            File("../telegram/src/main/assets/$assetName"),
+            File("../TMessagesProj/src/main/assets/$assetName"),
+            File("apps/android/TMessagesProj/src/main/assets/$assetName"),
+            File("TMessagesProj/src/main/assets/$assetName"),
         )
         val source = candidates.firstOrNull { it.isFile }
             ?: throw AssertionError("Missing $assetName for Theme unit tests")

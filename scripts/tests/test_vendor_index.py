@@ -20,7 +20,7 @@ from vendorlib import (  # noqa: E402
 )
 
 UPSTREAM = "TMessagesProj/src/main/java/org/telegram/ui/Foo.java"
-LOCAL = "telegram/src/main/java/org/telegram/ui/Foo.java"
+LOCAL = "TMessagesProj/src/main/java/org/telegram/ui/Foo.java"
 
 OVERLAY = {
     "schema_version": 1,
@@ -30,18 +30,18 @@ OVERLAY = {
         "local_checkout": "../telegram",
     },
     "policy": {"sync": "on-demand"},
-    "native": ["telegram/src/main/java/org/telegram/ui/Mine.java"],
+    "native": ["TMessagesProj/src/main/java/org/telegram/ui/Mine.java"],
     "upstream_ports": {"app/src/main/java/example/Port.kt": "org/telegram/ui/Foo.java"},
     "derived_from": {
-        "telegram/src/main/java/org/telegram/ui/Renamed.java": "org/telegram/ui/Foo.java"
+        "TMessagesProj/src/main/java/org/telegram/ui/Renamed.java": "org/telegram/ui/Foo.java"
     },
     "reference": {
         "commit": "b" * 40,
         "why": "historical baseline",
-        "paths": ["telegram/src/main/java/org/telegram/ui/Mine.java"],
+        "paths": ["TMessagesProj/src/main/java/org/telegram/ui/Mine.java"],
     },
     "forced_exact": {
-        "telegram/src/main/java/org/telegram/ui/Mine.java": ["measurement", "drawing"]
+        "TMessagesProj/src/main/java/org/telegram/ui/Mine.java": ["measurement", "drawing"]
     },
     "resources": [{"kind": "drawable", "files": ["a.9.png"], "upstream_dir": "res"}],
 }
@@ -93,7 +93,7 @@ class IndexDerivationTest(unittest.TestCase):
         overlay["derived_from"] = {}
         overlay["reference"]["paths"] = []
         self.write_overlay(overlay)
-        mine = self.root / "apps/android/telegram/src/main/java/org/telegram/ui/Mine.java"
+        mine = self.root / "apps/android/TMessagesProj/src/main/java/org/telegram/ui/Mine.java"
         with self.assertRaises(ManifestError) as ctx:
             load_index(self.root, with_modified=False)
         self.assertIn("Mine.java", str(ctx.exception))
@@ -162,9 +162,9 @@ class IndexDerivationTest(unittest.TestCase):
         self.write_overlay(overlay)
 
         self.write_local(LOCAL, "pin\n")  # byte-clean vs the pin
-        self.write_local("telegram/src/main/java/org/telegram/ui/Mine.java", "mine\n")
-        self.write_local("telegram/src/main/java/org/telegram/ui/Renamed.java", "renamed\n")
-        self.write_local("telegram/src/main/java/org/telegram/ui/Stub.java", "stub\n")
+        self.write_local("TMessagesProj/src/main/java/org/telegram/ui/Mine.java", "mine\n")
+        self.write_local("TMessagesProj/src/main/java/org/telegram/ui/Renamed.java", "renamed\n")
+        self.write_local("TMessagesProj/src/main/java/org/telegram/ui/Stub.java", "stub\n")
         self.write_local("app/src/main/java/example/Port.kt", "port\n")
 
         index = load_index(self.root)
@@ -174,20 +174,20 @@ class IndexDerivationTest(unittest.TestCase):
         self.assertFalse(by_local[LOCAL]["modified"])
         self.assertEqual("exact", by_local[LOCAL]["port_mode"])
         # overlay-native file that has an upstream counterpart
-        self.assertEqual("native", by_local["telegram/src/main/java/org/telegram/ui/Mine.java"]["port_mode"])
+        self.assertEqual("native", by_local["TMessagesProj/src/main/java/org/telegram/ui/Mine.java"]["port_mode"])
         self.assertEqual(
             ["drawing", "measurement"],
-            by_local["telegram/src/main/java/org/telegram/ui/Mine.java"]["forced_exact"],
+            by_local["TMessagesProj/src/main/java/org/telegram/ui/Mine.java"]["forced_exact"],
         )
         # derived_from rewrites the upstream mapping
         self.assertEqual(
             "org/telegram/ui/Foo.java",
-            by_local["telegram/src/main/java/org/telegram/ui/Renamed.java"]["upstream"],
+            by_local["TMessagesProj/src/main/java/org/telegram/ui/Renamed.java"]["upstream"],
         )
         # :app port keeps native + explicit upstream
         self.assertEqual("native", by_local["app/src/main/java/example/Port.kt"]["port_mode"])
         # file with no upstream counterpart becomes a shim, forced_exact survives
-        stub = shims["telegram/src/main/java/org/telegram/ui/Stub.java"]
+        stub = shims["TMessagesProj/src/main/java/org/telegram/ui/Stub.java"]
         self.assertEqual("shim", stub["origin"])
         self.assertEqual("native", stub["port_mode"])
 

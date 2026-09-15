@@ -30,7 +30,7 @@ class ThemeDayNightContractTest {
         AndroidUtilities.init(app)
         // Clear theme prefs so each test starts from a known state.
         app.getSharedPreferences("themeconfig", 0).edit().clear().commit()
-        // Robolectric does not package :telegram assets; seed files dir for .attheme loads.
+        // Robolectric does not package :TMessagesProj assets; seed files dir for .attheme loads.
         seedAtthemeIntoFilesDir("bluebubbles.attheme")
         seedAtthemeIntoFilesDir("darkblue.attheme")
         Theme.getActiveTheme()
@@ -39,9 +39,9 @@ class ThemeDayNightContractTest {
 
     private fun seedAtthemeIntoFilesDir(assetName: String) {
         val candidates = listOf(
-            File("telegram/src/main/assets/$assetName"),
-            File("apps/android/telegram/src/main/assets/$assetName"),
-            File("../telegram/src/main/assets/$assetName"),
+            File("../TMessagesProj/src/main/assets/$assetName"),
+            File("apps/android/TMessagesProj/src/main/assets/$assetName"),
+            File("TMessagesProj/src/main/assets/$assetName"),
         )
         val source = candidates.firstOrNull { it.isFile }
             ?: throw AssertionError("Missing $assetName for Theme unit tests")

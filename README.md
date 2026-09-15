@@ -8,7 +8,7 @@ NativeDo for Linux.do. This repository keeps the Android app as the active imple
 - `apps/ios` - Future iOS native scaffold.
 - `contracts/discourse` - Shared API and auth contracts.
 - `fixtures` - Sample payloads used by tests.
-- `apps/android/telegram` - Vendored Telegram-derived sources compiled as the `:telegram` module (committed; enough to build).
+- `apps/android/TMessagesProj` - Vendored Telegram-derived sources compiled as the `:TMessagesProj` module (committed; enough to build).
 - `vendor-overlay.json` - The only hand-maintained vendor file: upstream pin, sync policy, and the exceptions to derived provenance.
 - `../telegram` - Local pristine Telegram checkout for diff / re-sync tooling only (outside the repo, gitignored; not required to build).
 
@@ -18,7 +18,7 @@ NativeDo for Linux.do. This repository keeps the Android app as the active imple
 2. Use JDK 17.
 3. Ensure `apps/android/local.properties` points to your Android SDK. Android Studio usually creates this file automatically.
 
-You do **not** need to clone Telegram or run vendor scripts to assemble or run the app. The sources under `apps/android/telegram` are already in the repo.
+You do **not** need to clone Telegram or run vendor scripts to assemble or run the app. The sources under `apps/android/TMessagesProj` are already in the repo.
 
 ## Run
 
@@ -33,11 +33,11 @@ You do **not** need to clone Telegram or run vendor scripts to assemble or run t
 - Run unit and local screenshot verification together with `./apps/android/gradlew -p apps/android runUnitAndScreenshotTests --quiet`.
 - Build a debug APK with `./apps/android/gradlew -p apps/android :app:assembleDebug --quiet`.
 
-Paparazzi baselines live in `apps/android/app/src/test/snapshots/images` and are currently Git-ignored local artifacts, so record them before verification. Use device tests for behavior that depends on IME/insets, separate windows, WebView, network images, or gestures.
+Paparazzi goldens live in `apps/android/app/src/test/snapshots/images` and are committed: `:app:verifyPaparazziDebug` compares against them, and `:app:recordPaparazziDebug` re-records them for intentional UI changes. Use device tests for behavior that depends on IME/insets, separate windows, WebView, network images, or gestures.
 
 ## Vendored Telegram (optional)
 
-Only needed when you change, audit, or re-sync Telegram-derived code (`:telegram` or native ports in `:app`).
+Only needed when you change, audit, or re-sync Telegram-derived code (`:TMessagesProj` or native ports in `:app`).
 
 ```bash
 # Clone DrKLO/Telegram next to this repo (default ../telegram) and check out the pinned commit
@@ -51,4 +51,4 @@ scripts/vendor-status.sh
 
 Requires network access to GitHub on first setup. After that `scripts/vendor-diff.sh`, `scripts/vendor-ff.sh`, and the other tools derive everything from the overlay + the pristine tree; there is no lock file to regenerate.
 
-Full workflow (manifest, pin bumps, adding files, host-wiring rules): [`VENDOR.md`](VENDOR.md) and [`AGENTS.md`](AGENTS.md).
+Full workflow (overlay edits, pin bumps, adding files, host-wiring rules): [`VENDOR.md`](VENDOR.md) and [`AGENTS.md`](AGENTS.md).

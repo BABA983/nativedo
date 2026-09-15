@@ -150,7 +150,7 @@ def main() -> int:
 
     refs = re.findall(r"TL_iv\.([A-Za-z0-9_]+)", pin_t)
     ref_counts = Counter(refs)
-    tlrpc_path = root / "apps/android/telegram/src/main/java/org/telegram/tgnet/TLRPC.java"
+    tlrpc_path = root / "apps/android/TMessagesProj/src/main/java/org/telegram/tgnet/TLRPC.java"
     tlrpc = tlrpc_path.read_text(encoding="utf-8", errors="replace")
 
     mapped_ok = []
@@ -166,7 +166,7 @@ def main() -> int:
     # Local host markers to re-apply later (informational)
     local = (
         root
-        / "apps/android/telegram/src/main/java/org/telegram/ui/ArticleViewer.java"
+        / "apps/android/TMessagesProj/src/main/java/org/telegram/ui/ArticleViewer.java"
     ).read_text(encoding="utf-8", errors="replace")
     host_hits = []
     for i, line in enumerate(local.splitlines(), 1):

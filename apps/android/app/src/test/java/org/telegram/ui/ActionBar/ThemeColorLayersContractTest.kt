@@ -25,7 +25,7 @@ class ThemeColorLayersContractTest {
         ApplicationLoader.init(app)
         AndroidUtilities.init(app)
         app.getSharedPreferences("themeconfig", 0).edit().clear().commit()
-        // Robolectric app context does not see :telegram assets; seed files dir so
+        // Robolectric app context does not see :TMessagesProj assets; seed files dir so
         // Theme.getAssetFile / getThemeFileValues resolve Blue and Dark Blue packs.
         seedAtthemeIntoFilesDir("bluebubbles.attheme")
         seedAtthemeIntoFilesDir("darkblue.attheme")
@@ -43,9 +43,9 @@ class ThemeColorLayersContractTest {
 
     private fun resolveAtthemeSource(assetName: String): File? {
         val candidates = listOf(
-            File("telegram/src/main/assets/$assetName"),
-            File("apps/android/telegram/src/main/assets/$assetName"),
-            File("../telegram/src/main/assets/$assetName"),
+            File("../TMessagesProj/src/main/assets/$assetName"),
+            File("apps/android/TMessagesProj/src/main/assets/$assetName"),
+            File("TMessagesProj/src/main/assets/$assetName"),
             File("src/main/assets/$assetName"),
         )
         return candidates.firstOrNull { it.isFile }

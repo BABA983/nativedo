@@ -7,7 +7,7 @@ screen-specific color compatibility. The pinned source is Telegram Android
 ## Architecture Boundary
 
 Generic Theme state, parsing, drawing, scheduling, and animation remain Java in
-`:telegram` under their upstream `org.telegram.*` packages. Product storage,
+`:TMessagesProj` under their upstream `org.telegram.*` packages. Product storage,
 navigation, and remote capability decisions live in `:app` and are injected
 through interfaces owned by `Theme`.
 

@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -29,7 +30,10 @@ OVERLAY_SCHEMA_VERSION = 1
 
 DEFAULT_UPSTREAM_ROOT = "TMessagesProj/src/main/java"
 DEFAULT_LOCAL_ROOT = "apps/android/"
-TELEGRAM_JAVA_PREFIX = "telegram/src/main/java/"
+# The module directory mirrors the upstream project name, so a vendored file's
+# local path equals its upstream path (modulo the `local_root` prefix). That is
+# why this equals DEFAULT_UPSTREAM_ROOT: provenance for a copy is its path.
+TELEGRAM_JAVA_PREFIX = "TMessagesProj/src/main/java/"
 APP_JAVA_PREFIX = "app/src/main/java/"
 SOURCE_SUFFIXES = (".java", ".kt")
 
@@ -121,22 +125,31 @@ def _manifest_local_checkout(root: Optional[PathLike] = None) -> Optional[Path]:
 
 
 def _case_insensitive_sibling(path: Path) -> Optional[Path]:
-    """`path` when it exists, else a sibling whose name matches ignoring case.
+    """The on-disk entry for `path`, matched ignoring case.
 
     `git clone https://github.com/DrKLO/Telegram.git` creates `Telegram/`, so a
     case-sensitive filesystem would otherwise miss an existing checkout named
     after the upstream repo.
+
+    The parent directory is always scanned instead of trusting
+    `path.exists()`: on a case-insensitive filesystem (macOS default) that
+    check succeeds for `telegram` while only `Telegram` is on disk, and the
+    resolved path would then carry a casing no directory has — which makes
+    behaviour differ between platforms. Scanning returns the real entry, so
+    both filesystems resolve to the same absolute path.
     """
-    if path.exists():
-        return path
     parent = path.parent
     if not parent.is_dir():
         return None
-    wanted = path.name.casefold()
+    wanted = path.name
+    folded = wanted.casefold()
+    fallback: Optional[Path] = None
     for candidate in sorted(parent.iterdir()):
-        if candidate.name.casefold() == wanted:
+        if candidate.name == wanted:
             return candidate
-    return None
+        if fallback is None and candidate.name.casefold() == folded:
+            fallback = candidate
+    return fallback
 
 
 def vendor_dir(root: Optional[PathLike] = None) -> Path:
@@ -437,7 +450,7 @@ def sha256_bytes(data: bytes) -> str:
 
 
 def scan_managed_sources(root: Optional[PathLike] = None) -> list[str]:
-    """`local_root`-relative sources under `:telegram` (java + kotlin)."""
+    """`local_root`-relative sources under `:TMessagesProj` (java + kotlin)."""
     r = _as_path(root)
     base = r / DEFAULT_LOCAL_ROOT / TELEGRAM_JAVA_PREFIX
     if not base.is_dir():
@@ -491,7 +504,7 @@ def derive_index(
     Entry shape (kept compatible with the vendor tools):
 
     - `files`        — sources with an upstream counterpart at the pin
-    - `compat_shims` — `:telegram` sources with no upstream blob at the pin
+    - `compat_shims` — `:TMessagesProj` sources with no upstream blob at the pin
     - `resources`    — declared resource copies
     """
     r = _as_path(root)
@@ -739,18 +752,109 @@ def run_isolation_check(root: Optional[PathLike] = None) -> tuple[int, str]:
 
 
 def changed_since_head(root: Optional[PathLike] = None) -> set[str]:
-    """Repo-relative paths changed in the working tree (staged + unstaged)."""
+    """Repo-relative paths with content changes (staged + unstaged).
+
+    Pure renames (`R100`: same bytes at a new path) are skipped — moving a file
+    is not a behavior change, and every consumer of this set guards behavior.
+    A rename that also edits the file reports the new path.
+    """
+    return set(changed_with_head_source(root))
+
+
+def changed_with_head_source(
+    root: Optional[PathLike] = None,
+) -> dict[str, Optional[str]]:
+    """Changed path -> the HEAD path it came from (`None` when HEAD lacks it).
+
+    The mapping lets callers diff a moved file against its own history instead
+    of treating it as brand new.
+    """
     r = _as_path(root)
-    changed: set[str] = set()
-    for args in (["diff", "--name-only"], ["diff", "--cached", "--name-only"]):
-        try:
-            out = subprocess.check_output(
-                ["git", "-C", str(r), *args], stderr=subprocess.DEVNULL, text=True
-            )
-        except (subprocess.CalledProcessError, FileNotFoundError):
+    sources: dict[str, Optional[str]] = {}
+    # One diff against HEAD covers staged *and* unstaged edits, and rename
+    # detection then reports `R<score> old new` for a file that moved and was
+    # edited in the same working state — which is what the provenance of a
+    # comment-only edit needs.
+    try:
+        out = subprocess.check_output(
+            ["git", "-C", str(r), "diff", "HEAD", "-M", "--name-status"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return sources
+    for line in out.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 2:
             continue
-        changed.update(line.strip() for line in out.splitlines() if line.strip())
-    return changed
+        status = parts[0]
+        if status in ("R100", "C100"):
+            continue
+        if status.startswith(("R", "C")) and len(parts) >= 3:
+            sources[parts[2].strip()] = parts[1].strip()
+        elif status == "A":
+            sources[parts[1].strip()] = None
+        else:
+            sources[parts[1].strip()] = parts[1].strip()
+    return sources
+
+
+def strip_comments(text: str) -> str:
+    """Source text with comments and whitespace removed.
+
+    Used to tell a comment-only edit from a behavior change; string literals are
+    kept intact so a URL containing `//` is not mistaken for a comment.
+    """
+    out: list[str] = []
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if c in ('"', "'"):
+            quote = c
+            j = i + 1
+            while j < n:
+                if text[j] == "\\":
+                    j += 2
+                    continue
+                if text[j] == quote:
+                    break
+                j += 1
+            out.append(text[i : min(j + 1, n)])
+            i = min(j + 1, n)
+            continue
+        if c == "/" and i + 1 < n and text[i + 1] == "/":
+            j = text.find("\n", i)
+            i = n if j < 0 else j
+            continue
+        if c == "/" and i + 1 < n and text[i + 1] == "*":
+            j = text.find("*/", i + 2)
+            i = n if j < 0 else j + 2
+            continue
+        out.append(c)
+        i += 1
+    return re.sub(r"\s+", "", "".join(out))
+
+
+def comment_only_edit(
+    root: Optional[PathLike], path: str, head_path: Optional[str]
+) -> bool:
+    """True when `path` differs from its HEAD blob only in comments/whitespace."""
+    if not head_path:
+        return False
+    r = _as_path(root)
+    proc = subprocess.run(
+        ["git", "-C", str(r), "show", f"HEAD:{head_path}"],
+        capture_output=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        return False
+    try:
+        new = (r / path).read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
+    old = proc.stdout.decode("utf-8", "ignore")
+    return strip_comments(old) == strip_comments(new)
 
 
 def eprint(*args: object) -> None:

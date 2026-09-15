@@ -10,8 +10,8 @@
 #   scripts/vendor-diff.sh --stat              # summary for all modified:false mismatches
 #
 # <local-path> may be:
-#   apps/android/telegram/src/main/java/org/telegram/...
-#   telegram/src/main/java/org/telegram/...          (relative to local_root)
+#   apps/android/TMessagesProj/src/main/java/org/telegram/...
+#   TMessagesProj/src/main/java/org/telegram/...          (relative to local_root)
 #   org/telegram/ui/Components/RecyclerListView.java  (upstream-style)
 set -euo pipefail
 

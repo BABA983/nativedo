@@ -95,9 +95,9 @@ def resolve_entry(manifest: dict, path_arg: str, root: Path) -> dict:  # noqa: D
     if len(candidates) == 1:
         return candidates[0]
     if not candidates:
-        # synthesize for unmanifested :telegram path
-        if arg.startswith("telegram/src/main/java/"):
-            rel = arg[len("telegram/src/main/java/") :]
+        # synthesize for unmanifested :TMessagesProj path
+        if arg.startswith("TMessagesProj/src/main/java/"):
+            rel = arg[len("TMessagesProj/src/main/java/") :]
             return {
                 "local": arg,
                 "upstream": rel,

@@ -3,7 +3,7 @@ package org.telegram.ui.ActionBar;
 import android.view.View;
 
 /**
- * Abstract bridge for BrowserSheet so :telegram does not depend on :app.
+ * Abstract bridge for BrowserSheet so :TMessagesProj does not depend on :app.
  * The real implementation lives in {@code io.github.baba983.nativedo.ui.browser.BrowserSheet}
  * and is injected at runtime by the host app.
  *

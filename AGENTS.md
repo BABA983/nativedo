@@ -2,10 +2,10 @@
 
 ## Telegram-Derived Code
 
-Telegram source lives in the standalone `:telegram` Gradle module at
-`apps/android/telegram/src/main/java/org/telegram/...` (upstream package kept,
+Telegram source lives in the standalone `:TMessagesProj` Gradle module at
+`apps/android/TMessagesProj/src/main/java/org/telegram/...` (upstream package kept,
 so files diff cleanly and imports stay byte-identical). `:app` depends on
-`:telegram`; a smaller class of **native ports** in `:app` mirrors an upstream
+`:TMessagesProj`; a smaller class of **native ports** in `:app` mirrors an upstream
 component's shape but binds to NativeDo models (e.g.
 `io.github.baba983.nativedo.ui.topic.TopicCell` ←
 `org/telegram/ui/Cells/DialogCell.java`).
@@ -23,8 +23,8 @@ a product goal needs upstream code, never on every upstream release.
   flag, and no per-file notes to maintain. `scripts/vendor-index.sh` prints the
   derived provenance for any path.
 - **`scripts/vendor-guard.sh`** — run it before committing any change under
-  `apps/android/telegram/**` or to the overlay. It reports problems with the
-  command that fixes them; `--compile` also builds `:telegram`.
+  `apps/android/TMessagesProj/**` or to the overlay. It reports problems with the
+  command that fixes them; `--compile` also builds `:TMessagesProj`.
 - **`VENDOR.md`** — the workflow (setup, diff, bump, check the pristine tree).
 - **`docs/code-layout.md`** — directory layout, language choice, façade policy.
   Read before moving files or adding a façade.
@@ -36,10 +36,10 @@ a product goal needs upstream code, never on every upstream release.
    to see how far the file has drifted from the pinned copy). Don't rewrite
    semantics from memory; if you need different behavior, make it lazy.
 2. **Our own code must not hide at an upstream path.** If a file under
-   `:telegram` is NativeDo code (a stub, shim, or re-designed port), list it in
+   `:TMessagesProj` is NativeDo code (a stub, shim, or re-designed port), list it in
    the overlay's `native` array. That is the difference between "copy we
    re-sync" and "our file that happens to sit in `org.telegram.*`". A
-   `:telegram` file with no upstream counterpart at the pin is classified as a
+   `:TMessagesProj` file with no upstream counterpart at the pin is classified as a
    shim automatically.
 3. **Respect `forced_exact`.** Overlay entries list `gesture`, `animation`,
    `measurement`, `drawing`, `recycling` for components whose hand-feel must
@@ -78,7 +78,7 @@ a product goal needs upstream code, never on every upstream release.
   goldens in the same commit. Snapshot names follow `<package>_<Class>_<method>[Theme].png`.
 - **Assemble (runtime/resource changes):** `./apps/android/gradlew -p apps/android :app:assembleDebug --quiet`
 - **Telegram-derived changes:** `./scripts/vendor-guard.sh --compile` (index + isolation +
-  forced-exact + `:telegram` compile). The same check runs in `.githooks/pre-commit`
+  forced-exact + `:TMessagesProj` compile). The same check runs in `.githooks/pre-commit`
   (`--quick`) and in CI.
 - For docs-only changes, verification can be limited to checking the edited Markdown for accuracy and consistency.
 

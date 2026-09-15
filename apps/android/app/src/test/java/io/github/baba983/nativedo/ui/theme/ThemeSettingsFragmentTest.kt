@@ -199,9 +199,9 @@ class ThemeSettingsFragmentTest {
 
     private fun seedAttheme(assetName: String) {
         val source = listOf(
-            File("telegram/src/main/assets/$assetName"),
-            File("apps/android/telegram/src/main/assets/$assetName"),
-            File("../telegram/src/main/assets/$assetName"),
+            File("../TMessagesProj/src/main/assets/$assetName"),
+            File("apps/android/TMessagesProj/src/main/assets/$assetName"),
+            File("TMessagesProj/src/main/assets/$assetName"),
         ).firstOrNull { it.isFile }
             ?: throw AssertionError("Missing $assetName for Theme unit tests")
         source.copyTo(File(ApplicationLoader.getFilesDirFixed(), assetName), overwrite = true)

@@ -156,9 +156,9 @@ private class PaparazziApplicationContext(
 
     fun seedThemeAsset(assetName: String) {
         val source = listOf(
-            File("telegram/src/main/assets/$assetName"),
-            File("apps/android/telegram/src/main/assets/$assetName"),
-            File("../telegram/src/main/assets/$assetName"),
+            File("../TMessagesProj/src/main/assets/$assetName"),
+            File("apps/android/TMessagesProj/src/main/assets/$assetName"),
+            File("TMessagesProj/src/main/assets/$assetName"),
         ).firstOrNull { it.isFile }
             ?: throw AssertionError("Missing $assetName for Paparazzi Theme tests")
         source.copyTo(File(filesDir, assetName), overwrite = true)
