@@ -21,7 +21,7 @@ class PollInstantButtonDrawableContractTest {
     @Before
     fun setUp() {
         ApplicationLoader.init(RuntimeEnvironment.getApplication())
-        drawable = PollInstantButtonDrawable(View(RuntimeEnvironment.getApplication()))
+        drawable = PollInstantButtonDrawable(View(RuntimeEnvironment.getApplication()), null)
         drawable.setBounds(0, 0, 240, 48)
         drawable.setButtonText("查看投票", false)
         drawable.setButtonTextColor(0xffffffff.toInt())

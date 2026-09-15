@@ -230,7 +230,7 @@ public class MediaController {
         public float sharpenValue;
         public CurvesToolValue curvesToolValue = new CurvesToolValue();
         public float blurExcludeSize;
-        public org.telegram.ui.Components.Point blurExcludePoint;
+        public android.graphics.PointF blurExcludePoint;
         public float blurExcludeBlurSize;
         public float blurAngle;
         public float softenSkinValue;

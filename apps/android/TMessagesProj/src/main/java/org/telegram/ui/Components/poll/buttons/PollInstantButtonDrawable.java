@@ -24,10 +24,6 @@ public class PollInstantButtonDrawable extends PollButtonDrawableBase {
     private final RadialProgress radialProgress;
     private final BoolAnimator animatorProgressVisible;
 
-    public PollInstantButtonDrawable(View parent) {
-        this(parent, null);
-    }
-
     public PollInstantButtonDrawable(View parent, Theme.ResourcesProvider resourcesProvider) {
         super(resourcesProvider);
 

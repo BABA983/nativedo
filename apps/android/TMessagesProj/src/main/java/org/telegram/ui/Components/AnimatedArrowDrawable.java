@@ -1,5 +1,7 @@
 package org.telegram.ui.Components;
 
+import static org.telegram.messenger.AndroidUtilities.dp;
+
 import android.graphics.Canvas;
 import android.graphics.ColorFilter;
 import android.graphics.Paint;
@@ -20,14 +22,10 @@ public class AnimatedArrowDrawable extends Drawable {
     private long lastUpdateTime;
     private boolean isSmall;
 
-    public AnimatedArrowDrawable() {
-        this(0xff222222, false);
-    }
-
     public AnimatedArrowDrawable(int color, boolean small) {
         paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         paint.setStyle(Paint.Style.STROKE);
-        paint.setStrokeWidth(AndroidUtilities.dp(2));
+        paint.setStrokeWidth(dp(2));
         paint.setColor(color);
         paint.setStrokeCap(Paint.Cap.ROUND);
         paint.setStrokeJoin(Paint.Join.ROUND);
@@ -46,13 +44,13 @@ public class AnimatedArrowDrawable extends Drawable {
         path.reset();
         float p = animProgress * 2 - 1;
         if (isSmall) {
-            path.moveTo(AndroidUtilities.dp(3), AndroidUtilities.dp(6) - AndroidUtilities.dp(2) * p);
-            path.lineTo(AndroidUtilities.dp(8), AndroidUtilities.dp(6) + AndroidUtilities.dp(2) * p);
-            path.lineTo(AndroidUtilities.dp(13), AndroidUtilities.dp(6) - AndroidUtilities.dp(2) * p);
+            path.moveTo(dp(3), dp(6) - dp(2) * p);
+            path.lineTo(dp(8), dp(6) + dp(2) * p);
+            path.lineTo(dp(13), dp(6) - dp(2) * p);
         } else {
-            path.moveTo(AndroidUtilities.dp(4.5f), AndroidUtilities.dp(12) - AndroidUtilities.dp(4) * p + AndroidUtilities.dp(2) * animProgress);
-            path.lineTo(AndroidUtilities.dp(13), AndroidUtilities.dp(12) + AndroidUtilities.dp(4) * p + AndroidUtilities.dp(2) * animProgress);
-            path.lineTo(AndroidUtilities.dp(21.5f), AndroidUtilities.dp(12) - AndroidUtilities.dp(4) * p + AndroidUtilities.dp(2) * animProgress);
+            path.moveTo(dp(4.5f), dp(12) - dp(4) * p + dp(2) * animProgress);
+            path.lineTo(dp(13), dp(12) + dp(4) * p + dp(2) * animProgress);
+            path.lineTo(dp(21.5f), dp(12) - dp(4) * p + dp(2) * animProgress);
         }
     }
 
@@ -104,18 +102,6 @@ public class AnimatedArrowDrawable extends Drawable {
         return animProgress;
     }
 
-    public void setRotation(float rotation, boolean animated) {
-        if (animated) {
-            setAnimationProgressAnimated(rotation);
-        } else {
-            setAnimationProgress(rotation);
-        }
-    }
-
-    public float getRotation() {
-        return animProgress;
-    }
-
     @Override
     public void setAlpha(int alpha) {
 
@@ -133,11 +119,11 @@ public class AnimatedArrowDrawable extends Drawable {
 
     @Override
     public int getIntrinsicWidth() {
-        return AndroidUtilities.dp(26);
+        return dp(26);
     }
 
     @Override
     public int getIntrinsicHeight() {
-        return AndroidUtilities.dp(26);
+        return dp(26);
     }
 }

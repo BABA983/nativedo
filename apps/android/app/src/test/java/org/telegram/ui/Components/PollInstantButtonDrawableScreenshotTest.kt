@@ -31,8 +31,8 @@ internal class PollInstantButtonDrawableScreenshotTest {
 }
 
 private class PollButtonStatesView(context: Context) : View(context) {
-    private val idle = PollInstantButtonDrawable(this)
-    private val loading = PollInstantButtonDrawable(this)
+    private val idle = PollInstantButtonDrawable(this, null)
+    private val loading = PollInstantButtonDrawable(this, null)
 
     init {
         val color = Theme.getColor(Theme.key_chat_inPreviewInstantText)

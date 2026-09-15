@@ -726,7 +726,7 @@ final class PollBlock implements PostBodyBlock {
 
     private void ensureInstantButtonDrawable() {
         if (pollInstantButtonDrawable == null) {
-            pollInstantButtonDrawable = new PollInstantButtonDrawable(context.getHost());
+            pollInstantButtonDrawable = new PollInstantButtonDrawable(context.getHost(), null);
             if (context.getHost().isAttachedToWindow()) {
                 pollInstantButtonDrawable.setupCallbacks(context.getHost());
             }
@@ -735,7 +735,7 @@ final class PollBlock implements PostBodyBlock {
 
     private void ensureRemoveVoteButtonDrawable() {
         if (pollRemoveVoteButtonDrawable == null) {
-            pollRemoveVoteButtonDrawable = new PollInstantButtonDrawable(context.getHost());
+            pollRemoveVoteButtonDrawable = new PollInstantButtonDrawable(context.getHost(), null);
             if (context.getHost().isAttachedToWindow()) {
                 pollRemoveVoteButtonDrawable.setupCallbacks(context.getHost());
             }
