@@ -14,8 +14,7 @@
  * limitations under the License.
  */
 
-package com.google.zxing.qrcode;
-
+package org.telegram.messenger;
 
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
@@ -33,9 +32,6 @@ import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel;
 import com.google.zxing.qrcode.encoder.Encoder;
 import com.google.zxing.qrcode.encoder.QRCode;
 
-import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.R;
-
 import java.util.Arrays;
 import java.util.Map;
 
@@ -44,7 +40,7 @@ import java.util.Map;
  *
  * @author dswitkin@google.com (Daniel Switkin)
  */
-public final class QRCodeWriter {
+public final class TelegramQRCodeWriter {
 
   private static final int QUIET_ZONE_SIZE = 4;
   private ByteMatrix input;

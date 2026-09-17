@@ -48,6 +48,10 @@ dependencies {
     implementation(libs.androidx.browser)
     implementation(libs.jsoup)
     implementation("androidx.exifinterface:exifinterface:1.4.1")
+    // zxing is Telegram's own choice upstream (com.google.zxing:core 3.5.4 at
+    // 12.10.2) for the QR code in the share sheet and two detector helpers;
+    // the in-tree copy it used to vendor is gone with the 12.10.2 snapshot.
+    implementation(libs.zxing.core)
 
     testImplementation(libs.junit4)
     testImplementation("org.json:json:20240303")

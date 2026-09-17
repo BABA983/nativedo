@@ -78,6 +78,25 @@ original (a stub wearing an upstream path → adopt upstream or list it in
 Declaring a path that no longer exists on disk is an error (that is the one kind
 of rot the tools can still catch).
 
+## Third-party code
+
+Third-party trees carried inside `:TMessagesProj` (patched AndroidX RecyclerView,
+small GMS/Guava shims, `me/vkryl` helpers) are copies and follow the same rules
+as Telegram sources. Two of them are settled differently, and stay that way
+until a product goal says otherwise:
+
+- **zxing** — upstream stopped vendoring it at 12.10.2 and depends on
+  `com.google.zxing:core:3.5.4`; we do the same (a `:TMessagesProj`
+  dependency). Telegram's styled QR writer is Telegram code again and is
+  vendored as `org.telegram.messenger.TelegramQRCodeWriter`, with the Telegram
+  logo block replaced by host wiring (NativeDo QR codes carry no logo; the
+  caller overlays its own centre image).
+- **media3 / ExoPlayer** — upstream moved ExoPlayer out of the source tree at
+  12.10.2 (media3 arrives as a build submodule of their own fork). We do not
+  adopt it: nothing plays video, and the compile-time stubs it satisfies are
+  declared `native`. If playback is ever implemented, take `androidx.media3:*`
+  from Maven behind an `:app` façade instead of importing their fork.
+
 ## Tooling
 
 | Command | Purpose |
