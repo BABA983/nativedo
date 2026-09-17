@@ -1,8 +1,17 @@
 package org.telegram.ui.Cells
 
 import android.content.Context
+import android.graphics.Typeface
+import android.text.Editable
+import android.text.NoCopySpan
+import android.text.Spannable
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.SpanWatcher
 import android.text.StaticLayout
 import android.text.TextPaint
+import android.text.TextWatcher
+import android.text.style.StyleSpan
 import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -97,19 +106,75 @@ class TextSelectionHelperTest {
         assertThat(helper.isInSelectionMode).isTrue()
     }
 
+    @Test
+    fun cachedTextDetachesFromTheLiveLayoutAndDropsWatchers() {
+        val textWatcher = object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+            override fun afterTextChanged(s: Editable?) = Unit
+        }
+        val spanWatcher = object : SpanWatcher {
+            override fun onSpanAdded(text: Spannable?, what: Any?, start: Int, end: Int) = Unit
+            override fun onSpanRemoved(text: Spannable?, what: Any?, start: Int, end: Int) = Unit
+            override fun onSpanChanged(text: Spannable?, what: Any?, ostart: Int, oend: Int, nstart: Int, nend: Int) = Unit
+        }
+        val noCopySpan = object : NoCopySpan {}
+        val text = SpannableStringBuilder("hello").apply {
+            setSpan(textWatcher, 0, 5, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            setSpan(spanWatcher, 0, 5, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            setSpan(noCopySpan, 0, 5, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            setSpan(StyleSpan(Typeface.BOLD), 0, 5, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        val prefix = SpannableStringBuilder("1.").apply {
+            setSpan(textWatcher, 0, 2, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        val helper = TextSelectionHelper.ArticleTextSelectionHelper()
+        helper.cacheTextForViewForTest(
+            SelectableTestView(context, withText = true, sourceText = text, prefixText = prefix),
+            position = 0,
+        )
+
+        val cached = requireNotNull(helper.cachedText(position = 0, child = 0))
+        assertThat(cached).isNotSameInstanceAs(text)
+        assertThat(cached.toString()).isEqualTo("hello")
+        assertThat(cached.getSpans(0, cached.length, TextWatcher::class.java)).isEmpty()
+        assertThat(cached.getSpans(0, cached.length, SpanWatcher::class.java)).isEmpty()
+        assertThat(cached.getSpans(0, cached.length, NoCopySpan::class.java)).isEmpty()
+        assertThat(cached.getSpans(0, cached.length, StyleSpan::class.java)).hasLength(1)
+
+        val cachedPrefix = requireNotNull(helper.cachedPrefix(position = 0, child = 0))
+        assertThat(cachedPrefix).isNotSameInstanceAs(prefix)
+        assertThat(cachedPrefix.toString()).isEqualTo("1.")
+        assertThat(cachedPrefix.getSpans(0, cachedPrefix.length, TextWatcher::class.java)).isEmpty()
+    }
+
+    @Test
+    fun nullPrefixClearsTheCachedEntry() {
+        val helper = TextSelectionHelper.ArticleTextSelectionHelper()
+        helper.cacheTextForViewForTest(
+            SelectableTestView(context, withText = true, sourceText = SpannableStringBuilder("hello"), prefixText = null),
+            position = 0,
+        )
+
+        assertThat(helper.cachedText(position = 0, child = 0).toString()).isEqualTo("hello")
+        assertThat(helper.cachedPrefixKeyPresent(position = 0, child = 0)).isFalse()
+    }
+
     private class SelectableTestView(
         context: Context,
         private val withText: Boolean = false,
+        private val sourceText: CharSequence = "hello",
+        private val prefixText: CharSequence? = "",
     ) : View(context), TextSelectionHelper.ArticleSelectableView {
         override fun fillTextLayoutBlocks(blocks: ArrayList<TextSelectionHelper.TextLayoutBlock>) {
             if (!withText) return
-            val layout = StaticLayout.Builder.obtain("hello", 0, 5, TextPaint(), 200).build()
+            val layout = StaticLayout.Builder.obtain(sourceText, 0, sourceText.length, TextPaint(), 200).build()
             blocks += object : TextSelectionHelper.TextLayoutBlock {
                 override fun getLayout(): StaticLayout = layout
                 override fun getX(): Int = 0
                 override fun getY(): Int = 0
                 override fun getRow(): Int = 0
-                override fun getPrefix(): CharSequence = ""
+                override fun getPrefix(): CharSequence? = prefixText
             }
         }
     }
@@ -161,3 +226,31 @@ private fun Any.privateField(name: String): Any? =
         isAccessible = true
         get(this@privateField)
     }
+
+private fun TextSelectionHelper.ArticleTextSelectionHelper.cacheTextForViewForTest(
+    view: TextSelectionHelper.ArticleSelectableView,
+    position: Int,
+) {
+    javaClass.getDeclaredMethod(
+        "cacheTextForView",
+        TextSelectionHelper.ArticleSelectableView::class.java,
+        Int::class.javaPrimitiveType,
+    ).apply { isAccessible = true }.invoke(this, view, position)
+}
+
+private fun TextSelectionHelper.ArticleTextSelectionHelper.cachedText(position: Int, child: Int): Spanned? =
+    cachedMap("textByPosition")[cacheKey(position, child)] as? Spanned
+
+private fun TextSelectionHelper.ArticleTextSelectionHelper.cachedPrefix(position: Int, child: Int): Spanned? =
+    cachedMap("prefixByPosition")[cacheKey(position, child)] as? Spanned
+
+private fun TextSelectionHelper.ArticleTextSelectionHelper.cachedPrefixKeyPresent(position: Int, child: Int): Boolean =
+    cachedMap("prefixByPosition").containsKey(cacheKey(position, child))
+
+private fun cacheKey(position: Int, child: Int): Int = position + (child shl 16)
+
+@Suppress("UNCHECKED_CAST")
+private fun TextSelectionHelper.ArticleTextSelectionHelper.cachedMap(name: String): Map<Int, CharSequence> =
+    TextSelectionHelper.ArticleTextSelectionHelper::class.java
+        .getDeclaredField(name).apply { isAccessible = true }
+        .get(this) as Map<Int, CharSequence>

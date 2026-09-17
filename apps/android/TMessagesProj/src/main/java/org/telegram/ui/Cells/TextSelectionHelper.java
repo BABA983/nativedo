@@ -17,9 +17,12 @@ import android.graphics.Rect;
 import android.graphics.RectF;
 import android.os.Build;
 import android.text.Layout;
+import android.text.NoCopySpan;
+import android.text.SpanWatcher;
 import android.text.Spanned;
 import android.text.SpannableStringBuilder;
 import android.text.StaticLayout;
+import android.text.TextWatcher;
 import android.text.style.ReplacementSpan;
 import android.view.ActionMode;
 import android.view.HapticFeedbackConstants;
@@ -1201,10 +1204,44 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
             for (int i = 0; i < blocks.size(); i++) {
                 TextLayoutBlock block = blocks.get(i);
                 if (block.getLayout() != null) {
-                    textByPosition.put(cacheKey(position, i), block.getLayout().getText());
-                    prefixByPosition.put(cacheKey(position, i), block.getPrefix());
+                    cacheLayoutBlock(position, i, block);
                 }
             }
+        }
+
+        private void cacheLayoutBlock(int position, int childPosition, TextLayoutBlock block) {
+            final int key = cacheKey(position, childPosition);
+            textByPosition.put(key, detachedText(block.getLayout().getText()));
+            final CharSequence prefix = block.getPrefix();
+            if (prefix == null) {
+                prefixByPosition.remove(key);
+            } else {
+                prefixByPosition.put(key, detachedText(prefix));
+            }
+        }
+
+        private static CharSequence detachedText(CharSequence text) {
+            if (text == null) {
+                return "";
+            }
+            if (!(text instanceof Spanned)) {
+                return text.toString();
+            }
+            final Spanned source = (Spanned) text;
+            final SpannableStringBuilder copy = new SpannableStringBuilder(text.toString());
+            final Object[] spans = source.getSpans(0, source.length(), Object.class);
+            for (Object span : spans) {
+                if (span instanceof TextWatcher || span instanceof SpanWatcher || span instanceof NoCopySpan) {
+                    continue;
+                }
+                final int start = source.getSpanStart(span);
+                final int end = source.getSpanEnd(span);
+                if (start < 0 || end < start || start > copy.length()) {
+                    continue;
+                }
+                copy.setSpan(span, start, Math.min(end, copy.length()), source.getSpanFlags(span));
+            }
+            return copy;
         }
 
         private int cacheKey(int position, int childPosition) {
