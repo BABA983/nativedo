@@ -31,12 +31,12 @@ Only three of those areas are decisions; the rest is drift we can leave alone:
 
 | Step | What | Commit |
 |---|---|---|
-| 0 | resource/label verification: `native` for the 12 exoplayer stubs, resource groups resolved by bytes, `GIT_NO_LAZY_FETCH`, parallel prefetch | `5642022` |
-| 1 | zxing from Maven (`com.google.zxing:core:3.5.4`), in-tree zxing deleted, Telegram's QR writer vendored with host wiring | `567fa9f` |
-| 2a | 12.10.2 package moves: `LinearSmoothScroller*`/`ChatListItemAnimator` → `ui/recyclerview/`, media3 stand-ins, `VideoPlayerHolderBase` + `HttpGetFileTask` | `1d92852` |
-| 2b | message-bubble theming: `MessageDrawable` extracted to `ui/ActionBar/` | `289f681` |
-| — | CI stops running the whole pipeline on every commit (path filters + job gating) | `65b7c3c` |
-| 3 | the bump itself: pin, `ViewOutlineProviderImpl` adopted, move mappings dropped | *(this step)* |
+| 0 | resource/label verification: `native` for the 12 exoplayer stubs, resource groups resolved by bytes, `GIT_NO_LAZY_FETCH`, parallel prefetch | `285861f` |
+| 1 | zxing from Maven (`com.google.zxing:core:3.5.4`), in-tree zxing deleted, Telegram's QR writer vendored with host wiring | `c0b61fd` |
+| 2a | 12.10.2 package moves: `LinearSmoothScroller*`/`ChatListItemAnimator` → `ui/recyclerview/`, media3 stand-ins, `VideoPlayerHolderBase` + `HttpGetFileTask` | `baae8b6` |
+| 2b | message-bubble theming: `MessageDrawable` extracted to `ui/ActionBar/` | `1d0ab15` |
+| — | CI stops running the whole pipeline on every commit (path filters + job gating) | `07d8466` |
+| 3 | the bump itself: pin, `ViewOutlineProviderImpl` adopted, move mappings dropped | `02b209c` |
 
 ## The bump
 
