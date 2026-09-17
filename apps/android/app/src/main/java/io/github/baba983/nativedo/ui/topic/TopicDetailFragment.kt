@@ -51,7 +51,6 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.GridLayoutManager
-import androidx.recyclerview.widget.LinearSmoothScrollerCustom
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager.widget.PagerAdapter
@@ -171,6 +170,7 @@ import org.telegram.ui.Components.chat.ChatActivityBottomViewsVisibilityControll
 import org.telegram.ui.Components.chat.ChatInputViewsContainer
 import org.telegram.ui.Components.chat.ViewPositionWatcher
 import org.telegram.ui.Components.inset.WindowAnimatedInsetsProvider
+import org.telegram.ui.recyclerview.LinearSmoothScrollerCustom
 import org.telegram.ui.Components.inset.WindowInsetsStateHolder
 import org.telegram.messenger.utils.RectFMergeBounding
 import org.telegram.messenger.R as TelegramR

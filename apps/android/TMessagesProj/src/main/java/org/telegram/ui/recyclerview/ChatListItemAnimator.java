@@ -1,7 +1,9 @@
-package androidx.recyclerview.widget;
+package org.telegram.ui.recyclerview;
 
 import android.animation.TimeInterpolator;
 import android.view.animation.Interpolator;
+
+import androidx.recyclerview.widget.DefaultItemAnimator;
 
 import org.telegram.ui.Components.CubicBezierInterpolator;
 

@@ -1147,10 +1147,30 @@ def strip_comments(text: str) -> str:
     return re.sub(r"\s+", "", "".join(out))
 
 
+IMPORT_OR_PACKAGE_LINE = re.compile(r"^[ \t]*(?:package|import)\s+[\w.*]+\s*;", re.M)
+
+
+def strip_imports(text: str) -> str:
+    """Source text without `package`/`import` declarations.
+
+    Import lines cannot move a gesture/measurement/drawing number, so an import
+    swap (a class that upstream moved to another package, say) is not a
+    behaviour change: the forced-exact check ignores it as it ignores comments.
+    """
+    return IMPORT_OR_PACKAGE_LINE.sub("", text)
+
+
 def comment_only_edit(
-    root: Optional[PathLike], path: str, head_path: Optional[str]
+    root: Optional[PathLike],
+    path: str,
+    head_path: Optional[str],
+    *,
+    ignore_imports: bool = False,
 ) -> bool:
-    """True when `path` differs from its HEAD blob only in comments/whitespace."""
+    """True when `path` differs from its HEAD blob only in comments/whitespace.
+
+    With `ignore_imports`, package/import declarations are ignored too.
+    """
     if not head_path:
         return False
     r = _as_path(root)
@@ -1166,6 +1186,8 @@ def comment_only_edit(
     except OSError:
         return False
     old = proc.stdout.decode("utf-8", "ignore")
+    if ignore_imports:
+        old, new = strip_imports(old), strip_imports(new)
     return strip_comments(old) == strip_comments(new)
 
 

@@ -74,6 +74,25 @@ class ChangeSetTest(unittest.TestCase):
         self.assertEqual({"A.java": "A.java"}, changed_with_head_source(self.root))
         self.assertTrue(comment_only_edit(self.root, "A.java", "A.java"))
 
+    def test_import_swap_is_not_a_behaviour_change(self) -> None:
+        # The shape a package move takes: identical code, one import changed.
+        moved = SOURCE.replace(
+            "class A {",
+            "import org.telegram.ui.recyclerview.Other;\n\nclass A {",
+        )
+        (self.root / "A.java").write_text(moved, encoding="utf-8")
+        self.assertFalse(comment_only_edit(self.root, "A.java", "A.java"))
+        self.assertTrue(
+            comment_only_edit(self.root, "A.java", "A.java", ignore_imports=True)
+        )
+        # …but a real edit behind the import is still reported.
+        (self.root / "A.java").write_text(
+            moved.replace("int x = 1;", "int x = 2;"), encoding="utf-8"
+        )
+        self.assertFalse(
+            comment_only_edit(self.root, "A.java", "A.java", ignore_imports=True)
+        )
+
     def test_new_file_has_no_history_to_compare(self) -> None:
         (self.root / "New.java").write_text(SOURCE, encoding="utf-8")
         git(self.root, "add", "New.java")

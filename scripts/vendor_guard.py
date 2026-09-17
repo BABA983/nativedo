@@ -138,8 +138,12 @@ def check_forced_exact(index: dict, root: Path, guard: Guard) -> None:
         if changed_path is None:
             continue
         # A comment-only edit cannot move a gesture/measurement/drawing number,
-        # so it does not deserve the "verify with these tests" prompt.
-        if comment_only_edit(root, changed_path, sources[changed_path]):
+        # and neither can an import swap (upstream moving a class to another
+        # package, say), so they do not deserve the "verify with these tests"
+        # prompt.
+        if comment_only_edit(
+            root, changed_path, sources[changed_path], ignore_imports=True
+        ):
             continue
         hits.append(e)
     if not hits:

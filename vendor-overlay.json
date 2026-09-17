@@ -279,6 +279,7 @@
     "TMessagesProj/src/main/java/org/telegram/ui/bots/BotWebViewAttachedSheet.java",
     "TMessagesProj/src/main/java/org/telegram/ui/bots/BotWebViewSheet.java",
     "TMessagesProj/src/main/java/org/telegram/ui/bots/ChatAttachAlertBotWebViewLayout.java",
+    "TMessagesProj/src/main/java/org/telegram/ui/recyclerview/ChatListItemAnimator.java",
     "TMessagesProj/src/main/java/org/telegram/ui/web/BotWebViewContainer.java",
     "TMessagesProj/src/main/java/org/telegram/ui/web/WebBookmarks.java"
   ],
@@ -337,7 +338,10 @@
     "TMessagesProj/src/main/java/org/telegram/ui/Components/UniversalCells.java": "org/telegram/ui/Components/UniversalAdapter.java",
     "TMessagesProj/src/main/java/org/telegram/ui/Components/UniversalListCallbacks.java": "org/telegram/ui/Components/UniversalRecyclerView.java",
     "TMessagesProj/src/main/java/org/telegram/ui/Stories/StoryItem.java": "org/telegram/tgnet/tl/TL_stories.java",
-    "TMessagesProj/src/main/java/org/telegram/ui/web/WebBookmarks.java": "org/telegram/ui/web/AddressBarList.java"
+    "TMessagesProj/src/main/java/org/telegram/ui/web/WebBookmarks.java": "org/telegram/ui/web/AddressBarList.java",
+    "TMessagesProj/src/main/java/org/telegram/ui/recyclerview/LinearSmoothScrollerCustom.java": "androidx/recyclerview/widget/LinearSmoothScrollerCustom.java",
+    "TMessagesProj/src/main/java/org/telegram/ui/recyclerview/LinearSmoothScrollerEnd.java": "androidx/recyclerview/widget/LinearSmoothScrollerEnd.java",
+    "TMessagesProj/src/main/java/org/telegram/ui/recyclerview/ChatListItemAnimator.java": "androidx/recyclerview/widget/ChatListItemAnimator.java"
   },
   "forced_exact": {
     "app/src/main/java/io/github/baba983/nativedo/ui/components/DiscourseUserCell.java": [
