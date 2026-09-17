@@ -14,9 +14,9 @@
   ],
   "upstream": {
     "repo": "git@github.com:DrKLO/Telegram.git",
-    "pinned_commit": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
-    "pinned_date": "2026-07-16",
-    "subject": "update to 12.9.0 (6966)",
+    "pinned_commit": "163356809fa4bd81e64969700753e0a15664a288",
+    "pinned_date": "2026-09-17",
+    "subject": "update to 12.10.2 (7086)",
     "local_checkout": "../telegram"
   },
   "policy": {
@@ -338,10 +338,7 @@
     "TMessagesProj/src/main/java/org/telegram/ui/Components/UniversalCells.java": "org/telegram/ui/Components/UniversalAdapter.java",
     "TMessagesProj/src/main/java/org/telegram/ui/Components/UniversalListCallbacks.java": "org/telegram/ui/Components/UniversalRecyclerView.java",
     "TMessagesProj/src/main/java/org/telegram/ui/Stories/StoryItem.java": "org/telegram/tgnet/tl/TL_stories.java",
-    "TMessagesProj/src/main/java/org/telegram/ui/web/WebBookmarks.java": "org/telegram/ui/web/AddressBarList.java",
-    "TMessagesProj/src/main/java/org/telegram/ui/recyclerview/LinearSmoothScrollerCustom.java": "androidx/recyclerview/widget/LinearSmoothScrollerCustom.java",
-    "TMessagesProj/src/main/java/org/telegram/ui/recyclerview/LinearSmoothScrollerEnd.java": "androidx/recyclerview/widget/LinearSmoothScrollerEnd.java",
-    "TMessagesProj/src/main/java/org/telegram/ui/recyclerview/ChatListItemAnimator.java": "androidx/recyclerview/widget/ChatListItemAnimator.java"
+    "TMessagesProj/src/main/java/org/telegram/ui/web/WebBookmarks.java": "org/telegram/ui/web/AddressBarList.java"
   },
   "forced_exact": {
     "app/src/main/java/io/github/baba983/nativedo/ui/components/DiscourseUserCell.java": [

@@ -1,10 +1,11 @@
-# Vendor bump 12.10.2 — plan and decisions
+# Vendor bump 12.10.2 — landed
 
 Pin `9bcf3d2769c6` (Telegram Android 12.9.0) → `163356809fa4bd81e64969700753e0a15664a288`
-("update to 12.10.2 (7086)", 2026-09-17). The pin lives in [vendor-overlay.json](../vendor-overlay.json);
+("update to 12.10.2 (7086)", 2026-09-17) — **landed**, this document is the record of *why*
+each piece moved and what is left. The pin lives in [vendor-overlay.json](../vendor-overlay.json);
 the workflow is [VENDOR.md](../VENDOR.md); provenance is derived (`scripts/vendor-index.sh`),
-pre-flight is `scripts/vendor-guard.sh`. Prelude work lands before the pin moves so each step
-can be verified and committed on its own.
+pre-flight is `scripts/vendor-guard.sh`. Prelude work landed before the pin moved, one verified
+commit per step.
 
 ## What the pin diff contains
 
@@ -33,8 +34,30 @@ Only three of those areas are decisions; the rest is drift we can leave alone:
 | 0 | resource/label verification: `native` for the 12 exoplayer stubs, resource groups resolved by bytes, `GIT_NO_LAZY_FETCH`, parallel prefetch | `5642022` |
 | 1 | zxing from Maven (`com.google.zxing:core:3.5.4`), in-tree zxing deleted, Telegram's QR writer vendored with host wiring | `567fa9f` |
 | 2a | 12.10.2 package moves: `LinearSmoothScroller*`/`ChatListItemAnimator` → `ui/recyclerview/`, media3 stand-ins, `VideoPlayerHolderBase` + `HttpGetFileTask` | `1d92852` |
-| 2b | message-bubble theming: `MessageDrawable` extracted to `ui/ActionBar/` | *(this step)* |
+| 2b | message-bubble theming: `MessageDrawable` extracted to `ui/ActionBar/` | `289f681` |
 | — | CI stops running the whole pipeline on every commit (path filters + job gating) | `65b7c3c` |
+| 3 | the bump itself: pin, `ViewOutlineProviderImpl` adopted, move mappings dropped | *(this step)* |
+
+## The bump
+
+The overlay's `upstream` block is the only place the pin lives, so the bump is small: the pin,
+the date, the subject, and dropping the three `derived_from` entries that only bridged the
+recyclerview move (`LinearSmoothScrollerCustom`, `LinearSmoothScrollerEnd`,
+`ChatListItemAnimator` — all three now sit at their upstream paths). Resource groups and the
+`reference` block carry their own baselines (`vendored_at`, `reference.commit`) and do not move
+with the main pin.
+
+One file needed a real decision. `ViewOutlineProviderImpl.java` was a byte-clean copy of the
+pin; 12.10.2 grows it from 67 to 174 lines (a `drawViewWithOutline` / `outlineToPath` helper
+that clips a software canvas to a view's outline). Our copy carried no host edits, so the new
+file was adopted byte-exact and `:TMessagesProj` compiles with it.
+
+Twenty-one files have no upstream original at 12.10.2 and are therefore reported as shims:
+the exoplayer2 stubs (upstream replaced that tree with the media3 submodule), the media3
+stand-ins we added in 2a, and the GMS/guava shims. They are not scratch files: nine host files
+still import the exoplayer types, so the stubs keep satisfying compile-time references, which
+is what their `native` labels say. `MessageDrawable.java` was in that shim list before this
+commit and is an ordinary copy now that the pin has it.
 
 ## Decision: follow the message-bubble theming move
 
@@ -105,14 +128,15 @@ there is nothing to port. Revisit only if we ever add a JS bridge to that WebVie
 
 ## Remaining work
 
-1. **Bump commit**: advance `upstream` in the overlay to 12.10.2, prune `reference`, drop the
-   three `derived_from` entries that exist only to bridge the recyclerview move, resolve the
-   shims, refresh the `resources` baselines, re-run `scripts/vendor-guard.sh --compile`.
-2. **Deferred, needs a bigger orb**: the cell/theme content rebase, if a product goal appears.
+1. **Deferred, needs a bigger orb**: the cell/theme content rebase, if a product goal appears.
    `:app:testDebugUnitTest` does not finish on an `a1.small` orb — the Kotlin test source set
    thrashes for half an hour without producing results (twice, with warm and cold daemons) —
    so the forced-exact test classes the guard names cannot be run here. What this orb *can*
    verify is compilation (`:TMessagesProj:compileDebugJavaWithJavac` ~25s,
    `:app:compileDebugJavaWithJavac` ~1.5min) and the guard's static checks.
+2. **Watch item**: 241 of the 520 tracked files differ from 12.10.2 (they were at 12.9.0
+   before the pin moved). Nothing in that set is wrong — the pin advanced, the copies did not —
+   but the next product-driven sync should take the delta for the files it touches instead of
+   copying a whole area.
 
-Mark this file historical once the pin moves.
+Mark this file historical once the deferred rebase lands or is dropped.
