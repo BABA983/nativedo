@@ -39,6 +39,13 @@ internal class TopicPostCellScreenshotTest {
         }
     }
 
+    @Test
+    fun contentBlocks() {
+        paparazziRule.snapshot { context ->
+            topicPostCell(context, CONTENT_BLOCKS_HTML)
+        }
+    }
+
     private fun topicPostCell(
         context: Context,
         html: String = POST_HTML,
@@ -81,5 +88,27 @@ internal class TopicPostCellScreenshotTest {
             "<p>NativeDo keeps linux.do topics readable and highlights search results.</p>"
         const val CJK_POST_HTML =
             "<p>在Linux环境里，NativeDo keeps linux.do topics readable.</p>"
+
+        /** One post body that exercises every deterministic content block we render. */
+        val CONTENT_BLOCKS_HTML = """
+            <h2>渲染块清单</h2>
+            <p>正文段落，用来对比各内容块的配色与间距。</p>
+            <ul><li>列表项 A</li><li>列表项 B</li></ul>
+            <blockquote><p>引用的一段话。</p></blockquote>
+            <table>
+              <thead><tr><th>名称</th><th>取值</th><th>说明</th></tr></thead>
+              <tbody>
+                <tr><td>alpha</td><td>1</td><td>first</td></tr>
+                <tr><td>beta</td><td>2</td><td>second</td></tr>
+              </tbody>
+            </table>
+            <pre><code>val x = 42
+fun main() { println(x) }</code></pre>
+            <hr>
+            <details>
+              <summary>展开查看详情</summary>
+              <p>折叠起来的内容。</p>
+            </details>
+        """.trimIndent()
     }
 }
