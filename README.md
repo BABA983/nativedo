@@ -33,7 +33,7 @@ You do **not** need to clone Telegram or run vendor scripts to assemble or run t
 - Run unit and local screenshot verification together with `./apps/android/gradlew -p apps/android runUnitAndScreenshotTests --quiet`.
 - Build a debug APK with `./apps/android/gradlew -p apps/android :app:assembleDebug --quiet`.
 
-Paparazzi goldens live in `apps/android/app/src/test/snapshots/images` and are committed: `:app:verifyPaparazziDebug` compares against them, and `:app:recordPaparazziDebug` re-records them for intentional UI changes. Use device tests for behavior that depends on IME/insets, separate windows, WebView, network images, or gestures.
+Paparazzi goldens live in `apps/android/app/src/test/snapshots/images` and are committed: `:app:verifyPaparazziDebug` compares against them, and `:app:recordPaparazziDebug` re-records them for intentional UI changes. They are recorded on Linux (the same environment as the orb and CI), and CI runs `runUnitAndScreenshotTests` — the full unit suite plus the pixel comparison — so a golden diff fails the build. Use device tests for behavior that depends on IME/insets, separate windows, WebView, network images, or gestures.
 
 ## Vendored Telegram (optional)
 

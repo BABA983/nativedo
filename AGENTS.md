@@ -72,10 +72,13 @@ a product goal needs upstream code, never on every upstream release.
 - **All unit tests:** `./apps/android/gradlew -p apps/android :app:testDebugUnitTest --quiet`
 - **Single test class:** `./apps/android/gradlew -p apps/android :app:testDebugUnitTest --tests 'io.github.baba983.nativedo.feature.home.ui.HomeViewModelTest' --quiet`
 - **Paparazzi screenshots:** plain `testDebugUnitTest` only exercises rendering; pixel
-  verification runs via `./apps/android/gradlew -p apps/android :app:verifyPaparazziDebug`.
-  Goldens live in `apps/android/app/src/test/snapshots/images` and are committed. After an
-  intentional UI change, re-record with `:app:recordPaparazziDebug` and include the updated
-  goldens in the same commit. Snapshot names follow `<package>_<Class>_<method>[Theme].png`.
+  verification runs via `./apps/android/gradlew -p apps/android :app:verifyPaparazziDebug`
+  (or `runUnitAndScreenshotTests`, which is the same task and what CI runs). Goldens live in
+  `apps/android/app/src/test/snapshots/images` and are committed; they are recorded on Linux
+  (the orb/CI environment), so `verifyPaparazziDebug` is a real local gate — a diff is either
+  an intentional UI change or a bug. After an intentional UI change, re-record with
+  `:app:recordPaparazziDebug` and include the updated goldens in the same commit. Snapshot
+  names follow `<package>_<Class>_<method>[Theme].png`.
 - **Assemble (runtime/resource changes):** `./apps/android/gradlew -p apps/android :app:assembleDebug --quiet`
 - **Telegram-derived changes:** `./scripts/vendor-guard.sh --compile` (index + isolation +
   forced-exact + `:TMessagesProj` compile). The same check runs in `.githooks/pre-commit`

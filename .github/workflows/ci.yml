@@ -122,5 +122,9 @@ jobs:
         with:
           packages: "platforms;android-35 build-tools;34.0.0 platform-tools"
 
-      - name: Unit tests
-        run: ./apps/android/gradlew -p apps/android :app:testDebugUnitTest --quiet
+      - name: Unit tests and screenshot verification
+        # `runUnitAndScreenshotTests` is `:app:verifyPaparazziDebug`: the whole
+        # unit suite plus a pixel comparison of every snapshot against the
+        # committed goldens. The goldens are recorded on Linux (the orb
+        # environment), so CI checks the same rendering it can reproduce.
+        run: ./apps/android/gradlew -p apps/android runUnitAndScreenshotTests --quiet
