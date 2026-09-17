@@ -1,13 +1,74 @@
 name: ci
 
+# Runs only when something that can actually break CI changed: a docs-only or
+# fixtures-only commit skips the workflow entirely, and a vendor-tooling commit
+# skips the Android job (both are gated by the `changes` job below). The
+# pre-commit hook already runs `vendor-guard.sh --quick` on every commit, so CI
+# is the backstop, not the first line of defence.
+#
+# Note: with `paths` filtering plus gated jobs, a skipped job reports "skipped"
+# rather than "success". If branch protection ever requires these check names
+# on pull requests, either keep the workflow unfiltered or mirror the gates as
+# step-level `if:` conditions instead.
 on:
   push:
     branches: [main]
+    paths: &ci_paths
+      - "apps/android/**"
+      - "scripts/**"
+      - "docs/**"
+      - "contracts/**"
+      - "vendor-overlay.json"
+      - "VENDOR.md"
+      - ".github/workflows/ci.yml"
   pull_request:
+    types: [opened, ready_for_review, synchronize]
+    paths: *ci_paths
   workflow_dispatch:
 
+# A newer commit on the same ref makes the older run pointless.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      android: ${{ steps.filter.outputs.android }}
+      vendor: ${{ steps.filter.outputs.vendor }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: filter
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          base="${BASE:-}"
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            # Unknown base (first push, force push, manual run): check everything.
+            echo "android=true" >> "$GITHUB_OUTPUT"
+            echo "vendor=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          android=false
+          vendor=false
+          while IFS= read -r path; do
+            case "$path" in
+              apps/android/*) android=true; vendor=true ;;
+              scripts/*|docs/*|contracts/*|vendor-overlay.json|VENDOR.md) vendor=true ;;
+              .github/workflows/ci.yml) android=true; vendor=true ;;
+            esac
+          done < <(git diff --name-only "$base" HEAD)
+          echo "android=$android" >> "$GITHUB_OUTPUT"
+          echo "vendor=$vendor" >> "$GITHUB_OUTPUT"
+
   vendor-tooling:
+    needs: changes
+    if: needs.changes.outputs.vendor == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -48,6 +109,8 @@ jobs:
         run: scripts/vendor-guard.sh
 
   android:
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
