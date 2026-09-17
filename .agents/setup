@@ -2,22 +2,16 @@
 # Orb setup for linuxdo-native.
 #
 # Runs once per fresh orb (and again when a stale snapshot is refreshed), then
-# the resulting filesystem is snapshotted. Installs the Android toolchain,
-# warms the Gradle/Maven/Robolectric caches so agents can build and test
-# without downloads, and checks out the pristine Telegram tree used by the
-# vendor tooling.
-#
-# Amp kills setup after 20 minutes and only publishes the snapshot when the
-# script exits 0, so the expensive warm-ups run under the budget below: a phase
-# that stalls costs its own timeout, and whatever already finished still lands
-# in the snapshot.
+# the resulting filesystem is snapshotted. Installs the Android toolchain and
+# prepares a sparse Telegram tree used by the vendor tooling. Builds and tests
+# stay out of setup so orb creation does not spend minutes compiling a checkout
+# that may be replaced as soon as the orb starts.
 #
 # Non-interactive, idempotent, no long-lived processes.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 GRADLE_PROJECT="$REPO_ROOT/apps/android"
-GRADLEW="$GRADLE_PROJECT/gradlew"
 ANDROID_SDK_DIR="${ANDROID_HOME:-$HOME/Android/Sdk}"
 CMDLINE_TOOLS_URL="https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip"
 ANDROID_PLATFORM="platforms;android-35"
@@ -26,46 +20,6 @@ JDK_PACKAGE="openjdk-17-jdk-headless"
 
 SECONDS=0
 log() { printf '\n[%s +%ss] %s\n' "$(date +%H:%M:%S)" "$SECONDS" "$*"; }
-
-# --- Phase budget ------------------------------------------------------------
-# 17 minutes of a 20 minute window, leaving room for the last phase and the
-# trailing bookkeeping. Every costly step goes through run_phase, which caps the
-# step and returns even when the step fails, times out, or has no budget left.
-SETUP_BUDGET_SECONDS="${NATIVEDO_SETUP_BUDGET_SECONDS:-1020}"
-VENDOR_RESERVE_SECONDS=180
-budget_left() {
-  local left=$(( SETUP_BUDGET_SECONDS - SECONDS ))
-  (( left < 0 )) && left=0
-  printf '%s' "$left"
-}
-# Upper bound for a phase, never robbing the reserve kept for later phases.
-cap_phase() {
-  local want="$1" reserve="${2:-0}" left
-  left=$(( $(budget_left) - reserve ))
-  (( left < 0 )) && left=0
-  (( want > left )) && want=$left
-  printf '%s' "$want"
-}
-run_phase() { # <label> <timeout-seconds> <command...>
-  local label="$1" want="$2"
-  shift 2
-  if (( want < 30 )); then
-    log "Skipped: $label (no budget left)"
-    return 0
-  fi
-  log "$label (timeout ${want}s, budget left $(budget_left)s)"
-  if timeout --signal=TERM --kill-after=15s "$want" "$@"; then
-    log "Finished: $label (elapsed ${SECONDS}s)"
-  else
-    log "WARNING: $label was stopped after ${want}s; caches keep whatever it finished."
-  fi
-}
-gradle_warm() { # <timeout-seconds> <gradle args...>
-  local want="$1"
-  shift
-  run_phase "gradlew $*" "$want" \
-    "$GRADLEW" -p "$GRADLE_PROJECT" --no-daemon --console=plain "$@"
-}
 
 # --- System packages ---------------------------------------------------------
 # AGP 8.6 and Kotlin 2.1 both target JVM 17, so a JDK 17+ is required.
@@ -172,43 +126,42 @@ else
   log "Orb RAM $(( mem_total_kb / 1024 )) MiB: keeping the repo's JVM settings"
 fi
 
-# --- Warm Gradle, Maven, and Robolectric caches ------------------------------
-# A cold build downloads the Gradle distribution, the AndroidX/Compose
-# dependency set, and the Robolectric android-all jars. Doing that here keeps
-# the results in the orb snapshot instead of in an agent's first task. Each
-# phase is capped: a cold build on a 2 vCPU orb can run longer than the whole
-# setup window, and a phase that overruns must not cost us the snapshot.
-log "Warming Gradle caches (:app:assembleDebug; cold builds take minutes)"
-gradle_warm "$(cap_phase 660 "$VENDOR_RESERVE_SECONDS")" :app:assembleDebug
-
-# The full suite does not fit the budget (77 Robolectric classes plus 20
-# Paparazzi goldens) and is not needed to warm caches: compiling the test source
-# set pulls the test classpath, and one Robolectric class per SDK level the
-# suite uses (28 through @Config, 34 through
-# app/src/test/resources/robolectric.properties) pulls its android-all jar into
-# ~/.m2. A failing test in the checkout is reported and tolerated.
-log "Warming unit-test toolchain (Robolectric android-all jars for SDK 28 and 34)"
-gradle_warm "$(cap_phase 300 "$VENDOR_RESERVE_SECONDS")" \
-  :app:testDebugUnitTest \
-  --tests 'io.github.baba983.nativedo.ui.topic.TopicListAdapterTest' \
-  --tests 'io.github.baba983.nativedo.feature.topic.data.TopicViewportStoreTest'
-
-# --- Pristine Telegram tree (optional, used by scripts/vendor-*.sh) ----------
-# It lives outside the repo (default: a sibling `../telegram`) so the
-# large checkout never bloats the working tree. scripts/vendor-setup.sh owns
-# the resolution; NATIVEDO_TELEGRAM_VENDOR_DIR overrides it.
+# --- Sparse Telegram tree (optional, used by scripts/vendor-*.sh) -------------
+# Vendor tooling only reads Java sources at the pinned and reference commits.
+# Fetch those two baselines shallowly and materialize that subtree, avoiding the
+# full repository history, all tags, and unrelated platform sources.
 VENDOR_DIR="$(
   PYTHONPATH="$REPO_ROOT/scripts" NATIVEDO_ROOT="$REPO_ROOT" python3 -c \
     'from vendorlib import vendor_dir; print(vendor_dir())'
 )"
 if [[ ! -d "$VENDOR_DIR/.git" && ! -f "$VENDOR_DIR/.git" ]]; then
-  log "Cloning pristine Telegram tree for vendor tooling into $VENDOR_DIR"
-  run_phase "scripts/vendor-setup.sh" "$(cap_phase 600)" "$REPO_ROOT/scripts/vendor-setup.sh"
-  if [[ ! -d "$VENDOR_DIR/.git" && ! -f "$VENDOR_DIR/.git" ]]; then
-    if [[ -n "$VENDOR_DIR" ]]; then
-      rm -rf "$VENDOR_DIR"
+  log "Preparing sparse Telegram tree for vendor tooling (timeout 60s)"
+  mkdir -p "$(dirname "$VENDOR_DIR")"
+  vendor_tmp="${VENDOR_DIR}.setup-tmp"
+  rm -rf "$vendor_tmp"
+  pin="$(python3 -c "import json; print(json.load(open('$REPO_ROOT/vendor-overlay.json'))['upstream']['pinned_commit'])")"
+  reference="$(python3 -c "import json; print((json.load(open('$REPO_ROOT/vendor-overlay.json')).get('reference') or {}).get('commit') or '')")"
+  if timeout --signal=TERM --kill-after=10s 60 bash -c '
+    set -euo pipefail
+    git init -q "$1"
+    git -C "$1" remote add origin https://github.com/DrKLO/Telegram.git
+    git -C "$1" config extensions.partialClone origin
+    git -C "$1" config remote.origin.promisor true
+    git -C "$1" config remote.origin.partialclonefilter blob:none
+    git -C "$1" sparse-checkout init --cone
+    git -C "$1" sparse-checkout set TMessagesProj/src/main/java
+    git -C "$1" fetch -q --depth=1 --filter=blob:none origin "$2"
+    if [[ -n "$3" && "$3" != "$2" ]]; then
+      git -C "$1" fetch -q --depth=1 --filter=blob:none origin "$3"
+      git -C "$1" checkout -q "$3"
     fi
-    echo "WARNING: vendor clone did not finish; vendor tooling needs scripts/vendor-setup.sh (the app builds without it)."
+    git -C "$1" checkout -q "$2"
+  ' _ "$vendor_tmp" "$pin" "$reference"; then
+    mv "$vendor_tmp" "$VENDOR_DIR"
+    log "Finished preparing sparse Telegram tree"
+  else
+    rm -rf "$vendor_tmp"
+    echo "WARNING: sparse Telegram tree was not ready after 60s; run scripts/vendor-setup.sh when vendor tooling is needed."
   fi
 else
   log "Vendor tree present: $(git -C "$VENDOR_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
@@ -233,11 +186,11 @@ if ! grep -qF "$guidance_marker" "$guidance" 2>/dev/null; then
 <!-- linuxdo-native orb toolchain (managed by .agents/setup) -->
 ## linuxdo-native orb notes
 
-- Android toolchain is preinstalled: JDK 17, Android SDK in `$HOME/Android/Sdk` (`ANDROID_HOME` exported for login shells), and `apps/android/local.properties` already points at it. Gradle, AndroidX, Robolectric, and Paparazzi artifacts are cached in `~/.gradle` / `~/.m2`; keep those caches.
+- Android toolchain is preinstalled: JDK 17, Android SDK in `$HOME/Android/Sdk` (`ANDROID_HOME` exported for login shells), and `apps/android/local.properties` already points at it. Gradle downloads dependencies on the first relevant build or test; keep `~/.gradle` / `~/.m2` caches after that.
 - On a small orb (under 6 GiB RAM) `.agents/setup` caps the Gradle and Kotlin daemon heaps in `~/.gradle/gradle.properties`; two 2 GiB heaps on a 4 GiB orb starve the page cache and turn builds into disk thrashing. Do not raise the caps on a small orb.
 - Orbs have no emulator or device (no KVM): `adb` and instrumentation tests cannot run. Verify with `:app:testDebugUnitTest` and Paparazzi instead.
 - Paparazzi goldens were recorded on macOS; on Linux orbs `:app:verifyPaparazziDebug` can fail on ~0.03% pixel drift in a few snapshots. Inspect the diff before re-recording, and record only intentional UI changes.
-- `../telegram` (sibling of the repo, override with `NATIVEDO_TELEGRAM_VENDOR_DIR`) holds the pristine Telegram checkout at the pinned commit, with blob contents prefetched, so `scripts/vendor-index.sh` / `vendor-diff.sh` / the guard work immediately.
+- `../telegram` (sibling of the repo, override with `NATIVEDO_TELEGRAM_VENDOR_DIR`) is a shallow sparse checkout of Telegram's Java sources at the pinned commit, so `scripts/vendor-index.sh` / `vendor-diff.sh` / the guard work immediately without a full upstream clone.
 - Vendor provenance is derived: `vendor-overlay.json` is the only hand-edited file, and `.githooks/pre-commit` (installed by this setup) runs `scripts/vendor-guard.sh --quick` on every commit.
 EOF
 fi

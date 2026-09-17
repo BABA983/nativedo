@@ -3,7 +3,7 @@
 #
 # Runs after activation and every time a paused orb wakes, inside a 10 second
 # budget. No installs here: repair the gitignored SDK pointer and report the
-# toolchain state that .agents/setup prepared.
+# required toolchain state that .agents/setup prepared.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -14,7 +14,6 @@ missing=()
 [[ -d "$ANDROID_SDK_DIR/platforms/android-35" ]] || missing+=("Android SDK platform 35 in $ANDROID_SDK_DIR")
 [[ -d "$ANDROID_SDK_DIR/build-tools/34.0.0" ]] || missing+=("Android build-tools 34.0.0 in $ANDROID_SDK_DIR")
 command -v javac >/dev/null 2>&1 || missing+=("JDK 17")
-[[ -d "$GRADLE_PROJECT/.gradle" || -d "$HOME/.gradle/wrapper" ]] || missing+=("warm Gradle caches")
 
 if (( ${#missing[@]} > 0 )); then
   printf 'orb resume: toolchain incomplete: %s\n' "${missing[*]}" >&2
@@ -35,4 +34,4 @@ VENDOR_DIR="$(
     echo "$REPO_ROOT/../telegram"
 )"
 [[ -d "$VENDOR_DIR/.git" || -f "$VENDOR_DIR/.git" ]] ||
-  echo "orb resume: pristine Telegram tree missing at $VENDOR_DIR; run scripts/vendor-setup.sh for vendor diffs"
+  echo "orb resume: sparse Telegram tree missing at $VENDOR_DIR; run scripts/vendor-setup.sh for vendor diffs"
