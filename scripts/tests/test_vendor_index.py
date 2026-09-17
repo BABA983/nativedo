@@ -16,6 +16,9 @@ from vendorlib import (  # noqa: E402
     ManifestError,
     load_index,
     load_overlay,
+    redundant_native,
+    resource_report,
+    stub_candidates,
     vendor_dir,
 )
 
@@ -43,7 +46,15 @@ OVERLAY = {
     "forced_exact": {
         "TMessagesProj/src/main/java/org/telegram/ui/Mine.java": ["measurement", "drawing"]
     },
-    "resources": [{"kind": "drawable", "files": ["a.9.png"], "upstream_dir": "res"}],
+    "resources": [
+        {
+            "kind": "drawable",
+            "files": ["a.9.png"],
+            "upstream_dir": "TMessagesProj/src/main/res",
+            "local_glob": "apps/android/TMessagesProj/src/main/res/drawable",
+            "ours": ["drawable/a.9.png"],
+        }
+    ],
 }
 
 
@@ -53,6 +64,13 @@ class IndexDerivationTest(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name) / "repo"
         self.root.mkdir()
+        # The fixture overlay declares one resource group (`ours`), so its file
+        # has to exist on disk: a declaration without a file is an error.
+        declared_res = (
+            self.root / "apps/android/TMessagesProj/src/main/res/drawable/a.9.png"
+        )
+        declared_res.parent.mkdir(parents=True, exist_ok=True)
+        declared_res.write_text("x\n", encoding="utf-8")
         patcher = mock.patch.dict(os.environ, {}, clear=False)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -231,6 +249,159 @@ class IndexDerivationTest(unittest.TestCase):
         index = load_index(self.root)
         entry = next(e for e in index["files"] if e["local"] == LOCAL)
         self.assertTrue(entry["modified"])
+
+
+class ResourceAndLedgerTest(IndexDerivationTest):
+    """Resource resolution, byte accounting and the ledger heuristics."""
+
+    DIR = "TMessagesProj/src/main/res"
+
+    def prepare(
+        self,
+        resources: list[tuple[list[str], dict]],
+        upstream: dict[str, str],
+        *,
+        local: dict[str, str] | None = None,
+        extra_local: dict[str, str] | None = None,
+        skip_local: list[str] | None = None,
+    ) -> None:
+        """Stand up a pristine repo plus our copy of it.
+
+        `upstream` is repo-relative (the pristine tree, and our copy of it, since
+        the mirror keeps the same paths); `local` overrides our copy's content,
+        `extra_local` adds files only we have and `skip_local` drops ours.
+        """
+        import subprocess
+
+        repo = self.make_pristine(upstream)
+        pin = subprocess.check_output(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True
+        ).strip()
+        overlay = json.loads(json.dumps(OVERLAY))
+        overlay["upstream"]["pinned_commit"] = pin
+        overlay["reference"]["commit"] = pin
+        overlay["native"] = []
+        overlay["upstream_ports"] = {}
+        overlay["derived_from"] = {}
+        overlay["forced_exact"] = {}
+        overlay["reference"]["paths"] = []
+        overlay["resources"] = [
+            {
+                "kind": "drawable",
+                "files": sorted(f.rsplit("/", 1)[1] for f in declared),
+                "upstream_dir": self.DIR,
+                "local_glob": f"apps/android/{self.DIR}/drawable-*",
+                "vendored_at": pin,
+                **extra,
+            }
+            for declared, extra in resources
+        ]
+        self.write_overlay(overlay)
+        overrides = local or {}
+        skip = set(skip_local or [])
+        for rel in upstream:
+            if rel in skip:
+                continue
+            self.write_local(rel, overrides.get(rel, upstream[rel]))
+        for rel, text in (extra_local or {}).items():
+            self.write_local(rel, text)
+
+    def test_resources_resolve_compare_and_acknowledge(self) -> None:
+        icon = f"{self.DIR}/drawable-xxhdpi/icon.png"
+        edited = f"{self.DIR}/drawable-xxhdpi/edited.png"
+        ours = f"{self.DIR}/drawable-xxhdpi/ours.png"
+        self.prepare(
+            [([icon, edited, ours], {"ours": ["drawable-xxhdpi/ours.png"]})],
+            {icon: "icon\n", edited: "upstream\n"},
+            local={edited: "edited\n"},
+            extra_local={ours: "ours\n"},
+        )
+        index = load_index(self.root)
+        report = resource_report(index)
+        self.assertEqual([icon], [e["local"] for e in report["identical"]])
+        self.assertEqual([ours], [e["local"] for e in report["ours"]])
+        self.assertEqual([], report["unresolved"])
+        # The edited copy is drift nobody acknowledged yet.
+        self.assertEqual([edited], [e["local"] for e in report["differs"]])
+        self.assertTrue(report["differs"][0]["modified"])
+
+        # Acknowledging it in the overlay moves it out of `differs`.
+        path = self.root / "vendor-overlay.json"
+        data = json.loads(path.read_text())
+        data["resources"][0]["differs"] = ["drawable-xxhdpi/edited.png"]
+        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        report = resource_report(load_index(self.root))
+        self.assertEqual([], report["differs"])
+        self.assertEqual([edited], [e["local"] for e in report["acknowledged"]])
+
+    def test_resource_paths_override_maps_a_renamed_upstream_file(self) -> None:
+        renamed = f"{self.DIR}/drawable-xxhdpi/renamed.png"
+        self.prepare(
+            [
+                (
+                    [f"{self.DIR}/drawable-xxhdpi/renamed.webp"],
+                    {"paths": {"drawable-xxhdpi/renamed.webp": "drawable-xxhdpi/renamed.png"}},
+                )
+            ],
+            {renamed: "same\n"},
+            extra_local={f"{self.DIR}/drawable-xxhdpi/renamed.webp": "same\n"},
+            skip_local=[renamed],
+        )
+        entry = load_index(self.root)["resource_files"][0]
+        self.assertEqual(renamed, entry["upstream"])
+        self.assertTrue(entry["resolved"])
+        self.assertFalse(entry["modified"])
+
+    def test_dead_resource_declaration_is_an_error(self) -> None:
+        ghost = f"{self.DIR}/drawable-xxhdpi/ghost.png"
+        self.prepare([([ghost], {})], {ghost: "x\n"}, skip_local=[ghost])
+        with self.assertRaises(ManifestError) as ctx:
+            load_index(self.root)
+        self.assertIn("ghost.png", str(ctx.exception))
+
+    def test_ledger_heuristics_pick_both_mislabels(self) -> None:
+        index = {
+            "files": [
+                # a stub wearing an upstream path
+                {
+                    "local": "TMessagesProj/src/main/java/com/google/Player.java",
+                    "port_mode": "exact",
+                    "modified": True,
+                    "local_bytes": 400,
+                    "upstream_bytes": 116000,
+                },
+                # a real host-wired copy
+                {
+                    "local": "TMessagesProj/src/main/java/org/telegram/ui/Cell.java",
+                    "port_mode": "exact",
+                    "modified": True,
+                    "local_bytes": 9000,
+                    "upstream_bytes": 10000,
+                },
+                # a clean copy labelled native
+                {
+                    "local": "TMessagesProj/src/main/java/org/telegram/messenger/Mine.java",
+                    "port_mode": "native",
+                    "origin": "vendored",
+                    "modified": False,
+                },
+                # our own code, drifted from upstream
+                {
+                    "local": "TMessagesProj/src/main/java/org/telegram/messenger/Ours.java",
+                    "port_mode": "native",
+                    "origin": "vendored",
+                    "modified": True,
+                },
+            ]
+        }
+        self.assertEqual(
+            ["TMessagesProj/src/main/java/com/google/Player.java"],
+            [e["local"] for e in stub_candidates(index)],
+        )
+        self.assertEqual(
+            ["TMessagesProj/src/main/java/org/telegram/messenger/Mine.java"],
+            [e["local"] for e in redundant_native(index)],
+        )
 
 
 if __name__ == "__main__":

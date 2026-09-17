@@ -47,6 +47,34 @@ Everything else — which files have an upstream counterpart, whether they diffe
 byte-for-byte, which are scratch shims, which third-party trees are carried —
 is computed. Adding a copied file needs **no** overlay edit.
 
+### Resource groups
+
+A resource group names a copied set (`kind`, `files`, `local_glob`,
+`upstream_dir`, `vendored_at`) and the tools resolve every declared file to its
+upstream path (the tail below `res/`/`assets/`, or the group's `paths`
+override). Per-group annotations:
+
+| Field | Meaning |
+|---|---|
+| `paths` | `{"<local rel>": "<upstream rel>"}` when the counterpart is named differently upstream |
+| `ours` | declared files with no upstream counterpart (our own assets) |
+| `differs` | acknowledged byte differences from `vendored_at` (icon/values edits) |
+
+The guard byte-compares declared resources: an *unlisted* difference is an
+error, a listed one that matches again is a warning, and a file the resolver
+cannot place is a warning asking for `paths`/`ours`. The comparison needs the
+baseline blob contents; a blob-filtered checkout without them reports those
+files as "not compared" instead of fetching them one by one
+(`scripts/vendor-setup.sh --prefetch` warms them, in parallel).
+
+### Ledger warnings
+
+Two labels can be wrong in ways that make the bump report lie, so the guard
+reports both on every run: an `exact` file far smaller than its upstream
+original (a stub wearing an upstream path → adopt upstream or list it in
+`native`), and a `native` file that is byte-identical to upstream (a clean copy
+→ drop it from `native`).
+
 Declaring a path that no longer exists on disk is an error (that is the one kind
 of rot the tools can still catch).
 

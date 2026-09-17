@@ -27,8 +27,11 @@ from vendorlib import (  # noqa: E402
     git_rev_parse,
     load_index,
     normalize_sha,
+    redundant_native,
     repo_root,
+    resource_report,
     run_isolation_check,
+    stub_candidates,
     upstream_git_path,
     vendor_dir,
 )
@@ -66,10 +69,14 @@ def parse_args() -> argparse.Namespace:
 class Guard:
     def __init__(self) -> None:
         self.errors: list[str] = []
+        self.warnings: list[str] = []
         self.infos: list[str] = []
 
     def error(self, msg: str) -> None:
         self.errors.append(msg)
+
+    def warn(self, msg: str) -> None:
+        self.warnings.append(msg)
 
     def info(self, msg: str) -> None:
         self.infos.append(msg)
@@ -151,6 +158,94 @@ def check_forced_exact(index: dict, root: Path, guard: Guard) -> None:
     )
 
 
+def _sample(paths: list[str], limit: int = 3) -> str:
+    head = ", ".join(paths[:limit])
+    return f"{head}, …" if len(paths) > limit else head
+
+
+def check_ledger(index: dict, guard: Guard, *, verbose: bool = True) -> None:
+    """Both directions of a mislabelled vendored file.
+
+    A copy that shrank to a fraction of its upstream original is a stub wearing
+    an upstream path; a `native` file that still matches upstream is a clean
+    copy wearing our label. Neither changes behaviour, but they make the bump
+    report lie, so they are reported on every run.
+    """
+    stubs = stub_candidates(index)
+    if stubs:
+        guard.warn(
+            f"{len(stubs)} exact file(s) are far smaller than their upstream "
+            f"original ({_sample([e['local'].split('/')[-1] for e in stubs])}) — "
+            "adopt the upstream file, or add them to vendor-overlay.json `native`"
+        )
+        if verbose:
+            for entry in stubs[:10]:
+                guard.warn(
+                    f"  {entry['local']} "
+                    f"({entry.get('local_bytes')}B vs upstream "
+                    f"{entry.get('upstream_bytes')}B)"
+                )
+    redundant = redundant_native(index)
+    if redundant:
+        guard.warn(
+            f"{len(redundant)} native-declared file(s) are byte-identical to "
+            f"upstream ({_sample([e['local'] for e in redundant])}) — drop them "
+            "from `native` so the bump report tracks them"
+        )
+
+
+def check_resources(index: dict, guard: Guard, *, verbose: bool = True) -> None:
+    """Declared resource copies: unacknowledged drift is an error.
+
+    Resources are declared per group, and their bytes are verified against the
+    group's `vendored_at` baseline. A byte difference the overlay does not list
+    in that group's `differs` array is drift nobody signed off on.
+    """
+    files = index.get("resource_files") or []
+    if not files:
+        return
+    report = resource_report(index)
+    compared = [
+        e for e in files if not e.get("ours") and e.get("modified") is not None
+    ]
+    if report["uncompared"]:
+        guard.info(
+            f"{len(report['uncompared'])} declared resource file(s) were not "
+            "compared (blob contents missing in this checkout — run "
+            "scripts/vendor-setup.sh --prefetch for the byte check)"
+        )
+    guard.info(
+        f"{len(files)} declared resource file(s): "
+        f"{len(report['identical'])} identical, "
+        f"{len(report['acknowledged'])} acknowledged drift, "
+        f"{len(report['ours'])} ours, "
+        f"{len(compared)} compared"
+    )
+    if report["differs"]:
+        guard.error(
+            f"{len(report['differs'])} declared resource file(s) changed vs "
+            "their declared baseline — if intentional, add the path to that "
+            "group's `differs` array in vendor-overlay.json; otherwise restore "
+            "the file (git checkout -- <path>)"
+        )
+        for entry in report["differs"][:10] if verbose else report["differs"][:3]:
+            guard.error(f"  {entry['local']}")
+    if report["unresolved"]:
+        guard.warn(
+            f"{len(report['unresolved'])} declared resource file(s) have no "
+            "upstream counterpart at their baseline — annotate the group's "
+            "`paths` (counterpart elsewhere) or `ours` (our own asset)"
+        )
+        for entry in report["unresolved"][:10] if verbose else []:
+            guard.warn(f"  {entry['local']}")
+    if report["stale_acknowledged"]:
+        guard.warn(
+            f"{len(report['stale_acknowledged'])} acknowledged resource file(s) "
+            "are identical to their baseline again — drop them from the group's "
+            "`differs` array"
+        )
+
+
 def check_drift(index: dict, root: Path, guard: Guard) -> None:
     vd = vendor_dir(root)
     pin = normalize_sha((index.get("upstream") or {}).get("pinned_commit"))
@@ -219,6 +314,8 @@ def main() -> int:
         # they are part of --quick too; the upstream drift report (git log over
         # ~500 paths) only runs in the full mode.
         check_forced_exact(index, root, guard)
+        check_ledger(index, guard, verbose=not args.quick)
+        check_resources(index, guard, verbose=not args.quick)
         if not args.quick:
             check_drift(index, root, guard)
 
@@ -227,12 +324,20 @@ def main() -> int:
 
     for line in guard.infos:
         print(f"INFO  {line}")
+    for line in guard.warnings:
+        print(f"WARN  {line}")
     for line in guard.errors:
         print(f"ERROR {line}")
 
     if guard.errors:
-        print(f"=== vendor-guard: {len(guard.errors)} problem(s) ===")
+        print(
+            f"=== vendor-guard: {len(guard.errors)} problem(s), "
+            f"{len(guard.warnings)} warning(s) ==="
+        )
         return 1
+    if guard.warnings:
+        print(f"=== vendor-guard: OK ({len(guard.warnings)} warning(s)) ===")
+        return 0
     print("=== vendor-guard: OK ===")
     return 0
 

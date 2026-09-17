@@ -22,9 +22,13 @@ from vendorlib import (  # noqa: E402
     git_rev_parse,
     load_index,
     normalize_sha,
+    redundant_native,
     repo_root,
+    resource_report,
     run_isolation_check,
+    stub_candidates,
     third_party_bucket,
+    third_party_prefixes,
     upstream_git_path,
     vendor_dir,
 )
@@ -84,7 +88,12 @@ def main() -> int:
             "false": modified[False],
         }
         buckets = Counter(
-            b for b in (third_party_bucket(e["local"]) for e in files) if b
+            b
+            for b in (
+                third_party_bucket(e["local"], third_party_prefixes(index))
+                for e in files
+            )
+            if b
         )
         report["stats"]["third_party"] = dict(buckets)
         report["stats"]["forced_exact"] = sum(1 for e in files if e.get("forced_exact"))
@@ -101,6 +110,66 @@ def main() -> int:
             )
         if buckets:
             report["info"].append(f"third-party trees carried: {dict(buckets)}")
+
+        # Ledger heuristics: a stub at an upstream path, a clean copy labelled
+        # native. Both make the bump report lie, so they surface as warnings.
+        stubs = stub_candidates(index)
+        if stubs:
+            report["warnings"].append(
+                f"{len(stubs)} exact file(s) are far smaller than their upstream "
+                "original (adopt upstream or list them in `native`): "
+                + ", ".join(e["local"].split("/")[-1] for e in stubs[:5])
+            )
+        redundant = redundant_native(index)
+        if redundant:
+            report["warnings"].append(
+                f"{len(redundant)} native-declared file(s) are byte-identical to "
+                "upstream (drop them from `native`): "
+                + ", ".join(e["local"] for e in redundant[:5])
+            )
+
+        resource_files = index.get("resource_files") or []
+        if resource_files:
+            res = resource_report(index)
+            report["stats"]["resource_files"] = len(resource_files)
+            report["stats"]["resource_buckets"] = {
+                key: len(value) for key, value in res.items()
+            }
+            compared = sum(
+                1
+                for e in resource_files
+                if not e.get("ours") and e.get("modified") is not None
+            )
+            report["info"].append(
+                f"{len(resource_files)} declared resource file(s), "
+                f"{compared} byte-compared: {len(res['identical'])} identical, "
+                f"{len(res['acknowledged'])} acknowledged, "
+                f"{len(res['ours'])} ours"
+            )
+            if compared < len(resource_files) - len(res["ours"]):
+                report["info"].append(
+                    f"{len(res['uncompared'])} resource file(s) not byte-compared — "
+                    "run scripts/vendor-setup.sh --prefetch to materialize the blobs"
+                )
+            if res["differs"]:
+                report["errors"].append(
+                    f"{len(res['differs'])} declared resource file(s) changed vs "
+                    "their declared baseline (add to the group's `differs` array "
+                    "if intentional): "
+                    + ", ".join(e["local"] for e in res["differs"][:5])
+                )
+            if res["unresolved"]:
+                report["warnings"].append(
+                    f"{len(res['unresolved'])} declared resource file(s) have no "
+                    "upstream counterpart (annotate `paths` or `ours`): "
+                    + ", ".join(e["local"] for e in res["unresolved"][:5])
+                )
+            if res["stale_acknowledged"]:
+                report["warnings"].append(
+                    f"{len(res['stale_acknowledged'])} acknowledged resource "
+                    "file(s) are identical again (drop the `differs` entry): "
+                    + ", ".join(e["local"] for e in res["stale_acknowledged"][:5])
+                )
 
         vendor_head = git_rev_parse("HEAD", vd)
         report["stats"]["vendor_HEAD"] = vendor_head

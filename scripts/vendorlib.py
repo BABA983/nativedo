@@ -276,6 +276,31 @@ def load_overlay(root: Optional[PathLike] = None) -> dict[str, Any]:
     for i, res in enumerate(resources):
         if not isinstance(res, dict) or not res.get("kind") or not res.get("files"):
             raise ManifestError(f"resources[{i}]: kind and files are required")
+        for field_name in ("upstream_dir", "local_glob"):
+            value = res.get(field_name)
+            if not isinstance(value, str) or not value.strip():
+                raise ManifestError(
+                    f"resources[{i}].{field_name} is required (the derived check "
+                    "resolves each declared file against it)"
+                )
+        for field_name in ("paths",):
+            value = res.get(field_name)
+            if value is not None and (
+                not isinstance(value, dict)
+                or not all(isinstance(k, str) and isinstance(v, str) for k, v in value.items())
+            ):
+                raise ManifestError(
+                    f"resources[{i}].{field_name} must be an object of "
+                    "local-rel -> upstream-rel"
+                )
+        for field_name in ("ours", "differs"):
+            value = res.get(field_name)
+            if value is not None and (
+                not isinstance(value, list) or not all(isinstance(v, str) for v in value)
+            ):
+                raise ManifestError(
+                    f"resources[{i}].{field_name} must be an array of strings"
+                )
     data["resources"] = resources
     return data
 
@@ -372,17 +397,29 @@ def git_tree_blobs(
 
 
 def git_blob_bytes(
-    oids: Iterable[str], cwd: Optional[PathLike] = None
+    oids: Iterable[str],
+    cwd: Optional[PathLike] = None,
+    *,
+    no_lazy_fetch: bool = False,
 ) -> dict[str, Optional[bytes]]:
-    """`{oid: content_or_None}` via one `git cat-file --batch` call."""
+    """`{oid: content_or_None}` via one `git cat-file --batch` call.
+
+    `no_lazy_fetch` forbids the promisor remote from filling in missing objects
+    (git >= 2.42): a blob-filtered checkout without the contents then answers
+    "missing" immediately instead of paying one network round trip per object.
+    """
     unique = list(dict.fromkeys(oids))
     if not unique:
         return {}
     vd = _as_path(cwd) if cwd is not None else vendor_dir()
+    env = {**os.environ}
+    if no_lazy_fetch:
+        env["GIT_NO_LAZY_FETCH"] = "1"
     proc = subprocess.run(
         ["git", "-C", str(vd), "cat-file", "--batch"],
         input="".join(f"{oid}\n" for oid in unique).encode(),
         capture_output=True,
+        env=env,
     )
     out = proc.stdout
     blobs: dict[str, Optional[bytes]] = {}
@@ -485,15 +522,257 @@ def upstream_git_path(entry: dict[str, Any], manifest: dict[str, Any]) -> Option
     return f"{root}/{u}"
 
 
-def third_party_bucket(local: str) -> Optional[str]:
-    """Bucket name for allowlisted/third-party trees, else None."""
+def third_party_bucket(
+    local: str, prefixes: Optional[Iterable[str]] = None
+) -> Optional[str]:
+    """Bucket name for allowlisted/third-party trees, else None.
+
+    `prefixes` defaults to the module constant; the overlay's
+    `policy.third_party_prefixes` is the human-owned list (pass it in).
+    """
     rel = local
     if rel.startswith(TELEGRAM_JAVA_PREFIX):
         rel = rel[len(TELEGRAM_JAVA_PREFIX) :]
-    for prefix in THIRD_PARTY_PREFIXES:
+    for prefix in prefixes if prefixes is not None else THIRD_PARTY_PREFIXES:
         if rel.startswith(prefix):
             return prefix.rstrip("/").replace("/", "_")
     return None
+
+
+def third_party_prefixes(manifest: Optional[dict[str, Any]]) -> list[str]:
+    """The third-party prefixes to report on: overlay policy, else the default."""
+    policy = (manifest or {}).get("policy") or {}
+    declared = policy.get("third_party_prefixes")
+    if isinstance(declared, list) and all(isinstance(p, str) for p in declared):
+        return [p for p in declared if p]
+    return list(THIRD_PARTY_PREFIXES)
+
+
+# ---------------------------------------------------------------------------
+# Declared resource copies
+# ---------------------------------------------------------------------------
+
+
+def _resource_rel(local: str) -> Optional[str]:
+    """Tail of a local resource path below `res/` or `assets/` (its identity)."""
+    for marker in ("/res/", "/assets/"):
+        if marker in local:
+            return local.split(marker, 1)[1]
+    return None
+
+
+def resource_entries(
+    root: Optional[PathLike] = None,
+    *,
+    overlay: Optional[dict[str, Any]] = None,
+    local_root: Optional[str] = None,
+    trees: Optional[dict[tuple[str, str], dict[str, str]]] = None,
+) -> list[dict[str, Any]]:
+    """Resolve every declared resource file to its upstream path.
+
+    Resource groups are declared in the overlay as copied sets (`files` +
+    `local_glob`, not per-file paths). Resolution is deterministic:
+
+    1. the group's `paths` override for that file, else
+    2. the tail below `upstream_dir` (e.g. `drawable-xxhdpi/foo.png`), else
+    3. that tail without its first segment (globs whose `upstream_dir` already
+       names the resource dir), else
+    4. unresolved — annotate with `paths` (counterpart elsewhere) or `ours`
+       (our own asset; nothing to compare against).
+
+    Existence comes from `git ls-tree` (tree objects only), so resolution never
+    pulls blob content; byte comparison happens later, and only where the
+    contents are already in the checkout.
+
+    Declared names that match no file on disk, and annotations that match no
+    declared file, are errors: dead entries are the rot the tools can catch.
+    """
+    r = _as_path(root)
+    overlay = overlay if overlay is not None else load_overlay(r)
+    local_root = (local_root or overlay.get("local_root", DEFAULT_LOCAL_ROOT)).rstrip("/")
+    vd = vendor_dir(r)
+    tree_cache = trees if trees is not None else {}
+
+    def tree(commit: str, upstream_dir: str) -> dict[str, str]:
+        """`{path: blob_oid}` for one subtree — `ls-tree` reads no blob content."""
+        key = (commit, upstream_dir)
+        if key not in tree_cache:
+            tree_cache[key] = git_tree_blobs(commit, upstream_dir, vd)
+        return tree_cache[key]
+
+    entries: list[dict[str, Any]] = []
+    errors: list[str] = []
+    for gi, group in enumerate(overlay.get("resources") or []):
+        kind = group.get("kind") or "resource"
+        upstream_dir = str(group.get("upstream_dir") or "").rstrip("/")
+        baseline = normalize_sha(group.get("vendored_at")) or normalize_sha(
+            (overlay.get("upstream") or {}).get("pinned_commit")
+        )
+        glob = str(group.get("local_glob") or "").rstrip("/")
+        overrides = group.get("paths") or {}
+        ours = set(group.get("ours") or [])
+        if not upstream_dir or not baseline or not glob:
+            raise ManifestError(
+                f"resources[{gi}]: upstream_dir, local_glob and vendored_at "
+                "(or a pinned commit) are required"
+            )
+        declared = list(group.get("files") or [])
+        # `local_glob` is repo-relative (e.g. apps/android/app/src/main/res/drawable-*).
+        search_glob = glob if glob.startswith(local_root + "/") else f"{local_root}/{glob}"
+        rel_glob = search_glob[len(local_root) + 1 :]
+        matched: set[str] = set()
+        for name in declared:
+            found = sorted(r.glob(f"{search_glob}/{name}"))
+            if not found:
+                errors.append(
+                    f"resources[{gi}]: {rel_glob}/{name} is declared but not on disk"
+                )
+                continue
+            for path in found:
+                local = path.relative_to(r / local_root).as_posix()
+                rel = _resource_rel(local)
+                if rel is None:
+                    errors.append(
+                        f"resources[{gi}]: {local} is not below res/ or assets/"
+                    )
+                    continue
+                matched.add(rel)
+                override = overrides.get(rel)
+                candidates = (
+                    [f"{upstream_dir}/{override}"]
+                    if override is not None
+                    else (
+                        []
+                        if rel in ours
+                        else [f"{upstream_dir}/{rel}"]
+                        + (
+                            [f"{upstream_dir}/{rel.split('/', 1)[1]}"]
+                            if "/" in rel
+                            else []
+                        )
+                    )
+                )
+                up_tree = tree(baseline, upstream_dir)
+                git_path = next((c for c in candidates if c in up_tree), None)
+                if override is not None and git_path is None:
+                    errors.append(
+                        f"resources[{gi}]: paths[{rel}] -> {override} does not "
+                        f"exist at {baseline[:12]}"
+                    )
+                    continue
+                entries.append(
+                    {
+                        "group": gi,
+                        "kind": kind,
+                        "local": local,
+                        "rel": rel,
+                        "upstream": git_path,
+                        "upstream_rel": (
+                            git_path[len(upstream_dir) + 1 :] if git_path else None
+                        ),
+                        "upstream_dir": upstream_dir,
+                        "oid": up_tree[git_path] if git_path else None,
+                        "vendored_at": baseline,
+                        "ours": rel in ours,
+                        "resolved": git_path is not None,
+                    }
+                )
+        for rel in sorted(set(overrides) | ours):
+            if rel not in matched:
+                errors.append(
+                    f"resources[{gi}]: {rel} is annotated (paths/ours) but no "
+                    "declared file resolves to it"
+                )
+    if errors:
+        raise ManifestError(
+            f"{OVERLAY_NAME}: {len(errors)} resource group problem(s); "
+            + "; ".join(errors[:3])
+        )
+    entries.sort(key=lambda e: e["local"])
+    return entries
+
+
+def resource_report(index: dict[str, Any]) -> dict[str, Any]:
+    """Bucket the declared resource files of a derived index.
+
+    `differs` holds the byte differences nobody acknowledged yet (the guard
+    treats them as errors); `acknowledged` holds the ones the overlay lists in
+    the group's `differs` array; `stale_acknowledged` holds acknowledged files
+    that became identical again (drop the entry).
+    """
+    files = index.get("resource_files") or []
+    acknowledged = set()
+    for gi, group in enumerate(index.get("resources") or []):
+        for rel in group.get("differs") or []:
+            acknowledged.add(f"{gi}:{rel}")
+    buckets: dict[str, list[dict[str, Any]]] = {
+        "identical": [],
+        "differs": [],
+        "acknowledged": [],
+        "stale_acknowledged": [],
+        "ours": [],
+        "unresolved": [],
+        "uncompared": [],
+    }
+    for entry in files:
+        key = f"{entry['group']}:{entry['rel']}"
+        if entry.get("ours"):
+            buckets["ours"].append(entry)
+        elif not entry.get("resolved"):
+            buckets["unresolved"].append(entry)
+        elif entry.get("modified") is None:
+            # Blob contents unavailable in this checkout (see
+            # git_blob_bytes(no_lazy_fetch=True)).
+            buckets["uncompared"].append(entry)
+        elif entry.get("modified"):
+            buckets[
+                "acknowledged" if key in acknowledged else "differs"
+            ].append(entry)
+        else:
+            buckets[
+                "stale_acknowledged" if key in acknowledged else "identical"
+            ].append(entry)
+    return buckets
+
+
+# ---------------------------------------------------------------------------
+# Ledger heuristics (both directions of a mislabelled file)
+# ---------------------------------------------------------------------------
+
+
+def stub_candidates(index: dict[str, Any]) -> list[dict[str, Any]]:
+    """`exact` files far smaller than their upstream original.
+
+    A copy that shrank to a fraction of the upstream blob is almost always a
+    hand-written stub wearing an upstream path — either adopt the upstream
+    file or list it in the overlay's `native` array.
+    """
+    out = []
+    for entry in index.get("files") or []:
+        if entry.get("port_mode") != "exact" or not entry.get("modified"):
+            continue
+        local_bytes = entry.get("local_bytes")
+        upstream_bytes = entry.get("upstream_bytes")
+        if not local_bytes or not upstream_bytes:
+            continue
+        if local_bytes * 2 < upstream_bytes:
+            out.append(entry)
+    return out
+
+
+def redundant_native(index: dict[str, Any]) -> list[dict[str, Any]]:
+    """`native`-declared files whose bytes still equal the upstream blob.
+
+    They are clean copies, so the label hides them from the bump report; drop
+    them from `native` (or they are ours and have drifted since).
+    """
+    out = []
+    for entry in index.get("files") or []:
+        if entry.get("port_mode") != "native" or entry.get("origin") == "shim":
+            continue
+        if entry.get("modified") is False:
+            out.append(entry)
+    return out
 
 
 def derive_index(
@@ -503,9 +782,10 @@ def derive_index(
 
     Entry shape (kept compatible with the vendor tools):
 
-    - `files`        — sources with an upstream counterpart at the pin
-    - `compat_shims` — `:TMessagesProj` sources with no upstream blob at the pin
-    - `resources`    — declared resource copies
+    - `files`          — sources with an upstream counterpart at the pin
+    - `compat_shims`   — `:TMessagesProj` sources with no upstream blob at the pin
+    - `resource_files` — declared resource copies, resolved per file
+    - `resources`      — the declared resource groups
     """
     r = _as_path(root)
     overlay = load_overlay(r)
@@ -550,7 +830,9 @@ def derive_index(
     trees: dict[str, dict[str, str]] = {}
     for commit in {pin, reference_commit} - {None}:
         trees[commit] = git_tree_blobs(commit, upstream_root, vd)
+    resource_files = resource_entries(r, overlay=overlay, local_root=local_root)
     blob_bytes: dict[str, Optional[bytes]] = {}
+    resource_blob_bytes: dict[str, Optional[bytes]] = {}
     if with_modified:
         wanted = []
         for entry in pending:
@@ -563,6 +845,13 @@ def derive_index(
             if oid:
                 wanted.append(oid)
         blob_bytes = git_blob_bytes(wanted, vd)
+        # Resource copies are byte-verified only where their blobs are already
+        # present (a warmed checkout); a cold blob-filtered clone — CI — must
+        # not pay one network round trip per drawable, so it reports them as
+        # "not compared" instead of fetching them.
+        resource_blob_bytes = git_blob_bytes(
+            [e["oid"] for e in resource_files if e.get("oid")], vd, no_lazy_fetch=True
+        )
 
     files: list[dict[str, Any]] = []
     shims: list[dict[str, Any]] = []
@@ -589,19 +878,39 @@ def derive_index(
             item["origin"] = "shim"
             shims.append(item)
             continue
-        item["origin"] = "vendored"
+        item["origin"] = entry["origin"]
+        path = local_abs(item, manifest_meta, r)
+        if path.is_file():
+            item["local_bytes"] = path.stat().st_size
         if with_modified:
             blob = blob_bytes.get(oid)
-            path = local_abs(item, manifest_meta, r)
+            if blob is not None:
+                item["upstream_bytes"] = len(blob)
             item["modified"] = (
                 None if blob is None or not path.is_file() else path.read_bytes() != blob
             )
         files.append(item)
 
+    for entry in resource_files:
+        path = r / local_root / entry["local"]
+        entry["local_bytes"] = path.stat().st_size if path.is_file() else None
+        if with_modified:
+            blob = (
+                resource_blob_bytes.get(entry["oid"]) if entry.get("oid") else None
+            )
+            if blob is not None:
+                entry["upstream_bytes"] = len(blob)
+            entry["modified"] = (
+                None
+                if blob is None or not path.is_file()
+                else path.read_bytes() != blob
+            )
+
     files.sort(key=lambda e: e["local"])
     shims.sort(key=lambda e: e["local"])
     manifest_meta["files"] = files
     manifest_meta["compat_shims"] = shims
+    manifest_meta["resource_files"] = resource_files
     return manifest_meta
 
 
@@ -677,6 +986,9 @@ def prefetch_specs(root: Optional[PathLike] = None) -> list[str]:
         git_path = upstream_git_path({"upstream": upstream}, meta)
         baseline = reference_commit if local in reference_paths else pin
         paths.append(f"{baseline}:{git_path}")
+    for entry in resource_entries(r, overlay=overlay, local_root=local_root):
+        if entry["resolved"]:
+            paths.append(f"{entry['vendored_at']}:{entry['upstream']}")
     return sorted(set(paths))
 
 

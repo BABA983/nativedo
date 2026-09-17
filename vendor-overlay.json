@@ -24,8 +24,9 @@
     "why": "NativeDo is a linux.do client, not a Telegram fork: the snapshot advances only when a product goal needs upstream code, never on every upstream release.",
     "third_party_prefixes": [
       "androidx/",
+      "com/carrotsearch/",
       "com/google/",
-      "com/carrotsearch/"
+      "me/vkryl/"
     ]
   },
   "reference": {
@@ -66,8 +67,8 @@
       "TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java",
       "TMessagesProj/src/main/java/org/telegram/messenger/BuildVars.java",
       "TMessagesProj/src/main/java/org/telegram/messenger/Emoji.java",
-        "TMessagesProj/src/main/java/org/telegram/messenger/FileLog.java",
-        "TMessagesProj/src/main/java/org/telegram/messenger/ImageLoader.java",
+      "TMessagesProj/src/main/java/org/telegram/messenger/FileLog.java",
+      "TMessagesProj/src/main/java/org/telegram/messenger/ImageLoader.java",
       "TMessagesProj/src/main/java/org/telegram/messenger/LocaleController.java",
       "TMessagesProj/src/main/java/org/telegram/messenger/MessagesController.java",
       "TMessagesProj/src/main/java/org/telegram/messenger/NotificationCenter.java",
@@ -80,7 +81,7 @@
       "TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java",
       "TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarMenuItem.java",
       "TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarMenuSubItem.java",
-        "TMessagesProj/src/main/java/org/telegram/ui/ActionBar/BaseFragment.java",
+      "TMessagesProj/src/main/java/org/telegram/ui/ActionBar/BaseFragment.java",
       "TMessagesProj/src/main/java/org/telegram/ui/ActionBar/BottomSheetTabs.java",
       "TMessagesProj/src/main/java/org/telegram/ui/ActionBar/BottomSheetTabsOverlay.java",
       "TMessagesProj/src/main/java/org/telegram/ui/ActionBar/DrawerLayoutContainer.java",
@@ -94,8 +95,8 @@
       "TMessagesProj/src/main/java/org/telegram/ui/Cells/TextCell.java",
       "TMessagesProj/src/main/java/org/telegram/ui/Cells/TextCheckCell.java",
       "TMessagesProj/src/main/java/org/telegram/ui/Cells/TextDetailCell.java",
-        "TMessagesProj/src/main/java/org/telegram/ui/Cells/TextSelectionHelper.java",
-        "TMessagesProj/src/main/java/org/telegram/ui/Components/AnimatedEmojiSpan.java",
+      "TMessagesProj/src/main/java/org/telegram/ui/Cells/TextSelectionHelper.java",
+      "TMessagesProj/src/main/java/org/telegram/ui/Components/AnimatedEmojiSpan.java",
       "TMessagesProj/src/main/java/org/telegram/ui/Components/AnimatedFileDrawable.java",
       "TMessagesProj/src/main/java/org/telegram/ui/Components/AudioPlayerAlert.java",
       "TMessagesProj/src/main/java/org/telegram/ui/Components/AvatarDrawable.java",
@@ -113,21 +114,33 @@
       "TMessagesProj/src/main/java/org/telegram/ui/Components/RLottieDrawable.java",
       "TMessagesProj/src/main/java/org/telegram/ui/Components/Rect.java",
       "TMessagesProj/src/main/java/org/telegram/ui/Components/ReplyMessageLine.java",
-        "TMessagesProj/src/main/java/org/telegram/ui/Components/SizeNotifierFrameLayout.java",
+      "TMessagesProj/src/main/java/org/telegram/ui/Components/SizeNotifierFrameLayout.java",
       "TMessagesProj/src/main/java/org/telegram/ui/Components/UItem.java",
       "TMessagesProj/src/main/java/org/telegram/ui/Components/UniversalAdapter.java",
       "TMessagesProj/src/main/java/org/telegram/ui/Components/UniversalCells.java",
       "TMessagesProj/src/main/java/org/telegram/ui/Components/UniversalFragment.java",
       "TMessagesProj/src/main/java/org/telegram/ui/Components/ViewPagerFixed.java",
       "TMessagesProj/src/main/java/org/telegram/ui/Components/poll/buttons/PollButtonDrawable.java",
-          "TMessagesProj/src/main/java/org/telegram/ui/Components/spoilers/SpoilersClickDetector.java",
-        "TMessagesProj/src/main/java/org/telegram/ui/PhotoViewer.java",
+      "TMessagesProj/src/main/java/org/telegram/ui/Components/spoilers/SpoilersClickDetector.java",
+      "TMessagesProj/src/main/java/org/telegram/ui/PhotoViewer.java",
       "TMessagesProj/src/main/java/org/telegram/ui/bots/BotWebViewAttachedSheet.java",
       "TMessagesProj/src/main/java/org/telegram/ui/bots/ChatAttachAlertBotWebViewLayout.java",
       "TMessagesProj/src/main/java/org/telegram/ui/web/BotWebViewContainer.java"
     ]
   },
   "native": [
+    "TMessagesProj/src/main/java/com/google/android/exoplayer2/C.java",
+    "TMessagesProj/src/main/java/com/google/android/exoplayer2/ExoPlayer.java",
+    "TMessagesProj/src/main/java/com/google/android/exoplayer2/Format.java",
+    "TMessagesProj/src/main/java/com/google/android/exoplayer2/Player.java",
+    "TMessagesProj/src/main/java/com/google/android/exoplayer2/analytics/AnalyticsListener.java",
+    "TMessagesProj/src/main/java/com/google/android/exoplayer2/ext/mediasession/MediaSessionConnector.java",
+    "TMessagesProj/src/main/java/com/google/android/exoplayer2/ui/AspectRatioFrameLayout.java",
+    "TMessagesProj/src/main/java/com/google/android/exoplayer2/util/Log.java",
+    "TMessagesProj/src/main/java/com/google/android/exoplayer2/util/MimeTypes.java",
+    "TMessagesProj/src/main/java/com/google/android/exoplayer2/util/Util.java",
+    "TMessagesProj/src/main/java/com/google/android/exoplayer2/video/VideoFrameMetadataListener.java",
+    "TMessagesProj/src/main/java/com/google/android/exoplayer2/video/VideoSize.java",
     "TMessagesProj/src/main/java/org/telegram/messenger/AccountInstance.java",
     "TMessagesProj/src/main/java/org/telegram/messenger/AndroidUtilities.java",
     "TMessagesProj/src/main/java/org/telegram/messenger/ApplicationLoader.java",
@@ -925,7 +938,7 @@
       ],
       "upstream_dir": "TMessagesProj/src/main/res",
       "local_glob": "apps/android/TMessagesProj/src/main/res/drawable-*",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348"
     },
     {
       "kind": "drawable",
@@ -943,7 +956,7 @@
       ],
       "upstream_dir": "TMessagesProj/src/main/res",
       "local_glob": "apps/android/TMessagesProj/src/main/res/drawable-*",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348"
     },
     {
       "kind": "drawable",
@@ -961,7 +974,10 @@
       ],
       "upstream_dir": "TMessagesProj/src/main/res/drawable",
       "local_glob": "apps/android/TMessagesProj/src/main/res/drawable",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
+      "differs": [
+        "drawable/send_plane_24.xml"
+      ]
     },
     {
       "kind": "drawable",
@@ -970,7 +986,13 @@
       ],
       "upstream_dir": "TMessagesProj/src/main/res",
       "local_glob": "apps/android/TMessagesProj/src/main/res/drawable-*",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
+      "differs": [
+        "drawable-hdpi/reactions_bubble_shadow.9.png",
+        "drawable-mdpi/reactions_bubble_shadow.9.png",
+        "drawable-xhdpi/reactions_bubble_shadow.9.png",
+        "drawable-xxhdpi/reactions_bubble_shadow.9.png"
+      ]
     },
     {
       "kind": "drawable",
@@ -979,7 +1001,7 @@
       ],
       "upstream_dir": "TMessagesProj/src/main/res",
       "local_glob": "apps/android/TMessagesProj/src/main/res/drawable-*",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348"
     },
     {
       "kind": "drawable",
@@ -1010,7 +1032,10 @@
       ],
       "upstream_dir": "TMessagesProj/src/main/res",
       "local_glob": "apps/android/TMessagesProj/src/main/res/drawable*",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
+      "differs": [
+        "drawable/menu_poll_notify.xml"
+      ]
     },
     {
       "kind": "drawable",
@@ -1034,7 +1059,16 @@
       ],
       "upstream_dir": "TMessagesProj/src/main/res/drawable",
       "local_glob": "apps/android/TMessagesProj/src/main/res/drawable",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
+      "differs": [
+        "drawable/action_share.xml",
+        "drawable/filled_profile_edit_24.xml",
+        "drawable/filled_profile_message_24.xml",
+        "drawable/outline_profile_edit_24.xml",
+        "drawable/outline_profile_message_24.xml",
+        "drawable/tabs_chats_24.xml",
+        "drawable/tabs_chats_active_24.xml"
+      ]
     },
     {
       "kind": "drawable",
@@ -1050,7 +1084,7 @@
       ],
       "upstream_dir": "TMessagesProj/src/main/res",
       "local_glob": "apps/android/TMessagesProj/src/main/res/drawable-*",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348"
     },
     {
       "kind": "raw",
@@ -1089,7 +1123,13 @@
       ],
       "upstream_dir": "TMessagesProj/src/main/res/drawable",
       "local_glob": "apps/android/TMessagesProj/src/main/res/drawable",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
+      "ours": [
+        "drawable/miniplayer_close.xml"
+      ],
+      "differs": [
+        "drawable/outline_search_1_24.xml"
+      ]
     },
     {
       "kind": "drawable",
@@ -1135,7 +1175,7 @@
       ],
       "upstream_dir": "TMessagesProj/src/main/res",
       "local_glob": "apps/android/TMessagesProj/src/main/res/drawable-*",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348"
     },
     {
       "kind": "drawable",
@@ -1157,7 +1197,10 @@
       ],
       "upstream_dir": "TMessagesProj/src/main/res/anim",
       "local_glob": "apps/android/TMessagesProj/src/main/res/anim",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
+      "differs": [
+        "anim/popup_context_in.xml"
+      ]
     },
     {
       "kind": "drawable",
@@ -1215,7 +1258,10 @@
       ],
       "upstream_dir": "TMessagesProj/src/main/res/values",
       "local_glob": "apps/android/TMessagesProj/src/main/res/values",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
+      "differs": [
+        "values/ids.xml"
+      ]
     },
     {
       "kind": "values",
@@ -1224,7 +1270,10 @@
       ],
       "upstream_dir": "TMessagesProj/src/main/res/values",
       "local_glob": "apps/android/TMessagesProj/src/main/res/values",
-      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348"
+      "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348",
+      "differs": [
+        "values/styles.xml"
+      ]
     },
     {
       "kind": "drawable",
@@ -1324,7 +1373,13 @@
       ],
       "upstream_dir": "TMessagesProj/src/main/res/drawable-*",
       "local_glob": "apps/android/TMessagesProj/src/main/res/drawable-*",
-      "vendored_at": "009e97356f966bb81eceba113d210230bf383122"
+      "vendored_at": "009e97356f966bb81eceba113d210230bf383122",
+      "ours": [
+        "drawable-hdpi/mini_quote.png",
+        "drawable-mdpi/mini_quote.png",
+        "drawable-xhdpi/mini_quote.png",
+        "drawable-xxhdpi/mini_quote.png"
+      ]
     },
     {
       "kind": "drawable",

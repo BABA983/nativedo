@@ -36,6 +36,11 @@ jobs:
           fi
           git -C ../telegram checkout -q "$PIN"
 
+      # The sparse cone covers the sources; this warms the declared resource
+      # blobs too (parallel, ~30 s) so the guard can byte-compare them.
+      - name: Prefetch vendor blobs
+        run: scripts/vendor-setup.sh --prefetch
+
       - name: Vendor tooling unit tests
         run: python3 -m unittest discover -s scripts/tests -t scripts/tests
 
