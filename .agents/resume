@@ -33,5 +33,12 @@ VENDOR_DIR="$(
     'from vendorlib import vendor_dir; print(vendor_dir())' 2>/dev/null ||
     echo "$REPO_ROOT/../telegram"
 )"
-[[ -d "$VENDOR_DIR/.git" || -f "$VENDOR_DIR/.git" ]] ||
+if [[ -d "$VENDOR_DIR/.git" || -f "$VENDOR_DIR/.git" ]]; then
+  vendor_head="$(git -C "$VENDOR_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
+  pin="$(python3 -c "import json; print(json.load(open('$REPO_ROOT/vendor-overlay.json'))['upstream']['pinned_commit'])" 2>/dev/null || true)"
+  if [[ -n "$pin" && "$vendor_head" != "$pin" ]]; then
+    echo "orb resume: vendor tree at ${vendor_head:0:8} is not the pin (${pin:0:8}); run scripts/vendor-setup.sh"
+  fi
+else
   echo "orb resume: sparse Telegram tree missing at $VENDOR_DIR; run scripts/vendor-setup.sh for vendor diffs"
+fi

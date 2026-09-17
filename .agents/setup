@@ -164,7 +164,22 @@ if [[ ! -d "$VENDOR_DIR/.git" && ! -f "$VENDOR_DIR/.git" ]]; then
     echo "WARNING: sparse Telegram tree was not ready after 60s; run scripts/vendor-setup.sh when vendor tooling is needed."
   fi
 else
-  log "Vendor tree present: $(git -C "$VENDOR_DIR" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  vendor_head="$(git -C "$VENDOR_DIR" rev-parse HEAD 2>/dev/null || echo unknown)"
+  pin="$(python3 -c "import json; print(json.load(open('$REPO_ROOT/vendor-overlay.json'))['upstream']['pinned_commit'])")"
+  if [[ "$vendor_head" == "$pin" ]]; then
+    log "Vendor tree present at the pin: ${vendor_head:0:8}"
+  else
+    # A snapshot taken before a pin bump keeps the old checkout: the vendor tools
+    # read blobs by commit so they never notice, but the tree on disk shows the
+    # previous release to anyone who reads it. vendor-setup.sh fetches and
+    # checks out the pin; bound it and never fail setup over this.
+    log "Vendor tree at ${vendor_head:0:8} is not the pin (${pin:0:8}); re-checking out (timeout 180s)"
+    if timeout --signal=TERM --kill-after=10s 180 "$REPO_ROOT/scripts/vendor-setup.sh"; then
+      log "Vendor tree moved to $(git -C "$VENDOR_DIR" rev-parse --short HEAD)"
+    else
+      echo "WARNING: could not move the vendor tree to the pin; run scripts/vendor-setup.sh."
+    fi
+  fi
 fi
 
 # --- Repo git hooks ----------------------------------------------------------
