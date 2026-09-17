@@ -712,6 +712,14 @@ public class Theme {
                         currentColors.put(key, newColor);
                     }
                 }
+                for (int key : myMessagesAccentExtraKeys) {
+                    final int index = currentColorsNoAccent.indexOfKey(key);
+                    final int color = index < 0 ? defaultColors[key] : currentColorsNoAccent.valueAt(index);
+                    final int newColor = changeColorAccent(hsvTemp1, hsvTemp2, color, isDarkTheme, color);
+                    if (newColor != color) {
+                        currentColors.put(key, newColor);
+                    }
+                }
 
                 if (changeMyMessagesColors) {
                     Color.colorToHSV(myMessagesAccent, hsvTemp2);
@@ -955,6 +963,8 @@ public class Theme {
             } else {
                 currentColors.put(key_chat_outCodeBackground, codeBackground(outBubble, isDarkTheme));
             }
+            applyCalculatedTableColors(currentColorsNoAccent, currentColors, isDarkTheme);
+            applyCalculatedArticleCodeColors(currentColorsNoAccent, currentColors, isDarkTheme);
 
             return !isMyMessagesGradientColorsNear;
         }
@@ -3405,6 +3415,23 @@ public class Theme {
 
     public static final int key_chat_inCodeBackground = colorsCount++;
     public static final int key_chat_outCodeBackground = colorsCount++;
+    public static final int key_chat_inTableBackground = colorsCount++;
+    public static final int key_chat_outTableBackground = colorsCount++;
+    public static final int key_chat_inTableBorder = colorsCount++;
+    public static final int key_chat_outTableBorder = colorsCount++;
+    public static final int key_chat_inDivider = colorsCount++;
+    public static final int key_chat_outDivider = colorsCount++;
+    public static final int key_chat_inArticleCodeBackground = colorsCount++;
+    public static final int key_chat_outArticleCodeBackground = colorsCount++;
+    public static final int key_chat_inArticleCodeScrollbarBackground = colorsCount++;
+    public static final int key_chat_inArticleCodeScrollbar = colorsCount++;
+    public static final int key_chat_outArticleCodeScrollbarBackground = colorsCount++;
+    public static final int key_chat_outArticleCodeScrollbar = colorsCount++;
+    public static final int key_chat_inArticleDetailsArrow = colorsCount++;
+    public static final int key_chat_outArticleDetailsArrow = colorsCount++;
+    public static final int key_chat_inArticleDetailsLine = colorsCount++;
+    public static final int key_chat_outArticleDetailsLine = colorsCount++;
+    private static final int[] myMessagesAccentExtraKeys = { key_chat_outDivider };
     public static final int key_code_keyword = colorsCount++;
     public static final int key_code_operator = colorsCount++;
     public static final int key_code_constant = colorsCount++;
@@ -3705,6 +3732,11 @@ public class Theme {
 
         fallbackKeys.put(key_table_background, key_graySection);
         fallbackKeys.put(key_table_border, key_divider);
+        fallbackKeys.put(key_chat_inTableBackground, key_table_background);
+        fallbackKeys.put(key_chat_outTableBackground, key_chat_outCodeBackground);
+        fallbackKeys.put(key_chat_inTableBorder, key_table_border);
+        fallbackKeys.put(key_chat_outTableBorder, key_table_border);
+        fallbackKeys.put(key_chat_outArticleCodeBackground, key_chat_outCodeBackground);
 
         fallbackKeys.put(key_share_icon, key_windowBackgroundWhiteBlackText);
         fallbackKeys.put(key_share_linkBackground, key_windowBackgroundGray);
@@ -3745,6 +3777,21 @@ public class Theme {
         themeAccentExclusionKeys.add(key_statisticChartLine_orange);
         themeAccentExclusionKeys.add(key_statisticChartLine_indigo);
         themeAccentExclusionKeys.add(key_chat_inCodeBackground);
+        themeAccentExclusionKeys.add(key_chat_inTableBackground);
+        themeAccentExclusionKeys.add(key_chat_outTableBackground);
+        themeAccentExclusionKeys.add(key_chat_inTableBorder);
+        themeAccentExclusionKeys.add(key_chat_outTableBorder);
+        themeAccentExclusionKeys.add(key_chat_inDivider);
+        themeAccentExclusionKeys.add(key_chat_inArticleCodeBackground);
+        themeAccentExclusionKeys.add(key_chat_outArticleCodeBackground);
+        themeAccentExclusionKeys.add(key_chat_inArticleCodeScrollbarBackground);
+        themeAccentExclusionKeys.add(key_chat_inArticleCodeScrollbar);
+        themeAccentExclusionKeys.add(key_chat_outArticleCodeScrollbarBackground);
+        themeAccentExclusionKeys.add(key_chat_outArticleCodeScrollbar);
+        themeAccentExclusionKeys.add(key_chat_inArticleDetailsArrow);
+        themeAccentExclusionKeys.add(key_chat_outArticleDetailsArrow);
+        themeAccentExclusionKeys.add(key_chat_inArticleDetailsLine);
+        themeAccentExclusionKeys.add(key_chat_outArticleDetailsLine);
 
         themeAccentExclusionKeys.add(key_voipgroup_checkMenu);
         themeAccentExclusionKeys.add(key_voipgroup_muteButton);
@@ -5891,6 +5938,142 @@ public class Theme {
         return lightness > 0.705f || lightness2 > 0.705f;
     }
 
+    private static int calculatedTableBackground(int bubbleColor, boolean isDarkTheme, boolean isOut) {
+        if (isDarkTheme && isOut) {
+            return multAlpha(Color.WHITE, .07f);
+        }
+        float[] hsv = getTempHsv(3);
+        Color.colorToHSV(bubbleColor, hsv);
+        if (isDarkTheme) {
+            hsv[2] = Math.min(1f, hsv[2] + .07f);
+            if (isOut) {
+                hsv[1] = Math.min(1f, hsv[1] + .02f);
+            }
+        } else {
+            hsv[2] = Math.max(0f, hsv[2] - (isOut ? .06f : .03f));
+            if (isOut && hsv[1] > .02f) {
+                hsv[1] = Math.min(1f, hsv[1] + .02f);
+            }
+        }
+        return Color.HSVToColor(Color.alpha(bubbleColor), hsv);
+    }
+
+    private static int calculatedTableBorder(int bubbleColor, boolean isDarkTheme, boolean isOut) {
+        if (isDarkTheme && isOut) {
+            return multAlpha(Color.WHITE, .14f);
+        }
+        float[] hsv = getTempHsv(3);
+        Color.colorToHSV(bubbleColor, hsv);
+        if (isDarkTheme) {
+            hsv[2] = Math.min(1f, hsv[2] + .14f);
+            if (isOut) {
+                hsv[1] = Math.min(1f, hsv[1] + .03f);
+            }
+        } else {
+            hsv[2] = Math.max(0f, hsv[2] - (isOut ? .14f : .12f));
+            if (isOut && hsv[1] > .02f) {
+                hsv[1] = Math.min(1f, hsv[1] + .04f);
+            }
+        }
+        return Color.HSVToColor(Color.alpha(bubbleColor), hsv);
+    }
+
+    private static int tableOutBubble(SparseIntArray colors) {
+        int r = 0, g = 0, b = 0, count = 0;
+        final int[] keys = {
+            key_chat_outBubble, key_chat_outBubbleGradient1,
+            key_chat_outBubbleGradient2, key_chat_outBubbleGradient3
+        };
+        for (int key : keys) {
+            if (key != key_chat_outBubble && colors.indexOfKey(key) < 0) {
+                continue;
+            }
+            final int color = colors.get(key, defaultColors[key]);
+            r += Color.red(color);
+            g += Color.green(color);
+            b += Color.blue(color);
+            count++;
+        }
+        return Color.rgb(r / count, g / count, b / count);
+    }
+
+    private static void applyCalculatedTableColors(SparseIntArray sourceColors, SparseIntArray colors, boolean isDarkTheme) {
+        final int inBubble = colors.get(key_chat_inBubble, defaultColors[key_chat_inBubble]);
+        final int outBubble = tableOutBubble(colors);
+        if (sourceColors.indexOfKey(key_chat_inTableBackground) < 0) {
+            colors.put(key_chat_inTableBackground, calculatedTableBackground(inBubble, isDarkTheme, false));
+        }
+        if (sourceColors.indexOfKey(key_chat_outTableBackground) < 0) {
+            colors.put(key_chat_outTableBackground, calculatedTableBackground(outBubble, isDarkTheme, true));
+        }
+        if (sourceColors.indexOfKey(key_chat_inTableBorder) < 0) {
+            colors.put(key_chat_inTableBorder, calculatedTableBorder(inBubble, isDarkTheme, false));
+        }
+        if (sourceColors.indexOfKey(key_chat_outTableBorder) < 0) {
+            colors.put(key_chat_outTableBorder, calculatedTableBorder(outBubble, isDarkTheme, true));
+        }
+        if (sourceColors.indexOfKey(key_chat_outDivider) < 0) {
+            final int replyLine = colors.get(key_chat_outReplyLine, defaultColors[key_chat_outReplyLine]);
+            colors.put(key_chat_outDivider, multAlpha(replyLine, .2f));
+        }
+        if (isDarkTheme && sourceColors.indexOfKey(key_chat_inDivider) < 0) {
+            final int replyText = colors.get(key_chat_inReplyMessageText, defaultColors[key_chat_inReplyMessageText]);
+            colors.put(key_chat_inDivider, multAlpha(replyText, .2f));
+        }
+    }
+
+    private static void applyCalculatedArticleCodeColors(SparseIntArray sourceColors, SparseIntArray colors, boolean isDarkTheme) {
+        if (isDarkTheme && sourceColors.indexOfKey(key_chat_inArticleCodeBackground) < 0) {
+            colors.put(key_chat_inArticleCodeBackground, multAlpha(Color.WHITE, .10f));
+        }
+        final int inBubble = colors.get(key_chat_inBubble, defaultColors[key_chat_inBubble]);
+        final int outBubble = tableOutBubble(colors);
+        if (sourceColors.indexOfKey(key_chat_inArticleCodeScrollbarBackground) < 0) {
+            colors.put(key_chat_inArticleCodeScrollbarBackground, calculatedArticleCodeScrollbar(inBubble, isDarkTheme, false));
+        }
+        if (sourceColors.indexOfKey(key_chat_inArticleCodeScrollbar) < 0) {
+            colors.put(key_chat_inArticleCodeScrollbar, calculatedArticleCodeScrollbar(inBubble, isDarkTheme, true));
+        }
+        if (sourceColors.indexOfKey(key_chat_outArticleCodeScrollbarBackground) < 0) {
+            colors.put(key_chat_outArticleCodeScrollbarBackground, calculatedArticleCodeScrollbar(outBubble, isDarkTheme, false));
+        }
+        if (sourceColors.indexOfKey(key_chat_outArticleCodeScrollbar) < 0) {
+            colors.put(key_chat_outArticleCodeScrollbar, calculatedArticleCodeScrollbar(outBubble, isDarkTheme, true));
+        }
+        if (sourceColors.indexOfKey(key_chat_inArticleDetailsArrow) < 0) {
+            colors.put(key_chat_inArticleDetailsArrow, calculatedArticleDetailsColor(inBubble, isDarkTheme, false, true));
+        }
+        if (sourceColors.indexOfKey(key_chat_outArticleDetailsArrow) < 0) {
+            colors.put(key_chat_outArticleDetailsArrow, calculatedArticleDetailsColor(outBubble, isDarkTheme, true, true));
+        }
+        if (sourceColors.indexOfKey(key_chat_inArticleDetailsLine) < 0) {
+            colors.put(key_chat_inArticleDetailsLine, calculatedArticleDetailsColor(inBubble, isDarkTheme, false, false));
+        }
+        if (sourceColors.indexOfKey(key_chat_outArticleDetailsLine) < 0) {
+            colors.put(key_chat_outArticleDetailsLine, calculatedArticleDetailsColor(outBubble, isDarkTheme, true, false));
+        }
+    }
+
+    private static int calculatedArticleDetailsColor(int bubbleColor, boolean isDarkTheme, boolean isOut, boolean arrow) {
+        if (isDarkTheme) {
+            return multAlpha(Color.WHITE, arrow ? .62f : .18f);
+        }
+        final int baseColor = arrow ? 0xff9ea4a8 : 0xffd8d8d8;
+        final float[] hsv = getTempHsv(3);
+        Color.colorToHSV(bubbleColor, hsv);
+        return isOut && hsv[1] > .02f ? adaptHue(baseColor, bubbleColor) : baseColor;
+    }
+
+    private static int calculatedArticleCodeScrollbar(int bubbleColor, boolean isDarkTheme, boolean thumb) {
+        if (isDarkTheme) {
+            return multAlpha(Color.WHITE, thumb ? .22f : .12f);
+        }
+        final int baseColor = thumb ? 0xffc5cdd5 : 0xffe1e6eb;
+        final float[] hsv = getTempHsv(3);
+        Color.colorToHSV(bubbleColor, hsv);
+        return hsv[1] > .02f ? adaptHue(baseColor, bubbleColor) : baseColor;
+    }
+
     public static void refreshThemeColors() {
         refreshThemeColors(false, false);
     }
@@ -5902,6 +6085,8 @@ public class Theme {
         if (accent != null) {
             shouldDrawGradientIcons = accent.fillAccentColors(currentColorsNoAccent, currentColors);
         }
+        applyCalculatedTableColors(currentColorsNoAccent, currentColors, currentTheme.isDark());
+        applyCalculatedArticleCodeColors(currentColorsNoAccent, currentColors, currentTheme.isDark());
         if (!messages) {
             boolean async = !(LaunchActivity.getSafeLastFragment() instanceof ChatActivity);
             reloadWallpaper(async);
@@ -8609,6 +8794,10 @@ public class Theme {
     public static int getDefaultColor(int key) {
         int value = defaultColors[key];
         if (value == 0) {
+            int fallbackKey = fallbackKeys.get(key, -1);
+            if (fallbackKey != -1) {
+                return getDefaultColor(fallbackKey);
+            }
             if (isMyMessagesBubbles(key) || key == key_chats_menuTopShadow || key == key_chats_menuTopBackground || key == key_chats_menuTopShadowCats || key == key_chat_wallpaper_gradient_to2 || key == key_chat_wallpaper_gradient_to3) {
                 return 0;
             }
@@ -9716,7 +9905,9 @@ public class Theme {
     }
 
     public static Paint fillingPaint(int color) {
-        PAINT_FILLING.setColor(color);
+        if (PAINT_FILLING.getColor() != color) {
+            PAINT_FILLING.setColor(color);
+        }
         return PAINT_FILLING;
     }
 
