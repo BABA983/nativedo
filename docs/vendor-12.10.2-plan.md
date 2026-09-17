@@ -86,24 +86,36 @@ one, and neither can move a gesture/measurement/drawing number (`strip_type_qual
 `scripts/vendorlib.py`, `types=` on `comment_only_edit`). A real edit behind the move still
 raises the prompt.
 
-## Deferred: the cell/theme *content* rebase
+## The cell/theme content rebase — sliced and landed
 
-`ChatMessageCell`, `ChatActionCell`, `Theme`, `TextSelectionHelper` and `ActionBarLayout`
-also gained 12.10.2 content, but adopting it is not a copy — it drags a wide closure of
-classes for features we deliberately do not implement:
+The import closures originally recorded here (62 / 30 / 8 / 5 — `Stars*`, `Stories*`,
+`Gift*`, `TL_keyboard`, `RichMessageLayout`, …) are the *whole-file* cost of replacing
+these mirrors wholesale. Measured as a delta
+(9bcf3d27 → 12.10.2) the same files are small — `ChatMessageCell` +395/−98,
+`ChatActionCell` +7/−2, `Theme` +371/−882 (845 of them the `MessageDrawable` extraction
+that landed in `1d0ab15`), `TextSelectionHelper` +55/−9 — and **no slice needed a new or
+stubbed class**: every file is already a `native` entry, so the work is hand-porting
+deltas, not buying closures.
 
-| File | Missing imports to satisfy |
+Landed, one commit per slice:
+
+| Slice | What | Commit |
+|---|---|---|
+| 1 | `TextSelectionHelper`: cached selection text is copied out of the live layout and drops `TextWatcher`/`SpanWatcher`/`NoCopySpan` spans; a null prefix clears its cache entry | `21239b8` |
+| 2 | `Theme`/`ThemeColors`: the 16 table / divider / article code & details keys, the calculators that derive them from the bubble, the fallbacks, accent-exclusion and accent-tint pass, `getDefaultColor` following the fallback chain, `fillingPaint` skipping a no-op | `f229669` |
+| 2b | The `:app` body blocks sample those keys: table surface and grid, preformatted background, details arrow and line, rule divider | `0a5b77c` |
+
+Deliberately not taken, and why none of them is a product goal:
+
+| Piece | Reason |
 |---|---|
-| `ChatMessageCell.java` | 62 — `Stars*`, `Stories*`, `Gift*`, `Poll*`, `TL_stars`, `TL_stories`, `TL_payments`, `TL_iv`, `RichMessageLayout`, `Giveaway*`, … |
-| `ChatActionCell.java` | 30 — the same families plus `ChatThemeController`, `Community*` |
-| `Theme.java` | 8 — `TL_keyboard`, `BlurSettingsBottomSheet`, `ThemeActivity`, `ThemePreviewActivity`, … |
-| `TextSelectionHelper.java` | 5 — `RichMessageLayout`, `RichTextCell`, `LanguageDetector`, … |
+| `ChatMessageCell` / `ChatActionCell` content | both are 52- and 15-line stubs, so "adopting the content" means implementing Telegram's message cells (29.5k lines) *plus* their closures. The upstream delta does not intersect the cells we draw: no hunk's pre-image is present in `TopicPostCell` or `TopicDateCell` |
+| the 30 `key_chat_msgIvButton*` keys, `IvButtonColors`, the `TL_keyboard` import | bot keyboards / Instant View buttons |
+| `RLottieDrawable` constructor and layer names, `Utilities.blurBitmap(bitmap, 3)` | a coherence unit with its own files: our copies still carry the old signatures, so the call-site hunks belong to that pair's rebase |
+| `ActionBarLayout` edge-to-edge insets (`EdgeToEdgeSupportMode`) | our tree has no such mode; taking it moves `BaseFragment`, the sheet containers and every container call site, and the result cannot be verified in an orb (no device, no emulator, and Paparazzi cannot see real insets). Revisit with a concrete insets bug and a device |
 
-Their bot-keyboard additions (`TL_keyboard`, `key_chat_msgIvButton*`, `BotInlineKeyboard`)
-are the new feature riding along. None of this is needed to ship the linux.do client: the
-cells we actually draw are `:app` ports (`TopicCell`, `TopicPostCell`), and these mirrors are
-`native` entries, not our product surface. Revisit when a product goal needs one of those
-features — not as a bulk re-sync.
+A product goal that needs one of these features should port it into the `:app` surface
+that renders it, not re-copy an area.
 
 ## Decision: not following the Instant View refactor
 
@@ -128,15 +140,19 @@ there is nothing to port. Revisit only if we ever add a JS bridge to that WebVie
 
 ## Remaining work
 
-1. **Deferred, needs a bigger orb**: the cell/theme content rebase, if a product goal appears.
-   `:app:testDebugUnitTest` does not finish on an `a1.small` orb — the Kotlin test source set
-   thrashes for half an hour without producing results (twice, with warm and cold daemons) —
-   so the forced-exact test classes the guard names cannot be run here. What this orb *can*
-   verify is compilation (`:TMessagesProj:compileDebugJavaWithJavac` ~25s,
-   `:app:compileDebugJavaWithJavac` ~1.5min) and the guard's static checks.
+1. **Resolved — orb size, not the tests**: the deferred rebase needed a larger orb. On
+   an `a1.medium` (4 vCPU / 8 GB) `:app:testDebugUnitTest` runs in 6m55s cold — 697
+   tests, 0 failures — and the forced-exact classes the guard names run in seconds. The
+   `a1.small` failure mode recorded here was the Kotlin test source set, never the tests
+   themselves. `scripts/vendor-setup.sh` was also the only thing that checked
+   `HEAD == pin`; `.agents/setup` and `.agents/resume` now do too (`6eb9df3`), because a
+   snapshot taken before a pin bump otherwise keeps the old checkout on disk.
 2. **Watch item**: 241 of the 520 tracked files differ from 12.10.2 (they were at 12.9.0
-   before the pin moved). Nothing in that set is wrong — the pin advanced, the copies did not —
-   but the next product-driven sync should take the delta for the files it touches instead of
-   copying a whole area.
+   before the pin moved). Nothing in that set is wrong — the pin advanced, the copies did
+   not — but the next product-driven sync should take the delta for the files it touches
+   instead of copying a whole area. The slices above are the model: `Theme` moved ~200
+   lines of delta where the whole-file figure suggested an 8-import closure, and the two
+   cell mirrors turned out to need nothing at all.
 
-Mark this file historical once the deferred rebase lands or is dropped.
+The deferred rebase has landed (slices 1, 2, 2b) and the dropped pieces are recorded
+above with their reasons, so this document is now historical.
