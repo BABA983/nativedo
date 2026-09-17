@@ -229,14 +229,7 @@ final class TableBlock implements EmbeddedPostBodyBlock, TableLayout.TableLayout
         this.gallery = gallery;
         this.inlineState = inlineState;
         this.stateKey = stateKey;
-        backgroundPaint.setColor(0x0F000000);
-        dividerPaint.setColor(context.getDividerColor());
-        dividerPaint.setStrokeWidth(AndroidUtilities.dp(1f));
-        borderPaint.setColor(context.getDividerColor());
-        borderPaint.setStrokeWidth(AndroidUtilities.dp(1f));
-        borderPaint.setStyle(Paint.Style.STROKE);
-        headerBackgroundPaint.setColor(Theme.multAlpha(context.getSecondaryTextColor(), 0.10f));
-        stripPaint.setColor(Theme.multAlpha(context.getSecondaryTextColor(), 0.045f));
+        applyContentColors();
         headerPaint = new TextPaint(context.getQuotePaint());
         headerPaint.setTypeface(Typeface.create(Typeface.DEFAULT, Typeface.BOLD));
         bodyPaint = new TextPaint(context.getQuotePaint());
@@ -597,6 +590,7 @@ final class TableBlock implements EmbeddedPostBodyBlock, TableLayout.TableLayout
 
     @Override
     public void applyTheme() {
+        applyContentColors();
         for (TableCellLayout cell : cells) {
             for (PostBodyBlock child : cell.blocks) {
                 child.applyTheme();
@@ -604,6 +598,21 @@ final class TableBlock implements EmbeddedPostBodyBlock, TableLayout.TableLayout
         }
         scrollContentView().invalidate();
         scrollView.invalidate();
+    }
+
+    /**
+     * Table surface and grid from the 12.10.2 palette; header and zebra stripes
+     * stay derived from the secondary text colour, as they were.
+     */
+    private void applyContentColors() {
+        backgroundPaint.setColor(context.getTableBackgroundColor());
+        dividerPaint.setColor(context.getTableBorderColor());
+        dividerPaint.setStrokeWidth(AndroidUtilities.dp(1f));
+        borderPaint.setColor(context.getTableBorderColor());
+        borderPaint.setStrokeWidth(AndroidUtilities.dp(1f));
+        borderPaint.setStyle(Paint.Style.STROKE);
+        headerBackgroundPaint.setColor(Theme.multAlpha(context.getSecondaryTextColor(), 0.10f));
+        stripPaint.setColor(Theme.multAlpha(context.getSecondaryTextColor(), 0.045f));
     }
 
     @Override

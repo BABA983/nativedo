@@ -8,7 +8,6 @@
 package io.github.baba983.nativedo.ui.topic.body;
 
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.RectF;
@@ -330,8 +329,7 @@ final class CodeBlock implements EmbeddedPostBodyBlock {
     }
 
     static int preformattedBackgroundColor() {
-        int color = Theme.getColor(Theme.key_windowBackgroundWhiteLinkSelection);
-        return Color.argb(20, Color.red(color), Color.green(color), Color.blue(color));
+        return Theme.getColor(Theme.key_chat_inArticleCodeBackground);
     }
 
     @Override

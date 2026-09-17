@@ -160,7 +160,7 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
         currentBlock = toPageBlockDetails(block);
         currentBlock.open = initialOpenState(state, stateIndex, defaultOpen);
         childLayout = buildChildLayout(block, context, gallery, inlineState, stateKey);
-        arrow = new AnimatedArrowDrawable(context.getSecondaryTextColor(), true);
+        arrow = new AnimatedArrowDrawable(context.getArticleDetailsArrowColor(), true);
         arrow.setAnimationProgress(currentBlock.open ? 0.0f : 1.0f);
         arrow.setCallback(context.getHost());
         titlePaint = new TextPaint(context.getQuotePaint());
@@ -387,9 +387,9 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
 
     @Override
     public void applyTheme() {
-        arrow.setColor(context.getSecondaryTextColor());
+        arrow.setColor(context.getArticleDetailsArrowColor());
         titlePaint.setColor(context.getTextColor());
-        dividerPaint.setColor(context.getDividerColor());
+        dividerPaint.setColor(context.getArticleDetailsLineColor());
         for (PostBodyBlock child : childLayout.blocks) {
             child.applyTheme();
         }

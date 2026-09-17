@@ -91,6 +91,36 @@ class PostBodyRecolorContractTest {
         }
     }
 
+    @Test
+    fun applyTheme_resamplesTheArticleBlockColorsFromTheNewKeys() {
+        val host = View(RuntimeEnvironment.getApplication())
+        val context = PostBodyBuildContext(
+            host = host,
+            baseUrl = "https://linux.do",
+            delegate = NoOpDelegate,
+            textColor = Theme.getColor(Theme.key_chat_messageTextIn),
+            secondaryTextColor = Theme.getColor(Theme.key_chat_inTimeText),
+            accentColor = Theme.getColor(Theme.key_chat_inReplyLine),
+            chipBackgroundColor = Theme.multAlpha(Theme.getColor(Theme.key_chat_inReplyLine), 0.15f),
+            dividerColor = Theme.getColor(Theme.key_divider),
+        )
+        val dayTableBackground = context.tableBackgroundColor
+
+        Theme.applyTheme(Theme.getCurrentNightTheme(), true)
+        context.applyTheme()
+
+        assertThat(context.articleDividerColor).isEqualTo(Theme.getColor(Theme.key_chat_inDivider))
+        assertThat(context.tableBackgroundColor).isEqualTo(Theme.getColor(Theme.key_chat_inTableBackground))
+        assertThat(context.tableBorderColor).isEqualTo(Theme.getColor(Theme.key_chat_inTableBorder))
+        assertThat(context.articleCodeBackgroundColor)
+            .isEqualTo(Theme.getColor(Theme.key_chat_inArticleCodeBackground))
+        assertThat(context.articleDetailsArrowColor)
+            .isEqualTo(Theme.getColor(Theme.key_chat_inArticleDetailsArrow))
+        assertThat(context.articleDetailsLineColor)
+            .isEqualTo(Theme.getColor(Theme.key_chat_inArticleDetailsLine))
+        assertThat(context.tableBackgroundColor).isNotEqualTo(dayTableBackground)
+    }
+
     private fun seedAtthemeIntoFilesDir(assetName: String) {
         val candidates = listOf(
             File("../TMessagesProj/src/main/assets/$assetName"),

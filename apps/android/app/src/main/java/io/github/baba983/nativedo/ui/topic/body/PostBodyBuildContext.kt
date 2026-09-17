@@ -44,6 +44,20 @@ internal class PostBodyBuildContext @JvmOverloads constructor(
     @ColorInt var spoilerOverlayColor: Int = Theme.multAlpha(textColor, 0.18f)
         private set
 
+    /** Content colours the 12.10.2 palette defines for article-style blocks. */
+    @ColorInt var articleDividerColor: Int = Theme.getColor(Theme.key_chat_inDivider)
+        private set
+    @ColorInt var tableBackgroundColor: Int = Theme.getColor(Theme.key_chat_inTableBackground)
+        private set
+    @ColorInt var tableBorderColor: Int = Theme.getColor(Theme.key_chat_inTableBorder)
+        private set
+    @ColorInt var articleCodeBackgroundColor: Int = Theme.getColor(Theme.key_chat_inArticleCodeBackground)
+        private set
+    @ColorInt var articleDetailsArrowColor: Int = Theme.getColor(Theme.key_chat_inArticleDetailsArrow)
+        private set
+    @ColorInt var articleDetailsLineColor: Int = Theme.getColor(Theme.key_chat_inArticleDetailsLine)
+        private set
+
     val paragraphPaint: TextPaint = textPaint(sizeSp = bodyFontSize(), color = textColor)
     val quotePaint: TextPaint = textPaint(sizeSp = (bodyFontSize() - 1f).coerceAtLeast(12f), color = textColor)
     val mediaCaptionPaint: TextPaint = textPaint(sizeSp = (bodyFontSize() - 2f).coerceAtLeast(11f), color = secondaryTextColor)
@@ -69,6 +83,12 @@ internal class PostBodyBuildContext @JvmOverloads constructor(
         cardStrokeColor = Theme.multAlpha(dividerColor, 0.55f)
         pollBarColor = Theme.multAlpha(accentColor, 0.16f)
         spoilerOverlayColor = Theme.multAlpha(textColor, 0.18f)
+        articleDividerColor = Theme.getColor(Theme.key_chat_inDivider)
+        tableBackgroundColor = Theme.getColor(Theme.key_chat_inTableBackground)
+        tableBorderColor = Theme.getColor(Theme.key_chat_inTableBorder)
+        articleCodeBackgroundColor = Theme.getColor(Theme.key_chat_inArticleCodeBackground)
+        articleDetailsArrowColor = Theme.getColor(Theme.key_chat_inArticleDetailsArrow)
+        articleDetailsLineColor = Theme.getColor(Theme.key_chat_inArticleDetailsLine)
         applyPaint(paragraphPaint, textColor)
         applyPaint(quotePaint, textColor)
         applyPaint(mediaCaptionPaint, secondaryTextColor)

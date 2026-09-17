@@ -1,6 +1,5 @@
 package io.github.baba983.nativedo.ui.topic.body
 
-import android.graphics.Color
 import android.view.View
 import com.google.common.truth.Truth.assertThat
 import org.junit.Before
@@ -36,17 +35,9 @@ class CodeBlockTest {
     }
 
     @Test
-    fun preformattedBackgroundColor_usesArticleViewerLinkSelectionPaint() {
-        val linkSelectionColor = Theme.getColor(Theme.key_windowBackgroundWhiteLinkSelection)
-
-        assertThat(CodeBlock.preformattedBackgroundColor()).isEqualTo(
-            Color.argb(
-                20,
-                Color.red(linkSelectionColor),
-                Color.green(linkSelectionColor),
-                Color.blue(linkSelectionColor),
-            ),
-        )
+    fun preformattedBackgroundColor_usesTheArticleCodeBackgroundKey() {
+        assertThat(CodeBlock.preformattedBackgroundColor())
+            .isEqualTo(Theme.getColor(Theme.key_chat_inArticleCodeBackground))
     }
 
     private fun buildContext(): PostBodyBuildContext {

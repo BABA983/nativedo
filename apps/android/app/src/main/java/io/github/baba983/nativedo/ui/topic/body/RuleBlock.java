@@ -30,7 +30,7 @@ final class RuleBlock implements PostBodyBlock {
 
     RuleBlock(PostBodyBuildContext context) {
         this.context = context;
-        paint.setColor(context.getDividerColor());
+        paint.setColor(context.getArticleDividerColor());
     }
 
     @Override
@@ -89,7 +89,7 @@ final class RuleBlock implements PostBodyBlock {
 
     @Override
     public void applyTheme() {
-        paint.setColor(context.getDividerColor());
+        paint.setColor(context.getArticleDividerColor());
     }
 
     static int measuredHeightPx() {
