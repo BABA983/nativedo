@@ -1160,16 +1160,48 @@ def strip_imports(text: str) -> str:
     return IMPORT_OR_PACKAGE_LINE.sub("", text)
 
 
+def strip_type_qualifiers(text: str, types: Iterable[str]) -> str:
+    """Collapse `Outer.Inner` / `pkg.Type` to the simple `Type` for known types.
+
+    Upstream moving a nested class into a file of its own (12.10.2 does that
+    with `Theme.MessageDrawable`) rewrites references from the qualified to the
+    simple form. Like an import swap, that rewrite cannot move a
+    gesture/measurement/drawing number, so the forced-exact check ignores it.
+    Only names that are types in this repository collapse, so a reference to a
+    field or a method still counts as an edit.
+    """
+    names = sorted({t for t in types if t}, key=len, reverse=True)
+    if not names:
+        return text
+    pattern = re.compile(
+        r"(?:\b[A-Za-z_]\w*\.)+(?:" + "|".join(map(re.escape, names)) + r")\b"
+    )
+    return pattern.sub(lambda m: m.group(0).rsplit(".", 1)[1], text)
+
+
+def known_type_names(index: dict[str, Any]) -> set[str]:
+    """Simple names of the Java/Kotlin types this repository carries."""
+    out = set()
+    for entry in list(index.get("files") or []) + list(index.get("compat_shims") or []):
+        name = Path(str(entry.get("local") or "")).name
+        if name.endswith((".java", ".kt")):
+            out.add(name.rsplit(".", 1)[0])
+    return out
+
+
 def comment_only_edit(
     root: Optional[PathLike],
     path: str,
     head_path: Optional[str],
     *,
     ignore_imports: bool = False,
+    types: Optional[Iterable[str]] = None,
 ) -> bool:
     """True when `path` differs from its HEAD blob only in comments/whitespace.
 
-    With `ignore_imports`, package/import declarations are ignored too.
+    With `ignore_imports`, package/import declarations are ignored too. With
+    `types`, qualified references to those types (`Outer.Type` / `pkg.Type`)
+    compare equal to the simple name.
     """
     if not head_path:
         return False
@@ -1188,6 +1220,8 @@ def comment_only_edit(
     old = proc.stdout.decode("utf-8", "ignore")
     if ignore_imports:
         old, new = strip_imports(old), strip_imports(new)
+    if types:
+        old, new = strip_type_qualifiers(old, types), strip_type_qualifiers(new, types)
     return strip_comments(old) == strip_comments(new)
 
 

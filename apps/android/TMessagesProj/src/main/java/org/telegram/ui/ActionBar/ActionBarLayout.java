@@ -177,8 +177,8 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
     private final ArrayList<int[]> animateStartColors = new ArrayList<>();
     private final ArrayList<int[]> animateEndColors = new ArrayList<>();
     private final StartColorsProvider startColorsProvider = new StartColorsProvider();
-    public Theme.MessageDrawable messageDrawableOutStart;
-    public Theme.MessageDrawable messageDrawableOutMediaStart;
+    public MessageDrawable messageDrawableOutStart;
+    public MessageDrawable messageDrawableOutMediaStart;
     public ThemeAnimationSettings.onAnimationProgress animationProgressListener;
     private final ArrayList<ArrayList<ThemeDescription>> themeAnimatorDescriptions = new ArrayList<>();
     private ArrayList<ThemeDescription> presentingFragmentDescriptions;
@@ -1354,9 +1354,9 @@ public class ActionBarLayout extends FrameLayout implements INavigationLayout {
                     startAnimation = true;
                     if (settings.resourcesProvider != null) {
                         if (messageDrawableOutStart == null) {
-                            messageDrawableOutStart = new Theme.MessageDrawable(Theme.MessageDrawable.TYPE_TEXT, true, false, startColorsProvider);
+                            messageDrawableOutStart = new MessageDrawable(MessageDrawable.TYPE_TEXT, true, false, startColorsProvider);
                             messageDrawableOutStart.isCrossfadeBackground = true;
-                            messageDrawableOutMediaStart = new Theme.MessageDrawable(Theme.MessageDrawable.TYPE_MEDIA, true, false, startColorsProvider);
+                            messageDrawableOutMediaStart = new MessageDrawable(MessageDrawable.TYPE_MEDIA, true, false, startColorsProvider);
                             messageDrawableOutMediaStart.isCrossfadeBackground = true;
                         }
                         startColorsProvider.saveColors(settings.resourcesProvider);

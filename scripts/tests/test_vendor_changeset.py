@@ -13,7 +13,9 @@ from vendorlib import (  # noqa: E402
     changed_since_head,
     changed_with_head_source,
     comment_only_edit,
+    known_type_names,
     strip_comments,
+    strip_type_qualifiers,
 )
 
 SOURCE = """class A {
@@ -36,6 +38,31 @@ class StripCommentsTest(unittest.TestCase):
         out = strip_comments('String url = "https://example.com/a"; // note\n')
         self.assertIn('"https://example.com/a"', out)
         self.assertNotIn("note", out)
+
+
+class StripTypeQualifiersTest(unittest.TestCase):
+    """A class that upstream moved keeps comparing equal to its old spelling."""
+
+    def test_qualified_references_collapse(self) -> None:
+        self.assertEqual(
+            "MessageDrawable d;",
+            strip_type_qualifiers("Theme.MessageDrawable d;", {"MessageDrawable"}),
+        )
+        self.assertEqual(
+            "x = new MessageDrawable(MessageDrawable.TYPE_TEXT);",
+            strip_type_qualifiers(
+                "x = new Theme.MessageDrawable(Theme.MessageDrawable.TYPE_TEXT);",
+                {"MessageDrawable"},
+            ),
+        )
+
+    def test_unknown_names_and_longest_match_win(self) -> None:
+        self.assertEqual("a.b.c", strip_type_qualifiers("a.b.c", {"Other", ""}))
+        # `Drawable` must not eat the tail of `MessageDrawable`.
+        self.assertEqual(
+            "new MessageDrawable()",
+            strip_type_qualifiers("new ui.MessageDrawable()", {"Drawable", "MessageDrawable"}),
+        )
 
 
 class ChangeSetTest(unittest.TestCase):
@@ -100,6 +127,58 @@ class ChangeSetTest(unittest.TestCase):
         self.assertIn("New.java", sources)
         self.assertIsNone(sources["New.java"])
         self.assertFalse(comment_only_edit(self.root, "New.java", None))
+
+    def test_class_move_is_not_a_behaviour_change(self) -> None:
+        # The shape an extraction takes: the qualified reference and the import
+        # follow the class, the code does not move.
+        before = "class A {\n    Theme.Drawable d;\n    int x = 1;\n}\n"
+        after = (
+            "import org.telegram.ui.ActionBar.Drawable;\n\n"
+            "class A {\n    Drawable d;\n    int x = 1;\n}\n"
+        )
+        (self.root / "A.java").write_text(before, encoding="utf-8")
+        git(self.root, "add", "A.java")
+        git(self.root, "commit", "-qm", "before the move")
+        (self.root / "A.java").write_text(after, encoding="utf-8")
+        self.assertFalse(
+            comment_only_edit(self.root, "A.java", "A.java", ignore_imports=True)
+        )
+        self.assertTrue(
+            comment_only_edit(
+                self.root,
+                "A.java",
+                "A.java",
+                ignore_imports=True,
+                types={"Drawable"},
+            )
+        )
+        # …but a real edit behind the move is still reported.
+        (self.root / "A.java").write_text(
+            after.replace("int x = 1;", "int x = 2;"), encoding="utf-8"
+        )
+        self.assertFalse(
+            comment_only_edit(
+                self.root,
+                "A.java",
+                "A.java",
+                ignore_imports=True,
+                types={"Drawable"},
+            )
+        )
+
+
+class KnownTypeNamesTest(unittest.TestCase):
+    def test_only_java_and_kotlin_sources_contribute(self) -> None:
+        index = {
+            "files": [{"local": "org/telegram/ui/ActionBar/MessageDrawable.java"}],
+            "compat_shims": [
+                {"local": "org/telegram/ui/Components/SpannableStringLight.kt"},
+                {"local": "res/map-background-stripes.png"},
+            ],
+        }
+        self.assertEqual(
+            {"MessageDrawable", "SpannableStringLight"}, known_type_names(index)
+        )
 
 
 if __name__ == "__main__":

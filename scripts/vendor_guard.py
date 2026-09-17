@@ -25,6 +25,7 @@ from vendorlib import (  # noqa: E402
     display_path,
     git_log_paths,
     git_rev_parse,
+    known_type_names,
     load_index,
     normalize_sha,
     redundant_native,
@@ -138,11 +139,16 @@ def check_forced_exact(index: dict, root: Path, guard: Guard) -> None:
         if changed_path is None:
             continue
         # A comment-only edit cannot move a gesture/measurement/drawing number,
-        # and neither can an import swap (upstream moving a class to another
-        # package, say), so they do not deserve the "verify with these tests"
-        # prompt.
+        # and neither can a class that upstream moved to another file or
+        # package: the import swap and the qualified -> simple reference rewrite
+        # both follow from the move, so they do not deserve the "verify with
+        # these tests" prompt.
         if comment_only_edit(
-            root, changed_path, sources[changed_path], ignore_imports=True
+            root,
+            changed_path,
+            sources[changed_path],
+            ignore_imports=True,
+            types=known_type_names(index),
         ):
             continue
         hits.append(e)

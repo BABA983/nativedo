@@ -17,16 +17,14 @@ class MessageDrawableGradientContractTest {
     @Before
     fun setUp() {
         ApplicationLoader.init(RuntimeEnvironment.getApplication())
-        val field = Theme::class.java.getDeclaredField("shouldDrawGradientIcons")
-        field.isAccessible = true
-        field.setBoolean(null, true)
-        Theme.MessageDrawable.motionBackground.fill(null)
+        Theme.shouldDrawGradientIcons = true
+        MessageDrawable.motionBackground.fill(null)
     }
 
     @Test
     fun staticGradientExposesShaderAndMatrixAfterSetTop() {
-        val drawable = Theme.MessageDrawable(
-            Theme.MessageDrawable.TYPE_TEXT,
+        val drawable = MessageDrawable(
+            MessageDrawable.TYPE_TEXT,
             true,
             false,
             gradientProvider(animated = false),
@@ -41,8 +39,8 @@ class MessageDrawableGradientContractTest {
 
     @Test
     fun animatedGradientExposesMotionBackgroundShaderAfterSetTop() {
-        val drawable = Theme.MessageDrawable(
-            Theme.MessageDrawable.TYPE_TEXT,
+        val drawable = MessageDrawable(
+            MessageDrawable.TYPE_TEXT,
             true,
             false,
             gradientProvider(animated = true),
@@ -53,7 +51,7 @@ class MessageDrawableGradientContractTest {
         assertThat(drawable.hasGradient()).isTrue()
         assertThat(drawable.gradientShader).isInstanceOf(BitmapShader::class.java)
         assertThat(drawable.matrix).isNotNull()
-        assertThat(Theme.MessageDrawable.motionBackground[0]).isNotNull()
+        assertThat(MessageDrawable.motionBackground[0]).isNotNull()
     }
 
     private fun gradientProvider(animated: Boolean) = object : Theme.ResourcesProvider {
