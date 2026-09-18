@@ -321,6 +321,74 @@ public class Utilities {
         return false;
     }
 
+    public static boolean drawReplyLinePattern(Bitmap bitmap, int color1, int color2, int color3, int barHeight, boolean hasColor3) {
+        if (bitmap == null || bitmap.isRecycled() || !bitmap.isMutable()
+                || bitmap.getConfig() != Bitmap.Config.ARGB_8888) {
+            return false;
+        }
+        final int width = bitmap.getWidth();
+        final int height = bitmap.getHeight();
+        if (width == 0 || height == 0 || height > 256 || width > height || barHeight <= 0 || barHeight > height) {
+            return false;
+        }
+
+        final int c1 = premultiply(color1);
+        final int c2 = premultiply(color2);
+        final int c3 = hasColor3 ? premultiply(color3) : 0;
+
+        final int period = height;
+        final int barsTotal = hasColor3 ? 2 * barHeight : barHeight;
+        final int gapSize = period > barsTotal ? period - barsTotal : 0;
+        final int bar2End = gapSize + barHeight;
+
+        final int[] reference = new int[period];
+        for (int i = 0; i < period; i++) {
+            final int ci = patternColorAt(i, gapSize, bar2End, c1, c2, c3);
+            final int next = i + 1 < period ? i + 1 : 0;
+            final int cn = patternColorAt(next, gapSize, bar2End, c1, c2, c3);
+            reference[i] = ci != cn ? averageAlphaColor(ci, cn) : ci;
+        }
+
+        final int[] row = new int[width];
+        for (int y = 0; y < height; y++) {
+            final int split = Math.min(period - y, width);
+            System.arraycopy(reference, y, row, 0, split);
+            if (split < width) {
+                System.arraycopy(reference, 0, row, split, width - split);
+            }
+            bitmap.setPixels(row, 0, width, 0, y, width, 1);
+        }
+        return true;
+    }
+
+    private static int patternColorAt(int index, int gapSize, int bar2End, int c1, int c2, int c3) {
+        if (index < gapSize) {
+            return c1;
+        }
+        if (index < bar2End) {
+            return c2;
+        }
+        return c3;
+    }
+
+    private static int averageAlphaColor(int p, int q) {
+        return (p & q) + (((p ^ q) >>> 1) & 0x7F7F7F7F);
+    }
+
+    private static int premultiply(int argb) {
+        final int a = argb >>> 24;
+        if (a == 0xFF) {
+            return argb;
+        }
+        if (a == 0x00) {
+            return 0;
+        }
+        final int r = ((argb >> 16) & 0xFF) * a / 255;
+        final int g = ((argb >> 8) & 0xFF) * a / 255;
+        final int b = (argb & 0xFF) * a / 255;
+        return (a << 24) | (r << 16) | (g << 8) | b;
+    }
+
     public static boolean applyAlphaInvert(Bitmap inputBitmap, Bitmap outputBitmap, int intensity) {
         if (inputBitmap == null || outputBitmap == null || inputBitmap == outputBitmap
                 || inputBitmap.isRecycled() || outputBitmap.isRecycled()
