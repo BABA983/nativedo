@@ -213,8 +213,6 @@
     "TMessagesProj/src/main/java/org/telegram/ui/Cells/DialogCell.java",
     "TMessagesProj/src/main/java/org/telegram/ui/Cells/FixedWidthSpan.java",
     "TMessagesProj/src/main/java/org/telegram/ui/Cells/TextCell.java",
-    "TMessagesProj/src/main/java/org/telegram/ui/Cells/TextCheckCell.java",
-    "TMessagesProj/src/main/java/org/telegram/ui/Cells/TextDetailCell.java",
     "TMessagesProj/src/main/java/org/telegram/ui/Cells/TextSelectionHelper.java",
     "TMessagesProj/src/main/java/org/telegram/ui/ChatActivity.java",
     "TMessagesProj/src/main/java/org/telegram/ui/Components/AlertsCreator.java",

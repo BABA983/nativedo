@@ -11,6 +11,7 @@ import org.robolectric.annotation.Config
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.ui.Components.LinkSpanDrawable
+import org.telegram.ui.Components.spoilers.SpoilersTextView
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], manifest = Config.NONE)
@@ -27,10 +28,11 @@ class TextDetailCellContractTest {
     fun profileRowsUseTelegramLinkAwareTextViews() {
         cell.setTextAndValue("Username", "@alice", false)
 
-        assertThat(cell.getChildAt(0)).isInstanceOf(LinkSpanDrawable.LinksTextView::class.java)
-        assertThat(cell.getChildAt(1)).isInstanceOf(LinkSpanDrawable.LinksTextView::class.java)
-        assertThat((cell.getChildAt(0) as LinkSpanDrawable.LinksTextView).text.toString())
-            .isEqualTo("Username")
+        // The pin's title is a SpoilersTextView (which is why the cell family
+        // needed that class vendored); the value stays a LinksTextView.
+        assertThat(cell.textView).isInstanceOf(SpoilersTextView::class.java)
+        assertThat(cell.valueTextView).isInstanceOf(LinkSpanDrawable.LinksTextView::class.java)
+        assertThat(cell.textView.text.toString()).isEqualTo("Username")
     }
 
     @Test
@@ -46,9 +48,10 @@ class TextDetailCellContractTest {
 
     @Test
     fun factoryUsesPinnedTitleAndValueInsets() {
-        val factoryCell = TextDetailCell(RuntimeEnvironment.getApplication(), 18, null)
-        val titleParams = factoryCell.getChildAt(0).layoutParams as android.widget.FrameLayout.LayoutParams
-        val valueParams = factoryCell.getChildAt(1).layoutParams as android.widget.FrameLayout.LayoutParams
+        val factoryCell =
+            TextDetailCell(RuntimeEnvironment.getApplication(), 18, null, false, false)
+        val titleParams = factoryCell.textView.layoutParams as android.widget.FrameLayout.LayoutParams
+        val valueParams = factoryCell.valueTextView.layoutParams as android.widget.FrameLayout.LayoutParams
 
         assertThat(titleParams.leftMargin).isEqualTo(AndroidUtilities.dp(12f))
         assertThat(valueParams.leftMargin).isEqualTo(AndroidUtilities.dp(18f))

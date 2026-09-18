@@ -138,6 +138,19 @@ public class AvatarDrawable extends Drawable {
      * palette seed and monogram from a User or Chat. Other TLObject subtypes
      * are ignored (avatar stays at the last set state).
      */
+    /** NativeDo is single-account: the account argument exists for upstream parity. */
+    public void setInfo(int currentAccount, TLRPC.User user) {
+        setInfo(user);
+    }
+
+    public void setInfo(int currentAccount, TLRPC.Chat chat) {
+        setInfo(chat);
+    }
+
+    public void setInfo(int currentAccount, TLObject object) {
+        setInfo(object);
+    }
+
     public void setInfo(TLObject object) {
         if (object instanceof TLRPC.User) {
             TLRPC.User u = (TLRPC.User) object;

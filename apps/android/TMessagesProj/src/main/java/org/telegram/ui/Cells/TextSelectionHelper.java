@@ -58,6 +58,18 @@ public abstract class TextSelectionHelper<Cell extends TextSelectionHelper.Selec
         void fillTextLayoutBlocks(ArrayList<TextLayoutBlock> blocks);
     }
 
+    /**
+     * NativeDo adaptation: upstream's {SimpleSelectabeleView extends SelectableView}
+     * carries the view geometry that upstream's {@code SelectableView} declares.
+     * Our selection port declares {@code fillTextLayoutBlocks} there instead, so
+     * the sub-interface stands alone and a view that implements it keeps the two
+     * methods it promises.
+     */
+    public interface SimpleSelectabeleView {
+        CharSequence getText();
+        Layout getStaticTextLayout();
+    }
+
     public interface TextLayoutBlock {
         StaticLayout getLayout();
         int getX();

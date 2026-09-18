@@ -21,7 +21,7 @@ class TextCheckCellContractTest {
     fun setUp() {
         ApplicationLoader.init(RuntimeEnvironment.getApplication())
         cell = TextCheckCell(RuntimeEnvironment.getApplication())
-        switchView = cell.getChildAt(1) as Switch
+        switchView = cell.checkBox
     }
 
     @Test
