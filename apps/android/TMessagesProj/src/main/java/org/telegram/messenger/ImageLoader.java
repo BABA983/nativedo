@@ -1085,10 +1085,11 @@ public class ImageLoader {
                             cacheOptions.firstFrame = true;
                         }
                     }
+                    final boolean isSingleChannel = cacheImage.imageLocation != null && MessageObject.isTextColorEmoji(cacheImage.imageLocation.document);
                     if (compressed) {
-                        lottieDrawable = new RLottieDrawable(cacheImage.finalFilePath, decompressGzip(cacheImage.finalFilePath), w, h, cacheOptions, limitFps, null, fitzModifier);
+                        lottieDrawable = new RLottieDrawable(cacheImage.finalFilePath, decompressGzip(cacheImage.finalFilePath), w, h, cacheOptions, limitFps, null, fitzModifier, isSingleChannel);
                     } else {
-                        lottieDrawable = new RLottieDrawable(cacheImage.finalFilePath, w, h, cacheOptions, limitFps, null, fitzModifier);
+                        lottieDrawable = new RLottieDrawable(cacheImage.finalFilePath, null, w, h, cacheOptions, limitFps, null, fitzModifier, isSingleChannel);
                     }
                 }
                 if (lastFrameBitmap || firstFrameBitmap) {

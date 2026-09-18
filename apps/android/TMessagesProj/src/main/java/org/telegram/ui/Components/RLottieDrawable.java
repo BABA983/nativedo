@@ -62,23 +62,7 @@ public class RLottieDrawable extends BitmapDrawable {
         super((Bitmap) null);
     }
 
-    public RLottieDrawable(java.io.File file, int data, int w, int h, org.telegram.messenger.utils.BitmapsCache.CacheOptions cacheOptions, boolean limitFps, int[] colorReplacement, String fitzModifier) {
-        super((Bitmap) null);
-    }
-
-    public RLottieDrawable(java.io.File file, int w, int h, org.telegram.messenger.utils.BitmapsCache.CacheOptions cacheOptions, boolean limitFps, int[] colorReplacement, String fitzModifier) {
-        super((Bitmap) null);
-    }
-
-    public RLottieDrawable(java.io.File file, int w, int h, org.telegram.messenger.utils.BitmapsCache.CacheOptions cacheOptions, boolean limitFps, int[] colorReplacement, int fitzModifier) {
-        super((Bitmap) null);
-    }
-
-    public RLottieDrawable(java.io.File file, String json, int w, int h, org.telegram.messenger.utils.BitmapsCache.CacheOptions cacheOptions, boolean limitFps, int[] colorReplacement, String fitzModifier) {
-        super((Bitmap) null);
-    }
-
-    public RLottieDrawable(java.io.File file, String json, int w, int h, org.telegram.messenger.utils.BitmapsCache.CacheOptions cacheOptions, boolean limitFps, int[] colorReplacement, int fitzModifier) {
+    public RLottieDrawable(java.io.File file, String json, int w, int h, org.telegram.messenger.utils.BitmapsCache.CacheOptions options, boolean limitFps, int[] colorReplacement, int fitzModifier, boolean isSingleChannel) {
         super((Bitmap) null);
     }
 

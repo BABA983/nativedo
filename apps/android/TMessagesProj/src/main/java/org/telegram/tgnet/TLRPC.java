@@ -182,6 +182,12 @@ public class TLRPC {
     public static class TL_documentAttributeSticker extends DocumentAttribute {
     }
 
+    /** Upstream's declaration (12.10.2); our shell TLRPC carries the fields, not the wire code. */
+    public static class TL_documentAttributeCustomEmoji extends DocumentAttribute {
+        public boolean free;
+        public boolean text_color;
+    }
+
     public static class TL_documentAttributeImageSize extends DocumentAttribute {
     }
 

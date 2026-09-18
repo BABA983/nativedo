@@ -326,4 +326,39 @@ public class MessageObject {
     public static boolean isVideoSticker(WebFile document) {
         return false;
     }
+
+    /** Upstream's helper: the sticker set a document belongs to, or null. */
+    public static TLRPC.InputStickerSet getInputStickerSet(TLRPC.Document document) {
+        if (document == null) {
+            return null;
+        }
+        for (int a = 0, N = document.attributes.size(); a < N; a++) {
+            TLRPC.DocumentAttribute attribute = document.attributes.get(a);
+            if (attribute instanceof TLRPC.TL_documentAttributeSticker ||
+                    attribute instanceof TLRPC.TL_documentAttributeCustomEmoji) {
+                if (attribute.stickerset instanceof TLRPC.TL_inputStickerSetEmpty) {
+                    return null;
+                }
+                return attribute.stickerset;
+            }
+        }
+        return null;
+    }
+
+    /** Upstream's helper: a custom emoji that renders as text color rather than as a picture. */
+    public static boolean isTextColorEmoji(TLRPC.Document document) {
+        if (document == null) {
+            return false;
+        }
+        for (int a = 0, N = document.attributes.size(); a < N; a++) {
+            TLRPC.DocumentAttribute attribute = document.attributes.get(a);
+            if (attribute instanceof TLRPC.TL_documentAttributeCustomEmoji) {
+                if (attribute.stickerset instanceof TLRPC.TL_inputStickerSetID && attribute.stickerset.id == 1269403972611866647L) {
+                    return true;
+                }
+                return ((TLRPC.TL_documentAttributeCustomEmoji) attribute).text_color;
+            }
+        }
+        return false;
+    }
 }
