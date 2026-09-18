@@ -68,6 +68,38 @@ these eight were read in full now, and none is worth taking today:
 | `MotionBackgroundDrawable` + `MotionBackgroundPaint` | a bitmap/AGSL gradient rewrite on the wallpaper path, which is already on the device-validation list |
 | `ui/Components/QuoteSpan.java` | slims the span toward the `iv/` refactor we skipped |
 
+## Landed since the snapshot
+
+| Commit | What | Effect |
+|---|---|---|
+| `3d4c037` | `SimpleTextView` takes 12.10.2's wrap-width clamp (`setWidthWrapContent` could hand a negative width to `setMeasuredDimension`; the profile header, `DiscourseUserCell` and the topic title all measure through it) | six files byte-exact again; the guard's "differ" count 241 → 235 |
+
+The same commit removed the dead `com.google.android.exoplayer2.util.Log` import from
+six files — 12.10.2 deletes it, nothing in the tree used it (the plan document's
+"nine host files still import the exoplayer types" predates this). Three files still
+do: `ArticleViewer` → `AspectRatioFrameLayout`, `BookmarksFragment` and
+`HistoryFragment` → `Util`. The stub set stays for those two classes; the `Log` stub
+now has no importers.
+
+The small pure-drift deltas were read in full and none is a product goal today:
+`TextSettingsCell` (+8/−8, row-density tweak: 21→16dp icon gutter, 71→58dp value
+margin), `FragmentSearchField` (`setHintText(CharSequence, boolean)`, no consumer),
+`ChatActivityEnterViewAnimatedIconView` / `RLottieImageView` / `ProfileActionsView`
+(the RLottie constructor), `SerializedData` (an `InputStream` constructor),
+`DefaultItemAnimator` (visibility widening), `HistoryFragment` (−20, browser code we
+do not use), `Choreographer60FpsContent` + `DrawableUtils` (additive, no consumer),
+`WindowInsetsStateHolder` (display-cutout insets — device-bound).
+
+The `:app` ports' ancestors moved 12.9.0 → pin mostly inside settled non-goals:
+`DialogCell` (+14/−17: rich-message drafts, RLottie layer names), `ChatActionCell`
+(+7/−2: `TL_keyboard`, `emojiLoaded`, RLottie constructor), `ChatActivity`
+(+743/−327) and `ChatMessageCell` (+395/−98) (stories, proxy, bot keyboards),
+`ArticleViewer` (+39/−77) (the IV split). The landing-relevant deltas to read before
+the next port change are `ProfileActivity` → `ProfileFragment` (+55/−5),
+`SharedMediaLayout` → `ProfileContentLayout` (+59/−64), `DialogsActivity`
+→ `TopicDialogsRecyclerView` (+19/−11) and `MainTabsActivity` (+140/−5) — all figures
+are 12.9.0 → pin.
+
 ## Tier 2 — upstream moved, no product path: leave
 
 | Family | Examples | Why not |
