@@ -83,6 +83,42 @@ these eight were read in full now, and none is worth taking today:
 | `6fda1ca` | the `isSingleChannel` tail: `TLRPC.TL_documentAttributeCustomEmoji` (our `TLRPC` is a shell, so it is the fields only), `MessageObject.getInputStickerSet`/`isTextColorEmoji`, `RLottieDrawable`'s 9-argument `File` constructor, and the `ImageLoader` call sites; `PullForegroundDrawable`, `DialogsItemAnimator` and `ArticleViewer` join `native` for the same reason as above | the custom-emoji branch compiles without the JNI body it would need on a device |
 | `2e9f699` | the last two cosmetic-only mirror deltas: `SimpleItemAnimator`'s trailing blank line and `RectFMergeBounding`'s comment arrow | both byte-exact, 216 → 214. This closes the mechanical pool: a sweep of all 173 differing mirrors found no other file whose delta is whitespace or comments only, so every remaining difference is either a deliberate adaptation or a hand-carry |
 | `6b83ef2` | `forced_exact` grows teeth: the guard's prompt is per file (`FORCED_EXACT_TESTS_BY_PATH`, 58 entries) instead of a fixed trio, unmapped files get name-matching candidate hints, and `scripts/tests/test_vendor_guard.py` fails when an entry names a renamed test or an un-promoted file. Promoted 31 mirrors that a test already pins — the five body blocks that lacked what their siblings had, the text cells, and the widgets with contract tests | 125 → 156 forced-exact files, no code change and no golden moved; the prompt was exercised on a mapped file (`TextCell` → `TextCellContractTest`) and an unmapped one (`BottomSheet` → trio + candidate hint) |
+| `6a32c2a` | first hand-carry sweep over the `reference` set, using upstream's own baseline→pin patch per file: `UItem` takes the pin's additive factories (plus the `enabled` check in `itemContentEquals`, now a rebind instead of a no-op) and `GraySectionCell` takes back `createThemeDescriptions` | `GraySectionCell` byte-exact, `UItem` off the `reference` baseline (91 paths left); 213 differ. The sweep is also the measurement below — the mechanical pool is closed |
+
+## Hand-carry pool: measured
+
+The pool is the `reference`-baseline set, and the measurement is upstream's own
+patch per file, rewritten onto our path:
+
+```bash
+# per file: upstream's baseline -> pin patch, checked against our copy
+git -C ../telegram diff <vendored_at> <pin> -- TMessagesProj/src/main/java/<upstream> \
+  | sed -e 's#^--- a/#--- a/apps/android/<local>#' -e 's#^+++ b/#+++ b/apps/android/<local>#' \
+  | git apply --check -p1
+```
+
+| Result | Files | What it means |
+|---|---|---|
+| no upstream delta | 11 | upstream's blob is identical at the reference commit and at the pin, so the file differs from the pin by our adaptation only — there is nothing to align, and the reference listing carries no information for it |
+| applies cleanly | 1 | `UItem` (`6a32c2a`) — additive factories only; `asRadio2` had to stay out because our stripped `UniversalAdapter` lacks `VIEW_TYPE_RADIO_2`, so a clean apply is not yet a compiling one |
+| conflicts | 75 | either our own rewrite (`Bulletin` 316 vs 1543 lines, `SizeNotifierFrameLayout` 236 vs 1230, `TextCell` 279 vs ~600, `NotificationCenter`, `FiltersView`, `CameraView`, …) or the delta is already in (`CheckBoxSquare`'s rounded checkbox, `ActionBarMenuSubItem`'s `SRC_IN`, `EditTextEmoji`'s observer move, `DiscourseProfileActionsView`'s RLottie constructor) |
+
+So the mechanical pool is closed: what remains in the reference set is our own
+design (leave it listed) or a family project. The families, with their
+first-line blockers:
+
+| Family | First line | Blocker |
+|---|---|---|
+| IV types | `TableLayout`'s 4-line delta is `TL_iv.pageTableCell` | that type carries `TL_iv.RichText`, so adopting it starts the IV split through our body pipeline (`TableBlock`, `DetailsBlock`, `ArticleViewer`, `WebInstantView`, the `TLRPC` shell) |
+| RLottie | `RLottieDrawable` (a 12.6-based port) | the JNI body and `RLottieNative`; the shapes are already at the pin (`60a764c`) |
+| cells / text | `TextCell`, `TextCheckCell`, `TextDetailCell` | they are our own ports (upstream's row density and `SRC_IN` tint are already in), so this is a rewrite toward upstream's file, not a delta |
+
+Four deltas cannot be closed at all, and none of them is drift: `AnimatedTextView`
+wants `org.checkerframework` imports (not on our classpath),
+`NestedSizeNotifierLayout` wants an *unused* import of `CachedMediaLayout`
+(1076 lines we do not ship), `ButtonWithCounterView` wants the unvendored
+`R.drawable.mini_boost_button`, and `TelegramQRCodeWriter` deliberately drops the
+Telegram QR logo.
 
 ## Blocked, and by what
 
