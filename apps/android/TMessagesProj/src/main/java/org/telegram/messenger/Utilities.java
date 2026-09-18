@@ -314,11 +314,73 @@ public class Utilities {
     public static void drawDitheredGradient(Bitmap bitmap, int[] colors, int startX, int startY, int endX, int endY) {
     }
 
-    public static void generateGradient(Bitmap bitmap, boolean unpin, int phase, float progress, int width, int height, int stride, int[] colors) {
+    public static void generateGradient(Bitmap bitmap, int phase, float progress, int[] colors) {
     }
 
     public static boolean applySoftLight(Bitmap inputBitmap, Bitmap outputBitmap, int color) {
         return false;
+    }
+
+    public static boolean applyAlphaInvert(Bitmap inputBitmap, Bitmap outputBitmap, int intensity) {
+        if (inputBitmap == null || outputBitmap == null || inputBitmap == outputBitmap
+                || inputBitmap.isRecycled() || outputBitmap.isRecycled()
+                || outputBitmap.getConfig() != Bitmap.Config.ARGB_8888
+                || inputBitmap.getWidth() != outputBitmap.getWidth()
+                || inputBitmap.getHeight() != outputBitmap.getHeight()
+                || inputBitmap.getWidth() == 0 || inputBitmap.getHeight() == 0) {
+            return false;
+        }
+        final Bitmap source;
+        if (inputBitmap.getConfig() == Bitmap.Config.ALPHA_8) {
+            source = inputBitmap.copy(Bitmap.Config.ARGB_8888, false);
+            if (source == null) {
+                return false;
+            }
+        } else if (inputBitmap.getConfig() == Bitmap.Config.ARGB_8888) {
+            source = inputBitmap;
+        } else {
+            return false;
+        }
+        final int width = source.getWidth();
+        final int height = source.getHeight();
+        final int[] pixels = new int[width * height];
+        source.getPixels(pixels, 0, width, 0, 0, width, height);
+        for (int i = 0; i < pixels.length; i++) {
+            int alpha = (int) (255 - ((long) (pixels[i] >>> 24) * intensity) / 255);
+            if (alpha < 0) {
+                alpha = 0;
+            } else if (alpha > 255) {
+                alpha = 255;
+            }
+            pixels[i] = alpha << 24;
+        }
+        outputBitmap.setPixels(pixels, 0, width, 0, 0, width, height);
+        return true;
+    }
+
+    public static boolean expandAlphaToBlack(Bitmap inputBitmap, Bitmap outputBitmap) {
+        if (inputBitmap == null || outputBitmap == null || inputBitmap == outputBitmap
+                || inputBitmap.isRecycled() || outputBitmap.isRecycled()
+                || inputBitmap.getConfig() != Bitmap.Config.ALPHA_8
+                || outputBitmap.getConfig() != Bitmap.Config.ARGB_8888
+                || inputBitmap.getWidth() != outputBitmap.getWidth()
+                || inputBitmap.getHeight() != outputBitmap.getHeight()
+                || inputBitmap.getWidth() == 0 || inputBitmap.getHeight() == 0) {
+            return false;
+        }
+        final Bitmap source = inputBitmap.copy(Bitmap.Config.ARGB_8888, false);
+        if (source == null) {
+            return false;
+        }
+        final int width = source.getWidth();
+        final int height = source.getHeight();
+        final int[] pixels = new int[width * height];
+        source.getPixels(pixels, 0, width, 0, 0, width, height);
+        for (int i = 0; i < pixels.length; i++) {
+            pixels[i] = (pixels[i] >>> 24) << 24;
+        }
+        outputBitmap.setPixels(pixels, 0, width, 0, 0, width, height);
+        return true;
     }
 
     public static boolean copyBitmaps(Bitmap src, Bitmap dst) {
