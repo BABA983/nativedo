@@ -18,6 +18,8 @@ package org.telegram.messenger;
 import android.content.Context;
 
 import java.text.SimpleDateFormat;
+
+import org.telegram.tgnet.TLRPC;
 import java.util.Locale;
 
 /**
@@ -187,6 +189,18 @@ public final class LocaleController {
         public LocaleInfo(String shortName) {
             this.shortName = shortName == null ? "en" : shortName;
         }
+    }
+
+    /**
+     * Host version of the pin's entity-date formatter. The pin composes relative week/day/long/short
+     * variants from its own formatter set; this shim returns a readable date and the rich pattern lands
+     * with the formatted-date feature (our composer wires the date action out).
+     */
+    public static String formatEntityFormattedDate(TLRPC.TL_messageEntityFormattedDate entity) {
+        if (entity == null) {
+            return "";
+        }
+        return java.text.DateFormat.getDateTimeInstance().format(new java.util.Date(entity.date * 1000L));
     }
 
     public SimpleDateFormat getChatFullDate() {

@@ -39,6 +39,32 @@ public final class TL_keyboard {
         public boolean link;
     }
 
+    public abstract static class ButtonType extends ButtonTypeProto {
+    }
+
+    public static class TL_buttonTypeSimpleWebView extends ButtonType {
+        public String url;
+    }
+
+    public static class TL_inlineButtonTypeUrl extends InlineButtonType {
+        public String url;
+    }
+
+    public static class TL_inlineButtonTypeWebView extends InlineButtonType {
+        public String url;
+    }
+
+    public static class TL_inlineButtonTypeCopy extends InlineButtonType {
+        public String copy_text;
+    }
+
+    public static class TL_inlineButtonTypeUserProfile extends InlineButtonType {
+        public long user_id;
+    }
+
+    public static class TL_inlineButtonTypeDisabled extends InlineButtonType {
+    }
+
     public static class PageButton extends TLObject implements KeyboardButtonProto {
         public static final int constructor = 0x692A5488;
 

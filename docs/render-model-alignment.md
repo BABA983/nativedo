@@ -212,8 +212,21 @@ Sequence, if chat is scheduled:
    TL wire layer this tree does not carry (`TLObject.TLdeserialize`,
    `Vector`/`InputSerializedData`, `TLMethod`, `TLRPC.messages_Messages`,
    `TLRPC.InputUser`), which is why the file is `native` in the first place.
-2. **S2** - the render-side leaf classes above, with the Telegram-only ones
-   wired out (`LinkManager`, the premium sheets).
+2. **S2 - landed.** The render-side leaves are in from the pin: `spoolers/SpoilerEffect2`
+   (with the two spoiler shaders as raw resources), `TornEdge`, `SquigglyLinesSpan`,
+   `FormattedDateSpan`, `ForegroundColorSpanThemable`, the `URLSpan{Mono,UserMention,BotCommand}`
+   family, and `PhoneFormat` with its `CallingCodeInfo`/`PhoneRule`/`RuleSet` tables.
+   Host additions they needed: `TLObject.hasFlag`/`setFlag` (the pin delegates to
+   `me.vkryl.core.BitwiseUtils`, which is not in this tree, so they are inlined),
+   `TLRPC.MessageEntity`'s `flags`/`language`, a `TL_messageEntityFormattedDate` data
+   holder with a local flag table, a minimal `LocaleController.formatEntityFormattedDate`
+   (the pin's relative/week/long/short composition lands with the date feature), and
+   `TL_keyboard`'s `ButtonType` plus six button types. Left out on purpose, to be wired
+   out when `RichMessageLayout` itself is patched in S3: `ui/iv/RichHtml` and
+   `RichTextStyle` (they open the 27k-line editor package), `Latex` (needs the
+   JLatexMath jar), `UnsupportedBlockDrawable`, `TLKeyboardHelper` (reply-markup family)
+   and the Telegram-only `LinkManager`/premium sheets. Probe after S2: 337 -> 285 -> 229
+   errors, the rest being the host surface and those wire-outs.
 3. **S3** - grow the stubs until `RichMessageLayout` compiles (measured: 337
    errors, ~60 unique symbols, all inside the file).
 4. **S4** - host it on a Discourse post (post blocks become a `TL_iv.RichMessage`)

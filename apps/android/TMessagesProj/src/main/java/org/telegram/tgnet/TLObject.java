@@ -13,4 +13,14 @@ public class TLObject {
     public int getObjectSize() {
         return 0;
     }
+
+    /** Pin helper (delegates to {@code me.vkryl.core.BitwiseUtils}, which this tree does not carry). */
+    public static boolean hasFlag(int flags, int flag) {
+        return (flags & flag) != 0;
+    }
+
+    /** Pin helper, inlined for the same reason as {@link #hasFlag(int, int)}. */
+    public static int setFlag(int flags, int flag, boolean value) {
+        return value ? (flags | flag) : (flags & ~flag);
+    }
 }

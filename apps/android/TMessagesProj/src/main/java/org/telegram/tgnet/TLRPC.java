@@ -237,10 +237,40 @@ public class TLRPC {
     }
 
     public static class MessageEntity extends TLObject {
+        public int flags;
         public int offset;
         public int length;
         public String url;
+        public String language;
         public boolean collapsed;
+    }
+
+    /** Data holder for the pin's formatted-date entity; the flag table is local because this shell has no
+     * shared one. */
+    public static class TL_messageEntityFormattedDate extends MessageEntity {
+        public static final int FLAG_RELATIVE = 1;
+        public static final int FLAG_SHORT_TIME = 1 << 1;
+        public static final int FLAG_LONG_TIME = 1 << 2;
+        public static final int FLAG_SHORT_DATE = 1 << 3;
+        public static final int FLAG_LONG_DATE = 1 << 4;
+        public static final int FLAG_DAY_OF_WEEK = 1 << 5;
+
+        public boolean relative;
+        public boolean short_time;
+        public boolean long_time;
+        public boolean short_date;
+        public boolean long_date;
+        public boolean day_of_week;
+        public int date;
+
+        public void applyFlags() {
+            relative = hasFlag(flags, FLAG_RELATIVE);
+            short_time = hasFlag(flags, FLAG_SHORT_TIME);
+            long_time = hasFlag(flags, FLAG_LONG_TIME);
+            short_date = hasFlag(flags, FLAG_SHORT_DATE);
+            long_date = hasFlag(flags, FLAG_LONG_DATE);
+            day_of_week = hasFlag(flags, FLAG_DAY_OF_WEEK);
+        }
     }
 
     public static class TL_messageEntityUrl extends MessageEntity {
