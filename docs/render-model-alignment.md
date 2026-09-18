@@ -105,11 +105,25 @@ Two consequences for our plan:
    blocks (polls, oneboxes, callouts) stay ours and would be an added
    block case in whichever renderer we adopt.
 
-Revised R2: the spike targets `RichMessageLayout` rather than an
-`ArticleViewer` cell - same canvas shape as our body, one mirror file, shallow
-host surface. The ArticleViewer-cell extraction stays the fallback if the
-rich-message host turns out to be chat-entangled in ways the shallow access list
-does not show.
+Revised R2, and then measured: `RichMessageLayout` was copied in verbatim and
+compiled. It produces 337 errors, all inside the file, clustering into three
+groups: host surface (`ChatMessageCell.TransitionParams` 10, `ChatMessageCellDelegate`
+8, and `MessageObject` members it reads - `checked`/`checkbox`, `IvButtonColors`,
+`holders`, `spoiler`, `collapsed`, `visibleHeight`, `textY`, `sponsoredColor`),
+missing mirror classes (`SpoilerEffect2`, `UnsupportedBlockDrawable`,
+`ForegroundColorSpanThemable`, `UnsupportedBlockDrawable`, `latex`/`Latex`), and
+missing `TL_iv` classes (`RichMessage` itself, `textCustomEmoji`, `textMath`,
+`textDate`, `textMentionName`, `pageBlockDocument`, `pageBlockMath`,
+`pageBlockButtonRow`). Two of those drag documented non-goals: the button row
+needs the bot-keyboard TL types (`TL_keyboard`, `TLKeyboardHelper`), and the
+rich-text helpers come from `ui/iv` (`RichHtml`, `RichTextStyle`).
+
+So the canvas shape is right but the host is not cheap: the rich-message path
+assumes a chat message cell and two subsystems this product does not ship. R2
+therefore starts with the **ArticleViewer-cell extraction** (one cell, the
+eleven-member adapter, three public static helpers) and treats `RichMessageLayout`
+as the destination to re-measure once the block model is `TL_iv` and the body
+renderer is being replaced for real.
 
 ## Staged plan
 
@@ -142,16 +156,12 @@ consumes Telegram's model instead of a home-grown one, and any later cell copy
 becomes mechanical. Gate: the eight `TopicPostCellScreenshotTest` goldens plus
 the suite — a pure refactor of the boundary should not move a pixel.
 
-**R2 — renderer spike: `RichMessageLayout` first, an `ArticleViewer` cell as the fallback.**
-Land `RichMessageLayout` as a mirror file, host it with a `MessageObject`-shaped
-holder carrying our post's blocks plus the shallow flag set above, and draw one
-post body with it (the `ChatMessageCell` delegate/`TransitionParams` seam is the
-work). If a post-body golden can be produced that way, the body renderer is
-upstream's, one file, re-syncable. If the host turns out to be chat-entangled
-beyond the access list, fall back to the cell extraction described above:
-`BlockBlockquoteCell` into a mirror file hosted by `IArticleViewer` + a slim
-adapter carrying the eleven members, then the View-vs-canvas decision once, for
-all cells.
+**R2 — renderer spike: an `ArticleViewer` cell (after measuring `RichMessageLayout`, below).**
+Take `BlockBlockquoteCell` out of `ArticleViewer` into a mirror file and host it
+with `IArticleViewer` plus a slim adapter carrying the eleven members its family
+touches, then decide the View-vs-canvas question once, for all cells. The
+`RichMessageLayout` measurement above is what moved it from the first slot to
+the destination.
 
 **R3 — if either spike holds, extend it block by block.**
 Each adopted renderer becomes a mirror file with a reported delta instead of a
