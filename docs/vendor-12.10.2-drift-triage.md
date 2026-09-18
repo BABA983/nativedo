@@ -78,6 +78,7 @@ these eight were read in full now, and none is worth taking today:
 | `ad73778` | `AnimatedArrowDrawable`'s additive custom-geometry constructor (`color, widthDp, heightDp, strokeWidthDp`) | byte-exact; the two-argument path our blocks use is unchanged, goldens confirm |
 | `0ac809a` | `QuoteSpan` moves off the `reference` baseline onto the pin, with the collapse/expand toggle extracted into `QuoteCollapseButton` | the span keeps a `public QuoteCollapseButton collapseButton` and drops ~76 lines of inline animation; our editor compiles unchanged, and `verifyPaparazziDebug` is green — no golden moved |
 | `d2fa294` | the wallpaper/AGSL group: `MotionBackgroundPaint` byte-exact (it wants the blur3 `BitmapChangeTracker` closure, which is in the tree), `MotionBackgroundDrawable` at the pin plus a 3-line wiring diff, and the `Utilities` surface they call — `generateGradient`'s `(bitmap, phase, progress, colors)` signature, plus new `applyAlphaInvert`/`expandAlphaToBlack` Java fallbacks modelled on the pinned `jni/image.cpp` | `MotionBackgroundPaint` is the first of the pair to be byte-exact; no golden moved, and that is the expected result, not a miss: nothing calls `setFastRenderAllowed()` so the AGSL path stays dormant, and `generateGradient` remains a host no-op, so the CPU path's gradient bitmaps are as blank after as before. The rewrite the pair brings (pattern+gift merge, legacy-bitmap path dropped, `drawBackground`/`drawPattern` collapsed into `draw`) is a device check |
+| `d09ee77` | first hand-carry out of the pool: `ChatActivitySideControlsButtonsLayout` takes the pin's pending-button state (`setButtonCount`/`setButtonLoading`/`setButtonEnabled` only touch the view once the holder exists, and `getOrCreateButtonHolder` flushes it) | the file is now the pin plus its one local helper (`setButtonContentDescription`); the forced-exact trio passed, and the full suite plus `verifyPaparazziDebug` stayed green |
 
 ## Blocked, and by what
 
@@ -137,8 +138,10 @@ local files whose upstream moved, **five** take the delta verbatim and every one
 them is already parked — `BottomSheet`, `BottomSheetWithRecyclerListView` and
 `WindowInsetsStateHolder` on the edge-to-edge program, `ExtendedGridLayoutManager`
 on the suspected upstream bug above, `RLottieImageView` on the RLottie family. The
-other 62 are `native` ports or mirrors whose host wiring overlaps the hunks; the
-clean-copy pool is empty, so what is left is per-family hand-porting.
+other 62 are `native` ports or mirrors whose host wiring overlaps the hunks; one of
+them has landed by hand (`d09ee77`), and the rest are per-family hand-porting — RLottie
+constructor/layer-name sites, the media3 imports, and the `native` ports whose
+upstream ancestors moved inside settled non-goals.
 
 The `:app` ports' ancestors moved 12.9.0 → pin mostly inside settled non-goals:
 `DialogCell` (+14/−17: rich-message drafts, RLottie layer names), `ChatActionCell`
