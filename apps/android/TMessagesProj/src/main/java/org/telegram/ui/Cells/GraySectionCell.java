@@ -22,11 +22,14 @@ import androidx.core.view.ViewCompat;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.LocaleController;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.ActionBar.ThemeDescription;
 import org.telegram.ui.Components.AnimatedEmojiSpan;
 import org.telegram.ui.Components.AnimatedTextView;
 import org.telegram.ui.Components.CubicBezierInterpolator;
 import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.Components.RecyclerListView;
 
+import java.util.List;
 
 public class GraySectionCell extends FrameLayout implements Theme.Colorable {
 
@@ -145,6 +148,12 @@ public class GraySectionCell extends FrameLayout implements Theme.Colorable {
         rightTextView.setText(right, true, moveDown);
         rightTextView.setOnClickListener(onClickListener);
         rightTextView.setVisibility(VISIBLE);
+    }
+
+    public static void createThemeDescriptions(List<ThemeDescription> descriptions, RecyclerListView listView) {
+        descriptions.add(new ThemeDescription(listView, 0, new Class[]{GraySectionCell.class}, new String[]{"textView"}, null, null, null, Theme.key_graySectionText));
+        descriptions.add(new ThemeDescription(listView, 0, new Class[]{GraySectionCell.class}, new String[]{"rightTextView"}, null, null, null, Theme.key_graySectionText));
+        descriptions.add(new ThemeDescription(listView, ThemeDescription.FLAG_CELLBACKGROUNDCOLOR, new Class[]{GraySectionCell.class}, null, null, null, Theme.key_graySection));
     }
 
     public TextView getTextView() {
