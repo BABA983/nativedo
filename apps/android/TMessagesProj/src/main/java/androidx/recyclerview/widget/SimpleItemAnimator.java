@@ -474,3 +474,4 @@ public abstract class SimpleItemAnimator extends RecyclerView.ItemAnimator {
     public void onChangeFinished(RecyclerView.ViewHolder item, boolean oldItem) {
     }
 }
+

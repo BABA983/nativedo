@@ -42,7 +42,7 @@ public class RectFMergeBounding {
             output.add(new RectF());
         }
 
-        // Copy positions -> output[0..count-1]
+        // Copy positions → output[0..count-1]
         for (int i = 0; i < count; i++) {
             RectF src = positions.get(i);
             RectF dst = output.get(i);
