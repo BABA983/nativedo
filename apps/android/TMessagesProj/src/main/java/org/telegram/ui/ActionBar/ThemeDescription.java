@@ -226,7 +226,7 @@ public class ThemeDescription {
                     ((BackDrawable) drawablesToUpdate[a]).setColor(color);
                 } else if (drawablesToUpdate[a] instanceof RLottieDrawable) {
                     if (lottieLayerName != null) {
-                        ((RLottieDrawable) drawablesToUpdate[a]).setLayerColor(lottieLayerName + ".**", color);
+                        ((RLottieDrawable) drawablesToUpdate[a]).setLayerColor(lottieLayerName, color);
                     }
                 } else if (drawablesToUpdate[a] instanceof CombinedDrawable) {
                     if ((changeFlags & FLAG_BACKGROUNDFILTER) != 0) {
@@ -546,7 +546,7 @@ public class ThemeDescription {
                                     ((View) object).invalidate();
                                 }
                                 if (lottieLayerName != null && object instanceof RLottieImageView) {
-                                    ((RLottieImageView) object).setLayerColor(lottieLayerName + ".**", color);
+                                    ((RLottieImageView) object).setLayerColor(lottieLayerName, color);
                                 }
                                 if ((changeFlags & FLAG_USEBACKGROUNDDRAWABLE) != 0 && object instanceof View) {
                                     object = ((View) object).getBackground();

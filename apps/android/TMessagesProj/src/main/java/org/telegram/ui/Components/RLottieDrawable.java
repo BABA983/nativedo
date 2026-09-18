@@ -43,20 +43,21 @@ public class RLottieDrawable extends BitmapDrawable {
         super((Bitmap) null);
     }
 
-    public RLottieDrawable(int resId, String key, int w, int h) {
+    public RLottieDrawable(int rawRes, int w, int h) {
         super((Bitmap) null);
-        this.resId = resId;
+        // Host: no JNI decode, so the resource is not read here; the fallback in draw() keys off
+        // resId, which only the colorReplacement constructor below sets (as it did before).
     }
 
-    public RLottieDrawable(int resId, String key, int w, int h, boolean limitFps, int[] colorReplacement) {
+    public RLottieDrawable(int rawRes, int w, int h, boolean startDecode, int[] colorReplacement) {
         super((Bitmap) null);
-        this.resId = resId;
+        this.resId = rawRes;
     }
 
-    public RLottieDrawable(int diceEmoji, int w, int h) {
-        super((Bitmap) null);
-    }
-
+    /**
+     * The dice emoji still constructs by name here: upstream 12.10.2 moved that path into
+     * {@code RLottieDiceDrawable}, which this stub does not carry.
+     */
     public RLottieDrawable(String diceEmoji, int w, int h) {
         super((Bitmap) null);
     }

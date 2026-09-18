@@ -7569,22 +7569,22 @@ public class Theme {
             if (dialogs_hidePsaDrawable != null) {
                 dialogs_hidePsaDrawable.recycle(false);
             }
-            dialogs_archiveAvatarDrawable = new RLottieDrawable(R.raw.chats_archiveavatar, "chats_archiveavatar", dp(36), dp(36), false, null);
-            dialogs_archiveDrawable = new RLottieDrawable(R.raw.chats_archive, "chats_archive", dp(36), dp(36), false, null);
-            dialogs_unarchiveDrawable = new RLottieDrawable(R.raw.chats_unarchive, "chats_unarchive", dp(dp(36)), dp(36), false, null);
-            dialogs_pinArchiveDrawable = new RLottieDrawable(R.raw.chats_hide, "chats_hide", dp(36), dp(36), false, null);
-            dialogs_unpinArchiveDrawable = new RLottieDrawable(R.raw.chats_unhide, "chats_unhide", dp(36), dp(36), false, null);
-            dialogs_hidePsaDrawable = new RLottieDrawable(R.raw.chat_audio_record_delete, "chats_psahide", dp(30), dp(30), false, null);
+            dialogs_archiveAvatarDrawable = new RLottieDrawable(R.raw.chats_archiveavatar, dp(36), dp(36), false, null);
+            dialogs_archiveDrawable = new RLottieDrawable(R.raw.chats_archive, dp(36), dp(36), false, null);
+            dialogs_unarchiveDrawable = new RLottieDrawable(R.raw.chats_unarchive, dp(36), dp(36), false, null);
+            dialogs_pinArchiveDrawable = new RLottieDrawable(R.raw.chats_hide, dp(36), dp(36), false, null);
+            dialogs_unpinArchiveDrawable = new RLottieDrawable(R.raw.chats_unhide, dp(36), dp(36), false, null);
+            dialogs_hidePsaDrawable = new RLottieDrawable(R.raw.chat_audio_record_delete, dp(30), dp(30), false, null);
 
-            dialogs_swipeMuteDrawable = new RLottieDrawable(R.raw.swipe_mute, "swipe_mute", dp(36), dp(36), false, null);
-            dialogs_swipeUnmuteDrawable = new RLottieDrawable(R.raw.swipe_unmute, "swipe_unmute", dp(36), dp(36), false, null);
+            dialogs_swipeMuteDrawable = new RLottieDrawable(R.raw.swipe_mute, dp(36), dp(36), false, null);
+            dialogs_swipeUnmuteDrawable = new RLottieDrawable(R.raw.swipe_unmute, dp(36), dp(36), false, null);
 
-            dialogs_swipeReadDrawable = new RLottieDrawable(R.raw.swipe_read, "swipe_read", dp(36), dp(36), false, null);
-            dialogs_swipeUnreadDrawable = new RLottieDrawable(R.raw.swipe_unread, "swipe_unread", dp(36), dp(36), false, null);
-            dialogs_swipeDeleteDrawable = new RLottieDrawable(R.raw.swipe_delete, "swipe_delete", dp(36), dp(36), false, null);
-            dialogs_swipeUnpinDrawable = new RLottieDrawable(R.raw.swipe_unpin, "swipe_unpin", dp(36), dp(36), false, null);
-            dialogs_swipePinDrawable = new RLottieDrawable(R.raw.swipe_pin, "swipe_pin", dp(36), dp(36), false, null);
-            dialogs_swipeCommunityUngroup = new RLottieDrawable(R.raw.swipe_community_ungroup, "swipe_community_ungroup", dp(28), dp(28), false, null);
+            dialogs_swipeReadDrawable = new RLottieDrawable(R.raw.swipe_read, dp(36), dp(36), false, null);
+            dialogs_swipeUnreadDrawable = new RLottieDrawable(R.raw.swipe_unread, dp(36), dp(36), false, null);
+            dialogs_swipeDeleteDrawable = new RLottieDrawable(R.raw.swipe_delete, dp(36), dp(36), false, null);
+            dialogs_swipeUnpinDrawable = new RLottieDrawable(R.raw.swipe_unpin, dp(36), dp(36), false, null);
+            dialogs_swipePinDrawable = new RLottieDrawable(R.raw.swipe_pin, dp(36), dp(36), false, null);
+            dialogs_swipeCommunityUngroup = new RLottieDrawable(R.raw.swipe_community_ungroup, dp(28), dp(28), false, null);
 
             applyCommonTheme();
         }
@@ -7602,45 +7602,45 @@ public class Theme {
         }
 
         dialogs_archiveAvatarDrawable.beginApplyLayerColors();
-        dialogs_archiveAvatarDrawable.setLayerColor("Arrow1.**", getNonAnimatedColor(key_avatar_backgroundArchived));
-        dialogs_archiveAvatarDrawable.setLayerColor("Arrow2.**", getNonAnimatedColor(key_avatar_backgroundArchived));
-        dialogs_archiveAvatarDrawable.setLayerColor("Box2.**", getNonAnimatedColor(key_avatar_text));
-        dialogs_archiveAvatarDrawable.setLayerColor("Box1.**", getNonAnimatedColor(key_avatar_text));
+        dialogs_archiveAvatarDrawable.setLayerColor("Arrow1", getNonAnimatedColor(key_avatar_backgroundArchived));
+        dialogs_archiveAvatarDrawable.setLayerColor("Arrow2", getNonAnimatedColor(key_avatar_backgroundArchived));
+        dialogs_archiveAvatarDrawable.setLayerColor("Box2", getNonAnimatedColor(key_avatar_text));
+        dialogs_archiveAvatarDrawable.setLayerColor("Box1", getNonAnimatedColor(key_avatar_text));
         dialogs_archiveAvatarDrawable.commitApplyLayerColors();
         dialogs_archiveAvatarDrawableRecolored = false;
         dialogs_archiveAvatarDrawable.setAllowDecodeSingleFrame(true);
 
         dialogs_pinArchiveDrawable.beginApplyLayerColors();
-        dialogs_pinArchiveDrawable.setLayerColor("Arrow.**", getNonAnimatedColor(key_chats_archiveIcon));
-        dialogs_pinArchiveDrawable.setLayerColor("Line.**", getNonAnimatedColor(key_chats_archiveIcon));
+        dialogs_pinArchiveDrawable.setLayerColor("Arrow", getNonAnimatedColor(key_chats_archiveIcon));
+        dialogs_pinArchiveDrawable.setLayerColor("Line", getNonAnimatedColor(key_chats_archiveIcon));
         dialogs_pinArchiveDrawable.commitApplyLayerColors();
 
         dialogs_unpinArchiveDrawable.beginApplyLayerColors();
-        dialogs_unpinArchiveDrawable.setLayerColor("Arrow.**", getNonAnimatedColor(key_chats_archiveIcon));
-        dialogs_unpinArchiveDrawable.setLayerColor("Line.**", getNonAnimatedColor(key_chats_archiveIcon));
+        dialogs_unpinArchiveDrawable.setLayerColor("Arrow", getNonAnimatedColor(key_chats_archiveIcon));
+        dialogs_unpinArchiveDrawable.setLayerColor("Line", getNonAnimatedColor(key_chats_archiveIcon));
         dialogs_unpinArchiveDrawable.commitApplyLayerColors();
 
         dialogs_hidePsaDrawable.beginApplyLayerColors();
-        dialogs_hidePsaDrawable.setLayerColor("Line 1.**", getNonAnimatedColor(key_chats_archiveBackground));
-        dialogs_hidePsaDrawable.setLayerColor("Line 2.**", getNonAnimatedColor(key_chats_archiveBackground));
-        dialogs_hidePsaDrawable.setLayerColor("Line 3.**", getNonAnimatedColor(key_chats_archiveBackground));
-        dialogs_hidePsaDrawable.setLayerColor("Cup Red.**", getNonAnimatedColor(key_chats_archiveIcon));
-        dialogs_hidePsaDrawable.setLayerColor("Box.**", getNonAnimatedColor(key_chats_archiveIcon));
+        dialogs_hidePsaDrawable.setLayerColor("Line 1", getNonAnimatedColor(key_chats_archiveBackground));
+        dialogs_hidePsaDrawable.setLayerColor("Line 2", getNonAnimatedColor(key_chats_archiveBackground));
+        dialogs_hidePsaDrawable.setLayerColor("Line 3", getNonAnimatedColor(key_chats_archiveBackground));
+        dialogs_hidePsaDrawable.setLayerColor("Cup Red", getNonAnimatedColor(key_chats_archiveIcon));
+        dialogs_hidePsaDrawable.setLayerColor("Box", getNonAnimatedColor(key_chats_archiveIcon));
         dialogs_hidePsaDrawable.commitApplyLayerColors();
         dialogs_hidePsaDrawableRecolored = false;
 
         dialogs_archiveDrawable.beginApplyLayerColors();
-        dialogs_archiveDrawable.setLayerColor("Arrow.**", getNonAnimatedColor(key_chats_archiveBackground));
-        dialogs_archiveDrawable.setLayerColor("Box2.**", getNonAnimatedColor(key_chats_archiveIcon));
-        dialogs_archiveDrawable.setLayerColor("Box1.**", getNonAnimatedColor(key_chats_archiveIcon));
+        dialogs_archiveDrawable.setLayerColor("Arrow", getNonAnimatedColor(key_chats_archiveBackground));
+        dialogs_archiveDrawable.setLayerColor("Box2", getNonAnimatedColor(key_chats_archiveIcon));
+        dialogs_archiveDrawable.setLayerColor("Box1", getNonAnimatedColor(key_chats_archiveIcon));
         dialogs_archiveDrawable.commitApplyLayerColors();
         dialogs_archiveDrawableRecolored = false;
 
         dialogs_unarchiveDrawable.beginApplyLayerColors();
-        dialogs_unarchiveDrawable.setLayerColor("Arrow1.**", getNonAnimatedColor(key_chats_archiveIcon));
-        dialogs_unarchiveDrawable.setLayerColor("Arrow2.**", getNonAnimatedColor(key_chats_archivePinBackground));
-        dialogs_unarchiveDrawable.setLayerColor("Box2.**", getNonAnimatedColor(key_chats_archiveIcon));
-        dialogs_unarchiveDrawable.setLayerColor("Box1.**", getNonAnimatedColor(key_chats_archiveIcon));
+        dialogs_unarchiveDrawable.setLayerColor("Arrow1", getNonAnimatedColor(key_chats_archiveIcon));
+        dialogs_unarchiveDrawable.setLayerColor("Arrow2", getNonAnimatedColor(key_chats_archivePinBackground));
+        dialogs_unarchiveDrawable.setLayerColor("Box2", getNonAnimatedColor(key_chats_archiveIcon));
+        dialogs_unarchiveDrawable.setLayerColor("Box1", getNonAnimatedColor(key_chats_archiveIcon));
         dialogs_unarchiveDrawable.commitApplyLayerColors();
 
         chat_animatedEmojiTextColorFilter = new PorterDuffColorFilter(getColor(key_windowBackgroundWhiteBlackText), PorterDuff.Mode.SRC_IN);
