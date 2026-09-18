@@ -79,6 +79,7 @@ these eight were read in full now, and none is worth taking today:
 | `0ac809a` | `QuoteSpan` moves off the `reference` baseline onto the pin, with the collapse/expand toggle extracted into `QuoteCollapseButton` | the span keeps a `public QuoteCollapseButton collapseButton` and drops ~76 lines of inline animation; our editor compiles unchanged, and `verifyPaparazziDebug` is green — no golden moved |
 | `d2fa294` | the wallpaper/AGSL group: `MotionBackgroundPaint` byte-exact (it wants the blur3 `BitmapChangeTracker` closure, which is in the tree), `MotionBackgroundDrawable` at the pin plus a 3-line wiring diff, and the `Utilities` surface they call — `generateGradient`'s `(bitmap, phase, progress, colors)` signature, plus new `applyAlphaInvert`/`expandAlphaToBlack` Java fallbacks modelled on the pinned `jni/image.cpp` | `MotionBackgroundPaint` is the first of the pair to be byte-exact; no golden moved, and that is the expected result, not a miss: nothing calls `setFastRenderAllowed()` so the AGSL path stays dormant, and `generateGradient` remains a host no-op, so the CPU path's gradient bitmaps are as blank after as before. The rewrite the pair brings (pattern+gift merge, legacy-bitmap path dropped, `drawBackground`/`drawPattern` collapsed into `draw`) is a device check |
 | `d09ee77` | first hand-carry out of the pool: `ChatActivitySideControlsButtonsLayout` takes the pin's pending-button state (`setButtonCount`/`setButtonLoading`/`setButtonEnabled` only touch the view once the holder exists, and `getOrCreateButtonHolder` flushes it) | the file is now the pin plus its one local helper (`setButtonContentDescription`); the forced-exact trio passed, and the full suite plus `verifyPaparazziDebug` stayed green |
+| `60a764c` | RLottie family shapes: the stub takes the pin's constructors (plus the dice `String` one upstream moved to `RLottieDiceDrawable`, and the `File` ones `ImageLoader` keeps), the 15 call sites drop the layer-name argument, and the 22 `.**` layer names become plain names (`Theme` ×20, `ThemeDescription` ×2) | `RLottieImageView` is byte-exact again (drift 217 → 216) and no golden moved. The three-argument constructor keeps its no-op body on purpose: assigning `resId` would arm the stub's composer-icon fallback and light up `ChatActivityEnterViewAnimatedIconView`, which the topic composer mounts — a device-visible change left as an open decision |
 
 ## Blocked, and by what
 
@@ -120,10 +121,11 @@ import (the stubs' own `Format` reference aside), so the `Log` and `Util` stubs
 have no importers. The stub set stays for `AspectRatioFrameLayout` and `Format`;
 pruning the other ten is a separate decision.
 
-Read in full and left: `ChatActivityEnterViewAnimatedIconView` / `RLottieImageView` /
-`ProfileActionsView` (the RLottie constructor), `WindowInsetsStateHolder` (display-cutout
-insets — device-bound), and the blur3 group — its closures landed, and the one mirror
-that wanted them (`MotionBackgroundPaint`) is at the pin now.
+Read in full and left: `ChatActivityEnterViewAnimatedIconView` (byte-exact — it was the one
+call site already on the pin's three-argument constructor), `ProfileActionsView` (its delta
+is the RLottie constructor, which our port does not carry), `WindowInsetsStateHolder`
+(display-cutout insets — device-bound), and the blur3 group — its closures landed, and the
+one mirror that wanted them (`MotionBackgroundPaint`) is at the pin now.
 
 One left *because upstream looks wrong*: `ExtendedGridLayoutManager` sets
 `lastSpanCount = itemsCount` and then guards `checkLayout()` with
@@ -134,13 +136,14 @@ until upstream sets the field to the span count it compares against.
 
 The hand-port pool, measured after the wallpaper group (`git apply --check` of the
 12.9.0 → pin delta per moved upstream path, local root prefix substituted): of the
-local files whose upstream moved, **five** take the delta verbatim and every one of
-them is already parked — `BottomSheet`, `BottomSheetWithRecyclerListView` and
-`WindowInsetsStateHolder` on the edge-to-edge program, `ExtendedGridLayoutManager`
-on the suspected upstream bug above, `RLottieImageView` on the RLottie family. The
+local files whose upstream moved, **five** take the delta verbatim — four of them are
+still parked (`BottomSheet`, `BottomSheetWithRecyclerListView` and
+`WindowInsetsStateHolder` on the edge-to-edge program, `ExtendedGridLayoutManager` on
+the suspected upstream bug above) and the fifth, `RLottieImageView`, landed with the
+family's shape change (`60a764c`). The
 other 62 are `native` ports or mirrors whose host wiring overlaps the hunks; one of
-them has landed by hand (`d09ee77`), and the rest are per-family hand-porting — RLottie
-constructor/layer-name sites, the media3 imports, and the `native` ports whose
+them has landed by hand (`d09ee77`), and the rest are per-family hand-porting — RLottie's JNI
+body (its shapes landed, `60a764c`), the media3 imports, and the `native` ports whose
 upstream ancestors moved inside settled non-goals.
 
 The `:app` ports' ancestors moved 12.9.0 → pin mostly inside settled non-goals:
@@ -161,7 +164,7 @@ are 12.9.0 → pin.
 | proxy | `ConnectionsManager`, `ProxySettings` users | settled non-goal |
 | emoji packs | `Emoji`, `EmojiView`, `AnimatedEmoji*` | settled non-goal |
 | localization | `LocaleController` (+ `org.telegram.localization`) | a new upstream subsystem; taking it drags a package we do not ship |
-| RLottie layer names | `ThemeDescription`, `DialogCell`, `Theme` | coherence unit with `RLottieDrawable`; no product goal |
+| RLottie layer names | `ThemeDescription`, `DialogCell`, `Theme` | the `.**` suffix and the stub's constructor shapes are aligned now (`60a764c`); what is left is `DialogCell`'s port and the JNI body of `RLottieDrawable`/`RLottieNative`, which this tree cannot carry |
 | media3 / exoplayer | `VideoPlayer`, `AnimatedFileDrawable`, `AndroidUtilities` | settled when zxing and media3 were decided |
 | stories / gifts / stars / community | `ChatActivity`, `MainTabsActivity`, `SharedMediaLayout` | settled non-goal |
 | edge-to-edge insets | `ActionBarLayout`, `DrawerLayoutContainer`, `LaunchActivity`, `MainTabsActivity` | needs a device to verify; parked until a concrete insets bug |
