@@ -46,7 +46,6 @@ from `:app`, 14 are ancestors of our ports, and 38 sit on the historical
 | `ui/Components/TableLayout.java` | +182/−35 | natural horizontal geometry, `updateTextX/Y`, valign/padding helpers, `getEmojiOnlyCount` | post-body tables render through `TableLayout` |
 | `ui/Components/EditTextBoldCursor.java` | +121/−16 | `setTransformHintToHeaderOnFocus`, hint-header visibility rule, `Choreographer60FpsContent` invalidation | search field and composer inputs |
 | `ui/ActionBar/ActionBar.java` | +93/−11 | glass drawables become `BlurredBackgroundDrawable`, `alwaysApplyColorFilterToBackButton()`, width clamp | main-tabs chrome |
-| `ui/Components/ReplyMessageLine.java` | +92/−93 | pattern/shader rewrite with a cached bitmap, `setSimpleColor` | reply and quote rails; the file is `forced_exact(drawing)` |
 | `messenger/AndroidUtilities.java` | +96/−108 | drops the `USE_LEGACY_SYSTEM_INSETS` branch, adds `executeOnUIThread`, media3 `Consumer` | shared utility; the insets half belongs to the edge-to-edge question |
 | `messenger/PhotoViewer.java` | +296/−302 | insets/media3/proxy touches on top of our port | our image viewer port |
 
@@ -62,7 +61,6 @@ these eight were read in full now, and none is worth taking today:
 | `ui/Components/TableLayout.java` | the delta is IV-shaped: wide-table scaling (`setRenderWidth`), emoji-only cells, new padding defaults. Our tables scroll horizontally instead of scaling and never use `valign_bottom`, so only the padding change would be visible |
 | `ui/ActionBar/BottomSheet.java` | the delta is the edge-to-edge program (`EdgeToEdge` V1/V2 + window insets) plus APIs nothing calls yet (`skipDismissAnimation()`, and `ItemOptions.DimView` measuring — `:app` never uses `ItemOptions`) |
 | `ui/Components/EditTextBoldCursor.java` | makes the hint-to-header transform configurable and re-checks it; the default path is unchanged, so nothing is fixed for us |
-| `ui/Components/ReplyMessageLine.java` | the drawing rewrite calls the new `native Utilities.drawReplyLinePattern`; our `Utilities` is deliberately no-JNI, and we consume only `check()` for colours, which the delta leaves alone |
 
 ## Landed since the snapshot
 
@@ -80,6 +78,7 @@ these eight were read in full now, and none is worth taking today:
 | `d2fa294` | the wallpaper/AGSL group: `MotionBackgroundPaint` byte-exact (it wants the blur3 `BitmapChangeTracker` closure, which is in the tree), `MotionBackgroundDrawable` at the pin plus a 3-line wiring diff, and the `Utilities` surface they call — `generateGradient`'s `(bitmap, phase, progress, colors)` signature, plus new `applyAlphaInvert`/`expandAlphaToBlack` Java fallbacks modelled on the pinned `jni/image.cpp` | `MotionBackgroundPaint` is the first of the pair to be byte-exact; no golden moved, and that is the expected result, not a miss: nothing calls `setFastRenderAllowed()` so the AGSL path stays dormant, and `generateGradient` remains a host no-op, so the CPU path's gradient bitmaps are as blank after as before. The rewrite the pair brings (pattern+gift merge, legacy-bitmap path dropped, `drawBackground`/`drawPattern` collapsed into `draw`) is a device check |
 | `d09ee77` | first hand-carry out of the pool: `ChatActivitySideControlsButtonsLayout` takes the pin's pending-button state (`setButtonCount`/`setButtonLoading`/`setButtonEnabled` only touch the view once the holder exists, and `getOrCreateButtonHolder` flushes it) | the file is now the pin plus its one local helper (`setButtonContentDescription`); the forced-exact trio passed, and the full suite plus `verifyPaparazziDebug` stayed green |
 | `60a764c` | RLottie family shapes: the stub takes the pin's constructors (plus the dice `String` one upstream moved to `RLottieDiceDrawable`, and the `File` ones `ImageLoader` keeps), the 15 call sites drop the layer-name argument, and the 22 `.**` layer names become plain names (`Theme` ×20, `ThemeDescription` ×2) | `RLottieImageView` is byte-exact again (drift 217 → 216) and no golden moved. The three-argument constructor keeps its no-op body on purpose: assigning `resId` would arm the stub's composer-icon fallback and light up `ChatActivityEnterViewAnimatedIconView`, which the topic composer mounts — a device-visible change left as an open decision |
+| `cc94b7f` | `Utilities.drawReplyLinePattern` becomes a Java port of the pinned `jni/image.cpp` (reference column with averaged transitions, 45° skew, the same validation and premultiplied output), which unblocks `ReplyMessageLine`'s delta: `drawLine`'s single- and multi-colour branches, `checkPatternBitmap` with its cache, `setSimpleColor`, and `drawBackground`'s `Theme.multAlpha` + `RadiiUtils.radiiAreSame` fast path | the loading branch and the pattern's scroll animation stay out (our port has no such state); the new tests sit in `MotionBackgroundDrawableContractTest` because adding a test class shifts the suite's order and flips order-sensitive goldens. Full run 704/0, no golden moved |
 
 ## Blocked, and by what
 
@@ -120,6 +119,18 @@ the rest: `ArticleViewer` → `AspectRatioFrameLayout` is the last real exoplaye
 import (the stubs' own `Format` reference aside), so the `Log` and `Util` stubs
 have no importers. The stub set stays for `AspectRatioFrameLayout` and `Format`;
 pruning the other ten is a separate decision.
+
+**The gradient generator waits on the snapshot suite.** `Utilities.generateGradient`'s Java
+body is written and unit-tested, but wiring it in makes every motion-gradient wallpaper
+render real pixels for the first time, and the suite's wallpaper state is order-sensitive:
+the wallpaper-derived `serviceMessageColor` leaks into later snapshots (measured: the
+checkbox's unchecked circle goes from `0x28` over white to a wallpaper-tinted fill, and
+`Theme.reloadWallpaper`/`applyTheme` per snapshot do not reset it because the state arrives
+with the earlier tests' persisted app state). Every victim passes when its class is run
+alone, so the full run is the only stable gate and it disagrees with the committed
+snapshots. The ready-to-apply body is saved next to this document's workflow as
+`.amp/in/artifacts/generateGradient-java.patch`; the next slice is a test-infrastructure
+one — reset that state per snapshot, re-record what legitimately changes, then land it.
 
 Read in full and left: `ChatActivityEnterViewAnimatedIconView` (byte-exact — it was the one
 call site already on the pin's three-argument constructor), `ProfileActionsView` (its delta
