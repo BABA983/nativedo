@@ -352,6 +352,16 @@ Sequence, if chat is scheduled:
    device-only (a Paparazzi run has no network), so the snapshot proves the geometry: a 16:9 image
    box where the post asked for one. Still ours to do: collages/slideshows (`pageBlockCollage`'s
    per-photo URL handling), the press-to-open path (our viewer), and alt text as accessibility.
+   **The vertical rhythm, measured** (this is upstream's model, not ours to invent): paragraphs
+   `setContentPadding(previousSiblingParagraph ? 0 : dp(5), dp(4.66f))`, headings `dp(10)/dp(6)`,
+   media `padding.top + image + padding.bottom` with the caller's zero rect, captions the same, and
+   `getGap()` between consecutive visible blocks is `0`; the first paragraph's top and the last
+   block's bottom are trimmed by `layout()`. So upstream leaves a photo flush against whatever
+   precedes it (measured in the snapshot: the quote's background ends at y=417 and the image box
+   starts at y=418 - touching, never overlapping), which reads as one media message from a bot
+   rather than as a reading surface. Seventh `// NativeDo:` delta: `mediaPadding()` gives a media
+   block that follows something `dp(6)` of top padding, while the caption keeps the original rect
+   so it stays glued to its image.
 5. **S5** - the interactive paths (spoilers, selection, button rows), scheduled
    with chat itself. **Selection-helper alignment is part of S5, measured:**
    adopting the pin's whole `TextSelectionHelper` (4,091 lines against our 2,347) was
