@@ -114,6 +114,13 @@ does not show.
 ## Staged plan
 
 **R1 — make `TL_iv` the post-body model (cheap, pixel-gated).**
+Step 1 landed: `core/ui/InlineRichText.kt` cooks cooked HTML into
+`TL_iv.RichText` (styles, links, spoilers, sub/superscript, marked) with the
+Discourse-only constructs (emoji images, SVG icons, hashtag chips, `[size]`)
+kept in the token form the model has no case for, plus nine tests. Step 2 is the
+consumer swap: `buildPostBodyText` walks the tree instead of `HtmlCompat` +
+marker spans, which deletes the spoiler/style marker machinery, and after that
+the blocks carry the model instead of HTML.
 The parser stops emitting HTML strings and emits `TL_iv` page blocks plus
 `TL_iv.RichText` runs (`textBold`/`textItalic`/`textMono`/`textStrike`/
 `textUnderline`/`textSpoiler`/`textMarked`/`textUrl`/`textMention`/…), and the

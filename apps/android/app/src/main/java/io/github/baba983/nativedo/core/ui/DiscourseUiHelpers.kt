@@ -257,7 +257,7 @@ internal fun prepareInlineContent(html: String): PreparedInlineContent {
     )
 }
 
-private fun Element.inlineHashtagChipSpec(index: Int): InlineHashtagChipSpec? {
+internal fun Element.inlineHashtagChipSpec(index: Int): InlineHashtagChipSpec? {
     val href = attr("href").trim().takeIf { it.isNotBlank() } ?: return null
     val svg = selectFirst("svg")
     val iconWrapper = selectFirst(".hashtag-tag-icon")
@@ -293,7 +293,7 @@ private fun String.isHashtagBackgroundSymbol(): Boolean {
     return this == "square" || this == "square-full"
 }
 
-private fun Element.inlineTextStyleSpec(index: Int): InlineTextStyleSpec? {
+internal fun Element.inlineTextStyleSpec(index: Int): InlineTextStyleSpec? {
     val style = attr("style")
     val underline = hasClass("bbcode-u") ||
         style.contains("text-decoration", ignoreCase = true) &&
@@ -328,7 +328,7 @@ private fun String.inlineFontSizeRatio(): Float? {
     return ratio?.coerceIn(0.5f, 2.5f)
 }
 
-private fun Element.inlineSvgSymbolId(): String? {
+internal fun Element.inlineSvgSymbolId(): String? {
     return inlineSvgSymbolIds().firstOrNull()
 }
 
@@ -343,7 +343,7 @@ private fun Element.inlineSvgSymbolIds(): List<String> {
         }
 }
 
-private fun Element.inlineSvgTintColor(): String {
+internal fun Element.inlineSvgTintColor(): String {
     return sequenceOf(this)
         .plus(parents().asSequence())
         .mapNotNull { element -> element.attr("style").cssColorValue("--color1") ?: element.attr("style").cssColorValue("color") }
@@ -359,11 +359,11 @@ private fun String.cssColorValue(name: String): String? {
         ?.takeIf { it.isNotBlank() }
 }
 
-private fun Element.iconFallbackText(): String {
+internal fun Element.iconFallbackText(): String {
     return attr("aria-label").ifBlank { attr("title") }
 }
 
-private fun Element.isDecorativeInlineIcon(): Boolean {
+internal fun Element.isDecorativeInlineIcon(): Boolean {
     return classNames().any { className ->
         className == "svg-icon" ||
             className == "d-icon" ||
@@ -373,7 +373,7 @@ private fun Element.isDecorativeInlineIcon(): Boolean {
     }
 }
 
-private fun Element.inlineImageKind(): InlineImageKind? {
+internal fun Element.inlineImageKind(): InlineImageKind? {
     return when {
         hasClass("emoji") -> InlineImageKind.Emoji
         hasClass("site-icon") -> InlineImageKind.SiteIcon
@@ -381,7 +381,7 @@ private fun Element.inlineImageKind(): InlineImageKind? {
     }
 }
 
-private fun Element.fallbackText(): String {
+internal fun Element.fallbackText(): String {
     return when {
         hasClass("emoji") -> attr("title").ifBlank { attr("alt") }
         else -> attr("alt").ifBlank { attr("title") }
