@@ -7,6 +7,7 @@ import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.screenshot.NativeDoPaparazziRule
 import io.github.baba983.nativedo.screenshot.SystemAppearance
 import io.github.baba983.nativedo.ui.topic.body.PostBodyBlockState
+import io.github.baba983.nativedo.ui.topic.body.RichMessageBody
 import org.junit.Rule
 import org.junit.Test
 
@@ -43,6 +44,23 @@ internal class TopicPostCellScreenshotTest {
     fun contentBlocks() {
         paparazziRule.snapshot { context ->
             topicPostCell(context, CONTENT_BLOCKS_HTML)
+        }
+    }
+
+    /**
+     * The opt-in rich-message body: same cell, same post, but the body is one
+     * [RichMessageBodyBlock] (upstream's renderer) instead of our block tree. The other goldens in
+     * this class are the flag-off shape and must not move.
+     */
+    @Test
+    fun richMessageBody() {
+        RichMessageBody.enabled = true
+        try {
+            paparazziRule.snapshot { context ->
+                topicPostCell(context, RICH_MESSAGE_POST_HTML)
+            }
+        } finally {
+            RichMessageBody.enabled = false
         }
     }
 
@@ -84,6 +102,20 @@ internal class TopicPostCellScreenshotTest {
     }
 
     private companion object {
+        val RICH_MESSAGE_POST_HTML = """
+            <p>A post body drawn by <b>upstream's renderer</b>: paragraphs, a heading, a list,
+            a <a href="https://linux.do/t/1">link</a>, a quote and a code block.</p>
+            <h2>Blocks</h2>
+            <ul>
+              <li>plain item</li>
+              <li>item with <b>bold</b></li>
+            </ul>
+            <blockquote><p>Quoted paragraph with <code>inline code</code>.</p></blockquote>
+            <pre><code>val body = RichMessageBody.enabled</code></pre>
+            <hr>
+            <p>Done.</p>
+        """.trimIndent()
+
         const val POST_HTML =
             "<p>NativeDo keeps linux.do topics readable and highlights search results.</p>"
         const val CJK_POST_HTML =

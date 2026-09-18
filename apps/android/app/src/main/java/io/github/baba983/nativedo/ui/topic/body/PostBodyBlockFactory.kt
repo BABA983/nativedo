@@ -15,6 +15,13 @@ internal object PostBodyBlockFactory {
         persistStructuralState: Boolean = true,
         listLevel: Int = 0,
     ): List<PostBodyBlock> {
+        // The top-level call (no state prefix, no list level) is the post body itself: when the
+        // rich-message switch is on, the whole body is upstream's renderer instead of this tree.
+        // Nested calls always carry a prefix (a quote's children, a table cell, a list item), so the
+        // switch can never fire inside a subtree that the mapping does not cover yet.
+        if (RichMessageBody.enabled && listLevel == 0 && stateKeyPrefix.isEmpty()) {
+            return RichMessageBody.blocks(blocks, context)
+        }
         return blocks.mapIndexed { index, block ->
             val stateKey = if (stateKeyPrefix.isEmpty()) index.toString() else "$stateKeyPrefix.$index"
             val structuralState = if (persistStructuralState) state else null

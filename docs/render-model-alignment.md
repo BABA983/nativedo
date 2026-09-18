@@ -329,8 +329,20 @@ Sequence, if chat is scheduled:
    Not mapped yet, deliberately: callouts, oneboxes, polls and images/collages (the
    Discourse-only blocks plus media plumbing - Discourse URLs are not `TLRPC.Photo`s), so
    `pageBlock(...)` returns null for them and a post of only those blocks renders empty rather
-   than wrong. Slice 2 is the cell switch (the body becomes this renderer behind a flag, with
-   the Discourse-only blocks still ours) and slice 3 is media.
+   than wrong.
+   **Slice 2 landed: the cell switch is in, opt-in.** `RichMessageBody.enabled` (default off)
+   makes the top-level `PostBodyBlockFactory.build` return one `RichMessageBodyBlock` instead of
+   the block tree, so the cooked blocks become the `TL_iv.RichMessage`, `RichMessageLayout` lays
+   it out and draws into the cell's canvas, and the block forwards the renderer's text blocks to
+   selection with the cell's offset. The cell keeps its own duties - background, column inset,
+   touch - because the renderer draws no bubble, and the message is built incoming (`out` unset)
+   so the body uses the body colours. The switch lives in the factory rather than the cell on
+   purpose: `TopicPostCell` is `forced_exact` (drawing, gesture, measurement) and the guard
+   refuses an edit there, while nested factory calls always carry a state prefix, so the switch
+   can only fire at the top level. `TopicPostCellScreenshotTest.richMessageBody` renders that
+   path (two new goldens) while every other golden stayed byte-identical - which is what
+   "opt-in" means here. Slice 3 is media: the mapping drops `Image`/`Collage` until a Discourse
+   URL can reach the renderer's `ImageReceiver`.
 5. **S5** - the interactive paths (spoilers, selection, button rows), scheduled
    with chat itself. **Selection-helper alignment is part of S5, measured:**
    adopting the pin's whole `TextSelectionHelper` (4,091 lines against our 2,347) was

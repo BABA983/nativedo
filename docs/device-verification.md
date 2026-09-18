@@ -80,9 +80,10 @@ height) as worth blaming on this first — it is a one-line revert.
 ## 7. The rich-message renderer (S3 complete, not yet hosted)
 
 `RichMessageLayout` and its mirror dependencies compile (`docs/render-model-alignment.md`, S3),
-and S4 slice 1 draws a mapped Discourse post through `RichMessageLayout.PreviewView` in the
-snapshot suite - so the pipeline is verified in pixels, but **no app screen uses it yet**. What a
-device has to settle is the cell switch: the post body becoming this renderer behind a flag.
+and S4 slices 1-2 draw a mapped Discourse post through `RichMessageLayout`, both standalone
+(`PostRichMessageScreenshotTest`) and inside the real `TopicPostCell` behind
+`RichMessageBody.enabled` (off by default). What a device has to settle is that flag-on cell path:
+turn it on, scroll a topic with long posts, and compare the body against the flag-off shape.
 
 What to check once S4 lands:
 
