@@ -1,63 +1,115 @@
 /*
- * This file is part of NativeDo.
+ * Copyright (C) 2015 The Android Open Source Project
  *
- * Derived in part from Android/Telegram FloatingActionMode, adapted as a compact
- * bridge from ActionMode.Callback2 to NativeDo's FloatingToolbar.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * SPDX-License-Identifier: GPL-2.0-or-later
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
+
 package org.telegram.ui.ActionBar;
 
+import android.accounts.AccountManager;
+import android.annotation.TargetApi;
 import android.content.Context;
+import android.graphics.Point;
 import android.graphics.Rect;
+import android.util.Log;
 import android.view.ActionMode;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.View;
 import android.view.ViewConfiguration;
+import android.view.ViewGroup;
+import android.view.ViewParent;
+import android.view.WindowManager;
 import android.widget.PopupMenu;
 import android.widget.PopupWindow;
 
+import org.telegram.messenger.AccountInstance;
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.NotificationCenter;
+import org.telegram.messenger.UserConfig;
 
+import java.util.Arrays;
+
+@TargetApi(23)
 public final class FloatingActionMode extends ActionMode {
+
     private static final int MAX_HIDE_DURATION = 3000;
     private static final int MOVING_HIDE_DELAY = 50;
+    private final Context mContext;
+    private final ActionMode.Callback2 mCallback;
+    private final Menu mMenu;
+    private final Rect mContentRect;
+    private final Rect mContentRectOnScreen;
+    private final Rect mPreviousContentRectOnScreen;
+    private final int[] mViewPositionOnScreen;
+    private final int[] mPreviousViewPositionOnScreen;
+    private final int[] mRootViewPositionOnScreen;
+    private final Rect mViewRectOnScreen;
+    private final Rect mPreviousViewRectOnScreen;
+    private final Rect mScreenRect;
+    private final View mOriginatingView;
+    private final Point mDisplaySize;
+    private final int mBottomAllowance;
 
-    private final Context context;
-    private final ActionMode.Callback2 callback;
-    private final View originatingView;
-    private final Menu menu;
-    private final Rect contentRect = new Rect();
-    private final Rect previousContentRect = new Rect();
-    private final Rect viewRectOnScreen = new Rect();
-    private final Rect screenRect = new Rect();
-    private FloatingToolbar floatingToolbar;
-    private FloatingToolbarVisibilityHelper visibilityHelper;
-    private boolean finished;
-    private final Runnable showRunnable = this::showToolbar;
-    private final Runnable movingOffRunnable = () -> {
-        if (visibilityHelper != null) {
-            visibilityHelper.setMoving(false);
-            visibilityHelper.updateToolbarVisibility();
+    private final Runnable mMovingOff = new Runnable() {
+        public void run() {
+            if (isViewStillActive()) {
+                mFloatingToolbarVisibilityHelper.setMoving(false);
+                mFloatingToolbarVisibilityHelper.updateToolbarVisibility();
+            }
         }
     };
 
+    private final Runnable mHideOff = new Runnable() {
+        public void run() {
+            if (isViewStillActive()) {
+                mFloatingToolbarVisibilityHelper.setHideRequested(false);
+                mFloatingToolbarVisibilityHelper.updateToolbarVisibility();
+            }
+        }
+    };
+
+    private FloatingToolbar mFloatingToolbar;
+    private FloatingToolbarVisibilityHelper mFloatingToolbarVisibilityHelper;
+
     public FloatingActionMode(Context context, ActionMode.Callback2 callback, View originatingView, FloatingToolbar floatingToolbar) {
-        this.context = context;
-        this.callback = callback;
-        this.originatingView = originatingView;
-        PopupMenu popupMenu = new PopupMenu(context, null);
-        this.menu = popupMenu.getMenu();
-        popupMenu.setOnMenuItemClickListener(item -> this.callback.onActionItemClicked(this, item));
+        mContext = context;
+        mCallback = callback;
+
+        PopupMenu p = new PopupMenu(context, null);
+        mMenu = p.getMenu();
         setType(ActionMode.TYPE_FLOATING);
+        p.setOnMenuItemClickListener(menuItem -> mCallback.onActionItemClicked(FloatingActionMode.this, menuItem));
+        mContentRect = new Rect();
+        mContentRectOnScreen = new Rect();
+        mPreviousContentRectOnScreen = new Rect();
+        mViewPositionOnScreen = new int[2];
+        mPreviousViewPositionOnScreen = new int[2];
+        mRootViewPositionOnScreen = new int[2];
+        mViewRectOnScreen = new Rect();
+        mPreviousViewRectOnScreen = new Rect();
+        mScreenRect = new Rect();
+        mOriginatingView = originatingView;
+        mOriginatingView.getLocationOnScreen(mViewPositionOnScreen);
+        mBottomAllowance = AndroidUtilities.dp(20);
+        mDisplaySize = new Point();
         setFloatingToolbar(floatingToolbar);
     }
 
-    private void setFloatingToolbar(FloatingToolbar toolbar) {
-        floatingToolbar = toolbar.setMenu(menu).setOnMenuItemClickListener(item -> callback.onActionItemClicked(this, item));
-        visibilityHelper = new FloatingToolbarVisibilityHelper(floatingToolbar);
-        visibilityHelper.activate();
+    private void setFloatingToolbar(FloatingToolbar floatingToolbar) {
+        mFloatingToolbar = floatingToolbar.setMenu(mMenu).setOnMenuItemClickListener(item -> mCallback.onActionItemClicked(FloatingActionMode.this, item));
+        mFloatingToolbarVisibilityHelper = new FloatingToolbarVisibilityHelper(mFloatingToolbar);
+        mFloatingToolbarVisibilityHelper.activate();
     }
 
     @Override
@@ -82,54 +134,64 @@ public final class FloatingActionMode extends ActionMode {
 
     @Override
     public void invalidate() {
-        if (finished) {
-            return;
-        }
-        callback.onPrepareActionMode(this, menu);
-        floatingToolbar.setMenu(menu);
+        mCallback.onPrepareActionMode(this, mMenu);
         invalidateContentRect();
     }
 
     @Override
     public void invalidateContentRect() {
-        if (finished) {
-            return;
-        }
-        callback.onGetContentRect(this, originatingView, contentRect);
-        if (contentRect.left == 0 && contentRect.right == 0) {
-            contentRect.left = 1;
-            contentRect.right = 1;
+        mCallback.onGetContentRect(this, mOriginatingView, mContentRect);
+        if (mContentRect.left == 0 && mContentRect.right == 0) {
+            mContentRect.left = 1;
+            mContentRect.right = 1;
         }
         repositionToolbar();
     }
 
     public void updateViewLocationInWindow() {
-        invalidateContentRect();
+        mOriginatingView.getLocationOnScreen(mViewPositionOnScreen);
+        mOriginatingView.getRootView().getLocationOnScreen(mRootViewPositionOnScreen);
+        mOriginatingView.getGlobalVisibleRect(mViewRectOnScreen);
+        mViewRectOnScreen.offset(mRootViewPositionOnScreen[0], mRootViewPositionOnScreen[1]);
+        if (!Arrays.equals(mViewPositionOnScreen, mPreviousViewPositionOnScreen) || !mViewRectOnScreen.equals(mPreviousViewRectOnScreen)) {
+            repositionToolbar();
+            mPreviousViewPositionOnScreen[0] = mViewPositionOnScreen[0];
+            mPreviousViewPositionOnScreen[1] = mViewPositionOnScreen[1];
+            mPreviousViewRectOnScreen.set(mViewRectOnScreen);
+        }
     }
 
     private void repositionToolbar() {
+        mContentRectOnScreen.set(mContentRect);
+        final ViewParent parent = mOriginatingView.getParent();
+        if (parent instanceof ViewGroup) {
+            parent.getChildVisibleRect(mOriginatingView, mContentRectOnScreen, null);
+            mContentRectOnScreen.offset(mRootViewPositionOnScreen[0], mRootViewPositionOnScreen[1]);
+        } else {
+            mContentRectOnScreen.offset(mViewPositionOnScreen[0], mViewPositionOnScreen[1]);
+        }
         if (isContentRectWithinBounds()) {
-            visibilityHelper.setOutOfBounds(false);
-            if (!contentRect.equals(previousContentRect)) {
-                originatingView.removeCallbacks(movingOffRunnable);
-                visibilityHelper.setMoving(true);
-                originatingView.postDelayed(movingOffRunnable, MOVING_HIDE_DELAY);
-                floatingToolbar.setContentRect(contentRect).updateLayout();
+            mFloatingToolbarVisibilityHelper.setOutOfBounds(false);
+            mContentRectOnScreen.set(Math.max(mContentRectOnScreen.left, mViewRectOnScreen.left), Math.max(mContentRectOnScreen.top, mViewRectOnScreen.top), Math.min(mContentRectOnScreen.right, mViewRectOnScreen.right), Math.min(mContentRectOnScreen.bottom, mViewRectOnScreen.bottom + mBottomAllowance));
+            if (!mContentRectOnScreen.equals(mPreviousContentRectOnScreen)) {
+                mOriginatingView.removeCallbacks(mMovingOff);
+                mFloatingToolbarVisibilityHelper.setMoving(true);
+                mOriginatingView.postDelayed(mMovingOff, MOVING_HIDE_DELAY);
+                mFloatingToolbar.setContentRect(mContentRectOnScreen);
+                mFloatingToolbar.updateLayout();
             }
         } else {
-            visibilityHelper.setOutOfBounds(true);
+            mFloatingToolbarVisibilityHelper.setOutOfBounds(true);
+            mContentRectOnScreen.setEmpty();
         }
-        visibilityHelper.updateToolbarVisibility();
-        previousContentRect.set(contentRect);
+        mFloatingToolbarVisibilityHelper.updateToolbarVisibility();
+        mPreviousContentRectOnScreen.set(mContentRectOnScreen);
     }
 
     private boolean isContentRectWithinBounds() {
-        originatingView.getGlobalVisibleRect(viewRectOnScreen);
-        if (viewRectOnScreen.isEmpty()) {
-            return false;
-        }
-        screenRect.set(0, 0, AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y);
-        return intersectsClosed(contentRect, screenRect) && intersectsClosed(contentRect, viewRectOnScreen);
+        mContext.getSystemService(WindowManager.class).getDefaultDisplay().getRealSize(mDisplaySize);
+        mScreenRect.set(0, 0, mDisplaySize.x, mDisplaySize.y);
+        return intersectsClosed(mContentRectOnScreen, mScreenRect) && intersectsClosed(mContentRectOnScreen, mViewRectOnScreen);
     }
 
     private static boolean intersectsClosed(Rect a, Rect b) {
@@ -138,46 +200,39 @@ public final class FloatingActionMode extends ActionMode {
 
     @Override
     public void hide(long duration) {
-        duration = duration == ActionMode.DEFAULT_HIDE_DURATION ? ViewConfiguration.getDefaultActionModeHideDuration() : duration;
-        duration = Math.min(duration, MAX_HIDE_DURATION);
-        originatingView.removeCallbacks(showRunnable);
-        visibilityHelper.setHideRequested(true);
-        visibilityHelper.updateToolbarVisibility();
-        if (duration > 0) {
-            originatingView.postDelayed(showRunnable, duration);
+        if (duration == ActionMode.DEFAULT_HIDE_DURATION) {
+            duration = ViewConfiguration.getDefaultActionModeHideDuration();
+        }
+        duration = Math.min(MAX_HIDE_DURATION, duration);
+        mOriginatingView.removeCallbacks(mHideOff);
+        if (duration <= 0) {
+            mHideOff.run();
         } else {
-            showToolbar();
+            mFloatingToolbarVisibilityHelper.setHideRequested(true);
+            mFloatingToolbarVisibilityHelper.updateToolbarVisibility();
+            mOriginatingView.postDelayed(mHideOff, duration);
         }
     }
 
     public void setOutsideTouchable(boolean outsideTouchable, PopupWindow.OnDismissListener onDismiss) {
-        floatingToolbar.setOutsideTouchable(outsideTouchable, onDismiss);
-    }
-
-    @Override
-    public void finish() {
-        if (finished) {
-            return;
-        }
-        finished = true;
-        originatingView.removeCallbacks(showRunnable);
-        originatingView.removeCallbacks(movingOffRunnable);
-        floatingToolbar.dismiss();
-        visibilityHelper.deactivate();
-        callback.onDestroyActionMode(this);
+        mFloatingToolbar.setOutsideTouchable(outsideTouchable, onDismiss);
     }
 
     @Override
     public void onWindowFocusChanged(boolean hasWindowFocus) {
-        if (visibilityHelper != null) {
-            visibilityHelper.setWindowFocused(hasWindowFocus);
-            visibilityHelper.updateToolbarVisibility();
-        }
+        mFloatingToolbarVisibilityHelper.setWindowFocused(hasWindowFocus);
+        mFloatingToolbarVisibilityHelper.updateToolbarVisibility();
+    }
+
+    @Override
+    public void finish() {
+        reset();
+        mCallback.onDestroyActionMode(this);
     }
 
     @Override
     public Menu getMenu() {
-        return menu;
+        return mMenu;
     }
 
     @Override
@@ -197,72 +252,75 @@ public final class FloatingActionMode extends ActionMode {
 
     @Override
     public MenuInflater getMenuInflater() {
-        return new MenuInflater(context);
+        return new MenuInflater(mContext);
     }
 
-    private void showToolbar() {
-        if (!finished) {
-            visibilityHelper.setHideRequested(false);
-            visibilityHelper.updateToolbarVisibility();
-        }
+    private void reset() {
+        mFloatingToolbar.dismiss();
+        mFloatingToolbarVisibilityHelper.deactivate();
+        mOriginatingView.removeCallbacks(mMovingOff);
+        mOriginatingView.removeCallbacks(mHideOff);
+    }
+
+    private boolean isViewStillActive() {
+        return mOriginatingView.getWindowVisibility() == View.VISIBLE && mOriginatingView.isShown();
     }
 
     private static final class FloatingToolbarVisibilityHelper {
         private static final long MIN_SHOW_DURATION_FOR_MOVE_HIDE = 500;
+        private final FloatingToolbar mToolbar;
+        private boolean mHideRequested;
+        private boolean mMoving;
+        private boolean mOutOfBounds;
+        private boolean mWindowFocused = true;
+        private boolean mActive;
+        private long mLastShowTime;
 
-        private final FloatingToolbar toolbar;
-        private boolean hideRequested;
-        private boolean moving;
-        private boolean outOfBounds;
-        private boolean windowFocused = true;
-        private boolean active;
-        private long lastShowTime;
-
-        FloatingToolbarVisibilityHelper(FloatingToolbar toolbar) {
-            this.toolbar = toolbar;
+        public FloatingToolbarVisibilityHelper(FloatingToolbar toolbar) {
+            mToolbar = toolbar;
         }
 
-        void activate() {
-            hideRequested = false;
-            moving = false;
-            outOfBounds = false;
-            windowFocused = true;
-            active = true;
+        public void activate() {
+            mHideRequested = false;
+            mMoving = false;
+            mOutOfBounds = false;
+            mWindowFocused = true;
+            mActive = true;
         }
 
-        void deactivate() {
-            active = false;
-            toolbar.dismiss();
+        public void deactivate() {
+            mActive = false;
+            mToolbar.dismiss();
         }
 
-        void setHideRequested(boolean hideRequested) {
-            this.hideRequested = hideRequested;
+        public void setHideRequested(boolean hide) {
+            mHideRequested = hide;
         }
 
-        void setMoving(boolean moving) {
-            boolean showingLongEnough = System.currentTimeMillis() - lastShowTime > MIN_SHOW_DURATION_FOR_MOVE_HIDE;
+        public void setMoving(boolean moving) {
+            final boolean showingLongEnough = System.currentTimeMillis() - mLastShowTime > MIN_SHOW_DURATION_FOR_MOVE_HIDE;
             if (!moving || showingLongEnough) {
-                this.moving = moving;
+                mMoving = moving;
             }
         }
 
-        void setOutOfBounds(boolean outOfBounds) {
-            this.outOfBounds = outOfBounds;
+        public void setOutOfBounds(boolean outOfBounds) {
+            mOutOfBounds = outOfBounds;
         }
 
-        void setWindowFocused(boolean windowFocused) {
-            this.windowFocused = windowFocused;
+        public void setWindowFocused(boolean windowFocused) {
+            mWindowFocused = windowFocused;
         }
 
-        void updateToolbarVisibility() {
-            if (!active) {
+        public void updateToolbarVisibility() {
+            if (!mActive) {
                 return;
             }
-            if (hideRequested || moving || outOfBounds || !windowFocused) {
-                toolbar.hide();
+            if (mHideRequested || mMoving || mOutOfBounds || !mWindowFocused) {
+                mToolbar.hide();
             } else {
-                toolbar.show();
-                lastShowTime = System.currentTimeMillis();
+                mToolbar.show();
+                mLastShowTime = System.currentTimeMillis();
             }
         }
     }

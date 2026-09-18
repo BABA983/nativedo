@@ -15,14 +15,20 @@ import android.graphics.PorterDuffXfermode
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
+import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Build
 import android.text.Editable
+import android.text.SpannableStringBuilder
+import android.text.Spanned
 import android.text.InputType
 import android.text.TextUtils
 import android.text.TextWatcher
+import android.text.style.TypefaceSpan
 import android.util.TypedValue
+import android.view.ActionMode
+import android.view.Menu
 import android.view.MotionEvent
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
@@ -151,6 +157,7 @@ import org.telegram.ui.Components.ChatActivityEnterViewAnimatedIconView
 import org.telegram.ui.Components.ChatActivityEnterTopView
 import org.telegram.ui.Components.CubicBezierInterpolator
 import org.telegram.ui.Components.EditTextCaption
+import org.telegram.ui.Components.TextStyleSpan
 import org.telegram.ui.Components.FlickerLoadingView
 import org.telegram.ui.Components.LayoutHelper
 import org.telegram.ui.Components.RecyclerAnimationScrollHelper
@@ -8202,6 +8209,96 @@ private class TopicReplyComposerPanel(
             if (editTextReady) {
                 dispatchMentionToken()
             }
+        }
+
+        // The item set and its order mirror upstream's `ChatActivity.fillActionModeMenu`; the
+        // actions are markdown, because the payload Discourse gets is the draft text itself.
+        override fun extendActionMode(actionMode: ActionMode?, menu: Menu) {
+            if (selectionStart < 0 || selectionEnd <= selectionStart) return
+            if (menu.findItem(TelegramR.id.menu_bold) != null) return
+            if (menu.findItem(android.R.id.copy) == null) return
+            var order = 6
+            menu.add(TelegramR.id.menu_groupbolditalic, TelegramR.id.menu_quote, order++, LocaleController.getString(TelegramR.string.Quote))
+            menu.add(TelegramR.id.menu_groupbolditalic, TelegramR.id.menu_spoiler, order++, LocaleController.getString(TelegramR.string.Spoiler))
+            menu.add(
+                TelegramR.id.menu_groupbolditalic,
+                TelegramR.id.menu_bold,
+                order++,
+                styleTitle(TelegramR.string.Bold, TypefaceSpan(AndroidUtilities.bold())),
+            )
+            menu.add(
+                TelegramR.id.menu_groupbolditalic,
+                TelegramR.id.menu_italic,
+                order++,
+                styleTitle(TelegramR.string.Italic, TypefaceSpan(AndroidUtilities.getTypeface("fonts/ritalic.ttf") ?: Typeface.DEFAULT)),
+            )
+            menu.add(
+                TelegramR.id.menu_groupbolditalic,
+                TelegramR.id.menu_mono,
+                order++,
+                styleTitle(TelegramR.string.Mono, TypefaceSpan(Typeface.MONOSPACE)),
+            )
+            menu.add(
+                TelegramR.id.menu_groupbolditalic,
+                TelegramR.id.menu_strike,
+                order++,
+                styleTitle(TelegramR.string.Strike, styleRunSpan(TextStyleSpan.FLAG_STYLE_STRIKE)),
+            )
+            menu.add(
+                TelegramR.id.menu_groupbolditalic,
+                TelegramR.id.menu_underline,
+                order++,
+                styleTitle(TelegramR.string.Underline, styleRunSpan(TextStyleSpan.FLAG_STYLE_UNDERLINE)),
+            )
+            menu.add(TelegramR.id.menu_groupbolditalic, TelegramR.id.menu_link, order++, LocaleController.getString(TelegramR.string.CreateLink))
+            menu.add(TelegramR.id.menu_groupbolditalic, TelegramR.id.menu_regular, order++, LocaleController.getString(TelegramR.string.Regular))
+        }
+
+        override fun performMenuAction(itemId: Int): Boolean {
+            val editable = text ?: return false
+            val start = minOf(selectionStart, selectionEnd).coerceAtLeast(0)
+            val end = maxOf(selectionStart, selectionEnd).coerceAtLeast(0)
+            if (itemId == TelegramR.id.menu_link) {
+                showLinkDialog(editable, start, end)
+                return true
+            }
+            val selection = TopicReplyComposerMarkdown.apply(editable, itemId, start, end)
+                ?: return super.performMenuAction(itemId)
+            applySelection(selection)
+            return true
+        }
+
+        private fun showLinkDialog(editable: Editable, start: Int, end: Int) {
+            val selected = if (end > start) editable.subSequence(start, end).toString() else ""
+            val initial = selected.takeIf { it.startsWith("http://") || it.startsWith("https://") }.orEmpty()
+            showInputDialog(
+                LocaleController.getString(TelegramR.string.CreateLink),
+                LocaleController.getString(TelegramR.string.URL),
+                initial,
+                true,
+            ) { value ->
+                val url = value.trim()
+                if (url.isNotEmpty()) {
+                    applySelection(TopicReplyComposerMarkdown.link(editable, start, end, url))
+                }
+            }
+        }
+
+        private fun applySelection(selection: IntRange) {
+            val length = text?.length ?: 0
+            setSelection(selection.first.coerceIn(0, length), (selection.last + 1).coerceIn(0, length))
+        }
+
+        private fun styleTitle(stringRes: Int, span: Any): CharSequence {
+            val title = SpannableStringBuilder(LocaleController.getString(stringRes))
+            title.setSpan(span, 0, title.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            return title
+        }
+
+        private fun styleRunSpan(flag: Int): TextStyleSpan {
+            val run = TextStyleSpan.TextStyleRun()
+            run.flags = flag
+            return TextStyleSpan(run)
         }
     }.apply {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {

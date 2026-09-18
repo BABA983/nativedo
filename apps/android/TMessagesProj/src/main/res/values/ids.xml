@@ -4,6 +4,9 @@
     <item name="menu_quote" type="id"/>
     <item name="menu_translate" type="id"/>
 
+    <!-- Group id upstream puts the style items into. -->
+    <item name="menu_groupbolditalic" type="id"/>
+
     <!-- Upstream style menu IDs used by EditTextCaption / FloatingToolbar. -->
     <item name="menu_regular" type="id"/>
     <item name="menu_bold" type="id"/>

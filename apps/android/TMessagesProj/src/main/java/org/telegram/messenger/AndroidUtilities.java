@@ -51,6 +51,7 @@ import android.view.PixelCopy;
 import android.view.Surface;
 import android.view.SurfaceView;
 import android.view.View;
+import android.view.inspector.WindowInspector;
 import android.view.ViewGroup;
 import android.view.MotionEvent;
 import android.view.Window;
@@ -84,6 +85,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -1172,6 +1174,30 @@ public final class AndroidUtilities {
             if (!((Vibrator) view.getContext().getSystemService(Context.VIBRATOR_SERVICE)).hasAmplitudeControl()) return;
             view.performHapticFeedback(HapticFeedbackConstants.TEXT_HANDLE_MOVE, HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING);
         } catch (Exception ignore) {}
+    }
+
+    public static List<View> allGlobalViews() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                return WindowInspector.getGlobalWindowViews();
+            } else {
+                Class wmgClass = Class.forName("android.view.WindowManagerGlobal");
+                Object wmgInstance = wmgClass.getMethod("getInstance").invoke(null, (Object[]) null);
+
+                Method getViewRootNames = wmgClass.getMethod("getViewRootNames");
+                Method getRootView = wmgClass.getMethod("getRootView", String.class);
+                String[] rootViewNames = (String[]) getViewRootNames.invoke(wmgInstance, (Object[]) null);
+
+                List<View> views = new ArrayList<>();
+                for (String viewName : rootViewNames) {
+                    views.add((View) getRootView.invoke(wmgInstance, viewName));
+                }
+                return views;
+            }
+        } catch (Exception e) {
+            FileLog.e("allGlobalViews()", e);
+        }
+        return null;
     }
 
     public static boolean hasDialogOnTop(org.telegram.ui.ActionBar.BaseFragment fragment) {
