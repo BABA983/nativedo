@@ -213,7 +213,7 @@ public class TLRPC {
         public boolean restricted;
         public String attachPath;
         public long grouped_id;
-        public Object fwd_from;
+        public MessageFwdHeader fwd_from;
         public CharSequence translatedText;
         public String translatedToLanguage;
         public int ttl;
@@ -300,6 +300,7 @@ public class TLRPC {
 
     public static class User extends TLObject {
         public long id;
+        public PeerColor color;
         public long access_hash;
         public String first_name;
         public String last_name;
@@ -315,6 +316,8 @@ public class TLRPC {
 
     public static class Chat extends TLObject {
         public long id;
+        public PeerColor color;
+        public boolean signature_profiles;
         public long access_hash;
         public String title;
         public String username;
@@ -854,6 +857,22 @@ public class TLRPC {
         public boolean selective;
         public boolean force_reply;
         public String placeholder;
+    }
+
+    public static abstract class MessageFwdHeader extends TLObject {
+        public int flags;
+        public boolean imported;
+        public boolean saved_out;
+        public Peer from_id;
+        public String from_name;
+        public int date;
+        public int channel_post;
+        public String post_author;
+        public Peer saved_from_peer;
+        public int saved_from_msg_id;
+        public Peer saved_from_id;
+        public String saved_from_name;
+        public int saved_date;
     }
 
     public static class TL_replyKeyboardMarkup extends ReplyMarkup {

@@ -289,11 +289,26 @@ Sequence, if chat is scheduled:
    `TextSelectionHelper.ReplaceCopyTextSpannable` nested holder is refused for the same reason.
    Both are therefore `// NativeDo:` wire-outs in `RichMessageLayout` (its selection/copy sites,
    which is S5 territory anyway), and the rendered-text path keeps our 12.6 selection shape.
-   `ui/iv/RichHtml` (4 call sites, the selection-to-HTML export) becomes a documented `native`
-   stub instead of opening the 27k-line editor half; `LinkManager` and the premium sheets stay
-   wire-outs as planned. Emoji caveat for S4: `AnimatedEmojiSpan` is a stub in this tree, so the
-   renderer compiles against no-op emoji metrics - the emoji family (`AnimatedEmojiDrawable` and
-   the span's real layout/draw) is its own alignment project, not part of S3.
+   **S3 is complete: the renderer closure compiles (0 errors).** The last pass (slice 4) landed
+   the remaining model fields (`TL_iv`'s `pageBlockBlockquote.collapsed`, `pageBlockTable.compact`,
+   `pageBlockOrderedList.flags/reversed/start/type`, `pageBlockPhoto`/`pageBlockVideo.spoiler`,
+   `PageListItem`/`PageListOrderedItem`'s `flags`/`checkbox`/`checked`/`value`; `TLRPC`'s
+   `MessageFwdHeader` with `fwd_from` retyped, `Chat`/`User.color`, `Chat.signature_profiles`;
+   `DialogObject.getPeerDialogId`), the rest of the host surface
+   (`MessageObject.shouldEncryptPhotoOrVideo()`, `Emoji.EmojiSpan`'s
+   `setPreserveFontMetrics`/`setMinimumLineHeight`, `AnimatedEmojiSpan.setSize` and
+   `EmojiGroupedSpans.holders`/`isEmpty`, the `AndroidUtilities.openForView(File, …)` overload,
+   three more `ChatMessageCellDelegate` defaults), and the four mirror files themselves:
+   `RichTextStyle`, `RichInlineButtonSpan` and `UnsupportedBlockDrawable` byte-exact,
+   `RichMessageLayout` as a mirror with a reported delta, `RichHtml` as a documented `native` stub.
+   That delta in `RichMessageLayout` is five `// NativeDo:` wire-outs, all at selection/copy or
+   product-surface sites: the math span's copy substitution, `withReplacements`, the
+   `TextLayoutBlock` shape (`StaticLayout getLayout()` plus a `getPrefix()` returning null in
+   `Text` and in `PaddedTextLayoutBlock`), the Telegram web-app icon branch, and the premium
+   rich-editor sheet. Probe trail for the record: 337 (raw) -> 229 (S2) -> 183 -> 105 -> **0**.
+   Emoji caveat for S4: `AnimatedEmojiSpan` is a stub in this tree, so the renderer compiles
+   against no-op emoji metrics - the emoji family (`AnimatedEmojiDrawable` and the span's real
+   layout/draw) is its own alignment project, not part of S3; the device queue has the S4 pass.
 4. **S4** - host it on a Discourse post (post blocks become a `TL_iv.RichMessage`)
    and compare goldens. This is the "topic body is a rich message" test.
 5. **S5** - the interactive paths (spoilers, selection, button rows), scheduled

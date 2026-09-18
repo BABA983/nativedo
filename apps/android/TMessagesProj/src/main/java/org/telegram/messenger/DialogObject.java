@@ -32,4 +32,17 @@ public final class DialogObject {
     public static long makeEncryptedDialogId(int chatId) {
         return ((long) chatId) | 0x200000000L;
     }
+
+    public static long getPeerDialogId(org.telegram.tgnet.TLRPC.Peer peer) {
+        if (peer == null) {
+            return 0;
+        }
+        if (peer.user_id != 0) {
+            return peer.user_id;
+        } else if (peer.chat_id != 0) {
+            return -peer.chat_id;
+        } else {
+            return -peer.channel_id;
+        }
+    }
 }

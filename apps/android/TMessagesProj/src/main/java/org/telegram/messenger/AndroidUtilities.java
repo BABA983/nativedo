@@ -1919,6 +1919,14 @@ public final class AndroidUtilities {
         }
     }
 
+    /**
+     * Pin signature for the document-press path of the rich renderer. This product opens
+     * documents through its own viewer, so the host wires this later; the signature keeps the
+     * mirror compiling.
+     */
+    public static void openForView(java.io.File file, String fileName, String mimeType, android.app.Activity activity, org.telegram.ui.ActionBar.Theme.ResourcesProvider resourcesProvider, boolean useDownloadFolder) {
+    }
+
     public static void openForView(org.telegram.tgnet.TLObject obj, android.app.Activity activity) {
         // No-op stub: NativeDo doesn't yet have a "open file with external app" flow.
     }

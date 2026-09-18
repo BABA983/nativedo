@@ -76,3 +76,24 @@ decision, not a regression.
 No specific screen to check. The bump was pixel-neutral in the whole snapshot
 suite, so treat any *new* inset/edge-to-edge oddity (status-bar overlap, sheet
 height) as worth blaming on this first — it is a one-line revert.
+
+## 7. The rich-message renderer (S3 complete, not yet hosted)
+
+`RichMessageLayout` and its mirror dependencies now compile (`docs/render-model-alignment.md`,
+S3), but nothing instantiates them yet, so no golden or test has ever drawn one: the first
+hosting is S4, and it needs a device pass.
+
+What to check once S4 lands:
+
+1. A post body drawn by `RichMessageLayout` matches the current cell pixel-for-pixel (the
+   S4 gate is the Paparazzi snapshot; a device pass confirms the animation/scroll feel).
+2. Emoji: `AnimatedEmojiSpan` is a **stub** in this tree (no metrics, no drawable, no
+   animation), so custom emoji in a post will be misplaced or invisible. That is the emoji
+   family not being aligned yet, not an S4 bug.
+3. The wire-outs are inert by design and should not be reachable from a timeline post:
+   copy-as-HTML (`RichHtml` stub), the math span's copy substitution
+   (`ReplaceCopyTextSpannable`), the Telegram web-app icon branch, and the premium rich-editor
+   sheet. If a post can trigger any of them visibly, that is a bug in the wire-out.
+4. Selection inside a rich message uses our 12.6 `TextSelectionHelper.TextLayoutBlock` shape;
+   handles/prefixes are therefore expected to behave like the current text blocks, not like
+   upstream 12.10.2's selection.

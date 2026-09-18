@@ -87,4 +87,7 @@ public class ChatActivity extends BaseFragment {
     public int getQuickReplyId() {
         return 0;
     }
+
+    /** Pin constant: the progress spinner state for a full-article load. */
+    public static final int PROGRESS_FULL_ARTICLE = 7;
 }

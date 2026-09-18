@@ -61,8 +61,21 @@ public final class Emoji {
         public float lastDrawY;
         private final int verticalAlignment;
 
+        private boolean preserveFontMetrics;
+        private int minimumLineHeight;
+
         public EmojiSpan(Paint.FontMetricsInt original) {
             this(original, DynamicDrawableSpan.ALIGN_BOTTOM);
+        }
+
+        public EmojiSpan setPreserveFontMetrics(boolean preserveFontMetrics) {
+            this.preserveFontMetrics = preserveFontMetrics;
+            return this;
+        }
+
+        public EmojiSpan setMinimumLineHeight(int minimumLineHeight) {
+            this.minimumLineHeight = minimumLineHeight;
+            return this;
         }
 
         public EmojiSpan(Paint.FontMetricsInt original, int verticalAlignment) {

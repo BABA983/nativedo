@@ -24,6 +24,9 @@ public class AnimatedEmojiSpan extends CharacterStyle {
     }
 
     public static class EmojiGroupedSpans {
+        /** Pin holder list; this stub never fills it, so the renderer's isEmpty() checks are stable. */
+        public final java.util.ArrayList<Object> holders = new java.util.ArrayList<>();
+        public boolean isEmpty() { return holders.isEmpty(); }
         public void release() {}
         public void replaceFontMetrics(android.graphics.Paint.FontMetricsInt fontMetricsInt) {}
         public void clearPositions() {}
@@ -73,6 +76,11 @@ public class AnimatedEmojiSpan extends CharacterStyle {
                 size = org.telegram.messenger.AndroidUtilities.dp(20);
             }
         }
+    }
+
+    public AnimatedEmojiSpan setSize(int size) {
+        this.size = size;
+        return this;
     }
 
     public long getDocumentId() {

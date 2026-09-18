@@ -123,6 +123,7 @@ public final class TL_iv {
 
     public static class pageBlockBlockquote extends PageBlock {
         public RichText caption;
+        public boolean collapsed;
     }
 
     public static class pageBlockBlockquoteBlocks extends PageBlock {
@@ -173,6 +174,7 @@ public final class TL_iv {
 
     public static class pageBlockTable extends PageBlock {
         public boolean bordered;
+        public boolean compact;
         public boolean striped;
         public ArrayList<pageTableRow> rows = new ArrayList<>();
     }
@@ -188,13 +190,19 @@ public final class TL_iv {
     }
 
     public static class pageBlockOrderedList extends PageBlock {
+        public int flags;
+        public boolean reversed;
         public ArrayList<PageListOrderedItem> items = new ArrayList<>();
+        public int start;
+        public String type;
     }
 
     public static class pageBlockPhoto extends PageBlock {
+        public boolean spoiler;
     }
 
     public static class pageBlockVideo extends PageBlock {
+        public boolean spoiler;
     }
 
     public static class PageCaption extends TLObject {
@@ -203,6 +211,9 @@ public final class TL_iv {
     }
 
     public static class PageListItem extends TLObject {
+        public int flags;
+        public boolean checkbox;
+        public boolean checked;
         public RichText text;
         public ArrayList<PageBlock> blocks = new ArrayList<>();
     }
@@ -214,6 +225,10 @@ public final class TL_iv {
     }
 
     public static class PageListOrderedItem extends TLObject {
+        public int flags;
+        public boolean checkbox;
+        public boolean checked;
+        public int value;
         public String num;
         public RichText text;
         public ArrayList<PageBlock> blocks = new ArrayList<>();

@@ -367,6 +367,10 @@ public class MessageObject {
         return false;
     }
 
+    public boolean shouldEncryptPhotoOrVideo() {
+        return shouldEncryptPhotoOrVideo(currentAccount, messageOwner);
+    }
+
     // --- pin members the rich-message renderer reads (host surface) ---
 
     public boolean isSpoilersRevealed;
