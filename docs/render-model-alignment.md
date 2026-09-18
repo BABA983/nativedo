@@ -320,6 +320,12 @@ Sequence, if chat is scheduled:
    inline code run, the code block and the divider all come out as upstream draws them.
    `PostRichMessageLayoutProbeTest` guards the other half of the claim: every mapped block
    becomes exactly one laid-out block, so nothing is silently dropped between model and canvas.
+   Two host rules the snapshot run made concrete, for the cell switch: the renderer paints **no
+   message bubble** - `drawBackground` only draws quote/pullquote backgrounds, and the bubble is
+   the cell's job (upstream's `PreviewView` leaves the canvas transparent, which is why the golden
+   reads as a large white area around the content) - and the message must be built as an incoming
+   one: `PreviewView.set` forces `out = true`, so its link/quote colours are the *out* variants, and
+   a post body wants `out = false`.
    Not mapped yet, deliberately: callouts, oneboxes, polls and images/collages (the
    Discourse-only blocks plus media plumbing - Discourse URLs are not `TLRPC.Photo`s), so
    `pageBlock(...)` returns null for them and a post of only those blocks renders empty rather
