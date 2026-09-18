@@ -47,10 +47,8 @@ from `:app`, 14 are ancestors of our ports, and 38 sit on the historical
 | `ui/Components/EditTextBoldCursor.java` | +121/−16 | `setTransformHintToHeaderOnFocus`, hint-header visibility rule, `Choreographer60FpsContent` invalidation | search field and composer inputs |
 | `ui/ActionBar/ActionBar.java` | +93/−11 | glass drawables become `BlurredBackgroundDrawable`, `alwaysApplyColorFilterToBackButton()`, width clamp | main-tabs chrome |
 | `ui/Components/ReplyMessageLine.java` | +92/−93 | pattern/shader rewrite with a cached bitmap, `setSimpleColor` | reply and quote rails; the file is `forced_exact(drawing)` |
-| `ui/Components/MotionBackgroundDrawable.java` + `MotionBackgroundPaint.java` | +170/−488, +242/−168 | gradient rendering moves to cached bitmaps and an AGSL/shader impl | theme wallpaper animation |
 | `messenger/AndroidUtilities.java` | +96/−108 | drops the `USE_LEGACY_SYSTEM_INSETS` branch, adds `executeOnUIThread`, media3 `Consumer` | shared utility; the insets half belongs to the edge-to-edge question |
 | `messenger/PhotoViewer.java` | +296/−302 | insets/media3/proxy touches on top of our port | our image viewer port |
-| `ui/Components/QuoteSpan.java` | +17/−76 | slims the span in the `iv/` direction | used by quote content; check before taking — it leans on the IV refactor we skipped |
 
 ## Reviewed against the product, not taken
 
@@ -65,8 +63,6 @@ these eight were read in full now, and none is worth taking today:
 | `ui/ActionBar/BottomSheet.java` | the delta is the edge-to-edge program (`EdgeToEdge` V1/V2 + window insets) plus APIs nothing calls yet (`skipDismissAnimation()`, and `ItemOptions.DimView` measuring — `:app` never uses `ItemOptions`) |
 | `ui/Components/EditTextBoldCursor.java` | makes the hint-to-header transform configurable and re-checks it; the default path is unchanged, so nothing is fixed for us |
 | `ui/Components/ReplyMessageLine.java` | the drawing rewrite calls the new `native Utilities.drawReplyLinePattern`; our `Utilities` is deliberately no-JNI, and we consume only `check()` for colours, which the delta leaves alone |
-| `MotionBackgroundDrawable` + `MotionBackgroundPaint` | a bitmap/AGSL gradient rewrite on the wallpaper path, which is already on the device-validation list |
-| `ui/Components/QuoteSpan.java` | slims the span toward the `iv/` refactor we skipped |
 
 ## Landed since the snapshot
 
@@ -80,6 +76,8 @@ these eight were read in full now, and none is worth taking today:
 | `0084f59` | import-only cleanups: `HistoryFragment` (20 dead imports), `StaticLayoutEx` (4), `Blur3Utils` (a blank line) adopted verbatim; `Theme` (4) and `BookmarksFragment` (1) hand-cleaned | four files byte-exact; guard's "differ" count 231 → 228 |
 | `236ca60` | the last two mechanical pure-drift deltas: `DefaultItemAnimator`'s `protected` widening, `SerializedData`'s `InputStream` constructor | both byte-exact; 228 → 226 |
 | `ad73778` | `AnimatedArrowDrawable`'s additive custom-geometry constructor (`color, widthDp, heightDp, strokeWidthDp`) | byte-exact; the two-argument path our blocks use is unchanged, goldens confirm |
+| `0ac809a` | `QuoteSpan` moves off the `reference` baseline onto the pin, with the collapse/expand toggle extracted into `QuoteCollapseButton` | the span keeps a `public QuoteCollapseButton collapseButton` and drops ~76 lines of inline animation; our editor compiles unchanged, and `verifyPaparazziDebug` is green — no golden moved |
+| `d2fa294` | the wallpaper/AGSL group: `MotionBackgroundPaint` byte-exact (it wants the blur3 `BitmapChangeTracker` closure, which is in the tree), `MotionBackgroundDrawable` at the pin plus a 3-line wiring diff, and the `Utilities` surface they call — `generateGradient`'s `(bitmap, phase, progress, colors)` signature, plus new `applyAlphaInvert`/`expandAlphaToBlack` Java fallbacks modelled on the pinned `jni/image.cpp` | `MotionBackgroundPaint` is the first of the pair to be byte-exact; no golden moved, and that is the expected result, not a miss: nothing calls `setFastRenderAllowed()` so the AGSL path stays dormant, and `generateGradient` remains a host no-op, so the CPU path's gradient bitmaps are as blank after as before. The rewrite the pair brings (pattern+gift merge, legacy-bitmap path dropped, `drawBackground`/`drawPattern` collapsed into `draw`) is a device check |
 
 ## Blocked, and by what
 
@@ -122,9 +120,9 @@ have no importers. The stub set stays for `AspectRatioFrameLayout` and `Format`;
 pruning the other ten is a separate decision.
 
 Read in full and left: `ChatActivityEnterViewAnimatedIconView` / `RLottieImageView` /
-`ProfileActionsView` (the RLottie constructor), `MotionBackgroundDrawable`'s bitmap
-path, `WindowInsetsStateHolder` (display-cutout insets — device-bound), and the blur3
-group (its closures are not in the tree).
+`ProfileActionsView` (the RLottie constructor), `WindowInsetsStateHolder` (display-cutout
+insets — device-bound), and the blur3 group — its closures landed, and the one mirror
+that wanted them (`MotionBackgroundPaint`) is at the pin now.
 
 One left *because upstream looks wrong*: `ExtendedGridLayoutManager` sets
 `lastSpanCount = itemsCount` and then guards `checkLayout()` with
@@ -132,6 +130,15 @@ One left *because upstream looks wrong*: `ExtendedGridLayoutManager` sets
 span count differ — i.e. almost always — so every `checkLayout()` recomputes the
 layout. The file is used (`UniversalRecyclerView`), so our copy stays at 12.9.0
 until upstream sets the field to the span count it compares against.
+
+The hand-port pool, measured after the wallpaper group (`git apply --check` of the
+12.9.0 → pin delta per moved upstream path, local root prefix substituted): of the
+local files whose upstream moved, **five** take the delta verbatim and every one of
+them is already parked — `BottomSheet`, `BottomSheetWithRecyclerListView` and
+`WindowInsetsStateHolder` on the edge-to-edge program, `ExtendedGridLayoutManager`
+on the suspected upstream bug above, `RLottieImageView` on the RLottie family. The
+other 62 are `native` ports or mirrors whose host wiring overlaps the hunks; the
+clean-copy pool is empty, so what is left is per-family hand-porting.
 
 The `:app` ports' ancestors moved 12.9.0 → pin mostly inside settled non-goals:
 `DialogCell` (+14/−17: rich-message drafts, RLottie layer names), `ChatActionCell`
