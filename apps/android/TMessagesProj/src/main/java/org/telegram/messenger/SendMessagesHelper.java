@@ -7,7 +7,6 @@
 
 package org.telegram.messenger;
 
-import org.telegram.tgnet.TLRPC;
 
 /**
  * NativeDo stub of org.telegram.messenger.SendMessagesHelper.
