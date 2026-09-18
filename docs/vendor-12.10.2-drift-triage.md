@@ -177,9 +177,10 @@ The owner's direction: once every mirrored file sits at 12.10.2, the family
 refactors become a later project — Discourse posts are rich text, so the
 rich-text composition/rendering families are the plausible ones (`rich_message`
 formatting, the composer/`EditTextBoldCursor` editing surface, message-cell text
-rendering as a reference). The bot-keyboard half of `TL_keyboard` stays a
-non-goal. Design is ours to make; this note only keeps the candidates from being
-re-derived.
+rendering as a reference). The bot-keyboard *wire* half of `TL_keyboard` (its
+serializers and layer variants) waits for chat; the data holders it reads are in
+with the rich-message work (`TLKeyboardHelper`, `ReplyMarkup`). Design is ours to
+make; this note only keeps the candidates from being re-derived.
 
 The render side of the same principle is analysed in
 [`render-model-alignment.md`](render-model-alignment.md): make `TL_iv` the

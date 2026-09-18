@@ -53,6 +53,9 @@ dependencies {
     // 12.10.2) for the QR code in the share sheet and two detector helpers;
     // the in-tree copy it used to vendor is gone with the 12.10.2 snapshot.
     implementation(libs.zxing.core)
+    // JLatexMath is Telegram's own choice upstream (ru.noties:jlatexmath-android
+    // 0.2.0) for rendering math blocks; used by ui/iv/Latex.java.
+    implementation(libs.jlatexmath.android)
 
     testImplementation(libs.junit4)
     testImplementation("org.json:json:20240303")

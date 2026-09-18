@@ -6,6 +6,7 @@ import android.graphics.drawable.Drawable;
 
 import org.telegram.messenger.SvgHelper;
 import org.telegram.tgnet.tl.TL_iv;
+import org.telegram.tgnet.tl.TL_keyboard;
 
 import java.util.ArrayList;
 
@@ -840,5 +841,35 @@ public class TLRPC {
         public ArrayList<Message> messages = new ArrayList<>();
         public ArrayList<User> users = new ArrayList<>();
         public ArrayList<Chat> chats = new ArrayList<>();
+    }
+
+    public static abstract class ReplyMarkup extends TLObject {
+        public int flags;
+        public boolean resize;
+        public boolean single_use;
+        public boolean is_persistent;
+        public boolean selective;
+        public boolean force_reply;
+        public String placeholder;
+    }
+
+    public static class TL_replyKeyboardMarkup extends ReplyMarkup {
+        public static final int constructor = 0x85dd99d1;
+
+        public ArrayList<TL_keyboard.KeyboardButtonRow> rows = new ArrayList<>();
+    }
+
+    public static class TL_replyKeyboardHide extends ReplyMarkup {
+        public static final int constructor = 0xa03e5b85;
+    }
+
+    public static class TL_replyKeyboardForceReply extends ReplyMarkup {
+        public static final int constructor = 0x86b40b08;
+    }
+
+    public static class TL_replyInlineMarkup extends ReplyMarkup {
+        public static final int constructor = 0xB2B15770;
+
+        public ArrayList<TL_keyboard.KeyboardInlineButtonRow> rows = new ArrayList<>();
     }
 }

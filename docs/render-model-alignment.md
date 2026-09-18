@@ -223,16 +223,67 @@ Sequence, if chat is scheduled:
    (the pin's relative/week/long/short composition lands with the date feature), and
    `TL_keyboard`'s `ButtonType` plus six button types. Left out on purpose, to be wired
    out when `RichMessageLayout` itself is patched in S3: `ui/iv/RichHtml` and
-   `RichTextStyle` (they open the 27k-line editor package), `Latex` (needs the
-   JLatexMath jar), `UnsupportedBlockDrawable`, `TLKeyboardHelper` (reply-markup family)
-   and the Telegram-only `LinkManager`/premium sheets. Probe after S2: 337 -> 285 -> 229
+   `RichTextStyle` (they open the 27k-line editor package, below) and the
+   Telegram-only `LinkManager`/premium sheets. Probe after S2: 337 -> 285 -> 229
    errors, the rest being the host surface and those wire-outs.
-3. **S3** - grow the stubs until `RichMessageLayout` compiles (measured: 337
-   errors, ~60 unique symbols, all inside the file).
+3. **S3 - in progress, three slices landed.**
+   - `ui/iv/Latex` is in verbatim (79 lines) with the jar the pin itself uses,
+     `ru.noties:jlatexmath-android:0.2.0`: a JAR-only AAR, so the math spans pay
+     no JNI bill, and the wrapper stays byte-identical to upstream.
+   - `TLKeyboardHelper` (48 lines, verbatim) plus the model it reads. `TL_keyboard`
+     grew the pin's whole `KeyboardButtonProto` interface (including the `getUrl`/`getData`
+     defaults), the remaining inline button types (`UrlAuth`, `SwitchInline`, `Buy`,
+     `Callback`; the existing ones gained their pin constructor values),
+     `KeyboardButtonStyle`, and the reply-keyboard row/button holders
+     (`KeyboardButtonRow`, `KeyboardInlineButtonRow` + `TL_keyboardInlineButtonRow`,
+     `KeyboardButton`, `KeyboardInlineButton`, `TL_keyboardInlineButton`).
+     `TL_iv.textButton` learned the pin's `getType`/`getText` (that is what
+     `RichMessageLayout`'s `RichButton` and `TLKeyboardHelper.isType` call), and
+     `TLRPC` grew the reply-markup family as holders (`ReplyMarkup` +
+     `TL_replyKeyboardMarkup`/`Hide`/`ForceReply`, `TL_replyInlineMarkup`). These are
+     the data shapes upstream's composer and inline keyboards read; no screen in this
+     product builds them yet.
+   - `me.vkryl.android.util.ClickHelper` (227 lines, verbatim) - the tap helper
+     `UnsupportedBlockDrawable` and the link spans use; `ViewUtils`/`BitwiseUtils` were
+     already in the tree.
+   Left in S3: `UnsupportedBlockDrawable` (it needs `RichMessageLayout` to exist), the
+   host surface (`ChatMessageCellDelegate`, `TransitionParams`, the `MessageObject`
+   members it reads), and the two wire-outs.
 4. **S4** - host it on a Discourse post (post blocks become a `TL_iv.RichMessage`)
    and compare goldens. This is the "topic body is a rich message" test.
 5. **S5** - the interactive paths (spoilers, selection, button rows), scheduled
    with chat itself.
+
+### The `ui/iv` project (approved 2026-09-18, copy rather than wire out)
+
+`ui/iv` is the pin's 47-file / ~27k-line instant-view + rich-text package, and it is
+two of our prerequisites at once:
+
+- the **chat rich-text editor** (the counterpart of our WYSIWYG composer:
+  `RichEditorListView`, `RichTextCell`, `RichCommand*`, `RichHtml`, `RichTextStyle`), and
+- `RichMessageLayout`'s **HTML and style path** (`RichHtml`, `RichTextStyle`), whose
+  call sites in S3 would otherwise be wire-outs.
+
+Measured closure, from the `RichMessageLayout` probe: adding `RichHtml` alone costs 105
+more symbols - `BlockRow` 55, `TableModel` 13, `RichInlineButtonSpan` 8,
+`RichEditorListView` 5, `RichTextCell` 4, `ReplaceCopyTextSpannable` 4, `MediaUploadState`
+3, `MathSpan` 3 - i.e. it opens the editor half of the package. That is why it is a
+project with ordered slices rather than a wire-out:
+
+1. The **non-editor leaves**: `Latex` (landed), `RichTextStyle`, `TableModel`,
+   `BlockRow`, `MathSpan`, `RichInlineButtonSpan`, the cell (`RichTextCell`,
+   `RichBlockCell`, …) and chrome classes that do not reach into the editor list.
+   Gate: compiles, and `RichHtml`-free call sites in `RichMessageLayout` stop being
+   wire-outs as they clear.
+2. `RichHtml` + the editor cells it drags (`RichEditorListView`, `RichTextCell`,
+   `MediaUploadState`), with the commands/toolbar after.
+3. Wire the editor into the composer as the upstream-shaped replacement for our
+   span-only path, once chat/rich compose is scheduled.
+
+Files we trim land in the overlay's `native` array; byte-identical copies do not need
+bookkeeping. Nothing in this project is a new product surface by itself - the slices
+exist because a single 10k-line `RichMessageLayout` and a 27k-line editor package are
+not one reviewable change.
 
 The `ArticleViewer`-cell extraction stays as the fallback: it serves the body
 only, so it is the cheaper step if chat slips.

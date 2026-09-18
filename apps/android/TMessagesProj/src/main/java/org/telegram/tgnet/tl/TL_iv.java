@@ -352,9 +352,24 @@ public final class TL_iv {
     }
 
     public static class textButton extends RichText implements TL_keyboard.KeyboardButtonProto {
+        public static final int constructor = 0xAFC79CD6;
+
         public int flags;
         public TL_keyboard.InlineButtonType type;
         public TL_keyboard.RichButtonStyle style;
+
+        @Override
+        public TL_keyboard.ButtonTypeProto getType() {
+            return type;
+        }
+
+        @Override
+        public String getText() {
+            if (text instanceof TL_iv.textPlain) {
+                return ((TL_iv.textPlain) text).text;
+            }
+            return null;
+        }
     }
 
     public static class textCustomEmoji extends RichText {
