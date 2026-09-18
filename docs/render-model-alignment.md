@@ -117,10 +117,21 @@ does not show.
 Step 1 landed: `core/ui/InlineRichText.kt` cooks cooked HTML into
 `TL_iv.RichText` (styles, links, spoilers, sub/superscript, marked) with the
 Discourse-only constructs (emoji images, SVG icons, hashtag chips, `[size]`)
-kept in the token form the model has no case for, plus nine tests. Step 2 is the
-consumer swap: `buildPostBodyText` walks the tree instead of `HtmlCompat` +
-marker spans, which deletes the spoiler/style marker machinery, and after that
-the blocks carry the model instead of HTML.
+kept in the token form the model has no case for, plus nine tests.
+
+Step 2 landed: `buildPostBodyText` walks the model instead of
+`HtmlCompat.fromHtml` + marker spans. `prepareInlineContent`, the
+`InlineSpoilerSpec`/`InlineTextStyleSpec` side-lists, the platform-span
+collectors and `HtmlCompat` are gone (-116 lines net); `[size]` still rides
+token pairs and becomes a `RelativeSizeSpan`, links still become our clickable
+or chip spans, and the merged pass stays because one span per range carrying
+flags plus size is the shape `TextStyleRun` describes. `normalizeInlineHtml`
+and `htmlToPreviewText` now render from the model too (`toHtml`/`plainText`),
+so bios and reply previews share it. The eight post-cell goldens did not move:
+a boundary refactor should be pixel-neutral, and it was.
+
+Step 3 is mechanical: the blocks carry `CookedInline` instead of HTML strings,
+so the conversion happens once per post instead of once per bind.
 The parser stops emitting HTML strings and emits `TL_iv` page blocks plus
 `TL_iv.RichText` runs (`textBold`/`textItalic`/`textMono`/`textStrike`/
 `textUnderline`/`textSpoiler`/`textMarked`/`textUrl`/`textMention`/…), and the

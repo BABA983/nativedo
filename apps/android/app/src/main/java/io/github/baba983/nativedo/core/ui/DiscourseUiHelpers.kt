@@ -1,32 +1,8 @@
 package io.github.baba983.nativedo.core.ui
 
 import okhttp3.HttpUrl.Companion.toHttpUrl
-import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
-import org.jsoup.nodes.TextNode
 import kotlin.math.roundToInt
-
-internal data class PreparedInlineContent(
-    val html: String,
-    val inlineImages: List<InlineImageSpec>,
-    val inlineSpoilers: List<InlineSpoilerSpec>,
-    val inlineTextStyles: List<InlineTextStyleSpec>,
-    val inlineIcons: List<InlineIconSpec>,
-    val inlineHashtagChips: List<InlineHashtagChipSpec>,
-)
-
-internal data class InlineSpoilerSpec(
-    val startToken: String,
-    val endToken: String,
-)
-
-internal data class InlineTextStyleSpec(
-    val startToken: String,
-    val endToken: String,
-    val underline: Boolean = false,
-    val strike: Boolean = false,
-    val relativeSize: Float? = null,
-)
 
 internal data class InlineIconSpec(
     val token: String,
@@ -121,140 +97,15 @@ internal fun isAnimatedDiscourseImageUrl(rawUrl: String): Boolean {
         normalizedUrl.endsWith(".svgz")
 }
 
-internal fun normalizeInlineHtml(html: String): String {
-    return prepareInlineContent(html).let { prepared ->
-        var normalizedHtml = prepared.html
-        prepared.inlineImages.forEach { image ->
-            normalizedHtml = normalizedHtml.replace(
-                image.token,
-                image.contentDescription,
-            )
-        }
-        prepared.inlineSpoilers.forEach { spoiler ->
-            normalizedHtml = normalizedHtml
-                .replace(spoiler.startToken, "")
-                .replace(spoiler.endToken, "")
-        }
-        prepared.inlineTextStyles.forEach { style ->
-            normalizedHtml = normalizedHtml
-                .replace(style.startToken, "")
-                .replace(style.endToken, "")
-        }
-        prepared.inlineIcons.forEach { icon ->
-            normalizedHtml = normalizedHtml.replace(icon.token, icon.contentDescription)
-        }
-        prepared.inlineHashtagChips.forEach { chip ->
-            normalizedHtml = normalizedHtml.replace(chip.token, chip.label)
-        }
-        normalizedHtml
-    }
-}
+internal fun normalizeInlineHtml(html: String): String = cookInlineHtml(html).toHtml()
 
-internal fun replaceEmojiImagesWithText(html: String): String {
-    return normalizeInlineHtml(html)
-}
+internal fun replaceEmojiImagesWithText(html: String): String = normalizeInlineHtml(html)
 
 internal fun String.htmlToPreviewText(): String {
-    return Jsoup.parseBodyFragment(normalizeInlineHtml(this))
-        .body()
-        .text()
+    return cookInlineHtml(this)
+        .plainText()
         .replace(Regex("\\s+"), " ")
         .trim()
-}
-
-internal fun prepareInlineContent(html: String): PreparedInlineContent {
-    val body = Jsoup.parseBodyFragment(html).body()
-    val inlineImages = mutableListOf<InlineImageSpec>()
-    val inlineSpoilers = mutableListOf<InlineSpoilerSpec>()
-    val inlineTextStyles = mutableListOf<InlineTextStyleSpec>()
-    val inlineIcons = mutableListOf<InlineIconSpec>()
-    val inlineHashtagChips = mutableListOf<InlineHashtagChipSpec>()
-
-    body.select(".spoiler, .spoiled").forEach { spoiler ->
-        if (spoiler.parents().any { parent -> parent.hasClass("spoiler") || parent.hasClass("spoiled") }) {
-            return@forEach
-        }
-        val startToken = "__nd_spoiler_start_${inlineSpoilers.size}__"
-        val endToken = "__nd_spoiler_end_${inlineSpoilers.size}__"
-        inlineSpoilers += InlineSpoilerSpec(
-            startToken = startToken,
-            endToken = endToken,
-        )
-        spoiler.before(TextNode(startToken))
-        spoiler.after(TextNode(endToken))
-    }
-
-    body.select(".bbcode-u, [style*=font-size], [style*=text-decoration]").forEach { element ->
-        val inlineTextStyle = element.inlineTextStyleSpec(inlineTextStyles.size) ?: return@forEach
-        inlineTextStyles += inlineTextStyle
-        element.before(TextNode(inlineTextStyle.startToken))
-        element.after(TextNode(inlineTextStyle.endToken))
-    }
-
-    body.select("img").forEach { image ->
-        val replacement = image.fallbackText()
-        val kind = image.inlineImageKind()
-        if (kind == null) {
-            image.replaceWith(TextNode(replacement))
-            return@forEach
-        }
-
-        val src = image.attr("src").ifBlank {
-            image.replaceWith(TextNode(replacement))
-            return@forEach
-        }
-        val token = "__nd_inline_image_${inlineImages.size}__"
-        inlineImages += InlineImageSpec(
-            token = token,
-            rawUrl = src,
-            contentDescription = replacement,
-            kind = kind,
-        )
-        image.replaceWith(TextNode(token))
-    }
-
-    body.select("a.hashtag-cooked").forEach { hashtag ->
-        val chip = hashtag.inlineHashtagChipSpec(inlineHashtagChips.size) ?: return@forEach
-        inlineHashtagChips += chip
-        hashtag.replaceWith(TextNode(chip.token))
-    }
-
-    body.select("svg").forEach { icon ->
-        val symbolId = icon.inlineSvgSymbolId()
-        if (symbolId.isNullOrBlank()) {
-            if (icon.isDecorativeInlineIcon()) {
-                icon.replaceWith(TextNode(icon.iconFallbackText()))
-            }
-            return@forEach
-        }
-        val token = "__nd_inline_icon_${inlineIcons.size}__"
-        inlineIcons += InlineIconSpec(
-            token = token,
-            symbolId = symbolId,
-            rawTintColor = icon.inlineSvgTintColor(),
-            contentDescription = icon.iconFallbackText(),
-        )
-        icon.replaceWith(TextNode(token))
-    }
-
-    body.select("i, svg").forEach { icon ->
-        if (icon.isDecorativeInlineIcon()) {
-            icon.replaceWith(
-                TextNode(
-                    icon.iconFallbackText(),
-                ),
-            )
-        }
-    }
-
-    return PreparedInlineContent(
-        html = body.html(),
-        inlineImages = inlineImages,
-        inlineSpoilers = inlineSpoilers,
-        inlineTextStyles = inlineTextStyles,
-        inlineIcons = inlineIcons,
-        inlineHashtagChips = inlineHashtagChips,
-    )
 }
 
 internal fun Element.inlineHashtagChipSpec(index: Int): InlineHashtagChipSpec? {
@@ -293,27 +144,7 @@ private fun String.isHashtagBackgroundSymbol(): Boolean {
     return this == "square" || this == "square-full"
 }
 
-internal fun Element.inlineTextStyleSpec(index: Int): InlineTextStyleSpec? {
-    val style = attr("style")
-    val underline = hasClass("bbcode-u") ||
-        style.contains("text-decoration", ignoreCase = true) &&
-        style.contains("underline", ignoreCase = true)
-    val strike = style.contains("text-decoration", ignoreCase = true) &&
-        style.contains("line-through", ignoreCase = true)
-    val relativeSize = style.inlineFontSizeRatio()
-    if (!underline && !strike && relativeSize == null) {
-        return null
-    }
-    return InlineTextStyleSpec(
-        startToken = "__nd_inline_style_start_${index}__",
-        endToken = "__nd_inline_style_end_${index}__",
-        underline = underline,
-        strike = strike,
-        relativeSize = relativeSize,
-    )
-}
-
-private fun String.inlineFontSizeRatio(): Float? {
+internal fun String.inlineFontSizeRatio(): Float? {
     val declaration = split(';')
         .firstOrNull { part -> part.substringBefore(':').trim().equals("font-size", ignoreCase = true) }
         ?.substringAfter(':', missingDelimiterValue = "")

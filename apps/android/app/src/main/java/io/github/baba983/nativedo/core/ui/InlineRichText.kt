@@ -1,6 +1,7 @@
 package io.github.baba983.nativedo.core.ui
 
 import org.jsoup.Jsoup
+import org.jsoup.nodes.Entities
 import org.jsoup.nodes.Element
 import org.jsoup.nodes.Node
 import org.jsoup.nodes.TextNode
@@ -45,8 +46,7 @@ internal fun cookInlineHtml(html: String): CookedInline {
     )
 }
 
-/** The flattened text, with the token-form constructs replaced by their readable form. */
-internal fun CookedInline.plainText(): String {
+private fun CookedInline.tokenReplacements(): Map<String, String> {
     val replacements = HashMap<String, String>()
     inlineImages.forEach { replacements[it.token] = it.contentDescription }
     inlineIcons.forEach { replacements[it.token] = it.contentDescription }
@@ -55,11 +55,59 @@ internal fun CookedInline.plainText(): String {
         replacements[it.startToken] = ""
         replacements[it.endToken] = ""
     }
+    return replacements
+}
+
+/** The flattened text, with the token-form constructs replaced by their readable form. */
+internal fun CookedInline.plainText(): String {
     val out = StringBuilder()
     appendText(richText, out)
     var text = out.toString()
-    replacements.forEach { (token, value) -> text = text.replace(token, value) }
+    tokenReplacements().forEach { (token, value) -> text = text.replace(token, value) }
     return text
+}
+
+/** The model back as HTML, for the surfaces that still hand HTML to `HtmlCompat` (profile bios). */
+internal fun CookedInline.toHtml(): String {
+    val out = StringBuilder()
+    appendHtml(richText, out)
+    var html = out.toString()
+    tokenReplacements().forEach { (token, value) ->
+        html = html.replace(token, Entities.escape(value))
+    }
+    return html
+}
+
+private fun appendHtml(node: TL_iv.RichText, out: StringBuilder) {
+    when (node) {
+        is TL_iv.textEmpty -> Unit
+        is TL_iv.textPlain -> out.append(Entities.escape(node.text.orEmpty()))
+        is TL_iv.textConcat -> node.texts.forEach { appendHtml(it, out) }
+        is TL_iv.textUrl -> {
+            out.append("<a href=\"").append(Entities.escape(node.url.orEmpty())).append("\">")
+            node.text?.let { appendHtml(it, out) }
+            out.append("</a>")
+        }
+        else -> {
+            val name = htmlTagOf(node) ?: return
+            out.append(name)
+            node.text?.let { appendHtml(it, out) }
+            out.append(name.replaceFirst("<", "</"))
+        }
+    }
+}
+
+private fun htmlTagOf(node: TL_iv.RichText): String? = when (node) {
+    is TL_iv.textBold -> "<b>"
+    is TL_iv.textItalic -> "<i>"
+    is TL_iv.textUnderline -> "<u>"
+    is TL_iv.textStrike -> "<s>"
+    is TL_iv.textFixed -> "<code>"
+    is TL_iv.textSubscript -> "<sub>"
+    is TL_iv.textSuperscript -> "<sup>"
+    is TL_iv.textMarked -> "<mark>"
+    is TL_iv.textSpoiler -> "<span class=\"spoiler\">"
+    else -> null
 }
 
 private fun appendText(node: TL_iv.RichText, out: StringBuilder) {
@@ -100,46 +148,53 @@ private class InlineCooker {
             return listOf(plain("\n"))
         }
 
-        val content = nodes(element.childNodes())
-        val styled = when {
-            element.hasClass("spoiler") || element.hasClass("spoiled") ->
-                TL_iv.textSpoiler().apply { text = content }
-
-            element.tagName() == "b" || element.tagName() == "strong" ->
-                TL_iv.textBold().apply { text = content }
-
-            element.tagName() == "i" || element.tagName() == "em" ->
-                TL_iv.textItalic().apply { text = content }
-
-            element.isUnderline() -> TL_iv.textUnderline().apply { text = content }
-
-            element.tagName() == "s" || element.tagName() == "del" || element.tagName() == "strike" ||
-                element.hasLineThrough() -> TL_iv.textStrike().apply { text = content }
-
-            element.tagName() == "code" || element.tagName() == "kbd" ||
-                element.tagName() == "tt" || element.tagName() == "samp" ->
-                TL_iv.textFixed().apply { text = content }
-
-            element.tagName() == "sub" -> TL_iv.textSubscript().apply { text = content }
-
-            element.tagName() == "sup" -> TL_iv.textSuperscript().apply { text = content }
-
-            element.tagName() == "mark" -> TL_iv.textMarked().apply { text = content }
-
-            element.tagName() == "a" && element.attr("href").isNotBlank() ->
-                TL_iv.textUrl().apply {
-                    url = element.attr("href")
-                    text = content
-                }
-
-            else -> content
+        var node = nodes(element.childNodes())
+        for (wrapper in wrappersOf(element)) {
+            node = wrapper(node)
         }
-        return listOf(sizeMarker(element, styled))
+        return listOf(sizeMarker(element, node))
+    }
+
+    /**
+     * The wrappers an element asks for, outermost first. One element can carry several (a Discourse
+     * span with both underline and line-through, a link inside a bold run), which is why this is a
+     * list instead of a single `when` arm.
+     */
+    private fun wrappersOf(element: Element): List<(TL_iv.RichText) -> TL_iv.RichText> {
+        val wrappers = mutableListOf<(TL_iv.RichText) -> TL_iv.RichText>()
+        if (element.tagName() == "a" && element.attr("href").isNotBlank()) {
+            val url = element.attr("href")
+            wrappers += { child: TL_iv.RichText -> TL_iv.textUrl().apply { this.url = url; text = child } }
+        }
+        if (element.hasClass("spoiler") || element.hasClass("spoiled")) {
+            wrappers += { child: TL_iv.RichText -> TL_iv.textSpoiler().apply { text = child } }
+        }
+        if (element.tagName() == "b" || element.tagName() == "strong") {
+            wrappers += { child: TL_iv.RichText -> TL_iv.textBold().apply { text = child } }
+        }
+        if (element.tagName() == "i" || element.tagName() == "em") {
+            wrappers += { child: TL_iv.RichText -> TL_iv.textItalic().apply { text = child } }
+        }
+        if (element.isUnderline()) {
+            wrappers += { child: TL_iv.RichText -> TL_iv.textUnderline().apply { text = child } }
+        }
+        if (element.isStrike()) {
+            wrappers += { child: TL_iv.RichText -> TL_iv.textStrike().apply { text = child } }
+        }
+        if (element.isMono()) {
+            wrappers += { child: TL_iv.RichText -> TL_iv.textFixed().apply { text = child } }
+        }
+        when (element.tagName()) {
+            "sub" -> wrappers += { child: TL_iv.RichText -> TL_iv.textSubscript().apply { text = child } }
+            "sup" -> wrappers += { child: TL_iv.RichText -> TL_iv.textSuperscript().apply { text = child } }
+            "mark" -> wrappers += { child: TL_iv.RichText -> TL_iv.textMarked().apply { text = child } }
+        }
+        return wrappers
     }
 
     /** `[size]` spans have no RichText case, so they keep the marker pair the HTML pipeline used. */
     private fun sizeMarker(element: Element, styled: TL_iv.RichText): TL_iv.RichText {
-        val ratio = element.inlineTextStyleSpec(inlineSizes.size)?.relativeSize ?: return styled
+        val ratio = element.sizeRatio() ?: return styled
         val spec = InlineSizeSpec(
             startToken = "__nd_inline_size_start_${inlineSizes.size}__",
             endToken = "__nd_inline_size_end_${inlineSizes.size}__",
@@ -197,18 +252,26 @@ private class InlineCooker {
     }
 }
 
-private fun Element.isUnderline(): Boolean {
-    return tagName() == "u" || tagName() == "ins" || hasClass("bbcode-u") || hasUnderline()
+private fun Element.sizeRatio(): Float? = when (tagName()) {
+    "big" -> 1.25f
+    "small" -> 0.8f
+    else -> attr("style").inlineFontSizeRatio()
 }
 
-private fun Element.hasUnderline(): Boolean {
+private fun Element.isUnderline(): Boolean {
+    if (tagName() == "u" || tagName() == "ins" || hasClass("bbcode-u")) return true
     val style = attr("style")
     return style.contains("text-decoration", ignoreCase = true) &&
         style.contains("underline", ignoreCase = true)
 }
 
-private fun Element.hasLineThrough(): Boolean {
+private fun Element.isStrike(): Boolean {
+    if (tagName() == "s" || tagName() == "del" || tagName() == "strike" || hasClass("bbcode-s")) return true
     val style = attr("style")
     return style.contains("text-decoration", ignoreCase = true) &&
         style.contains("line-through", ignoreCase = true)
+}
+
+private fun Element.isMono(): Boolean {
+    return tagName() == "code" || tagName() == "kbd" || tagName() == "tt" || tagName() == "samp"
 }

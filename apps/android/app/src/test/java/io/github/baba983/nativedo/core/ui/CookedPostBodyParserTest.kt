@@ -506,20 +506,19 @@ class CookedPostBodyParserTest {
     }
 
     @Test
-    fun prepareInlineContent_extractsEmojiInlineImage() {
-        val prepared = prepareInlineContent("""<p>Hello <img src="/images/emoji/twemoji/wave.png" class="emoji" title=":wave:" alt=":wave:"></p>""")
+    fun cookInlineHtml_extractsEmojiInlineImage() {
+        val prepared = cookInlineHtml("""<p>Hello <img src="/images/emoji/twemoji/wave.png" class="emoji" title=":wave:" alt=":wave:"></p>""")
 
         val inlineImage = prepared.inlineImages.single()
         assertThat(inlineImage.rawUrl).isEqualTo("/images/emoji/twemoji/wave.png")
         assertThat(inlineImage.contentDescription).isEqualTo(":wave:")
         assertThat(inlineImage.kind).isEqualTo(InlineImageKind.Emoji)
-        assertThat(prepared.html).contains(inlineImage.token)
-        assertThat(prepared.html).doesNotContain("<img")
+        assertThat(prepared.plainText()).isEqualTo("Hello :wave:")
     }
 
     @Test
-    fun prepareInlineContent_extractsDiscourseHashtagChip() {
-        val prepared = prepareInlineContent(
+    fun cookInlineHtml_extractsDiscourseHashtagChip() {
+        val prepared = cookInlineHtml(
             """
                 <a class="hashtag-cooked" href="/tag/1436-tag/1436">
                   <span class="hashtag-tag-icon" style="--color1: #669d34; --color2: #fffd;">
@@ -536,13 +535,12 @@ class CookedPostBodyParserTest {
         assertThat(chip.symbolId).isEqualTo("circle-question")
         assertThat(chip.rawIconColor).isEqualTo("#669d34")
         assertThat(prepared.inlineIcons).isEmpty()
-        assertThat(prepared.html).contains(chip.token)
-        assertThat(prepared.html).doesNotContain("<svg")
+        assertThat(prepared.plainText()).isEqualTo("快问快答")
     }
 
     @Test
-    fun prepareInlineContent_prefersRealHashtagIconOverSquareBackgroundSymbol() {
-        val prepared = prepareInlineContent(
+    fun cookInlineHtml_prefersRealHashtagIconOverSquareBackgroundSymbol() {
+        val prepared = cookInlineHtml(
             """
                 <a class="hashtag-cooked" href="/tag/%E9%9B%86%E4%B8%AD%E5%B8%96" data-icon="tag">
                   <span class="hashtag-tag-icon">
