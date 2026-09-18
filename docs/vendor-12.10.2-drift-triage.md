@@ -181,6 +181,12 @@ rendering as a reference). The bot-keyboard half of `TL_keyboard` stays a
 non-goal. Design is ours to make; this note only keeps the candidates from being
 re-derived.
 
+The render side of the same principle is analysed in
+[`render-model-alignment.md`](render-model-alignment.md): make `TL_iv` the
+post-body model (R1), then try lifting upstream's `ArticleViewer` cells out of
+the monolith one at a time (R2/R3). Device-only checks accumulate in
+[`device-verification.md`](device-verification.md).
+
 Read and left, for the record: `TextSelectionHelper`'s only remaining hunk is
 `hideActionsMenu()`, whose single upstream caller is `iv/RichEditorListView` (the IV
 refactor we do not follow) and whose body needs a `showActionsRunnable` field our
