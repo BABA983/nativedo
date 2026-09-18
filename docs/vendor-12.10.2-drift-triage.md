@@ -77,6 +77,8 @@ these eight were read in full now, and none is worth taking today:
 | `4817a8a` | additive helpers: `Choreographer60FpsContent` once-callbacks, `DrawableUtils` `RectF`/int overloads, `FragmentSearchField.setHintText` | three files byte-exact |
 | `cd6fc5b` | icon tints `MULTIPLY` → `SRC_IN`: 10 sites of upstream's 33, in `ActionBarMenuItem`, `ActionBarMenuSubItem` and `TextCell` | goldens do not move — pure-white icons are identical under both modes; the fix shows on icons that are not white |
 | `8f107e4` | `EditTextBoldCursor`: `setTransformHintToHeaderOnFocus`, and selection handles keep one colour filter plus per-instance mutated drawables | the cursor-blink override stays out (`forced_exact(animation)`, no product reason) |
+| `0084f59` | import-only cleanups: `HistoryFragment` (20 dead imports), `StaticLayoutEx` (4), `Blur3Utils` (a blank line) adopted verbatim; `Theme` (4) and `BookmarksFragment` (1) hand-cleaned | four files byte-exact; guard's "differ" count 231 → 228 |
+| `236ca60` | the last two mechanical pure-drift deltas: `DefaultItemAnimator`'s `protected` widening, `SerializedData`'s `InputStream` constructor | both byte-exact; 228 → 226 |
 
 Read and left, for the record: `TextSelectionHelper`'s only remaining hunk is
 `hideActionsMenu()`, whose single upstream caller is `iv/RichEditorListView` (the IV
@@ -87,19 +89,23 @@ layout no screen of ours uses; `BaseFragment`'s +25 is a debug `Trace` wrapper a
 
 `3d4c037` also removed the dead `com.google.android.exoplayer2.util.Log` import from
 six files — 12.10.2 deletes it, nothing in the tree used it (the plan document's
-"nine host files still import the exoplayer types" predates this). Three files still
-do: `ArticleViewer` → `AspectRatioFrameLayout`, `BookmarksFragment` and
-`HistoryFragment` → `Util`. The stub set stays for those two classes; the `Log` stub
-now has no importers.
+"nine host files still import the exoplayer types" predates this). `0084f59` took
+the rest: `ArticleViewer` → `AspectRatioFrameLayout` is the last real exoplayer
+import (the stubs' own `Format` reference aside), so the `Log` and `Util` stubs
+have no importers. The stub set stays for `AspectRatioFrameLayout` and `Format`;
+pruning the other ten is a separate decision.
 
-The small pure-drift deltas were read in full and none is a product goal today:
-`TextSettingsCell` (+8/−8, row-density tweak: 21→16dp icon gutter, 71→58dp value
-margin), `FragmentSearchField` (`setHintText(CharSequence, boolean)`, no consumer),
-`ChatActivityEnterViewAnimatedIconView` / `RLottieImageView` / `ProfileActionsView`
-(the RLottie constructor), `SerializedData` (an `InputStream` constructor),
-`DefaultItemAnimator` (visibility widening), `HistoryFragment` (−20, browser code we
-do not use), `Choreographer60FpsContent` + `DrawableUtils` (additive, no consumer),
-`WindowInsetsStateHolder` (display-cutout insets — device-bound).
+Read in full and left: `ChatActivityEnterViewAnimatedIconView` / `RLottieImageView` /
+`ProfileActionsView` (the RLottie constructor), `MotionBackgroundDrawable`'s bitmap
+path, `WindowInsetsStateHolder` (display-cutout insets — device-bound), and the blur3
+group (its closures are not in the tree).
+
+One left *because upstream looks wrong*: `ExtendedGridLayoutManager` sets
+`lastSpanCount = itemsCount` and then guards `checkLayout()` with
+`lastSpanCount != getSpanCount()`, which is true whenever the item count and the
+span count differ — i.e. almost always — so every `checkLayout()` recomputes the
+layout. The file is used (`UniversalRecyclerView`), so our copy stays at 12.9.0
+until upstream sets the field to the span count it compares against.
 
 The `:app` ports' ancestors moved 12.9.0 → pin mostly inside settled non-goals:
 `DialogCell` (+14/−17: rich-message drafts, RLottie layer names), `ChatActionCell`
