@@ -45,6 +45,13 @@ public class LaunchActivity extends ComponentActivity {
         }
     }
 
+    /**
+     * NativeDo has no premium-bot navigation; the hook exists so the vendored
+     * LinkSpanDrawable/URLSpanReplacement code stays the pin's file.
+     */
+    public void setNavigateToPremiumBot(boolean val) {
+    }
+
     public static Activity getActionBarLayoutActivity() {
         Context context = actionBarLayout == null ? null : actionBarLayout.getContext();
         while (context instanceof ContextWrapper) {
