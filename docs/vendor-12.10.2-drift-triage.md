@@ -84,6 +84,7 @@ these eight were read in full now, and none is worth taking today:
 | `2e9f699` | the last two cosmetic-only mirror deltas: `SimpleItemAnimator`'s trailing blank line and `RectFMergeBounding`'s comment arrow | both byte-exact, 216 → 214. This closes the mechanical pool: a sweep of all 173 differing mirrors found no other file whose delta is whitespace or comments only, so every remaining difference is either a deliberate adaptation or a hand-carry |
 | `6b83ef2` | `forced_exact` grows teeth: the guard's prompt is per file (`FORCED_EXACT_TESTS_BY_PATH`, 58 entries) instead of a fixed trio, unmapped files get name-matching candidate hints, and `scripts/tests/test_vendor_guard.py` fails when an entry names a renamed test or an un-promoted file. Promoted 31 mirrors that a test already pins — the five body blocks that lacked what their siblings had, the text cells, and the widgets with contract tests | 125 → 156 forced-exact files, no code change and no golden moved; the prompt was exercised on a mapped file (`TextCell` → `TextCellContractTest`) and an unmapped one (`BottomSheet` → trio + candidate hint) |
 | `6a32c2a` | first hand-carry sweep over the `reference` set, using upstream's own baseline→pin patch per file: `UItem` takes the pin's additive factories (plus the `enabled` check in `itemContentEquals`, now a rebind instead of a no-op) and `GraySectionCell` takes back `createThemeDescriptions` | `GraySectionCell` byte-exact, `UItem` off the `reference` baseline (91 paths left); 213 differ. The sweep is also the measurement below — the mechanical pool is closed |
+| `8c1e55f` | step 1 of the instant-view split: `org.telegram.tgnet.tl.TL_iv.pageTableCell` exists and `TableLayout` is the pin's file; the row's cell list, the two cell builders (`TableBlock`, `DetailsBlock`) and `WebInstantView`'s parser feed that type | the pin's name aliases onto our legacy `TLRPC.TL_pageTableCell` (the stub is a `native` entry), so `TableLayout` is byte-exact without the ~650-reference rename the full split needs — that seam is what a later slice widens. `:app:verifyPaparazziDebug` green, no golden moved; 524 tracked / 213 differ |
 
 ## Hand-carry pool: measured
 
@@ -109,9 +110,9 @@ first-line blockers:
 
 | Family | First line | Blocker |
 |---|---|---|
-| IV types | `TableLayout`'s 4-line delta is `TL_iv.pageTableCell` | that type carries `TL_iv.RichText`, so adopting it starts the IV split through our body pipeline (`TableBlock`, `DetailsBlock`, `ArticleViewer`, `WebInstantView`, the `TLRPC` shell) |
+| IV types | step 1 landed (`8c1e55f`): `TableLayout` is byte-exact through a `TL_iv.pageTableCell` alias | the full split is open — the remaining ~50 page-block and rich-text classes and the ~650 call sites that spell them (`ArticleViewer` alone holds 527) — and nothing needs it until we take upstream's `ArticleViewer` |
 | RLottie | `RLottieDrawable` (a 12.6-based port) | the JNI body and `RLottieNative`; the shapes are already at the pin (`60a764c`) |
-| cells / text | `TextCell`, `TextCheckCell`, `TextDetailCell` | they are our own ports (upstream's row density and `SRC_IN` tint are already in), so this is a rewrite toward upstream's file, not a delta |
+| cells / text | `TextCell` at the pin is 983 lines | probed: it does not compile here — it wants `PeerColorActivity`, `FilterCreateActivity`, `SettingsActivity.SettingCell`, `SwapAnimatedEmojiDrawable(int)` and more, so the cell family is a project that vendors its settings/screen dependencies first (our ports already carry the pin's row density and `SRC_IN` tint) |
 
 Four deltas cannot be closed at all, and none of them is drift: `AnimatedTextView`
 wants `org.checkerframework` imports (not on our classpath),
