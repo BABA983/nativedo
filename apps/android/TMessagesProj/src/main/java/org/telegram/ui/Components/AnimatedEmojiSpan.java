@@ -1,11 +1,16 @@
 package org.telegram.ui.Components;
 
+import android.text.TextPaint;
+import android.text.style.CharacterStyle;
 import android.text.Layout;
 import android.view.View;
 import android.widget.TextView;
 import android.content.Context;
 
-public class AnimatedEmojiSpan {
+public class AnimatedEmojiSpan extends CharacterStyle {
+
+    @Override
+    public void updateDrawState(TextPaint tp) {}
 
     /** Pin ImageReceiver implements this for animated-emoji invalidation. Host stub. */
     public interface InvalidateHolder {
@@ -38,4 +43,7 @@ public class AnimatedEmojiSpan {
 
     public static void drawAnimatedEmojis(android.graphics.Canvas canvas, Layout layout, EmojiGroupedSpans drawables, float drawingYOffset, java.util.List<?> spoilers, float top, float bottom, float drawingYOffsetMore, float alpha) {}
     public static void drawAnimatedEmojis(android.graphics.Canvas canvas, Layout layout, EmojiGroupedSpans drawables, float drawingYOffset, java.util.List<?> spoilers, float top, float bottom, float drawingYOffsetMore, float alpha, android.graphics.ColorFilter colorFilter) {}
+
+    /** Pin signature: re-measures the emoji for the paint that will draw it. */
+    public void applyFontMetrics(android.graphics.Paint.FontMetricsInt fontMetricsInt, int cacheType) {}
 }

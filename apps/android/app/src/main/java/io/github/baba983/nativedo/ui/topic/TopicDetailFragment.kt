@@ -150,7 +150,7 @@ import org.telegram.ui.Components.ChatReplyContainer
 import org.telegram.ui.Components.ChatActivityEnterViewAnimatedIconView
 import org.telegram.ui.Components.ChatActivityEnterTopView
 import org.telegram.ui.Components.CubicBezierInterpolator
-import org.telegram.ui.Components.EditTextBoldCursor
+import org.telegram.ui.Components.EditTextCaption
 import org.telegram.ui.Components.FlickerLoadingView
 import org.telegram.ui.Components.LayoutHelper
 import org.telegram.ui.Components.RecyclerAnimationScrollHelper
@@ -8196,7 +8196,7 @@ private class TopicReplyComposerPanel(
         setPadding(AndroidUtilities.dp(52f), AndroidUtilities.dp(2f), AndroidUtilities.dp(52f), 0)
     }
     private var editTextReady = false
-    private val editText = object : EditTextBoldCursor(context) {
+    private val editText = object : EditTextCaption(context, null) {
         override fun onSelectionChanged(selStart: Int, selEnd: Int) {
             super.onSelectionChanged(selStart, selEnd)
             if (editTextReady) {
