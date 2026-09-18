@@ -767,7 +767,7 @@ final class TableBlock implements EmbeddedPostBodyBlock, TableLayout.TableLayout
 
     private static TL_iv.pageTableCell toPageTableCell(CookedPostBlock.TableCell source, boolean header) {
         TL_iv.pageTableCell cell = new TL_iv.pageTableCell();
-        TLRPC.TL_textPlain text = new TLRPC.TL_textPlain();
+        TL_iv.textPlain text = new TL_iv.textPlain();
         text.text = source.getText();
         cell.text = text;
         cell.header = header;
@@ -778,9 +778,9 @@ final class TableBlock implements EmbeddedPostBodyBlock, TableLayout.TableLayout
         return cell;
     }
 
-    private static CharSequence richTextPlain(TLRPC.RichText text) {
-        if (text instanceof TLRPC.TL_textPlain) {
-            String value = ((TLRPC.TL_textPlain) text).text;
+    private static CharSequence richTextPlain(TL_iv.RichText text) {
+        if (text instanceof TL_iv.textPlain) {
+            String value = ((TL_iv.textPlain) text).text;
             return value != null ? value : "";
         }
         if (text != null && text.text != null) {
@@ -788,7 +788,7 @@ final class TableBlock implements EmbeddedPostBodyBlock, TableLayout.TableLayout
         }
         if (text != null && !text.texts.isEmpty()) {
             StringBuilder builder = new StringBuilder();
-            for (TLRPC.RichText child : text.texts) {
+            for (TL_iv.RichText child : text.texts) {
                 builder.append(richTextPlain(child));
             }
             return builder;

@@ -10,6 +10,7 @@ import org.robolectric.RobolectricTestRunner
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.tgnet.TLRPC
+import org.telegram.tgnet.tl.TL_iv;
 
 @RunWith(RobolectricTestRunner::class)
 class DetailsBlockTest {
@@ -118,19 +119,19 @@ class DetailsBlockTest {
         val pageBlock = DetailsBlock(details, buildContext(), PostBodyBlockState(), 0, emptyList(), PostBodyBlockState(), "details")
             .currentBlockViaReflection()
 
-        assertThat((pageBlock.title as TLRPC.TL_textPlain).text).isEqualTo("Summary")
+        assertThat((pageBlock.title as TL_iv.textPlain).text).isEqualTo("Summary")
 
-        val list = pageBlock.blocks[0] as TLRPC.TL_pageBlockList
+        val list = pageBlock.blocks[0] as TL_iv.pageBlockList
         assertThat(list.ordered).isTrue()
-        val itemBlocks = list.items.single() as TLRPC.TL_pageListItemBlocks
-        assertThat(itemBlocks.blocks[0]).isInstanceOf(TLRPC.TL_pageBlockParagraph::class.java)
-        val nestedPhoto = itemBlocks.blocks[1] as TLRPC.TL_pageBlockPhoto
+        val itemBlocks = list.items.single() as TL_iv.TL_pageListItemBlocks
+        assertThat(itemBlocks.blocks[0]).isInstanceOf(TL_iv.pageBlockParagraph::class.java)
+        val nestedPhoto = itemBlocks.blocks[1] as TL_iv.pageBlockPhoto
         assertThat(nestedPhoto.url).isEqualTo("/uploads/default/original/1x/a.png")
         assertThat(nestedPhoto.w).isEqualTo(640)
         assertThat(nestedPhoto.h).isEqualTo(320)
-        assertThat((nestedPhoto.caption.text as TLRPC.TL_textPlain).text).isEqualTo("Caption")
+        assertThat((nestedPhoto.caption.text as TL_iv.textPlain).text).isEqualTo("Caption")
 
-        val table = pageBlock.blocks[1] as TLRPC.TL_pageBlockTable
+        val table = pageBlock.blocks[1] as TL_iv.pageBlockTable
         assertThat(table.bordered).isTrue()
         assertThat(table.striped).isTrue()
         assertThat(table.rows).hasSize(2)
@@ -139,22 +140,22 @@ class DetailsBlockTest {
         assertThat(table.rows[1].cells.single().align_right).isTrue()
         assertThat(table.rows[1].cells.single().colspan).isEqualTo(2)
 
-        val collage = pageBlock.blocks[2] as TLRPC.TL_pageBlockCollage
+        val collage = pageBlock.blocks[2] as TL_iv.pageBlockCollage
         assertThat(collage.items).hasSize(2)
-        assertThat(collage.items[0]).isInstanceOf(TLRPC.TL_pageBlockPhoto::class.java)
+        assertThat(collage.items[0]).isInstanceOf(TL_iv.pageBlockPhoto::class.java)
 
-        val quote = pageBlock.blocks[3] as TLRPC.TL_pageBlockBlockquote
-        assertThat((quote.caption as TLRPC.TL_textPlain).text).isEqualTo("alice")
+        val quote = pageBlock.blocks[3] as TL_iv.pageBlockBlockquote
+        assertThat((quote.caption as TL_iv.textPlain).text).isEqualTo("alice")
         assertThat(quote.level).isEqualTo(1)
 
-        assertThat(pageBlock.blocks[4]).isInstanceOf(TLRPC.TL_pageBlockDivider::class.java)
+        assertThat(pageBlock.blocks[4]).isInstanceOf(TL_iv.pageBlockDivider::class.java)
     }
 
-    private fun DetailsBlock.currentBlockViaReflection(): TLRPC.TL_pageBlockDetails {
+    private fun DetailsBlock.currentBlockViaReflection(): TL_iv.pageBlockDetails {
         @Suppress("UNCHECKED_CAST")
         return DetailsBlock::class.java.getDeclaredMethod("getCurrentBlock")
             .apply { isAccessible = true }
-            .invoke(this) as TLRPC.TL_pageBlockDetails
+            .invoke(this) as TL_iv.pageBlockDetails
     }
 
     private fun buildContext(): PostBodyBuildContext {

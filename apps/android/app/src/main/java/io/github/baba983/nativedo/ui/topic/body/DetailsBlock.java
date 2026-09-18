@@ -119,7 +119,7 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
     private final String titleHtml;
     private final String titleSpoilerStateKey;
     private final boolean defaultOpen;
-    private final TLRPC.TL_pageBlockDetails currentBlock;
+    private final TL_iv.pageBlockDetails currentBlock;
     private final DetailsChildLayout childLayout;
     private final AnimatedArrowDrawable arrow;
     private final TextPaint titlePaint;
@@ -396,7 +396,7 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
         }
     }
 
-    TLRPC.TL_pageBlockDetails getCurrentBlock() {
+    TL_iv.pageBlockDetails getCurrentBlock() {
         return currentBlock;
     }
 
@@ -682,8 +682,8 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
         }
     }
 
-    private static TLRPC.TL_pageBlockDetails toPageBlockDetails(CookedPostBlock.Details block) {
-        TLRPC.TL_pageBlockDetails details = new TLRPC.TL_pageBlockDetails();
+    private static TL_iv.pageBlockDetails toPageBlockDetails(CookedPostBlock.Details block) {
+        TL_iv.pageBlockDetails details = new TL_iv.pageBlockDetails();
         details.title = richTextFromHtml(detailsTitleHtml(block));
         details.open = block.getOpen();
         if (block.getChildren() != null && !block.getChildren().isEmpty()) {
@@ -696,30 +696,30 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
         return details;
     }
 
-    private static TLRPC.PageBlock toPageBlock(CookedPostBlock block) {
+    private static TL_iv.PageBlock toPageBlock(CookedPostBlock block) {
         if (block instanceof CookedPostBlock.Text) {
             return paragraphBlock(((CookedPostBlock.Text) block).getHtml());
         } else if (block instanceof CookedPostBlock.Heading) {
-            TLRPC.PageBlock pageBlock = ((CookedPostBlock.Heading) block).getLevel() <= 2
-                    ? new TLRPC.TL_pageBlockHeader()
-                    : new TLRPC.TL_pageBlockSubheader();
+            TL_iv.PageBlock pageBlock = ((CookedPostBlock.Heading) block).getLevel() <= 2
+                    ? new TL_iv.pageBlockHeader()
+                    : new TL_iv.pageBlockSubheader();
             pageBlock.text = richTextFromHtml(((CookedPostBlock.Heading) block).getHtml());
             return pageBlock;
         } else if (block instanceof CookedPostBlock.Quote) {
-            TLRPC.TL_pageBlockBlockquote pageBlock = new TLRPC.TL_pageBlockBlockquote();
+            TL_iv.pageBlockBlockquote pageBlock = new TL_iv.pageBlockBlockquote();
             CookedPostBlock.Quote quote = (CookedPostBlock.Quote) block;
             pageBlock.text = richTextFromHtml(quote.getHtml());
             pageBlock.caption = richTextFromHtml(quote.getTitleHtml() != null ? quote.getTitleHtml() : quote.getTitle());
             pageBlock.level = quote.getLevel();
             return pageBlock;
         } else if (block instanceof CookedPostBlock.Callout) {
-            TLRPC.TL_pageBlockBlockquote pageBlock = new TLRPC.TL_pageBlockBlockquote();
+            TL_iv.pageBlockBlockquote pageBlock = new TL_iv.pageBlockBlockquote();
             CookedPostBlock.Callout callout = (CookedPostBlock.Callout) block;
             pageBlock.text = richTextFromHtml(callout.getHtml());
             pageBlock.caption = richTextFromHtml(callout.getTitleHtml() != null ? callout.getTitleHtml() : callout.getType());
             return pageBlock;
         } else if (block instanceof CookedPostBlock.Code) {
-            TLRPC.TL_pageBlockPreformatted pageBlock = new TLRPC.TL_pageBlockPreformatted();
+            TL_iv.pageBlockPreformatted pageBlock = new TL_iv.pageBlockPreformatted();
             pageBlock.text = plain(((CookedPostBlock.Code) block).getCode());
             pageBlock.language = "";
             return pageBlock;
@@ -730,7 +730,7 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
         } else if (block instanceof CookedPostBlock.Image) {
             return photoBlock((CookedPostBlock.Image) block);
         } else if (block instanceof CookedPostBlock.Collage) {
-            TLRPC.TL_pageBlockCollage pageBlock = new TLRPC.TL_pageBlockCollage();
+            TL_iv.pageBlockCollage pageBlock = new TL_iv.pageBlockCollage();
             pageBlock.caption = emptyCaption();
             for (CookedPostBlock.Image image : ((CookedPostBlock.Collage) block).getImages()) {
                 pageBlock.items.add(photoBlock(image));
@@ -739,23 +739,23 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
         } else if (block instanceof CookedPostBlock.Details) {
             return toPageBlockDetails((CookedPostBlock.Details) block);
         } else if (block == CookedPostBlock.Rule.INSTANCE) {
-            return new TLRPC.TL_pageBlockDivider();
+            return new TL_iv.pageBlockDivider();
         }
-        return new TLRPC.TL_pageBlockUnsupported();
+        return new TL_iv.pageBlockUnsupported();
     }
 
-    private static TLRPC.TL_pageBlockList listBlock(CookedPostBlock.ListItems block) {
-        TLRPC.TL_pageBlockList pageBlock = new TLRPC.TL_pageBlockList();
+    private static TL_iv.pageBlockList listBlock(CookedPostBlock.ListItems block) {
+        TL_iv.pageBlockList pageBlock = new TL_iv.pageBlockList();
         pageBlock.ordered = block.getOrdered();
         for (CookedPostBlock.ListItem item : block.getItems()) {
             if (item.getBlocks() != null && !item.getBlocks().isEmpty()) {
-                TLRPC.TL_pageListItemBlocks pageListItem = new TLRPC.TL_pageListItemBlocks();
+                TL_iv.TL_pageListItemBlocks pageListItem = new TL_iv.TL_pageListItemBlocks();
                 for (CookedPostBlock child : item.getBlocks()) {
                     pageListItem.blocks.add(toPageBlock(child));
                 }
                 pageBlock.items.add(pageListItem);
             } else {
-                TLRPC.TL_pageListItemText pageListItem = new TLRPC.TL_pageListItemText();
+                TL_iv.TL_pageListItemText pageListItem = new TL_iv.TL_pageListItemText();
                 pageListItem.text = richTextFromHtml(item.getHtml());
                 pageBlock.items.add(pageListItem);
             }
@@ -763,20 +763,20 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
         return pageBlock;
     }
 
-    private static TLRPC.TL_pageBlockTable tableBlock(CookedPostBlock.Table block) {
-        TLRPC.TL_pageBlockTable pageBlock = new TLRPC.TL_pageBlockTable();
+    private static TL_iv.pageBlockTable tableBlock(CookedPostBlock.Table block) {
+        TL_iv.pageBlockTable pageBlock = new TL_iv.pageBlockTable();
         pageBlock.bordered = true;
         pageBlock.striped = true;
         pageBlock.title = plain("");
         if (!block.getHeaders().isEmpty()) {
-            TLRPC.TL_pageTableRow headerRow = new TLRPC.TL_pageTableRow();
+            TL_iv.pageTableRow headerRow = new TL_iv.pageTableRow();
             for (CookedPostBlock.TableCell cell : block.getHeaders()) {
                 headerRow.cells.add(tableCell(cell, true));
             }
             pageBlock.rows.add(headerRow);
         }
         for (List<CookedPostBlock.TableCell> row : block.getRows()) {
-            TLRPC.TL_pageTableRow pageRow = new TLRPC.TL_pageTableRow();
+            TL_iv.pageTableRow pageRow = new TL_iv.pageTableRow();
             for (CookedPostBlock.TableCell cell : row) {
                 pageRow.cells.add(tableCell(cell, false));
             }
@@ -798,8 +798,8 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
         return pageCell;
     }
 
-    private static TLRPC.TL_pageBlockPhoto photoBlock(CookedPostBlock.Image image) {
-        TLRPC.TL_pageBlockPhoto pageBlock = new TLRPC.TL_pageBlockPhoto();
+    private static TL_iv.pageBlockPhoto photoBlock(CookedPostBlock.Image image) {
+        TL_iv.pageBlockPhoto pageBlock = new TL_iv.pageBlockPhoto();
         pageBlock.url = image.getSrc();
         pageBlock.w = image.getWidthPx();
         pageBlock.h = image.getHeightPx();
@@ -823,29 +823,29 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
         return "Details";
     }
 
-    private static TLRPC.TL_pageBlockParagraph paragraphBlock(String html) {
-        TLRPC.TL_pageBlockParagraph pageBlock = new TLRPC.TL_pageBlockParagraph();
+    private static TL_iv.pageBlockParagraph paragraphBlock(String html) {
+        TL_iv.pageBlockParagraph pageBlock = new TL_iv.pageBlockParagraph();
         pageBlock.text = richTextFromHtml(html);
         return pageBlock;
     }
 
-    private static TLRPC.TL_pageCaption pageCaption(String html) {
-        TLRPC.TL_pageCaption caption = new TLRPC.TL_pageCaption();
-        caption.text = html != null && !html.trim().isEmpty() ? richTextFromHtml(html) : new TLRPC.TL_textEmpty();
-        caption.credit = new TLRPC.TL_textEmpty();
+    private static TL_iv.PageCaption pageCaption(String html) {
+        TL_iv.PageCaption caption = new TL_iv.PageCaption();
+        caption.text = html != null && !html.trim().isEmpty() ? richTextFromHtml(html) : new TL_iv.textEmpty();
+        caption.credit = new TL_iv.textEmpty();
         return caption;
     }
 
-    private static TLRPC.TL_pageCaption emptyCaption() {
+    private static TL_iv.PageCaption emptyCaption() {
         return pageCaption(null);
     }
 
-    private static TLRPC.TL_textPlain richTextFromHtml(String html) {
+    private static TL_iv.textPlain richTextFromHtml(String html) {
         return plain(htmlText(html));
     }
 
-    private static TLRPC.TL_textPlain plain(String text) {
-        TLRPC.TL_textPlain richText = new TLRPC.TL_textPlain();
+    private static TL_iv.textPlain plain(String text) {
+        TL_iv.textPlain richText = new TL_iv.textPlain();
         richText.text = text != null ? text : "";
         return richText;
     }

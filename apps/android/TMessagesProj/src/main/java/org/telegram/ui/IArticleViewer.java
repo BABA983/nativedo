@@ -17,6 +17,7 @@ import androidx.collection.LongSparseArray;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.video.VideoPlayerHolderBase;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.tgnet.tl.TL_iv;
 import org.telegram.ui.ActionBar.ActionBarPopupWindow;
 import org.telegram.ui.ActionBar.BottomSheet;
 import org.telegram.ui.ActionBar.Theme;
@@ -108,7 +109,7 @@ public abstract class IArticleViewer {
         return null;
     }
 
-    public boolean openPhoto(TLRPC.PageBlock block, ArticleViewer.WebpageAdapter adapter) {
+    public boolean openPhoto(TL_iv.PageBlock block, ArticleViewer.WebpageAdapter adapter) {
         return false;
     }
 

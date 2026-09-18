@@ -15,6 +15,7 @@ import org.telegram.ui.ActionBar.Theme
 import org.telegram.ui.Cells.TextSelectionHelper
 import org.telegram.ui.Components.TextPaintSpan
 import org.telegram.ui.Components.TextPaintUrlSpan
+import org.telegram.tgnet.tl.TL_iv;
 
 /**
  * Phase 0 contract tests for ArticleViewer public surface used by NativeDo.
@@ -141,8 +142,8 @@ class ArticleViewerContractTest {
             override fun getResources() = isolated
             override fun getTextSelectionHelper(view: android.view.View?): TextSelectionHelper.ArticleTextSelectionHelper? = null
         }
-        val text = TLRPC.TL_textPlain()
-        val block = TLRPC.TL_pageBlockPreformatted()
+        val text = TL_iv.textPlain()
+        val block = TL_iv.pageBlockPreformatted()
 
         val paint = ArticleViewer.getTextPaint(host, text, text, block)
 
@@ -164,24 +165,24 @@ class ArticleViewerContractTest {
             override fun getTextSelectionHelper(view: android.view.View?): TextSelectionHelper.ArticleTextSelectionHelper? = null
         }
 
-        val plain = TLRPC.TL_textPlain().apply { text = "hello" }
-        val bold = TLRPC.TL_textBold().apply {
+        val plain = TL_iv.textPlain().apply { text = "hello" }
+        val bold = TL_iv.textBold().apply {
             text = plain
             plain.parentRichText = this
         }
-        val urlInner = TLRPC.TL_textPlain().apply { text = "docs" }
-        val url = TLRPC.TL_textUrl().apply {
+        val urlInner = TL_iv.textPlain().apply { text = "docs" }
+        val url = TL_iv.textUrl().apply {
             text = urlInner
             this.url = "https://linux.do/t/1"
             urlInner.parentRichText = this
         }
-        val concat = TLRPC.TL_textConcat().apply {
+        val concat = TL_iv.textConcat().apply {
             texts.add(bold)
             texts.add(url)
             bold.parentRichText = this
             url.parentRichText = this
         }
-        val block = TLRPC.TL_pageBlockParagraph()
+        val block = TL_iv.pageBlockParagraph()
 
         val built = ArticleViewer.getText(host, null as TLRPC.WebPage?, null, concat, concat, block, 320)
         assertThat(built).isInstanceOf(android.text.Spanned::class.java)
@@ -216,8 +217,8 @@ class ArticleViewerContractTest {
             override fun getTextSelectionHelper(view: android.view.View?): TextSelectionHelper.ArticleTextSelectionHelper? = null
         }
 
-        val plain = TLRPC.TL_textPlain().apply { text = "hello layout" }
-        val block = TLRPC.TL_pageBlockParagraph()
+        val plain = TL_iv.textPlain().apply { text = "hello layout" }
+        val block = TL_iv.pageBlockParagraph()
 
         val drawing = ArticleViewer.createLayoutForText(
             host,
@@ -259,8 +260,8 @@ class ArticleViewerContractTest {
             override fun getTextSelectionHelper(view: android.view.View?): TextSelectionHelper.ArticleTextSelectionHelper? = null
         }
 
-        val plain = TLRPC.TL_textPlain().apply { text = "hidden spoiler" }
-        val block = TLRPC.TL_pageBlockParagraph()
+        val plain = TL_iv.textPlain().apply { text = "hidden spoiler" }
+        val block = TL_iv.pageBlockParagraph()
         // SpoilerEffect.addSpoilers scans TextStyleSpan with FLAG_STYLE_SPOILER on the laid-out text.
         // createLayoutForText builds from rich text only; inject via plainText Spanned path.
         val spoilerRun = org.telegram.ui.Components.TextStyleSpan.TextStyleRun().apply {
@@ -310,12 +311,12 @@ class ArticleViewerContractTest {
             override fun getTextSelectionHelper(view: android.view.View?): TextSelectionHelper.ArticleTextSelectionHelper? = null
         }
 
-        val plain = TLRPC.TL_textPlain().apply { text = "secret" }
-        val spoiler = TLRPC.TL_textSpoiler().apply {
+        val plain = TL_iv.textPlain().apply { text = "secret" }
+        val spoiler = TL_iv.textSpoiler().apply {
             text = plain
             plain.parentRichText = this
         }
-        val block = TLRPC.TL_pageBlockParagraph()
+        val block = TL_iv.pageBlockParagraph()
 
         val built = ArticleViewer.getText(host, null as TLRPC.WebPage?, null, spoiler, spoiler, block, 320)
         assertThat(built).isInstanceOf(android.text.Spanned::class.java)
@@ -347,12 +348,12 @@ class ArticleViewerContractTest {
             override fun getTextSelectionHelper(view: android.view.View?): TextSelectionHelper.ArticleTextSelectionHelper? = null
         }
 
-        val plain = TLRPC.TL_textPlain().apply { text = "hidden via rich text" }
-        val spoiler = TLRPC.TL_textSpoiler().apply {
+        val plain = TL_iv.textPlain().apply { text = "hidden via rich text" }
+        val spoiler = TL_iv.textSpoiler().apply {
             text = plain
             plain.parentRichText = this
         }
-        val block = TLRPC.TL_pageBlockParagraph()
+        val block = TL_iv.pageBlockParagraph()
 
         val drawing = ArticleViewer.createLayoutForText(
             host,
@@ -394,12 +395,12 @@ class ArticleViewerContractTest {
             override fun getResources() = isolated
             override fun getTextSelectionHelper(view: android.view.View?): TextSelectionHelper.ArticleTextSelectionHelper? = null
         }
-        val plain = TLRPC.TL_textPlain().apply { text = "H" }
-        val h1 = TLRPC.TL_pageBlockHeading1().apply { text = plain }
-        val h3 = TLRPC.TL_pageBlockHeading3().apply { text = plain }
-        val h6 = TLRPC.TL_pageBlockHeading6().apply { text = plain }
+        val plain = TL_iv.textPlain().apply { text = "H" }
+        val h1 = TL_iv.pageBlockHeading1().apply { text = plain }
+        val h3 = TL_iv.pageBlockHeading3().apply { text = plain }
+        val h6 = TL_iv.pageBlockHeading6().apply { text = plain }
         assertThat(ArticleViewer.isHeadingBlock(h1)).isTrue()
-        assertThat(ArticleViewer.isHeadingBlock(TLRPC.TL_pageBlockHeader())).isFalse()
+        assertThat(ArticleViewer.isHeadingBlock(TL_iv.pageBlockHeader())).isFalse()
 
         val paint1 = ArticleViewer.getTextPaint(host, plain, plain, h1)
         val paint3 = ArticleViewer.getTextPaint(host, plain, plain, h3)
@@ -451,7 +452,7 @@ class ArticleViewerContractTest {
         }
         // Ensure paint exists; createPaint initializes quoteLinePaint among others.
         ArticleViewer.createPaint(host, true)
-        val block = TLRPC.TL_pageBlockParagraph().apply {
+        val block = TL_iv.pageBlockParagraph().apply {
             level = 0
             // bits 0 and 2 => two gutters at padx and padx+28
             quoteLevels = 0b101
@@ -478,7 +479,7 @@ class ArticleViewerContractTest {
             override fun getTextSelectionHelper(view: android.view.View?): TextSelectionHelper.ArticleTextSelectionHelper? = null
         }
 
-        val block = TLRPC.TL_pageBlockEmbedPost().apply { author = "alice" }
+        val block = TL_iv.pageBlockEmbedPost().apply { author = "alice" }
         val drawing = ArticleViewer.createLayoutForText(
             host,
             null,
@@ -511,7 +512,7 @@ class ArticleViewerContractTest {
         }
         ArticleViewer.createPaint(host, true)
 
-        val nested = TLRPC.TL_pageBlockParagraph().apply {
+        val nested = TL_iv.pageBlockParagraph().apply {
             level = 2
             bottom = true
         }
@@ -521,7 +522,7 @@ class ArticleViewerContractTest {
         // Null-safe no-ops for incomplete hosts/blocks.
         ArticleViewer.drawQuoteLines(canvas, host, null, 120)
         ArticleViewer.drawQuoteLines(canvas, null, nested, 120)
-        ArticleViewer.drawQuoteLines(canvas, host, TLRPC.TL_pageBlockParagraph().apply { level = 0 }, 120)
+        ArticleViewer.drawQuoteLines(canvas, host, TL_iv.pageBlockParagraph().apply { level = 0 }, 120)
     }
 
     @Test
@@ -543,8 +544,8 @@ class ArticleViewerContractTest {
 
         val context = RuntimeEnvironment.getApplication()
         val cell = ArticleViewer.BlockParagraphCell(context, host, null)
-        val plain = TLRPC.TL_textPlain().apply { text = "paragraph pilot" }
-        cell.setBlock(TLRPC.TL_pageBlockParagraph().apply {
+        val plain = TL_iv.textPlain().apply { text = "paragraph pilot" }
+        cell.setBlock(TL_iv.pageBlockParagraph().apply {
             text = plain
             level = 0
         })
@@ -581,8 +582,8 @@ class ArticleViewerContractTest {
 
         val context = RuntimeEnvironment.getApplication()
         val cell = ArticleViewer.BlockHeaderCell(context, host, null)
-        cell.setBlock(TLRPC.TL_pageBlockHeader().apply {
-            text = TLRPC.TL_textPlain().apply { text = "header pilot" }
+        cell.setBlock(TL_iv.pageBlockHeader().apply {
+            text = TL_iv.textPlain().apply { text = "header pilot" }
         })
 
         cell.measure(
@@ -613,9 +614,9 @@ class ArticleViewerContractTest {
 
         val context = RuntimeEnvironment.getApplication()
         val cell = ArticleViewer.BlockPullquoteCell(context, host, null)
-        cell.setBlock(TLRPC.TL_pageBlockPullquote().apply {
-            text = TLRPC.TL_textPlain().apply { text = "quote body" }
-            caption = TLRPC.TL_textPlain().apply { text = "— source" }
+        cell.setBlock(TL_iv.pageBlockPullquote().apply {
+            text = TL_iv.textPlain().apply { text = "quote body" }
+            caption = TL_iv.textPlain().apply { text = "— source" }
         })
 
         cell.measure(
@@ -646,8 +647,8 @@ class ArticleViewerContractTest {
 
         val context = RuntimeEnvironment.getApplication()
         val cell = ArticleViewer.BlockDetailsCell(context, host, null)
-        cell.setBlock(TLRPC.TL_pageBlockDetails().apply {
-            title = TLRPC.TL_textPlain().apply { text = "details title" }
+        cell.setBlock(TL_iv.pageBlockDetails().apply {
+            title = TL_iv.textPlain().apply { text = "details title" }
             open = true
         })
 
@@ -798,8 +799,8 @@ class ArticleViewerContractTest {
         }
         ArticleViewer.createPaint(host, true)
 
-        val plain = TLRPC.TL_textPlain().apply { text = "bounds text" }
-        val block = TLRPC.TL_pageBlockParagraph()
+        val plain = TL_iv.textPlain().apply { text = "bounds text" }
+        val block = TL_iv.pageBlockParagraph()
         val drawing = ArticleViewer.createLayoutForText(
             host,
             null,

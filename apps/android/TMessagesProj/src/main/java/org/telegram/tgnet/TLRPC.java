@@ -578,316 +578,85 @@ public class TLRPC {
     public static class TL_messageMediaPaidMedia extends MessageMedia {
     }
 
-    public static class PageBlock extends TLObject {
-        public int level;
-        public boolean bottom;
-        /**
-         * A6 (partial): pin {@code quoteLevels} bitmask — bit i set => draw a vertical
-         * quote gutter at layer i ({@code padx + i*14} dp). Local producers currently leave
-         * this at 0; {@link ArticleViewer#drawQuoteLines} falls back to single-level
-         * {@link #level} drawing (pin legacy path).
-         */
-        public int quoteLevels;
-        public int mid;
-        public long groupId;
-        public int cachedWidth;
-        public int cachedHeight;
-        public PhotoSize thumb;
-        public TLObject thumbObject;
-        public RichText title;
-        public RichText text;
-        public RichText subtitle;
-        public TL_pageCaption caption;
-        public Photo photo;
-        public Document document;
-        public String url;
-        public String html;
-        public long poster_photo_id;
-        public String author;
-        public int date;
-        public int w;
-        public int h;
-        public long photo_id;
-        public long video_id;
-        public long audio_id;
-        public long channel_id;
-        public GeoPoint geo;
-        public int zoom;
-        public PageBlock block;
-        public ArrayList<PageBlock> blocks = new ArrayList<>();
-        public boolean first;
-    }
 
-    public static class TL_pageBlockUnsupported extends PageBlock {
-    }
 
-    public static class TL_pageBlockTitle extends PageBlock {
-    }
 
-    public static class TL_pageBlockSubtitle extends PageBlock {
-    }
 
-    public static class TL_pageBlockAuthorDate extends PageBlock {
-        public RichText author;
-        public int published_date;
-    }
 
-    public static class TL_pageBlockHeader extends PageBlock {
-    }
 
-    public static class TL_pageBlockSubheader extends PageBlock {
-    }
 
     /** Instant View HTML h1 (pin: TL_iv.pageBlockHeading1). A6. */
-    public static class TL_pageBlockHeading1 extends PageBlock {
-    }
 
     /** Instant View HTML h2 (pin: TL_iv.pageBlockHeading2). A6. */
-    public static class TL_pageBlockHeading2 extends PageBlock {
-    }
 
     /** Instant View HTML h3 (pin: TL_iv.pageBlockHeading3). A6. */
-    public static class TL_pageBlockHeading3 extends PageBlock {
-    }
 
     /** Instant View HTML h4 (pin: TL_iv.pageBlockHeading4). A6. */
-    public static class TL_pageBlockHeading4 extends PageBlock {
-    }
 
     /** Instant View HTML h5 (pin: TL_iv.pageBlockHeading5). A6. */
-    public static class TL_pageBlockHeading5 extends PageBlock {
-    }
 
     /** Instant View HTML h6 (pin: TL_iv.pageBlockHeading6). A6. */
-    public static class TL_pageBlockHeading6 extends PageBlock {
-    }
 
-    public static class TL_pageBlockKicker extends PageBlock {
-    }
 
-    public static class TL_pageBlockParagraph extends PageBlock {
-    }
 
-    public static class TL_pageBlockPreformatted extends PageBlock {
-        public String language;
-    }
 
-    public static class TL_pageBlockFooter extends PageBlock {
-    }
 
-    public static class TL_pageBlockDivider extends PageBlock {
-    }
 
-    public static class TL_pageBlockAnchor extends PageBlock {
-        public String name;
-    }
 
-    public static class TL_pageBlockBlockquote extends PageBlock {
-        public RichText caption;
-    }
 
     /**
      * Nested multi-block quote (pin: TL_iv.pageBlockBlockquoteBlocks).
      * Children live in {@link PageBlock#blocks}; {@link PageBlock#quoteLevels} is set while flattening.
      */
-    public static class TL_pageBlockBlockquoteBlocks extends PageBlock {
-        public RichText caption;
-    }
 
-    public static class TL_pageBlockPullquote extends PageBlock {
-        public RichText caption;
-    }
 
-    public static class TL_pageBlockCover extends PageBlock {
-        public PageBlock cover;
-    }
 
-    public static class TL_pageBlockEmbed extends PageBlock {
-        public boolean full_width;
-        public boolean allow_scrolling;
-    }
 
-    public static class TL_pageBlockEmbedPost extends PageBlock {
-        public String webpage_id;
-        public long author_photo_id;
-        public ArrayList<PageBlock> blocks = new ArrayList<>();
-    }
 
-    public static class TL_pageBlockCollage extends PageBlock {
-        public ArrayList<PageBlock> items = new ArrayList<>();
-    }
 
-    public static class TL_pageBlockSlideshow extends PageBlock {
-        public ArrayList<PageBlock> items = new ArrayList<>();
-    }
 
-    public static class TL_pageBlockChannel extends PageBlock {
-        public Chat channel;
-    }
 
-    public static class TL_pageBlockAudio extends PageBlock {
-    }
 
-    public static class TL_pageBlockMap extends PageBlock {
-    }
 
-    public static class TL_pageBlockDetails extends PageBlock {
-        public boolean open;
-        public ArrayList<PageBlock> blocks = new ArrayList<>();
-    }
 
-    public static class TL_pageBlockTable extends PageBlock {
-        public boolean bordered;
-        public boolean striped;
-        public ArrayList<TL_pageTableRow> rows = new ArrayList<>();
-    }
 
-    public static class TL_pageBlockRelatedArticles extends PageBlock {
-        public RichText title;
-        public ArrayList<TL_pageRelatedArticle> articles = new ArrayList<>();
-    }
 
-    public static class TL_pageBlockList extends PageBlock {
-        public ArrayList<PageListItem> items = new ArrayList<>();
-        public boolean ordered;
-    }
 
-    public static class TL_pageBlockOrderedList extends PageBlock {
-        public ArrayList<PageListOrderedItem> items = new ArrayList<>();
-    }
 
-    public static class TL_pageBlockPhoto extends PageBlock {
-    }
 
-    public static class TL_pageBlockVideo extends PageBlock {
-    }
 
-    public static class TL_pageCaption extends TLObject {
-        public RichText text;
-        public RichText credit;
-    }
 
-    public static class PageListItem extends TLObject {
-        public RichText text;
-        public ArrayList<PageBlock> blocks = new ArrayList<>();
-    }
 
-    public static class TL_pageListItemText extends PageListItem {
-    }
 
-    public static class TL_pageListItemBlocks extends PageListItem {
-    }
 
-    public static class PageListOrderedItem extends TLObject {
-        public String num;
-        public RichText text;
-        public ArrayList<PageBlock> blocks = new ArrayList<>();
-    }
 
-    public static class TL_pageListOrderedItemText extends PageListOrderedItem {
-    }
 
-    public static class TL_pageListOrderedItemBlocks extends PageListOrderedItem {
-    }
 
-    public static class TL_pageTableRow extends TLObject {
-        public ArrayList<TL_iv.pageTableCell> cells = new ArrayList<>();
-    }
 
-    public static class TL_pageTableCell extends TLObject {
-        public int flags;
-        public boolean header;
-        public boolean align_center;
-        public boolean align_right;
-        public boolean valign_middle;
-        public boolean valign_bottom;
-        public int colspan = 1;
-        public int rowspan = 1;
-        public RichText text;
-    }
 
-    public static class TL_pageRelatedArticle extends TLObject {
-        public String url;
-        public long webpage_id;
-        public long photo_id;
-        public String title;
-        public String description;
-        public Photo photo;
-        public String author;
-        public int published_date;
-    }
 
-    public static class RichText extends TLObject {
-        public String url;
-        public long webpage_id;
-        public String email;
-        public RichText text;
-        public ArrayList<RichText> texts = new ArrayList<>();
-        public RichText parentRichText;
-    }
 
-    public static class TL_textEmpty extends RichText {
-    }
 
-    public static class TL_textPlain extends RichText {
-        public String text;
-    }
 
-    public static class TL_textBold extends RichText {
-    }
 
-    public static class TL_textItalic extends RichText {
-    }
 
-    public static class TL_textUnderline extends RichText {
-    }
 
-    public static class TL_textStrike extends RichText {
-    }
 
-    public static class TL_textFixed extends RichText {
-    }
 
-    public static class TL_textUrl extends RichText {
-    }
 
-    public static class TL_textEmail extends RichText {
-    }
 
-    public static class TL_textConcat extends RichText {
-    }
 
-    public static class TL_textSubscript extends RichText {
-    }
 
-    public static class TL_textSuperscript extends RichText {
-    }
 
-    public static class TL_textMarked extends RichText {
-    }
 
     /**
      * Instant View / rich-text spoiler wrapper (pin: TL_iv.textSpoiler).
      * Content production for ArticleViewer A3: getText applies
      * {@code TextStyleSpan.FLAG_STYLE_SPOILER} on the nested text.
      */
-    public static class TL_textSpoiler extends RichText {
-    }
 
-    public static class TL_textPhone extends RichText {
-        public String phone;
-    }
 
-    public static class TL_textImage extends RichText {
-        public long photo_id;
-        public long document_id;
-        public int w;
-        public int h;
-    }
 
-    public static class TL_textAnchor extends RichText {
-        public String name;
-    }
 
     public static class TL_messageExtendedMediaPreview extends MessageExtendedMedia {
     }
@@ -910,7 +679,7 @@ public class TLRPC {
         public String author;
         public Photo photo;
         public Document document;
-        public Page cached_page;
+        public TL_iv.Page cached_page;
         public String embed_url;
         public String embed_type;
         public int embed_width;
@@ -935,24 +704,8 @@ public class TLRPC {
         public long id;
     }
 
-    public static class Page extends TLObject {
-        public int flags;
-        public String url;
-        public boolean part;
-        public boolean rtl;
-        public boolean web;
-        public ArrayList<PageBlock> blocks = new ArrayList<>();
-        public ArrayList<Photo> photos = new ArrayList<>();
-        public ArrayList<Document> documents = new ArrayList<>();
-        public ArrayList<Page> cached_pages = new ArrayList<>();
-        public int views;
-    }
 
-    public static class TL_page extends Page {
-    }
 
-    public static class TL_pagePart_layer82 extends TL_page {
-    }
 
     public static class TL_null extends TLObject {
         public static final int constructor = 0x56730bcc;

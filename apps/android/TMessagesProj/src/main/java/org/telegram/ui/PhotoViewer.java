@@ -81,6 +81,7 @@ import static org.telegram.messenger.AndroidUtilities.dp;
 import static org.telegram.messenger.AndroidUtilities.dpf2;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.tgnet.tl.TL_iv;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenu;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
@@ -229,7 +230,7 @@ public class PhotoViewer {
     private int keyboardSize;
     private GroupedPhotosListView groupedPhotosListView;
     private final ArrayList<ImageLocation> groupedPhotoLocations = new ArrayList<>();
-    private final ArrayList<TLRPC.PageBlock> groupedPageBlocks = new ArrayList<>();
+    private final ArrayList<TL_iv.PageBlock> groupedPageBlocks = new ArrayList<>();
     private final RectF centerImageRect = new RectF();
     private final RectF leftImageRect = new RectF();
     private final RectF rightImageRect = new RectF();
@@ -796,7 +797,7 @@ public class PhotoViewer {
             }
 
             @Override
-            public List<TLRPC.PageBlock> getPageBlockArr() {
+            public List<TL_iv.PageBlock> getPageBlockArr() {
                 return shouldUseGroupedPageBlocks() ? groupedPageBlocks : null;
             }
 
@@ -1171,7 +1172,7 @@ public class PhotoViewer {
         }
         int width = 0;
         int height = 0;
-        TLRPC.PageBlock block = adapter.get(index);
+        TL_iv.PageBlock block = adapter.get(index);
         if (block != null) {
             width = block.w > 0 ? block.w : block.cachedWidth;
             height = block.h > 0 ? block.h : block.cachedHeight;
@@ -1196,7 +1197,7 @@ public class PhotoViewer {
     }
 
     private String urlForPageBlock(PageBlocksAdapter adapter, int index) {
-        TLRPC.PageBlock block = adapter.get(index);
+        TL_iv.PageBlock block = adapter.get(index);
         if (block != null && !TextUtils.isEmpty(block.url)) {
             return block.url;
         }
@@ -1268,7 +1269,7 @@ public class PhotoViewer {
         public final ImageLocation thumbLocation;
         public final Object parentObject;
         public final String progressKey;
-        public final TLRPC.PageBlock pageBlock;
+        public final TL_iv.PageBlock pageBlock;
 
         public UrlPhotoItem(String url, String thumbUrl, int width, int height) {
             this(url, thumbUrl, width, height, null);
@@ -1286,11 +1287,11 @@ public class PhotoViewer {
             this(url, thumbUrl, width, height, caption, null, null, imageLocation, thumbLocation, parentObject, progressKey, null);
         }
 
-        public UrlPhotoItem(String url, String thumbUrl, int width, int height, CharSequence caption, ImageLocation imageLocation, ImageLocation thumbLocation, Object parentObject, String progressKey, TLRPC.PageBlock pageBlock) {
+        public UrlPhotoItem(String url, String thumbUrl, int width, int height, CharSequence caption, ImageLocation imageLocation, ImageLocation thumbLocation, Object parentObject, String progressKey, TL_iv.PageBlock pageBlock) {
             this(url, thumbUrl, width, height, caption, null, null, imageLocation, thumbLocation, parentObject, progressKey, pageBlock);
         }
 
-        public UrlPhotoItem(String url, String thumbUrl, int width, int height, CharSequence caption, CharSequence title, CharSequence subtitle, ImageLocation imageLocation, ImageLocation thumbLocation, Object parentObject, String progressKey, TLRPC.PageBlock pageBlock) {
+        public UrlPhotoItem(String url, String thumbUrl, int width, int height, CharSequence caption, CharSequence title, CharSequence subtitle, ImageLocation imageLocation, ImageLocation thumbLocation, Object parentObject, String progressKey, TL_iv.PageBlock pageBlock) {
             this.url = url;
             this.thumbUrl = thumbUrl;
             this.width = width;
@@ -1308,8 +1309,8 @@ public class PhotoViewer {
 
     public interface PageBlocksAdapter {
         int getItemsCount();
-        TLRPC.PageBlock get(int index);
-        List<TLRPC.PageBlock> getAll();
+        TL_iv.PageBlock get(int index);
+        List<TL_iv.PageBlock> getAll();
         boolean isVideo(int index);
         boolean isHardwarePlayer(int index);
         TLObject getMedia(int index);
@@ -1317,7 +1318,7 @@ public class PhotoViewer {
         String getFileName(int index);
         CharSequence getCaption(int index);
         TLRPC.PhotoSize getFileLocation(TLObject media, int[] size);
-        void updateSlideshowCell(TLRPC.PageBlock currentPageBlock);
+        void updateSlideshowCell(TL_iv.PageBlock currentPageBlock);
         Object getParentObject();
     }
 
