@@ -46,7 +46,9 @@ a product goal needs upstream code, never on every upstream release.
    stay upstream-shaped: keep method shape, signatures (return types,
    parameters, overload set), constants (`dp(10)`, `0.3f`, `>= 3000`,
    `clamp(150, 600)`, `< 1px` snap), imports/short type names, and branch
-   structure. The guard prints the test classes to run when you touch one.
+   structure. The guard prints the test classes to run when you touch one: the
+   file's entry in `scripts/vendor_guard.py` (`FORCED_EXACT_TESTS_BY_PATH`), or
+   the shared default trio while it has none.
 4. **Adding upstream files needs no bookkeeping.** Copy them (`scripts/auto-vendor-copy.sh`
    bulk-copies javac's missing classes) and commit: provenance is derived.
    Rewriting a file's `upstream` mapping or marking our own code is a one-line

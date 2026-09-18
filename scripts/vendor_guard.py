@@ -37,7 +37,74 @@ from vendorlib import (  # noqa: E402
     vendor_dir,
 )
 
-FORCED_EXACT_TESTS = [
+# Tests that pin one forced-exact file's hand-feel, keyed by the file's
+# index-local path and given as simple test-class names (resolved against the
+# test tree, so a rename surfaces as a warning instead of a silent skip). A file
+# with an entry runs exactly these; a file without one falls back to the shared
+# trio below — which is why promotion is only worth its commit friction
+# together with the entry.
+FORCED_EXACT_TESTS_BY_PATH: dict[str, list[str]] = {
+    "app/src/main/java/io/github/baba983/nativedo/ui/components/DiscourseUserCell.java": ["DiscourseUserCellScreenshotTest"],
+    "app/src/main/java/io/github/baba983/nativedo/ui/main/MainTabsActivity.java": ["MainTabsActivityGlassTest"],
+    "app/src/main/java/io/github/baba983/nativedo/ui/main/MainTabsLayout.java": ["MainTabsLayoutTest"],
+    "app/src/main/java/io/github/baba983/nativedo/ui/theme/ThemeSettingsFragment.java": ["ThemeSettingsFragmentTest"],
+    "app/src/main/java/io/github/baba983/nativedo/ui/theme/TopicThemePreviewFragment.kt": ["TopicThemePreviewScreenshotTest"],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicCell.java": ["TopicCellTitleTest", "TopicCellTypographyContractTest"],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicFloatingDateController.kt": ["TopicFloatingDateControllerTest"],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicMentionSuggestionsView.kt": ["TopicMentionSuggestionsTest"],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicPostScrimHostLayout.java": ["TopicPostScrimHostLayoutScreenshotTest", "TopicPostScrimHostLayoutTest"],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicSearchViewPager.kt": ["TopicSearchViewPagerScreenshotTest"],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicSwipeReplyRecyclerView.java": ["TopicSwipeReplyRecyclerViewScreenshotTest", "TopicSwipeReplyRecyclerViewTest"],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/CodeBlock.java": ["CodeBlockTest"],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/CollageBlock.java": ["CollageBlockTest"],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/DetailsBlock.java": ["DetailsBlockTest"],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/HeadingBlock.java": ["HeadingBlockTest"],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ImageBlock.java": ["ImageBlockTest"],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ListBlock.java": ["ListBlockTest"],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/OneboxBlock.java": ["OneboxBlockTest"],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/PollBlock.java": ["PollBlockTest"],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/QuoteBlock.java": ["QuoteBlockTest"],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/RuleBlock.java": ["RuleBlockTest"],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/SpoilerTextLayout.java": ["SpoilerTextLayoutTest"],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/TableBlock.java": ["TableBlockTest"],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicDateCell.java": ["TopicDateCellTest"],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicPostCell.java": ["TopicPostCellScreenshotTest", "TopicPostCellTest"],
+    "TMessagesProj/src/main/java/org/telegram/messenger/wallpaper/WallpaperGiftBitmapDrawable.java": ["WallpaperGiftBitmapDrawableContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java": ["ActionBarLayoutThemeAnimationContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarMenuSubItem.java": ["ActionBarMenuSubItemContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/ActionBar/BottomSheetTabsOverlay.java": ["BottomSheetTabsOverlaySheetContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/ActionBar/MessageDrawable.java": ["MessageDrawableGradientContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ThemeDescription.java": ["ThemeDescriptionContractTest", "ThemeDescriptionListClassesContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/Cells/TextCell.java": ["TextCellContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/Cells/TextCheckCell.java": ["TextCheckCellContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/Cells/TextDetailCell.java": ["TextDetailCellContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/Cells/TextInfoPrivacyCell.java": ["TextInfoPrivacyCellContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/Cells/TextSelectionHelper.java": ["TextSelectionHelperTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/Cells/TextSettingsCell.java": ["TextSettingsCellContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/Components/BackgroundGradientDrawable.java": ["BackgroundGradientDrawableContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/Components/BackupImageView.java": ["BackupImageViewContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/Components/Bulletin.java": ["BulletinContainerContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/Components/CheckBoxSquare.java": ["CheckBoxSquareContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/Components/CircularProgressDrawable.java": ["CircularProgressDrawableForcedExactTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/Components/EditTextEffects.java": ["EditTextEffectsContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/Components/FlickerLoadingView.java": ["FlickerLoadingViewHostContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/Components/FragmentFloatingButton.java": ["FragmentFloatingButtonContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/Components/LayoutHelper.java": ["LayoutHelperForcedExactTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/Components/LineProgressView.java": ["LineProgressViewContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/Components/LoadingDrawable.java": ["LoadingDrawableContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/Components/LoadingStickerDrawable.java": ["LoadingStickerDrawableContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/Components/MotionBackgroundDrawable.java": ["MotionBackgroundDrawableContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/Components/NestedSizeNotifierLayout.java": ["NestedSizeNotifierLayoutHostContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/Components/ShareAlert.java": ["ShareAlertThemeTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/Components/StickerEmptyView.java": ["StickerEmptyViewContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/Components/ThemePreviewDrawable.java": ["ThemePreviewDrawableContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/Components/chat/layouts/ChatActivitySideControlsButtonsLayout.java": ["ChatActivitySideControlsButtonsLayoutTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/Components/poll/buttons/PollInstantButtonDrawable.java": ["PollInstantButtonDrawableContractTest", "PollInstantButtonDrawableScreenshotTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/GradientClip.java": ["GradientClipContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/web/AddressBarList.java": ["AddressBarListAccessibilityTest"],
+}
+
+DEFAULT_FORCED_EXACT_TESTS = [
     "org.telegram.ui.Components.LayoutHelperForcedExactTest",
     "org.telegram.ui.Components.CircularProgressDrawableForcedExactTest",
     "org.telegram.ui.Components.ForcedExactControlsScreenshotTest",
@@ -120,6 +187,61 @@ def check_retired_terms(root: Path, guard: Guard) -> None:
                 )
 
 
+_TEST_SUFFIXES = (
+    "HostContractTest",
+    "ForcedExactTest",
+    "ContractTest",
+    "ScreenshotTest",
+    "Test",
+)
+
+
+def _test_classes(test_root: Path) -> dict[str, str]:
+    """Simple test-class name -> fully qualified name, derived from the tree."""
+    out: dict[str, str] = {}
+    if not test_root.is_dir():
+        return out
+    for path in test_root.rglob("*"):
+        if path.suffix in (".kt", ".java"):
+            out[path.stem] = ".".join(
+                path.relative_to(test_root).with_suffix("").parts
+            )
+    return out
+
+
+def _forced_exact_tests(
+    local: str, known: dict[str, str]
+) -> tuple[list[str], list[str]]:
+    """(fully qualified tests to run, mapped names that match no test class)."""
+    names = FORCED_EXACT_TESTS_BY_PATH.get(local)
+    if not names:
+        return list(DEFAULT_FORCED_EXACT_TESTS), []
+    tests: list[str] = []
+    unknown: list[str] = []
+    for name in names:
+        qualified = known.get(name)
+        if qualified:
+            tests.append(qualified)
+        else:
+            unknown.append(name)
+    return tests, unknown
+
+
+def _test_candidates(local: str, known: dict[str, str]) -> list[str]:
+    """Test classes whose name matches this file's class name."""
+    name = Path(local).stem
+    out: list[str] = []
+    for cls in known:
+        stem = cls
+        for suffix in _TEST_SUFFIXES:
+            if stem.endswith(suffix):
+                stem = stem[: -len(suffix)]
+                break
+        if stem and (name.startswith(stem) or stem.startswith(name)):
+            out.append(cls)
+    return sorted(out)
+
+
 def check_forced_exact(index: dict, root: Path, guard: Guard) -> None:
     sources = changed_with_head_source(root)
     local_root = index.get("local_root", "apps/android/")
@@ -154,6 +276,27 @@ def check_forced_exact(index: dict, root: Path, guard: Guard) -> None:
         hits.append(e)
     if not hits:
         return
+    known = _test_classes(root / "apps/android/app/src/test/java")
+    tests: list[str] = []
+    for e in hits:
+        mapped, unknown = _forced_exact_tests(e["local"], known)
+        for test in mapped:
+            if test not in tests:
+                tests.append(test)
+        for name in unknown:
+            guard.warn(
+                f"forced-exact mapping for {e['local']} names {name}, which no "
+                "test class matches — fix FORCED_EXACT_TESTS_BY_PATH in "
+                "scripts/vendor_guard.py"
+            )
+        if not FORCED_EXACT_TESTS_BY_PATH.get(e["local"]):
+            candidates = _test_candidates(e["local"], known)
+            if candidates:
+                guard.warn(
+                    f"no pinned test for {e['local']} yet — name-matching "
+                    f"candidates: {', '.join(candidates)}; add the right one to "
+                    "FORCED_EXACT_TESTS_BY_PATH in scripts/vendor_guard.py"
+                )
     guard.error(
         f"{len(hits)} forced-exact file(s) changed in the working tree. "
         "Keep gesture/measurement/drawing behavior upstream-shaped; verify with:"
@@ -164,7 +307,7 @@ def check_forced_exact(index: dict, root: Path, guard: Guard) -> None:
         )
     guard.error(
         "  run: ./apps/android/gradlew -p apps/android :app:testDebugUnitTest "
-        + " ".join(f"--tests '{t}'" for t in FORCED_EXACT_TESTS)
+        + " ".join(f"--tests '{t}'" for t in tests)
     )
 
 
