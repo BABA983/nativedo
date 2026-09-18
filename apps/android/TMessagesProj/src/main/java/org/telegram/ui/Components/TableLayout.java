@@ -21,7 +21,7 @@ import androidx.customview.widget.ExploreByTouchHelper;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.NotificationCenter;
-import org.telegram.tgnet.TLRPC;
+import org.telegram.tgnet.tl.TL_iv;
 import org.telegram.ui.ArticleViewer;
 import org.telegram.ui.Cells.TextSelectionHelper;
 
@@ -112,7 +112,7 @@ public class TableLayout extends View {
     public class Child {
         private LayoutParams layoutParams;
         public CellText textLayout;
-        private TLRPC.TL_pageTableCell cell;
+        private TL_iv.pageTableCell cell;
         private int index;
 
         public int textWidth;
@@ -400,7 +400,7 @@ public class TableLayout extends View {
     }
 
     public interface TableLayoutDelegate {
-        CellText createTextLayout(TLRPC.TL_pageTableCell cell, int maxWidth);
+        CellText createTextLayout(TL_iv.pageTableCell cell, int maxWidth);
         Paint getLinePaint();
         Paint getHalfLinePaint();
         Paint getHeaderPaint();
@@ -423,7 +423,7 @@ public class TableLayout extends View {
         invalidateStructure();
     }
 
-    public void addChild(TLRPC.TL_pageTableCell cell, int x, int y, int colspan) {
+    public void addChild(TL_iv.pageTableCell cell, int x, int y, int colspan) {
         if (colspan == 0) {
             colspan = 1;
         }

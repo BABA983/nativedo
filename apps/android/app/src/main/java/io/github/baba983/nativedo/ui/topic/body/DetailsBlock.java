@@ -30,6 +30,7 @@ import org.jsoup.Jsoup;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ImageReceiver;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.tgnet.tl.TL_iv;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.TextSelectionHelper;
 import org.telegram.ui.Components.AnimatedArrowDrawable;
@@ -784,8 +785,8 @@ final class DetailsBlock implements EmbeddedPostBodyBlock {
         return pageBlock;
     }
 
-    private static TLRPC.TL_pageTableCell tableCell(CookedPostBlock.TableCell cell, boolean header) {
-        TLRPC.TL_pageTableCell pageCell = new TLRPC.TL_pageTableCell();
+    private static TL_iv.pageTableCell tableCell(CookedPostBlock.TableCell cell, boolean header) {
+        TL_iv.pageTableCell pageCell = new TL_iv.pageTableCell();
         pageCell.header = header;
         pageCell.align_center = cell.getAlign() == CookedPostBlock.TableCellAlign.Center;
         pageCell.align_right = cell.getAlign() == CookedPostBlock.TableCellAlign.End;

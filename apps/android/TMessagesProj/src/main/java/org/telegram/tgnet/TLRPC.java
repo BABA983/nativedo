@@ -5,6 +5,7 @@ import android.graphics.Bitmap;
 import android.graphics.drawable.Drawable;
 
 import org.telegram.messenger.SvgHelper;
+import org.telegram.tgnet.tl.TL_iv;
 
 import java.util.ArrayList;
 
@@ -790,7 +791,7 @@ public class TLRPC {
     }
 
     public static class TL_pageTableRow extends TLObject {
-        public ArrayList<TL_pageTableCell> cells = new ArrayList<>();
+        public ArrayList<TL_iv.pageTableCell> cells = new ArrayList<>();
     }
 
     public static class TL_pageTableCell extends TLObject {

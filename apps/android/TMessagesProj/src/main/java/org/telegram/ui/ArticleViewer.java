@@ -148,6 +148,7 @@ import org.telegram.messenger.video.VideoPlayerHolderBase;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.tgnet.tl.TL_iv;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarLayout;
 import org.telegram.ui.ActionBar.ActionBarMenuSubItem;
@@ -6513,7 +6514,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 for (int a = 0, size = pageBlockTable.rows.size(); a < size; a++) {
                     TLRPC.TL_pageTableRow row = pageBlockTable.rows.get(a);
                     for (int b = 0, size2 = row.cells.size(); b < size2; b++) {
-                        TLRPC.TL_pageTableCell cell = row.cells.get(b);
+                        TL_iv.pageTableCell cell = row.cells.get(b);
                         setRichTextParents(null, cell.text);
                         addTextBlock(cell.text, pageBlockTable);
                     }
@@ -9437,7 +9438,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
         }
 
         @Override
-        public DrawingText createTextLayout(TLRPC.TL_pageTableCell cell, int maxWidth) {
+        public DrawingText createTextLayout(TL_iv.pageTableCell cell, int maxWidth) {
             if (cell == null) {
                 return null;
             }
@@ -9509,7 +9510,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
             if (!currentBlock.rows.isEmpty()) {
                 TLRPC.TL_pageTableRow row = currentBlock.rows.get(0);
                 for (int c = 0, size2 = row.cells.size(); c < size2; c++) {
-                    TLRPC.TL_pageTableCell cell = row.cells.get(c);
+                    TL_iv.pageTableCell cell = row.cells.get(c);
                     maxCols += (cell.colspan != 0 ? cell.colspan : 1);
                 }
             }
@@ -9518,7 +9519,7 @@ public class ArticleViewer extends IArticleViewer implements NotificationCenter.
                 TLRPC.TL_pageTableRow row = currentBlock.rows.get(r);
                 int cols = 0;
                 for (int c = 0, size2 = row.cells.size(); c < size2; c++) {
-                    TLRPC.TL_pageTableCell cell = row.cells.get(c);
+                    TL_iv.pageTableCell cell = row.cells.get(c);
                     int colspan = (cell.colspan != 0 ? cell.colspan : 1);
                     int rowspan = (cell.rowspan != 0 ? cell.rowspan : 1);
                     if (cell.text != null) {

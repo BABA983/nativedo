@@ -30,6 +30,7 @@ import java.util.Stack;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ImageReceiver;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.tgnet.tl.TL_iv;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.ArticleViewer;
 import org.telegram.ui.Cells.TextSelectionHelper;
@@ -616,7 +617,7 @@ final class TableBlock implements EmbeddedPostBodyBlock, TableLayout.TableLayout
     }
 
     @Override
-    public ArticleViewer.DrawingText createTextLayout(TLRPC.TL_pageTableCell cell, int maxWidth) {
+    public ArticleViewer.DrawingText createTextLayout(TL_iv.pageTableCell cell, int maxWidth) {
         if (cell == null) {
             return null;
         }
@@ -764,8 +765,8 @@ final class TableBlock implements EmbeddedPostBodyBlock, TableLayout.TableLayout
         tableLayout.setColumnCount(maxCols);
     }
 
-    private static TLRPC.TL_pageTableCell toPageTableCell(CookedPostBlock.TableCell source, boolean header) {
-        TLRPC.TL_pageTableCell cell = new TLRPC.TL_pageTableCell();
+    private static TL_iv.pageTableCell toPageTableCell(CookedPostBlock.TableCell source, boolean header) {
+        TL_iv.pageTableCell cell = new TL_iv.pageTableCell();
         TLRPC.TL_textPlain text = new TLRPC.TL_textPlain();
         text.text = source.getText();
         cell.text = text;
@@ -1157,7 +1158,7 @@ final class TableBlock implements EmbeddedPostBodyBlock, TableLayout.TableLayout
         return Layout.Alignment.ALIGN_NORMAL;
     }
 
-    private static Layout.Alignment alignment(TLRPC.TL_pageTableCell cell) {
+    private static Layout.Alignment alignment(TL_iv.pageTableCell cell) {
         if (cell.align_right) {
             return Layout.Alignment.ALIGN_OPPOSITE;
         }

@@ -42,6 +42,7 @@ import org.telegram.messenger.Timer;
 import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.tgnet.tl.TL_iv;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.LaunchActivity;
 
@@ -1038,7 +1039,7 @@ public class WebInstantView {
             String td_tag = td_json.optString("tag");
             if (td_tag == null || !("td".equals(td_tag) || "th".equals(td_tag))) continue;
 
-            TLRPC.TL_pageTableCell cell = new TLRPC.TL_pageTableCell();
+            TL_iv.pageTableCell cell = new TL_iv.pageTableCell();
             cell.header = "th".equals(td_tag);
             try {
                 cell.colspan = Integer.parseInt(td_json.optString("colspan"));
