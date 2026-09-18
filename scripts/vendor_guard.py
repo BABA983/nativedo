@@ -87,6 +87,7 @@ FORCED_EXACT_TESTS_BY_PATH: dict[str, list[str]] = {
     "TMessagesProj/src/main/java/org/telegram/ui/Components/CheckBoxSquare.java": ["CheckBoxSquareContractTest"],
     "TMessagesProj/src/main/java/org/telegram/ui/Components/CircularProgressDrawable.java": ["CircularProgressDrawableForcedExactTest"],
     "TMessagesProj/src/main/java/org/telegram/ui/Components/EditTextEffects.java": ["EditTextEffectsContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/Components/EditTextBoldCursor.java": ["EditTextEffectsContractTest", "AlertDialogScreenshotTest"],
     "TMessagesProj/src/main/java/org/telegram/ui/Components/FlickerLoadingView.java": ["FlickerLoadingViewHostContractTest"],
     "TMessagesProj/src/main/java/org/telegram/ui/Components/FragmentFloatingButton.java": ["FragmentFloatingButtonContractTest"],
     "TMessagesProj/src/main/java/org/telegram/ui/Components/LayoutHelper.java": ["LayoutHelperForcedExactTest"],

@@ -8230,13 +8230,9 @@ private class TopicReplyComposerPanel(
         setCursorWidth(1.5f)
         setCursorSize(AndroidUtilities.dp(24f))
         setHandlesColor(Theme.getColor(Theme.key_chat_TextSelectionCursor))
-        setAllowTextEntitiesIntersection(false)
         hint = context.getString(io.github.baba983.nativedo.R.string.topic_reply_composer_hint)
         setPadding(0, AndroidUtilities.dp(9f), 0, AndroidUtilities.dp(10f))
         background = null
-        setDelegate {
-            invalidateForce()
-        }
         addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
             override fun onViewAttachedToWindow(v: View) {
                 setWindowView(rootView)
