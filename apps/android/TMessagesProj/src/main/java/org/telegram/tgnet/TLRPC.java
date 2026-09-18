@@ -872,4 +872,36 @@ public class TLRPC {
 
         public ArrayList<TL_keyboard.KeyboardInlineButtonRow> rows = new ArrayList<>();
     }
+
+    public static class TL_messageEntityMention extends MessageEntity {
+        public static final int constructor = 0xfa04579d;
+    }
+
+    public static class TL_messageEntityHashtag extends MessageEntity {
+        public static final int constructor = 0x6f635b0d;
+    }
+
+    public static class TL_messageEntityCashtag extends MessageEntity {
+        public static final int constructor = 0x4c4e743f;
+    }
+
+    public static class PeerColor extends TLObject {
+        public int flags;
+        public int color;
+        public long background_emoji_id;
+        public long collectible_id;
+        public long gift_emoji_id;
+        public int accent_color;
+        public ArrayList<Integer> colors;
+        public int dark_accent_color;
+        public ArrayList<Integer> dark_colors;
+    }
+
+    public static class TL_peerColor extends PeerColor {
+        public static final int constructor = 0xb54b5acf;
+    }
+
+    public static class TL_peerColorCollectible extends PeerColor {
+        public static final int constructor = 0xb9c0639a;
+    }
 }

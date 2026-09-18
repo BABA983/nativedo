@@ -421,4 +421,40 @@ public final class TL_iv {
     public static class pageBlockMath extends PageBlock {
         public String source;
     }
+
+    public static class textMention extends RichText {
+        public static final int constructor = 0xcd24cf44;
+    }
+
+    public static class textHashtag extends RichText {
+        public static final int constructor = 0x519524ea;
+    }
+
+    public static class textCashtag extends RichText {
+        public static final int constructor = 0x7b9e1801;
+    }
+
+    public static class textBotCommand extends RichText {
+        public static final int constructor = 0x2ff29d3;
+    }
+
+    public static class textBankCard extends RichText {
+        public static final int constructor = 0xb956812d;
+    }
+
+    public static class textAutoUrl extends RichText {
+        public static final int constructor = 0xac6a83aa;
+    }
+
+    public static class textAutoPhone extends RichText {
+        public static final int constructor = 0x24c26789;
+    }
+
+    public static class textAutoEmail extends RichText {
+        public static final int constructor = 0xc556a45d;
+    }
+
+    public static class pageBlockThinking extends PageBlock {
+        public static final int constructor = 0x3c29a3e2;
+    }
 }

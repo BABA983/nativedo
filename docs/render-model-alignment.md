@@ -246,9 +246,26 @@ Sequence, if chat is scheduled:
    - `me.vkryl.android.util.ClickHelper` (227 lines, verbatim) - the tap helper
      `UnsupportedBlockDrawable` and the link spans use; `ViewUtils`/`BitwiseUtils` were
      already in the tree.
-   Left in S3: `UnsupportedBlockDrawable` (it needs `RichMessageLayout` to exist), the
-   host surface (`ChatMessageCellDelegate`, `TransitionParams`, the `MessageObject`
-   members it reads), and the two wire-outs.
+   - The model side of the renderer's closure also landed, as data holders: `TL_iv`'s
+     remaining text/page nodes (`textMention`, `textHashtag`, `textCashtag`,
+     `textBotCommand`, `textBankCard`, `textAutoUrl`, `textAutoPhone`, `textAutoEmail`,
+     `pageBlockThinking` - all field-less markers upstream) and `TLRPC`'s
+     `TL_messageEntity{Mention,Hashtag,Cashtag}` plus the `PeerColor` family
+     (`PeerColor`, `TL_peerColor`, `TL_peerColorCollectible`).
+   Left in S3, measured by re-probing `RichMessageLayout` + `RichTextStyle` +
+   `RichInlineButtonSpan` + `UnsupportedBlockDrawable` together (**201 -> 183 errors**;
+   178 of the 183 are inside `RichMessageLayout` itself). What the 183 name, by kind:
+   the host surface (`ChatMessageCell.TransitionParams` 10, `ChatMessageCellDelegate` 8,
+   `MessageObject` members: `checked`/`checkbox` 24, `IvButtonColors` 3+8, `holders`,
+   `spoiler`, `collapsed`, `visibleHeight`, `textY`, `sponsoredColor`, `color`, `flags`,
+   `from_id`, `namesOffset`, `childPosition`, `realId`, `isSpoilersRevealed`,
+   `getText`/`getTextX`/`getTextY`/`getSize`/`getRealId`/`getFromChatId`/`isFromUser`/
+   `isFromChannel`/`isPinnedTop`/`isTranslating`), the `ui/iv` HTML pair (`RichHtml` 1,
+   `ReplaceCopyTextSpannable` 4 - the paste path, wire-out candidate), four drawables the
+   button/unsupported rows reference (`mini_inline_{arrow,switch,profile,copy}_16`,
+   `large_unsupported`), two accessibility strings (`AccDescrExpanded`/`Collapsed`), and
+   the two documented wire-outs (`LinkManager`, `PremiumFeatureBottomSheet` +
+   `PremiumPreviewFragment`). None of it is a new product surface.
 4. **S4** - host it on a Discourse post (post blocks become a `TL_iv.RichMessage`)
    and compare goldens. This is the "topic body is a rich message" test.
 5. **S5** - the interactive paths (spoilers, selection, button rows), scheduled
