@@ -79,6 +79,32 @@ these eight were read in full now, and none is worth taking today:
 | `8f107e4` | `EditTextBoldCursor`: `setTransformHintToHeaderOnFocus`, and selection handles keep one colour filter plus per-instance mutated drawables | the cursor-blink override stays out (`forced_exact(animation)`, no product reason) |
 | `0084f59` | import-only cleanups: `HistoryFragment` (20 dead imports), `StaticLayoutEx` (4), `Blur3Utils` (a blank line) adopted verbatim; `Theme` (4) and `BookmarksFragment` (1) hand-cleaned | four files byte-exact; guard's "differ" count 231 → 228 |
 | `236ca60` | the last two mechanical pure-drift deltas: `DefaultItemAnimator`'s `protected` widening, `SerializedData`'s `InputStream` constructor | both byte-exact; 228 → 226 |
+| `ad73778` | `AnimatedArrowDrawable`'s additive custom-geometry constructor (`color, widthDp, heightDp, strokeWidthDp`) | byte-exact; the two-argument path our blocks use is unchanged, goldens confirm |
+
+## Blocked, and by what
+
+Adopting these wholesale was tried and fails at compile time, which is the
+difference between "not worth it" and "cannot yet":
+
+| File | Compile error | What has to land first |
+|---|---|---|
+| `ui/Components/BottomSheetWithRecyclerListView.java` | `cannot find symbol: EdgeToEdge` (in `Params`/`Params.Builder`) | `BottomSheet`'s `EdgeToEdge` enum and insets path — the parked edge-to-edge program |
+| `ui/ActionBar/AlertDialog.java` | `package org.telegram.ui.Stars does not exist` (`BalanceCloud`, `StarsIntroActivity`) | the Stars family (non-goal), or a hand-port that keeps our stripped imports |
+| `ui/ActionBar/BaseFragment.java` | `cannot find symbol: EdgeToEdgeSupportMode` (and the classes it drags) | the same edge-to-edge program |
+
+`AnimatedArrowDrawable` looked like this list at first reading (its delta is a new
+constructor) but compiles and is byte-exact now; only *using* the new geometry is a
+visual decision.
+
+## Revisit when the mirror is at the pin
+
+The owner's direction: once every mirrored file sits at 12.10.2, the family
+refactors become a later project — Discourse posts are rich text, so the
+rich-text composition/rendering families are the plausible ones (`rich_message`
+formatting, the composer/`EditTextBoldCursor` editing surface, message-cell text
+rendering as a reference). The bot-keyboard half of `TL_keyboard` stays a
+non-goal. Design is ours to make; this note only keeps the candidates from being
+re-derived.
 
 Read and left, for the record: `TextSelectionHelper`'s only remaining hunk is
 `hideActionsMenu()`, whose single upstream caller is `iv/RichEditorListView` (the IV
