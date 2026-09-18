@@ -182,6 +182,17 @@ else
   fi
 fi
 
+# The guard byte-compares declared resources against the pin. On a blob-filtered
+# checkout that needs the blob contents; without them it degrades to "N files
+# not compared", so warm them here (parallel; ~5s warm, ~30s cold).
+if [[ -d "$VENDOR_DIR/.git" || -f "$VENDOR_DIR/.git" ]]; then
+  if timeout --signal=TERM --kill-after=10s 120 "$REPO_ROOT/scripts/vendor-setup.sh" --prefetch >/dev/null 2>&1; then
+    log "Vendor blobs prefetched for the guard's resource byte comparison"
+  else
+    echo "WARNING: vendor blob prefetch failed; the guard will report some resources as not compared."
+  fi
+fi
+
 # --- Repo git hooks ----------------------------------------------------------
 # .githooks/pre-commit runs the vendor guard, so agent commits are checked even
 # though .git/hooks itself is never committed.

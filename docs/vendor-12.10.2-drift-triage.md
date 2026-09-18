@@ -52,6 +52,22 @@ from `:app`, 14 are ancestors of our ports, and 38 sit on the historical
 | `messenger/PhotoViewer.java` | +296/−302 | insets/media3/proxy touches on top of our port | our image viewer port |
 | `ui/Components/QuoteSpan.java` | +17/−76 | slims the span in the `iv/` direction | used by quote content; check before taking — it leans on the IV refactor we skipped |
 
+## Reviewed against the product, not taken
+
+Tier 1 is a "review when the next product change touches that surface" list;
+these eight were read in full now, and none is worth taking today:
+
+| File | Why not |
+|---|---|
+| `ui/Components/BottomSheetWithRecyclerListView.java` | it does have one consumer (`TopicDetailFragment`'s sheet subclass), but the delta is an internal `Params.Builder` refactor sitting on the edge-to-edge program the sheets are parked on; no behavior change for us |
+| `ui/Components/AnimatedArrowDrawable.java` | the new constructor is geometry parity for upstream's details arrow (12.66/6.16/1.66dp); ours draws a 2dp stroke into a 13dp box, so the difference is cosmetic |
+| `ui/Components/TableLayout.java` | the delta is IV-shaped: wide-table scaling (`setRenderWidth`), emoji-only cells, new padding defaults. Our tables scroll horizontally instead of scaling and never use `valign_bottom`, so only the padding change would be visible |
+| `ui/ActionBar/BottomSheet.java` | the delta is the edge-to-edge program (`EdgeToEdge` V1/V2 + window insets) plus APIs nothing calls yet (`skipDismissAnimation()`, and `ItemOptions.DimView` measuring — `:app` never uses `ItemOptions`) |
+| `ui/Components/EditTextBoldCursor.java` | makes the hint-to-header transform configurable and re-checks it; the default path is unchanged, so nothing is fixed for us |
+| `ui/Components/ReplyMessageLine.java` | the drawing rewrite calls the new `native Utilities.drawReplyLinePattern`; our `Utilities` is deliberately no-JNI, and we consume only `check()` for colours, which the delta leaves alone |
+| `MotionBackgroundDrawable` + `MotionBackgroundPaint` | a bitmap/AGSL gradient rewrite on the wallpaper path, which is already on the device-validation list |
+| `ui/Components/QuoteSpan.java` | slims the span toward the `iv/` refactor we skipped |
+
 ## Tier 2 — upstream moved, no product path: leave
 
 | Family | Examples | Why not |
