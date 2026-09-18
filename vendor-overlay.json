@@ -172,6 +172,7 @@
     "TMessagesProj/src/main/java/org/telegram/tgnet/TLRPC.java",
     "TMessagesProj/src/main/java/org/telegram/tgnet/tl/TL_account.java",
     "TMessagesProj/src/main/java/org/telegram/tgnet/tl/TL_iv.java",
+    "TMessagesProj/src/main/java/org/telegram/tgnet/tl/TL_keyboard.java",
     "TMessagesProj/src/main/java/org/telegram/tgnet/tl/TL_stories.java",
     "TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBar.java",
     "TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java",

@@ -6,6 +6,8 @@
  */
 package org.telegram.tgnet.tl;
 
+import android.graphics.Bitmap;
+
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 
@@ -334,5 +336,74 @@ public final class TL_iv {
     }
 
     public static class TL_pagePart_layer82 extends TL_page {
+    }
+    /**
+     * Rich messages are the pin's message-shaped page: a topic post and a chat
+     * message carry the same blocks (see docs/render-model-alignment.md). Data
+     * holder only, like the rest of this file.
+     */
+    public static class RichMessage extends TLObject {
+        public int flags;
+        public boolean rtl;
+        public boolean part;
+        public ArrayList<PageBlock> blocks = new ArrayList<>();
+        public ArrayList<TLRPC.Photo> photos = new ArrayList<>();
+        public ArrayList<TLRPC.Document> documents = new ArrayList<>();
+    }
+
+    public static class textButton extends RichText implements TL_keyboard.KeyboardButtonProto {
+        public int flags;
+        public TL_keyboard.InlineButtonType type;
+        public TL_keyboard.RichButtonStyle style;
+    }
+
+    public static class textCustomEmoji extends RichText {
+        public long document_id;
+        public String alt;
+    }
+
+    public static class textMath extends RichText {
+        public int w;
+        public int h;
+        public String source;
+        public int depth;
+        public Bitmap bitmap;
+        public boolean tried;
+    }
+
+    public static class textDate extends RichText {
+        public int flags;
+        public boolean relative;
+        public boolean short_time;
+        public boolean long_time;
+        public boolean short_date;
+        public boolean long_date;
+        public boolean day_of_week;
+        public int date;
+    }
+
+    public static class textDiff extends RichText {
+        public RichText text;
+        public RichText old_text;
+    }
+
+    public static class textMentionName extends RichText {
+        public long user_id;
+    }
+
+    public static class pageBlockButtonRow extends PageBlock {
+        public int flags;
+        public boolean align_left;
+        public boolean align_center;
+        public boolean align_right;
+        public ArrayList<TL_keyboard.PageButton> buttons = new ArrayList<>();
+    }
+
+    public static class pageBlockDocument extends PageBlock {
+        public long document_id;
+    }
+
+    public static class pageBlockMath extends PageBlock {
+        public String source;
     }
 }

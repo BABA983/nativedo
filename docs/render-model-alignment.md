@@ -201,9 +201,17 @@ ones can start wired out.
 
 Sequence, if chat is scheduled:
 
-1. **S1** - the missing `TL_iv` classes (`RichMessage`, `textCustomEmoji`,
-   `textMath`, `textDate`, `textMentionName`, `pageBlockDocument`,
-   `pageBlockMath`, `pageBlockButtonRow`). Mechanical copy, additive.
+1. **S1 - landed.** The missing model classes are in: `RichMessage`, `textButton`,
+   `textCustomEmoji`, `textMath`, `textDate`, `textDiff`, `textMentionName`,
+   `pageBlockButtonRow`, `pageBlockDocument`, `pageBlockMath` joined `TL_iv`
+   (data-holder style, like the rest of that `native` file), and the button row
+   brought a minimal `TL_keyboard` host surface (`ButtonTypeProto`,
+   `InlineButtonType`, `RichButtonStyle`, `PageButton`, the protocol as a marker
+   interface). Measured and rejected on the way: adopting the pin's whole
+   `TL_iv.java` (2,301 lines, 112 classes against our 69) verbatim - it needs the
+   TL wire layer this tree does not carry (`TLObject.TLdeserialize`,
+   `Vector`/`InputSerializedData`, `TLMethod`, `TLRPC.messages_Messages`,
+   `TLRPC.InputUser`), which is why the file is `native` in the first place.
 2. **S2** - the render-side leaf classes above, with the Telegram-only ones
    wired out (`LinkManager`, the premium sheets).
 3. **S3** - grow the stubs until `RichMessageLayout` compiles (measured: 337
