@@ -270,11 +270,22 @@ more symbols - `BlockRow` 55, `TableModel` 13, `RichInlineButtonSpan` 8,
 3, `MathSpan` 3 - i.e. it opens the editor half of the package. That is why it is a
 project with ordered slices rather than a wire-out:
 
-1. The **non-editor leaves**: `Latex` (landed), `RichTextStyle`, `TableModel`,
-   `BlockRow`, `MathSpan`, `RichInlineButtonSpan`, the cell (`RichTextCell`,
-   `RichBlockCell`, …) and chrome classes that do not reach into the editor list.
-   Gate: compiles, and `RichHtml`-free call sites in `RichMessageLayout` stop being
-   wire-outs as they clear.
+1. The **non-editor leaves** - slice 1 landed (plus `Latex`, above):
+   `RichBlockChrome`, `RichBlockInset`, `RichInsetCell`, `RichBlockCell`, `RichContainer`,
+   `BlockRow`, `MathSpan`, `MediaUploadState` - the shared base of the iv cell family
+   (`RichTextCell`, `RichMediaCell`, `RichTableCell`, `RichAudioCell`) and of `RichHtml`.
+   The only host addition they needed was `TLObject`'s `FLAG_0`..`FLAG_31` table (the pin
+   declares it there; `TableModel` alone uses 33 of them).
+   Deferred on purpose, with the reason measured:
+   `TableModel` (hard dep on `RichTextStyle.plainOf`/`toSpannable`/`fromSpannable`), and
+   `RichTextStyle` + `RichInlineButtonSpan` (`RichTextStyle` spans an
+   `org.telegram.ui.iv.RichInlineButtonSpan`, which calls `RichMessageLayout` - the three
+   land together with the renderer in S3's remainder, which is also where
+   `RichBlockSelection` waits: it implements the pin's `TextSelectionHelper.TextLayoutBlock`
+   (`Layout getLayout()` plus `getPrefix`/`getSelectionBounds` defaults), while ours is
+   the `reference`-pinned 12.6 shape (`StaticLayout getLayout()`, abstract `getPrefix`,
+   `getPrefixLayout`), and rule 8 says that file is not moved to the pin.
+   `RichCaptionHost` + `RichEditText` are the editor half and wait for slice 2.
 2. `RichHtml` + the editor cells it drags (`RichEditorListView`, `RichTextCell`,
    `MediaUploadState`), with the commands/toolbar after.
 3. Wire the editor into the composer as the upstream-shaped replacement for our
