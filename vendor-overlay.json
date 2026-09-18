@@ -1602,6 +1602,20 @@
       "upstream_dir": "TMessagesProj/src/main/res",
       "local_glob": "apps/android/TMessagesProj/src/main/res/drawable",
       "vendored_at": "9bcf3d2769c6d3f07105a992e5d9493e33ac3348"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "large_unsupported.xml",
+        "mini_inline_arrow_16.xml",
+        "mini_inline_copy_16.xml",
+        "mini_inline_profile_16.xml",
+        "mini_inline_switch_16.xml",
+        "send_plane_26.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/drawable",
+      "local_glob": "apps/android/TMessagesProj/src/main/res/drawable",
+      "vendored_at": "163356809fa4bd81e64969700753e0a15664a288"
     }
   ]
 }

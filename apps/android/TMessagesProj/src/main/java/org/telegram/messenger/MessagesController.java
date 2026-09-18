@@ -465,4 +465,12 @@ public final class MessagesController {
         return false;
     }
 
+    /**
+     * Pin gate for Telegram's rich-message editor. This product does not ship that editor and has
+     * no {@code richMessagePosting} server config, so the pin's premium/enabled switch is answered
+     * with "off" - which is also what keeps the premium sheet out of the renderer's call site.
+     */
+    public boolean richEditorAllowed() {
+        return false;
+    }
 }

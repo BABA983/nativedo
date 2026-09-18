@@ -98,6 +98,7 @@ import org.telegram.messenger.time.SunDate;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.SerializedData;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.tgnet.tl.TL_keyboard;
 import org.telegram.tgnet.Vector;
 import org.telegram.tgnet.tl.TL_account;
 import org.telegram.ui.Cells.BaseCell;
@@ -3460,6 +3461,101 @@ public class Theme {
     public static final int key_telegram_color_dialogsLogo = colorsCount++;
     public static final int key_telegram_color = colorsCount++;
     public static final int key_telegram_color_text = colorsCount++;
+
+    public static final int key_chat_msgIvButtonDefaultIn = colorsCount++;
+    public static final int key_chat_msgIvButtonDefaultInPressed = colorsCount++;
+    public static final int key_chat_msgIvButtonDefaultInText = colorsCount++;
+    public static final int key_chat_msgIvButtonDefaultOut = colorsCount++;
+    public static final int key_chat_msgIvButtonDefaultOutPressed = colorsCount++;
+    public static final int key_chat_msgIvButtonDefaultOutText = colorsCount++;
+    public static final int key_chat_msgIvButtonPrimaryIn = colorsCount++;
+    public static final int key_chat_msgIvButtonPrimaryInPressed = colorsCount++;
+    public static final int key_chat_msgIvButtonPrimaryInText = colorsCount++;
+    public static final int key_chat_msgIvButtonPrimaryOut = colorsCount++;
+    public static final int key_chat_msgIvButtonPrimaryOutPressed = colorsCount++;
+    public static final int key_chat_msgIvButtonPrimaryOutText = colorsCount++;
+    public static final int key_chat_msgIvButtonDangerIn = colorsCount++;
+    public static final int key_chat_msgIvButtonDangerInPressed = colorsCount++;
+    public static final int key_chat_msgIvButtonDangerInText = colorsCount++;
+    public static final int key_chat_msgIvButtonDangerOut = colorsCount++;
+    public static final int key_chat_msgIvButtonDangerOutPressed = colorsCount++;
+    public static final int key_chat_msgIvButtonDangerOutText = colorsCount++;
+    public static final int key_chat_msgIvButtonSuccessIn = colorsCount++;
+    public static final int key_chat_msgIvButtonSuccessInPressed = colorsCount++;
+    public static final int key_chat_msgIvButtonSuccessInText = colorsCount++;
+    public static final int key_chat_msgIvButtonSuccessOut = colorsCount++;
+    public static final int key_chat_msgIvButtonSuccessOutPressed = colorsCount++;
+    public static final int key_chat_msgIvButtonSuccessOutText = colorsCount++;
+    public static final int key_chat_msgIvButtonDefaultInlineIn = colorsCount++;
+    public static final int key_chat_msgIvButtonDefaultInlineInPressed = colorsCount++;
+    public static final int key_chat_msgIvButtonDefaultInlineInText = colorsCount++;
+    public static final int key_chat_msgIvButtonDefaultInlineOut = colorsCount++;
+    public static final int key_chat_msgIvButtonDefaultInlineOutPressed = colorsCount++;
+    public static final int key_chat_msgIvButtonDefaultInlineOutText = colorsCount++;
+
+    /**
+     * The pin's inline-button colour table ({@code Theme.IvButtonColors}), keys only: the colour
+     * values land with the chat theme setup, which this port does not carry yet.
+     */
+    public enum IvButtonColors {
+        DEFAULT(
+                Theme.key_chat_msgIvButtonDefaultIn, Theme.key_chat_msgIvButtonDefaultInPressed, Theme.key_chat_msgIvButtonDefaultInText,
+                Theme.key_chat_msgIvButtonDefaultOut, Theme.key_chat_msgIvButtonDefaultOutPressed, Theme.key_chat_msgIvButtonDefaultOutText
+        ),
+        PRIMARY(
+                Theme.key_chat_msgIvButtonPrimaryIn, Theme.key_chat_msgIvButtonPrimaryInPressed, Theme.key_chat_msgIvButtonPrimaryInText,
+                Theme.key_chat_msgIvButtonPrimaryOut, Theme.key_chat_msgIvButtonPrimaryOutPressed, Theme.key_chat_msgIvButtonPrimaryOutText
+        ),
+        DANGER(
+                Theme.key_chat_msgIvButtonDangerIn, Theme.key_chat_msgIvButtonDangerInPressed, Theme.key_chat_msgIvButtonDangerInText,
+                Theme.key_chat_msgIvButtonDangerOut, Theme.key_chat_msgIvButtonDangerOutPressed, Theme.key_chat_msgIvButtonDangerOutText
+        ),
+        SUCCESS(
+                Theme.key_chat_msgIvButtonSuccessIn, Theme.key_chat_msgIvButtonSuccessInPressed, Theme.key_chat_msgIvButtonSuccessInText,
+                Theme.key_chat_msgIvButtonSuccessOut, Theme.key_chat_msgIvButtonSuccessOutPressed, Theme.key_chat_msgIvButtonSuccessOutText
+        ),
+        DEFAULT_IN_TEXT(
+                Theme.key_chat_msgIvButtonDefaultInlineIn, Theme.key_chat_msgIvButtonDefaultInlineInPressed, Theme.key_chat_msgIvButtonDefaultInlineInText,
+                Theme.key_chat_msgIvButtonDefaultInlineOut, Theme.key_chat_msgIvButtonDefaultInlineOutPressed, Theme.key_chat_msgIvButtonDefaultInlineOutText
+        );
+
+        private final int backgroundIn, backgroundInPressed, textIn;
+        private final int backgroundOut, backgroundOutPressed, textOut;
+
+        IvButtonColors(int backgroundIn, int backgroundInPressed, int textIn, int backgroundOut, int backgroundOutPressed, int textOut) {
+            this.backgroundIn = backgroundIn;
+            this.backgroundInPressed = backgroundInPressed;
+            this.textIn = textIn;
+            this.backgroundOut = backgroundOut;
+            this.backgroundOutPressed = backgroundOutPressed;
+            this.textOut = textOut;
+        }
+
+        public int getBackgroundKey(boolean out) {
+            return out ? backgroundOut : backgroundIn;
+        }
+
+        public int getBackgroundPressedKey(boolean out) {
+            return out ? backgroundOutPressed : backgroundInPressed;
+        }
+
+        public int getTextKey(boolean out) {
+            return out ? textOut : textIn;
+        }
+
+        public static IvButtonColors of(TL_keyboard.RichButtonStyle style) {
+            if (style != null) {
+                if (style.bg_primary) {
+                    return PRIMARY;
+                } else if (style.bg_danger) {
+                    return DANGER;
+                } else if (style.bg_success) {
+                    return SUCCESS;
+                }
+            }
+            return DEFAULT;
+        }
+    }
 
     public static final String key_drawable_botInline = "drawableBotInline";
     public static final String key_drawable_botLink = "drawableBotLink";

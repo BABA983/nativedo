@@ -46,4 +46,59 @@ public class AnimatedEmojiSpan extends CharacterStyle {
 
     /** Pin signature: re-measures the emoji for the paint that will draw it. */
     public void applyFontMetrics(android.graphics.Paint.FontMetricsInt fontMetricsInt, int cacheType) {}
+
+    // --- pin surface the rich-message renderer reads. This class stays a host stub: it stores the
+    // span's identity/metrics but does not lay out or draw an emoji yet (the emoji family is a
+    // separate alignment project). ---
+
+    public long documentId;
+    private float scale;
+    private android.graphics.Paint.FontMetricsInt fontMetrics;
+    private boolean preserveFontMetrics;
+    private int minimumLineHeight;
+    public float size = org.telegram.messenger.AndroidUtilities.dp(20);
+    public int cacheType = -1;
+
+    public AnimatedEmojiSpan(long documentId, android.graphics.Paint.FontMetricsInt fontMetrics) {
+        this(documentId, 1.2f, fontMetrics);
+    }
+
+    public AnimatedEmojiSpan(long documentId, float scale, android.graphics.Paint.FontMetricsInt fontMetrics) {
+        this.documentId = documentId;
+        this.scale = scale;
+        this.fontMetrics = fontMetrics;
+        if (fontMetrics != null) {
+            size = Math.abs(fontMetrics.descent) + Math.abs(fontMetrics.ascent);
+            if (size == 0) {
+                size = org.telegram.messenger.AndroidUtilities.dp(20);
+            }
+        }
+    }
+
+    public long getDocumentId() {
+        return documentId;
+    }
+
+    public void setPreserveFontMetrics(boolean value) {
+        preserveFontMetrics = value;
+    }
+
+    public void setMinimumLineHeight(int value) {
+        minimumLineHeight = value;
+    }
+
+    /** Stub measure: the pin sizes the span from the emoji drawable, which this port does not load. */
+    public int getSize(android.graphics.Paint paint, CharSequence text, int start, int end, android.graphics.Paint.FontMetricsInt fm) {
+        if (fontMetrics != null && fm != null) {
+            fm.top = fontMetrics.top;
+            fm.ascent = fontMetrics.ascent;
+            fm.descent = fontMetrics.descent;
+            fm.bottom = fontMetrics.bottom;
+        }
+        return (int) Math.max(size, 1);
+    }
+
+    public static EmojiGroupedSpans update(int cacheType, View view, boolean invalidateParent, EmojiGroupedSpans drawables, Layout... layouts) {
+        return drawables == null ? new EmojiGroupedSpans() : drawables;
+    }
 }

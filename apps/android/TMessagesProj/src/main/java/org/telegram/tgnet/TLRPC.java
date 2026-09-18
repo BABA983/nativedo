@@ -204,7 +204,7 @@ public class TLRPC {
         public long id;
         public long dialog_id;
         public String message;
-        public Object rich_message;
+        public TL_iv.RichMessage rich_message;
         public MessageMedia media;
         public MessageAction action;
         public Peer from_id;
@@ -223,6 +223,9 @@ public class TLRPC {
         public Object suggested_post;
         public boolean scheduled;
         public int date;
+        public boolean post;
+        public int realId; //custom
+        public TL_iv.RichMessage translatedRichMessage; //custom
     }
 
     public static class TL_message extends Message {

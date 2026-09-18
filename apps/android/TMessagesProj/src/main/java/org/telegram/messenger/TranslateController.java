@@ -24,4 +24,9 @@ public class TranslateController {
     public boolean isFeatureAvailable() { return false; }
     public boolean isContextTranslateEnabled() { return false; }
     public boolean isDialogTranslatable(long dialogId) { return false; }
+
+    /** Pin signature; translation state is not carried in this port, so nothing is translating. */
+    public boolean isTranslating(MessageObject messageObject) {
+        return false;
+    }
 }

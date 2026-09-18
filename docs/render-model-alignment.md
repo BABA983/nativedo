@@ -252,20 +252,48 @@ Sequence, if chat is scheduled:
      `pageBlockThinking` - all field-less markers upstream) and `TLRPC`'s
      `TL_messageEntity{Mention,Hashtag,Cashtag}` plus the `PeerColor` family
      (`PeerColor`, `TL_peerColor`, `TL_peerColorCollectible`).
-   Left in S3, measured by re-probing `RichMessageLayout` + `RichTextStyle` +
-   `RichInlineButtonSpan` + `UnsupportedBlockDrawable` together (**201 -> 183 errors**;
-   178 of the 183 are inside `RichMessageLayout` itself). What the 183 name, by kind:
-   the host surface (`ChatMessageCell.TransitionParams` 10, `ChatMessageCellDelegate` 8,
-   `MessageObject` members: `checked`/`checkbox` 24, `IvButtonColors` 3+8, `holders`,
-   `spoiler`, `collapsed`, `visibleHeight`, `textY`, `sponsoredColor`, `color`, `flags`,
-   `from_id`, `namesOffset`, `childPosition`, `realId`, `isSpoilersRevealed`,
-   `getText`/`getTextX`/`getTextY`/`getSize`/`getRealId`/`getFromChatId`/`isFromUser`/
-   `isFromChannel`/`isPinnedTop`/`isTranslating`), the `ui/iv` HTML pair (`RichHtml` 1,
-   `ReplaceCopyTextSpannable` 4 - the paste path, wire-out candidate), four drawables the
-   button/unsupported rows reference (`mini_inline_{arrow,switch,profile,copy}_16`,
-   `large_unsupported`), two accessibility strings (`AccDescrExpanded`/`Collapsed`), and
-   the two documented wire-outs (`LinkManager`, `PremiumFeatureBottomSheet` +
-   `PremiumPreviewFragment`). None of it is a new product surface.
+   - The host surface for the renderer landed next (slice 3), and re-probing the four files
+     now reports **183 -> 105 errors** (all 105 inside `RichMessageLayout`; `RichTextStyle`,
+     `RichInlineButtonSpan` and `UnsupportedBlockDrawable` compile). What went in:
+     `MessageObject` gained the members it reads (`isSpoilersRevealed`, `sponsoredColor`,
+     `overrideLinkColor`/`overrideLinkPeerColor`, `translated`, `isSponsored`,
+     `shouldDrawWithoutBackground`, `getFromChatId`/`getPeerId`, `getRealId`,
+     `getDisplayRichMessage`, `isFromUser`/`isFromChannel`) plus the pin's
+     `makeStaticLayout` and `capitalizeLanguage` verbatim; `TLRPC.Message` gained the pin's
+     `post`/`realId`/`translatedRichMessage` and `rich_message` is now typed
+     `TL_iv.RichMessage`; `Theme` gained the pin's `IvButtonColors` enum and its 30
+     `key_chat_msgIvButton*` keys (appended after the last key, so no existing key moves);
+     `SharedConfig.isAutoplayVideo`/`isAutoplayGifs`, `MessagesController.richEditorAllowed`
+     (off: no rich-message-posting config in this product) and
+     `TranslateController.isTranslating` are in; `AnimatedEmojiSpan` grew the pin's
+     constructors/`cacheType`/`getDocumentId`/`setPreserveFontMetrics`/`setMinimumLineHeight`/
+     `getSize` surface while staying a documented stub; and the renderer's resources landed -
+     `mini_inline_{arrow,copy,profile,switch}_16`, `send_plane_26`, `large_unsupported`
+     (declared as their own overlay drawable group) plus the 20 strings they label.
+     Gate: guard OK, `verifyPaparazziDebug` green (732 tests, no golden moved).
+   Left in S3, 105 errors, three groups - and two of them are decisions, not typing:
+   the `ChatMessageCell` seam (`ChatMessageCellDelegate` 8, `TransitionParams` 10,
+   `namesOffset`/`visibleHeight`/`childPosition`/`textY`/`isPinnedTop`/`getTextX`/`getTextY`/
+     `drawButtonProgress`, `ChatActivity.PROGRESS_FULL_ARTICLE`,
+     `ChatMessageCellDelegate.isProgressLoading`), which grows on our stub cell;
+   the remaining model fields (`TL_iv`'s `checkbox`/`checked`, `collapsed`, `flags`,
+     `value`/`start`/`reversed`, `compact`, `spoiler`, `fwd_from.from_id`, `chat.color`/
+     `user.color`/`signature_profiles`, `DialogObject.getPeerDialogId`,
+     `EmojiGroupedSpans.holders`, an `openForView` and a `shouldEncryptPhotoOrVideo`
+     overload); and the wire-outs.
+   **The selection-interface decision (recorded).** The renderer's `Text`/`PaddedTextLayoutBlock`
+   implement `TextSelectionHelper.TextLayoutBlock`, and the pin's interface shape
+   (`Layout getLayout()` + `getPrefix`/`getText`/`getSelectionBounds` defaults) is not ours:
+   that file is `reference`-pinned to 12.6, `native`, and `forced_exact` ['drawing','gesture'],
+   so the guard refuses an edit there and rule 8 says it is not moved to the pin. The pin's
+   `TextSelectionHelper.ReplaceCopyTextSpannable` nested holder is refused for the same reason.
+   Both are therefore `// NativeDo:` wire-outs in `RichMessageLayout` (its selection/copy sites,
+   which is S5 territory anyway), and the rendered-text path keeps our 12.6 selection shape.
+   `ui/iv/RichHtml` (4 call sites, the selection-to-HTML export) becomes a documented `native`
+   stub instead of opening the 27k-line editor half; `LinkManager` and the premium sheets stay
+   wire-outs as planned. Emoji caveat for S4: `AnimatedEmojiSpan` is a stub in this tree, so the
+   renderer compiles against no-op emoji metrics - the emoji family (`AnimatedEmojiDrawable` and
+   the span's real layout/draw) is its own alignment project, not part of S3.
 4. **S4** - host it on a Discourse post (post blocks become a `TL_iv.RichMessage`)
    and compare goldens. This is the "topic body is a rich message" test.
 5. **S5** - the interactive paths (spoilers, selection, button rows), scheduled

@@ -233,4 +233,12 @@ public final class SharedConfig {
     public static boolean chatBlurEnabled() {
         return true;
     }
+
+    public static boolean isAutoplayVideo() {
+        return LiteMode.isEnabled(LiteMode.FLAG_AUTOPLAY_VIDEOS);
+    }
+
+    public static boolean isAutoplayGifs() {
+        return LiteMode.isEnabled(LiteMode.FLAG_AUTOPLAY_GIFS);
+    }
 }

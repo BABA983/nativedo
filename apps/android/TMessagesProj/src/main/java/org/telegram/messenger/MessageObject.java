@@ -10,6 +10,11 @@ package org.telegram.messenger;
 
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
+import android.os.Build;
+import android.text.Layout;
+import android.text.StaticLayout;
+import android.text.TextPaint;
+import org.telegram.tgnet.tl.TL_iv;
 
 /**
  * NativeDo-trimmed stub of org.telegram.messenger.MessageObject.
@@ -360,5 +365,202 @@ public class MessageObject {
             }
         }
         return false;
+    }
+
+    // --- pin members the rich-message renderer reads (host surface) ---
+
+    public boolean isSpoilersRevealed;
+    public TLRPC.PeerColor sponsoredColor;
+    public int overrideLinkColor = -1;
+    public TLRPC.TL_peerColorCollectible overrideLinkPeerColor;
+    public boolean translated;
+
+
+    public boolean shouldDrawWithoutBackground() {
+        return !isSponsored() && (type == TYPE_STICKER || type == TYPE_ANIMATED_STICKER || type == TYPE_ROUND_VIDEO);
+    }
+
+    public static long getFromChatId(TLRPC.Message message) {
+        return getPeerId(message.from_id);
+    }
+
+    public long getFromChatId() {
+        return getFromChatId(messageOwner);
+    }
+
+    public static long getPeerId(TLRPC.Peer peer) {
+        if (peer == null) {
+            return 0;
+        }
+        if (peer instanceof TLRPC.TL_peerChat) {
+            return -peer.chat_id;
+        } else if (peer instanceof TLRPC.TL_peerChannel) {
+            return -peer.channel_id;
+        } else if (peer instanceof TLRPC.TL_peerUser) {
+            return peer.user_id;
+        }
+        return 0;
+    }
+
+    public int getRealId() {
+        return messageOwner.realId != 0 ? messageOwner.realId : (int) messageOwner.id;
+    }
+
+    public TL_iv.RichMessage getDisplayRichMessage() {
+        if (messageOwner == null) {
+            return null;
+        }
+        if (translated && messageOwner.translatedRichMessage != null) {
+            return messageOwner.translatedRichMessage;
+        }
+        return messageOwner.rich_message;
+    }
+
+    public boolean isFromUser() {
+        return messageOwner.from_id instanceof TLRPC.TL_peerUser && !messageOwner.post;
+    }
+
+    /**
+     * Pin shape minus the mega-group check: the pin asks ChatObject about the resolved chat, and
+     * this port carries no chat state for a Discourse topic.
+     */
+    public boolean isFromChannel() {
+        return messageOwner.from_id instanceof TLRPC.TL_peerChannel;
+    }
+
+    public static StaticLayout makeStaticLayout(CharSequence text_, TextPaint paint, int width, float lineSpacingMult, float lineSpacingAdd, boolean dontIncludePad) {
+        return makeStaticLayout(text_, paint, width, lineSpacingMult, lineSpacingAdd, dontIncludePad, Layout.Alignment.ALIGN_NORMAL);
+    }
+
+    public static StaticLayout makeStaticLayout(CharSequence text_, TextPaint paint, int width, float lineSpacingMult, float lineSpacingAdd, boolean dontIncludePad, Layout.Alignment alignment) {
+        if (width <= 0) width = 1;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            final CharSequence text = /* Build.VERSION.SDK_INT >= Build.VERSION_CODES.P ?
+                PrecomputedText.create(text_, new PrecomputedText.Params.Builder(paint).build()) :*/ text_;
+
+            StaticLayout.Builder builder =
+                    StaticLayout.Builder.obtain(text, 0, text.length(), paint, width)
+                            .setLineSpacing(lineSpacingAdd, lineSpacingMult)
+                            .setBreakStrategy(StaticLayout.BREAK_STRATEGY_HIGH_QUALITY)
+                            .setHyphenationFrequency(StaticLayout.HYPHENATION_FREQUENCY_NONE)
+                            .setAlignment(alignment);
+            if (dontIncludePad) {
+                builder.setIncludePad(false);
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                builder.setUseLineSpacingFromFallbacks(false);
+            }
+            StaticLayout layout = builder.build();
+
+            boolean realWidthLarger = false;
+            for (int l = 0; l < layout.getLineCount(); ++l) {
+                if (layout.getLineRight(l) > width) {
+                    realWidthLarger = true;
+                    break;
+                }
+            }
+            if (realWidthLarger) {
+                builder = StaticLayout.Builder.obtain(text, 0, text.length(), paint, width)
+                                .setLineSpacing(lineSpacingAdd, lineSpacingMult)
+                                .setBreakStrategy(StaticLayout.BREAK_STRATEGY_SIMPLE)
+                                .setHyphenationFrequency(StaticLayout.HYPHENATION_FREQUENCY_NONE)
+                                .setAlignment(alignment);
+                if (dontIncludePad) {
+                    builder.setIncludePad(false);
+                }
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    builder.setUseLineSpacingFromFallbacks(false);
+                }
+                layout = builder.build();
+            }
+
+            return layout;
+        } else {
+            return new StaticLayout(text_, paint, width, alignment, lineSpacingMult, lineSpacingAdd, false);
+        }
+    }
+
+    private static String capitalizeFirst(String str) {
+        return str.substring(0, 1).toUpperCase() + str.substring(1).toLowerCase();
+    }
+
+    /** Pin holder for a laid-out text block; only the language label is read by the renderer. */
+    public static class TextLayoutBlock {
+        public static String capitalizeLanguage(String lng) {
+            if (lng == null) return null;
+            String llng = lng.toLowerCase().replaceAll("\\W|lang$", "");
+            switch (llng) {
+                case "js":
+                case "javascript":
+                    return "JavaScript";
+                case "ts":
+                case "typescript":
+                    return "TypeScript";
+                case "objc":
+                case "objectivec":
+                    return "Objective-C";
+                case "md":
+                case "markdown":
+                    return "Markdown";
+                case "rb":
+                case "ruby":
+                    return "Ruby";
+                case "py":
+                case "python":
+                    return "Python";
+                case "visual-basic":
+                    return "Visual Basic";
+                case "vbnet":
+                    return "VB.NET";
+                case "gdscript":
+                    return "GDScript";
+                case "bbcode":
+                    return "BBCode";
+                case "actionscript": return "ActionScript";
+                case "autohotkey": return "AutoHotKey";
+                case "cpp": return "C++";
+                case "csharp":
+                case "cs":
+                    return "C#";
+                case "fsharp":
+                    return "F#";
+                case "aspnet": return "ASP.NET";
+                case "http":
+                case "html":
+                case "css":
+                case "scss":
+                case "less":
+                case "asm":
+                case "nasm":
+                case "wasm":
+                case "xml":
+                case "yaml":
+                case "yml":
+                case "php":
+                case "json":
+                case "json5":
+                case "r":
+                case "ini":
+                case "glsl":
+                case "hlsl":
+                case "csv":
+                case "cobol":
+                case "jsx":
+                case "tsx":
+                case "tl":
+                case "sql":
+                case "qml":
+                case "sass":
+                case "matlab":
+                case "jsonp":
+                    return lng.toUpperCase();
+                case "tl-b":
+                case "tlb":
+                    return "TL-B";
+                case "func":
+                    return "FunC";
+            }
+            return capitalizeFirst(lng);
+        }
     }
 }
