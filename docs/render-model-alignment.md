@@ -125,6 +125,42 @@ eleven-member adapter, three public static helpers) and treats `RichMessageLayou
 as the destination to re-measure once the block model is `TL_iv` and the body
 renderer is being replaced for real.
 
+## What "extract into a mirror file" means, and why not just use ArticleViewer
+
+Extraction, concretely: the pin keeps every block renderer as a class inside
+`ArticleViewer.java` (31 `Block*Cell` classes). Extracting one means moving that
+class body into its own file under the same package in `:TMessagesProj`, copying
+it from the pin unchanged, and recording where it came from in
+`vendor-overlay.json`'s `derived_from` (the same mechanism the overlay already
+uses for files whose upstream source differs from their path). From then on the
+guard tracks it like any other mirror: `vendor-diff.sh` shows how far it drifted,
+and a re-sync is a per-file operation instead of an un-reviewable 16.5k-line
+file. Extraction is mechanical here because the cells are already decoupled:
+many are `public static`, the host is the top-level `IArticleViewer` interface
+(89 lines, 11 methods), the adapter arrives as a constructor parameter, and the
+whole cell range references `ArticleViewer.this` only five times - all of them
+tab/sheet bookkeeping (`tryRemoveTabWith`, `tab.articleViewer = …`,
+`activeSheets.add/remove`, one getter), never block drawing.
+
+Why not use `ArticleViewer` itself, per post? Because it is a fragment-level
+page viewer: its own window/chrome, one instance with its own state, tab
+registration against `WebInstantView`, and `WebpageAdapter` is a **non-static**
+inner class, so an adapter cannot exist without an `ArticleViewer` instance.
+Two honest alternatives exist and neither is "the body renderer":
+
+- Use it for the whole topic as an instant-view page (we have `TL_iv` and the
+  pin's `WebInstantView`). That is an article-reading mode, a different product
+  surface from the timeline of per-post cells with reactions, quotes and jumps.
+- Instantiate an `ArticleViewer` inside the mirror purely as a host for its own
+  cells. Possible, but it drags fragment and window state into a RecyclerView
+  item, and the cells' five tab references show exactly what would have to be
+  neutered.
+
+ArticleViewer keeps its real place in this product: the in-app browser and
+instant-view suite (`vendor-browser-iv-suite.md`), which already reuses it. The
+post body is a separate surface, and whether it becomes View-based is the
+decision R2 exists to inform.
+
 ## Staged plan
 
 **R1 — make `TL_iv` the post-body model (cheap, pixel-gated).**
