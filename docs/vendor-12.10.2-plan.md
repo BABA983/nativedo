@@ -117,6 +117,12 @@ Deliberately not taken, and why none of them is a product goal:
 A product goal that needs one of these features should port it into the `:app` surface
 that renders it, not re-copy an area.
 
+Slice 2 also brings `key_chat_{in,out}ArticleCodeScrollbar[Background]`, which nothing
+consumes yet: `CodeBlock` scrolls with the platform scrollbar. They stay because the
+`applyCalculatedArticleCodeColors` pass that derives them is verbatim upstream code, and
+dropping two keys would make that block diverge — which costs more on the next sync than
+two unused ints. If the code block ever gains a themed scrollbar, the colours are there.
+
 ## Decision: not following the Instant View refactor
 
 12.10.2 splits IV into `org/telegram/ui/iv/` (`Latex`, `RichMessageLayout`, `RichHtml`,
