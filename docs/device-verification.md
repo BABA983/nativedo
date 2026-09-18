@@ -79,9 +79,10 @@ height) as worth blaming on this first — it is a one-line revert.
 
 ## 7. The rich-message renderer (S3 complete, not yet hosted)
 
-`RichMessageLayout` and its mirror dependencies now compile (`docs/render-model-alignment.md`,
-S3), but nothing instantiates them yet, so no golden or test has ever drawn one: the first
-hosting is S4, and it needs a device pass.
+`RichMessageLayout` and its mirror dependencies compile (`docs/render-model-alignment.md`, S3),
+and S4 slice 1 draws a mapped Discourse post through `RichMessageLayout.PreviewView` in the
+snapshot suite - so the pipeline is verified in pixels, but **no app screen uses it yet**. What a
+device has to settle is the cell switch: the post body becoming this renderer behind a flag.
 
 What to check once S4 lands:
 

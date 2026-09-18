@@ -309,10 +309,45 @@ Sequence, if chat is scheduled:
    Emoji caveat for S4: `AnimatedEmojiSpan` is a stub in this tree, so the renderer compiles
    against no-op emoji metrics - the emoji family (`AnimatedEmojiDrawable` and the span's real
    layout/draw) is its own alignment project, not part of S3; the device queue has the S4 pass.
-4. **S4** - host it on a Discourse post (post blocks become a `TL_iv.RichMessage`)
-   and compare goldens. This is the "topic body is a rich message" test.
+4. **S4 - slice 1 landed: the pipeline is proven end to end.**
+   `core/ui/PostRichMessage.kt` maps cooked post blocks to `TL_iv.RichMessage`
+   (paragraph, headings 1-6, blockquote with the author as the caption and nested children as
+   the `...Blocks` variant, preformatted, plain/ordered lists with the inline-item shape the
+   parser's child blocks allow, details/toggle, tables with the header row marked, divider),
+   and `PostRichMessageScreenshotTest` draws that model through upstream's own host view
+   (`RichMessageLayout.PreviewView`) in both themes - the first pixels this renderer has ever
+   produced in this tree: bold/italic/link runs, heading, bullets, the quote bar with its
+   inline code run, the code block and the divider all come out as upstream draws them.
+   `PostRichMessageLayoutProbeTest` guards the other half of the claim: every mapped block
+   becomes exactly one laid-out block, so nothing is silently dropped between model and canvas.
+   Not mapped yet, deliberately: callouts, oneboxes, polls and images/collages (the
+   Discourse-only blocks plus media plumbing - Discourse URLs are not `TLRPC.Photo`s), so
+   `pageBlock(...)` returns null for them and a post of only those blocks renders empty rather
+   than wrong. Slice 2 is the cell switch (the body becomes this renderer behind a flag, with
+   the Discourse-only blocks still ours) and slice 3 is media.
 5. **S5** - the interactive paths (spoilers, selection, button rows), scheduled
-   with chat itself.
+   with chat itself. **Selection-helper alignment is part of S5, measured:**
+   adopting the pin's whole `TextSelectionHelper` (4,091 lines against our 2,347) was
+   probed by overwriting the file and compiling: **172 errors, 168 of them inside the
+   file**, all of them the engine reading the chat cell's layout state it lives inside -
+   `messageObject.textLayoutBlocks` (35 references), `textLayout` (54),
+   `getCaptionLayout`/`hasCaptionLayout`/`getFactCheckLayout`/`getDescriptionlayout`
+   (32), `transitionParams`, `getCurrentMessagesGroup`, `textXOffset`,
+   `charactersOffset`, `padTop`, `edit_date`, `quote`, `richLayout`. Those are products
+   of upstream's chat text layout (`MessageObject.generateLayout` and the
+   `ChatMessageCell` block lifecycle), which this tree never ported, so the file is
+   **not standalone infrastructure**: it is the chat cell's selection engine, with the
+   article/IV selection (`ArticleTextSelectionHelper`, what our `TopicPostCell` /
+   `TopicDetailFragment` / `TextSelectionHelperTest` use) as one subclass. The other
+   three holes are `LanguageDetector` and `RestrictedLanguagesSelectActivity`
+   (translation UI we do not ship) and `ui/iv/RichTextCell` (the editor half).
+   Cost on our side if adopted: 12+ `:app` body blocks implement our interface, and 13
+   call sites use our extra members (`getPrefixLayout`/`getPrefixX`/`getPrefixY`/
+   `getClipBounds`) that the pin's interface does not have, so they migrate too; and in
+   `RichMessageLayout` the two `TextLayoutBlock` wire-outs plus the math-span copy
+   wire-out would disappear. Decision (2026-09-18, owner): continue S4 first, align the
+   selection helper with S5 - that is when `RichMessageLayout`'s own text blocks are
+   the layout producer and the chat-shaped fields have something to be filled with.
 
 ### The `ui/iv` project (approved 2026-09-18, copy rather than wire out)
 

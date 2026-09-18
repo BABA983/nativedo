@@ -1,0 +1,163 @@
+package io.github.baba983.nativedo.core.ui
+
+import io.github.baba983.nativedo.core.html.CookedPostBlock
+import org.telegram.tgnet.tl.TL_iv
+import java.util.ArrayList
+
+/**
+ * Cooked post blocks as Telegram's rich-message model.
+ *
+ * This is the block-level half of the boundary [cookInlineHtml] draws for inline runs: the post's
+ * structure becomes `TL_iv` page blocks, so upstream's renderer (`RichMessageLayout`) can draw a
+ * topic body without ever seeing Discourse HTML. The inline leaves stay [CookedInline.richText].
+ *
+ * What maps, and what does not yet:
+ *
+ * - mapped: paragraph, headings 1-6, blockquote (with the author as the caption), preformatted,
+ *   lists (plain and ordered, with nested blocks), details/toggle, tables, divider.
+ * - not mapped (the Discourse-only half of `CookedPostBlock`): callouts, oneboxes, polls and
+ *   images/collages. Images need media plumbing (Discourse URLs are not `TLRPC.Photo`s), the rest
+ *   have no upstream counterpart and stay our own blocks. `pageBlock(...)` returns null for them,
+ *   so a post that is only those blocks produces an empty message rather than a wrong one.
+ */
+internal object PostRichMessageBuilder {
+
+    fun build(blocks: List<CookedPostBlock>): TL_iv.RichMessage = TL_iv.RichMessage().apply {
+        this.blocks = ArrayList(pageBlocks(blocks))
+    }
+
+    fun pageBlocks(blocks: List<CookedPostBlock>): List<TL_iv.PageBlock> =
+        blocks.mapNotNull { pageBlock(it) }
+
+    fun pageBlock(block: CookedPostBlock): TL_iv.PageBlock? = when (block) {
+        is CookedPostBlock.Text -> paragraph(block.html)
+        is CookedPostBlock.Heading -> heading(block.level, block.html)
+        is CookedPostBlock.Quote -> quote(block)
+        is CookedPostBlock.Code -> preformatted(block.code)
+        is CookedPostBlock.ListItems -> list(block)
+        is CookedPostBlock.Details -> details(block)
+        is CookedPostBlock.Table -> table(block)
+        CookedPostBlock.Rule -> TL_iv.pageBlockDivider()
+        is CookedPostBlock.Callout,
+        is CookedPostBlock.Onebox,
+        is CookedPostBlock.Image,
+        is CookedPostBlock.Collage,
+        is CookedPostBlock.Poll,
+        -> null
+    }
+
+    private fun paragraph(html: String): TL_iv.PageBlock = TL_iv.pageBlockParagraph().apply {
+        text = inline(html)
+    }
+
+    private fun heading(level: Int, html: String): TL_iv.PageBlock {
+        val block: TL_iv.PageBlock = when (level.coerceIn(1, 6)) {
+            1 -> TL_iv.pageBlockHeading1()
+            2 -> TL_iv.pageBlockHeading2()
+            3 -> TL_iv.pageBlockHeading3()
+            4 -> TL_iv.pageBlockHeading4()
+            5 -> TL_iv.pageBlockHeading5()
+            else -> TL_iv.pageBlockHeading6()
+        }
+        block.text = inline(html)
+        return block
+    }
+
+    /**
+     * A Discourse quote is a blockquote with an author line. Upstream's renderer reads the author
+     * from `caption`, so the title travels there; nested blocks (a quote can contain lists, code,
+     * another quote) make it the `...Blocks` variant.
+     */
+    private fun quote(block: CookedPostBlock.Quote): TL_iv.PageBlock {
+        val author = block.title
+        return if (block.children.isNotEmpty()) {
+            TL_iv.pageBlockBlockquoteBlocks().apply {
+                caption = author?.let(::plain)
+                blocks = ArrayList(pageBlocks(block.children))
+            }
+        } else {
+            TL_iv.pageBlockBlockquote().apply {
+                caption = author?.let(::plain)
+                text = inline(block.html)
+            }
+        }
+    }
+
+    private fun preformatted(code: String): TL_iv.PageBlock =
+        TL_iv.pageBlockPreformatted().apply {
+            // Discourse code blocks carry a class name, not a language Telegram would label.
+            language = null
+            text = plain(code)
+        }
+
+    private fun list(block: CookedPostBlock.ListItems): TL_iv.PageBlock =
+        if (block.ordered) {
+            TL_iv.pageBlockOrderedList().apply {
+                items = ArrayList(block.items.map(::orderedItem))
+            }
+        } else {
+            TL_iv.pageBlockList().apply {
+                items = ArrayList(block.items.map(::listItem))
+            }
+        }
+
+    private fun listItem(item: CookedPostBlock.ListItem): TL_iv.PageListItem {
+        val inlineHtml = item.inlineHtmlOrNull()
+        return if (inlineHtml != null) {
+            TL_iv.TL_pageListItemText().apply { text = inline(inlineHtml) }
+        } else {
+            TL_iv.TL_pageListItemBlocks().apply { blocks = ArrayList(pageBlocks(item.blocks)) }
+        }
+    }
+
+    private fun orderedItem(item: CookedPostBlock.ListItem): TL_iv.PageListOrderedItem {
+        val inlineHtml = item.inlineHtmlOrNull()
+        return if (inlineHtml != null) {
+            TL_iv.TL_pageListOrderedItemText().apply { text = inline(inlineHtml) }
+        } else {
+            TL_iv.TL_pageListOrderedItemBlocks().apply { blocks = ArrayList(pageBlocks(item.blocks)) }
+        }
+    }
+
+    /**
+     * The parser always fills a list item's child blocks (an `<li>` may hold anything), so an item
+     * whose only child block is a paragraph is a plain inline item and keeps upstream's inline form
+     * (`pageListItemText`), which is what the renderer draws as a list row.
+     */
+    private fun CookedPostBlock.ListItem.inlineHtmlOrNull(): String? =
+        if (blocks.isEmpty()) html else (blocks.singleOrNull() as? CookedPostBlock.Text)?.html
+
+    private fun details(block: CookedPostBlock.Details): TL_iv.PageBlock =
+        TL_iv.pageBlockDetails().apply {
+            open = block.open
+            title = (block.summaryHtml ?: block.summary)?.let(::inline)
+            blocks = ArrayList(pageBlocks(block.children))
+        }
+
+    private fun table(block: CookedPostBlock.Table): TL_iv.PageBlock =
+        TL_iv.pageBlockTable().apply {
+            bordered = true
+            rows = ArrayList(
+                listOf(block.headers to true, *block.rows.map { it to false }.toTypedArray())
+                    .map { (row, header) ->
+                        TL_iv.pageTableRow().apply {
+                            cells = ArrayList(row.map { cell -> tableCell(cell, header) })
+                        }
+                    }
+            )
+        }
+
+    private fun tableCell(cell: CookedPostBlock.TableCell, header: Boolean): TL_iv.pageTableCell =
+        TL_iv.pageTableCell().apply {
+            this.header = header
+            align_center = cell.align == CookedPostBlock.TableCellAlign.Center
+            align_right = cell.align == CookedPostBlock.TableCellAlign.End
+            colspan = cell.colspan
+            rowspan = cell.rowspan
+            text = inline(cell.html)
+        }
+
+    private fun inline(html: String): TL_iv.RichText = cookInlineHtml(html).richText
+
+    private fun plain(value: String): TL_iv.RichText = TL_iv.textPlain().apply { text = value }
+}
