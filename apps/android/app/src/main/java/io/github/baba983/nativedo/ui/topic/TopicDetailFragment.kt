@@ -8203,6 +8203,8 @@ private class TopicReplyComposerPanel(
         setPadding(AndroidUtilities.dp(52f), AndroidUtilities.dp(2f), AndroidUtilities.dp(52f), 0)
     }
     private var editTextReady = false
+    /** The markdown the composer last handed to the draft store; `bindDraft` only re-parses when the store changes elsewhere. */
+    private var lastReportedDraftMarkdown = initialDraft.raw
     private val editText = object : EditTextCaption(context, null) {
         override fun onSelectionChanged(selStart: Int, selEnd: Int) {
             super.onSelectionChanged(selStart, selEnd)
@@ -8212,7 +8214,8 @@ private class TopicReplyComposerPanel(
         }
 
         // The item set and its order mirror upstream's `ChatActivity.fillActionModeMenu`; the
-        // actions are markdown, because the payload Discourse gets is the draft text itself.
+        // actions are upstream's too (`EditTextCaption.performMenuAction` applies style runs),
+        // and TopicReplyComposerMarkdown serializes those runs on the way out.
         override fun extendActionMode(actionMode: ActionMode?, menu: Menu) {
             if (selectionStart < 0 || selectionEnd <= selectionStart) return
             if (menu.findItem(TelegramR.id.menu_bold) != null) return
@@ -8254,41 +8257,6 @@ private class TopicReplyComposerPanel(
             menu.add(TelegramR.id.menu_groupbolditalic, TelegramR.id.menu_regular, order++, LocaleController.getString(TelegramR.string.Regular))
         }
 
-        override fun performMenuAction(itemId: Int): Boolean {
-            val editable = text ?: return false
-            val start = minOf(selectionStart, selectionEnd).coerceAtLeast(0)
-            val end = maxOf(selectionStart, selectionEnd).coerceAtLeast(0)
-            if (itemId == TelegramR.id.menu_link) {
-                showLinkDialog(editable, start, end)
-                return true
-            }
-            val selection = TopicReplyComposerMarkdown.apply(editable, itemId, start, end)
-                ?: return super.performMenuAction(itemId)
-            applySelection(selection)
-            return true
-        }
-
-        private fun showLinkDialog(editable: Editable, start: Int, end: Int) {
-            val selected = if (end > start) editable.subSequence(start, end).toString() else ""
-            val initial = selected.takeIf { it.startsWith("http://") || it.startsWith("https://") }.orEmpty()
-            showInputDialog(
-                LocaleController.getString(TelegramR.string.CreateLink),
-                LocaleController.getString(TelegramR.string.URL),
-                initial,
-                true,
-            ) { value ->
-                val url = value.trim()
-                if (url.isNotEmpty()) {
-                    applySelection(TopicReplyComposerMarkdown.link(editable, start, end, url))
-                }
-            }
-        }
-
-        private fun applySelection(selection: IntRange) {
-            val length = text?.length ?: 0
-            setSelection(selection.first.coerceIn(0, length), (selection.last + 1).coerceIn(0, length))
-        }
-
         private fun styleTitle(stringRes: Int, span: Any): CharSequence {
             val title = SpannableStringBuilder(LocaleController.getString(stringRes))
             title.setSpan(span, 0, title.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
@@ -8301,13 +8269,16 @@ private class TopicReplyComposerPanel(
             return TextStyleSpan(run)
         }
     }.apply {
+        // Span-only edits (bold, a link, Regular) leave the text untouched, so no TextWatcher
+        // runs for them; the delegate is where `EditTextCaption` reports those.
+        setDelegate { reportDraftText(text) }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             setFallbackLineSpacing(false)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
             setLocalePreferredLineHeightForMinimumUsed(false)
         }
-        setText(initialDraft.raw)
+        setText(TopicReplyComposerMarkdown.parse(initialDraft.raw))
         setSelection(text.length)
         setSingleLine(false)
         maxLines = 6
@@ -8615,7 +8586,7 @@ private class TopicReplyComposerPanel(
                     setError(null)
                 }
                 if (!bindingDraft) {
-                    onTextChanged(s?.toString().orEmpty())
+                    reportDraftText(s ?: return)
                 }
                 dispatchMentionToken()
                 updateSendButtonState()
@@ -8704,15 +8675,26 @@ private class TopicReplyComposerPanel(
         }
     }
 
+    /** Hands the composer's markdown to the draft store; the store is the payload, so this is what a reply carries. */
+    private fun reportDraftText(editable: Editable) {
+        val markdown = TopicReplyComposerMarkdown.serialize(editable)
+        if (markdown == lastReportedDraftMarkdown) {
+            return
+        }
+        lastReportedDraftMarkdown = markdown
+        onTextChanged(markdown)
+    }
+
     fun bindDraft(draft: TopicReplyDraft, replyToPost: Post?) {
         val hadReplyTarget = activeReplyToPostNumber != null && replyHeader.visibility == View.VISIBLE
         activeReplyToPostNumber = draft.replyToPostNumber
-        val currentText = editText.text?.toString().orEmpty()
-        if (currentText != draft.raw) {
+        if (draft.raw != lastReportedDraftMarkdown) {
             bindingDraft = true
-            editText.setText(draft.raw)
-            editText.setSelection(draft.raw.length)
+            val styled = TopicReplyComposerMarkdown.parse(draft.raw)
+            editText.setText(styled)
+            editText.setSelection(styled.length)
             bindingDraft = false
+            lastReportedDraftMarkdown = draft.raw
         }
         if (draft.replyToPostNumber != null) {
             val title = replyHeaderTitle(context, replyToPost, draft.replyToPostNumber)

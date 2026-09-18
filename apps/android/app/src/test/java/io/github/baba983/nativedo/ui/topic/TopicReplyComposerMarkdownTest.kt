@@ -2,170 +2,227 @@ package io.github.baba983.nativedo.ui.topic
 
 import android.text.Editable
 import android.text.SpannableStringBuilder
+import android.text.Spanned
 import com.google.common.truth.Truth.assertThat
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.telegram.messenger.R
+import org.robolectric.RuntimeEnvironment
+import org.telegram.messenger.AndroidUtilities
+import org.telegram.messenger.ApplicationLoader
+import org.telegram.messenger.CodeHighlighting
+import org.telegram.ui.Components.QuoteSpan
+import org.telegram.ui.Components.TextStyleSpan
+import org.telegram.ui.Components.URLSpanReplacement
 
 @RunWith(RobolectricTestRunner::class)
 class TopicReplyComposerMarkdownTest {
 
+    @Before
+    fun setUp() {
+        ApplicationLoader.init(RuntimeEnvironment.getApplication())
+        AndroidUtilities.init(RuntimeEnvironment.getApplication())
+    }
+
     private fun editable(text: String) = SpannableStringBuilder(text)
 
-    private fun toggle(style: (Editable, Int, Int) -> IntRange, marker: String) {
-        val text = editable("x")
-        val selection = style(text, 0, 1)
-        assertThat(text.toString()).isEqualTo("${marker}x$marker")
-        assertThat(selection).isEqualTo(marker.length until (marker.length + 1))
+    private fun style(editable: Editable, start: Int, end: Int, flag: Int) {
+        val run = TextStyleSpan.TextStyleRun()
+        run.flags = flag
+        editable.setSpan(TextStyleSpan(run), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    }
 
-        val unquoted = style(text, selection.first, selection.last + 1)
-        assertThat(text.toString()).isEqualTo("x")
-        assertThat(unquoted).isEqualTo(0 until 1)
+    private fun quote(editable: Editable, start: Int, end: Int) {
+        val styleSpan = QuoteSpan.QuoteStyleSpan()
+        val quoteSpan = QuoteSpan(true, false, styleSpan)
+        editable.setSpan(quoteSpan, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        editable.setSpan(styleSpan, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    }
+
+    /** The flags every character carries, the way the serializer reads them. */
+    private fun flagsOf(text: CharSequence): IntArray {
+        val flags = IntArray(text.length)
+        if (text is Spanned) {
+            for (span in text.getSpans(0, text.length, TextStyleSpan::class.java)) {
+                val spanFlags = span.textStyleRun?.flags ?: 0
+                for (i in text.getSpanStart(span).coerceAtLeast(0) until text.getSpanEnd(span).coerceAtMost(text.length)) {
+                    flags[i] = flags[i] or spanFlags
+                }
+            }
+        }
+        return flags
+    }
+
+    private fun serialize(text: CharSequence) = TopicReplyComposerMarkdown.serialize(
+        if (text is Editable) text else SpannableStringBuilder(text),
+    )
+
+    @Test
+    fun serializeLeavesUnstyledTextAlone() {
+        assertThat(serialize(editable("plain text"))).isEqualTo("plain text")
     }
 
     @Test
-    fun boldTogglesWrapAndUnwrap() {
-        toggle(TopicReplyComposerMarkdown::bold, "**")
-    }
-
-    @Test
-    fun italicTogglesWrapAndUnwrap() {
-        toggle(TopicReplyComposerMarkdown::italic, "_")
-    }
-
-    @Test
-    fun monoTogglesWrapAndUnwrap() {
-        toggle(TopicReplyComposerMarkdown::mono, "`")
-    }
-
-    @Test
-    fun strikeTogglesWrapAndUnwrap() {
-        toggle(TopicReplyComposerMarkdown::strike, "~~")
-    }
-
-    @Test
-    fun underlineTogglesWrapAndUnwrapWithBbcodePair() {
-        val text = editable("x")
-        assertThat(TopicReplyComposerMarkdown.underline(text, 0, 1)).isEqualTo(3 until 4)
-        assertThat(text.toString()).isEqualTo("[u]x[/u]")
-
-        val unwrapped = TopicReplyComposerMarkdown.underline(text, 3, 4)
-        assertThat(text.toString()).isEqualTo("x")
-        assertThat(unwrapped).isEqualTo(0 until 1)
-    }
-
-    @Test
-    fun spoilerTogglesWrapAndUnwrapWithDiscoursePair() {
-        val text = editable("secret")
-        assertThat(TopicReplyComposerMarkdown.spoiler(text, 0, 6)).isEqualTo(9 until 15)
-        assertThat(text.toString()).isEqualTo("[spoiler]secret[/spoiler]")
-
-        val unwrapped = TopicReplyComposerMarkdown.spoiler(text, 9, 15)
-        assertThat(text.toString()).isEqualTo("secret")
-        assertThat(unwrapped).isEqualTo(0 until 6)
-    }
-
-    @Test
-    fun styleAtCaretInsertsThePairAndKeepsTheCaretInside() {
-        val text = editable("ab")
-        val selection = TopicReplyComposerMarkdown.bold(text, 1, 1)
-        assertThat(text.toString()).isEqualTo("a****b")
-        assertThat(selection.first).isEqualTo(3)
-        assertThat(selection.last + 1).isEqualTo(3)
-    }
-
-    @Test
-    fun quotePrefixesEverySelectedLineAndTogglesBack() {
-        val text = editable("one\ntwo")
-        val quoted = TopicReplyComposerMarkdown.quote(text, 0, 7)
-        assertThat(text.toString()).isEqualTo("> one\n> two")
-        assertThat(quoted).isEqualTo(0 until 11)
-
-        val unquoted = TopicReplyComposerMarkdown.quote(text, quoted.first, quoted.last + 1)
-        assertThat(text.toString()).isEqualTo("one\ntwo")
-        assertThat(unquoted).isEqualTo(0 until 7)
-    }
-
-    @Test
-    fun quoteTouchesOnlyTheLinesTheSelectionReaches() {
-        val text = editable("one\ntwo\nthree")
-        TopicReplyComposerMarkdown.quote(text, 5, 6)
-        assertThat(text.toString()).isEqualTo("one\n> two\nthree")
-    }
-
-    @Test
-    fun linkWrapsTheSelectionIntoMarkdown() {
-        val text = editable("see docs")
-        val selection = TopicReplyComposerMarkdown.link(text, 4, 8, "https://linux.do")
-        val expected = "see [docs](https://linux.do)"
-        assertThat(text.toString()).isEqualTo(expected)
-        assertThat(selection).isEqualTo(4 until expected.length)
-    }
-
-    @Test
-    fun linkWithoutSelectionLinksTheUrl() {
-        val text = editable("")
-        TopicReplyComposerMarkdown.link(text, 0, 0, "https://linux.do")
-        assertThat(text.toString()).isEqualTo("[https://linux.do](https://linux.do)")
-    }
-
-    @Test
-    fun clearStripsInlineMarkersInsideTheSelection() {
-        val text = editable("**a** and [spoiler]b[/spoiler]")
-        val selection = TopicReplyComposerMarkdown.clear(text, 0, text.length)
-        assertThat(text.toString()).isEqualTo("a and b")
-        assertThat(selection).isEqualTo(0 until 7)
-    }
-
-    @Test
-    fun clearAlsoUnquotesLines() {
-        val text = editable("> one\n> two")
-        TopicReplyComposerMarkdown.clear(text, 0, text.length)
-        assertThat(text.toString()).isEqualTo("one\ntwo")
-    }
-
-    @Test
-    fun toolbarIdsMapToTheirMarkdownActions() {
-        val expected = listOf(
-            R.id.menu_bold to "**x**",
-            R.id.menu_italic to "_x_",
-            R.id.menu_mono to "`x`",
-            R.id.menu_strike to "~~x~~",
-            R.id.menu_underline to "[u]x[/u]",
-            R.id.menu_spoiler to "[spoiler]x[/spoiler]",
+    fun serializeWrapsEverySupportedStyleRun() {
+        val cases = listOf(
+            TextStyleSpan.FLAG_STYLE_BOLD to "**x**",
+            TextStyleSpan.FLAG_STYLE_ITALIC to "_x_",
+            TextStyleSpan.FLAG_STYLE_STRIKE to "~~x~~",
+            TextStyleSpan.FLAG_STYLE_MONO to "`x`",
+            TextStyleSpan.FLAG_STYLE_UNDERLINE to "[u]x[/u]",
+            TextStyleSpan.FLAG_STYLE_SPOILER to "[spoiler]x[/spoiler]",
         )
-        for ((itemId, expectedText) in expected) {
+        for ((flag, expected) in cases) {
             val text = editable("x")
-            assertThat(TopicReplyComposerMarkdown.apply(text, itemId, 0, 1)).isNotNull()
-            assertThat(text.toString()).isEqualTo(expectedText)
+            style(text, 0, 1, flag)
+            assertThat(serialize(text)).isEqualTo(expected)
         }
     }
 
     @Test
-    fun quoteAndRegularIdsRouteToTheirActions() {
-        val text = editable("one")
-        assertThat(TopicReplyComposerMarkdown.apply(text, R.id.menu_quote, 0, 3)).isNotNull()
-        assertThat(text.toString()).isEqualTo("> one")
-
-        val styled = editable("**one**")
-        assertThat(TopicReplyComposerMarkdown.apply(styled, R.id.menu_regular, 0, styled.length)).isNotNull()
-        assertThat(styled.toString()).isEqualTo("one")
-    }
-
-    @Test
-    fun unknownMenuIdsStayWithTheBaseClass() {
+    fun serializeDropsStylesTheWireCannotCarry() {
         val text = editable("x")
-        assertThat(TopicReplyComposerMarkdown.apply(text, android.R.id.copy, 0, 1)).isNull()
-        assertThat(text.toString()).isEqualTo("x")
+        style(text, 0, 1, TextStyleSpan.FLAG_STYLE_ACCENT or TextStyleSpan.FLAG_STYLE_MARKED)
+        assertThat(serialize(text)).isEqualTo("x")
     }
 
     @Test
-    fun clearAtCaretKeepsTheText() {
-        val text = editable("**a**")
-        val selection = TopicReplyComposerMarkdown.clear(text, 3, 3)
-        assertThat(text.toString()).isEqualTo("**a**")
-        assertThat(selection.first).isEqualTo(3)
-        assertThat(selection.last).isEqualTo(2)
+    fun serializeNestsAnInnerRunInsideTheOuterOne() {
+        val text = editable("a b c")
+        style(text, 0, 5, TextStyleSpan.FLAG_STYLE_BOLD)
+        style(text, 2, 3, TextStyleSpan.FLAG_STYLE_ITALIC)
+        assertThat(serialize(text)).isEqualTo("**a _b_ c**")
+    }
+
+    @Test
+    fun serializeReopensTheOuterStyleAroundAPartialRun() {
+        val text = editable("abcd")
+        style(text, 0, 2, TextStyleSpan.FLAG_STYLE_BOLD)
+        style(text, 2, 4, TextStyleSpan.FLAG_STYLE_ITALIC)
+        assertThat(serialize(text)).isEqualTo("**ab**_cd_")
+    }
+
+    @Test
+    fun serializeWritesLinksAsMarkdown() {
+        val text = editable("see docs more")
+        text.setSpan(URLSpanReplacement("https://linux.do"), 4, 8, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        assertThat(serialize(text)).isEqualTo("see [docs](https://linux.do) more")
+    }
+
+    @Test
+    fun serializePrefixesQuotedLines() {
+        val text = editable("one\ntwo")
+        quote(text, 0, 7)
+        assertThat(serialize(text)).isEqualTo("> one\n> two")
+    }
+
+    @Test
+    fun serializeTreatsMonospaceHighlightingAsCode() {
+        val text = editable("x")
+        text.setSpan(CodeHighlighting.Span(false, 0, null, null, "code"), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        assertThat(serialize(text)).isEqualTo("`x`")
+    }
+
+    @Test
+    fun parseTurnsMarkersIntoSpanRuns() {
+        val parsed = TopicReplyComposerMarkdown.parse("a **b** c")
+        assertThat(parsed.toString()).isEqualTo("a b c")
+        val flags = flagsOf(parsed)
+        assertThat(flags.sliceArray(0..1).toList()).containsExactly(0, 0)
+        assertThat(flags[2]).isEqualTo(TextStyleSpan.FLAG_STYLE_BOLD)
+        assertThat(flags.sliceArray(3..4).toList()).containsExactly(0, 0)
+    }
+
+    @Test
+    fun parseKeepsNestedStylesNested() {
+        val parsed = TopicReplyComposerMarkdown.parse("**a _b_ c**")
+        assertThat(parsed.toString()).isEqualTo("a b c")
+        val flags = flagsOf(parsed)
+        assertThat(flags[0]).isEqualTo(TextStyleSpan.FLAG_STYLE_BOLD)
+        assertThat(flags[2]).isEqualTo(TextStyleSpan.FLAG_STYLE_BOLD or TextStyleSpan.FLAG_STYLE_ITALIC)
+        assertThat(flags[4]).isEqualTo(TextStyleSpan.FLAG_STYLE_BOLD)
+    }
+
+    @Test
+    fun parseReadsEverySupportedMarker() {
+        val cases = listOf(
+            "**x**" to TextStyleSpan.FLAG_STYLE_BOLD,
+            "_x_" to TextStyleSpan.FLAG_STYLE_ITALIC,
+            "*x*" to TextStyleSpan.FLAG_STYLE_ITALIC,
+            "~~x~~" to TextStyleSpan.FLAG_STYLE_STRIKE,
+            "`x`" to TextStyleSpan.FLAG_STYLE_MONO,
+            "[u]x[/u]" to TextStyleSpan.FLAG_STYLE_UNDERLINE,
+            "[spoiler]x[/spoiler]" to TextStyleSpan.FLAG_STYLE_SPOILER,
+        )
+        for ((markdown, flag) in cases) {
+            val parsed = TopicReplyComposerMarkdown.parse(markdown)
+            assertThat(parsed.toString()).isEqualTo("x")
+            assertThat(flagsOf(parsed)[0]).isEqualTo(flag)
+        }
+    }
+
+    @Test
+    fun parseStripsQuotePrefixesAndAddsAQuoteSpan() {
+        val parsed = TopicReplyComposerMarkdown.parse("intro\n> one\n> two\noutro")
+        assertThat(parsed.toString()).isEqualTo("intro\none\ntwo\noutro")
+        val spans = (parsed as Spanned).getSpans(0, parsed.length, QuoteSpan::class.java)
+        assertThat(spans).hasLength(1)
+        assertThat(parsed.getSpanStart(spans[0])).isEqualTo(6)
+        assertThat(parsed.getSpanEnd(spans[0])).isEqualTo(13)
+    }
+
+    @Test
+    fun parseWritesLinksAsUrlSpans() {
+        val parsed = TopicReplyComposerMarkdown.parse("see [docs](https://linux.do) more")
+        assertThat(parsed.toString()).isEqualTo("see docs more")
+        val spans = (parsed as Spanned).getSpans(0, parsed.length, URLSpanReplacement::class.java)
+        assertThat(spans).hasLength(1)
+        assertThat(spans[0].url).isEqualTo("https://linux.do")
+        assertThat(parsed.getSpanStart(spans[0])).isEqualTo(4)
+        assertThat(parsed.getSpanEnd(spans[0])).isEqualTo(8)
+    }
+
+    @Test
+    fun parseLeavesUnknownMarkersAsText() {
+        val markdown = "[quote=\"daud, post:1, topic:2\"]body[/quote] and **unclosed"
+        val parsed = TopicReplyComposerMarkdown.parse(markdown)
+        assertThat(parsed.toString()).isEqualTo(markdown)
+        assertThat(flagsOf(parsed).toList()).containsExactlyElementsIn(List(markdown.length) { 0 })
+    }
+
+    @Test
+    fun roundTripIsStable() {
+        val samples = listOf(
+            "plain text",
+            "a **b** c",
+            "**a _b_ c**",
+            "**ab**_cd_",
+            "~~gone~~ and `code`",
+            "[u]under[/u] [spoiler]hidden[/spoiler]",
+            "see [docs](https://linux.do) more",
+            "intro\n> one\n> two",
+            "**bold**\n> quoted _line_",
+            "a_b_c",
+        )
+        for (markdown in samples) {
+            assertThat(serialize(TopicReplyComposerMarkdown.parse(markdown))).isEqualTo(markdown)
+        }
+    }
+
+    @Test
+    fun roundTripKeepsStyleRuns() {
+        val text = editable("a b c")
+        style(text, 0, 5, TextStyleSpan.FLAG_STYLE_BOLD)
+        style(text, 2, 3, TextStyleSpan.FLAG_STYLE_ITALIC)
+        val reparsed = TopicReplyComposerMarkdown.parse(serialize(text))
+        assertThat(reparsed.toString()).isEqualTo("a b c")
+        assertThat(flagsOf(reparsed).toList()).containsExactly(
+            TextStyleSpan.FLAG_STYLE_BOLD,
+            TextStyleSpan.FLAG_STYLE_BOLD,
+            TextStyleSpan.FLAG_STYLE_BOLD or TextStyleSpan.FLAG_STYLE_ITALIC,
+            TextStyleSpan.FLAG_STYLE_BOLD,
+            TextStyleSpan.FLAG_STYLE_BOLD,
+        )
     }
 }

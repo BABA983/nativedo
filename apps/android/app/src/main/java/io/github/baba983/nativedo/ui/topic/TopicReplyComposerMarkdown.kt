@@ -4,118 +4,237 @@
 package io.github.baba983.nativedo.ui.topic
 
 import android.text.Editable
-
-import org.telegram.messenger.R
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import org.telegram.messenger.CodeHighlighting
+import org.telegram.ui.Components.QuoteSpan
+import org.telegram.ui.Components.TextStyleSpan
+import org.telegram.ui.Components.URLSpanReplacement
 
 /**
- * The reply composer's style actions.
+ * Bridges the composer's rich text and Discourse's markdown.
  *
- * The composer edits Discourse's markdown source, which is the wire format, so a style action
- * inserts or removes the markers around the selection instead of holding Telegram's span model:
- * the payload comes from the draft text (see `TopicViewModel.submitReply`), and Discourse parses
- * markdown server-side. The toolbar that surfaces the actions is upstream's (`EditTextCaption`'s
- * selection action mode plus `FloatingToolbar`); only the action itself is markdown.
+ * The composer edits Telegram's span model — `EditTextCaption` applies the toolbar's styles as
+ * `TextStyleSpan` runs and draws them — while Discourse's payload is markdown. [serialize] turns
+ * the spans into the markdown the draft and the request carry; [parse] turns a stored draft back
+ * into spans, so a style survives a draft round-trip.
  */
 internal object TopicReplyComposerMarkdown {
 
     private const val QUOTE_PREFIX = "> "
 
-    /** The pairs [clear] strips; the toolbar's toggles mirror them one by one. */
-    private val inlinePairs = listOf(
-        "**" to "**",
-        "_" to "_",
-        "~~" to "~~",
-        "`" to "`",
-        "[u]" to "[/u]",
-        "[spoiler]" to "[/spoiler]",
+    /** What each style flag becomes on the wire; the open order is the nesting order. */
+    private val markerOrder = listOf(
+        TextStyleSpan.FLAG_STYLE_BOLD to "**",
+        TextStyleSpan.FLAG_STYLE_ITALIC to "_",
+        TextStyleSpan.FLAG_STYLE_STRIKE to "~~",
+        TextStyleSpan.FLAG_STYLE_MONO to "`",
+        TextStyleSpan.FLAG_STYLE_UNDERLINE to "[u]",
+        TextStyleSpan.FLAG_STYLE_SPOILER to "[spoiler]",
     )
 
-    /**
-     * Runs the toolbar action behind [itemId] — the ids are upstream's
-     * (`ChatActivity.fillActionModeMenu` adds them) — and returns the selection it leaves.
-     * `null` means the item is not a markdown style, so the caller keeps upstream's behaviour.
-     */
-    fun apply(editable: Editable, itemId: Int, start: Int, end: Int): IntRange? = when (itemId) {
-        R.id.menu_bold -> bold(editable, start, end)
-        R.id.menu_italic -> italic(editable, start, end)
-        R.id.menu_mono -> mono(editable, start, end)
-        R.id.menu_strike -> strike(editable, start, end)
-        R.id.menu_underline -> underline(editable, start, end)
-        R.id.menu_spoiler -> spoiler(editable, start, end)
-        R.id.menu_quote -> quote(editable, start, end)
-        R.id.menu_regular -> clear(editable, start, end)
-        else -> null
-    }
+    private val closers = markerOrder.toMap() + mapOf(
+        TextStyleSpan.FLAG_STYLE_UNDERLINE to "[/u]",
+        TextStyleSpan.FLAG_STYLE_SPOILER to "[/spoiler]",
+    )
 
-    fun bold(editable: Editable, start: Int, end: Int): IntRange = toggleInline(editable, start, end, "**")
+    /** Flags the wire can carry: accent, strike-red, marked and sub/superscript have no markdown counterpart. */
+    private val supportedFlags = markerOrder.fold(0) { flags, (flag, _) -> flags or flag }
 
-    fun italic(editable: Editable, start: Int, end: Int): IntRange = toggleInline(editable, start, end, "_")
+    private val markers = listOf(
+        Marker("**", "**", TextStyleSpan.FLAG_STYLE_BOLD),
+        Marker("~~", "~~", TextStyleSpan.FLAG_STYLE_STRIKE),
+        Marker("[spoiler]", "[/spoiler]", TextStyleSpan.FLAG_STYLE_SPOILER),
+        Marker("[u]", "[/u]", TextStyleSpan.FLAG_STYLE_UNDERLINE),
+        Marker("`", "`", TextStyleSpan.FLAG_STYLE_MONO),
+        Marker("_", "_", TextStyleSpan.FLAG_STYLE_ITALIC),
+        Marker("*", "*", TextStyleSpan.FLAG_STYLE_ITALIC),
+    )
 
-    fun mono(editable: Editable, start: Int, end: Int): IntRange = toggleInline(editable, start, end, "`")
+    /** The composer's spans as markdown: style runs become markers, links become labels, quotes become `> ` lines. */
+    fun serialize(editable: Editable): String {
+        val length = editable.length
+        if (length == 0) return ""
+        val text = editable.toString()
 
-    fun strike(editable: Editable, start: Int, end: Int): IntRange = toggleInline(editable, start, end, "~~")
-
-    fun underline(editable: Editable, start: Int, end: Int): IntRange =
-        toggleInline(editable, start, end, "[u]", "[/u]")
-
-    fun spoiler(editable: Editable, start: Int, end: Int): IntRange =
-        toggleInline(editable, start, end, "[spoiler]", "[/spoiler]")
-
-    /** Wraps the selection into `[label](url)`; an empty selection links the url itself. */
-    fun link(editable: Editable, start: Int, end: Int, url: String): IntRange {
-        val label = if (end > start) editable.subSequence(start, end).toString() else url
-        val markdown = "[$label]($url)"
-        editable.replace(start, end, markdown)
-        return start until (start + markdown.length)
-    }
-
-    /**
-     * Quotes the lines the selection touches, or unquotes them when all of them already carry
-     * the prefix. Empty lines are quoted too, so the blockquote stays one block.
-     */
-    fun quote(editable: Editable, start: Int, end: Int): IntRange {
-        val source = editable.toString()
-        val blockStart = source.lastIndexOf('\n', (start - 1).coerceAtLeast(0)).let { if (it < 0) 0 else it + 1 }
-        val blockEnd = source.indexOf('\n', end.coerceAtLeast(start)).let { if (it < 0) source.length else it }
-        val lines = source.substring(blockStart, blockEnd).split('\n')
-        val quoted = lines.isNotEmpty() && lines.all { it.isEmpty() || it.startsWith(QUOTE_PREFIX) }
-        val toggled = lines.joinToString("\n") { line ->
-            if (quoted) line.removePrefix(QUOTE_PREFIX) else QUOTE_PREFIX + line
+        val flags = IntArray(length)
+        for (span in editable.getSpans(0, length, TextStyleSpan::class.java)) {
+            val spanFlags = span.textStyleRun?.flags ?: 0
+            addFlags(editable, flags, span, spanFlags)
         }
-        editable.replace(blockStart, blockEnd, toggled)
-        return blockStart until (blockStart + toggled.length)
+        for (span in editable.getSpans(0, length, URLSpanReplacement::class.java)) {
+            val spanFlags = span.textStyleRun?.flags ?: 0
+            addFlags(editable, flags, span, spanFlags)
+        }
+        for (span in editable.getSpans(0, length, CodeHighlighting.Span::class.java)) {
+            addFlags(editable, flags, span, TextStyleSpan.FLAG_STYLE_MONO)
+        }
+
+        val links = ArrayList<String>()
+        val linkIndex = IntArray(length) { -1 }
+        for (span in editable.getSpans(0, length, URLSpanReplacement::class.java)) {
+            val url = span.url ?: continue
+            val index = links.size
+            links.add(url)
+            val start = editable.getSpanStart(span).coerceIn(0, length)
+            val end = editable.getSpanEnd(span).coerceIn(0, length)
+            for (i in start until end) {
+                linkIndex[i] = index
+            }
+        }
+
+        val quotedLineStarts = HashSet<Int>()
+        for (span in editable.getSpans(0, length, QuoteSpan::class.java)) {
+            val start = editable.getSpanStart(span).coerceIn(0, length)
+            val end = editable.getSpanEnd(span).coerceIn(0, length)
+            for (i in start until end) {
+                if (i == 0 || text[i - 1] == '\n') {
+                    quotedLineStarts.add(i)
+                }
+            }
+        }
+
+        val out = StringBuilder()
+        val open = ArrayList<Int>()
+        var openLink = -1
+        for (i in 0 until length) {
+            if (quotedLineStarts.contains(i)) {
+                out.append(QUOTE_PREFIX)
+            }
+            val link = linkIndex[i]
+            if (link != openLink) {
+                if (openLink >= 0) {
+                    out.append("](").append(links[openLink]).append(')')
+                }
+                if (link >= 0) {
+                    out.append('[')
+                }
+                openLink = link
+            }
+            val desired = flags[i] and supportedFlags
+            for (k in open.indices.reversed()) {
+                if (desired and open[k] == 0) {
+                    out.append(closeOf(open[k]))
+                    open.removeAt(k)
+                }
+            }
+            for ((flag, marker) in markerOrder) {
+                if (desired and flag != 0 && !open.contains(flag)) {
+                    out.append(marker)
+                    open.add(flag)
+                }
+            }
+            out.append(text[i])
+        }
+        for (k in open.indices.reversed()) {
+            out.append(closeOf(open[k]))
+        }
+        if (openLink >= 0) {
+            out.append("](").append(links[openLink]).append(')')
+        }
+        return out.toString()
     }
 
-    /** Drops the inline markers inside the selection and unquotes its lines. A caret-only selection has nothing to clear. */
-    fun clear(editable: Editable, start: Int, end: Int): IntRange {
-        if (end <= start) return start until end
-        var body = editable.subSequence(start, end).toString()
-        for ((prefix, suffix) in inlinePairs) {
-            body = body.replace(prefix, "").replace(suffix, "")
+    /** Markdown as the composer's rich text: marker pairs become style runs, `> ` lines become a quote block. */
+    fun parse(markdown: String): CharSequence {
+        val out = SpannableStringBuilder()
+        val quotedBlocks = ArrayList<IntRange>()
+        var blockStart = -1
+        var blockEnd = -1
+        val lines = markdown.split('\n')
+        for ((lineIndex, line) in lines.withIndex()) {
+            if (line.startsWith(QUOTE_PREFIX)) {
+                if (blockStart < 0) {
+                    blockStart = out.length
+                }
+                emitInline(line.substring(QUOTE_PREFIX.length), out, 0)
+                blockEnd = out.length
+            } else {
+                if (blockStart >= 0) {
+                    quotedBlocks.add(blockStart until blockEnd)
+                    blockStart = -1
+                }
+                emitInline(line, out, 0)
+            }
+            if (lineIndex < lines.size - 1) {
+                out.append('\n')
+            }
         }
-        val cleared = body.split('\n').joinToString("\n") { it.removePrefix(QUOTE_PREFIX) }
-        editable.replace(start, end, cleared)
-        return start until (start + cleared.length)
+        if (blockStart >= 0) {
+            quotedBlocks.add(blockStart until blockEnd)
+        }
+        for (block in quotedBlocks) {
+            if (block.isEmpty()) continue
+            val styleSpan = QuoteSpan.QuoteStyleSpan()
+            val quoteSpan = QuoteSpan(true, false, styleSpan)
+            out.setSpan(quoteSpan, block.first, block.last + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            out.setSpan(styleSpan, block.first, block.last + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        return out
     }
 
-    private fun toggleInline(editable: Editable, start: Int, end: Int, prefix: String, suffix: String = prefix): IntRange {
-        val source = editable.toString()
-        val wrapped = start - prefix.length >= 0 &&
-            end + suffix.length <= source.length &&
-            source.startsWith(prefix, start - prefix.length) &&
-            source.startsWith(suffix, end)
-        if (wrapped) {
-            editable.delete(end, end + suffix.length)
-            editable.delete(start - prefix.length, start)
-            return (start - prefix.length) until (end - prefix.length)
+    private fun emitInline(source: String, out: SpannableStringBuilder, flags: Int) {
+        var i = 0
+        while (i < source.length) {
+            val marker = markerAt(source, i)
+            if (marker != null) {
+                val close = source.indexOf(marker.close, i + marker.open.length)
+                if (close > i) {
+                    val start = out.length
+                    val inner = flags or marker.flag
+                    emitInline(source.substring(i + marker.open.length, close), out, inner)
+                    applyStyle(out, start, out.length, inner)
+                    i = close + marker.close.length
+                    continue
+                }
+            }
+            val link = linkAt(source, i)
+            if (link != null) {
+                val start = out.length
+                emitInline(link.label, out, flags)
+                out.setSpan(URLSpanReplacement(link.url), start, out.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                i = link.end + 1
+                continue
+            }
+            out.append(source[i])
+            i++
         }
-        if (start == end) {
-            editable.insert(start, prefix + suffix)
-            val caret = start + prefix.length
-            return caret until caret
-        }
-        editable.insert(end, suffix)
-        editable.insert(start, prefix)
-        return (start + prefix.length) until (end + prefix.length)
     }
+
+    private fun applyStyle(out: SpannableStringBuilder, start: Int, end: Int, flags: Int) {
+        if (start >= end || flags == 0) return
+        val run = TextStyleSpan.TextStyleRun()
+        run.flags = flags
+        out.setSpan(TextStyleSpan(run), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+    }
+
+    private fun markerAt(source: String, index: Int): Marker? =
+        markers.firstOrNull { source.startsWith(it.open, index) }
+
+    private fun linkAt(source: String, index: Int): Link? {
+        if (source[index] != '[') return null
+        val labelEnd = source.indexOf(']', index + 1)
+        if (labelEnd < 0 || labelEnd + 1 >= source.length || source[labelEnd + 1] != '(') return null
+        val urlEnd = source.indexOf(')', labelEnd + 2)
+        if (urlEnd < 0) return null
+        val label = source.substring(index + 1, labelEnd)
+        val url = source.substring(labelEnd + 2, urlEnd)
+        if (label.isEmpty() || url.isEmpty() || label.contains('[') || url.any { it.isWhitespace() }) return null
+        return Link(label, url, urlEnd)
+    }
+
+    private fun addFlags(editable: Editable, flags: IntArray, span: Any, spanFlags: Int) {
+        if (spanFlags == 0) return
+        val start = editable.getSpanStart(span).coerceIn(0, flags.size)
+        val end = editable.getSpanEnd(span).coerceIn(0, flags.size)
+        for (i in start until end) {
+            flags[i] = flags[i] or spanFlags
+        }
+    }
+
+    private fun closeOf(flag: Int): String = closers[flag] ?: "**"
+
+    private data class Marker(val open: String, val close: String, val flag: Int)
+
+    private data class Link(val label: String, val url: String, val end: Int)
 }
