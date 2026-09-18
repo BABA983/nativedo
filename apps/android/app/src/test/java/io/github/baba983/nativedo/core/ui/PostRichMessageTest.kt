@@ -9,7 +9,7 @@ class PostRichMessageTest {
     private val baseUrl = "https://linux.do/"
 
     private fun build(html: String): TL_iv.RichMessage =
-        PostRichMessageBuilder.build(parseCookedPostBody(html, baseUrl))
+        PostRichMessageBuilder.build(parseCookedPostBody(html, baseUrl), baseUrl)
 
     @Test
     fun paragraphsAndHeadingsBecomeTheirPageBlocksWithTheInlineModelInside() {
@@ -78,6 +78,24 @@ class PostRichMessageTest {
 
         val divider = build("<hr>")
         assertThat(divider.blocks.single()).isInstanceOf(TL_iv.pageBlockDivider::class.java)
+    }
+
+    @Test
+    fun anImageBecomesAPhotoBlockWithItsUrlSizeAndCaption() {
+        val message = build(
+            """
+            <p class="lightbox-wrapper">
+              <a class="lightbox" href="https://cdn.example.dev/full.png">
+                <img src="/uploads/photo.png" width="800" height="600" alt="alt text">
+              </a>
+            </p>
+            """.trimIndent()
+        )
+
+        val photo = message.blocks.single() as TL_iv.pageBlockPhoto
+        assertThat(photo.url).isEqualTo("https://linux.do/uploads/photo.png")
+        assertThat(photo.w).isEqualTo(800)
+        assertThat(photo.h).isEqualTo(600)
     }
 
     @Test

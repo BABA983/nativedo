@@ -96,6 +96,10 @@ What to check once S4 lands:
    copy-as-HTML (`RichHtml` stub), the math span's copy substitution
    (`ReplaceCopyTextSpannable`), the Telegram web-app icon branch, and the premium rich-editor
    sheet. If a post can trigger any of them visibly, that is a bug in the wire-out.
-4. Selection inside a rich message uses our 12.6 `TextSelectionHelper.TextLayoutBlock` shape;
+4. Images: with the switch on, a post image should load (the bridge goes through
+   `ImageLocation.getForPath`), keep its aspect ratio, and show a caption when the post has one.
+   Pressing it does nothing yet - the press path still hands off to our viewer. A collage stays on
+   our own block even with the switch on, by design.
+5. Selection inside a rich message uses our 12.6 `TextSelectionHelper.TextLayoutBlock` shape;
    handles/prefixes are therefore expected to behave like the current text blocks, not like
    upstream 12.10.2's selection.

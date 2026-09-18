@@ -47,6 +47,8 @@ internal class PostRichMessageScreenshotTest {
               <li>an item with <b>bold</b> text</li>
             </ul>
             <blockquote><p>A quoted paragraph with an <code>inline code</code> run.</p></blockquote>
+            <p><img src="https://cdn.example.dev/diagram.png" width="960" height="540" alt="diagram"></p>
+            <p>Above: an image block, whose bitmap is device-only.</p>
             <pre><code>val message = PostRichMessageBuilder.build(blocks)</code></pre>
             <hr>
             <p>Done.</p>

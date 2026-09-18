@@ -341,8 +341,17 @@ Sequence, if chat is scheduled:
    refuses an edit there, while nested factory calls always carry a state prefix, so the switch
    can only fire at the top level. `TopicPostCellScreenshotTest.richMessageBody` renders that
    path (two new goldens) while every other golden stayed byte-identical - which is what
-   "opt-in" means here. Slice 3 is media: the mapping drops `Image`/`Collage` until a Discourse
-   URL can reach the renderer's `ImageReceiver`.
+   "opt-in" means here.
+   **Slice 3 landed for single images.** The mapping turns an `Image` block into a
+   `pageBlockPhoto` carrying the absolute URL (`resolvePostImageUrl`), the declared pixel size and
+   a `PageCaption` for its caption, and the renderer's photo block learned the URL case as a sixth
+   `// NativeDo:` delta: with no `TLRPC.Photo` behind the block, `applyImage` loads
+   `ImageLocation.getForPath(block.url)` - the mechanism the app's own image pool already uses, so
+   `ImageLoader` fetches the URL directly - `getFileName`/`fileExists` answer for a URL instead of
+   a FileLoader entry, and the size comes from the block instead of a photo size. The bitmap is
+   device-only (a Paparazzi run has no network), so the snapshot proves the geometry: a 16:9 image
+   box where the post asked for one. Still ours to do: collages/slideshows (`pageBlockCollage`'s
+   per-photo URL handling), the press-to-open path (our viewer), and alt text as accessibility.
 5. **S5** - the interactive paths (spoilers, selection, button rows), scheduled
    with chat itself. **Selection-helper alignment is part of S5, measured:**
    adopting the pin's whole `TextSelectionHelper` (4,091 lines against our 2,347) was

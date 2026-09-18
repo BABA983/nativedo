@@ -7076,8 +7076,11 @@ public class RichMessageLayout {
                 strippedSize = null;
             }
 
-            int w = sizeFull != null ? sizeFull.w : 100;
-            int h = sizeFull != null ? sizeFull.h : 100;
+            // NativeDo: a Discourse image has no Telegram photo. The block carries the absolute URL and
+            // the declared pixel size, and applyImage below loads it through ImageLocation.getForPath.
+            webImage = photo == null && block != null && block.url != null && !block.url.isEmpty();
+            int w = sizeFull != null ? sizeFull.w : (webImage && block.w > 0 ? block.w : 100);
+            int h = sizeFull != null ? sizeFull.h : (webImage && block.h > 0 ? block.h : 100);
             int width = this.maxWidth;
             float scale = width / (float) Math.max(1, w);
             int height = (int) (scale * h);
@@ -7092,8 +7095,18 @@ public class RichMessageLayout {
             finishLayout();
         }
 
+        private final boolean webImage;
+
         @Override
         protected void applyImage(boolean allowMedia) {
+            if (webImage) {
+                // NativeDo: the URL case - ImageLoader fetches it directly, as the app's own image pool
+                // does, so there is no FileLoader entry, no stripped thumb and no download state.
+                if (allowMedia) {
+                    imageReceiver.setImage(ImageLocation.getForPath(block.url), null, null, null, root.messageObject, 1);
+                }
+                return;
+            }
             if (photo == null || sizeFull == null) return;
             final ImageLocation thumbLoc = strippedSize != null ? ImageLocation.getForPhoto(strippedSize, photo) : null;
             if (allowMedia) {
@@ -7115,12 +7128,15 @@ public class RichMessageLayout {
 
         @Override
         protected String getFileName() {
+            // NativeDo: a URL image has no attach file; the URL is its stable identity.
+            if (webImage) return block.url;
             return FileLoader.getAttachFileName(sizeFull);
         }
 
         @Override
         protected boolean fileExists() {
-            if (sizeFull == null) return true;
+            // NativeDo: nothing to download through FileLoader for a URL image.
+            if (webImage || sizeFull == null) return true;
             final File p1 = FileLoader.getInstance(root.currentAccount).getPathToAttach(sizeFull, true);
             final File p2 = FileLoader.getInstance(root.currentAccount).getPathToAttach(sizeFull, false);
             return p1.exists() || (p2 != null && p2.exists());

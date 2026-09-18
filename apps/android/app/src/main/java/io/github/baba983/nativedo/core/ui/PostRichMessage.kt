@@ -1,6 +1,7 @@
 package io.github.baba983.nativedo.core.ui
 
 import io.github.baba983.nativedo.core.html.CookedPostBlock
+import io.github.baba983.nativedo.core.html.resolvePostImageUrl
 import org.telegram.tgnet.tl.TL_iv
 import java.util.ArrayList
 
@@ -22,25 +23,25 @@ import java.util.ArrayList
  */
 internal object PostRichMessageBuilder {
 
-    fun build(blocks: List<CookedPostBlock>): TL_iv.RichMessage = TL_iv.RichMessage().apply {
-        this.blocks = ArrayList(pageBlocks(blocks))
+    fun build(blocks: List<CookedPostBlock>, baseUrl: String = ""): TL_iv.RichMessage = TL_iv.RichMessage().apply {
+        this.blocks = ArrayList(pageBlocks(blocks, baseUrl))
     }
 
-    fun pageBlocks(blocks: List<CookedPostBlock>): List<TL_iv.PageBlock> =
-        blocks.mapNotNull { pageBlock(it) }
+    fun pageBlocks(blocks: List<CookedPostBlock>, baseUrl: String = ""): List<TL_iv.PageBlock> =
+        blocks.mapNotNull { pageBlock(it, baseUrl) }
 
-    fun pageBlock(block: CookedPostBlock): TL_iv.PageBlock? = when (block) {
+    fun pageBlock(block: CookedPostBlock, baseUrl: String = ""): TL_iv.PageBlock? = when (block) {
         is CookedPostBlock.Text -> paragraph(block.html)
         is CookedPostBlock.Heading -> heading(block.level, block.html)
-        is CookedPostBlock.Quote -> quote(block)
+        is CookedPostBlock.Quote -> quote(block, baseUrl)
         is CookedPostBlock.Code -> preformatted(block.code)
-        is CookedPostBlock.ListItems -> list(block)
-        is CookedPostBlock.Details -> details(block)
-        is CookedPostBlock.Table -> table(block)
+        is CookedPostBlock.ListItems -> list(block, baseUrl)
+        is CookedPostBlock.Details -> details(block, baseUrl)
+        is CookedPostBlock.Table -> table(block, baseUrl)
+        is CookedPostBlock.Image -> photo(block, baseUrl)
         CookedPostBlock.Rule -> TL_iv.pageBlockDivider()
         is CookedPostBlock.Callout,
         is CookedPostBlock.Onebox,
-        is CookedPostBlock.Image,
         is CookedPostBlock.Collage,
         is CookedPostBlock.Poll,
         -> null
@@ -68,12 +69,12 @@ internal object PostRichMessageBuilder {
      * from `caption`, so the title travels there; nested blocks (a quote can contain lists, code,
      * another quote) make it the `...Blocks` variant.
      */
-    private fun quote(block: CookedPostBlock.Quote): TL_iv.PageBlock {
+    private fun quote(block: CookedPostBlock.Quote, baseUrl: String): TL_iv.PageBlock {
         val author = block.title
         return if (block.children.isNotEmpty()) {
             TL_iv.pageBlockBlockquoteBlocks().apply {
                 caption = author?.let(::plain)
-                blocks = ArrayList(pageBlocks(block.children))
+                blocks = ArrayList(pageBlocks(block.children, baseUrl))
             }
         } else {
             TL_iv.pageBlockBlockquote().apply {
@@ -90,32 +91,32 @@ internal object PostRichMessageBuilder {
             text = plain(code)
         }
 
-    private fun list(block: CookedPostBlock.ListItems): TL_iv.PageBlock =
+    private fun list(block: CookedPostBlock.ListItems, baseUrl: String): TL_iv.PageBlock =
         if (block.ordered) {
             TL_iv.pageBlockOrderedList().apply {
-                items = ArrayList(block.items.map(::orderedItem))
+                items = ArrayList(block.items.map { orderedItem(it, baseUrl) })
             }
         } else {
             TL_iv.pageBlockList().apply {
-                items = ArrayList(block.items.map(::listItem))
+                items = ArrayList(block.items.map { listItem(it, baseUrl) })
             }
         }
 
-    private fun listItem(item: CookedPostBlock.ListItem): TL_iv.PageListItem {
+    private fun listItem(item: CookedPostBlock.ListItem, baseUrl: String): TL_iv.PageListItem {
         val inlineHtml = item.inlineHtmlOrNull()
         return if (inlineHtml != null) {
             TL_iv.TL_pageListItemText().apply { text = inline(inlineHtml) }
         } else {
-            TL_iv.TL_pageListItemBlocks().apply { blocks = ArrayList(pageBlocks(item.blocks)) }
+            TL_iv.TL_pageListItemBlocks().apply { blocks = ArrayList(pageBlocks(item.blocks, baseUrl)) }
         }
     }
 
-    private fun orderedItem(item: CookedPostBlock.ListItem): TL_iv.PageListOrderedItem {
+    private fun orderedItem(item: CookedPostBlock.ListItem, baseUrl: String): TL_iv.PageListOrderedItem {
         val inlineHtml = item.inlineHtmlOrNull()
         return if (inlineHtml != null) {
             TL_iv.TL_pageListOrderedItemText().apply { text = inline(inlineHtml) }
         } else {
-            TL_iv.TL_pageListOrderedItemBlocks().apply { blocks = ArrayList(pageBlocks(item.blocks)) }
+            TL_iv.TL_pageListOrderedItemBlocks().apply { blocks = ArrayList(pageBlocks(item.blocks, baseUrl)) }
         }
     }
 
@@ -127,27 +128,27 @@ internal object PostRichMessageBuilder {
     private fun CookedPostBlock.ListItem.inlineHtmlOrNull(): String? =
         if (blocks.isEmpty()) html else (blocks.singleOrNull() as? CookedPostBlock.Text)?.html
 
-    private fun details(block: CookedPostBlock.Details): TL_iv.PageBlock =
+    private fun details(block: CookedPostBlock.Details, baseUrl: String): TL_iv.PageBlock =
         TL_iv.pageBlockDetails().apply {
             open = block.open
             title = (block.summaryHtml ?: block.summary)?.let(::inline)
-            blocks = ArrayList(pageBlocks(block.children))
+            blocks = ArrayList(pageBlocks(block.children, baseUrl))
         }
 
-    private fun table(block: CookedPostBlock.Table): TL_iv.PageBlock =
+    private fun table(block: CookedPostBlock.Table, baseUrl: String): TL_iv.PageBlock =
         TL_iv.pageBlockTable().apply {
             bordered = true
             rows = ArrayList(
                 listOf(block.headers to true, *block.rows.map { it to false }.toTypedArray())
                     .map { (row, header) ->
                         TL_iv.pageTableRow().apply {
-                            cells = ArrayList(row.map { cell -> tableCell(cell, header) })
+                            cells = ArrayList(row.map { cell -> tableCell(cell, header, baseUrl) })
                         }
                     }
             )
         }
 
-    private fun tableCell(cell: CookedPostBlock.TableCell, header: Boolean): TL_iv.pageTableCell =
+    private fun tableCell(cell: CookedPostBlock.TableCell, header: Boolean, baseUrl: String): TL_iv.pageTableCell =
         TL_iv.pageTableCell().apply {
             this.header = header
             align_center = cell.align == CookedPostBlock.TableCellAlign.Center
@@ -155,6 +156,23 @@ internal object PostRichMessageBuilder {
             colspan = cell.colspan
             rowspan = cell.rowspan
             text = inline(cell.html)
+        }
+
+    /**
+     * A Discourse image as a rich-message photo: the block carries the absolute URL and the pixel
+     * size the post declared, and the caption travels as upstream's `PageCaption`. There is no
+     * `TLRPC.Photo` behind it - the renderer's photo block learns the URL case (its `applyImage`),
+     * and the bitmap itself is device-only (a Paparazzi run has no network).
+     */
+    private fun photo(image: CookedPostBlock.Image, baseUrl: String): TL_iv.PageBlock =
+        TL_iv.pageBlockPhoto().apply {
+            // A relative src needs a base to resolve against; without one the raw src is all we have.
+            url = if (baseUrl.isEmpty()) image.src else resolvePostImageUrl(baseUrl, image.src)
+            w = image.widthPx
+            h = image.heightPx
+            image.captionHtml?.takeIf { it.isNotBlank() }?.let { html ->
+                caption = TL_iv.PageCaption().apply { text = inline(html) }
+            }
         }
 
     private fun inline(html: String): TL_iv.RichText = cookInlineHtml(html).richText

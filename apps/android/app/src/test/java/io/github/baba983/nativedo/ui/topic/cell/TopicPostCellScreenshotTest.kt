@@ -111,6 +111,7 @@ internal class TopicPostCellScreenshotTest {
               <li>item with <b>bold</b></li>
             </ul>
             <blockquote><p>Quoted paragraph with <code>inline code</code>.</p></blockquote>
+            <p><img src="https://cdn.example.dev/diagram.png" width="960" height="540" alt="diagram"></p>
             <pre><code>val body = RichMessageBody.enabled</code></pre>
             <hr>
             <p>Done.</p>
