@@ -240,6 +240,7 @@
     "TMessagesProj/src/main/java/org/telegram/ui/Components/PaintingOverlay.java",
     "TMessagesProj/src/main/java/org/telegram/ui/Components/ProfileGalleryBlurView.java",
     "TMessagesProj/src/main/java/org/telegram/ui/Components/ProfileGalleryView.java",
+    "TMessagesProj/src/main/java/org/telegram/ui/Components/QRCodeBottomSheet.java",
     "TMessagesProj/src/main/java/org/telegram/ui/Components/RLottieDrawable.java",
     "TMessagesProj/src/main/java/org/telegram/ui/Components/ReactedUsersListView.java",
     "TMessagesProj/src/main/java/org/telegram/ui/Components/ReplyMessageLine.java",
@@ -279,6 +280,7 @@
     "TMessagesProj/src/main/java/org/telegram/ui/bots/BotWebViewSheet.java",
     "TMessagesProj/src/main/java/org/telegram/ui/bots/ChatAttachAlertBotWebViewLayout.java",
     "TMessagesProj/src/main/java/org/telegram/ui/recyclerview/ChatListItemAnimator.java",
+    "TMessagesProj/src/main/java/org/telegram/ui/web/BookmarksFragment.java",
     "TMessagesProj/src/main/java/org/telegram/ui/web/BotWebViewContainer.java",
     "TMessagesProj/src/main/java/org/telegram/ui/web/WebBookmarks.java"
   ],
