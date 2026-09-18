@@ -73,8 +73,19 @@ these eight were read in full now, and none is worth taking today:
 | Commit | What | Effect |
 |---|---|---|
 | `3d4c037` | `SimpleTextView` takes 12.10.2's wrap-width clamp (`setWidthWrapContent` could hand a negative width to `setMeasuredDimension`; the profile header, `DiscourseUserCell` and the topic title all measure through it) | six files byte-exact again; the guard's "differ" count 241 → 235 |
+| `ce1876d` | `TextSettingsCell` takes 12.10.2's row density (icon gutter 21→16dp, value margin 71→58dp) | byte-exact; no production consumer yet |
+| `4817a8a` | additive helpers: `Choreographer60FpsContent` once-callbacks, `DrawableUtils` `RectF`/int overloads, `FragmentSearchField.setHintText` | three files byte-exact |
+| `cd6fc5b` | icon tints `MULTIPLY` → `SRC_IN`: 10 sites of upstream's 33, in `ActionBarMenuItem`, `ActionBarMenuSubItem` and `TextCell` | goldens do not move — pure-white icons are identical under both modes; the fix shows on icons that are not white |
+| `8f107e4` | `EditTextBoldCursor`: `setTransformHintToHeaderOnFocus`, and selection handles keep one colour filter plus per-instance mutated drawables | the cursor-blink override stays out (`forced_exact(animation)`, no product reason) |
 
-The same commit removed the dead `com.google.android.exoplayer2.util.Log` import from
+Read and left, for the record: `TextSelectionHelper`'s only remaining hunk is
+`hideActionsMenu()`, whose single upstream caller is `iv/RichEditorListView` (the IV
+refactor we do not follow) and whose body needs a `showActionsRunnable` field our
+12.6-baseline copy never had; `AlertDialog`'s +64 is an opt-in four-button two-row
+layout no screen of ours uses; `BaseFragment`'s +25 is a debug `Trace` wrapper and
+`getEdgeToEdgeSupportMode()`.
+
+`3d4c037` also removed the dead `com.google.android.exoplayer2.util.Log` import from
 six files — 12.10.2 deletes it, nothing in the tree used it (the plan document's
 "nine host files still import the exoplayer types" predates this). Three files still
 do: `ArticleViewer` → `AspectRatioFrameLayout`, `BookmarksFragment` and
