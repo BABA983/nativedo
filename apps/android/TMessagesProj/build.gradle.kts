@@ -43,6 +43,7 @@ android {
 dependencies {
     // Telegram ported helpers use AndroidX widgets, animations, etc.
     implementation(libs.androidx.appcompat)
+    implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.recyclerview)
     implementation(libs.androidx.dynamicanimation)
     implementation(libs.androidx.browser)
