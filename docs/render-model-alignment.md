@@ -161,6 +161,61 @@ instant-view suite (`vendor-browser-iv-suite.md`), which already reuses it. The
 post body is a separate surface, and whether it becomes View-based is the
 decision R2 exists to inform.
 
+## If chat is on the roadmap, the rich-message stack stops being a non-goal
+
+Owner's point (2026-09-18): Discourse has chat, we will support it, and a topic
+body and a chat message are the same shape upstream - `RichMessage` is blocks
+plus `RichText`, the same blocks instant view uses. So the pieces
+`RichMessageLayout` wants are not a cost the post body pays alone; they are the
+prerequisites of Telegram's chat stack, and the earlier "bot keyboard = settled
+non-goal" line should read "deferred until chat is scheduled".
+
+The measured price (pin line counts, and how often `RichMessageLayout` touches
+each): the missing pieces are shallow - most are one to seven call sites, and the
+two with real substance are the button row (`TL_keyboard`, 21) and the style
+mapping (`ui/iv/RichTextStyle`, 7).
+
+| Piece | Lines | Uses | How |
+|---|---|---|---|
+| `tgnet/tl/TL_keyboard` | 1877 | 21 | the rich-message button row (inline keyboards) - chat prerequisite |
+| `ui/iv/RichHtml` | 1427 | 5 | HTML to rich model, the editor's paste path |
+| `ui/LinkManager` | 1570 | 2 | Telegram's link opener - wire out, we have our own |
+| `ui/iv/RichTextStyle` | 608 | 7 | rich text style mapping |
+| `components/spoilers/SpoilerEffect2` | 623 | few | spoiler rendering, additive |
+| `PhoneFormat/PhoneFormat` | 423 | 3 | phone number formatting |
+| `ui/Components/TornEdge` | 240 | 2 | unsupported/locked block decoration |
+| `ui/Components/UnsupportedBlockDrawable` | 226 | 3 | unsupported block placeholder |
+| `ui/iv/Latex` | 79 | 4 | math spans |
+| `ui/Components/SquigglyLinesSpan` | 95 | 4 | spell/diff decoration |
+| `ui/Components/ForegroundColorSpanThemable` | 42 | 3 | themed text colour span |
+| `ui/Components/URLSpan{Mono,UserMention,BotCommand}` | 72/54/47 | few | URL span family, additive |
+| `ui/Components/FormattedDateSpan` | 126 | few | date entities (we wire the picker out already) |
+| `TLKeyboardHelper` | 48 | 2 | keyboard button helpers |
+| `PremiumFeatureBottomSheet`, `PremiumPreviewFragment` | screens | 1 each | Telegram-only upsell - wire out |
+
+Host surface, measured separately: `ChatMessageCellDelegate` and
+`TransitionParams` are nested types of a 29,570-line `ChatMessageCell`, so
+they are grown on our 52-line stub rather than copied; `MessageObject` (ours is
+364 lines) only needs the members the layout reads, and the poll/inline-button
+ones can start wired out.
+
+Sequence, if chat is scheduled:
+
+1. **S1** - the missing `TL_iv` classes (`RichMessage`, `textCustomEmoji`,
+   `textMath`, `textDate`, `textMentionName`, `pageBlockDocument`,
+   `pageBlockMath`, `pageBlockButtonRow`). Mechanical copy, additive.
+2. **S2** - the render-side leaf classes above, with the Telegram-only ones
+   wired out (`LinkManager`, the premium sheets).
+3. **S3** - grow the stubs until `RichMessageLayout` compiles (measured: 337
+   errors, ~60 unique symbols, all inside the file).
+4. **S4** - host it on a Discourse post (post blocks become a `TL_iv.RichMessage`)
+   and compare goldens. This is the "topic body is a rich message" test.
+5. **S5** - the interactive paths (spoilers, selection, button rows), scheduled
+   with chat itself.
+
+The `ArticleViewer`-cell extraction stays as the fallback: it serves the body
+only, so it is the cheaper step if chat slips.
+
 ## Staged plan
 
 **R1 — make `TL_iv` the post-body model (cheap, pixel-gated).**

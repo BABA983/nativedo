@@ -254,7 +254,7 @@ are 12.9.0 → pin.
 
 | Family | Examples | Why not |
 |---|---|---|
-| bot keyboards / inline markups | `MessageObject`, `SendMessagesHelper`, `ChatActivity`, `ChatMessageCell` | settled non-goal |
+| bot keyboards / inline markups | `MessageObject`, `SendMessagesHelper`, `ChatActivity`, `ChatMessageCell` | deferred, not settled: the chat stack's prerequisite. Discourse has chat and we intend to support it, so these unlock with chat; the price list is in [`render-model-alignment.md`](render-model-alignment.md) |
 | proxy | `ConnectionsManager`, `ProxySettings` users | settled non-goal |
 | emoji packs | `Emoji`, `EmojiView`, `AnimatedEmoji*` | settled non-goal |
 | localization | `LocaleController` (+ `org.telegram.localization`) | a new upstream subsystem; taking it drags a package we do not ship |
