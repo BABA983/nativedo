@@ -54,7 +54,7 @@ public class TextCell extends FrameLayout {
 
         iconView = new ImageView(context);
         iconView.setScaleType(ImageView.ScaleType.CENTER);
-        iconView.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_windowBackgroundWhiteGrayIcon), PorterDuff.Mode.MULTIPLY));
+        iconView.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_windowBackgroundWhiteGrayIcon), PorterDuff.Mode.SRC_IN));
         addView(iconView);
 
         titleView = new TextView(context);
@@ -96,7 +96,7 @@ public class TextCell extends FrameLayout {
     public void setColors(int icon, int text) {
         titleView.setTextColor(getThemedColor(text));
         if (icon >= 0) {
-            iconView.setColorFilter(new PorterDuffColorFilter(getThemedColor(icon), PorterDuff.Mode.MULTIPLY));
+            iconView.setColorFilter(new PorterDuffColorFilter(getThemedColor(icon), PorterDuff.Mode.SRC_IN));
         }
     }
 
@@ -120,7 +120,7 @@ public class TextCell extends FrameLayout {
         subtitleView.setVisibility(GONE);
         valueView.setText(null);
         valueView.setVisibility(GONE);
-        iconView.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_windowBackgroundWhiteGrayIcon), PorterDuff.Mode.MULTIPLY));
+        iconView.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_windowBackgroundWhiteGrayIcon), PorterDuff.Mode.SRC_IN));
         iconView.setImageResource(resId);
         iconView.setVisibility(VISIBLE);
         leftPadding = 71;
@@ -166,7 +166,7 @@ public class TextCell extends FrameLayout {
         subtitleView.setVisibility(GONE);
         valueView.setText(value);
         valueView.setVisibility(TextUtils.isEmpty(value) ? GONE : VISIBLE);
-        iconView.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_windowBackgroundWhiteGrayIcon), PorterDuff.Mode.MULTIPLY));
+        iconView.setColorFilter(new PorterDuffColorFilter(getThemedColor(Theme.key_windowBackgroundWhiteGrayIcon), PorterDuff.Mode.SRC_IN));
         iconView.setImageResource(resId);
         iconView.setVisibility(VISIBLE);
         leftPadding = 71;

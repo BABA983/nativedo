@@ -123,7 +123,7 @@ public class ActionBarMenuItem extends FrameLayout {
             iconView = new ImageView(context);
             iconView.setScaleType(ImageView.ScaleType.CENTER);
             if (iconColor != 0) {
-                iconView.setColorFilter(new PorterDuffColorFilter(iconColor, PorterDuff.Mode.MULTIPLY));
+                iconView.setColorFilter(new PorterDuffColorFilter(iconColor, PorterDuff.Mode.SRC_IN));
             }
             addView(iconView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
         }
@@ -538,7 +538,7 @@ public class ActionBarMenuItem extends FrameLayout {
 
     public void setIconColor(int color) {
         if (iconView != null) {
-            iconView.setColorFilter(new PorterDuffColorFilter(color, PorterDuff.Mode.MULTIPLY));
+            iconView.setColorFilter(new PorterDuffColorFilter(color, PorterDuff.Mode.SRC_IN));
         }
         if (textView != null) {
             textView.setTextColor(color);
@@ -671,7 +671,7 @@ public class ActionBarMenuItem extends FrameLayout {
             int textColor = Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider);
             int selectorColor = Theme.getColor(Theme.key_listSelector, resourcesProvider);
             textView.setTextColor(textColor);
-            iconView.setColorFilter(new PorterDuffColorFilter(Theme.multAlpha(textColor, 0.65f), PorterDuff.Mode.MULTIPLY));
+            iconView.setColorFilter(new PorterDuffColorFilter(Theme.multAlpha(textColor, 0.65f), PorterDuff.Mode.SRC_IN));
             int backgroundColor = Theme.multAlpha(textColor, selectedForDelete ? 0.16f : expanded ? 0.12f : 0.08f);
             setBackground(Theme.createSimpleSelectorRoundRectDrawable(AndroidUtilities.dp(16), backgroundColor, selectorColor, backgroundColor));
         }

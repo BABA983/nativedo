@@ -48,7 +48,7 @@ public class ActionBarMenuSubItem extends FrameLayout {
 
         imageView = new ImageView(context);
         imageView.setScaleType(ImageView.ScaleType.CENTER);
-        imageView.setColorFilter(new PorterDuffColorFilter(iconColor, PorterDuff.Mode.MULTIPLY));
+        imageView.setColorFilter(new PorterDuffColorFilter(iconColor, PorterDuff.Mode.SRC_IN));
         addView(imageView, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, 40, (isRTL ? Gravity.RIGHT : Gravity.LEFT) | Gravity.CENTER_VERTICAL));
 
         textView = new TextView(context);
@@ -87,7 +87,7 @@ public class ActionBarMenuSubItem extends FrameLayout {
             textView.setPadding(isRTL ? 0 : AndroidUtilities.dp(43), 0, isRTL ? AndroidUtilities.dp(43) : 0, 0);
         } else if (icon != 0) {
             iconResId = icon;
-            imageView.setColorFilter(new PorterDuffColorFilter(iconColor, PorterDuff.Mode.MULTIPLY));
+            imageView.setColorFilter(new PorterDuffColorFilter(iconColor, PorterDuff.Mode.SRC_IN));
             imageView.setImageResource(icon);
             imageView.setVisibility(VISIBLE);
             textView.setPadding(isRTL ? 0 : AndroidUtilities.dp(43), 0, isRTL ? AndroidUtilities.dp(43) : 0, 0);
@@ -126,7 +126,7 @@ public class ActionBarMenuSubItem extends FrameLayout {
 
     public void setIconColor(int iconColor) {
         this.iconColor = iconColor;
-        imageView.setColorFilter(new PorterDuffColorFilter(iconColor, PorterDuff.Mode.MULTIPLY));
+        imageView.setColorFilter(new PorterDuffColorFilter(iconColor, PorterDuff.Mode.SRC_IN));
     }
 
     public void setText(CharSequence text) {
