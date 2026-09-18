@@ -808,6 +808,21 @@ public class RichMessageLayout {
         return (textFlags &~ TEXT_FLAG_BLOCKS) | blockFlags;
     }
 
+    /**
+     * NativeDo: upstream gives rich-message media no vertical padding at all - a media block's height
+     * is {@code padding.top + image + padding.bottom} with the caller's zero rect, and
+     * {@link #getGap()} is 0 - so a photo lands flush against the block before it. That reads as one
+     * media message from a bot, but a Discourse post is a reading surface: give a media block that
+     * follows something the same family of gap a paragraph gets. The caption keeps the original rect,
+     * so it stays glued to its image.
+     */
+    private Rect mediaPadding(Rect padding) {
+        if (blocks.isEmpty()) return padding;
+        final Rect mediaPadding = new Rect(padding);
+        mediaPadding.top += dp(6);
+        return mediaPadding;
+    }
+
     private void emitCaption(TL_iv.PageCaption caption, Rect padding, int textFlags) {
         if (caption == null) return;
         final boolean hasText = caption.text != null && !(caption.text instanceof TL_iv.textEmpty);
@@ -1066,25 +1081,25 @@ public class RichMessageLayout {
             return block;
         } else if (pageBlock instanceof TL_iv.pageBlockPhoto) {
             final TL_iv.pageBlockPhoto photo = (TL_iv.pageBlockPhoto) pageBlock;
-            final RichBlock block = new RichPhotoBlock(this, padding, maxWidth, photo, blocks.isEmpty());
+            final RichBlock block = new RichPhotoBlock(this, mediaPadding(padding), maxWidth, photo, blocks.isEmpty());
             blocks.add(block);
             emitCaption(photo.caption, padding, textFlags);
             return block;
         } else if (pageBlock instanceof TL_iv.pageBlockVideo) {
             final TL_iv.pageBlockVideo video = (TL_iv.pageBlockVideo) pageBlock;
-            final RichBlock block = new RichVideoBlock(this, padding, maxWidth, video, blocks.isEmpty());
+            final RichBlock block = new RichVideoBlock(this, mediaPadding(padding), maxWidth, video, blocks.isEmpty());
             blocks.add(block);
             emitCaption(video.caption, padding, textFlags);
             return block;
         } else if (pageBlock instanceof TL_iv.pageBlockCollage) {
             final TL_iv.pageBlockCollage collage = (TL_iv.pageBlockCollage) pageBlock;
-            final RichBlock block = new RichCollageBlock(this, padding, maxWidth, collage, blocks.isEmpty());
+            final RichBlock block = new RichCollageBlock(this, mediaPadding(padding), maxWidth, collage, blocks.isEmpty());
             blocks.add(block);
             emitCaption(collage.caption, padding, textFlags);
             return block;
         } else if (pageBlock instanceof TL_iv.pageBlockSlideshow) {
             final TL_iv.pageBlockSlideshow slideshow = (TL_iv.pageBlockSlideshow) pageBlock;
-            final RichBlock block = new RichSlideshowBlock(this, padding, maxWidth, slideshow, blocks.isEmpty());
+            final RichBlock block = new RichSlideshowBlock(this, mediaPadding(padding), maxWidth, slideshow, blocks.isEmpty());
             blocks.add(block);
             emitCaption(slideshow.caption, padding, textFlags);
             return block;
