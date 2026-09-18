@@ -69,6 +69,48 @@ tied to Telegram's message/editor world. It is the strategic alternative if the
 body renderer is ever rebuilt, and a subsystem, not a slice. The triage
 documents it as deferred (`UniversalRecyclerView` needs `RichEditor`).
 
+## How upstream renders, and which renderer to copy
+
+Measured at the pin. Nothing in Telegram renders HTML at runtime: each surface
+renders from a Telegram model, and external formats are converted at the edges.
+
+| Surface | Model | Renderer | Host | Size / shape |
+|---|---|---|---|---|
+| Classic chat message | `TLRPC.MessageEntity` list over plain text | `MessageObject.addEntitiesToText` → spans (`TextStyleSpan`, `URLSpan*`, `CodeHighlighting`, `AnimatedEmojiSpan`) | `ChatMessageCell`, `StaticLayout` drawn on canvas | cell-bound, ours already mirrors this shape |
+| Rich message (Bot API rich messages) | `TLRPC.Message.rich_message` = `TL_iv.RichMessage` (blocks + `RichText`) | `org/telegram/messenger/RichMessageLayout.java` | `ChatMessageCell` delegates touch/selection to it and draws it | **10,066 lines, one file, canvas-drawn** |
+| Instant view page | `TL_iv.Page` (blocks + `RichText`) | `ArticleViewer`'s inner `Block*Cell` Views | `ArticleViewer.WebpageAdapter` (`RecyclerListView`) | 16,469-line monolith, rebase closed |
+| Rich message editing / other hosts | same blocks | `ui/iv/Rich*Cell` + `RichEditor`, `RichTextStyle`, `RichHtml`, `RichMessageConvert` | attach-alert rich layout, AI compose sheet | 47 files / 27,247 lines, editor-bound |
+
+Conversions upstream already ships, i.e. the "assemble into Telegram's format"
+half of the idea: `MarkdownParser.parse(String, ArrayList<TL_iv.PageBlock>)`
+(markdown → blocks, for `.md` documents and bot content), `ui/iv/RichHtml`
+(HTML ↔ rich model, for the editor's paste/copy), `RichMessageConvert`.
+Both directions exist: `MessageObject.formatRichMessage/formatRichBlock` flatten
+blocks back into a `CharSequence` for previews and copy.
+
+Two consequences for our plan:
+
+1. `RichMessageLayout` is the closest thing to our post body that upstream has:
+   it draws blocks on a canvas inside a chat cell, which is exactly our shape
+   (single canvas-drawn cell, `StaticLayout`s, hit-testing), and it is **one
+   file** instead of a monolith of inner Views. Its `MessageObject` use is
+   shallow - `messageOwner` (for the blocks), `isOutOwner`, `getDisplayRichMessage`,
+   `getDialogId`, `isSponsored`/`sponsoredColor`, `isSpoilersRevealed`, link
+   colors, `currentAccount` - which is why hosting it with a
+   `MessageObject`-shaped holder is plausible: our `MessageObject` is already a
+   364-line port and our `ChatMessageCell` is a 52-line stub that would have to
+   grow the delegate/`TransitionParams` seam.
+2. The blocks are the same blocks as instant view, so R1 (make `TL_iv` the
+   post-body model) is the precondition for either renderer. Discourse-only
+   blocks (polls, oneboxes, callouts) stay ours and would be an added
+   block case in whichever renderer we adopt.
+
+Revised R2: the spike targets `RichMessageLayout` rather than an
+`ArticleViewer` cell - same canvas shape as our body, one mirror file, shallow
+host surface. The ArticleViewer-cell extraction stays the fallback if the
+rich-message host turns out to be chat-entangled in ways the shallow access list
+does not show.
+
 ## Staged plan
 
 **R1 — make `TL_iv` the post-body model (cheap, pixel-gated).**
@@ -82,18 +124,22 @@ consumes Telegram's model instead of a home-grown one, and any later cell copy
 becomes mechanical. Gate: the eight `TopicPostCellScreenshotTest` goldens plus
 the suite — a pure refactor of the boundary should not move a pixel.
 
-**R2 — extraction spike: one cell.**
-Take `BlockBlockquoteCell` (or `BlockPreformattedCell`), move it into a mirror
-file, host it with `IArticleViewer` + a slim adapter interface carrying the
-eleven members above, and render it inside one post cell. If the golden for that
-block stays green, the extraction generalizes; then decide the View-vs-canvas
-question once, for all cells.
+**R2 — renderer spike: `RichMessageLayout` first, an `ArticleViewer` cell as the fallback.**
+Land `RichMessageLayout` as a mirror file, host it with a `MessageObject`-shaped
+holder carrying our post's blocks plus the shallow flag set above, and draw one
+post body with it (the `ChatMessageCell` delegate/`TransitionParams` seam is the
+work). If a post-body golden can be produced that way, the body renderer is
+upstream's, one file, re-syncable. If the host turns out to be chat-entangled
+beyond the access list, fall back to the cell extraction described above:
+`BlockBlockquoteCell` into a mirror file hosted by `IArticleViewer` + a slim
+adapter carrying the eleven members, then the View-vs-canvas decision once, for
+all cells.
 
-**R3 — if R2 holds, extract the cells one at a time.**
-Each cell becomes a mirror file with a reported delta instead of a permanent
-hand port; what stays ours is what Discourse has and Telegram does not (polls,
-oneboxes, callouts) and the boundary parser itself. If R2 fails, record the
-failure here and keep the ports — R1 still pays for itself.
+**R3 — if either spike holds, extend it block by block.**
+Each adopted renderer becomes a mirror file with a reported delta instead of a
+permanent hand port; what stays ours is what Discourse has and Telegram does not
+(polls, oneboxes, callouts) plus the boundary parser. If both spikes fail,
+record why here and keep the ports — R1 still pays for itself.
 
 Explicit non-claim: R1 changes nothing visible; R2/R3 change how the body is
 drawn, which is exactly why they need the goldens *and* a device pass
