@@ -2,6 +2,7 @@ package io.github.baba983.nativedo.ui.topic.body
 
 import android.text.TextPaint
 import android.text.style.DynamicDrawableSpan
+import io.github.baba983.nativedo.core.ui.CookedInline
 import io.github.baba983.nativedo.core.ui.PostBodyClickableSpan
 import io.github.baba983.nativedo.core.ui.buildPostBodyInlineSpans
 import org.telegram.messenger.Emoji
@@ -22,9 +23,14 @@ internal class PostBodyTextBuilder(
     fun build(
         html: String,
         textPaint: TextPaint,
+    ): BuiltText = build(context.cookedInline(html), textPaint)
+
+    fun build(
+        cooked: CookedInline,
+        textPaint: TextPaint,
     ): BuiltText {
         val withImages = buildPostBodyInlineSpans(
-            html = html,
+            cooked = cooked,
             baseUrl = context.baseUrl,
             textSizePx = textPaint.textSize,
             accentColor = context.accentColor,

@@ -1,9 +1,6 @@
 package io.github.baba983.nativedo.core.ui
 
-import android.text.TextPaint
-import android.text.style.DynamicDrawableSpan
 import androidx.annotation.ColorInt
-import org.telegram.messenger.Emoji
 
 internal fun buildPostBodyInlineSpans(
     html: String,
@@ -15,8 +12,29 @@ internal fun buildPostBodyInlineSpans(
     onUserClick: ((String) -> Unit)?,
     onOpenLink: ((String) -> Unit)?,
     svgSpriteMarkup: String = "",
+): AppliedInlineImages = buildPostBodyInlineSpans(
+    cooked = cookInlineHtml(html),
+    baseUrl = baseUrl,
+    textSizePx = textSizePx,
+    accentColor = accentColor,
+    chipBackgroundArgb = chipBackgroundArgb,
+    onTopicClick = onTopicClick,
+    onUserClick = onUserClick,
+    onOpenLink = onOpenLink,
+    svgSpriteMarkup = svgSpriteMarkup,
+)
+
+internal fun buildPostBodyInlineSpans(
+    cooked: CookedInline,
+    baseUrl: String,
+    textSizePx: Float,
+    @ColorInt accentColor: Int,
+    @ColorInt chipBackgroundArgb: Int,
+    onTopicClick: ((Long) -> Unit)?,
+    onUserClick: ((String) -> Unit)?,
+    onOpenLink: ((String) -> Unit)?,
+    svgSpriteMarkup: String = "",
 ): AppliedInlineImages {
-    val cooked = cookInlineHtml(html)
     return applyInlineImagePlaceholders(
         text = buildPostBodyText(
             cooked = cooked,

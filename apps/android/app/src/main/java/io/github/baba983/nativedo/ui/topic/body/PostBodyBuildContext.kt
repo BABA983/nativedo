@@ -6,6 +6,8 @@ import android.view.View
 import androidx.annotation.ColorInt
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.SharedConfig
+import io.github.baba983.nativedo.core.ui.CookedInline
+import io.github.baba983.nativedo.core.ui.cookInlineHtml
 import org.telegram.ui.ActionBar.Theme
 
 internal class PostBodyBuildContext @JvmOverloads constructor(
@@ -72,6 +74,13 @@ internal class PostBodyBuildContext @JvmOverloads constructor(
      * Re-sample theme keys and push them into shared paints so attached body
      * blocks can recolor without rebuilding the full block tree / image pool.
      */
+    private val cookedInlineCache = HashMap<String, CookedInline>()
+
+    /** The inline model for a fragment, cooked once: re-measuring for a new width must not re-parse HTML. */
+    fun cookedInline(html: String): CookedInline = cookedInlineCache.getOrPut(html) {
+        cookInlineHtml(html)
+    }
+
     fun applyTheme() {
         textColor = Theme.getColor(Theme.key_chat_messageTextIn)
         secondaryTextColor = Theme.getColor(Theme.key_chat_inTimeText)
