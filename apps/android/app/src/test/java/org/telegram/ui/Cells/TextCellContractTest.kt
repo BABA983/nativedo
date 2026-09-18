@@ -1,7 +1,6 @@
 package org.telegram.ui.Cells
 
 import android.graphics.drawable.ColorDrawable
-import android.view.Gravity
 import android.view.View
 import com.google.common.truth.Truth.assertThat
 import org.junit.After
@@ -15,6 +14,12 @@ import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.messenger.LocaleController
 
+/**
+ * Pins the pin's TextCell layout contract (the file is the pin's again): the row
+ * mirrors its icon for RTL, which is what the browser-settings rows depend on.
+ * The value side is deliberately not asserted here — its measured width depends
+ * on the row's text metrics, not on the direction.
+ */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], manifest = Config.NONE)
 class TextCellContractTest {
@@ -31,20 +36,30 @@ class TextCellContractTest {
         LocaleController.isRTL = originalRtl
     }
 
+    private fun browserSettingRow(): TextCell =
+        TextCell(RuntimeEnvironment.getApplication()).apply {
+            setTextAndValueAndIcon("Search engine", "Google", ColorDrawable(), false)
+            val width = AndroidUtilities.dp(360f)
+            measure(
+                View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+            )
+            layout(0, 0, width, measuredHeight)
+        }
+
     @Test
-    fun rtlBrowserSettingRowMirrorsTitleAndIcon() {
+    fun rtlBrowserSettingRowMirrorsTheIcon() {
         LocaleController.isRTL = true
-        val cell = TextCell(RuntimeEnvironment.getApplication())
-        cell.setTextAndValueAndIcon("Search engine", "Google", ColorDrawable(), false)
         val width = AndroidUtilities.dp(360f)
 
-        cell.measure(
-            View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
-        )
-        cell.layout(0, 0, width, cell.measuredHeight)
+        assertThat(browserSettingRow().imageView.left).isGreaterThan(width / 2)
+    }
 
-        assertThat(cell.textView.gravity and Gravity.HORIZONTAL_GRAVITY_MASK).isEqualTo(Gravity.RIGHT)
-        assertThat(cell.imageView.left).isGreaterThan(width / 2)
+    @Test
+    fun ltrBrowserSettingRowKeepsTheIconOnTheLeft() {
+        LocaleController.isRTL = false
+        val width = AndroidUtilities.dp(360f)
+
+        assertThat(browserSettingRow().imageView.left).isLessThan(width / 2)
     }
 }

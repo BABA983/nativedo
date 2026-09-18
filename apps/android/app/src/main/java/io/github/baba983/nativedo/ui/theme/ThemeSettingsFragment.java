@@ -1120,8 +1120,8 @@ public class ThemeSettingsFragment extends UniversalFragment {
         descriptions.add(description(listView, ThemeDescription.FLAG_LISTGLOWCOLOR, Theme.key_windowBackgroundGray, delegate));
         descriptions.add(description(listView, ThemeDescription.FLAG_SELECTOR, Theme.key_listSelector, delegate));
 
-        addCellFieldDescription(descriptions, TextCell.class, "titleView", Theme.key_windowBackgroundWhiteBlackText, delegate);
-        addCellFieldDescription(descriptions, TextCell.class, "valueView", Theme.key_windowBackgroundWhiteValueText, delegate);
+        addCellFieldDescription(descriptions, TextCell.class, "textView", Theme.key_windowBackgroundWhiteBlackText, delegate);
+        addCellFieldDescription(descriptions, TextCell.class, "valueTextView", Theme.key_windowBackgroundWhiteValueText, delegate);
         addCellFieldDescription(descriptions, TextCheckCell.class, "titleView", Theme.key_windowBackgroundWhiteBlackText, delegate);
         addCellFieldDescription(descriptions, DialogRadioCell.class, "textView", Theme.key_windowBackgroundWhiteBlackText, delegate);
         addCellFieldDescription(descriptions, DialogRadioCell.class, "valueTextView", Theme.key_windowBackgroundWhiteValueText, delegate);

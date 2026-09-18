@@ -63,8 +63,19 @@ public class AnimatedEmojiDrawable extends Drawable {
      * check without any drawing behaviour.
      */
     public static class SwapAnimatedEmojiDrawable extends Drawable {
+        public SwapAnimatedEmojiDrawable(android.view.View parent, int size) {}
         public SwapAnimatedEmojiDrawable(android.view.View parent, int size, boolean invalidateParent, int cacheType) {}
         public SwapAnimatedEmojiDrawable(android.view.View parent, int size, int cacheType) {}
+        public void set(android.graphics.drawable.Drawable drawable, boolean animated) {}
+        public boolean set(org.telegram.tgnet.TLRPC.Document document, boolean animated) { return false; }
+        public boolean set(org.telegram.tgnet.TLRPC.Document document, int cacheType, boolean animated) { return false; }
+        public boolean set(long documentId, boolean animated) { return false; }
+        public boolean set(long documentId, int cacheType, boolean animated) { return false; }
+        public void setParentView(android.view.View parentView) {}
+        public void setCurrentAccount(int account) {}
+        public void attach() {}
+        public void detach() {}
+        public float isNotEmpty() { return 0f; }
         @Override public void draw(android.graphics.Canvas canvas) {}
         @Override public void setAlpha(int alpha) {}
         @Override public void setColorFilter(android.graphics.ColorFilter colorFilter) {}
