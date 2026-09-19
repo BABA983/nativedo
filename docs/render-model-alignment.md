@@ -350,8 +350,17 @@ Sequence, if chat is scheduled:
    `ImageLoader` fetches the URL directly - `getFileName`/`fileExists` answer for a URL instead of
    a FileLoader entry, and the size comes from the block instead of a photo size. The bitmap is
    device-only (a Paparazzi run has no network), so the snapshot proves the geometry: a 16:9 image
-   box where the post asked for one. Still ours to do: collages/slideshows (`pageBlockCollage`'s
-   per-photo URL handling), the press-to-open path (our viewer), and alt text as accessibility.
+   box where the post asked for one. Collages followed: `Collage` maps to `pageBlockCollage` (one
+   `pageBlockPhoto` per image, each with its URL and declared size - upstream's collage reads those
+   for its aspect ratios), and `MediaCell`, the collage's per-cell helper, learned the same URL case
+   (`webUrl`, aspect ratio from the block, `fileExists`/`getFileName`/`applyImage` answering for a
+   URL). The caption path is exercised in the snapshots now: upstream's `RichCaptionBlock` renders
+   under its image at 50% of the body text colour (probe: text `A captioned diagram.`, height 51).
+   One **recorded limitation**: the parser coalesces a captioned figure with adjacent images into one
+   `Collage`, and Telegram's collage has only a block-level caption, so a per-image caption is dropped
+   by the mapping - the probe test asserts that shape and the device queue lists it.
+   Still ours to do: slideshows (Discourse has none), the press-to-open path (our viewer), and alt
+   text as accessibility.
    **The vertical rhythm, measured** (this is upstream's model, not ours to invent): paragraphs
    `setContentPadding(previousSiblingParagraph ? 0 : dp(5), dp(4.66f))`, headings `dp(10)/dp(6)`,
    media `padding.top + image + padding.bottom` with the caller's zero rect, captions the same, and
