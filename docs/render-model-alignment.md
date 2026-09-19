@@ -281,14 +281,16 @@ Sequence, if chat is scheduled:
      `user.color`/`signature_profiles`, `DialogObject.getPeerDialogId`,
      `EmojiGroupedSpans.holders`, an `openForView` and a `shouldEncryptPhotoOrVideo`
      overload); and the wire-outs.
-   **The selection-interface decision (recorded).** The renderer's `Text`/`PaddedTextLayoutBlock`
-   implement `TextSelectionHelper.TextLayoutBlock`, and the pin's interface shape
-   (`Layout getLayout()` + `getPrefix`/`getText`/`getSelectionBounds` defaults) is not ours:
-   that file is `reference`-pinned to 12.6, `native`, and `forced_exact` ['drawing','gesture'],
-   so the guard refuses an edit there and rule 8 says it is not moved to the pin. The pin's
-   `TextSelectionHelper.ReplaceCopyTextSpannable` nested holder is refused for the same reason.
-   Both are therefore `// NativeDo:` wire-outs in `RichMessageLayout` (its selection/copy sites,
-   which is S5 territory anyway), and the rendered-text path keeps our 12.6 selection shape.
+   **The selection-interface decision (recorded; superseded by `5fd8dc3`).** The pin's
+   interface shape (`Layout getLayout()` + `getPrefix`/`getText`/`getSelectionBounds`
+   defaults) was not ours at the time - the file was `reference`-pinned to 12.6,
+   `native`, and `forced_exact` ['drawing','gesture'] - so the renderer's selection/copy
+   sites were `// NativeDo:` wire-outs. That is no longer true: S5 put the pin's
+   `TextSelectionHelper` and its interface in the tree
+   (`docs/vendor-selection-helper-plan.md`), so `RichMessageLayout`'s two remaining
+   sites are the copy-substitution marker (`ReplaceCopyTextSpannable`, which now
+   exists) rather than a blocked decision, and the `getPrefix()` override at its
+   `PaddedTextLayoutBlock` is what the pin's default already returns.
    **S3 is complete: the renderer closure compiles (0 errors).** The last pass (slice 4) landed
    the remaining model fields (`TL_iv`'s `pageBlockBlockquote.collapsed`, `pageBlockTable.compact`,
    `pageBlockOrderedList.flags/reversed/start/type`, `pageBlockPhoto`/`pageBlockVideo.spoiler`,
@@ -416,8 +418,13 @@ Sequence, if chat is scheduled:
    spacing and the rails that follow), not rendering errors - the flip commit is therefore
    "re-record those ten, nothing else".
 5. **S5** - the interactive paths (spoilers, selection, button rows), scheduled
-   with chat itself. **Second probe (2026-09-19): the file is ours after all - see
-   `docs/vendor-selection-helper-plan.md`.** Of the 172 errors the adoption probe
+   with chat itself. **Landed (`5fd8dc3`): the selection engine is upstream's file.**
+   `TextSelectionHelper` is the pin's, with `ChatListTextSelectionHelper` omitted and
+   one `// NativeDo:` branch in `quoteText()`; the post body migrated to the pin's
+   `TextLayoutBlock` shape and the app's Quote/list-observation/teardown behaviour
+   lives in a `:app` subclass. Details, decision resolutions and what is left in
+   `docs/vendor-selection-helper-plan.md`. **Second probe (2026-09-19): the file is
+   ours after all - see `docs/vendor-selection-helper-plan.md`.** Of the 172 errors the adoption probe
    reports, **160 are inside `ChatListTextSelectionHelper`** (the dialogs-list engine
    that reads the un-ported chat text layout) and **`ArticleTextSelectionHelper` + the
    interfaces probe clean**; the residue is our own extras (`getPrefix*`/`getClipBounds`
@@ -477,7 +484,9 @@ project with ordered slices rather than a wire-out:
    `RichBlockSelection` waits: it implements the pin's `TextSelectionHelper.TextLayoutBlock`
    (`Layout getLayout()` plus `getPrefix`/`getSelectionBounds` defaults), while ours is
    the `reference`-pinned 12.6 shape (`StaticLayout getLayout()`, abstract `getPrefix`,
-   `getPrefixLayout`), and rule 8 says that file is not moved to the pin.
+   `getPrefixLayout`), and rule 8 says that file is not moved to the pin. **That last
+   blocker is gone: `5fd8dc3` put the pin's interface in the tree, so
+   `RichBlockSelection` now compiles against the shape it was written for.**
    `RichCaptionHost` + `RichEditText` are the editor half and wait for slice 2.
 2. `RichHtml` + the editor cells it drags (`RichEditorListView`, `RichTextCell`,
    `MediaUploadState`), with the commands/toolbar after.

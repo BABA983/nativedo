@@ -109,9 +109,10 @@ What to check once S4 lands:
    - or under a group, when a caption was folded onto a collage - should read at half the body text
    colour. The viewer itself shows no caption/title for these images, which is upstream's behaviour;
    if the product wants the author/time header we layer it on the viewer entry point.
-5. Selection inside a rich message uses our 12.6 `TextSelectionHelper.TextLayoutBlock` shape;
-   handles/prefixes are therefore expected to behave like the current text blocks, not like
-   upstream 12.10.2's selection.
+5. Selection inside a rich message now runs upstream's engine (see §9): handles,
+   magnifier, the article menu and the copy path are the pin's `TextSelectionHelper`, not
+   our 12.6 port. The list-bullet/prefix highlighting our port drew is gone with the
+   prefix geometry, which is upstream's behaviour.
 6. The hybrid body (S4, `78fa211`): with the switch on, a post mixing prose with a poll, a link
    card or a callout should read in place - upstream's typography for the prose, our block for the
    three - and the seams (our blocks' own top/bottom margins against the run's trimmed edges) are
@@ -152,3 +153,34 @@ To check:
 6. The entry itself is still gated by `PollBlock.canOpenVotersList` (public poll
    with votes and results shown, or a voted state), and anonymous polls never
    offer it — that gate is unchanged.
+
+## 9. The selection engine is upstream's (`5fd8dc3`)
+
+What changed: `TextSelectionHelper` is the pin's file (the dialogs-list class
+omitted, one `// NativeDo:` branch in `quoteText()` so a non-chat view reaches the
+quote hooks, one dropped import), the post body implements the pin's
+`TextLayoutBlock` (`Layout`-typed, `getSelectionBounds()`; our prefix geometry and
+clip rect are gone), and `TopicPostTextSelectionHelper` carries what stayed
+app-side — the Quote action on upstream's `canShowQuote()`/`onQuoteClick(...)`
+hooks, the list-adapter observation and the overlay teardown.
+
+To check, on a post body (long-press a text block, then drag):
+
+1. Handles and magnifier behave like the upstream engine: selecting across
+   paragraphs, dragging a handle to the cell edge (the list scrolls and the
+   selection follows), and releasing into the floating toolbar's
+   copy/quote/select-all/translate.
+2. Quote still opens the composer with the same `[quote]` markup as before, and
+   the action only appears where it did (a plain text selection without a
+   Discourse author must not fail).
+3. Code blocks, tables and lists still select and copy their text; a list bullet or
+   a quote bar is **no longer** highlighted with its text (upstream draws prefixes
+   through its own layout), and a table's rows must not smear the selection across
+   cells.
+4. Custom emoji, spoiler and chip spans: selection must not break into glyph
+   garbage, and a copy must produce the same characters as before (the span-bounds
+   provider is gone; the pin's engine derives span bounds from the layout).
+5. Teardown: select something, then leave the topic (or rotate) and come back — no
+   stray handles, no crash (this part is app-side).
+6. TalkBack is unaffected: the cell's description is still the accessibility text
+   (§7.7); selection is a separate gesture.

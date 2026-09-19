@@ -1,9 +1,55 @@
 # Selection helper: adopting the pin's `TextSelectionHelper`
 
-Status: **measured, not started** (2026-09-19, at `b461063`). This is the S5
-selection-engine project from `docs/render-model-alignment.md`; the numbers below
-supersede the first probe recorded there, because the second probe looked *inside*
-the file instead of only counting errors.
+Status: **P1 landed** (`5fd8dc3`, 2026-09-19); P2 and P3 below are what is left.
+This is the S5 selection-engine project from `docs/render-model-alignment.md`; the
+measurement below is kept as it was written (the second probe looked *inside* the
+file instead of only counting errors), and "Landed" records the residue against it.
+
+## Landed: P1, the file is upstream's (`5fd8dc3`)
+
+`TMessagesProj/.../ui/Cells/TextSelectionHelper.java` is the pin's 4,091-line file,
+3,336 lines on disk after exactly three deltas:
+
+- `ChatListTextSelectionHelper` is omitted, with a two-line `// NativeDo:` notice
+  where it sat (the dialogs list has no surface here, and it owns 160 of the 167
+  in-file errors — the chat text layout it reads);
+- an unused `import org.telegram.ui.iv.RichTextCell` goes (nothing in the tree
+  implements that interface);
+- `quoteText()` gets `if (messageObject == null && !canShowQuote()) return;` under a
+  `// NativeDo:` comment, so a non-chat view reaches the quote hooks — upstream's
+  `quoteText` only looks for a `MessageObject` on a `ChatMessageCell`.
+
+**Open decision 1 resolved as (B), the pin-exact interface.** The four extras left
+the interface instead of being kept as a compatibility block: `PostSelectionLayoutBlock`
+(`PostBodyBlock.kt`) is `Layout`-typed with `getSelectionBounds()`, and
+`getPrefixLayout`/`getPrefixX`/`getPrefixY`/`getClipBounds` have no reader anywhere in
+the tree anymore (`grep` is clean). `RichMessageBody.OffsetTextLayoutBlock`,
+`TableBlock`, `ListBlock` and `CodeBlock` follow; the span-level
+`TextSelectionHelper.TextSelectionBoundsProvider` is gone, so `Emoji.EmojiSpan`
+extends `ImageSpan` again and `InlineTextImages`/`PostBodyChipSpan` carry the pin's
+shape (a `ReplacementSpan` plus an `IgnoreCopySpannable` marker where a copy-substitution
+was needed). `TopicPostCell`'s long-press hit test now takes `getSelectionBounds()`,
+and the block it tests no longer needs a prefix rectangle.
+
+**Open decision 2 resolved as (1), upstream's extension points.** `TopicPostTextSelectionHelper`
+(native, `:app`) subclasses the article helper and overrides `canShowQuote()` /
+`onQuoteClick(MessageObject, int, int, CharSequence)` — the shape `ChatActivity:3490/3524`
+and `MessagePreviewView:327/332` use — and `TopicDetailFragment` answers it with
+`showReplyComposer(discourseQuoteMarkup(...))` as before. Our port's `setOnQuote`,
+`setRecyclerView` and the prefix-geometry members are gone.
+
+**What stayed app-side, on purpose:** `TopicPostTextSelectionHelper` also carries the
+two behaviours our port had grown — list-adapter observation (a change at or before
+`getEndCell()` clears the selection, through the pin's public accessors) and overlay
+teardown (`destroy()`, called from the fragment's `onDestroyView`) — because the pin's
+engine owns neither the RecyclerView nor the fragment lifecycle. The translate path
+compiles against two native shims (`messenger/LanguageDetector.java`,
+`ui/RestrictedLanguagesSelectActivity.java`: no ML Kit, no translation settings
+screen), and `ChatListTextSelectionHelper` is the only class left out.
+
+**Gates:** guard OK (562 tracked / 217 differ), full suite 768/0,
+`:app:verifyPaparazziDebug` green with **no golden moved**, `:app:assembleDebug`
+green. The device pass is `docs/device-verification.md` §9.
 
 ## What we have, and what the pin has
 
@@ -77,21 +123,33 @@ post body actually runs (the article helper plus the interfaces) probe **clean**
 
 ## Staged plan
 
-**P1 - adopt the file minus the chat-list block (small, the bulk of S5).**
-Take the pin's `TextSelectionHelper.java` and delete `ChatListTextSelectionHelper`
-(a documented delta: the product has no dialogs list; the class is ~763 lines of the
-4,091 and owns 160 of the 167 in-file errors). Fix the residue: `RichMessageLayout`'s
-two `getLayout()` returns, then the migration list in point 2. Gate: full unit suite +
-`verifyPaparazziDebug` + a device pass over the selection handles, emoji selection and
-spoilers; the article helper's public API (`getOverlayView(Context)`, `setParentView`,
-`setCallback`, `setOnTranslate`, `clear`, `isInSelectionMode`, `stopScrolling`,
-`onParentScrolled`) already matches what `TopicDetailFragment` calls.
+**P1 - adopt the file minus the chat-list block (landed, `5fd8dc3`; the bulk of
+S5).** Take the pin's `TextSelectionHelper.java` and delete
+`ChatListTextSelectionHelper` (a documented delta: the product has no dialogs list;
+the class is ~763 lines of the 4,091 and owns 160 of the 167 in-file errors). Fix the
+residue: `RichMessageLayout`'s two `getLayout()` returns, then the migration list in
+point 2. Gate: full unit suite + `verifyPaparazziDebug` + a device pass over the
+selection handles, emoji selection and spoilers; the article helper's public API
+(`getOverlayView(Context)`, `setParentView`, `setCallback`, `setOnTranslate`,
+`clear`, `isInSelectionMode`, `stopScrolling`, `onParentScrolled`) already matches
+what `TopicDetailFragment` calls. **What the landing changed against this text:** the
+interface migration list in point 2 went all the way rather than keeping a
+compatibility block (decision 1 -> B), so `getPrefix*`/`getClipBounds` and the
+`TextSelectionBoundsProvider` are gone instead of re-added; the two `RichMessageLayout`
+`getLayout()` returns needed no change, since `StaticLayout extends Layout`.
 
 **P2 - the wire-outs fall.** Once the blocks carry the pin's `TextLayoutBlock`
 shape, `RichMessageLayout`'s two `TextLayoutBlock` wire-outs and the math-span copy
 wire-out go away, and the `getPrefix*` extras (ours) are either migrated to the pin's
 interface or re-added as marked deltas - decide per member: `getPrefix*`/`getClipBounds`
-are *our* drawing model, the pin draws prefixes through `LayoutBlock`.
+are *our* drawing model, the pin draws prefixes through `LayoutBlock`. **State after
+P1:** the interface is the pin's everywhere, so what is left here is the renderer's
+own three sites (`RichMessageLayout:3213`, `:2136` and `:9370`), whose comments still
+say "12.6 shape"; the `ReplaceCopyTextSpannable` nested holder now exists (it comes
+with the adopted file), so attaching it at `:2136` and walking it at `:9370` is
+typing rather than a decision. The marker draws nothing (it is a plain class, not a
+span style), so copied LaTeX is what changes, not pixels — the copy tests in
+`TextSelectionHelperTest` are the gate, not Paparazzi.
 
 **P3 - the chat-ready half (project, optional until chat).** For the file to need no
 delta at all, port the layout producer: `MessageObject.TextLayoutBlock` +
@@ -103,6 +161,8 @@ i.e. the dialogs list, which is only meaningful with chat.
 ## Open decisions for the owner (in detail)
 
 **1. What our `TextLayoutBlock` interface carries that the pin's does not.**
+*(Resolved in `5fd8dc3`: option (B), the pin-exact interface. The options and the
+reasoning are kept below for the record.)*
 
 Ours (`TextSelectionHelper.java:73-83`) declares
 
@@ -132,6 +192,7 @@ long-press hit test that asks `bestBlock.getClipBounds()`).
   option that touches a forced-exact file, so it needs the entry relaxed for one commit.
 
 **2. What happens to the selection menu's Quote action.**
+*(Resolved in `5fd8dc3`: option (1), upstream's hooks. Kept for the record.)*
 
 Today our helper exposes `setOnQuote(callback)` (our addition) and `TopicDetailFragment`
 answers it with `showReplyComposer(discourseQuoteMarkup(...))`. The pin has the same Quote
@@ -153,4 +214,5 @@ the hooks today.
   REPLY/SELECT_TEXT/COPY_LINK and no Quote, so that is new UI. The only option that changes
   the product.
 
-**3. Order:** this project before or after the RLottie family.
+**3. Order:** this project before or after the RLottie family. *(Answered: after
+S4, before the RLottie family.)*
