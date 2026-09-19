@@ -533,15 +533,18 @@ project with ordered slices rather than a wire-out:
      `RichMediaConverter` 11 - TL upload types, `VideoEditedInfo`'s converter
      fields, `NotificationCenter.filePreparingStarted`,
      `MediaController.cancelVideoConvert`), `RichMessageButtonUsers` (5: `InputUser`
-     + `MessagesController.getInputUser`), then `RichHtml` (three model fields away
-     once its cells are in) and `RichEditorListView`'s body, which needs the editor
-     core - the chat-coupled tail below.
-   - **The tail is chat.** `RichHtml` and `RichEditorListView` need the editor
-     core (`RichEditor`, 229 errors) and the rest of `ChatAttachAlertRichLayout`
-     (283) - the attach-alert editor host and the AI compose sheet. Those wait for
-     chat, or take documented wire-outs like the LaTeX sheet; `RichHtml` itself is
-     then three model fields away (`TLRPC.TL_geoPoint` + `access_hash`,
-     `AnimatedEmojiSpan.standard`).
+     + `MessagesController.getInputUser`), and `RichEditorListView`'s body, which
+     needs the editor core - the chat-coupled tail below. **`RichHtml` landed
+     (`952d9a4`): the pin's 1,427-line file is in the tree verbatim** (it was three
+     model fields and three static predicates away), so the selection-export path
+     our renderer already calls - `RichMessageLayout`'s
+     `tableToHtml`/`inlineToHtml`/`preToHtml` - produces real HTML now instead of
+     the stub's empty document; `IvRichHtmlContractTest` (6 tests) pins the wire
+     format.
+   - **The tail is chat.** `RichEditorListView`'s body needs the editor core
+     (`RichEditor`, 229 errors) and the rest of `ChatAttachAlertRichLayout` (283) -
+     the attach-alert editor host and the AI compose sheet. Those wait for chat, or
+     take documented wire-outs like the LaTeX sheet.
 3. Wire the editor into the composer as the upstream-shaped replacement for our
    span-only path, once chat/rich compose is scheduled.
 
