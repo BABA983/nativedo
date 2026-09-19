@@ -989,6 +989,58 @@
     {
       "kind": "drawable",
       "files": [
+        "formatting_bold.xml",
+        "formatting_italic.xml",
+        "formatting_marked.xml",
+        "formatting_spoiler.xml",
+        "formatting_strikethrough.xml",
+        "formatting_underline.xml",
+        "input_ai.xml",
+        "iv_h.xml",
+        "iv_list_tab.xml",
+        "iv_list_untab.xml",
+        "iv_lists.xml",
+        "iv_redo.xml",
+        "iv_sub.xml",
+        "iv_super.xml",
+        "iv_text.xml",
+        "iv_text2.xml",
+        "iv_undo.xml",
+        "large_article.xml",
+        "media_link_24.xml",
+        "outline_poll_attach_24.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/drawable",
+      "local_glob": "apps/android/TMessagesProj/src/main/res/drawable",
+      "vendored_at": "163356809fa4bd81e64969700753e0a15664a288"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "input_done.webp",
+        "input_notify_off.webp",
+        "input_schedule.webp",
+        "left_status_profile.webp",
+        "msg_calendar2.webp",
+        "msg_online.webp"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/TMessagesProj/src/main/res/drawable-*",
+      "vendored_at": "163356809fa4bd81e64969700753e0a15664a288"
+    },
+    {
+      "kind": "raw",
+      "files": [
+        "contact_check.json",
+        "group_pip_delete_icon.json"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/raw",
+      "local_glob": "apps/android/TMessagesProj/src/main/res/raw",
+      "vendored_at": "163356809fa4bd81e64969700753e0a15664a288"
+    },
+    {
+      "kind": "drawable",
+      "files": [
         "arrows_select.xml",
         "iv_align_horiz_left.xml",
         "iv_align_horiz_middle.xml",
