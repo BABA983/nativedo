@@ -9,7 +9,9 @@ import android.graphics.Rect
 import android.text.StaticLayout
 import android.view.MotionEvent
 import io.github.baba983.nativedo.core.html.CookedPostBlock
+import io.github.baba983.nativedo.core.ui.PostBodySegment
 import io.github.baba983.nativedo.core.ui.PostRichMessageBuilder
+import io.github.baba983.nativedo.core.ui.splitPostBodySegments
 import org.telegram.messenger.ImageReceiver
 import org.telegram.messenger.MessageObject
 import org.telegram.messenger.RichMessageLayout
@@ -24,13 +26,14 @@ import java.io.File
 import java.util.ArrayList
 
 /**
- * Roll-out switch for the rich-message body: when [enabled], a post's body is one
- * [RichMessageBodyBlock] (upstream's `RichMessageLayout`) instead of our own block tree.
+ * Roll-out switch for the rich-message body: when [enabled], a post's body is upstream's renderer
+ * (`RichMessageLayout`, one [RichMessageBodyBlock] per run of mappable blocks) with the
+ * Discourse-only blocks (callout, onebox, poll) and any container holding one kept in our own block
+ * tree and stacked in place between those runs.
  *
  * Off by default. The renderer's pixels are covered by `PostRichMessageScreenshotTest`, but the cell
- * path has not run on a device yet (`docs/device-verification.md` §7), and the mapping deliberately
- * drops the Discourse-only blocks (callout, onebox, poll, image/collage), so the switch stays opt-in
- * until that pass and the media bridge land.
+ * path has not run on a device yet (`docs/device-verification.md` §7), so the switch stays opt-in
+ * until that pass.
  */
 internal object RichMessageBody {
 
@@ -38,13 +41,41 @@ internal object RichMessageBody {
     var enabled: Boolean = false
 
     @JvmStatic
-    fun blocks(cooked: List<CookedPostBlock>, context: PostBodyBuildContext): List<PostBodyBlock> =
-        listOf(RichMessageBodyBlock(cooked, context))
+    fun blocks(
+        cooked: List<CookedPostBlock>,
+        context: PostBodyBuildContext,
+        state: PostBodyBlockState? = null,
+    ): List<PostBodyBlock> {
+        val result = ArrayList<PostBodyBlock>()
+        var index = 0
+        for (segment in splitPostBodySegments(cooked)) {
+            when (segment) {
+                is PostBodySegment.RichRun -> {
+                    result.add(RichMessageBodyBlock(segment.blocks, context))
+                    index += segment.blocks.size
+                }
+                is PostBodySegment.OwnBlock -> {
+                    // The same path the flag-off body uses, keyed by the block's index in the post so
+                    // its state (a poll's selection, a callout's collapse) survives a rebind.
+                    result.addAll(
+                        PostBodyBlockFactory.build(
+                            blocks = listOf(segment.block),
+                            context = context,
+                            state = state,
+                            stateKeyPrefix = "rich.$index",
+                        ),
+                    )
+                    index++
+                }
+            }
+        }
+        return result
+    }
 }
 
 /**
- * The whole post body as upstream's renderer: one `TL_iv.RichMessage` built from the cooked blocks,
- * laid out by `RichMessageLayout` and drawn into the cell's canvas.
+ * A run of the post body drawn by upstream's renderer: one `TL_iv.RichMessage` built from the run's
+ * cooked blocks, laid out by `RichMessageLayout` and drawn into the cell's canvas.
  *
  * The cell keeps doing what it does for every other block - it paints its own background, insets the
  * column and forwards touch - because `RichMessageLayout` draws no message bubble (it draws only

@@ -15,11 +15,11 @@ import java.util.ArrayList
  * What maps, and what does not yet:
  *
  * - mapped: paragraph, headings 1-6, blockquote (with the author as the caption), preformatted,
- *   lists (plain and ordered, with nested blocks), details/toggle, tables, divider.
- * - not mapped (the Discourse-only half of `CookedPostBlock`): callouts, oneboxes, polls and
- *   images/collages. Images need media plumbing (Discourse URLs are not `TLRPC.Photo`s), the rest
- *   have no upstream counterpart and stay our own blocks. `pageBlock(...)` returns null for them,
- *   so a post that is only those blocks produces an empty message rather than a wrong one.
+ *   lists (plain and ordered, with nested blocks), details/toggle, tables, divider, images and
+ *   collages.
+ * - not mapped (the Discourse-only half of `CookedPostBlock`): callouts, oneboxes and polls.
+ *   `pageBlock(...)` returns null for them, so the hybrid body keeps them, and any container whose
+ *   subtree holds one, in our own block tree (see [splitPostBodySegments]).
  */
 internal object PostRichMessageBuilder {
 
@@ -30,21 +30,43 @@ internal object PostRichMessageBuilder {
     fun pageBlocks(blocks: List<CookedPostBlock>, baseUrl: String = ""): List<TL_iv.PageBlock> =
         blocks.mapNotNull { pageBlock(it, baseUrl) }
 
-    fun pageBlock(block: CookedPostBlock, baseUrl: String = ""): TL_iv.PageBlock? = when (block) {
-        is CookedPostBlock.Text -> paragraph(block.html)
-        is CookedPostBlock.Heading -> heading(block.level, block.html)
-        is CookedPostBlock.Quote -> quote(block, baseUrl)
-        is CookedPostBlock.Code -> preformatted(block.code)
-        is CookedPostBlock.ListItems -> list(block, baseUrl)
-        is CookedPostBlock.Details -> details(block, baseUrl)
-        is CookedPostBlock.Table -> table(block, baseUrl)
-        is CookedPostBlock.Image -> photo(block, baseUrl)
-        is CookedPostBlock.Collage -> collage(block, baseUrl)
-        CookedPostBlock.Rule -> TL_iv.pageBlockDivider()
+    /**
+     * True when this block, and every block it carries, has an upstream counterpart. A container
+     * whose subtree holds a Discourse-only block (callout, onebox, poll) is not mappable as a whole:
+     * the renderer would silently drop the child, so the hybrid body keeps the whole subtree in our
+     * block tree instead.
+     */
+    fun isMappable(block: CookedPostBlock): Boolean = when (block) {
         is CookedPostBlock.Callout,
         is CookedPostBlock.Onebox,
         is CookedPostBlock.Poll,
-        -> null
+        -> false
+        is CookedPostBlock.Quote -> block.children.all(::isMappable)
+        is CookedPostBlock.Details -> block.children.all(::isMappable)
+        is CookedPostBlock.ListItems -> block.items.all { item -> item.blocks.all(::isMappable) }
+        else -> true
+    }
+
+    fun pageBlock(block: CookedPostBlock, baseUrl: String = ""): TL_iv.PageBlock? {
+        if (!isMappable(block)) {
+            return null
+        }
+        return when (block) {
+            is CookedPostBlock.Text -> paragraph(block.html)
+            is CookedPostBlock.Heading -> heading(block.level, block.html)
+            is CookedPostBlock.Quote -> quote(block, baseUrl)
+            is CookedPostBlock.Code -> preformatted(block.code)
+            is CookedPostBlock.ListItems -> list(block, baseUrl)
+            is CookedPostBlock.Details -> details(block, baseUrl)
+            is CookedPostBlock.Table -> table(block, baseUrl)
+            is CookedPostBlock.Image -> photo(block, baseUrl)
+            is CookedPostBlock.Collage -> collage(block, baseUrl)
+            CookedPostBlock.Rule -> TL_iv.pageBlockDivider()
+            is CookedPostBlock.Callout,
+            is CookedPostBlock.Onebox,
+            is CookedPostBlock.Poll,
+            -> null
+        }
     }
 
     private fun paragraph(html: String): TL_iv.PageBlock = TL_iv.pageBlockParagraph().apply {
@@ -212,4 +234,39 @@ internal object PostRichMessageBuilder {
     private fun inline(html: String): TL_iv.RichText = cookInlineHtml(html).richText
 
     private fun plain(value: String): TL_iv.RichText = TL_iv.textPlain().apply { text = value }
+}
+
+/**
+ * A stretch of the post body: what upstream's renderer draws ([RichRun]) and what stays in our own
+ * block tree ([OwnBlock]). The cell stacks both kinds in the order the post wrote them, so a body
+ * that mixes paragraphs with a poll/onebox/callout reads in place instead of losing content.
+ */
+internal sealed interface PostBodySegment {
+    data class RichRun(val blocks: List<CookedPostBlock>) : PostBodySegment
+
+    data class OwnBlock(val block: CookedPostBlock) : PostBodySegment
+}
+
+/**
+ * Splits a body into maximal runs of mappable blocks and the Discourse-only blocks in between
+ * (`isMappable` covers containers, so a details/quote holding a callout falls back as a whole).
+ */
+internal fun splitPostBodySegments(blocks: List<CookedPostBlock>): List<PostBodySegment> {
+    val segments = ArrayList<PostBodySegment>()
+    var run = ArrayList<CookedPostBlock>()
+    for (block in blocks) {
+        if (PostRichMessageBuilder.isMappable(block)) {
+            run.add(block)
+            continue
+        }
+        if (run.isNotEmpty()) {
+            segments.add(PostBodySegment.RichRun(run))
+            run = ArrayList()
+        }
+        segments.add(PostBodySegment.OwnBlock(block))
+    }
+    if (run.isNotEmpty()) {
+        segments.add(PostBodySegment.RichRun(run))
+    }
+    return segments
 }

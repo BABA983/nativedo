@@ -64,6 +64,23 @@ internal class TopicPostCellScreenshotTest {
         }
     }
 
+    /**
+     * The hybrid body: paragraphs, a heading, a code block and a divider are upstream's renderer,
+     * while the poll, the link card and the callout keep our own blocks and stay in place between
+     * those runs - the shape a real post with Discourse-only content gets.
+     */
+    @Test
+    fun richMessageHybridBody() {
+        RichMessageBody.enabled = true
+        try {
+            paparazziRule.snapshot { context ->
+                topicPostCell(context, RICH_MESSAGE_HYBRID_HTML)
+            }
+        } finally {
+            RichMessageBody.enabled = false
+        }
+    }
+
     private fun topicPostCell(
         context: Context,
         html: String = POST_HTML,
@@ -121,6 +138,47 @@ internal class TopicPostCellScreenshotTest {
             <pre><code>val body = RichMessageBody.enabled</code></pre>
             <hr>
             <p>Done.</p>
+        """.trimIndent()
+
+
+        /**
+         * A body that is half upstream's renderer and half our blocks: the poll, the link card and the
+         * callout have no upstream counterpart, so the hybrid body keeps them (and the containers
+         * holding them) in our block tree, in the order the post wrote them.
+         */
+        val RICH_MESSAGE_HYBRID_HTML = """
+            <p>An intro paragraph, drawn by upstream's renderer.</p>
+            <h2>After the heading</h2>
+            <p>Another mapped paragraph.</p>
+            <div class="poll" data-poll-charttype="bar" data-poll-name="frontend" data-poll-title="Frontend work" data-poll-public="true" data-poll-results="always" data-poll-status="open" data-poll-type="regular">
+              <div class="poll-container">
+                <ul>
+                  <li data-poll-option-id="option-a" class="chosen">
+                    <span class="poll-option-label">Tool A</span>
+                    <span class="poll-option-votes">7 votes</span>
+                    <span class="poll-option-percent">70%</span>
+                  </li>
+                  <li data-poll-option-id="option-b">
+                    <span class="poll-option-label">Tool B</span>
+                    <span class="poll-option-votes">3 votes</span>
+                    <span class="poll-option-percent">30%</span>
+                  </li>
+                </ul>
+              </div>
+            </div>
+            <p>A paragraph between the poll and the link card.</p>
+            <aside class="onebox allowlistedgeneric">
+              <header class="source"><a href="https://developers.example.dev/tooling/cli">developers.example.dev</a></header>
+              <article class="onebox-body">
+                <h3><a href="https://developers.example.dev/tooling/cli">CLI tooling</a></h3>
+                <p>A short description of the linked page.</p>
+              </article>
+            </aside>
+            <div class="callout callout-note" data-callout-type="note">
+              <div class="callout-title"><span class="callout-title-inner">Note</span></div>
+              <div class="callout-content"><p>Callouts stay our own block.</p></div>
+            </div>
+            <p>An outro paragraph.</p>
         """.trimIndent()
 
         const val POST_HTML =
