@@ -164,27 +164,50 @@ internal object PostRichMessageBuilder {
      * `TLRPC.Photo` behind it - the renderer's photo block learns the URL case (its `applyImage`),
      * and the bitmap itself is device-only (a Paparazzi run has no network).
      */
-    private fun photo(image: CookedPostBlock.Image, baseUrl: String): TL_iv.PageBlock =
+    private fun photo(
+        image: CookedPostBlock.Image,
+        baseUrl: String,
+        withCaption: Boolean = true,
+    ): TL_iv.PageBlock =
         TL_iv.pageBlockPhoto().apply {
             // A relative src needs a base to resolve against; without one the raw src is all we have.
             url = if (baseUrl.isEmpty()) image.src else resolvePostImageUrl(baseUrl, image.src)
             w = image.widthPx
             h = image.heightPx
-            image.captionHtml?.takeIf { it.isNotBlank() }?.let { html ->
-                caption = TL_iv.PageCaption().apply { text = inline(html) }
+            if (withCaption) {
+                image.captionHtml?.takeIf { it.isNotBlank() }?.let { html ->
+                    caption = TL_iv.PageCaption().apply { text = inline(html) }
+                }
             }
         }
 
     /**
      * A Discourse collage as upstream's `pageBlockCollage`: one `pageBlockPhoto` per image, each with
-     * its own URL and pixel size (upstream's collage lays them out from those aspect ratios). The
-     * per-image captions of a Discourse collage have no place in this model yet - the block-level
-     * caption is Telegram's own, and a post's images rarely carry one.
+     * its own URL and pixel size (upstream's collage lays them out from those aspect ratios).
+     *
+     * Telegram's model has **one caption per media group** - the renderer reads `collage.caption` and
+     * never a member's - so a Discourse caption travels to the group instead of being dropped, and
+     * several members' captions join as paragraphs of that one caption.
      */
     private fun collage(collage: CookedPostBlock.Collage, baseUrl: String): TL_iv.PageBlock =
         TL_iv.pageBlockCollage().apply {
-            items = ArrayList(collage.images.map { image -> photo(image, baseUrl) })
+            items = ArrayList(collage.images.map { image -> photo(image, baseUrl, withCaption = false) })
+            val captions = collage.images.mapNotNull { image ->
+                image.captionHtml?.takeIf { html -> html.isNotBlank() }
+            }
+            if (captions.isNotEmpty()) {
+                caption = TL_iv.PageCaption().apply { text = joinedCaptions(captions) }
+            }
         }
+
+    private fun joinedCaptions(captions: List<String>): TL_iv.RichText {
+        val parts = ArrayList<TL_iv.RichText>(captions.size * 2 - 1)
+        captions.forEachIndexed { index, html ->
+            if (index > 0) parts.add(TL_iv.textPlain().apply { text = "\n" })
+            parts.add(inline(html))
+        }
+        return if (parts.size == 1) parts[0] else TL_iv.textConcat().apply { texts = parts }
+    }
 
     private fun inline(html: String): TL_iv.RichText = cookInlineHtml(html).richText
 

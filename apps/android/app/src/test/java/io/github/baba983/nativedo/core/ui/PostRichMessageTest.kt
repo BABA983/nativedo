@@ -133,6 +133,43 @@ class PostRichMessageTest {
     }
 
     @Test
+    fun aCaptionOnACollageMemberTravelsToTheGroupCaption() {
+        val message = build(
+            """
+            <figure>
+              <img src="https://cdn.example.dev/one.png" width="800" height="600" alt="one">
+              <figcaption>One caption for the group.</figcaption>
+            </figure>
+            <p><img src="https://cdn.example.dev/two.png" width="600" height="800" alt="two"></p>
+            """.trimIndent()
+        )
+
+        val collage = message.blocks.single() as TL_iv.pageBlockCollage
+        assertThat(collage.items).hasSize(2)
+        // Telegram's model keeps one caption per media group; the members carry none.
+        assertThat(collage.items.map { it.caption }).containsExactly(null, null)
+        assertThat((collage.caption.text as TL_iv.textPlain).text).isEqualTo("One caption for the group.")
+    }
+
+    @Test
+    fun severalMemberCaptionsJoinAsOneGroupCaption() {
+        val message = build(
+            """
+            <figure><img src="https://cdn.example.dev/one.png" width="800" height="600" alt="one"><figcaption>First.</figcaption></figure>
+            <figure><img src="https://cdn.example.dev/two.png" width="600" height="800" alt="two"><figcaption>Second.</figcaption></figure>
+            """.trimIndent()
+        )
+
+        // Two captioned figures still coalesce, and their captions become one caption with a break.
+        val collage = message.blocks.single() as TL_iv.pageBlockCollage
+        val joined = collage.caption.text as TL_iv.textConcat
+        assertThat(joined.texts).hasSize(3)
+        assertThat((joined.texts[0] as TL_iv.textPlain).text).isEqualTo("First.")
+        assertThat((joined.texts[1] as TL_iv.textPlain).text).isEqualTo("\n")
+        assertThat((joined.texts[2] as TL_iv.textPlain).text).isEqualTo("Second.")
+    }
+
+    @Test
     fun discourseOnlyBlocksAreLeftOutInsteadOfMisrendered() {
         val message = build("<p>Text only</p>")
 

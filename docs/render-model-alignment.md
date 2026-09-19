@@ -356,11 +356,25 @@ Sequence, if chat is scheduled:
    (`webUrl`, aspect ratio from the block, `fileExists`/`getFileName`/`applyImage` answering for a
    URL). The caption path is exercised in the snapshots now: upstream's `RichCaptionBlock` renders
    under its image at 50% of the body text colour (probe: text `A captioned diagram.`, height 51).
-   One **recorded limitation**: the parser coalesces a captioned figure with adjacent images into one
-   `Collage`, and Telegram's collage has only a block-level caption, so a per-image caption is dropped
-   by the mapping - the probe test asserts that shape and the device queue lists it.
-   Still ours to do: slideshows (Discourse has none), the press-to-open path (our viewer), and alt
-   text as accessibility.
+   **Captions, aligned:** Telegram's model keeps **one caption per media group** (`pageBlockPhoto`
+   carries its own; the renderer calls `emitCaption(collage.caption)` and never reads a member's), so
+   the parser coalescing a captioned figure with adjacent images no longer drops anything: the mapping
+   moves that caption onto the collage (several member captions join as paragraphs of the one caption,
+   `joinedCaptions`), which is exactly what upstream's `RichCaptionBlock` then draws under the group.
+   **The image tap, aligned:** a media tap reaches the host through `delegate.openArticlePhoto(cell,
+   block)` (upstream's callback - `openForView` is *not* the image path; it is the document/file opener
+   at `RichDocumentBlock.press`, and it stays a stub only until documents are mapped).
+   `RichMessageBodyDelegate` answers it the way `ChatActivity` does upstream: `collectMediaBlocks` ->
+   index of the tapped block -> `PhotoViewer.openPhoto(index, PageBlocksAdapter, provider)` - our
+   ported entry point, which reads each block's URL through `photoItemForPageBlock`. One port delta was
+   needed: `PhotoViewer.setParentActivity(Activity)` (our host is a view in a cell, not a fragment),
+   factored so both overloads share the window setup. The adapter answers `getCaption` with **null**
+   exactly like `ChatArticlePageBlocksAdapter` does - the message already draws the caption, so the
+   viewer does not repeat it - and the place object for the zoom animation comes from
+   `layout.findMediaImageReceiver(block, off)` plus the block's origin, which the block reads off the
+   canvas matrix in `draw`.
+   Still ours to do: slideshows (Discourse has none), `openForView` when documents get mapped (the
+   pin's mime dispatch over our own viewer), and alt text as accessibility.
    **The vertical rhythm, measured** (this is upstream's model, not ours to invent): paragraphs
    `setContentPadding(previousSiblingParagraph ? 0 : dp(5), dp(4.66f))`, headings `dp(10)/dp(6)`,
    media `padding.top + image + padding.bottom` with the caller's zero rect, captions the same, and

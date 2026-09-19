@@ -98,12 +98,13 @@ What to check once S4 lands:
    sheet. If a post can trigger any of them visibly, that is a bug in the wire-out.
 4. Images: with the switch on, a post image should load (the bridge goes through
    `ImageLocation.getForPath`), keep its aspect ratio, and show a caption when the post has one.
-   Pressing it does nothing yet - the press path still hands off to our viewer. A collage renders
-   through the renderer too (its cells carry URLs the same way), and a caption under an image should
-   read at half the body text colour.
-   Known limitation to look at: a captioned image *adjacent* to another image is parsed as a collage,
-   and a collage keeps no per-image caption, so that caption disappears with the switch on. If the
-   corpus shows it, the mapping needs a rule (e.g. keep such a group on our own collage block).
+   Tapping one should open our `PhotoViewer` at the tapped image, with swipe between the post's
+   images and the zoom-from-the-tile animation (the place object is computed from
+   `findMediaImageReceiver` plus the block's origin, so the geometry is worth eyeballing). A collage
+   renders through the renderer too (its cells carry URLs the same way), and a caption under an image
+   - or under a group, when a caption was folded onto a collage - should read at half the body text
+   colour. The viewer itself shows no caption/title for these images, which is upstream's behaviour;
+   if the product wants the author/time header we layer it on the viewer entry point.
 5. Selection inside a rich message uses our 12.6 `TextSelectionHelper.TextLayoutBlock` shape;
    handles/prefixes are therefore expected to behave like the current text blocks, not like
    upstream 12.10.2's selection.

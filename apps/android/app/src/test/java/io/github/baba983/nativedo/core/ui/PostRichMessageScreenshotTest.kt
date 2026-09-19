@@ -51,8 +51,12 @@ internal class PostRichMessageScreenshotTest {
               <img src="https://cdn.example.dev/diagram.png" width="960" height="540" alt="diagram">
               <figcaption>A captioned image.</figcaption>
             </figure>
-            <p>Two adjacent images, which the parser reads as a collage:</p>
-            <p><img src="https://cdn.example.dev/one.png" width="800" height="600" alt="one"></p>
+            <p>An image with a caption, then an adjacent one - the parser reads them as a collage,
+            and Telegram's model keeps one caption per group:</p>
+            <figure>
+              <img src="https://cdn.example.dev/one.png" width="800" height="600" alt="one">
+              <figcaption>This caption travels to the group.</figcaption>
+            </figure>
             <p><img src="https://cdn.example.dev/two.png" width="600" height="800" alt="two"></p>
             <p>Above: a captioned image and a collage. Their bitmaps are device-only.</p>
             <pre><code>val message = PostRichMessageBuilder.build(blocks)</code></pre>

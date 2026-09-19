@@ -317,7 +317,18 @@ public class PhotoViewer {
 
     public void setParentActivity(BaseFragment fragment) {
         parentFragment = fragment;
-        Activity activity = fragment == null ? null : fragment.getParentActivity();
+        setParentActivityInternal(fragment == null ? null : fragment.getParentActivity());
+    }
+
+    /**
+     * NativeDo: the rich-message host is a view inside a post cell, not a fragment, so it needs an
+     * Activity entry point; the window setup below is the fragment overload's, unchanged.
+     */
+    public void setParentActivity(Activity activity) {
+        setParentActivityInternal(activity);
+    }
+
+    private void setParentActivityInternal(Activity activity) {
         if (parentActivity == activity && windowView != null) {
             return;
         }

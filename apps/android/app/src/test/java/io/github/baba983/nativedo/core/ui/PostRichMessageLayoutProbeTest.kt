@@ -71,13 +71,13 @@ internal class PostRichMessageLayoutProbeTest {
     }
 
     /**
-     * Recorded limitation rather than an invariant: the parser coalesces a captioned figure with
-     * whatever adjacent images follow it into one `Collage`, and a collage carries no per-image
-     * caption in Telegram's model, so such a caption is dropped by the mapping (`docs/device-verification.md`
-     * lists it). The leading image's caption survives only when the image stands alone.
+     * The parser coalesces a captioned figure with whatever adjacent images follow it into one
+     * `Collage`, and Telegram's model keeps one caption per media group - so the mapping moves the
+     * figure's caption onto the group instead of dropping it (and the renderer draws it under the
+     * cells, as `RichCaptionBlock`).
      */
     @Test
-    fun aCaptionedFigureFollowedByAdjacentImagesBecomesACollageWithoutTheCaption() {
+    fun aCaptionedFigureFollowedByAdjacentImagesKeepsItsCaptionOnTheGroup() {
         paparazziRule.verify {
             val html = """
                 <figure>
@@ -101,8 +101,12 @@ internal class PostRichMessageLayoutProbeTest {
             println("layout blocks: ${layout.blocks.map { it.javaClass.simpleName }}")
             println("caption heights: ${layout.blocks.filterIsInstance<RichMessageLayout.RichCaptionBlock>().map { it.height }}")
             assertThat(richMessage.blocks.single()).isInstanceOf(org.telegram.tgnet.tl.TL_iv.pageBlockCollage::class.java)
-            assertThat(richMessage.blocks.single().caption).isNull()
             assertThat(cooked.single()).isInstanceOf(io.github.baba983.nativedo.core.html.CookedPostBlock.Collage::class.java)
+            // One caption per media group: the figure's caption travels to the collage.
+            assertThat(richMessage.blocks.single().caption).isNotNull()
+            assertThat(
+                (richMessage.blocks.single().caption.text as org.telegram.tgnet.tl.TL_iv.textPlain).text
+            ).isEqualTo("A captioned image.")
         }
     }
 
