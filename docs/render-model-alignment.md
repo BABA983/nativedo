@@ -583,9 +583,24 @@ project with ordered slices rather than a wire-out:
      (rowspan/colspan flatten), and media use the URL the upload bridge minted for
      their id (a block that already carries a URL uses that). What markdown cannot
      express is dropped or noted in the file: Telegram-only inline styles, table
-     geometry, and map blocks. `RichMessageMarkdownTest` (13 tests). **Still to
-     come:** the markdown → blocks reader, for re-opening one of our own posts
-     (whose `raw` the API returns), and the host that shows the editor.
+     geometry, and map blocks. `RichMessageMarkdownTest` (13 tests).
+   - **The reader landed (`ba62c45`).** `RichMessageMarkdown.parse` is the inverse, so the
+     editor can re-open a document whose `raw` the API returned (our own posts and
+     drafts): a line-based recursive parser over the same wire forms the writer
+     emits - fenced code, `[details="…"]`, `[quote="…"]`/`>` runs (a one-paragraph
+     run becomes the leaf block, anything richer keeps its blocks, and an author
+     rides the editor's own `flattenForCopy(msg, authors)` map), headings, dividers,
+     `$…$`, tables with their alignment row, bullet/ordered/task lists with nesting,
+     images (the alt is the caption) and media links. Inline runs go through the
+     composer's own parser, so the markers the reply box writes come back as runs.
+     The round trip found two writer gaps, both fixed here: a leaf quote now ends
+     its own line, and a `pageBlockBlockquoteBlocks` (what the reader produces for a
+     `>` run of several paragraphs) has a branch of its own instead of vanishing.
+     `RichMessageMarkdownTest` +5 (18 total). **Still to come:** the host that shows
+     the editor - the entry in topic detail, mounting `RichEditorListView` +
+     `RichEditorToolbar`, and sending through the writer into the existing reply
+     submit; and `RichEditor`'s chat glue plus `RichInlineButtonEditor`, which stay
+     out until a product surface needs them.
 3. Wire the editor into the composer as the upstream-shaped replacement for our
    span-only path, once chat/rich compose is scheduled. **Measured
    (`09e5ce1`, 2026-09-19): the two editing surfaces are separate work, and only
