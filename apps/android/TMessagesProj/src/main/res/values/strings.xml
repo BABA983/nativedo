@@ -10751,10 +10751,14 @@
     <string name="ArticleConversionSubscribe">Subscribe to Premium</string>
     <string name="ArticleConversionText">This message uses rich formatting, which requires **Telegram Premium**.</string>
     <string name="ArticleConversionTitle">Remove Formatting</string>
+    <string name="ArticleEditor">Rich Editor</string>
     <string name="ArticleHeading">Heading</string>
     <string name="ArticleIndent">Indent</string>
+    <string name="ArticleListBulleted">Bulleted</string>
     <string name="ArticleListBulletedList">Bulleted list</string>
+    <string name="ArticleListNumbered">Numbered</string>
     <string name="ArticleListNumberedList">Numbered list</string>
+    <string name="ArticleListTodo">To-Do</string>
     <string name="ArticleOutdent">Outdent</string>
     <string name="ArticleText">Text</string>
     <string name="ChatLink">Link</string>

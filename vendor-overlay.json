@@ -117,6 +117,7 @@
     "TMessagesProj/src/main/java/org/telegram/ui/iv/RichMediaUploader.java",
     "TMessagesProj/src/main/java/org/telegram/messenger/AppGlobalConfig.java",
     "TMessagesProj/src/main/java/org/telegram/ui/iv/RichEditor.java",
+    "TMessagesProj/src/main/java/org/telegram/ui/iv/RichEditorHostLayout.java",
     "TMessagesProj/src/main/java/com/google/android/exoplayer2/C.java",
     "TMessagesProj/src/main/java/com/google/android/exoplayer2/ExoPlayer.java",
     "TMessagesProj/src/main/java/com/google/android/exoplayer2/Format.java",
@@ -333,6 +334,7 @@
     "TMessagesProj/src/main/java/org/telegram/ui/Components/UniversalCells.java": "org/telegram/ui/Components/UniversalAdapter.java",
     "TMessagesProj/src/main/java/org/telegram/ui/Components/UniversalListCallbacks.java": "org/telegram/ui/Components/UniversalRecyclerView.java",
     "TMessagesProj/src/main/java/org/telegram/ui/Stories/StoryItem.java": "org/telegram/tgnet/tl/TL_stories.java",
+    "TMessagesProj/src/main/java/org/telegram/ui/iv/RichEditorHostLayout.java": "org/telegram/ui/iv/ChatAttachAlertRichLayout.java",
     "TMessagesProj/src/main/java/org/telegram/ui/web/WebBookmarks.java": "org/telegram/ui/web/AddressBarList.java"
   },
   "forced_exact": {

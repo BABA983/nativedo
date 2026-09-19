@@ -72,7 +72,7 @@ internal object RichMessageMarkdown {
                 continue
             }
             if (row.level > 0) {
-                out.append(listItem(row, row.level))
+                out.append(listItem(row, row.level, urlForId))
                 i++
                 continue
             }
@@ -89,17 +89,113 @@ internal object RichMessageMarkdown {
         }
 
     /** A message's blocks without row structure (what a renderer or a copy path holds). */
-    fun blocksToMarkdown(blocks: List<TL_iv.PageBlock>, urlForId: (Long) -> String? = RichMediaUploadBridge::urlForId): String =
-        toMarkdown(blocks.map { BlockRow(it) }, urlForId)
+    fun blocksToMarkdown(blocks: List<TL_iv.PageBlock>, urlForId: (Long) -> String? = RichMediaUploadBridge::urlForId): String {
+        val rows = ArrayList<BlockRow>()
+        expandBlocks(rows, blocks)
+        return toMarkdown(rows, urlForId)
+    }
 
-    private fun listItem(row: BlockRow, level: Int): String {
+    /**
+     * A document's blocks as rows: a details block becomes its header, its children and the end
+     * marker (the row shape `RichEditorListView.flattenDetails` builds), so one code path writes
+     * a details block, whether it arrives as rows or as blocks.
+     */
+    private fun expandBlocks(out: MutableList<BlockRow>, blocks: List<TL_iv.PageBlock>) {
+        for (b in blocks) {
+            out.add(BlockRow(b))
+            if (b is TL_iv.pageBlockDetails) {
+                expandBlocks(out, b.blocks)
+                out.add(BlockRow(TL_iv.pageBlockParagraph()).apply { detailsEnd = true })
+            }
+        }
+    }
+
+    private fun listItem(row: BlockRow, level: Int, urlForId: (Long) -> String?): String {
         val indent = INDENT.repeat((level - 1).coerceAtLeast(0))
         val prefix = when {
             row.isChecklist() -> if (row.checked) "- [x] " else "- [ ] "
             row.isOrdered() -> "${row.num}. "
             else -> "- "
         }
-        return "$indent$prefix${inline(row)}\n"
+        val body = inline(row)
+        // an item that wraps a block (a table, code, a quote) keeps that block's own form, indented
+        if (body.isEmpty() && row.block !is TL_iv.pageBlockParagraph) {
+            val inner = block(row, urlForId).trim('\n')
+            return if (inner.isEmpty()) "" else indent + inner.replace("\n", "\n$indent") + "\n"
+        }
+        return "$indent$prefix$body\n"
+    }
+
+    /**
+     * A list *block* as lines: the editor's own expansion (`RichEditorListView.expandListBlock`: one
+     * row per item, nested lists one level deeper, a `*Blocks` item whose first block is a paragraph
+     * keeps that paragraph as the item's text) with the writer's list form on top.
+     */
+    private fun listBlock(b: TL_iv.PageBlock, urlForId: (Long) -> String?): String {
+        val rows = ArrayList<BlockRow>()
+        expandListBlock(rows, b, 1)
+        return rows.joinToString("") { listItem(it, it.level, urlForId) }
+    }
+
+    private fun expandListBlock(out: MutableList<BlockRow>, listBlock: TL_iv.PageBlock, level: Int) {
+        var counter = 1
+        if (listBlock is TL_iv.pageBlockOrderedList) {
+            for (item in listBlock.items) {
+                when (item) {
+                    is TL_iv.TL_pageListOrderedItemText -> addListItemRow(out, item.text, level, counter, item.checkbox, item.checked)
+                    is TL_iv.TL_pageListOrderedItemBlocks -> expandItemBlocks(out, item.blocks, level, true, counter, item.checkbox, item.checked)
+                    else -> continue
+                }
+                counter++
+            }
+        } else if (listBlock is TL_iv.pageBlockList) {
+            for (item in listBlock.items) {
+                when (item) {
+                    is TL_iv.TL_pageListItemText -> addListItemRow(out, item.text, level, 0, item.checkbox, item.checked)
+                    is TL_iv.TL_pageListItemBlocks -> expandItemBlocks(out, item.blocks, level, false, 0, item.checkbox, item.checked)
+                    else -> continue
+                }
+            }
+        }
+    }
+
+    private fun expandItemBlocks(
+        out: MutableList<BlockRow>,
+        blocks: List<TL_iv.PageBlock>,
+        level: Int,
+        ordered: Boolean,
+        num: Int,
+        checkbox: Boolean,
+        checked: Boolean,
+    ) {
+        var started = false
+        for (b in blocks) {
+            if (b is TL_iv.pageBlockList || b is TL_iv.pageBlockOrderedList) {
+                if (!started) {
+                    addListItemRow(out, null, level, num, checkbox, checked)
+                    started = true
+                }
+                expandListBlock(out, b, level + 1)
+                continue
+            }
+            if (!started) {
+                if (b is TL_iv.pageBlockParagraph) {
+                    addListItemRow(out, b.text, level, num, checkbox, checked)
+                } else {
+                    out.add(BlockRow(b, level, num).apply { this.checkbox = checkbox; this.checked = checked })
+                }
+                started = true
+            } else {
+                out.add(BlockRow(b, level, if (ordered) 1 else 0))
+            }
+        }
+        if (!started) addListItemRow(out, null, level, num, checkbox, checked)
+    }
+
+    private fun addListItemRow(out: MutableList<BlockRow>, text: TL_iv.RichText?, level: Int, num: Int, checkbox: Boolean, checked: Boolean) {
+        val paragraph = TL_iv.pageBlockParagraph()
+        paragraph.text = text ?: TL_iv.textEmpty()
+        out.add(BlockRow(paragraph, level, num).apply { this.checkbox = checkbox; this.checked = checked })
     }
 
     private fun block(row: BlockRow, urlForId: (Long) -> String?): String {
@@ -148,6 +244,7 @@ internal object RichMessageMarkdown {
                 text.append("```\n")
             }
             b is TL_iv.pageBlockTable -> text.append(table(b))
+            b is TL_iv.pageBlockList || b is TL_iv.pageBlockOrderedList -> text.append(listBlock(b, urlForId))
             b is TL_iv.pageBlockDivider -> text.append("---\n")
             b is TL_iv.pageBlockMath -> {
                 val source = b.source ?: ""
@@ -160,7 +257,11 @@ internal object RichMessageMarkdown {
             b is TL_iv.pageBlockAudio -> text.append(media(b, urlForId, "audio", b.audio_id)).append('\n')
             b is TL_iv.pageBlockDocument -> text.append(media(b, urlForId, "document", b.document_id)).append('\n')
             b is TL_iv.pageBlockButtonRow -> text.append(buttonRow(b)).append('\n')
-            headingLevel(b) > 0 -> text.append("#".repeat(headingLevel(b))).append(' ').append(inline(row)).append('\n')
+            headingLevel(b) > 0 -> {
+                // an empty heading is how the editor seeds its document, and it is not markdown
+                val body = inline(row)
+                if (body.isNotEmpty()) text.append("#".repeat(headingLevel(b))).append(' ').append(body).append('\n')
+            }
             else -> {
                 val body = inline(row)
                 if (body.isNotEmpty()) text.append(body).append('\n')

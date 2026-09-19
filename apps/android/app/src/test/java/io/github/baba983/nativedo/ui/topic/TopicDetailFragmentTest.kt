@@ -753,12 +753,17 @@ class TopicDetailFragmentTest {
         assertThat(topicReplyComposerIconButtonSelectorRadiusDp()).isEqualTo(19f)
         assertThat(topicReplyComposerIconButtonSelectorInsetWDp()).isEqualTo(1f)
         assertThat(topicReplyComposerIconButtonSelectorInsetHDp()).isEqualTo(3f)
+        // the block editor's entry button sits next to the emoji one (2dp inset + 44dp button)
+        assertThat(topicReplyComposerRichEditorButtonLeftMarginDp()).isEqualTo(46f)
     }
 
     @Test
     fun replyComposerInputFieldMargins_matchChatActivityEnterView() {
         assertThat(topicReplyComposerTextFieldBottomPaddingDp()).isEqualTo(0f)
-        assertThat(topicReplyComposerEditTextLeftMarginDp()).isEqualTo(52f)
+        // 96, not upstream's 52: our composer carries the block editor's entry button next to the
+        // emoji one (upstream opens the editor from the attach sheet instead, so its input field
+        // starts right after the emoji button).
+        assertThat(topicReplyComposerEditTextLeftMarginDp()).isEqualTo(96f)
         assertThat(topicReplyComposerEditTextRightMarginDp()).isEqualTo(50f)
     }
 

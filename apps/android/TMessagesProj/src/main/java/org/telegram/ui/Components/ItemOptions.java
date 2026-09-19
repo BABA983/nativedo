@@ -411,6 +411,14 @@ public class ItemOptions {
         return addChecked(checked, text, onClickListener, null);
     }
 
+    public ItemOptions addChecked(boolean checked, int iconResId, CharSequence text, Runnable onClickListener) {
+        return addChecked(checked, iconResId, text, onClickListener, null);
+    }
+
+    public ItemOptions addChecked(boolean checked, Drawable icon, CharSequence text, Runnable onClickListener) {
+        return addChecked(checked, 0, icon, text, onClickListener, null);
+    }
+
 
     public ItemOptions addCheckedIf(boolean condition, boolean checked, CharSequence text, Runnable onClickListener, Runnable onLongClickRunnable) {
         if (!condition) return this;
@@ -418,6 +426,14 @@ public class ItemOptions {
     }
 
     public ItemOptions addChecked(boolean checked, CharSequence text, Runnable onClickListener, Runnable onLongClickRunnable) {
+        return addChecked(checked, 0, text, onClickListener, onLongClickRunnable);
+    }
+
+    public ItemOptions addChecked(boolean checked, int iconResId, CharSequence text, Runnable onClickListener, Runnable onLongClickRunnable) {
+        return addChecked(checked, iconResId, null, text, onClickListener, onLongClickRunnable);
+    }
+
+    public ItemOptions addChecked(boolean checked, int iconResId, Drawable icon, CharSequence text, Runnable onClickListener, Runnable onLongClickRunnable) {
         if (context == null) {
             return this;
         }
@@ -425,10 +441,19 @@ public class ItemOptions {
         final int textColorKey = Theme.key_actionBarDefaultSubmenuItem;
         final int iconColorKey = Theme.key_actionBarDefaultSubmenuItemIcon;
 
-        ActionBarMenuSubItem subItem = new ActionBarMenuSubItem(context, true, false, resourcesProvider);
+        // NativeDo: the pin builds the item with `needCheck` here, so it can draw a CheckBox2 check
+        // mark; this tree's ActionBarMenuSubItem port has no check view yet (`setChecked` is the
+        // pin's body with the check view absent), so an item shows its icon but no check mark.
+        ActionBarMenuSubItem subItem = new ActionBarMenuSubItem(context, false, false, resourcesProvider);
         subItem.setPadding(dp(18), 0, dp(18), 0);
-        subItem.setText(text);
-        // subItem.setChecked(checked); // Method not available in ActionBarMenuSubItem
+        if (icon != null) {
+            subItem.setTextAndIcon(text, 0, icon);
+        } else if (iconResId != 0) {
+            subItem.setTextAndIcon(text, iconResId);
+        } else {
+            subItem.setText(text);
+        }
+        subItem.setChecked(checked);
 
 
         subItem.setColors(textColor != null ? textColor : Theme.getColor(textColorKey, resourcesProvider), iconColor != null ? iconColor : Theme.getColor(iconColorKey, resourcesProvider));

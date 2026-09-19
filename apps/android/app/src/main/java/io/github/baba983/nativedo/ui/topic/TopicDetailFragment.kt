@@ -984,6 +984,8 @@ class TopicDetailFragment @JvmOverloads constructor(
         unlockPostOptionsListScroll()
         repliesSheet?.dismiss()
         repliesSheet = null
+        richEditorSheet?.dismiss()
+        richEditorSheet = null
         replyComposerPanel?.release()
         replyComposerPanel = null
         listView.cancelSwipeReply(false)
@@ -1610,6 +1612,7 @@ class TopicDetailFragment @JvmOverloads constructor(
             initialDraft = draft,
             replyToPost = viewModel.uiState.value.posts.firstOrNull { it.postNumber == draft.replyToPostNumber },
             onEmojiButtonPressed = ::handleReplyComposerEmojiButton,
+            onRichEditorPressed = ::showRichEditor,
             onKeyboardRequested = ::handleReplyComposerKeyboardRequested,
             onReplyContextPressed = { postNumber ->
                 viewModel.requestJumpToReplyTarget(postNumber)
@@ -1642,6 +1645,35 @@ class TopicDetailFragment @JvmOverloads constructor(
         }
         panel.bindDraft(draft, viewModel.uiState.value.posts.firstOrNull { it.postNumber == draft.replyToPostNumber })
         updateReplyComposerBottomInset()
+    }
+
+    private var richEditorSheet: RichEditorSheet? = null
+
+    /**
+     * The composer's way into the block editor: the same draft, edited with the block model.
+     * Dismissing the sheet keeps the edits as the composer's draft
+     * ([TopicViewModel.updateReplyDraftText]), and sending posts them through the same
+     * [TopicViewModel.submitReply] the send button uses.
+     */
+    private fun showRichEditor() {
+        val context = context ?: return
+        val draft = viewModel.uiState.value.replyDraft
+        richEditorSheet?.dismiss()
+        val sheet = RichEditorSheet(
+            context = context,
+            resourcesProvider = resourceProvider,
+            currentAccount = currentAccount,
+            onSend = { markdown ->
+                viewModel.submitReply(
+                    raw = markdown,
+                    replyToPostNumber = draft.replyToPostNumber,
+                )
+            },
+            onDraft = viewModel::updateReplyDraftText,
+        )
+        richEditorSheet = sheet
+        sheet.loadMarkdown(draft.raw)
+        sheet.show()
     }
 
     private fun createTopicActionBarMenu(context: Context) {
@@ -8089,11 +8121,12 @@ private const val TOPIC_REPLY_COMPOSER_PANEL_TOP_INSET_DP = 0f
 private const val TOPIC_REPLY_COMPOSER_PANEL_BOTTOM_INSET_DP = 0f
 private const val TOPIC_REPLY_COMPOSER_PANEL_RADIUS_DP = 0f
 private const val TOPIC_REPLY_COMPOSER_ICON_BUTTON_PADDING_DP = 7.5f
+private const val TOPIC_REPLY_COMPOSER_RICH_EDITOR_BUTTON_LEFT_MARGIN_DP = 46f
 private const val TOPIC_REPLY_COMPOSER_ICON_BUTTON_SELECTOR_RADIUS_DP = 19f
 private const val TOPIC_REPLY_COMPOSER_ICON_BUTTON_SELECTOR_INSET_W_DP = 1f
 private const val TOPIC_REPLY_COMPOSER_ICON_BUTTON_SELECTOR_INSET_H_DP = 3f
 private const val TOPIC_REPLY_COMPOSER_TEXT_FIELD_BOTTOM_PADDING_DP = 0f
-private const val TOPIC_REPLY_COMPOSER_EDIT_TEXT_LEFT_MARGIN_DP = 52f
+private const val TOPIC_REPLY_COMPOSER_EDIT_TEXT_LEFT_MARGIN_DP = 96f
 private const val TOPIC_REPLY_COMPOSER_EDIT_TEXT_RIGHT_MARGIN_DP = 50f
 private const val TOPIC_REPLY_COMPOSER_SEND_BUTTON_LOADING_RADIUS_DP = 8.66f
 private const val TOPIC_REPLY_COMPOSER_TOP_VIEW_HEIGHT_DP = 48
@@ -8151,6 +8184,7 @@ private class TopicReplyComposerPanel(
     initialDraft: TopicReplyDraft,
     replyToPost: Post?,
     private val onEmojiButtonPressed: (View, View, (String) -> Unit) -> Unit,
+    private val onRichEditorPressed: () -> Unit,
     private val onKeyboardRequested: (View) -> Unit,
     private val onReplyContextPressed: (Int) -> Unit,
     private val onBackKeyPressed: (Int, Int) -> Boolean,
@@ -8333,6 +8367,30 @@ private class TopicReplyComposerPanel(
             onEmojiButtonPressed(this, editText, ::insertEmoji)
         }
     }
+    /**
+     * The composer's way into the block editor, the button upstream's `ChatActivityEnterView`
+     * shows for the article editor (`R.string.ArticleEditor`): the composer stays the simple
+     * surface, and this opens the full one with the same draft in it.
+     */
+    private val richEditorButton = ImageView(context).apply {
+        val padding = AndroidUtilities.dp(TOPIC_REPLY_COMPOSER_ICON_BUTTON_PADDING_DP)
+        setPadding(padding, padding, padding, padding)
+        scaleType = ImageView.ScaleType.CENTER
+        setImageResource(TelegramR.drawable.large_article)
+        setColorFilter(PorterDuffColorFilter(
+            Theme.getColor(Theme.key_glass_defaultIcon),
+            PorterDuff.Mode.SRC_IN,
+        ))
+        background = Theme.createInsetRoundRectDrawable(
+            Theme.getColor(Theme.key_listSelector),
+            AndroidUtilities.dp(TOPIC_REPLY_COMPOSER_ICON_BUTTON_SELECTOR_RADIUS_DP).toFloat(),
+            AndroidUtilities.dp(TOPIC_REPLY_COMPOSER_ICON_BUTTON_SELECTOR_INSET_W_DP),
+            AndroidUtilities.dp(TOPIC_REPLY_COMPOSER_ICON_BUTTON_SELECTOR_INSET_H_DP),
+        )
+        isFocusable = true
+        contentDescription = LocaleController.getString(TelegramR.string.ArticleEditor)
+        setOnClickListener { onRichEditorPressed() }
+    }
     private val openKeyboardRunnable: Runnable = Runnable {
         if (visibility != View.VISIBLE) {
             waitingForKeyboardOpen = false
@@ -8503,6 +8561,15 @@ private class TopicReplyComposerPanel(
             TOPIC_REPLY_COMPOSER_DEFAULT_HEIGHT_DP.toFloat(),
             Gravity.BOTTOM or Gravity.LEFT,
             2f,
+            0f,
+            0f,
+            0f,
+        ))
+        messageEditTextContainer.addView(richEditorButton, LayoutHelper.createFrame(
+            TOPIC_REPLY_COMPOSER_DEFAULT_HEIGHT_DP,
+            TOPIC_REPLY_COMPOSER_DEFAULT_HEIGHT_DP.toFloat(),
+            Gravity.BOTTOM or Gravity.LEFT,
+            TOPIC_REPLY_COMPOSER_RICH_EDITOR_BUTTON_LEFT_MARGIN_DP,
             0f,
             0f,
             0f,
@@ -9352,6 +9419,8 @@ internal fun topicReplyComposerIconButtonSelectorInsetHDp(): Float = TOPIC_REPLY
 internal fun topicReplyComposerTextFieldBottomPaddingDp(): Float = TOPIC_REPLY_COMPOSER_TEXT_FIELD_BOTTOM_PADDING_DP
 
 internal fun topicReplyComposerEditTextLeftMarginDp(): Float = TOPIC_REPLY_COMPOSER_EDIT_TEXT_LEFT_MARGIN_DP
+
+internal fun topicReplyComposerRichEditorButtonLeftMarginDp(): Float = TOPIC_REPLY_COMPOSER_RICH_EDITOR_BUTTON_LEFT_MARGIN_DP
 
 internal fun topicReplyComposerEditTextRightMarginDp(): Float = TOPIC_REPLY_COMPOSER_EDIT_TEXT_RIGHT_MARGIN_DP
 
