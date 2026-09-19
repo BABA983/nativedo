@@ -18,6 +18,7 @@ Android v1 uses standard Discourse JSON endpoints and homepage bootstrap HTML.
 - `GET /session/current.json` - preferred current-user identity lookup during session restore
 - `GET /session/csrf` - preferred CSRF token refresh for authenticated writes; bootstrap HTML still provides a fallback hint during session restore
 - `POST /posts.json` - authenticated topic reply/create post with form fields `topic_id`, `raw`, optional `reply_to_post_number`, and `X-CSRF-Token`
+- `POST /uploads.json` - authenticated media upload as the web composer sends it: `multipart/form-data` with the file part named `file`, `upload_type=composer`, `synchronous=true` (so the answer carries the id and URL instead of the asynchronous upload's empty acknowledgement), and `X-CSRF-Token`. The answer's `url` is what a post embeds (absolute, or a path to resolve against the base URL) plus `original_filename`, `width`, `height`, `extension` and `short_url`; fixture at `fixtures/discourse/upload-response.json`.
 - `POST /bookmarks.json` - authenticated post bookmark create with form fields `bookmarkable_id`, `bookmarkable_type=Post`, `auto_delete_preference`, and `X-CSRF-Token`
 - `DELETE /posts/{id}/bookmark` - authenticated post bookmark removal with `X-CSRF-Token`
 - `PUT /polls/vote` - authenticated poll vote with form fields `post_id`, `poll_name`, `options[]`, and `X-CSRF-Token`; the discourse-poll engine registers this route as `PUT` (not `POST`). Response body is `{ "poll": {...}, "vote": ["<option_id>", ...] }` with the updated poll and the current user's normalized selection.

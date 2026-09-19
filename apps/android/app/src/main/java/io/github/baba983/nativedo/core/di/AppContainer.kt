@@ -8,6 +8,7 @@ import coil3.svg.SvgDecoder
 import coil3.intercept.Interceptor
 import coil3.request.allowHardware
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
+import io.github.baba983.nativedo.core.media.DiscourseMediaUploader
 import io.github.baba983.nativedo.core.network.DiscourseApiClient
 import io.github.baba983.nativedo.core.network.DiscourseApiService
 import io.github.baba983.nativedo.core.network.ImageRequestHeadersInterceptor
@@ -120,6 +121,15 @@ class AppContainer(
 
     val discourseApiClient: DiscourseApiClient = DiscourseApiClient(
         service = apiService,
+    )
+    // The editor's uploads report on the main dispatcher (its listeners touch views); the app
+    // passes its own scope, and a container built without one gets a local main-immediate scope.
+    private val mediaUploadScope: CoroutineScope =
+        applicationScope ?: CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate)
+    val discourseMediaUploader: DiscourseMediaUploader = DiscourseMediaUploader(
+        client = discourseApiClient,
+        baseUrl = baseUrl,
+        scope = mediaUploadScope,
     )
     val profileRepository: ProfileRepository = ProfileRepository(
         client = discourseApiClient,

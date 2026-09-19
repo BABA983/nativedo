@@ -13,6 +13,7 @@ import org.telegram.messenger.ApplicationLoader
 import org.telegram.messenger.ImageLoader as TelegramImageLoader
 import org.telegram.messenger.LocaleController
 import org.telegram.messenger.SharedConfig
+import org.telegram.messenger.nativedo.RichMediaUploadBridge
 import io.github.baba983.nativedo.core.di.AppContainer
 import io.github.baba983.nativedo.ui.topic.body.RichMessageBody
 import org.telegram.tgnet.ConnectionsManager
@@ -51,6 +52,10 @@ class NativeDoApp : Application(), SingletonImageLoader.Factory {
         // first-frame NPE we used to paper over in FileLoader.getDirectory.
         TelegramImageLoader.getInstance()
         ApplicationLoader.checkFreeDiscSpace(0)
+
+        // The block editor uploads to the site, not to Telegram: its uploader is the app's
+        // bridge end (`POST /uploads.json`), installed once here so the editor only sees the seam.
+        RichMediaUploadBridge.setUploader(appContainer.discourseMediaUploader)
     }
 
     override fun newImageLoader(context: Context): ImageLoader {

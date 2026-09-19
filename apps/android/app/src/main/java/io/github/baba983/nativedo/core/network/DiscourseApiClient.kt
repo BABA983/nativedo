@@ -9,6 +9,7 @@ import io.github.baba983.nativedo.core.model.TopicDetail
 import io.github.baba983.nativedo.core.model.TopicListPage
 import io.github.baba983.nativedo.core.model.TopicSummary
 import io.github.baba983.nativedo.core.model.UserProfile
+import io.github.baba983.nativedo.core.model.UploadedFile
 import io.github.baba983.nativedo.core.model.UserActionPage
 import io.github.baba983.nativedo.core.session.LoginRequiredException
 import io.github.baba983.nativedo.core.session.SessionBootstrapClient
@@ -24,6 +25,11 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.io.File
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
+import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.Locale
 import org.jsoup.Jsoup
 import retrofit2.HttpException
@@ -167,6 +173,40 @@ class DiscourseApiClient(
                 csrfToken = csrfToken,
             ).toModel()
         }
+
+    /**
+     * Uploads a file to the site as the web composer does (`POST /uploads.json`,
+     * `upload_type=composer`, synchronous) and reports the file's own progress as its bytes leave
+     * the device. The URL comes back as the site wrote it - usually absolute, a path when the site
+     * answered one - and the caller resolves it.
+     */
+    suspend fun uploadFile(
+        file: File,
+        mimeType: String?,
+        onProgress: (Float) -> Unit,
+    ): UploadedFile = runWithSessionBoundary(requiresAuthentication = true) {
+        val csrfToken = service.csrf().csrf
+        val response = service.upload(
+            file = MultipartBody.Part.createFormData(
+                "file",
+                file.name,
+                ProgressRequestBody(file, mimeType, onProgress),
+            ),
+            uploadType = "composer".toUploadField(),
+            synchronous = "true".toUploadField(),
+            csrfToken = csrfToken,
+        )
+        UploadedFile(
+            id = response.id,
+            url = response.url,
+            filename = response.originalFilename,
+            width = response.width,
+            height = response.height,
+        )
+    }
+
+    private fun String.toUploadField(): RequestBody =
+        toRequestBody("text/plain; charset=utf-8".toMediaType())
 
     suspend fun fetchReactionUsers(postId: Long): List<PostReactionUsersGroup> =
         runWithSessionBoundary {

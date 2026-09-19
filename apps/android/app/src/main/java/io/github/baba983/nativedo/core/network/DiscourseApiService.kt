@@ -31,6 +31,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.MultipartBody
+import okhttp3.RequestBody
 import okhttp3.ResponseBody
 import org.jsoup.Jsoup
 import retrofit2.http.DELETE
@@ -41,9 +43,11 @@ import retrofit2.http.GET
 import retrofit2.http.HTTP
 import retrofit2.http.Header
 import retrofit2.http.Headers
-import retrofit2.http.Path
+import retrofit2.http.Multipart
 import retrofit2.http.POST
 import retrofit2.http.PUT
+import retrofit2.http.Part
+import retrofit2.http.Path
 import retrofit2.http.Query
 
 interface DiscourseApiService {
@@ -113,6 +117,20 @@ interface DiscourseApiService {
         @Field("reply_to_post_number") replyToPostNumber: Int?,
         @Header("X-CSRF-Token") csrfToken: String,
     ): PostDto
+
+    /**
+     * `POST /uploads.json` as the web composer sends it: the file as a multipart part, the
+     * composer upload type, and `synchronous=true` so the answer carries the id and URL instead
+     * of the asynchronous upload's empty acknowledgement. Requires `X-CSRF-Token`.
+     */
+    @Multipart
+    @POST("uploads.json")
+    suspend fun upload(
+        @Part file: MultipartBody.Part,
+        @Part("upload_type") uploadType: RequestBody,
+        @Part("synchronous") synchronous: RequestBody,
+        @Header("X-CSRF-Token") csrfToken: String,
+    ): UploadResponseDto
 
     @FormUrlEncoded
     @POST("topics/timings")
@@ -247,6 +265,23 @@ data class TopicDto(
     val unseen: Boolean = false,
     @SerialName("notification_level")
     val notificationLevel: Int? = null,
+)
+
+/**
+ * `POST /uploads.json`'s answer: `url` is what a post embeds (usually absolute; a path when the
+ * site answered a relative one), the dimensions are what the site read from the file.
+ */
+@Serializable
+data class UploadResponseDto(
+    val id: Long = 0,
+    val url: String = "",
+    @SerialName("original_filename")
+    val originalFilename: String? = null,
+    val width: Int = 0,
+    val height: Int = 0,
+    val extension: String? = null,
+    @SerialName("short_url")
+    val shortUrl: String? = null,
 )
 
 @Serializable
