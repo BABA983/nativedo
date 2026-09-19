@@ -383,8 +383,10 @@ Sequence, if chat is scheduled:
    precedes it (measured in the snapshot: the quote's background ends at y=417 and the image box
    starts at y=418 - touching, never overlapping), which reads as one media message from a bot
    rather than as a reading surface. Seventh `// NativeDo:` delta: `mediaPadding()` gives a media
-   block that follows something `dp(6)` of top padding, while the caption keeps the original rect
-   so it stays glued to its image.
+   block that follows something `dp(6)` of top padding. Eighth: `captionPadding()` gives the caption
+   block `dp(4)` of top padding - upstream glues it to the image (measured: image bottom y=511,
+   caption ink from y=521, ~3dp), and `dp(4)` is the renderer's own caption-to-credit gap, so the
+   caption stays tied to its image while getting room to breathe.
 5. **S5** - the interactive paths (spoilers, selection, button rows), scheduled
    with chat itself. **Selection-helper alignment is part of S5, measured:**
    adopting the pin's whole `TextSelectionHelper` (4,091 lines against our 2,347) was

@@ -816,6 +816,17 @@ public class RichMessageLayout {
      * follows something the same family of gap a paragraph gets. The caption keeps the original rect,
      * so it stays glued to its image.
      */
+    /**
+     * NativeDo: upstream glues a caption to the media it belongs to (the caller's zero rect), which
+     * reads as one media message; a reading surface wants a small gap that still ties caption and image
+     * together. dp(4) is the renderer's own caption-to-credit gap, so the rhythm stays in that family.
+     */
+    private Rect captionPadding(Rect padding) {
+        final Rect captionPadding = new Rect(padding);
+        captionPadding.top += dp(4);
+        return captionPadding;
+    }
+
     private Rect mediaPadding(Rect padding) {
         if (blocks.isEmpty()) return padding;
         final Rect mediaPadding = new Rect(padding);
@@ -831,7 +842,7 @@ public class RichMessageLayout {
         final int flags = setBlockFlags(textFlags, TEXT_FLAG_BLOCK_CAPTION);
         final CharSequence text = hasText ? formatText(caption.text, flags) : null;
         final CharSequence credit = hasCredit ? formatText(caption.credit, flags) : null;
-        blocks.add(new RichCaptionBlock(this, padding, maxWidth, text, credit));
+        blocks.add(new RichCaptionBlock(this, captionPadding(padding), maxWidth, text, credit));
     }
 
     private static boolean previousBlockIsParagraph(List<TL_iv.PageBlock> blocks, int index) {
