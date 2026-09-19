@@ -546,10 +546,30 @@ project with ordered slices rather than a wire-out:
      `TLRPC.InputUser` access hashes for profile buttons, which needs a Telegram user
      store (`MessagesController.getUser`/`getInputUser`) that a Discourse client does
      not have.
-   - **The tail is chat.** `RichEditorListView`'s body needs the editor core
-     (`RichEditor`, 229 errors) and the rest of `ChatAttachAlertRichLayout` (283) -
-     the attach-alert editor host and the AI compose sheet. Those wait for chat, or
-     take documented wire-outs like the LaTeX sheet.
+   - **Landed (`1d127a9`): the toolbar.** `RichEditorToolbar` (714 lines: the block
+     row, the format panel, the send button, the history buttons, the reorder
+     trash) and `RichCommandSuggestions` (the slash-command popup) are byte-exact,
+     as is `AiButtonDrawable` with its `input_ai_star` vector. Four host additions
+     came with them (`ItemOptions.dontFocus`/`followScrimView`/`reposition`,
+     `RLottieDrawable`'s frame accessors, `RichEditor`'s accessibility builders) and
+     two native seams: `ChatActivityEnterView.SendButton` (the pin's is 635 lines of
+     chat send-button states; ours is the surface the toolbar mounts, so our host
+     drives `onSend()`) and the AI button. `IvEditorToolbarContractTest` (4 tests)
+     pins the send flow, `setSendEditing`/`setSendEnabled`, the measurement and the
+     accessibility names.
+   - **What is left of the editor, measured after the toolbar** (dropping
+     `RichEditor` + `RichEditorListView` + `RichInlineButtonEditor` in leaves
+     **208 errors**): `RichEditor` (144) is the glue that hosts the editor *inside
+     Telegram's chat* - the enter view (`sendButtonContainer`,
+     `hideSearchKeyboard`), the attach alert (`LAYOUT_TYPE_*`, `getPhotoLayout`),
+     the AI/premium bits and `MessageSendPreview`/`StickersActivity`; that part is
+     not portable, our host replaces it. `RichEditorListView` (56) is mostly the
+     media path it calls into (`RichMediaUploader`/`RichMediaConverter`, 23 of the
+     208) - i.e. our own Discourse upload bridge - plus `RichEditor` references.
+     `RichInlineButtonEditor` (8) is small. So the next two slices are: the media
+     bridge (a native uploader/converter pair speaking `/uploads.json`), then the
+     host (where the editor opens in the topic detail and what its toolbar's send
+     button posts).
 3. Wire the editor into the composer as the upstream-shaped replacement for our
    span-only path, once chat/rich compose is scheduled. **Measured
    (`09e5ce1`, 2026-09-19): the two editing surfaces are separate work, and only
