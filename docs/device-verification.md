@@ -222,3 +222,29 @@ To check, in a topic:
    only a URL, which is what the markdown reader produces) is not carried by the page -
    re-opening an existing post in the editor is a later flow (the edit-post surface), and
    it needs an import step before that gap is user-visible.
+
+## 11. The editor's media: pick, upload, send (`fbe2772`, `990853c`)
+
+What changed: the editor's attach button (and a media row's add) opens the system
+picker for an image or a video; the picked file goes through
+`POST /uploads.json` (multipart, `upload_type=composer`, synchronous) and the
+site's URL is what the post embeds. The uploader is installed once by
+`NativeDoApp` (`core/media/DiscourseMediaUploader`).
+
+To check, in a topic with the editor open:
+
+1. Tap the toolbar's attach button: the system picker opens (images and videos).
+   Pick an image — a media block appears with the picked file previewed
+   locally and a progress ring while it uploads, then no ring.
+2. Pick a video: the block is a video, the preview comes from the local file,
+   and the duration/size are the file's.
+3. Send: the post appears with `![name](https://linux.do/uploads/...)` in its
+   `raw` (edit the post on the web to see it), and the image renders in the
+   topic.
+4. Failure path: turn the network off and pick a file — the block must report the
+   error (it is removed again) rather than hang; a row cancelled mid-upload must
+   disappear without posting anything.
+5. A media row's own "add" (a photo/video block that has no file yet) must put the
+   picked file into that row, not into a new one.
+6. Known gap: the composer's own inline reply box still has no attach path — media
+   goes through the editor, and a post sent from the composer is text-only.

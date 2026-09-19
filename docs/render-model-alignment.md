@@ -629,10 +629,14 @@ project with ordered slices rather than a wire-out:
      `RichEditorSheetScreenshotTest` renders one draft in both themes (the first golden of
      the editor); `RichEditorHostContractTest` (5) and `RichEditorSheetTest` (6) pin the
      document in/out and the send/dispatch guards; the device pass is
-     `docs/device-verification.md` §10. **Still to come:** the media slice (a `:app` file
-     picker + an uploader installed in `RichMediaUploadBridge` speaking `/uploads.json`,
-     which also lights up the toolbar's attach button), the emoji hook, and - until a
-     product surface needs them - `RichEditor`'s chat glue and `RichInlineButtonEditor`.
+     `docs/device-verification.md` §10. The media slice followed (`fbe2772`, `990853c`): the
+     bridge now has its app end - `core/media/DiscourseMediaUploader` posts to `POST
+     /uploads.json` (multipart, `upload_type=composer`, synchronous, progress from the request
+     body, cancellation by path) and `NativeDoApp` installs it once - and the editor's attach
+     button opens the system picker, whose result the page copies and uploads. **Still to
+     come:** the emoji hook, the composer's own attach path (media currently goes through the
+     editor only), and - until a product surface needs them - `RichEditor`'s chat glue and
+     `RichInlineButtonEditor`.
 3. Wire the editor into the composer as the upstream-shaped replacement for our
    span-only path, once chat/rich compose is scheduled. **Measured
    (`09e5ce1`, 2026-09-19): the two editing surfaces are separate work, and only
