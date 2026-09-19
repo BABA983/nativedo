@@ -407,6 +407,14 @@ Sequence, if chat is scheduled:
    block `dp(4)` of top padding - upstream glues it to the image (measured: image bottom y=511,
    caption ink from y=521, ~3dp), and `dp(4)` is the renderer's own caption-to-credit gap, so the
    caption stays tied to its image while getting room to breathe.
+   **The roll-out switch is a debug toggle now (`b461063`).** Settings -> 调试 ->
+   "富文本正文（实验）" flips `RichMessageBody.enabled` and persists it (`RichMessageBody.setEnabled`,
+   restored by `NativeDoApp.onCreate`), so the device pass in `docs/device-verification.md` §7 needs
+   no rebuild. Measured while preparing the flip: with the default on, **10 goldens move** (five
+   tests x two themes: `TopicThemePreviewScreenshotTest` x3, `TopicPostScrimHostLayoutScreenshotTest`,
+   `TopicSwipeReplyRecyclerViewScreenshotTest`), all of them vertical-rhythm shifts (quote/list/code
+   spacing and the rails that follow), not rendering errors - the flip commit is therefore
+   "re-record those ten, nothing else".
 5. **S5** - the interactive paths (spoilers, selection, button rows), scheduled
    with chat itself. **Selection-helper alignment is part of S5, measured:**
    adopting the pin's whole `TextSelectionHelper` (4,091 lines against our 2,347) was

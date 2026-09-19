@@ -84,6 +84,10 @@ and S4 slices 1-2 draw a mapped Discourse post through `RichMessageLayout`, both
 (`PostRichMessageScreenshotTest`) and inside the real `TopicPostCell` behind
 `RichMessageBody.enabled` (off by default). What a device has to settle is that flag-on cell path:
 turn it on, scroll a topic with long posts, and compare the body against the flag-off shape.
+The switch is a debug toggle now (Settings -> 调试 -> "富文本正文（实验）", `b461063`); it persists
+across restarts, so the pass needs no rebuild. With the default on, ten goldens move (see
+`docs/render-model-alignment.md`, S4) - that is the expected shape of the flip, not part of this
+checklist.
 
 What to check once S4 lands:
 
