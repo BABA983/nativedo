@@ -596,11 +596,43 @@ project with ordered slices rather than a wire-out:
      The round trip found two writer gaps, both fixed here: a leaf quote now ends
      its own line, and a `pageBlockBlockquoteBlocks` (what the reader produces for a
      `>` run of several paragraphs) has a branch of its own instead of vanishing.
-     `RichMessageMarkdownTest` +5 (18 total). **Still to come:** the host that shows
-     the editor - the entry in topic detail, mounting `RichEditorListView` +
-     `RichEditorToolbar`, and sending through the writer into the existing reply
-     submit; and `RichEditor`'s chat glue plus `RichInlineButtonEditor`, which stay
-     out until a product surface needs them.
+     `RichMessageMarkdownTest` +5 (18 total).
+   - **The host landed (`4ee2448`).** `RichEditorHostLayout` is the editor's page: the pin's
+     `ChatAttachAlertRichLayout` with the chat glue dropped (attach-sheet raise and type
+     buttons, the emoji view, the AI compose sheet, the schedule/notify preview, the
+     location picker, the premium gates, chat drafts, the pan transition) and a four-method
+     delegate for what only `:app` can do (leave, pick a file, emoji, send). It is a
+     `:TMessagesProj` file at a new path, mapped to the pin's through the overlay's
+     `derived_from` and listed in `native`, so `vendor-diff.sh` still shows the delta. What
+     it keeps upstream-shaped: the delegate wiring, the formatting/block-type state read
+     from the list's own selection helpers, the toolbar's top row riding above the first
+     visible row, the list's paddings (`dp(52)` / `dp(TOOLBAR_BOTTOM_INSET + 50)`), the
+     selection overlay owning touches first, and the toolbar's block-type menus (headings,
+     text/quote/pullquote/code/footer, list kinds with indent/outdent, details, table,
+     math). `ItemOptions` gained the pin's `addChecked` icon overloads for those menus; the
+     check mark itself needs `ActionBarMenuSubItem`'s `CheckBox2` view, which is a separate
+     alignment.
+
+     `RichEditorSheet` (`:app`) is the app's sheet idiom around the page and the two ends
+     the product owns: the composer's draft in as markdown, the document out on send
+     (through the same `TopicViewModel.submitReply` the send button uses), or back as the
+     composer's draft when the sheet is dismissed instead. The composer's entry is its own
+     button next to the emoji one (upstream's `large_article` glyph + `ArticleEditor`
+     label) - upstream reaches the same page from the attach sheet's Article tab, which
+     this product does not have. The round trip through the real page found three writer
+     gaps, all fixed in `RichMessageMarkdown`: a list *block* wrote nothing (only rows
+     carried levels, so lists vanished from a collected document - now the pin's own
+     `expandListBlock` expansion), a details block wrote its header but not its children
+     (now the `flattenDetails` row shape), and the editor's empty seeded heading wrote `#`.
+     A document written by the page and read back is a fixed point.
+
+     `RichEditorSheetScreenshotTest` renders one draft in both themes (the first golden of
+     the editor); `RichEditorHostContractTest` (5) and `RichEditorSheetTest` (6) pin the
+     document in/out and the send/dispatch guards; the device pass is
+     `docs/device-verification.md` §10. **Still to come:** the media slice (a `:app` file
+     picker + an uploader installed in `RichMediaUploadBridge` speaking `/uploads.json`,
+     which also lights up the toolbar's attach button), the emoji hook, and - until a
+     product surface needs them - `RichEditor`'s chat glue and `RichInlineButtonEditor`.
 3. Wire the editor into the composer as the upstream-shaped replacement for our
    span-only path, once chat/rich compose is scheduled. **Measured
    (`09e5ce1`, 2026-09-19): the two editing surfaces are separate work, and only
