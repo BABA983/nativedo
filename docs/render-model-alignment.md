@@ -504,26 +504,34 @@ project with ordered slices rather than a wire-out:
      line → blockquote, plus `isLossy`), `RichMediaItem` and `RichMediaClipboard`.
      All four are the pin's blobs verbatim, pinned by
      `IvDocumentModelContractTest` (9 tests).
-   - **The cells are one blocker deep.** Everything in the cell family
-     (`RichTextCell`, `RichTableCell`/`Host`/`Grid`, `RichDetailsCell`,
+   - **Landed (`2e2e728`): the editor text view and the caption base** -
+     `RichEditText` (706), `RichCaptionHost` (8), `RichCaptionController` (201),
+     all byte-exact, plus the one stub they needed: a native
+     `ChatAttachAlertRichLayout` with just `showEditLatexSheet` (the pin's sheet is
+     `BottomSheet` + `EditTextCell` + `ButtonWithCounterView` preview, ~150 lines
+     of editor UI, so it lands with that host). `IvEditorBaseContractTest` pins the
+     style run API and the stub's "no sheet, no callback" contract.
+   - **The cells are one host surface away.** With `RichEditText` in, the cell
+     family (`RichTextCell`, `RichTableCell`/`Host`/`Grid`, `RichDetailsCell`,
      `RichQuoteAuthorCell`, `RichAudioCell`/`MapCell`/`DocumentCell`/`MediaCell`,
-     `RichCaptionHost`/`RichCaptionController`, `RichTextCell`'s helpers) compiles
-     as soon as `RichEditText` does - and `RichEditText`'s only error is one call
-     to `ChatAttachAlertRichLayout.showEditLatexSheet(getContext(), …, cb)` (the
-     LaTeX editor sheet). Behind that: their own small host surface - the
-     `ArticleHint*`/`ArticleTableTitleHint`/`ArticleAlignment` strings, the `iv_*`
-     toolbar drawables plus `arrows_select`/`msg_map`, `AnimatedEmojiSpan`'s
-     `replaceFontMetrics`/`standard`, the media-upload TL shells
-     (`TL_messages_uploadMedia`, `TL_inputMediaUploaded*`, `TL_inputPeerSelf`,
-     `InputUser`, `TL_geoPoint*`), `VideoEditedInfo`'s converter fields and
+     `RichMediaCell`'s `LAYOUT_TYPE_*`) compiles once its own small host surface is
+     there: the `ArticleHint*`/`ArticleTableTitleHint`/`ArticleAlignment` strings,
+     the `iv_table_*`/`iv_media_*`/`arrows_select`/`msg_map`/`msg_spoiler*`
+     drawables, an `AppGlobalConfig` shim (the `richMessage*` limits),
+     `AnimatedEmojiSpan`'s `replaceFontMetrics`/`standard`, the media-upload TL
+     shells (`TL_messages_uploadMedia`, `TL_inputMediaUploaded*`,
+     `TL_inputPeerSelf`, `InputUser`, `TL_geoPoint*`), `TL_documentAttributeAudio`'s
+     `title`/`performer`, `VideoEditedInfo`'s converter fields and
      `NotificationCenter.filePreparingStarted`/`MediaController.cancelVideoConvert`.
-   - **The tail is chat.** `RichHtml` and `RichEditorListView` (plus
-     `RichButtonRowCell`, `RichEditorHistory`, `RichEditorLimits`,
-     `RichMediaConverter`/`Uploader`, `RichMessageButtonUsers`) need the editor
-     core (`RichEditor`, 229 errors) and `ChatAttachAlertRichLayout` (283) - the
-     attach-alert editor host and the AI compose sheet. Those wait for chat, or
-     take documented wire-outs; `RichHtml` itself is then three model fields away
-     (`TLRPC.TL_geoPoint` + `access_hash`, `AnimatedEmojiSpan.standard`).
+     `RichTextCell`, `RichButtonRowCell` and `RichAudioCell` also reach
+     `RichEditor` (its nested drawables and `RichCommand`) - the editor core file,
+     which is the chat-coupled tail below.
+   - **The tail is chat.** `RichHtml` and `RichEditorListView` need the editor
+     core (`RichEditor`, 229 errors) and the rest of `ChatAttachAlertRichLayout`
+     (283) - the attach-alert editor host and the AI compose sheet. Those wait for
+     chat, or take documented wire-outs like the LaTeX sheet; `RichHtml` itself is
+     then three model fields away (`TLRPC.TL_geoPoint` + `access_hash`,
+     `AnimatedEmojiSpan.standard`).
 3. Wire the editor into the composer as the upstream-shaped replacement for our
    span-only path, once chat/rich compose is scheduled.
 
