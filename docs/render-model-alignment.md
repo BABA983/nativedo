@@ -472,7 +472,9 @@ project with ordered slices rather than a wire-out:
 
 1. The **non-editor leaves** - slice 1 landed (plus `Latex`, above):
    `RichBlockChrome`, `RichBlockInset`, `RichInsetCell`, `RichBlockCell`, `RichContainer`,
-   `BlockRow`, `MathSpan`, `MediaUploadState` - the shared base of the iv cell family
+   `BlockRow`, `MathSpan`, `MediaUploadState`, and (after S5 removed the interface
+   blocker) `RichBlockSelection`, `RichDividerCell`, `RichDetailsEndCell`, `RichMathCell` -
+   the shared base of the iv cell family
    (`RichTextCell`, `RichMediaCell`, `RichTableCell`, `RichAudioCell`) and of `RichHtml`.
    The only host addition they needed was `TLObject`'s `FLAG_0`..`FLAG_31` table (the pin
    declares it there; `TableModel` alone uses 33 of them).
@@ -485,8 +487,9 @@ project with ordered slices rather than a wire-out:
    (`Layout getLayout()` plus `getPrefix`/`getSelectionBounds` defaults), while ours is
    the `reference`-pinned 12.6 shape (`StaticLayout getLayout()`, abstract `getPrefix`,
    `getPrefixLayout`), and rule 8 says that file is not moved to the pin. **That last
-   blocker is gone: `5fd8dc3` put the pin's interface in the tree, so
-   `RichBlockSelection` now compiles against the shape it was written for.**
+   blocker is gone: `5fd8dc3` put the pin's interface in the tree and `1c295dd`
+   landed the file itself** (with `RichDividerCell`, `RichDetailsEndCell` and
+   `RichMathCell`, its first consumers — see the triage document's landed table).
    `RichCaptionHost` + `RichEditText` are the editor half and wait for slice 2.
 2. `RichHtml` + the editor cells it drags (`RichEditorListView`, `RichTextCell`,
    `MediaUploadState`), with the commands/toolbar after.
