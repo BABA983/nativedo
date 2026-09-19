@@ -39,10 +39,10 @@ internal object PostRichMessageBuilder {
         is CookedPostBlock.Details -> details(block, baseUrl)
         is CookedPostBlock.Table -> table(block, baseUrl)
         is CookedPostBlock.Image -> photo(block, baseUrl)
+        is CookedPostBlock.Collage -> collage(block, baseUrl)
         CookedPostBlock.Rule -> TL_iv.pageBlockDivider()
         is CookedPostBlock.Callout,
         is CookedPostBlock.Onebox,
-        is CookedPostBlock.Collage,
         is CookedPostBlock.Poll,
         -> null
     }
@@ -173,6 +173,17 @@ internal object PostRichMessageBuilder {
             image.captionHtml?.takeIf { it.isNotBlank() }?.let { html ->
                 caption = TL_iv.PageCaption().apply { text = inline(html) }
             }
+        }
+
+    /**
+     * A Discourse collage as upstream's `pageBlockCollage`: one `pageBlockPhoto` per image, each with
+     * its own URL and pixel size (upstream's collage lays them out from those aspect ratios). The
+     * per-image captions of a Discourse collage have no place in this model yet - the block-level
+     * caption is Telegram's own, and a post's images rarely carry one.
+     */
+    private fun collage(collage: CookedPostBlock.Collage, baseUrl: String): TL_iv.PageBlock =
+        TL_iv.pageBlockCollage().apply {
+            items = ArrayList(collage.images.map { image -> photo(image, baseUrl) })
         }
 
     private fun inline(html: String): TL_iv.RichText = cookInlineHtml(html).richText

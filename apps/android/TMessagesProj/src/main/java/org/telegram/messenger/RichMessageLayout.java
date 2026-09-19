@@ -8069,6 +8069,8 @@ public class RichMessageLayout {
         public final TLRPC.PhotoSize strippedThumb;
         public final boolean isVideo;
         public final boolean realVideo;
+        /** NativeDo: the absolute URL of a Discourse image, when the page block carries one. */
+        public final String webUrl;
 
         public final float aspectRatio;
 
@@ -8108,7 +8110,12 @@ public class RichMessageLayout {
             strippedThumb = null;
             isVideo = false;
             realVideo = false;
-            aspectRatio = sizeFull != null && sizeFull.h > 0 ? sizeFull.w / (float) sizeFull.h : 1f;
+            // NativeDo: a Discourse image has no Telegram photo; the page block carries the absolute
+            // URL and the declared size, and applyImage loads it through ImageLocation.getForPath.
+            webUrl = photo == null && pb.url != null && !pb.url.isEmpty() ? pb.url : null;
+            aspectRatio = sizeFull != null && sizeFull.h > 0 ? sizeFull.w / (float) sizeFull.h
+                : webUrl != null && pb.w > 0 && pb.h > 0 ? pb.w / (float) pb.h
+                : 1f;
             observerTag = DownloadController.getInstance(root.currentAccount).generateObserverTag();
             imageReceiver.setAllowLoadingOnAttachedOnly(true);
             blurImageReceiver.setAllowLoadingOnAttachedOnly(true);
@@ -8121,6 +8128,7 @@ public class RichMessageLayout {
             this.sizeFull = null;
             this.strippedSize = null;
             this.document = root.getDocument(pb.video_id);
+            this.webUrl = null;
             this.realVideo = MessageObject.isVideoDocument(document);
             this.isVideo = realVideo || MessageObject.isGifDocument(document);
             if (document != null) {
@@ -8180,6 +8188,8 @@ public class RichMessageLayout {
         }
 
         public boolean fileExists() {
+            // NativeDo: a URL image has nothing to fetch through FileLoader.
+            if (webUrl != null) return true;
             if (sizeFull != null) {
                 final File p1 = FileLoader.getInstance(root.currentAccount).getPathToAttach(sizeFull, true);
                 final File p2 = FileLoader.getInstance(root.currentAccount).getPathToAttach(sizeFull, false);
@@ -8194,12 +8204,21 @@ public class RichMessageLayout {
         }
 
         public String getFileName() {
+            // NativeDo: the URL is a URL image's stable identity.
+            if (webUrl != null) return webUrl;
             if (sizeFull != null) return FileLoader.getAttachFileName(sizeFull);
             if (document != null) return FileLoader.getAttachFileName(document);
             return null;
         }
 
         private void applyImage(boolean allowMedia) {
+            if (webUrl != null) {
+                // NativeDo: same mechanism as the app's own image pool - ImageLoader fetches the URL.
+                if (allowMedia) {
+                    imageReceiver.setImage(ImageLocation.getForPath(webUrl), null, null, null, root.messageObject, 1);
+                }
+                return;
+            }
             if (photo != null && sizeFull != null) {
                 final ImageLocation thumbLoc = strippedSize != null ? ImageLocation.getForPhoto(strippedSize, photo) : null;
                 if (allowMedia) {

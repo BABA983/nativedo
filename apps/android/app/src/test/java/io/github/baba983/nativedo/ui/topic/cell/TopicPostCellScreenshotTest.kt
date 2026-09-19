@@ -111,7 +111,13 @@ internal class TopicPostCellScreenshotTest {
               <li>item with <b>bold</b></li>
             </ul>
             <blockquote><p>Quoted paragraph with <code>inline code</code>.</p></blockquote>
-            <p><img src="https://cdn.example.dev/diagram.png" width="960" height="540" alt="diagram"></p>
+            <figure>
+              <img src="https://cdn.example.dev/diagram.png" width="960" height="540" alt="diagram">
+              <figcaption>A captioned image.</figcaption>
+            </figure>
+            <p>Two adjacent images, which the parser reads as a collage:</p>
+            <p><img src="https://cdn.example.dev/one.png" width="800" height="600" alt="one"></p>
+            <p><img src="https://cdn.example.dev/two.png" width="600" height="800" alt="two"></p>
             <pre><code>val body = RichMessageBody.enabled</code></pre>
             <hr>
             <p>Done.</p>

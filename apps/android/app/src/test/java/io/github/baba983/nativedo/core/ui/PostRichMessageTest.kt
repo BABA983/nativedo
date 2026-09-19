@@ -99,6 +99,40 @@ class PostRichMessageTest {
     }
 
     @Test
+    fun adjacentImagesBecomeACollageOfUrlPhotos() {
+        val message = build(
+            """
+            <p><img src="https://cdn.example.dev/one.png" width="800" height="600" alt="one"></p>
+            <p><img src="https://cdn.example.dev/two.png" width="600" height="800" alt="two"></p>
+            """.trimIndent()
+        )
+
+        val collage = message.blocks.single() as TL_iv.pageBlockCollage
+        assertThat(collage.items).hasSize(2)
+        val first = collage.items[0] as TL_iv.pageBlockPhoto
+        assertThat(first.url).isEqualTo("https://cdn.example.dev/one.png")
+        assertThat(first.w).isEqualTo(800)
+        val second = collage.items[1] as TL_iv.pageBlockPhoto
+        assertThat(second.h).isEqualTo(800)
+    }
+
+    @Test
+    fun aFigureCaptionTravelsAsThePhotoCaption() {
+        val message = build(
+            """
+            <figure>
+              <img src="https://cdn.example.dev/diagram.png" width="960" height="540" alt="diagram">
+              <figcaption>A <b>captioned</b> diagram.</figcaption>
+            </figure>
+            """.trimIndent()
+        )
+
+        val photo = message.blocks.single() as TL_iv.pageBlockPhoto
+        assertThat(photo.caption).isNotNull()
+        assertThat((photo.caption.text as TL_iv.textConcat).texts.filterIsInstance<TL_iv.textBold>()).hasSize(1)
+    }
+
+    @Test
     fun discourseOnlyBlocksAreLeftOutInsteadOfMisrendered() {
         val message = build("<p>Text only</p>")
 
