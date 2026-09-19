@@ -572,6 +572,21 @@ project with ordered slices rather than a wire-out:
      two ends are ours: the host (where it opens, what "send" does) and the media
      bridge (Discourse's upload API instead of `messages.uploadMedia`). That is a
      product design step, not an alignment step.
+   - **Decision (2026-09-19, owner): the block editor's output is Discourse
+     markdown, not HTML.** `raw` is Discourse's stored form and what its own web
+     composer round-trips through, so a post written in our editor stays editable
+     there and cooks exactly as the server renders it; an HTML `raw` would be
+     visible as HTML source in the web composer and would live or die by the
+     server's sanitizer allowlist. The cost is ours: upstream has no markdown path
+     (Telegram's export is `RichHtml`, blocks → HTML), so the bridge is a writer
+     (blocks → markdown: headings, lists, quotes, `[details=...]`, Discourse table
+     syntax, fenced code with its language, images as uploaded URLs) and a reader
+     (markdown → blocks, for re-opening one of our own posts, whose `raw` the API
+     does return - other people's posts only arrive cooked). The text-level half of
+     the writer can lean on `RichMessageConvert` (blocks → styled `CharSequence`)
+     plus `TopicReplyComposerMarkdown.serialize` (spans → markdown), which is the
+     same bridge the inline composer already uses; what is genuinely new is the
+     structural layer, bounded by the block set we support.
 
 Files we trim land in the overlay's `native` array; byte-identical copies do not need
 bookkeeping. Nothing in this project is a new product surface by itself - the slices
