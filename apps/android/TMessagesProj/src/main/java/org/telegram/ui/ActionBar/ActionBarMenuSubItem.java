@@ -35,6 +35,16 @@ public class ActionBarMenuSubItem extends FrameLayout {
     public boolean checkViewLeft = LocaleController.isRTL;
     public android.view.View checkView;
 
+    /** Pin body: a no-op in this port, where the selector/checkbox decoration is absent (checkView stays null). */
+    public void setChecked(boolean checked) {
+        if (checkView == null) {
+            return;
+        }
+        if (checkView instanceof org.telegram.ui.Components.CheckBoxSquare) {
+            ((org.telegram.ui.Components.CheckBoxSquare) checkView).setChecked(checked, true);
+        }
+    }
+
     public ActionBarMenuSubItem(Context context, boolean top, boolean bottom, Theme.ResourcesProvider resourcesProvider) {
         super(context);
         this.top = top;

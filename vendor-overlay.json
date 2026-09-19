@@ -112,9 +112,11 @@
     ]
   },
   "native": [
+    "TMessagesProj/src/main/java/org/telegram/messenger/nativedo/RichMediaUploadBridge.java",
+    "TMessagesProj/src/main/java/org/telegram/ui/iv/RichMediaConverter.java",
+    "TMessagesProj/src/main/java/org/telegram/ui/iv/RichMediaUploader.java",
     "TMessagesProj/src/main/java/org/telegram/messenger/AppGlobalConfig.java",
     "TMessagesProj/src/main/java/org/telegram/ui/iv/RichEditor.java",
-    "TMessagesProj/src/main/java/org/telegram/ui/iv/RichEditorListView.java",
     "TMessagesProj/src/main/java/com/google/android/exoplayer2/C.java",
     "TMessagesProj/src/main/java/com/google/android/exoplayer2/ExoPlayer.java",
     "TMessagesProj/src/main/java/com/google/android/exoplayer2/Format.java",

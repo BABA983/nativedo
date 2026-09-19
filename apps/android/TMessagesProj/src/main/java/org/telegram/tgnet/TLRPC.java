@@ -143,7 +143,7 @@ public class TLRPC {
         public long access_hash;
         public int date;
         public String mime_type;
-        public int size;
+        public long size;
         public int dc_id;
         public ArrayList<PhotoSize> thumbs;
         public ArrayList<VideoSize> video_thumbs;

@@ -176,6 +176,48 @@ public class MediaController {
         public java.util.ArrayList<Object> entities = new java.util.ArrayList<>();
         public TLRPC.VideoSize emojiMarkup;
 
+        public PhotoEntry(int bucketId, int imageId, long dateTaken, String path, int orientationOrDuration, boolean isVideo, int width, int height, long size) {
+            this.bucketId = bucketId;
+            this.imageId = imageId;
+            this.dateTaken = dateTaken;
+            this.path = path;
+            this.width = width;
+            this.height = height;
+            this.size = size;
+            if (isVideo) {
+                this.duration = orientationOrDuration;
+            } else {
+                this.orientation = orientationOrDuration;
+            }
+            this.isVideo = isVideo;
+        }
+
+        /** Pin signature (PhotoEntry's own constructor is a no-arg one in this port). */
+        public PhotoEntry(int bucketId, int imageId, long dateTaken, String path, int orientation, int duration, boolean isVideo, int width, int height, long size) {
+            this.bucketId = bucketId;
+            this.imageId = imageId;
+            this.dateTaken = dateTaken;
+            this.path = path;
+            this.width = width;
+            this.height = height;
+            this.size = size;
+            this.duration = duration;
+            this.orientation = orientation;
+            this.isVideo = isVideo;
+        }
+
+        public PhotoEntry setOrientation(android.util.Pair<Integer, Integer> rotationAndInvert) {
+            this.orientation = rotationAndInvert.first;
+            this.invert = rotationAndInvert.second;
+            return this;
+        }
+
+        public PhotoEntry setOrientation(int rotation, int invert) {
+            this.orientation = rotation;
+            this.invert = invert;
+            return this;
+        }
+
         public String getPath() {
             return path;
         }

@@ -987,6 +987,12 @@ public class ItemOptions {
         return this;
     }
 
+    private boolean allowShowingOnTopOfKeyboard;
+    public ItemOptions allowShowingOnTopOfKeyboard() {
+        this.allowShowingOnTopOfKeyboard = true;
+        return this;
+    }
+
     private boolean dontFocus;
     public ItemOptions dontFocus() {
         this.dontFocus = true;
@@ -1361,7 +1367,10 @@ public class ItemOptions {
         actionBarPopupWindow.setFocusable(!dontFocus);
         actionBarPopupWindow.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
         actionBarPopupWindow.setAnimationStyle(R.style.PopupContextAnimation);
-        if (dontFocus) {
+        if (allowShowingOnTopOfKeyboard) {
+            actionBarPopupWindow.setInputMethodMode(ActionBarPopupWindow.INPUT_METHOD_NOT_NEEDED);
+            actionBarPopupWindow.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED);
+        } else if (dontFocus) {
             actionBarPopupWindow.setInputMethodMode(ActionBarPopupWindow.INPUT_METHOD_NEEDED);
             actionBarPopupWindow.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_PAN);
         } else if (needsFocus) {
