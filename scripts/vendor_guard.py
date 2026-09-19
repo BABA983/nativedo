@@ -102,6 +102,10 @@ FORCED_EXACT_TESTS_BY_PATH: dict[str, list[str]] = {
     "TMessagesProj/src/main/java/org/telegram/ui/Components/chat/layouts/ChatActivitySideControlsButtonsLayout.java": ["ChatActivitySideControlsButtonsLayoutTest"],
     "TMessagesProj/src/main/java/org/telegram/ui/Components/poll/buttons/PollInstantButtonDrawable.java": ["PollInstantButtonDrawableContractTest", "PollInstantButtonDrawableScreenshotTest"],
     "TMessagesProj/src/main/java/org/telegram/ui/GradientClip.java": ["GradientClipContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/iv/RichBlockSelection.java": ["IvLeafCellsContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/iv/RichDetailsEndCell.java": ["IvLeafCellsContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/iv/RichDividerCell.java": ["IvLeafCellsContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/iv/RichMathCell.java": ["IvLeafCellsContractTest"],
     "TMessagesProj/src/main/java/org/telegram/ui/web/AddressBarList.java": ["AddressBarListAccessibilityTest"],
 }
 
