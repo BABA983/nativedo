@@ -24,6 +24,16 @@ public final class TL_iv {
     private TL_iv() {}
 
     public static class PageBlock extends TLObject {
+
+        /**
+         * NativeDo: the pin's generated class deserializes itself from a stream; this tree's TL_iv
+         * types are data holders with no serializers, so the history path answers null and its own
+         * fallback (an empty paragraph) takes over - see {@code RichEditorHistory.deserializeBlock}.
+         */
+        public static PageBlock TLdeserialize(org.telegram.tgnet.SerializedData data, int constructor, boolean exception) {
+            return null;
+        }
+
         public int level;
         public boolean bottom;
         /**

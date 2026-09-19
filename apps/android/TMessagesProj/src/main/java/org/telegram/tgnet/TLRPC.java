@@ -173,6 +173,10 @@ public class TLRPC {
     }
 
     public static class TL_documentAttributeAudio extends DocumentAttribute {
+        public int flags;
+        public int duration;
+        public String title;
+        public String performer;
     }
 
     public static class TL_documentAttributeVideo extends DocumentAttribute {
@@ -752,8 +756,17 @@ public class TLRPC {
     }
 
     public static class GeoPoint extends TLObject {
+        public int flags;
         public double lat;
         public double _long;
+        public long access_hash;
+        public int accuracy_radius;
+    }
+
+    public static class TL_geoPoint extends GeoPoint {
+    }
+
+    public static class TL_geoPointEmpty extends GeoPoint {
     }
 
     public static class StickerSet extends TLObject {

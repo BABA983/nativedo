@@ -58,6 +58,7 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.view.WindowInsets;
 import android.widget.EdgeEffect;
+import android.widget.ImageView;
 import android.widget.HorizontalScrollView;
 import android.widget.ScrollView;
 import android.view.animation.DecelerateInterpolator;
@@ -65,6 +66,7 @@ import android.view.animation.Interpolator;
 import android.view.inputmethod.InputMethodManager;
 
 import androidx.annotation.NonNull;
+import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 import androidx.core.view.WindowCompat;
 import androidx.dynamicanimation.animation.DynamicAnimation;
@@ -95,6 +97,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Scanner;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 import org.telegram.ui.ActionBar.Theme;
@@ -2515,6 +2518,15 @@ public final class AndroidUtilities {
         return true;
     }
 
+    public static boolean copyFileSafe(File sourceFile, File destFile) {
+        try {
+            return copyFile(sourceFile, destFile);
+        } catch (Exception e) {
+            FileLog.e(e);
+            return false;
+        }
+    }
+
     public static int getWallpaperRotation(int angle, boolean iOS) {
         angle += iOS ? 180 : -180;
         while (angle >= 360) angle -= 360;
@@ -2595,5 +2607,28 @@ public final class AndroidUtilities {
             return isContextSafe(baseContext);
         }
         return true;
+    }
+
+    public static void updateImageViewImageAnimated(ImageView imageView, int newIcon) {
+        updateImageViewImageAnimated(imageView, ContextCompat.getDrawable(imageView.getContext(), newIcon));
+    }
+
+    public static void updateImageViewImageAnimated(ImageView imageView, Drawable newIcon) {
+        if (imageView.getDrawable() == newIcon) {
+            return;
+        }
+        ValueAnimator animator = ValueAnimator.ofFloat(0, 1).setDuration(150);
+        AtomicBoolean changed = new AtomicBoolean();
+        animator.addUpdateListener(animation -> {
+            float val = (float) animation.getAnimatedValue();
+            float scale = 0.5f + Math.abs(val - 0.5f);
+            imageView.setScaleX(scale);
+            imageView.setScaleY(scale);
+            if (val >= 0.5f && !changed.get()) {
+                changed.set(true);
+                imageView.setImageDrawable(newIcon);
+            }
+        });
+        animator.start();
     }
 }

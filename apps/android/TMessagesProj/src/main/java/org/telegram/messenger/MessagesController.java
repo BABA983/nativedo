@@ -38,18 +38,7 @@ public final class MessagesController {
     public int largeQueueMaxActiveOperations = 2;
     public int smallQueueMaxActiveOperations = 5;
 
-    public final BlurConfig config = new BlurConfig();
-
-    public static class BlurConfig {
-        public final ConfigBoolean disableBlurInLightTheme = new ConfigBoolean(false);
-        public final ConfigBoolean disableBlurInDarkTheme = new ConfigBoolean(false);
-
-        public static class ConfigBoolean {
-            private final boolean value;
-            public ConfigBoolean(boolean defaultValue) { this.value = defaultValue; }
-            public boolean get() { return value; }
-        }
-    }
+    public final AppGlobalConfig config = new AppGlobalConfig();
 
     private MessagesController() {
     }

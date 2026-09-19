@@ -87,6 +87,20 @@ public class AnimatedEmojiSpan extends CharacterStyle {
         return documentId;
     }
 
+    /** Pin body: the span re-measures itself for the metrics of the paint that will draw it. */
+    public void replaceFontMetrics(android.graphics.Paint.FontMetricsInt newMetrics) {
+        this.fontMetrics = newMetrics;
+        if (fontMetrics != null) {
+            size = Math.abs(fontMetrics.descent) + Math.abs(fontMetrics.ascent);
+            if (size == 0) {
+                size = org.telegram.messenger.AndroidUtilities.dp(20);
+            }
+        }
+    }
+
+    /** Pin field the rich-message HTML export reads. */
+    public boolean standard;
+
     public void setPreserveFontMetrics(boolean value) {
         preserveFontMetrics = value;
     }

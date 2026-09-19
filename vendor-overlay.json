@@ -112,6 +112,9 @@
     ]
   },
   "native": [
+    "TMessagesProj/src/main/java/org/telegram/messenger/AppGlobalConfig.java",
+    "TMessagesProj/src/main/java/org/telegram/ui/iv/RichEditor.java",
+    "TMessagesProj/src/main/java/org/telegram/ui/iv/RichEditorListView.java",
     "TMessagesProj/src/main/java/com/google/android/exoplayer2/C.java",
     "TMessagesProj/src/main/java/com/google/android/exoplayer2/ExoPlayer.java",
     "TMessagesProj/src/main/java/com/google/android/exoplayer2/Format.java",
@@ -984,6 +987,68 @@
     ]
   },
   "resources": [
+    {
+      "kind": "drawable",
+      "files": [
+        "arrows_select.xml",
+        "iv_align_horiz_left.xml",
+        "iv_align_horiz_middle.xml",
+        "iv_align_horiz_right.xml",
+        "iv_align_vert_bottom.xml",
+        "iv_align_vert_middle.xml",
+        "iv_align_vert_top.xml",
+        "iv_audio.xml",
+        "iv_button.xml",
+        "iv_code.xml",
+        "iv_details.xml",
+        "iv_divider.xml",
+        "iv_footer.xml",
+        "iv_h1.xml",
+        "iv_h2.xml",
+        "iv_h3.xml",
+        "iv_h4.xml",
+        "iv_h5.xml",
+        "iv_h6.xml",
+        "iv_list.xml",
+        "iv_location.xml",
+        "iv_math.xml",
+        "iv_media.xml",
+        "iv_media_add.xml",
+        "iv_media_collage.xml",
+        "iv_media_dots.xml",
+        "iv_media_slideshow.xml",
+        "iv_ordered_list.xml",
+        "iv_pullquote.xml",
+        "iv_quote.xml",
+        "iv_table.xml",
+        "iv_table_highlight.xml",
+        "iv_table_highlight_remove.xml",
+        "iv_table_insert_bottom.xml",
+        "iv_table_insert_left.xml",
+        "iv_table_insert_right.xml",
+        "iv_table_insert_top.xml",
+        "iv_table_merge.xml",
+        "iv_table_remove.xml",
+        "iv_table_unmerge.xml",
+        "iv_todo.xml",
+        "star_premium.xml",
+        "star_premium_cutout.xml"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res/drawable",
+      "local_glob": "apps/android/TMessagesProj/src/main/res/drawable",
+      "vendored_at": "163356809fa4bd81e64969700753e0a15664a288"
+    },
+    {
+      "kind": "drawable",
+      "files": [
+        "msg_map.webp",
+        "msg_spoiler.webp",
+        "msg_spoiler_off.webp"
+      ],
+      "upstream_dir": "TMessagesProj/src/main/res",
+      "local_glob": "apps/android/TMessagesProj/src/main/res/drawable-*",
+      "vendored_at": "163356809fa4bd81e64969700753e0a15664a288"
+    },
     {
       "kind": "drawable",
       "files": [
