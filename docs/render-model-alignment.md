@@ -416,7 +416,15 @@ Sequence, if chat is scheduled:
    spacing and the rails that follow), not rendering errors - the flip commit is therefore
    "re-record those ten, nothing else".
 5. **S5** - the interactive paths (spoilers, selection, button rows), scheduled
-   with chat itself. **Selection-helper alignment is part of S5, measured:**
+   with chat itself. **Second probe (2026-09-19): the file is ours after all - see
+   `docs/vendor-selection-helper-plan.md`.** Of the 172 errors the adoption probe
+   reports, **160 are inside `ChatListTextSelectionHelper`** (the dialogs-list engine
+   that reads the un-ported chat text layout) and **`ArticleTextSelectionHelper` + the
+   interfaces probe clean**; the residue is our own extras (`getPrefix*`/`getClipBounds`
+   on `TextLayoutBlock`, `Emoji`'s `TextSelectionBoundsProvider`, `setOnQuote`/
+   `setRecyclerView`/`destroy`) plus two `RichMessageLayout` `getLayout()` returns. So
+   S5 is one file minus a block, not a chat-layout port. **First measurement, kept for
+   the record:**
    adopting the pin's whole `TextSelectionHelper` (4,091 lines against our 2,347) was
    probed by overwriting the file and compiling: **172 errors, 168 of them inside the
    file**, all of them the engine reading the chat cell's layout state it lives inside -
