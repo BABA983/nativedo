@@ -184,3 +184,41 @@ To check, on a post body (long-press a text block, then drag):
    stray handles, no crash (this part is app-side).
 6. TalkBack is unaffected: the cell's description is still the accessibility text
    (§7.7); selection is a separate gesture.
+
+## 10. The block editor, and the composer's way in (`4ee2448`)
+
+What changed: the reply composer grew the block editor's entry button (next to the
+emoji one, upstream's `large_article` glyph and `ArticleEditor` label) and the sheet it
+opens mounts the pin's editor page (`RichEditorHostLayout`) with our own ends - the draft
+goes in as Discourse markdown and the send comes out the same way. Paparazzi pins the
+rendering of one draft (`RichEditorSheetScreenshotTest`, both themes).
+
+To check, in a topic:
+
+1. Open: tapping the composer's entry button opens the editor with the draft the
+   composer holds. Type text in the composer first and confirm it arrives as the
+   document's text (the composer's own markers — `**bold**`, lists, quotes — arrive as
+   their blocks).
+2. Editing: the seeded heading row is the draft's first line; the toolbar's block button
+   switches a row to heading/text/quote/code/list kinds (with indent/outdent in the list
+   menu), the history pill enables as edits land, and undo/redo walk them back.
+3. Selection: long-press then drag over a row — the bottom toolbar turns into the format
+   panel (bold/italic/underline/strike/spoiler/mono/sub/sup, link, date, quote) and each
+   button applies to the selection; the selection handles must survive scrolling.
+4. Keyboard and insets: with the keyboard open, the toolbar's bottom row and the input
+   must stay visible (the sheet pans), and with the keyboard closed the bottom row must
+   sit above the navigation bar. The list must scroll clear of the toolbar (its bottom
+   padding is `dp(8 + 44 + 8 + 50)`).
+5. Send: pressing send posts through the reply path and closes the sheet; the composer's
+   draft is cleared and the new post appears. The send button must be disabled while the
+   page is empty.
+6. Dismiss instead of send (back arrow in the sheet's top row, system back, swipe down,
+   tap outside): the composer's draft now holds the editor's markdown — reopen the
+   editor and the document must be identical (the page is a fixed point).
+7. Known gaps in this slice, by design: the toolbar's attach button and a media row's
+   "add" are inert (the app has no file picker, and `RichMediaUploadBridge` has no
+   uploader installed yet — that is the next media slice), the emoji button does nothing,
+   inline-button/block-button editing is not wired, and a site image (a photo block with
+   only a URL, which is what the markdown reader produces) is not carried by the page -
+   re-opening an existing post in the editor is a later flow (the edit-post surface), and
+   it needs an import step before that gap is user-visible.
