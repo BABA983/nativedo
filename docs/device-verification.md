@@ -108,6 +108,11 @@ What to check once S4 lands:
 5. Selection inside a rich message uses our 12.6 `TextSelectionHelper.TextLayoutBlock` shape;
    handles/prefixes are therefore expected to behave like the current text blocks, not like
    upstream 12.10.2's selection.
+6. The hybrid body (S4, `78fa211`): with the switch on, a post mixing prose with a poll, a link
+   card or a callout should read in place - upstream's typography for the prose, our block for the
+   three - and the seams (our blocks' own top/bottom margins against the run's trimmed edges) are
+   worth eyeballing on a long post. A container holding one of the three (a details with a callout
+   inside) must fall back to our block tree as a whole, never silently drop the child.
 
 ## 8. The poll votes sheet is Telegram's `PollVotesAlert` (`6b775d7`)
 

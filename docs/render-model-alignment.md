@@ -375,6 +375,17 @@ Sequence, if chat is scheduled:
    canvas matrix in `draw`.
    Still ours to do: slideshows (Discourse has none), `openForView` when documents get mapped (the
    pin's mime dispatch over our own viewer), and alt text as accessibility.
+   **The hybrid body landed: runs stay upstream's, the Discourse-only blocks stay ours.**
+   `PostRichMessageBuilder.isMappable` answers for a block *and its subtree*, and
+   `splitPostBodySegments` cuts the body into maximal runs of mappable blocks plus the
+   callout/onebox/poll blocks between them; `RichMessageBody.blocks` builds one
+   `RichMessageBodyBlock` per run and routes the rest through `PostBodyBlockFactory` (keyed by the
+   block's index, so a poll's selection or a callout's collapse survives a rebind). A container
+   whose subtree holds one of the three falls back as a whole rather than losing its child, which
+   is why the predicate, not the renderer, decides. No cell change was needed - the factory already
+   returned a list of blocks, so `TopicPostCell` (forced_exact) is untouched. 5 segment tests
+   (order, grouping, container fallback, no block lost) plus the `richMessageHybridBody` cell
+   snapshot; the flag-off and single-run goldens did not move.
    **The vertical rhythm, measured** (this is upstream's model, not ours to invent): paragraphs
    `setContentPadding(previousSiblingParagraph ? 0 : dp(5), dp(4.66f))`, headings `dp(10)/dp(6)`,
    media `padding.top + image + padding.bottom` with the caller's zero rect, captions the same, and
