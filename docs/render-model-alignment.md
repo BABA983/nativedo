@@ -511,21 +511,31 @@ project with ordered slices rather than a wire-out:
      `BottomSheet` + `EditTextCell` + `ButtonWithCounterView` preview, ~150 lines
      of editor UI, so it lands with that host). `IvEditorBaseContractTest` pins the
      style run API and the stub's "no sheet, no callback" contract.
-   - **The cells are one host surface away.** With `RichEditText` in, the cell
-     family (`RichTextCell`, `RichTableCell`/`Host`/`Grid`, `RichDetailsCell`,
-     `RichQuoteAuthorCell`, `RichAudioCell`/`MapCell`/`DocumentCell`/`MediaCell`,
-     `RichMediaCell`'s `LAYOUT_TYPE_*`) compiles once its own small host surface is
-     there: the `ArticleHint*`/`ArticleTableTitleHint`/`ArticleAlignment` strings,
-     the `iv_table_*`/`iv_media_*`/`arrows_select`/`msg_map`/`msg_spoiler*`
-     drawables, an `AppGlobalConfig` shim (the `richMessage*` limits),
-     `AnimatedEmojiSpan`'s `replaceFontMetrics`/`standard`, the media-upload TL
-     shells (`TL_messages_uploadMedia`, `TL_inputMediaUploaded*`,
-     `TL_inputPeerSelf`, `InputUser`, `TL_geoPoint*`), `TL_documentAttributeAudio`'s
-     `title`/`performer`, `VideoEditedInfo`'s converter fields and
-     `NotificationCenter.filePreparingStarted`/`MediaController.cancelVideoConvert`.
-     `RichTextCell`, `RichButtonRowCell` and `RichAudioCell` also reach
-     `RichEditor` (its nested drawables and `RichCommand`) - the editor core file,
-     which is the chat-coupled tail below.
+   - **Landed (`bffc839`): the cell family.** The fourteen files of it are the
+     pin's blobs verbatim - `RichTextCell` (1,773), `RichTableCell` (1,085),
+     `RichTableCellHost`, `RichTableCellGrid` (872), `RichDetailsCell`,
+     `RichQuoteAuthorCell`, `RichAudioCell`, `RichMapCell`, `RichDocumentCell`,
+     `RichMediaCell`, `RichButtonRowCell`, `RichCommand`, `RichEditorHistory`,
+     `RichEditorLimits` - and so is the host surface they read: 43 `iv_*`/`msg_*`
+     drawables and 39 `Article*`/`RichEditor*` strings, a native `AppGlobalConfig`
+     (the five `richMessage*` limits; `MessagesController.config` is that type now,
+     which retires the local `BlurConfig`), a native `RichEditor` carrying exactly
+     the members the cells use (drag drawable, round button + premium wrapper,
+     shadow wrapper), a native `RichEditorListView` with `isHeading`, the
+     `TL_geoPoint*`/`TL_documentAttributeAudio` fields and
+     `AnimatedEmojiSpan.replaceFontMetrics`. `IvEditorCellContractTest` (4 tests)
+     pins the limit walk and the undo stack. **One wire-out has a functional cost:**
+     `TL_iv.PageBlock.TLdeserialize` answers null because this tree's `TL_iv` types
+     carry no serializers, so `RichEditorHistory` restores a row's metadata and
+     shape but not its content - the content round trip needs the generated
+     serializers, which is the same gap that keeps `LiteMode` out.
+   - **Left in slice 2:** the media upload path (`RichMediaUploader` 11 errors,
+     `RichMediaConverter` 11 - TL upload types, `VideoEditedInfo`'s converter
+     fields, `NotificationCenter.filePreparingStarted`,
+     `MediaController.cancelVideoConvert`), `RichMessageButtonUsers` (5: `InputUser`
+     + `MessagesController.getInputUser`), then `RichHtml` (three model fields away
+     once its cells are in) and `RichEditorListView`'s body, which needs the editor
+     core - the chat-coupled tail below.
    - **The tail is chat.** `RichHtml` and `RichEditorListView` need the editor
      core (`RichEditor`, 229 errors) and the rest of `ChatAttachAlertRichLayout`
      (283) - the attach-alert editor host and the AI compose sheet. Those wait for
