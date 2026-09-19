@@ -77,6 +77,7 @@ import io.github.baba983.nativedo.core.model.PostReactionUser
 import io.github.baba983.nativedo.core.model.PostReactionUsersGroup
 import io.github.baba983.nativedo.core.model.TopicSummary
 import io.github.baba983.nativedo.core.ui.avatarImageFilter
+import io.github.baba983.nativedo.core.ui.postBodyAccessibilityText
 import io.github.baba983.nativedo.core.ui.isAnimatedDiscourseImageUrl
 import io.github.baba983.nativedo.core.ui.resolveAvatarUrl
 import io.github.baba983.nativedo.feature.topic.data.TopicRepository
@@ -3213,6 +3214,7 @@ class TopicDetailFragment @JvmOverloads constructor(
                             { viewModel.clearJumpHighlight(row.jumpHighlightNonce) },
                         )
                         setHighlightedText(searchHighlightFor(post))
+                        contentDescription = postContentDescription(post, parsedBlocks)
                     }
                 }
             }
@@ -3232,6 +3234,15 @@ class TopicDetailFragment @JvmOverloads constructor(
                 }
             }
             super.onBindViewHolder(holder, position, payloads)
+        }
+
+        /** Spoken post: the floor and author, then the body, images included (`postBodyAccessibilityText`). */
+        private fun postContentDescription(post: Post, blocks: List<CookedPostBlock>): CharSequence {
+            val author = topicPostDisplayName(post.authorDisplayName, post.authorUsername)
+            val floor = post.postNumber?.let { number -> topicFloorLabelForPostNumber(number) }
+            val header = if (floor != null) "$floor，$author" else author
+            val body = postBodyAccessibilityText(blocks)
+            return if (body.isEmpty()) header else "$header。$body"
         }
 
         private fun searchHighlightFor(post: Post): String {
