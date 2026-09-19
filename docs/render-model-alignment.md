@@ -572,11 +572,20 @@ project with ordered slices rather than a wire-out:
      `PhotoEntry`'s two constructors + `setOrientation`,
      `ActionBarMenuSubItem.setChecked`, `ItemOptions.allowShowingOnTopOfKeyboard`.
      `IvMediaUploadContractTest` (7 tests) drives the hop with a fake uploader.
-   - **What is left of the editor:** `RichEditor` (the host glue that lives inside
-     Telegram's chat - our own host replaces it, and it carries the toolbar's
-     entry points), `RichInlineButtonEditor` (needs `AlertDialogDecor`, the adaptive
-     dialog the blocked table already lists) and the **blocks → markdown send
-     bridge** (the format decision above).
+   - **The send bridge landed (`df722de`).** `core/ui/RichMessageMarkdown.kt` writes the
+     editor's `BlockRow`s as Discourse markdown - the format the site stores in
+     `raw`: inline runs go through the composer's own serializer (so the reply box
+     and the editor write the same markers), list rows become `- `/`1. `/`- [x] `
+     with one indent per level, quote rows get one `> ` per nesting level (a quote
+     block whose caption names an author becomes `[quote="author"]…[/quote]`),
+     details become `[details="title"] … [/details]`, preformatted a fenced block
+     with its language, tables a markdown table with its alignment row
+     (rowspan/colspan flatten), and media use the URL the upload bridge minted for
+     their id (a block that already carries a URL uses that). What markdown cannot
+     express is dropped or noted in the file: Telegram-only inline styles, table
+     geometry, and map blocks. `RichMessageMarkdownTest` (13 tests). **Still to
+     come:** the markdown → blocks reader, for re-opening one of our own posts
+     (whose `raw` the API returns), and the host that shows the editor.
 3. Wire the editor into the composer as the upstream-shaped replacement for our
    span-only path, once chat/rich compose is scheduled. **Measured
    (`09e5ce1`, 2026-09-19): the two editing surfaces are separate work, and only
