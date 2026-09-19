@@ -538,6 +538,7 @@ data class PostReactionUsersGroupDto(
 
 @Serializable
 data class PostReactionUserDto(
+    val id: Long? = null,
     val username: String,
     @SerialName("name")
     val displayName: String? = null,
@@ -709,6 +710,7 @@ internal fun ReactionUsersResponseDto.toModel(): List<PostReactionUsersGroup> =
             count = group.count,
             users = group.users.map { user ->
                 PostReactionUser(
+                    id = user.id ?: 0L,
                     username = user.username,
                     displayName = user.displayName.orEmpty(),
                     avatarTemplate = user.avatarTemplate,
@@ -740,6 +742,7 @@ internal fun PollVoterDto.toPostReactionUser(): PostReactionUser? {
     val resolvedAvatar = user?.avatarTemplate?.takeIf { it.isNotBlank() }
         ?: avatarTemplate
     return PostReactionUser(
+        id = user?.id ?: id ?: 0L,
         username = resolvedUsername,
         displayName = resolvedDisplayName,
         avatarTemplate = resolvedAvatar,

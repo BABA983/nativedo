@@ -4,9 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.PostReaction
+import io.github.baba983.nativedo.core.model.PostReactionUser
 import io.github.baba983.nativedo.core.model.toggledReaction
 import io.github.baba983.nativedo.feature.home.ui.readableMessage
-import io.github.baba983.nativedo.core.model.PostReactionUsersGroup
 import io.github.baba983.nativedo.feature.topic.data.TopicRepository
 import io.github.baba983.nativedo.feature.topic.data.TopicReplyDraft
 import io.github.baba983.nativedo.feature.topic.data.TopicReplyDraftKey
@@ -57,7 +57,6 @@ class TopicViewModel(
     private val pendingJumpPostNumbers = mutableSetOf<Int>()
     private val pendingJumpPostIds = mutableSetOf<Long>()
     private var reactionUsersRequestGeneration: Int = 0
-    private var pollVotersRequestGeneration: Int = 0
     private var postRepliesRequestGeneration: Int = 0
     private var lastReportedReadPostNumber: Int = 0
     private var pendingReadReportPostNumber: Int = 0
@@ -557,133 +556,27 @@ class TopicViewModel(
         }
     }
 
-    fun openPollVotersSheet(postId: Long, args: PollVotersSheetArgs) {
-        pollVotersRequestGeneration++
-        val preferredOptionId = args.initialSelectedOptionId?.takeIf { it.isNotBlank() }
-            ?: args.options.firstOrNull { option -> option.votes > 0 }?.id
-            ?: args.options.firstOrNull()?.id
-        val initialGroups = mergePollVoterGroups(args.options, emptyList())
-        val initialPages = initialGroups.associate { group ->
-            group.id to TopicPollVoterOptionPageUiState(endReached = group.count <= 0)
-        }
-        _uiState.value = _uiState.value.copy(
-            pollVotersSheet = TopicPollVotersSheetUiState(
-                postId = postId,
-                pollName = args.pollName,
-                pollTitle = args.pollTitle,
-                options = args.options,
-            ),
-            pollVoters = TopicPollVotersUiState(
-                groups = initialGroups,
-                selectedOptionId = preferredOptionId,
-                optionPages = initialPages,
-            ),
-        )
-        preferredOptionId?.let { optionId -> loadPollVotersPage(optionId, page = 1) }
-    }
-
-    fun selectPollOptionInSheet(optionId: String) {
-        val state = _uiState.value
-        if (state.pollVotersSheet?.options?.none { option -> option.id == optionId } != false) return
-        _uiState.value = state.copy(pollVoters = state.pollVoters.copy(selectedOptionId = optionId))
-        val pageState = _uiState.value.pollVoters.optionPages[optionId]
-        if (pageState == null || (!pageState.hasLoaded && !pageState.isLoading)) {
-            loadPollVotersPage(optionId, page = 1)
-        }
-    }
-
-    fun loadMorePollVoters() {
-        val pollState = _uiState.value.pollVoters
-        val optionId = pollState.selectedOptionId ?: return
-        val pageState = pollState.optionPages[optionId] ?: return
-        if (!pageState.hasLoaded || pageState.isLoading || pageState.endReached) return
-        loadPollVotersPage(optionId, pageState.nextPage)
-    }
-
-    fun retryPollVoters() {
-        val pollState = _uiState.value.pollVoters
-        val optionId = pollState.selectedOptionId ?: return
-        val pageState = pollState.optionPages[optionId] ?: return
-        if (pageState.isLoading) return
-        loadPollVotersPage(optionId, pageState.nextPage)
-    }
-
-    fun dismissPollVotersSheet() {
-        pollVotersRequestGeneration++
-        _uiState.value = _uiState.value.copy(
-            pollVotersSheet = null,
-            pollVoters = TopicPollVotersUiState(),
-        )
-    }
-
-    private fun loadPollVotersPage(optionId: String, page: Int) {
-        val sheet = _uiState.value.pollVotersSheet ?: return
-        val currentPage = _uiState.value.pollVoters.optionPages[optionId]
-            ?: TopicPollVoterOptionPageUiState()
-        if (currentPage.isLoading || currentPage.endReached) return
-        val requestGeneration = pollVotersRequestGeneration
-        _uiState.value = _uiState.value.copy(
-            pollVoters = _uiState.value.pollVoters.copy(
-                optionPages = _uiState.value.pollVoters.optionPages + (
-                    optionId to currentPage.copy(isLoading = true, errorMessage = null)
-                ),
-            ),
-        )
+    /**
+     * One page of poll voters for the Telegram-shaped votes sheet. Discourse has no MTProto
+     * backend, so [org.telegram.ui.Components.PollVotesAlert] asks back through
+     * [org.telegram.messenger.nativedo.PollVotesBridge] and this is the data it gets.
+     */
+    fun loadPollVoters(
+        postId: Long,
+        pollName: String,
+        optionId: String,
+        page: Int,
+        onResult: (Result<List<PostReactionUser>>) -> Unit,
+    ) {
         viewModelScope.launch {
-            repository.loadPollVoters(
-                postId = sheet.postId,
-                pollName = sheet.pollName,
-                optionId = optionId,
-                page = page,
-                limit = POLL_VOTERS_PAGE_SIZE,
-            ).fold(
-                onSuccess = { responseGroups ->
-                    if (requestGeneration != pollVotersRequestGeneration || _uiState.value.pollVotersSheet?.postId != sheet.postId) {
-                        return@fold
-                    }
-                    val responseUsers = responseGroups.firstOrNull { group -> group.id == optionId }?.users.orEmpty()
-                    val existingGroup = _uiState.value.pollVoters.groups.firstOrNull { group -> group.id == optionId }
-                    val existingUsers = existingGroup?.users.orEmpty()
-                    val mergedUsers = (existingUsers + responseUsers).distinctBy { user -> user.username }
-                    val optionTotal = sheet.options.firstOrNull { option -> option.id == optionId }?.votes
-                    val endReached = when {
-                        responseUsers.size < POLL_VOTERS_PAGE_SIZE -> true
-                        optionTotal != null -> mergedUsers.size >= optionTotal
-                        else -> false
-                    }
-                    val groups = _uiState.value.pollVoters.groups.map { group ->
-                        if (group.id == optionId) group.copy(users = mergedUsers) else group
-                    }
-                    val updatedPage = TopicPollVoterOptionPageUiState(
-                        nextPage = page + 1,
-                        isLoading = false,
-                        hasLoaded = true,
-                        endReached = endReached,
-                        errorMessage = null,
-                    )
-                    _uiState.value = _uiState.value.copy(
-                        pollVoters = _uiState.value.pollVoters.copy(
-                            groups = groups,
-                            optionPages = _uiState.value.pollVoters.optionPages + (optionId to updatedPage),
-                        ),
-                    )
-                },
-                onFailure = { error ->
-                    if (requestGeneration != pollVotersRequestGeneration || _uiState.value.pollVotersSheet?.postId != sheet.postId) {
-                        return@fold
-                    }
-                    val failedPage = (_uiState.value.pollVoters.optionPages[optionId] ?: currentPage).copy(
-                        nextPage = page,
-                        isLoading = false,
-                        hasLoaded = page > 1 || currentPage.hasLoaded,
-                        errorMessage = error.message?.takeIf { it.isNotBlank() } ?: "加载投票用户失败",
-                    )
-                    _uiState.value = _uiState.value.copy(
-                        pollVoters = _uiState.value.pollVoters.copy(
-                            optionPages = _uiState.value.pollVoters.optionPages + (optionId to failedPage),
-                        ),
-                    )
-                },
+            onResult(
+                repository.loadPollVoters(
+                    postId = postId,
+                    pollName = pollName,
+                    optionId = optionId,
+                    page = page,
+                    limit = POLL_VOTERS_PAGE_SIZE,
+                ).map { groups -> groups.firstOrNull { group -> group.id == optionId }?.users.orEmpty() },
             )
         }
     }
@@ -1041,26 +934,5 @@ class TopicViewModel(
         _uiState.value = _uiState.value.copy(
             pollActionFailure = PollActionFailure(postId = postId, nonce = pollActionFailureNonce),
         )
-    }
-
-    private fun mergePollVoterGroups(
-        options: List<PollOptionRef>,
-        apiGroups: List<PostReactionUsersGroup>,
-    ): List<PostReactionUsersGroup> {
-        val ordered = options.mapNotNull { option ->
-            if (option.id.isBlank()) return@mapNotNull null
-            val apiGroup = apiGroups.firstOrNull { group -> group.id == option.id }
-            PostReactionUsersGroup(
-                id = option.id,
-                count = option.votes,
-                users = apiGroup?.users.orEmpty(),
-            )
-        }
-        val merged = ordered.ifEmpty { apiGroups }
-        return if (merged.all { group -> group.users.isEmpty() } && apiGroups.any { group -> group.users.isNotEmpty() }) {
-            apiGroups
-        } else {
-            merged
-        }
     }
 }

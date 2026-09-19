@@ -9,9 +9,7 @@ import io.github.baba983.nativedo.core.model.PostReaction
 import io.github.baba983.nativedo.core.model.PostReactionUser
 import io.github.baba983.nativedo.core.model.PostReactionUsersGroup
 import io.github.baba983.nativedo.feature.topic.ui.PollOptionRef
-import io.github.baba983.nativedo.feature.topic.ui.TopicPollVoterOptionPageUiState
-import io.github.baba983.nativedo.feature.topic.ui.TopicPollVotersSheetUiState
-import io.github.baba983.nativedo.feature.topic.ui.TopicPollVotersUiState
+import io.github.baba983.nativedo.feature.topic.ui.PollVotersSheetArgs
 import io.github.baba983.nativedo.feature.topic.ui.TopicReactionUsersUiState
 import io.github.baba983.nativedo.screenshot.NativeDoPaparazziRule
 import io.github.baba983.nativedo.screenshot.SystemAppearance
@@ -19,41 +17,40 @@ import org.junit.Rule
 import org.junit.Test
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.ui.ActionBar.BaseFragment
+import org.telegram.messenger.nativedo.PollVotesBridge
 import org.telegram.ui.ActionBar.BottomSheet
+import org.telegram.ui.Components.PollVotesAlert
 
 internal class TopicUserSheetsScreenshotTest {
     @get:Rule
     val paparazziRule = NativeDoPaparazziRule(SystemAppearance.entries)
 
     @Test
-    fun pollVotersSheetRendersIdentityRowsInRealPanel() {
+    fun pollVotesAlertRendersVoterSections() {
         paparazziRule.snapshot { context ->
-            val sheet = TopicPollVotersSheet(
-                context = context,
-                fragment = testFragment(),
-                baseUrl = BASE_URL,
-                onOptionSelected = {},
-                onLoadMore = {},
-                onRetry = {},
-                onUserSelected = {},
-                onDismissed = {},
-            )
-            sheet.submit(
-                TopicPollVotersSheetUiState(
-                    postId = 43L,
-                    pollName = "favorite",
-                    pollTitle = "Which option do you prefer?",
-                    options = listOf(PollOptionRef(id = "first", label = "First", votes = USERS.size)),
+            val args = PollVotersSheetArgs(
+                pollName = "favorite",
+                pollTitle = "Which option do you prefer?",
+                options = listOf(
+                    PollOptionRef(id = "first", label = "First option", votes = USERS.size),
+                    PollOptionRef(id = "second", label = "Second option", votes = 2),
                 ),
-                TopicPollVotersUiState(
-                    groups = listOf(PostReactionUsersGroup(id = "first", count = USERS.size, users = USERS)),
-                    selectedOptionId = "first",
-                    optionPages = mapOf(
-                        "first" to TopicPollVoterOptionPageUiState(hasLoaded = true, endReached = true),
-                    ),
-                ),
+                initialSelectedOptionId = "first",
+                totalVoters = USERS.size + 2,
             )
-            sheetViewport(context, sheet)
+            PollVotesBridge.setProvider { request, callback ->
+                val optionId = String(request.option ?: ByteArray(0), Charsets.UTF_8)
+                callback.onVotes(
+                    TopicPollVotesAlert.buildVotesList(BASE_URL, USERS, optionId, USERS.size, 1),
+                )
+                true
+            }
+            try {
+                val alert = PollVotesAlert(context, 0, TopicPollVotesAlert.buildMessage(43L, args), null)
+                sheetViewport(context, alert)
+            } finally {
+                PollVotesBridge.setProvider(null)
+            }
         }
     }
 

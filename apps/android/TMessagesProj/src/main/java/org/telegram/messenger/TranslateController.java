@@ -29,4 +29,13 @@ public class TranslateController {
     public boolean isTranslating(MessageObject messageObject) {
         return false;
     }
+
+    /** Pin holder for a translated poll; carried so vendored poll UI keeps the pin's field shape. */
+    public static class PollText extends org.telegram.tgnet.TLObject {
+        public static final int constructor = 0x24953ab8;
+
+        public org.telegram.tgnet.TLRPC.TL_textWithEntities question;
+        public java.util.ArrayList<org.telegram.tgnet.TLRPC.PollAnswer> answers = new java.util.ArrayList<>();
+        public org.telegram.tgnet.TLRPC.TL_textWithEntities solution;
+    }
 }

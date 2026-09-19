@@ -165,7 +165,14 @@ public class ImageLocation {
     }
 
     public static ImageLocation getForUser(int currentAccount, TLRPC.User user, int type) {
-        if (user == null || user.photo == null) {
+        if (user == null) {
+            return null;
+        }
+        // NativeDo: Discourse avatars are plain URLs carried on the user.
+        if (user.nativeDoAvatarUrl != null && (type == TYPE_SMALL || type == TYPE_BIG)) {
+            return getForPath(user.nativeDoAvatarUrl);
+        }
+        if (user.photo == null) {
             return null;
         }
         if (type == TYPE_VIDEO_BIG || type == TYPE_VIDEO_SMALL) {

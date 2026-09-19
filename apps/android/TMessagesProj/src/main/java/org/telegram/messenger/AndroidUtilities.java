@@ -2579,4 +2579,21 @@ public final class AndroidUtilities {
         }
         return null;
     }
+
+    public static boolean isContextSafe(Context context) {
+        if (context == null) return false;
+        if (context instanceof Activity) {
+            final Activity activity = (Activity) context;
+            if (activity.isFinishing()) return false;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+                if (activity.isDestroyed()) return false;
+            }
+            return true;
+        }
+        if (context instanceof ContextWrapper) {
+            final Context baseContext = ((ContextWrapper) context).getBaseContext();
+            return isContextSafe(baseContext);
+        }
+        return true;
+    }
 }

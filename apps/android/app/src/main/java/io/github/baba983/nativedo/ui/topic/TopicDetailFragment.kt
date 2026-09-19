@@ -65,6 +65,7 @@ import io.github.baba983.nativedo.NativeDoApp
 import io.github.baba983.nativedo.R
 import io.github.baba983.nativedo.core.html.CookedPostBlock
 import io.github.baba983.nativedo.core.html.GalleryImage
+import io.github.baba983.nativedo.core.html.findCookedPoll
 import io.github.baba983.nativedo.core.html.parseCookedPostBody
 import io.github.baba983.nativedo.core.html.resolvePostImageUrl
 import io.github.baba983.nativedo.core.model.DiscourseEmoji
@@ -86,8 +87,6 @@ import io.github.baba983.nativedo.feature.topic.data.TopicReadPositionKey
 import io.github.baba983.nativedo.feature.topic.data.TopicMentionRepository
 import io.github.baba983.nativedo.feature.topic.ui.TopicReplySheetItem
 import io.github.baba983.nativedo.feature.topic.ui.TopicReplyTargetResolver
-import io.github.baba983.nativedo.feature.topic.ui.TopicPollVotersSheetUiState
-import io.github.baba983.nativedo.feature.topic.ui.TopicPollVotersUiState
 import io.github.baba983.nativedo.feature.topic.ui.TopicPostRepliesUiState
 import io.github.baba983.nativedo.feature.topic.ui.PollVotersSheetArgs
 import io.github.baba983.nativedo.feature.topic.ui.TopicReactionUsersUiState
@@ -217,7 +216,6 @@ class TopicDetailFragment @JvmOverloads constructor(
     private lateinit var baseUrl: String
     private var collectorScope = MainScope()
     private var reactionUsersSheet: TopicReactionUsersSheet? = null
-    private var pollVotersSheet: TopicPollVotersSheet? = null
     private var postOptions: ActionBarPopupWindow? = null
     private var reactionRailPopup: ActionBarPopupWindow? = null
     private var expandedReactionPickerPopup: ActionBarPopupWindow? = null
@@ -695,7 +693,6 @@ class TopicDetailFragment @JvmOverloads constructor(
                 updateTopicIdentity(state)
                 updateCollapsedTitle()
                 updateReactionUsersSheet(context, state)
-                updatePollVotersSheet(context, state)
                 updatePostRepliesSheet(context, state)
                 updateReplyComposerPanel(state)
                 handleJumpEvent(state)
@@ -960,8 +957,6 @@ class TopicDetailFragment @JvmOverloads constructor(
         PhotoViewer.getInstance().closePhoto(false, false)
         reactionUsersSheet?.dismiss()
         reactionUsersSheet = null
-        pollVotersSheet?.dismiss()
-        pollVotersSheet = null
         dismissExpandedReactionPicker(animated = false)
         reactionRailPopup?.dismiss()
         reactionRailPopup = null
@@ -1343,36 +1338,6 @@ class TopicDetailFragment @JvmOverloads constructor(
             created.show()
         } else {
             sheet.submit(sheetState.reactions, sheetState.reactionUsersCount, state.reactionUsers)
-        }
-    }
-
-    private fun updatePollVotersSheet(context: Context, state: TopicUiState) {
-        val sheetState = state.pollVotersSheet
-        if (sheetState == null) {
-            pollVotersSheet?.dismiss()
-            pollVotersSheet = null
-            return
-        }
-        val sheet = pollVotersSheet
-        if (sheet == null) {
-            val created = TopicPollVotersSheet(
-                context = context,
-                fragment = this,
-                baseUrl = baseUrl,
-                onOptionSelected = viewModel::selectPollOptionInSheet,
-                onLoadMore = viewModel::loadMorePollVoters,
-                onRetry = viewModel::retryPollVoters,
-                onUserSelected = { username ->
-                    pollVotersSheet?.dismiss()
-                    Browser.openUrl(parentActivity ?: return@TopicPollVotersSheet, "$baseUrl/u/$username")
-                },
-                onDismissed = viewModel::dismissPollVotersSheet,
-            )
-            pollVotersSheet = created
-            created.submit(sheetState, state.pollVoters)
-            created.show()
-        } else {
-            sheet.submit(sheetState, state.pollVoters)
         }
     }
 
@@ -3434,7 +3399,27 @@ class TopicDetailFragment @JvmOverloads constructor(
         }
 
         override fun didPressPollVoters(post: Post, args: PollVotersSheetArgs) {
-            viewModel.openPollVotersSheet(post.id, args)
+            val hostContext = context ?: return
+            val pollBlock = findCookedPoll(
+                parseCookedPostBody(post.cookedHtml.ifBlank { "<p>（空内容）</p>" }, baseUrl),
+                args.pollName,
+            )
+            TopicPollVotesAlert.show(
+                context = hostContext,
+                baseUrl = baseUrl,
+                postId = post.id,
+                args = args.copy(
+                    totalVoters = pollBlock?.voters ?: args.options.sumOf { option -> option.votes },
+                    multiple = pollBlock?.type.equals("multiple", ignoreCase = true),
+                ),
+                loadVoters = { optionId, page, onResult -> viewModel.loadPollVoters(post.id, args.pollName, optionId, page, onResult) },
+                onUserClick = { username ->
+                    val activity = parentActivity
+                    if (activity != null) {
+                        Browser.openUrl(activity, "$baseUrl/u/$username")
+                    }
+                },
+            )
         }
 
         override fun didPressImage(

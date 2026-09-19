@@ -148,11 +148,17 @@ public class MessageObject {
     }
 
     public int getId() {
-        return 0;
+        return messageOwner == null ? 0 : (int) messageOwner.id;
     }
 
     public long getDialogId() {
-        return 0L;
+        if (messageOwner == null) {
+            return 0;
+        }
+        if (messageOwner.dialog_id != 0) {
+            return messageOwner.dialog_id;
+        }
+        return getPeerId(messageOwner.peer_id);
     }
 
     public long getGroupIdForUse() {

@@ -77,6 +77,7 @@ object PostReactionRendering {
 }
 
 data class PostReactionUser(
+    val id: Long = 0L,
     val username: String,
     val displayName: String = "",
     val avatarTemplate: String = "",

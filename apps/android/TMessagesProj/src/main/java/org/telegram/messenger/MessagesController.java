@@ -20,6 +20,13 @@ import org.telegram.ui.ActionBar.Theme;
  */
 public final class MessagesController {
 
+    public static int UPDATE_MASK_NAME = 1;
+    public static int UPDATE_MASK_AVATAR = 2;
+    public static int UPDATE_MASK_STATUS = 4;
+
+    /** NativeDo user registry: vendored UI resolves users it was handed (e.g. poll voters). */
+    private final java.util.HashMap<Long, TLRPC.User> usersById = new java.util.HashMap<>();
+
     private static final MessagesController[] Instance = new MessagesController[1];
     private volatile static long lastThemeCheckTime;
     private final Runnable themeCheckRunnable = Theme::checkAutoNightThemeConditions;
@@ -91,7 +98,7 @@ public final class MessagesController {
     }
 
     public TLRPC.User getUser(Long userId) {
-        return null;
+        return userId == null ? null : usersById.get(userId);
     }
 
     public TLRPC.Chat getChat(Long chatId) {
@@ -127,12 +134,21 @@ public final class MessagesController {
     }
 
     public void putUser(TLRPC.User user, boolean fromCache) {
+        if (user != null && user.id != 0) {
+            usersById.put(user.id, user);
+        }
     }
 
     public void putChat(TLRPC.Chat chat, boolean fromCache) {
     }
 
     public void putUsers(java.util.ArrayList<TLRPC.User> users, boolean fromCache) {
+        if (users == null) {
+            return;
+        }
+        for (int i = 0; i < users.size(); i++) {
+            putUser(users.get(i), fromCache);
+        }
     }
 
     public void putChats(java.util.ArrayList<TLRPC.Chat> chats, boolean fromCache) {

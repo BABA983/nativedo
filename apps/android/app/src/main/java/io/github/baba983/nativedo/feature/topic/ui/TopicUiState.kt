@@ -42,8 +42,6 @@ data class TopicUiState(
     val jumpToLatestErrorMessage: String? = null,
     val reactionSheet: TopicReactionSheetUiState? = null,
     val reactionUsers: TopicReactionUsersUiState = TopicReactionUsersUiState(),
-    val pollVotersSheet: TopicPollVotersSheetUiState? = null,
-    val pollVoters: TopicPollVotersUiState = TopicPollVotersUiState(),
     val postRepliesSheet: TopicPostRepliesSheetUiState? = null,
     val postReplies: TopicPostRepliesUiState = TopicPostRepliesUiState(),
     val replyPreviewsBySourcePostId: Map<Long, List<Post>> = emptyMap(),
@@ -94,13 +92,6 @@ data class TopicReactionUsersUiState(
     val errorMessage: String? = null,
 )
 
-data class TopicPollVotersSheetUiState(
-    val postId: Long,
-    val pollName: String,
-    val pollTitle: String? = null,
-    val options: List<PollOptionRef> = emptyList(),
-)
-
 data class TopicPostRepliesSheetUiState(
     val sourcePost: Post,
     val totalCount: Int,
@@ -123,38 +114,6 @@ data class PollActionFailure(
     val postId: Long,
     val nonce: Int,
 )
-
-data class TopicPollVoterOptionPageUiState(
-    val nextPage: Int = 1,
-    val isLoading: Boolean = false,
-    val hasLoaded: Boolean = false,
-    val endReached: Boolean = false,
-    val errorMessage: String? = null,
-)
-
-data class TopicPollVotersUiState(
-    val groups: List<PostReactionUsersGroup> = emptyList(),
-    val selectedOptionId: String? = null,
-    val optionPages: Map<String, TopicPollVoterOptionPageUiState> = emptyMap(),
-) {
-    val selectedPage: TopicPollVoterOptionPageUiState?
-        get() = selectedOptionId?.let(optionPages::get)
-
-    val isLoading: Boolean
-        get() = selectedPage?.let { page -> page.isLoading && !page.hasLoaded } == true
-
-    val isLoadingMore: Boolean
-        get() = selectedPage?.let { page -> page.isLoading && page.hasLoaded } == true
-
-    val hasLoaded: Boolean
-        get() = selectedPage?.hasLoaded == true
-
-    val errorMessage: String?
-        get() = selectedPage?.errorMessage
-
-    val canLoadMore: Boolean
-        get() = selectedPage?.let { page -> page.hasLoaded && !page.isLoading && !page.endReached } == true
-}
 
 data class TopicJumpEvent(
     val itemIndex: Int,

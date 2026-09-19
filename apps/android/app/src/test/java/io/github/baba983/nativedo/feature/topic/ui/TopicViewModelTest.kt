@@ -786,17 +786,14 @@ class TopicViewModelTest {
     }
 
     @Test
-    fun openPollVotersSheetLoadsAndDismisses() = runTest {
+    fun loadPollVotersDeliversOptionUsersForRequestedPage() = runTest {
         val voters = listOf(
             PostReactionUsersGroup(
                 id = "option-a",
-                count = 1,
-                users = listOf(
-                    io.github.baba983.nativedo.core.model.PostReactionUser(
-                        username = "baba",
-                        displayName = "Baba",
-                    ),
-                ),
+                count = 51,
+                users = (1..50).map { index ->
+                    PostReactionUser(username = "user-$index", displayName = "User $index")
+                },
             ),
         )
         val repository = FakeTopicRepository(
@@ -806,116 +803,41 @@ class TopicViewModelTest {
         viewModel = TopicViewModel(repository = repository, topicId = 101L)
         viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
 
-        viewModel.openPollVotersSheet(
+        var loaded: List<PostReactionUser>? = null
+        viewModel.loadPollVoters(
             postId = 1001L,
-            args = PollVotersSheetArgs(
-                pollName = "frontend",
-                pollTitle = "模型订阅的方式",
-                options = listOf(
-                    PollOptionRef(id = "option-a", label = "国模的API付费", votes = 3),
-                    PollOptionRef(id = "option-b", label = "国外模型自己充账号", votes = 5),
-                ),
-            ),
-        )
+            pollName = "frontend",
+            optionId = "option-a",
+            page = 2,
+        ) { result -> loaded = result.getOrNull() }
         runCurrent()
 
-        assertThat(repository.pollVotersRequests).containsExactly(PollVotersRequest(1001L, "frontend", "option-a", 1, 50))
-        val loaded = viewModel.awaitState { state -> state.pollVoters.hasLoaded }
-        assertThat(loaded.pollVoters.groups).hasSize(2)
-        assertThat(loaded.pollVoters.groups.first().users.single().username).isEqualTo("baba")
-
-        viewModel.dismissPollVotersSheet()
-        assertThat(viewModel.uiState.value.pollVotersSheet).isNull()
-        assertThat(viewModel.uiState.value.pollVoters).isEqualTo(TopicPollVotersUiState())
-    }
-
-    @Test
-    fun openPollVotersSheetPrefersInitialSelectedOptionWithUsers() = runTest {
-        val voters = listOf(
-            PostReactionUsersGroup(
-                id = "option-a",
-                count = 0,
-                users = emptyList(),
-            ),
-            PostReactionUsersGroup(
-                id = "option-b",
-                count = 1,
-                users = listOf(
-                    io.github.baba983.nativedo.core.model.PostReactionUser(
-                        username = "baba",
-                        displayName = "Baba",
-                    ),
-                ),
-            ),
-        )
-        val repository = FakeTopicRepository(
-            detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L)),
-            pollVoters = Result.success(voters),
-        )
-        viewModel = TopicViewModel(repository = repository, topicId = 101L)
-        viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
-
-        viewModel.openPollVotersSheet(
-            postId = 1001L,
-            args = PollVotersSheetArgs(
-                pollName = "frontend",
-                options = listOf(
-                    PollOptionRef(id = "option-a", label = "Option A", votes = 0),
-                    PollOptionRef(id = "option-b", label = "Option B", votes = 1),
-                ),
-                initialSelectedOptionId = "option-b",
-            ),
-        )
-        runCurrent()
-
-        val loaded = viewModel.awaitState { state -> state.pollVoters.hasLoaded }
-        assertThat(loaded.pollVoters.selectedOptionId).isEqualTo("option-b")
-        assertThat(loaded.pollVoters.groups.first { it.id == "option-b" }.users.single().username).isEqualTo("baba")
-    }
-
-    @Test
-    fun pollVotersLoadsSelectedOptionPagesAndKeepsRealVoteCount() = runTest {
-        val firstPage = (1..50).map { index -> PostReactionUser(username = "user-$index") }
-        val secondPage = listOf(PostReactionUser(username = "user-51"))
-        val repository = FakeTopicRepository(
-            detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L)),
-            pollVotersByRequest = { request ->
-                Result.success(
-                    listOf(
-                        PostReactionUsersGroup(
-                            id = request.optionId.orEmpty(),
-                            count = if (request.page == 1) firstPage.size else secondPage.size,
-                            users = if (request.page == 1) firstPage else secondPage,
-                        ),
-                    ),
-                )
-            },
-        )
-        viewModel = TopicViewModel(repository = repository, topicId = 101L)
-        viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
-
-        viewModel.openPollVotersSheet(
-            postId = 1001L,
-            args = PollVotersSheetArgs(
-                pollName = "frontend",
-                options = listOf(PollOptionRef(id = "option-a", label = "Option A", votes = 51)),
-            ),
-        )
-        runCurrent()
-
-        assertThat(viewModel.uiState.value.pollVoters.groups.single().count).isEqualTo(51)
-        assertThat(viewModel.uiState.value.pollVoters.groups.single().users).hasSize(50)
-        assertThat(viewModel.uiState.value.pollVoters.canLoadMore).isTrue()
-
-        viewModel.loadMorePollVoters()
-        runCurrent()
-
-        assertThat(viewModel.uiState.value.pollVoters.groups.single().users).hasSize(51)
-        assertThat(viewModel.uiState.value.pollVoters.canLoadMore).isFalse()
         assertThat(repository.pollVotersRequests).containsExactly(
-            PollVotersRequest(1001L, "frontend", "option-a", 1, 50),
             PollVotersRequest(1001L, "frontend", "option-a", 2, 50),
-        ).inOrder()
+        )
+        assertThat(loaded).hasSize(50)
+        assertThat(loaded!!.first().username).isEqualTo("user-1")
+    }
+
+    @Test
+    fun loadPollVotersReportsFailure() = runTest {
+        val repository = FakeTopicRepository(
+            detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L)),
+            pollVoters = Result.failure(IllegalStateException("boom")),
+        )
+        viewModel = TopicViewModel(repository = repository, topicId = 101L)
+        viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
+
+        var failed: Throwable? = null
+        viewModel.loadPollVoters(
+            postId = 1001L,
+            pollName = "frontend",
+            optionId = "option-a",
+            page = 1,
+        ) { result -> failed = result.exceptionOrNull() }
+        runCurrent()
+
+        assertThat(failed).isNotNull()
     }
 
     @Test

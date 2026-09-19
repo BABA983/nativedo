@@ -836,3 +836,18 @@ internal fun isLikelyPostImageUrl(url: String): Boolean {
         path.endsWith(".svg") ||
         path.endsWith(".avif")
 }
+
+/**
+ * Finds a poll by name anywhere in a parsed body: a poll can sit at the top level or inside a
+ * details/quote/callout container.
+ */
+internal fun findCookedPoll(blocks: List<CookedPostBlock>, pollName: String): CookedPostBlock.Poll? =
+    blocks.firstNotNullOfOrNull { block -> block.findCookedPoll(pollName) }
+
+private fun CookedPostBlock.findCookedPoll(pollName: String): CookedPostBlock.Poll? = when (this) {
+    is CookedPostBlock.Poll -> takeIf { name == pollName }
+    is CookedPostBlock.Details -> findCookedPoll(children, pollName)
+    is CookedPostBlock.Callout -> findCookedPoll(children, pollName)
+    is CookedPostBlock.Quote -> findCookedPoll(children, pollName)
+    else -> null
+}

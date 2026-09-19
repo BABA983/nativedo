@@ -215,6 +215,47 @@ public final class LocaleController {
         return new SimpleDateFormat("MMM d", Locale.US);
     }
 
+    public SimpleDateFormat getFormatterDayMonth() {
+        return new SimpleDateFormat(getDatePattern("formatterMonth", R.string.formatterMonth, "dd MMM"), Locale.getDefault());
+    }
+
+    public SimpleDateFormat getFormatterYear() {
+        return new SimpleDateFormat(getDatePattern("formatterYear", R.string.formatterYear, "dd.MM.yy"), Locale.getDefault());
+    }
+
+    public static String formatDate(long date) {
+        return formatDate(date, false);
+    }
+
+    /** Pin implementation; the patterns fall back to upstream's when the string resources are absent. */
+    public static String formatDate(long date, boolean withToday) {
+        try {
+            date *= 1000;
+            java.util.Calendar rightNow = java.util.Calendar.getInstance();
+            int day = rightNow.get(java.util.Calendar.DAY_OF_YEAR);
+            int year = rightNow.get(java.util.Calendar.YEAR);
+            rightNow.setTimeInMillis(date);
+            int dateDay = rightNow.get(java.util.Calendar.DAY_OF_YEAR);
+            int dateYear = rightNow.get(java.util.Calendar.YEAR);
+
+            if (dateDay == day && year == dateYear) {
+                if (withToday) {
+                    return getString(R.string.ShortToday);
+                }
+                return getInstance().getFormatterDay().format(new java.util.Date(date));
+            } else if (dateDay + 1 == day && year == dateYear) {
+                return getString("Yesterday", R.string.Yesterday);
+            } else if (Math.abs(System.currentTimeMillis() - date) < 31536000000L) {
+                return getInstance().getFormatterDayMonth().format(new java.util.Date(date));
+            } else {
+                return getInstance().getFormatterYear().format(new java.util.Date(date));
+            }
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
+        return "LOC_ERR: formatDate";
+    }
+
     public static String formatDateChat(long value) {
         return formatDateChat(value, false);
     }

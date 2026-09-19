@@ -56,6 +56,13 @@ public class ConnectionsManager {
 
     /** Stub of upstream {@code ConnectionsManager.sendRequest}. */
     public int sendRequest(TLObject req, RequestDelegate completionBlock) {
+        // NativeDo: Discourse polls answer messages.getPollVotes from the site's polls API.
+        if (req instanceof TLRPC.TL_messages_getPollVotes) {
+            final int token = generateClassGuid();
+            org.telegram.messenger.nativedo.PollVotesBridge.loadVotes((TLRPC.TL_messages_getPollVotes) req,
+                    result -> completionBlock.run(result, null));
+            return token;
+        }
         return 0;
     }
 

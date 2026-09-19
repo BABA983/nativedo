@@ -226,6 +226,7 @@ public class TLRPC {
         public boolean post;
         public int realId; //custom
         public TL_iv.RichMessage translatedRichMessage; //custom
+        public org.telegram.messenger.TranslateController.PollText translatedPoll; //custom
     }
 
     public static class TL_message extends Message {
@@ -309,6 +310,8 @@ public class TLRPC {
         public boolean premium;
         public long fromMessageDialogId;
         public int fromMessageId;
+        public UserStatus status;
+        public String nativeDoAvatarUrl; //custom
     }
 
     public static class TL_user extends User {
@@ -925,5 +928,169 @@ public class TLRPC {
 
     public static class TL_peerColorCollectible extends PeerColor {
         public static final int constructor = 0xb9c0639a;
+    }
+
+    // ---------------------------------------------------------------------
+    // Poll model: the pin's TLRPC poll types, carried as data holders (no
+    // serializers) so the vendored poll UI (org/telegram/ui/Components/
+    // PollVotesAlert.java) compiles against the pin's class and field names.
+    // ---------------------------------------------------------------------
+
+    public static class TL_textWithEntities extends TLObject {
+        public static final int constructor = 0x751f3146;
+
+        public String text = "";
+        public ArrayList<MessageEntity> entities = new ArrayList<>();
+    }
+
+    public static class PollAnswer extends TLObject {
+        public int flags;
+        public TL_textWithEntities text = new TL_textWithEntities();
+        public byte[] option;
+        public MessageMedia media;
+        public Peer added_by;
+        public int date;
+
+        public int unshuffled_index; // custom
+        public long shuffle_hash; // custom
+    }
+
+    public static class TL_pollAnswer extends PollAnswer {
+        public static final int constructor = 0x4B7D786A;
+    }
+
+    public static class PollResults extends TLObject {
+        public int flags;
+        public boolean min;
+        public ArrayList<PollAnswerVoters> results = new ArrayList<>();
+        public int total_voters;
+        public ArrayList<Peer> recent_voters = new ArrayList<>();
+        public String solution;
+        public ArrayList<MessageEntity> solution_entities = new ArrayList<>();
+        public boolean has_unread_votes;
+        public boolean can_view_stats;
+    }
+
+    public static class TL_pollResults extends PollResults {
+        public static final int constructor = 0xba7bb15e;
+    }
+
+    public static class PollAnswerVoters extends TLObject {
+        public int flags;
+        public boolean chosen;
+        public boolean correct;
+        public byte[] option;
+        public int voters;
+        public ArrayList<Peer> recent_voters;
+    }
+
+    public static class TL_pollAnswerVoters extends PollAnswerVoters {
+        public static final int constructor = 0x3645230a;
+    }
+
+    public static class Poll extends TLObject {
+        public long id;
+        public int flags;
+        public boolean closed;
+        public boolean public_voters;
+        public boolean multiple_choice;
+        public boolean open_answers;
+        public boolean revoting_disabled;
+        public boolean shuffle_answers;
+        public boolean hide_results_until_close;
+        public boolean creator;
+        public boolean subscribers_only;
+
+        public boolean quiz;
+        public TL_textWithEntities question = new TL_textWithEntities();
+        public ArrayList<PollAnswer> answers = new ArrayList<>();
+        public int close_period;
+        public int close_date;
+        public ArrayList<String> countries_iso2 = new ArrayList<>();
+        public long hash;
+    }
+
+    public static class TL_poll extends Poll {
+        public static final int constructor = 0x966E2DBF;
+    }
+
+    public static class MessagePeerVote extends TLObject {
+        public Peer peer;
+        public int date;
+    }
+
+    public static class TL_messagePeerVoteMultiple extends MessagePeerVote {
+        public static final int constructor = 0x4628f6e6;
+
+        public ArrayList<byte[]> options = new ArrayList<>();
+    }
+
+    public static class TL_messagePeerVote extends MessagePeerVote {
+        public static final int constructor = 0xb6cc2d5c;
+
+        public byte[] option;
+    }
+
+    public static class TL_messagePeerVoteInputOption extends MessagePeerVote {
+        public static final int constructor = 0x74cda504;
+    }
+
+    public static class TL_messageMediaPoll extends MessageMedia {
+        public static final int constructor = 0x773f4e66;
+
+        public Poll poll;
+        public PollResults results;
+        public MessageMedia attached_media;
+    }
+
+    public static class TL_messages_votesList extends TLObject {
+        public static final int constructor = 0x4899484e;
+
+        public int flags;
+        public int count;
+        public ArrayList<MessagePeerVote> votes = new ArrayList<>();
+        public ArrayList<Chat> chats = new ArrayList<>();
+        public ArrayList<User> users = new ArrayList<>();
+        public String next_offset;
+    }
+
+    public static class TL_messages_getPollVotes extends TLObject {
+        public static final int constructor = 0xb86e380e;
+
+        public int flags;
+        public InputPeer peer;
+        public int id;
+        public byte[] option;
+        public String offset;
+        public int limit;
+    }
+
+    public static abstract class UserStatus extends TLObject {
+        public int flags;
+        public int expires;
+        public boolean by_me;
+    }
+
+    public static class TL_userStatusEmpty extends UserStatus {
+    }
+
+    public static class TL_userStatusOnline extends UserStatus {
+        public static final int constructor = 0xed018455;
+    }
+
+    public static class TL_userStatusOffline extends UserStatus {
+        public static final int constructor = 0x8c703f;
+    }
+
+    public static class TL_userStatusRecently extends UserStatus {
+        public static final int constructor = 0x7b197dc8;
+    }
+
+    public static class TL_userStatusLastWeek extends UserStatus {
+        public static final int constructor = 0x541cbdc4;
+    }
+
+    public static class TL_userStatusLastMonth extends UserStatus {
+        public static final int constructor = 0x65899777;
     }
 }
