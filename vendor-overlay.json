@@ -331,6 +331,28 @@
     "TMessagesProj/src/main/java/org/telegram/ui/web/WebBookmarks.java": "org/telegram/ui/web/AddressBarList.java"
   },
   "forced_exact": {
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/CodeBlock.java": [
+      "drawing",
+      "gesture",
+      "measurement"
+    ],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ListBlock.java": [
+      "drawing",
+      "measurement"
+    ],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/TableBlock.java": [
+      "drawing",
+      "measurement"
+    ],
+    "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicPostCell.java": [
+      "drawing",
+      "gesture",
+      "measurement"
+    ],
+    "TMessagesProj/src/main/java/org/telegram/ui/Cells/TextSelectionHelper.java": [
+      "drawing",
+      "gesture"
+    ],
     "app/src/main/java/io/github/baba983/nativedo/ui/components/DiscourseUserCell.java": [
       "measurement"
     ],
