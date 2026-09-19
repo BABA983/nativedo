@@ -557,19 +557,26 @@ project with ordered slices rather than a wire-out:
      drives `onSend()`) and the AI button. `IvEditorToolbarContractTest` (4 tests)
      pins the send flow, `setSendEditing`/`setSendEnabled`, the measurement and the
      accessibility names.
-   - **What is left of the editor, measured after the toolbar** (dropping
-     `RichEditor` + `RichEditorListView` + `RichInlineButtonEditor` in leaves
-     **208 errors**): `RichEditor` (144) is the glue that hosts the editor *inside
-     Telegram's chat* - the enter view (`sendButtonContainer`,
-     `hideSearchKeyboard`), the attach alert (`LAYOUT_TYPE_*`, `getPhotoLayout`),
-     the AI/premium bits and `MessageSendPreview`/`StickersActivity`; that part is
-     not portable, our host replaces it. `RichEditorListView` (56) is mostly the
-     media path it calls into (`RichMediaUploader`/`RichMediaConverter`, 23 of the
-     208) - i.e. our own Discourse upload bridge - plus `RichEditor` references.
-     `RichInlineButtonEditor` (8) is small. So the next two slices are: the media
-     bridge (a native uploader/converter pair speaking `/uploads.json`), then the
-     host (where the editor opens in the topic detail and what its toolbar's send
-     button posts).
+   - **Landed (`715f9d9`): the media bridge, and the block list.** `RichEditorListView`
+     (7,764 lines - the block list, drag reordering, the attach/slash entry points,
+     the media inserters) is the pin's file verbatim. Its two ends are ours:
+     `RichMediaUploadBridge` (native: `:app` installs an `Uploader` that POSTs
+     `/uploads.json`, and the bridge owns the id ↔ URL map the send path will read),
+     `RichMediaUploader` (native, the pin's public surface: dimension resolution,
+     progress, and the fabricated `TLRPC.Photo`/`Document` the editor stores - `id`
+     is the URL's bridge id, `sizes`/`thumbs` carry the dimensions the cells read),
+     `RichMediaConverter` (native: nothing to convert - the animated-entity check
+     answers false and the picked file is reported as it is) and `ChatAttachAlert`
+     (native: the attach sheet is a chat surface; only its layout-type table is
+     read). Host additions copied from the pin: `TLRPC.Document.size` is `long`,
+     `PhotoEntry`'s two constructors + `setOrientation`,
+     `ActionBarMenuSubItem.setChecked`, `ItemOptions.allowShowingOnTopOfKeyboard`.
+     `IvMediaUploadContractTest` (7 tests) drives the hop with a fake uploader.
+   - **What is left of the editor:** `RichEditor` (the host glue that lives inside
+     Telegram's chat - our own host replaces it, and it carries the toolbar's
+     entry points), `RichInlineButtonEditor` (needs `AlertDialogDecor`, the adaptive
+     dialog the blocked table already lists) and the **blocks → markdown send
+     bridge** (the format decision above).
 3. Wire the editor into the composer as the upstream-shaped replacement for our
    span-only path, once chat/rich compose is scheduled. **Measured
    (`09e5ce1`, 2026-09-19): the two editing surfaces are separate work, and only
