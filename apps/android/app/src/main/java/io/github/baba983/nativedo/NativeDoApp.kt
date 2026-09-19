@@ -14,6 +14,7 @@ import org.telegram.messenger.ImageLoader as TelegramImageLoader
 import org.telegram.messenger.LocaleController
 import org.telegram.messenger.SharedConfig
 import io.github.baba983.nativedo.core.di.AppContainer
+import io.github.baba983.nativedo.ui.topic.body.RichMessageBody
 import org.telegram.tgnet.ConnectionsManager
 import org.telegram.tgnet.tl.TL_account
 import org.telegram.ui.ActionBar.Theme
@@ -30,6 +31,8 @@ class NativeDoApp : Application(), SingletonImageLoader.Factory {
         super.onCreate()
         ApplicationLoader.init(this)
         SharedConfig.loadBrowserConfig()
+        // The rich-message body is a debug toggle (Settings -> 调试): its choice outlives a process.
+        RichMessageBody.loadPreference()
         LocaleController.init(this)
         AndroidUtilities.init(this)
         Theme.setThemeBackend(NativeDoThemeBackend)

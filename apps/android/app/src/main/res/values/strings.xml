@@ -104,6 +104,8 @@
     <string name="profile_settings_account_title">账号与活动</string>
     <string name="profile_settings_account_subtitle">资料、社区数据与活跃记录</string>
     <string name="profile_debug_title">调试</string>
+    <string name="profile_dev_rich_message_body_title">富文本正文（实验）</string>
+    <string name="profile_dev_rich_message_body_subtitle">用 Telegram 的 RichMessageLayout 绘制正文,关闭时用本地块渲染。</string>
     <string name="profile_username_label">用户名</string>
     <string name="profile_trust_level_label">信任等级</string>
     <string name="profile_trust_level_0">新用户 (TL0)</string>

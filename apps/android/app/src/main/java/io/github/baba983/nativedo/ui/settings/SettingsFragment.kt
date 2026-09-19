@@ -29,6 +29,7 @@ import io.github.baba983.nativedo.ui.main.MainTabsActivity
 import io.github.baba983.nativedo.ui.settings.IconSettingCell.Factory as IconSettingFactory
 import io.github.baba983.nativedo.ui.theme.ThemeSettingsFragment
 import io.github.baba983.nativedo.ui.topic.TopicDetailFragment
+import io.github.baba983.nativedo.ui.topic.body.RichMessageBody
 import java.util.ArrayList
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collectLatest
@@ -51,6 +52,7 @@ private const val SETTINGS_ACTION_LOGOUT = 4
 private const val SETTINGS_ACTION_DEV_URL = 20
 private const val SETTINGS_ACTION_TOPIC_FIXTURES = 21
 private const val SETTINGS_ACTION_TOPIC_URL = 22
+private const val SETTINGS_ACTION_RICH_MESSAGE_BODY = 23
 
 class SettingsFragment : SessionSettingsFragment(), MainTabsActivity.TabFragmentDelegate {
     private var topicFixtureSheet: DebugTopicFixtureSheet? = null
@@ -191,6 +193,13 @@ class SettingsFragment : SessionSettingsFragment(), MainTabsActivity.TabFragment
                 string(R.string.profile_topic_dev_tools_subtitle),
             ),
         )
+        items.add(
+            UItem.asCheck(
+                SETTINGS_ACTION_RICH_MESSAGE_BODY,
+                string(R.string.profile_dev_rich_message_body_title),
+            ).setChecked(RichMessageBody.enabled),
+        )
+        items.add(UItem.asShadow(string(R.string.profile_dev_rich_message_body_subtitle)))
         items.add(UItem.asShadow(null))
     }
 
@@ -199,6 +208,10 @@ class SettingsFragment : SessionSettingsFragment(), MainTabsActivity.TabFragment
             SETTINGS_ACTION_ACCOUNT -> presentFragment(AccountDetailsFragment())
             SETTINGS_ACTION_APPEARANCE -> presentFragment(ThemeSettingsFragment())
             SETTINGS_ACTION_BROWSER -> openBrowserSettings()
+            SETTINGS_ACTION_RICH_MESSAGE_BODY -> {
+                RichMessageBody.setEnabled(!RichMessageBody.enabled)
+                listView?.adapter?.update(true)
+            }
             SETTINGS_ACTION_LOGOUT -> showLogoutConfirm()
             SETTINGS_ACTION_DEV_URL -> showUrlInputDialog(
                 title = string(R.string.profile_dev_url_title),

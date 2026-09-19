@@ -14,6 +14,7 @@ import io.github.baba983.nativedo.core.ui.PostRichMessageBuilder
 import io.github.baba983.nativedo.core.ui.splitPostBodySegments
 import org.telegram.messenger.ImageReceiver
 import org.telegram.messenger.MessageObject
+import org.telegram.messenger.MessagesController
 import org.telegram.messenger.RichMessageLayout
 import org.telegram.messenger.UserConfig
 import org.telegram.tgnet.TLObject
@@ -37,8 +38,26 @@ import java.util.ArrayList
  */
 internal object RichMessageBody {
 
+    /** Keys the debug toggle in Settings writes; restored by [loadPreference]. */
+    private const val PREF_ENABLED = "nativedo_rich_message_body_enabled"
+
     @JvmField
     var enabled: Boolean = false
+
+    /**
+     * Restores the toggle's persisted choice. Called from the app's entry point, so a device pass
+     * (docs/device-verification.md §7) survives a restart without a rebuild.
+     */
+    @JvmStatic
+    fun loadPreference() {
+        enabled = MessagesController.getGlobalMainSettings().getBoolean(PREF_ENABLED, false)
+    }
+
+    @JvmStatic
+    fun setEnabled(value: Boolean) {
+        enabled = value
+        MessagesController.getGlobalMainSettings().edit().putBoolean(PREF_ENABLED, value).apply()
+    }
 
     @JvmStatic
     fun blocks(
