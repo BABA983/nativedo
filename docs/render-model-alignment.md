@@ -529,18 +529,23 @@ project with ordered slices rather than a wire-out:
      carry no serializers, so `RichEditorHistory` restores a row's metadata and
      shape but not its content - the content round trip needs the generated
      serializers, which is the same gap that keeps `LiteMode` out.
-   - **Left in slice 2:** the media upload path (`RichMediaUploader` 11 errors,
-     `RichMediaConverter` 11 - TL upload types, `VideoEditedInfo`'s converter
-     fields, `NotificationCenter.filePreparingStarted`,
-     `MediaController.cancelVideoConvert`), `RichMessageButtonUsers` (5: `InputUser`
-     + `MessagesController.getInputUser`), and `RichEditorListView`'s body, which
-     needs the editor core - the chat-coupled tail below. **`RichHtml` landed
-     (`952d9a4`): the pin's 1,427-line file is in the tree verbatim** (it was three
-     model fields and three static predicates away), so the selection-export path
-     our renderer already calls - `RichMessageLayout`'s
-     `tableToHtml`/`inlineToHtml`/`preToHtml` - produces real HTML now instead of
-     the stub's empty document; `IvRichHtmlContractTest` (6 tests) pins the wire
-     format.
+   - **Landed (`952d9a4`): `RichHtml` is the pin's file.** The slice's namesake,
+     1,427 lines verbatim - it was three model fields and three static predicates
+     away. This is the first iv layer on a path the product already calls:
+     `RichMessageLayout`'s selection export (`tableToHtml`/`inlineToHtml`/
+     `preToHtml`) was wired to the stub and answered an empty document, so copying
+     or quoting a rich message now produces the real HTML (inline styles, links,
+     custom emoji, tables with header cells and spans, `pre` with its language),
+     and `parse` closes the loop the editor will use. `IvRichHtmlContractTest`
+     (6 tests) pins the wire format.
+   - **Left out of slice 2 on purpose - product, not typing.** `RichMediaUploader`
+     and `RichMediaConverter` are Telegram-server machinery: `messages.uploadMedia`
+     with `TL_inputMediaUploaded*`, and the `VideoEditedInfo`/`PhotoEntry` media
+     conversion path. This client uploads through Discourse's own API, so there is
+     nothing of ours for them to drive. `RichMessageButtonUsers` collects
+     `TLRPC.InputUser` access hashes for profile buttons, which needs a Telegram user
+     store (`MessagesController.getUser`/`getInputUser`) that a Discourse client does
+     not have.
    - **The tail is chat.** `RichEditorListView`'s body needs the editor core
      (`RichEditor`, 229 errors) and the rest of `ChatAttachAlertRichLayout` (283) -
      the attach-alert editor host and the AI compose sheet. Those wait for chat, or
