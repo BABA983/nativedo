@@ -100,11 +100,57 @@ delta at all, port the layout producer: `MessageObject.TextLayoutBlock` +
 step the S4 notes always pointed at). That also unblocks `ChatListTextSelectionHelper`,
 i.e. the dialogs list, which is only meaningful with chat.
 
-## Open decisions for the owner
+## Open decisions for the owner (in detail)
 
-1. `TopicPostCell` is forced_exact and its `fillTextLayoutBlocks` forwarding is on the
-   `getPrefix*` list: relax that entry for this project, or route the forwarding through
-   a NativeDo shim that keeps the cell untouched?
-2. `setOnQuote` (our composer's quote flow): keep as a two-line delta on the adopted
-   file, or move the quote action to our side of the boundary?
-3. Order: this project before or after the RLottie family.
+**1. What our `TextLayoutBlock` interface carries that the pin's does not.**
+
+Ours (`TextSelectionHelper.java:73-83`) declares
+
+```java
+StaticLayout getLayout();
+int getX(); int getY(); int getRow(); CharSequence getPrefix();
+default StaticLayout getPrefixLayout() { return null; }
+default int getPrefixX() { return getX(); }
+default int getPrefixY() { return getY(); }
+default Rect getClipBounds() { return null; }
+```
+
+The pin's (line 3962) declares `Layout getLayout()`, the same four getters, and defaults
+for `getPrefix()`, `getText()` and `getSelectionBounds()`. The four extras are **our drawing
+model**: the prefix layout is the bullet/quote bar that is drawn and highlighted with the
+text, and `getClipBounds()` is the block's clip rectangle. They are implemented or read in
+four files - `PostBodyBlock.kt` (`PostSelectionLayoutBlock`), `RichMessageBody.kt`
+(`OffsetTextLayoutBlock`), `TableBlock.java`, and `TopicPostCell.java` (~line 1232, the
+long-press hit test that asks `bestBlock.getClipBounds()`).
+
+- **(A) keep them as a compatibility block.** Adopt the pin's file and keep those five lines
+  as a marked `// NativeDo:` block on the interface (`StaticLayout` satisfies the pin's
+  `Layout` reads). The four files, including the forced-exact cell, do not change; the
+  adopted file carries one delta, like `RichMessageLayout`'s eight.
+- **(B) pin-exact interface.** Migrate the four files instead: the blocks produce the pin's
+  shape and `TopicPostCell`'s hit test derives its bounds from the layout. That is the only
+  option that touches a forced-exact file, so it needs the entry relaxed for one commit.
+
+**2. What happens to the selection menu's Quote action.**
+
+Today our helper exposes `setOnQuote(callback)` (our addition) and `TopicDetailFragment`
+answers it with `showReplyComposer(discourseQuoteMarkup(...))`. The pin has the same Quote
+menu item but its extension point is a pair of `protected` hooks - `canShowQuote()` and
+`onQuoteClick(MessageObject, int, int, CharSequence)` - and upstream implements them by
+**subclassing**: `ChatActivity:3490/3524` (chat message selection) and
+`MessagePreviewView:327/332`. The pin's `quoteText()` only fetches a `MessageObject` when
+`selectedView instanceof ChatMessageCell`, so the article path (our post body) never reaches
+the hooks today.
+
+- **(1) upstream shape.** A ~6-line marked delta in `quoteText()` (continue with
+  `onQuoteClick(null, start, end, str)` for non-chat views) plus a small
+  `ArticleTextSelectionHelper` subclass in `:app` that overrides `canShowQuote()` /
+  `onQuoteClick(...)` - the same shape `ChatActivity` uses. UX unchanged.
+- **(2) cheapest.** Keep our `setOnQuote` setter as the delta. Same UX, extension point not
+  upstream's.
+- **(3) aligned by omission.** Drop Quote from the article selection menu (upstream's article
+  path shows none) and add the action elsewhere - the post "..." menu today has
+  REPLY/SELECT_TEXT/COPY_LINK and no Quote, so that is new UI. The only option that changes
+  the product.
+
+**3. Order:** this project before or after the RLottie family.
