@@ -996,6 +996,7 @@
         "formatting_strikethrough.xml",
         "formatting_underline.xml",
         "input_ai.xml",
+        "input_ai_star.xml",
         "iv_h.xml",
         "iv_list_tab.xml",
         "iv_list_untab.xml",

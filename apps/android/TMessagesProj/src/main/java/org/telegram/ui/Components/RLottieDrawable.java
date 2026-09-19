@@ -164,7 +164,19 @@ public class RLottieDrawable extends BitmapDrawable {
         return false;
     }
 
+    /** NativeDo: the stub draws nothing (no JNI body), so frames are bookkeeping only. */
+    private int currentFrame;
+
+    public final int getCurrentFrame() {
+        return currentFrame;
+    }
+
     public void setCurrentFrame(int frame) {
+        if (frame >= 0) currentFrame = frame;
+    }
+
+    public void setCurrentFrame(int frame, boolean async) {
+        setCurrentFrame(frame);
     }
 
     public void setProgress(float progress) {

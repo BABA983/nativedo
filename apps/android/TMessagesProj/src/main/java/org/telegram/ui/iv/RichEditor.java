@@ -5,6 +5,7 @@
 package org.telegram.ui.iv;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
+import static org.telegram.messenger.LocaleController.getString;
 
 import android.content.Context;
 import android.graphics.Canvas;
@@ -396,5 +397,29 @@ public class RichEditor {
         public int getOpacity() {
             return PixelFormat.TRANSLUCENT;
         }
+    }
+
+    static String blockButtonContentDescription(int flag) {
+        switch (flag) {
+            case 1: return getString(R.string.AccDescrIVTextStyle);
+            case 2: return getString(R.string.AccDescrIVListStyle);
+            case 4: return getString(R.string.AccDescrIVTable);
+            case 7: return getString(R.string.AccDescrIVFormula);
+            case 9: return getString(R.string.AccDescrIVDetails);
+            default: return null;
+        }
+    }
+
+    static String formattingButtonContentDescription(int styleFlag) {
+        if (styleFlag == RichTextStyle.BOLD) return getString(R.string.Bold);
+        if (styleFlag == RichTextStyle.ITALIC) return getString(R.string.Italic);
+        if (styleFlag == RichTextStyle.UNDERLINE) return getString(R.string.Underline);
+        if (styleFlag == RichTextStyle.STRIKE) return getString(R.string.Strike);
+        if (styleFlag == RichTextStyle.SPOILER) return getString(R.string.Spoiler);
+        if (styleFlag == RichTextStyle.MONO) return getString(R.string.Mono);
+        if (styleFlag == RichTextStyle.MARKED) return getString(R.string.Highlight);
+        if (styleFlag == RichTextStyle.SUBSCRIPT) return getString(R.string.Subscript);
+        if (styleFlag == RichTextStyle.SUPERSCRIPT) return getString(R.string.Superscript);
+        return null;
     }
 }
