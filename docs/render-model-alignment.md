@@ -492,7 +492,38 @@ project with ordered slices rather than a wire-out:
    `RichMathCell`, its first consumers — see the triage document's landed table).
    `RichCaptionHost` + `RichEditText` are the editor half and wait for slice 2.
 2. `RichHtml` + the editor cells it drags (`RichEditorListView`, `RichTextCell`,
-   `MediaUploadState`), with the commands/toolbar after.
+   `MediaUploadState`), with the commands/toolbar after. **Measured 2026-09-19
+   (`471a029`) by dropping the pin's whole 47-file package into the tree: 757
+   compile errors, and the tail is the chat composer. So the slice is staged
+   bottom-up:**
+   - **Landed: the layer that needs nothing new** - `TableModel` (the editable
+     table: span expansion into a solid grid with anchor maps, merge/unmerge,
+     row/column edits, `normalizeForSend`), `RichMessageConvert` (the
+     `TL_iv.RichMessage`/block ⇄ `CharSequence` bridge: line → paragraph,
+     `CodeHighlighting.Span` line → preformatted with its language, `QuoteSpan`
+     line → blockquote, plus `isLossy`), `RichMediaItem` and `RichMediaClipboard`.
+     All four are the pin's blobs verbatim, pinned by
+     `IvDocumentModelContractTest` (9 tests).
+   - **The cells are one blocker deep.** Everything in the cell family
+     (`RichTextCell`, `RichTableCell`/`Host`/`Grid`, `RichDetailsCell`,
+     `RichQuoteAuthorCell`, `RichAudioCell`/`MapCell`/`DocumentCell`/`MediaCell`,
+     `RichCaptionHost`/`RichCaptionController`, `RichTextCell`'s helpers) compiles
+     as soon as `RichEditText` does - and `RichEditText`'s only error is one call
+     to `ChatAttachAlertRichLayout.showEditLatexSheet(getContext(), …, cb)` (the
+     LaTeX editor sheet). Behind that: their own small host surface - the
+     `ArticleHint*`/`ArticleTableTitleHint`/`ArticleAlignment` strings, the `iv_*`
+     toolbar drawables plus `arrows_select`/`msg_map`, `AnimatedEmojiSpan`'s
+     `replaceFontMetrics`/`standard`, the media-upload TL shells
+     (`TL_messages_uploadMedia`, `TL_inputMediaUploaded*`, `TL_inputPeerSelf`,
+     `InputUser`, `TL_geoPoint*`), `VideoEditedInfo`'s converter fields and
+     `NotificationCenter.filePreparingStarted`/`MediaController.cancelVideoConvert`.
+   - **The tail is chat.** `RichHtml` and `RichEditorListView` (plus
+     `RichButtonRowCell`, `RichEditorHistory`, `RichEditorLimits`,
+     `RichMediaConverter`/`Uploader`, `RichMessageButtonUsers`) need the editor
+     core (`RichEditor`, 229 errors) and `ChatAttachAlertRichLayout` (283) - the
+     attach-alert editor host and the AI compose sheet. Those wait for chat, or
+     take documented wire-outs; `RichHtml` itself is then three model fields away
+     (`TLRPC.TL_geoPoint` + `access_hash`, `AnimatedEmojiSpan.standard`).
 3. Wire the editor into the composer as the upstream-shaped replacement for our
    span-only path, once chat/rich compose is scheduled.
 
