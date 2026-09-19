@@ -373,8 +373,17 @@ Sequence, if chat is scheduled:
    viewer does not repeat it - and the place object for the zoom animation comes from
    `layout.findMediaImageReceiver(block, off)` plus the block's origin, which the block reads off the
    canvas matrix in `draw`.
-   Still ours to do: slideshows (Discourse has none), `openForView` when documents get mapped (the
-   pin's mime dispatch over our own viewer), and alt text as accessibility.
+   Still ours to do: slideshows (Discourse has none) and `openForView` when documents get mapped
+   (the pin's mime dispatch over our own viewer).
+   **Alt text speaks now.** A post body is canvas, so its only accessibility surface is the cell's
+   description: `postBodyAccessibilityText` (core/ui) builds one from the cooked blocks - text,
+   poll question and per-option counts, link cards, callouts, quote authors, the children of an
+   open details - and every image contributes the one description a Discourse image has, its `alt`
+   (with the caption next to it when both exist; a caption or the plain label `图片` stands in when
+   alt is empty). The topic adapter sets the cell's `contentDescription` from it plus floor and
+   author, which is upstream's shape - one description per message, walked block by block - and
+   needed no change inside the forced-exact `TopicPostCell`/`ImageBlock`. 8 tests pin the spoken
+   text; no golden moved.
    **The hybrid body landed: runs stay upstream's, the Discourse-only blocks stay ours.**
    `PostRichMessageBuilder.isMappable` answers for a block *and its subtree*, and
    `splitPostBodySegments` cuts the body into maximal runs of mappable blocks plus the

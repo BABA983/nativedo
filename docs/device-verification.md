@@ -113,6 +113,12 @@ What to check once S4 lands:
    three - and the seams (our blocks' own top/bottom margins against the run's trimmed edges) are
    worth eyeballing on a long post. A container holding one of the three (a details with a callout
    inside) must fall back to our block tree as a whole, never silently drop the child.
+7. Accessibility (S4, `798ae84`): turn TalkBack on and focus a post. It should read the floor and
+   author, then the body; an image with alt text must be spoken ("图片：..."), one with only a
+   caption must read that caption, and a picture with neither must not fall silent. Check that a
+   collapsed details block does not read its hidden children, and that the reaction rail below the
+   cell keeps its own labels (the cell's description is additive, not a replacement for the child
+   views).
 
 ## 8. The poll votes sheet is Telegram's `PollVotesAlert` (`6b775d7`)
 
