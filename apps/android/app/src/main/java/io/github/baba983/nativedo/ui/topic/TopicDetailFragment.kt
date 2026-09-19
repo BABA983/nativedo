@@ -297,7 +297,7 @@ class TopicDetailFragment @JvmOverloads constructor(
     private var topicSearchOpen = false
     private var topicSearchQuery = ""
     private var topicSearchPendingNext = false
-    private val textSelectionHelper = TextSelectionHelper.ArticleTextSelectionHelper()
+    private val textSelectionHelper = TopicPostTextSelectionHelper()
 
     override fun onFragmentCreate(): Boolean {
         if (!super.onFragmentCreate()) {
@@ -488,14 +488,16 @@ class TopicDetailFragment @JvmOverloads constructor(
             }
             onAlertDismiss.run()
         }
-        textSelectionHelper.setOnQuote { selectedView, text ->
-            val sourcePost = (selectedView as? TopicPostCell)?.boundPost
+        // Upstream's extension point: the helper subclass answers canShowQuote()/onQuoteClick()
+        // (ChatActivity and MessagePreviewView do the same).
+        textSelectionHelper.onQuote = { cell, text ->
+            val sourcePost = cell.boundPost
             showReplyComposer(
                 initialText = discourseQuoteMarkup(text, sourcePost, topicId),
                 replyToPost = sourcePost,
             )
         }
-        textSelectionHelper.setCallback(object : TextSelectionHelper.Callback {
+        textSelectionHelper.setCallback(object : TextSelectionHelper.Callback() {
             override fun onStateChanged(isSelected: Boolean) {
                 if (isSelected && ::listView.isInitialized) {
                     listView.cancelSwipeReply(true)
@@ -606,7 +608,6 @@ class TopicDetailFragment @JvmOverloads constructor(
             })
         }
         textSelectionHelper.setParentView(listView)
-        textSelectionHelper.setRecyclerView(listView)
         root.addView(
             listView,
             LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT.toFloat(), Gravity.TOP, 0f, 0f, 0f, 0f),

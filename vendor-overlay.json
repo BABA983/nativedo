@@ -144,6 +144,7 @@
     "TMessagesProj/src/main/java/org/telegram/messenger/FileUploadOperation.java",
     "TMessagesProj/src/main/java/org/telegram/messenger/ImageLoader.java",
     "TMessagesProj/src/main/java/org/telegram/messenger/LiteMode.java",
+    "TMessagesProj/src/main/java/org/telegram/messenger/LanguageDetector.java",
     "TMessagesProj/src/main/java/org/telegram/messenger/LocaleController.java",
     "TMessagesProj/src/main/java/org/telegram/messenger/MediaController.java",
     "TMessagesProj/src/main/java/org/telegram/messenger/MediaDataController.java",
@@ -257,6 +258,7 @@
     "TMessagesProj/src/main/java/org/telegram/ui/PhotoViewer.java",
     "TMessagesProj/src/main/java/org/telegram/ui/PinchToZoomHelper.java",
     "TMessagesProj/src/main/java/org/telegram/ui/ProfileActivity.java",
+    "TMessagesProj/src/main/java/org/telegram/ui/RestrictedLanguagesSelectActivity.java",
     "TMessagesProj/src/main/java/org/telegram/ui/Stories/DarkThemeResourceProvider.java",
     "TMessagesProj/src/main/java/org/telegram/ui/Stories/StoryItem.java",
     "TMessagesProj/src/main/java/org/telegram/ui/Stories/recorder/HintView2.java",
@@ -398,11 +400,6 @@
       "animation",
       "gesture"
     ],
-    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/CodeBlock.java": [
-      "drawing",
-      "gesture",
-      "measurement"
-    ],
     "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/CollageBlock.java": [
       "drawing",
       "measurement",
@@ -420,10 +417,6 @@
     "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ImageBlock.java": [
       "drawing",
       "gesture",
-      "measurement"
-    ],
-    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ListBlock.java": [
-      "drawing",
       "measurement"
     ],
     "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/OneboxBlock.java": [
@@ -452,10 +445,6 @@
       "drawing",
       "gesture"
     ],
-    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/TableBlock.java": [
-      "drawing",
-      "measurement"
-    ],
     "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/TextLayoutBlock.java": [
       "drawing",
       "gesture",
@@ -469,11 +458,6 @@
       "measurement"
     ],
     "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicHeaderCell.java": [
-      "measurement"
-    ],
-    "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicPostCell.java": [
-      "drawing",
-      "gesture",
       "measurement"
     ],
     "TMessagesProj/src/main/java/org/telegram/messenger/SvgHelper.java": [
@@ -559,10 +543,6 @@
     "TMessagesProj/src/main/java/org/telegram/ui/Cells/TextInfoPrivacyCell.java": [
       "drawing",
       "measurement"
-    ],
-    "TMessagesProj/src/main/java/org/telegram/ui/Cells/TextSelectionHelper.java": [
-      "drawing",
-      "gesture"
     ],
     "TMessagesProj/src/main/java/org/telegram/ui/Cells/TextSettingsCell.java": [
       "drawing",

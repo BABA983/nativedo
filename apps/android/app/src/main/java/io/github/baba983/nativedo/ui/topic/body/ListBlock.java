@@ -10,6 +10,7 @@ package io.github.baba983.nativedo.ui.topic.body;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.RectF;
+import android.text.Layout;
 import android.text.StaticLayout;
 import android.text.TextPaint;
 import android.view.MotionEvent;
@@ -281,7 +282,7 @@ final class ListBlock implements EmbeddedPostBodyBlock {
             child.fillTextLayoutBlocks(markerProbeBlocks, 0, 0);
             for (int textIndex = 0; textIndex < markerProbeBlocks.size(); textIndex++) {
                 TextSelectionHelper.TextLayoutBlock textBlock = markerProbeBlocks.get(textIndex);
-                StaticLayout textLayout = textBlock.getLayout();
+                Layout textLayout = textBlock.getLayout();
                 if (textLayout == null || textLayout.getLineCount() == 0) {
                     continue;
                 }
@@ -377,10 +378,7 @@ final class ListBlock implements EmbeddedPostBodyBlock {
                         current.getX(),
                         current.getY(),
                         current.getRow(),
-                        j == before ? prefix : null,
-                        j == before ? prefixLayout : null,
-                        prefixX,
-                        prefixY
+                        j == before ? prefix : null
                 ));
             }
         }

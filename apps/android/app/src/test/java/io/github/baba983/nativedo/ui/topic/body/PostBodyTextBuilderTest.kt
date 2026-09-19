@@ -168,38 +168,6 @@ class PostBodyTextBuilderTest {
     }
 
     @Test
-    fun build_unicodeEmojiUsesTelegramBaselineAlignedSpanBounds() {
-        val builder = builder()
-
-        val built = builder.build("""<p>Hi 😄 now</p>""", textSizePx = 18f)
-        val emojiSpan = built.spannable
-            .getSpans(0, built.spannable.length, Emoji.EmojiSpan::class.java)
-            .single()
-        val spanStart = built.spannable.getSpanStart(emojiSpan)
-        val spanEnd = built.spannable.getSpanEnd(emojiSpan)
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            textSize = 18f
-        }
-        val fm = Paint.FontMetricsInt()
-        val size = emojiSpan.getSize(paint, built.spannable, spanStart, spanEnd, fm)
-        val baselineY = 32
-
-        val bounds = emojiSpan.getSelectionBounds(
-            paint,
-            built.spannable,
-            spanStart,
-            spanEnd,
-            10f,
-            0,
-            baselineY,
-            48,
-        )
-
-        assertThat(bounds.top).isEqualTo((baselineY - size).toFloat())
-        assertThat(bounds.bottom).isEqualTo(baselineY.toFloat())
-    }
-
-    @Test
     fun build_mapsInlineSpoilerClassToTelegramSpoilerSpan() {
         val builder = builder()
 

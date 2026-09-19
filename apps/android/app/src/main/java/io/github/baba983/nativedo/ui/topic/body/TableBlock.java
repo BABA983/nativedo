@@ -108,42 +108,32 @@ final class TableBlock implements EmbeddedPostBodyBlock, TableLayout.TableLayout
     }
 
     private static final class TableSelectionBlock implements TextSelectionHelper.TextLayoutBlock {
-        private final StaticLayout layout;
+        private final Layout layout;
         private final int x;
         private final int y;
         private final int row;
         private final CharSequence prefix;
-        private final StaticLayout prefixLayout;
-        private final int prefixX;
-        private final int prefixY;
-        private final Rect clipBounds;
+        private final Rect selectionBounds;
 
-        TableSelectionBlock(StaticLayout layout, int x, int y, int row) {
+        TableSelectionBlock(Layout layout, int x, int y, int row) {
             this(layout, x, y, row, null);
         }
 
-        TableSelectionBlock(StaticLayout layout, int x, int y, int row, CharSequence prefix) {
-            this(layout, x, y, row, prefix, null, x, y, null);
+        TableSelectionBlock(Layout layout, int x, int y, int row, CharSequence prefix) {
+            this(layout, x, y, row, prefix, null);
         }
 
-        TableSelectionBlock(StaticLayout layout, int x, int y, int row, CharSequence prefix, Rect clipBounds) {
-            this(layout, x, y, row, prefix, null, x, y, clipBounds);
-        }
-
-        TableSelectionBlock(StaticLayout layout, int x, int y, int row, CharSequence prefix, StaticLayout prefixLayout, int prefixX, int prefixY, Rect clipBounds) {
+        TableSelectionBlock(Layout layout, int x, int y, int row, CharSequence prefix, Rect selectionBounds) {
             this.layout = layout;
             this.x = x;
             this.y = y;
             this.row = row;
             this.prefix = prefix;
-            this.prefixLayout = prefixLayout;
-            this.prefixX = prefixX;
-            this.prefixY = prefixY;
-            this.clipBounds = clipBounds;
+            this.selectionBounds = selectionBounds;
         }
 
         @Override
-        public StaticLayout getLayout() {
+        public Layout getLayout() {
             return layout;
         }
 
@@ -168,23 +158,8 @@ final class TableBlock implements EmbeddedPostBodyBlock, TableLayout.TableLayout
         }
 
         @Override
-        public StaticLayout getPrefixLayout() {
-            return prefixLayout;
-        }
-
-        @Override
-        public int getPrefixX() {
-            return prefixX;
-        }
-
-        @Override
-        public int getPrefixY() {
-            return prefixY;
-        }
-
-        @Override
-        public Rect getClipBounds() {
-            return clipBounds;
+        public Rect getSelectionBounds() {
+            return selectionBounds;
         }
     }
 
@@ -481,9 +456,6 @@ final class TableBlock implements EmbeddedPostBodyBlock, TableLayout.TableLayout
                                 current.getY(),
                                 cell.row + 10,
                                 current.getPrefix(),
-                                current.getPrefixLayout(),
-                                current.getPrefixX(),
-                                current.getPrefixY(),
                                 clipBounds
                         ));
                     }

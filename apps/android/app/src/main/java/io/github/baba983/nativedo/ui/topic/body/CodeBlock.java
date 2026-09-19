@@ -249,9 +249,6 @@ final class CodeBlock implements EmbeddedPostBodyBlock {
                     y + textContainerTopForSelection(),
                     0,
                     null,
-                    null,
-                    x,
-                    y,
                     selectionClipBounds(x, y)
             ));
         }

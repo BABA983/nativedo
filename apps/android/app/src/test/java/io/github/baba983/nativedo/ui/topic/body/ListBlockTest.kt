@@ -1,6 +1,7 @@
 package io.github.baba983.nativedo.ui.topic.body
 
 import android.text.Layout
+import android.graphics.Rect
 import android.text.StaticLayout
 import android.text.TextPaint
 import com.google.common.truth.Truth.assertThat
@@ -87,9 +88,9 @@ class ListBlockTest {
     }
 
     @Test
-    fun postSelectionLayoutBlock_exposesOptionalPrefixLayoutGeometry() {
+    fun postSelectionLayoutBlock_exposesPrefixAndSelectionBounds() {
         val textLayout = staticLayout("item")
-        val prefixLayout = staticLayout("•")
+        val selectionBounds = Rect(12, 48, 60, 80)
 
         val block = PostSelectionLayoutBlock(
             textLayout,
@@ -97,16 +98,12 @@ class ListBlockTest {
             y = 50,
             row = 0,
             prefix = "•",
-            prefixLayout = prefixLayout,
-            prefixX = 12,
-            prefixY = 48,
+            selectionBounds = selectionBounds,
         )
 
         assertThat(block.layout).isSameInstanceAs(textLayout)
         assertThat(block.prefix).isEqualTo("•")
-        assertThat(block.prefixLayout).isSameInstanceAs(prefixLayout)
-        assertThat(block.prefixX).isEqualTo(12)
-        assertThat(block.prefixY).isEqualTo(48)
+        assertThat(block.selectionBounds).isSameInstanceAs(selectionBounds)
     }
 
     @Suppress("DEPRECATION")

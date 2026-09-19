@@ -65,8 +65,6 @@ class PostBodyChipSpanTest {
         assertThat(bounds.width()).isWithin(0.01f).of(width.toFloat())
         assertThat(bounds.height()).isGreaterThan(0f)
         assertThat((span as PostBodyLinkHighlightSpan).linkHighlightCornerRadius()).isEqualTo(6f)
-        assertThat(span).isInstanceOf(TextSelectionHelper.TextSelectionBoundsProvider::class.java)
-        assertThat((span as TextSelectionHelper.TextSelectionBoundsProvider).getSelectionCornerRadius()).isEqualTo(6f)
     }
 
     @Test
@@ -123,8 +121,7 @@ class PostBodyChipSpanTest {
         assertThat(bounds.width()).isWithin(0.01f).of(width.toFloat())
         assertThat(bounds.height()).isGreaterThan(0f)
         assertThat((span as PostBodyLinkHighlightSpan).linkHighlightCornerRadius()).isGreaterThan(0f)
-        assertThat(span).isInstanceOf(TextSelectionHelper.TextSelectionBoundsProvider::class.java)
-        assertThat((span as TextSelectionHelper.TextSelectionBoundsProvider).getSelectionBounds(
+        assertThat((span as PostBodyLinkHighlightSpan).linkHighlightBounds(
             paint,
             "快问快答",
             0,

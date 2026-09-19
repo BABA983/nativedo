@@ -10103,7 +10103,7 @@ public class RichMessageLayout {
             }
 
             @Override
-            public StaticLayout getLayout() { return inner.getLayout(); }
+            public Layout getLayout() { return inner.getLayout(); }
             @Override
             public int getX() { return inner.getX() + px; }
             @Override
@@ -10115,7 +10115,7 @@ public class RichMessageLayout {
             public CharSequence getText() {
                 // NativeDo: our 12.6 TextLayoutBlock has no getText(); upstream's interface defaults it to
                 // the layout's own text, which is what this returns.
-                final StaticLayout layout = inner.getLayout();
+                final Layout layout = inner.getLayout();
                 return layout == null ? null : layout.getText();
             }
         }

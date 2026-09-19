@@ -712,11 +712,32 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
         return false;
     }
 
+    /**
+     * The pin's text selection engine drives an active selection through its overlay, which is
+     * mounted over the list in its own coordinates; a gesture that started in this cell is offset
+     * into them and handed over (upstream's ArticleViewer forwards to the same overlay).
+     */
+    private boolean forwardSelectionTouchToOverlay(MotionEvent event) {
+        View overlay = textSelectionHelper.getOverlayView(getContext());
+        int[] cellLocation = new int[2];
+        int[] overlayLocation = new int[2];
+        getLocationInWindow(cellLocation);
+        overlay.getLocationInWindow(overlayLocation);
+        final float dx = cellLocation[0] - overlayLocation[0];
+        final float dy = cellLocation[1] - overlayLocation[1];
+        event.offsetLocation(dx, dy);
+        try {
+            return overlay.onTouchEvent(event);
+        } finally {
+            event.offsetLocation(-dx, -dy);
+        }
+    }
+
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         if (textSelectionHelper != null && textSelectionHelper.isInSelectionMode()) {
             if (ignoreSelectionTouchUntilUp) {
-                boolean handled = textSelectionHelper.continueOneTouchSelection(this, event);
+                boolean handled = forwardSelectionTouchToOverlay(event);
                 if (event.getActionMasked() == MotionEvent.ACTION_UP || event.getActionMasked() == MotionEvent.ACTION_CANCEL) {
                     ignoreSelectionTouchUntilUp = false;
                 }
@@ -1213,7 +1234,7 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
         int[] bestRange = null;
         for (int i = 0; i < textBlocks.size(); i++) {
             TextSelectionHelper.TextLayoutBlock block = textBlocks.get(i);
-            StaticLayout layout = block.getLayout();
+            Layout layout = block.getLayout();
             int[] range = layout == null ? null : searchHighlightRange(layout.getText(), highlightedText);
             if (range != null && (bestRange == null || range[1] - range[0] > bestRange[1] - bestRange[0])) {
                 bestBlock = block;
@@ -1229,7 +1250,7 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
             path.setCurrentLayout(bestBlock.getLayout(), bestRange[0], bestBlock.getX(), bestBlock.getY());
             bestBlock.getLayout().getSelectionPath(bestRange[0], bestRange[1], path);
             path.closeRects();
-            Rect clipBounds = bestBlock.getClipBounds();
+            Rect clipBounds = bestBlock.getSelectionBounds();
             searchHighlightPaths.add(new SearchHighlightPath(path, clipBounds == null ? null : new Rect(clipBounds)));
         } catch (Exception ignored) {
             searchHighlightPaths.clear();

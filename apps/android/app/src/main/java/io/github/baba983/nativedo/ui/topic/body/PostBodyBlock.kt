@@ -3,6 +3,7 @@ package io.github.baba983.nativedo.ui.topic.body
 import android.graphics.Canvas
 import android.graphics.Rect
 import android.graphics.RectF
+import android.text.Layout
 import android.text.StaticLayout
 import android.view.MotionEvent
 import org.telegram.messenger.AndroidUtilities
@@ -45,23 +46,17 @@ internal interface PostBodyBlock {
 }
 
 internal class PostSelectionLayoutBlock @JvmOverloads constructor(
-    private val layout: StaticLayout,
+    private val layout: Layout,
     private val x: Int,
     private val y: Int,
     private val row: Int = 0,
     private val prefix: CharSequence? = null,
-    private val prefixLayout: StaticLayout? = null,
-    private val prefixX: Int = x,
-    private val prefixY: Int = y,
-    private val clipBounds: Rect? = null,
+    private val selectionBounds: Rect? = null,
 ) : TextSelectionHelper.TextLayoutBlock {
-    override fun getLayout(): StaticLayout = layout
+    override fun getLayout(): Layout = layout
     override fun getX(): Int = x
     override fun getY(): Int = y
     override fun getRow(): Int = row
     override fun getPrefix(): CharSequence? = prefix
-    override fun getPrefixLayout(): StaticLayout? = prefixLayout
-    override fun getPrefixX(): Int = prefixX
-    override fun getPrefixY(): Int = prefixY
-    override fun getClipBounds(): Rect? = clipBounds
+    override fun getSelectionBounds(): Rect? = selectionBounds
 }

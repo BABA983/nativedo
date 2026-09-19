@@ -25,7 +25,6 @@ import androidx.annotation.Nullable;
 
 import java.util.ArrayList;
 
-import org.telegram.ui.Cells.TextSelectionHelper;
 
 /**
  * NativeDo shim of org.telegram.messenger.Emoji helpers.
@@ -50,7 +49,7 @@ public final class Emoji {
         public boolean isLoaded() { return true; }
     }
 
-    public static class EmojiSpan extends ReplacementSpan implements TextSelectionHelper.TextSelectionBoundsProvider {
+    public static class EmojiSpan extends ReplacementSpan {
         private final EmojiDrawable drawable = new EmojiDrawable();
         public Paint.FontMetricsInt fontMetrics;
         public float scale = 1f;
@@ -128,6 +127,13 @@ public final class Emoji {
             return scaledSize;
         }
 
+        private float emojiTop(int y, int bottom, int scaledSize) {
+            if (verticalAlignment == DynamicDrawableSpan.ALIGN_BASELINE) {
+                return y - scaledSize;
+            }
+            return bottom - scaledSize;
+        }
+
         @Override
         public void draw(@NonNull Canvas canvas, CharSequence text, int start, int end, float x, int top, int y, int bottom, @NonNull Paint paint) {
             lastDrawX = x + scale * size / 2f;
@@ -157,25 +163,6 @@ public final class Emoji {
             if (needRestore) {
                 canvas.restore();
             }
-        }
-
-        private float emojiTop(int y, int bottom, int scaledSize) {
-            if (verticalAlignment == DynamicDrawableSpan.ALIGN_BASELINE) {
-                return y - scaledSize;
-            }
-            return bottom - scaledSize;
-        }
-
-        @Override
-        public RectF getSelectionBounds(Paint paint, CharSequence text, int start, int end, float x, int top, int y, int bottom) {
-            int scaledSize = (int) (scale * size);
-            float emojiTop = emojiTop(y, bottom, scaledSize);
-            return new RectF(x, emojiTop, x + scaledSize, emojiTop + scaledSize);
-        }
-
-        @Override
-        public float getSelectionCornerRadius() {
-            return AndroidUtilities.dp(3f);
         }
 
         public Drawable getDrawable() {

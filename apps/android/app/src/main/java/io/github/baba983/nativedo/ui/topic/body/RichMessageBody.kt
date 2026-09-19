@@ -6,6 +6,7 @@ import android.content.ContextWrapper
 import android.graphics.Canvas
 import android.graphics.Matrix
 import android.graphics.Rect
+import android.text.Layout
 import android.text.StaticLayout
 import android.view.MotionEvent
 import io.github.baba983.nativedo.core.html.CookedPostBlock
@@ -230,15 +231,12 @@ private inner class RichMessageBodyDelegate : ChatMessageCell.ChatMessageCellDel
         private val dx: Int,
         private val dy: Int,
     ) : TextSelectionHelper.TextLayoutBlock {
-        override fun getLayout(): StaticLayout = inner.layout
+        override fun getLayout(): Layout = inner.layout
         override fun getX(): Int = inner.x + dx
         override fun getY(): Int = inner.y + dy
         override fun getRow(): Int = inner.row
         override fun getPrefix(): CharSequence? = inner.prefix
-        override fun getPrefixLayout(): StaticLayout? = inner.prefixLayout
-        override fun getPrefixX(): Int = inner.prefixX + dx
-        override fun getPrefixY(): Int = inner.prefixY + dy
-        override fun getClipBounds(): Rect? = inner.clipBounds
+        override fun getSelectionBounds(): Rect? = inner.selectionBounds
     }
 }
 

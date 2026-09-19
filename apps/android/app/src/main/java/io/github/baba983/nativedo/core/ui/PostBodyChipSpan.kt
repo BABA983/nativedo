@@ -20,7 +20,7 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
-interface PostBodyLinkHighlightSpan : TextSelectionHelper.TextSelectionBoundsProvider {
+interface PostBodyLinkHighlightSpan {
     fun linkHighlightBounds(
         paint: Paint,
         text: CharSequence,
@@ -33,19 +33,6 @@ interface PostBodyLinkHighlightSpan : TextSelectionHelper.TextSelectionBoundsPro
     ): RectF
 
     fun linkHighlightCornerRadius(): Float
-
-    override fun getSelectionBounds(
-        paint: Paint,
-        text: CharSequence,
-        start: Int,
-        end: Int,
-        x: Float,
-        top: Int,
-        y: Int,
-        bottom: Int,
-    ): RectF = linkHighlightBounds(paint, text, start, end, x, top, y, bottom)
-
-    override fun getSelectionCornerRadius(): Float = linkHighlightCornerRadius()
 }
 
 /**

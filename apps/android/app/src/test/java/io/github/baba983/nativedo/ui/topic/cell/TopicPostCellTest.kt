@@ -222,7 +222,7 @@ class TopicPostCellTest {
         assertThat(cell.triggerLongPressForTest()).isTrue()
         assertThat(selectionHelper.maybeViewSet).isFalse()
         assertThat(selectionHelper.trySelectCalled).isFalse()
-        assertThat(selectionHelper.oneTouchSelectionStarted).isFalse()
+        assertThat(selectionHelper.isInSelectionMode).isFalse()
         assertThat(longPressedPost).isEqualTo(post)
     }
 
@@ -237,7 +237,6 @@ class TopicPostCellTest {
         assertThat(cell.startTextSelectionAt(80f, 120f)).isTrue()
         assertThat(selectionHelper.maybeViewSet).isTrue()
         assertThat(selectionHelper.trySelectCalled).isTrue()
-        assertThat(selectionHelper.oneTouchSelectionStarted).isFalse()
     }
 
     @Test
@@ -500,7 +499,6 @@ class TopicPostCellTest {
     private class FakeSelectingHelper : TextSelectionHelper.ArticleTextSelectionHelper() {
         var maybeViewSet = false
         var trySelectCalled = false
-        var oneTouchSelectionStarted = false
         private var inSelectionMode = false
 
         override fun isSelectable(view: View?): Boolean = true
@@ -516,8 +514,5 @@ class TopicPostCellTest {
 
         override fun isInSelectionMode(): Boolean = inSelectionMode
 
-        override fun startOneTouchSelection() {
-            oneTouchSelectionStarted = true
-        }
     }
 }

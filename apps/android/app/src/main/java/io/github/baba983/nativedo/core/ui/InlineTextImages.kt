@@ -9,6 +9,7 @@ import android.graphics.RectF
 import android.graphics.drawable.Drawable
 import android.text.Spannable
 import android.text.SpannableStringBuilder
+import android.text.style.ReplacementSpan
 import io.github.baba983.nativedo.core.html.resolvePostImageUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.telegram.messenger.AndroidUtilities
@@ -102,6 +103,15 @@ internal fun applyInlineImagePlaceholders(
                     start + 1,
                     Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
                 )
+                // Upstream's marker for "not part of the copied text"; the span itself extends
+                // ReplacementSpan, so it cannot also extend the marker class (the pin's
+                // IgnoreCopySpannable is carried as its own span on the same range).
+                builder.setSpan(
+                    TextSelectionHelper.IgnoreCopySpannable(),
+                    start,
+                    start + 1,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                )
                 pendingImages += PendingInlineImage(
                     resolvedUrl = resolvePostImageUrl(
                         baseUrl = baseUrl,
@@ -136,6 +146,12 @@ internal fun applyInlineImagePlaceholders(
                 )
                 builder.setSpan(
                     span,
+                    start,
+                    start + 1,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                )
+                builder.setSpan(
+                    TextSelectionHelper.IgnoreCopySpannable(),
                     start,
                     start + 1,
                     Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
@@ -307,7 +323,7 @@ private class BaselineCenteredInlineSvgSpan(
     drawable: Drawable,
     sizePx: Int,
     private val tintColor: Int?,
-) : TextSelectionHelper.IgnoreCopySpannable(), TextSelectionHelper.TextSelectionBoundsProvider {
+) : ReplacementSpan() {
     private val centeredDrawable = drawable.mutate().apply {
         setBounds(0, 0, sizePx, sizePx)
         tintColor?.let { setColorFilter(android.graphics.PorterDuffColorFilter(it, android.graphics.PorterDuff.Mode.SRC_IN)) }
@@ -353,35 +369,13 @@ private class BaselineCenteredInlineSvgSpan(
         canvas.restore()
     }
 
-    override fun getSelectionBounds(
-        paint: Paint,
-        text: CharSequence,
-        start: Int,
-        end: Int,
-        x: Float,
-        top: Int,
-        y: Int,
-        bottom: Int,
-    ): RectF {
-        val metrics = paint.fontMetrics
-        val centerY = y + (metrics.ascent + metrics.descent) / 2f
-        val size = centeredDrawable.bounds.height().toFloat()
-        return RectF(
-            x,
-            centerY - size / 2f,
-            x + centeredDrawable.bounds.width(),
-            centerY + size / 2f,
-        )
-    }
-
-    override fun getSelectionCornerRadius(): Float = AndroidUtilities.dp(3f).toFloat()
 }
 
 private class CenteredInlineImageSpan(
     drawable: Drawable,
     private val kind: InlineImageKind,
     private val emojiScale: Float = customEmojiInlineImageScale,
-) : TextSelectionHelper.IgnoreCopySpannable(), TextSelectionHelper.TextSelectionBoundsProvider {
+) : ReplacementSpan() {
     private val inlineDrawable = drawable
 
     override fun getSize(
@@ -432,30 +426,6 @@ private class CenteredInlineImageSpan(
         canvas.restore()
     }
 
-    override fun getSelectionBounds(
-        paint: Paint,
-        text: CharSequence,
-        start: Int,
-        end: Int,
-        x: Float,
-        top: Int,
-        y: Int,
-        bottom: Int,
-    ): RectF {
-        val imageTop = calculateInlineImageTranslationY(
-            y = y,
-            fontMetrics = paint.fontMetrics,
-            drawableHeight = inlineDrawable.bounds.height(),
-        )
-        return RectF(
-            x,
-            imageTop,
-            x + inlineDrawable.bounds.width(),
-            imageTop + inlineDrawable.bounds.height(),
-        )
-    }
-
-    override fun getSelectionCornerRadius(): Float = AndroidUtilities.dp(3f).toFloat()
 }
 
 @Suppress("OVERRIDE_DEPRECATION")
