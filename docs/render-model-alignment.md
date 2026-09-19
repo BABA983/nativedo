@@ -551,7 +551,27 @@ project with ordered slices rather than a wire-out:
      the attach-alert editor host and the AI compose sheet. Those wait for chat, or
      take documented wire-outs like the LaTeX sheet.
 3. Wire the editor into the composer as the upstream-shaped replacement for our
-   span-only path, once chat/rich compose is scheduled.
+   span-only path, once chat/rich compose is scheduled. **Measured
+   (`09e5ce1`, 2026-09-19): the two editing surfaces are separate work, and only
+   the second is a project.**
+   - The **inline** surface - the composer's own rich text - is already upstream's:
+     `EditTextCaption` + `FloatingActionMode`/`FloatingToolbar` + the span runs, with
+     `TopicReplyComposerMarkdown` as the bridge to Discourse's markdown. That is the
+     shape Telegram's `ChatActivityEnterView` uses.
+   - The **block** editor is a different surface: Telegram opens it as
+     `ChatAttachAlert.LAYOUT_TYPE_RICH`, i.e. a page inside the attach sheet
+     (`ChatAttachAlertRichLayout` + `RichEditorListView` + `RichEditorToolbar` +
+     `RichInlineButtonEditor` + `RichCommand`/`RichCommandSuggestions`), and sends
+     its `TL_iv.RichMessage` through `SendMessagesHelper`. Dropping the whole set in
+     leaves **326 errors**, and they are of three kinds: the resource set (landed in
+     `09e5ce1`: 20 vectors, 24 density bitmaps, 2 raw, 31 strings), the Telegram
+     media upload path (`RichMediaUploader`/`RichMediaConverter`, which this client
+     does not need - uploads go to Discourse), and the chat composer pieces the
+     sheet's glue reaches (`SendButton`, `MessageSendPreview`, `AiButtonDrawable`,
+     `ChatAttachAlert`'s layout constants). So the editor *body* is copyable, but its
+     two ends are ours: the host (where it opens, what "send" does) and the media
+     bridge (Discourse's upload API instead of `messages.uploadMedia`). That is a
+     product design step, not an alignment step.
 
 Files we trim land in the overlay's `native` array; byte-identical copies do not need
 bookkeeping. Nothing in this project is a new product surface by itself - the slices
