@@ -6,6 +6,8 @@ package org.telegram.ui.iv;
 
 import org.telegram.tgnet.tl.TL_iv;
 
+import java.util.ArrayList;
+
 /**
  * NativeDo: the pin's file is the editor's 7,764-line RecyclerView (the block list, the drag
  * reordering, the toolbar glue, the media inserters). This tree has no host for it yet - the editor
@@ -25,5 +27,19 @@ public final class RichEditorListView {
             || b instanceof TL_iv.pageBlockHeading4
             || b instanceof TL_iv.pageBlockHeading5
             || b instanceof TL_iv.pageBlockHeading6;
+    }
+
+    static boolean isDetailsHeader(BlockRow row) {
+        return row != null && row.block instanceof TL_iv.pageBlockDetails;
+    }
+
+    static boolean isGallery(TL_iv.PageBlock b) {
+        return b instanceof TL_iv.pageBlockCollage || b instanceof TL_iv.pageBlockSlideshow;
+    }
+
+    static ArrayList<TL_iv.PageBlock> galleryItems(TL_iv.PageBlock b) {
+        if (b instanceof TL_iv.pageBlockCollage) return ((TL_iv.pageBlockCollage) b).items;
+        if (b instanceof TL_iv.pageBlockSlideshow) return ((TL_iv.pageBlockSlideshow) b).items;
+        return null;
     }
 }

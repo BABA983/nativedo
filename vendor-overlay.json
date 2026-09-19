@@ -271,7 +271,6 @@
     "TMessagesProj/src/main/java/org/telegram/ui/bots/BotWebViewSheet.java",
     "TMessagesProj/src/main/java/org/telegram/ui/bots/ChatAttachAlertBotWebViewLayout.java",
     "TMessagesProj/src/main/java/org/telegram/ui/iv/ChatAttachAlertRichLayout.java",
-    "TMessagesProj/src/main/java/org/telegram/ui/iv/RichHtml.java",
     "TMessagesProj/src/main/java/org/telegram/ui/recyclerview/ChatListItemAnimator.java",
     "TMessagesProj/src/main/java/org/telegram/ui/web/BookmarksFragment.java",
     "TMessagesProj/src/main/java/org/telegram/ui/web/BotWebViewContainer.java",
