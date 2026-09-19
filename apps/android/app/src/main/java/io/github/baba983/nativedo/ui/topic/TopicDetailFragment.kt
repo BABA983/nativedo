@@ -2,6 +2,9 @@ package io.github.baba983.nativedo.ui.topic
 
 import android.animation.ValueAnimator
 import android.content.Context
+import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Intent
 import android.content.DialogInterface
 import android.graphics.Canvas
 import android.graphics.Color
@@ -1672,8 +1675,38 @@ class TopicDetailFragment @JvmOverloads constructor(
             onDraft = viewModel::updateReplyDraftText,
         )
         richEditorSheet = sheet
+        sheet.onAttachRequested = ::showRichEditorMediaPicker
         sheet.loadMarkdown(draft.raw)
         sheet.show()
+    }
+
+    /**
+     * The media the editor's attach button (or a media row's add) asks for: the system picker for
+     * an image or a video. The result comes back through [handleRichEditorActivityResult] and goes
+     * to the page, which copies it into the cache and uploads it (`POST /uploads.json`).
+     */
+    private fun showRichEditorMediaPicker() {
+        val activity = parentActivity ?: return
+        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
+        }
+        try {
+            activity.startActivityForResult(intent, RICH_EDITOR_MEDIA_REQUEST_CODE)
+        } catch (ignored: ActivityNotFoundException) {
+            // no picker on the device: the editor's attach button simply does nothing
+        }
+    }
+
+    /** The activity's result for [showRichEditorMediaPicker]; true when this fragment consumed it. */
+    fun handleRichEditorActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
+        if (requestCode != RICH_EDITOR_MEDIA_REQUEST_CODE) return false
+        val uri = data?.data
+        if (resultCode == Activity.RESULT_OK && uri != null) {
+            richEditorSheet?.editorHost()?.attachExternalMedia(uri)
+        }
+        return true
     }
 
     private fun createTopicActionBarMenu(context: Context) {
@@ -8080,6 +8113,9 @@ internal fun topicPostScrimPopupMaxHeight(anchorView: View, popupY: Int): Int {
     val displayHeight = AndroidUtilities.displaySize.y.takeIf { it > 0 } ?: anchorView.resources.displayMetrics.heightPixels
     return (displayHeight - popupY - AndroidUtilities.dp(8f)).coerceAtLeast(AndroidUtilities.dp(48f))
 }
+
+/** The activity's result code for the editor's media picker (see `showRichEditorMediaPicker`). */
+internal const val RICH_EDITOR_MEDIA_REQUEST_CODE = 4711
 
 private const val TOPIC_REPLY_COMPOSER_DEFAULT_HEIGHT_DP = 44
 private const val TOPIC_BOTTOM_INPUT_CONTAINER = 1

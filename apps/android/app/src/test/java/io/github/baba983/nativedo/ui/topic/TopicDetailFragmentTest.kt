@@ -1,6 +1,9 @@
 package io.github.baba983.nativedo.ui.topic
 
 import android.content.Context
+import android.app.Activity
+import android.content.Intent
+import android.net.Uri
 import android.graphics.Paint
 import android.view.KeyEvent
 import android.view.View
@@ -61,6 +64,36 @@ class TopicDetailFragmentTest {
         assertThat(TopicDetailFragment.topicDetailListBackgroundColor()).isEqualTo(0xfff1f1f3.toInt())
         assertThat(Theme.getDefaultColor(Theme.key_chat_serviceBackground)).isEqualTo(0x6685859e)
         assertThat(Theme.getDefaultColor(Theme.key_chat_serviceBackgroundSelected)).isEqualTo(0x889393af.toInt())
+    }
+
+    @Test
+    fun richEditorMediaResult_isConsumedOnlyForItsOwnRequest() {
+        val fragment = TopicDetailFragment(topicId = 1L)
+        val result = Intent().setData(Uri.parse("content://media/picked/1"))
+
+        // the dispatch MainActivity does: a foreign request code must fall through
+        assertThat(
+            fragment.handleRichEditorActivityResult(
+                RICH_EDITOR_MEDIA_REQUEST_CODE,
+                Activity.RESULT_OK,
+                result,
+            ),
+        ).isTrue()
+        assertThat(
+            fragment.handleRichEditorActivityResult(
+                RICH_EDITOR_MEDIA_REQUEST_CODE + 1,
+                Activity.RESULT_OK,
+                result,
+            ),
+        ).isFalse()
+        // a cancelled picker (or one without a sheet) is still ours to consume, and must not throw
+        assertThat(
+            fragment.handleRichEditorActivityResult(
+                RICH_EDITOR_MEDIA_REQUEST_CODE,
+                Activity.RESULT_CANCELED,
+                null,
+            ),
+        ).isTrue()
     }
 
     @Test

@@ -34,6 +34,7 @@ import io.github.baba983.nativedo.core.ui.resolveAvatarUrl
 import io.github.baba983.nativedo.ui.auth.LoginWebViewFragment
 import io.github.baba983.nativedo.ui.main.MainTabsActivity
 import io.github.baba983.nativedo.ui.theme.ThemeSettingsFragment
+import io.github.baba983.nativedo.ui.topic.TopicDetailFragment
 import org.telegram.ui.Components.ThemeEditorView
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
@@ -140,6 +141,9 @@ class MainActivity : LaunchActivity(), NotificationCenter.NotificationCenterDele
         if (::actionBarLayout.isInitialized) {
             val fragment = actionBarLayout.lastFragment
             if (fragment is ThemeSettingsFragment && fragment.handleActivityResult(requestCode, resultCode, data)) {
+                return
+            }
+            if (fragment is TopicDetailFragment && fragment.handleRichEditorActivityResult(requestCode, resultCode, data)) {
                 return
             }
         }
