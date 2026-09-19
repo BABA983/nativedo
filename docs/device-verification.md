@@ -108,3 +108,32 @@ What to check once S4 lands:
 5. Selection inside a rich message uses our 12.6 `TextSelectionHelper.TextLayoutBlock` shape;
    handles/prefixes are therefore expected to behave like the current text blocks, not like
    upstream 12.10.2's selection.
+
+## 8. The poll votes sheet is Telegram's `PollVotesAlert` (`6b775d7`)
+
+What changed: the "view votes" entry on a poll opens the vendored
+`PollVotesAlert` (the pin's file) fed by `TopicPollVotesAlert` — a Discourse poll
+rebuilt as `TLRPC.Poll` — and `PollVotesBridge`, which answers
+`messages.getPollVotes` from `polls/voters.json` instead of MTProto. The old
+site-shaped `TopicPollVotersSheet` is gone, so the whole panel including its
+paging now comes from upstream.
+
+To check:
+
+1. Open a public poll with votes and tap the entry: the sheet lists every option
+   with its percentage and, per option, the first page of voters (50).
+2. Scroll past the first page of an option: the sheet appends page 2 (upstream
+   asks for it through `next_offset`, we translate it into the site's `page`).
+   With more than 50 voters this is the pagination path; below that it must not
+   offer a load-more row at all.
+3. Avatars load from the site (`ImageLocation.getForUser`'s new URL branch);
+   when a voter has no `avatar_template` the monogram circle stands in.
+4. Tap a voter: the sheet dismisses and the site profile opens in the in-app
+   browser, which is the behaviour our reaction sheets use. A voter without a
+   username should do nothing.
+5. Things Paparazzi cannot show: the section expand/collapse animation, the
+   placeholder skeleton before the first page arrives, and the sheet's
+   drag/scroll feel inside a topic.
+6. The entry itself is still gated by `PollBlock.canOpenVotersList` (public poll
+   with votes and results shown, or a voted state), and anonymous polls never
+   offer it — that gate is unchanged.
