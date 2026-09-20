@@ -122,6 +122,36 @@ was not what it looked like:
 The switch is off again after the pass: the two shapes above plus the untested families (images and
 collages #7.4, selection #7.5, TalkBack #7.7) keep it from flipping on.
 
+### Why the two bodies read differently (measured 2026-09-20, same emulator)
+
+Both bodies are Telegram's, but from two different renderers: the flag-off block tree mirrors
+`ArticleViewer` (the article reader) and the flag-on run is `RichMessageLayout` (the rich message).
+They disagree on the reading rhythm, which is why flipping the flag visibly changes a post:
+
+| | flag off (our blocks) | flag on (`RichMessageLayout`) |
+| --- | --- | --- |
+| line pitch, measured on topic 2790689 post #1 | ~60 px | ~49-50 px |
+| within a paragraph | `ArticleTextLayout` sets `setLineSpacing(dp(4), 1f)`, and upstream's article text does the same (`new StaticLayout(..., 1.0f, dp(4), false)`) | `RichTextBlock` -> `makeStaticLayout(..., 1f, 0f, ...)`: no extra line spacing, exactly what `MessageObject` gives a chat message |
+| between two paragraphs | 8 + 8 dp - every text block carries its own padding | 0 + 4.66 dp after another paragraph, 5 + 4.66 dp otherwise (`emitBlock`); headings 10 + 6 dp; first paragraph top and last block bottom are zeroed |
+
+A Telegram *chat* paragraph is neither: its text also has `lineSpacingAdd = 0`, but its paragraph gap
+is a full empty line. So "the rich body is Telegram's own typography" is only half true, and which
+rhythm a post body should have is a product call - nothing in `RichMessageBodyBlock` can change it
+today, because the constants live inside upstream's `emitBlock` and the line spacing is baked into
+`RichTextBlock`'s `Text`.
+
+### An inline image drew its token instead of its content (fixed 2026-09-20)
+
+`InlineRichText` keeps an inline image, an inline icon, a hashtag chip and a `[size]` range as tokens
+in the tree and resolves them to the readable form only in `plainText()`/`toHtml()`. The *block* path
+is fine - `PostBodyInlineSpans` turns a token into a real span - but the rich run handed the tree
+straight to the renderer, which draws a token literally: topic 2503776 post #1 showed
+`__nd_inline_image_0__` where a custom emoji belongs. `flattenTokensForLayout()` now rewrites the tree
+before the mapping hands it over, pinned by
+`InlineRichTextTest.theLayoutTreeReplacesTokensWithTheirReadableForm` and confirmed on the device -
+the same paragraph reads `:laughing:` now. The rich run still cannot *draw* what the block path draws
+(an emoji image from the sprite store); the alt text is the honest fallback until it can.
+
 What changed: `RichMessageLayout` and its mirror dependencies compile (`docs/render-model-alignment.md`, S3),
 and S4 slices 1-2 draw a mapped Discourse post through `RichMessageLayout`, both standalone
 (`PostRichMessageScreenshotTest`) and inside the real `TopicPostCell` behind
