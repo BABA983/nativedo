@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.PostReaction
 import io.github.baba983.nativedo.core.model.PostReactionUser
+import io.github.baba983.nativedo.core.model.UploadedFile
 import io.github.baba983.nativedo.core.model.toggledReaction
 import io.github.baba983.nativedo.feature.home.ui.readableMessage
 import io.github.baba983.nativedo.feature.topic.data.TopicRepository
@@ -13,6 +14,7 @@ import io.github.baba983.nativedo.feature.topic.data.TopicReplyDraftKey
 import io.github.baba983.nativedo.feature.topic.data.TopicReplyDraftStore
 import io.github.baba983.nativedo.feature.topic.data.TopicReadPositionKey
 import io.github.baba983.nativedo.feature.topic.data.TopicReadPositionStore
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -607,6 +609,16 @@ class TopicViewModel(
 
     fun clearReplyDraft() {
         updateReplyDraft(TopicReplyDraft())
+    }
+
+    /**
+     * The reply composer's own attach path: a picked file goes up to the site and comes back as
+     * the upload (`null` when it failed). The block editor uploads through the media bridge.
+     */
+    fun uploadMedia(file: File, mimeType: String?, onResult: (UploadedFile?) -> Unit) {
+        viewModelScope.launch {
+            onResult(repository.uploadMedia(file = file, mimeType = mimeType).getOrNull())
+        }
     }
 
     fun submitReply() {

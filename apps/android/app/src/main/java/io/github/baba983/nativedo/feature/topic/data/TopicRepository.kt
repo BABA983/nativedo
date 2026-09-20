@@ -3,6 +3,8 @@ package io.github.baba983.nativedo.feature.topic.data
 import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.PostReactionUsersGroup
 import io.github.baba983.nativedo.core.model.TopicDetail
+import java.io.File
+import io.github.baba983.nativedo.core.model.UploadedFile
 import io.github.baba983.nativedo.core.network.DiscourseApiClient
 
 open class TopicRepository protected constructor() {
@@ -42,6 +44,14 @@ open class TopicRepository protected constructor() {
 
     open suspend fun loadPostReplies(postId: Long, afterPostNumber: Int): Result<List<Post>> = runCatching {
         client.fetchPostReplies(postId = postId, afterPostNumber = afterPostNumber)
+    }
+
+    /**
+     * The composer's own attach path: one file up to the site (`POST /uploads.json`). The editor's
+     * media goes through the media bridge instead, because its model carries upload state.
+     */
+    open suspend fun uploadMedia(file: File, mimeType: String?): Result<UploadedFile> = runCatching {
+        client.uploadFile(file = file, mimeType = mimeType, onProgress = {})
     }
 
     open suspend fun createReply(topicId: Long, raw: String, replyToPostNumber: Int?): Result<Post> = runCatching {

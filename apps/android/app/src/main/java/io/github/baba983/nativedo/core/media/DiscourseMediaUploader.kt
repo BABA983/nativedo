@@ -79,15 +79,5 @@ class DiscourseMediaUploader(
         return baseUrl.trimEnd('/') + "/" + url.trimStart('/')
     }
 
-    private fun mimeTypeFor(file: File): String? = when (file.name.substringAfterLast('.', "").lowercase()) {
-        "png" -> "image/png"
-        "gif" -> "image/gif"
-        "webp" -> "image/webp"
-        "heic" -> "image/heic"
-        "jpg", "jpeg" -> "image/jpeg"
-        "mp4" -> "video/mp4"
-        "mov" -> "video/quicktime"
-        "webm" -> "video/webm"
-        else -> null
-    }
+    private fun mimeTypeFor(file: File): String? = mediaMimeTypeFor(file.name)
 }

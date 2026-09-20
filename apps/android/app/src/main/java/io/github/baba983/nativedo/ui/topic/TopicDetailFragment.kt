@@ -73,6 +73,7 @@ import io.github.baba983.nativedo.core.html.parseCookedPostBody
 import io.github.baba983.nativedo.core.html.resolvePostImageUrl
 import io.github.baba983.nativedo.core.model.DiscourseEmoji
 import io.github.baba983.nativedo.core.model.DiscourseEmojiCategory
+import io.github.baba983.nativedo.core.media.PickedMediaResolver
 import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.PostReaction
 import io.github.baba983.nativedo.core.model.PostReactionRendering
@@ -1616,6 +1617,7 @@ class TopicDetailFragment @JvmOverloads constructor(
             replyToPost = viewModel.uiState.value.posts.firstOrNull { it.postNumber == draft.replyToPostNumber },
             onEmojiButtonPressed = ::handleReplyComposerEmojiButton,
             onRichEditorPressed = ::showRichEditor,
+            onAttachMediaPressed = ::pickReplyComposerMedia,
             onKeyboardRequested = ::handleReplyComposerKeyboardRequested,
             onReplyContextPressed = { postNumber ->
                 viewModel.requestJumpToReplyTarget(postNumber)
@@ -1652,6 +1654,9 @@ class TopicDetailFragment @JvmOverloads constructor(
 
     private var richEditorSheet: RichEditorSheet? = null
 
+    /** Which surface asked for media, while the system picker is up. */
+    private var mediaPickTarget: TopicMediaPickTarget? = null
+
     /**
      * The composer's way into the block editor: the same draft, edited with the block model.
      * Dismissing the sheet keeps the edits as the composer's draft
@@ -1675,38 +1680,79 @@ class TopicDetailFragment @JvmOverloads constructor(
             onDraft = viewModel::updateReplyDraftText,
         )
         richEditorSheet = sheet
-        sheet.onAttachRequested = ::showRichEditorMediaPicker
+        sheet.onAttachRequested = ::pickEditorMedia
         sheet.loadMarkdown(draft.raw)
         sheet.show()
     }
 
     /**
-     * The media the editor's attach button (or a media row's add) asks for: the system picker for
-     * an image or a video. The result comes back through [handleRichEditorActivityResult] and goes
-     * to the page, which copies it into the cache and uploads it (`POST /uploads.json`).
+     * The editor's attach button (or a media row's add): the page takes the picked file itself -
+     * it copies it into the cache and uploads it through the media bridge.
      */
-    private fun showRichEditorMediaPicker() {
+    private fun pickEditorMedia() {
+        pickMedia(TopicMediaPickTarget.Editor)
+    }
+
+    /**
+     * The composer's own attach path (the attach button while the reply is empty, or the send
+     * button's menu): upload the picked file to the site and put its markdown into the draft.
+     */
+    private fun pickReplyComposerMedia() {
+        pickMedia(TopicMediaPickTarget.Composer)
+    }
+
+    private fun pickMedia(target: TopicMediaPickTarget) {
         val activity = parentActivity ?: return
+        if (mediaPickTarget != null) return
         val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "*/*"
             putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
         }
+        mediaPickTarget = target
         try {
             activity.startActivityForResult(intent, RICH_EDITOR_MEDIA_REQUEST_CODE)
         } catch (ignored: ActivityNotFoundException) {
-            // no picker on the device: the editor's attach button simply does nothing
+            // no picker on the device: the button simply does nothing
+            mediaPickTarget = null
         }
     }
 
-    /** The activity's result for [showRichEditorMediaPicker]; true when this fragment consumed it. */
+    /** The activity's result for [pickMedia]; true when this fragment consumed it. */
     fun handleRichEditorActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
         if (requestCode != RICH_EDITOR_MEDIA_REQUEST_CODE) return false
+        val target = mediaPickTarget
+        mediaPickTarget = null
         val uri = data?.data
         if (resultCode == Activity.RESULT_OK && uri != null) {
-            richEditorSheet?.editorHost()?.attachExternalMedia(uri)
+            when (target) {
+                TopicMediaPickTarget.Editor -> richEditorSheet?.editorHost()?.attachExternalMedia(uri)
+                TopicMediaPickTarget.Composer -> uploadReplyMedia(uri)
+                null -> Unit
+            }
         }
         return true
+    }
+
+    /** The composer's attach: copy the picked URI, upload it, insert the markdown it yields. */
+    private fun uploadReplyMedia(uri: Uri) {
+        val context = context ?: return
+        val panel = replyComposerPanel ?: return
+        val picked = PickedMediaResolver.resolve(context, uri)
+        if (picked == null) {
+            panel.setError(context.getString(io.github.baba983.nativedo.R.string.topic_reply_composer_attach_failed))
+            return
+        }
+        panel.setError(null)
+        panel.setAttachUploading(true)
+        viewModel.uploadMedia(picked.file, picked.mimeType) { uploaded ->
+            panel.setAttachUploading(false)
+            if (uploaded == null) {
+                panel.setError(context.getString(io.github.baba983.nativedo.R.string.topic_reply_composer_attach_failed))
+            } else {
+                panel.insertMediaMarkdown(alt = uploaded.filename ?: picked.name, url = uploaded.url)
+            }
+        }
     }
 
     private fun createTopicActionBarMenu(context: Context) {
@@ -8114,8 +8160,11 @@ internal fun topicPostScrimPopupMaxHeight(anchorView: View, popupY: Int): Int {
     return (displayHeight - popupY - AndroidUtilities.dp(8f)).coerceAtLeast(AndroidUtilities.dp(48f))
 }
 
-/** The activity's result code for the editor's media picker (see `showRichEditorMediaPicker`). */
+/** The activity's result code for the media picker (see `pickMedia`). */
 internal const val RICH_EDITOR_MEDIA_REQUEST_CODE = 4711
+
+/** Who asked for media: the reply composer's own attach, or the block editor's page. */
+private enum class TopicMediaPickTarget { Composer, Editor }
 
 private const val TOPIC_REPLY_COMPOSER_DEFAULT_HEIGHT_DP = 44
 private const val TOPIC_BOTTOM_INPUT_CONTAINER = 1
@@ -8221,6 +8270,7 @@ private class TopicReplyComposerPanel(
     replyToPost: Post?,
     private val onEmojiButtonPressed: (View, View, (String) -> Unit) -> Unit,
     private val onRichEditorPressed: () -> Unit,
+    private val onAttachMediaPressed: () -> Unit,
     private val onKeyboardRequested: (View) -> Unit,
     private val onReplyContextPressed: (Int) -> Unit,
     private val onBackKeyPressed: (Int, Int) -> Boolean,
@@ -8235,7 +8285,6 @@ private class TopicReplyComposerPanel(
     private var bindingDraft = false
     private var lastReplyHeaderKey: String? = null
     private var submitting = false
-    private var sendButtonAnimator: ValueAnimator? = null
     private var sendButtonPopup: ActionBarPopupWindow? = null
     private var panelAnimator: ValueAnimator? = null
     private var keyboardInsetAnimator: ValueAnimator? = null
@@ -8246,7 +8295,6 @@ private class TopicReplyComposerPanel(
     private var editTextPredrawHeight = 0
     private var editTextPredrawScrollY = 0
     private var editTextPredrawLineCount = 1
-    private var sendButtonTargetVisible = false
     private var dismissed = false
     private var processEmojiChange = false
     private var panelOffsetY = 0f
@@ -8376,12 +8424,17 @@ private class TopicReplyComposerPanel(
             override fun onViewDetachedFromWindow(v: View) = Unit
         })
     }
-    private val sendButton = ComposerSendButton(context).apply {
-        visibility = topicReplyComposerInitialSendButtonVisibility()
-        alpha = 0f
-        scaleX = 0.1f
-        scaleY = 0.1f
+    private val sendButton = ComposerCircleButton(context, topicReplyComposerSendButtonIconRes(), shown = false).apply {
         setSoundEffectsEnabled(false)
+    }
+    /**
+     * The composer's attach path: while there is nothing to send, the send slot offers media
+     * instead (Telegram's empty-input slot). Once there is text the send button takes the slot
+     * back, and the same action stays reachable from the send button's long-press menu.
+     */
+    private val attachButton = ComposerCircleButton(context, TelegramR.drawable.outline_poll_attach_24, shown = true).apply {
+        contentDescription = context.getString(io.github.baba983.nativedo.R.string.topic_reply_composer_attach)
+        setOnClickListener { onAttachMediaPressed() }
     }
     private val emojiButton = ChatActivityEnterViewAnimatedIconView(context).apply {
         val padding = AndroidUtilities.dp(TOPIC_REPLY_COMPOSER_ICON_BUTTON_PADDING_DP)
@@ -8644,6 +8697,11 @@ private class TopicReplyComposerPanel(
             TOPIC_REPLY_COMPOSER_DEFAULT_HEIGHT_DP.toFloat(),
             Gravity.BOTTOM or Gravity.RIGHT,
         ))
+        actionContainer.addView(attachButton, LayoutHelper.createFrame(
+            TOPIC_REPLY_COMPOSER_SEND_BUTTON_WIDTH_DP.toFloat(),
+            TOPIC_REPLY_COMPOSER_DEFAULT_HEIGHT_DP.toFloat(),
+            Gravity.BOTTOM or Gravity.RIGHT,
+        ))
         actionContainer.setOnLongClickListener {
             showSendButtonMenu(sendButton)
             true
@@ -8888,8 +8946,6 @@ private class TopicReplyComposerPanel(
         dismissed = true
         sendButtonPopup?.dismiss()
         sendButtonPopup = null
-        sendButtonAnimator?.cancel()
-        sendButtonAnimator = null
         keyboardInsetAnimator?.cancel()
         keyboardInsetAnimator = null
         inputFieldHeightAnimator?.cancel()
@@ -9025,7 +9081,7 @@ private class TopicReplyComposerPanel(
         if (submitting) {
             onMentionTokenChanged(null)
         }
-        sendButton.isSubmitting = submitting
+        sendButton.busy = submitting
         updateSendButtonState()
     }
 
@@ -9049,7 +9105,26 @@ private class TopicReplyComposerPanel(
             setBackgroundColor(Theme.getColor(Theme.key_actionBarDefaultSubmenuBackground))
             setFitItems(true)
         }
-        val sendItem = ActionBarMenuSubItem(context, true, true, null).apply {
+        // The attach action lives in the send slot only while the reply is empty; once there is
+        // text the slot belongs to send, so the same action is offered here.
+        val attachItem = ActionBarMenuSubItem(context, true, false, null).apply {
+            setMinimumWidth(AndroidUtilities.dp(184f))
+            setColors(
+                Theme.getColor(Theme.key_actionBarDefaultSubmenuItem),
+                Theme.getColor(Theme.key_actionBarDefaultSubmenuItemIcon),
+            )
+            setSelectorColor(Theme.getColor(Theme.key_dialogButtonSelector))
+            setTextAndIcon(
+                context.getString(io.github.baba983.nativedo.R.string.topic_reply_composer_attach),
+                TelegramR.drawable.outline_poll_attach_24,
+            )
+            setOnClickListener {
+                sendButtonPopup?.dismiss()
+                sendButtonPopup = null
+                onAttachMediaPressed()
+            }
+        }
+        val sendItem = ActionBarMenuSubItem(context, false, true, null).apply {
             setMinimumWidth(AndroidUtilities.dp(184f))
             setColors(
                 Theme.getColor(Theme.key_actionBarDefaultSubmenuItem),
@@ -9063,10 +9138,11 @@ private class TopicReplyComposerPanel(
                 submit()
             }
         }
+        popupLayout.addView(attachItem)
         popupLayout.addView(sendItem)
         popupLayout.measure(
             MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(220f), MeasureSpec.AT_MOST),
-            MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(80f), MeasureSpec.AT_MOST),
+            MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(160f), MeasureSpec.AT_MOST),
         )
         val location = IntArray(2)
         anchor.getLocationInWindow(location)
@@ -9313,60 +9389,34 @@ private class TopicReplyComposerPanel(
         setSendButtonVisible(state.visible, animated = sendButton.isAttachedToWindow)
     }
 
-    private fun setSendButtonVisible(visible: Boolean, animated: Boolean) {
-        if (sendButtonTargetVisible == visible) {
-            return
-        }
-        sendButtonTargetVisible = visible
-        sendButtonAnimator?.cancel()
-        sendButtonAnimator = null
-        if (!animated) {
-            sendButton.visibility = if (visible) View.VISIBLE else View.INVISIBLE
-            sendButton.alpha = if (visible) 1f else 0f
-            sendButton.scaleX = if (visible) 1f else 0.1f
-            sendButton.scaleY = if (visible) 1f else 0.1f
-            return
-        }
-        if (visible) {
-            sendButton.visibility = View.VISIBLE
-        }
-        val fromAlpha = sendButton.alpha
-        val toAlpha = if (visible) 1f else 0f
-        val fromScaleX = sendButton.scaleX
-        val toScaleX = if (visible) 1f else 0.1f
-        val fromScaleY = sendButton.scaleY
-        val toScaleY = if (visible) 1f else 0.1f
-        if (visible && fromAlpha < 0.25f) {
-            sendButton.appear()
-        }
-        val animator = ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 220L
-            interpolator = CubicBezierInterpolator.EASE_OUT_QUINT
-            addUpdateListener { animation ->
-                val t = animation.animatedValue as Float
-                sendButton.alpha = lerpFloat(fromAlpha, toAlpha, t)
-                sendButton.scaleX = lerpFloat(fromScaleX, toScaleX, t)
-                sendButton.scaleY = lerpFloat(fromScaleY, toScaleY, t)
-            }
-            addListener(object : android.animation.AnimatorListenerAdapter() {
-                override fun onAnimationEnd(animation: android.animation.Animator) {
-                    if (sendButtonAnimator === animation) {
-                        if (!visible) {
-                            sendButton.visibility = View.INVISIBLE
-                        }
-                        sendButtonAnimator = null
-                    }
-                }
+    /** The attach slot spins (and ignores taps) while a picked file is on its way up. */
+    fun setAttachUploading(uploading: Boolean) {
+        attachButton.busy = uploading
+        attachButton.isEnabled = !uploading
+    }
 
-                override fun onAnimationCancel(animation: android.animation.Animator) {
-                    if (sendButtonAnimator === animation) {
-                        sendButtonAnimator = null
-                    }
-                }
-            })
-        }
-        sendButtonAnimator = animator
-        animator.start()
+    /** Puts an uploaded file into the draft at the caret, the way the web composer does. */
+    fun insertMediaMarkdown(alt: String, url: String) {
+        if (submitting) return
+        val markup = topicReplyComposerMediaMarkup(alt = alt, url = url)
+        if (markup.isEmpty()) return
+        val editable = editText.text ?: return
+        val selectionStart = editText.selectionStart.takeIf { it >= 0 } ?: editable.length
+        val selectionEnd = editText.selectionEnd.takeIf { it >= 0 } ?: selectionStart
+        val start = minOf(selectionStart, selectionEnd).coerceIn(0, editable.length)
+        val end = maxOf(selectionStart, selectionEnd).coerceIn(0, editable.length)
+        val insertion = topicReplyComposerMediaInsertionText(editable, start, end, markup)
+        if (insertion.isEmpty()) return
+        editable.replace(start, end, insertion)
+        editText.setSelection((start + insertion.length).coerceAtMost(editable.length))
+        editText.requestFocus()
+        updateSendButtonState()
+    }
+
+    private fun setSendButtonVisible(visible: Boolean, animated: Boolean) {
+        sendButton.setShown(visible, animated)
+        // the two share the slot: exactly one of them is on screen
+        attachButton.setShown(!visible, animated)
     }
 
     private fun clearReplyContext() {
@@ -9934,6 +9984,30 @@ internal fun topicReplyComposerEmojiInsertionText(
     val prefix = if (start > 0 && !currentText[start - 1].isWhitespace()) " " else ""
     val suffix = if (end < currentText.length && !currentText[end].isWhitespace()) " " else ""
     return prefix + markup + suffix
+}
+
+/** The markdown an uploaded file contributes: the site's URL, a readable alt from the filename. */
+internal fun topicReplyComposerMediaMarkup(alt: String, url: String): String {
+    if (url.isBlank()) return ""
+    val name = alt.trim().replace("]", "").replace("\n", " ").ifBlank { "image" }
+    return "![$name](${url.trim()})"
+}
+
+/**
+ * Where an uploaded file lands in the draft: on a line of its own (the web composer writes
+ * `![name](url)` the same way), with a newline first when the caret is mid-line and a trailing one
+ * so typing continues on a fresh line.
+ */
+internal fun topicReplyComposerMediaInsertionText(
+    currentText: CharSequence,
+    selectionStart: Int,
+    selectionEnd: Int,
+    markdown: String,
+): String {
+    if (markdown.isBlank()) return ""
+    val start = minOf(selectionStart, selectionEnd).coerceIn(0, currentText.length)
+    val prefix = if (start > 0 && currentText[start - 1] != '\n') "\n" else ""
+    return prefix + markdown + "\n"
 }
 
 private fun topicReplyComposerFallbackEmojiCategories(
@@ -10567,9 +10641,20 @@ private fun composerIconColor(kind: ComposerIconKind): Int {
     }
 }
 
-private class ComposerSendButton(context: Context) : View(context) {
+/**
+ * The composer's round action button: a filled circle with an icon and, while [busy], the arcs the
+ * send button spins. The composer uses one for sending and one for attaching media in the same
+ * slot - the attach button shows while there is nothing to send, the send button once there is.
+ */
+private class ComposerCircleButton(
+    context: Context,
+    @androidx.annotation.DrawableRes iconRes: Int,
+    shown: Boolean = false,
+) : View(context) {
+    private var shown = shown
+    private var shownAnimator: ValueAnimator? = null
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val sendIcon: Drawable = context.resources.getDrawable(topicReplyComposerSendButtonIconRes()).mutate().apply {
+    private val icon: Drawable = context.resources.getDrawable(iconRes).mutate().apply {
         setColorFilter(PorterDuffColorFilter(Theme.getColor(Theme.key_dialogFloatingIcon), PorterDuff.Mode.SRC_IN))
     }
     private val loadingPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -10583,7 +10668,7 @@ private class ComposerSendButton(context: Context) : View(context) {
     private val loadingInterpolator = CubicBezierInterpolator(0.4, 0.0, 0.2, 1.0)
     private val loadingAnimatedShown = AnimatedFloat(this, 0, 420, CubicBezierInterpolator.EASE_OUT_QUINT)
     private val appear = AnimatedFloat(this, 0, 320, CubicBezierInterpolator.EASE_OUT_QUINT)
-    var isSubmitting: Boolean = false
+    var busy: Boolean = false
         set(value) {
             if (field == value) {
                 return
@@ -10601,6 +10686,65 @@ private class ComposerSendButton(context: Context) : View(context) {
 
     init {
         isFocusable = true
+        applyShown(shown)
+    }
+
+    /**
+     * Shows or hides the button; the two buttons the composer shares its slot between cross-fade
+     * and scale into each other. [animated] is what the panel passes: an attached view animates,
+     * one that is still being built applies the end state.
+     */
+    fun setShown(shown: Boolean, animated: Boolean) {
+        if (this.shown == shown) return
+        this.shown = shown
+        shownAnimator?.cancel()
+        shownAnimator = null
+        if (!animated) {
+            applyShown(shown)
+            return
+        }
+        if (shown) {
+            visibility = View.VISIBLE
+        }
+        val fromAlpha = alpha
+        val fromScaleX = scaleX
+        val fromScaleY = scaleY
+        if (shown && fromAlpha < 0.25f) {
+            appear()
+        }
+        val animator = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 220L
+            interpolator = CubicBezierInterpolator.EASE_OUT_QUINT
+            addUpdateListener { animation ->
+                val t = animation.animatedValue as Float
+                alpha = lerpFloat(fromAlpha, if (shown) 1f else 0f, t)
+                scaleX = lerpFloat(fromScaleX, if (shown) 1f else 0.1f, t)
+                scaleY = lerpFloat(fromScaleY, if (shown) 1f else 0.1f, t)
+            }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: android.animation.Animator) {
+                    if (shownAnimator === animation) {
+                        if (!shown) visibility = View.INVISIBLE
+                        shownAnimator = null
+                    }
+                }
+
+                override fun onAnimationCancel(animation: android.animation.Animator) {
+                    if (shownAnimator === animation) {
+                        shownAnimator = null
+                    }
+                }
+            })
+        }
+        shownAnimator = animator
+        animator.start()
+    }
+
+    private fun applyShown(shown: Boolean) {
+        visibility = if (shown) View.VISIBLE else View.INVISIBLE
+        alpha = if (shown) 1f else 0f
+        scaleX = if (shown) 1f else 0.1f
+        scaleY = if (shown) 1f else 0.1f
     }
 
     fun appear() {
@@ -10649,10 +10793,10 @@ private class ComposerSendButton(context: Context) : View(context) {
         }
         paint.style = Paint.Style.FILL
         paint.color = Theme.getColor(Theme.key_chat_messagePanelSend)
-        paint.alpha = if (isEnabled || isSubmitting) 255 else 110
+        paint.alpha = if (isEnabled || busy) 255 else 110
         canvas.drawRoundRect(rect, rect.height() / 2f, rect.height() / 2f, paint)
 
-        val loadingShown = loadingAnimatedShown.set(if (isSubmitting) 1f else 0f)
+        val loadingShown = loadingAnimatedShown.set(if (busy) 1f else 0f)
         paint.color = Theme.getColor(Theme.key_dialogFloatingIcon)
         paint.alpha = (255f * (1f - loadingShown)).toInt().coerceIn(0, 255)
         if (loadingShown > 0f) {
@@ -10687,17 +10831,17 @@ private class ComposerSendButton(context: Context) : View(context) {
                 cy,
             )
             canvas.rotate(60f * (1f - appearProgress), cx, cy)
-            sendIcon.alpha = paint.alpha
-            val iconLeft = Math.round(cx - sendIcon.intrinsicWidth / 2f)
-            val iconTop = Math.round(cy - sendIcon.intrinsicHeight / 2f)
-            sendIcon.setBounds(
+            icon.alpha = paint.alpha
+            val iconLeft = Math.round(cx - icon.intrinsicWidth / 2f)
+            val iconTop = Math.round(cy - icon.intrinsicHeight / 2f)
+            icon.setBounds(
                 iconLeft,
                 iconTop,
-                iconLeft + sendIcon.intrinsicWidth,
-                iconTop + sendIcon.intrinsicHeight,
+                iconLeft + icon.intrinsicWidth,
+                iconTop + icon.intrinsicHeight,
             )
-            sendIcon.draw(canvas)
-            sendIcon.alpha = 255
+            icon.draw(canvas)
+            icon.alpha = 255
             canvas.restoreToCount(iconRestore)
             if (appearProgress < 1f) {
                 invalidate()

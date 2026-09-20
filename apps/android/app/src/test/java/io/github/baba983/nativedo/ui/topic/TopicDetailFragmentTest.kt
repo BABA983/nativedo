@@ -653,6 +653,34 @@ class TopicDetailFragmentTest {
     }
 
     @Test
+    fun replyComposerMediaInsertion_putsTheImageOnItsOwnLine() {
+        // mid-line: a newline first, and a trailing one so typing continues below the image
+        assertThat(topicReplyComposerMediaInsertionText("hello", 5, 5, "![a.png](https://x/a.png)"))
+            .isEqualTo("\n![a.png](https://x/a.png)\n")
+        // at a line start: no leading newline
+        assertThat(topicReplyComposerMediaInsertionText("hello\n", 6, 6, "![a.png](https://x/a.png)"))
+            .isEqualTo("![a.png](https://x/a.png)\n")
+        // an empty draft starts the line
+        assertThat(topicReplyComposerMediaInsertionText("", 0, 0, "![a.png](https://x/a.png)"))
+            .isEqualTo("![a.png](https://x/a.png)\n")
+        // a selection is replaced, and the markdown still owns its line
+        assertThat(topicReplyComposerMediaInsertionText("old text", 0, 8, "![a.png](https://x/a.png)"))
+            .isEqualTo("![a.png](https://x/a.png)\n")
+    }
+
+    @Test
+    fun replyComposerMediaMarkup_usesTheSitesUrlAndAReadableAlt() {
+        assertThat(topicReplyComposerMediaMarkup("screenshot.png", "https://linux.do/uploads/a.png"))
+            .isEqualTo("![screenshot.png](https://linux.do/uploads/a.png)")
+        // an alt that would break the image syntax, and a blank one
+        assertThat(topicReplyComposerMediaMarkup("a]b\nc", "https://linux.do/u.png"))
+            .isEqualTo("![ab c](https://linux.do/u.png)")
+        assertThat(topicReplyComposerMediaMarkup("", "https://linux.do/u.png"))
+            .isEqualTo("![image](https://linux.do/u.png)")
+        assertThat(topicReplyComposerMediaMarkup("a", " ")).isEmpty()
+    }
+
+    @Test
     fun replyComposerEmojiButton_togglesLikeChatActivityEnterView() {
         assertThat(topicReplyComposerEmojiButtonAction(isEmojiPopupShowing = false))
             .isEqualTo(TopicReplyComposerEmojiButtonAction.SHOW_EMOJI_POPUP)
