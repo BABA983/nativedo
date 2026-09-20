@@ -122,6 +122,22 @@ was not what it looked like:
 The switch is off again after the pass: the two shapes above plus the untested families (images and
 collages #7.4, selection #7.5, TalkBack #7.7) keep it from flipping on.
 
+### Device verdict, third pass (2026-09-20, media and selection)
+
+- **An image in a rich run draws, and its viewer opens.** Topic 2790689 post #3's screenshot renders
+  with its frame (the image block keeps its aspect ratio) and tapping it opens our `PhotoViewer` at
+  that image - "Photo" header, no caption/title, which is upstream's behaviour (§7.4). The swipe
+  between images is still unverified: that post carries a single image, so a multi-image post (or a
+  collage) is the next fixture for it.
+- **Selection**: a long-press on a text line raises the cell's message menu (Reply / Select text /
+  Copy link / Add bookmark) and "Select text" enters selection mode - handles and the action toolbar
+  draw. But the handles landed about a cell below the pressed line (pressed y ~1016 px, handles ~1610
+  px on this 420 dpi screen), so the rich run's touch geometry is worth a look -
+  `RichMessageBodyBlock.fillTextLayoutBlocks` offsets upstream's blocks by the block origin from the
+  canvas matrix, and `onTouch` forwards raw local coordinates into `RichMessageLayout`, which expects
+  the ones it laid out against. A second long-press ~20 px above an image opened the viewer instead
+  of the menu, which may only be that image block's padded hit area.
+
 ### Why the two bodies read differently (measured 2026-09-20, same emulator)
 
 Both bodies are Telegram's, but from two different renderers: the flag-off block tree mirrors
