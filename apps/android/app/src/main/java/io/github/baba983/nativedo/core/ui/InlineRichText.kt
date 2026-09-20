@@ -67,6 +67,36 @@ internal fun CookedInline.plainText(): String {
     return text
 }
 
+/**
+ * The tree with the token-form constructs replaced by the readable form `plainText()` uses.
+ *
+ * The block path resolves a token into a real span - an emoji image, a hashtag chip, a size range
+ * (`PostBodyInlineSpans`) - but upstream's renderer has no such step: handed a token, it draws it
+ * literally, which is how `__nd_inline_image_0__` ended up as body text on the device. The rich
+ * mapping flattens the tokens into the tree it hands over instead. The tree [cookInlineHtml]
+ * returns is fresh, so this rewrites it in place.
+ */
+internal fun CookedInline.flattenTokensForLayout(): TL_iv.RichText {
+    val replacements = tokenReplacements()
+    fun replaceTokens(value: String): String {
+        var text = value
+        replacements.forEach { (token, replacement) -> text = text.replace(token, replacement) }
+        return text
+    }
+
+    fun rewrite(node: TL_iv.RichText?) {
+        when (node) {
+            null -> Unit
+            is TL_iv.textPlain -> node.text = replaceTokens(node.text.orEmpty())
+            is TL_iv.textConcat -> node.texts.forEach(::rewrite)
+            else -> rewrite(node.text)
+        }
+    }
+
+    rewrite(richText)
+    return richText
+}
+
 /** The model back as HTML, for the surfaces that still hand HTML to `HtmlCompat` (profile bios). */
 internal fun CookedInline.toHtml(): String {
     val out = StringBuilder()

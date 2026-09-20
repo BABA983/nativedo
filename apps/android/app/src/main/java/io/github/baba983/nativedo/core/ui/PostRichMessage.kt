@@ -235,7 +235,7 @@ internal object PostRichMessageBuilder {
         return if (parts.size == 1) parts[0] else TL_iv.textConcat().apply { texts = parts }
     }
 
-    private fun inline(html: String): TL_iv.RichText = cookInlineHtml(html).richText
+    private fun inline(html: String): TL_iv.RichText = cookInlineHtml(html).flattenTokensForLayout()
 
     private fun plain(value: String): TL_iv.RichText = TL_iv.textPlain().apply { text = value }
 }

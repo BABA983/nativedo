@@ -95,6 +95,26 @@ class InlineRichTextTest {
         assertThat(cooked.plainText()).isEqualTo("x")
     }
 
+    /**
+     * The rich mapping hands the tree to upstream's renderer, which has no step that turns a token
+     * back into a span - so the tokens have to be gone before the layout sees them, or a post shows
+     * `__nd_inline_image_0__` as body text (seen on the device).
+     */
+    @Test
+    fun theLayoutTreeReplacesTokensWithTheirReadableForm() {
+        val cooked = cookInlineHtml(
+            "<p>hi <img src=\"/images/emoji/wave.png\" class=\"emoji\" alt=\":wave:\">" +
+                " <span style=\"font-size: 150%\">big</span></p>",
+        )
+
+        val layoutTree = cooked.flattenTokensForLayout()
+        val described = describe(layoutTree)
+        assertThat(described).doesNotContain("__nd_inline_")
+        assertThat(described).doesNotContain(cooked.inlineImages[0].token)
+        assertThat(described).contains(":wave:")
+        assertThat(described).contains("big")
+    }
+
     @Test
     fun marksSizesWithTokenPairsBecauseTheModelHasNoSizeCase() {
         val cooked = cookInlineHtml("<span style=\"font-size: 150%\">x</span>")
