@@ -167,6 +167,11 @@ internal object TopicReplyComposerMarkdown {
             if (block.isEmpty()) continue
             val styleSpan = QuoteSpan.QuoteStyleSpan()
             val quoteSpan = QuoteSpan(true, false, styleSpan)
+            // Upstream's own factories (`putQuote`, `putQuoteToEditable`) assign this back-reference
+            // at the creation site; the style span reads `span.edit` on the first measure/draw.
+            styleSpan.span = quoteSpan
+            quoteSpan.start = block.first
+            quoteSpan.end = block.last + 1
             out.setSpan(quoteSpan, block.first, block.last + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             out.setSpan(styleSpan, block.first, block.last + 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }

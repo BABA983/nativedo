@@ -3,6 +3,7 @@ package io.github.baba983.nativedo.ui.topic
 import android.text.Editable
 import android.text.SpannableStringBuilder
 import android.text.Spanned
+import android.text.TextPaint
 import com.google.common.truth.Truth.assertThat
 import org.junit.Before
 import org.junit.Test
@@ -36,6 +37,7 @@ class TopicReplyComposerMarkdownTest {
     private fun quote(editable: Editable, start: Int, end: Int) {
         val styleSpan = QuoteSpan.QuoteStyleSpan()
         val quoteSpan = QuoteSpan(true, false, styleSpan)
+        styleSpan.span = quoteSpan
         editable.setSpan(quoteSpan, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         editable.setSpan(styleSpan, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
     }
@@ -170,6 +172,20 @@ class TopicReplyComposerMarkdownTest {
         assertThat(spans).hasLength(1)
         assertThat(parsed.getSpanStart(spans[0])).isEqualTo(6)
         assertThat(parsed.getSpanEnd(spans[0])).isEqualTo(13)
+    }
+
+    /**
+     * The parse side has to hand the composer the same span pair upstream's `putQuote`/`putQuoteToEditable`
+     * build: the metric-affecting helper reads its quote back-reference on the first measure and draw.
+     */
+    @Test
+    fun parsedQuoteSpansMeasureAndDraw() {
+        val parsed = TopicReplyComposerMarkdown.parse("> one\n> two")
+        val paint = TextPaint()
+        val spans = (parsed as Spanned).getSpans(0, parsed.length, QuoteSpan.QuoteStyleSpan::class.java)
+        assertThat(spans).hasLength(1)
+        spans[0].updateMeasureState(paint)
+        spans[0].updateDrawState(paint)
     }
 
     @Test
