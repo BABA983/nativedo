@@ -374,3 +374,20 @@ To check: with an authenticated but clearance-less jar, tap the challenge action
 the cell's button), let the page settle, and confirm the next native requests log
 `hasClearance=true` and the `403 Challenge` bursts stop. A VPN node change invalidates the
 clearance again - that part is expected.
+
+## 16. A hand-injected session must stay host-only, or the WebView gets two variants (2026-09-20)
+
+Injected browser cookies were written into `nativedo.cookie_store.xml` with a `domain=linux.do`
+attribute, which makes them *domain* cookies for OkHttp (and `Cookie.toString()` then keeps
+`domain=`, unlike for host-only cookies). Discourse sets `_t`/`_forum_session` host-only, so
+`syncToWebView` wrote the domain copy next to the site's own one: the emulator's WebView jar held
+`.linux.do | _forum_session | 12` (the injected value) *and* `linux.do | _forum_session | 460`
+(the session the site had just issued). With two `_forum_session` variants the server resolves
+the wrong session, and the GitHub OAuth callback answers `csrf_detected` - rendered as "Sorry, the
+authorization timed out, or you have switched browsers" (`login.omniauth_error.csrf_detected` in
+Discourse's `server.en.yml`). The flow never completes, and back then pops the login screen.
+
+The product path is clean: the phone's jar, from a real in-app GitHub login, holds a single
+host-only `_forum_session`/`_t`. So: inject host-only values (no `domain=`), or clear the app's
+data between an injection and a WebView login. Verified by clearing the emulator's data and
+finishing a Turnstile: the jar then holds only the site's own cookies.
