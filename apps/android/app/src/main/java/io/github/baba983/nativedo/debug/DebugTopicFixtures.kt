@@ -24,5 +24,6 @@ object DebugTopicFixtures {
         DebugTopicFixture(2336669L, "又来修一下 CC", "杂项"),
         DebugTopicFixture(2501882L, "auto scroll issue", "滚动"),
         DebugTopicFixture(2503776L, "emoji title", "标题"),
+        DebugTopicFixture(2790689L, "渲染极限：bbcode/HTML", "富文本"),
     )
 }
