@@ -33,7 +33,7 @@ You do **not** need to clone Telegram or run vendor scripts to assemble or run t
 - Run unit and local screenshot verification together with `./apps/android/gradlew -p apps/android runUnitAndScreenshotTests --quiet`.
 - Build a debug APK with `./apps/android/gradlew -p apps/android :app:assembleDebug --quiet`.
 
-Paparazzi goldens live in `apps/android/app/src/test/snapshots/images` and are committed: `:app:verifyPaparazziDebug` compares against them, and `:app:recordPaparazziDebug` re-records them for intentional UI changes. They are recorded on Linux (the same environment as the orb and CI), and CI runs `runUnitAndScreenshotTests` — the full unit suite plus the pixel comparison — so a golden diff fails the build. Use device tests for behavior that depends on IME/insets, separate windows, WebView, network images, or gestures.
+Paparazzi goldens live in `apps/android/app/src/test/snapshots/<platform>/images` and are committed: `:app:verifyPaparazziDebug` compares against the current host's set, and `:app:recordPaparazziDebug` re-records it for intentional UI changes. There is one set per host platform — `linux` (what CI verifies) and `macos` — because layoutlib's renderer paints differently on each (a Linux golden misses a macOS verify by far more than the 0.1% tolerance), and the `:app` build script points Paparazzi at `snapshots/$platform`. CI runs `runUnitAndScreenshotTests` — the full unit suite plus the pixel comparison — so a golden diff fails the build; record the set for the platform you are on, and let the orb/CI re-record the other. Use device tests for behavior that depends on IME/insets, separate windows, WebView, network images, or gestures.
 
 ## Vendored Telegram (optional)
 

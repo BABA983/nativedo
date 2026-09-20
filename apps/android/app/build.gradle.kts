@@ -84,6 +84,27 @@ kotlin {
     }
 }
 
+// Paparazzi rasterises through layoutlib's native Skia, which paints text (and shapes emoji) a
+// little differently per host OS: a golden recorded on Linux misses a macOS verify by more than
+// the 0.1% tolerance, and the other way round. So each host keeps its own set under
+// `src/test/snapshots/<platform>`, and a checkout records and verifies the set it can reproduce.
+// CI is Linux, so it verifies `linux/` unchanged; a macOS checkout uses `macos/`.
+val paparazziHostPlatform = when {
+    System.getProperty("os.name").startsWith("Mac", ignoreCase = true) -> "macos"
+    System.getProperty("os.name").startsWith("Linux", ignoreCase = true) -> "linux"
+    else -> System.getProperty("os.name").lowercase().replace(Regex("[^a-z0-9]+"), "-")
+}
+val paparazziSnapshotDir = layout.projectDirectory
+    .dir("src/test/snapshots/$paparazziHostPlatform")
+    .asFile.absolutePath
+tasks.withType<Test>().configureEach {
+    // `doFirst`: the Paparazzi plugin writes `paparazzi.snapshot.dir` itself when it configures
+    // the verify/record tasks, and the last write wins, so this has to land after it.
+    doFirst {
+        systemProperty("paparazzi.snapshot.dir", paparazziSnapshotDir)
+    }
+}
+
 dependencies {
     implementation(project(":TMessagesProj"))
 

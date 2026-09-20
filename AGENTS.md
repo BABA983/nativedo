@@ -76,11 +76,15 @@ a product goal needs upstream code, never on every upstream release.
 - **Paparazzi screenshots:** plain `testDebugUnitTest` only exercises rendering; pixel
   verification runs via `./apps/android/gradlew -p apps/android :app:verifyPaparazziDebug`
   (or `runUnitAndScreenshotTests`, which is the same task and what CI runs). Goldens live in
-  `apps/android/app/src/test/snapshots/images` and are committed; they are recorded on Linux
-  (the orb/CI environment), so `verifyPaparazziDebug` is a real local gate — a diff is either
-  an intentional UI change or a bug. After an intentional UI change, re-record with
-  `:app:recordPaparazziDebug` and include the updated goldens in the same commit. Snapshot
-  names follow `<package>_<Class>_<method>[Theme].png`.
+  `apps/android/app/src/test/snapshots/<platform>/images` and are committed; papering over the
+  host is not possible (layoutlib's Skia paints text a little differently per OS), so there is
+  one set per platform — `linux` (what CI verifies) and `macos` — and each checkout
+  records/verifies only its own, because the `:app` build script points Paparazzi's
+  `paparazzi.snapshot.dir` at `snapshots/$platform`. Either way `verifyPaparazziDebug` is a real
+  local gate — a diff is either an intentional UI change or a bug. After an intentional UI
+  change, re-record on the platforms you can run (`:app:recordPaparazziDebug`), and the other
+  set is re-recorded wherever it is verified (the orb/CI for Linux); include both in the same
+  commit. Snapshot names follow `<package>_<Class>_<method>[Theme].png`.
 - **Assemble (runtime/resource changes):** `./apps/android/gradlew -p apps/android :app:assembleDebug --quiet`
 - **Telegram-derived changes:** `./scripts/vendor-guard.sh --compile` (index + isolation +
   forced-exact + `:TMessagesProj` compile). The same check runs in `.githooks/pre-commit`
