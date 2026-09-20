@@ -102,6 +102,26 @@ draws" failure - it is the three shapes above. The switch is not ready to flip o
 it is off again in the emulator's `global.xml` after the pass. Not yet exercised on device: images
 and collages (#7.4), selection inside a rich body (#7.5) and TalkBack (#7.7).
 
+### Device verdict, second pass (2026-09-20, same emulator, after quotes stayed ours)
+
+`isOurBlock` (the hybrid body's splitter) now keeps `CookedPostBlock.Quote` in our block tree, so
+the flag-on body draws the card again: post #1's two quotes show the leading bar, the quoted author
+(`星缘`) with the small avatar, the referenced topic's title, the `文档共建` / `开发调优` chips and
+the collapse chevron - matching the flag-off cell. Re-read at native resolution, one first-pass item
+was not what it looked like:
+
+- The **`<kbd>` bullet** (post #7, "开箱符号（Open Box）：…") is not a column overflow: the line
+  wraps, but the inline `<kbd>Space</kbd>` draws as a placeholder box and swallows the run right
+  after it (「（空格」 is gone and 「键符号）」 opens the next line, with a stray corner glyph at the
+  column's right edge). The flag-off cell resolves the same `<kbd>` through the sprite store, so
+  this is the rich run's inline-image path, not the layout's wrapping.
+- The **code block** keeps its horizontal scroll strip and clips the long line: that is what
+  `RichMessageLayout` does with a long line (the flag-off cell wraps instead). A design difference
+  to decide on, not a defect.
+
+The switch is off again after the pass: the two shapes above plus the untested families (images and
+collages #7.4, selection #7.5, TalkBack #7.7) keep it from flipping on.
+
 What changed: `RichMessageLayout` and its mirror dependencies compile (`docs/render-model-alignment.md`, S3),
 and S4 slices 1-2 draw a mapped Discourse post through `RichMessageLayout`, both standalone
 (`PostRichMessageScreenshotTest`) and inside the real `TopicPostCell` behind
@@ -140,7 +160,9 @@ What to check once S4 lands:
    card or a callout should read in place - upstream's typography for the prose, our block for the
    three - and the seams (our blocks' own top/bottom margins against the run's trimmed edges) are
    worth eyeballing on a long post. A container holding one of the three (a details with a callout
-   inside) must fall back to our block tree as a whole, never silently drop the child.
+   inside) must fall back to our block tree as a whole, never silently drop the child. A fourth
+   family is ours even though the mapper can express it: **quotes**, because only `QuoteBlock` draws
+   the card (see the second pass above and `isOurBlock` in `PostRichMessage.kt`).
 7. Accessibility (S4, `798ae84`): turn TalkBack on and focus a post. It should read the floor and
    author, then the body; an image with alt text must be spoken ("图片：..."), one with only a
    caption must read that caption, and a picture with neither must not fall silent. Check that a

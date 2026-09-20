@@ -20,6 +20,10 @@ import java.util.ArrayList
  * - not mapped (the Discourse-only half of `CookedPostBlock`): callouts, oneboxes and polls.
  *   `pageBlock(...)` returns null for them, so the hybrid body keeps them, and any container whose
  *   subtree holds one, in our own block tree (see [splitPostBodySegments]).
+ *
+ * A quote maps (upstream's blockquote, with the author as the caption), but the hybrid body does not
+ * use that mapping: [isOurBlock] keeps quotes in our block tree so they keep the card `QuoteBlock`
+ * draws. The mapping stays here for the model's sake (the editor reads quotes the same way).
  */
 internal object PostRichMessageBuilder {
 
@@ -248,14 +252,15 @@ internal sealed interface PostBodySegment {
 }
 
 /**
- * Splits a body into maximal runs of mappable blocks and the Discourse-only blocks in between
- * (`isMappable` covers containers, so a details/quote holding a callout falls back as a whole).
+ * Splits a body into maximal runs of blocks upstream's renderer draws and the blocks our block tree
+ * keeps in between. A container (details, list) whose subtree holds one of those falls back as a
+ * whole, so a run never silently drops a child.
  */
 internal fun splitPostBodySegments(blocks: List<CookedPostBlock>): List<PostBodySegment> {
     val segments = ArrayList<PostBodySegment>()
     var run = ArrayList<CookedPostBlock>()
     for (block in blocks) {
-        if (PostRichMessageBuilder.isMappable(block)) {
+        if (!isOurBlock(block)) {
             run.add(block)
             continue
         }
@@ -269,4 +274,26 @@ internal fun splitPostBodySegments(blocks: List<CookedPostBlock>): List<PostBody
         segments.add(PostBodySegment.RichRun(run))
     }
     return segments
+}
+
+/**
+ * True when the hybrid body keeps this block - and, for a container, its whole subtree - in our own
+ * block tree, even where [PostRichMessageBuilder] could express it.
+ *
+ * Two families land here. The Discourse-only blocks (callout, onebox, poll) have no upstream
+ * counterpart at all. A **quote** does, but only `QuoteBlock` draws the product's card: the leading
+ * bar, the quoted author's avatar, the referenced topic's title, its category chip and the collapse
+ * chevron (`expandQuote` fetches the quoted post for the expand affordance). A mapped blockquote is a
+ * tinted run of text with none of that, which is what the device pass found
+ * (`docs/device-verification.md` §7) - so the hybrid keeps quotes ours the same way.
+ */
+internal fun isOurBlock(block: CookedPostBlock): Boolean = when (block) {
+    is CookedPostBlock.Callout,
+    is CookedPostBlock.Onebox,
+    is CookedPostBlock.Poll,
+    is CookedPostBlock.Quote,
+    -> true
+    is CookedPostBlock.Details -> block.children.any(::isOurBlock)
+    is CookedPostBlock.ListItems -> block.items.any { item -> item.blocks.any(::isOurBlock) }
+    else -> false
 }

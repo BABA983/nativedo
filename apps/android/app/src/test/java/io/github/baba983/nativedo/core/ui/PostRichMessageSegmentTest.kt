@@ -63,6 +63,28 @@ class PostRichMessageSegmentTest {
         ).inOrder()
     }
 
+    /**
+     * The mapper can express a quote, but the hybrid must not take it: only `QuoteBlock` draws the
+     * card (bar, quoted author, topic title, category chip, collapse), which is what the device pass
+     * found missing when the rich run drew the quote instead.
+     */
+    @Test
+    fun aPlainQuoteStaysInOurBlockTreeForItsCard() {
+        val quote = CookedPostBlock.Quote(title = "alice", html = "<p>quoted</p>", children = emptyList())
+
+        assertThat(PostRichMessageBuilder.isMappable(quote)).isTrue()
+        assertThat(PostRichMessageBuilder.pageBlock(quote)).isNotNull()
+        assertThat(isOurBlock(quote)).isTrue()
+
+        val segments = splitPostBodySegments(listOf(text("before"), quote, text("after")))
+        assertThat(segments.map { segment -> segment::class.java }).containsExactly(
+            PostBodySegment.RichRun::class.java,
+            PostBodySegment.OwnBlock::class.java,
+            PostBodySegment.RichRun::class.java,
+        ).inOrder()
+        assertThat((segments[1] as PostBodySegment.OwnBlock).block).isSameInstanceAs(quote)
+    }
+
     @Test
     fun aListHoldingADiscourseOnlyItemFallsBackAsAWhole() {
         val list = CookedPostBlock.ListItems(
