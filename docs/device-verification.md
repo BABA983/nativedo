@@ -132,18 +132,16 @@ collages #7.4, selection #7.5, TalkBack #7.7) keep it from flipping on.
 - **Selection**: a long-press on a text line raises the cell's message menu (Reply / Select text /
   Copy link / Add bookmark) and "Select text" enters selection mode - handles and the action toolbar
   draw. But the handles landed about a cell below the pressed line (pressed y ~1016 px, handles ~1610
-  px on this 420 dpi screen). The same gesture on the *block* body lands on the pressed line (A/B on
-  the same emulator, flag off), so the rich block is the one to fix. Both sides of the rich path look
-  consistent on paper - `startTextSelectionAt(pressX, pressY)` takes cell-local coordinates (the same
-  numbers the menu's placement math derives from `anchorLocation + press`), and
-  `fillTextLayoutBlocks` adds the block's own origin to upstream's layout-relative blocks
-  (`RichMessageLayout.reposition()` starts its y at 0) - so the next step is a trace rather than a
-  guess: log the touch (x, y), the block origin and each inner block's y at registration, reproduce
-  once, and compare against where the text actually draws. The trace's registration half ran
-  (`register block x=48 y=170 innerY=0,119,238 height=442` for a three-paragraph run - block origin
-  plus layout-relative blocks, exactly as designed); the touch half never logged, because the device
-  harness cannot hit the menu's "Select text" on demand (the menu is custom-drawn, so `uiautomator`
-  finds no node to tap). Next: log inside `setMaybeView`/`trySelect` and drive the menu by hand.
+  px on this 420 dpi screen), and a press ~20 px above an image opened the viewer instead. Both came
+  from one bug: `RichMessageBodyBlock.onTouch` forwarded the *cell* event straight into
+  `RichMessageLayout`, whose coordinate space starts at the block's origin, so every press landed a
+  block-offset lower - a text press hit whatever media block sat below it. The block now moves the
+  event into its own space first (the way the cell does for an embedded view).
+  Verified with a temporary pref-gated probe (a fixed press inside the first text block of the first
+  visible cell, `docs/device-verification.md` §7): before the fix the same press opened `PhotoViewer`
+  (a black viewer screen, luminance ~70), after it the topic stays put (~223) and the selection's
+  blue sits at the pressed line (~500 px, i.e. the probe's own y once the cell's window position is
+  added) instead of ~590 px lower. The probe and its logs were removed again.
 
 ### Why the two bodies read differently (measured 2026-09-20, same emulator)
 

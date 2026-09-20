@@ -137,8 +137,20 @@ internal class RichMessageBodyBlock(
     /** Same column as the text blocks; the renderer insets its own content inside it. */
     override fun horizontalInsetPx(): Int = PostBodyBlock.DEFAULT_HORIZONTAL_INSET
 
-    override fun onTouch(event: MotionEvent, localX: Float, localY: Float): Boolean =
-        layout?.onTouchEvent(event) ?: false
+    /**
+     * The cell hands a block its own local coordinates; `RichMessageLayout` draws from the block's
+     * origin, so the event has to be moved into that space before it sees it - forwarding the raw
+     * cell event made every press land a block-offset lower, which is how a press on a text line
+     * opened the image viewer.
+     */
+    override fun onTouch(event: MotionEvent, localX: Float, localY: Float): Boolean {
+        val rich = layout ?: return false
+        val localEvent = MotionEvent.obtain(event)
+        localEvent.offsetLocation(localX - event.x, localY - event.y)
+        val handled = rich.onTouchEvent(localEvent)
+        localEvent.recycle()
+        return handled
+    }
 
     override fun fillTextLayoutBlocks(
         blocks: ArrayList<TextSelectionHelper.TextLayoutBlock>,
