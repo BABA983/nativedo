@@ -10,6 +10,7 @@ package io.github.baba983.nativedo.ui.topic
 
 import android.content.Context
 import android.content.DialogInterface
+import android.graphics.Canvas
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import io.github.baba983.nativedo.core.ui.RichMessageMarkdown
@@ -71,7 +72,17 @@ internal class RichEditorSheet(
             }
         })
         // The page fills the sheet: the container measures it against the height the sheet has.
-        containerView = FrameLayout(context).apply {
+        // A `BottomSheet` only prepares its own container when it creates one, so a container
+        // handed in has to paint the sheet background itself - the same shape the app's other
+        // sheets use (`FixedHeaderRecyclerBottomSheet`).
+        containerView = object : FrameLayout(context) {
+            override fun onDraw(canvas: Canvas) {
+                shadowDrawable.setBounds(0, 0, measuredWidth, measuredHeight)
+                shadowDrawable.draw(canvas)
+            }
+        }.apply {
+            setWillNotDraw(false)
+            setPadding(backgroundPaddingLeft, 0, backgroundPaddingLeft, 0)
             addView(
                 host,
                 FrameLayout.LayoutParams(
@@ -80,6 +91,7 @@ internal class RichEditorSheet(
                 ),
             )
         }
+        fixNavigationBar(getThemedColor(Theme.key_dialogBackground))
         setOnDismissListener(DialogInterface.OnDismissListener { reportDraftIfNotSent() })
     }
 

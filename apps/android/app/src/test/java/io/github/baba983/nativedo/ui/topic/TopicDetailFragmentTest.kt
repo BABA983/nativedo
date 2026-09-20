@@ -1277,6 +1277,15 @@ class TopicDetailFragmentTest {
             .isEqualTo(TopicSelectionTouchDispatch.DISPATCH_ORIGINAL)
     }
 
+    /**
+     * `BaseFragment.getResourceProvider()` returns null, and the block editor's sheet requires one
+     * (the on-device symptom was a `NullPointerException` in `showRichEditor` on the entry tap).
+     */
+    @Test
+    fun fragmentSuppliesTheResourcesProviderTheEditorSheetNeeds() {
+        assertThat(TopicDetailFragment(1L).getResourceProvider()).isNotNull()
+    }
+
     private fun positionFor(
         anchorX: Int,
         anchorY: Int,

@@ -190,6 +190,15 @@ import kotlin.math.roundToInt
 
 private const val TOPIC_SEARCH_HIGHLIGHT_PAYLOAD = "topic_search_highlight"
 
+/**
+ * The global theme as a [Theme.ResourcesProvider]: upstream's `getColor(key, null)` path, spelled
+ * as the interface so a themed sheet can take it. `BaseFragment.getResourceProvider()` returns
+ * null, and the sheets this screen mounts require one.
+ */
+private object AppThemeResourcesProvider : Theme.ResourcesProvider {
+    override fun getColor(key: Int): Int = Theme.getColor(key)
+}
+
 data class TopicInitialIdentity(
     val username: String,
     val avatarTemplate: String,
@@ -747,6 +756,13 @@ class TopicDetailFragment @JvmOverloads constructor(
         rootFrameLayout?.stopPanTransition()
         super.onPause()
     }
+
+    /**
+     * `BaseFragment` returns null here, and the themed sheets this fragment mounts (the block
+     * editor) take a provider. The app draws from the global theme, so the provider below
+     * resolves exactly what `Theme.getColor(key)` returns with no provider at all.
+     */
+    override fun getResourceProvider(): Theme.ResourcesProvider = AppThemeResourcesProvider
 
     /**
      * Upstream-shaped theme targets (DialogsActivity pattern):
