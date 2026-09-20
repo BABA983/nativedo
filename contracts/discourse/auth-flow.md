@@ -31,9 +31,14 @@ linux.do username/password in native code.
 1. Replay persisted cookies through a network interceptor for JSON and image
    calls, including each redirect. Capture the cookie revision and actual sent
    values together. Login/logout fence earlier requests; `_t` changes advance
-   the revision. Discard stale responses before applying cookies or reporting
-   authentication failure. `CookieJar` alone lacks the request context needed
-   for this check.
+   the revision. A response whose revision moved under it drops its stale cookie
+   write, but it is still *returned* when it is a plain success: the payload does
+   not depend on the jar, and Discourse rotates `_t` roughly every ten minutes,
+   so a cold start's parallel requests lose that race routinely. Only a negative
+   answer - not successful, or classified as anything but `Other` - loses its
+   meaning in that race and fails the request, so a stale response never reports
+   a logout, a challenge or a rejection. `CookieJar` alone lacks the request
+   context needed for this check.
    Response `Set-Cookie` headers, including expired/deleted values, update the
    same `(name, normalized domain, path)` cookie identity; an expired `_t`
    removes the previous value.
@@ -79,6 +84,39 @@ Hidden homepage WebViews can rotate `_t`. Await native-to-browser synchronizatio
 and import browser changes after loading only if the native revision has not
 changed in the meantime.
 
+### `_t` rotates, so a rejected token is not a logout
+
+`_t` is a per-device `UserAuthToken` (upstream: `lib/auth/default_current_user_provider.rb`,
+`app/models/user_auth_token.rb`). It is rotated roughly every ten minutes
+(`UserAuthToken::ROTATE_TIME_MINS = 10`; a token that was never seen rotates after one minute),
+and the rotation hands the new value to whichever client made that request. The previous value
+stays acceptable for exactly one more request (`lookup` matches `auth_token OR prev_auth_token`,
+then clears `auth_token_seen`), after which it resolves to no user: the server answers
+`not_logged_in` and deletes the cookie (`refresh_session`: `cookie_jar.delete(TOKEN_COOKIE) if
+!user`). That is the `status=404 evidence=LoggedOut deletesToken=true` shape this app logs.
+
+A rejected token therefore proves only that the token *this* request carried is stale - the
+browser jar (login WebView, article viewer, challenge page) may hold the rotation the native jar
+missed. Reconcile before clearing anything:
+
+1. adopt the browser's values for the current revision (`CookieSyncBridge.syncFromWebViewIfCurrent`),
+2. re-run verification once,
+3. only then treat `ServerLoggedOut` as real, which clears both jars and the identity.
+
+A browser jar that is blank, unreadable, or holds the same rejected token changes nothing: the
+second verify fails and the session expires as before. Adoption never happens after a
+*successful* native request - a stale browser jar must not replace a rotation the native jar
+already has, which is the same rule the startup path follows.
+
+Login completion repeats the direction: when the browser has authenticated but the import
+produced no `_t` (Chromium flushes asynchronously; a conflicting pair is reported, not chosen),
+the native verify must not run - it would answer "not logged in" and clear the session the
+browser just created. Keep both jars and report recovery instead.
+
+One `_t` belongs to one client. Copying a browser session into the app, or running two app
+instances on the same token, gives two clients one rotating token, and the server logs the
+second one out within a rotation. Multiple devices are fine - each logs in for itself.
+
 `CookieManager.getCookie` only exposes name/value pairs. Preserve known cookie
 attributes when possible and never rewrite unchanged browser cookies. Unknown
 cookies use a host-only root scope; expiry cannot be inferred. Conflicting
@@ -92,7 +130,13 @@ HTTP status, response classification, fixed route categories, presence of
 `_t`/`_forum_session`/`cf_clearance`/`_rt`, token update/deletion flags and
 acceptance flags. It never records cookie values, usernames, URLs or response
 bodies. Events cover native responses, stale browser imports,
-startup recovery, missing auth cookies, committed login and expiration reason.
+startup recovery, missing auth cookies, committed login and expiration reason,
+plus the rotation reconciles: `webview_session_adopted` (the browser's values
+were taken for a rejected native token), `webview_session_unavailable` (the
+browser jar could not be read), `webview_login_unreadable` (a login the
+native jar could not read, kept for recovery instead of verified) and
+`fenced_read_returned` (a successful read whose cookie write was dropped
+because a parallel response advanced the revision).
 
 ## 403 classification
 

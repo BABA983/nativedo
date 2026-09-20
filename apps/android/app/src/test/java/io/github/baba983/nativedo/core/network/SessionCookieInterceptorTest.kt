@@ -82,6 +82,51 @@ class SessionCookieInterceptorTest {
     }
 
     @Test
+    fun fencedReadIsReturnedWhenARotationWonTheRace() {
+        MockWebServer().use { server ->
+            val release = CountDownLatch(1)
+            server.dispatcher = object : Dispatcher() {
+                override fun dispatch(request: RecordedRequest): MockResponse {
+                    check(release.await(5, TimeUnit.SECONDS))
+                    return MockResponse().setResponseCode(200).setBody("""{"topic_list":{}}""")
+                }
+            }
+            server.start()
+            val url = server.url("/")
+            val store = CookieStore()
+            fun token(value: String) = Cookie.Builder().name("_t").value(value)
+                .hostOnlyDomain(url.host).path("/").build()
+            store.save(url, listOf(token("old")))
+            val client = OkHttpClient.Builder().addNetworkInterceptor(SessionCookieInterceptor(store)).build()
+            val executor = Executors.newSingleThreadExecutor()
+            try {
+                val result = executor.submit<Pair<Int, String>?> {
+                    client.newCall(Request.Builder().url(url).build()).execute().use { response ->
+                        response.code to response.body!!.string()
+                    }
+                }
+                assertThat(server.takeRequest(5, TimeUnit.SECONDS)!!.getHeader("Cookie")).isEqualTo("_t=old")
+                // A parallel response rotates `_t` while this read is in flight.
+                store.advanceRevision()
+                store.save(url, listOf(token("rotated")))
+                release.countDown()
+
+                // The payload is still valid content: fencing drops the stale cookie write, not the
+                // response. Throwing here is what surfaced as "Couldn't load topics".
+                val (code, body) = result.get(5, TimeUnit.SECONDS)!!
+                assertThat(code).isEqualTo(200)
+                assertThat(body).contains("topic_list")
+                assertThat(store.load(url).single().value).isEqualTo("rotated")
+            } finally {
+                release.countDown()
+                executor.shutdownNow()
+                client.connectionPool.evictAll()
+                client.dispatcher.executorService.shutdown()
+            }
+        }
+    }
+
+    @Test
     fun redirectUsesRotatedCookieAndLogoutCannotResurrectOldResponse() {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setResponseCode(302).addHeader("Location", "/next")

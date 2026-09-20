@@ -713,16 +713,105 @@ class SessionCoordinatorTest {
         clearCallback?.invoke()
         logoutJob.join()
     }
+    /**
+     * Discourse rotates `_t` roughly every 10 minutes and hands the new value to whichever client
+     * asked. The browser jar can therefore hold the rotation the native jar missed, so a rejected
+     * native token must adopt the browser's values and ask again before it clears anything.
+     */
+    @Test
+    fun rejectedNativeTokenAdoptsTheBrowserRotationInsteadOfLoggingOut() = runTest {
+        val cookies = CookieStore().apply {
+            save(
+                baseUrl.toHttpUrl(),
+                listOf(
+                    Cookie.Builder()
+                        .name("_t")
+                        .value("native-stale")
+                        .hostOnlyDomain("linux.do")
+                        .path("/")
+                        .build(),
+                ),
+            )
+        }
+        val sessions = SessionStore().apply {
+            save(SessionSnapshot("baba", "Baba", "", 1L))
+        }
+        var browserReads = 0
+        val bridge = CookieSyncBridge(
+            baseUrl = baseUrl,
+            cookieStore = cookies,
+            readCookieHeader = { browserReads++; "_t=browser-rotated" },
+            flushCookies = {},
+        )
+        val coordinator = SessionCoordinator(
+            cookieStore = cookies,
+            sessionStore = sessions,
+            apiClient = FakeSessionBootstrapClient(
+                currentUsername = "baba",
+                currentUsernameErrors = mutableListOf(SessionLoggedOutException()),
+            ),
+            cookieSyncBridge = bridge,
+        )
+
+        coordinator.start()
+
+        val state = coordinator.sessionState.value as AppSessionState.Authenticated
+        assertThat(state.snapshot.username).isEqualTo("baba")
+        assertThat(state.freshness).isEqualTo(SessionFreshness.Verified)
+        assertThat(browserReads).isEqualTo(1)
+        assertThat(cookies.load(baseUrl.toHttpUrl()).single().value).isEqualTo("browser-rotated")
+        assertThat(sessions.snapshot()).isNotNull()
+    }
+
+    @Test
+    fun loginCompletionWithoutReadableBrowserCookiesKeepsTheSessionForRecovery() = runTest {
+        val cookieStore = CookieStore()
+        val sessionStore = SessionStore().apply {
+            save(SessionSnapshot("baba", "Baba", "", 1L))
+        }
+        val bridge = CookieSyncBridge(
+            baseUrl = baseUrl,
+            cookieStore = cookieStore,
+            readCookieHeader = { null },
+            flushCookies = {},
+        )
+        val apiClient = FakeSessionBootstrapClient(currentUsername = "baba")
+        val coordinator = SessionCoordinator(
+            cookieStore = cookieStore,
+            sessionStore = sessionStore,
+            apiClient = apiClient,
+            cookieSyncBridge = bridge,
+        )
+
+        coordinator.completeLoginFromWebView()
+
+        // A verify here would answer "not logged in" and clear the browser's fresh login.
+        assertThat(apiClient.fetchCurrentUserCalls).isEqualTo(0)
+        assertThat(cookieStore.hasAuthenticatedCookies()).isFalse()
+        assertThat(sessionStore.snapshot()).isNotNull()
+        assertThat(coordinator.sessionState.value).isEqualTo(
+            AppSessionState.Expired(
+                reason = SessionExpiredReason.RecoveryFailed,
+                snapshot = SessionSnapshot("baba", "Baba", "", 1L),
+            ),
+        )
+    }
+
     private class FakeSessionBootstrapClient(
         private val currentUser: SessionUserSummary? = null,
         private val currentUsername: String? = null,
         private val bootstrapUsername: String? = null,
         private val currentUsernameError: Throwable? = null,
+        private val currentUsernameErrors: MutableList<Throwable> = mutableListOf(),
     ) : SessionBootstrapClient {
+        var fetchCurrentUserCalls = 0
+
         override suspend fun fetchBootstrap(): ParsedBootstrap =
             ParsedBootstrap(currentUsername = bootstrapUsername)
 
         override suspend fun fetchCurrentUser(): SessionUserSummary? {
+            fetchCurrentUserCalls++
+            if (currentUsernameErrors.isNotEmpty()) throw currentUsernameErrors.removeAt(0)
             currentUsernameError?.let { throw it }
             return currentUser ?: currentUsername?.let { username ->
                 SessionUserSummary(username = username)

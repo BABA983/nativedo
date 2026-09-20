@@ -88,6 +88,19 @@ class SessionCoordinator(
             }
             nextGeneration
         }
+        if (!cookieStore.hasAuthenticatedCookies()) {
+            // The browser finished a login the native jar could not read: Chromium flushes its
+            // cookie store asynchronously, and a conflicting `_t` pair is reported, not chosen.
+            // A native verify here would answer "not logged in" and clear the session the browser
+            // just created, so keep both jars and let the next attempt read them.
+            SessionDiagnostics.record("webview_login_unreadable", cookieStore.revision(), accepted = false)
+            keepSessionForRecovery(
+                cachedSnapshot = sessionStore.snapshot(),
+                allowCachedFallback = false,
+                reason = SessionExpiredReason.RecoveryFailed,
+            )
+            return
+        }
         restore(
             generation = generation,
             loginCompletion = true,
@@ -310,6 +323,7 @@ class SessionCoordinator(
         generation: Int,
         loginCompletion: Boolean = false,
         allowCachedFallback: Boolean,
+        adoptedBrowserSession: Boolean = false,
     ) {
         if (generation != currentOperationGeneration()) return
         if (!cookieStore.hasAuthenticatedCookies()) {
@@ -376,6 +390,20 @@ class SessionCoordinator(
         } catch (error: CancellationException) {
             throw error
         } catch (error: SessionLoggedOutException) {
+            // A rejected `_t` is not proof that the account is logged out: Discourse rotates `_t`
+            // every ~10 minutes, and the browser jar can hold the rotation the native jar missed
+            // (an in-app browser visit, a challenge page, a login handoff). Adopt what the browser
+            // has and ask once more before anything is cleared.
+            if (!adoptedBrowserSession && adoptBrowserSessionIfCurrent(generation)) {
+                SessionDiagnostics.record("webview_session_adopted", cookieStore.revision())
+                restore(
+                    generation = generation,
+                    loginCompletion = loginCompletion,
+                    allowCachedFallback = allowCachedFallback,
+                    adoptedBrowserSession = true,
+                )
+                return
+            }
             markExpiredIfCurrent(
                 reason = SessionExpiredReason.ServerLoggedOut,
                 expectedGeneration = generation,
@@ -428,6 +456,29 @@ class SessionCoordinator(
     private suspend fun clearCookiesAsync() {
         cookieSyncBridge?.clearAsync() ?: cookieStore.clear()
     }
+
+    /**
+     * Adopt the browser's cookie values for the operation this caller started from. This is the
+     * reconcile half of "the browser can hold a `_t` rotation the native jar missed"; the caller
+     * re-verifies afterwards, so a browser jar that holds the same rejected token changes nothing.
+     *
+     * False when there is no bridge, the browser jar cannot be read (a `CookieManager` that is not
+     * up yet, or a conflicting pair the import refuses to choose between), or a login/logout moved
+     * the generation while this was running - none of which is a deletion signal.
+     */
+    private suspend fun adoptBrowserSessionIfCurrent(generation: Int): Boolean =
+        cookieOperationMutex.withLock {
+            val bridge = cookieSyncBridge ?: return@withLock false
+            if (generation != currentOperationGeneration()) return@withLock false
+            try {
+                bridge.syncFromWebViewIfCurrent(cookieStore.revision())
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                SessionDiagnostics.record("webview_session_unavailable", cookieStore.revision(), accepted = false)
+                false
+            }
+        }
 
     internal fun currentOperationGeneration(): Int = synchronized(operationLock) {
         operationGeneration

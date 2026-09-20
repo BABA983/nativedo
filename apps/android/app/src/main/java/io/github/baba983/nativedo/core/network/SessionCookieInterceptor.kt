@@ -45,6 +45,15 @@ class SessionCookieInterceptor(private val cookieStore: CookieStore) : Intercept
             responseCookies.any { it.name == "_t" },
             responseCookies.any { it.name == "_t" && it.expiresAt <= System.currentTimeMillis() })
         if (!accepted) {
+            // Fencing protects the cookie jar and the auth *decisions*, not the payload. Discourse
+            // rotates `_t` roughly every ten minutes, so a cold start's parallel requests race the
+            // rotation routinely; the loser of that race still holds valid content. Only a negative
+            // answer - one that would report a logout, a challenge or a rejection - loses its
+            // meaning while the cookie state moved on.
+            if (response.isSuccessful && evidence == SessionResponseEvidence.Other) {
+                SessionDiagnostics.record("fenced_read_returned", revision, response.code)
+                return response
+            }
             response.close()
             throw IOException("Session changed while request was in flight")
         }
