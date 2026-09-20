@@ -6,7 +6,7 @@ verified by unit tests and (where relevant) Paparazzi goldens, and needs one
 pass on real hardware. Add entries when a slice lands with a device-only
 question; strike them out with a date + verdict once checked.
 
-## 1. The reply composer's WYSIWYG editing (`15f5bdb`)
+## 1. The reply composer's WYSIWYG editing (`15f5bdb`) — passed, one crash fixed (2026-09-20, `emulator-5554`)
 
 What changed: the composer's `EditText` is `EditTextCaption` and the style
 toolbar items now run upstream's span actions (`TextStyleSpan` runs, `QuoteSpan`,
@@ -14,34 +14,35 @@ toolbar items now run upstream's span actions (`TextStyleSpan` runs, `QuoteSpan`
 the markdown the draft store and the request carry, and parses a stored draft
 back into spans.
 
-To check:
+Verdict: the menu is complete (Quote in the primary row; Spoiler, Bold, Italic,
+Mono, Strikethrough, Underline, Create Link, Regular behind the overflow). Bold and
+Quote apply and render in the field with no markers in it, and the draft store picks
+the markdown up (`111\n*222*` untouched → `**boldme**` → `> quoteme`). A draft stored
+as markdown (`**bold** _italic_ `mono` ~~strike~~ [u]under[/u] [spoiler]spoiler[/spoiler]`
+plus a `>` line) comes back fully styled after a restart, and hand-typed markdown stays
+literal while typing (`*222*` stored verbatim). That reload was also where the crash
+was: `parse()` built a `QuoteStyleSpan` without the back-reference upstream's
+`putQuote`/`putQuoteToEditable` always assign, so the first measure threw
+`NullPointerException ... QuoteSpan$QuoteStyleSpan.updateMeasureState`. Fixed in
+`TopicReplyComposerMarkdown.parse`, with a regression test
+(`parsedQuoteSpansMeasureAndDraw`).
 
-1. Reply to a topic and select a few words. The floating toolbar should offer
-   Quote, Spoiler, Bold, Italic, Mono, Strikethrough, Underline, Link, Regular.
-2. Tap Bold. The selection should render **bold**, with no `**` in the field.
-   Same for Italic, Mono, Strikethrough, Underline, Spoiler.
-3. Tap Quote. The selection should become a quote block (Telegram's quote
-   rendering, with the leading bar), not a `> ` prefix.
-4. Type something, switch to another topic and back (or kill and reopen the
-   app). The styled words should come back styled: the draft stores markdown and
-   the parser rebuilds the spans.
-5. Send. The post on Discourse should carry the styles, because the request body
-   is the serialized markdown.
-6. Type markdown by hand (`**x**`). It stays literal while typing and is sent
-   as typed; a draft reload then shows it styled.
-7. Edge cases worth poking: a style applied over a link, a style applied at a
-   collapsed caret (bold with nothing selected applies to what you type next),
-   Regular (clears the selection's styles), and paste of HTML from a browser
-   (now framework `Html.fromHtml`, so it keeps bold/italic/links but drops
-   Telegram-specific entities).
+Still open by hand: the Italic/Mono/Strikethrough/Underline/Spoiler *actions* (only
+Bold and Quote were driven; their parse side renders), 1.5 (send — needs a reply
+target), and 1.7 (Regular, collapsed-caret bold, a style over a link, HTML paste).
 
 Known deltas that are expected, not bugs: accent, strike-red, marked and
 sub/superscript have no markdown counterpart and are dropped on the way out.
 
-## 2. The selection toolbar itself (`83eca05`)
+## 2. The selection toolbar itself (`83eca05`) — partially seen (2026-09-20)
 
 What changed: `FloatingToolbar` and `FloatingActionMode` are the pin's files now
 (1610 and 327 lines, byte-exact) instead of our 439-line port.
+
+Seen in the composer: the primary row (Cut/Copy/Paste/Quote + ⋮), the overflow panel
+with its Back row, and its drag-to-reveal scrolling. The animation timing and the blur
+were not judged by eye; also worth a second look on a long selection over a post body
+(§9).
 
 To check: select text anywhere (composer, the settings text fields, a message in
 the timeline) and confirm the toolbar's position, overflow behaviour, animation
@@ -49,7 +50,11 @@ timing and blur still feel right, and that the style items appear only where a
 selection exists. A regression here is hand-feel, not correctness, which is
 exactly why it is on this list.
 
-## 3. `EditTextCaption` in the composer (`e6bdc30`)
+## 3. `EditTextCaption` in the composer (`e6bdc30`) — partially seen (2026-09-20)
+
+Seen in the composer: the hint, the cursor and its blink, the selection handles and
+long-press selection all behaved. Still to drive: the link dialog's paste popup,
+clipboard cut/copy, and the four local wires' drift triage.
 
 What to check: hint, cursor width/blink, selection handles, the "paste" popup in
 the link dialog, copy/cut through the clipboard, and long-press selection. The
@@ -185,13 +190,35 @@ To check, on a post body (long-press a text block, then drag):
 6. TalkBack is unaffected: the cell's description is still the accessibility text
    (§7.7); selection is a separate gesture.
 
-## 10. The block editor, and the composer's way in (`4ee2448`)
+## 10. The block editor, and the composer's way in (`4ee2448`) — passed except the keyboard (2026-09-20)
 
 What changed: the reply composer grew the block editor's entry button (next to the
 emoji one, upstream's `large_article` glyph and `ArticleEditor` label) and the sheet it
 opens mounts the pin's editor page (`RichEditorHostLayout`) with our own ends - the draft
 goes in as Discourse markdown and the send comes out the same way. Paparazzi pins the
 rendering of one draft (`RichEditorSheetScreenshotTest`, both themes).
+
+Verdict: the entry button opens the sheet with the composer's draft as the document, a
+tap in a row moves the caret and typing edits it, the history pill enables with the first
+edit, and dismissing (the back arrow, or a tap outside the sheet) hands the edited
+markdown back to the composer's draft (`hello andthere` in the draft store) - the round
+trip is a fixed point. Two defects found and fixed on the way:
+
+- the entry tap crashed with `NullPointerException: getResourceProvider(...) must not be
+  null` (`showRichEditor`); `BaseFragment.getResourceProvider()` returns null and the
+  fragment never overrode it. `TopicDetailFragment` now supplies the global theme as a
+  provider (`AppThemeResourcesProvider`), with a regression test
+  (`fragmentSuppliesTheResourcesProviderTheEditorSheetNeeds`).
+- the sheet painted no background: it hands `BottomSheet` a `containerView`, and a
+  container handed in must draw the sheet backdrop itself (the app's other sheets do).
+  Found because the topic showed straight through the sheet and the dark-theme golden was
+  white-on-white. The container now paints `shadowDrawable` like
+  `FixedHeaderRecyclerBottomSheet`, and both goldens were re-recorded.
+
+Still failing on device: 10.4's keyboard. With the keyboard up it covers the sheet's
+lower half - the toolbar row and the input - instead of the sheet riding above it; the
+full-height container neither shrinks nor translates for the keyboard. Still to check:
+10.2's heading/block menu, 10.3's selection format panel, 10.5's send.
 
 To check, in a topic:
 
@@ -249,13 +276,19 @@ To check, in a topic with the editor open:
 6. Known gap: the composer's own inline reply box still has no attach path — media
    goes through the editor, and a post sent from the composer is text-only.
 
-## 12. The composer's attach slot (`b9a967d`)
+## 12. The composer's attach slot (`b9a967d`) — partially driven (2026-09-20)
 
 What changed: the reply composer carries its own attach path. While the draft is empty the
 send slot shows a paperclip instead of the send plane; a picked image or video is copied
 into the cache, uploaded to `POST /uploads.json`, and its markdown lands in the draft on a
 line of its own. With text already in the draft the same action is in the send button's
 long-press menu (send is the other item there).
+
+Verdict: with an empty draft the slot is the paperclip; with text in it, long-pressing the
+send plane opens "Add image or video" above "Send", and that entry opens the system photo
+picker. Still to drive: 12.1's insert/caret placement, the failure path (12.4), and the
+send that proves the site renders the upload (12.5) - the emulator's picker has no photos,
+and the send needs a reply target.
 
 To check, in a topic:
 
@@ -273,3 +306,71 @@ To check, in a topic:
    `raw`), which is the same wire form the editor produces.
 6. Known gaps: only one file at a time, no caption, and no upload progress beyond the
    spinning slot; the composer has no screenshot golden, so this swap is device-only.
+
+## 13. Cold start can fail with "Session changed while request was in flight" (new, 2026-09-20)
+
+Seen three times on the emulator and once on the phone in the same pass: when
+`linux.do` rotates `_t` on the first response of a launch, `SessionCookieInterceptor`
+fences the concurrent startup requests (`saveIfCurrent` returns false → `accepted=false`),
+every one of them throws `IOException("Session changed while request was in flight")`,
+and the home screen shows "Couldn't load topics" with a Retry. Retry reloads the feed and
+a restart re-verifies the session, so the session itself is never lost.
+
+The rotation is expected (the site rotates `_t` for a session it considers stale, and this
+is exactly the state an injected browser cookie starts in); the emulator's proxy also
+rotates its exit IP between requests, which may make the rotation likelier than it is on a
+phone VPN. What needs deciding is what a fenced *read* response (the feed, a topic) should
+do: today it fails the whole startup, where keeping the response and letting the next
+request carry the new token would show the feed.
+
+Fixed (2026-09-20, seen again on the phone after the re-login): the fence drops the stale
+cookie *write* but returns a plain success, so a read that lost the rotation race keeps its
+payload; only a negative answer (not successful, or classified as anything but `Other`) still
+fails the request, which is what keeps a stale response from reporting a logout or a challenge.
+`fenced_read_returned` is logged when a read is returned that way. Test:
+`fencedReadIsReturnedWhenARotationWonTheRace` (fails without the change). The next cold start
+after a rotation should stop showing "Couldn't load topics / Session changed while request was
+in flight".
+
+## 14. `_t` rotation vs. the two cookie jars: a rejected token must reconcile, not log out (fixed 2026-09-20)
+
+Symptom on the phone (`449dd25d`): the app often asked for a login on start. `NativeDoSession`
+shows why: `/session/current.json` answered `404 evidence=LoggedOut ... setsToken=true
+deletesToken=true`, then `event=expired_ServerLoggedOut`, which clears the native jar, the
+cached identity *and* the WebView cookies.
+
+Root cause (Discourse source): `_t` is a per-device `UserAuthToken` rotated roughly every ten
+minutes, and the rotation hands the new value to whichever caller made that request. The
+previous value lives for exactly one more request, after which it resolves to no user and the
+server deletes the cookie (`refresh_session`: `cookie_jar.delete(TOKEN_COOKIE) if !user`). So a
+rejected `_t` proves only that *that* token is stale - while the browser jar (in-app browser,
+login WebView, challenge page) can hold the rotation the native jar missed. The pass made it
+acute because one browser `_t` was shared by the browser, the phone app and the emulator app, so
+each rotation logged out whoever still held the previous value.
+
+Fixed: `SessionCoordinator` reconciles before clearing anything. On `SessionLoggedOutException`
+it adopts the browser jar for the current revision (`CookieSyncBridge.syncFromWebViewIfCurrent`)
+and verifies once more; only a second rejection clears both jars and the identity. A login
+completion whose import produced no `_t` no longer runs a native verify that would clear the
+browser's fresh login - it keeps both jars and reports recovery. Contract updated
+(`contracts/discourse/auth-flow.md`, "`_t` rotates, so a rejected token is not a logout"), with
+tests in `SessionCoordinatorTest`. New diagnostics: `webview_session_adopted`,
+`webview_session_unavailable`, `webview_login_unreadable`.
+
+Still to check on device, and it needs a live `_t` (a fresh in-app login): browse linux.do in the
+in-app browser, wait out a rotation, cold-start - the log should show `webview_session_adopted`
+instead of `expired_ServerLoggedOut`.
+
+## 15. `cf_clearance` only arrives through the WebView (new, 2026-09-20)
+
+Seen on the phone after the re-login: the jar holds `_t` and `_forum_session` but no
+`cf_clearance` (every `native_response` logs `hasClearance=false`), and native reads answer
+`403 evidence=Challenge` in bursts. `cf_clearance` is bound to the TLS/IP identity that solved
+the challenge, so only the WebView can obtain it; the app imports it when a WebView login
+completes (`CompleteLoginUseCase` stage 2) and the profile's challenge cell offers that WebView
+as its action.
+
+To check: with an authenticated but clearance-less jar, tap the challenge action (Profile →
+the cell's button), let the page settle, and confirm the next native requests log
+`hasClearance=true` and the `403 Challenge` bursts stop. A VPN node change invalidates the
+clearance again - that part is expected.
