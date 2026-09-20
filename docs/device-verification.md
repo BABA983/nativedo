@@ -84,7 +84,25 @@ height) as worth blaming on this first — it is a one-line revert.
 
 ## 7. The rich-message renderer (S3 complete, not yet hosted)
 
-`RichMessageLayout` and its mirror dependencies compile (`docs/render-model-alignment.md`, S3),
+### Device verdict, first pass (2026-09-20, `emulator-5554`, topic 2790689 "发掘论坛的渲染极限")
+
+With the switch on (`RichMessageLayout`) the same posts, against the flag-off cell:
+
+- **Quotes lose their card.** The plain cell draws the app's quote card - leading bar, the quoted
+  author's avatar, the referenced topic's title, its category chip and the collapse chevron; the
+  rich body flattens `[quote]` to a tinted block with no bar, no header and no collapse, and the
+  title line ends up inside the body text (post #1, the two quotes at the top).
+- **A bullet's text overflows the column** and is clipped at the right edge ("开箱符号（Open Box）：
+  ... 键符号）"), where the flag-off cell wraps it (post #7).
+- **A code block is wider than the column**: its last line is clipped and a horizontal scrollbar
+  strip is drawn inside the block; the flag-off cell wraps the same block (post #7).
+
+Headings, plain lists, the divider and the spoiler bar render in place, so this is not a "nothing
+draws" failure - it is the three shapes above. The switch is not ready to flip on as it stands;
+it is off again in the emulator's `global.xml` after the pass. Not yet exercised on device: images
+and collages (#7.4), selection inside a rich body (#7.5) and TalkBack (#7.7).
+
+What changed: `RichMessageLayout` and its mirror dependencies compile (`docs/render-model-alignment.md`, S3),
 and S4 slices 1-2 draw a mapped Discourse post through `RichMessageLayout`, both standalone
 (`PostRichMessageScreenshotTest`) and inside the real `TopicPostCell` behind
 `RichMessageBody.enabled` (off by default). What a device has to settle is that flag-on cell path:
