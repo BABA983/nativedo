@@ -248,3 +248,28 @@ To check, in a topic with the editor open:
    picked file into that row, not into a new one.
 6. Known gap: the composer's own inline reply box still has no attach path — media
    goes through the editor, and a post sent from the composer is text-only.
+
+## 12. The composer's attach slot (`b9a967d`)
+
+What changed: the reply composer carries its own attach path. While the draft is empty the
+send slot shows a paperclip instead of the send plane; a picked image or video is copied
+into the cache, uploaded to `POST /uploads.json`, and its markdown lands in the draft on a
+line of its own. With text already in the draft the same action is in the send button's
+long-press menu (send is the other item there).
+
+To check, in a topic:
+
+1. Empty reply: the slot at the bottom right shows the paperclip, not the send plane. Tap
+   it, pick an image — the slot must spin (and ignore further taps) until the upload
+   answers, then `![name](https://linux.do/uploads/...)` appears at the caret, on its own
+   line, and the slot becomes the send plane (the draft is no longer empty).
+2. Type a few characters first: the slot is the send plane, and long-pressing it offers
+   "Add image or video" above "Send".
+3. Insert with the caret mid-line: the image must start on a new line, and the caret must
+   end on the line *after* the markdown, so typing continues below it.
+4. Failure path: turn the network off and attach — the composer's red error line must
+   report it and the draft must stay as it was (no broken markdown inserted).
+5. Send the post: the site must render the image (edit the post on the web to see the
+   `raw`), which is the same wire form the editor produces.
+6. Known gaps: only one file at a time, no caption, and no upload progress beyond the
+   spinning slot; the composer has no screenshot golden, so this swap is device-only.
