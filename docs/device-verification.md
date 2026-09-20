@@ -132,11 +132,18 @@ collages #7.4, selection #7.5, TalkBack #7.7) keep it from flipping on.
 - **Selection**: a long-press on a text line raises the cell's message menu (Reply / Select text /
   Copy link / Add bookmark) and "Select text" enters selection mode - handles and the action toolbar
   draw. But the handles landed about a cell below the pressed line (pressed y ~1016 px, handles ~1610
-  px on this 420 dpi screen), so the rich run's touch geometry is worth a look -
-  `RichMessageBodyBlock.fillTextLayoutBlocks` offsets upstream's blocks by the block origin from the
-  canvas matrix, and `onTouch` forwards raw local coordinates into `RichMessageLayout`, which expects
-  the ones it laid out against. A second long-press ~20 px above an image opened the viewer instead
-  of the menu, which may only be that image block's padded hit area.
+  px on this 420 dpi screen). The same gesture on the *block* body lands on the pressed line (A/B on
+  the same emulator, flag off), so the rich block is the one to fix. Both sides of the rich path look
+  consistent on paper - `startTextSelectionAt(pressX, pressY)` takes cell-local coordinates (the same
+  numbers the menu's placement math derives from `anchorLocation + press`), and
+  `fillTextLayoutBlocks` adds the block's own origin to upstream's layout-relative blocks
+  (`RichMessageLayout.reposition()` starts its y at 0) - so the next step is a trace rather than a
+  guess: log the touch (x, y), the block origin and each inner block's y at registration, reproduce
+  once, and compare against where the text actually draws. The trace's registration half ran
+  (`register block x=48 y=170 innerY=0,119,238 height=442` for a three-paragraph run - block origin
+  plus layout-relative blocks, exactly as designed); the touch half never logged, because the device
+  harness cannot hit the menu's "Select text" on demand (the menu is custom-drawn, so `uiautomator`
+  finds no node to tap). Next: log inside `setMaybeView`/`trySelect` and drive the menu by hand.
 
 ### Why the two bodies read differently (measured 2026-09-20, same emulator)
 
