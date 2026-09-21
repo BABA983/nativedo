@@ -45,12 +45,17 @@ internal class RichEditorSheet(
     currentAccount: Int = UserConfig.selectedAccount,
     private val onSend: (String) -> Unit,
     private val onDraft: (String) -> Unit,
-) : BottomSheet(context, false, resourcesProvider) {
+) : BottomSheet(context, true, resourcesProvider) {
 
     /** The app's file picker; left unset, the toolbar's attach button and media rows do nothing. */
     var onAttachRequested: (() -> Unit)? = null
 
-    private val host = RichEditorHostLayout(context, currentAccount, resourcesProvider)
+    private val host = RichEditorHostLayout(
+        context,
+        currentAccount,
+        resourcesProvider,
+        RichEditorHostLayout.LayoutMode.STANDALONE_SHEET,
+    )
     private var sending = false
     private var unresizedWindowHeight = 0
 
@@ -83,6 +88,16 @@ internal class RichEditorSheet(
         // (applyTopPadding ? dp(8) : 0) + backgroundPaddingTop - 1, backgroundPaddingLeft,
         // (applyBottomPadding ? dp(8) : 0))`), the bottom `dp(8)` included.
         containerView = object : FrameLayout(context) {
+            override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+                super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+                // BottomSheet measures custom content with AT_MOST. This page is a complete
+                // standalone surface, so its host must own the available sheet height rather than
+                // letting the two seed rows shrink the dialog to the bottom of the screen.
+                if (MeasureSpec.getMode(heightMeasureSpec) == MeasureSpec.AT_MOST) {
+                    setMeasuredDimension(measuredWidth, MeasureSpec.getSize(heightMeasureSpec))
+                }
+            }
+
             override fun onDraw(canvas: Canvas) {
                 shadowDrawable.setBounds(0, 0, measuredWidth, measuredHeight)
                 shadowDrawable.draw(canvas)
@@ -126,6 +141,11 @@ internal class RichEditorSheet(
             }
         }
         applyWindowInsets(ViewCompat.getRootWindowInsets(host))
+    }
+
+    /** Let the editor clear selection before the sheet is dismissed by system back. */
+    override fun onBackPressed() {
+        host.onBackPressed()
     }
 
     private fun applyWindowInsets(insets: WindowInsetsCompat?) {

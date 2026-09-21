@@ -126,6 +126,15 @@ class RichEditorSheetTest {
     }
 
     @Test
+    fun theEditorSheetOwnsWindowFocusForTextInput() {
+        val sheet = sheet()
+        val field = BottomSheet::class.java.getDeclaredField("focusable")
+            .apply { isAccessible = true }
+
+        assertThat(field.getBoolean(sheet)).isTrue()
+    }
+
+    @Test
     fun theScreenshotStatesAreRenderable() {
         val sheet = sheet()
 

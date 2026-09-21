@@ -1,6 +1,5 @@
 package org.telegram.ui.iv
 
-import android.graphics.Point
 import android.view.MotionEvent
 import android.view.View
 import android.widget.FrameLayout
@@ -22,9 +21,9 @@ import org.telegram.ui.ActionBar.Theme
  * chat glue dropped - which is what our sheet mounts. The page owns the editor's own behaviour and
  * leaves four things to its delegate; these tests pin the contract the `:app` sheet relies on: an
  * untouched page writes nothing, a loaded document reads back (and reads back *stably*), when the
- * page may send, that the toolbar's own buttons reach the delegate, and the pin's layout formulas
- * the toolbar was built against (its top padding, its top row, its bottom padding and the strips
- * it keeps out of the selection's way).
+ * page may send, that the toolbar's own buttons reach the delegate, and the standalone host's
+ * layout contract (its top padding, its top row, its bottom padding and the strips it keeps out of
+ * the selection's way).
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], manifest = Config.NONE)
@@ -52,8 +51,12 @@ class RichEditorHostContractTest {
         ApplicationLoader.init(RuntimeEnvironment.getApplication())
     }
 
-    private fun page(session: Session): RichEditorHostLayout =
-        RichEditorHostLayout(RuntimeEnvironment.getApplication(), 0, provider).apply { setDelegate(session) }
+    private fun page(
+        session: Session,
+        layoutMode: RichEditorHostLayout.LayoutMode = RichEditorHostLayout.LayoutMode.STANDALONE_SHEET,
+    ): RichEditorHostLayout =
+        RichEditorHostLayout(RuntimeEnvironment.getApplication(), 0, provider, layoutMode)
+            .apply { setDelegate(session) }
 
     private fun on(page: RichEditorHostLayout, markdown: String) {
         page.loadRichMessage(RichMessageMarkdown.parse(markdown))
@@ -86,6 +89,12 @@ class RichEditorHostContractTest {
         field.isAccessible = true
         val buttons = field.get(page.getToolbar()) as android.view.ViewGroup
         return (buttons.layoutParams as FrameLayout.LayoutParams).topMargin
+    }
+
+    private fun toolbarBackButton(page: RichEditorHostLayout): View {
+        val field = RichEditorToolbar::class.java.getDeclaredField("backButton")
+        field.isAccessible = true
+        return field.get(page.getToolbar()) as View
     }
 
     @Test
@@ -259,6 +268,22 @@ class RichEditorHostContractTest {
     }
 
     @Test
+    fun backClearsSelectionBeforeLeavingFromEitherEntryPoint() {
+        val session = Session()
+        val page = page(session)
+        on(page, "selected text")
+        measured(page, AndroidUtilities.dp(360f), AndroidUtilities.dp(600f))
+
+        assertThat(page.editorListView.textSelectionHelper.selectAllBlocksRange(0, 0, 0, 8)).isTrue()
+        toolbarBackButton(page).performClick()
+        assertThat(page.editorListView.isInSelectionMode).isFalse()
+        assertThat(session.back).isEqualTo(0)
+
+        page.onBackPressed()
+        assertThat(session.back).isEqualTo(1)
+    }
+
+    @Test
     fun theSendButtonReportsOnlyASendablePage() {
         val session = Session()
         val page = page(session)
@@ -281,65 +306,62 @@ class RichEditorHostContractTest {
     }
 
     @Test
-    fun theListRidesOnThePinsTopFormulaAndWalksBackToDp52UnderTheKeyboard() {
+    fun theStandaloneListStartsBelowItsOwnToolbarInEveryBottomState() {
         val page = page(Session())
+        val width = AndroidUtilities.dp(360f)
+        val height = AndroidUtilities.dp(1000f)
+        val topInset = AndroidUtilities.dp(8f)
+        val expectedTop = topInset + AndroidUtilities.dp((8 + 44 + 8).toFloat())
+
+        measured(page, width, height)
+        assertThat(page.editorListView.paddingTop).isEqualTo(expectedTop)
+
+        page.setImeInset(AndroidUtilities.dp(800f))
+        measured(page, width, height)
+        assertThat(page.editorListView.paddingTop).isEqualTo(expectedTop)
+
+        page.setImeInset(0)
+        page.setBottomInsets(0, AndroidUtilities.dp(200f))
+        measured(page, width, height)
+        assertThat(page.editorListView.paddingTop).isEqualTo(expectedTop)
+    }
+
+    @Test
+    fun attachPreviewKeepsThePinsFirstRowFormula() {
+        val page = page(Session(), RichEditorHostLayout.LayoutMode.ATTACH_PREVIEW)
         val width = AndroidUtilities.dp(360f)
         val height = AndroidUtilities.dp(1000f)
         val topInset = AndroidUtilities.dp(8f)
         val actionBar = ActionBar.getCurrentActionBarHeight()
 
         measured(page, width, height)
-        // portrait: two fifths of the page, dp(52) above that, plus the page's top and the action bar
-        assertThat(page.editorListView.paddingTop)
-            .isEqualTo(height / 5 * 2 - AndroidUtilities.dp(52f) + topInset + actionBar)
+        assertThat(page.editorListView.paddingTop).isEqualTo(
+            height / 5 * 2 - AndroidUtilities.dp(52f) + topInset + actionBar,
+        )
 
-        // the keyboard owns the bottom: the pin's onPreMeasure walks the top back to dp(52)
-        page.setImeInset(AndroidUtilities.dp(800f))
+        page.setImeInset(AndroidUtilities.dp(320f))
         measured(page, width, height)
-        assertThat(page.editorListView.paddingTop)
-            .isEqualTo(AndroidUtilities.dp(52f) + topInset + actionBar)
-
-        // an emoji panel does the same (the pin's `emojiPadding > dp(20)`)
-        page.setImeInset(0)
-        page.setBottomInsets(0, AndroidUtilities.dp(200f))
-        measured(page, width, height)
-        assertThat(page.editorListView.paddingTop)
-            .isEqualTo(AndroidUtilities.dp(52f) + topInset + actionBar)
-
-        // landscape takes a third and a half of the page instead of two fifths
-        val display = AndroidUtilities.displaySize
-        val saved = Point(display.x, display.y)
-        try {
-            page.setBottomInsets(0, 0)
-            display.set(1000, 500)
-            measured(page, width, height)
-            assertThat(page.editorListView.paddingTop)
-                .isEqualTo((height / 3.5f).toInt() - AndroidUtilities.dp(52f) + topInset + ActionBar.getCurrentActionBarHeight())
-        } finally {
-            display.set(saved.x, saved.y)
-        }
+        assertThat(page.editorListView.paddingTop).isEqualTo(
+            AndroidUtilities.dp(52f) + topInset + actionBar,
+        )
     }
 
     @Test
-    fun theTopControlsHoldThePinsMinOffset() {
+    fun theTopControlsStartAtTheStandaloneSheetsTopInset() {
         val page = page(Session())
         val topInset = AndroidUtilities.dp(8f)
-        val actionBar = ActionBar.getCurrentActionBarHeight()
-        val minOffset = topInset + (actionBar - AndroidUtilities.dp(44f)) / 2 - AndroidUtilities.dp(8f)
+        val minOffset = topInset
 
         assertThat(page.toolbarTopControlsMinOffset).isEqualTo(minOffset)
 
         measured(page, AndroidUtilities.dp(360f), AndroidUtilities.dp(1000f))
-        // Telegram hides this toolbar's back button behind ChatAttachAlert's action bar. Our sheet
-        // keeps it, so the shared back/history strip sits one 52dp strip above the first row.
-        assertThat(toolbarTopControlsOffset(page))
-            .isEqualTo(page.editorListView.paddingTop - AndroidUtilities.dp(8f + 44f))
-        assertThat(toolbarTopControlsOffset(page)).isAtLeast(minOffset)
+        assertThat(toolbarTopControlsOffset(page)).isEqualTo(minOffset)
 
         // a deeper safe area lifts the floor with it
         page.setTopInset(AndroidUtilities.dp(30f))
         assertThat(page.toolbarTopControlsMinOffset)
-            .isEqualTo(AndroidUtilities.dp(30f) + (actionBar - AndroidUtilities.dp(44f)) / 2 - AndroidUtilities.dp(8f))
+            .isEqualTo(AndroidUtilities.dp(30f))
+        assertThat(toolbarTopControlsOffset(page)).isEqualTo(AndroidUtilities.dp(30f))
     }
 
     @Test

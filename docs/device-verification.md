@@ -281,7 +281,7 @@ To check, on a post body (long-press a text block, then drag):
 6. TalkBack is unaffected: the cell's description is still the accessibility text
    (§7.7); selection is a separate gesture.
 
-## 10. The block editor, and the composer's way in (`4ee2448`) — passed except the keyboard (2026-09-20)
+## 10. The block editor, and the composer's way in (`e4300b7`) — verified on device (2026-09-21)
 
 What changed: the reply composer grew the block editor's entry button (next to the
 emoji one, upstream's `large_article` glyph and `ArticleEditor` label) and the sheet it
@@ -306,17 +306,30 @@ trip is a fixed point. Two defects found and fixed on the way:
   white-on-white. The container now paints `shadowDrawable` like
   `FixedHeaderRecyclerBottomSheet`, and both goldens were re-recorded.
 
-The keyboard failure from the first pass now has an insets fix awaiting a device re-check:
-the sheet reads system-bar/IME insets from the dialog decor and gives the editor only the
-part that actually covers its bounds, so an `adjustResize` window is not lifted twice. The
-page now also lays out on the pin's own formulas (`ChatAttachAlertRichLayout.onPreMeasure` /
-`updateToolbarTopOffset`): the first row rides at two fifths of the page (a third and a half
-in landscape) `dp(52)` above it, `dp(52)` from the top while the keyboard or an emoji panel
-owns the bottom, the top row sits at `topInset + (ActionBarHeight - dp(44)) / 2 - dp(8)`, and
-the toolbar's bottom row keeps the sheet's own `dp(8)` edge - to check that the keyboard
-lifts the toolbar exactly once in both `adjustResize` and overlay windows.
-Still to check: 10.2's heading/block menu, 10.3's selection format panel, 10.4 on a
-device, and 10.5's send.
+The host fix changes the sheet to `BottomSheet(context, true, ...)`, routes system back through
+`RichEditorHostLayout.onBackPressed()` so selection is cleared before dismissal, and gives the
+standalone page its own geometry. There is no ActionBar in this sheet: the toolbar starts at the
+reported top inset and the first document row starts `dp(8 + 44 + 8)` below it. Keyboard and
+emoji insets change the bottom only; the old attach-alert `2/5` or landscape `1/3.5` height
+formula and the `firstItemTopRaw() - dp(8 + 44)` compensation are gone.
+
+Device evidence was collected on `emulator-5554`, `sdk_gphone64_arm64`, Android 16/API 36,
+1080x2400 at 420 dpi, font scale 1.0. The final empty state places the sheet container at
+`[0,1603]-[1080,2337]`, the host at `[0,1649]-[1080,2316]`, the top controls at about
+`y=1670-1786`, Title at `[42,1857]-[1038,1924]`, body at `[42,1957]-[1038,2014]`, and the
+bottom editor toolbar at about `y=2179-2295`. The former roughly 800px top void is gone.
+
+After tapping Title, UI XML reports a focused `org.telegram.ui.iv.RichEditText` with hint
+`Title`. `dumpsys input_method` reports `mInputShown=true`, `mImeWindowVis=3`,
+`mIsInputViewShown=true`, `mServedView=org.telegram.ui.iv.RichEditText`, and an
+`ADJUST_RESIZE` focused window without `ALT_FOCUSABLE_IM`. The runner has a built-in hardware
+keyboard, so Gboard renders its side toolbar instead of a full software keybed in the captured
+frame even with `show_ime_with_hard_keyboard=1`; the IME service and served view are nevertheless
+the expected ones. Full-keybed visual comparison needs a software-only emulator image.
+
+Paparazzi covers the empty, content, keyboard-inset, format-panel, and undo states in both
+themes. Telegram comparison was not possible: no Telegram package or APK is installed on this
+emulator.
 
 To check, in a topic:
 

@@ -70,6 +70,13 @@ import java.util.List;
  */
 public class RichEditorHostLayout extends FrameLayout {
 
+    public enum LayoutMode {
+        /** Preserve the upstream attach sheet's expandable preview space above the document. */
+        ATTACH_PREVIEW,
+        /** Place the document directly below this page's own top toolbar. */
+        STANDALONE_SHEET
+    }
+
     public interface Delegate {
         /** The toolbar's back button, or a back press that deselected nothing. */
         void onBackPressed();
@@ -92,6 +99,7 @@ public class RichEditorHostLayout extends FrameLayout {
 
     private final int currentAccount;
     private final Theme.ResourcesProvider resourcesProvider;
+    private final LayoutMode layoutMode;
     private final RichEditorListView listView;
     private final RichEditorToolbar toolbar;
 
@@ -111,9 +119,14 @@ public class RichEditorHostLayout extends FrameLayout {
     private int appliedPaddingBottom = -1;
 
     public RichEditorHostLayout(Context context, int currentAccount, Theme.ResourcesProvider resourcesProvider) {
+        this(context, currentAccount, resourcesProvider, LayoutMode.ATTACH_PREVIEW);
+    }
+
+    public RichEditorHostLayout(Context context, int currentAccount, Theme.ResourcesProvider resourcesProvider, LayoutMode layoutMode) {
         super(context);
         this.currentAccount = currentAccount;
         this.resourcesProvider = resourcesProvider;
+        this.layoutMode = layoutMode;
 
         listView = new RichEditorListView(context, currentAccount, resourcesProvider, new RichEditorListView.Delegate() {
             @Override public ItemOptions makeMenu(View anchor) {
@@ -163,7 +176,7 @@ public class RichEditorHostLayout extends FrameLayout {
 
         toolbar = new RichEditorToolbar(context, new RichEditorToolbar.Delegate() {
             @Override public Theme.ResourcesProvider getResourcesProvider() { return resourcesProvider; }
-            @Override public void onBack() { if (delegate != null) delegate.onBackPressed(); }
+            @Override public void onBack() { RichEditorHostLayout.this.onBackPressed(); }
             @Override public void onUndo() { listView.undo(); }
             @Override public void onRedo() { listView.redo(); }
             @Override public void onEmoji() { if (delegate != null) delegate.onEmojiRequested(); }
@@ -700,26 +713,21 @@ public class RichEditorHostLayout extends FrameLayout {
         toolbar.setSelectedBlockType(type, icon);
     }
 
-    /**
-     * The pin's formula (ChatAttachAlertRichLayout.java): the top row rides above the first visible
-     * row, but never higher than the action bar's own centre - the pin's `statusBarHeight` is this
-     * page's `topInset`, which the sheet reports from the window's real insets.
-     */
+    /** Positions the top controls for the surface that owns this page. */
     private void updateToolbarTopOffset() {
         if (toolbar == null) return;
-        // Telegram hides this toolbar's back button because ChatAttachAlert supplies navigation in
-        // its action bar. NativeDo's full-page sheet keeps the button, so place the shared back /
-        // history row one toolbar strip above the first editor row; using the pin's raw row top
-        // would put our additional back circle directly over a heading. The minTop floor remains
-        // the pin's exact formula.
-        toolbar.setTopButtonsOffset(Math.max(getToolbarTopControlsMinOffset(), firstItemTopRaw() - dp(8 + 44)));
+        if (layoutMode == LayoutMode.STANDALONE_SHEET) {
+            toolbar.setTopButtonsOffset(getToolbarTopControlsMinOffset());
+        } else {
+            toolbar.setTopButtonsOffset(Math.max(getToolbarTopControlsMinOffset(), firstItemTopRaw() - dp(8 + 44)));
+        }
     }
 
-    /**
-     * The pin's `minTop`: `topInset + (ActionBar.getCurrentActionBarHeight() - dp(44)) / 2 - dp(8)`,
-     * the floor {@link #updateToolbarTopOffset()} holds the back/history row at.
-     */
+    /** The standalone toolbar starts at its inset; attach preview keeps the pin's ActionBar floor. */
     public int getToolbarTopControlsMinOffset() {
+        if (layoutMode == LayoutMode.STANDALONE_SHEET) {
+            return topInset;
+        }
         return topInset + (ActionBar.getCurrentActionBarHeight() - dp(44)) / 2 - dp(8);
     }
 
@@ -751,32 +759,26 @@ public class RichEditorHostLayout extends FrameLayout {
         toolbar.setBottomGradientTranslationY(emojiInset > 0 ? -emojiInset : 0);
     }
 
-    /**
-     * The pin's `onPreMeasure` (ChatAttachAlertRichLayout.java), with this page's seam in the
-     * attach sheet's place: while the keyboard or an emoji panel owns the bottom the list starts at
-     * `dp(52)`; otherwise its first row rides at two fifths of the available height (a third and a
-     * half in landscape) and `dp(52)` above that, clamped at zero - and the page's own top inset
-     * plus the action bar's height is added on top (the pin's `statusBarHeight +
-     * ActionBar.getCurrentActionBarHeight()`, with the sheet's reported top inset standing in for
-     * the status bar). The bottom keeps the pin's `bottomNavInset() + dp(TOOLBAR_BOTTOM_INSET + 50)
-     * + attachButtonsExtra + emojiPadding`; this page's `bottomInset` is the sheet's WindowInsets
-     * seam where the pin read `navigationBarHeight` (0 while the keyboard is up), and the attach
-     * sheet's raise (`attachButtonsExtra`) does not exist here.
-     */
+    /** Applies either the pin's attach-preview spacing or the standalone surface's compact strip. */
     private void applyListPadding(int availableHeight) {
-        final int paddingTop;
-        if (keyboardVisible || emojiInset > dp(20)) {
-            paddingTop = dp(52);
+        final int top;
+        if (layoutMode == LayoutMode.STANDALONE_SHEET) {
+            top = topInset + dp(8 + 44 + 8);
         } else {
-            final int fromHeight;
-            if (!AndroidUtilities.isTablet() && AndroidUtilities.displaySize.x > AndroidUtilities.displaySize.y) {
-                fromHeight = (int) (availableHeight / 3.5f);
+            final int paddingTop;
+            if (keyboardVisible || emojiInset > dp(20)) {
+                paddingTop = dp(52);
             } else {
-                fromHeight = (availableHeight / 5 * 2);
+                final int fromHeight;
+                if (!AndroidUtilities.isTablet() && AndroidUtilities.displaySize.x > AndroidUtilities.displaySize.y) {
+                    fromHeight = (int) (availableHeight / 3.5f);
+                } else {
+                    fromHeight = availableHeight / 5 * 2;
+                }
+                paddingTop = Math.max(0, fromHeight - dp(52));
             }
-            paddingTop = Math.max(0, fromHeight - dp(52));
+            top = paddingTop + topInset + ActionBar.getCurrentActionBarHeight();
         }
-        final int top = paddingTop + topInset + ActionBar.getCurrentActionBarHeight();
         final int bottom = bottomInset + emojiInset + dp(TOOLBAR_BOTTOM_INSET + 50);
         if (appliedPaddingTop != top || appliedPaddingBottom != bottom) {
             appliedPaddingTop = top;
