@@ -175,8 +175,14 @@ internal class TopicPostCellScreenshotTest {
               </article>
             </aside>
             <div class="callout callout-note" data-callout-type="note">
-              <div class="callout-title"><span class="callout-title-inner">Note</span></div>
-              <div class="callout-content"><p>Callouts stay our own block.</p></div>
+              <div class="callout-title">
+                <span class="callout-icon"><svg class="fa d-icon svg-icon"><use href="#far-pen-to-square"></use></svg></span>
+                <span class="callout-title-inner">Note</span>
+              </div>
+              <div class="callout-content">
+                <p>Callouts stay our own block.</p>
+                <ul><li>and keep their nested blocks</li><li>in place</li></ul>
+              </div>
             </div>
             <p>An outro paragraph.</p>
         """.trimIndent()

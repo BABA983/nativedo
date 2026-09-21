@@ -239,8 +239,32 @@ private fun parseParagraphElement(element: Element): List<CookedPostBlock> {
     return listOfNotNull(textHtml?.let(CookedPostBlock::Text)) + images
 }
 
+// The element names a Discourse callout can be cooked onto. The Quote Callouts theme component
+// emits a `blockquote.callout`, but the same `callout` / `callout-title` / `callout-content`
+// structure also shows up on a `div` or `aside` (other callout renderers, older markup), and a
+// `div.callout.callout-note` used to fall through `parseDivElement` into a plain run of Text.
+private val calloutContainerNames = setOf("blockquote", "div", "aside")
+
+/**
+ * True when [element] carries callout semantics, whatever element it is cooked on.
+ *
+ * A Discourse quote is an `aside.quote`, so the `quote` class always wins and a quote is never read
+ * as a callout. A `blockquote.callout` is a callout on the class alone (the theme component's
+ * shape); a `div` / `aside` needs both a callout marker (`callout` class or `data-callout-type` /
+ * `data-callout`) and the structural children, so an unrelated page `.callout` class is not stolen.
+ */
+private fun Element.isCalloutContainer(): Boolean {
+    if (normalName() !in calloutContainerNames) return false
+    if (hasClass("quote")) return false
+    if (normalName() == "blockquote" && hasClass("callout")) return true
+    val hasCalloutStructure = selectFirst(":root > .callout-title") != null ||
+        selectFirst(":root > .callout-content") != null
+    val hasCalloutMarker = hasClass("callout") || hasAttr("data-callout-type") || hasAttr("data-callout")
+    return hasCalloutStructure && hasCalloutMarker
+}
+
 private fun parseBlockquoteElement(element: Element, quoteLevel: Int, baseUrl: String): List<CookedPostBlock> {
-    if (element.hasClass("callout")) {
+    if (element.isCalloutContainer()) {
         return parseCalloutElement(element, quoteLevel, baseUrl)
     }
     val markdownCallout = parseMarkdownCalloutElement(element, quoteLevel, baseUrl)
@@ -331,31 +355,41 @@ private fun Element.extractMarkdownCalloutHeader(): MarkdownCalloutHeader? {
 private fun parseCalloutElement(element: Element, quoteLevel: Int, baseUrl: String): List<CookedPostBlock> {
     val titleElement = element.children().firstOrNull { child -> child.hasClass("callout-title") }
         ?: element.selectFirst(".callout-title")
-    val titleInner = titleElement?.selectFirst(".callout-title-inner")
+    // The theme component names the title text `.callout-title-inner`; other renderers use
+    // `.callout-title-text`. Both carry the same semantics.
+    val titleInner = titleElement?.selectFirst(".callout-title-inner, .callout-title-text")
     val titlePlain = titleInner?.text()?.trim()?.takeIf { it.isNotBlank() }
         ?.removePrefix("+")
         ?.trim()
         ?.takeIf { it.isNotBlank() }
     val titleHtml = titlePlain?.let { org.jsoup.nodes.TextNode(it).outerHtml().trim() }
         ?: titleElement?.clone()?.apply {
-            select(".callout-icon, .callout-fold").remove()
+            select(".callout-icon, .callout-title-icon, .callout-fold, .callout-fold-icon").remove()
         }?.text()?.trim()?.takeIf { it.isNotBlank() }
             ?.removePrefix("+")
             ?.trim()
             ?.takeIf { it.isNotBlank() }
             ?.let { org.jsoup.nodes.TextNode(it).outerHtml().trim() }
     val collapsible = element.hasClass("is-collapsible") ||
-        titleElement?.selectFirst(".callout-fold") != null ||
-        element.selectFirst(".callout-fold") != null
-    val rawIcon = titleElement?.selectFirst(".callout-icon svg use[href], .callout-icon svg use[xlink:href]")
-        ?.attr("href")
-        ?.ifBlank { titleElement.selectFirst(".callout-icon svg use[xlink:href]")?.attr("xlink:href").orEmpty() }
+        element.attr("data-collapsible").equals("true", ignoreCase = true) ||
+        titleElement?.selectFirst(".callout-fold, .callout-fold-icon") != null ||
+        element.selectFirst(".callout-fold, .callout-fold-icon") != null
+    val rawIcon = titleElement?.selectFirst(
+        ".callout-icon svg use[href], .callout-icon svg use[xlink:href], " +
+            ".callout-title-icon svg use[href], .callout-title-icon svg use[xlink:href]",
+    )?.attr("href")
+        ?.ifBlank {
+            titleElement.selectFirst(".callout-icon svg use[xlink:href], .callout-title-icon svg use[xlink:href]")
+                ?.attr("xlink:href").orEmpty()
+        }
         .orEmpty()
-    val rawType = element.attr("data-callout-type").ifBlank {
-        element.classNames().firstOrNull { className -> className.startsWith("callout-") }
-            ?.removePrefix("callout-")
-            .orEmpty()
-    }
+    val rawType = element.attr("data-callout-type")
+        .ifBlank { element.attr("data-callout") }
+        .ifBlank {
+            element.classNames().firstOrNull { className -> className.startsWith("callout-") }
+                ?.removePrefix("callout-")
+                .orEmpty()
+        }
     val spec = resolveDiscourseCalloutSpec(rawType, rawIcon)
     val content = (element.children().firstOrNull { child -> child.hasClass("callout-content") }
         ?: element).clone().apply {
@@ -472,6 +506,9 @@ private fun parseAsideElement(element: Element, quoteLevel: Int, baseUrl: String
                 level = quoteLevel,
             ),
         )
+    }
+    if (element.isCalloutContainer()) {
+        return parseCalloutElement(element, quoteLevel, baseUrl)
     }
     if (element.hasClass("onebox")) {
         val onebox = parseOneboxAside(element)
@@ -733,6 +770,10 @@ private fun parseDivElement(element: Element, quoteLevel: Int, baseUrl: String):
     if (element.hasClass("lightbox-wrapper")) {
         return imageBlocksFrom(element)
     }
+    if (element.isCalloutContainer()) {
+        val callout = parseCalloutElement(element, quoteLevel, baseUrl)
+        if (callout.isNotEmpty()) return callout
+    }
     if (element.hasClass("poll")) {
         return listOf(parsePollElement(element))
     }
@@ -787,6 +828,7 @@ private fun Element.removeCookedNonContentArtifacts() {
             ".copy-cmd",
             ".fullscreen-cmd",
             ".callout-fold",
+            ".callout-fold-icon",
             ".lightbox-wrapper .meta",
             ".lightbox .meta",
             ".lightbox-wrapper .filename",
@@ -801,7 +843,8 @@ private fun Element.isCookedNonContentArtifact(): Boolean {
     if (hasClass("codeblock-button-wrapper") ||
         hasClass("copy-cmd") ||
         hasClass("fullscreen-cmd") ||
-        hasClass("callout-fold")
+        hasClass("callout-fold") ||
+        hasClass("callout-fold-icon")
     ) {
         return true
     }

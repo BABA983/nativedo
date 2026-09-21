@@ -1,7 +1,9 @@
 package io.github.baba983.nativedo.core.ui
 
 import com.google.common.truth.Truth.assertThat
+import com.google.common.truth.Truth.assertWithMessage
 import io.github.baba983.nativedo.core.html.CookedPostBlock
+import io.github.baba983.nativedo.core.html.parseCookedPostBody
 import org.junit.Test
 
 class PostRichMessageSegmentTest {
@@ -83,6 +85,47 @@ class PostRichMessageSegmentTest {
             PostBodySegment.RichRun::class.java,
         ).inOrder()
         assertThat((segments[1] as PostBodySegment.OwnBlock).block).isSameInstanceAs(quote)
+    }
+
+    /**
+     * The callout fed through the real parser, not a hand-built block: the `div`/`aside` callout
+     * shapes used to be read by `CookedPostBodyParser` as plain `Text`, which the hybrid body then
+     * handed to upstream's renderer and lost the callout card entirely. A callout parsed from cooked
+     * HTML must land as an [PostBodySegment.OwnBlock].
+     */
+    @Test
+    fun calloutsParsedFromRealCookedHtmlStayOurOwnBlock() {
+        val shapes = listOf(
+            "div" to
+                """
+                    <div class="callout callout-note" data-callout-type="note">
+                      <div class="callout-title"><span class="callout-title-inner">Note</span></div>
+                      <div class="callout-content"><p>Callouts stay our own block.</p></div>
+                    </div>
+                """.trimIndent(),
+            "aside" to
+                """
+                    <aside class="callout callout-warning" data-callout-type="warning">
+                      <div class="callout-title"><span class="callout-title-inner">Warning</span></div>
+                      <div class="callout-content"><p>Callouts stay our own block.</p></div>
+                    </aside>
+                """.trimIndent(),
+        )
+
+        for ((shape, calloutHtml) in shapes) {
+            val parsed = parseCookedPostBody("<p>before</p>$calloutHtml<p>after</p>", "https://linux.do/")
+            val callout = parsed.filterIsInstance<CookedPostBlock.Callout>().single()
+
+            val segments = splitPostBodySegments(parsed)
+            assertThat(segments.map { segment -> segment::class.java }).containsExactly(
+                PostBodySegment.RichRun::class.java,
+                PostBodySegment.OwnBlock::class.java,
+                PostBodySegment.RichRun::class.java,
+            ).inOrder()
+            assertWithMessage("$shape callout block")
+                .that((segments[1] as PostBodySegment.OwnBlock).block)
+                .isEqualTo(callout)
+        }
     }
 
     @Test

@@ -241,6 +241,130 @@ class CookedPostBodyParserTest {
     }
 
     @Test
+    fun parseCookedPostBody_parsesDivCalloutShape() {
+        // The Quote Callouts theme component wraps a callout in a blockquote, but the same
+        // callout/callout-title/callout-content structure is also cooked onto a div; the div shape
+        // used to fall through parseDivElement into a plain run of Text.
+        val html = """
+            <div class="callout callout-note" data-callout-type="note">
+              <div class="callout-title"><span class="callout-title-inner">Note</span></div>
+              <div class="callout-content"><p>Callouts stay our own block.</p></div>
+            </div>
+        """.trimIndent()
+
+        val blocks = parseCookedPostBody(html, baseUrl)
+
+        assertThat(blocks.filterIsInstance<CookedPostBlock.Text>()).isEmpty()
+        val callout = blocks.filterIsInstance<CookedPostBlock.Callout>().single()
+        assertThat(callout.type).isEqualTo("note")
+        assertThat(callout.icon).isEqualTo("far-pen-to-square")
+        assertThat(callout.color).isEqualTo("#086ddd")
+        assertThat(callout.titleHtml).isEqualTo("Note")
+        assertThat(callout.collapsible).isFalse()
+        assertThat(callout.children.filterIsInstance<CookedPostBlock.Text>().single().html)
+            .contains("Callouts stay our own block.")
+        assertThat(callout.html).contains("Callouts stay our own block.")
+    }
+
+    @Test
+    fun parseCookedPostBody_parsesAsideCalloutShapeWithFoldAndNestedBlocks() {
+        val html = """
+            <aside class="callout callout-warning is-collapsible" data-callout-type="warning">
+              <div class="callout-title">
+                <span class="callout-icon"><svg class="fa d-icon svg-icon"><use href="#triangle-exclamation"></use></svg></span>
+                <span class="callout-title-inner">Watch out</span>
+                <span class="callout-fold"><svg><use href="#chevron-down"></use></svg></span>
+              </div>
+              <div class="callout-content">
+                <p>First line.</p>
+                <ul><li>one</li><li>two</li></ul>
+              </div>
+            </aside>
+        """.trimIndent()
+
+        val callout = parseCookedPostBody(html, baseUrl)
+            .filterIsInstance<CookedPostBlock.Callout>()
+            .single()
+
+        assertThat(callout.type).isEqualTo("warning")
+        assertThat(callout.icon).isEqualTo("triangle-exclamation")
+        assertThat(callout.color).isEqualTo("#ec7500")
+        assertThat(callout.titleHtml).isEqualTo("Watch out")
+        assertThat(callout.collapsible).isTrue()
+        assertThat(callout.children.filterIsInstance<CookedPostBlock.Text>().single().html)
+            .contains("First line.")
+        assertThat(callout.children.filterIsInstance<CookedPostBlock.ListItems>().single().items).hasSize(2)
+        assertThat(callout.html).doesNotContain("callout-fold")
+    }
+
+    @Test
+    fun parseCookedPostBody_parsesCalloutWithAlternateTitleClassesAndDataCallout() {
+        val html = """
+            <div class="callout" data-callout="tip">
+              <div class="callout-title">
+                <div class="callout-title-icon"><svg><use href="#fire-flame-curved"></use></svg></div>
+                <div class="callout-title-text">Pro tip</div>
+              </div>
+              <div class="callout-content"><p>Body.</p></div>
+            </div>
+        """.trimIndent()
+
+        val callout = parseCookedPostBody(html, baseUrl)
+            .filterIsInstance<CookedPostBlock.Callout>()
+            .single()
+
+        assertThat(callout.type).isEqualTo("tip")
+        assertThat(callout.icon).isEqualTo("fire-flame-curved")
+        assertThat(callout.titleHtml).isEqualTo("Pro tip")
+        assertThat(callout.children.filterIsInstance<CookedPostBlock.Text>().single().html).contains("Body.")
+    }
+
+    @Test
+    fun parseCookedPostBody_parsesNestedCalloutInsideDivCallout() {
+        val html = """
+            <div class="callout callout-note" data-callout-type="note">
+              <div class="callout-title"><span class="callout-title-inner">Outer</span></div>
+              <div class="callout-content">
+                <p>Before</p>
+                <div class="callout callout-tip" data-callout-type="tip">
+                  <div class="callout-title"><span class="callout-title-inner">Inner</span></div>
+                  <div class="callout-content"><p>Nested body.</p></div>
+                </div>
+              </div>
+            </div>
+        """.trimIndent()
+
+        val outer = parseCookedPostBody(html, baseUrl)
+            .filterIsInstance<CookedPostBlock.Callout>()
+            .single()
+        val inner = outer.children.filterIsInstance<CookedPostBlock.Callout>().single()
+
+        assertThat(outer.type).isEqualTo("note")
+        assertThat(inner.type).isEqualTo("tip")
+        assertThat(inner.color).isEqualTo("#00bfbc")
+        assertThat(inner.children.filterIsInstance<CookedPostBlock.Text>().single().html)
+            .contains("Nested body.")
+    }
+
+    @Test
+    fun parseCookedPostBody_doesNotTreatQuoteAsideAsCallout() {
+        val html = """
+            <aside class="quote no-group" data-post="7" data-topic="424242">
+              <div class="title"><a href="https://community.example/t/topic/424242/7">Quoted</a></div>
+              <blockquote><p>Plain quote body.</p></blockquote>
+            </aside>
+        """.trimIndent()
+
+        val blocks = parseCookedPostBody(html, baseUrl)
+
+        assertThat(blocks.filterIsInstance<CookedPostBlock.Callout>()).isEmpty()
+        val quote = blocks.filterIsInstance<CookedPostBlock.Quote>().single()
+        assertThat(quote.html).contains("Plain quote body.")
+        assertThat(quote.sourcePostNumber).isEqualTo(7)
+        assertThat(quote.sourceTopicId).isEqualTo(424242L)
+    }
+
+    @Test
     fun parseCookedPostBody_parsesMarkdownCalloutWithPlusFoldModifier() {
         val html = """
             <blockquote>
