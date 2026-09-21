@@ -1,6 +1,7 @@
 package io.github.baba983.nativedo.ui.topic
 
 import android.app.Activity
+import android.view.View
 import com.google.common.truth.Truth.assertThat
 import org.junit.Before
 import org.junit.Test
@@ -9,7 +10,10 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ApplicationLoader
+import org.telegram.tgnet.tl.TL_iv
+import org.telegram.ui.ActionBar.BottomSheet
 import org.telegram.ui.ActionBar.Theme
 
 /**
@@ -84,6 +88,60 @@ class RichEditorSheetTest {
 
         assertThat(draft).isNotNull()
         assertThat(draft!!).contains("**text**")
+    }
+
+    @Test
+    fun dismissingKeepsAMediaDraft() {
+        var draft: String? = null
+        val sheet = sheet(onDraft = { draft = it })
+
+        sheet.loadMarkdown("![alt text](https://linux.do/uploads/1/x.png)")
+        sheet.reportDraftIfNotSent()
+
+        // a dismiss hands the image back to the composer instead of overwriting it with the text
+        assertThat(draft).isNotNull()
+        assertThat(draft!!).contains("![alt text](https://linux.do/uploads/1/x.png)")
+    }
+
+    @Test
+    fun theContainerCarriesTheBottomSheetsOwnPadding() {
+        val sheet = sheet()
+
+        // `BottomSheet` pads the container it builds itself and a handed-in container has to carry
+        // the same: `dp(8) + backgroundPaddingTop - 1` above and `dp(8)` below (`BottomSheet.java`).
+        assertThat(sheet.sheetContainer.paddingBottom).isEqualTo(AndroidUtilities.dp(8f))
+        val shadowTop = BottomSheet::class.java.getDeclaredField("backgroundPaddingTop")
+            .apply { isAccessible = true }
+            .getInt(sheet)
+        assertThat(sheet.sheetContainer.paddingTop).isEqualTo(AndroidUtilities.dp(8f) + shadowTop - 1)
+
+        // and the page inside keeps the toolbar's own strip below its content: dp(8 + 44 + 8 + 50)
+        val host = sheet.editorHost()
+        host.measure(
+            View.MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(360f), View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(560f), View.MeasureSpec.EXACTLY),
+        )
+        assertThat(host.editorListView.paddingBottom)
+            .isEqualTo(AndroidUtilities.dp((8 + 44 + 8 + 50).toFloat()))
+    }
+
+    @Test
+    fun theScreenshotStatesAreRenderable() {
+        val sheet = sheet()
+
+        // the states `RichEditorSheetScreenshotTest` renders: the empty seed, the keyboard's own
+        // insets, the format panel and an edit's history - none may throw on the way to the golden
+        sheet.loadMarkdown("")
+        val host = sheet.editorHost()
+        host.setImeInset(AndroidUtilities.dp(320f))
+        host.setBottomInsets(AndroidUtilities.dp(320f), 0)
+        sheet.loadMarkdown("# A reply\n\nText with **bold**, *italic* and a [link](https://linux.do/t/x).")
+        host.getToolbar().showFormattingPanel(true, false)
+        val message = TL_iv.RichMessage()
+        message.blocks = arrayListOf<TL_iv.PageBlock>(TL_iv.pageBlockDivider())
+        host.getEditorListView().addRichMessage(message)
+
+        assertThat(sheet.markdown()).isNotEmpty()
     }
 
     @Test

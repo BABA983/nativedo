@@ -13,7 +13,10 @@ import android.content.DialogInterface
 import android.graphics.Canvas
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import io.github.baba983.nativedo.core.ui.RichMessageMarkdown
+import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.UserConfig
 import org.telegram.ui.ActionBar.BottomSheet
 import org.telegram.ui.ActionBar.Theme
@@ -49,6 +52,7 @@ internal class RichEditorSheet(
 
     private val host = RichEditorHostLayout(context, currentAccount, resourcesProvider)
     private var sending = false
+    private var unresizedWindowHeight = 0
 
     init {
         host.setDelegate(object : RichEditorHostLayout.Delegate {
@@ -74,7 +78,10 @@ internal class RichEditorSheet(
         // The page fills the sheet: the container measures it against the height the sheet has.
         // A `BottomSheet` only prepares its own container when it creates one, so a container
         // handed in has to paint the sheet background itself - the same shape the app's other
-        // sheets use (`FixedHeaderRecyclerBottomSheet`).
+        // sheets use (`FixedHeaderRecyclerBottomSheet`) - and carry the padding `BottomSheet`
+        // gives its own container (`BottomSheet.java`: `setPadding(backgroundPaddingLeft,
+        // (applyTopPadding ? dp(8) : 0) + backgroundPaddingTop - 1, backgroundPaddingLeft,
+        // (applyBottomPadding ? dp(8) : 0))`), the bottom `dp(8)` included.
         containerView = object : FrameLayout(context) {
             override fun onDraw(canvas: Canvas) {
                 shadowDrawable.setBounds(0, 0, measuredWidth, measuredHeight)
@@ -82,7 +89,12 @@ internal class RichEditorSheet(
             }
         }.apply {
             setWillNotDraw(false)
-            setPadding(backgroundPaddingLeft, 0, backgroundPaddingLeft, 0)
+            setPadding(
+                backgroundPaddingLeft,
+                AndroidUtilities.dp(8f) + backgroundPaddingTop - 1,
+                backgroundPaddingLeft,
+                AndroidUtilities.dp(8f),
+            )
             addView(
                 host,
                 FrameLayout.LayoutParams(
@@ -93,6 +105,55 @@ internal class RichEditorSheet(
         }
         fixNavigationBar(getThemedColor(Theme.key_dialogBackground))
         setOnDismissListener(DialogInterface.OnDismissListener { reportDraftIfNotSent() })
+        // The page's own top is part of its insets; the sheet's handle gap is the base it keeps.
+        host.viewTreeObserver.addOnGlobalLayoutListener { applyWindowInsets(ViewCompat.getRootWindowInsets(host)) }
+    }
+
+    /**
+     * The keyboard is an insets problem, not a fixed number. [BottomSheet]'s own container consumes
+     * the system insets before the page sees them, so the sheet reads them from the dialog's decor
+     * (which sees them first) and feeds the page the part of its bottom edge the system actually
+     * covers - the navigation bar when the keyboard is down, the keyboard's own overlap when it is
+     * up, and nothing when the window was resized for the IME and already rides above it. See
+     * [RichEditorSheetInsets] for the arithmetic.
+     */
+    override fun show() {
+        super.show()
+        window?.decorView?.let { decor ->
+            ViewCompat.setOnApplyWindowInsetsListener(decor) { _, insets ->
+                applyWindowInsets(insets)
+                insets
+            }
+        }
+        applyWindowInsets(ViewCompat.getRootWindowInsets(host))
+    }
+
+    private fun applyWindowInsets(insets: WindowInsetsCompat?) {
+        if (insets == null || !host.isAttachedToWindow) return
+        val currentWindowHeight = host.rootView?.height ?: return
+        if (currentWindowHeight <= 0) return
+        val location = IntArray(2)
+        host.getLocationInWindow(location)
+        val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+        val ime = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
+        // A resized decor is shorter while the IME is visible. Keep its keyboard-down height as
+        // the reference; using the shortened height here would lift an already-resized page again.
+        if (ime == 0) unresizedWindowHeight = currentWindowHeight
+        val windowHeight = maxOf(unresizedWindowHeight, currentWindowHeight)
+        val values = RichEditorSheetInsets.compute(
+            hostTop = location[1],
+            hostBottom = location[1] + host.height,
+            windowHeight = windowHeight,
+            systemBarsTop = bars.top,
+            systemBarsBottom = bars.bottom,
+            imeBottom = ime,
+            minTopInset = AndroidUtilities.dp(8f),
+        )
+        host.setTopInset(values.top)
+        host.setBottomInsets(values.bottom, 0)
+        // the page's own keyboard seam: the pin's `measureKeyboardHeight() > dp(20)`, read from the
+        // window's real IME inset instead of the size-notifier view the attach sheet had
+        host.setImeInset(ime)
     }
 
     /** The composer's draft (Discourse markdown) as the editor's starting document. */

@@ -11,12 +11,16 @@
  * picker, the premium gates, the chat drafts and the pan transition. What only the page's host
  * (:app) can do - pick a file, open an emoji panel, send, leave - is a Delegate.
  *
- * Kept upstream-shaped because the toolbar and the list were built against these numbers:
- * `updateToolbarTopOffset` rides the toolbar's top row above the first visible row and never
- * higher than the page's top inset; the list is padded `dp(52)` above and `dp(TOOLBAR_BOTTOM_INSET
- * + 50)` below, plus the insets the host reports; the selection overlay owns touches before the
- * list does; and the formatting/block-type state the toolbar paints is read from the list's own
- * selection helpers.
+ * Kept upstream-shaped because the toolbar and the list were built against these numbers, and the
+ * page keeps the pin's own layout formulas (`ChatAttachAlertRichLayout.java` at the pin):
+ * `updateToolbarTopOffset` rides the back/history row above the first visible row but never higher
+ * than the pin's `minTop` (`topInset + (ActionBarHeight - dp(44)) / 2 - dp(8)`); the list's padding
+ * is the pin's `onPreMeasure` - `dp(52)` while the keyboard or an emoji panel owns the bottom, two
+ * fifths of the available height (a third and a half in landscape) `dp(52)` above otherwise, plus
+ * the page's top inset and the action bar's height, and `bottomInset + dp(TOOLBAR_BOTTOM_INSET + 50)
+ * + emojiPadding` below; the bottom panel slides above whatever the sheet reports covers the page's
+ * bottom edge; the selection overlay only wins touches between the two toolbar strips; and the
+ * formatting/block-type state the toolbar paints is read from the list's own selection helpers.
  *
  * NativeDo wire-outs, recorded in docs/render-model-alignment.md: inline-button and block-button
  * editing (Telegram's button rows, which Discourse markdown cannot express), the location picker
@@ -29,25 +33,34 @@ import static org.telegram.messenger.LocaleController.getString;
 
 import android.content.Context;
 import android.net.Uri;
+import android.os.Build;
 import android.text.TextUtils;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.MediaController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
+import org.telegram.messenger.nativedo.RichMediaUploadBridge;
 import org.telegram.tgnet.tl.TL_iv;
+import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.TextSelectionHelper;
+import org.telegram.ui.Components.AiButtonDrawable;
+import org.telegram.ui.Components.ChatActivityEnterView;
 import org.telegram.ui.Components.ItemOptions;
 import org.telegram.ui.Components.LayoutHelper;
+
+import java.util.List;
 
 /**
  * The rich editor as a page: {@link RichEditorListView} filling it, {@link RichEditorToolbar}
@@ -91,6 +104,8 @@ public class RichEditorHostLayout extends FrameLayout {
     private int bottomInset;
     /** An emoji panel covering the page's bottom; 0 while it is closed. */
     private int emojiInset;
+    /** The pin's `keyboardVisible`: the IME covers the page's bottom (its inset over `dp(20)`). */
+    private boolean keyboardVisible;
 
     private int appliedPaddingTop = -1;
     private int appliedPaddingBottom = -1;
@@ -138,6 +153,10 @@ public class RichEditorHostLayout extends FrameLayout {
 
         setFocusable(true);
         setFocusableInTouchMode(true);
+        // the pin's page (ChatAttachAlertRichLayout.java): no focus highlight on the page itself
+        if (Build.VERSION.SDK_INT >= 26) {
+            setDefaultFocusHighlightEnabled(false);
+        }
         setBackground(null);
         setForeground(null);
         setClipChildren(false);
@@ -173,6 +192,7 @@ public class RichEditorHostLayout extends FrameLayout {
         // hides the toolbar's back arrow; our page is the whole sheet, so it keeps it.
         toolbar.setBackVisible(true);
         toolbar.setTopGradientVisible(false);
+        disableUnwiredToolbarButtons();
         addView(toolbar, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, Gravity.FILL));
 
         updateHistoryButtons();
@@ -194,16 +214,138 @@ public class RichEditorHostLayout extends FrameLayout {
         return toolbar;
     }
 
-    /** The document to edit; the caller parses it (our markdown reader lives in `:app`). */
+    /**
+     * The two toolbar buttons this product cannot answer - the pin's AI key (the compose sheet's,
+     * next to the block row, and the style editor's, in the format panel) and the emoji key - stay
+     * at the pin's geometry (hiding them would move the block row the pin centers) but must not
+     * look like live controls: the pin has no "unavailable" state for them, so they are dimmed to
+     * the alpha the editor's own disabled buttons use (`RichEditor.Button.setEnabled`) and stop
+     * taking touches. The AI compose sheet and the style editor are chat/Bot API surfaces this tree
+     * has no host for, and the emoji panel belongs to the composer's input island, not this sheet
+     * (`docs/render-model-alignment.md`, "The ui/iv project"). The delegate's `onAi`/`onEmoji`
+     * stay as the toolbar's contract, but nothing reaches them.
+     */
+    private void disableUnwiredToolbarButtons() {
+        final View emojiButton = toolbar.getEmojiButton();
+        if (emojiButton != null) {
+            setUnwired(emojiButton);
+        }
+        disableAiButtons(toolbar);
+    }
+
+    /** Every AI button in the toolbar paints an {@link AiButtonDrawable} (pin's `aiButton`/`aiStyleButton`). */
+    private static void disableAiButtons(View view) {
+        if (view instanceof ImageView && ((ImageView) view).getDrawable() instanceof AiButtonDrawable) {
+            setUnwired(view);
+        }
+        if (view instanceof ViewGroup) {
+            final ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                disableAiButtons(group.getChildAt(i));
+            }
+        }
+    }
+
+    private static void setUnwired(View button) {
+        button.setOnClickListener(null);
+        button.setOnLongClickListener(null);
+        button.setClickable(false);
+        // the disabled alpha every editor button uses (`RichEditor.Button.setEnabled` animates to
+        // it; set immediately so the button is dimmed before its first frame)
+        button.setEnabled(false);
+        button.setAlpha(0.5f);
+    }
+
+    /**
+     * The document to edit; the caller parses it (our markdown reader lives in `:app`).
+     *
+     * <p>Loading replaces whatever the page held. The page is cleared *without* the empty-article
+     * seed - {@link RichEditorListView#clearContent()} leaves a title row and a paragraph behind for
+     * a blank editor, and on top of a document those two rows would be a permanent extra pair of
+     * lines. A document that turns out to hold nothing is still given the editor's editable seed.
+     * Media blocks that carry only a URL (a post loaded from the site) are imported first, so the
+     * editor holds them like any other media instead of dropping them.</p>
+     */
     public void loadRichMessage(TL_iv.RichMessage message) {
         if (message == null) message = new TL_iv.RichMessage();
+        importRemoteMedia(message);
         listView.clearContent();
+        listView.rows.clear();
         listView.loadRichMessage(message);
+        // `flattenRowsToBlocks` drops the empty text blocks, so an empty result means the document
+        // held nothing to show; anything else (a divider, a media block, a table) counts as content
+        // and must not be replaced by the seed.
+        if (listView.flattenRowsToBlocks().isEmpty()) {
+            listView.seedEmptyArticle();
+        }
         listView.resetHistoryBaseline();
         updateHistoryButtons();
         updateToolbarBlockType();
         updateSendButton();
         post(this::updateToolbarTopOffset);
+    }
+
+    /**
+     * NativeDo import: the markdown reader turns a site image/video/audio/document into a block
+     * that carries only a {@code url}, while the editor's resolve path only holds media whose
+     * {@code TLRPC} object is ready. The URL is registered with {@link RichMediaUploadBridge} - the
+     * same id → URL seam the uploader uses, run backwards - and the object the editor stores is
+     * fabricated around it, so the block survives the page's collect/send path and renders. The walk
+     * covers the block containers a document nests media in (galleries, details, quotes, list
+     * items).
+     */
+    private void importRemoteMedia(TL_iv.RichMessage message) {
+        if (message == null || message.blocks == null) return;
+        if (message.photos == null) message.photos = new java.util.ArrayList<>();
+        if (message.documents == null) message.documents = new java.util.ArrayList<>();
+        importRemoteMedia(message, message.blocks);
+    }
+
+    private void importRemoteMedia(TL_iv.RichMessage message, List<TL_iv.PageBlock> blocks) {
+        if (blocks == null) return;
+        for (TL_iv.PageBlock block : blocks) {
+            if (block == null) continue;
+            if (block instanceof TL_iv.pageBlockPhoto) {
+                final TL_iv.pageBlockPhoto photo = (TL_iv.pageBlockPhoto) block;
+                if (photo.photo_id == 0 && !TextUtils.isEmpty(photo.url)) {
+                    photo.photo_id = RichMediaUploadBridge.registerUrl(photo.url);
+                    message.photos.add(RichMediaUploadBridge.fabricatePhoto(photo.photo_id, 0, 0));
+                }
+            } else if (block instanceof TL_iv.pageBlockVideo) {
+                final TL_iv.pageBlockVideo video = (TL_iv.pageBlockVideo) block;
+                if (video.video_id == 0 && !TextUtils.isEmpty(video.url)) {
+                    video.video_id = RichMediaUploadBridge.registerUrl(video.url);
+                    message.documents.add(RichMediaUploadBridge.fabricateDocument(video.video_id, video.url, null, true, false, 0, 0, 0));
+                }
+            } else if (block instanceof TL_iv.pageBlockAudio) {
+                final TL_iv.pageBlockAudio audio = (TL_iv.pageBlockAudio) block;
+                if (audio.audio_id == 0 && !TextUtils.isEmpty(audio.url)) {
+                    audio.audio_id = RichMediaUploadBridge.registerUrl(audio.url);
+                    message.documents.add(RichMediaUploadBridge.fabricateDocument(audio.audio_id, audio.url, null, false, true, 0, 0, 0));
+                }
+            } else if (block instanceof TL_iv.pageBlockDocument) {
+                final TL_iv.pageBlockDocument document = (TL_iv.pageBlockDocument) block;
+                if (document.document_id == 0 && !TextUtils.isEmpty(document.url)) {
+                    document.document_id = RichMediaUploadBridge.registerUrl(document.url);
+                    message.documents.add(RichMediaUploadBridge.fabricateDocument(document.document_id, document.url, null, false, false, 0, 0, 0));
+                }
+            } else if (RichEditorListView.isGallery(block)) {
+                importRemoteMedia(message, RichEditorListView.galleryItems(block));
+            } else {
+                if (block.blocks != null && !block.blocks.isEmpty()) {
+                    importRemoteMedia(message, block.blocks);
+                }
+                if (block instanceof TL_iv.pageBlockList) {
+                    for (TL_iv.PageListItem item : ((TL_iv.pageBlockList) block).items) {
+                        if (item != null) importRemoteMedia(message, item.blocks);
+                    }
+                } else if (block instanceof TL_iv.pageBlockOrderedList) {
+                    for (TL_iv.PageListOrderedItem item : ((TL_iv.pageBlockOrderedList) block).items) {
+                        if (item != null) importRemoteMedia(message, item.blocks);
+                    }
+                }
+            }
+        }
     }
 
     /** The document as it stands, for the caller's own writer (`:app` writes Discourse markdown). */
@@ -238,7 +380,7 @@ public class RichEditorHostLayout extends FrameLayout {
     public void setTopInset(int px) {
         if (topInset == px) return;
         topInset = px;
-        updateListPadding();
+        requestLayout();
         updateToolbarTopOffset();
     }
 
@@ -251,7 +393,21 @@ public class RichEditorHostLayout extends FrameLayout {
         bottomInset = navInset;
         this.emojiInset = emojiInset;
         layoutBottomPanels();
-        updateListPadding();
+        requestLayout();
+    }
+
+    /**
+     * The keyboard's own overlap with the page, the pin's `keyboardVisible` seam (the attach sheet's
+     * `sizeNotifierFrameLayout.measureKeyboardHeight() > dp(20)`): the sheet reads the IME inset off
+     * the window's decor and reports it here, and the page walks its top padding back to `dp(52)`
+     * while the IME is up.
+     */
+    public void setImeInset(int px) {
+        final boolean visible = px > dp(20);
+        if (keyboardVisible == visible) return;
+        keyboardVisible = visible;
+        requestLayout();
+        updateToolbarTopOffset();
     }
 
     /** A back press: true when the page consumed it (a selection was dropped). */
@@ -295,7 +451,20 @@ public class RichEditorHostLayout extends FrameLayout {
         if (toolbar == null) return;
         final boolean loading = listView.hasPendingUploads();
         toolbar.setSendLoading(loading);
-        toolbar.setSendEnabled(listView.hasAnyText() && !loading && listView.isWithinLimits());
+        // the toolbar's own setSendLoading only invalidates its subclassed button; the ported
+        // SendButton draws the pin's loading arc, so the host drives that too
+        toolbar.getSendButton().setLoading(loading, ChatActivityEnterView.SendButton.INFINITE_LOADING);
+        updateSendButtonEnabled();
+    }
+
+    /**
+     * The pin's `updateSendButtonEnabled` (ChatAttachAlertRichLayout.java): the send button's
+     * enabled state is the editor's own limit check and nothing else. An empty document is within
+     * the limits, so it stays enabled there and the click's own guard ({@link #canSend()}) is what
+     * keeps an empty page from actually sending.
+     */
+    private void updateSendButtonEnabled() {
+        if (toolbar != null) toolbar.setSendEnabled(listView.isWithinLimits());
     }
 
     private void onBlockButtonClicked(int flag, View v) {
@@ -531,9 +700,27 @@ public class RichEditorHostLayout extends FrameLayout {
         toolbar.setSelectedBlockType(type, icon);
     }
 
+    /**
+     * The pin's formula (ChatAttachAlertRichLayout.java): the top row rides above the first visible
+     * row, but never higher than the action bar's own centre - the pin's `statusBarHeight` is this
+     * page's `topInset`, which the sheet reports from the window's real insets.
+     */
     private void updateToolbarTopOffset() {
         if (toolbar == null) return;
-        toolbar.setTopButtonsOffset(Math.max(topInset + dp(8), firstItemTopRaw()));
+        // Telegram hides this toolbar's back button because ChatAttachAlert supplies navigation in
+        // its action bar. NativeDo's full-page sheet keeps the button, so place the shared back /
+        // history row one toolbar strip above the first editor row; using the pin's raw row top
+        // would put our additional back circle directly over a heading. The minTop floor remains
+        // the pin's exact formula.
+        toolbar.setTopButtonsOffset(Math.max(getToolbarTopControlsMinOffset(), firstItemTopRaw() - dp(8 + 44)));
+    }
+
+    /**
+     * The pin's `minTop`: `topInset + (ActionBar.getCurrentActionBarHeight() - dp(44)) / 2 - dp(8)`,
+     * the floor {@link #updateToolbarTopOffset()} holds the back/history row at.
+     */
+    public int getToolbarTopControlsMinOffset() {
+        return topInset + (ActionBar.getCurrentActionBarHeight() - dp(44)) / 2 - dp(8);
     }
 
     private int firstItemTopRaw() {
@@ -548,7 +735,14 @@ public class RichEditorHostLayout extends FrameLayout {
         return top == Integer.MAX_VALUE ? listView.getPaddingTop() : top;
     }
 
-    /** The bottom toolbar slides above the navigation bar or an emoji panel that covers it. */
+    /**
+     * The pin slides the toolbar's bottom container above whatever owns the page's bottom edge: an
+     * emoji panel when one is open, the navigation bar otherwise (`ChatAttachAlertRichLayout.layoutBottomPanels`).
+     * The pin's `bottomNavInset()` is 0 while the keyboard is up, which this page's `bottomInset`
+     * already encodes - the sheet reports the IME's own overlap, and 0 once the window was resized
+     * for it, so the lift happens exactly once - and the attach sheet's pan translation and its
+     * `attachRaise` do not exist here. The bottom gradient follows the emoji panel only, as upstream.
+     */
     private void layoutBottomPanels() {
         if (toolbar == null) return;
         final int inset = emojiInset > 0 ? emojiInset : bottomInset;
@@ -557,34 +751,77 @@ public class RichEditorHostLayout extends FrameLayout {
         toolbar.setBottomGradientTranslationY(emojiInset > 0 ? -emojiInset : 0);
     }
 
-    private void updateListPadding() {
-        final int top = topInset + dp(52);
+    /**
+     * The pin's `onPreMeasure` (ChatAttachAlertRichLayout.java), with this page's seam in the
+     * attach sheet's place: while the keyboard or an emoji panel owns the bottom the list starts at
+     * `dp(52)`; otherwise its first row rides at two fifths of the available height (a third and a
+     * half in landscape) and `dp(52)` above that, clamped at zero - and the page's own top inset
+     * plus the action bar's height is added on top (the pin's `statusBarHeight +
+     * ActionBar.getCurrentActionBarHeight()`, with the sheet's reported top inset standing in for
+     * the status bar). The bottom keeps the pin's `bottomNavInset() + dp(TOOLBAR_BOTTOM_INSET + 50)
+     * + attachButtonsExtra + emojiPadding`; this page's `bottomInset` is the sheet's WindowInsets
+     * seam where the pin read `navigationBarHeight` (0 while the keyboard is up), and the attach
+     * sheet's raise (`attachButtonsExtra`) does not exist here.
+     */
+    private void applyListPadding(int availableHeight) {
+        final int paddingTop;
+        if (keyboardVisible || emojiInset > dp(20)) {
+            paddingTop = dp(52);
+        } else {
+            final int fromHeight;
+            if (!AndroidUtilities.isTablet() && AndroidUtilities.displaySize.x > AndroidUtilities.displaySize.y) {
+                fromHeight = (int) (availableHeight / 3.5f);
+            } else {
+                fromHeight = (availableHeight / 5 * 2);
+            }
+            paddingTop = Math.max(0, fromHeight - dp(52));
+        }
+        final int top = paddingTop + topInset + ActionBar.getCurrentActionBarHeight();
         final int bottom = bottomInset + emojiInset + dp(TOOLBAR_BOTTOM_INSET + 50);
-        if (appliedPaddingTop == top && appliedPaddingBottom == bottom) return;
-        appliedPaddingTop = top;
-        appliedPaddingBottom = bottom;
-        listView.setPaddingWithoutRequestLayout(0, top, 0, bottom);
+        if (appliedPaddingTop != top || appliedPaddingBottom != bottom) {
+            appliedPaddingTop = top;
+            appliedPaddingBottom = bottom;
+            listView.setPaddingWithoutRequestLayout(0, top, 0, bottom);
+        }
         updateToolbarTopOffset();
     }
 
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-        updateListPadding();
+        applyListPadding(View.MeasureSpec.getSize(heightMeasureSpec));
         super.onMeasure(widthMeasureSpec, heightMeasureSpec);
     }
 
+    /**
+     * The pin's page guards (ChatAttachAlertRichLayout.java): the selection overlay only wins a tap
+     * in the content area, between the top row's own strip (`dp(8 + 44 + 8)`) and the bottom
+     * panel's, so neither toolbar's buttons are eaten by a selection; the emoji-panel branch that
+     * closed the popup on an outside tap is dropped with the panel (our emoji panel belongs to the
+     * composer), as is the attach sheet's `attachRaise`.
+     */
     @Override
     public boolean dispatchTouchEvent(MotionEvent ev) {
         if (listView.textSelectionHelper.isInSelectionMode() && listView.textSelectionOverlay.onTouchEvent(ev)) {
             return true;
         }
-        if (ev.getAction() != MotionEvent.ACTION_DOWN && listView.textSelectionOverlay.checkOnTap(ev)) {
+        final int top = getSelectionTouchBottomBoundary();
+        if ((ev.getAction() != MotionEvent.ACTION_DOWN || (ev.getY() > dp(8 + 44 + 8) && ev.getY() < top))
+            && listView.textSelectionOverlay.checkOnTap(ev)) {
             ev.setAction(MotionEvent.ACTION_CANCEL);
         }
-        if (listView.handleSelectionTouch(ev)) {
+        if (ev.getY() < top && listView.handleSelectionTouch(ev)) {
             return true;
         }
         return super.dispatchTouchEvent(ev);
+    }
+
+    /**
+     * The pin's bottom boundary of the content area: `getHeight() - emojiPadding - dp(8 + 44 + 8)`
+     * (the bottom panel's own strip starts here, so a tap in it is the toolbar's, not the page's).
+     * The pin subtracts the attach sheet's `attachRaise` too; this page has no attach sheet.
+     */
+    public int getSelectionTouchBottomBoundary() {
+        return getHeight() - emojiInset - dp(8 + 44 + 8);
     }
 
     @Override

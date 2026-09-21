@@ -11,13 +11,17 @@ import org.junit.Rule
 import org.junit.Test
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.UserConfig
+import org.telegram.tgnet.tl.TL_iv
 import org.telegram.ui.ActionBar.BottomSheet
 import org.telegram.ui.ActionBar.Theme
 
 /**
  * The block editor as the user sees it: [RichEditorSheet] with a reply draft in it, rendered in
  * the app's sheet idiom. The document is what the composer's own markdown bridge writes, so the
- * picture is also the proof that the two surfaces agree on the shape of a draft.
+ * picture is also the proof that the two surfaces agree on the shape of a draft. The other states
+ * are the ones the pin's page is built around: the empty editor's own seed, the keyboard owning
+ * the page's bottom (the pin's `dp(52)` top padding), the format panel over a selection, and the
+ * undo row after an edit.
  */
 internal class RichEditorSheetScreenshotTest {
     @get:Rule
@@ -26,13 +30,7 @@ internal class RichEditorSheetScreenshotTest {
     @Test
     fun theEditorRendersTheComposersDraft() {
         paparazziRule.snapshot { context ->
-            val sheet = RichEditorSheet(
-                context,
-                themeProvider(),
-                UserConfig.selectedAccount,
-                onSend = {},
-                onDraft = {},
-            )
+            val sheet = editorSheet(context)
             sheet.loadMarkdown(
                 """
                 # A reply
@@ -56,6 +54,62 @@ internal class RichEditorSheetScreenshotTest {
             sheetViewport(context, sheet)
         }
     }
+
+    @Test
+    fun theEmptyEditorRendersTheEditorsOwnSeed() {
+        paparazziRule.snapshot { context ->
+            val sheet = editorSheet(context)
+            sheet.loadMarkdown("")
+            sheetViewport(context, sheet)
+        }
+    }
+
+    @Test
+    fun theEditorRidesTheKeyboard() {
+        paparazziRule.snapshot { context ->
+            val sheet = editorSheet(context)
+            sheet.loadMarkdown("# A reply\n\nText with the keyboard up.")
+            // the sheet's own seam: the renderer reports what covers the page's bottom edge. The
+            // page walks its top back to dp(52) and lifts the toolbar over the keyboard.
+            val host = sheet.editorHost()
+            host.setImeInset(AndroidUtilities.dp(320f))
+            host.setBottomInsets(AndroidUtilities.dp(320f), 0)
+            sheetViewport(context, sheet)
+        }
+    }
+
+    @Test
+    fun theEditorShowsTheFormatPanel() {
+        paparazziRule.snapshot { context ->
+            val sheet = editorSheet(context)
+            sheet.loadMarkdown("# A reply\n\nText with **bold**, *italic* and a [link](https://linux.do/t/x).")
+            // the selection's format panel, which the page shows through the toolbar's own state
+            sheet.editorHost().getToolbar().showFormattingPanel(true, false)
+            sheetViewport(context, sheet)
+        }
+    }
+
+    @Test
+    fun theEditorLightsUpUndoAfterAnEdit() {
+        paparazziRule.snapshot { context ->
+            val sheet = editorSheet(context)
+            sheet.loadMarkdown("# A reply\n\nText to edit.")
+            // an edit: the list records it and reports it, so the toolbar's undo row lights up
+            val message = TL_iv.RichMessage()
+            message.blocks = arrayListOf<TL_iv.PageBlock>(TL_iv.pageBlockDivider())
+            sheet.editorHost().getEditorListView().addRichMessage(message)
+            sheetViewport(context, sheet)
+        }
+    }
+
+    private fun editorSheet(context: Context): RichEditorSheet =
+        RichEditorSheet(
+            context,
+            themeProvider(),
+            UserConfig.selectedAccount,
+            onSend = {},
+            onDraft = {},
+        )
 
     private fun themeProvider(): Theme.ResourcesProvider = object : Theme.ResourcesProvider {
         override fun getColor(key: Int): Int = Theme.getColor(key)

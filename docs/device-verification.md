@@ -306,10 +306,17 @@ trip is a fixed point. Two defects found and fixed on the way:
   white-on-white. The container now paints `shadowDrawable` like
   `FixedHeaderRecyclerBottomSheet`, and both goldens were re-recorded.
 
-Still failing on device: 10.4's keyboard. With the keyboard up it covers the sheet's
-lower half - the toolbar row and the input - instead of the sheet riding above it; the
-full-height container neither shrinks nor translates for the keyboard. Still to check:
-10.2's heading/block menu, 10.3's selection format panel, 10.5's send.
+The keyboard failure from the first pass now has an insets fix awaiting a device re-check:
+the sheet reads system-bar/IME insets from the dialog decor and gives the editor only the
+part that actually covers its bounds, so an `adjustResize` window is not lifted twice. The
+page now also lays out on the pin's own formulas (`ChatAttachAlertRichLayout.onPreMeasure` /
+`updateToolbarTopOffset`): the first row rides at two fifths of the page (a third and a half
+in landscape) `dp(52)` above it, `dp(52)` from the top while the keyboard or an emoji panel
+owns the bottom, the top row sits at `topInset + (ActionBarHeight - dp(44)) / 2 - dp(8)`, and
+the toolbar's bottom row keeps the sheet's own `dp(8)` edge - to check that the keyboard
+lifts the toolbar exactly once in both `adjustResize` and overlay windows.
+Still to check: 10.2's heading/block menu, 10.3's selection format panel, 10.4 on a
+device, and 10.5's send.
 
 To check, in a topic:
 
@@ -322,24 +329,29 @@ To check, in a topic:
    menu), the history pill enables as edits land, and undo/redo walk them back.
 3. Selection: long-press then drag over a row — the bottom toolbar turns into the format
    panel (bold/italic/underline/strike/spoiler/mono/sub/sup, link, date, quote) and each
-   button applies to the selection; the selection handles must survive scrolling.
+   button applies to the selection; the selection handles must survive scrolling. A tap
+   inside either toolbar's own strip (the top row, the bottom panel) must not be eaten by
+   the selection.
 4. Keyboard and insets: with the keyboard open, the toolbar's bottom row and the input
    must stay visible (the sheet pans), and with the keyboard closed the bottom row must
    sit above the navigation bar. The list must scroll clear of the toolbar (its bottom
-   padding is `dp(8 + 44 + 8 + 50)`).
+   padding is `dp(8 + 44 + 8 + 50)`), and the sheet container keeps `BottomSheet`'s own
+   `dp(8)` bottom edge.
 5. Send: pressing send posts through the reply path and closes the sheet; the composer's
-   draft is cleared and the new post appears. The send button must be disabled while the
-   page is empty.
+   draft is cleared and the new post appears. The send button's enabled state is the
+   editor's own limit check (the pin's `isWithinLimits`), so an empty page can look
+   enabled - pressing it must do nothing until there is content. While media is still
+   uploading the button shows the pin's loading arc, and the plane must stay the icon's own
+   ~24dp inside its circle, never stretched to the 44dp mount.
 6. Dismiss instead of send (back arrow in the sheet's top row, system back, swipe down,
    tap outside): the composer's draft now holds the editor's markdown — reopen the
    editor and the document must be identical (the page is a fixed point).
-7. Known gaps in this slice, by design: the toolbar's attach button and a media row's
-   "add" are inert (the app has no file picker, and `RichMediaUploadBridge` has no
-   uploader installed yet — that is the next media slice), the emoji button does nothing,
-   inline-button/block-button editing is not wired, and a site image (a photo block with
-   only a URL, which is what the markdown reader produces) is not carried by the page -
-   re-opening an existing post in the editor is a later flow (the edit-post surface), and
-   it needs an import step before that gap is user-visible.
+7. The media slice has since wired the toolbar's attach button and uploader. A site image,
+   video, audio file or document that enters as a URL-only markdown block is imported into
+   the editor's media model and must remain in the draft after dismiss/send. Remaining gaps:
+   the AI key (both the block row's and the format panel's) and the emoji key are dimmed and
+   unclickable - a tap must do nothing and must not open anything - and
+   inline-button/block-button editing is not wired.
 
 ## 11. The editor's media: pick, upload, send (`fbe2772`, `990853c`)
 

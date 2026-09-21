@@ -86,6 +86,38 @@ class IvMediaUploadContractTest {
     }
 
     @Test
+    fun importingAUrlFabricatesAMediaObjectThatRemembersIt() {
+        val url = "https://linux.do/uploads/original/1/photo.png"
+        val id = RichMediaUploadBridge.registerUrl(url)
+
+        val photo = RichMediaUploadBridge.fabricatePhoto(id, 640, 480)
+
+        assertThat(photo.id).isEqualTo(id)
+        assertThat(RichMediaUploadBridge.urlForId(photo.id)).isEqualTo(url)
+        assertThat(photo.sizes[0].w).isEqualTo(640)
+        assertThat(photo.sizes[0].h).isEqualTo(480)
+
+        val clipUrl = "https://linux.do/uploads/original/1/clip.mp4"
+        val clipId = RichMediaUploadBridge.registerUrl(clipUrl)
+        val clip = RichMediaUploadBridge.fabricateDocument(clipId, clipUrl, "clip.mp4", true, false, 1920, 1080, 5)
+        assertThat(RichMediaUploadBridge.urlForId(clip.id)).isEqualTo(clipUrl)
+        assertThat(clip.mime_type).isEqualTo("video/mp4")
+        assertThat(clip.attributes.filterIsInstance<TLRPC.TL_documentAttributeVideo>()).hasSize(1)
+
+        // a plain document keeps its name and gets no media attribute
+        val docUrl = "https://linux.do/uploads/original/1/notes.pdf"
+        val docId = RichMediaUploadBridge.registerUrl(docUrl)
+        val doc = RichMediaUploadBridge.fabricateDocument(docId, docUrl, null, false, false, 0, 0, 0)
+        assertThat(doc.attributes.filterIsInstance<TLRPC.TL_documentAttributeFilename>().single().file_name).isEqualTo("notes.pdf")
+        assertThat(doc.attributes.filterIsInstance<TLRPC.TL_documentAttributeVideo>()).isEmpty()
+        assertThat(doc.attributes.filterIsInstance<TLRPC.TL_documentAttributeAudio>()).isEmpty()
+
+        RichMediaUploadBridge.releaseId(id)
+        RichMediaUploadBridge.releaseId(clipId)
+        RichMediaUploadBridge.releaseId(docId)
+    }
+
+    @Test
     fun aPhotoUploadResolvesItsDimensionsAndHandsTheUrlIdToTheEditor() {
         val fake = FakeUploader()
         RichMediaUploadBridge.setUploader(fake)

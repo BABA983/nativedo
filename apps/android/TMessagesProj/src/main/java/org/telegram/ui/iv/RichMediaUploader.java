@@ -11,17 +11,16 @@ import org.telegram.messenger.FileLog;
 import org.telegram.messenger.nativedo.RichMediaUploadBridge;
 import org.telegram.tgnet.TLRPC;
 
-import java.io.File;
-
 /**
  * NativeDo: the pin's uploader pushes a file to Telegram - {@code FileLoader.uploadFile}, then it
  * waits on {@code NotificationCenter.fileUploaded} and builds a {@code TLRPC.Photo}/{@code Document}
  * from the message media the server answers with. This client uploads to Discourse, so the pin's
  * two halves are replaced: the transport lives behind {@link RichMediaUploadBridge} (installed by
  * {@code :app}, {@code POST /uploads.json}), and the objects this class hands to its listener are
- * fabricated around the uploaded URL - {@code id} is the bridge's id for that URL (so the send path
- * can turn a media block's id back into a URL) and {@code sizes}/{@code thumbs} carry the dimensions
- * the editor's cells read. The public surface is the pin's, so the editor's call sites stay upstream.
+ * fabricated around the uploaded URL by {@link RichMediaUploadBridge} - {@code id} is the bridge's
+ * id for that URL (so the send path can turn a media block's id back into a URL) and
+ * {@code sizes}/{@code thumbs} carry the dimensions the editor's cells read. The public surface is
+ * the pin's, so the editor's call sites stay upstream.
  */
 public class RichMediaUploader {
 
@@ -136,13 +135,13 @@ public class RichMediaUploader {
                         listener.onWidthHeightResolved(w, h);
                     }
                     if (isVideo) {
-                        if (listener != null) listener.onVideoUploaded(fabricateDocument(id, filename, url, w, h, durationSec, true));
+                        if (listener != null) listener.onVideoUploaded(RichMediaUploadBridge.fabricateDocument(id, url, filename, true, false, w, h, durationSec));
                     } else if (isAudio) {
-                        if (listener != null) listener.onAudioUploaded(fabricateDocument(id, filename, url, w, h, durationSec, false));
+                        if (listener != null) listener.onAudioUploaded(RichMediaUploadBridge.fabricateDocument(id, url, filename, false, true, w, h, durationSec));
                     } else if (isDocument) {
-                        if (listener != null) listener.onDocumentUploaded(fabricateDocument(id, filename, url, w, h, durationSec, false));
+                        if (listener != null) listener.onDocumentUploaded(RichMediaUploadBridge.fabricateDocument(id, url, filename, false, false, w, h, durationSec));
                     } else {
-                        if (listener != null) listener.onPhotoUploaded(fabricatePhoto(id, w, h));
+                        if (listener != null) listener.onPhotoUploaded(RichMediaUploadBridge.fabricatePhoto(id, w, h));
                     }
                 }
 
@@ -192,68 +191,5 @@ public class RichMediaUploader {
         } catch (Exception e) {
             FileLog.e(e);
         }
-    }
-
-    private static TLRPC.Photo fabricatePhoto(long id, int width, int height) {
-        final TLRPC.TL_photo photo = new TLRPC.TL_photo();
-        photo.id = id;
-        photo.dc_id = 0;
-        photo.date = (int) (System.currentTimeMillis() / 1000);
-        photo.sizes = new java.util.ArrayList<>();
-        final TLRPC.TL_photoSize size = new TLRPC.TL_photoSize();
-        size.type = "x";
-        size.w = width;
-        size.h = height;
-        size.size = width * height;
-        size.location = new TLRPC.TL_fileLocationToBeDeprecated();
-        photo.sizes.add(size);
-        return photo;
-    }
-
-    private static TLRPC.Document fabricateDocument(long id, String filename, String url, int width, int height, int durationSec, boolean video) {
-        final TLRPC.TL_document document = new TLRPC.TL_document();
-        document.id = id;
-        document.dc_id = 0;
-        document.date = (int) (System.currentTimeMillis() / 1000);
-        final String name = filename != null && !filename.isEmpty() ? filename : new File(url == null ? "" : url).getName();
-        document.mime_type = guessMimeType(name, video);
-        final TLRPC.TL_documentAttributeFilename attribute = new TLRPC.TL_documentAttributeFilename();
-        attribute.file_name = name;
-        document.attributes = new java.util.ArrayList<>();
-        document.attributes.add(attribute);
-        if (video) {
-            final TLRPC.TL_documentAttributeVideo videoAttribute = new TLRPC.TL_documentAttributeVideo();
-            videoAttribute.w = width;
-            videoAttribute.h = height;
-            videoAttribute.duration = durationSec;
-            document.attributes.add(videoAttribute);
-        } else {
-            final TLRPC.TL_documentAttributeAudio audioAttribute = new TLRPC.TL_documentAttributeAudio();
-            audioAttribute.duration = durationSec;
-            document.attributes.add(audioAttribute);
-        }
-        if (width > 0 && height > 0) {
-            document.thumbs = new java.util.ArrayList<>();
-            final TLRPC.TL_photoSize thumb = new TLRPC.TL_photoSize();
-            thumb.type = "x";
-            thumb.w = width;
-            thumb.h = height;
-            thumb.location = new TLRPC.TL_fileLocationToBeDeprecated();
-            document.thumbs.add(thumb);
-        }
-        return document;
-    }
-
-    private static String guessMimeType(String name, boolean video) {
-        final String lower = name == null ? "" : name.toLowerCase();
-        if (lower.endsWith(".mp4") || lower.endsWith(".mov") || lower.endsWith(".m4v")) return "video/mp4";
-        if (lower.endsWith(".webm")) return "video/webm";
-        if (lower.endsWith(".mp3")) return "audio/mpeg";
-        if (lower.endsWith(".m4a") || lower.endsWith(".aac")) return "audio/mp4";
-        if (lower.endsWith(".ogg") || lower.endsWith(".opus")) return "audio/ogg";
-        if (lower.endsWith(".png")) return "image/png";
-        if (lower.endsWith(".gif")) return "image/gif";
-        if (lower.endsWith(".webp")) return "image/webp";
-        return video ? "video/mp4" : "image/jpeg";
     }
 }
