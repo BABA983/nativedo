@@ -547,6 +547,7 @@ class TopicDetailFragment @JvmOverloads constructor(
                 AndroidUtilities.statusBarHeight + ActionBar.getCurrentActionBarHeight(),
             )
             setPadding(0, estimatedTop, 0, listBottomBasePadding)
+            root.setFixedContentTopClip(this, estimatedTop)
             adapter = this@TopicDetailFragment.adapter
             setSwipeReplyDelegate(object : TopicSwipeReplyRecyclerView.Delegate {
                 override fun canStartSwipeReply(): Boolean {
@@ -2912,6 +2913,7 @@ class TopicDetailFragment @JvmOverloads constructor(
         }
         val nextTop = topicDetailListContentTopPaddingPx(actionBarHeight)
         topicTopFadeView?.setFadeZoneTop(actionBarHeight + AndroidUtilities.dp(1f))
+        rootFrameLayout?.setFixedContentTopClip(listView, nextTop)
         if (listView.paddingTop != nextTop) {
             // Preserve first-visible offset when chrome top pad is corrected after measure
             // so content does not appear to auto-scroll.
@@ -2983,6 +2985,7 @@ class TopicDetailFragment @JvmOverloads constructor(
             basePadding = listBottomBasePadding,
             panelHeight = panelHeight,
             keyboardInset = listInset,
+            overlayHeight = TopicDetailHostLayout.getOverlayContentHeight(pageDownControls),
         )
         if (listView.paddingBottom != nextBottom) {
             listView.setPadding(listView.paddingLeft, listView.paddingTop, listView.paddingRight, nextBottom)
@@ -9933,8 +9936,16 @@ internal fun topicReplyComposerPanelBottomInsetForListPadding(
     }
 }
 
-internal fun topicReplyComposerListBottomPadding(basePadding: Int, panelHeight: Int, keyboardInset: Int): Int {
-    return basePadding.coerceAtLeast(0) + panelHeight.coerceAtLeast(0) + keyboardInset.coerceAtLeast(0)
+internal fun topicReplyComposerListBottomPadding(
+    basePadding: Int,
+    panelHeight: Int,
+    keyboardInset: Int,
+    overlayHeight: Int = 0,
+): Int {
+    return basePadding.coerceAtLeast(0) +
+        panelHeight.coerceAtLeast(0) +
+        keyboardInset.coerceAtLeast(0) +
+        overlayHeight.coerceAtLeast(0)
 }
 
 internal fun topicReplyComposerVisiblePanelHeightForListPadding(

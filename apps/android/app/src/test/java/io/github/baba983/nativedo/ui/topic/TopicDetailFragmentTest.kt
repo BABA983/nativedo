@@ -5,9 +5,11 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.graphics.Paint
+import android.graphics.Rect
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewConfiguration
+import android.widget.FrameLayout
 import com.google.common.truth.Truth.assertThat
 import io.github.baba983.nativedo.core.model.DiscourseEmoji
 import io.github.baba983.nativedo.core.model.DiscourseEmojiCategory
@@ -1180,11 +1182,42 @@ class TopicDetailFragmentTest {
     }
 
     @Test
+    fun topicListChromeInset_clipsRowsWithoutDisablingEdgeToEdgePadding() {
+        val host = TopicDetailHostLayout(RuntimeEnvironment.getApplication())
+        val list = View(RuntimeEnvironment.getApplication())
+        host.addView(list)
+        host.layout(0, 0, 400, 800)
+        list.layout(0, 0, 400, 800)
+        host.setFixedContentTopClip(list, 112)
+
+        assertThat(list.clipBounds).isEqualTo(Rect(0, 112, 400, 800))
+    }
+
+    @Test
     fun replyComposerListBottomPadding_includesPanelAndKeyboardInset() {
         assertThat(topicReplyComposerListBottomPadding(basePadding = 24, panelHeight = 72, keyboardInset = 260))
             .isEqualTo(356)
         assertThat(topicReplyComposerListBottomPadding(basePadding = 24, panelHeight = -1, keyboardInset = -1))
             .isEqualTo(24)
+    }
+
+    @Test
+    fun replyComposerListBottomPadding_includesFixedSideControlExtent() {
+        val controls = FrameLayout(RuntimeEnvironment.getApplication()).apply {
+            addView(View(context), FrameLayout.LayoutParams(56, 64))
+            addView(View(context), FrameLayout.LayoutParams(56, 52))
+        }
+        val overlayHeight = TopicDetailHostLayout.getOverlayContentHeight(controls)
+
+        assertThat(overlayHeight).isEqualTo(64)
+        assertThat(
+            topicReplyComposerListBottomPadding(
+                basePadding = 24,
+                panelHeight = 72,
+                keyboardInset = 260,
+                overlayHeight = overlayHeight,
+            ),
+        ).isEqualTo(420)
     }
 
     @Test
