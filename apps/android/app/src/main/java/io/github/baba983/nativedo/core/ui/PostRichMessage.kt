@@ -202,7 +202,7 @@ internal object PostRichMessageBuilder {
             h = image.heightPx
             if (withCaption) {
                 image.captionHtml?.takeIf { it.isNotBlank() }?.let { html ->
-                    caption = TL_iv.PageCaption().apply { text = inline(html) }
+                    caption = pageCaption(inline(html))
                 }
             }
         }
@@ -222,9 +222,15 @@ internal object PostRichMessageBuilder {
                 image.captionHtml?.takeIf { html -> html.isNotBlank() }
             }
             if (captions.isNotEmpty()) {
-                caption = TL_iv.PageCaption().apply { text = joinedCaptions(captions) }
+                caption = pageCaption(joinedCaptions(captions))
             }
         }
+
+    /** Telegram's PageCaption wire requires both text and credit, even when credit is empty. */
+    private fun pageCaption(text: TL_iv.RichText): TL_iv.PageCaption = TL_iv.PageCaption().apply {
+        this.text = text
+        credit = TL_iv.textEmpty()
+    }
 
     private fun joinedCaptions(captions: List<String>): TL_iv.RichText {
         val parts = ArrayList<TL_iv.RichText>(captions.size * 2 - 1)

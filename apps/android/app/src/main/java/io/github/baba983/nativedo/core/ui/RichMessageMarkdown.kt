@@ -699,7 +699,7 @@ internal object RichMessageMarkdown {
             this.url = url
             val alt = altOf(line)
             if (alt.isNotEmpty()) {
-                caption = TL_iv.PageCaption().apply { text = styled(alt) }
+                caption = pageCaption(styled(alt))
             }
         }
     }
@@ -715,9 +715,15 @@ internal object RichMessageMarkdown {
         }
         block.url = url
         if (label.isNotEmpty()) {
-            block.caption = TL_iv.PageCaption().apply { text = styled(label) }
+            block.caption = pageCaption(styled(label))
         }
         return block
+    }
+
+    /** Telegram's PageCaption wire requires both text and credit, even when credit is empty. */
+    private fun pageCaption(text: TL_iv.RichText): TL_iv.PageCaption = TL_iv.PageCaption().apply {
+        this.text = text
+        credit = TL_iv.textEmpty()
     }
 
     private fun readParagraph(reader: Reader): TL_iv.PageBlock {

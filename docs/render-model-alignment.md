@@ -211,7 +211,11 @@ Sequence, if chat is scheduled:
    `TL_iv.java` (2,301 lines, 112 classes against our 69) verbatim - it needs the
    TL wire layer this tree does not carry (`TLObject.TLdeserialize`,
    `Vector`/`InputSerializedData`, `TLMethod`, `TLRPC.messages_Messages`,
-   `TLRPC.InputUser`), which is why the file is `native` in the first place.
+   `TLRPC.InputUser`), which is why the file is `native` in the first place. The
+   editor-reachable slice of that wire landed afterwards (see the history note in
+   slice 2 below): `TLObject.TLdeserialize`, the `Vector`/`InputSerializedData`
+   plumbing and the PageBlock/RichText serializers are in; `TLMethod` and the
+   network `TLRPC` types remain out.
 2. **S2 - landed.** The render-side leaves are in from the pin: `spoolers/SpoilerEffect2`
    (with the two spoiler shaders as raw resources), `TornEdge`, `SquigglyLinesSpan`,
    `FormattedDateSpan`, `ForegroundColorSpanThemable`, the `URLSpan{Mono,UserMention,BotCommand}`
@@ -523,12 +527,21 @@ project with ordered slices rather than a wire-out:
      the members the cells use (drag drawable, round button + premium wrapper,
      shadow wrapper), a native `RichEditorListView` with `isHeading`, the
      `TL_geoPoint*`/`TL_documentAttributeAudio` fields and
-     `AnimatedEmojiSpan.replaceFontMetrics`. `IvEditorCellContractTest` (4 tests)
-     pins the limit walk and the undo stack. **One wire-out has a functional cost:**
-     `TL_iv.PageBlock.TLdeserialize` answers null because this tree's `TL_iv` types
-     carry no serializers, so `RichEditorHistory` restores a row's metadata and
-     shape but not its content - the content round trip needs the generated
-     serializers, which is the same gap that keeps `LiteMode` out.
+     `AnimatedEmojiSpan.replaceFontMetrics`. `IvEditorCellContractTest`
+     pins the limit walk and the undo stack. **History, on the wire:** `TL_iv`
+     now carries the pin's wire for the editor-reachable closure - `PageBlock`
+     (40 concrete types), `RichText` (31), the `PageCaption` / list-item /
+     ordered-item / table-row / table-cell / related-article helpers,
+     `TL_keyboard`'s `PageButton` / `RichButtonStyle` / `InlineButtonType`
+     family, and `TLRPC`'s `geoPoint` / `geoPointEmpty` - with the pin's
+     constructor ids, flags and field order (`TLObject.TLdeserialize` and the
+     size calculator came back with it). `RichEditorHistory` is therefore the
+     pin's file verbatim again: a row is snapshotted by serializing its
+     `PageBlock` and `TL_iv.PageBlock.TLdeserialize` restores it. The pin's
+     legacy layer variants and the network-only wire whose `TLRPC` types this tree
+     does not carry (`Page` / `RichMessage` / `pageBlockChannel`) are not carried
+     and dispatch to null. `IvRichSerializerContractTest` covers the closure;
+     `IvEditorCellContractTest` the undo behavior it feeds.
    - **Landed (`952d9a4`): `RichHtml` is the pin's file.** The slice's namesake,
      1,427 lines verbatim - it was three model fields and three static predicates
      away. This is the first iv layer on a path the product already calls:

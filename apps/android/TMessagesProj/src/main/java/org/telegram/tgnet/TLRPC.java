@@ -761,12 +761,57 @@ public class TLRPC {
         public double _long;
         public long access_hash;
         public int accuracy_radius;
+
+        /**
+         * The editor-reachable closure only: {@code geoPoint} and {@code geoPointEmpty}. The pin's
+         * layer variants ({@code 0x296f104}, {@code 0x2049d70c}) are network-only article data this
+         * tree does not carry; their magic falls through to null.
+         */
+        public static GeoPoint TLdeserialize(InputSerializedData stream, int constructor, boolean exception) {
+            GeoPoint result = null;
+            switch (constructor) {
+                case 0x1117dd5f:
+                    result = new TL_geoPointEmpty();
+                    break;
+                case 0xb2a2f663:
+                    result = new TL_geoPoint();
+                    break;
+            }
+            return TLdeserialize(GeoPoint.class, result, stream, constructor, exception);
+        }
     }
 
     public static class TL_geoPoint extends GeoPoint {
+        public static final int constructor = 0xb2a2f663;
+
+        public void readParams(InputSerializedData stream, boolean exception) {
+            flags = stream.readInt32(exception);
+            _long = stream.readDouble(exception);
+            lat = stream.readDouble(exception);
+            access_hash = stream.readInt64(exception);
+            if (hasFlag(flags, FLAG_0)) {
+                accuracy_radius = stream.readInt32(exception);
+            }
+        }
+
+        public void serializeToStream(OutputSerializedData stream) {
+            stream.writeInt32(constructor);
+            stream.writeInt32(flags);
+            stream.writeDouble(_long);
+            stream.writeDouble(lat);
+            stream.writeInt64(access_hash);
+            if (hasFlag(flags, FLAG_0)) {
+                stream.writeInt32(accuracy_radius);
+            }
+        }
     }
 
     public static class TL_geoPointEmpty extends GeoPoint {
+        public static final int constructor = 0x1117dd5f;
+
+        public void serializeToStream(OutputSerializedData stream) {
+            stream.writeInt32(constructor);
+        }
     }
 
     public static class StickerSet extends TLObject {

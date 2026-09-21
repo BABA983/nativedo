@@ -38,6 +38,13 @@ public class TLObject {
     public static final int FLAG_30 = 1 << 30; // 1_073_741_824
     public static final int FLAG_31 = 1 << 31; // 2_147_483_648
 
+    private static final ThreadLocal<NativeByteBuffer> sizeCalculator = new ThreadLocal<NativeByteBuffer>() {
+        @Override
+        protected NativeByteBuffer initialValue() {
+            return new NativeByteBuffer(true);
+        }
+    };
+
     public void readParams(InputSerializedData stream, boolean exception) {
     }
 
@@ -45,7 +52,31 @@ public class TLObject {
     }
 
     public int getObjectSize() {
-        return 0;
+        NativeByteBuffer byteBuffer = sizeCalculator.get();
+        byteBuffer.rewind();
+        serializeToStream(sizeCalculator.get());
+        return byteBuffer.length();
+    }
+
+    /**
+     * The pin's deserialize helper: hands the stream to a freshly dispatched object, or reports the
+     * magic as unparseable (logging, or throwing when {@code exception} is set). Subclasses call it
+     * with their own class and a {@code fromConstructor}-style instance.
+     */
+    protected static <T extends TLObject> T TLdeserialize(
+            Class<T> tClass,
+            T object,
+            InputSerializedData stream,
+            int constructor,
+            boolean exception
+    ) {
+        if (object == null) {
+            TLParseException.doThrowOrLog(stream, tClass.getName(), constructor, exception);
+            return null;
+        }
+
+        object.readParams(stream, exception);
+        return object;
     }
 
     /** Pin helper (delegates to {@code me.vkryl.core.BitwiseUtils}, which this tree does not carry). */
