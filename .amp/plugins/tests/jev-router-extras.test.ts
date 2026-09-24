@@ -73,6 +73,7 @@ function makeApi() {
 		helpers: {
 			shellCommandFromToolCall: () => null,
 			filesModifiedByToolCall: () => null,
+			filePathFromURI: (uri: string | { toString(): string }) => String(uri),
 		},
 	}
 	return { api, handlers, agents, tools }

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import type { OrchestrateStage, RouteDecision } from '../jev-router.ts'
-import type { CreateAgentConfig } from '@ampcode/plugin'
+import type { AgentStartResult, CreateAgentConfig } from '@ampcode/plugin'
 import plugin, {
 	AGENT_MODES,
 	MODEL_TAG,
@@ -156,7 +156,7 @@ function decision(overrides: Partial<RouteDecision> = {}): RouteDecision {
 type StartHandler = (
 	event: { thread: { id: string }; message: string; id: string },
 	ctx: { thread: { parentThreadID: () => Promise<string | null> }; logger: { log: (...args: unknown[]) => void } },
-) => Promise<{ message: { content: string; display: boolean } } | void>
+) => Promise<AgentStartResult>
 
 type RegisteredMode = {
 	key: string
@@ -206,8 +206,14 @@ function fakePluginApi() {
 		helpers: {
 			shellCommandFromToolCall: (event: { input?: { command?: unknown } }) =>
 				typeof event?.input?.command === 'string' ? { command: event.input.command as string } : null,
+			// The real helper answers with file URIs, not paths, and the plugin converts them with
+			// `filePathFromURI`. Keep the fake faithful so that conversion is exercised rather
+			// than assumed away.
 			filesModifiedByToolCall: (event: { input?: { files?: unknown } }) =>
-				Array.isArray(event?.input?.files) ? (event.input.files as string[]) : null,
+				Array.isArray(event?.input?.files)
+					? (event.input.files as string[]).map((path) => ({ toString: () => path }))
+					: null,
+			filePathFromURI: (uri: string | { toString(): string }) => String(uri),
 		},
 	}
 	return {
@@ -804,9 +810,9 @@ describe('agent.start hook', () => {
 			{ thread: { id: 'T-main' }, message: complexPrompt, id: 'M1' },
 			ctxWithParent(null) as never,
 		)
-		expect(result?.message.display).toBe(false)
-		expect(result?.message.content).toContain('jev_orchestrate_task')
-		expect(result?.message.content).toContain('classification: local fallback')
+		expect(result?.message?.display).toBe(false)
+		expect(result?.message?.content).toContain('jev_orchestrate_task')
+		expect(result?.message?.content).toContain('classification: local fallback')
 		expect(agents).toHaveLength(baseline)
 	})
 
@@ -817,7 +823,7 @@ describe('agent.start hook', () => {
 		const handler = getHandler()!
 
 		const result = await handler({ thread: { id: 'T-quiet' }, message: 'add a comma', id: 'M2' }, ctxWithParent(null) as never)
-		expect(result).toBeUndefined()
+		expect(result).toEqual({})
 		expect(agents).toHaveLength(baseline)
 	})
 
@@ -831,7 +837,7 @@ describe('agent.start hook', () => {
 			{ thread: { id: 'T-child' }, message: complexPrompt, id: 'M3' },
 			ctxWithParent('T-parent') as never,
 		)
-		expect(result).toBeUndefined()
+		expect(result).toEqual({})
 		expect(agents).toHaveLength(baseline)
 	})
 
@@ -843,8 +849,8 @@ describe('agent.start hook', () => {
 
 		const first = await handler({ thread: { id: 'T-once' }, message: complexPrompt, id: 'M4' }, ctxWithParent(null) as never)
 		const second = await handler({ thread: { id: 'T-once' }, message: complexPrompt, id: 'M5' }, ctxWithParent(null) as never)
-		expect(first?.message.content).toContain('jev_orchestrate_task')
-		expect(second).toBeUndefined()
+		expect(first?.message?.content).toContain('jev_orchestrate_task')
+		expect(second).toEqual({})
 		expect(agents).toHaveLength(baseline)
 	})
 })

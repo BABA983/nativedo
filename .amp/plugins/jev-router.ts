@@ -8,6 +8,7 @@
 import type {
 	AgentEndResult,
 	AgentRunResult,
+	AgentStartResult,
 	AgentToolSelection,
 	BuiltinAgentMode,
 	CreateAgentConfig,
@@ -1428,15 +1429,17 @@ async function autoTriage(
 	amp: PluginAPI,
 	event: AgentStartEvent,
 	ctx: AgentStartContext,
-): Promise<{ message: { content: string; display: boolean } } | void> {
-	if (!envFlag('JEV_ROUTER_AUTO_TRIAGE', true)) return
-	if (triagedThreadIDs.has(event.thread.id)) return
-	if (spawnedThreadIDs.has(event.thread.id)) return
+): Promise<AgentStartResult> {
+	// `agent.start` is a request event: returning a result is mandatory, so "do nothing" is the
+	// empty result rather than `undefined`.
+	if (!envFlag('JEV_ROUTER_AUTO_TRIAGE', true)) return {}
+	if (triagedThreadIDs.has(event.thread.id)) return {}
+	if (spawnedThreadIDs.has(event.thread.id)) return {}
 	// Dispatched children, subagents, and Task workers always carry a parent: never re-triage them.
-	if (await ctx.thread.parentThreadID().catch(() => null)) return
+	if (await ctx.thread.parentThreadID().catch(() => null)) return {}
 
 	const task = event.message?.trim()
-	if (!task || !looksComplex(task)) return
+	if (!task || !looksComplex(task)) return {}
 	rememberThread(triagedThreadIDs, event.thread.id)
 
 	let decision: RouteDecision
@@ -1450,7 +1453,7 @@ async function autoTriage(
 		decision = fallbackDecision(task)
 	}
 
-	if (triagePlan(decision) === 'none') return
+	if (triagePlan(decision) === 'none') return {}
 	return {
 		message: {
 			content: `Jev Router classification: ${classificationLabel(classification)}. ${orchestrateHint(decision)}`,
@@ -1568,7 +1571,11 @@ async function gateToolCall(
 	const input = {
 		tool: event.tool,
 		command: amp.helpers.shellCommandFromToolCall(event)?.command,
-		files: amp.helpers.filesModifiedByToolCall(event) ?? [],
+		// `filesModifiedByToolCall` answers with file URIs, not paths; the sensitive-path patterns
+		// are written against local paths (`cat .git/config`, `~/.env`), so convert them with the
+		// documented helper. Without this the deterministic half of the gate silently sees
+		// `file://…` strings instead of the paths it was written for.
+		files: (amp.helpers.filesModifiedByToolCall(event) ?? []).map((uri) => amp.helpers.filePathFromURI(uri)),
 	}
 	if (!input.command && input.files.length === 0) return { action: 'allow' }
 
@@ -1599,7 +1606,7 @@ export default function (amp: PluginAPI) {
 		} catch (error) {
 			// The hook must never break a turn.
 			ctx.logger.log('Jev Router auto triage failed:', redactSecrets(errorMessage(error)))
-			return
+			return {}
 		}
 	})
 
