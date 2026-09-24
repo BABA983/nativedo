@@ -53,3 +53,6 @@ apps/android/app/src/test/snapshots/*/videos/
 # now clones it next to the repo (default ../telegram); keep the rule so
 # a leftover in-repo tree is never committed.
 /vendor/
+
+# Dev tooling for the Jev Router plugin (types only; the plugin itself is dependency-free).
+.amp/plugins/node_modules/

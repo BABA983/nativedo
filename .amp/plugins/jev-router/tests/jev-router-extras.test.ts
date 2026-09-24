@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import type { CreateAgentConfig, ThreadMessage } from '@ampcode/plugin'
-import type { OrchestrateStage, RouteDecision } from '../jev-router.ts'
+import type { OrchestrateStage, RouteDecision } from '../index.ts'
 import plugin, {
 	COST_PROFILES,
 	EVIDENCE_MAX_ITEMS,
@@ -43,7 +43,7 @@ import plugin, {
 	summarizeGuidance,
 	turnHasCodeChanges,
 	parallelInspect,
-} from '../jev-router.ts'
+} from '../index.ts'
 
 // ---------------------------------------------------------------------------
 // harness

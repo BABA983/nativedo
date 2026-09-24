@@ -1,6 +1,8 @@
 # Jev Router plugin
 
-`.amp/plugins/jev-router.ts` adds these things to Amp:
+`.amp/plugins/jev-router/index.ts` adds these things to Amp — a **directory plugin**
+(the official shape for a plugin with supporting files; it is also what makes bundling
+a skill possible later, which a single-file plugin cannot do):
 
 - the **Jev Router: Send** command (the manual test entry) in the command palette,
 - the **`jev_dispatch_task`** tool, which a thread calls when it wants to hand a
@@ -225,14 +227,27 @@ turn the thread into a loop:
   Child/subagent threads are skipped (recursion guard), and each turn is reviewed
   at most once.
 - `JEV_ROUTER_AUTO_REVIEW` selects the mode:
-  - **`1`/`thread` (default)** — start one **non-blocking read-only** review thread
-    on the fast model. It uses `createAgent(...).createThread({ show: false })`,
-    which the API runs independently of the handler, so the handler waits only on
-    that bounded API call and never on the review's work. The review thread is
-    read-only (no editing tool) and has a parent, so it is never reviewed itself.
+  - **`1`/`thread` (default)** — start one **non-blocking read-only** review thread.
+    It uses `createAgent(...).createThread({ show: false })`, which the API runs
+    independently of the handler, so the handler waits only on that bounded API
+    call and never on the review's work. The review thread is read-only (no
+    editing tool) and has a parent, so it is never reviewed itself.
+    **Its model comes from `autoReviewModel`, not from a hardcoded fast model:**
+    the intent is cross-model review — a model that did not produce the turn. The
+    Plugin API exposes the parent's resolved model only for custom agents
+    (`thread.agent().definition.model`), never for built-in modes, so:
+    - `JEV_ROUTER_AUTO_REVIEW_MODEL` (`flash`/`sol`/`astra`, or a full model id)
+      wins whenever it names a verified model, including back to `flash`;
+    - a parent model the API exposes escalates the reviewer off it, via the
+      pipeline's own `reviewModel` rule (fast parent → `sol`, `sol` parent →
+      `astra`, `astra` parent → `sol`), so the reviewer is never the model that
+      produced the work;
+    - otherwise (an ordinary user thread on a built-in mode) the reviewer is the
+      senior coding model, `sol` — **never the fast model by default**.
   - **`continue`** — return one bounded `continue` (`maxContinuations: 1`) asking
-    the current thread for a single read-only pass. This spends the current
-    thread's model, so it is opt-in.
+    the current thread for a single read-only pass. This runs on the current
+    thread's own model (the API cannot change it), so the review is visible in
+    the thread but not cross-model; it is opt-in.
   - **`0`/`off`** — disabled.
 - `JEV_ROUTER_AUTO_REVIEW_MAX` (default `1`) caps reviews per thread, and the
   handler books the review before starting it, so a duplicate event cannot review
@@ -299,10 +314,19 @@ it on Sol.
 
 ## Subagent pinning (the routing that actually pays)
 
-Every agent this plugin creates — the three registered modes and all four pipeline
- stages — sets `CreateAgentConfig.subagents` and `.oracle` to `SUBAGENT_PIN`, which
- points at the fast model. That covers the subagents Amp spawns from those threads:
-`Task` workers, `finder`, thread reader, `librarian`, and the `oracle`.
+Every agent this plugin creates — the three registered modes, all four pipeline
+stages, the review observer, and each parallel-inspect child — pins two roles, and
+they are deliberately pinned differently:
+
+- **`subagents` → the fast model** (`SUBAGENT_PIN`: Flash, effort `high`). That
+  covers the subagents Amp spawns from those threads: `Task` workers, `finder`,
+  thread reader, and `librarian`.
+- **`oracle` → Astra** (`oraclePin()`), *not* the fast model. The oracle is a
+  judgement role, not a retrieval one: retrieval answers with a compact result, so
+  the cheap model belongs there, while a second opinion is only worth taking from a
+  stronger model. Astra is also what Amp's own modes pin the oracle to. Only the
+  model is pinned; the oracle keeps its own reasoning effort.
+  `JEV_ROUTER_ORACLE_MODEL=flash|sol|astra` overrides it.
 
 This is deliberately **not** how the plugin routes the thread itself. The Plugin API
 exposes no way to change the model of a thread that is already running, and routing a
@@ -314,7 +338,7 @@ an agent's tool turns, so that is where the cheap model belongs.
 
 Amp falls back to its own routing when the pinned model is unavailable, so the pin is
 an optimisation and never a correctness dependency. `JEV_ROUTER_SUBAGENT_PIN=0`
-leaves Amp's routing alone.
+leaves Amp's routing alone for **both** roles.
 
 ## The `tool.call` gate
 
@@ -446,10 +470,12 @@ Environment variables:
 | `TYPESAFE_API_KEY` | — | Bearer token for the TypeSafe endpoint. |
 | `JEV_ROUTER_AUTO_TRIAGE` | `1` | Set to `0` to disable the `agent.start` hook entirely. |
 | `JEV_ROUTER_GATE` | `1` | Set to `0` to stop the `tool.call` gate from consulting Jev. The deterministic holds still apply. |
-| `JEV_ROUTER_SUBAGENT_PIN` | `1` | Set to `0` to stop pinning subagents and the oracle to the fast model. |
+| `JEV_ROUTER_SUBAGENT_PIN` | `1` | Set to `0` to stop pinning subagents (fast model) and the oracle (Astra), leaving both roles on Amp's routing. |
+| `JEV_ROUTER_ORACLE_MODEL` | `astra` | Model for the pinned oracle (`flash`, `sol`, `astra`, or a full model id). Only applies while `JEV_ROUTER_SUBAGENT_PIN` is on. |
 | `JEV_ROUTER_TOOL_RESULT` | `1` | Set to `0` to stop `tool.result` from asking Jev's relevance question. The deterministic truncation still runs. |
 | `JEV_ROUTER_AUTO_REVIEW` | `thread` | `thread` (default) starts one read-only review thread after a successful code-changing turn; `continue` returns one bounded review turn instead; `0`/`off` disables the hook. |
 | `JEV_ROUTER_AUTO_REVIEW_MAX` | `1` | Maximum auto reviews per thread (clamped to 0–5). |
+| `JEV_ROUTER_AUTO_REVIEW_MODEL` | unset → senior model | Pins the review observer's model (`flash`, `sol`, `astra`, or a full model id). Unset: escalates off a parent model the API exposes, else `sol`. The fast model is only ever used here when you ask for it. |
 | `JEV_ROUTER_PROFILE` | `balanced` | Cost/quality profile (`economy`, `balanced`, `quality`, `sensitive`) for the pipeline's stage models. |
 
 The old `JEV_ROUTER_AUTO_DISPATCH` switch is gone with the auto-dispatch
@@ -460,16 +486,42 @@ written by the plugin.
 
 ## Local checks
 
-This repository has no Node package or TypeScript project configuration. The
-plugin is syntax-checked, loaded, and exercised with Bun:
+Amp loads `.amp/plugins/jev-router/index.ts` directly and the plugin has **no
+runtime dependencies**; the `package.json`/`tsconfig.json` next to it exist only
+for local tooling (types and a typecheck). They do not change how Amp loads the
+plugin — verified with `amp plugins list` (reports
+`✓ .amp/plugins/jev-router/index.ts active`) and `amp plugins exec`.
+
+Layout:
+
+```
+.amp/plugins/
+├── jev-router/
+│   ├── index.ts          # the plugin (entry file)
+│   └── tests/            # dev-only; a directory without index.ts is not a plugin
+├── package.json          # dev tooling only
+├── tsconfig.json         # dev tooling only
+└── bun.lock              # dev tooling only
+```
 
 ```bash
-bun --check .amp/plugins/jev-router.ts
+bun --check .amp/plugins/jev-router/index.ts
 amp plugins list   # loads the plugin; lists the command, three tools, and events: agent.start, tool.call, tool.result, agent.end
 
+# Tooling (first time only); installs typescript, @types/bun, @ampcode/plugin
+cd .amp/plugins && bun install
+
 # Unit tests (fake amp + disabled network; no real API key or model call)
-bun test ./.amp/plugins/tests/
+bun test ./.amp/plugins/jev-router/tests/
+
+# Typecheck the plugin (entry + tests) against the published @ampcode/plugin types
+cd .amp/plugins && bun run typecheck
 ```
+
+The types come from the `@ampcode/plugin` nightly that matched the Amp build at
+the time; after updating Amp, refresh them with
+`cd .amp/plugins && bun update @ampcode/plugin` so the gate keeps describing the
+runtime you actually run. CI runs the same three commands in the `plugin` job.
 
 The tests cover stage order, model selection, per-stage tool isolation, stage
 failure short-circuiting, the destructive confirmation gate, hidden hook
@@ -574,8 +626,12 @@ Be honest about where the savings are:
   output when a key is set; turn it off with `JEV_ROUTER_TOOL_RESULT=0`.
 - **The auto review spends tokens, it does not save them.** A background review
   thread and a `continue` are extra model work whose value is a second look at a
-  change. The default keeps it cheap (fast model) and bounded (one per turn, one
-  per thread); `JEV_ROUTER_AUTO_REVIEW=0` removes it.
+  change. The default reviewer is now the **senior** model rather than the fast
+  one (see the section above), so a review costs more per run than it used to —
+  the trade is a real cross-model second opinion instead of the cheap model
+  checking expensive work. `JEV_ROUTER_AUTO_REVIEW_MODEL=flash` restores the cheap
+  observer, and `JEV_ROUTER_AUTO_REVIEW=0` removes the review entirely. It stays
+  bounded either way: one per turn, one per thread.
 - **Profiles trade cost for quality, they do not create savings by themselves.**
   `economy` lowers the planned/reviewed tier where risk allows; `quality`/`sensitive`
   raise it. Pick deliberately.
@@ -632,11 +688,13 @@ threads.
   keeping lines that merely look like errors, and one enormous single error line
   is kept whole rather than sliced — the safe direction, but it means the bound is
   a budget, not a hard ceiling, when errors alone exceed it.
-- **`agent.end` uses only the API's documented results.** The background review is
-  a child thread on the fast model (the handler cannot set the current thread's
-  model, and a review cannot run on the main thread's model without the `continue`
-  that spends it). The handler waits on the bounded thread-creation call, not on
-  the review's work, and any failure is swallowed.
+- **`agent.end` uses only the API's documented results.** The handler cannot set
+  the current thread's model, so a review on the parent's own model is only
+  possible through the `continue` mode that spends it; the background mode always
+  creates a child thread, with its model coming from `autoReviewModel`
+  (`JEV_ROUTER_AUTO_REVIEW_MODEL`, else escalated off an exposed parent model, else
+  the senior coding model). The handler waits on the bounded thread-creation call,
+  not on the review's work, and any failure is swallowed.
 - **The guidance selector is a path-prefix heuristic.** It ranks a small set of
   `AGENTS.md`/`CLAUDE.md` files by the task's path hints and summarises them; it
   can miss a relevant file or pick a marginally relevant one, and it only ever

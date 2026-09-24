@@ -1,0 +1,15 @@
+{
+	"name": "jev-router-dev",
+	"private": true,
+	"type": "module",
+	"description": "Development tooling for the jev-router Amp plugin. Amp loads jev-router/index.ts directly; nothing here is needed to run the plugin.",
+	"scripts": {
+		"test": "bun test",
+		"typecheck": "tsc --noEmit"
+	},
+	"devDependencies": {
+		"@ampcode/plugin": "^0.0.0-20260924001720-g7fda6e0",
+		"@types/bun": "^1.4.2",
+		"typescript": "^7.0.2"
+	}
+}

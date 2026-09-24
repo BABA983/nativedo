@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
-import type { OrchestrateStage, RouteDecision } from '../jev-router.ts'
+import type { OrchestrateStage, RouteDecision } from '../index.ts'
 import type { AgentStartResult, CreateAgentConfig } from '@ampcode/plugin'
 import plugin, {
 	AGENT_MODES,
@@ -32,10 +32,10 @@ import plugin, {
 	stageInstructions,
 	stageMessage,
 	triagePlan,
-} from '../jev-router.ts'
+} from '../index.ts'
 
 /** The plugin source, read from disk, for the static "no unsupported API" assertions. */
-const PLUGIN_SOURCE = readFileSync(new URL('../jev-router.ts', import.meta.url), 'utf8')
+const PLUGIN_SOURCE = readFileSync(new URL('../index.ts', import.meta.url), 'utf8')
 
 /**
  * Built-in tool names mirrored from `amp plugins show-agent-options` (2026-09-22). If Amp renames

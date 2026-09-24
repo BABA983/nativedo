@@ -2,9 +2,10 @@ name: ci
 
 # Runs only when something that can actually break CI changed: a docs-only or
 # fixtures-only commit skips the workflow entirely, and a vendor-tooling commit
-# skips the Android job (both are gated by the `changes` job below). The
-# pre-commit hook already runs `vendor-guard.sh --quick` on every commit, so CI
-# is the backstop, not the first line of defence.
+# skips the Android job, while a plugin-only commit runs just the plugin job
+# (all three are gated by the `changes` job below). The pre-commit hook already
+# runs `vendor-guard.sh --quick` on every commit, so CI is the backstop, not the
+# first line of defence.
 #
 # Note: with `paths` filtering plus gated jobs, a skipped job reports "skipped"
 # rather than "success". If branch protection ever requires these check names
@@ -20,6 +21,7 @@ on:
       - "contracts/**"
       - "vendor-overlay.json"
       - "VENDOR.md"
+      - ".amp/plugins/**"
       - ".github/workflows/ci.yml"
   pull_request:
     types: [opened, ready_for_review, synchronize]
@@ -37,6 +39,7 @@ jobs:
     outputs:
       android: ${{ steps.filter.outputs.android }}
       vendor: ${{ steps.filter.outputs.vendor }}
+      plugin: ${{ steps.filter.outputs.plugin }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -52,19 +55,50 @@ jobs:
             # Unknown base (first push, force push, manual run): check everything.
             echo "android=true" >> "$GITHUB_OUTPUT"
             echo "vendor=true" >> "$GITHUB_OUTPUT"
+            echo "plugin=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           android=false
           vendor=false
+          plugin=false
           while IFS= read -r path; do
             case "$path" in
               apps/android/*) android=true; vendor=true ;;
               scripts/*|docs/*|contracts/*|vendor-overlay.json|VENDOR.md) vendor=true ;;
-              .github/workflows/ci.yml) android=true; vendor=true ;;
+              .amp/plugins/*) plugin=true ;;
+              .github/workflows/ci.yml) android=true; vendor=true; plugin=true ;;
             esac
           done < <(git diff --name-only "$base" HEAD)
           echo "android=$android" >> "$GITHUB_OUTPUT"
           echo "vendor=$vendor" >> "$GITHUB_OUTPUT"
+          echo "plugin=$plugin" >> "$GITHUB_OUTPUT"
+
+  plugin:
+    needs: changes
+    if: needs.changes.outputs.plugin == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .amp/plugins
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          # Pin the runtime the lockfile was written with; the typecheck gate is
+          # only meaningful if the toolchain does not move under it.
+          bun-version: "1.3.10"
+
+      - name: Install plugin dev tooling
+        # Dev-only: the plugin itself has no runtime dependencies. The lockfile is
+        # committed, so this is reproducible and `--frozen-lockfile` fails if a
+        # dependency was changed without updating it.
+        run: bun install --frozen-lockfile
+
+      - name: Plugin unit tests
+        run: bun test jev-router/tests/
+
+      - name: Plugin typecheck
+        run: bun run typecheck
 
   vendor-tooling:
     needs: changes
