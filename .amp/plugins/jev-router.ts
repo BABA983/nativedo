@@ -153,6 +153,30 @@ export const SUBAGENT_PIN = {
 } as const
 
 /**
+ * Model pin for the `oracle` a plugin thread consults — deliberately **not** the fast model.
+ *
+ * The oracle is a judgement role, not a retrieval one: search and reading answer with a compact
+ * result, so the cheap model belongs there, while a second opinion is only worth taking from a
+ * stronger model. Astra is also what Amp's own modes default the oracle to, so this matches the
+ * product rather than fighting it. Only the model is pinned; the oracle keeps its own reasoning
+ * effort. `JEV_ROUTER_ORACLE_MODEL` overrides the model, and `JEV_ROUTER_SUBAGENT_PIN=0` leaves
+ * both the subagents and the oracle on Amp's routing.
+ */
+export function oraclePin(raw: string | undefined = env()?.JEV_ROUTER_ORACLE_MODEL): { model: RoutedModel } {
+	return { model: parseRoutedModel(raw) ?? VERIFIED_MODELS.astra }
+}
+
+/** The `subagents` pin for one plugin agent, or `undefined` to leave Amp's routing alone. */
+export function subagentPin(): { model: RoutedModel; effort: 'none' | 'medium' | 'high' } | undefined {
+	return envFlag('JEV_ROUTER_SUBAGENT_PIN', true) ? { ...SUBAGENT_PIN } : undefined
+}
+
+/** The `oracle` pin for one plugin agent, or `undefined` to leave Amp's routing alone. */
+export function resolveOraclePin(): { model: RoutedModel } | undefined {
+	return envFlag('JEV_ROUTER_SUBAGENT_PIN', true) ? oraclePin() : undefined
+}
+
+/**
  * The verified models, also exposed as first-class model-pinned Amp modes via
  * `amp.registerAgentMode`. A mode thread is created the way a user thread is, so its served
  * model is visible in Amp's Cost & Usage — the only reliable way to confirm that Amp honours a
@@ -1175,8 +1199,8 @@ export async function orchestrate(options: OrchestrateOptions): Promise<Orchestr
 					reasoningEffort: MODEL_REASONING_EFFORT[choice.model],
 				instructions,
 				tools: STAGE_TOOLS[stage],
-				subagents: SUBAGENT_PIN,
-				oracle: SUBAGENT_PIN,
+				subagents: subagentPin(),
+				oracle: resolveOraclePin(),
 				display: stageDisplay(stage, choice.model),
 			})
 			const result = await agent.run(message, {
@@ -1913,8 +1937,8 @@ export default function (amp: PluginAPI) {
 			model: mode.model,
 				reasoningEffort: MODEL_REASONING_EFFORT[mode.model],
 			// Whatever model this mode runs on, the subagents it spawns read and search on Flash.
-			subagents: envFlag('JEV_ROUTER_SUBAGENT_PIN', true) ? SUBAGENT_PIN : undefined,
-			oracle: envFlag('JEV_ROUTER_SUBAGENT_PIN', true) ? SUBAGENT_PIN : undefined,
+			subagents: subagentPin(),
+			oracle: resolveOraclePin(),
 			instructions: [
 				`You are the ${mode.label} mode, pinned by the Jev Router plugin to ${mode.model}.`,
 				'Stay within the work the user gave you, and report what you did and what you verified.',
@@ -2676,8 +2700,8 @@ async function startBackgroundReview(
 		reasoningEffort: MODEL_REASONING_EFFORT[model],
 		instructions: AUTO_REVIEW_INSTRUCTIONS,
 		tools: [...READ_ONLY_STAGE_TOOLS],
-		subagents: SUBAGENT_PIN,
-		oracle: SUBAGENT_PIN,
+		subagents: subagentPin(),
+		oracle: resolveOraclePin(),
 		display: { label: `Jev Review · ${MODEL_LABEL[model]}`, color: MODEL_COLOR[model] },
 	})
 	const thread = await withTimeout(
@@ -2835,8 +2859,8 @@ export async function parallelInspect(
 				reasoningEffort: MODEL_REASONING_EFFORT[model],
 				instructions: PARALLEL_INSPECT_INSTRUCTIONS,
 				tools: [...READ_ONLY_STAGE_TOOLS],
-				subagents: SUBAGENT_PIN,
-				oracle: SUBAGENT_PIN,
+				subagents: subagentPin(),
+				oracle: resolveOraclePin(),
 				display: { label: `Jev Inspect · ${MODEL_LABEL[model]}`, color: MODEL_COLOR[model] },
 			})
 			const result = await agent.run(

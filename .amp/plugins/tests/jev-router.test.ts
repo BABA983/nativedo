@@ -19,6 +19,7 @@ import plugin, {
 	fallbackDecision,
 	inspectModel,
 	looksComplex,
+	oraclePin,
 	orchestrate,
 	parseReviewVerdict,
 	parseSafetyResponse,
@@ -990,18 +991,23 @@ describe('tool.call gate', () => {
 // ---------------------------------------------------------------------------
 
 describe('subagent pin', () => {
-	test('pins subagents and the oracle to the fast model', () => {
+	test('pins retrieval to the fast model and judgement to Astra', () => {
 		expect(SUBAGENT_PIN.model).toBe(VERIFIED_MODELS.flash)
 		expect(SUBAGENT_PIN.effort).toBe('high')
+		// The oracle is a judgement role: never the fast model, and Astra by default (which is also
+		// what Amp's own modes pin it to).
+		expect(oraclePin().model).toBe(VERIFIED_MODELS.astra)
+		expect(oraclePin('flash').model).toBe(VERIFIED_MODELS.flash)
+		expect(oraclePin('gpt-9000').model).toBe(VERIFIED_MODELS.astra)
 	})
 
-	test('every mode agent the plugin registers pins its subagents', () => {
+	test('every mode agent the plugin registers pins both roles', () => {
 		const { api, agents } = fakePluginApi()
 		plugin(api as never)
 		expect(agents.length).toBe(AGENT_MODES.length)
 		for (const agent of agents) {
 			expect(agent.subagents).toEqual(SUBAGENT_PIN)
-			expect(agent.oracle).toEqual(SUBAGENT_PIN)
+			expect(agent.oracle).toEqual({ model: VERIFIED_MODELS.astra })
 		}
 	})
 
@@ -1016,13 +1022,13 @@ describe('subagent pin', () => {
 		delete process.env.JEV_ROUTER_SUBAGENT_PIN
 	})
 
-	test('every pipeline stage pins its subagents too', async () => {
+	test('every pipeline stage pins both roles too', async () => {
 		const f = fakeDeps()
 		await orchestrate({ task: 'fix the parser', decision: decision(), deps: f.deps })
 		expect(f.created).toHaveLength(4)
 		for (const created of f.created) {
 			expect(created.subagents).toEqual(SUBAGENT_PIN)
-			expect(created.oracle).toEqual(SUBAGENT_PIN)
+			expect(created.oracle).toEqual({ model: VERIFIED_MODELS.astra })
 		}
 	})
 })
