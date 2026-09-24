@@ -13,6 +13,7 @@ import plugin, {
 	adjustBudgetWithRelevance,
 	autoReviewMax,
 	autoReviewMessage,
+	autoReviewModel,
 	buildRelevanceState,
 	collectGuidance,
 	compressToolResultText,
@@ -27,6 +28,8 @@ import plugin, {
 	parseEvidencePackage,
 	parseProfile,
 	parseRelevanceResponse,
+	parseRoutedModel,
+	parentThreadModel,
 	pathHintsFromTask,
 	planAutoReview,
 	planToolResultCompression,
@@ -113,6 +116,7 @@ beforeEach(() => {
 	delete process.env.TYPESAFE_API_KEY
 	delete process.env.JEV_ROUTER_AUTO_REVIEW
 	delete process.env.JEV_ROUTER_AUTO_REVIEW_MAX
+	delete process.env.JEV_ROUTER_AUTO_REVIEW_MODEL
 	delete process.env.JEV_ROUTER_PROFILE
 	delete process.env.JEV_ROUTER_TOOL_RESULT
 	globalThis.fetch = (async () => {
@@ -124,6 +128,7 @@ afterEach(() => {
 	delete process.env.TYPESAFE_API_KEY
 	delete process.env.JEV_ROUTER_AUTO_REVIEW
 	delete process.env.JEV_ROUTER_AUTO_REVIEW_MAX
+	delete process.env.JEV_ROUTER_AUTO_REVIEW_MODEL
 	delete process.env.JEV_ROUTER_PROFILE
 	delete process.env.JEV_ROUTER_TOOL_RESULT
 })
@@ -470,6 +475,63 @@ describe('auto review planning', () => {
 		expect(autoReviewMax('nope')).toBe(1)
 	})
 
+	test('the review model is never the fast model unless asked', () => {
+		// No parent model is exposed for a built-in mode, so the default is the senior model.
+		const fallback = autoReviewModel({})
+		expect(fallback.model).toBe(VERIFIED_MODELS.sol)
+		expect(fallback.reason).toContain('senior coding model')
+		// An explicit pin wins, by tag or by full model id.
+		expect(autoReviewModel({ requested: 'flash' }).model).toBe(VERIFIED_MODELS.flash)
+		expect(autoReviewModel({ requested: 'JEV-SOL' }).model).toBe(VERIFIED_MODELS.sol)
+		expect(autoReviewModel({ requested: VERIFIED_MODELS.astra }).model).toBe(VERIFIED_MODELS.astra)
+		expect(autoReviewModel({ requested: 'gpt-9000' }).model).toBe(VERIFIED_MODELS.sol)
+		// An explicit pin also wins over a known parent model.
+		expect(autoReviewModel({ requested: 'flash', parentModel: VERIFIED_MODELS.astra }).model).toBe(VERIFIED_MODELS.flash)
+	})
+
+	test('a known parent model never reviews its own work', () => {
+		for (const parent of [VERIFIED_MODELS.flash, VERIFIED_MODELS.sol, VERIFIED_MODELS.astra]) {
+			const choice = autoReviewModel({ parentModel: parent })
+			expect(choice.model).not.toBe(parent)
+			expect(parseRoutedModel(choice.model)).toBeDefined()
+		}
+		// The fast parent gets the senior reviewer; the senior parent escalates to Astra.
+		expect(autoReviewModel({ parentModel: VERIFIED_MODELS.flash }).model).toBe(VERIFIED_MODELS.sol)
+		expect(autoReviewModel({ parentModel: VERIFIED_MODELS.sol }).model).toBe(VERIFIED_MODELS.astra)
+		expect(autoReviewModel({ parentModel: VERIFIED_MODELS.astra }).model).toBe(VERIFIED_MODELS.sol)
+	})
+
+	test('parseRoutedModel accepts tags and model ids, and rejects anything else', () => {
+		expect(parseRoutedModel(undefined)).toBeUndefined()
+		expect(parseRoutedModel('  ')).toBeUndefined()
+		expect(parseRoutedModel('astra')).toBe(VERIFIED_MODELS.astra)
+		expect(parseRoutedModel('SOL')).toBe(VERIFIED_MODELS.sol)
+		expect(parseRoutedModel(VERIFIED_MODELS.flash)).toBe(VERIFIED_MODELS.flash)
+		expect(parseRoutedModel('sonnet-4-6')).toBeUndefined()
+	})
+
+	test('the parent model is read only where the API exposes it', async () => {
+		// A built-in mode carries a mode key and no resolved model.
+		expect(await parentThreadModel({ thread: { agent: async () => ({ definition: { kind: 'builtin-agent', mode: 'high' } }) } })).toBeUndefined()
+		// A custom agent carries the resolved model.
+		expect(
+			await parentThreadModel({
+				thread: { agent: async () => ({ definition: { kind: 'agent-definition', model: VERIFIED_MODELS.sol } }) },
+			}),
+		).toBe(VERIFIED_MODELS.sol)
+		// A thread without the handle, or one that throws, must not break the review.
+		expect(await parentThreadModel({ thread: { id: 'T-x' } })).toBeUndefined()
+		expect(
+			await parentThreadModel({
+				thread: {
+					agent: async () => {
+						throw new Error('no agent handle')
+					},
+				},
+			}),
+		).toBeUndefined()
+	})
+
 	test('only a clean, code-changing, uncapped, non-child turn is reviewed', () => {
 		const base = {
 			status: 'done' as const,
@@ -523,16 +585,43 @@ describe('auto review handler', () => {
 		logger: { log: () => {} },
 	})
 
-	test('starts one background read-only thread on the fast model by default', async () => {
+	test('starts one background read-only thread on the senior model by default', async () => {
 		const { handlers, agents } = loaded()
 		const handler = handlers.get('agent.end')!
 		expect(await handler(makeEvent('T-a', 'M-default'), makeCtx('T-a'))).toBeUndefined()
 		const review = agents.find((agent) => String(agent.name).includes('review-observer'))
 		expect(review).toBeDefined()
-		expect(review!.model).toBe(VERIFIED_MODELS.flash)
+		// No parent model is exposed for a built-in mode: the reviewer is the senior model, never
+		// the fast one, so the review is not the cheap model checking the expensive model's work.
+		expect(review!.model).toBe(VERIFIED_MODELS.sol)
 		const tools = review!.tools as readonly string[]
 		expect(tools).toEqual([...READ_ONLY_STAGE_TOOLS])
 		expect(tools).not.toContain('edit_file')
+	})
+
+	test('escalates the reviewer off a parent model the API exposes', async () => {
+		const { handlers, agents } = loaded()
+		const customCtx = (threadID: string, model: string) => ({
+			thread: {
+				id: threadID,
+				parentThreadID: async () => null,
+				agent: async () => ({ definition: { kind: 'agent-definition', model } }),
+			},
+			logger: { log: () => {} },
+		})
+		expect(await handlers.get('agent.end')!(makeEvent('T-sol', 'M-sol'), customCtx('T-sol', VERIFIED_MODELS.sol))).toBeUndefined()
+		expect(agents.find((agent) => String(agent.name) === 'jev-review-observer-astra')).toBeDefined()
+		expect(await handlers.get('agent.end')!(makeEvent('T-flash', 'M-flash'), customCtx('T-flash', VERIFIED_MODELS.flash))).toBeUndefined()
+		expect(agents.find((agent) => String(agent.name) === 'jev-review-observer-sol')).toBeDefined()
+	})
+
+	test('honours an explicit review-model pin', async () => {
+		process.env.JEV_ROUTER_AUTO_REVIEW_MODEL = 'flash'
+		const { handlers, agents } = loaded()
+		expect(await handlers.get('agent.end')!(makeEvent('T-pin', 'M-pin'), makeCtx('T-pin'))).toBeUndefined()
+		const review = agents.find((agent) => String(agent.name).includes('review-observer'))
+		expect(review!.model).toBe(VERIFIED_MODELS.flash)
+		delete process.env.JEV_ROUTER_AUTO_REVIEW_MODEL
 	})
 
 	test('is off when the switch is 0', async () => {

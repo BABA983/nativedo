@@ -2494,9 +2494,12 @@ async function listGuidanceFiles(amp: PluginAPI): Promise<string[]> {
 // The API's `agent.end` result is a single `continue` (or nothing), so this
 // path is deliberately small: it decides from the finished turn whether one
 // read-only review is worth it, dedupes per turn, caps per thread, and never
-// loops. The default is a background child thread on the fast model, which the
-// API runs independently of this handler, so the handler does not block the
-// turn; `continue` mode instead asks the current thread for one bounded pass.
+// loops. The default is a background child thread whose model comes from
+// `autoReviewModel` — the senior coding model (or one escalated off the parent's
+// model), never the fast model unless `JEV_ROUTER_AUTO_REVIEW_MODEL` pins it —
+// which the API runs independently of this handler, so the handler does not
+// block the turn; `continue` mode instead asks the current thread for one
+// bounded pass (and therefore reviews on the current thread's own model).
 // ===========================================================================
 
 export type AutoReviewMode = 'off' | 'thread' | 'continue'
@@ -2519,6 +2522,61 @@ export function autoReviewMax(raw: string | undefined = env()?.JEV_ROUTER_AUTO_R
 	const parsed = Number.parseInt(raw ?? '', 10)
 	if (!Number.isFinite(parsed) || parsed < 0) return AUTO_REVIEW_DEFAULT_MAX
 	return Math.min(parsed, 5)
+}
+
+/** Parse a verified model from either its short tag (`flash`/`sol`/`astra`) or its full model id. */
+export function parseRoutedModel(raw: string | undefined): RoutedModel | undefined {
+	const value = raw?.trim().toLowerCase()
+	if (!value) return undefined
+	for (const model of Object.values(VERIFIED_MODELS) as RoutedModel[]) {
+		if (value === model.toLowerCase() || value === MODEL_TAG[model]) return model
+	}
+	return undefined
+}
+
+export type AutoReviewModelChoice = { model: RoutedModel; reason: string }
+
+/**
+ * Which model the read-only review observer runs on.
+ *
+ * The doc intent is *cross-model* review — a model that did not produce the turn. The Plugin API
+ * exposes the parent's resolved model only for custom agents (`thread.agent().definition.model`);
+ * an ordinary user thread runs a built-in mode and carries only a mode key. So, in order:
+ * - `JEV_ROUTER_AUTO_REVIEW_MODEL` wins whenever it names a verified model;
+ * - a known parent model escalates the reviewer off it, reusing the pipeline's own `reviewModel`
+ *   rule so the reviewer is never the model that produced the work;
+ * - an unknown parent model falls back to the senior coding model, never the fast one.
+ */
+export function autoReviewModel(
+	input: { parentModel?: string; requested?: string } = {},
+): AutoReviewModelChoice {
+	const explicit = parseRoutedModel(input.requested)
+	if (explicit) return { model: explicit, reason: 'pinned by JEV_ROUTER_AUTO_REVIEW_MODEL' }
+	const parent = parseRoutedModel(input.parentModel)
+	if (parent === undefined) {
+		return {
+			model: VERIFIED_MODELS.sol,
+			reason:
+				"the parent thread's model is not exposed for built-in modes, so the reviewer defaults to the senior coding model rather than the fast one",
+		}
+	}
+	return reviewModel({ executor: parent, planner: parent, risk: 'normal' })
+}
+
+/**
+ * The parent thread's resolved model, when the API exposes it. Custom agents carry
+ * `definition.model`; built-in modes carry only a mode key, so this returns `undefined` for an
+ * ordinary user thread and `autoReviewModel` applies its default. Never throws: a review that
+ * cannot read the thread must still be able to start.
+ */
+export async function parentThreadModel(ctx: { thread?: unknown }): Promise<string | undefined> {
+	try {
+		const thread = ctx.thread as { agent?: () => Promise<unknown> } | undefined
+		if (typeof thread?.agent !== 'function') return undefined
+		return readAgentModel((await thread.agent()) as { definition?: { kind?: string; model?: unknown } })
+	} catch {
+		return undefined
+	}
 }
 
 export type AutoReviewInput = {
@@ -2604,13 +2662,14 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): P
 	}
 }
 
-/** Start the non-blocking read-only review thread on the fast model. */
+/** Start the non-blocking read-only review thread. Model choice comes from `autoReviewModel`. */
 async function startBackgroundReview(
 	amp: PluginAPI,
 	parentThreadID: ThreadID,
 	ctx: PluginEventContext<'agent.end'>,
+	choice: AutoReviewModelChoice = autoReviewModel(),
 ): Promise<ThreadID> {
-	const model = VERIFIED_MODELS.flash
+	const model = choice.model
 	const agent = amp.createAgent({
 		name: `jev-review-observer-${MODEL_TAG[model]}`,
 		model,
@@ -2668,8 +2727,14 @@ async function handleAgentEnd(
 		return { action: 'continue', userMessage: autoReviewMessage(), maxContinuations: 1 }
 	}
 
+	const choice = autoReviewModel({
+		parentModel: await parentThreadModel(ctx),
+		requested: env()?.JEV_ROUTER_AUTO_REVIEW_MODEL,
+	})
+	ctx.logger.log(`Jev Router auto review on ${MODEL_TAG[choice.model]}: ${choice.reason}`)
+
 	try {
-		await startBackgroundReview(amp, event.thread.id, ctx)
+		await startBackgroundReview(amp, event.thread.id, ctx, choice)
 	} catch (error) {
 		// Fail open: a review that cannot start must not fail the finished turn.
 		ctx.logger.log('Jev Router background review could not start:', redactSecrets(errorMessage(error)))
