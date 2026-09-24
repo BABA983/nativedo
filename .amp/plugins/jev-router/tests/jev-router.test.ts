@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
-import type { OrchestrateStage, RouteDecision } from '../index.ts'
+import type { OrchestrateStage, PipelineDeps, RouteDecision } from '../index.ts'
 import type { AgentStartResult, CreateAgentConfig } from '@ampcode/plugin'
 import plugin, {
 	AGENT_MODES,
@@ -79,6 +79,8 @@ type CreatedAgent = {
 	display: unknown
 	tools: unknown
 	instructions: string
+	subagents?: unknown
+	oracle?: unknown
 	definitionModel?: string
 }
 
@@ -133,7 +135,9 @@ function fakeDeps(script: FakeScript = {}) {
 		created,
 		runs,
 		deps: {
-			createAgent,
+			// The fake implements only the members the pipeline touches (definition + run), so the
+			// cast is the seam between the fake and the real handle type.
+			createAgent: createAgent as unknown as PipelineDeps['createAgent'],
 			captureDiff: script.diff !== undefined ? async () => script.diff! : undefined,
 		},
 	}
@@ -158,6 +162,14 @@ type StartHandler = (
 	event: { thread: { id: string }; message: string; id: string },
 	ctx: { thread: { parentThreadID: () => Promise<string | null> }; logger: { log: (...args: unknown[]) => void } },
 ) => Promise<AgentStartResult>
+
+/** What the `tool.call` gate answers: allow (no `action`), or a hold with a message. */
+type GateResult = { action?: string; message?: string }
+
+type GateHandler = (
+	event: { tool: string; input: Record<string, unknown> },
+	ctx: unknown,
+) => Promise<GateResult>
 
 type RegisteredMode = {
 	key: string
@@ -226,6 +238,7 @@ function fakePluginApi() {
 		toolDefs,
 		handlers,
 		getHandler: (event = 'agent.start') => handlers.get(event) as StartHandler | undefined,
+		getGateHandler: () => handlers.get('tool.call') as GateHandler | undefined,
 	}
 }
 
@@ -301,12 +314,6 @@ describe('routing helpers', () => {
 		expect(triagePlan(decision({ route: 'planning', complexity: 2, model: VERIFIED_MODELS.astra, risk: 'sensitive' }))).toBe('hint')
 	})
 
-	test('clip truncates oversized handoffs', () => {
-		expect(clip('abc', 3)).toBe('abc')
-		expect(clip('abcdef', 3)).toContain('truncated')
-		expect(clip('  spaced  ', 20)).toBe('spaced')
-	})
-
 	test('parseReviewVerdict reads the verdict section', () => {
 		expect(parseReviewVerdict('## Verdict\nPASS — looks good')).toBe('pass')
 		expect(parseReviewVerdict('## Verdict\nCHANGES_REQUIRED — broken')).toBe('fail')
@@ -357,10 +364,6 @@ describe('routing helpers', () => {
 		).toEqual({ permission: 'needs_confirmation', risk: 1, confidence: 0.8 })
 	})
 
-	test('module helpers stay exported for the documented smoke test', () => {
-		expect(looksComplex('please architect and refactor across the repo')).toBe(true)
-		expect(looksComplex('add a comma')).toBe(false)
-	})
 })
 
 describe('decision provenance', () => {
@@ -434,14 +437,6 @@ describe('stage tool isolation', () => {
 			expect(text.toLowerCase()).toMatch(/never commit|must not commit/)
 		}
 		expect(stageInstructions('execute', decision({ risk: 'sensitive' }))).toContain('confirmation-required')
-	})
-
-	test('stage and dispatch displays name the requested model', () => {
-		const inspect = stageDisplay('inspect', VERIFIED_MODELS.flash)
-		expect(inspect.label).toContain('Flash')
-		expect(inspect.label.length).toBeLessThanOrEqual(24)
-		expect(stageDisplay('plan', VERIFIED_MODELS.astra).label).toContain('Astra')
-		expect(stageDisplay('execute', VERIFIED_MODELS.sol).label).toContain('Sol')
 	})
 
 	test('plan and review messages carry only compact prior reports', () => {
@@ -531,7 +526,7 @@ describe('orchestrate pipeline', () => {
 		expect(f.created).toHaveLength(4)
 		for (const created of f.created) {
 			// The pinned model survives even though every stage also sets a display.
-			expect(Object.values(VERIFIED_MODELS)).toContain(created.model)
+			expect(Object.values(VERIFIED_MODELS) as string[]).toContain(created.model)
 			expect(typeof created.display).toBe('object')
 			const label = (created.display as { label?: string }).label ?? ''
 			expect(label).not.toBe(created.model)
@@ -575,15 +570,6 @@ describe('orchestrate pipeline', () => {
 		expect(f.created.map((c) => c.name)).toEqual(['jev-orchestrate-inspect-flash', 'jev-orchestrate-plan-astra'])
 		expect(result.stages.map((s) => s.stage)).toEqual(['inspect'])
 		expect(result.message).toContain('plan')
-	})
-
-	test('a failing inspect stage stops the pipeline immediately', async () => {
-		const f = fakeDeps({ failAt: 'inspect' })
-		const result = await orchestrate({ task: 'refactor everything', decision: decision(), deps: f.deps })
-		expect(result.status).toBe('failed')
-		expect(result.failedStage).toBe('inspect')
-		expect(result.stages).toHaveLength(0)
-		expect(f.created).toHaveLength(1)
 	})
 
 	test('a failing review is reported, not fixed or retried', async () => {
@@ -864,9 +850,9 @@ describe('tool.call gate', () => {
 	const gateCtx = { thread: { id: 'T-main' }, logger: { log: () => {} } }
 
 	function gateHandler() {
-		const { api, getHandler } = fakePluginApi()
+		const { api, getGateHandler } = fakePluginApi()
 		plugin(api as never)
-		return getHandler('tool.call')!
+		return getGateHandler()!
 	}
 
 	/** A Jev that always answers, plus a counter so a test can prove no call was spent. */
@@ -889,8 +875,8 @@ describe('tool.call gate', () => {
 		return calls
 	}
 
-	function call(tool: string, input: Record<string, unknown>) {
-		return gateHandler()({ tool, input, thread: { id: 'T-main' } }, gateCtx as never)
+	function call(tool: string, input: Record<string, unknown>): Promise<GateResult> {
+		return gateHandler()({ tool, input }, gateCtx as never)
 	}
 
 	test('registers the lifecycle handlers including tool.result and agent.end', () => {

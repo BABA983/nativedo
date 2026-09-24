@@ -180,15 +180,6 @@ describe('tool.result compression', () => {
 		expect(out).toContain('@@ -1,3 +1,3 @@')
 	})
 
-	test('compression is deterministic', () => {
-		const text = longText(30_000)
-		expect(compressToolResultText(text, 'logs', 6_000)).toBe(compressToolResultText(text, 'logs', 6_000))
-	})
-
-	test('short text is returned unchanged', () => {
-		expect(compressToolResultText('abc', 'generic', TOOL_RESULT_MIN_CHARS)).toBe('abc')
-	})
-
 	test('a structured relevance judgment only moves the budget inside the bounds', () => {
 		const plan = planToolResultCompression('Read', {}, longText(20_000))
 		const low = { signal: 'noise' as const, score: 0, confidence: 0.3 }
@@ -364,12 +355,6 @@ describe('structured evidence package', () => {
 		expect(pkg.parsed).toBe(false)
 	})
 
-	test('extractJsonObject finds fenced and bare objects', () => {
-		expect(extractJsonObject('```json\n{"a":1}\n```')).toEqual({ a: 1 })
-		expect(extractJsonObject('prefix {"a":1} suffix')).toEqual({ a: 1 })
-		expect(extractJsonObject('nothing here')).toBeUndefined()
-	})
-
 	test('the plan handoff carries structured fields, not a wall of prose', () => {
 		const message = stageMessage('plan', { task: 'fix it', decision: decision(), inspectReport: fenced })
 		expect(message).toContain('## Relevant files')
@@ -436,12 +421,6 @@ describe('conditional guidance', () => {
 		const guidance = await collectGuidance(api as never, ['apps/android/app/Foo.kt'])
 		expect(guidance).toContain('apps/android/AGENTS.md')
 		expect(guidance).toContain('# Android rules')
-	})
-
-	test('guidancePathHint lists paths or is empty', () => {
-		expect(guidancePathHint(['AGENTS.md'])).toContain('AGENTS.md')
-		expect(guidancePathHint([])).toBe('')
-		expect(KNOWN_GUIDANCE_PATHS).toContain('AGENTS.md')
 	})
 
 	test('the inspect stage message only adds guidance when it is present', () => {

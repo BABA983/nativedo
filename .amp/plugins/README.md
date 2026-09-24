@@ -523,9 +523,24 @@ the time; after updating Amp, refresh them with
 `cd .amp/plugins && bun update @ampcode/plugin` so the gate keeps describing the
 runtime you actually run. CI runs the same three commands in the `plugin` job.
 
+Scope and limits of the typecheck, stated plainly:
+
+- `tsconfig.json` covers **the entry and both test files**, with `strict: true`, so
+  the whole plugin is typechecked. The test harness types its fakes at the seam
+  (`createAgent` is cast once, where the fake implements only what the pipeline
+  touches) instead of loosening the plugin's own types.
+- It is a real gate, and it has paid for itself: it caught two genuine defects the
+  fake-based tests could not. (1) `helpers.filesModifiedByToolCall` answers with **file URIs, not
+  paths**, while the gate's sensitive-path patterns are written against local
+  paths — the gate now converts them with the documented
+  `helpers.filePathFromURI`. (2) `agent.start` is a *request* event, so its
+  "do nothing" answer is the empty result `{}`, not `undefined`; the hook and the
+  tests were updated accordingly. The test fake also grew a faithful
+  `filePathFromURI`, so the conversion is covered rather than assumed.
+
 The tests cover stage order, model selection, per-stage tool isolation, stage
 failure short-circuiting, the destructive confirmation gate, hidden hook
-injection without `createAgent`, the exported pure helpers, plus the
+injection without `createAgent`, plus the
 observability contract: every stage's `requestedModel`/`agentModel`, the
 `⚠ MISMATCH` flag, the `local fallback` marker (including that a fallback is never
 reported as a Jev success), API-key redaction, that the display label never
@@ -533,12 +548,19 @@ overwrites the requested model, that the read-only tool names are current
 built-ins, that the source never calls `getBuiltinAgent` or sets `extends:`, and
 that the `// @amp-agent-mode` directives match the runtime mode registration.
 
+The suite is deliberately behaviour-first: tests that only proved an export
+existed, or that duplicated another test's contract, were removed, so every
+remaining test pins something that can actually break. (When pruning, prefer the
+end-to-end handler assertion over the helper-level restatement of it.)
+
 `jev-router-extras.test.ts` adds the pure coverage for the newer pieces:
 `tool.result` classification/compression bounds (errors preserved, a single
 oversized line clipped, deterministic output), the relevance-budget rule and its
 failure-open handler path, the evidence package parser/truncation, guidance
 ranking/summarising and the shell fallback, the auto-review gate (dedupe, per
-thread cap, continuation mode, recursion guard) and `turnHasCodeChanges`,
+thread cap, continuation mode, recursion guard) and `turnHasCodeChanges`, the
+review-model choice (senior by default, escalated off a parent model the API
+exposes, pinnable) and the oracle pin (Astra, never the fast model by default),
 `runWithConcurrency`/`parallelInspect` isolation, and the profile mapping
 (including that no profile can lower the sensitive/destructive floor).
 

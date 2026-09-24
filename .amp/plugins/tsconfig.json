@@ -11,5 +11,5 @@
 		"forceConsistentCasingInFileNames": true,
 		"types": ["bun"]
 	},
-	"include": ["jev-router/index.ts"]
+	"include": ["jev-router/index.ts", "jev-router/tests/**/*.ts"]
 }
