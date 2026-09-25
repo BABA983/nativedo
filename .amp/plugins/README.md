@@ -465,6 +465,13 @@ Recursion and duplicate-trigger protection:
   classification fails,
 - unexpected errors in the hook are logged and never break a turn.
 
+That makes this **root-prompt triage**, not ongoing triage: it runs once per thread, on
+the prompt that starts it, and never on a follow-up. The default is deliberate — a hook
+that re-injected orchestration instructions (and spent a Jev call) on every reply in a
+long thread would nag and cost far more than it saves, and the follow-up usually belongs
+to work the thread is already doing. If follow-ups ever need re-triaging, that is a
+separate, opt-in policy rather than a change to this default.
+
 Sensitive and destructive tasks are never dispatched; the injected instruction
 tells the main agent to confirm destructive steps first, and
 `jev_orchestrate_task` enforces that itself.
@@ -544,6 +551,12 @@ The types come from the `@ampcode/plugin` nightly that matched the Amp build at
 the time; after updating Amp, refresh them with
 `cd .amp/plugins && bun update @ampcode/plugin` so the gate keeps describing the
 runtime you actually run. CI runs the same three commands in the `plugin` job.
+
+Amp loads the plugin into a long-lived runtime, so an edit to `index.ts` (or a
+`git checkout` of another commit) does not take effect by itself: the running
+process keeps the old code until the runtime reloads — **`plugins: reload`** from
+the command palette, or a restart. That is also why a behaviour change should be
+verified after a reload, not merely after the file changed.
 
 Scope and limits of the typecheck, stated plainly:
 
