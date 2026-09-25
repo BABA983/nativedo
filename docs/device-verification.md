@@ -115,6 +115,11 @@ was not what it looked like:
   after it (「（空格」 is gone and 「键符号）」 opens the next line, with a stray corner glyph at the
   column's right edge). The flag-off cell resolves the same `<kbd>` through the sprite store, so
   this is the rich run's inline-image path, not the layout's wrapping.
+  **Fixed:** the rich run's inline images now go through the same registry the block path uses
+  (`DiscourseInlineImages` -> `AnimatedEmojiSpan`): the icon draws its sprite when the captured
+  markup has it and its alt text when it does not, and the span reserves the square it draws in, so
+  no run is swallowed. Device re-check: a `<kbd>`/site icon must show the sprite (or its alt text)
+  and the text after it must stay on the line.
 - The **code block** keeps its horizontal scroll strip and clips the long line: that is what
   `RichMessageLayout` does with a long line (the flag-off cell wraps instead). A design difference
   to decide on, not a defect.
@@ -167,11 +172,11 @@ today, because the constants live inside upstream's `emitBlock` and the line spa
 in the tree and resolves them to the readable form only in `plainText()`/`toHtml()`. The *block* path
 is fine - `PostBodyInlineSpans` turns a token into a real span - but the rich run handed the tree
 straight to the renderer, which draws a token literally: topic 2503776 post #1 showed
-`__nd_inline_image_0__` where a custom emoji belongs. `flattenTokensForLayout()` now rewrites the tree
-before the mapping hands it over, pinned by
-`InlineRichTextTest.theLayoutTreeReplacesTokensWithTheirReadableForm` and confirmed on the device -
-the same paragraph reads `:laughing:` now. The rich run still cannot *draw* what the block path draws
-(an emoji image from the sprite store); the alt text is the honest fallback until it can.
+`__nd_inline_image_0__` where a custom emoji belongs. The mapping now carries an inline image as
+upstream's own `textCustomEmoji` run (`InlineRichText.toLayoutTree`), pinned by
+`InlineRichTextTest.theLayoutTreeCarriesInlineImagesAsEmojiRuns`, so the layout never sees a token.
+That first pass flattened the token into the alt text (`:laughing:`, the honest fallback); the
+registry below then made the run draw the real image.
 
 What changed: `RichMessageLayout` and its mirror dependencies compile (`docs/render-model-alignment.md`, S3),
 and S4 slices 1-2 draw a mapped Discourse post through `RichMessageLayout`, both standalone
@@ -187,14 +192,18 @@ What to check once S4 lands:
 
 1. A post body drawn by `RichMessageLayout` matches the current cell pixel-for-pixel (the
    S4 gate is the Paparazzi snapshot; a device pass confirms the animation/scroll feel).
-2. Emoji: `AnimatedEmojiSpan` is a **stub** in this tree (no metrics, no drawable, no
-   animation), so custom emoji in a post will be misplaced or invisible. That is the emoji
-   family not being aligned yet, not an S4 bug.
-3. The wire-outs are inert by design and should not be reachable from a timeline post:
+2. Emoji and inline icons: a custom emoji must draw as the site's image (a `:name:` text or an
+   empty box means the registry or the image load is broken), and a `<kbd>`/site icon must draw its
+   sprite from the captured markup - or its alt text when the markup is missing - with the text after
+   it still on the line. The span reserves the square it draws in, so a line whose emoji is invisible
+   but whose spacing looks right is the fallback, not a crash.
+3. Code blocks: a fenced block with a language (`lang-kotlin`) must come out highlighted, and the
+   copy/label path must name the language; `lang-auto` must stay plain and unnamed.
+4. The wire-outs are inert by design and should not be reachable from a timeline post:
    copy-as-HTML (`RichHtml` stub), the math span's copy substitution
    (`ReplaceCopyTextSpannable`), the Telegram web-app icon branch, and the premium rich-editor
    sheet. If a post can trigger any of them visibly, that is a bug in the wire-out.
-4. Images: with the switch on, a post image should load (the bridge goes through
+5. Images: with the switch on, a post image should load (the bridge goes through
    `ImageLocation.getForPath`), keep its aspect ratio, and show a caption when the post has one.
    Tapping one should open our `PhotoViewer` at the tapped image, with swipe between the post's
    images and the zoom-from-the-tile animation (the place object is computed from
@@ -203,18 +212,18 @@ What to check once S4 lands:
    - or under a group, when a caption was folded onto a collage - should read at half the body text
    colour. The viewer itself shows no caption/title for these images, which is upstream's behaviour;
    if the product wants the author/time header we layer it on the viewer entry point.
-5. Selection inside a rich message now runs upstream's engine (see §9): handles,
+6. Selection inside a rich message now runs upstream's engine (see §9): handles,
    magnifier, the article menu and the copy path are the pin's `TextSelectionHelper`, not
    our 12.6 port. The list-bullet/prefix highlighting our port drew is gone with the
    prefix geometry, which is upstream's behaviour.
-6. The hybrid body (S4, `78fa211`): with the switch on, a post mixing prose with a poll, a link
+7. The hybrid body (S4, `78fa211`): with the switch on, a post mixing prose with a poll, a link
    card or a callout should read in place - upstream's typography for the prose, our block for the
    three - and the seams (our blocks' own top/bottom margins against the run's trimmed edges) are
    worth eyeballing on a long post. A container holding one of the three (a details with a callout
    inside) must fall back to our block tree as a whole, never silently drop the child. A fourth
    family is ours even though the mapper can express it: **quotes**, because only `QuoteBlock` draws
    the card (see the second pass above and `isOurBlock` in `PostRichMessage.kt`).
-7. Accessibility (S4, `798ae84`): turn TalkBack on and focus a post. It should read the floor and
+8. Accessibility (S4, `798ae84`): turn TalkBack on and focus a post. It should read the floor and
    author, then the body; an image with alt text must be spoken ("图片：..."), one with only a
    caption must read that caption, and a picture with neither must not fall silent. Check that a
    collapsed details block does not read its hidden children, and that the reaction rail below the

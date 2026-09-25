@@ -192,7 +192,7 @@ internal class RichMessageBodyBlock(
             false,
             false,
         ).apply {
-            messageOwner.rich_message = PostRichMessageBuilder.build(cooked)
+            messageOwner.rich_message = PostRichMessageBuilder.build(cooked, context.baseUrl)
         }.also { messageObject = it }
 
         val rich = RichMessageLayout(message, maxWidthPx, null)

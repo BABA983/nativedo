@@ -15,6 +15,7 @@ import org.telegram.messenger.LocaleController
 import org.telegram.messenger.SharedConfig
 import org.telegram.messenger.nativedo.RichMediaUploadBridge
 import io.github.baba983.nativedo.core.di.AppContainer
+import io.github.baba983.nativedo.core.ui.DiscourseInlineImages
 import io.github.baba983.nativedo.ui.topic.body.RichMessageBody
 import org.telegram.tgnet.ConnectionsManager
 import org.telegram.tgnet.tl.TL_account
@@ -56,6 +57,10 @@ class NativeDoApp : Application(), SingletonImageLoader.Factory {
         // The block editor uploads to the site, not to Telegram: its uploader is the app's
         // bridge end (`POST /uploads.json`), installed once here so the editor only sees the seam.
         RichMediaUploadBridge.setUploader(appContainer.discourseMediaUploader)
+        // The rich renderer's inline images (a post's custom emoji, a site icon) resolve through the
+        // app's registry: a URL loads through the image pool, a sprite symbol renders from the
+        // markup the browser captured.
+        DiscourseInlineImages.install { appContainer.svgSpriteStore.sprite.value }
     }
 
     override fun newImageLoader(context: Context): ImageLoader {

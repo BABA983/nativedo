@@ -200,7 +200,22 @@ private fun parseCookedElement(element: Element, quoteLevel: Int, baseUrl: Strin
         "p" -> parseParagraphElement(element)
         "blockquote" -> parseBlockquoteElement(element, quoteLevel, baseUrl)
         "aside" -> parseAsideElement(element, quoteLevel, baseUrl)
-        "pre" -> listOf(CookedPostBlock.Code((element.selectFirst("code")?.wholeText() ?: element.wholeText()).trimEnd()))
+        "pre" -> {
+            val code = element.selectFirst("code")
+            listOf(
+                CookedPostBlock.Code(
+                    code = (code?.wholeText() ?: element.wholeText()).trimEnd(),
+                    // Discourse writes the fence's language as a class on the code element
+                    // (`lang-kotlin`); anything else is a styling class, not a language.
+                    language = code?.classNames()
+                        ?.firstOrNull { it.startsWith("lang-") }
+                        ?.removePrefix("lang-")
+                        // `auto` is Discourse's "no language given", not a language upstream could
+                        // label or highlight.
+                        ?.takeIf { it.isNotBlank() && it != "auto" },
+                ),
+            )
+        }
         "ul", "ol" -> parseListElement(element, quoteLevel, baseUrl)
         "details" -> parseDetailsElement(element, quoteLevel, baseUrl)
         "h1" -> listOf(CookedPostBlock.Heading(level = 1, html = element.html()))

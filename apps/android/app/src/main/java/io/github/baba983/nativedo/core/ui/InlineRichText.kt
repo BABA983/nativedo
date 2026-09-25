@@ -68,33 +68,85 @@ internal fun CookedInline.plainText(): String {
 }
 
 /**
- * The tree with the token-form constructs replaced by the readable form `plainText()` uses.
+ * The tree the rich renderer lays out, with the token-form constructs resolved the way the model
+ * can carry them.
  *
- * The block path resolves a token into a real span - an emoji image, a hashtag chip, a size range
- * (`PostBodyInlineSpans`) - but upstream's renderer has no such step: handed a token, it draws it
- * literally, which is how `__nd_inline_image_0__` ended up as body text on the device. The rich
- * mapping flattens the tokens into the tree it hands over instead. The tree [cookInlineHtml]
- * returns is fresh, so this rewrites it in place.
+ * The block path resolves a token into a real span (`PostBodyInlineSpans`); upstream's renderer has
+ * its own step for exactly one of those - a `textCustomEmoji` run drawn by `AnimatedEmojiSpan` -
+ * and draws any other token literally, which is how `__nd_inline_image_0__` ended up as body text
+ * on the device. So an inline image or icon becomes that run ([DiscourseInlineImages] hands out the
+ * id the span resolves), a hashtag chip keeps its label (the model has no chip), and a `[size]`
+ * range drops its markers (the model has no size case). No token may reach the layout.
+ *
+ * The tree [cookInlineHtml] returns is fresh, so this rewrites it in place.
  */
-internal fun CookedInline.flattenTokensForLayout(): TL_iv.RichText {
-    val replacements = tokenReplacements()
-    fun replaceTokens(value: String): String {
-        var text = value
-        replacements.forEach { (token, replacement) -> text = text.replace(token, replacement) }
-        return text
+internal fun CookedInline.toLayoutTree(baseUrl: String): TL_iv.RichText {
+    val runs = HashMap<String, TL_iv.textCustomEmoji>()
+    inlineImages.forEach { image ->
+        runs[image.token] = customEmojiRun(
+            documentId = DiscourseInlineImages.registerImage(image, baseUrl),
+            alt = image.contentDescription,
+        )
+    }
+    inlineIcons.forEach { icon ->
+        runs[icon.token] = customEmojiRun(
+            documentId = DiscourseInlineImages.registerIcon(icon),
+            alt = icon.contentDescription,
+        )
+    }
+    val textOnly = HashMap<String, String>()
+    inlineHashtagChips.forEach { textOnly[it.token] = it.label }
+    inlineSizes.forEach {
+        textOnly[it.startToken] = ""
+        textOnly[it.endToken] = ""
     }
 
-    fun rewrite(node: TL_iv.RichText?) {
-        when (node) {
-            null -> Unit
-            is TL_iv.textPlain -> node.text = replaceTokens(node.text.orEmpty())
-            is TL_iv.textConcat -> node.texts.forEach(::rewrite)
-            else -> rewrite(node.text)
+    fun rewrite(node: TL_iv.RichText?): TL_iv.RichText? = when {
+        node == null -> null
+        node is TL_iv.textPlain -> splitLeaf(node.text.orEmpty(), textOnly, runs)
+        node is TL_iv.textConcat -> node.apply { texts = ArrayList(texts.mapNotNull(::rewrite)) }
+        node.text != null -> node.apply { text = rewrite(node.text) }
+        else -> node
+    }
+
+    return rewrite(richText) ?: richText
+}
+
+private fun customEmojiRun(documentId: Long, alt: String): TL_iv.textCustomEmoji =
+    TL_iv.textCustomEmoji().apply {
+        this.document_id = documentId
+        this.alt = alt.ifBlank { null }
+    }
+
+/** A leaf whose text carries inline images becomes a concat of plain runs and emoji runs. */
+private fun splitLeaf(
+    text: String,
+    textOnly: Map<String, String>,
+    runs: Map<String, TL_iv.textCustomEmoji>,
+): TL_iv.RichText {
+    var value = text
+    textOnly.forEach { (token, replacement) -> value = value.replace(token, replacement) }
+    if (runs.isEmpty() || runs.keys.none(value::contains)) {
+        return TL_iv.textPlain().apply { this.text = value }
+    }
+    val parts = ArrayList<TL_iv.RichText>()
+    var index = 0
+    while (index < value.length) {
+        val next = runs.keys
+            .map { token -> value.indexOf(token, index).takeIf { it >= 0 }?.let { it to token } }
+            .filterNotNull()
+            .minByOrNull { it.first }
+        if (next == null) {
+            parts.add(TL_iv.textPlain().apply { this.text = value.substring(index) })
+            break
         }
+        if (next.first > index) {
+            parts.add(TL_iv.textPlain().apply { this.text = value.substring(index, next.first) })
+        }
+        parts.add(runs.getValue(next.second))
+        index = next.first + next.second.length
     }
-
-    rewrite(richText)
-    return richText
+    return if (parts.size == 1) parts[0] else TL_iv.textConcat().apply { texts = parts }
 }
 
 /** The model back as HTML, for the surfaces that still hand HTML to `HtmlCompat` (profile bios). */

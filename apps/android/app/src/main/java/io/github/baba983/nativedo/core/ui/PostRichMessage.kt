@@ -56,10 +56,10 @@ internal object PostRichMessageBuilder {
             return null
         }
         return when (block) {
-            is CookedPostBlock.Text -> paragraph(block.html)
-            is CookedPostBlock.Heading -> heading(block.level, block.html)
+            is CookedPostBlock.Text -> paragraph(block.html, baseUrl)
+            is CookedPostBlock.Heading -> heading(block.level, block.html, baseUrl)
             is CookedPostBlock.Quote -> quote(block, baseUrl)
-            is CookedPostBlock.Code -> preformatted(block.code)
+            is CookedPostBlock.Code -> preformatted(block)
             is CookedPostBlock.ListItems -> list(block, baseUrl)
             is CookedPostBlock.Details -> details(block, baseUrl)
             is CookedPostBlock.Table -> table(block, baseUrl)
@@ -73,11 +73,11 @@ internal object PostRichMessageBuilder {
         }
     }
 
-    private fun paragraph(html: String): TL_iv.PageBlock = TL_iv.pageBlockParagraph().apply {
-        text = inline(html)
+    private fun paragraph(html: String, baseUrl: String): TL_iv.PageBlock = TL_iv.pageBlockParagraph().apply {
+        text = inline(html, baseUrl)
     }
 
-    private fun heading(level: Int, html: String): TL_iv.PageBlock {
+    private fun heading(level: Int, html: String, baseUrl: String): TL_iv.PageBlock {
         val block: TL_iv.PageBlock = when (level.coerceIn(1, 6)) {
             1 -> TL_iv.pageBlockHeading1()
             2 -> TL_iv.pageBlockHeading2()
@@ -86,7 +86,7 @@ internal object PostRichMessageBuilder {
             5 -> TL_iv.pageBlockHeading5()
             else -> TL_iv.pageBlockHeading6()
         }
-        block.text = inline(html)
+        block.text = inline(html, baseUrl)
         return block
     }
 
@@ -105,16 +105,17 @@ internal object PostRichMessageBuilder {
         } else {
             TL_iv.pageBlockBlockquote().apply {
                 caption = author?.let(::plain)
-                text = inline(block.html)
+                text = inline(block.html, baseUrl)
             }
         }
     }
 
-    private fun preformatted(code: String): TL_iv.PageBlock =
+    private fun preformatted(block: CookedPostBlock.Code): TL_iv.PageBlock =
         TL_iv.pageBlockPreformatted().apply {
-            // Discourse code blocks carry a class name, not a language Telegram would label.
-            language = null
-            text = plain(code)
+            // The parser keeps the fence's language (`lang-kotlin` -> `kotlin`) and drops the site's
+            // "no language" marker; upstream highlights and labels what it gets.
+            language = block.language
+            text = plain(block.code)
         }
 
     private fun list(block: CookedPostBlock.ListItems, baseUrl: String): TL_iv.PageBlock =
@@ -131,7 +132,7 @@ internal object PostRichMessageBuilder {
     private fun listItem(item: CookedPostBlock.ListItem, baseUrl: String): TL_iv.PageListItem {
         val inlineHtml = item.inlineHtmlOrNull()
         return if (inlineHtml != null) {
-            TL_iv.TL_pageListItemText().apply { text = inline(inlineHtml) }
+            TL_iv.TL_pageListItemText().apply { text = inline(inlineHtml, baseUrl) }
         } else {
             TL_iv.TL_pageListItemBlocks().apply { blocks = ArrayList(pageBlocks(item.blocks, baseUrl)) }
         }
@@ -140,7 +141,7 @@ internal object PostRichMessageBuilder {
     private fun orderedItem(item: CookedPostBlock.ListItem, baseUrl: String): TL_iv.PageListOrderedItem {
         val inlineHtml = item.inlineHtmlOrNull()
         return if (inlineHtml != null) {
-            TL_iv.TL_pageListOrderedItemText().apply { text = inline(inlineHtml) }
+            TL_iv.TL_pageListOrderedItemText().apply { text = inline(inlineHtml, baseUrl) }
         } else {
             TL_iv.TL_pageListOrderedItemBlocks().apply { blocks = ArrayList(pageBlocks(item.blocks, baseUrl)) }
         }
@@ -157,7 +158,7 @@ internal object PostRichMessageBuilder {
     private fun details(block: CookedPostBlock.Details, baseUrl: String): TL_iv.PageBlock =
         TL_iv.pageBlockDetails().apply {
             open = block.open
-            title = (block.summaryHtml ?: block.summary)?.let(::inline)
+            title = (block.summaryHtml ?: block.summary)?.let { html -> inline(html, baseUrl) }
             blocks = ArrayList(pageBlocks(block.children, baseUrl))
         }
 
@@ -181,7 +182,7 @@ internal object PostRichMessageBuilder {
             align_right = cell.align == CookedPostBlock.TableCellAlign.End
             colspan = cell.colspan
             rowspan = cell.rowspan
-            text = inline(cell.html)
+            text = inline(cell.html, baseUrl)
         }
 
     /**
@@ -202,7 +203,7 @@ internal object PostRichMessageBuilder {
             h = image.heightPx
             if (withCaption) {
                 image.captionHtml?.takeIf { it.isNotBlank() }?.let { html ->
-                    caption = pageCaption(inline(html))
+                    caption = pageCaption(inline(html, baseUrl))
                 }
             }
         }
@@ -222,7 +223,7 @@ internal object PostRichMessageBuilder {
                 image.captionHtml?.takeIf { html -> html.isNotBlank() }
             }
             if (captions.isNotEmpty()) {
-                caption = pageCaption(joinedCaptions(captions))
+                caption = pageCaption(joinedCaptions(captions, baseUrl))
             }
         }
 
@@ -232,16 +233,17 @@ internal object PostRichMessageBuilder {
         credit = TL_iv.textEmpty()
     }
 
-    private fun joinedCaptions(captions: List<String>): TL_iv.RichText {
+    private fun joinedCaptions(captions: List<String>, baseUrl: String): TL_iv.RichText {
         val parts = ArrayList<TL_iv.RichText>(captions.size * 2 - 1)
         captions.forEachIndexed { index, html ->
             if (index > 0) parts.add(TL_iv.textPlain().apply { text = "\n" })
-            parts.add(inline(html))
+            parts.add(inline(html, baseUrl))
         }
         return if (parts.size == 1) parts[0] else TL_iv.textConcat().apply { texts = parts }
     }
 
-    private fun inline(html: String): TL_iv.RichText = cookInlineHtml(html).flattenTokensForLayout()
+    private fun inline(html: String, baseUrl: String): TL_iv.RichText =
+        cookInlineHtml(html).toLayoutTree(baseUrl)
 
     private fun plain(value: String): TL_iv.RichText = TL_iv.textPlain().apply { text = value }
 }

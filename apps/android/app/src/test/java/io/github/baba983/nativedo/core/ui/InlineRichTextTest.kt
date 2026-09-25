@@ -22,6 +22,7 @@ class InlineRichTextTest {
         is TL_iv.textMarked -> "mark(${describe(node.text)})"
         is TL_iv.textSpoiler -> "spoiler(${describe(node.text)})"
         is TL_iv.textUrl -> "a(${node.url},${describe(node.text)})"
+        is TL_iv.textCustomEmoji -> "emoji(${node.document_id},${node.alt})"
         else -> "?"
     }
 
@@ -96,23 +97,24 @@ class InlineRichTextTest {
     }
 
     /**
-     * The rich mapping hands the tree to upstream's renderer, which has no step that turns a token
-     * back into a span - so the tokens have to be gone before the layout sees them, or a post shows
-     * `__nd_inline_image_0__` as body text (seen on the device).
+     * The rich mapping hands the tree to upstream's renderer, which draws an unresolved token
+     * literally - `__nd_inline_image_0__` as body text, seen on the device - and knows exactly one
+     * inline-image run: a `textCustomEmoji`, drawn by `AnimatedEmojiSpan`. So an inline image has to
+     * arrive as that run, carrying the alt its span falls back to, and no token may survive.
      */
     @Test
-    fun theLayoutTreeReplacesTokensWithTheirReadableForm() {
+    fun theLayoutTreeCarriesInlineImagesAsEmojiRuns() {
         val cooked = cookInlineHtml(
             "<p>hi <img src=\"/images/emoji/wave.png\" class=\"emoji\" alt=\":wave:\">" +
                 " <span style=\"font-size: 150%\">big</span></p>",
         )
 
-        val layoutTree = cooked.flattenTokensForLayout()
+        val layoutTree = cooked.toLayoutTree("https://linux.do/")
         val described = describe(layoutTree)
         assertThat(described).doesNotContain("__nd_inline_")
-        assertThat(described).doesNotContain(cooked.inlineImages[0].token)
+        assertThat(described).contains("emoji(")
         assertThat(described).contains(":wave:")
-        assertThat(described).contains("big")
+        assertThat(described).contains("\"big\"")
     }
 
     @Test

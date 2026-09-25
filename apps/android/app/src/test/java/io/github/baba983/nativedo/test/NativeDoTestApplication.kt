@@ -3,6 +3,7 @@ package io.github.baba983.nativedo.test
 import android.app.Application
 import java.io.File
 import java.lang.reflect.Method
+import io.github.baba983.nativedo.core.ui.DiscourseInlineImages
 import org.robolectric.TestLifecycleApplication
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ApplicationLoader
@@ -20,6 +21,10 @@ class NativeDoTestApplication : Application(), TestLifecycleApplication {
         seedThemeAsset("bluebubbles.attheme")
         seedThemeAsset("darkblue.attheme")
         installThemeBackend()
+        // The shipped app installs the rich renderer's inline-image registry in `NativeDoApp`; the
+        // test host installs it with no sprite markup, so a golden renders the real span path (a URL
+        // image is its placeholder box, a sprite icon falls back to its alt text).
+        DiscourseInlineImages.install { "" }
     }
 
     override fun beforeTest(method: Method) {

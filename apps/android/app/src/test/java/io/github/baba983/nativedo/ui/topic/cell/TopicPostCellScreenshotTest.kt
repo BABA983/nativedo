@@ -122,6 +122,9 @@ internal class TopicPostCellScreenshotTest {
         val RICH_MESSAGE_POST_HTML = """
             <p>A post body drawn by <b>upstream's renderer</b>: paragraphs, a heading, a list,
             a <a href="https://linux.do/t/1">link</a>, a quote and a code block.</p>
+            <p>Inline images: <img src="/images/emoji/twemoji/laughing.png" class="emoji" alt=":laughing:" title=":laughing:">
+            and a custom <img src="/uploads/default/original/3X/blob.png" class="emoji emoji-custom" alt=":party_blob:" title=":party_blob:">
+            plus a key <svg class="fa d-icon svg-icon" aria-label="keyboard"><use href="#far-keyboard"></use></svg> in the line.</p>
             <h2>Blocks</h2>
             <ul>
               <li>plain item</li>
@@ -135,7 +138,7 @@ internal class TopicPostCellScreenshotTest {
             <p>Two adjacent images, which the parser reads as a collage:</p>
             <p><img src="https://cdn.example.dev/one.png" width="800" height="600" alt="one"></p>
             <p><img src="https://cdn.example.dev/two.png" width="600" height="800" alt="two"></p>
-            <pre><code>val body = RichMessageBody.enabled</code></pre>
+            <pre><code class="lang-kotlin">val body = RichMessageBody.enabled</code></pre>
             <hr>
             <p>Done.</p>
         """.trimIndent()

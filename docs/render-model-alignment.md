@@ -312,9 +312,18 @@ Sequence, if chat is scheduled:
    `TextLayoutBlock` shape (`StaticLayout getLayout()` plus a `getPrefix()` returning null in
    `Text` and in `PaddedTextLayoutBlock`), the Telegram web-app icon branch, and the premium
    rich-editor sheet. Probe trail for the record: 337 (raw) -> 229 (S2) -> 183 -> 105 -> **0**.
-   Emoji caveat for S4: `AnimatedEmojiSpan` is a stub in this tree, so the renderer compiles
-   against no-op emoji metrics - the emoji family (`AnimatedEmojiDrawable` and the span's real
-   layout/draw) is its own alignment project, not part of S3; the device queue has the S4 pass.
+   **The emoji caveat is closed.** `AnimatedEmojiSpan` is a real `ReplacementSpan` now: it reserves
+   the square upstream sizes it to and draws the image an app-installed resolver hands it, and with
+   no image behind its id it draws the alt text it covers (never a hole, and copy/selection keep the
+   alt). `core/ui/DiscourseInlineImages` is that resolver: `PostRichMessageBuilder` registers each
+   inline image (a custom emoji, a twemoji image - the URL resolved against the post's base) and each
+   inline sprite icon, and emits upstream's `textCustomEmoji` run for both. A URL image loads through
+   the image pool (`ImageReceiver`, the block path's own mechanism) and invalidates the renderer's
+   view; a sprite icon renders synchronously from the captured markup and falls back to its alt text
+   while that markup is missing. So the rich run draws what the block path draws instead of
+   flattening the token into `:name:` text, and a `<kbd>`-style icon stops drawing a placeholder that
+   swallowed the run after it. The fence's language travels too (`CookedPostBlock.Code.language`,
+   read from Discourse's `lang-*` class), so upstream highlights and labels a code block.
 4. **S4 - slice 1 landed: the pipeline is proven end to end.**
    `core/ui/PostRichMessage.kt` maps cooked post blocks to `TL_iv.RichMessage`
    (paragraph, headings 1-6, blockquote with the author as the caption and nested children as

@@ -10,6 +10,7 @@ import app.cash.paparazzi.DeviceConfig
 import app.cash.paparazzi.Paparazzi
 import com.android.ide.common.rendering.api.SessionParams
 import com.android.resources.NightMode
+import io.github.baba983.nativedo.core.ui.DiscourseInlineImages
 import org.junit.rules.TestRule
 import org.junit.runner.Description
 import org.junit.runners.model.Statement
@@ -108,6 +109,10 @@ internal class NativeDoPaparazziRule(
         AndroidUtilities.init(context)
         Theme.getActiveTheme()
         Theme.createDialogsResources(context)
+        // The shipped app installs the rich renderer's inline-image registry in `NativeDoApp`; a
+        // Paparazzi snapshot never runs that Application, so the environment installs it here, with
+        // no sprite markup: a URL image renders its placeholder box, a sprite icon its alt text.
+        DiscourseInlineImages.install { "" }
     }
 
     private fun fixedWidthContainer(

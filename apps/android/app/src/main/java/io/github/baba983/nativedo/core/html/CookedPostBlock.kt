@@ -28,7 +28,7 @@ internal sealed interface CookedPostBlock {
         val collapsible: Boolean = false,
         val defaultExpanded: Boolean = true,
     ) : CookedPostBlock
-    data class Code(val code: String) : CookedPostBlock
+    data class Code(val code: String, val language: String? = null) : CookedPostBlock
     data class ListItem(
         val html: String,
         val blocks: List<CookedPostBlock> = emptyList(),
