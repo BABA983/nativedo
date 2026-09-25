@@ -257,23 +257,41 @@ pass is what settles the parts a snapshot cannot:
   an emoji image must load from the post's base URL and an icon without captured markup must fall
   back to its alt text rather than an empty square.
 
-#### Device attempt (2026-09-26, runner `emulator-5554`, AVD `Medium_Phone_API_36.0`) - blocked
+#### Device passes (2026-09-26, runner `emulator-5554`, AVD `Medium_Phone_API_36.0`)
 
-The pass ran on the Mac mini's emulator with a real session (logged in as `@example_user`): the patched
-debug build installed over the existing data (session and the debug switch survived), the app
-launched to the feed, and Settings -> 调试 -> "富文本正文（实验）" toggled on/off (read back through
-`uiautomator`'s `checked`). The editor also opened from the composer's ArticleEditor button with the
-toolbar's Emoji key present at `[225,584][325,684]`.
+Two rounds, same session (`@example_user`), the patched debug build installed over the existing data (the
+session and the debug switch survived) - and the runner's Mac cannot reach `linux.do` over TLS at all
+(`LibreSSL SSL_ERROR_SYSCALL` on every A-record, pre-outage included), so the site's health has to be
+read from the app's own traffic rather than from `curl` on that host.
 
-Everything that needs a post body was blocked by an external outage: `linux.do` answered Cloudflare
-**521** ("Web server is down", Ray IDs `a40bf7d19be18efe` / `a40bf9945e6c8ef8`) on `/latest.json` and
-on every topic's `.json`, from the emulator and from the host (TLS handshake to every A-record times
-out; other hosts are fine). So no post rendered in either switch state and no chip existed to tap.
-Tapping the Emoji key was a silent no-op, which the same outage explains: the panel is built from the
-detail response's `emojiCategories`/`emojiCatalog`, and the composer's key has the identical
-`categories.isEmpty()` guard - the device pass could not separate "blocked by the outage" from
-"broken", so the checks above stand as queued. Screenshots and the command/verdict table:
-`slice-a-device/` on the runner (22 PNGs, `evidence-log.md`).
+**Round 1 - blocked by an outage.** `linux.do` answered Cloudflare **521** ("Web server is down", Ray
+IDs `a40bf7d19be18efe` / `a40bf9945e6c8ef8`) on `/latest.json` and on every topic's `.json`, so no post
+body rendered in either switch state and no chip existed to tap. The Emoji key was a silent no-op for
+the same reason: the panel is built from the detail response's `emojiCategories`/`emojiCatalog`, and
+the composer's key has the identical `categories.isEmpty()` guard - which also means the round could
+not separate "blocked by the outage" from "broken".
+
+**Round 2 - the site was up, and the parts a snapshot cannot reach were checked:**
+
+- **Custom emoji images: PASS.** The same post renders its emoji images identically with the switch
+  off and on (`71-posted-render-closeup.png` vs `73-posted-render-flagON.png`), and the reply the
+  round posted (topic 2790689, `RENDER :grinning_face:`) renders as an image in both states - so the
+  registry's URL load works on a device, not only in the golden.
+- **Switch on/off on the same post: PASS** (`43-post4-flagON.png` vs `45-topic-flagOFF-open.png`).
+- **`[size]`, task lists and hashtag chips: NOT REACHED.** The site had no reachable post carrying
+  them (the Posts search hits for `[size=150]` and `[x]` are code/markdown posts - `77`..`80`), and
+  linux.do's tags are non-ASCII, so one cannot be authored from `adb` input either. Their rendering
+  is what `richMessageInlineCases` pins; the **chip tap** (`didPressAnimatedEmoji` -> `onLinkClick`)
+  stays unverified on a device, and it is the one construct whose failure a golden cannot show.
+- **Keyboard-dependent halves: unobservable on this AVD.** The soft IME never shows (`dumpsys
+  input_method` -> `mImeWindowVis=0`, `mInputShown=false`; the `InputMethod` window is `GONE`), and
+  `ime reset` / `ime set` / `show_ime_with_hard_keyboard` did not bring it back, so "the keyboard
+  comes back" never happens and the sheet's keyboard rule (§10.8) has no precondition here.
+
+Screenshots and the full command/verdict table: `slice-a-device/` on the runner (round 1: `00`..`21`,
+round 2: `30`..`88`, plus `evidence-log.md`). One observation left unresolved, not a defect claim:
+topic 2790689's post #4 reads `disguised_face:` as literal text in *both* switch states, which is
+what the site cooked (an unknown `:name:` stays text), not a rich-body difference.
 
 ## 8. The poll votes sheet is Telegram's `PollVotesAlert` (`6b775d7`)
 
@@ -422,7 +440,24 @@ To check, in a topic:
 8. The emoji key (`2026-09-25`): it is live now and opens the composer's own panel
    (`TopicReplyComposerEmojiPanel`, the same view the reply island shows) at the sheet's bottom
    edge, and the key flips to a keyboard glyph while the panel covers the bottom (the pin's
-   `setEmojiOpened`). To check, in a topic with the editor open:
+   `setEmojiOpened`). **Driven on the runner's emulator (2026-09-26, round 2, `slice-a-device/`):**
+   the sheet opens from the composer's ArticleEditor entry (`50`, `56`); the panel appears at the
+   sheet's bottom edge with the toolbar riding above it and `uiautomator`'s content description
+   flipping `Emoji` -> `Keyboard` (`59-editor-emoji-panel.png`); a pick with the caret mid-word
+   landed *at the caret* - the body read `ALPHAB :grinning_face: ETA`
+   (`60-emoji-inserted-at-caret.png`); tapping the key again closed the panel and flipped the key
+   back (`62`); dismiss and reopen kept the markup (`65`, `66`); and the sent reply posted and
+   rendered (`69`..`73`). Still unverified on a device, with the reason:
+   - **A selection replaced by the pick**: `adb` input could not create a text selection in the
+     editor (long-press and double-tap both left a bare caret - `82`, `86`), so the replace branch
+     of `topicReplyComposerEmojiInsertionText` was never reached.
+   - **The keyboard coming back closing the panel** (the composer's own
+     `topicReplyComposerShouldHideEmojiPanelForKeyboard`): this AVD's soft IME never shows
+     (`dumpsys input_method` -> `mImeWindowVis=0`, `mInputShown=false`, the `InputMethod` window
+     `GONE`; `ime reset` / `ime set` / `show_ime_with_hard_keyboard` did not revive it), so the
+     precondition never occurred - the panel stayed up after a tap in the text (`61`). The rule
+     itself is the composer's, already exercised on the island.
+   To check by hand, in a topic with the editor open:
    - Tap the emoji key: the panel slides in over the page's bottom, the keyboard goes away, the
      toolbar (format pill and send) rides above the panel, and the key shows a keyboard.
      Tapping the key again, or dismissing the sheet, takes the panel away and gives the keyboard
