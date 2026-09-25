@@ -1402,6 +1402,10 @@ export async function dispatch(amp: PluginAPI, options: DispatchOptions): Promis
 		reasoningEffort: MODEL_REASONING_EFFORT[decision.model],
 		instructions: buildInstructions(decision, options.instructions),
 		tools: 'all',
+		// Dispatched work follows the same role policy as every other agent this plugin creates:
+		// retrieval on the fast model, judgement on Astra.
+		subagents: subagentPin(),
+		oracle: resolveOraclePin(),
 		display: modelDisplay(decision.model),
 	})
 	const agentModel = readAgentModel(agent)
@@ -1493,19 +1497,52 @@ const MUTATING_TOOLS = new Set(['shell_command', 'edit_file', 'create_file', 'ap
  * Each pattern captures the offending token in group 1 so the hold message can name it. The
  * leading character class matters: `cat .git/config` and `cat .env` are as sensitive as
  * `/repo/.env`, and a command is the common way an agent reaches them.
+ *
+ * The edit's file list is authoritative — those are real paths — so it accepts a bare extension
+ * (`/repo/.key`).
  */
-const SENSITIVE_PATH_PATTERNS: readonly RegExp[] = [
-	/(?:^|[\s/'"=])(\.env\b)/,
-	/(?:^|[\s/'"=])(\.git\/)/,
-	/\.((?:pem|key|p12|keystore|jks)\b)/i,
-	/(?:^|[\s/'"=])((?:credentials|secrets?)\.)/i,
+const SENSITIVE_FILE_PATTERNS: readonly RegExp[] = [
+	/(?:^|[\s/])(\.env\b)/,
+	/(?:^|[\s/])(\.git\/)/,
+	/(?:^|[\s/])([\w@+.-]*\.(?:pem|key|p12|keystore|jks))\b/i,
+	/(?:^|[\s/])((?:credentials|secrets?)\.)/i,
 ]
 
+/**
+ * The same names inside a command's *unquoted* text. A filename stem is required here: a bare
+ * `.key` in a command is far more often a JSON field (`jq '.key'`) or prose than a key file, and
+ * that single pattern was responsible for most of the gate's false holds.
+ */
+const SENSITIVE_COMMAND_PATTERNS: readonly RegExp[] = [
+	/(?:^|[\s/])(\.env\b)/,
+	/(?:^|[\s/])(\.git\/)/,
+	/(?:^|[\s/])([\w@+.-]*[\w@+-]\.(?:pem|key|p12|keystore|jks))\b/i,
+	/(?:^|[\s/])((?:credentials|secrets?)\.)/i,
+]
+
+/**
+ * A command with its quoted spans blanked out: what it *asks for*, as opposed to the data it
+ * carries. A path an agent is about to read is an argument (`cat .git/config`), while the holds
+ * users complained about were quoted payloads — `jq '.key'`, an `rg` pattern naming a credential,
+ * a `--data '{"files":["/repo/.env"]}'` probe. Deliberately not used for the destructive check:
+ * `bash -c "rm -rf /"` is quoted and still has to hold.
+ */
+export function unquotedText(command: string): string {
+	return command.replace(/'[^']*'/g, ' ').replace(/"[^"]*"/g, ' ')
+}
+
 /** The sensitive token an action reaches for, or undefined when it reaches for none. */
-function sensitivePath(targets: readonly string[]): string | undefined {
-	for (const target of targets) {
-		for (const pattern of SENSITIVE_PATH_PATTERNS) {
-			const match = target.match(pattern)
+function sensitivePath(files: readonly string[], command?: string): string | undefined {
+	for (const file of files) {
+		for (const pattern of SENSITIVE_FILE_PATTERNS) {
+			const match = file.match(pattern)
+			if (match?.[1]) return match[1]
+		}
+	}
+	if (command) {
+		const text = unquotedText(command)
+		for (const pattern of SENSITIVE_COMMAND_PATTERNS) {
+			const match = text.match(pattern)
 			if (match?.[1]) return match[1]
 		}
 	}
@@ -1543,8 +1580,9 @@ export function gateAction(input: {
 }): GateDecision {
 	const description = describeAction(input)
 	// The command text is scanned too: `filesModifiedByToolCall` cannot know that `cat .git/config`
-	// reaches repository internals, and the check is free either way.
-	const riskyPath = sensitivePath([...(input.files ?? []), ...(input.command ? [input.command] : [])])
+	// reaches repository internals, and the check is free either way. Quoted spans are treated as
+	// data, not as the thing being reached for.
+	const riskyPath = sensitivePath(input.files ?? [], input.command)
 	if (riskyPath) {
 		return {
 			action: 'reject-and-continue',
@@ -1553,12 +1591,17 @@ export function gateAction(input: {
 				`repository internals: ${description}. Ask the user to confirm before running it.`,
 		}
 	}
-	const risk = detectRisk(description)
-	if (risk !== 'normal') {
+	// Only the destructive half reads the raw command text, because a quoted destructive command is
+	// still destructive (`bash -c "rm -rf /"`). Sensitive *topic words* are deliberately left to
+	// Jev's judgment instead of a text scan: holding on `password` / `credential` / `payment`
+	// anywhere in the text is what made this gate block ordinary inspection — an `rg` pattern, a
+	// patch that mentions a credentials file, a JSON probe — and a hold the user learns to click
+	// through is worse than no hold at all.
+	if (DESTRUCTIVE_PATTERNS.some((pattern) => pattern.test(description))) {
 		return {
 			action: 'reject-and-continue',
 			message:
-				`Jev Router held this action because it looks ${risk}: ${description}. ` +
+				`Jev Router held this action because it looks destructive: ${description}. ` +
 				'Ask the user to confirm before running it, and say what you would do instead.',
 		}
 	}

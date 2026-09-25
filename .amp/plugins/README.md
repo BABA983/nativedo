@@ -315,8 +315,9 @@ it on Sol.
 ## Subagent pinning (the routing that actually pays)
 
 Every agent this plugin creates — the three registered modes, all four pipeline
-stages, the review observer, and each parallel-inspect child — pins two roles, and
-they are deliberately pinned differently:
+stages, the review observer, each parallel-inspect child, and each task dispatched
+by `jev_dispatch_task` — pins two roles, and they are deliberately pinned
+differently:
 
 - **`subagents` → the fast model** (`SUBAGENT_PIN`: Flash, effort `high`). That
   covers the subagents Amp spawns from those threads: `Task` workers, `finder`,
@@ -355,12 +356,17 @@ What is checked, in order, and what each step costs:
 2. **Mutating calls** (`shell_command`, `edit_file`, `create_file`, `apply_patch`) are
    described in one line — the command plus the paths `filesModifiedByToolCall`
    reports.
-3. **Deterministic holds, free.** A command matching the destructive/sensitive
-   patterns (`rm -rf`, `drop table`, `force-push`, …) or touching a sensitive path
+3. **Deterministic holds, free.** A command matching the destructive patterns
+   (`rm -rf`, `drop table`, `force-push`, …) or reaching for a sensitive path
    (`.env`, `.git/`, `*.pem`, `credentials.`, `secrets.`) is held immediately, with no
-   API key and no Jev call. The path check reads the command text as well as the
-   reported file list, because `cat .git/config` is the common way an agent reaches
-   repository internals.
+   API key and no Jev call. Two deliberate details:
+   - the path check reads the command's **unquoted** text as well as the reported file
+     list, because `cat .git/config` is the common way an agent reaches repository
+     internals while a quoted payload is *data the command carries*, not something it
+     reaches for;
+   - inside a command a sensitive **extension** needs a filename stem, so `cat
+     server.key` holds while `jq '.key'` does not. The edit's file list is real paths,
+     so it accepts a bare `/repo/.key`.
 4. **Jev is asked only for an ordinary shell command.** File edits are skipped: they
    are already visible in the diff and a Jev request per edit would cost more than it
    saves. One request, 5 s budget, questions `SAFETY_QUESTIONS` (a `choice` for
@@ -374,6 +380,16 @@ working; the deterministic checks already ran) while an explicit risk signal fai
 closed. Any plugin bug in the handler also fails open, because a gate must never break
 a turn.
 
+**What the deterministic half deliberately does not hold.** Sensitive *topic words*
+(`password`, `credential`, `secret`, `payment`, `user data`, …) are left to Jev's
+judgment instead of a text scan. A scan of that kind held ordinary inspection commands
+— an `rg` pattern naming a credential, a patch file that mentioned one, a JSON probe —
+because it read quoted prose as if the command were reaching for a credential. Only the
+**destructive** half reads the raw command text, because a quoted destructive command
+is still destructive (`bash -c "rm -rf /"`). The trade is deliberate: a hold the user
+learns to click through is worse than no hold, and Jev still sees the full command
+(quotes included) for shell commands.
+
 **Known judgement call.** Live Jev answers: `bun test …` → `safe`, risk 0.02,
 confidence 0.97; `git push origin main` → `needs_confirmation`, risk 0.94, confidence
 0.50. Because 0.50 is under the 0.6 floor, the gate **allows** a plain `git push`.
@@ -382,15 +398,21 @@ Holding on a 20%-confidence `needs_confirmation` (observed for an ordinary multi
 one meaning — "trustworthy enough to act on" — shared with the routing path. If you
 want pushes held, that is a one-line change to the floor, not a redesign.
 
-Also note the path check is a text heuristic, so a command that merely *mentions*
-`.env` or `.git/` in a string literal is held. That is the safe direction, and the hold
-message names the token so the user can confirm in one step.
+The path check remains a text heuristic in one direction: a *quoted* path argument
+(`cat '.env'`) is no longer held deterministically, because quoted spans are treated as
+data; Jev still classifies the full command, so it remains a judgment call rather than
+a deterministic hold. Unquoted forms — the ones a command actually uses to reach a file
+— are still held, and the hold message names the token so the user can confirm in one
+step.
 
-## The `jev_dispatch_task` tool (unchanged compatibility entry)
+## The `jev_dispatch_task` tool (compatibility entry)
 
 Inputs: `task` (required), `mode` (`run`, the default, waits for the routed agent
 and returns its answer; `thread` starts a visible child thread and returns its
-ID), `confirm`, and `instructions`.
+ID), `confirm`, and `instructions`. The routed agent is created with the same role
+pins as every other agent this plugin creates — retrieval subagents on the fast
+model, the oracle on Astra — so a dispatched task cannot quietly fall back to the
+cheap model for a second opinion.
 
 The tool keeps the main thread informed instead of failing silently:
 
@@ -671,10 +693,12 @@ threads.
   model for the current turn. It routes subagents (`SUBAGENT_PIN`), the pipeline
   stages, and dispatched children — and it gates actions (`tool.call`) instead of
   pretending to re-route them.
-- **The gate's deterministic half is a text heuristic.** A command that merely
-  mentions `.env`, `.git/`, or a key file in a string literal is held, and an
-  obfuscated destructive command the patterns do not name gets through. Jev is the
-  second line, not a replacement, and it only sees ordinary shell commands.
+- **The gate's deterministic half is a text heuristic.** Unquoted sensitive paths and
+  destructive patterns are held; quoted text is treated as data, so `cat '.env'` and a
+  payload that merely mentions a credential are left to Jev's judgment rather than held
+  deterministically, and an obfuscated destructive command the patterns do not name gets
+  through. Jev is the second line, not a replacement, and it only sees ordinary shell
+  commands.
 - **A hold needs a confident Jev answer.** Below the 0.6 floor a non-safe verdict
   is ignored, so `git push origin main` (observed: `needs_confirmation`, risk 0.94,
   confidence 0.50) is allowed. See the note under

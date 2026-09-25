@@ -32,6 +32,7 @@ import plugin, {
 	stageInstructions,
 	stageMessage,
 	triagePlan,
+	unquotedText,
 } from '../index.ts'
 
 /** The plugin source, read from disk, for the static "no unsupported API" assertions. */
@@ -711,6 +712,22 @@ describe('dispatch', () => {
 		expect(describeModelPin(result.requestedModel, result.agentModel, result.modelMismatch)).toContain('MISMATCH')
 	})
 
+	test('pins the dispatched agent’s two roles like every other creation site', async () => {
+		const { api, agents } = dispatchApi()
+		await dispatch(api as never, { decision: decision(), task: 'x' })
+		expect(agents[0].subagents).toEqual(SUBAGENT_PIN)
+		expect(agents[0].oracle).toEqual({ model: VERIFIED_MODELS.astra })
+	})
+
+	test('leaves the dispatched agent’s roles on Amp routing when the pin is off', async () => {
+		process.env.JEV_ROUTER_SUBAGENT_PIN = '0'
+		const { api, agents } = dispatchApi()
+		await dispatch(api as never, { decision: decision(), task: 'x' })
+		expect(agents[0].subagents).toBeUndefined()
+		expect(agents[0].oracle).toBeUndefined()
+		delete process.env.JEV_ROUTER_SUBAGENT_PIN
+	})
+
 	test('the thread mode returns the created thread id', async () => {
 		const { api } = dispatchApi()
 		const result = await dispatch(api as never, { decision: decision(), task: 'x', mode: 'thread' })
@@ -913,6 +930,42 @@ describe('tool.call gate', () => {
 		const result = await call('shell_command', { command: 'cat .git/config' })
 		expect(result.action).toBe('reject-and-continue')
 		expect((result as { message: string }).message).toContain('.git')
+	})
+
+	// The gate's false positives were all one shape: credential-looking *text* inside quotes, which
+	// is data the command carries rather than something it reaches for. These are the cases users
+	// actually hit — an inspection command, a search pattern, a patch payload, a JSON probe.
+	test('does not hold on quoted text that merely looks like a credential', () => {
+		expect(gateAction({ tool: 'shell_command', command: "jq '.key' package.json" })).toEqual({ action: 'allow' })
+		expect(gateAction({ tool: 'shell_command', command: "rg 'credential|password' src/" })).toEqual({ action: 'allow' })
+		expect(gateAction({ tool: 'shell_command', command: 'rg -n "touches a credential path" docs/' })).toEqual({ action: 'allow' })
+		expect(
+			gateAction({ tool: 'shell_command', command: `amp plugins exec x.ts tool.call --data '{"files":["/repo/.env"]}'` }),
+		).toEqual({ action: 'allow' })
+	})
+
+	test('still holds a sensitive path the command actually names', () => {
+		for (const command of ['cat .git/config', 'cat .env', 'cat /repo/server.key', 'cat ./credentials.json']) {
+			expect(gateAction({ tool: 'shell_command', command }).action).toBe('reject-and-continue')
+		}
+	})
+
+	test('still holds a sensitive file the edit actually touches, bare extension included', () => {
+		// The edit's file list is real paths, so it does not need a filename stem.
+		expect(gateAction({ tool: 'edit_file', files: ['/repo/.key'] }).action).toBe('reject-and-continue')
+		expect(gateAction({ tool: 'edit_file', files: ['/repo/notes.md'] })).toEqual({ action: 'allow' })
+	})
+
+	test('a quoted destructive command still holds', () => {
+		// Quoted text is data for the sensitive half, but a destructive command is destructive
+		// whether or not it is quoted, so that half reads the raw text.
+		expect(gateAction({ tool: 'shell_command', command: 'bash -c "rm -rf /"' }).action).toBe('reject-and-continue')
+	})
+
+	test('unquotedText blanks quoted spans and keeps the arguments', () => {
+		expect(unquotedText("jq '.key' file")).not.toContain('.key')
+		expect(unquotedText('cat .git/config')).toBe('cat .git/config')
+		expect(unquotedText('echo "a .env b"')).not.toContain('.env')
 	})
 
 	test('asks Jev about an ordinary command and allows a safe answer', async () => {
