@@ -315,7 +315,7 @@ private fun parseCssColor(rawColor: String): Int? {
     return runCatching { Color.parseColor(normalized) }.getOrNull()
 }
 
-private fun Int.toCssHexColor(): String {
+internal fun Int.toCssHexColor(): String {
     return "#${(this and 0xFFFFFF).toString(16).padStart(6, '0')}"
 }
 

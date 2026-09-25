@@ -32,6 +32,8 @@ internal sealed interface CookedPostBlock {
     data class ListItem(
         val html: String,
         val blocks: List<CookedPostBlock> = emptyList(),
+        /** A task-list item's checkbox state; null when the item is a plain bullet/number. */
+        val checked: Boolean? = null,
     )
     data class ListItems(val ordered: Boolean, val items: List<ListItem>) : CookedPostBlock
     data class Image(

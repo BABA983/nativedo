@@ -230,6 +230,33 @@ What to check once S4 lands:
    cell keeps its own labels (the cell's description is additive, not a replacement for the child
    views).
 
+### The Discourse-only inline constructs (`2026-09-25`)
+
+The rich run (flag-on body) now carries the four constructs the model has no upstream case for, so a
+flag-on post reads like the flag-off cell. All four ride the runs the block path already emits, and
+`TopicPostCellScreenshotTest.richMessageInlineCases` is the retained golden (both themes); the device
+pass is what settles the parts a snapshot cannot:
+
+- **Hashtag chip**: a cooked `hashtag-cooked` anchor is registered as a chip
+  (`DiscourseInlineImages.registerChip`) and draws through the block path's own
+  `DiscourseTagChipSpan` drawable, inside upstream's `textCustomEmoji` run. On device: the chip must
+  show the tag's pill with its colour (not the tag name as plain text), keep its size when the theme
+  flips, and **tapping it must open that tag's page** (`didPressAnimatedEmoji` ->
+  `onLinkClick` with the chip's URL) - a tap that does nothing, or one that opens the wrong tag, is
+  the bug to look for, since the chip's URL is stored out of band by id.
+- **`[size=150]`**: the cooker's size range becomes a `RelativeSizeSpan` on the run
+  (`RichMessageLayout.formatText`'s `applyDiscourseSizeMarkers`). On device: the sized text must be
+  visibly larger/smaller and *stay* so through selection and copy (the markers must not leak into
+  the copied text), and a nested size inside bold/italic must not shift the run's other spans.
+- **Task lists**: a `[ ]`/`[x]` item is carried as `PageListItem.checkbox/checked` (the parser drops
+  the `input[type=checkbox]` element and reads `checked`). On device: a checked item must draw
+  upstream's checked box and an unchecked one its empty box, both without a bullet in front, and a
+  *plain* list item must keep its bullet (a checkbox on every item would mean the flag was read
+  from the wrong node).
+- **Custom emoji / inline icons**: the registry's images (see the fixed section above). On device:
+  an emoji image must load from the post's base URL and an icon without captured markup must fall
+  back to its alt text rather than an empty square.
+
 ## 8. The poll votes sheet is Telegram's `PollVotesAlert` (`6b775d7`)
 
 What changed: the "view votes" entry on a poll opens the vendored
@@ -371,9 +398,24 @@ To check, in a topic:
 7. The media slice has since wired the toolbar's attach button and uploader. A site image,
    video, audio file or document that enters as a URL-only markdown block is imported into
    the editor's media model and must remain in the draft after dismiss/send. Remaining gaps:
-   the AI key (both the block row's and the format panel's) and the emoji key are dimmed and
-   unclickable - a tap must do nothing and must not open anything - and
-   inline-button/block-button editing is not wired.
+   the two AI keys (the block row's and the format panel's) are dimmed and unclickable - a tap
+   must do nothing and must not open anything - and inline-button/block-button editing is not
+   wired.
+8. The emoji key (`2026-09-25`): it is live now and opens the composer's own panel
+   (`TopicReplyComposerEmojiPanel`, the same view the reply island shows) at the sheet's bottom
+   edge, and the key flips to a keyboard glyph while the panel covers the bottom (the pin's
+   `setEmojiOpened`). To check, in a topic with the editor open:
+   - Tap the emoji key: the panel slides in over the page's bottom, the keyboard goes away, the
+     toolbar (format pill and send) rides above the panel, and the key shows a keyboard.
+     Tapping the key again, or dismissing the sheet, takes the panel away and gives the keyboard
+     back.
+   - Put the caret in the middle of a word and pick an emoji: the site's `:name:` markup lands
+     *at the caret* (`topicReplyComposerEmojiInsertionText`, the composer's own insertion rule),
+     not appended at the end - and with a selection, the pick replaces the selection.
+   - Pick, then send: the post's `raw` carries the `:name:` form and the topic renders the emoji
+     image (the panel's own search/category strip is the composer's view, unchanged).
+   - The panel's height is the composer's `topicReplyComposerEmojiPanelHeightPx` with no keyboard
+     inset, so on a tall page the page's top inset must not change (only the bottom moves).
 
 ## 11. The editor's media: pick, upload, send (`fbe2772`, `990853c`)
 

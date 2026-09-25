@@ -99,8 +99,11 @@ class InlineRichTextTest {
     /**
      * The rich mapping hands the tree to upstream's renderer, which draws an unresolved token
      * literally - `__nd_inline_image_0__` as body text, seen on the device - and knows exactly one
-     * inline-image run: a `textCustomEmoji`, drawn by `AnimatedEmojiSpan`. So an inline image has to
-     * arrive as that run, carrying the alt its span falls back to, and no token may survive.
+     * inline-image run: a `textCustomEmoji`, drawn by `AnimatedEmojiSpan`. So an inline image (and an
+     * icon, and a chip) arrives as that run, carrying the alt its span falls back to, and none of
+     * those tokens survives as text. A `[size]` range is the exception: the model has no size run,
+     * so its marker pair travels with the tree and `RichMessageLayout` resolves it into a
+     * RelativeSizeSpan (the rich golden is the gate for that half).
      */
     @Test
     fun theLayoutTreeCarriesInlineImagesAsEmojiRuns() {
@@ -111,10 +114,13 @@ class InlineRichTextTest {
 
         val layoutTree = cooked.toLayoutTree("https://linux.do/")
         val described = describe(layoutTree)
-        assertThat(described).doesNotContain("__nd_inline_")
+        assertThat(described).doesNotContain("__nd_inline_image_")
+        assertThat(described).doesNotContain("__nd_inline_icon_")
         assertThat(described).contains("emoji(")
         assertThat(described).contains(":wave:")
         assertThat(described).contains("\"big\"")
+        assertThat(described).contains(cooked.inlineSizes[0].startToken)
+        assertThat(described).contains(cooked.inlineSizes[0].endToken)
     }
 
     @Test

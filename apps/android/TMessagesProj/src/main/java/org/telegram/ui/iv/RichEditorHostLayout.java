@@ -228,21 +228,32 @@ public class RichEditorHostLayout extends FrameLayout {
     }
 
     /**
-     * The two toolbar buttons this product cannot answer - the pin's AI key (the compose sheet's,
-     * next to the block row, and the style editor's, in the format panel) and the emoji key - stay
-     * at the pin's geometry (hiding them would move the block row the pin centers) but must not
-     * look like live controls: the pin has no "unavailable" state for them, so they are dimmed to
-     * the alpha the editor's own disabled buttons use (`RichEditor.Button.setEnabled`) and stop
-     * taking touches. The AI compose sheet and the style editor are chat/Bot API surfaces this tree
-     * has no host for, and the emoji panel belongs to the composer's input island, not this sheet
-     * (`docs/render-model-alignment.md`, "The ui/iv project"). The delegate's `onAi`/`onEmoji`
-     * stay as the toolbar's contract, but nothing reaches them.
+     * The pin's own emoji-popup seam (`ChatAttachAlertRichLayout.showEmojiPopup` /
+     * `hideEmojiPopup`): while the panel covers the bottom, the key shows a keyboard glyph.
+     */
+    public void setEmojiOpened(boolean opened) {
+        toolbar.setEmojiOpened(opened);
+    }
+
+    /**
+     * The pin's `resolveEmojiTarget` seam: the editor's focused text view, or the last one that had
+     * focus. The app inserts the site's emoji markup into it (`RichEditorSheet.insertEmojiMarkup`).
+     */
+    public org.telegram.ui.iv.RichEditText getFocusedEditTextOrNull() {
+        final org.telegram.ui.iv.RichEditText focused = listView.getFocusedEditTextOrNull();
+        return focused != null ? focused : listView.findFocusedEditText();
+    }
+
+    /**
+     * The toolbar buttons this product cannot answer stay at the pin's geometry (hiding them would
+     * move the block row the pin centers) but must not look like live controls: the pin has no
+     * "unavailable" state for them, so they are dimmed to the alpha the editor's own disabled
+     * buttons use (`RichEditor.Button.setEnabled`) and stop taking touches. That is the two AI keys
+     * (the compose sheet's and the style editor's) - chat/Bot API surfaces this tree has no host for;
+     * the delegate's `onAi` stays as the toolbar's contract, but nothing reaches it. The emoji key is
+     * live: the app answers it with the composer's own panel.
      */
     private void disableUnwiredToolbarButtons() {
-        final View emojiButton = toolbar.getEmojiButton();
-        if (emojiButton != null) {
-            setUnwired(emojiButton);
-        }
         disableAiButtons(toolbar);
     }
 

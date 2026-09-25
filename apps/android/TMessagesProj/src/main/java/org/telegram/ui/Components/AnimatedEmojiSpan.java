@@ -207,8 +207,9 @@ public class AnimatedEmojiSpan extends ReplacementSpan {
     }
 
     /**
-     * The pin reserves a square the emoji's size and lets the line grow to fit it. With no image the
-     * span measures the alt text it covers, so the run is never swallowed.
+     * The pin reserves a square the emoji's size and lets the line grow to fit it. A registry image
+     * brings its own bounds (a chip is wider than tall), so those win; with no image the span
+     * measures the alt text it covers, so the run is never swallowed.
      */
     @Override
     public int getSize(android.graphics.Paint paint, CharSequence text, int start, int end, android.graphics.Paint.FontMetricsInt fm) {
@@ -220,7 +221,8 @@ public class AnimatedEmojiSpan extends ReplacementSpan {
             return (int) Math.ceil(paint.measureText(text, start, end));
         }
         final int side = Math.max(1, Math.round(size));
-        image.setBounds(0, 0, side, side);
+        final int width = image.getBounds().width() > 0 ? image.getBounds().width() : side;
+        final int height = image.getBounds().height() > 0 ? image.getBounds().height() : side;
         if (fm != null) {
             final android.graphics.Paint.FontMetricsInt paintMetrics = paint.getFontMetricsInt();
             fm.top = paintMetrics.top;
@@ -230,7 +232,7 @@ public class AnimatedEmojiSpan extends ReplacementSpan {
             fm.leading = paintMetrics.leading;
             if (!preserveFontMetrics) {
                 final int textHeight = paintMetrics.descent - paintMetrics.ascent;
-                int wanted = Math.max(side, minimumLineHeight);
+                int wanted = Math.max(height, minimumLineHeight);
                 if (wanted > textHeight) {
                     final int extra = wanted - textHeight;
                     fm.ascent = paintMetrics.ascent - extra / 2;
@@ -240,7 +242,7 @@ public class AnimatedEmojiSpan extends ReplacementSpan {
                 }
             }
         }
-        return side;
+        return width;
     }
 
     @Override
@@ -251,11 +253,14 @@ public class AnimatedEmojiSpan extends ReplacementSpan {
             return;
         }
         final int side = Math.max(1, Math.round(size));
-        image.setBounds(0, 0, side, side);
+        if (image.getBounds().width() <= 0 || image.getBounds().height() <= 0) {
+            image.setBounds(0, 0, side, side);
+        }
+        final int height = image.getBounds().height();
         final Paint.FontMetrics metrics = paint.getFontMetrics();
         final float centerY = y + (metrics.ascent + metrics.descent) / 2f;
         canvas.save();
-        canvas.translate(x, centerY - side / 2f);
+        canvas.translate(x, centerY - height / 2f);
         image.draw(canvas);
         canvas.restore();
     }

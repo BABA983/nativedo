@@ -739,10 +739,22 @@ private fun parseListElement(element: Element, quoteLevel: Int, baseUrl: String)
     val items = element.children()
         .filter { child -> child.normalName() == "li" }
         .mapNotNull { item ->
-            val html = item.html().takeIfHtmlNotBlank() ?: return@mapNotNull null
+            // Discourse cooks a task list as `li.task-list-item` with a checkbox input. The input is
+            // chrome, not content: it leaves the item before the item is parsed, and its state
+            // travels as the item's `checked`.
+            val checkbox = item.selectFirst("input[type=checkbox]")
+            val checked = when {
+                checkbox != null -> checkbox.hasAttr("checked")
+                item.hasClass("task-list-item") -> false
+                else -> null
+            }
+            checkbox?.remove()
+            val html = item.html()
+            if (html.takeIfHtmlNotBlank() == null && checked == null) return@mapNotNull null
             CookedPostBlock.ListItem(
                 html = html,
                 blocks = coalesceImagesIntoCollage(parseCookedNodes(item.childNodes(), quoteLevel, baseUrl)),
+                checked = checked,
             )
         }
     return if (items.isEmpty()) emptyList() else listOf(CookedPostBlock.ListItems(ordered = element.normalName() == "ol", items = items))

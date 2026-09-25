@@ -132,19 +132,44 @@ internal object PostRichMessageBuilder {
     private fun listItem(item: CookedPostBlock.ListItem, baseUrl: String): TL_iv.PageListItem {
         val inlineHtml = item.inlineHtmlOrNull()
         return if (inlineHtml != null) {
-            TL_iv.TL_pageListItemText().apply { text = inline(inlineHtml, baseUrl) }
+            TL_iv.TL_pageListItemText().apply {
+                text = inline(inlineHtml, baseUrl)
+                withCheckbox(item.checked)
+            }
         } else {
-            TL_iv.TL_pageListItemBlocks().apply { blocks = ArrayList(pageBlocks(item.blocks, baseUrl)) }
+            TL_iv.TL_pageListItemBlocks().apply {
+                blocks = ArrayList(pageBlocks(item.blocks, baseUrl))
+                withCheckbox(item.checked)
+            }
         }
     }
 
     private fun orderedItem(item: CookedPostBlock.ListItem, baseUrl: String): TL_iv.PageListOrderedItem {
         val inlineHtml = item.inlineHtmlOrNull()
         return if (inlineHtml != null) {
-            TL_iv.TL_pageListOrderedItemText().apply { text = inline(inlineHtml, baseUrl) }
+            TL_iv.TL_pageListOrderedItemText().apply {
+                text = inline(inlineHtml, baseUrl)
+                withCheckbox(item.checked)
+            }
         } else {
-            TL_iv.TL_pageListOrderedItemBlocks().apply { blocks = ArrayList(pageBlocks(item.blocks, baseUrl)) }
+            TL_iv.TL_pageListOrderedItemBlocks().apply {
+                blocks = ArrayList(pageBlocks(item.blocks, baseUrl))
+                withCheckbox(item.checked)
+            }
         }
+    }
+
+    /** A task-list item's state is upstream's checkbox pair; a plain item carries neither flag. */
+    private fun TL_iv.PageListItem.withCheckbox(checked: Boolean?) {
+        if (checked == null) return
+        checkbox = true
+        this.checked = checked
+    }
+
+    private fun TL_iv.PageListOrderedItem.withCheckbox(checked: Boolean?) {
+        if (checked == null) return
+        checkbox = true
+        this.checked = checked
     }
 
     /**

@@ -1981,10 +1981,76 @@ public class RichMessageLayout {
         return formatText(text, new SpannableStringBuilder(), 0);
     }
     public CharSequence formatText(TL_iv.RichText text, int flags) {
+        final CharSequence formatted;
         if (flags == 0)
-            return formatText(text, new SpannableStringBuilder(), 0);
+            formatted = formatText(text, new SpannableStringBuilder(), 0);
         else
-            return formatTextAndSetSpan(text, new SpannableStringBuilder(), flags, new StyleSpan(this, flags));
+            formatted = formatTextAndSetSpan(text, new SpannableStringBuilder(), flags, new StyleSpan(this, flags));
+        return applyDiscourseSizeMarkers(formatted);
+    }
+
+    // NativeDo: a Discourse `[size]` range has no RichText case, so the mapping keeps the range's
+    // marker pair (`__nd_inline_size_start_<index>_<percent>__` ... `_end_...`) in the text and this
+    // resolves it - the markers go, and the text between them carries a RelativeSizeSpan. The index
+    // pairs a start with its own end (ranges can nest); the block path resolves the same pair in
+    // PostBodyInternalLinks.
+    private static final java.util.regex.Pattern DISCOURSE_SIZE_START =
+        java.util.regex.Pattern.compile("__nd_inline_size_start_(\\d+)_(\\d+)__");
+    private static final java.util.regex.Pattern DISCOURSE_SIZE_ANY =
+        java.util.regex.Pattern.compile("__nd_inline_size_(?:start|end)_\\d+_\\d+__");
+
+    private static CharSequence applyDiscourseSizeMarkers(CharSequence text) {
+        if (!(text instanceof SpannableStringBuilder) || text.length() == 0) {
+            return text;
+        }
+        final SpannableStringBuilder out = (SpannableStringBuilder) text;
+        final String plain = out.toString();
+        final ArrayList<int[]> ranges = new ArrayList<>();   // {start, end, percent}
+        final java.util.regex.Matcher startMatcher = DISCOURSE_SIZE_START.matcher(plain);
+        while (startMatcher.find()) {
+            final int index = Integer.parseInt(startMatcher.group(1));
+            final int percent = Integer.parseInt(startMatcher.group(2));
+            final java.util.regex.Matcher endMatcher = java.util.regex.Pattern
+                .compile("__nd_inline_size_end_" + index + "_\\d+__")
+                .matcher(plain);
+            if (endMatcher.find(startMatcher.end())) {
+                ranges.add(new int[] { startMatcher.end(), endMatcher.start(), percent });
+            }
+        }
+        if (ranges.isEmpty()) {
+            return text;
+        }
+        final ArrayList<int[]> markers = new ArrayList<>();  // {start, end}
+        final java.util.regex.Matcher anyMatcher = DISCOURSE_SIZE_ANY.matcher(plain);
+        while (anyMatcher.find()) {
+            markers.add(new int[] { anyMatcher.start(), anyMatcher.end() });
+        }
+        // Remove the markers from the end, so the offsets recorded above stay valid; then map each
+        // range onto the marker-free text.
+        for (int i = markers.size() - 1; i >= 0; i--) {
+            out.delete(markers.get(i)[0], markers.get(i)[1]);
+        }
+        for (int i = 0; i < ranges.size(); i++) {
+            final int[] range = ranges.get(i);
+            int shiftStart = 0;
+            int shiftEnd = 0;
+            for (int m = 0; m < markers.size(); m++) {
+                final int[] marker = markers.get(m);
+                if (marker[1] <= range[0]) shiftStart += marker[1] - marker[0];
+                if (marker[1] <= range[1]) shiftEnd += marker[1] - marker[0];
+            }
+            final int spanStart = range[0] - shiftStart;
+            final int spanEnd = range[1] - shiftEnd;
+            if (spanEnd > spanStart) {
+                out.setSpan(
+                    new android.text.style.RelativeSizeSpan(range[2] / 100f),
+                    spanStart,
+                    spanEnd,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
+                );
+            }
+        }
+        return out;
     }
     private void setSpansWithoutClash(Object span, SpannableStringBuilder out, int start, int end) {
         if (span instanceof StyleSpan) {

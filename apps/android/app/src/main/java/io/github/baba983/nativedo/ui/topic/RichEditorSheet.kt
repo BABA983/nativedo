@@ -11,6 +11,8 @@ package io.github.baba983.nativedo.ui.topic
 import android.content.Context
 import android.content.DialogInterface
 import android.graphics.Canvas
+import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.core.view.ViewCompat
@@ -36,8 +38,8 @@ import org.telegram.ui.iv.RichEditorHostLayout
  *
  * What the page cannot do itself is left to the caller: [onAttachRequested] is the app's file
  * picker (the caller hands the picked file back with `RichEditorHostLayout.attachMedia` /
- * `attachExternalMedia`), and emoji is not wired yet (the composer's emoji panel belongs to its
- * input island, not to this sheet).
+ * `attachExternalMedia`), and [onEmojiPanelRequested] is the site's emoji panel (the caller owns the
+ * view; the sheet places it at its bottom edge and inserts the picked markup at the editor's caret).
  */
 internal class RichEditorSheet(
     context: Context,
@@ -50,6 +52,13 @@ internal class RichEditorSheet(
     /** The app's file picker; left unset, the toolbar's attach button and media rows do nothing. */
     var onAttachRequested: (() -> Unit)? = null
 
+    /**
+     * The emoji key's hook. The caller owns the panel (the composer's own `DiscourseEmojiPanel`
+     * source) and hands back the view plus the height it needs at the sheet's bottom edge; returning
+     * null leaves the key inert. The sheet places the view and keeps the page's bottom inset in sync.
+     */
+    var onEmojiPanelRequested: ((onPicked: (String) -> Unit) -> Pair<View, Int>?)? = null
+
     private val host = RichEditorHostLayout(
         context,
         currentAccount,
@@ -58,6 +67,8 @@ internal class RichEditorSheet(
     )
     private var sending = false
     private var unresizedWindowHeight = 0
+    private var emojiPanel: View? = null
+    private var emojiPanelHeight = 0
 
     init {
         host.setDelegate(object : RichEditorHostLayout.Delegate {
@@ -70,7 +81,7 @@ internal class RichEditorSheet(
             }
 
             override fun onEmojiRequested() {
-                // NativeDo wire-out: the composer's emoji panel is anchored to its input island.
+                toggleEmojiPanel()
             }
 
             override fun onSendPressed() {
@@ -119,7 +130,10 @@ internal class RichEditorSheet(
             )
         }
         fixNavigationBar(getThemedColor(Theme.key_dialogBackground))
-        setOnDismissListener(DialogInterface.OnDismissListener { reportDraftIfNotSent() })
+        setOnDismissListener(DialogInterface.OnDismissListener {
+            hideEmojiPanel()
+            reportDraftIfNotSent()
+        })
         // The page's own top is part of its insets; the sheet's handle gap is the base it keeps.
         host.viewTreeObserver.addOnGlobalLayoutListener { applyWindowInsets(ViewCompat.getRootWindowInsets(host)) }
     }
@@ -170,10 +184,64 @@ internal class RichEditorSheet(
             minTopInset = AndroidUtilities.dp(8f),
         )
         host.setTopInset(values.top)
-        host.setBottomInsets(values.bottom, 0)
+        host.setBottomInsets(values.bottom, emojiPanelHeight)
         // the page's own keyboard seam: the pin's `measureKeyboardHeight() > dp(20)`, read from the
         // window's real IME inset instead of the size-notifier view the attach sheet had
         host.setImeInset(ime)
+    }
+
+    /**
+     * The emoji key: the pin's `toggleEmojiPopup`, with the panel the caller owns. Opening hides the
+     * keyboard (the panel takes the bottom), places the view at the sheet's bottom edge and tells the
+     * page how much of it the panel covers; tapping the key again takes it away.
+     */
+    private fun toggleEmojiPanel() {
+        if (emojiPanel != null) {
+            hideEmojiPanel()
+            return
+        }
+        val requested = onEmojiPanelRequested?.invoke(::insertEmojiMarkup) ?: return
+        val (panel, heightPx) = requested
+        if (heightPx <= 0) return
+        AndroidUtilities.hideKeyboard(host)
+        emojiPanel = panel
+        emojiPanelHeight = heightPx
+        (containerView as? FrameLayout)?.addView(
+            panel,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                heightPx,
+                Gravity.BOTTOM,
+            ),
+        )
+        host.setEmojiOpened(true)
+        applyWindowInsets(ViewCompat.getRootWindowInsets(host))
+    }
+
+    private fun hideEmojiPanel() {
+        val panel = emojiPanel ?: return
+        emojiPanel = null
+        emojiPanelHeight = 0
+        (containerView as? FrameLayout)?.removeView(panel)
+        host.setEmojiOpened(false)
+        applyWindowInsets(ViewCompat.getRootWindowInsets(host))
+    }
+
+    /**
+     * The site's emoji markup at the editor's caret - the same insertion rule the composer uses
+     * (`topicReplyComposerEmojiInsertionText`), on the focused cell's text view (the pin's
+     * `resolveEmojiTarget` shape). Returns false when no cell has focus.
+     */
+    fun insertEmojiMarkup(name: String): Boolean {
+        val editText = host.focusedEditTextOrNull ?: return false
+        val current = editText.text ?: return false
+        val start = minOf(editText.selectionStart, editText.selectionEnd).coerceIn(0, current.length)
+        val end = maxOf(editText.selectionStart, editText.selectionEnd).coerceIn(0, current.length)
+        val insertion = topicReplyComposerEmojiInsertionText(current, start, end, name)
+        if (insertion.isEmpty()) return false
+        current.replace(start, end, insertion)
+        editText.setSelection((start + insertion.length).coerceAtMost(current.length))
+        return true
     }
 
     /** The composer's draft (Discourse markdown) as the editor's starting document. */

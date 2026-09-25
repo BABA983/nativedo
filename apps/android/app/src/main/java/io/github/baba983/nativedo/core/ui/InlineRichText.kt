@@ -6,6 +6,7 @@ import org.jsoup.nodes.Element
 import org.jsoup.nodes.Node
 import org.jsoup.nodes.TextNode
 import org.telegram.tgnet.tl.TL_iv
+import kotlin.math.roundToInt
 
 /**
  * Discourse's cooked inline HTML as Telegram's inline model.
@@ -74,9 +75,10 @@ internal fun CookedInline.plainText(): String {
  * The block path resolves a token into a real span (`PostBodyInlineSpans`); upstream's renderer has
  * its own step for exactly one of those - a `textCustomEmoji` run drawn by `AnimatedEmojiSpan` -
  * and draws any other token literally, which is how `__nd_inline_image_0__` ended up as body text
- * on the device. So an inline image or icon becomes that run ([DiscourseInlineImages] hands out the
- * id the span resolves), a hashtag chip keeps its label (the model has no chip), and a `[size]`
- * range drops its markers (the model has no size case). No token may reach the layout.
+ * on the device. So an inline image, an icon and a hashtag chip all become that run
+ * ([DiscourseInlineImages] hands out the id the span resolves: an image, a sprite, or a chip), and a
+ * `[size]` range keeps its marker pair for the renderer's own delta (`RichMessageLayout`). No other
+ * token may reach the layout.
  *
  * The tree [cookInlineHtml] returns is fresh, so this rewrites it in place.
  */
@@ -94,16 +96,16 @@ internal fun CookedInline.toLayoutTree(baseUrl: String): TL_iv.RichText {
             alt = icon.contentDescription,
         )
     }
-    val textOnly = HashMap<String, String>()
-    inlineHashtagChips.forEach { textOnly[it.token] = it.label }
-    inlineSizes.forEach {
-        textOnly[it.startToken] = ""
-        textOnly[it.endToken] = ""
+    inlineHashtagChips.forEach { chip ->
+        runs[chip.token] = customEmojiRun(
+            documentId = DiscourseInlineImages.registerChip(chip, baseUrl),
+            alt = chip.label,
+        )
     }
 
     fun rewrite(node: TL_iv.RichText?): TL_iv.RichText? = when {
         node == null -> null
-        node is TL_iv.textPlain -> splitLeaf(node.text.orEmpty(), textOnly, runs)
+        node is TL_iv.textPlain -> splitLeaf(node.text.orEmpty(), runs)
         node is TL_iv.textConcat -> node.apply { texts = ArrayList(texts.mapNotNull(::rewrite)) }
         node.text != null -> node.apply { text = rewrite(node.text) }
         else -> node
@@ -121,14 +123,12 @@ private fun customEmojiRun(documentId: Long, alt: String): TL_iv.textCustomEmoji
 /** A leaf whose text carries inline images becomes a concat of plain runs and emoji runs. */
 private fun splitLeaf(
     text: String,
-    textOnly: Map<String, String>,
     runs: Map<String, TL_iv.textCustomEmoji>,
 ): TL_iv.RichText {
-    var value = text
-    textOnly.forEach { (token, replacement) -> value = value.replace(token, replacement) }
-    if (runs.isEmpty() || runs.keys.none(value::contains)) {
-        return TL_iv.textPlain().apply { this.text = value }
+    if (runs.isEmpty() || runs.keys.none(text::contains)) {
+        return TL_iv.textPlain().apply { this.text = text }
     }
+    val value = text
     val parts = ArrayList<TL_iv.RichText>()
     var index = 0
     while (index < value.length) {
@@ -274,12 +274,18 @@ private class InlineCooker {
         return wrappers
     }
 
-    /** `[size]` spans have no RichText case, so they keep the marker pair the HTML pipeline used. */
+    /**
+     * `[size]` spans have no RichText case, so they keep the marker pair the HTML pipeline used. The
+     * marker carries the index (so a start finds its own end even when ranges nest) and the ratio in
+     * percent (so the rich renderer can resolve the pair into a span without seeing this spec list).
+     */
     private fun sizeMarker(element: Element, styled: TL_iv.RichText): TL_iv.RichText {
         val ratio = element.sizeRatio() ?: return styled
+        val index = inlineSizes.size
+        val percent = (ratio * 100f).roundToInt()
         val spec = InlineSizeSpec(
-            startToken = "__nd_inline_size_start_${inlineSizes.size}__",
-            endToken = "__nd_inline_size_end_${inlineSizes.size}__",
+            startToken = "__nd_inline_size_start_${index}_${percent}__",
+            endToken = "__nd_inline_size_end_${index}_${percent}__",
             relativeSize = ratio,
         )
         inlineSizes += spec

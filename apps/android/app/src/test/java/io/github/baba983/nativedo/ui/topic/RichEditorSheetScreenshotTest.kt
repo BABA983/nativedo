@@ -5,6 +5,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.TextView
 import io.github.baba983.nativedo.screenshot.NativeDoPaparazziRule
 import io.github.baba983.nativedo.screenshot.SystemAppearance
 import org.junit.Rule
@@ -101,6 +102,23 @@ internal class RichEditorSheetScreenshotTest {
         }
     }
 
+    @Test
+    fun theEditorShowsTheComposerEmojiPanel() {
+        paparazziRule.snapshot { context ->
+            val sheet = editorSheet(context)
+            sheet.loadMarkdown("# A reply\n\nText with an emoji :smile: in it.")
+            // the emoji key's glyph is an RLottie asset, which layoutlib does not paint, so this
+            // golden pins the sheet's half of the seam rather than the key itself: the panel takes
+            // the bottom edge and the page's toolbar rides above it. The panel view is the
+            // composer's (built by the fragment, device-verified there), so it is stood in for here
+            // at the same height.
+            val panelHeight = AndroidUtilities.dp(260f)
+            sheet.onEmojiPanelRequested = { _ -> stubEmojiPanel(context, panelHeight) to panelHeight }
+            sheet.editorHost().getToolbar().getEmojiButton().performClick()
+            sheetViewport(context, sheet)
+        }
+    }
+
     private fun editorSheet(context: Context): RichEditorSheet =
         RichEditorSheet(
             context,
@@ -109,6 +127,26 @@ internal class RichEditorSheetScreenshotTest {
             onSend = {},
             onDraft = {},
         )
+
+    /**
+     * The composer's emoji panel, stood in for: the real view belongs to the input island and is
+     * device-verified there, so only the sheet's half of the seam is pinned here.
+     */
+    private fun stubEmojiPanel(context: Context, heightPx: Int): View =
+        FrameLayout(context).apply {
+            setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundGray))
+            addView(
+                TextView(context).apply {
+                    text = "emoji panel"
+                    gravity = Gravity.CENTER
+                    setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText))
+                },
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    heightPx,
+                ),
+            )
+        }
 
     private fun themeProvider(): Theme.ResourcesProvider = object : Theme.ResourcesProvider {
         override fun getColor(key: Int): Int = Theme.getColor(key)

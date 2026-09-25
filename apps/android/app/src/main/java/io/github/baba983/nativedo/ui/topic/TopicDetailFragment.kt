@@ -1698,8 +1698,39 @@ class TopicDetailFragment @JvmOverloads constructor(
         )
         richEditorSheet = sheet
         sheet.onAttachRequested = ::pickEditorMedia
+        sheet.onEmojiPanelRequested = ::editorEmojiPanel
         sheet.loadMarkdown(draft.raw)
         sheet.show()
+    }
+
+    /**
+     * The editor sheet's emoji key: the same panel the composer opens
+     * ([TopicReplyComposerEmojiPanel]), anchored to the sheet instead of the input island. The sheet
+     * places the view at its bottom edge and routes a pick to `insertEmojiMarkup`, so the document
+     * gets the site's `:name:` form through the composer's own insertion rule. The panel animates in
+     * as the composer's does; the sheet's layout then owns it.
+     */
+    private fun editorEmojiPanel(onPicked: (String) -> Unit): Pair<View, Int>? {
+        val categories = emojiCategories.ifEmpty {
+            topicReplyComposerFallbackEmojiCategories(
+                reactionIds = validReactionIds.ifEmpty { DEFAULT_REACTION_IDS },
+                emojiCatalog = emojiCatalog,
+            )
+        }
+        if (categories.isEmpty()) return null
+        val panelHeight = topicReplyComposerEmojiPanelHeightPx(
+            keyboardInset = 0,
+            rootHeight = (fragmentView as? ViewGroup)?.height ?: AndroidUtilities.displaySize.y,
+        )
+        val panel = TopicReplyComposerEmojiPanel(
+            context = context ?: return null,
+            heightPx = panelHeight,
+            baseUrl = baseUrl,
+            categories = categories,
+            onEmojiSelected = onPicked,
+        )
+        panel.show()
+        return panel to panelHeight
     }
 
     /**

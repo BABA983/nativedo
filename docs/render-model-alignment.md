@@ -410,6 +410,19 @@ Sequence, if chat is scheduled:
    returned a list of blocks, so `TopicPostCell` (forced_exact) is untouched. 5 segment tests
    (order, grouping, container fallback, no block lost) plus the `richMessageHybridBody` cell
    snapshot; the flag-off and single-run goldens did not move.
+   **The Discourse-only inline constructs landed (`2026-09-25`).** The four shapes the model has no
+   upstream case for now ride the runs the block path already emits, so a flag-on post reads like the
+   flag-off cell: a cooked hashtag anchor is a registered chip
+   (`DiscourseInlineImages.Spec.Chip` + `registerChip`, drawn by the block path's own
+   `DiscourseTagChipSpan`, rebuilt on a theme change, and answering its own tap by the tag URL the
+   registry kept out of band), a `[size=150]` range is a `RelativeSizeSpan` applied inside
+   `RichMessageLayout.formatText` (a new `// NativeDo:` delta, `applyDiscourseSizeMarkers`, which
+   deletes the cooker's markers and maps the run's spans around them, nesting-safe), a task-list item
+   carries `PageListItem.checkbox`/`checked` straight from the parser (upstream draws its own boxes),
+   and `AnimatedEmojiSpan` learned to honour a drawable's own non-square bounds, which is what lets
+   the chip pill and a wide icon sit in a run. The retained golden is
+   `TopicPostCellScreenshotTest.richMessageInlineCases` (both themes); the device pass is
+   `docs/device-verification.md` §7.
    **The vertical rhythm, measured** (this is upstream's model, not ours to invent): paragraphs
    `setContentPadding(previousSiblingParagraph ? 0 : dp(5), dp(4.66f))`, headings `dp(10)/dp(6)`,
    media `padding.top + image + padding.bottom` with the caller's zero rect, captions the same, and
@@ -659,8 +672,14 @@ project with ordered slices rather than a wire-out:
      own attach path followed (`b9a967d`): the send slot shows a paperclip while the draft is
      empty, the picked file is copied into the cache, uploaded through the same endpoint and
      inserted as `![name](url)` at the caret (the send button's long-press menu carries the
-     same action once there is text). **Still to come:** the emoji hook, and - until a product
-     surface needs them - `RichEditor`'s chat glue and `RichInlineButtonEditor`.
+     same action once there is text). The emoji hook followed (`2026-09-25`): the toolbar's emoji
+     key is live and opens the composer's own `TopicReplyComposerEmojiPanel` at the sheet's bottom
+     edge (`RichEditorSheet.onEmojiPanelRequested` - the caller owns the view, the sheet places it
+     and feeds the page's bottom inset), a pick inserts the site's `:name:` markup at the focused
+     cell's caret through the composer's own `topicReplyComposerEmojiInsertionText`, and the key
+     flips to a keyboard while the panel is up (the pin's `setEmojiOpened`, whose upstream caller is
+     `ChatAttachAlertRichLayout.showEmojiPopup`). **Still to come:** `RichEditor`'s chat glue and
+     `RichInlineButtonEditor`, until a product surface needs them.
 3. Wire the editor into the composer as the upstream-shaped replacement for our
    span-only path, once chat/rich compose is scheduled. **Measured
    (`09e5ce1`, 2026-09-19): the two editing surfaces are separate work, and only
