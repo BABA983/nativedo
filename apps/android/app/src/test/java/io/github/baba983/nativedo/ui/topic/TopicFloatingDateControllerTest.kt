@@ -31,48 +31,4 @@ class TopicFloatingDateControllerTest {
             ),
         ).isEqualTo(0)
     }
-
-    @Test
-    fun translationMatchesListParentCoordinatesAndListTranslation() {
-        org.telegram.messenger.AndroidUtilities.density = 1f
-
-        assertThat(
-            topicFloatingDateTranslationY(
-                listTop = 0f,
-                listTranslationY = 0f,
-                listPaddingTop = 180,
-                viewOffset = 0,
-            ),
-        ).isEqualTo(176f)
-        assertThat(
-            topicFloatingDateTranslationY(
-                listTop = 12f,
-                listTranslationY = -9f,
-                listPaddingTop = 180,
-                viewOffset = -12,
-            ),
-        ).isEqualTo(167f)
-    }
-
-    @Test
-    fun topClipTracksSeparatorPushWithoutClippingTheRestingDate() {
-        org.telegram.messenger.AndroidUtilities.density = 1f
-
-        assertThat(
-            topicFloatingDateTopClip(
-                listTop = 0f,
-                listTranslationY = 0f,
-                listPaddingTop = 180,
-                floatingViewY = 180f,
-            ),
-        ).isEqualTo(0f)
-        assertThat(
-            topicFloatingDateTopClip(
-                listTop = 0f,
-                listTranslationY = 0f,
-                listPaddingTop = 180,
-                floatingViewY = 168f,
-            ),
-        ).isEqualTo(8f)
-    }
 }

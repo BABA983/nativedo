@@ -33,9 +33,9 @@ import java.util.ArrayList
  * Discourse-only blocks (callout, onebox, poll) and any container holding one kept in our own block
  * tree and stacked in place between those runs.
  *
- * Off by default. The renderer's pixels are covered by `PostRichMessageScreenshotTest`, but the cell
- * path has not run on a device yet (`docs/device-verification.md` §7), so the switch stays opt-in
- * until that pass.
+ * Off by default. The renderer's pixels are covered by the `richMessageBody` / `richMessageHybridBody`
+ * goldens in `TopicPostCellScreenshotTest`, but the cell path has not run on a device yet
+ * (`docs/device-verification.md` §7), so the switch stays opt-in until that pass.
  */
 internal object RichMessageBody {
 

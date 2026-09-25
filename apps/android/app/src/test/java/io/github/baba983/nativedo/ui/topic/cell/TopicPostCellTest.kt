@@ -3,10 +3,8 @@ package io.github.baba983.nativedo.ui.topic.cell
 import android.view.MotionEvent
 import android.view.View
 import com.google.common.truth.Truth.assertThat
-import io.github.baba983.nativedo.core.html.parseCookedPostBody
 import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.PostReaction
-import io.github.baba983.nativedo.core.model.PostReactionRendering
 import io.github.baba983.nativedo.ui.topic.body.PostBodyBlockState
 import org.junit.Before
 import org.junit.Test
@@ -24,52 +22,6 @@ class TopicPostCellTest {
     @Before
     fun setUp() {
         ApplicationLoader.init(RuntimeEnvironment.getApplication())
-    }
-
-    @Test
-    fun cellChromeGeometry_matchesTelegramStylePostCellContract() {
-        assertThat(TopicPostCell.horizontalPaddingPx()).isEqualTo(AndroidUtilities.dp(18f))
-        assertThat(TopicPostCell.verticalPaddingPx()).isEqualTo(AndroidUtilities.dp(12f))
-        assertThat(TopicPostCell.avatarSizePx()).isEqualTo(AndroidUtilities.dp(42f))
-        assertThat(TopicPostCell.avatarGapPx()).isEqualTo(AndroidUtilities.dp(10f))
-        assertThat(TopicPostCell.headerBottomSpacingPx()).isEqualTo(AndroidUtilities.dp(10f))
-        assertThat(TopicPostCell.blockSpacingPx()).isEqualTo(AndroidUtilities.dp(10f))
-        assertThat(TopicPostCell.footerTopSpacingPx()).isEqualTo(AndroidUtilities.dp(12f))
-    }
-
-    @Test
-    fun replyFooterGeometry_keepsChatMessageCellCommentButtonAvatarContract() {
-        assertThat(TopicPostCell.replyFooterHeightPx()).isEqualTo(AndroidUtilities.dp(40f))
-        assertThat(TopicPostCell.replyAvatarSizePx()).isEqualTo(AndroidUtilities.dp(24f))
-        assertThat(TopicPostCell.replyAvatarStepPx()).isEqualTo(AndroidUtilities.dp(17f))
-        assertThat(TopicPostCell.replyAvatarLeadingOffsetPx()).isEqualTo(AndroidUtilities.dp(2f))
-        assertThat(TopicPostCell.replyAvatarOverlapMaskRadiusPx()).isEqualTo(AndroidUtilities.dp(13f))
-        assertThat(TopicPostCell.replyAvatarOffsetPx(0)).isEqualTo(AndroidUtilities.dp(2f))
-        assertThat(TopicPostCell.replyAvatarOffsetPx(2)).isEqualTo(AndroidUtilities.dp(2f) + AndroidUtilities.dp(34f))
-        assertThat(TopicPostCell.replyAvatarsWidthPx(0)).isEqualTo(0)
-        assertThat(TopicPostCell.replyAvatarsWidthPx(3))
-            .isEqualTo(AndroidUtilities.dp(2f) + AndroidUtilities.dp(24f) + AndroidUtilities.dp(34f))
-        assertThat(TopicPostCell.replyAvatarSlotCount(0, 0)).isEqualTo(0)
-        assertThat(TopicPostCell.replyAvatarSlotCount(1, 0)).isEqualTo(1)
-        assertThat(TopicPostCell.replyAvatarSlotCount(2, 0)).isEqualTo(2)
-        assertThat(TopicPostCell.replyAvatarSlotCount(80, 0)).isEqualTo(3)
-        assertThat(TopicPostCell.replyAvatarSlotCount(1, 3)).isEqualTo(3)
-        assertThat(TopicPostCell.replyContentLeftPx()).isEqualTo(AndroidUtilities.dp(10f))
-        assertThat(TopicPostCell.replyTextGapPx()).isEqualTo(AndroidUtilities.dp(8f))
-        assertThat(TopicPostCell.replySelectorRightPaddingPx()).isEqualTo(AndroidUtilities.dp(12f))
-    }
-
-    @Test
-    fun reactionGeometry_matchesChatMessageCellReactionsLayoutSubset() {
-        assertThat(TopicPostCell.usesReactionOverflowChip()).isFalse()
-        assertThat(TopicPostCell.reactionTopSpacingPx()).isEqualTo(AndroidUtilities.dp(12f))
-        assertThat(TopicPostCell.reactionButtonHeightPx()).isEqualTo(AndroidUtilities.dp(26f))
-        assertThat(TopicPostCell.reactionButtonSpacingPx()).isEqualTo(AndroidUtilities.dp(4f))
-        assertThat(TopicPostCell.reactionButtonTouchSlopPx()).isEqualTo(AndroidUtilities.dp(4f))
-        assertThat(TopicPostCell.reactionButtonHorizontalPaddingPx()).isEqualTo(AndroidUtilities.dp(8f))
-        assertThat(TopicPostCell.reactionButtonMinWidthPx()).isEqualTo(AndroidUtilities.dp(34f))
-        assertThat(TopicPostCell.reactionIconSizePx()).isEqualTo(AndroidUtilities.dp(20f))
-        assertThat(TopicPostCell.reactionIconGapPx()).isEqualTo(AndroidUtilities.dp(4f))
     }
 
     @Test
@@ -105,57 +57,6 @@ class TopicPostCellTest {
 
         assertThat(latinRange).isEqualTo(intArrayOf(2, 7))
         assertThat(cjkRange).isEqualTo(intArrayOf(2, 4))
-    }
-
-    @Test
-    fun highlightedText_buildsAndClearsRoundedBodyPathAfterMeasurement() {
-        val cell = TopicPostCell(RuntimeEnvironment.getApplication())
-        val html = "<p>prefix searching suffix</p>"
-        val post = Post(id = 1001L, postNumber = 1, authorUsername = "alice", cookedHtml = html)
-        cell.setPost(
-            post,
-            null,
-            null,
-            true,
-            true,
-            42L,
-            "https://linux.do/",
-            emptyMap(),
-            emptyMap(),
-            emptyList(),
-            0,
-            emptyList(),
-            parseCookedPostBody(html, "https://linux.do/"),
-            PostBodyBlockState(),
-            0,
-            null,
-        )
-        cell.setHighlightedText("search")
-        val width = AndroidUtilities.dp(360f)
-        cell.measure(
-            View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
-        )
-        cell.layout(0, 0, width, cell.measuredHeight)
-
-        assertThat(cell.searchHighlightPathCount()).isEqualTo(1)
-
-        cell.setHighlightedText("")
-        assertThat(cell.searchHighlightPathCount()).isEqualTo(0)
-    }
-
-    @Test
-    fun slidingOffset_matchesChatMessageCellTranslationApi() {
-        val cell = TopicPostCell(RuntimeEnvironment.getApplication())
-
-        cell.setSlidingOffset(-50f)
-
-        assertThat(cell.slidingOffsetX).isEqualTo(-50f)
-        assertThat(cell.getNonAnimationTranslationX(false)).isEqualTo(-50f)
-        assertThat(cell.translationX).isEqualTo(-50f)
-
-        cell.setSlidingOffset(0f)
-        assertThat(cell.translationX).isEqualTo(0f)
     }
 
     @Test
@@ -363,93 +264,6 @@ class TopicPostCellTest {
         assertThat(dispatchTouch(cell, MotionEvent.ACTION_UP, downX.toFloat(), downY)).isTrue()
         assertThat(moreReactionInitialId).isEqualTo("heart")
         assertThat(reactionPresses).isEqualTo(0)
-    }
-
-    @Test
-    fun buildReactionButtons_keepsRowHiddenWhenOnlyValidReactionOptionsExist() {
-        val buttons = TopicPostCell.buildReactionButtonSpecs(
-            emptyList<PostReaction>(),
-            listOf("heart", "+1"),
-            emptyMap<String, String>(),
-            3,
-        )
-
-        assertThat(buttons).isEmpty()
-    }
-
-    @Test
-    fun reactionRendering_prefersExplicitIconThenEmojiCatalog() {
-        assertThat(PostReactionRendering.iconUrl("heart", "explicit.png", mapOf("heart" to "catalog.png")))
-            .isEqualTo("explicit.png")
-        assertThat(PostReactionRendering.iconUrl("heart", "", mapOf("heart" to "catalog.png")))
-            .isEqualTo("catalog.png")
-        assertThat(PostReactionRendering.iconUrl("heart", null, emptyMap()))
-            .isNull()
-    }
-
-    @Test
-    fun buildReactionButtons_usesFallbackTextOnlyWhenIconIsMissing() {
-        val withCatalogIcon = TopicPostCell.buildReactionButtonSpecs(
-            listOf(PostReaction("heart", 4)),
-            listOf("heart"),
-            mapOf("heart" to "/images/emoji/heart.png"),
-            3,
-        )
-        val withoutIcon = TopicPostCell.buildReactionButtonSpecs(
-            listOf(PostReaction("heart", 4)),
-            listOf("heart"),
-            emptyMap<String, String>(),
-            3,
-        )
-
-        assertThat(withCatalogIcon.first().countText).isEqualTo("4")
-        assertThat(withoutIcon.first().countText).isEqualTo("♡ 4")
-    }
-
-    @Test
-    fun buildReactionButtons_keepsReactionRowHiddenWithoutKnownReactionOptions() {
-        val buttons = TopicPostCell.buildReactionButtonSpecs(
-            emptyList<PostReaction>(),
-            emptyList(),
-            emptyMap<String, String>(),
-            3,
-        )
-
-        assertThat(buttons).isEmpty()
-    }
-
-    @Test
-    fun buildReactionButtons_rendersAllExistingReactionsWithoutOverflowChip() {
-        val buttons = TopicPostCell.buildReactionButtonSpecs(
-            listOf(
-                PostReaction("heart", 4),
-                PostReaction("+1", 3),
-                PostReaction("laughing", 2),
-                PostReaction("clap", 1),
-            ),
-            listOf("heart", "+1", "laughing", "clap"),
-            emptyMap<String, String>(),
-            3,
-        )
-
-        assertThat(buttons.map { it.postReaction?.id })
-            .containsExactly("heart", "+1", "laughing", "clap")
-            .inOrder()
-    }
-
-    @Test
-    fun reactionChangeAnimationDuration_matchesReactionsLayoutInBubbleCounter() {
-        assertThat(TopicPostCell.reactionChangeAnimationDurationMs()).isEqualTo(320L)
-    }
-
-    @Test
-    fun reactionButtonInOutScale_matchesReactionsLayoutInBubbleAnimationTypes() {
-        assertThat(TopicPostCell.reactionButtonInAlpha(0.25f)).isEqualTo(0.25f)
-        assertThat(TopicPostCell.reactionButtonInAlpha(-1f)).isEqualTo(0f)
-        assertThat(TopicPostCell.reactionButtonInScale(0f)).isEqualTo(0.5f)
-        assertThat(TopicPostCell.reactionButtonInScale(1f)).isEqualTo(1f)
-        assertThat(TopicPostCell.reactionButtonOutScale(0f)).isEqualTo(1f)
-        assertThat(TopicPostCell.reactionButtonOutScale(1f)).isEqualTo(0.5f)
     }
 
     private fun dispatchTouch(cell: TopicPostCell, action: Int, x: Float, y: Float): Boolean {

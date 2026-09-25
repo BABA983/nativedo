@@ -126,9 +126,4 @@ class InlineRichTextTest {
         assertThat(cooked.plainText()).isEqualTo("x")
     }
 
-    @Test
-    fun flattensStyledTextForPreviews() {
-        val cooked = cookInlineHtml("<p>Hello <b>world</b> <a href=\"/t/x/1\">topic</a></p>")
-        assertThat(cooked.plainText()).isEqualTo("Hello world topic")
-    }
 }

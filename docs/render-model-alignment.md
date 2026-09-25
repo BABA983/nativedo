@@ -320,12 +320,12 @@ Sequence, if chat is scheduled:
    (paragraph, headings 1-6, blockquote with the author as the caption and nested children as
    the `...Blocks` variant, preformatted, plain/ordered lists with the inline-item shape the
    parser's child blocks allow, details/toggle, tables with the header row marked, divider),
-   and `PostRichMessageScreenshotTest` draws that model through upstream's own host view
-   (`RichMessageLayout.PreviewView`) in both themes - the first pixels this renderer has ever
-   produced in this tree: bold/italic/link runs, heading, bullets, the quote bar with its
-   inline code run, the code block and the divider all come out as upstream draws them.
-   `PostRichMessageLayoutProbeTest` guards the other half of the claim: every mapped block
-   becomes exactly one laid-out block, so nothing is silently dropped between model and canvas.
+   and the retained `TopicPostCellScreenshotTest.richMessageBody` golden draws that model
+   through upstream's renderer inside the real cell in both themes - the first pixels this
+   renderer has ever produced in this tree: bold/italic/link runs, heading, bullets, the quote
+   bar with its inline code run, the code block and the divider all come out as upstream draws
+   them. (The standalone `PostRichMessageScreenshotTest` and the `PostRichMessageLayoutProbeTest`
+   block-count probe were pruned as low-signal; the cell golden is the gate.)
    Two host rules the snapshot run made concrete, for the cell switch: the renderer paints **no
    message bubble** - `drawBackground` only draws quote/pullquote backgrounds, and the bubble is
    the cell's job (upstream's `PreviewView` leaves the canvas transparent, which is why the golden
@@ -513,8 +513,8 @@ project with ordered slices rather than a wire-out:
      all byte-exact, plus the one stub they needed: a native
      `ChatAttachAlertRichLayout` with just `showEditLatexSheet` (the pin's sheet is
      `BottomSheet` + `EditTextCell` + `ButtonWithCounterView` preview, ~150 lines
-     of editor UI, so it lands with that host). `IvEditorBaseContractTest` pins the
-     style run API and the stub's "no sheet, no callback" contract.
+     of editor UI, so it lands with that host). That style-run pin was pruned with the
+     low-signal suite; the editor page's retained contract is `RichEditorHostContractTest`.
    - **Landed (`bffc839`): the cell family.** The fourteen files of it are the
      pin's blobs verbatim - `RichTextCell` (1,773), `RichTableCell` (1,085),
      `RichTableCellHost`, `RichTableCellGrid` (872), `RichDetailsCell`,

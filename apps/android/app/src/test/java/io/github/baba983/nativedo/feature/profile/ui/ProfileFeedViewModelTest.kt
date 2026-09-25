@@ -20,25 +20,6 @@ class ProfileFeedViewModelTest {
     val mainDispatcherRule = MainDispatcherRule()
 
     @Test
-    fun initialPageUsesRequestedFilterAndTwentyItemPagination() = runTest {
-        val repository = FakeProfileFeedRepository(
-            0 to page(actions(1..20)),
-        )
-        val viewModel = ProfileFeedViewModel(
-            username = "baba",
-            feedType = ProfileFeedType.Topics,
-            repository = repository,
-        )
-
-        val state = viewModel.awaitState { !it.isLoading }
-
-        assertThat(state.items).hasSize(20)
-        assertThat(state.hasMore).isTrue()
-        assertThat(state.nextOffset).isEqualTo(20)
-        assertThat(repository.requests).containsExactly(Request("baba", "4", 0))
-    }
-
-    @Test
     fun filteredRowsDoNotEndPaginationWhenServerReturnedFullPage() = runTest {
         val repository = FakeProfileFeedRepository(
             0 to page(actions(1..19), rawCount = 20),

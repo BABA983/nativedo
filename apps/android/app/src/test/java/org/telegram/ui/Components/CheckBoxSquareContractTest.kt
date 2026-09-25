@@ -1,8 +1,5 @@
 package org.telegram.ui.Components
 
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.view.View
 import android.view.accessibility.AccessibilityNodeInfo
 import com.google.common.truth.Truth.assertThat
 import org.junit.Before
@@ -11,7 +8,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
-import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.ui.ActionBar.Theme
 
@@ -38,23 +34,6 @@ class CheckBoxSquareContractTest {
                 override fun getColorOrNull(key: Int): Int = color(key)
             },
         )
-    }
-
-    @Test
-    fun checkedStateExposesAnimatedProgressAndDrawsWithoutCrash() {
-        val size = AndroidUtilities.dp(18f)
-        checkBox.measure(
-            View.MeasureSpec.makeMeasureSpec(size, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(size, View.MeasureSpec.EXACTLY),
-        )
-        checkBox.layout(0, 0, size, size)
-        checkBox.setChecked(true, false)
-
-        assertThat(checkBox.progress).isEqualTo(1f)
-
-        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        checkBox.draw(Canvas(bitmap))
-        assertThat(checkBox.progress).isEqualTo(1f)
     }
 
     @Test

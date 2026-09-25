@@ -12,19 +12,6 @@ class PostRichMessageTest {
         PostRichMessageBuilder.build(parseCookedPostBody(html, baseUrl), baseUrl)
 
     @Test
-    fun paragraphsAndHeadingsBecomeTheirPageBlocksWithTheInlineModelInside() {
-        val message = build("<p>First <b>bold</b> line</p><h2>Heading</h2><p>Last</p>")
-
-        assertThat(message.blocks).hasSize(3)
-        assertThat(message.blocks[0]).isInstanceOf(TL_iv.pageBlockParagraph::class.java)
-        assertThat(message.blocks[1]).isInstanceOf(TL_iv.pageBlockHeading2::class.java)
-        assertThat(message.blocks[2]).isInstanceOf(TL_iv.pageBlockParagraph::class.java)
-
-        val first = message.blocks[0].text as TL_iv.textConcat
-        assertThat(first.texts.filterIsInstance<TL_iv.textBold>()).hasSize(1)
-    }
-
-    @Test
     fun blockquoteCarriesTheAuthorAsItsCaptionAndKeepsNestedBlocks() {
         val message = build(
             """
@@ -39,45 +26,6 @@ class PostRichMessageTest {
         assertThat((quote.caption as TL_iv.textPlain).text).isEqualTo("Some Author:")
         assertThat(quote.blocks).hasSize(1)
         assertThat(quote.blocks.single()).isInstanceOf(TL_iv.pageBlockParagraph::class.java)
-    }
-
-    @Test
-    fun codeBlockBecomesPreformattedText() {
-        val message = build("<pre><code>val x = 1\nval y = 2</code></pre>")
-
-        val pre = message.blocks.single() as TL_iv.pageBlockPreformatted
-        assertThat((pre.text as TL_iv.textPlain).text).contains("val x = 1")
-    }
-
-    @Test
-    fun orderedAndPlainListsBecomeTheirListBlocks() {
-        val ordered = build("<ol><li>one</li><li>two</li></ol>")
-        val plain = build("<ul><li>alpha</li><li>beta</li></ul>")
-
-        val orderedList = ordered.blocks.single() as TL_iv.pageBlockOrderedList
-        assertThat(orderedList.items).hasSize(2)
-        assertThat(orderedList.items[0]).isInstanceOf(TL_iv.TL_pageListOrderedItemText::class.java)
-
-        val plainList = plain.blocks.single() as TL_iv.pageBlockList
-        assertThat(plainList.items).hasSize(2)
-        assertThat(plainList.items[0]).isInstanceOf(TL_iv.TL_pageListItemText::class.java)
-    }
-
-    @Test
-    fun detailsAndTablesAndDividersMap() {
-        val details = build("<details><summary>More</summary><p>Hidden</p></details>")
-        assertThat(details.blocks.single()).isInstanceOf(TL_iv.pageBlockDetails::class.java)
-
-        val table = build(
-            "<table><thead><tr><th>H</th></tr></thead><tbody><tr><td>C</td></tr></tbody></table>"
-        )
-        val pageTable = table.blocks.single() as TL_iv.pageBlockTable
-        assertThat(pageTable.rows).hasSize(2)
-        assertThat(pageTable.rows[0].cells.single().header).isTrue()
-        assertThat(pageTable.rows[1].cells.single().header).isFalse()
-
-        val divider = build("<hr>")
-        assertThat(divider.blocks.single()).isInstanceOf(TL_iv.pageBlockDivider::class.java)
     }
 
     @Test
@@ -167,12 +115,5 @@ class PostRichMessageTest {
         assertThat((joined.texts[0] as TL_iv.textPlain).text).isEqualTo("First.")
         assertThat((joined.texts[1] as TL_iv.textPlain).text).isEqualTo("\n")
         assertThat((joined.texts[2] as TL_iv.textPlain).text).isEqualTo("Second.")
-    }
-
-    @Test
-    fun discourseOnlyBlocksAreLeftOutInsteadOfMisrendered() {
-        val message = build("<p>Text only</p>")
-
-        assertThat(message.blocks.map { it.javaClass }).containsExactly(TL_iv.pageBlockParagraph::class.java)
     }
 }

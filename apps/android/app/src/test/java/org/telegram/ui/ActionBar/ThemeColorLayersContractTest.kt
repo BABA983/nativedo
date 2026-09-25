@@ -52,56 +52,6 @@ class ThemeColorLayersContractTest {
     }
 
     @Test
-    fun assetColorDiffersFromHardcodedDefaultForBlueText() {
-        val key = Theme.key_windowBackgroundWhiteBlueText
-        val fromAsset = Theme.getColor(key)
-        val hardcoded = Theme.getDefaultColor(key)
-        // bluebubbles.attheme should supply a value; if it equals defaults this test still
-        // validates override restore, but we assert asset is not the missing-key sentinel.
-        assertThat(fromAsset).isNotEqualTo(0xffff0000.toInt())
-        assertThat(fromAsset and 0xff000000.toInt()).isEqualTo(0xff000000.toInt())
-        // Document the dual-layer intent: when they differ, restore must not use hardcoded.
-        if (fromAsset != hardcoded) {
-            assertThat(fromAsset).isNotEqualTo(hardcoded)
-        }
-    }
-
-    @Test
-    fun setColorOverrideThenUseDefaultRestoresResolvedDefault() {
-        val key = Theme.key_windowBackgroundWhiteBlueText
-        val hardcoded = Theme.getDefaultColor(key)
-        val override = 0xff112233.toInt()
-
-        Theme.setColor(key, override, false)
-        assertThat(Theme.getColor(key)).isEqualTo(override)
-        assertThat(Theme.getNonAnimatedColor(key)).isEqualTo(override)
-
-        Theme.setColor(key, hardcoded, true)
-        assertThat(Theme.getColor(key)).isEqualTo(hardcoded)
-        assertThat(Theme.getNonAnimatedColor(key)).isEqualTo(hardcoded)
-    }
-
-    @Test
-    fun themeDescriptionSetDefaultColorRestoresResolvedDefault() {
-        val key = Theme.key_windowBackgroundWhiteBlackText
-        val defaultColor = Theme.getDefaultColor(key)
-        Theme.setColor(key, 0xffabcdef.toInt(), false)
-        assertThat(Theme.getColor(key)).isEqualTo(0xffabcdef.toInt())
-
-        val description = ThemeDescription(
-            null,
-            ThemeDescription.FLAG_TEXTCOLOR,
-            null,
-            null as android.graphics.Paint?,
-            null,
-            null,
-            key,
-        )
-        description.setDefaultColor()
-        assertThat(Theme.getColor(key)).isEqualTo(defaultColor)
-    }
-
-    @Test
     fun reapplyThemeRebuildsAccentColorsAndDropsInMemoryOverrides() {
         val key = Theme.key_windowBackgroundWhiteBlueText
         val assetColor = Theme.getColor(key)

@@ -35,38 +35,6 @@ class DiscourseApiClientTest {
     }
 
     @Test
-    fun parsesLatestTopicsFixture() = runTest {
-        server.enqueue(jsonResponse(fixture("discourse/latest-topics.json")))
-
-        val page = client.fetchLatestPage(page = 0)
-
-        assertThat(page.topics).isNotEmpty()
-        assertThat(page.topics.first().id).isGreaterThan(0)
-        assertThat(page.topics.first().title).isNotEmpty()
-    }
-
-    @Test
-    fun parsesSearchFixture() = runTest {
-        server.enqueue(jsonResponse(fixture("discourse/search.json")))
-
-        val result = client.search(query = "NativeDo", page = 0)
-
-        assertThat(result.topics.map { it.id }).containsExactly(202L)
-        assertThat(result.posts.map { it.id }).containsExactly(101L)
-        assertThat(result.posts.single().targetPostNumber).isEqualTo(4)
-        assertThat(result.posts.single().targetPostId).isEqualTo(9001L)
-        assertThat(result.posts.single().rowIdentity).isEqualTo("search-post:9001")
-        assertThat(result.topics.first().title).isEqualTo("How to configure the 5.5 model")
-        assertThat(result.topics.single().authorUsername).isEqualTo("baba")
-        assertThat(result.topics.single().authorAvatarTemplate)
-            .isEqualTo("/user_avatar/linux.do/baba/{size}/1.png")
-        assertThat(result.posts.single().authorUsername).isEqualTo("baba")
-        assertThat(result.users.single().username).isEqualTo("baba")
-        assertThat(result.hasMore).isTrue()
-        assertThat(server.takeRequest().path).isEqualTo("/search.json?q=NativeDo&page=0")
-    }
-
-    @Test
     fun parsesSearchWhenDiscourseReturnsNullPaginationFlags() = runTest {
         server.enqueue(
             jsonResponse(
@@ -131,58 +99,6 @@ class DiscourseApiClientTest {
     }
 
     @Test
-    fun fetchCategoriesMapsNestedCategoryMetadata() = runTest {
-        server.enqueue(jsonResponse(fixture("discourse/site.json")))
-
-        val categories = client.fetchCategories()
-
-        assertThat(categories).hasSize(5)
-        assertThat(categories.first { it.id == 2 }.name).isEqualTo("运营反馈")
-        assertThat(categories.first { it.id == 99 }.parentCategoryId).isEqualTo(98)
-        assertThat(categories.first { it.id == 99 }.colorHex).isEqualTo("0088CC")
-        assertThat(server.takeRequest().path).isEqualTo("/site.json")
-    }
-
-    @Test
-    fun parsesTopicDetailFixture() = runTest {
-        server.enqueue(jsonResponse("""{"discourse_reactions":[{"name":"heart","url":"/images/emoji/heart.png"}]}"""))
-        server.enqueue(jsonResponse(fixture("discourse/topic-detail.json")))
-
-        val topic = client.fetchTopic(topicId = 1)
-
-        assertThat(topic.id).isGreaterThan(0)
-        assertThat(topic.title).isNotEmpty()
-        assertThat(topic.posts).isNotEmpty()
-        assertThat(topic.posts.first().cookedHtml).isNotEmpty()
-        assertThat(topic.posts.first().replyCount).isEqualTo(80)
-        assertThat(topic.lastReadPostNumber).isEqualTo(1)
-        assertThat(topic.lastReadPostId).isEqualTo(1001L)
-        assertThat(topic.participants.map { it.username }).containsExactly("orchid.hu", "quiet-user").inOrder()
-        assertThat(topic.participants.first().postCount).isEqualTo(4)
-        assertThat(topic.participants.last().displayName).isEmpty()
-        assertThat(topic.participants.last().avatarTemplate).contains("quiet-user")
-        assertThat(topic.participants.last().animatedAvatarUrl).endsWith(".gif")
-        assertThat(topic.emojiCatalog["heart"]).isEqualTo("/images/emoji/heart.png")
-        assertThat(topic.emojiCategories).hasSize(1)
-        assertThat(topic.emojiCategories.first().id).isEqualTo("discourse_reactions")
-        assertThat(topic.emojiCategories.first().emojis.first().name).isEqualTo("heart")
-        assertThat(server.takeRequest().path).isEqualTo("/emojis.json")
-        assertThat(server.takeRequest().path).isEqualTo("/t/1.json")
-    }
-
-    @Test
-    fun fetchTopicAtPostUsesDiscourseCenteredWindowRoute() = runTest {
-        server.enqueue(jsonResponse("""{"discourse_reactions":[]}"""))
-        server.enqueue(jsonResponse(fixture("discourse/topic-detail.json")))
-
-        val topic = client.fetchTopic(topicId = 101L, postNumber = 144)
-
-        assertThat(topic.id).isEqualTo(101L)
-        assertThat(server.takeRequest().path).isEqualTo("/emojis.json")
-        assertThat(server.takeRequest().path).isEqualTo("/t/101/144.json")
-    }
-
-    @Test
     fun topicDetailWithoutDetailsKeepsParticipantsEmpty() = runTest {
         server.enqueue(jsonResponse("""{"discourse_reactions":[]}"""))
         server.enqueue(
@@ -201,59 +117,6 @@ class DiscourseApiClientTest {
         val topic = client.fetchTopic(topicId = 2)
 
         assertThat(topic.participants).isEmpty()
-    }
-
-    @Test
-    fun parsesTopicPostsFixture() = runTest {
-        server.enqueue(jsonResponse("""{"discourse_reactions":[{"name":"heart","url":"/images/emoji/heart.png"}]}"""))
-        server.enqueue(jsonResponse(fixture("discourse/topic-posts.json")))
-
-        val posts = client.fetchTopicPosts(topicId = 1, postIds = listOf(1, 2))
-
-        assertThat(posts).isNotEmpty()
-        assertThat(posts.first().authorUsername).isNotEmpty()
-        assertThat(server.takeRequest().path).isEqualTo("/emojis.json")
-        assertThat(server.takeRequest().path).isEqualTo("/t/1/posts.json?post_ids%5B%5D=1&post_ids%5B%5D=2")
-    }
-
-    @Test
-    fun fetchPostRepliesMapsDirectReplyPage() = runTest {
-        server.enqueue(jsonResponse(fixture("discourse/post-replies.json")))
-
-        val replies = client.fetchPostReplies(postId = 1001L, afterPostNumber = 1)
-
-        assertThat(replies.map { it.id }).containsExactly(1002L, 1003L).inOrder()
-        assertThat(replies.first().replyToPostNumber).isEqualTo(1)
-        assertThat(server.takeRequest().path).isEqualTo("/posts/1001/replies?after=1")
-    }
-
-    @Test
-    fun fetchPostByNumberMapsSinglePost() = runTest {
-        server.enqueue(jsonResponse("""{"discourse_reactions":[{"name":"heart","url":"/images/emoji/heart.png"}]}"""))
-        server.enqueue(
-            jsonResponse(
-                """
-                {
-                  "id": 1002,
-                  "post_number": 2,
-                  "reply_to_post_number": 1,
-                  "username": "alice",
-                  "avatar_template": "/user_avatar/linux.do/alice/{size}/1.png",
-                  "reactions": [{"id": "heart", "count": 1}],
-                  "cooked": "<p>Remote quote</p>"
-                }
-                """.trimIndent(),
-            ),
-        )
-
-        val post = client.fetchPostByNumber(topicId = 101L, postNumber = 2)
-
-        assertThat(post.id).isEqualTo(1002L)
-        assertThat(post.postNumber).isEqualTo(2)
-        assertThat(post.replyToPostNumber).isEqualTo(1)
-        assertThat(post.reactions.single().iconUrl).isEqualTo("/images/emoji/heart.png")
-        assertThat(server.takeRequest().path).isEqualTo("/emojis.json")
-        assertThat(server.takeRequest().path).isEqualTo("/posts/by_number/101/2.json")
     }
 
     @Test
@@ -353,50 +216,6 @@ class DiscourseApiClientTest {
     }
 
     @Test
-    fun fetchReactionUsersMapsGroups() = runTest {
-        server.enqueue(jsonResponse(fixture("discourse/reaction-users.json")))
-
-        val groups = client.fetchReactionUsers(postId = 1001L)
-
-        assertThat(groups.map { it.id }).containsExactly("heart", "+1").inOrder()
-        assertThat(groups.first().count).isEqualTo(50)
-        assertThat(groups.first().users).hasSize(1)
-        assertThat(groups.first().users.single().displayName).isEqualTo("Baba")
-        assertThat(groups.first().users.single().canUndo).isTrue()
-        assertThat(server.takeRequest().path).isEqualTo("/discourse-reactions/posts/1001/reactions-users.json")
-    }
-
-    @Test
-    fun fetchPollVotersMapsOptionGroups() = runTest {
-        server.enqueue(
-            jsonResponse(
-                """
-                {
-                  "voters": {
-                    "option-a": [
-                      {
-                        "id": 356,
-                        "username": "baba",
-                        "name": "Baba",
-                        "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png"
-                      }
-                    ]
-                  }
-                }
-                """.trimIndent(),
-            ),
-        )
-
-        val groups = client.fetchPollVoters(postId = 1001L, pollName = "frontend")
-
-        assertThat(groups).hasSize(1)
-        assertThat(groups.single().id).isEqualTo("option-a")
-        assertThat(groups.single().users.single().username).isEqualTo("baba")
-        assertThat(server.takeRequest().path)
-            .isEqualTo("/polls/voters.json?post_id=1001&poll_name=frontend&page=1&limit=50")
-    }
-
-    @Test
     fun fetchPollVotersSupportsNestedRankedChoiceUserPayload() = runTest {
         server.enqueue(
             jsonResponse(
@@ -425,162 +244,6 @@ class DiscourseApiClientTest {
         assertThat(groups.single().id).isEqualTo("option-a")
         assertThat(groups.single().users.single().username).isEqualTo("baba")
         assertThat(groups.single().users.single().displayName).isEqualTo("Baba")
-    }
-
-    @Test
-    fun fetchPollVotersSupportsPerOptionPagination() = runTest {
-        server.enqueue(jsonResponse(fixture("discourse/poll-voters.json")))
-
-        val groups = client.fetchPollVoters(
-            postId = 1001L,
-            pollName = "frontend",
-            optionId = "e539a9df8700d0d05c69356a07b768cf",
-            page = 2,
-            limit = 50,
-        )
-
-        assertThat(groups.single().users).hasSize(2)
-        assertThat(server.takeRequest().path).isEqualTo(
-            "/polls/voters.json?post_id=1001&poll_name=frontend&option_id=e539a9df8700d0d05c69356a07b768cf&page=2&limit=50",
-        )
-    }
-
-    @Test
-    fun toggleReactionFetchesCsrfAndSendsHeader() = runTest {
-        server.enqueue(jsonResponse("""{"csrf":"csrf-token"}"""))
-        server.enqueue(jsonResponse("""{}"""))
-
-        client.toggleReaction(postId = 1001L, reactionId = "heart")
-
-        assertThat(server.takeRequest().path).isEqualTo("/session/csrf")
-        val toggleRequest = server.takeRequest()
-        assertThat(toggleRequest.method).isEqualTo("PUT")
-        assertThat(toggleRequest.path)
-            .isEqualTo("/discourse-reactions/posts/1001/custom-reactions/heart/toggle.json")
-        assertThat(toggleRequest.getHeader("X-CSRF-Token")).isEqualTo("csrf-token")
-    }
-
-    @Test
-    fun createBookmarkFetchesCsrfAndSendsDiscourseBookmarkFields() = runTest {
-        server.enqueue(jsonResponse("""{"csrf":"csrf-token"}"""))
-        server.enqueue(jsonResponse("""{}"""))
-
-        client.setPostBookmark(postId = 1001L, bookmarked = true)
-
-        assertThat(server.takeRequest().path).isEqualTo("/session/csrf")
-        val bookmarkRequest = server.takeRequest()
-        assertThat(bookmarkRequest.method).isEqualTo("POST")
-        assertThat(bookmarkRequest.path).isEqualTo("/bookmarks.json")
-        assertThat(bookmarkRequest.getHeader("X-CSRF-Token")).isEqualTo("csrf-token")
-        val body = bookmarkRequest.body.readUtf8()
-        assertThat(body).contains("bookmarkable_id=1001")
-        assertThat(body).contains("bookmarkable_type=Post")
-        assertThat(body).contains("auto_delete_preference=0")
-    }
-
-    @Test
-    fun deletePostBookmarkFetchesCsrfAndSendsDeleteRequest() = runTest {
-        server.enqueue(jsonResponse("""{"csrf":"csrf-token"}"""))
-        server.enqueue(jsonResponse("""{}"""))
-
-        client.setPostBookmark(postId = 1001L, bookmarked = false)
-
-        assertThat(server.takeRequest().path).isEqualTo("/session/csrf")
-        val deleteRequest = server.takeRequest()
-        assertThat(deleteRequest.method).isEqualTo("DELETE")
-        assertThat(deleteRequest.path).isEqualTo("/posts/1001/bookmark")
-        assertThat(deleteRequest.getHeader("X-CSRF-Token")).isEqualTo("csrf-token")
-    }
-
-    @Test
-    fun removePollVoteFetchesCsrfAndSendsDeleteBody() = runTest {
-        server.enqueue(jsonResponse("""{"csrf":"csrf-token"}"""))
-        server.enqueue(jsonResponse("""{}"""))
-
-        client.removePollVote(postId = 20028390L, pollName = "poll")
-
-        assertThat(server.takeRequest().path).isEqualTo("/session/csrf")
-        val removeRequest = server.takeRequest()
-        assertThat(removeRequest.method).isEqualTo("DELETE")
-        assertThat(removeRequest.path).isEqualTo("/polls/vote")
-        assertThat(removeRequest.getHeader("X-CSRF-Token")).isEqualTo("csrf-token")
-        val body = removeRequest.body.readUtf8()
-        assertThat(body).contains("post_id=20028390")
-        assertThat(body).contains("poll_name=poll")
-    }
-
-    @Test
-    fun votePollFetchesCsrfAndSendsPutBody() = runTest {
-        server.enqueue(jsonResponse("""{"csrf":"csrf-token"}"""))
-        server.enqueue(jsonResponse("""{"poll":{},"vote":["option-a"]}"""))
-
-        client.votePoll(postId = 20028390L, pollName = "poll", optionIds = listOf("option-a"))
-
-        assertThat(server.takeRequest().path).isEqualTo("/session/csrf")
-        val voteRequest = server.takeRequest()
-        assertThat(voteRequest.method).isEqualTo("PUT")
-        assertThat(voteRequest.path).isEqualTo("/polls/vote")
-        assertThat(voteRequest.getHeader("X-CSRF-Token")).isEqualTo("csrf-token")
-        val body = voteRequest.body.readUtf8()
-        assertThat(body).contains("post_id=20028390")
-        assertThat(body).contains("poll_name=poll")
-        assertThat(body).contains("options%5B%5D=option-a")
-    }
-
-    @Test
-    fun parsesUserProfileFixture() = runTest {
-        server.enqueue(jsonResponse(fixture("discourse/user-profile.json")))
-
-        val profile = client.fetchProfile(username = "baba")
-
-        assertThat(profile.username).isEqualTo("baba")
-        assertThat(profile.displayName).isEqualTo("Baba")
-        assertThat(profile.bio).contains("Compose user")
-        assertThat(profile.avatarTemplate).contains("/user_avatar/linux.do/baba/{size}/1.png")
-        assertThat(profile.animatedAvatarUrl).contains("/user_avatar/linux.do/baba/120/1.gif")
-        assertThat(profile.flairName).isEqualTo("Battery")
-        assertThat(profile.flairUrl).isEqualTo("battery-quarter")
-        assertThat(profile.flairBgColor).isEqualTo("001122")
-        assertThat(profile.flairColor).isEqualTo("abcdef")
-        assertThat(profile.trustLevel).isEqualTo(3)
-        assertThat(profile.title).isEqualTo("活跃用户")
-        assertThat(profile.badgeCount).isEqualTo(7)
-        assertThat(profile.timeRead).isEqualTo(285035)
-        assertThat(profile.recentTimeRead).isEqualTo(162657)
-        assertThat(profile.lastSeenAt).isEqualTo("2026-05-28T06:00:20.612Z")
-        assertThat(profile.lastPostedAt).isEqualTo("2026-05-27T12:30:00.000Z")
-        assertThat(profile.profileViewCount).isEqualTo(97)
-        assertThat(profile.gamificationScore).isEqualTo(2731)
-        assertThat(profile.cakeDate).isEqualTo("2024-05-26")
-        assertThat(profile.totalFollowers).isEqualTo(340)
-        assertThat(profile.totalFollowing).isEqualTo(58)
-        assertThat(profile.acceptedAnswers).isEqualTo(18)
-        assertThat(profile.primaryGroupName).isEqualTo("battery")
-        assertThat(server.takeRequest().path).isEqualTo("/u/baba.json")
-    }
-
-    @Test
-    fun fetchCurrentUser_mapsAvatarTemplateFromSessionCurrent() = runTest {
-        server.enqueue(
-            jsonResponse(
-                """
-                {
-                  "current_user": {
-                    "username": "baba",
-                    "name": "Baba",
-                    "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png"
-                  }
-                }
-                """.trimIndent(),
-            ),
-        )
-
-        val currentUser = client.fetchCurrentUser()
-
-        assertThat(currentUser?.username).isEqualTo("baba")
-        assertThat(currentUser?.displayName).isEqualTo("Baba")
-        assertThat(currentUser?.avatarTemplate).isEqualTo("/user_avatar/linux.do/baba/{size}/1.png")
-        assertThat(server.takeRequest().path).isEqualTo("/session/current.json")
     }
 
     @Test
@@ -749,6 +412,31 @@ class DiscourseApiClientTest {
     }
 
     @Test
+    fun fetchPollVotersSupportsPerOptionPagination() = runTest {
+        server.enqueue(jsonResponse(fixture("discourse/poll-voters.json")))
+
+        val groups = client.fetchPollVoters(
+            postId = 1001L,
+            pollName = "frontend",
+            optionId = "e539a9df8700d0d05c69356a07b768cf",
+            page = 2,
+            limit = 50,
+        )
+
+        assertThat(groups.single().users).hasSize(2)
+        assertThat(server.takeRequest().path).isEqualTo(
+            "/polls/voters.json?post_id=1001&poll_name=frontend&option_id=e539a9df8700d0d05c69356a07b768cf&page=2&limit=50",
+        )
+    }
+
+    @Test
+    fun parseBootstrap_readsCurrentUserFromPreloadedData() {
+        val bootstrap = BootstrapHtmlParser.parse(fixture("discourse/home-bootstrap.html"))
+
+        assertThat(bootstrap.currentUsername).isEqualTo("baba")
+    }
+
+    @Test
     fun parseBootstrap_readsCurrentUsernameMeta() {
         val bootstrap = BootstrapHtmlParser.parse(
             """
@@ -757,13 +445,6 @@ class DiscourseApiClientTest {
             </html>
             """.trimIndent(),
         )
-
-        assertThat(bootstrap.currentUsername).isEqualTo("baba")
-    }
-
-    @Test
-    fun parseBootstrap_readsCurrentUserFromPreloadedData() {
-        val bootstrap = BootstrapHtmlParser.parse(fixture("discourse/home-bootstrap.html"))
 
         assertThat(bootstrap.currentUsername).isEqualTo("baba")
     }

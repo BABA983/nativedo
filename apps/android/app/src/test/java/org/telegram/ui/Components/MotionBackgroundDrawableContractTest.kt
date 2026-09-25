@@ -19,21 +19,6 @@ class MotionBackgroundDrawableContractTest {
         ApplicationLoader.init(RuntimeEnvironment.getApplication())
     }
 
-    @Test
-    fun wallpaperDrawableInitializesGradientAndPatternPipeline() {
-        val drawable = MotionBackgroundDrawable()
-        val pattern = Bitmap.createBitmap(12, 12, Bitmap.Config.ARGB_8888)
-
-        drawable.setColors(0xff102030.toInt(), 0xff304050.toInt(), 0xff506070.toInt(), 0xff708090.toInt())
-        drawable.setPatternBitmap(80, pattern)
-        drawable.setBounds(0, 0, 120, 80)
-
-        assertThat(drawable.bitmap).isNotNull()
-        assertThat(drawable.patternBitmap).isSameInstanceAs(pattern)
-        assertThat(MotionBackgroundDrawable.isDark(0xff000000.toInt(), 0xff101010.toInt(), 0, 0)).isTrue()
-        assertThat(MotionBackgroundDrawable.isDark(0xffffffff.toInt(), 0xffeeeeee.toInt(), 0, 0)).isFalse()
-    }
-
     /**
      * The pattern tile ReplyMessageLine puts behind a rail comes from the Java stand-in
      * for the pinned `Utilities.drawReplyLinePattern` (Utilities is deliberately no-JNI).

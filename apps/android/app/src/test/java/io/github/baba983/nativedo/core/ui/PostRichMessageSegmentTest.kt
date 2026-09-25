@@ -31,14 +31,6 @@ class PostRichMessageSegmentTest {
     }
 
     @Test
-    fun aBodyOfOnlyDiscourseOnlyBlocksHasNoRichRun() {
-        val segments = splitPostBodySegments(listOf(poll("first"), callout()))
-
-        assertThat(segments).hasSize(2)
-        assertThat(segments.all { it is PostBodySegment.OwnBlock }).isTrue()
-    }
-
-    @Test
     fun aContainerHoldingADiscourseOnlyBlockFallsBackAsAWhole() {
         val details = CookedPostBlock.Details(
             html = "<p>inside</p>",

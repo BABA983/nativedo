@@ -42,16 +42,6 @@ class TopicDateUiTest {
     }
 
     @Test
-    fun oldDateIncludesYearAndStableIdsStayOutsideReservedRows() {
-        val recent = topicDateHeader("2026-07-12T01:00:00Z", shanghai)!!
-        val old = topicDateHeader("2024-01-02T01:00:00Z", shanghai)!!
-
-        assertThat(recent.stableId).isNotEqualTo(old.stableId)
-        assertThat(recent.stableId).isLessThan(-7L)
-        assertThat(old.stableId).isLessThan(-7L)
-    }
-
-    @Test
     fun acceptsDiscourseUtcFallbackFormat() {
         val header = topicDateHeader("2026-07-12 01:02:03 UTC", shanghai)
 

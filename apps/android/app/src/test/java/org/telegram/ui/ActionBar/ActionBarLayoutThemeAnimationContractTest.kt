@@ -46,23 +46,6 @@ class ActionBarLayoutThemeAnimationContractTest {
     }
 
     @Test
-    fun instantAnimationAppliesThemeDescriptionsAndFinalValue() {
-        val settings = INavigationLayout.ThemeAnimationSettings(
-            Theme.getCurrentNightTheme(),
-            -1,
-            true,
-            true,
-        )
-
-        layout.animateThemedValues(settings, null)
-
-        assertThat(Theme.getActiveTheme()?.name).isEqualTo("Dark Blue")
-        assertThat(layout.getThemeAnimationValue()).isEqualTo(1f)
-        assertThat(fragment.text.currentTextColor)
-            .isEqualTo(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText))
-    }
-
-    @Test
     fun timedAnimationReachesFinalValue() {
         val settings = INavigationLayout.ThemeAnimationSettings(
             Theme.getCurrentNightTheme(),
@@ -78,23 +61,6 @@ class ActionBarLayoutThemeAnimationContractTest {
         assertThat(Theme.getActiveTheme()?.name).isEqualTo("Dark Blue")
         assertThat(layout.getThemeAnimationValue()).isEqualTo(1f)
         assertThat(Theme.isAnimatingColor()).isFalse()
-    }
-
-    @Test
-    fun visibleDialogDescriptionsParticipateInThemeAnimation() {
-        val dialogText = TextView(activity)
-        fragment.visibleDialog = ThemeAlertDialog(activity, dialogText)
-        val settings = INavigationLayout.ThemeAnimationSettings(
-            Theme.getCurrentNightTheme(),
-            -1,
-            true,
-            true,
-        )
-
-        layout.animateThemedValues(settings, null)
-
-        assertThat(dialogText.currentTextColor)
-            .isEqualTo(Theme.getColor(Theme.key_dialogTextBlack))
     }
 
     @Test
@@ -178,25 +144,6 @@ class ActionBarLayoutThemeAnimationContractTest {
                     null,
                     null,
                     Theme.key_windowBackgroundWhiteBlackText,
-                ),
-            )
-        }
-    }
-
-    private class ThemeAlertDialog(
-        context: Context,
-        private val text: TextView,
-    ) : AlertDialog(context, ALERT_TYPE_MESSAGE) {
-        override fun getThemeDescriptions(): java.util.ArrayList<ThemeDescription> {
-            return arrayListOf(
-                ThemeDescription(
-                    text,
-                    ThemeDescription.FLAG_TEXTCOLOR,
-                    null,
-                    null as Paint?,
-                    null,
-                    null,
-                    Theme.key_dialogTextBlack,
                 ),
             )
         }

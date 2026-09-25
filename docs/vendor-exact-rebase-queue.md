@@ -21,7 +21,8 @@
   - RLottieImageView
   - FragmentSearchField
   - FlickerLoadingView
-    - host contract: `FlickerLoadingViewHostContractTest` (REACTED_TYPE = 50dp)
+    - the `REACTED_TYPE = 50dp` host pin was a constant mirror and was pruned with the
+      low-signal suite; the visual gate is `:app:verifyPaparazziDebug`
 
 ## ArticleViewer (closed — not next work)
 - See `docs/vendor-articleviewer-plan.md`.

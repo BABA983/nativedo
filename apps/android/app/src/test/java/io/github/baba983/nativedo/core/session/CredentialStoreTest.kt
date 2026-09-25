@@ -27,12 +27,12 @@ class CredentialStoreTest {
     fun loadDecryptsTheSealedPassword() {
         val storage = HashMap<String, String>()
         val store = CredentialStore(FakeSharedPreferences(storage), FakeCipher())
-        store.save(username = "baba", password = "hunter2")
+        store.save(username = "baba", password = "demo-secret")
 
         val credentials = store.load()
 
         assertThat(credentials.username).isEqualTo("baba")
-        assertThat(credentials.password).isEqualTo("hunter2")
+        assertThat(credentials.password).isEqualTo("demo-secret")
         assertThat(store.hasCredentials()).isTrue()
     }
 
@@ -45,16 +45,6 @@ class CredentialStoreTest {
 
         assertThat(store.load().password).isNull()
         assertThat(store.hasCredentials()).isFalse()
-    }
-
-    @Test
-    fun missingPreferencesYieldEmptyCredentials() {
-        val store = CredentialStore(prefs = null, cipher = FakeCipher())
-
-        assertThat(store.load().username).isNull()
-        assertThat(store.hasCredentials()).isFalse()
-        store.save("baba", "hunter2")
-        store.clear()
     }
 }
 

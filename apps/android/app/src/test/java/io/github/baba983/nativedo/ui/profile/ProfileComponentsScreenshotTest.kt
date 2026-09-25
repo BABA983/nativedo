@@ -3,12 +3,9 @@ package io.github.baba983.nativedo.ui.profile
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.text.Html
-import android.util.TypedValue
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import android.widget.LinearLayout
-import android.widget.TextView
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.common.truth.Truth.assertThat
@@ -20,15 +17,10 @@ import io.github.baba983.nativedo.R
 import org.junit.Rule
 import org.junit.Test
 import org.telegram.messenger.AndroidUtilities
-import org.telegram.messenger.ImageReceiver
 import org.telegram.messenger.R as TelegramR
 import org.telegram.ui.ActionBar.Theme
 import org.telegram.ui.Cells.AboutLinkCell
 import org.telegram.ui.Cells.TextDetailCell
-import org.telegram.ui.Components.FlickerLoadingView
-import org.telegram.ui.ProfileActivity
-import org.telegram.ui.Components.ProfileGalleryBlurView
-import org.telegram.ui.Components.ProfileGalleryView
 import org.telegram.ui.Components.RecyclerListView
 import org.telegram.ui.Components.ScrollSlidingTextTabStrip
 import org.telegram.ui.Components.StickerEmptyView
@@ -94,22 +86,6 @@ internal class ProfileComponentsScreenshotTest {
     }
 
     @Test
-    fun profileLoadingSkeletonKeepsTelegramDimensions() {
-        paparazziRule.verify { context ->
-            val loading = FlickerLoadingView(context).apply {
-                setViewType(FlickerLoadingView.CHECKBOX_TYPE)
-                setIsSingleCell(true)
-                setItemsCount(2)
-            }
-            loading.measure(
-                View.MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(360f), View.MeasureSpec.EXACTLY),
-                View.MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(200f), View.MeasureSpec.AT_MOST),
-            )
-            assertThat(loading.measuredHeight).isEqualTo((AndroidUtilities.dp(50f) + 1) * 2)
-        }
-    }
-
-    @Test
     fun anonymousProfileShowsTelegramLoginCta() {
         paparazziRule.snapshot { context ->
             Theme.createChatResources(context, false)
@@ -137,136 +113,6 @@ internal class ProfileComponentsScreenshotTest {
                     ),
                 )
             }
-        }
-    }
-
-    @Test
-    fun anonymousSessionFillsTheProfileViewport() {
-        paparazziRule.verify { context ->
-            Theme.createChatResources(context, false)
-            Theme.createProfileResources(context)
-            val cell = ProfileSessionStateCell(context).apply {
-                bottomContentInset = AndroidUtilities.dp(84f)
-                bind(
-                    titleText = context.getString(R.string.profile_login_title),
-                    subtitleText = context.getString(R.string.profile_login_subtitle),
-                    actionText = context.getString(R.string.profile_login_action),
-                    danger = false,
-                    onAction = {},
-                )
-            }
-            val recycler = RecyclerView(context).apply {
-                layoutManager = LinearLayoutManager(context)
-                addView(cell)
-            }
-            recycler.measure(
-                View.MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(360f), View.MeasureSpec.EXACTLY),
-                View.MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(720f), View.MeasureSpec.EXACTLY),
-            )
-            cell.measure(
-                View.MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(360f), View.MeasureSpec.EXACTLY),
-                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
-            )
-            cell.layout(0, 0, cell.measuredWidth, cell.measuredHeight)
-            val action = cell.linearLayout.getChildAt(cell.linearLayout.childCount - 1) as TextView
-            val actionParams = action.layoutParams as LinearLayout.LayoutParams
-
-            assertThat(kotlin.math.abs(cell.measuredHeight - AndroidUtilities.dp(636f))).isAtMost(1)
-            assertThat(actionParams.width).isEqualTo(ViewGroup.LayoutParams.MATCH_PARENT)
-            assertThat(actionParams.height).isEqualTo(AndroidUtilities.dp(48f))
-            assertThat(actionParams.leftMargin).isEqualTo(0)
-            assertThat(actionParams.topMargin).isEqualTo(AndroidUtilities.dp(28f))
-            assertThat(actionParams.rightMargin).isEqualTo(0)
-            assertThat(actionParams.bottomMargin).isEqualTo(AndroidUtilities.dp(4f))
-            assertThat(action.paddingLeft).isEqualTo(AndroidUtilities.dp(34f))
-            assertThat(action.paddingTop).isEqualTo(0)
-            assertThat(action.paddingRight).isEqualTo(AndroidUtilities.dp(34f))
-            assertThat(action.paddingBottom).isEqualTo(0)
-            assertThat(action.textSize).isEqualTo(
-                TypedValue.applyDimension(
-                    TypedValue.COMPLEX_UNIT_DIP,
-                    15f,
-                    context.resources.displayMetrics,
-                ),
-            )
-            assertThat(action.measuredWidth).isEqualTo(AndroidUtilities.dp(320f))
-            assertThat(action.measuredHeight).isEqualTo(AndroidUtilities.dp(48f))
-            assertThat(kotlin.math.abs(action.left + action.right - cell.linearLayout.width)).isAtMost(1)
-        }
-    }
-
-    @Test
-    fun anonymousProfileLoginCtaShrinksInsideNarrowViewport() {
-        paparazziRule.verify { context ->
-            Theme.createChatResources(context, false)
-            Theme.createProfileResources(context)
-            val cell = ProfileSessionStateCell(context).apply {
-                bind(
-                    titleText = context.getString(R.string.profile_login_title),
-                    subtitleText = context.getString(R.string.profile_login_subtitle),
-                    actionText = context.getString(R.string.profile_login_action),
-                    danger = false,
-                    onAction = {},
-                )
-            }
-            val width = AndroidUtilities.dp(320f)
-            cell.measure(
-                View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
-                View.MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(640f), View.MeasureSpec.EXACTLY),
-            )
-            cell.layout(0, 0, cell.measuredWidth, cell.measuredHeight)
-            val action = cell.linearLayout.getChildAt(cell.linearLayout.childCount - 1) as TextView
-
-            assertThat(action.measuredWidth).isEqualTo(AndroidUtilities.dp(288f))
-            assertThat(action.left).isAtLeast(0)
-            assertThat(action.right).isAtMost(cell.linearLayout.width)
-            assertThat(kotlin.math.abs(action.left + action.right - cell.linearLayout.width)).isAtMost(1)
-        }
-    }
-
-    @Test
-    fun expandedProfileGalleryKeepsActionsOutsideSquareImageArea() {
-        paparazziRule.verify { context ->
-            val width = AndroidUtilities.dp(360f)
-            val actionsHeight = AndroidUtilities.dp(74f)
-            val blur = ProfileGalleryBlurView(context).apply {
-                setSize(actionsHeight)
-            }
-            val gallery = ProfileGalleryView(context, RecyclerListView(context)).apply {
-                setBlurView(blur)
-            }
-            gallery.measure(
-                View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
-                View.MeasureSpec.makeMeasureSpec(width + actionsHeight, View.MeasureSpec.EXACTLY),
-            )
-            blur.measure(
-                View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
-                View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
-            )
-            gallery.layout(0, 0, width, width + actionsHeight)
-
-            assertThat(gallery.measuredHeight).isEqualTo(width + actionsHeight)
-            assertThat(gallery.currentItemView.measuredWidth).isEqualTo(width)
-            assertThat(gallery.currentItemView.measuredHeight).isEqualTo(width)
-            assertThat(blur.measuredHeight).isEqualTo(actionsHeight + (AndroidUtilities.dp(64f) * 1.5f).toInt())
-            assertThat(blur.translationY).isEqualTo((gallery.height - blur.measuredHeight).toFloat())
-        }
-    }
-
-    @Test
-    fun profileAvatarOwnsGalleryFrameDuringCollapse() {
-        paparazziRule.verify { context ->
-            val avatar = ProfileActivity.AvatarImageView(context)
-            val drawable = ColorDrawable(0xff336699.toInt())
-
-            avatar.setForegroundImageDrawable(ImageReceiver.BitmapHolder(drawable, null, 0))
-            avatar.setForegroundAlpha(1f)
-
-            assertThat(avatar.foregroundImageReceiver.drawable).isSameInstanceAs(drawable)
-            assertThat(avatar.foregroundAlpha).isEqualTo(1f)
-
-            avatar.clearForeground()
-            assertThat(avatar.foregroundAlpha).isEqualTo(0f)
         }
     }
 

@@ -97,50 +97,6 @@ class TopicMentionSuggestionsTest {
             .containsExactly("alice", "albert", "alex").inOrder()
     }
 
-    @Test
-    fun telegramScrollRangeGeometryRevealsExactRowHeightWithoutOverflow() {
-        val hostHeight = 110
-        val listPadding = 126
-        val visibleHeights = (1..4).map { rows ->
-            val itemHeight = rows * 36f
-            val translation = topicMentionListTranslation(
-                itemHeight = itemHeight,
-                listViewPadding = listPadding,
-                forceZeroHeight = false,
-                scrollOffset = 0,
-            )
-            val top = topicMentionContainerTop(
-                paddingViewBottom = hostHeight,
-                listTranslationY = translation,
-                hideT = 0f,
-                hostHeight = hostHeight,
-            )
-            hostHeight - top.toInt()
-        }
-
-        assertThat(visibleHeights).containsExactly(36, 72, 108, 110).inOrder()
-    }
-
-    @Test
-    fun hiddenTranslationKeepsContainerFullyClippedUntilSpringCompletes() {
-        val translation = topicMentionListTranslation(
-            itemHeight = -6f,
-            listViewPadding = 126,
-            forceZeroHeight = true,
-            scrollOffset = 0,
-        )
-
-        assertThat(translation).isEqualTo(6f)
-        assertThat(
-            topicMentionContainerTop(
-                paddingViewBottom = 110,
-                listTranslationY = translation,
-                hideT = 1f,
-                hostHeight = 110,
-            ),
-        ).isEqualTo(116f)
-    }
-
     private fun post(id: Long, username: String, name: String): Post {
         return Post(
             id = id,

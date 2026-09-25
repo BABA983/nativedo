@@ -16,9 +16,9 @@ class ForcedExactTestMappingTest(unittest.TestCase):
     """The per-file prompt is data, so it is checked like data.
 
     A promoted file runs its mapped tests; anything else falls back to the
-    shared trio. Both halves matter: a mapping that points at a renamed test, or
-    at a file the overlay no longer forces, would send the next agent to a
-    command that proves nothing.
+    shared default gate. Both halves matter: a mapping that points at a renamed
+    test, or at a file the overlay no longer forces, would send the next agent
+    to a command that proves nothing.
     """
 
     @classmethod
@@ -53,14 +53,14 @@ class ForcedExactTestMappingTest(unittest.TestCase):
         )
 
     def test_mapped_file_runs_only_its_tests(self) -> None:
-        local = "TMessagesProj/src/main/java/org/telegram/ui/Components/LayoutHelper.java"
+        local = "TMessagesProj/src/main/java/org/telegram/ui/ActionBar/BottomSheetTabsOverlay.java"
         tests, unknown = vendor_guard._forced_exact_tests(local, self.tests)
         self.assertEqual([], unknown)
         self.assertEqual(
-            ["org.telegram.ui.Components.LayoutHelperForcedExactTest"], tests
+            ["org.telegram.ui.ActionBar.BottomSheetTabsOverlaySheetContractTest"], tests
         )
 
-    def test_unmapped_file_falls_back_to_the_trio(self) -> None:
+    def test_unmapped_file_falls_back_to_the_default_gate(self) -> None:
         tests, unknown = vendor_guard._forced_exact_tests(
             "TMessagesProj/src/main/java/org/telegram/ui/ActionBar/BottomSheet.java",
             self.tests,

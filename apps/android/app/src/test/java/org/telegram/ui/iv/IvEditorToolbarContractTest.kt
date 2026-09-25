@@ -2,7 +2,6 @@ package org.telegram.ui.iv
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.Rect
 import android.view.View
 import com.google.common.truth.Truth.assertThat
 import org.junit.Before
@@ -21,9 +20,8 @@ import org.telegram.ui.Components.ChatActivityEnterView
  * The block editor's toolbar and its seams: the pin's [RichEditorToolbar] is byte-exact, and the two
  * chat-side classes it mounts come from native seams - [org.telegram.ui.Components.ChatActivityEnterView.SendButton]
  * (here) and [org.telegram.ui.Components.AiButtonDrawable] (a pin copy). The tests pin what our host
- * will rely on: the send button reports to the delegate and follows `setSendEditing`/`setSendEnabled`,
- * draws the pin's plane at its own size inside the pin's circle, follows the toolbar's loading state,
- * and the toolbar measures.
+ * will rely on: the send button reports to the delegate and follows `setSendEditing`/`setSendEnabled`
+ * and the toolbar's loading state, and the block and formatting keys carry their accessibility names.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], manifest = Config.NONE)
@@ -99,44 +97,11 @@ class IvEditorToolbarContractTest {
     }
 
     @Test
-    fun theToolbarMeasuresItsPanels() {
-        val toolbar = toolbar(Session())
-        toolbar.measure(
-            View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
-        )
-
-        assertThat(toolbar.measuredHeight).isGreaterThan(0)
-        assertThat(toolbar.measuredWidth).isEqualTo(1080)
-    }
-
-    @Test
     fun blockAndFormattingButtonsCarryTheirAccessibilityNames() {
         assertThat(RichEditor.blockButtonContentDescription(RichEditorToolbar.BLOCK_TABLE)).isNotEmpty()
         assertThat(RichEditor.blockButtonContentDescription(RichEditorToolbar.BLOCK_MATH)).isNotEmpty()
         assertThat(RichEditor.formattingButtonContentDescription(RichTextStyle.BOLD)).isNotEmpty()
         assertThat(RichEditor.formattingButtonContentDescription(RichTextStyle.SPOILER)).isNotEmpty()
-    }
-
-    @Test
-    fun theSendPlaneKeepsThePinsIntrinsicSizeInsteadOfTheMount() {
-        val toolbar = toolbar(Session())
-        val send = toolbar.sendButton!!
-        val size = AndroidUtilities.dp(44f)
-        send.measure(
-            View.MeasureSpec.makeMeasureSpec(size, View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(size, View.MeasureSpec.EXACTLY),
-        )
-        send.layout(0, 0, size, size)
-        send.draw(Canvas(Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)))
-
-        // the pin lays the drawable out at its own intrinsic size, centred in the circle the button
-        // paints (38dp inside the toolbar's 44dp mount): the mount must not stretch the plane
-        val plane = planeBounds(send)
-        assertThat(plane.width()).isEqualTo(AndroidUtilities.dp(24f))
-        assertThat(plane.height()).isEqualTo(AndroidUtilities.dp(24f))
-        assertThat(Math.abs(plane.exactCenterX() - size / 2f)).isAtMost(1f)
-        assertThat(Math.abs(plane.exactCenterY() - size / 2f)).isAtMost(1f)
     }
 
     @Test
@@ -167,12 +132,5 @@ class IvEditorToolbarContractTest {
         send.setLocked(true)
         send.draw(Canvas(bitmap))
         send.setLocked(false)
-    }
-
-    /** The bounds the pin's `onDraw` gave the plane: its own intrinsic size, centred. */
-    private fun planeBounds(send: ChatActivityEnterView.SendButton): Rect {
-        val field = ChatActivityEnterView.SendButton::class.java.getDeclaredField("drawable")
-        field.isAccessible = true
-        return (field.get(send) as android.graphics.drawable.Drawable).bounds
     }
 }

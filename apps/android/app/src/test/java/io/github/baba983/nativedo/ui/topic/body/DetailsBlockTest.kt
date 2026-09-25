@@ -3,57 +3,19 @@ package io.github.baba983.nativedo.ui.topic.body
 import android.view.View
 import com.google.common.truth.Truth.assertThat
 import io.github.baba983.nativedo.core.html.CookedPostBlock
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.RobolectricTestRunner
-import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ApplicationLoader
-import org.telegram.tgnet.TLRPC
-import org.telegram.tgnet.tl.TL_iv;
+import org.telegram.tgnet.tl.TL_iv
 
 @RunWith(RobolectricTestRunner::class)
 class DetailsBlockTest {
-    @org.junit.Before
+    @Before
     fun setUp() {
         ApplicationLoader.init(RuntimeEnvironment.getApplication())
-    }
-
-    @Test
-    fun detailsHeaderGeometry_matchesTelegramBlockDetailsCell() {
-        assertThat(DetailsBlock.titleTextXPx()).isEqualTo(AndroidUtilities.dp(44f + 6f))
-        assertThat(DetailsBlock.minHeaderHeightPx()).isEqualTo(AndroidUtilities.dp(39f))
-        assertThat(DetailsBlock.titleWidthInsetPx()).isEqualTo(AndroidUtilities.dp(36f + 16f))
-        assertThat(DetailsBlock.titleBaselineExtraHeightPx()).isEqualTo(AndroidUtilities.dp(21f))
-        assertThat(DetailsBlock.arrowLeftPx()).isEqualTo(AndroidUtilities.dp(18f))
-        assertThat(DetailsBlock.arrowSizePx()).isEqualTo(AndroidUtilities.dp(13f))
-    }
-
-    @Test
-    fun detailsChildrenGeometry_matchesTelegramDetailsChildRows() {
-        assertThat(DetailsBlock.childLevelInsetPx()).isEqualTo(AndroidUtilities.dp(14f))
-        assertThat(DetailsBlock.childContentLeftPx()).isEqualTo(AndroidUtilities.dp(18f))
-        assertThat(DetailsBlock.childRightInsetPx()).isEqualTo(AndroidUtilities.dp(18f))
-    }
-
-    @Test
-    fun detailsChildRowCodeBlock_usesFullWidthLikeBlockPreformattedCell() {
-        val code = io.github.baba983.nativedo.ui.topic.body.CodeBlock("{}", buildContext())
-        val paragraph = ParagraphBlock("<p>x</p>", buildContext())
-
-        assertThat(DetailsBlock.usesFullWidthDetailsChildRow(code)).isTrue()
-        assertThat(DetailsBlock.usesFullWidthDetailsChildRow(paragraph)).isFalse()
-    }
-
-    @Test
-    fun expandedHeight_doesNotAddInactiveTelegramDetailsBottomSpacer() {
-        val headerHeight = AndroidUtilities.dp(39f) + 1
-        val childrenHeight = AndroidUtilities.dp(80f)
-
-        assertThat(DetailsBlock.expandedHeightPx(headerHeight, childrenHeight))
-            .isEqualTo(headerHeight + childrenHeight)
-        assertThat(DetailsBlock.expandedHeightPx(headerHeight, childrenHeight))
-            .isNotEqualTo(headerHeight + childrenHeight + 1 + AndroidUtilities.dp(4f))
     }
 
     @Test

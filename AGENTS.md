@@ -46,9 +46,12 @@ a product goal needs upstream code, never on every upstream release.
    stay upstream-shaped: keep method shape, signatures (return types,
    parameters, overload set), constants (`dp(10)`, `0.3f`, `>= 3000`,
    `clamp(150, 600)`, `< 1px` snap), imports/short type names, and branch
-   structure. The guard prints the test classes to run when you touch one: the
+   structure. The guard prints the gate to run when you touch one: the
    file's entry in `scripts/vendor_guard.py` (`FORCED_EXACT_TESTS_BY_PATH`), or
-   the shared default trio while it has none.
+   the shared default gate while it has none — `:app:verifyPaparazziDebug` when
+   the gate is a screenshot class. A forced-exact file does not need a
+   constant-mirror unit test (see Testing); the mapping names only tests that pin
+   an observable outcome.
 4. **Adding upstream files needs no bookkeeping.** Copy them (`scripts/auto-vendor-copy.sh`
    bulk-copies javac's missing classes) and commit: provenance is derived.
    Rewriting a file's `upstream` mapping or marking our own code is a one-line
@@ -67,6 +70,14 @@ a product goal needs upstream code, never on every upstream release.
 8. **Files listed in the overlay's `reference` block** intentionally track an
    older upstream commit. Don't "fix" them to the pin; removing a path from
    `reference` is a deliberate decision.
+
+## Testing
+
+- **Never write unit tests after you write code.** A test written against code you just wrote restates the implementation: it pins the behavior you happened to choose instead of a failure mode, so it cannot tell you the choice was wrong.
+- **Highly prefer E2E tests as the sole testing mechanism.** Use them to verify complex features work. At the end of E2E tests, produce a verifiable and repeatable artifact (a committed golden, a captured log, a checked-in transcript) so the result can be re-checked without repeating the run by hand.
+- **If you must test a system in isolation, first write down all the ways it could fail, then write the code.** A test earns its place only by encoding a named failure mode — a race, a persistence/isolation rule, a wire round-trip, an error or retry path, an accessibility contract. Anything whose only oracle is a constant, a class shape, or a value copied from the implementation is not a test; delete it.
+
+Read the three together: E2E is the default and rule 3 is the only exception, so an isolated test has to name the failure mode E2E cannot reach. The device passes recorded in `docs/device-verification.md` are the current E2E mechanism: drive the flow on hardware and write the verdict plus its evidence there. Paparazzi goldens are the retained artifact for the visual half — they render shipped surfaces through production wiring and `:app:verifyPaparazziDebug` is the gate. Do not add a unit test that re-asserts a `dp()` value, a getter round-trip, a "flag was set", or a mapping a device pass shows directly. `FORCED_EXACT_TESTS_BY_PATH` in `scripts/vendor_guard.py` follows the same rule: it maps a forced-exact file to a retained observable gate, never to a constant mirror.
 
 ## Build, Lint, And Test
 

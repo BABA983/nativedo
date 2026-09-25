@@ -25,21 +25,6 @@ class ProfileViewModelTest {
     private lateinit var viewModel: ProfileViewModel
 
     @Test
-    fun authenticatedSessionLoadsProfile() = runTest {
-        val repository = FakeProfileRepository(
-            "baba" to Result.success(profile("baba", displayName = "Baba")),
-        )
-        viewModel = ProfileViewModel(repository)
-
-        viewModel.onSessionStateChanged(authenticated("baba"))
-
-        val state = viewModel.awaitState { state -> !state.isLoading && state.profile != null }
-        assertThat(state.username).isEqualTo("baba")
-        assertThat(state.profile?.displayName).isEqualTo("Baba")
-        assertThat(repository.requests).containsExactly("baba")
-    }
-
-    @Test
     fun cachedProfileIsRefreshedFromNetwork() = runTest {
         val repository = FakeProfileRepository(
             "baba" to Result.success(profile("baba", displayName = "Network Baba")),

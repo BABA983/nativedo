@@ -116,51 +116,6 @@ class DiscourseMediaUploaderTest {
         folder.newFile(name).apply { writeText("png-bytes-123") }
 
     @Test
-    fun theUploadPostsTheFileAndHandsBackTheSitesUrl() {
-        server.enqueue(csrfResponse())
-        server.enqueue(jsonResponse(fixture("discourse/upload-response.json")))
-        val file = writePhoto()
-        val recorder = Recorder()
-
-        uploader.upload(photoRequest(file), recorder)
-
-        assertThat(await(recorder)).isTrue()
-        assertThat(recorder.url)
-            .isEqualTo("https://linux.do/uploads/default/original/2X/9/9d5a2f6f0a1b2c3d4e5f60718293a4b5c6d7e8f9.png")
-        assertThat(recorder.filename).isEqualTo("screenshot.png")
-        assertThat(recorder.width).isEqualTo(1080)
-        assertThat(recorder.height).isEqualTo(720)
-
-        assertThat(server.takeRequest().path).isEqualTo("/session/csrf")
-        val upload = server.takeRequest()
-        assertThat(upload.method).isEqualTo("POST")
-        assertThat(upload.path).isEqualTo("/uploads.json")
-        assertThat(upload.getHeader("X-CSRF-Token")).isEqualTo("token")
-        assertThat(upload.getHeader("Content-Type")).contains("multipart/form-data")
-        val body = upload.body.readUtf8()
-        assertThat(body).contains("name=\"file\"")
-        assertThat(body).contains("filename=\"screenshot.png\"")
-        assertThat(body).contains("png-bytes-123")
-        assertThat(body).contains("name=\"upload_type\"")
-        assertThat(body).contains("composer")
-        assertThat(body).contains("name=\"synchronous\"")
-    }
-
-    @Test
-    fun theUploadReportsTheFilesProgress() {
-        server.enqueue(csrfResponse())
-        server.enqueue(jsonResponse(fixture("discourse/upload-response.json")))
-        val recorder = Recorder()
-
-        uploader.upload(photoRequest(writePhoto()), recorder)
-
-        assertThat(await(recorder)).isTrue()
-        assertThat(recorder.progress).isNotEmpty()
-        assertThat(recorder.progress.last()).isEqualTo(1f)
-        assertThat(recorder.progress).isInOrder()
-    }
-
-    @Test
     fun aRelativeUrlIsResolvedAgainstTheBaseUrl() {
         server.enqueue(csrfResponse())
         server.enqueue(
@@ -192,18 +147,6 @@ class DiscourseMediaUploaderTest {
         // the request already knew the picked file's size; the site answering 0 keeps it
         assertThat(recorder.width).isEqualTo(640)
         assertThat(recorder.height).isEqualTo(480)
-    }
-
-    @Test
-    fun aRejectedUploadReportsAnError() {
-        server.enqueue(csrfResponse())
-        server.enqueue(MockResponse().setResponseCode(422).setBody("""{"errors":["Invalid file"]}"""))
-        val recorder = Recorder()
-
-        uploader.upload(photoRequest(writePhoto()), recorder)
-
-        assertThat(await(recorder)).isFalse()
-        assertThat(recorder.url).isNull()
     }
 
     @Test

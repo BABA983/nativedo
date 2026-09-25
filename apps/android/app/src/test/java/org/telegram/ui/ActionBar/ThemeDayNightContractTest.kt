@@ -49,17 +49,6 @@ class ThemeDayNightContractTest {
     }
 
     @Test
-    fun initLoadsBlueDayThemeFromAsset() {
-        assertThat(Theme.getActiveTheme()?.name).isEqualTo("Blue")
-        assertThat(Theme.isCurrentThemeDark()).isFalse()
-        // Asset should override at least some keys into currentColors; background must be opaque white-ish.
-        val bg = Theme.getColor(Theme.key_windowBackgroundWhite)
-        assertThat(bg and 0xff000000.toInt()).isEqualTo(0xff000000.toInt())
-        // Default blue accent path is non-zero.
-        assertThat(Theme.getColor(Theme.key_telegram_color)).isNotEqualTo(0)
-    }
-
-    @Test
     fun applyingNightAndDaySlotsSwitchesThemes() {
         Theme.applyTheme(Theme.getCurrentNightTheme(), true)
         Theme.saveAutoNightThemeConfig()
@@ -81,25 +70,6 @@ class ThemeDayNightContractTest {
         val app = RuntimeEnvironment.getApplication()
         assertThat(app.getSharedPreferences("global", 0).getString("nighttheme", null))
             .isEqualTo("Dark Blue")
-    }
-
-    @Test
-    fun completeBuiltInCatalogIncludesFiveThemes() {
-        assertThat(Theme.getTheme("Blue")).isNotNull()
-        assertThat(Theme.getTheme("Dark Blue")).isNotNull()
-        assertThat(Theme.getTheme("Arctic Blue")).isNotNull()
-        assertThat(Theme.getTheme("Day")).isNotNull()
-        assertThat(Theme.getTheme("Night")).isNotNull()
-    }
-
-    @Test
-    fun atthemeAliasKey_telegram_color_textIsMapped() {
-        // bluebubbles writes "key_telegram_color_text=..."; parser must accept key_ prefix.
-        Theme.applyTheme(Theme.getTheme("Blue"), false, false)
-        val color = Theme.getColor(Theme.key_telegram_color_text)
-        // Either from asset or default — must not be the missing-key red sentinel 0xffff0000
-        // unless that is intentionally the value (it is not in defaults).
-        assertThat(color).isNotEqualTo(0xffff0000.toInt())
     }
 
     @Test

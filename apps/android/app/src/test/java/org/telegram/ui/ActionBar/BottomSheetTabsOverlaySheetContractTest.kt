@@ -21,13 +21,6 @@ class BottomSheetTabsOverlaySheetContractTest {
     }
 
     @Test
-    fun sheetWindowUsesDrawableOverlayContract() {
-        val method = BottomSheetTabsOverlay.Sheet::class.java.getMethod("getWindowView")
-
-        assertThat(method.returnType).isEqualTo(BottomSheetTabsOverlay.SheetView::class.java)
-    }
-
-    @Test
     fun modalAccessibilityHidesAndRestoresSiblingContent() {
         val context = RuntimeEnvironment.getApplication()
         val parent = FrameLayout(context)

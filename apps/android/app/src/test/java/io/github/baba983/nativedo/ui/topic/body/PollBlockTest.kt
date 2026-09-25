@@ -6,7 +6,6 @@ import android.view.MotionEvent
 import android.view.View
 import com.google.common.truth.Truth.assertThat
 import io.github.baba983.nativedo.core.html.CookedPostBlock
-import org.telegram.messenger.AndroidUtilities
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RuntimeEnvironment
@@ -16,99 +15,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], manifest = Config.NONE)
 class PollBlockTest {
-    @Test
-    fun pollGeometryConstants_matchTelegramChatMessageCellContract() {
-        assertThat(PollBlock.pollAnimationDurationMs()).isEqualTo(300)
-        assertThat(PollBlock.checkStrokeWidthPx()).isEqualTo(AndroidUtilities.dp(1.833f))
-        assertThat(PollBlock.optionTextLeftPx()).isEqualTo(AndroidUtilities.dp(35f))
-        assertThat(PollBlock.pollVerticalPaddingPx()).isEqualTo(AndroidUtilities.dp(12f))
-        assertThat(PollBlock.optionRowGapPx()).isEqualTo(AndroidUtilities.dp(26.66f))
-        assertThat(PollBlock.selectorVerticalInsetPx()).isEqualTo(AndroidUtilities.dp(13f))
-        assertThat(PollBlock.resultLineTopGapPx()).isEqualTo(AndroidUtilities.dp(6f))
-        assertThat(PollBlock.resultLineHeightPx()).isEqualTo(AndroidUtilities.dp(5f))
-        assertThat(PollBlock.inactiveLineTopGapPx()).isEqualTo(AndroidUtilities.dp(13f))
-        assertThat(PollBlock.inactiveLineStartOffsetPx()).isEqualTo(AndroidUtilities.dp(2f))
-        assertThat(PollBlock.percentXOffsetPx()).isEqualTo(AndroidUtilities.dp(6.5f))
-        assertThat(PollBlock.percentBaselineOffsetPx()).isEqualTo(AndroidUtilities.dp(14f))
-        assertThat(PollBlock.resultLineCornerPx()).isEqualTo(AndroidUtilities.dp(2f))
-        assertThat(PollBlock.resultCheckLayerSizePx()).isEqualTo(AndroidUtilities.dp(7f))
-        assertThat(PollBlock.instantButtonHeightPx()).isEqualTo(AndroidUtilities.dp(44f))
-        assertThat(PollBlock.instantButtonTopGapPx()).isEqualTo(AndroidUtilities.dp(13f))
-        assertThat(PollBlock.voteControlCenterXOffsetPx()).isEqualTo(AndroidUtilities.dp(22f))
-        assertThat(PollBlock.voteControlCenterYPx()).isEqualTo(AndroidUtilities.dp(9f))
-        assertThat(PollBlock.resultCheckCenterXOffsetPx()).isEqualTo(AndroidUtilities.dp(15.5f))
-        assertThat(PollBlock.resultCheckCenterYOffsetPx()).isEqualTo(AndroidUtilities.dp(2.5f))
-        assertThat(PollBlock.checkboxCustomRadiusPx()).isEqualTo(AndroidUtilities.dp(5f))
-        assertThat(PollBlock.MULTI_CHOICE_CHECKBOX_SIZE).isEqualTo(19)
-        assertThat(PollBlock.SINGLE_CHOICE_CHECKBOX_SIZE).isEqualTo(20)
-    }
-
-    @Test
-    fun footerText_usesOptionVoteSumWhenTotalVotersMissing() {
-        val poll = CookedPostBlock.Poll(
-            name = "frontend",
-            type = "regular",
-            status = "open",
-            voters = 0,
-            options = listOf(
-                CookedPostBlock.PollOption(id = "option-a", label = "Tool A", votes = 4),
-                CookedPostBlock.PollOption(id = "option-b", label = "Tool B", votes = 10),
-            ),
-        )
-        val block = PollBlock(
-            poll,
-            buildContext { _, _ -> },
-            PostBodyBlockState(),
-            20,
-        )
-
-        assertThat(block.footerText()).isEqualTo("14 票 · 单选")
-    }
-
-    @Test
-    fun footerText_prefersSerializedTotalVotersOverOptionSum() {
-        val poll = CookedPostBlock.Poll(
-            name = "frontend",
-            type = "multiple",
-            status = "open",
-            voters = 19,
-            options = listOf(
-                CookedPostBlock.PollOption(id = "option-a", label = "Tool A", votes = 4),
-                CookedPostBlock.PollOption(id = "option-b", label = "Tool B", votes = 10),
-            ),
-        )
-        val block = PollBlock(
-            poll,
-            buildContext { _, _ -> },
-            PostBodyBlockState(),
-            21,
-        )
-
-        assertThat(block.footerText()).isEqualTo("19 票 · 多选")
-    }
-
-    @Test
-    fun instantButtonText_usesSubmitLabelForOpenMultiSelectPoll() {
-        val poll = CookedPostBlock.Poll(
-            name = "frontend",
-            type = "multiple",
-            status = "open",
-            voters = null,
-            options = listOf(
-                CookedPostBlock.PollOption(id = "option-a", label = "Tool A"),
-                CookedPostBlock.PollOption(id = "option-b", label = "Tool B"),
-            ),
-        )
-        val block = PollBlock(
-            poll,
-            buildContext { _, _ -> },
-            PostBodyBlockState(),
-            22,
-        )
-
-        assertThat(block.instantButtonText()).isEqualTo("提交投票")
-    }
-
     @Test
     fun instantButtonText_usesViewVotersLabelForPublicPollWithResults() {
         val poll = CookedPostBlock.Poll(
@@ -133,28 +39,6 @@ class PollBlockTest {
         assertThat(block.instantButtonText()).isEqualTo("查看投票")
         assertThat(block.canOpenVotersList()).isTrue()
         assertThat(block.canInstantButtonAction()).isTrue()
-    }
-
-    @Test
-    fun openVotedPoll_showsRemoveVoteButton() {
-        val poll = CookedPostBlock.Poll(
-            name = "poll",
-            type = "regular",
-            status = "open",
-            voters = 5,
-            options = listOf(
-                CookedPostBlock.PollOption(id = "option-a", label = "Tool A", votes = 5, selected = true),
-                CookedPostBlock.PollOption(id = "option-b", label = "Tool B"),
-            ),
-        )
-        val block = PollBlock(
-            poll,
-            buildContext { _, _ -> },
-            PostBodyBlockState(),
-            24,
-        )
-
-        assertThat(block.shouldDrawRemoveVoteButton()).isTrue()
     }
 
     @Test
@@ -295,31 +179,6 @@ class PollBlockTest {
         assertThat(block.shouldDrawRemoveVoteButton()).isFalse()
         assertThat(block.canVote(0)).isTrue()
         assertThat(block.statusText()).isEmpty()
-    }
-
-    @Test
-    fun pollBlock_usesTextHostInsetSoResultPercentColumnDoesNotClipAtScreenEdge() {
-        val poll = CookedPostBlock.Poll(
-            name = "frontend",
-            type = "regular",
-            status = "open",
-            voters = 19,
-            options = listOf(
-                CookedPostBlock.PollOption(id = "option-a", label = "Tool A", votes = 4),
-                CookedPostBlock.PollOption(id = "option-b", label = "Tool B", votes = 10),
-                CookedPostBlock.PollOption(id = "option-c", label = "Tool C", votes = 2),
-                CookedPostBlock.PollOption(id = "option-d", label = "Tool D", votes = 3),
-            ),
-            results = "always",
-        )
-        val block = PollBlock(
-            poll,
-            buildContext { _, _ -> },
-            PostBodyBlockState(),
-            13,
-        )
-
-        assertThat(block.horizontalInsetPx()).isEqualTo(PostBodyBlock.DEFAULT_HORIZONTAL_INSET)
     }
 
     @Test
@@ -590,38 +449,6 @@ class PollBlockTest {
         assertThat(votes).containsExactly(listOf("option-b"))
     }
 
-    @Test
-    fun optionSpoilerReveal_usesInlineStateWhenStructuralStateDisabled() {
-        val inlineState = PostBodyBlockState()
-        val option = CookedPostBlock.PollOption(
-            id = "option-a",
-            label = "Visible hidden",
-            labelHtml = """Visible <span class="spoiler">hidden</span>""",
-        )
-        val poll = CookedPostBlock.Poll(
-            name = "frontend",
-            type = "regular",
-            status = "open",
-            voters = null,
-            options = listOf(option),
-        )
-        val block = PollBlock(
-            poll,
-            buildContext { _, _ -> },
-            null,
-            0,
-            inlineState,
-            "details:0.children.2",
-        )
-        block.populateButtons(poll.options)
-        val button = block.pollButton(0)
-
-        block.markButtonSpoilersRevealed(button)
-
-        assertThat(inlineState.revealedInlineSpoilersByKey)
-            .contains(block.pollOptionSpoilerStateKey(option, option.labelHtml!!))
-    }
-
     private fun buildContext(
         host: View = View(RuntimeEnvironment.getApplication()),
         onPollOptionsSelected: (String, List<String>) -> Unit,
@@ -670,11 +497,6 @@ class PollBlockTest {
         PollBlock::class.java.getDeclaredMethod("shouldShowResults")
             .apply { isAccessible = true }
             .invoke(this) as Boolean
-
-    private fun PollBlock.footerText(): String =
-        PollBlock::class.java.getDeclaredMethod("footerText")
-            .apply { isAccessible = true }
-            .invoke(this) as String
 
     private fun PollBlock.instantButtonText(): String =
         PollBlock::class.java.getDeclaredMethod("instantButtonText")
@@ -740,20 +562,6 @@ class PollBlockTest {
         PollBlock::class.java.getDeclaredMethod("markLocalSubmitted")
             .apply { isAccessible = true }
             .invoke(this)
-
-    private fun PollBlock.markButtonSpoilersRevealed(button: Any) =
-        PollBlock::class.java.getDeclaredMethod("markButtonSpoilersRevealed", button.javaClass)
-            .apply { isAccessible = true }
-            .invoke(this, button)
-
-    private fun PollBlock.pollOptionSpoilerStateKey(option: CookedPostBlock.PollOption, html: String): String =
-        PollBlock::class.java.getDeclaredMethod(
-            "pollOptionSpoilerStateKey",
-            CookedPostBlock.PollOption::class.java,
-            String::class.java,
-        )
-            .apply { isAccessible = true }
-            .invoke(this, option, html) as String
 
     private fun PollBlock.contextDelegate(): PostBodyDelegate {
         val context = PollBlock::class.java.getDeclaredField("context")

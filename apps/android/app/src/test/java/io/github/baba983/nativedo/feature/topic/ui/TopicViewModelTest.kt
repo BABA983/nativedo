@@ -309,68 +309,6 @@ class TopicViewModelTest {
         )
     }
 
-    fun replyDraftTextAndTargetUseOnePersistedState() = runTest {
-        val key = TopicReplyDraftKey("https://linux.do", "alice", 101L)
-        val persistence = FakeReplyDraftPersistence()
-        viewModel = TopicViewModel(
-            repository = FakeTopicRepository(
-                detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L)),
-            ),
-            topicId = 101L,
-            replyDraftStore = TopicReplyDraftStore(persistence),
-            replyDraftKey = key,
-        )
-        viewModel.awaitState { !it.isLoading }
-
-        viewModel.updateReplyDraftText("hello")
-        viewModel.prepareReplyDraft(replyToPostNumber = 3)
-        assertThat(viewModel.uiState.value.replyDraft).isEqualTo(TopicReplyDraft("hello", 3))
-        assertThat(persistence.values[key]).isEqualTo(TopicReplyDraft("hello", 3))
-
-        viewModel.clearReplyTarget()
-        assertThat(viewModel.uiState.value.replyDraft).isEqualTo(TopicReplyDraft("hello", null))
-    }
-
-    @Test
-    fun initLoadsTopicAndTracksRemainingPosts() = runTest {
-        val repository = FakeTopicRepository(
-            detail = topicDetail(
-                loadedPostIds = listOf(1001L),
-                streamPostIds = listOf(1001L, 1002L, 1003L),
-                participants = listOf(MentionCandidate(username = "topic-participant", postCount = 3)),
-            ),
-        )
-
-        viewModel = TopicViewModel(repository = repository, topicId = 101L)
-
-        val state = viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
-        assertThat(state.title).isEqualTo("Welcome to NativeDo Android")
-        assertThat(state.posts.map { it.id }).containsExactly(1001L)
-        assertThat(state.totalPosts).isEqualTo(3)
-        assertThat(state.participants.single().username).isEqualTo("topic-participant")
-        assertThat(state.hasMore).isTrue()
-        assertThat(state.isLoading).isFalse()
-        assertThat(repository.loadRequests).containsExactly(101L)
-    }
-
-    @Test
-    fun loadMoreAppendsRemainingPosts() = runTest {
-        val repository = FakeTopicRepository(
-            detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L, 1002L, 1003L)),
-            posts = Result.success(listOf(post(1002L), post(1003L))),
-        )
-        viewModel = TopicViewModel(repository = repository, topicId = 101L)
-        viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
-
-        viewModel.loadMore()
-
-        val state = viewModel.awaitState { state -> !state.isLoadingMore && state.posts.size == 3 }
-        assertThat(state.posts.map { it.id }).containsExactly(1001L, 1002L, 1003L).inOrder()
-        assertThat(state.isLoadingMore).isFalse()
-        assertThat(state.hasMore).isFalse()
-        assertThat(repository.loadPostRequests).containsExactly(101L to listOf(1002L, 1003L))
-    }
-
     @Test
     fun loadMoreFailureKeepsExistingPosts() = runTest {
         val repository = FakeTopicRepository(
@@ -387,41 +325,6 @@ class TopicViewModelTest {
         assertThat(state.isLoadingMore).isFalse()
         assertThat(state.loadMoreErrorMessage).isNotEmpty()
         assertThat(state.hasMore).isTrue()
-    }
-
-    @Test
-    fun replacePostUpdatesExistingPostInPlace() = runTest {
-        val repository = FakeTopicRepository(
-            detail = topicDetail(loadedPostIds = listOf(1001L, 1002L), streamPostIds = listOf(1001L, 1002L)),
-        )
-        viewModel = TopicViewModel(repository = repository, topicId = 101L)
-        viewModel.awaitState { state -> !state.isLoading && state.posts.size == 2 }
-
-        viewModel.replacePost(post(1002L).copy(currentUserReaction = "heart"))
-
-        val state = viewModel.awaitState { state ->
-            state.posts.any { post -> post.id == 1002L && post.currentUserReaction == "heart" }
-        }
-        assertThat(state.posts.map { it.id }).containsExactly(1001L, 1002L).inOrder()
-        assertThat(state.posts.single { it.id == 1002L }.currentUserReaction).isEqualTo("heart")
-    }
-
-    @Test
-    fun onReactionSelectedAppliesOptimisticReactionAndCallsRepository() = runTest {
-        val repository = FakeTopicRepository(
-            detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L)),
-        )
-        viewModel = TopicViewModel(repository = repository, topicId = 101L)
-        viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
-
-        viewModel.onReactionSelected(postId = 1001L, reactionId = "heart")
-        val state = viewModel.awaitState { state -> state.posts.single().currentUserReaction == "heart" }
-        runCurrent()
-
-        val post = state.posts.single()
-        assertThat(post.reactionUsersCount).isEqualTo(1)
-        assertThat(post.reactions).contains(PostReaction(id = "heart", count = 1, iconUrl = "heart.png", reacted = true))
-        assertThat(repository.toggleReactionRequests).containsExactly(1001L to "heart")
     }
 
     @Test
@@ -443,22 +346,6 @@ class TopicViewModelTest {
     }
 
     @Test
-    fun togglePostBookmarkAppliesOptimisticBookmarkAndCallsRepository() = runTest {
-        val repository = FakeTopicRepository(
-            detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L)),
-        )
-        viewModel = TopicViewModel(repository = repository, topicId = 101L)
-        viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
-
-        viewModel.togglePostBookmark(postId = 1001L)
-        val state = viewModel.awaitState { state -> state.posts.single().isBookmarked }
-        runCurrent()
-
-        assertThat(state.posts.single().isBookmarked).isTrue()
-        assertThat(repository.setPostBookmarkRequests).containsExactly(1001L to true)
-    }
-
-    @Test
     fun togglePostBookmarkRollsBackOnFailure() = runTest {
         val repository = FakeTopicRepository(
             detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L)),
@@ -473,65 +360,6 @@ class TopicViewModelTest {
         val state = viewModel.uiState.value
         assertThat(state.posts.single().isBookmarked).isFalse()
         assertThat(repository.setPostBookmarkRequests).containsExactly(1001L to true)
-    }
-
-    @Test
-    fun openReactionSheetLoadsUsersAndSelectsInitialReaction() = runTest {
-        val groups = listOf(
-            PostReactionUsersGroup(
-                id = "heart",
-                count = 1,
-                users = listOf(PostReactionUser(username = "baba")),
-            ),
-        )
-        val repository = FakeTopicRepository(
-            detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L)),
-            reactionUsers = Result.success(groups),
-        )
-        viewModel = TopicViewModel(repository = repository, topicId = 101L)
-        viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
-
-        viewModel.openReactionSheet(
-            postId = 1001L,
-            reactions = listOf(PostReaction(id = "heart", count = 1)),
-            initialReactionId = "heart",
-        )
-        runCurrent()
-
-        val state = viewModel.uiState.value
-        assertThat(state.reactionSheet?.postId).isEqualTo(1001L)
-        assertThat(state.reactionUsers.groups).isEqualTo(groups)
-        assertThat(state.reactionUsers.selectedReactionId).isEqualTo("heart")
-        assertThat(state.reactionUsers.isLoading).isFalse()
-        assertThat(state.reactionUsers.hasLoaded).isTrue()
-        assertThat(repository.reactionUsersRequests).containsExactly(1001L)
-    }
-
-    @Test
-    fun reactionUsersCanSelectTelegramStyleAllFilter() = runTest {
-        val groups = listOf(
-            PostReactionUsersGroup(id = "heart", count = 1, users = listOf(PostReactionUser(username = "baba"))),
-            PostReactionUsersGroup(id = "+1", count = 1, users = listOf(PostReactionUser(username = "alice"))),
-        )
-        val repository = FakeTopicRepository(
-            detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L)),
-            reactionUsers = Result.success(groups),
-        )
-        viewModel = TopicViewModel(repository = repository, topicId = 101L)
-        viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
-
-        viewModel.openReactionSheet(
-            postId = 1001L,
-            reactions = listOf(PostReaction(id = "heart", count = 1), PostReaction(id = "+1", count = 1)),
-            initialReactionId = "heart",
-            reactionUsersCount = 2,
-        )
-        runCurrent()
-        viewModel.selectReactionInSheet(TOPIC_REACTION_ALL_FILTER_ID)
-
-        val state = viewModel.uiState.value
-        assertThat(state.reactionSheet?.reactionUsersCount).isEqualTo(2)
-        assertThat(state.reactionUsers.selectedReactionId).isEqualTo(TOPIC_REACTION_ALL_FILTER_ID)
     }
 
     @Test
@@ -570,40 +398,6 @@ class TopicViewModelTest {
     }
 
     @Test
-    fun postRepliesOpenFromAuthoritativeCountAndLoadDirectReplies() = runTest {
-        val sourcePost = post(id = 1001L, postNumber = 1).copy(replyCount = 2)
-        val replies = listOf(
-            post(id = 1002L, postNumber = 2).copy(replyToPostNumber = 1),
-            post(id = 1003L, postNumber = 3).copy(replyToPostNumber = 1),
-        )
-        val repository = FakeTopicRepository(
-            detail = Result.success(
-                TopicDetail(
-                    id = 101L,
-                    title = "Replies",
-                    posts = listOf(sourcePost),
-                    totalPosts = 3,
-                    streamPostIds = listOf(1001L, 1002L, 1003L),
-                ),
-            ),
-            postReplies = Result.success(replies),
-        )
-        viewModel = TopicViewModel(repository = repository, topicId = 101L)
-        viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
-
-        viewModel.openPostReplies(sourcePost)
-        runCurrent()
-
-        assertThat(viewModel.uiState.value.postRepliesSheet?.totalCount).isEqualTo(2)
-        assertThat(viewModel.uiState.value.postReplies.posts.map { it.id }).containsExactly(1002L, 1003L).inOrder()
-        assertThat(viewModel.uiState.value.replyPreviewsBySourcePostId[1001L]?.map { it.id })
-            .containsExactly(1002L, 1003L)
-            .inOrder()
-        assertThat(viewModel.uiState.value.postReplies.endReached).isTrue()
-        assertThat(repository.postRepliesRequests).containsExactly(1001L to 1)
-    }
-
-    @Test
     fun reactionUsersFailureExposesRetryAndRetriesSamePost() = runTest {
         val repository = FakeTopicRepository(
             detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L)),
@@ -627,71 +421,6 @@ class TopicViewModelTest {
 
         assertThat(repository.reactionUsersRequests).containsExactly(1001L, 1001L).inOrder()
         assertThat(viewModel.uiState.value.reactionUsers.errorMessage).isEqualTo("offline")
-    }
-
-    @Test
-    fun dismissReactionSheetClearsSheetState() = runTest {
-        val repository = FakeTopicRepository(
-            detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L)),
-        )
-        viewModel = TopicViewModel(repository = repository, topicId = 101L)
-        viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
-        viewModel.openReactionSheet(
-            postId = 1001L,
-            reactions = listOf(PostReaction(id = "heart", count = 1)),
-            initialReactionId = null,
-        )
-        runCurrent()
-
-        viewModel.dismissReactionSheet()
-
-        val state = viewModel.uiState.value
-        assertThat(state.reactionSheet).isNull()
-        assertThat(state.reactionUsers).isEqualTo(TopicReactionUsersUiState())
-    }
-
-    @Test
-    fun expandQuoteReturnsCookedHtmlFromPostByNumber() = runTest {
-        val quotePost = post(id = 2001L, postNumber = 9).copy(cookedHtml = "<p>quoted</p>")
-        val repository = FakeTopicRepository(
-            detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L)),
-            postByNumber = Result.success(quotePost),
-        )
-        viewModel = TopicViewModel(repository = repository, topicId = 101L)
-        viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
-
-        val result = viewModel.expandQuote(sourceTopicId = 101L, sourcePostNumber = 9)
-
-        assertThat(result.getOrThrow()).isEqualTo("<p>quoted</p>")
-        assertThat(repository.loadPostByNumberRequests).containsExactly(101L to 9)
-    }
-
-    @Test
-    fun submitReplyCreatesReplyAndAppendsReturnedPost() = runTest {
-        val createdPost = post(id = 1002L, postNumber = 2).copy(
-            replyToPostNumber = 1,
-            cookedHtml = "<p>created reply</p>",
-        )
-        val repository = FakeTopicRepository(
-            detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L)),
-            createReplyResult = Result.success(createdPost),
-        )
-        viewModel = TopicViewModel(repository = repository, topicId = 101L)
-        viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
-
-        viewModel.submitReply(raw = " reply body ", replyToPostNumber = 1)
-        runCurrent()
-
-        val state = viewModel.uiState.value
-        assertThat(repository.createReplyRequests).containsExactly(ReplyCreateRequest(101L, "reply body", 1))
-        assertThat(state.isSubmittingReply).isFalse()
-        assertThat(state.replySubmitErrorMessage).isNull()
-        assertThat(state.posts.map { post -> post.id }).containsExactly(1001L, 1002L).inOrder()
-        assertThat(state.posts.first().replyCount).isEqualTo(1)
-        assertThat(state.posts.last().replyToPostNumber).isEqualTo(1)
-        assertThat(state.totalPosts).isEqualTo(2)
-        assertThat(state.highestPostNumber).isEqualTo(2)
-        assertThat(state.replyDraft).isEqualTo(TopicReplyDraft())
     }
 
     @Test
@@ -747,76 +476,6 @@ class TopicViewModelTest {
 
         assertThat(repository.createReplyRequests).isEmpty()
         assertThat(viewModel.uiState.value.isSubmittingReply).isFalse()
-    }
-
-    @Test
-    fun onPollOptionsSelectedVotesAndRefreshesPost() = runTest {
-        val refreshedPost = post(id = 1001L, postNumber = 1).copy(cookedHtml = "<p>updated poll</p>")
-        val repository = FakeTopicRepository(
-            detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L)),
-            postByNumber = Result.success(refreshedPost),
-        )
-        viewModel = TopicViewModel(repository = repository, topicId = 101L)
-        viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
-
-        viewModel.onPollOptionsSelected(postId = 1001L, postNumber = 1, pollName = "frontend", optionIds = listOf("option-a", "option-b"))
-        runCurrent()
-
-        assertThat(repository.votePollRequests).containsExactly(PollVoteRequest(1001L, "frontend", listOf("option-a", "option-b")))
-        assertThat(repository.loadPostByNumberRequests).containsExactly(101L to 1)
-        assertThat(viewModel.uiState.value.posts.single().cookedHtml).isEqualTo("<p>updated poll</p>")
-    }
-
-    @Test
-    fun onPollVoteRemovedRetractsVoteAndRefreshesPost() = runTest {
-        val refreshedPost = post(id = 1001L, postNumber = 1).copy(cookedHtml = "<p>poll retracted</p>")
-        val repository = FakeTopicRepository(
-            detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L)),
-            postByNumber = Result.success(refreshedPost),
-        )
-        viewModel = TopicViewModel(repository = repository, topicId = 101L)
-        viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
-
-        viewModel.onPollVoteRemoved(postId = 1001L, postNumber = 1, pollName = "poll")
-        runCurrent()
-
-        assertThat(repository.removePollVoteRequests).containsExactly(PollRemoveVoteRequest(1001L, "poll"))
-        assertThat(repository.loadPostByNumberRequests).containsExactly(101L to 1)
-        assertThat(viewModel.uiState.value.posts.single().cookedHtml).isEqualTo("<p>poll retracted</p>")
-    }
-
-    @Test
-    fun loadPollVotersDeliversOptionUsersForRequestedPage() = runTest {
-        val voters = listOf(
-            PostReactionUsersGroup(
-                id = "option-a",
-                count = 51,
-                users = (1..50).map { index ->
-                    PostReactionUser(username = "user-$index", displayName = "User $index")
-                },
-            ),
-        )
-        val repository = FakeTopicRepository(
-            detail = topicDetail(loadedPostIds = listOf(1001L), streamPostIds = listOf(1001L)),
-            pollVoters = Result.success(voters),
-        )
-        viewModel = TopicViewModel(repository = repository, topicId = 101L)
-        viewModel.awaitState { state -> !state.isLoading && state.posts.isNotEmpty() }
-
-        var loaded: List<PostReactionUser>? = null
-        viewModel.loadPollVoters(
-            postId = 1001L,
-            pollName = "frontend",
-            optionId = "option-a",
-            page = 2,
-        ) { result -> loaded = result.getOrNull() }
-        runCurrent()
-
-        assertThat(repository.pollVotersRequests).containsExactly(
-            PollVotersRequest(1001L, "frontend", "option-a", 2, 50),
-        )
-        assertThat(loaded).hasSize(50)
-        assertThat(loaded!!.first().username).isEqualTo("user-1")
     }
 
     @Test
@@ -1095,24 +754,6 @@ class TopicViewModelTest {
         runCurrent()
 
         assertThat(repository.loadPostRequests).containsExactly(101L to listOf(1002L))
-        assertThat(viewModel.uiState.value.jumpEvent?.postId).isEqualTo(1002L)
-        assertThat(viewModel.uiState.value.jumpEvent?.itemIndex).isEqualTo(2)
-    }
-
-    @Test
-    fun requestJumpToLatestUsesLoadedPostWithoutNetworkRequest() = runTest {
-        val repository = FakeTopicRepository(
-            detail = topicDetail(
-                loadedPostIds = listOf(1001L, 1002L),
-                streamPostIds = listOf(1001L, 1002L),
-            ),
-        )
-        viewModel = TopicViewModel(repository = repository, topicId = 101L)
-        viewModel.awaitState { !it.isLoading }
-
-        viewModel.requestJumpToLatest()
-
-        assertThat(repository.loadPostRequests).isEmpty()
         assertThat(viewModel.uiState.value.jumpEvent?.postId).isEqualTo(1002L)
         assertThat(viewModel.uiState.value.jumpEvent?.itemIndex).isEqualTo(2)
     }

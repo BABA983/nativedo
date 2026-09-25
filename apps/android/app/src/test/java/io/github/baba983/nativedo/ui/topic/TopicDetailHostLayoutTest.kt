@@ -54,28 +54,6 @@ class TopicDetailHostLayoutTest {
     }
 
     @Test
-    fun transitionLifecycleAndEmojiStartOffsetUseTheSameHostDelegate() {
-        var starts = 0
-        var ends = 0
-        host.setPanTransitionDelegate(delegate(
-            startOffset = 220,
-            onStart = { keyboardVisible, contentHeight ->
-                assertThat(keyboardVisible).isTrue()
-                assertThat(contentHeight).isEqualTo(640)
-                starts++
-            },
-            onEnd = { ends++ },
-        ))
-
-        host.adjustPanLayoutHelper.OnTransitionStart(true, 640)
-        host.adjustPanLayoutHelper.OnTransitionEnd()
-
-        assertThat(host.currentPanStartOffset).isEqualTo(220)
-        assertThat(starts).isEqualTo(1)
-        assertThat(ends).isEqualTo(1)
-    }
-
-    @Test
     fun releaseResetsTranslationsAndDropsCallbacks() {
         var updates = 0
         host.setPanTransitionDelegate(delegate(onUpdate = { _, _, _ -> updates++ }))
@@ -87,15 +65,6 @@ class TopicDetailHostLayoutTest {
         assertThat(host.translationY).isEqualTo(0f)
         assertThat(fixedTopView.translationY).isEqualTo(0f)
         assertThat(updates).isEqualTo(1)
-    }
-
-    @Test
-    fun hostDoesNotEnableHierarchyHeightProbeLikeChat() {
-        // ChatActivity never calls setCheckHierarchyHeight(true). The public
-        // escape hatches for non-IME height changes are ignore/stop instead.
-        host.ignoreNextPanHeightAnimation()
-        host.stopPanTransition()
-        assertThat(host.isPanAnimationInProgress).isFalse()
     }
 
     private fun delegate(

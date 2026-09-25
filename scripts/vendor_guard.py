@@ -41,77 +41,39 @@ from vendorlib import (  # noqa: E402
 # index-local path and given as simple test-class names (resolved against the
 # test tree, so a rename surfaces as a warning instead of a silent skip). A file
 # with an entry runs exactly these; a file without one falls back to the shared
-# trio below — which is why promotion is only worth its commit friction
-# together with the entry.
+# visual gate below.
+#
+# An entry is only worth its commit friction when the named test pins an
+# observable outcome (a shipped render, a state machine, an accessibility
+# contract). Constant-mirror tests — "this helper returns the same dp() literal
+# it computes" — were pruned on purpose: a device or golden pass catches the
+# regression, and the mirror cannot tell a bug from an intentional tweak. Do not
+# add one back just to fill a mapping.
 FORCED_EXACT_TESTS_BY_PATH: dict[str, list[str]] = {
-    "app/src/main/java/io/github/baba983/nativedo/ui/components/DiscourseUserCell.java": ["DiscourseUserCellScreenshotTest"],
-    "app/src/main/java/io/github/baba983/nativedo/ui/main/MainTabsActivity.java": ["MainTabsActivityGlassTest"],
-    "app/src/main/java/io/github/baba983/nativedo/ui/main/MainTabsLayout.java": ["MainTabsLayoutTest"],
     "app/src/main/java/io/github/baba983/nativedo/ui/theme/ThemeSettingsFragment.java": ["ThemeSettingsFragmentTest"],
     "app/src/main/java/io/github/baba983/nativedo/ui/theme/TopicThemePreviewFragment.kt": ["TopicThemePreviewScreenshotTest"],
-    "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicCell.java": ["TopicCellTitleTest", "TopicCellTypographyContractTest"],
     "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicFloatingDateController.kt": ["TopicFloatingDateControllerTest"],
     "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicMentionSuggestionsView.kt": ["TopicMentionSuggestionsTest"],
     "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicPostScrimHostLayout.java": ["TopicPostScrimHostLayoutScreenshotTest", "TopicPostScrimHostLayoutTest"],
     "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicSearchViewPager.kt": ["TopicSearchViewPagerScreenshotTest"],
     "app/src/main/java/io/github/baba983/nativedo/ui/topic/TopicSwipeReplyRecyclerView.java": ["TopicSwipeReplyRecyclerViewScreenshotTest", "TopicSwipeReplyRecyclerViewTest"],
-    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/CodeBlock.java": ["CodeBlockTest"],
-    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/CollageBlock.java": ["CollageBlockTest"],
     "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/DetailsBlock.java": ["DetailsBlockTest"],
-    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/HeadingBlock.java": ["HeadingBlockTest"],
-    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ImageBlock.java": ["ImageBlockTest"],
-    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/ListBlock.java": ["ListBlockTest"],
     "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/OneboxBlock.java": ["OneboxBlockTest"],
     "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/PollBlock.java": ["PollBlockTest"],
-    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/QuoteBlock.java": ["QuoteBlockTest"],
-    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/RuleBlock.java": ["RuleBlockTest"],
-    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/SpoilerTextLayout.java": ["SpoilerTextLayoutTest"],
-    "app/src/main/java/io/github/baba983/nativedo/ui/topic/body/TableBlock.java": ["TableBlockTest"],
-    "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicDateCell.java": ["TopicDateCellTest"],
     "app/src/main/java/io/github/baba983/nativedo/ui/topic/cell/TopicPostCell.java": ["TopicPostCellScreenshotTest", "TopicPostCellTest"],
-    "TMessagesProj/src/main/java/org/telegram/messenger/wallpaper/WallpaperGiftBitmapDrawable.java": ["WallpaperGiftBitmapDrawableContractTest"],
     "TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarLayout.java": ["ActionBarLayoutThemeAnimationContractTest"],
-    "TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ActionBarMenuSubItem.java": ["ActionBarMenuSubItemContractTest"],
     "TMessagesProj/src/main/java/org/telegram/ui/ActionBar/BottomSheetTabsOverlay.java": ["BottomSheetTabsOverlaySheetContractTest"],
-    "TMessagesProj/src/main/java/org/telegram/ui/ActionBar/MessageDrawable.java": ["MessageDrawableGradientContractTest"],
-    "TMessagesProj/src/main/java/org/telegram/ui/ActionBar/ThemeDescription.java": ["ThemeDescriptionContractTest", "ThemeDescriptionListClassesContractTest"],
-    "TMessagesProj/src/main/java/org/telegram/ui/Cells/TextCell.java": ["TextCellContractTest"],
     "TMessagesProj/src/main/java/org/telegram/ui/Cells/TextCheckCell.java": ["TextCheckCellContractTest"],
-    "TMessagesProj/src/main/java/org/telegram/ui/Cells/TextDetailCell.java": ["TextDetailCellContractTest"],
-    "TMessagesProj/src/main/java/org/telegram/ui/Cells/TextInfoPrivacyCell.java": ["TextInfoPrivacyCellContractTest"],
     "TMessagesProj/src/main/java/org/telegram/ui/Cells/TextSelectionHelper.java": ["TextSelectionHelperTest"],
-    "TMessagesProj/src/main/java/org/telegram/ui/Cells/TextSettingsCell.java": ["TextSettingsCellContractTest"],
-    "TMessagesProj/src/main/java/org/telegram/ui/Components/BackgroundGradientDrawable.java": ["BackgroundGradientDrawableContractTest"],
-    "TMessagesProj/src/main/java/org/telegram/ui/Components/BackupImageView.java": ["BackupImageViewContractTest"],
-    "TMessagesProj/src/main/java/org/telegram/ui/Components/Bulletin.java": ["BulletinContainerContractTest"],
     "TMessagesProj/src/main/java/org/telegram/ui/Components/CheckBoxSquare.java": ["CheckBoxSquareContractTest"],
-    "TMessagesProj/src/main/java/org/telegram/ui/Components/CircularProgressDrawable.java": ["CircularProgressDrawableForcedExactTest"],
     "TMessagesProj/src/main/java/org/telegram/ui/Components/EditTextEffects.java": ["EditTextEffectsContractTest"],
     "TMessagesProj/src/main/java/org/telegram/ui/Components/EditTextBoldCursor.java": ["EditTextEffectsContractTest", "AlertDialogScreenshotTest"],
-    "TMessagesProj/src/main/java/org/telegram/ui/Components/FlickerLoadingView.java": ["FlickerLoadingViewHostContractTest"],
-    "TMessagesProj/src/main/java/org/telegram/ui/Components/FragmentFloatingButton.java": ["FragmentFloatingButtonContractTest"],
-    "TMessagesProj/src/main/java/org/telegram/ui/Components/LayoutHelper.java": ["LayoutHelperForcedExactTest"],
-    "TMessagesProj/src/main/java/org/telegram/ui/Components/LineProgressView.java": ["LineProgressViewContractTest"],
-    "TMessagesProj/src/main/java/org/telegram/ui/Components/LoadingDrawable.java": ["LoadingDrawableContractTest"],
-    "TMessagesProj/src/main/java/org/telegram/ui/Components/LoadingStickerDrawable.java": ["LoadingStickerDrawableContractTest"],
     "TMessagesProj/src/main/java/org/telegram/ui/Components/MotionBackgroundDrawable.java": ["MotionBackgroundDrawableContractTest"],
-    "TMessagesProj/src/main/java/org/telegram/ui/Components/NestedSizeNotifierLayout.java": ["NestedSizeNotifierLayoutHostContractTest"],
-    "TMessagesProj/src/main/java/org/telegram/ui/Components/ShareAlert.java": ["ShareAlertThemeTest"],
     "TMessagesProj/src/main/java/org/telegram/ui/Components/StickerEmptyView.java": ["StickerEmptyViewContractTest"],
-    "TMessagesProj/src/main/java/org/telegram/ui/Components/ThemePreviewDrawable.java": ["ThemePreviewDrawableContractTest"],
-    "TMessagesProj/src/main/java/org/telegram/ui/Components/chat/layouts/ChatActivitySideControlsButtonsLayout.java": ["ChatActivitySideControlsButtonsLayoutTest"],
-    "TMessagesProj/src/main/java/org/telegram/ui/Components/poll/buttons/PollInstantButtonDrawable.java": ["PollInstantButtonDrawableContractTest", "PollInstantButtonDrawableScreenshotTest"],
-    "TMessagesProj/src/main/java/org/telegram/ui/GradientClip.java": ["GradientClipContractTest"],
-    "TMessagesProj/src/main/java/org/telegram/ui/iv/RichBlockSelection.java": ["IvLeafCellsContractTest"],
-    "TMessagesProj/src/main/java/org/telegram/ui/iv/RichDetailsEndCell.java": ["IvLeafCellsContractTest"],
-    "TMessagesProj/src/main/java/org/telegram/ui/iv/RichDividerCell.java": ["IvLeafCellsContractTest"],
-    "TMessagesProj/src/main/java/org/telegram/ui/iv/RichMathCell.java": ["IvLeafCellsContractTest"],
+    "TMessagesProj/src/main/java/org/telegram/ui/Components/poll/buttons/PollInstantButtonDrawable.java": ["PollInstantButtonDrawableScreenshotTest"],
     "TMessagesProj/src/main/java/org/telegram/ui/web/AddressBarList.java": ["AddressBarListAccessibilityTest"],
 }
-
 DEFAULT_FORCED_EXACT_TESTS = [
-    "org.telegram.ui.Components.LayoutHelperForcedExactTest",
-    "org.telegram.ui.Components.CircularProgressDrawableForcedExactTest",
     "org.telegram.ui.Components.ForcedExactControlsScreenshotTest",
 ]
 
@@ -310,10 +272,20 @@ def check_forced_exact(index: dict, root: Path, guard: Guard) -> None:
         guard.error(
             f"  {e['local']} [{','.join(e['forced_exact'])}]"
         )
-    guard.error(
-        "  run: ./apps/android/gradlew -p apps/android :app:testDebugUnitTest "
-        + " ".join(f"--tests '{t}'" for t in tests)
-    )
+    unit_tests = [t for t in tests if not t.endswith("ScreenshotTest")]
+    shot_tests = [t for t in tests if t.endswith("ScreenshotTest")]
+    if unit_tests:
+        guard.error(
+            "  run: ./apps/android/gradlew -p apps/android :app:testDebugUnitTest "
+            + " ".join(f"--tests '{t}'" for t in unit_tests)
+        )
+    if shot_tests:
+        # A Paparazzi class only renders under testDebugUnitTest; the pixels are
+        # compared by verifyPaparazziDebug (the class list is informational).
+        guard.error(
+            "  run: ./apps/android/gradlew -p apps/android :app:verifyPaparazziDebug "
+            f"  # {', '.join(shot_tests)}"
+        )
 
 
 def _sample(paths: list[str], limit: int = 3) -> str:

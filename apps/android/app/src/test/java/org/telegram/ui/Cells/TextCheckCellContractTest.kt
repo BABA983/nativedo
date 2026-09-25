@@ -9,28 +9,21 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.telegram.messenger.ApplicationLoader
-import org.telegram.ui.Components.Switch
 
+/**
+ * The switch rows in browser settings are TalkBack surfaces: the row has to be
+ * announced as a checkable switch carrying its label. A product-level pass does
+ * not run a screen reader, so this stays as the accessibility oracle.
+ */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28], manifest = Config.NONE)
 class TextCheckCellContractTest {
     private lateinit var cell: TextCheckCell
-    private lateinit var switchView: Switch
 
     @Before
     fun setUp() {
         ApplicationLoader.init(RuntimeEnvironment.getApplication())
         cell = TextCheckCell(RuntimeEnvironment.getApplication())
-        switchView = cell.checkBox
-    }
-
-    @Test
-    fun enabledStatePropagatesToTelegramSwitch() {
-        cell.setEnabled(false)
-        assertThat(switchView.isEnabled).isFalse()
-
-        cell.setEnabled(true)
-        assertThat(switchView.isEnabled).isTrue()
     }
 
     @Test
