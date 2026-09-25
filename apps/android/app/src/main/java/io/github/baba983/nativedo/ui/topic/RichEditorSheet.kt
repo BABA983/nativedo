@@ -70,6 +70,13 @@ internal class RichEditorSheet(
     private var emojiPanel: View? = null
     private var emojiPanelHeight = 0
 
+    /**
+     * The panel opens by taking the keyboard away, so the IME inset it is still reporting is the one
+     * going down. Once it is actually gone, the keyboard coming back means the user asked for it
+     * (a tap in the text) - the composer's own `waitingForKeyboardOpenAfterEmoji`.
+     */
+    private var emojiPanelKeyboardGone = false
+
     init {
         host.setDelegate(object : RichEditorHostLayout.Delegate {
             override fun onBackPressed() {
@@ -188,6 +195,22 @@ internal class RichEditorSheet(
         // the page's own keyboard seam: the pin's `measureKeyboardHeight() > dp(20)`, read from the
         // window's real IME inset instead of the size-notifier view the attach sheet had
         host.setImeInset(ime)
+        // the keyboard taking the bottom back closes the panel - the pin's `onPanTransitionStart`,
+        // through the composer's own rule (`topicReplyComposerShouldHideEmojiPanelForKeyboard`)
+        if (emojiPanel != null) {
+            if (ime > AndroidUtilities.dp(20f)) {
+                if (topicReplyComposerShouldHideEmojiPanelForKeyboard(
+                        keyboardVisible = true,
+                        emojiPanelShowing = true,
+                        waitingForKeyboardOpenAfterEmoji = emojiPanelKeyboardGone,
+                    )
+                ) {
+                    hideEmojiPanel()
+                }
+            } else {
+                emojiPanelKeyboardGone = true
+            }
+        }
     }
 
     /**
@@ -222,6 +245,7 @@ internal class RichEditorSheet(
         val panel = emojiPanel ?: return
         emojiPanel = null
         emojiPanelHeight = 0
+        emojiPanelKeyboardGone = false
         (containerView as? FrameLayout)?.removeView(panel)
         host.setEmojiOpened(false)
         applyWindowInsets(ViewCompat.getRootWindowInsets(host))

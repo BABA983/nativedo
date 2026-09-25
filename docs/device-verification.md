@@ -257,6 +257,24 @@ pass is what settles the parts a snapshot cannot:
   an emoji image must load from the post's base URL and an icon without captured markup must fall
   back to its alt text rather than an empty square.
 
+#### Device attempt (2026-09-26, runner `emulator-5554`, AVD `Medium_Phone_API_36.0`) - blocked
+
+The pass ran on the Mac mini's emulator with a real session (logged in as `@example_user`): the patched
+debug build installed over the existing data (session and the debug switch survived), the app
+launched to the feed, and Settings -> 调试 -> "富文本正文（实验）" toggled on/off (read back through
+`uiautomator`'s `checked`). The editor also opened from the composer's ArticleEditor button with the
+toolbar's Emoji key present at `[225,584][325,684]`.
+
+Everything that needs a post body was blocked by an external outage: `linux.do` answered Cloudflare
+**521** ("Web server is down", Ray IDs `a40bf7d19be18efe` / `a40bf9945e6c8ef8`) on `/latest.json` and
+on every topic's `.json`, from the emulator and from the host (TLS handshake to every A-record times
+out; other hosts are fine). So no post rendered in either switch state and no chip existed to tap.
+Tapping the Emoji key was a silent no-op, which the same outage explains: the panel is built from the
+detail response's `emojiCategories`/`emojiCatalog`, and the composer's key has the identical
+`categories.isEmpty()` guard - the device pass could not separate "blocked by the outage" from
+"broken", so the checks above stand as queued. Screenshots and the command/verdict table:
+`slice-a-device/` on the runner (22 PNGs, `evidence-log.md`).
+
 ## 8. The poll votes sheet is Telegram's `PollVotesAlert` (`6b775d7`)
 
 What changed: the "view votes" entry on a poll opens the vendored
@@ -408,7 +426,14 @@ To check, in a topic:
    - Tap the emoji key: the panel slides in over the page's bottom, the keyboard goes away, the
      toolbar (format pill and send) rides above the panel, and the key shows a keyboard.
      Tapping the key again, or dismissing the sheet, takes the panel away and gives the keyboard
-     back.
+     back. Tapping into the text with the panel up brings the keyboard back and closes the panel
+     (the composer's own `topicReplyComposerShouldHideEmojiPanelForKeyboard`), and the key opens it
+     again from there.
+   - The key is inert while the topic's emoji categories have not loaded: both this panel and the
+     composer's island are built from the detail response's `emojiCategories`/`emojiCatalog`, and
+     the composer's `showReplyComposerPopup` has the same `categories.isEmpty()` guard - a topic
+     opened during an outage leaves both keys doing nothing, which is the expected shape, not a
+     wiring gap.
    - Put the caret in the middle of a word and pick an emoji: the site's `:name:` markup lands
      *at the caret* (`topicReplyComposerEmojiInsertionText`, the composer's own insertion rule),
      not appended at the end - and with a selection, the pick replaces the selection.
