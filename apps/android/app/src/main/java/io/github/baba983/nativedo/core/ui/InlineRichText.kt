@@ -363,18 +363,19 @@ private class InlineCooker {
     }
 
     /**
-     * The site cooks `[x]`/`[ ]` into an `<input type="checkbox">` anywhere in a post (the web UI
-     * draws it as a box), so it becomes a token the two inline paths paint as a box. A list item's
-     * own input is taken by the block parser before this runs (`CookedPostBodyParser` reads it as
-     * the item's `checked`), so this only sees the inline ones.
+     * The site's bundled checklist plugin cooks `[x]`/`[ ]` into an empty `span.chcklst-box`
+     * anywhere in a post (the web UI draws the box with CSS), so it becomes a token the two inline
+     * paths paint as a box. `checked`/`permanent` are the plugin's state classes; the icon classes
+     * (`fa-*`) drift with Font Awesome versions, so detection keys on `chcklst-box` alone. A list
+     * item's leading box is taken by the block parser before this runs (`CookedPostBodyParser` reads
+     * it as the item's `checked`), so this sees the inline ones and any box inside an item.
      */
     private fun inlineCheckbox(element: Element): String? {
-        if (element.tagName() != "input") return null
-        if (!element.attr("type").equals("checkbox", ignoreCase = true)) return null
+        if (element.tagName() != "span" || !element.hasClass("chcklst-box")) return null
         val token = "__nd_inline_checkbox_${inlineCheckboxes.size}__"
         inlineCheckboxes += InlineCheckboxSpec(
             token = token,
-            checked = element.hasAttr("checked"),
+            checked = element.hasClass("checked") || element.hasClass("permanent"),
         )
         return token
     }

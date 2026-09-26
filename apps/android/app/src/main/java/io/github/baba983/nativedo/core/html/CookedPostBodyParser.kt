@@ -5,6 +5,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import org.jsoup.nodes.Node
+import org.jsoup.nodes.TextNode
 
 internal fun parseCookedPostBody(html: String, baseUrl: String): List<CookedPostBlock> {
     val body = Jsoup.parseBodyFragment(html).body()
@@ -739,15 +740,15 @@ private fun parseListElement(element: Element, quoteLevel: Int, baseUrl: String)
     val items = element.children()
         .filter { child -> child.normalName() == "li" }
         .mapNotNull { item ->
-            // Discourse cooks a task list as `li.task-list-item` with a checkbox input. The input is
+            // Discourse's bundled checklist plugin cooks the marker into an empty
+            // `span.chcklst-box` (`checked`/`permanent` are its state classes) and leaves the item
+            // itself unclassed - the web UI's `li.has-checkbox` is added client-side. The span is
             // chrome, not content: it leaves the item before the item is parsed, and its state
-            // travels as the item's `checked`.
-            val checkbox = item.selectFirst("input[type=checkbox]")
-            val checked = when {
-                checkbox != null -> checkbox.hasAttr("checked")
-                item.hasClass("task-list-item") -> false
-                else -> null
-            }
+            // travels as the item's `checked`. Only a *leading* box is the item's marker; a box
+            // later in the item is content and stays for the inline cooker (the site's own
+            // client-side rule removes the bullet for a leading box only).
+            val checkbox = item.leadingChecklistBox()
+            val checked = checkbox?.let { box -> box.hasClass("checked") || box.hasClass("permanent") }
             checkbox?.remove()
             val html = item.html()
             if (html.takeIfHtmlNotBlank() == null && checked == null) return@mapNotNull null
@@ -759,6 +760,27 @@ private fun parseListElement(element: Element, quoteLevel: Int, baseUrl: String)
         }
     return if (items.isEmpty()) emptyList() else listOf(CookedPostBlock.ListItems(ordered = element.normalName() == "ol", items = items))
 }
+
+/**
+ * The checklist box a cooked item leads with, or null. The site's own client-side rule
+ * (`li.has-checkbox`, which is what removes the bullet) looks at a box that is the first content of
+ * the item or of its first paragraph, and that is the position where the box is the item's marker
+ * rather than content.
+ */
+private fun Element.leadingChecklistBox(): Element? {
+    val first = firstContentNode()
+    if (first !is Element) return null
+    if (first.isChecklistBox()) return first
+    if (first.normalName() != "p") return null
+    val inner = first.firstContentNode()
+    return (inner as? Element)?.takeIf { it.isChecklistBox() }
+}
+
+/** The first child node that is not blank text, i.e. where the element's content starts. */
+private fun Element.firstContentNode(): Node? =
+    childNodes().firstOrNull { node -> node !is TextNode || node.text().isNotBlank() }
+
+private fun Element.isChecklistBox(): Boolean = normalName() == "span" && hasClass("chcklst-box")
 
 private fun parseDetailsElement(element: Element, quoteLevel: Int, baseUrl: String): List<CookedPostBlock> {
     val summaryElement = element.selectFirst("summary")

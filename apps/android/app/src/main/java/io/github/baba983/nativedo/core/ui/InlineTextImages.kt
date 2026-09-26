@@ -294,8 +294,8 @@ private fun calculateInlineImageSizePx(
 }
 
 /**
- * A cooked inline checkbox: the site cooks `[x]`/`[ ]` into an `<input type="checkbox">`, and this
- * is the token it becomes (the web UI draws the same element as a checkbox glyph).
+ * A cooked inline checkbox: the site's bundled checklist plugin cooks `[x]`/`[ ]` into an empty
+ * `span.chcklst-box`, and this is the token it becomes (the web UI draws the box with CSS).
  */
 internal data class InlineCheckboxSpec(
     val token: String,

@@ -287,12 +287,13 @@ internal class TopicPostCellScreenshotTest {
             <p>Inline: <img src="/images/emoji/twemoji/laughing.png" class="emoji" alt=":laughing:" title=":laughing:">
             and a custom <img src="/uploads/default/original/3X/blob.png" class="emoji emoji-custom" alt=":party_blob:" title=":party_blob:">
             plus a key <svg class="fa d-icon svg-icon" aria-label="keyboard"><use href="#far-keyboard"></use></svg> in the line.
-            A done box <input type="checkbox" class="task-list-item-checkbox" checked> and an open one <input type="checkbox" class="task-list-item-checkbox"> inline.</p>
+            A done box <span class="chcklst-box checked fa fa-square-check-o" data-chk-src="0:0"></span> and an open one <span class="chcklst-box fa fa-square-o" data-chk-src="0:1"></span> inline.</p>
             <p>A <span style="font-size: 150%">bigger run</span> and a
             <a class="hashtag-cooked" href="/tag/dev" data-slug="dev"><svg class="fa d-icon svg-icon" aria-label="dev"><use href="#far-tag"></use></svg><span>dev</span></a> chip.</p>
-            <ul class="task-list">
-              <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox" checked> done item</li>
-              <li class="task-list-item"><input type="checkbox" class="task-list-item-checkbox"> todo item</li>
+            <ul>
+              <li><span class="chcklst-box checked fa fa-square-check-o" data-chk-src="0:0"></span> done item</li>
+              <li><span class="chcklst-box fa fa-square-o" data-chk-src="0:1"></span> todo item</li>
+              <li>see <span class="chcklst-box fa fa-square-o" data-chk-src="0:2"></span> mid-item, which stays inline</li>
             </ul>
             <p>After the task list.</p>
         """.trimIndent()
