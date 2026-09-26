@@ -779,8 +779,14 @@ the detection moved to the parser (`CookedPostBlock.Attachment`, emitted for a p
 exactly one `a.attachment` plus the site's optional size text) and `PostBodyBlockFactory` builds
 `AttachmentBlock`, which mirrors `RichMessageLayout.RichDocumentBlock`'s URL-case geometry and
 colours. The rich golden did not move in that refactor, and `TopicPostCellScreenshotTest.attachment`
-is the block-path golden for the same fixture. Still to re-read on device: post #10 in the flag-off
-state must now draw the row instead of the link line.
+is the block-path golden for the same fixture.
+
+Verdict for the block-path row (2026-09-26, `emulator-5554`, app from `74b1e28`): post #10 draws the
+row in **both** states now (the flag-off block grew 293px -> 381px and shows the disc, the bold name
+and `219 Bytes`), the flag-off tap on the glyph centre opens the in-app browser at the CDN URL, and
+the flag-off hold opens the link popup and copies the exact absolute URL without opening the browser.
+Post #9, posted before the URL fix, also gained the row (its stored markdown keeps the old `//host`
+href; the renderer resolves that form - proven by probe - so no separate pass is needed for it).
 
 Notes for the next device pass on this surface: the row's press band is `y >= dp(10) && y <= dp(53)`
 inside the block (a tap a few pixels above it is swallowed by the cell with an empty logcat - that
