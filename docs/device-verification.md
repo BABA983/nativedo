@@ -735,3 +735,23 @@ The product path is clean: the phone's jar, from a real in-app GitHub login, hol
 host-only `_forum_session`/`_t`. So: inject host-only values (no `domain=`), or clear the app's
 data between an injection and a WebView login. Verified by clearing the emulator's data and
 finishing a Turnstile: the jar then holds only the site's own cookies.
+
+## 17. The Discourse attachment row (`494f5d5`) — new
+
+What changed: a cooked paragraph that is exactly one `a.attachment` anchor (plus the site's
+` (12.3 KB)` text) is no longer a link run - it maps to the pin's `pageBlockDocument`, so the
+flag-on body draws the document row: a circular file glyph, the file name in bold and the size
+under it. The row's press goes through `didPressUrl`, the same delegate entry a link run uses,
+which routes an uploads URL to the app's link entry (the in-app browser) - the site serves a PDF
+inline and downloads everything else.
+
+To check, on a post that has an attachment and with the rich body flag on:
+1. The row draws with the file's name and size (not a link in a sentence), and the same anchor
+   *inside* a sentence still draws as a link.
+2. Tap the row: the in-app browser opens the uploads URL (a PDF renders in it; a `.zip` downloads).
+3. The row must not show a download ring or progress - there is nothing to fetch through
+   `FileLoader`, and no `DownloadController` observer is registered for it.
+4. Hold the row: the URL is copied (the rule the run and the block path follow - the press must
+   *not* open the link when the hold fired), with the usual long-press haptic. The document
+   options sheet must never appear (`canShowOptions()` is document-guarded, so a URL row has no
+   menu).

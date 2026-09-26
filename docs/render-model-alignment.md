@@ -434,6 +434,22 @@ Sequence, if chat is scheduled:
    the pin's `pageBlockDocument` so upstream's `RichDocumentBlock` draws the file row, and answer its
    press the way the block path answers an attachment link today (`Browser.openUrl`), because the
    pin's `openForView` file/mime dispatch has no document viewer in this tree yet.
+   **Documents: the row landed (`2026-09-26`).** The plan above, implemented in `494f5d5`:
+   `PostRichMessageBuilder.attachment` takes a `CookedPostBlock.Text` whose body is exactly one
+   `a.attachment` child (any other element, or text that does not start with the site's `(`, falls
+   back to the paragraph), and emits `pageBlockDocument` with `document_id = 0`, the empty caption,
+   `PageBlock.url` and two new display fields `url_title`/`url_size`; `RichDocumentBlock` then takes
+   the URL case - `hasPreview` is document-guarded, the layouts read the block's name and size, a
+   static `ICON_FILE` glyph is drawn in the loader's colors, `updateButtonState` returns before the
+   download machinery, `onDraw`'s `document == null` guard became `document == null && url == null`,
+   and `press()` answers `didPressUrl` with the block's URL (the same delegate entry a link run uses,
+   so it lands on the app's own routing: an uploads URL goes to the link entry). One trap is worth
+   keeping: **do not declare a field on a concrete block that the host lifted onto `PageBlock`** - a
+   first cut gave `pageBlockDocument` its own `url`, which shadows the lifted `PageBlock.url` that the
+   editor's import and writer use, and the editor's document round-trip silently lost its label
+   (`RichEditorHostContractTest.importedMediaKeepsItsUrlLabelAndKind` caught it; the field was
+   dropped). Gates: `richMessageAttachment` per theme (the row, plus an attachment inside a sentence
+   staying a link) and a device pass - `docs/device-verification.md` section 17.
    **The checklist authoring loop is pinned (`2026-09-26`).** The editor's own list menu creates the
    shape (`ArticleListTodo` -> `turnIntoList(row, 3)`), `- [x]`/`- [ ]` load as its checkbox rows
    (`RichEditorSheetScreenshotTest.theEditorShowsAChecklist`, a checked and an empty box with no
