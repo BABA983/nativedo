@@ -780,3 +780,23 @@ To check, on a post with checklists (post #7 of 2953635 is the sample) and with 
 4. Both flag states agree; the block path and the rich path read the same parser.
 5. Nothing here toggles: the box is display-only (`data-chk-src` is the site's toggle locator, and
    this client has no toggle call yet) - tapping it must not change the post.
+
+## 19. Inline math renders with the tree's LaTeX renderer (`6c8f1b7`) — new
+
+What changed: a cooked `<span class="math">x^2</span>` (the site's math plugin output - bare TeX, the
+`$` delimiters are stripped at cook time) is no longer read as its text. The block path paints it
+with `DiscourseMathSpan` (a bitmap from `org.telegram.ui.iv.Latex`, falling back to the TeX text when
+a formula cannot be parsed) and the rich path emits the model's `textMath` run, which upstream's
+renderer draws through the same renderer. Display math (`div.math`) still reads as its text.
+
+To check, on a post with math (`$x^2 + y^2$` on its own line, posted into the private test bed) and
+in both flag states:
+1. The formula draws as math - italic variables, the `2` raised as a superscript - not as the
+   characters `x^2 + y^2`.
+2. It sits on the text baseline (no clipping of a tall formula, no gap under a fraction); a formula
+   the renderer cannot parse shows the TeX text instead of nothing.
+3. Copy the line: the clipboard must carry the TeX source (`x^2 + y^2`), which is what the restored
+   `ReplaceCopyTextSpannable` is for.
+4. The same post with the rich body flag off must look the same - both paths share the parser and
+   the renderer.
+5. A formula that fails to parse must not leave a hole in the line: the fallback is the source text.

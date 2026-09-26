@@ -462,6 +462,23 @@ Sequence, if chat is scheduled:
    `DiscourseCheckboxDrawable`/`DiscourseCheckboxSpan` in the block path and the registry's emoji
    resolver in the rich one. The retained golden grew the case:
    `TopicPostCellScreenshotTest.richMessageInlineCases` carries a done and an open box inline.
+   **The site's math renders now (`2026-09-26`, `6c8f1b7`).** linux.do has math on - its `/site.json`
+   carries `discourse_math_bundle_url`, which the plugin's serializer only emits while
+   `discourse_math_enabled` is true - and the site's math plugin cooks the TeX *at cook time*:
+   `$x^2$` becomes `<span class="math">x^2</span>` and `$$x^2$$` becomes
+   `<div class="math">\nx^2\n</div>`, with the delimiters gone (the plugin's own specs pin those two
+   strings; `\(…\)`/`\[…\]` are input delimiters and exist only client-side at render time, so
+   cooked HTML never carries a `$`, `\(` or `\[` to key on). The inline cooker therefore matches
+   `span.math` and takes the element's trimmed text as the source, and each path resolves the token
+   the way it resolves a checkbox: the block path paints `DiscourseMathSpan`, which draws the bitmap
+   from `org.telegram.ui.iv.Latex` (the tree's own JLatexMath renderer, already reachable through
+   `RichMessageLayout`'s `textMath` branch) and falls back to the TeX as text when a formula cannot
+   be parsed, caching bitmaps per source + text size; the rich path emits the model's own
+   `textMath` run, whose `ReplaceCopyTextSpannable` (restored in `3ec7959`) makes a copy yield the
+   TeX. Goldens: `richMessageInlineCases` (rich) and `contentBlocks` (block path) both carry a real
+   `<span class="math">x^2 + y^2</span>` and both show it rendered. Still open: display math
+   (`div.math`) is read as its text - a block-level math cell is the follow-up, and the device pass
+   is `docs/device-verification.md` section 19.
    **The element was wrong: it is `span.chcklst-box`, not an `<input>` (`2026-09-26`, `de01924`).**
    The first cut of the entry above keyed the parser on `<input type="checkbox">` inside
    `li.task-list-item`, and the device pass showed why that could never fire: a web-authored post
