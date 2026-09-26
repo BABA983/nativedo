@@ -289,9 +289,42 @@ not separate "blocked by the outage" from "broken".
   comes back" never happens and the sheet's keyboard rule (§10.8) has no precondition here.
 
 Screenshots and the full command/verdict table: `slice-a-device/` on the runner (round 1: `00`..`21`,
-round 2: `30`..`88`, plus `evidence-log.md`). One observation left unresolved, not a defect claim:
-topic 2790689's post #4 reads `disguised_face:` as literal text in *both* switch states, which is
-what the site cooked (an unknown `:name:` stays text), not a rich-body difference.
+round 2: `30`..`88`, round 3: `90`..`102`, plus `evidence-log.md`). One observation left unresolved, not
+a defect claim: topic 2790689's post #4 reads `disguised_face:` as literal text in *both* switch
+states, which is what the site cooked (an unknown `:name:` stays text), not a rich-body difference.
+
+**Round 3 - the private test bed was blocked, and one check got its answer.** The emulator
+(`emulator-5554`, AVD `Medium_Phone_API_36.0`) was restarted (process restarted 12:04, resumed from a
+snapshot) and its IME now *connects* (`mCurId=...LatinIME`, `mImeWindowVis=3`, `mInputShown=true`) -
+but Gboard paints nothing and contributes no usable bottom inset, so the app's layout never leaves the
+panel-open position and the keyboard rule is still **inconclusive** (the environment cannot evaluate
+it, not the patch failing). The only other device is a physical Xiaomi `24129PN74C` (`449dd25d`),
+where MIUI refuses `input` injection (`INJECT_EVENTS`), so it cannot be driven; there is no second
+emulator (one `qemu-system-aarch64` process, and `Pixel_Tablet_car` has a stale lock and no process).
+
+The round's premise - driving the *in-app browser* - does not hold on this setup: it is logged out,
+because the app's session is hand-injected and (per §16) the product path is a real in-app login; a
+hand-injected session is not the WebView's. So the public test reply could not be deleted from the
+browser and no self-PM could be created there - both need a hand (or a WebView login) on the web side.
+The selection check got its answer for `adb` input: a press-hold-drag (`input swipe x y x+70 y 1500`)
+produced no selection at all, and the pick then inserted a second emoji at the caret
+(`ALPHAB :grinning_face: :grinning_face: ETA`) - the correct behaviour for a caret, so the replace
+branch is still unexercised. Leftover, account-only: the reply composer for the Premium giveaway topic
+keeps the private draft `ALPHAB :grinning_face: ETA`.
+
+#### A private test bed: a personal message to yourself
+
+Discourse personal messages are readable only by their participants (`Guardian#can_see_topic?`), and a
+message whose only recipient is yourself is allowed server-side - the web composer only shows a "did
+you forget to add recipients?" hint, which is dismissible, and there is no "cannot message yourself"
+validation. So a self-PM is a private place to post real server-cooked HTML for a device pass: create
+it in the web UI (recipient = your own username), open it in the app by topic id (Settings -> 调试 ->
+打开话题), and every reply the app posts there is cooked by the server and visible only to you. This
+client ignores `archetype` and `TopicDetail` needs no category, so a PM should render as a normal
+topic (not yet device-verified). Two dead ends, recorded so nobody re-treads them: unlisting is
+staff/TL4-only *and* not private (anyone with the link can read it), and Discourse has no server-side
+"cook this markdown" endpoint - the composer preview is client-side markdown-it, so a post has to
+exist before its cooked HTML does.
 
 ## 8. The poll votes sheet is Telegram's `PollVotesAlert` (`6b775d7`)
 
@@ -449,14 +482,18 @@ To check, in a topic:
    back (`62`); dismiss and reopen kept the markup (`65`, `66`); and the sent reply posted and
    rendered (`69`..`73`). Still unverified on a device, with the reason:
    - **A selection replaced by the pick**: `adb` input could not create a text selection in the
-     editor (long-press and double-tap both left a bare caret - `82`, `86`), so the replace branch
-     of `topicReplyComposerEmojiInsertionText` was never reached.
+     editor - long-press and double-tap both left a bare caret (`82`, `86`), and a press-hold-drag
+     (`input swipe x y x+70 y 1500`) selected nothing either (`100`) - so the replace branch of
+     `topicReplyComposerEmojiInsertionText` was never reached; the pick inserted at the caret
+     (`ALPHAB :grinning_face: :grinning_face: ETA`, `101`), which is what a caret asks for.
    - **The keyboard coming back closing the panel** (the composer's own
      `topicReplyComposerShouldHideEmojiPanelForKeyboard`): this AVD's soft IME never shows
      (`dumpsys input_method` -> `mImeWindowVis=0`, `mInputShown=false`, the `InputMethod` window
      `GONE`; `ime reset` / `ime set` / `show_ime_with_hard_keyboard` did not revive it), so the
-     precondition never occurred - the panel stayed up after a tap in the text (`61`). The rule
-     itself is the composer's, already exercised on the island.
+     precondition never occurred - the panel stayed up after a tap in the text (`61`). After the
+     emulator was restarted the IME connects but paints nothing and supplies no usable inset, so the
+     check stays inconclusive (`99`, and §7's round 3). The rule itself is the composer's, already
+     exercised on the island.
    To check by hand, in a topic with the editor open:
    - Tap the emoji key: the panel slides in over the page's bottom, the keyboard goes away, the
      toolbar (format pill and send) rides above the panel, and the key shows a keyboard.
