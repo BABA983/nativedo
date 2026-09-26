@@ -7900,6 +7900,9 @@ public class RichMessageLayout {
         private int buttonState;
         private boolean pressed;
         private boolean optionsPressed;
+        // NativeDo: the URL case's held press (see scheduleUrlLongPress).
+        private Runnable urlLongPressRunnable;
+        private boolean urlLongPressFired;
         private int layoutWidth = -1;
         private final int observerTag;
 
@@ -8132,14 +8135,49 @@ public class RichMessageLayout {
                 }
             }
             final boolean inside = x >= (hasPreview ? previewX : buttonX) && x <= layoutWidth - dp(12) && y >= dp(10) && y <= dp(hasPreview ? 96 : 53);
-            if (event.getActionMasked() == MotionEvent.ACTION_DOWN && inside) { pressed = true; return true; }
-            if (event.getActionMasked() == MotionEvent.ACTION_UP && pressed) {
-                pressed = false;
-                if (inside) { if (view != null) view.playSoundEffect(SoundEffectConstants.CLICK); press(); }
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN && inside) {
+                pressed = true;
+                // NativeDo: a URL attachment is a link, so a held press copies it - the rule the run
+                // and the block path already follow.
+                if (block.url != null) scheduleUrlLongPress();
                 return true;
             }
-            if (event.getActionMasked() == MotionEvent.ACTION_CANCEL) pressed = false;
+            if (event.getActionMasked() == MotionEvent.ACTION_UP && pressed) {
+                pressed = false;
+                cancelUrlLongPress();
+                if (inside && !urlLongPressFired) { if (view != null) view.playSoundEffect(SoundEffectConstants.CLICK); press(); }
+                urlLongPressFired = false;
+                return true;
+            }
+            if (event.getActionMasked() == MotionEvent.ACTION_CANCEL) { pressed = false; cancelUrlLongPress(); urlLongPressFired = false; }
             return pressed;
+        }
+
+        // NativeDo: the URL case's long press, on the same timer shape the run uses.
+        private void scheduleUrlLongPress() {
+            cancelUrlLongPress();
+            urlLongPressRunnable = () -> {
+                urlLongPressRunnable = null;
+                if (block.url == null || !pressed) return;
+                urlLongPressFired = true;
+                if (view != null) {
+                    try {
+                        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+                    } catch (Exception ignore) {}
+                }
+                final ChatMessageCell.ChatMessageCellDelegate delegate = root.getDelegate();
+                if (delegate != null) {
+                    delegate.didPressUrl(root.getCell(), new URLSpan(block.url), true);
+                }
+            };
+            AndroidUtilities.runOnUIThread(urlLongPressRunnable, ViewConfiguration.getLongPressTimeout());
+        }
+
+        private void cancelUrlLongPress() {
+            if (urlLongPressRunnable != null) {
+                AndroidUtilities.cancelRunOnUIThread(urlLongPressRunnable);
+                urlLongPressRunnable = null;
+            }
         }
 
         private boolean canShowOptions() {
