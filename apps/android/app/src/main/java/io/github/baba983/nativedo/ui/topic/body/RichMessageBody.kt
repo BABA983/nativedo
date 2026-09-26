@@ -7,6 +7,8 @@ import android.graphics.Canvas
 import android.graphics.Matrix
 import android.graphics.Rect
 import android.text.Layout
+import android.text.style.CharacterStyle
+import android.text.style.URLSpan
 import android.text.StaticLayout
 import android.view.MotionEvent
 import io.github.baba983.nativedo.core.html.CookedPostBlock
@@ -225,6 +227,18 @@ internal class RichMessageBodyBlock(
  * upstream's entry point, and it reads each block's URL through `photoItemForPageBlock`.
  */
 private inner class RichMessageBodyDelegate : ChatMessageCell.ChatMessageCellDelegate {
+
+    /**
+     * A link press inside the run. Upstream answers this on the cell (`didPressUrl`), and this host is
+     * a plain view, so the renderer's own cell-less branch hands it here instead - the app then opens
+     * it through the same entry the block path's links use. The chip travels as a link run, so this is
+     * its tap too.
+     */
+    override fun didPressUrl(cell: ChatMessageCell?, url: CharacterStyle?, longPress: Boolean) {
+        val href = (url as? URLSpan)?.url ?: return
+        if (href.isBlank()) return
+        context.delegate.onLinkClick(href)
+    }
 
     override fun openArticlePhoto(cell: ChatMessageCell?, block: TL_iv.PageBlock?): Boolean {
         val rich = layout ?: return false

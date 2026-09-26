@@ -3154,7 +3154,11 @@ public class RichMessageLayout {
             }
             final ChatMessageCell.ChatMessageCellDelegate delegate = root.getDelegate();
             final ChatMessageCell cell = root.getCell();
-            if (delegate != null && cell != null) {
+            // NativeDo: this host can be a plain view (the rich post body has no ChatMessageCell), so
+            // the press goes to the delegate without one - the pin's own call is cell-guarded, and the
+            // app answers it with the same in-app browser entry the block path uses. Upstream always
+            // has a cell here, so the change is inert for it.
+            if (delegate != null) {
                 if (view != null && !longPress) {
                     view.playSoundEffect(SoundEffectConstants.CLICK);
                 }

@@ -438,6 +438,17 @@ Sequence, if chat is scheduled:
    the chip pill and a wide icon sit in a run. The retained golden is
    `TopicPostCellScreenshotTest.richMessageInlineCases` (both themes); the device pass is
    `docs/device-verification.md` §7.
+   **The rich run's links dispatch through the app now (`2026-09-26`).** A device A/B on one post -
+   flag off: the link and the chip both dispatch; flag on: both dead, same session, single taps -
+   sent this back to the code, and the cause is the pin's own guard: `dispatchLinkClick` calls
+   `delegate.didPressUrl(cell, span, longPress)` only `if (delegate != null && cell != null)`, and
+   this host is a plain view with no `ChatMessageCell`, so the press fell into the cell-less branch
+   (`((ClickableSpan) span).onClick(view)`) and died there. That branch is now a `// NativeDo:` delta
+   (the delegate is called without a cell; upstream always has one, so it is inert there) and
+   `RichMessageBodyDelegate.didPressUrl` answers it with `context.delegate.onLinkClick(href)` - the
+   entry the block path's links and chips take. Verified by a cell-level probe that taps a link in
+   the shipped cell: before the delta the delegate never saw the press, after it the tap lands on the
+   link's URL. The chip travels as a link run, so its tap is this path too.
    **The segment seam keeps its gap now (`2026-09-26`).** The renderer trims a run's first top and
    last bottom edge (`layout()`), which is right at the post's own ends but wrong where a run meets a
    block of ours: the poll or callout below it sat flush against the paragraph above. `RichMessageBody`

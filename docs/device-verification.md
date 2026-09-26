@@ -359,6 +359,14 @@ code nor the browser:
 - **The browser was never broken**: Settings -> 调试 -> Open URL -> `https://example.com` loaded in the
   in-app browser, and Settings -> 浏览器设置 shows in-app browsing on (`180`, `181`).
 
+**The rich run's link and chip taps were dead - fixed (`2026-09-26`).** Round 9 got the clean A/B the
+earlier rounds could not: on one post, one session, single taps, with the selection cleared, the
+flag-off link (native topic) and chip (in-app browser) both dispatch and the flag-on pair does nothing
+(`191`..`199`). The cause is the pin's guard in `dispatchLinkClick` - it calls `didPressUrl` only with a
+`ChatMessageCell`, which this host has not got - so the press fell into the cell-less `ClickableSpan`
+branch and died. The fix is a `// NativeDo:` delta plus `RichMessageBodyDelegate.didPressUrl` ->
+`onLinkClick`, the entry the block path uses; a cell-level probe over the shipped cell shows the tap
+landing on the link's URL after it. A device re-check of the same five taps is queued (`210`+).
 **The `[x]` answer, and what the app does with it now (`2026-09-26`).** The site cooks `[x]`/`[ ]`
 into an `<input type="checkbox">` anywhere in a post (the web UI draws the same element as a box), and
 the app now paints it with Telegram's own task-list box: `DiscourseCheckboxDrawable`/`DiscourseCheckboxSpan`
