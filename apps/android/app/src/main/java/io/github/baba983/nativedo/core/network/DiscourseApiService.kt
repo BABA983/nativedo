@@ -277,8 +277,11 @@ data class UploadResponseDto(
     val url: String = "",
     @SerialName("original_filename")
     val originalFilename: String? = null,
-    val width: Int = 0,
-    val height: Int = 0,
+    // The site sends `null` for anything that is not an image or a video, so these must be nullable
+    // even though the DTO's reader wants a number - a non-nullable Int here fails the decode of a
+    // perfectly good 200 response (a `.zip` upload), which reads as "the upload failed".
+    val width: Int? = null,
+    val height: Int? = null,
     val extension: String? = null,
     @SerialName("short_url")
     val shortUrl: String? = null,
