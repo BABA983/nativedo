@@ -474,6 +474,21 @@ Sequence, if chat is scheduled:
    edit, and the work only starts when that diff is small enough to be a reviewable change (the
    selection helper is the precedent: it was adopted whole, in one file). Until then the wire-outs are
    inert by design and should stay so.
+   **Both shape items closed: the diff was zero (`2026-09-26`).** The step above was taken and it
+   settled both items - the premise was stale. `S5` (`5fd8dc3`) adopted the selection helper whole,
+   so the local file *is* the pin's shape at the two places the wire-outs cited:
+   `TextSelectionHelper.TextLayoutBlock` already declares `default getPrefix()` (and `getText()`), and
+   `ReplaceCopyTextSpannable` is present with the pin's own constructor. `vendor-diff.sh <path> --at
+   <pin>` confirms the region is byte-identical to the pin's file; the only difference left in that
+   file is the `// NativeDo:` delta that lets a non-chat view reach `canShowQuote()` (plus the
+   protected-widening and `xOffset` changes the article helper needs). So the three wire-outs were
+   replaced by the pin's own lines in `3ec7959`: the math branch attaches
+   `ReplaceCopyTextSpannable(textLatex.source)` again, `withReplacements` walks those spans again
+   (so a copied/read math span yields its LaTeX, not the placeholder space), `Text.getPrefix()` (a
+   redundant override of the interface default) and `PaddedTextLayoutBlock.getText()`'s
+   reimplementation are gone. Nothing in this tree emits `textLatex` yet - the cooked-math mapping is
+   still open - so the restored path is upstream-faithful but unexercised: no golden moved, and the
+   suite (502 tests) is the only gate that can see it today.
    **The Discourse-only inline constructs landed (`2026-09-25`).** The four shapes the model has no
    upstream case for now ride the runs the block path already emits, so a flag-on post reads like the
    flag-off cell: a cooked hashtag anchor is a registered chip
