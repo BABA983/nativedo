@@ -358,8 +358,14 @@ private class RichMessagePlaceProvider(
         val window = IntArray(2)
         host.getLocationInWindow(window)
         val object_ = PhotoViewer.PlaceProviderObject()
-        object_.viewX = (window[0] + origin[0] + offset[0] - receiver.imageX).toInt()
-        object_.viewY = (window[1] + origin[1] + offset[1] - receiver.imageY).toInt()
+        // PhotoViewer adds the receiver's own draw region to these (`fillClippingAnimationValues`:
+        // `viewX + drawRegion.left`), and `drawRegion` is the image's offset *inside its block*
+        // (`RichMessageLayout.findMediaImageReceiver` hands back the block's offset, not the image's).
+        // So viewX/viewY must be the block's window position; subtracting the receiver's offset here,
+        // as this used to, put every collage tile but the first at the mirrored x - the viewer then
+        // animated it in from off-screen left, which reads as a jolt at the start.
+        object_.viewX = window[0] + origin[0] + offset[0]
+        object_.viewY = window[1] + origin[1] + offset[1]
         object_.viewWidth = receiver.imageWidth.toInt()
         object_.viewHeight = receiver.imageHeight.toInt()
         object_.parentView = host
