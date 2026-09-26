@@ -746,7 +746,7 @@ host-only `_forum_session`/`_t`. So: inject host-only values (no `domain=`), or 
 data between an injection and a WebView login. Verified by clearing the emulator's data and
 finishing a Turnstile: the jar then holds only the site's own cookies.
 
-## 17. The Discourse attachment row (`494f5d5`) — new
+## 17. The Discourse attachment row (`494f5d5`) — partially passed (2026-09-26, `emulator-5554`)
 
 What changed: a cooked paragraph that is exactly one `a.attachment` anchor (plus the site's
 ` (12.3 KB)` text) is no longer a link run - it maps to the pin's `pageBlockDocument`, so the
@@ -754,6 +754,20 @@ flag-on body draws the document row: a circular file glyph, the file name in bol
 under it. The row's press goes through `didPressUrl`, the same delegate entry a link run uses,
 which routes an uploads URL to the app's link entry (the in-app browser) - the site serves a PDF
 inline and downloads everything else.
+
+Verdict so far (2026-09-26): the composer's document route works end to end - a `.zip` uploaded
+from the app lands in the PM as post #9 and the flag-on body draws it as the row (glyph, name,
+`219 Bytes`). Three findings from that pass:
+1. **The two states disagree**: the flag-off block path draws the same post as a plain blue link
+   line (`name (219 Bytes)`), because the row was only ever mapped for the rich model. The site's
+   own rendering is a link with a paperclip icon, so the block path is the one that matches the
+   site and the rich path is the one that matches Telegram - a product fork, not a bug.
+2. **The taps did nothing in either state**, and the cause was in the composer: the site answers an
+   upload with a *protocol-relative* URL on its CDN host (`//linuxdo-uploads.s3.ldstatic.com/...`),
+   which the composer inserted verbatim, so the cooked href had no scheme to open. Fixed in
+   `ec52d2b` (`absoluteUploadUrl`, shared with the media bridge); the tap needs a re-run.
+3. The site renames an upload (`1790436268563-test_file.zip`) and the size text is its own
+   `human_filesize`; the composer inserts both as-is.
 
 To check, on a post that has an attachment and with the rich body flag on:
 1. The row draws with the file's name and size (not a link in a sentence), and the same anchor
