@@ -620,13 +620,16 @@ To check, in a topic with the editor open:
 6. Known gap: the composer's own inline reply box still has no attach path — media
    goes through the editor, and a post sent from the composer is text-only.
 
-## 12. The composer's attach slot (`b9a967d`) — partially driven (2026-09-20)
+## 12. The composer's attach slot (`b9a967d`) — partially driven (2026-09-20; the file route added `2026-09-26`)
 
 What changed: the reply composer carries its own attach path. While the draft is empty the
 send slot shows a paperclip instead of the send plane; a picked image or video is copied
 into the cache, uploaded to `POST /uploads.json`, and its markdown lands in the draft on a
 line of its own. With text already in the draft the same action is in the send button's
-long-press menu (send is the other item there).
+long-press menu (send is the other item there). Since `2026-09-26` the menu also carries
+**Add file** - any other type, uploaded the same way, inserted as the site's own attachment
+markdown (`[name|attachment](url) (12.3 KB)`), and the paperclip's *long press* opens that
+menu so an empty draft can reach the file route too.
 
 Verdict: with an empty draft the slot is the paperclip; with text in it, long-pressing the
 send plane opens "Add image or video" above "Send", and that entry opens the system photo
@@ -641,14 +644,21 @@ To check, in a topic:
    answers, then `![name](https://linux.do/uploads/...)` appears at the caret, on its own
    line, and the slot becomes the send plane (the draft is no longer empty).
 2. Type a few characters first: the slot is the send plane, and long-pressing it offers
-   "Add image or video" above "Send".
+   "Add image or video" above "Add file" above "Send".
 3. Insert with the caret mid-line: the image must start on a new line, and the caret must
    end on the line *after* the markdown, so typing continues below it.
 4. Failure path: turn the network off and attach — the composer's red error line must
    report it and the draft must stay as it was (no broken markdown inserted).
 5. Send the post: the site must render the image (edit the post on the web to see the
    `raw`), which is the same wire form the editor produces.
-6. Known gaps: only one file at a time, no caption, and no upload progress beyond the
+6. The file route: long-press the paperclip with an *empty* draft, choose "Add file", pick a
+   `.zip` or a `.pdf` (the picker must be the document picker, not the photo picker), and the
+   draft must gain `[name|attachment](https://linux.do/uploads/...) (12.3 KB)` - the size from
+   the upload's `human_filesize`. Send it: the post must draw as the attachment row (the
+   document golden's shape) and a tap on it must open the in-app browser at the uploads URL.
+   This is the route the attachment-row device pass was blocked on (round 14, 2026-09-26: the
+   photo picker was the only entry, so a `.zip` could not be attached at all).
+7. Known gaps: only one file at a time, no caption, and no upload progress beyond the
    spinning slot; the composer has no screenshot golden, so this swap is device-only.
 
 ## 13. Cold start can fail with "Session changed while request was in flight" (new, 2026-09-20)

@@ -450,6 +450,19 @@ Sequence, if chat is scheduled:
    (`RichEditorHostContractTest.importedMediaKeepsItsUrlLabelAndKind` caught it; the field was
    dropped). Gates: `richMessageAttachment` per theme (the row, plus an attachment inside a sentence
    staying a link) and a device pass - `docs/device-verification.md` section 17.
+   **The composer can attach a file now (`2026-09-26`).** The attachment row's device pass was
+   blocked by the other half of the loop: the composer's attach slot only ever reached the system
+   *photo* picker (`ACTION_GET_CONTENT` filtered to `image/*`/`video/*`), so a `.zip` could not be
+   attached at all - the site would cook an attachment nobody could send. The attach menu now carries
+   **Add file** (unfiltered `ACTION_GET_CONTENT`, i.e. the document picker) and the paperclip's long
+   press opens that menu, so an empty draft can reach it too. What the client inserts is the site's
+   own form, chosen by the file's kind the way the server chooses it: an image or video stays
+   `![name](url)`, anything else becomes `[name|attachment](url) (12.3 KB)` - the lowercase
+   `|attachment` marker is read from the link's *label* by the cook's `renderAttachment` rule (never
+   from the URL, so the plain `/uploads/...` URL this client gets is enough), and the size text is
+   cosmetic, taken from the upload's `human_filesize`. A post this client sends therefore cooks back
+   into the very row this mapping draws; `contracts/discourse/endpoints.md` records the form, and the
+   device pass is `docs/device-verification.md` section 12 step 6.
    **The checklist authoring loop is pinned (`2026-09-26`).** The editor's own list menu creates the
    shape (`ArticleListTodo` -> `turnIntoList(row, 3)`), `- [x]`/`- [ ]` load as its checkbox rows
    (`RichEditorSheetScreenshotTest.theEditorShowsAChecklist`, a checked and an empty box with no
