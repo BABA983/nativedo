@@ -28,10 +28,15 @@ on:
     paths: *ci_paths
   workflow_dispatch:
 
-# A newer commit on the same ref makes the older run pointless.
+# A newer commit on the same ref makes the older run pointless - except on `main`, where the
+# `changes` gate can skip the Android job for a docs-only head commit. Cancelling the run that was
+# testing the code in that case is exactly how a code push slips past CI: a docs commit landing
+# right after a code commit cancels the only run that would have exercised `apps/android/**`, and
+# the docs run skips the job. So pull requests still cancel in place; pushes to `main` always
+# finish.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name != 'push' }}
 
 jobs:
   changes:
