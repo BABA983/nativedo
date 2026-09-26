@@ -788,6 +788,14 @@ the flag-off hold opens the link popup and copies the exact absolute URL without
 Post #9, posted before the URL fix, also gained the row (its stored markdown keeps the old `//host`
 href; the renderer resolves that form - proven by probe - so no separate pass is needed for it).
 
+**Alignment follow-up (`7c8e492`, 2026-09-27).** The row used to be indented relative to the
+paragraphs around it: the block path put the glyph at dp(16) against a dp(18) text column, and the
+rich body put it at dp(16) *inside* its block padding (41px right of the column). Both now start at
+the text column. Device verdict: the disc's left edge is x=48 in **both** states, with the body's
+link ink at x=50/51, a list checkbox at x=49 and a paragraph's `I` at 52 in the same screenshots -
+2-3px of ink edge, no indent, and the two bodies agree. The macOS goldens were re-recorded for the
+pair (`attachment` and `richMessageAttachment`).
+
 Notes for the next device pass on this surface: the row's press band is `y >= dp(10) && y <= dp(53)`
 inside the block (a tap a few pixels above it is swallowed by the cell with an empty logcat - that
 is what made post #9 look like a dead row), and the paperclip's long press can need a force-stop
@@ -883,3 +891,30 @@ bed) in both flag states:
    formula the renderer cannot parse shows the TeX text instead of a hole.
 4. Tapping the formula does nothing (it is a bitmap: no link, no selection, no scroll).
 5. Changing the app's font size re-renders it at the new size; a theme switch only re-tints it.
+
+## 21. The image viewer's start rect (`f78e2b3`) — passed (2026-09-27, `emulator-5554`)
+
+What changed: the rich body's `PhotoViewer` place object handed `viewX/viewY` as
+`host + layout origin + block offset - receiver.imageX`, but PhotoViewer adds the receiver's own draw
+region to those itself (`fillClippingAnimationValues`: `viewX + drawRegion.left`), and the renderer's
+`findMediaImageReceiver` hands back the *block's* offset while `imageX/imageY` are the image's offset
+inside that block. The extra subtraction pulled the start rect left by twice the offset, so every
+image but the first of a group animated in from off-screen left. A probe over a two-image collage
+showed the second tile's place as `(-450, 0)` where its cell sits at x=450. `viewX/viewY` are now the
+block's window position; the block path's own provider was already correct (it starts from the
+image's window rect and subtracts the in-block offset, which PhotoViewer re-adds).
+
+Verdict (2026-09-27, `emulator-5554`): a two-image collage posted from the app (post #12, red tile
+x 54..539, blue tile x 546..1037) opens from the **second** tile with the viewer at "2 of 2". From a
+screen recording, the first captured animation frame has the rect's right edge already at the tile's
+right edge (1062 vs 1037) with the left edge expanding leftward from the tile's 546 - it grows out of
+the tile, and no frame shows the rect starting at `x ≈ -546` (which is what the old formula would
+have produced). Closing converges back onto the tile (f130 x 416..1048 towards 546..1037) and the
+topic is restored with the collage intact; the first image still opens as before ("1 of 2"). Caveat
+recorded by the pass: the emulator's encoder dropped frames (79 in ~4.4s), so the exact first frame
+is not in the file - the evidence is the resting frame and the first animation frame that bracket it.
+
+Still open, and a candidate rather than a defect: the place object's `parentView` is the cell here,
+where upstream's article viewer (`ArticleViewer.PageBlocksPhotoViewerProvider`) passes the scrolling
+list view and sets `clipTopAddition` to its header height. That affects only how the flying image is
+clipped during the transition; nothing has been changed for it.
