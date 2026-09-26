@@ -29,6 +29,7 @@ internal data class CookedInline(
     val inlineHashtagChips: List<InlineHashtagChipSpec> = emptyList(),
     val inlineCheckboxes: List<InlineCheckboxSpec> = emptyList(),
     val inlineSizes: List<InlineSizeSpec> = emptyList(),
+    val inlineMath: List<InlineMathSpec> = emptyList(),
 )
 
 internal data class InlineSizeSpec(
@@ -47,6 +48,7 @@ internal fun cookInlineHtml(html: String): CookedInline {
         inlineHashtagChips = cooker.inlineHashtagChips,
         inlineCheckboxes = cooker.inlineCheckboxes,
         inlineSizes = cooker.inlineSizes,
+        inlineMath = cooker.inlineMath,
     )
 }
 
@@ -56,6 +58,8 @@ private fun CookedInline.tokenReplacements(): Map<String, String> {
     inlineIcons.forEach { replacements[it.token] = it.contentDescription }
     inlineHashtagChips.forEach { replacements[it.token] = it.label }
     inlineCheckboxes.forEach { replacements[it.token] = if (it.checked) "☑" else "☐" }
+    // The TeX is the readable form of a formula in plain text - the renderer draws the bitmap.
+    inlineMath.forEach { replacements[it.token] = it.source }
     inlineSizes.forEach {
         replacements[it.startToken] = ""
         replacements[it.endToken] = ""
@@ -105,6 +109,11 @@ internal fun CookedInline.toLayoutTree(baseUrl: String): TL_iv.RichText {
             documentId = DiscourseInlineImages.registerCheckbox(checkbox.checked),
             alt = if (checkbox.checked) "☑" else "☐",
         )
+    }
+    inlineMath.forEach { math ->
+        // The model's own math run: the renderer renders it with the tree's LaTeX renderer
+        // (`RichMessageLayout`'s `textMath` branch), the same one the block path uses directly.
+        runs[math.token] = TL_iv.textMath().apply { source = math.source }
     }
     inlineHashtagChips.forEach { chip ->
         val documentId = DiscourseInlineImages.registerChip(chip, baseUrl)
@@ -242,6 +251,7 @@ private class InlineCooker {
     val inlineHashtagChips = mutableListOf<InlineHashtagChipSpec>()
     val inlineCheckboxes = mutableListOf<InlineCheckboxSpec>()
     val inlineSizes = mutableListOf<InlineSizeSpec>()
+    val inlineMath = mutableListOf<InlineMathSpec>()
 
     fun nodes(nodes: List<Node>): TL_iv.RichText = concat(nodes.flatMap(::node))
 
@@ -256,6 +266,7 @@ private class InlineCooker {
         inlineIcon(element)?.let { token -> return listOf(plain(token)) }
         inlineHashtagChip(element)?.let { token -> return listOf(plain(token)) }
         inlineCheckbox(element)?.let { token -> return listOf(plain(token)) }
+        inlineMath(element)?.let { token -> return listOf(plain(token)) }
         if (element.tagName() == "br") {
             return listOf(plain("\n"))
         }
@@ -377,6 +388,20 @@ private class InlineCooker {
             token = token,
             checked = element.hasClass("checked") || element.hasClass("permanent"),
         )
+        return token
+    }
+
+    /**
+     * The site's math plugin cooks `$x^2$` into `<span class="math">x^2</span>` - bare TeX, because
+     * the delimiters are stripped at cook time (the display form is `div.math`) - so it becomes a
+     * token the two inline paths render through the tree's own LaTeX renderer.
+     */
+    private fun inlineMath(element: Element): String? {
+        if (element.tagName() != "span" || !element.hasClass("math")) return null
+        val source = element.text().trim()
+        if (source.isEmpty()) return null
+        val token = "__nd_inline_math_${inlineMath.size}__"
+        inlineMath += InlineMathSpec(token = token, source = source)
         return token
     }
 

@@ -287,7 +287,8 @@ internal class TopicPostCellScreenshotTest {
             <p>Inline: <img src="/images/emoji/twemoji/laughing.png" class="emoji" alt=":laughing:" title=":laughing:">
             and a custom <img src="/uploads/default/original/3X/blob.png" class="emoji emoji-custom" alt=":party_blob:" title=":party_blob:">
             plus a key <svg class="fa d-icon svg-icon" aria-label="keyboard"><use href="#far-keyboard"></use></svg> in the line.
-            A done box <span class="chcklst-box checked fa fa-square-check-o" data-chk-src="0:0"></span> and an open one <span class="chcklst-box fa fa-square-o" data-chk-src="0:1"></span> inline.</p>
+            A done box <span class="chcklst-box checked fa fa-square-check-o" data-chk-src="0:0"></span> and an open one <span class="chcklst-box fa fa-square-o" data-chk-src="0:1"></span> inline.
+            And math: <span class="math">x^2 + y^2</span> in the sentence.</p>
             <p>A <span style="font-size: 150%">bigger run</span> and a
             <a class="hashtag-cooked" href="/tag/dev" data-slug="dev"><svg class="fa d-icon svg-icon" aria-label="dev"><use href="#far-tag"></use></svg><span>dev</span></a> chip.</p>
             <ul>
@@ -352,7 +353,7 @@ internal class TopicPostCellScreenshotTest {
         /** One post body that exercises every deterministic content block we render. */
         val CONTENT_BLOCKS_HTML = """
             <h2>渲染块清单</h2>
-            <p>正文段落，用来对比各内容块的配色与间距。</p>
+            <p>正文段落，用来对比各内容块的配色与间距，公式 <span class="math">x^2 + y^2</span> 也在行内。</p>
             <ul><li>列表项 A</li><li>列表项 B</li></ul>
             <blockquote><p>引用的一段话。</p></blockquote>
             <table>

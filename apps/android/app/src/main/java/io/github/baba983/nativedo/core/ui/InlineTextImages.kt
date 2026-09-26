@@ -17,7 +17,9 @@ import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ImageReceiver
 import org.telegram.ui.ActionBar.Theme
 import org.telegram.ui.Cells.TextSelectionHelper
+import org.telegram.ui.iv.Latex
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -45,6 +47,7 @@ internal fun applyInlineImagePlaceholders(
     inlineIcons: List<InlineIconSpec> = emptyList(),
     inlineHashtagChips: List<InlineHashtagChipSpec> = emptyList(),
     inlineCheckboxes: List<InlineCheckboxSpec> = emptyList(),
+    inlineMath: List<InlineMathSpec> = emptyList(),
     baseUrl: String,
     onOpenLink: ((String) -> Unit)? = null,
     textSizePx: Float,
@@ -78,6 +81,12 @@ internal fun applyInlineImagePlaceholders(
             val originalStart = searchableText.indexOf(checkbox.token)
             if (originalStart != -1) {
                 add(InlinePlaceholder.Checkbox(originalStart, checkbox))
+            }
+        }
+        inlineMath.forEach { math ->
+            val originalStart = searchableText.indexOf(math.token)
+            if (originalStart != -1) {
+                add(InlinePlaceholder.Math(originalStart, math))
             }
         }
     }.sortedBy { placeholder -> placeholder.originalStart }
@@ -224,6 +233,20 @@ internal fun applyInlineImagePlaceholders(
                     Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
                 )
             }
+
+            is InlinePlaceholder.Math -> {
+                val math = placeholder.spec
+                val end = start + math.token.length
+                if (end > builder.length) {
+                    return@forEach
+                }
+                builder.setSpan(
+                    DiscourseMathSpan(source = math.source),
+                    start,
+                    end,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                )
+            }
         }
     }
 
@@ -241,6 +264,7 @@ private sealed class InlinePlaceholder(
     class Icon(originalStart: Int, val spec: InlineIconSpec) : InlinePlaceholder(originalStart, spec.token)
     class HashtagChip(originalStart: Int, val spec: InlineHashtagChipSpec) : InlinePlaceholder(originalStart, spec.token)
     class Checkbox(originalStart: Int, val spec: InlineCheckboxSpec) : InlinePlaceholder(originalStart, spec.token)
+    class Math(originalStart: Int, val spec: InlineMathSpec) : InlinePlaceholder(originalStart, spec.token)
 }
 
 private fun SpannableStringBuilder.resolvePlaceholderStart(token: String, expectedStart: Int): Int {
@@ -300,6 +324,15 @@ private fun calculateInlineImageSizePx(
 internal data class InlineCheckboxSpec(
     val token: String,
     val checked: Boolean,
+)
+
+/**
+ * A cooked inline math span: the site's math plugin cooks `$x^2$` into `<span class="math">x^2</span>`
+ * with the delimiters stripped at cook time (so the TeX is bare), and this is the token it becomes.
+ */
+internal data class InlineMathSpec(
+    val token: String,
+    val source: String,
 )
 
 /**
@@ -390,6 +423,67 @@ internal class DiscourseCheckboxSpan(
         drawable.draw(canvas)
         canvas.restore()
     }
+}
+
+/**
+ * The block path's inline math: the site's bare TeX drawn by the tree's own LaTeX renderer
+ * (`org.telegram.ui.iv.Latex`, the same one the rich path reaches through `TL_iv.textMath`). A
+ * source the renderer cannot parse falls back to the TeX as text, so nothing disappears; the bitmap
+ * is cached per source + text size, because a list rebind asks for the same formula again.
+ */
+internal class DiscourseMathSpan(
+    private val source: String,
+) : ReplacementSpan() {
+
+    override fun getSize(
+        paint: Paint,
+        text: CharSequence,
+        start: Int,
+        end: Int,
+        fm: Paint.FontMetricsInt?,
+    ): Int {
+        val latex = latexFor(source, paint.textSize)
+        if (latex == null) {
+            return ceil(paint.measureText(source)).toInt()
+        }
+        return latex.width
+    }
+
+    override fun draw(
+        canvas: Canvas,
+        text: CharSequence,
+        start: Int,
+        end: Int,
+        x: Float,
+        top: Int,
+        y: Int,
+        bottom: Int,
+        paint: Paint,
+    ) {
+        val latex = latexFor(source, paint.textSize)
+        if (latex == null) {
+            canvas.drawText(source, x, y.toFloat(), paint)
+            return
+        }
+        // `y` is the baseline; the bitmap is the formula above it, reaching `depth` below it.
+        val top = y - latex.height + latex.depth
+        canvas.drawBitmap(latex.bitmap, x, top.toFloat(), mathPaint)
+    }
+}
+
+private val mathPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+/** `Latex.render` is pure but not free, and a rebind asks for the same formula again. */
+private val inlineMathCache = InlineMemoryCache<Latex>(maxEntries = 64)
+
+private fun latexFor(source: String, textSizePx: Float): Latex? {
+    val key = "${textSizePx.roundToInt()}:$source"
+    inlineMathCache.get(key)?.let { return it }
+    val rendered = Latex.render(source, textSizePx, true)
+    if (rendered != null) {
+        inlineMathCache.put(key, rendered)
+    }
+    return rendered
 }
 
 internal fun renderInlineSvgIconDrawable(
