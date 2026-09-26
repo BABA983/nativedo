@@ -502,9 +502,18 @@ Sequence, if chat is scheduled:
    be parsed, caching bitmaps per source + text size; the rich path emits the model's own
    `textMath` run, whose `ReplaceCopyTextSpannable` (restored in `3ec7959`) makes a copy yield the
    TeX. Goldens: `richMessageInlineCases` (rich) and `contentBlocks` (block path) both carry a real
-   `<span class="math">x^2 + y^2</span>` and both show it rendered. Still open: display math
-   (`div.math`) is read as its text - a block-level math cell is the follow-up, and the device pass
-   is `docs/device-verification.md` section 19.
+   `<span class="math">x^2 + y^2</span>` and both show it rendered. **Display math landed too
+   (`739300a`):** the parser emits `CookedPostBlock.Math` for a cooked `div.math` (the `$$x^2$$`
+   form - bare TeX between newlines, delimiters stripped at cook time), the rich mapping turns it
+   into the pin's `pageBlockMath` (`RichMathBlock` was already in the tree, so that half is a
+   mapping only), and the block path builds `MathBlock`, which mirrors it: `Latex.render` at
+   fontSize+4, dp(8) of vertical padding, centred, tinted with the body's text colour at draw time,
+   nothing contributed to selection, and the TeX as text when the renderer cannot parse it. Both
+   bodies share one render cache (`MathLatexCache`). Two deltas, both recorded: a formula wider than
+   the body is scaled down here where the rich block scrolls it, and `RichMathBlock`'s centring
+   moved from the layout's minimum width to the viewport (the minimum width is the bubble's for a
+   chat message but sits left of centre in a post body, so the two bodies disagreed until it moved).
+   Goldens `displayMath` / `richMessageDisplayMath` agree to the pixel (157x57 at the same x).
    **The element was wrong: it is `span.chcklst-box`, not an `<input>` (`2026-09-26`, `de01924`).**
    The first cut of the entry above keyed the parser on `<input type="checkbox">` inside
    `li.task-list-item`, and the device pass showed why that could never fire: a web-authored post
