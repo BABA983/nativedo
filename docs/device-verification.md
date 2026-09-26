@@ -329,9 +329,43 @@ no `__nd_inline_size_` marker leaks - all in both switch states. Two findings:
   markup actually is - which routes the tap through upstream's link span and its cell-less fallback
   into `Browser.openUrl` (`docs/render-model-alignment.md`). A device re-check is queued.
 - **The task list cannot be authored from this app**: a reply typed as `- [x] task alpha` cooks to a
-  plain bullet, and even `inline [x] control` loses the `[x]` (`Inline  control`) - the composer eats
-  the marker before the server sees it, so that check needs content authored on the web (the editor's
-  list-style button offers no checklist either, `121`).
+  plain bullet, and even `inline [x] control` loses the `[x]` (`Inline  control`) - the app's composer
+  does send the marker (the stored draft carries it verbatim, rounds 5-6 below), so what is lost is
+  the *drawing* of what the server cooks from it; the editor's list-style button offers no checklist
+  either (`121`). See the `[x]` section below for the resolved version.
+
+**Rounds 5-8 - the chip's link run, and two traps the device pass walked into.** The chip tap stayed
+dead on the device with the `textUrl` fix installed, while the same chip opened the tag page in the
+flag-off block path (round 5, five pixel-verified taps; the drawing itself was unchanged, no
+underline). A local probe of the shipped layout settled what the model looks like: for a chip
+paragraph the rich layout holds `URLSpanReplacement [2,5] url=https://linux.do/tag/dev` **and** the
+emoji span over the same range, and `getOffsetForHorizontal` across the pill's pixels maps back
+inside that clickable - so the run, the span and the hit test are all right. Two later rounds then
+found the *reason* the taps had been dead all along in that session, and it was neither the app's link
+code nor the browser:
+
+- **A stuck text selection swallows every body tap.** `TopicPostCell.onTouchEvent` starts with
+  `if (textSelectionHelper != null && textSelectionHelper.isInSelectionMode()) { ... return false; }`,
+  so while the cell is in selection mode no post body touch reaches any block - chip, link, emoji,
+  both flag states - while the composer (another view) still focuses, the debug "Open URL" entry still
+  opens the in-app browser (`180`), and logcat stays empty (`183`). The pass's own long-press and drag
+  experiments (`139`) started that selection. **Device passes must clear the selection (back) before
+  tap checks, and must not long-press/drag on a post body they intend to tap afterwards.**
+- **The browser was never broken**: Settings -> 调试 -> Open URL -> `https://example.com` loaded in the
+  in-app browser, and Settings -> 浏览器设置 shows in-app browsing on (`180`, `181`).
+
+**The `[x]` question, answered by the site itself.** The owner wrote `Inline [x] control` plus a
+`- [x] done item` / `- [ ] todo item` list into the private PM **from the web**, and the web UI renders
+`Inline ☑ control`, `☑ done item`, `☐ todo item` - so the server cooks both into checkboxes, and the
+app is the side that does not draw them. On the device the same post reads `Inline  control` (the
+inline checkbox element dropped, the two spaces left behind) and the list draws **plain bullets in
+both flag states** (`170`, `171`) - which contradicts the retained golden, so the real cooked
+structure differs from the fixture in a way the snapshot cannot show. What the app *does* send is
+clean: the stored draft (read out of the app's own prefs) is `Inline [x] control` verbatim, and the
+composer's serializer, the editor's markdown bridge and the cooked-HTML pipeline all keep the marker
+in JVM probes. The missing piece is the post's cooked HTML, which the runner cannot fetch (no TLS
+client on the emulator, the Mac's own egress to linux.do is blocked) - the owner has been asked to
+paste it, and the fix lands with it.
 
 #### A private test bed: a personal message to yourself
 
