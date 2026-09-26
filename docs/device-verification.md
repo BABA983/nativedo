@@ -774,6 +774,14 @@ site's own link line with the size text. The row was only ever mapped for the ri
 itself draws a link with a paperclip icon, so the block path matches the site and the rich path
 matches this app's Telegram machinery. Decide once and make the other path follow.
 
+**The fork is settled: the row in both bodies (`74b1e28`, 2026-09-26).** The owner chose the row, so
+the detection moved to the parser (`CookedPostBlock.Attachment`, emitted for a paragraph that is
+exactly one `a.attachment` plus the site's optional size text) and `PostBodyBlockFactory` builds
+`AttachmentBlock`, which mirrors `RichMessageLayout.RichDocumentBlock`'s URL-case geometry and
+colours. The rich golden did not move in that refactor, and `TopicPostCellScreenshotTest.attachment`
+is the block-path golden for the same fixture. Still to re-read on device: post #10 in the flag-off
+state must now draw the row instead of the link line.
+
 Notes for the next device pass on this surface: the row's press band is `y >= dp(10) && y <= dp(53)`
 inside the block (a tap a few pixels above it is swallowed by the cell with an empty logcat - that
 is what made post #9 look like a dead row), and the paperclip's long press can need a force-stop
