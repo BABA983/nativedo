@@ -762,10 +762,7 @@ from the app lands in the PM as post #9 and the flag-on body draws it as the row
    line (`name (219 Bytes)`), because the row was only ever mapped for the rich model. The site's
    own rendering is a link with a paperclip icon, so the block path is the one that matches the
    site and the rich path is the one that matches Telegram - a product fork, not a bug.
-2. **The taps did nothing in either state**, and the cause was in the composer: the site answers an
-   upload with a *protocol-relative* URL on its CDN host (`//linuxdo-uploads.s3.ldstatic.com/...`),
-   which the composer inserted verbatim, so the cooked href had no scheme to open. Fixed in
-   `ec52d2b` (`absoluteUploadUrl`, shared with the media bridge); the tap needs a re-run.
+2. **The taps did nothing in either state**, and the composer was the cause for anything sent from this app: the site answers an upload with a *protocol-relative* URL on its CDN host (`//linuxdo-uploads.s3.ldstatic.com/...`), which the composer inserted verbatim, so the cooked href had no scheme to open. Fixed in `ec52d2b` (`absoluteUploadUrl`, shared with the media bridge). The *render* side was never the problem: a cell-level probe over the three href forms the site can emit (protocol-relative, absolute, `/uploads/...` path) shows the row's press reaching `didPressUrl` with the resolved absolute URL every time, and `resolvePostImageUrl`/`parseInternalLinkDestination` both resolve `//host` through `HttpUrl.resolve`. So post #9 (stored with the old, protocol-relative href) is a marginal-tap case, not a dead row - the device taps at the row's edge were 2-4px above the block's `y >= dp(10)` band.
 3. The site renames an upload (`1790436268563-test_file.zip`) and the size text is its own
    `human_filesize`; the composer inserts both as-is.
 
