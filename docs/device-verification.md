@@ -852,3 +852,22 @@ in both flag states:
 4. The same post with the rich body flag off must look the same - both paths share the parser and
    the renderer.
 5. A formula that fails to parse must not leave a hole in the line: the fallback is the source text.
+
+## 20. Display math renders too (`739300a`) — new
+
+What changed: a cooked `div.math` (the site's `$$x^2$$` form, bare TeX between newlines) is no
+longer read as its text. The parser emits `CookedPostBlock.Math`, the rich body maps it to the pin's
+`pageBlockMath` (`RichMathBlock`), and the block path draws the new `MathBlock` - same size
+(fontSize+4), same dp(8) padding, centred in the body, tinted with the body's text colour, and the
+TeX as text when the renderer cannot parse it. `RichMathBlock`'s centring moved from the layout's
+minimum width to the viewport so the two bodies agree.
+
+To check, on a post with display math (`$$x^2 + y^2$$` on its own line, posted into the private test
+bed) in both flag states:
+1. The formula draws as math, centred in the body, larger than the inline form, with space above and
+   below it (dp(8) each side).
+2. The two states put it at the same place and the same size - a difference is a bug, not a taste.
+3. A formula wider than the body scales down to fit here (the rich body would let it scroll); a
+   formula the renderer cannot parse shows the TeX text instead of a hole.
+4. Tapping the formula does nothing (it is a bitmap: no link, no selection, no scroll).
+5. Changing the app's font size re-renders it at the new size; a theme switch only re-tints it.
