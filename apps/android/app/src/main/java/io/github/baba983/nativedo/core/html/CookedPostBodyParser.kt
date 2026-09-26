@@ -847,6 +847,12 @@ private fun parseDivElement(element: Element, quoteLevel: Int, baseUrl: String):
     if (element.hasClass("lightbox-wrapper")) {
         return imageBlocksFrom(element)
     }
+    if (element.hasClass("math")) {
+        // The site's math plugin cooks `$$x^2$$` into `<div class="math">\nx^2\n</div>` - bare TeX,
+        // the delimiters stripped - and that is a display formula, not a paragraph of text.
+        val source = element.text().trim()
+        if (source.isNotEmpty()) return listOf(CookedPostBlock.Math(source))
+    }
     if (element.isCalloutContainer()) {
         val callout = parseCalloutElement(element, quoteLevel, baseUrl)
         if (callout.isNotEmpty()) return callout

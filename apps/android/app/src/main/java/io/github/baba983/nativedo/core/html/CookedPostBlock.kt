@@ -54,6 +54,13 @@ internal sealed interface CookedPostBlock {
     data class Collage(val images: List<Image>) : CookedPostBlock
 
     /**
+     * Cooked display math: `div.math`, whose text is the bare TeX (the plugin strips the `$$`
+     * delimiters at cook time and leaves the surrounding newlines). The inline form is `span.math`,
+     * which the inline cooker handles.
+     */
+    data class Math(val source: String) : CookedPostBlock
+
+    /**
      * A cooked attachment: the paragraph that is exactly one `a.attachment` anchor plus the
      * ` (12.3 KB)` size text Discourse appends. The URL is resolved, and the name and size are the
      * anchor's own text - a Discourse attachment has no Telegram document behind it, so the block

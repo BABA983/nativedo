@@ -124,6 +124,30 @@ internal class TopicPostCellScreenshotTest {
     }
 
     /**
+     * Display math in the block path: the site cooks `$$x^2$$` into `div.math` holding bare TeX, and
+     * the block renders it with the tree's LaTeX renderer, centred - the shape the rich body draws.
+     */
+    @Test
+    fun displayMath() {
+        paparazziRule.snapshot { context ->
+            topicPostCell(context, DISPLAY_MATH_HTML)
+        }
+    }
+
+    /** The same display formula in the rich body, so the two states can be compared. */
+    @Test
+    fun richMessageDisplayMath() {
+        RichMessageBody.enabled = true
+        try {
+            paparazziRule.snapshot { context ->
+                topicPostCell(context, DISPLAY_MATH_HTML)
+            }
+        } finally {
+            RichMessageBody.enabled = false
+        }
+    }
+
+    /**
      * The same cooked attachment with the flag off: the block path draws the row too, so both
      * bodies show the same shape for it (the fork was settled that way on 2026-09-26 - the row is
      * the app's shape for a file, in either body).
@@ -256,6 +280,15 @@ internal class TopicPostCellScreenshotTest {
             </ul>
             <blockquote><p>Quoted paragraph.</p><blockquote><p>Nested quote.</p></blockquote></blockquote>
             <p>Last paragraph.</p>
+        """.trimIndent()
+
+        /** Display math between two paragraphs, for [displayMath] and [richMessageDisplayMath]. */
+        val DISPLAY_MATH_HTML = """
+            <p>Before the formula.</p>
+            <div class="math">
+            x^2 + y^2
+            </div>
+            <p>After the formula.</p>
         """.trimIndent()
 
         /** A standalone attachment and an inline one, for [richMessageAttachment]. */

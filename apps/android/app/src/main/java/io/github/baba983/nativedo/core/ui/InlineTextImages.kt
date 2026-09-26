@@ -473,18 +473,9 @@ internal class DiscourseMathSpan(
 
 private val mathPaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
-/** `Latex.render` is pure but not free, and a rebind asks for the same formula again. */
-private val inlineMathCache = InlineMemoryCache<Latex>(maxEntries = 64)
-
-private fun latexFor(source: String, textSizePx: Float): Latex? {
-    val key = "${textSizePx.roundToInt()}:$source"
-    inlineMathCache.get(key)?.let { return it }
-    val rendered = Latex.render(source, textSizePx, true)
-    if (rendered != null) {
-        inlineMathCache.put(key, rendered)
-    }
-    return rendered
-}
+/** The shared cache, so the display block and this span render one formula once. */
+internal fun latexFor(source: String, textSizePx: Float): Latex? =
+    MathLatexCache.render(source, textSizePx)
 
 internal fun renderInlineSvgIconDrawable(
     spriteMarkup: String,
@@ -698,7 +689,7 @@ internal class DeferredInlineImageDrawable(
     override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
 }
 
-private class InlineMemoryCache<T>(
+internal class InlineMemoryCache<T>(
     private val maxEntries: Int,
 ) {
     private val entries = object : LinkedHashMap<String, T>(maxEntries, 0.75f, true) {

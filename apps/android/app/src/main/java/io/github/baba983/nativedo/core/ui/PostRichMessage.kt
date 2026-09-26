@@ -67,6 +67,7 @@ internal object PostRichMessageBuilder {
             is CookedPostBlock.Image -> photo(block, baseUrl)
             is CookedPostBlock.Collage -> collage(block, baseUrl)
             CookedPostBlock.Rule -> TL_iv.pageBlockDivider()
+            is CookedPostBlock.Math -> TL_iv.pageBlockMath().apply { source = block.source }
             is CookedPostBlock.Callout,
             is CookedPostBlock.Onebox,
             is CookedPostBlock.Poll,

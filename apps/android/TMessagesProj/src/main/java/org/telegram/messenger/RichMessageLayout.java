@@ -6357,7 +6357,12 @@ public class RichMessageLayout {
                 canvas.save();
                 canvas.translate(dp(HPAD) - scrollX, dp(VPAD));
             } else {
-                final float cx = root.getMinWidth() / 2f - padding.left - contentW / 2f;
+                // NativeDo: upstream centres the formula in the layout's own minimum width, which is
+                // the bubble's width for a chat message. This host is a post body: the cell is wider
+                // than the layout's minimum width, so the formula would sit left of the body's centre.
+                // Centre it in the viewport instead, which is what the block path's own math block
+                // does - the two bodies draw a display formula the same way.
+                final float cx = viewportWidth / 2f - contentW / 2f;
                 canvas.save();
                 canvas.translate(cx, dp(VPAD));
             }
