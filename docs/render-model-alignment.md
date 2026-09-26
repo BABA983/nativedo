@@ -410,6 +410,18 @@ Sequence, if chat is scheduled:
    returned a list of blocks, so `TopicPostCell` (forced_exact) is untouched. 5 segment tests
    (order, grouping, container fallback, no block lost) plus the `richMessageHybridBody` cell
    snapshot; the flag-off and single-run goldens did not move.
+   **Documents: the shape is known, the block is next (`2026-09-26`).** Discourse cooks an attached
+   file as one inline anchor, `class="attachment"` on it and nothing else around it:
+   `<p><a class="attachment" href="/uploads/short-url/<id>.pdf">test_file.pdf</a> (12.3 KB)</p>`
+   - the href may be a short URL, a CDN/S3 URL, an old `/uploads/<site>/original/...` path, or `/404`
+   with `data-orig-href` when the short URL did not resolve; the anchor's text is the filename; the
+   size is an *optional* following text node, never an element (pinned in Discourse's
+   `spec/lib/pretty_text_spec.rb`, `lib/upload_markdown.rb`, `frontend/discourse-markdown-it/src/engine.js`).
+   On the web a tap is a plain navigation: PDF is served inline, everything else downloads. The plan
+   for this tree, when the item comes up: key on `a.attachment` (never on the extension), map it to
+   the pin's `pageBlockDocument` so upstream's `RichDocumentBlock` draws the file row, and answer its
+   press the way the block path answers an attachment link today (`Browser.openUrl`), because the
+   pin's `openForView` file/mime dispatch has no document viewer in this tree yet.
    **The checklist authoring loop is pinned (`2026-09-26`).** The editor's own list menu creates the
    shape (`ArticleListTodo` -> `turnIntoList(row, 3)`), `- [x]`/`- [ ]` load as its checkbox rows
    (`RichEditorSheetScreenshotTest.theEditorShowsAChecklist`, a checked and an empty box with no

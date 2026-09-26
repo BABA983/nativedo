@@ -239,6 +239,12 @@ private inner class RichMessageBodyDelegate : ChatMessageCell.ChatMessageCellDel
     override fun didPressUrl(cell: ChatMessageCell?, url: CharacterStyle?, longPress: Boolean) {
         val href = (url as? URLSpan)?.url ?: return
         if (href.isBlank()) return
+        if (longPress) {
+            // The block path's long press copies the URL (`didLongPressLink`); the run does the same, so
+            // a held link does not silently do nothing here.
+            context.delegate.onLinkLongPress(href)
+            return
+        }
         // The same routing the block path's spans take (`applyLinkSpan`): a topic opens in this app, a
         // mention on the profile, everything else (a hashtag, an external link) through the link entry.
         when (val destination = parseInternalLinkDestination(baseUrl = context.baseUrl, rawUrl = href)) {
