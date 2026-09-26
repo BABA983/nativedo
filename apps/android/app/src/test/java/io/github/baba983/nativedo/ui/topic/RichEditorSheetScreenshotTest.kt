@@ -64,6 +64,20 @@ internal class RichEditorSheetScreenshotTest {
         }
     }
 
+    /**
+     * The authoring loop's checklist half: `- [x]`/`- [ ]` load as the editor's own checklist rows
+     * (its list menu creates the same shape), and the writer puts the markers back verbatim - the
+     * round trip is what makes the site cook a task list out of what this sheet sends.
+     */
+    @Test
+    fun theEditorShowsAChecklist() {
+        paparazziRule.snapshot { context ->
+            val sheet = editorSheet(context)
+            sheet.loadMarkdown("# A reply\n\n- [x] done item\n- [ ] todo item\n\nText after the list.")
+            sheetViewport(context, sheet)
+        }
+    }
+
     @Test
     fun theEditorRidesTheKeyboard() {
         paparazziRule.snapshot { context ->

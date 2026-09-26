@@ -410,6 +410,12 @@ Sequence, if chat is scheduled:
    returned a list of blocks, so `TopicPostCell` (forced_exact) is untouched. 5 segment tests
    (order, grouping, container fallback, no block lost) plus the `richMessageHybridBody` cell
    snapshot; the flag-off and single-run goldens did not move.
+   **The checklist authoring loop is pinned (`2026-09-26`).** The editor's own list menu creates the
+   shape (`ArticleListTodo` -> `turnIntoList(row, 3)`), `- [x]`/`- [ ]` load as its checkbox rows
+   (`RichEditorSheetScreenshotTest.theEditorShowsAChecklist`, a checked and an empty box with no
+   bullet), and the writer emits the markers verbatim (`parse -> blocksToMarkdown` on a checklist
+   comes back byte-identical), which is what makes the site cook a task list out of what the sheet
+   sends.
    **A cooked inline checkbox draws now (`2026-09-26`).** The site cooks `[x]`/`[ ]` into an
    `<input type="checkbox">` *anywhere* in a post (the web UI draws the same element as a box - a
    web-authored post renders `Inline ☑ control`), and the app used to drop the element, leaving the
