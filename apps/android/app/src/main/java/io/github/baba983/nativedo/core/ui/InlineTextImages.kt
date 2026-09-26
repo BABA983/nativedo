@@ -4,6 +4,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ColorFilter
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.RectF
 import android.graphics.drawable.Drawable
@@ -14,9 +15,11 @@ import io.github.baba983.nativedo.core.html.resolvePostImageUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ImageReceiver
+import org.telegram.ui.ActionBar.Theme
 import org.telegram.ui.Cells.TextSelectionHelper
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 private const val twemojiInlineImageScale = 0.90f
@@ -41,6 +44,7 @@ internal fun applyInlineImagePlaceholders(
     inlineImages: List<InlineImageSpec>,
     inlineIcons: List<InlineIconSpec> = emptyList(),
     inlineHashtagChips: List<InlineHashtagChipSpec> = emptyList(),
+    inlineCheckboxes: List<InlineCheckboxSpec> = emptyList(),
     baseUrl: String,
     onOpenLink: ((String) -> Unit)? = null,
     textSizePx: Float,
@@ -68,6 +72,12 @@ internal fun applyInlineImagePlaceholders(
             val originalStart = searchableText.indexOf(chip.token)
             if (originalStart != -1) {
                 add(InlinePlaceholder.HashtagChip(originalStart, chip))
+            }
+        }
+        inlineCheckboxes.forEach { checkbox ->
+            val originalStart = searchableText.indexOf(checkbox.token)
+            if (originalStart != -1) {
+                add(InlinePlaceholder.Checkbox(originalStart, checkbox))
             }
         }
     }.sortedBy { placeholder -> placeholder.originalStart }
@@ -200,6 +210,20 @@ internal fun applyInlineImagePlaceholders(
                 }
                 replacedCharacterCount += chip.token.length - chip.label.length
             }
+
+            is InlinePlaceholder.Checkbox -> {
+                val checkbox = placeholder.spec
+                val end = start + checkbox.token.length
+                if (end > builder.length) {
+                    return@forEach
+                }
+                builder.setSpan(
+                    DiscourseCheckboxSpan(checked = checkbox.checked),
+                    start,
+                    end,
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE,
+                )
+            }
         }
     }
 
@@ -216,6 +240,7 @@ private sealed class InlinePlaceholder(
     class Image(originalStart: Int, val spec: InlineImageSpec) : InlinePlaceholder(originalStart, spec.token)
     class Icon(originalStart: Int, val spec: InlineIconSpec) : InlinePlaceholder(originalStart, spec.token)
     class HashtagChip(originalStart: Int, val spec: InlineHashtagChipSpec) : InlinePlaceholder(originalStart, spec.token)
+    class Checkbox(originalStart: Int, val spec: InlineCheckboxSpec) : InlinePlaceholder(originalStart, spec.token)
 }
 
 private fun SpannableStringBuilder.resolvePlaceholderStart(token: String, expectedStart: Int): Int {
@@ -266,6 +291,105 @@ private fun calculateInlineImageSizePx(
         InlineImageKind.Icon -> inlineSvgIconScale
     }
     return max(1, (fontHeight * scale).roundToInt())
+}
+
+/**
+ * A cooked inline checkbox: the site cooks `[x]`/`[ ]` into an `<input type="checkbox">`, and this
+ * is the token it becomes (the web UI draws the same element as a checkbox glyph).
+ */
+internal data class InlineCheckboxSpec(
+    val token: String,
+    val checked: Boolean,
+)
+
+/**
+ * Telegram's task-list box as a drawable (`RichMessageLayout.RichBlock.setCheckbox`: a 20dp box with
+ * 5dp corners, the accent fill, the `checkboxCheck` glyph, and the disabled-key border when open).
+ * It exists so both inline paths can paint the box: the block path through [DiscourseCheckboxSpan]
+ * and the rich path through the registry's emoji resolver. The colours are read while drawing, so a
+ * theme switch does not leave a stale box behind.
+ */
+internal class DiscourseCheckboxDrawable(
+    private val checked: Boolean,
+) : Drawable() {
+    private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = AndroidUtilities.dp(1.2f).toFloat()
+    }
+    private val checkPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+        strokeWidth = AndroidUtilities.dp(1.9f).toFloat()
+    }
+    private val checkPath = Path()
+    private val cornerRadius = AndroidUtilities.dp(5f).toFloat()
+
+    override fun draw(canvas: Canvas) {
+        val side = min(bounds.width(), bounds.height()).toFloat()
+        if (side <= 0f) return
+        val left = bounds.left + (bounds.width() - side) / 2f
+        val top = bounds.top + (bounds.height() - side) / 2f
+        val rect = RectF(left, top, left + side, top + side)
+        if (checked) {
+            fillPaint.color = Theme.getColor(Theme.key_telegram_color)
+            checkPaint.color = Theme.getColor(Theme.key_checkboxCheck)
+            canvas.drawRoundRect(rect, cornerRadius, cornerRadius, fillPaint)
+            val inset = side * 0.22f
+            checkPath.reset()
+            checkPath.moveTo(rect.left + inset, rect.centerY())
+            checkPath.lineTo(rect.centerX() - side * 0.04f, rect.bottom - inset)
+            checkPath.lineTo(rect.right - inset, rect.top + inset)
+            canvas.drawPath(checkPath, checkPaint)
+        } else {
+            borderPaint.color = Theme.getColor(Theme.key_dialogCheckboxSquareDisabled)
+            canvas.drawRoundRect(rect, cornerRadius, cornerRadius, borderPaint)
+        }
+    }
+
+    override fun setAlpha(alpha: Int) = Unit
+    override fun setColorFilter(colorFilter: ColorFilter?) = Unit
+    override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+}
+
+/** The block path's inline checkbox: the drawable above, centred on the line like an inline image. */
+internal class DiscourseCheckboxSpan(
+    checked: Boolean,
+) : ReplacementSpan() {
+    private val drawable = DiscourseCheckboxDrawable(checked)
+
+    override fun getSize(
+        paint: Paint,
+        text: CharSequence,
+        start: Int,
+        end: Int,
+        fm: Paint.FontMetricsInt?,
+    ): Int {
+        val side = max(1, paint.textSize.roundToInt())
+        drawable.setBounds(0, 0, side, side)
+        return side
+    }
+
+    override fun draw(
+        canvas: Canvas,
+        text: CharSequence,
+        start: Int,
+        end: Int,
+        x: Float,
+        top: Int,
+        y: Int,
+        bottom: Int,
+        paint: Paint,
+    ) {
+        val metrics = paint.fontMetrics
+        val centerY = y + (metrics.ascent + metrics.descent) / 2f
+        val side = drawable.bounds.height()
+        canvas.save()
+        canvas.translate(x, centerY - side / 2f)
+        drawable.draw(canvas)
+        canvas.restore()
+    }
 }
 
 internal fun renderInlineSvgIconDrawable(

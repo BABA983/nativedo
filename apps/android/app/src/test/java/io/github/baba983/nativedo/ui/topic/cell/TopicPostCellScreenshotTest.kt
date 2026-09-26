@@ -82,9 +82,34 @@ internal class TopicPostCellScreenshotTest {
     }
 
     /**
+     * The typography pair: the same post drawn by the block path (flag off) and by upstream's
+     * renderer (flag on), so the two rhythms can be compared and any delta the product wants closed
+     * is visible in one place. Paragraph gaps, a heading, a nested list and a nested quote are what
+     * the pair is for.
+     */
+    @Test
+    fun richMessageTypographyBlockPath() {
+        paparazziRule.snapshot { context ->
+            topicPostCell(context, RICH_MESSAGE_TYPOGRAPHY_HTML)
+        }
+    }
+
+    @Test
+    fun richMessageTypographyRichBody() {
+        RichMessageBody.enabled = true
+        try {
+            paparazziRule.snapshot { context ->
+                topicPostCell(context, RICH_MESSAGE_TYPOGRAPHY_HTML)
+            }
+        } finally {
+            RichMessageBody.enabled = false
+        }
+    }
+
+    /**
      * The inline constructs upstream's model has a run for: a custom emoji, a twemoji image, a site
-     * icon, a hashtag chip and a `[size]` range, plus a task list (upstream's checkbox rows). Kept in
-     * its own post so the golden stays inside the snapshot's frame.
+     * icon, a hashtag chip, a `[size]` range, a cooked inline checkbox, plus a task list (upstream's
+     * checkbox rows). Kept in its own post so the golden stays inside the snapshot's frame.
      */
     @Test
     fun richMessageInlineCases() {
@@ -166,10 +191,32 @@ internal class TopicPostCellScreenshotTest {
          * (its sprite is not captured in a Paparazzi run, so it falls back to its alt text), a
          * hashtag chip, a `[size]` range and a task list with one checked and one open item.
          */
+        /**
+         * The typography fixture: paragraph-to-paragraph spacing, a heading, a two-level list and a
+         * two-level quote, drawn by both paths in the pair above.
+         */
+        val RICH_MESSAGE_TYPOGRAPHY_HTML = """
+            <p>First paragraph.</p>
+            <p>Second paragraph with <b>bold</b> in it.</p>
+            <h2>A heading</h2>
+            <ul>
+              <li>top level item
+                <ul>
+                  <li>nested item</li>
+                  <li>another nested</li>
+                </ul>
+              </li>
+              <li>second top level</li>
+            </ul>
+            <blockquote><p>Quoted paragraph.</p><blockquote><p>Nested quote.</p></blockquote></blockquote>
+            <p>Last paragraph.</p>
+        """.trimIndent()
+
         val RICH_MESSAGE_INLINE_HTML = """
             <p>Inline: <img src="/images/emoji/twemoji/laughing.png" class="emoji" alt=":laughing:" title=":laughing:">
             and a custom <img src="/uploads/default/original/3X/blob.png" class="emoji emoji-custom" alt=":party_blob:" title=":party_blob:">
-            plus a key <svg class="fa d-icon svg-icon" aria-label="keyboard"><use href="#far-keyboard"></use></svg> in the line.</p>
+            plus a key <svg class="fa d-icon svg-icon" aria-label="keyboard"><use href="#far-keyboard"></use></svg> in the line.
+            A done box <input type="checkbox" class="task-list-item-checkbox" checked> and an open one <input type="checkbox" class="task-list-item-checkbox"> inline.</p>
             <p>A <span style="font-size: 150%">bigger run</span> and a
             <a class="hashtag-cooked" href="/tag/dev" data-slug="dev"><svg class="fa d-icon svg-icon" aria-label="dev"><use href="#far-tag"></use></svg><span>dev</span></a> chip.</p>
             <ul class="task-list">

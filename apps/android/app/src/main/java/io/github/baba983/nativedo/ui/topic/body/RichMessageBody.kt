@@ -13,6 +13,7 @@ import io.github.baba983.nativedo.core.html.CookedPostBlock
 import io.github.baba983.nativedo.core.ui.PostBodySegment
 import io.github.baba983.nativedo.core.ui.PostRichMessageBuilder
 import io.github.baba983.nativedo.core.ui.splitPostBodySegments
+import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ImageReceiver
 import org.telegram.messenger.MessageObject
 import org.telegram.messenger.MessagesController
@@ -67,11 +68,19 @@ internal object RichMessageBody {
         state: PostBodyBlockState? = null,
     ): List<PostBodyBlock> {
         val result = ArrayList<PostBodyBlock>()
+        val segments = splitPostBodySegments(cooked)
         var index = 0
-        for (segment in splitPostBodySegments(cooked)) {
+        for ((segmentIndex, segment) in segments.withIndex()) {
             when (segment) {
                 is PostBodySegment.RichRun -> {
-                    result.add(RichMessageBodyBlock(segment.blocks, context))
+                    // The renderer trims the run's first top and last bottom edge (`layout()`), which
+                    // is right at the post's own ends but wrong where the run meets a block of ours: a
+                    // poll or callout would sit flush against the paragraph above it. The renderer's
+                    // own rule for a block that follows something is `dp(6)` of top padding
+                    // (`mediaPadding()`), so a run that is not the last segment keeps that much of its
+                    // trimmed edge.
+                    val trailingGap = if (segmentIndex < segments.size - 1) AndroidUtilities.dp(6f) else 0
+                    result.add(RichMessageBodyBlock(segment.blocks, context, trailingGapPx = trailingGap))
                     index += segment.blocks.size
                 }
                 is PostBodySegment.OwnBlock -> {
@@ -105,6 +114,8 @@ internal object RichMessageBody {
 internal class RichMessageBodyBlock(
     private val cooked: List<CookedPostBlock>,
     private val context: PostBodyBuildContext,
+    /** Kept under the run when another block follows it; see `RichMessageBody.blocks`. */
+    private val trailingGapPx: Int = 0,
 ) : PostBodyBlock {
 
     private var messageObject: MessageObject? = null
@@ -118,7 +129,7 @@ internal class RichMessageBodyBlock(
 
     private val delegate = RichMessageBodyDelegate()
 
-    override fun measure(maxWidthPx: Int): Int = layoutFor(maxWidthPx)?.height ?: 0
+    override fun measure(maxWidthPx: Int): Int = (layoutFor(maxWidthPx)?.height ?: 0) + trailingGapPx
 
     override fun draw(canvas: Canvas, parentWidth: Int) {
         val rich = layout ?: return

@@ -258,6 +258,11 @@ pass is what settles the parts a snapshot cannot:
 - **Custom emoji / inline icons**: the registry's images (see the fixed section above). On device:
   an emoji image must load from the post's base URL and an icon without captured markup must fall
   back to its alt text rather than an empty square.
+- **Inline checkboxes**: the site cooks `[x]`/`[ ]` into an `<input type="checkbox">` anywhere - a
+  web-authored post renders `Inline ☑ control` on the site itself, while the app used to show
+  `Inline  control` (the element dropped). On device: the same post must now draw a checked and an
+  open box inline, with the same look as the task-list rows; a *list* item the site cooked keeps its
+  box and must not gain a bullet.
 
 #### Device passes (2026-09-26, runner `emulator-5554`, AVD `Medium_Phone_API_36.0`)
 
@@ -354,6 +359,12 @@ code nor the browser:
 - **The browser was never broken**: Settings -> 调试 -> Open URL -> `https://example.com` loaded in the
   in-app browser, and Settings -> 浏览器设置 shows in-app browsing on (`180`, `181`).
 
+**The `[x]` answer, and what the app does with it now (`2026-09-26`).** The site cooks `[x]`/`[ ]`
+into an `<input type="checkbox">` anywhere in a post (the web UI draws the same element as a box), and
+the app now paints it with Telegram's own task-list box: `DiscourseCheckboxDrawable`/`DiscourseCheckboxSpan`
+in the block path, the registry's emoji resolver in the rich one, and a list item's own input stays the
+block parser's `checked`. On device the same web-authored post must therefore read `Inline ☑ control`
+instead of `Inline  control`, with the list rows unchanged - a screenshot of it is queued (`200`).
 **The `[x]` question, answered by the site itself.** The owner wrote `Inline [x] control` plus a
 `- [x] done item` / `- [ ] todo item` list into the private PM **from the web**, and the web UI renders
 `Inline ☑ control`, `☑ done item`, `☐ todo item` - so the server cooks both into checkboxes, and the

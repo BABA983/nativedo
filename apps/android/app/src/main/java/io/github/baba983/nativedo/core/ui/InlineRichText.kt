@@ -26,6 +26,7 @@ internal data class CookedInline(
     val inlineImages: List<InlineImageSpec> = emptyList(),
     val inlineIcons: List<InlineIconSpec> = emptyList(),
     val inlineHashtagChips: List<InlineHashtagChipSpec> = emptyList(),
+    val inlineCheckboxes: List<InlineCheckboxSpec> = emptyList(),
     val inlineSizes: List<InlineSizeSpec> = emptyList(),
 )
 
@@ -43,6 +44,7 @@ internal fun cookInlineHtml(html: String): CookedInline {
         inlineImages = cooker.inlineImages,
         inlineIcons = cooker.inlineIcons,
         inlineHashtagChips = cooker.inlineHashtagChips,
+        inlineCheckboxes = cooker.inlineCheckboxes,
         inlineSizes = cooker.inlineSizes,
     )
 }
@@ -52,6 +54,7 @@ private fun CookedInline.tokenReplacements(): Map<String, String> {
     inlineImages.forEach { replacements[it.token] = it.contentDescription }
     inlineIcons.forEach { replacements[it.token] = it.contentDescription }
     inlineHashtagChips.forEach { replacements[it.token] = it.label }
+    inlineCheckboxes.forEach { replacements[it.token] = if (it.checked) "☑" else "☐" }
     inlineSizes.forEach {
         replacements[it.startToken] = ""
         replacements[it.endToken] = ""
@@ -94,6 +97,12 @@ internal fun CookedInline.toLayoutTree(baseUrl: String): TL_iv.RichText {
         runs[icon.token] = customEmojiRun(
             documentId = DiscourseInlineImages.registerIcon(icon),
             alt = icon.contentDescription,
+        )
+    }
+    inlineCheckboxes.forEach { checkbox ->
+        runs[checkbox.token] = customEmojiRun(
+            documentId = DiscourseInlineImages.registerCheckbox(checkbox.checked),
+            alt = if (checkbox.checked) "☑" else "☐",
         )
     }
     inlineHashtagChips.forEach { chip ->
@@ -224,6 +233,7 @@ private class InlineCooker {
     val inlineImages = mutableListOf<InlineImageSpec>()
     val inlineIcons = mutableListOf<InlineIconSpec>()
     val inlineHashtagChips = mutableListOf<InlineHashtagChipSpec>()
+    val inlineCheckboxes = mutableListOf<InlineCheckboxSpec>()
     val inlineSizes = mutableListOf<InlineSizeSpec>()
 
     fun nodes(nodes: List<Node>): TL_iv.RichText = concat(nodes.flatMap(::node))
@@ -238,6 +248,7 @@ private class InlineCooker {
         inlineImage(element)?.let { token -> return listOf(plain(token)) }
         inlineIcon(element)?.let { token -> return listOf(plain(token)) }
         inlineHashtagChip(element)?.let { token -> return listOf(plain(token)) }
+        inlineCheckbox(element)?.let { token -> return listOf(plain(token)) }
         if (element.tagName() == "br") {
             return listOf(plain("\n"))
         }
@@ -340,6 +351,23 @@ private class InlineCooker {
             symbolId = symbolId,
             rawTintColor = element.inlineSvgTintColor(),
             contentDescription = element.iconFallbackText(),
+        )
+        return token
+    }
+
+    /**
+     * The site cooks `[x]`/`[ ]` into an `<input type="checkbox">` anywhere in a post (the web UI
+     * draws it as a box), so it becomes a token the two inline paths paint as a box. A list item's
+     * own input is taken by the block parser before this runs (`CookedPostBodyParser` reads it as
+     * the item's `checked`), so this only sees the inline ones.
+     */
+    private fun inlineCheckbox(element: Element): String? {
+        if (element.tagName() != "input") return null
+        if (!element.attr("type").equals("checkbox", ignoreCase = true)) return null
+        val token = "__nd_inline_checkbox_${inlineCheckboxes.size}__"
+        inlineCheckboxes += InlineCheckboxSpec(
+            token = token,
+            checked = element.hasAttr("checked"),
         )
         return token
     }

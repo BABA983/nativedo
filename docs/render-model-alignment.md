@@ -410,6 +410,15 @@ Sequence, if chat is scheduled:
    returned a list of blocks, so `TopicPostCell` (forced_exact) is untouched. 5 segment tests
    (order, grouping, container fallback, no block lost) plus the `richMessageHybridBody` cell
    snapshot; the flag-off and single-run goldens did not move.
+   **A cooked inline checkbox draws now (`2026-09-26`).** The site cooks `[x]`/`[ ]` into an
+   `<input type="checkbox">` *anywhere* in a post (the web UI draws the same element as a box - a
+   web-authored post renders `Inline ☑ control`), and the app used to drop the element, leaving the
+   double space behind. It is now a token like the other constructs, painted by Telegram's own
+   task-list box (`RichMessageLayout.RichBlock.setCheckbox`'s 20dp box, 5dp corners, the accent fill
+   and `checkboxCheck` glyph) through `DiscourseCheckboxDrawable`/`DiscourseCheckboxSpan` in the
+   block path and the registry's emoji resolver in the rich one; a list item's own input is still the
+   block parser's `checked` (it never reaches the inline cooker). The retained golden grew the case:
+   `TopicPostCellScreenshotTest.richMessageInlineCases` now carries a done and an open box inline.
    **The Discourse-only inline constructs landed (`2026-09-25`).** The four shapes the model has no
    upstream case for now ride the runs the block path already emits, so a flag-on post reads like the
    flag-off cell: a cooked hashtag anchor is a registered chip
@@ -429,6 +438,20 @@ Sequence, if chat is scheduled:
    the chip pill and a wide icon sit in a run. The retained golden is
    `TopicPostCellScreenshotTest.richMessageInlineCases` (both themes); the device pass is
    `docs/device-verification.md` §7.
+   **The segment seam keeps its gap now (`2026-09-26`).** The renderer trims a run's first top and
+   last bottom edge (`layout()`), which is right at the post's own ends but wrong where a run meets a
+   block of ours: the poll or callout below it sat flush against the paragraph above. `RichMessageBody`
+   now keeps `dp(6)` under a run that is not the last segment - the renderer's own rule for a block
+   that follows something (`mediaPadding()`) - which moved `richMessageBody` and `richMessageHybridBody`
+   by that much and nothing else.
+   **The typography pair (`2026-09-26`).** `TopicPostCellScreenshotTest.richMessageTypographyBlockPath`
+   and `...RichBody` render one post - two paragraphs, a heading, a two-level list, a two-level quote,
+   a closing paragraph - through both paths, so the two rhythms can be compared in one place. Measured
+   off that pair, the rich body is Telegram's article rhythm and the block path is ours: the rich
+   heading is larger, its list rows are ~7px looser, and its nested list indents deeper, while the
+   paragraph-to-paragraph gap is within ~4px. Which of the two a post body should look like is a
+   product call (upstream's constants live inside `emitBlock`), and the pair is the artifact to make
+   it with.
    **The vertical rhythm, measured** (this is upstream's model, not ours to invent): paragraphs
    `setContentPadding(previousSiblingParagraph ? 0 : dp(5), dp(4.66f))`, headings `dp(10)/dp(6)`,
    media `padding.top + image + padding.bottom` with the caller's zero rect, captions the same, and

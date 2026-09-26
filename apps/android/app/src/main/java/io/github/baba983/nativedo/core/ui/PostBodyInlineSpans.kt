@@ -49,6 +49,7 @@ internal fun buildPostBodyInlineSpans(
         inlineImages = cooked.inlineImages,
         inlineIcons = cooked.inlineIcons,
         inlineHashtagChips = cooked.inlineHashtagChips,
+        inlineCheckboxes = cooked.inlineCheckboxes,
         baseUrl = baseUrl,
         onOpenLink = onOpenLink,
         textSizePx = textSizePx,

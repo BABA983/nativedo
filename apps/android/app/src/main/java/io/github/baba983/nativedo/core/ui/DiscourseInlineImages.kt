@@ -43,6 +43,7 @@ internal object DiscourseInlineImages : AnimatedEmojiSpan.InlineImageResolver {
     private sealed interface Spec {
         data class Image(val resolvedUrl: String) : Spec
         data class Icon(val symbolId: String, val rawTintColor: String) : Spec
+        data class Checkbox(val checked: Boolean) : Spec
         data class Chip(
             val label: String,
             val symbolId: String,
@@ -77,6 +78,11 @@ internal object DiscourseInlineImages : AnimatedEmojiSpan.InlineImageResolver {
         register("icon:${spec.symbolId}:${spec.rawTintColor}") {
             Spec.Icon(symbolId = spec.symbolId, rawTintColor = spec.rawTintColor)
         }
+
+    /** An id for a cooked inline checkbox: the site's `[x]`/`[ ]`, drawn as Telegram's task box. */
+    fun registerCheckbox(checked: Boolean): Long = register("checkbox:$checked") {
+        Spec.Checkbox(checked)
+    }
 
     /**
      * An id for this hashtag chip: the label it draws, the sprite symbol its icon resolves to, and
@@ -118,6 +124,9 @@ internal object DiscourseInlineImages : AnimatedEmojiSpan.InlineImageResolver {
                     rawTintColor = spec.rawTintColor,
                 )?.mutate()?.apply { setBounds(0, 0, side, side) }
                     ?.also { drawablesById.drawablesFor(documentId)[side] = it }
+            is Spec.Checkbox -> drawablesById.drawablesFor(documentId).getOrPut(side) {
+                DiscourseCheckboxDrawable(checked = spec.checked).apply { setBounds(0, 0, side, side) }
+            }
             is Spec.Chip -> drawablesById.drawablesFor(documentId).getOrPut(side) {
                 // The renderer sizes an inline image to `fontSize + 8dp`; the chip's label is the
                 // body size inside that box, and the chip's own height comes from its paint.
