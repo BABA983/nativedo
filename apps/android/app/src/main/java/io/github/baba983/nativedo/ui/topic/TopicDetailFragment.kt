@@ -1635,6 +1635,8 @@ class TopicDetailFragment @JvmOverloads constructor(
             onEmojiButtonPressed = ::handleReplyComposerEmojiButton,
             onRichEditorPressed = ::showRichEditor,
             onAttachMediaPressed = ::pickReplyComposerMedia,
+            onAttachFilePressed = ::pickReplyComposerFile,
+            onAttachMenuRequested = { anchor -> replyComposerPanel?.showAttachMenu(anchor) },
             onKeyboardRequested = ::handleReplyComposerKeyboardRequested,
             onReplyContextPressed = { postNumber ->
                 viewModel.requestJumpToReplyTarget(postNumber)
@@ -1742,11 +1744,21 @@ class TopicDetailFragment @JvmOverloads constructor(
     }
 
     /**
-     * The composer's own attach path (the attach button while the reply is empty, or the send
-     * button's menu): upload the picked file to the site and put its markdown into the draft.
+     * The composer's own attach path (the attach button while the reply is empty, or the attach
+     * menu): upload the picked file to the site and put its markdown into the draft.
      */
     private fun pickReplyComposerMedia() {
         pickMedia(TopicMediaPickTarget.Composer)
+    }
+
+    /**
+     * The same path for anything that is not an image or a video: a `.zip`, a `.pdf`, ... The site
+     * cooks such an upload as an attachment, which is a construct this client draws as a document
+     * row - so the picker must not filter by MIME type the way the media one does (a filtered
+     * `ACTION_GET_CONTENT` reaches the system photo picker, which has no files in it).
+     */
+    private fun pickReplyComposerFile() {
+        pickMedia(TopicMediaPickTarget.ComposerFile)
     }
 
     private fun pickMedia(target: TopicMediaPickTarget) {
@@ -1755,7 +1767,9 @@ class TopicDetailFragment @JvmOverloads constructor(
         val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = "*/*"
-            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
+            if (target != TopicMediaPickTarget.ComposerFile) {
+                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "video/*"))
+            }
         }
         mediaPickTarget = target
         try {
@@ -1775,7 +1789,9 @@ class TopicDetailFragment @JvmOverloads constructor(
         if (resultCode == Activity.RESULT_OK && uri != null) {
             when (target) {
                 TopicMediaPickTarget.Editor -> richEditorSheet?.editorHost()?.attachExternalMedia(uri)
-                TopicMediaPickTarget.Composer -> uploadReplyMedia(uri)
+                TopicMediaPickTarget.Composer,
+                TopicMediaPickTarget.ComposerFile,
+                -> uploadReplyMedia(uri)
                 null -> Unit
             }
         }
@@ -1797,8 +1813,16 @@ class TopicDetailFragment @JvmOverloads constructor(
             panel.setAttachUploading(false)
             if (uploaded == null) {
                 panel.setError(context.getString(io.github.baba983.nativedo.R.string.topic_reply_composer_attach_failed))
+                return@uploadMedia
+            }
+            // Which markdown an upload takes is the *file's* kind, not which picker was used - the
+            // site decides the same way (`isImage(original_filename)`).
+            val name = uploaded.filename ?: picked.name
+            val mimeType = picked.mimeType.orEmpty()
+            if (mimeType.startsWith("image/") || mimeType.startsWith("video/")) {
+                panel.insertMediaMarkdown(alt = name, url = uploaded.url)
             } else {
-                panel.insertMediaMarkdown(alt = uploaded.filename ?: picked.name, url = uploaded.url)
+                panel.insertAttachmentMarkdown(name = name, url = uploaded.url, humanSize = uploaded.humanSize)
             }
         }
     }
@@ -8214,7 +8238,7 @@ internal fun topicPostScrimPopupMaxHeight(anchorView: View, popupY: Int): Int {
 internal const val RICH_EDITOR_MEDIA_REQUEST_CODE = 4711
 
 /** Who asked for media: the reply composer's own attach, or the block editor's page. */
-private enum class TopicMediaPickTarget { Composer, Editor }
+private enum class TopicMediaPickTarget { Composer, ComposerFile, Editor }
 
 private const val TOPIC_REPLY_COMPOSER_DEFAULT_HEIGHT_DP = 44
 private const val TOPIC_BOTTOM_INPUT_CONTAINER = 1
@@ -8321,6 +8345,8 @@ private class TopicReplyComposerPanel(
     private val onEmojiButtonPressed: (View, View, (String) -> Unit) -> Unit,
     private val onRichEditorPressed: () -> Unit,
     private val onAttachMediaPressed: () -> Unit,
+    private val onAttachFilePressed: () -> Unit,
+    private val onAttachMenuRequested: (View) -> Unit,
     private val onKeyboardRequested: (View) -> Unit,
     private val onReplyContextPressed: (Int) -> Unit,
     private val onBackKeyPressed: (Int, Int) -> Boolean,
@@ -8485,6 +8511,11 @@ private class TopicReplyComposerPanel(
     private val attachButton = ComposerCircleButton(context, TelegramR.drawable.outline_poll_attach_24, shown = true).apply {
         contentDescription = context.getString(io.github.baba983.nativedo.R.string.topic_reply_composer_attach)
         setOnClickListener { onAttachMediaPressed() }
+        // The file route lives behind the slot's long press, so an empty draft can reach it too.
+        setOnLongClickListener {
+            onAttachMenuRequested(it)
+            true
+        }
     }
     private val emojiButton = ChatActivityEnterViewAnimatedIconView(context).apply {
         val padding = AndroidUtilities.dp(TOPIC_REPLY_COMPOSER_ICON_BUTTON_PADDING_DP)
@@ -9145,6 +9176,16 @@ private class TopicReplyComposerPanel(
             return
         }
         anchor.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        showAttachPopup(anchor, includeSend = true)
+    }
+
+    /**
+     * The attach slot's menu: both routes a file can take into the draft (an image or video, or any
+     * other file, which the site cooks as an attachment). The send item rides along when the send
+     * plane's long press opened it - the attach action lives in that slot only while the reply is
+     * empty, so this is where it stays reachable once there is text.
+     */
+    private fun showAttachPopup(anchor: View, includeSend: Boolean) {
         sendButtonPopup?.dismiss()
         val popupLayout = ActionBarPopupWindow.ActionBarPopupWindowLayout(
             context,
@@ -9155,9 +9196,7 @@ private class TopicReplyComposerPanel(
             setBackgroundColor(Theme.getColor(Theme.key_actionBarDefaultSubmenuBackground))
             setFitItems(true)
         }
-        // The attach action lives in the send slot only while the reply is empty; once there is
-        // text the slot belongs to send, so the same action is offered here.
-        val attachItem = ActionBarMenuSubItem(context, true, false, null).apply {
+        val mediaItem = ActionBarMenuSubItem(context, true, false, null).apply {
             setMinimumWidth(AndroidUtilities.dp(184f))
             setColors(
                 Theme.getColor(Theme.key_actionBarDefaultSubmenuItem),
@@ -9174,25 +9213,45 @@ private class TopicReplyComposerPanel(
                 onAttachMediaPressed()
             }
         }
-        val sendItem = ActionBarMenuSubItem(context, false, true, null).apply {
+        val fileItem = ActionBarMenuSubItem(context, false, includeSend, null).apply {
             setMinimumWidth(AndroidUtilities.dp(184f))
             setColors(
                 Theme.getColor(Theme.key_actionBarDefaultSubmenuItem),
                 Theme.getColor(Theme.key_actionBarDefaultSubmenuItemIcon),
             )
             setSelectorColor(Theme.getColor(Theme.key_dialogButtonSelector))
-            setTextAndIcon(context.getString(io.github.baba983.nativedo.R.string.topic_reply_composer_send), topicReplyComposerSendButtonIconRes())
+            setTextAndIcon(
+                context.getString(io.github.baba983.nativedo.R.string.topic_reply_composer_attach_file),
+                TelegramR.drawable.outline_poll_attach_24,
+            )
             setOnClickListener {
                 sendButtonPopup?.dismiss()
                 sendButtonPopup = null
-                submit()
+                onAttachFilePressed()
             }
         }
-        popupLayout.addView(attachItem)
-        popupLayout.addView(sendItem)
+        popupLayout.addView(mediaItem)
+        popupLayout.addView(fileItem)
+        if (includeSend) {
+            val sendItem = ActionBarMenuSubItem(context, false, true, null).apply {
+                setMinimumWidth(AndroidUtilities.dp(184f))
+                setColors(
+                    Theme.getColor(Theme.key_actionBarDefaultSubmenuItem),
+                    Theme.getColor(Theme.key_actionBarDefaultSubmenuItemIcon),
+                )
+                setSelectorColor(Theme.getColor(Theme.key_dialogButtonSelector))
+                setTextAndIcon(context.getString(io.github.baba983.nativedo.R.string.topic_reply_composer_send), topicReplyComposerSendButtonIconRes())
+                setOnClickListener {
+                    sendButtonPopup?.dismiss()
+                    sendButtonPopup = null
+                    submit()
+                }
+            }
+            popupLayout.addView(sendItem)
+        }
         popupLayout.measure(
             MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(220f), MeasureSpec.AT_MOST),
-            MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(160f), MeasureSpec.AT_MOST),
+            MeasureSpec.makeMeasureSpec(AndroidUtilities.dp(220f), MeasureSpec.AT_MOST),
         )
         val location = IntArray(2)
         anchor.getLocationInWindow(location)
@@ -9210,6 +9269,13 @@ private class TopicReplyComposerPanel(
         val x = (location[0] + anchor.width - popupLayout.measuredWidth).coerceAtLeast(AndroidUtilities.dp(4f))
         val y = (location[1] - popupLayout.measuredHeight - AndroidUtilities.dp(6f)).coerceAtLeast(AndroidUtilities.dp(4f))
         popup.showAtLocation(anchor, Gravity.LEFT or Gravity.TOP, x, y)
+    }
+
+    /** The attach slot's long press: the menu above, without the send item. */
+    fun showAttachMenu(anchor: View) {
+        if (submitting) return
+        anchor.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        showAttachPopup(anchor, includeSend = false)
     }
 
     private fun submit() {
@@ -9447,8 +9513,16 @@ private class TopicReplyComposerPanel(
 
     /** Puts an uploaded file into the draft at the caret, the way the web composer does. */
     fun insertMediaMarkdown(alt: String, url: String) {
+        insertMarkup(topicReplyComposerMediaMarkup(alt = alt, url = url))
+    }
+
+    /** The composer's document route: an upload the site cooks as an attachment. */
+    fun insertAttachmentMarkdown(name: String, url: String, humanSize: String?) {
+        insertMarkup(topicReplyComposerAttachmentMarkup(name = name, url = url, humanSize = humanSize))
+    }
+
+    private fun insertMarkup(markup: String) {
         if (submitting) return
-        val markup = topicReplyComposerMediaMarkup(alt = alt, url = url)
         if (markup.isEmpty()) return
         val editable = editText.text ?: return
         val selectionStart = editText.selectionStart.takeIf { it >= 0 } ?: editable.length
@@ -10049,6 +10123,25 @@ internal fun topicReplyComposerMediaMarkup(alt: String, url: String): String {
     if (url.isBlank()) return ""
     val name = alt.trim().replace("]", "").replace("\n", " ").ifBlank { "image" }
     return "![$name](${url.trim()})"
+}
+
+/**
+ * The site's own markdown for a non-image upload: the `|attachment` marker is what makes the cook
+ * emit `<a class="attachment" href="...">name</a>` (the marker is read from the link's label and
+ * never from the URL, so the plain `/uploads/...` URL this client uploads to is fine), and the size
+ * text after the link is cosmetic - the site never regenerates it. `[`, `]` and `|` are stripped
+ * from the label the way the site's composer strips them.
+ */
+internal fun topicReplyComposerAttachmentMarkup(name: String, url: String, humanSize: String?): String {
+    if (url.isBlank()) return ""
+    val label = name.trim()
+        .replace("[", "")
+        .replace("]", "")
+        .replace("|", "")
+        .replace("\n", " ")
+        .ifBlank { "file" }
+    val size = humanSize?.trim()?.takeIf { it.isNotEmpty() }?.let { " ($it)" }.orEmpty()
+    return "[$label|attachment](${url.trim()})$size"
 }
 
 /**

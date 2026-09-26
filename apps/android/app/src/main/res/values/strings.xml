@@ -183,6 +183,7 @@
     <string name="topic_reply_composer_emoji">Emoji</string>
     <string name="topic_reply_composer_send">Send</string>
     <string name="topic_reply_composer_attach">Add image or video</string>
+    <string name="topic_reply_composer_attach_file">Add file</string>
     <string name="topic_reply_composer_attach_failed">Couldn\'t upload that file</string>
     <string name="topic_reply_composer_clear_context">Cancel reply target</string>
     <string name="topic_reader_action_more">More</string>

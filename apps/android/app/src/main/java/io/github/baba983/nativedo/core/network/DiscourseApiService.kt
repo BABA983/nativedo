@@ -282,6 +282,9 @@ data class UploadResponseDto(
     val extension: String? = null,
     @SerialName("short_url")
     val shortUrl: String? = null,
+    // The site's own human size ("12.3 KB"), which its composer appends to an attachment's markdown.
+    @SerialName("human_filesize")
+    val humanFilesize: String? = null,
 )
 
 @Serializable
