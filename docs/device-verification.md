@@ -756,7 +756,7 @@ To check, on a post that has an attachment and with the rich body flag on:
    options sheet must never appear (`canShowOptions()` is document-guarded, so a URL row has no
    menu).
 
-## 18. The checklist markup is the site's, not GitHub's (`de01924`) — new
+## 18. The checklist markup is the site's, not GitHub's (`de01924`) — passed (2026-09-26, `emulator-5554`)
 
 What changed: the parser no longer looks for `<input type="checkbox">` in `li.task-list-item` (a
 shape Discourse never emits - its core allowlister strips a raw `<input>`, and the checklist is a
@@ -771,6 +771,13 @@ private test bed (2953635), `Inline  control` - the double space where the box s
 bullets, with the checkbox code in the build; the cooked HTML was never the problem and neither was
 the app's rendering, only the element it looked for.
 
+Verdict (2026-09-26, `emulator-5554`, app built from the patch): post #7 now reads `Inline ☑ control`
+with the filled box where the double space was, its first item is a checked box plus "done item" and
+its second an empty box plus "todo item", both with **no bullet** - and the two flag states are
+identical (`223-post7-8-flagON.png` / `221-post7-flagOFF-checklist.png`). Checks 1, 2 and 4 pass;
+the mid-item case (3) and the no-toggle case (5) are covered by the retained golden rather than by
+this pass.
+
 To check, on a post with checklists (post #7 of 2953635 is the sample) and with the rich body flag on:
 1. An inline `[x]`/`[ ]` draws as a box in the sentence - filled for checked, empty for open - with
    no leftover double space.
@@ -781,13 +788,21 @@ To check, on a post with checklists (post #7 of 2953635 is the sample) and with 
 5. Nothing here toggles: the box is display-only (`data-chk-src` is the site's toggle locator, and
    this client has no toggle call yet) - tapping it must not change the post.
 
-## 19. Inline math renders with the tree's LaTeX renderer (`6c8f1b7`) — new
+## 19. Inline math renders with the tree's LaTeX renderer (`6c8f1b7`) — passed (2026-09-26, `emulator-5554`)
 
 What changed: a cooked `<span class="math">x^2</span>` (the site's math plugin output - bare TeX, the
 `$` delimiters are stripped at cook time) is no longer read as its text. The block path paints it
 with `DiscourseMathSpan` (a bitmap from `org.telegram.ui.iv.Latex`, falling back to the TeX text when
 a formula cannot be parsed) and the rich path emits the model's `textMath` run, which upstream's
 renderer draws through the same renderer. Display math (`div.math`) still reads as its text.
+
+Verdict (2026-09-26, `emulator-5554`): `$x^2 + y^2$` posted into the private test bed from the app's
+composer (it became post #8) renders as a formula - italic x and y with raised `2`s, no caret - in
+both flag states (`222-math-post-flagOFF.png` / `223-post7-8-flagON.png`), so checks 1 and 4 pass.
+The cooked JSON could not be inspected from the device (the in-app browser has no session there and
+the shell has no TLS client), so the markup shape rests on the plugin's own specs; the copy check (3)
+and the unparsable-formula fallback (5) are covered by the renderer's code path rather than by this
+pass. Display math is still open.
 
 To check, on a post with math (`$x^2 + y^2$` on its own line, posted into the private test bed) and
 in both flag states:
