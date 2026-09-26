@@ -1363,6 +1363,14 @@ public final class TL_iv {
 
         public long document_id;
 
+        // NativeDo: a Discourse attachment is a URL, not a Telegram document, so the block carries
+        // the file's display name and size text instead of a document id (`PostRichMessage`); the
+        // URL itself travels on `PageBlock.url`, the lifted field the editor's own import already
+        // reads and writes. The renderer's document block draws its row from these and opens the
+        // URL; the wire fields above stay untouched, so nothing upstream changes.
+        public String url_title;
+        public String url_size;
+
         public void readParams(InputSerializedData stream, boolean exception) {
             document_id = stream.readInt64(exception);
             caption = PageCaption.TLdeserialize(stream, stream.readInt32(exception), exception);

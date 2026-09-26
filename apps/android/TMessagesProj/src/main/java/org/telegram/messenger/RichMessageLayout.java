@@ -7910,7 +7910,9 @@ public class RichMessageLayout {
             this.block = block;
             this.document = root.getDocument(block.document_id);
             this.previewX = root.padLeft + dp(10);
-            this.hasPreview = MessageObject.isDocumentHasThumb(document);
+            // NativeDo: a Discourse attachment carries a URL instead of a document id, so there is no
+            // document behind the block and nothing to preview.
+            this.hasPreview = document != null && MessageObject.isDocumentHasThumb(document);
             observerTag = DownloadController.getInstance(root.currentAccount).generateObserverTag();
             radialProgress = new RadialProgress2(null);
             radialProgress.setCircleRadius(buttonSize / 2);
@@ -7939,16 +7941,26 @@ public class RichMessageLayout {
             titlePaint.setTextSize(dp(root.fontSize - 1));
             titlePaint.setTypeface(AndroidUtilities.bold());
             sizePaint.setTextSize(dp(root.fontSize - 3));
-            final String name = document == null ? "" : FileLoader.getDocumentFileName(document);
+            // NativeDo: the URL case takes its name and size text from the block.
+            final String name = block.url != null
+                ? (block.url_title == null ? "" : block.url_title)
+                : (document == null ? "" : FileLoader.getDocumentFileName(document));
             final CharSequence title = TextUtils.ellipsize(name, titlePaint, width, TextUtils.TruncateAt.END);
             titleLayout = new StaticLayout(title, titlePaint, width, Layout.Alignment.ALIGN_NORMAL, 1f, 0f, false);
-            sizeLayout = new StaticLayout(document == null ? "" : AndroidUtilities.formatFileSize(document.size), sizePaint, width, Layout.Alignment.ALIGN_NORMAL, 1f, 0f, false);
+            final String size = block.url != null
+                ? (block.url_size == null ? "" : block.url_size)
+                : (document == null ? "" : AndroidUtilities.formatFileSize(document.size));
+            sizeLayout = new StaticLayout(size, sizePaint, width, Layout.Alignment.ALIGN_NORMAL, 1f, 0f, false);
         }
 
         @Override public int getHeight() { return padding.top + dp(hasPreview ? 106 : 60) + padding.bottom; }
         @Override public int getMinWidth() {
-            final String name = document == null ? "" : FileLoader.getDocumentFileName(document);
-            final String size = document == null ? "" : AndroidUtilities.formatFileSize(document.size);
+            final String name = block.url != null
+                ? (block.url_title == null ? "" : block.url_title)
+                : (document == null ? "" : FileLoader.getDocumentFileName(document));
+            final String size = block.url != null
+                ? (block.url_size == null ? "" : block.url_size)
+                : (document == null ? "" : AndroidUtilities.formatFileSize(document.size));
             final int textWidth = (int) Math.ceil(Math.max(titlePaint.measureText(name), sizePaint.measureText(size)));
             final int textX = hasPreview ? dp(10 + 86 + 11) : buttonX + buttonSize + buttonTextSpacing;
             final int contentWidth = Math.min(maxWidth, Math.max(dp(MIN_WIDTH_DP), textX + textWidth + dp(48)));
@@ -7994,6 +8006,14 @@ public class RichMessageLayout {
                         root.isOut() ? Theme.key_chat_outMediaIconSelected : Theme.key_chat_inMediaIconSelected);
                 radialProgress.setProgressColor(root.getThemedColor(root.isOut() ? Theme.key_chat_outFileProgress : Theme.key_chat_inFileProgress));
             }
+            // NativeDo: a URL attachment has nothing to download or track. The row draws a static
+            // file glyph in the loader's colors, and its press answers through the link entry.
+            if (block.url != null) {
+                buttonState = 0;
+                radialProgress.setIcon(MediaActionDrawable.ICON_FILE, false, animated);
+                if (view != null) view.invalidate();
+                return;
+            }
             final String fileName = FileLoader.getAttachFileName(document);
             final File file = path();
             if (file != null && file.exists()) {
@@ -8019,6 +8039,15 @@ public class RichMessageLayout {
         }
 
         private void press() {
+            // NativeDo: a URL attachment is a link, not a local file - answer it through the same
+            // delegate entry a link run uses (`didPressUrl`), which routes it to the app's browser.
+            if (block.url != null) {
+                final ChatMessageCell.ChatMessageCellDelegate delegate = root.getDelegate();
+                if (delegate != null) {
+                    delegate.didPressUrl(root.getCell(), new URLSpan(block.url), false);
+                }
+                return;
+            }
             if (buttonState == 0) {
                 final Activity activity = findActivity(view == null ? null : view.getContext());
                 final File file = path();
@@ -8044,7 +8073,9 @@ public class RichMessageLayout {
         }
 
         @Override protected void onDraw(Canvas canvas) {
-            if (document == null) return;
+            // NativeDo: a URL attachment has no document behind it, but its row still draws the name
+            // and size (and the file glyph) from the block.
+            if (document == null && block.url == null) return;
             if (layoutWidth != getLayoutWidth()) rebuildLayouts();
             canvas.save();
             canvas.translate(-root.padLeft, 0);

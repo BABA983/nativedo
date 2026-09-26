@@ -2,6 +2,8 @@ package io.github.baba983.nativedo.core.ui
 
 import io.github.baba983.nativedo.core.html.CookedPostBlock
 import io.github.baba983.nativedo.core.html.resolvePostImageUrl
+import org.jsoup.Jsoup
+import org.jsoup.nodes.TextNode
 import org.telegram.tgnet.tl.TL_iv
 import java.util.ArrayList
 
@@ -56,7 +58,7 @@ internal object PostRichMessageBuilder {
             return null
         }
         return when (block) {
-            is CookedPostBlock.Text -> paragraph(block.html, baseUrl)
+            is CookedPostBlock.Text -> attachment(block.html, baseUrl) ?: paragraph(block.html, baseUrl)
             is CookedPostBlock.Heading -> heading(block.level, block.html, baseUrl)
             is CookedPostBlock.Quote -> quote(block, baseUrl)
             is CookedPostBlock.Code -> preformatted(block)
@@ -75,6 +77,36 @@ internal object PostRichMessageBuilder {
 
     private fun paragraph(html: String, baseUrl: String): TL_iv.PageBlock = TL_iv.pageBlockParagraph().apply {
         text = inline(html, baseUrl)
+    }
+
+    /**
+     * A paragraph that is exactly one cooked attachment - Discourse's `a.attachment`, optionally
+     * followed by the ` (12.3 KB)` size text it appends - becomes a document block, so upstream's
+     * document row draws it instead of a link in a sentence. An attachment *inside* a sentence stays
+     * a link, which is also what the site does with it. The block carries the URL, the display name
+     * and the size text, because a Discourse attachment has no Telegram document behind it.
+     */
+    private fun attachment(html: String, baseUrl: String): TL_iv.PageBlock? {
+        val body = Jsoup.parseBodyFragment(html).body()
+        val anchor = body.selectFirst("a.attachment") ?: return null
+        if (body.children().size != 1 || body.children()[0] != anchor) return null
+        var rest = ""
+        for (node in body.childNodes()) {
+            if (node === anchor) continue
+            if (node !is TextNode) return null
+            rest += node.text()
+        }
+        val sizeText = rest.trim().removePrefix("(").removeSuffix(")").trim()
+        if (rest.isNotBlank() && !rest.trim().startsWith("(")) return null
+        val href = anchor.attr("href").ifBlank { return null }
+        val name = anchor.text().trim().ifBlank { href.substringAfterLast('/') }
+        return TL_iv.pageBlockDocument().apply {
+            document_id = 0
+            caption = TL_iv.PageCaption().apply { text = TL_iv.textEmpty() }
+            url = if (baseUrl.isEmpty()) href else resolvePostImageUrl(baseUrl, href)
+            url_title = name
+            url_size = sizeText
+        }
     }
 
     private fun heading(level: Int, html: String, baseUrl: String): TL_iv.PageBlock {

@@ -124,6 +124,23 @@ internal class TopicPostCellScreenshotTest {
     }
 
     /**
+     * A cooked attachment: the paragraph that is exactly one `a.attachment` (plus the size text the
+     * site appends) becomes a document row, while the same anchor inside a sentence stays a link -
+     * which is what the site's own layout does with it.
+     */
+    @Test
+    fun richMessageAttachment() {
+        RichMessageBody.enabled = true
+        try {
+            paparazziRule.snapshot { context ->
+                topicPostCell(context, RICH_MESSAGE_ATTACHMENT_HTML)
+            }
+        } finally {
+            RichMessageBody.enabled = false
+        }
+    }
+
+    /**
      * The inline constructs upstream's model has a run for: a custom emoji, a twemoji image, a site
      * icon, a hashtag chip, a `[size]` range, a cooked inline checkbox, plus a task list (upstream's
      * checkbox rows). Kept in its own post so the golden stays inside the snapshot's frame.
@@ -227,6 +244,12 @@ internal class TopicPostCellScreenshotTest {
             </ul>
             <blockquote><p>Quoted paragraph.</p><blockquote><p>Nested quote.</p></blockquote></blockquote>
             <p>Last paragraph.</p>
+        """.trimIndent()
+
+        /** A standalone attachment and an inline one, for [richMessageAttachment]. */
+        val RICH_MESSAGE_ATTACHMENT_HTML = """
+            <p><a class="attachment" href="/uploads/short-url/o8iobpLcW3WSFvVH7YQmyGlKmGM.pdf">test_file.pdf</a> (12.3 KB)</p>
+            <p>An <a class="attachment" href="/uploads/short-url/abcdef123456.zip">archive.zip</a> inside a sentence stays a link.</p>
         """.trimIndent()
 
         /** Deep and mixed nesting for [richMessageNestingRichBody]. */
