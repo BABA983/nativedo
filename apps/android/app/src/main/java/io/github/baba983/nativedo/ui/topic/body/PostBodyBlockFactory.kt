@@ -39,6 +39,12 @@ internal object PostBodyBlockFactory {
                     state,
                     TextLayoutBlock.inlineSpoilerStateKey("heading:$stateKey", block.html),
                 )
+                is CookedPostBlock.Attachment -> AttachmentBlock(
+                    block.name,
+                    block.url,
+                    block.sizeText,
+                    context,
+                )
                 is CookedPostBlock.Image -> ImageBlock(
                     block,
                     gallery,

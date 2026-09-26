@@ -198,7 +198,7 @@ private fun parseCookedNodes(
 
 private fun parseCookedElement(element: Element, quoteLevel: Int, baseUrl: String): List<CookedPostBlock> {
     return when (element.normalName()) {
-        "p" -> parseParagraphElement(element)
+        "p" -> parseParagraphElement(element, baseUrl)
         "blockquote" -> parseBlockquoteElement(element, quoteLevel, baseUrl)
         "aside" -> parseAsideElement(element, quoteLevel, baseUrl)
         "pre" -> {
@@ -243,7 +243,8 @@ private fun parseInlineHtmlFragment(html: String): List<CookedPostBlock> {
     return listOfNotNull(textHtml?.let(CookedPostBlock::Text)) + images
 }
 
-private fun parseParagraphElement(element: Element): List<CookedPostBlock> {
+private fun parseParagraphElement(element: Element, baseUrl: String): List<CookedPostBlock> {
+    attachmentBlock(element, baseUrl)?.let { attachment -> return listOf(attachment) }
     val images = imageBlocksFrom(element)
     val textHtml = element.clone().apply {
         removeCookedNonContentArtifacts()
@@ -253,6 +254,33 @@ private fun parseParagraphElement(element: Element): List<CookedPostBlock> {
         return listOf(images.single().copy(captionHtml = textHtml))
     }
     return listOfNotNull(textHtml?.let(CookedPostBlock::Text)) + images
+}
+
+/**
+ * A paragraph that is exactly one cooked attachment - Discourse's `a.attachment`, optionally
+ * followed by the ` (12.3 KB)` size text it appends - is a block of its own, so both bodies draw it
+ * as the document row. An attachment *inside* a sentence stays a link, which is also what the site
+ * does with it. The site cooks the anchor's href as a short URL, a CDN URL or an old
+ * `/uploads/...` path, so it is resolved against the post's base like any other link.
+ */
+private fun attachmentBlock(element: Element, baseUrl: String): CookedPostBlock.Attachment? {
+    val anchor = element.selectFirst("a.attachment") ?: return null
+    if (element.children().size != 1 || element.children()[0] !== anchor) return null
+    var rest = ""
+    for (node in element.childNodes()) {
+        if (node === anchor) continue
+        if (node !is TextNode) return null
+        rest += node.text()
+    }
+    // The size is the site's optional sibling text, and nothing else may follow the anchor.
+    if (rest.isNotBlank() && !rest.trim().startsWith("(")) return null
+    val href = anchor.attr("href").ifBlank { return null }
+    val name = anchor.text().trim().ifBlank { href.substringAfterLast('/') }
+    return CookedPostBlock.Attachment(
+        name = name,
+        url = resolvePostImageUrl(baseUrl, href),
+        sizeText = rest.trim().removePrefix("(").removeSuffix(")").trim(),
+    )
 }
 
 // The element names a Discourse callout can be cooked onto. The Quote Callouts theme component

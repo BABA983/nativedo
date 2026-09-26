@@ -124,6 +124,18 @@ internal class TopicPostCellScreenshotTest {
     }
 
     /**
+     * The same cooked attachment with the flag off: the block path draws the row too, so both
+     * bodies show the same shape for it (the fork was settled that way on 2026-09-26 - the row is
+     * the app's shape for a file, in either body).
+     */
+    @Test
+    fun attachment() {
+        paparazziRule.snapshot { context ->
+            topicPostCell(context, RICH_MESSAGE_ATTACHMENT_HTML)
+        }
+    }
+
+    /**
      * A cooked attachment: the paragraph that is exactly one `a.attachment` (plus the size text the
      * site appends) becomes a document row, while the same anchor inside a sentence stays a link -
      * which is what the site's own layout does with it.

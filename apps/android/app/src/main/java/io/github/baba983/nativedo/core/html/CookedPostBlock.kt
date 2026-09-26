@@ -53,6 +53,18 @@ internal sealed interface CookedPostBlock {
 
     data class Collage(val images: List<Image>) : CookedPostBlock
 
+    /**
+     * A cooked attachment: the paragraph that is exactly one `a.attachment` anchor plus the
+     * ` (12.3 KB)` size text Discourse appends. The URL is resolved, and the name and size are the
+     * anchor's own text - a Discourse attachment has no Telegram document behind it, so the block
+     * carries what the row draws.
+     */
+    data class Attachment(
+        val name: String,
+        val url: String,
+        val sizeText: String? = null,
+    ) : CookedPostBlock
+
     data class Onebox(
         val href: String,
         val domain: String?,

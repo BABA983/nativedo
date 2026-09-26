@@ -47,6 +47,9 @@ private fun List<CookedPostBlock>.appendAccessibilityParts(parts: MutableList<St
             is CookedPostBlock.ListItems -> block.items.forEach { item ->
                 if (item.blocks.isEmpty()) parts.addText(item.html) else item.blocks.appendAccessibilityParts(parts)
             }
+            is CookedPostBlock.Attachment -> parts.add(
+                block.sizeText?.takeIf { it.isNotBlank() }?.let { size -> "${block.name} ($size)" } ?: block.name,
+            )
             is CookedPostBlock.Image -> parts.addImage(block)
             is CookedPostBlock.Collage -> block.images.forEach { image -> parts.addImage(image) }
             is CookedPostBlock.Onebox -> {
