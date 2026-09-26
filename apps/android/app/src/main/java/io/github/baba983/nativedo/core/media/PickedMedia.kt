@@ -53,6 +53,19 @@ object PickedMediaResolver {
     private const val DEFAULT_NAME = "upload"
 }
 
+/**
+ * The site's URL for an upload, ready to be put in a post: an absolute answer as it is, a
+ * protocol-relative one on the site's own scheme (the CDN answers `//host/path`), a path resolved
+ * against the base. The site's own composer resolves the same way, and a protocol-relative URL in a
+ * post is a dead link for both the renderer and the browser entry.
+ */
+internal fun absoluteUploadUrl(baseUrl: String, url: String): String? {
+    if (url.isBlank()) return null
+    if (url.startsWith("http://") || url.startsWith("https://")) return url
+    if (url.startsWith("//")) return "https:$url"
+    return baseUrl.trimEnd('/') + "/" + url.trimStart('/')
+}
+
 /** What a file's name says it is (the picker's own mime type wins when it has one). */
 internal fun mediaMimeTypeFor(fileName: String): String? =
     when (fileName.substringAfterLast('.', "").lowercase()) {

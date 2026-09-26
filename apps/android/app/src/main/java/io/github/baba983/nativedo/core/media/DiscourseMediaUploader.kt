@@ -45,7 +45,7 @@ class DiscourseMediaUploader(
                     // read and touch views, so progress goes through the scope's dispatcher
                     onProgress = { progress -> scope.launch { callback.onProgress(progress) } },
                 )
-                val url = absoluteUrl(uploaded.url) ?: run {
+                val url = absoluteUploadUrl(baseUrl, uploaded.url) ?: run {
                     callback.onError()
                     return@launch
                 }
@@ -69,14 +69,6 @@ class DiscourseMediaUploader(
 
     override fun cancel(path: String) {
         uploads.remove(path)?.cancel()
-    }
-
-    /** The site's URL for an upload: absolute answers as they are, a path resolved against the base. */
-    private fun absoluteUrl(url: String): String? {
-        if (url.isBlank()) return null
-        if (url.startsWith("http://") || url.startsWith("https://")) return url
-        if (url.startsWith("//")) return "https:" + url
-        return baseUrl.trimEnd('/') + "/" + url.trimStart('/')
     }
 
     private fun mimeTypeFor(file: File): String? = mediaMimeTypeFor(file.name)

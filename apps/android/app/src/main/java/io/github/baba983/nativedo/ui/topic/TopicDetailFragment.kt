@@ -74,6 +74,7 @@ import io.github.baba983.nativedo.core.html.resolvePostImageUrl
 import io.github.baba983.nativedo.core.model.DiscourseEmoji
 import io.github.baba983.nativedo.core.model.DiscourseEmojiCategory
 import io.github.baba983.nativedo.core.media.PickedMediaResolver
+import io.github.baba983.nativedo.core.media.absoluteUploadUrl
 import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.PostReaction
 import io.github.baba983.nativedo.core.model.PostReactionRendering
@@ -1815,14 +1816,22 @@ class TopicDetailFragment @JvmOverloads constructor(
                 panel.setError(context.getString(io.github.baba983.nativedo.R.string.topic_reply_composer_attach_failed))
                 return@uploadMedia
             }
+            // The answer's URL is not necessarily absolute (the site's CDN answers
+            // `//host/path`), and a protocol-relative URL in a post is a dead link for the
+            // renderer and for the browser entry alike, so it is resolved before it goes in.
+            val url = absoluteUploadUrl(baseUrl, uploaded.url)
+            if (url == null) {
+                panel.setError(context.getString(io.github.baba983.nativedo.R.string.topic_reply_composer_attach_failed))
+                return@uploadMedia
+            }
             // Which markdown an upload takes is the *file's* kind, not which picker was used - the
             // site decides the same way (`isImage(original_filename)`).
             val name = uploaded.filename ?: picked.name
             val mimeType = picked.mimeType.orEmpty()
             if (mimeType.startsWith("image/") || mimeType.startsWith("video/")) {
-                panel.insertMediaMarkdown(alt = name, url = uploaded.url)
+                panel.insertMediaMarkdown(alt = name, url = url)
             } else {
-                panel.insertAttachmentMarkdown(name = name, url = uploaded.url, humanSize = uploaded.humanSize)
+                panel.insertAttachmentMarkdown(name = name, url = url, humanSize = uploaded.humanSize)
             }
         }
     }
