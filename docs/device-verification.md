@@ -746,7 +746,7 @@ host-only `_forum_session`/`_t`. So: inject host-only values (no `domain=`), or 
 data between an injection and a WebView login. Verified by clearing the emulator's data and
 finishing a Turnstile: the jar then holds only the site's own cookies.
 
-## 17. The Discourse attachment row (`494f5d5`) — partially passed (2026-09-26, `emulator-5554`)
+## 17. The Discourse attachment row (`494f5d5`) — passed (2026-09-26, `emulator-5554`)
 
 What changed: a cooked paragraph that is exactly one `a.attachment` anchor (plus the site's
 ` (12.3 KB)` text) is no longer a link run - it maps to the pin's `pageBlockDocument`, so the
@@ -755,27 +755,29 @@ under it. The row's press goes through `didPressUrl`, the same delegate entry a 
 which routes an uploads URL to the app's link entry (the in-app browser) - the site serves a PDF
 inline and downloads everything else.
 
-Verdict so far (2026-09-26): the composer's document route works end to end - a `.zip` uploaded
-from the app lands in the PM as post #9 and the flag-on body draws it as the row (glyph, name,
-`219 Bytes`). Three findings from that pass:
-1. **The two states disagree**: the flag-off block path draws the same post as a plain blue link
-   line (`name (219 Bytes)`), because the row was only ever mapped for the rich model. The site's
-   own rendering is a link with a paperclip icon, so the block path is the one that matches the
-   site and the rich path is the one that matches Telegram - a product fork, not a bug.
-2. **The taps did nothing in either state**, and the composer was the cause for anything sent from this app: the site answers an upload with a *protocol-relative* URL on its CDN host (`//linuxdo-uploads.s3.ldstatic.com/...`), which the composer inserted verbatim, so the cooked href had no scheme to open. Fixed in `ec52d2b` (`absoluteUploadUrl`, shared with the media bridge). The *render* side was never the problem: a cell-level probe over the three href forms the site can emit (protocol-relative, absolute, `/uploads/...` path) shows the row's press reaching `didPressUrl` with the resolved absolute URL every time, and `resolvePostImageUrl`/`parseInternalLinkDestination` both resolve `//host` through `HttpUrl.resolve`. So post #9 (stored with the old, protocol-relative href) is a marginal-tap case, not a dead row - the device taps at the row's edge were 2-4px above the block's `y >= dp(10)` band.
-3. The site renames an upload (`1790436268563-test_file.zip`) and the size text is its own
-   `human_filesize`; the composer inserts both as-is.
+Verdict (2026-09-26, fifth pass, app built from the patch): the whole loop is closed on post #10,
+which the app itself posted into the private test bed.
+1. The composer's document route inserts `[1790436268563-test_file.zip|attachment](https://linuxdo-uploads.s3.ldstatic.com/original/...zip) (219 Bytes)`
+   - absolute, not the protocol-relative form the site answered with - and the site cooks that into
+   its attachment anchor (the cell's content description reads `10F，example_user。1790436268563-test_file.zip (219 Bytes)`).
+2. The flag-on body draws the row; the flag-ON tap on the glyph centre opens the in-app browser at
+   the CDN URL (blank body - a `.zip` has nothing to render), and the flag-OFF tap on the link line
+   opens the same URL. The two states agree on the *action*.
+3. The hold opens the app's link popup (URL chip + Share/Copy) and does **not** open the browser;
+   Copy yields exactly the absolute URL.
+4. The row shows no download ring (nothing is tracked through `FileLoader`), and no document
+   options sheet appears.
 
-To check, on a post that has an attachment and with the rich body flag on:
-1. The row draws with the file's name and size (not a link in a sentence), and the same anchor
-   *inside* a sentence still draws as a link.
-2. Tap the row: the in-app browser opens the uploads URL (a PDF renders in it; a `.zip` downloads).
-3. The row must not show a download ring or progress - there is nothing to fetch through
-   `FileLoader`, and no `DownloadController` observer is registered for it.
-4. Hold the row: the URL is copied (the rule the run and the block path follow - the press must
-   *not* open the link when the hold fired), with the usual long-press haptic. The document
-   options sheet must never appear (`canShowOptions()` is document-guarded, so a URL row has no
-   menu).
+Still open, and it is a product fork rather than a defect: the two flag states draw *different
+shapes* for the same post - the rich body draws Telegram's file row, the block path draws the
+site's own link line with the size text. The row was only ever mapped for the rich model; the site
+itself draws a link with a paperclip icon, so the block path matches the site and the rich path
+matches this app's Telegram machinery. Decide once and make the other path follow.
+
+Notes for the next device pass on this surface: the row's press band is `y >= dp(10) && y <= dp(53)`
+inside the block (a tap a few pixels above it is swallowed by the cell with an empty logcat - that
+is what made post #9 look like a dead row), and the paperclip's long press can need a force-stop
+after many rounds (a wedged process, not the gesture).
 
 ## 18. The checklist markup is the site's, not GitHub's (`de01924`) — passed (2026-09-26, `emulator-5554`)
 
