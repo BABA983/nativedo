@@ -5,6 +5,7 @@ import org.jsoup.nodes.Entities
 import org.jsoup.nodes.Element
 import org.jsoup.nodes.Node
 import org.jsoup.nodes.TextNode
+import io.github.baba983.nativedo.core.html.resolvePostImageUrl
 import org.telegram.tgnet.tl.TL_iv
 import kotlin.math.roundToInt
 
@@ -128,6 +129,12 @@ internal fun CookedInline.toLayoutTree(baseUrl: String): TL_iv.RichText {
         node == null -> null
         node is TL_iv.textPlain -> splitLeaf(node.text.orEmpty(), runs)
         node is TL_iv.textConcat -> node.apply { texts = ArrayList(texts.mapNotNull(::rewrite)) }
+        node is TL_iv.textUrl -> node.apply {
+            // Resolved against the post's base, the way the block path resolves a link
+            // (`applyLinkSpan`), so a relative href reaches the app as a URL it can open.
+            url = resolvePostImageUrl(baseUrl, url)
+            text = rewrite(text)
+        }
         node.text != null -> node.apply { text = rewrite(node.text) }
         else -> node
     }

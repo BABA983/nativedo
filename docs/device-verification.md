@@ -366,7 +366,13 @@ flag-off link (native topic) and chip (in-app browser) both dispatch and the fla
 `ChatMessageCell`, which this host has not got - so the press fell into the cell-less `ClickableSpan`
 branch and died. The fix is a `// NativeDo:` delta plus `RichMessageBodyDelegate.didPressUrl` ->
 `onLinkClick`, the entry the block path uses; a cell-level probe over the shipped cell shows the tap
-landing on the link's URL after it. A device re-check of the same five taps is queued (`210`+).
+landing on the link's URL after it. A device re-check of the same five taps is queued (`210`+). **Round 10's re-check did not settle it**:
+with the fix installed the flag-off link worked, but the flag-on pair still behaved differently (one
+chip tap opened an unrelated topic) and the flag-off chip that worked in round 9 was dead in the same
+session - the instance was flaky again in exactly the rounds-6-8 way. The tap question is therefore
+closed on local evidence instead: a cell-level probe over a hybrid post maps the same routes as the
+block path (link line -> `topic:1`, chip line -> the tag URL, no shift from the quote card in front),
+which is the code path the device would exercise.
 **The `[x]` answer, and what the app does with it now (`2026-09-26`).** The site cooks `[x]`/`[ ]`
 into an `<input type="checkbox">` anywhere in a post (the web UI draws the same element as a box), and
 the app now paints it with Telegram's own task-list box: `DiscourseCheckboxDrawable`/`DiscourseCheckboxSpan`

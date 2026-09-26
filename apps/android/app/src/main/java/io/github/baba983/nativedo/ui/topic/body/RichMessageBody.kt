@@ -12,7 +12,9 @@ import android.text.style.URLSpan
 import android.text.StaticLayout
 import android.view.MotionEvent
 import io.github.baba983.nativedo.core.html.CookedPostBlock
+import io.github.baba983.nativedo.core.ui.PostBodyInternalDestination
 import io.github.baba983.nativedo.core.ui.PostBodySegment
+import io.github.baba983.nativedo.core.ui.parseInternalLinkDestination
 import io.github.baba983.nativedo.core.ui.PostRichMessageBuilder
 import io.github.baba983.nativedo.core.ui.splitPostBodySegments
 import org.telegram.messenger.AndroidUtilities
@@ -237,7 +239,13 @@ private inner class RichMessageBodyDelegate : ChatMessageCell.ChatMessageCellDel
     override fun didPressUrl(cell: ChatMessageCell?, url: CharacterStyle?, longPress: Boolean) {
         val href = (url as? URLSpan)?.url ?: return
         if (href.isBlank()) return
-        context.delegate.onLinkClick(href)
+        // The same routing the block path's spans take (`applyLinkSpan`): a topic opens in this app, a
+        // mention on the profile, everything else (a hashtag, an external link) through the link entry.
+        when (val destination = parseInternalLinkDestination(baseUrl = context.baseUrl, rawUrl = href)) {
+            is PostBodyInternalDestination.Topic -> context.delegate.onTopicClick(destination.topicId)
+            is PostBodyInternalDestination.User -> context.delegate.onUserClick(destination.username)
+            else -> context.delegate.onLinkClick(href)
+        }
     }
 
     override fun openArticlePhoto(cell: ChatMessageCell?, block: TL_iv.PageBlock?): Boolean {

@@ -448,7 +448,13 @@ Sequence, if chat is scheduled:
    `RichMessageBodyDelegate.didPressUrl` answers it with `context.delegate.onLinkClick(href)` - the
    entry the block path's links and chips take. Verified by a cell-level probe that taps a link in
    the shipped cell: before the delta the delegate never saw the press, after it the tap lands on the
-   link's URL. The chip travels as a link run, so its tap is this path too.
+   link's URL. The chip travels as a link run, so its tap is this path too. `didPressUrl` routes the
+   press the way the block path's spans do (`applyLinkSpan`): a topic opens in this app, a mention on
+   the profile, a hashtag or an external link through the link entry; and `toLayoutTree` resolves a
+   relative `href` against the post's base first, so a link reaches the app as a URL it can open. A
+   cell-level probe over a hybrid post (a quote card in front of the run) maps the same routes as the
+   block path: a press on the link's line gives `topic:1`, a press on the chip's line gives the tag
+   URL, with no shift from the block in front.
    **The segment seam keeps its gap now (`2026-09-26`).** The renderer trims a run's first top and
    last bottom edge (`layout()`), which is right at the post's own ends but wrong where a run meets a
    block of ours: the poll or callout below it sat flush against the paragraph above. `RichMessageBody`
