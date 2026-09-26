@@ -410,6 +410,18 @@ Sequence, if chat is scheduled:
    returned a list of blocks, so `TopicPostCell` (forced_exact) is untouched. 5 segment tests
    (order, grouping, container fallback, no block lost) plus the `richMessageHybridBody` cell
    snapshot; the flag-off and single-run goldens did not move.
+   **Documents: the plan (`2026-09-26`).** One design fork had to be settled first, and it is why this
+   needs a delta rather than a mapping: Telegram's `pageBlockDocument` is a *downloadable file* (a
+   `Document` with a file id), so the pin's `RichDocumentBlock` has no URL and its press goes to
+   `openForView` on a local file. A Discourse attachment is a *URL*. So the document takes the same
+   shape the image blocks already took: carry the URL on the block and teach the block the URL case.
+   Concretely, when this is implemented: `PostRichMessage` recognises a paragraph whose content is
+   exactly the attachment anchor (plus the optional ` (12.3 KB)` sibling text) and emits
+   `pageBlockDocument` with a synthetic `TLRPC.Document` (file name from the anchor text, size parsed
+   from that text, mime from the extension) plus the URL; `RichMessageLayout`/`RichDocumentBlock` get
+   the matching `// NativeDo:` URL delta (the row draws from the URL, the press answers through the
+   same browser entry the block path uses); gates are a golden per theme plus a device tap. An
+   attachment *inline* in a sentence stays a link, which is also what the site does with it.
    **Documents: the shape is known, the block is next (`2026-09-26`).** Discourse cooks an attached
    file as one inline anchor, `class="attachment"` on it and nothing else around it:
    `<p><a class="attachment" href="/uploads/short-url/<id>.pdf">test_file.pdf</a> (12.3 KB)</p>`
@@ -437,6 +449,15 @@ Sequence, if chat is scheduled:
    block path and the registry's emoji resolver in the rich one; a list item's own input is still the
    block parser's `checked` (it never reaches the inline cooker). The retained golden grew the case:
    `TopicPostCellScreenshotTest.richMessageInlineCases` now carries a done and an open box inline.
+   **The two 12.6->pin shape items, first step (`2026-09-26`).** Both remaining wire-outs in
+   `RichMessageLayout` are shape mismatches with a file this tree pins to 12.6: the math span's copy
+   substitution (`ReplaceCopyTextSpannable`, whose nested class lives in the older pinned file) and
+   the `TextLayoutBlock` interface (this tree's shape declares `getPrefix()`, which the two wire-outs
+   work around). Neither is implementable as a mapping - each one is "take the pin's shape" - so the
+   first step for either is a diff of the pinned file against the pin's, recorded here before any
+   edit, and the work only starts when that diff is small enough to be a reviewable change (the
+   selection helper is the precedent: it was adopted whole, in one file). Until then the wire-outs are
+   inert by design and should stay so.
    **The Discourse-only inline constructs landed (`2026-09-25`).** The four shapes the model has no
    upstream case for now ride the runs the block path already emits, so a flag-on post reads like the
    flag-off cell: a cooked hashtag anchor is a registered chip
