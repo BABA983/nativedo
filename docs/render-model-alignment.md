@@ -456,15 +456,36 @@ Sequence, if chat is scheduled:
    bullet), and the writer emits the markers verbatim (`parse -> blocksToMarkdown` on a checklist
    comes back byte-identical), which is what makes the site cook a task list out of what the sheet
    sends.
-   **A cooked inline checkbox draws now (`2026-09-26`).** The site cooks `[x]`/`[ ]` into an
-   `<input type="checkbox">` *anywhere* in a post (the web UI draws the same element as a box - a
-   web-authored post renders `Inline ☑ control`), and the app used to drop the element, leaving the
-   double space behind. It is now a token like the other constructs, painted by Telegram's own
-   task-list box (`RichMessageLayout.RichBlock.setCheckbox`'s 20dp box, 5dp corners, the accent fill
-   and `checkboxCheck` glyph) through `DiscourseCheckboxDrawable`/`DiscourseCheckboxSpan` in the
-   block path and the registry's emoji resolver in the rich one; a list item's own input is still the
-   block parser's `checked` (it never reaches the inline cooker). The retained golden grew the case:
-   `TopicPostCellScreenshotTest.richMessageInlineCases` now carries a done and an open box inline.
+   **A cooked inline checkbox draws now (`2026-09-26`).** A cooked `[x]`/`[ ]` is a token like the
+   other constructs, painted by Telegram's own task-list box (`RichMessageLayout.RichBlock.setCheckbox`'s
+   20dp box, 5dp corners, the accent fill and `checkboxCheck` glyph) through
+   `DiscourseCheckboxDrawable`/`DiscourseCheckboxSpan` in the block path and the registry's emoji
+   resolver in the rich one. The retained golden grew the case:
+   `TopicPostCellScreenshotTest.richMessageInlineCases` carries a done and an open box inline.
+   **The element was wrong: it is `span.chcklst-box`, not an `<input>` (`2026-09-26`, `de01924`).**
+   The first cut of the entry above keyed the parser on `<input type="checkbox">` inside
+   `li.task-list-item`, and the device pass showed why that could never fire: a web-authored post
+   rendered `Inline  control` (the double space where the box should be) and plain bullets, with the
+   code in the build. The shape came from GitHub-flavoured markdown, not from Discourse. Discourse's
+   own source settles it: `plugins/checklist` - bundled into core in Aug 2023, gated by the
+   `checklist_enabled` site setting, default on - cooks the marker into an *empty*
+   `<span class="chcklst-box …">` whose state is the `checked` (togglable) or `checked permanent`
+   (not togglable) class, with `data-chk-src="line:nth"` as its toggle locator; the `li`/`p` carries
+   no class at all, because `li.has-checkbox` (bullet removal), `role=checkbox`, `aria-checked` and
+   `tabindex` are all added *client-side* by the plugin's initializer. The plugin's spec pins the
+   inline case verbatim: `[ ] before `[x]` [x] after` cooks to
+   `<p><span class="chcklst-box fa fa-square-o" data-chk-src="0:0"></span> before <code>[x]</code> <span class="chcklst-box checked fa fa-square-check-o" data-chk-src="0:2"></span> after</p>`,
+   and it walks every inline token at nesting level 0, so a paragraph, a list item, a table cell and
+   a blockquote all get boxes - no list is required. A raw `<input>` in a post is not an option:
+   Discourse's core allowlister has no `input` tag, so it is sanitized away. So both readers now key
+   on `span.chcklst-box` and the state classes - never on the `fa-*` icon classes, which drifted
+   across Font Awesome versions (`fa-check-square-o` -> `fa-square-check-o` -> `fa-square-check`) -
+   and the list parser takes a box as the item's marker only when it *leads* the item (or its first
+   paragraph), which is the position the site's own client-side rule removes the bullet in; a box
+   later in an item is content and stays for the inline cooker. The golden fixture carries the site's
+   real markup, so `richMessageInlineCases` shows what the site shows: boxes inline, checklist rows
+   with no bullet, and a mid-item box left inline. Gates: that golden per theme, and the device
+   re-read - `docs/device-verification.md` section 18.
    **The two 12.6->pin shape items, first step (`2026-09-26`).** Both remaining wire-outs in
    `RichMessageLayout` are shape mismatches with a file this tree pins to 12.6: the math span's copy
    substitution (`ReplaceCopyTextSpannable`, whose nested class lives in the older pinned file) and

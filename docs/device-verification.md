@@ -755,3 +755,28 @@ To check, on a post that has an attachment and with the rich body flag on:
    *not* open the link when the hold fired), with the usual long-press haptic. The document
    options sheet must never appear (`canShowOptions()` is document-guarded, so a URL row has no
    menu).
+
+## 18. The checklist markup is the site's, not GitHub's (`de01924`) — new
+
+What changed: the parser no longer looks for `<input type="checkbox">` in `li.task-list-item` (a
+shape Discourse never emits - its core allowlister strips a raw `<input>`, and the checklist is a
+bundled plugin). It reads the plugin's real output: an empty `span.chcklst-box`, with `checked` /
+`checked permanent` as the state and `data-chk-src` as the toggle locator, in a paragraph, a list
+item, a table cell or a blockquote alike; a box only counts as a list item's marker when it leads the
+item or its first paragraph (the position the site's own client-side `li.has-checkbox` rule removes
+the bullet in).
+
+This is the item the device pass kept failing to settle. Rounds 9-10 recorded, on post #7 of the
+private test bed (2953635), `Inline  control` - the double space where the box should be - and plain
+bullets, with the checkbox code in the build; the cooked HTML was never the problem and neither was
+the app's rendering, only the element it looked for.
+
+To check, on a post with checklists (post #7 of 2953635 is the sample) and with the rich body flag on:
+1. An inline `[x]`/`[ ]` draws as a box in the sentence - filled for checked, empty for open - with
+   no leftover double space.
+2. A list item that *leads* with a box draws as a checklist row: a box and the text, no bullet.
+3. A box later in an item stays inline next to the bullet (the site's own client-side rule only
+   removes the bullet for a leading box).
+4. Both flag states agree; the block path and the rich path read the same parser.
+5. Nothing here toggles: the box is display-only (`data-chk-src` is the site's toggle locator, and
+   this client has no toggle call yet) - tapping it must not change the post.
