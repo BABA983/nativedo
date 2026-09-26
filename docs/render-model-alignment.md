@@ -463,6 +463,19 @@ Sequence, if chat is scheduled:
    cosmetic, taken from the upload's `human_filesize`. A post this client sends therefore cooks back
    into the very row this mapping draws; `contracts/discourse/endpoints.md` records the form, and the
    device pass is `docs/device-verification.md` section 12 step 6.
+   **The row is the app's shape in both bodies (`74b1e28`, 2026-09-26).** The device pass found the
+   two flag states drawing *different* shapes for the same attachment (the rich body a Telegram file
+   row, the block path the site's link line), which is the one thing the flag is not allowed to
+   change. The owner chose the row, so the detection moved to where the cooking is: the parser emits
+   `CookedPostBlock.Attachment` for a paragraph that is exactly one `a.attachment` (plus the site's
+   optional ` (size)` text, href resolved against the base), the rich mapping turns it into
+   `pageBlockDocument` as before - the rich golden did not move, so that half is
+   behaviour-preserving - and the block path builds the new `AttachmentBlock`, which mirrors
+   `RichDocumentBlock`'s URL-case geometry and colours (dp(42) glyph in `chat_inLoader`, the name at
+   fontSize-1 bold in `chat_inFileNameText`, the size at fontSize-3 in `chat_inTimeText`, dp(60)
+   tall) and draws the glyph from Telegram's `MediaActionDrawable`. It opens the URL on a press,
+   copies it on a hold, tracks nothing through `FileLoader`, and contributes no selection block (the
+   row's text is chrome). `TopicPostCellScreenshotTest.attachment` is the block-path golden.
    **The checklist authoring loop is pinned (`2026-09-26`).** The editor's own list menu creates the
    shape (`ArticleListTodo` -> `turnIntoList(row, 3)`), `- [x]`/`- [ ]` load as its checkbox rows
    (`RichEditorSheetScreenshotTest.theEditorShowsAChecklist`, a checked and an empty box with no
