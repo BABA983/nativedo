@@ -241,9 +241,11 @@ pass is what settles the parts a snapshot cannot:
   (`DiscourseInlineImages.registerChip`) and draws through the block path's own
   `DiscourseTagChipSpan` drawable, inside upstream's `textCustomEmoji` run. On device: the chip must
   show the tag's pill with its colour (not the tag name as plain text), keep its size when the theme
-  flips, and **tapping it must open that tag's page** (`didPressAnimatedEmoji` ->
-  `onLinkClick` with the chip's URL) - a tap that does nothing, or one that opens the wrong tag, is
-  the bug to look for, since the chip's URL is stored out of band by id.
+  flips, and **tapping it must open that tag's page** - a tap that does nothing, or one that opens the
+  wrong tag, is the bug to look for. The first device pass found exactly that dead tap (the press went
+  to the renderer's emoji branch, which needs a `ChatMessageCell` this host has not got); the fix is
+  the `textUrl` run around the chip's drawing run (`docs/render-model-alignment.md`), and a device
+  re-check is queued.
 - **`[size=150]`**: the cooker's size range becomes a `RelativeSizeSpan` on the run
   (`RichMessageLayout.formatText`'s `applyDiscourseSizeMarkers`). On device: the sized text must be
   visibly larger/smaller and *stay* so through selection and copy (the markers must not leak into
@@ -311,6 +313,25 @@ produced no selection at all, and the pick then inserted a second emoji at the c
 (`ALPHAB :grinning_face: :grinning_face: ETA`) - the correct behaviour for a caret, so the replace
 branch is still unexercised. Leftover, account-only: the reply composer for the Premium giveaway topic
 keeps the private draft `ALPHAB :grinning_face: ETA`.
+
+**Round 4 - the private test bed worked, and it found a real bug.** The owner created a self-PM
+(topic 2953635); anonymity confirms it stays invisible (`/t/topic/2953635.json` -> 404 to a
+logged-out request, while the public control answers 200). In the app the PM renders as a normal topic
+- title, author headers, quote card, composer (`110`) - the first device confirmation of that. On a
+reply posted into it from the app's own composer: `[size=150]` draws visibly larger, `#linux` `#api`
+`#vps` draw as pills (`#dev` stays text - no such tag exists), `:grinning_face:` draws as an image, and
+no `__nd_inline_size_` marker leaks - all in both switch states. Two findings:
+
+- **The chip was a dead tap** (three taps, three positions, nothing moved, while a control tap on the
+  composer bar focused it - `122`/`123`). Cause: the renderer dispatches an emoji press only when it
+  has a `ChatMessageCell`, and this host is a plain view, so `didPressAnimatedEmoji` was never called.
+  Fixed after the pass by carrying the chip as a `textUrl` run around its drawing run - the anchor the
+  markup actually is - which routes the tap through upstream's link span and its cell-less fallback
+  into `Browser.openUrl` (`docs/render-model-alignment.md`). A device re-check is queued.
+- **The task list cannot be authored from this app**: a reply typed as `- [x] task alpha` cooks to a
+  plain bullet, and even `inline [x] control` loses the `[x]` (`Inline  control`) - the composer eats
+  the marker before the server sees it, so that check needs content authored on the web (the editor's
+  list-style button offers no checklist either, `121`).
 
 #### A private test bed: a personal message to yourself
 

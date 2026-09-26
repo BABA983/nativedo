@@ -83,7 +83,7 @@ internal fun CookedInline.plainText(): String {
  * The tree [cookInlineHtml] returns is fresh, so this rewrites it in place.
  */
 internal fun CookedInline.toLayoutTree(baseUrl: String): TL_iv.RichText {
-    val runs = HashMap<String, TL_iv.textCustomEmoji>()
+    val runs = HashMap<String, TL_iv.RichText>()
     inlineImages.forEach { image ->
         runs[image.token] = customEmojiRun(
             documentId = DiscourseInlineImages.registerImage(image, baseUrl),
@@ -97,10 +97,22 @@ internal fun CookedInline.toLayoutTree(baseUrl: String): TL_iv.RichText {
         )
     }
     inlineHashtagChips.forEach { chip ->
-        runs[chip.token] = customEmojiRun(
-            documentId = DiscourseInlineImages.registerChip(chip, baseUrl),
-            alt = chip.label,
-        )
+        val documentId = DiscourseInlineImages.registerChip(chip, baseUrl)
+        val run = customEmojiRun(documentId = documentId, alt = chip.label)
+        // The chip is an anchor in the cooked markup, so it travels as a URL run around its own
+        // drawing run. Upstream's link span is what makes it tappable: the renderer checks a
+        // clickable before an emoji span, and its cell-less fallback (this host has no
+        // `ChatMessageCell`) calls the span's own `onClick`, which is the in-app browser - the entry
+        // the block path's chip takes too. An id whose URL is unknown stays a plain run.
+        val href = DiscourseInlineImages.hrefFor(documentId)
+        runs[chip.token] = if (href.isNullOrBlank()) {
+            run
+        } else {
+            TL_iv.textUrl().apply {
+                url = href
+                text = run
+            }
+        }
     }
 
     fun rewrite(node: TL_iv.RichText?): TL_iv.RichText? = when {
@@ -123,7 +135,7 @@ private fun customEmojiRun(documentId: Long, alt: String): TL_iv.textCustomEmoji
 /** A leaf whose text carries inline images becomes a concat of plain runs and emoji runs. */
 private fun splitLeaf(
     text: String,
-    runs: Map<String, TL_iv.textCustomEmoji>,
+    runs: Map<String, TL_iv.RichText>,
 ): TL_iv.RichText {
     if (runs.isEmpty() || runs.keys.none(text::contains)) {
         return TL_iv.textPlain().apply { this.text = text }

@@ -10,7 +10,6 @@ import android.text.Layout
 import android.text.StaticLayout
 import android.view.MotionEvent
 import io.github.baba983.nativedo.core.html.CookedPostBlock
-import io.github.baba983.nativedo.core.ui.DiscourseInlineImages
 import io.github.baba983.nativedo.core.ui.PostBodySegment
 import io.github.baba983.nativedo.core.ui.PostRichMessageBuilder
 import io.github.baba983.nativedo.core.ui.splitPostBodySegments
@@ -24,7 +23,6 @@ import org.telegram.tgnet.TLRPC
 import org.telegram.tgnet.tl.TL_iv
 import org.telegram.ui.Cells.ChatMessageCell
 import org.telegram.ui.Cells.TextSelectionHelper
-import org.telegram.ui.Components.AnimatedEmojiSpan
 import org.telegram.ui.PhotoViewer
 import java.io.File
 import java.util.ArrayList
@@ -216,17 +214,6 @@ internal class RichMessageBodyBlock(
  * upstream's entry point, and it reads each block's URL through `photoItemForPageBlock`.
  */
 private inner class RichMessageBodyDelegate : ChatMessageCell.ChatMessageCellDelegate {
-
-    /**
-     * An inline run's tap: a hashtag chip carries its tag URL in the registry, so a press opens it
-     * the way the block path's chip does; an image has no URL and stays inert (the media tap path is
-     * `openArticlePhoto`, upstream's).
-     */
-    override fun didPressAnimatedEmoji(cell: ChatMessageCell?, span: AnimatedEmojiSpan?): Boolean {
-        val href = span?.let { DiscourseInlineImages.hrefFor(it.getDocumentId()) } ?: return false
-        context.delegate.onLinkClick(href)
-        return true
-    }
 
     override fun openArticlePhoto(cell: ChatMessageCell?, block: TL_iv.PageBlock?): Boolean {
         val rich = layout ?: return false

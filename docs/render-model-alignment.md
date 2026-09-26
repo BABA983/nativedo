@@ -414,8 +414,14 @@ Sequence, if chat is scheduled:
    upstream case for now ride the runs the block path already emits, so a flag-on post reads like the
    flag-off cell: a cooked hashtag anchor is a registered chip
    (`DiscourseInlineImages.Spec.Chip` + `registerChip`, drawn by the block path's own
-   `DiscourseTagChipSpan`, rebuilt on a theme change, and answering its own tap by the tag URL the
-   registry kept out of band), a `[size=150]` range is a `RelativeSizeSpan` applied inside
+   `DiscourseTagChipSpan`, rebuilt on a theme change) travelling as **a `textUrl` run around the
+   chip's own drawing run** - the anchor is what the source markup is, and upstream's link span is
+   what makes it tappable (the renderer checks a clickable before an emoji span, and its cell-less
+   fallback calls the span's own `onClick` -> `Browser.openUrl`, the in-app browser, which is the
+   entry the block path's chip takes too). The device pass is why: routing the tap through the
+   renderer's emoji branch needed a `ChatMessageCell` this host does not have
+   (`RichMessageBodyBlock` is a plain view), so the press was swallowed - `didPressAnimatedEmoji`
+   is no longer implemented. A `[size=150]` range is a `RelativeSizeSpan` applied inside
    `RichMessageLayout.formatText` (a new `// NativeDo:` delta, `applyDiscourseSizeMarkers`, which
    deletes the cooker's markers and maps the run's spans around them, nesting-safe), a task-list item
    carries `PageListItem.checkbox`/`checked` straight from the parser (upstream draws its own boxes),
