@@ -107,6 +107,23 @@ internal class TopicPostCellScreenshotTest {
     }
 
     /**
+     * The nested shapes the rich run has to lay out on its own: a three-level bullet list, an ordered
+     * list with a nested one, and a toggle holding a list. Quotes are ours in this body (they stay in
+     * the block tree), so the nesting here is what upstream's renderer owns.
+     */
+    @Test
+    fun richMessageNestingRichBody() {
+        RichMessageBody.enabled = true
+        try {
+            paparazziRule.snapshot { context ->
+                topicPostCell(context, RICH_MESSAGE_NESTING_HTML)
+            }
+        } finally {
+            RichMessageBody.enabled = false
+        }
+    }
+
+    /**
      * The inline constructs upstream's model has a run for: a custom emoji, a twemoji image, a site
      * icon, a hashtag chip, a `[size]` range, a cooked inline checkbox, plus a task list (upstream's
      * checkbox rows). Kept in its own post so the golden stays inside the snapshot's frame.
@@ -210,6 +227,37 @@ internal class TopicPostCellScreenshotTest {
             </ul>
             <blockquote><p>Quoted paragraph.</p><blockquote><p>Nested quote.</p></blockquote></blockquote>
             <p>Last paragraph.</p>
+        """.trimIndent()
+
+        /** Deep and mixed nesting for [richMessageNestingRichBody]. */
+        val RICH_MESSAGE_NESTING_HTML = """
+            <ul>
+              <li>level one
+                <ul>
+                  <li>level two
+                    <ul>
+                      <li>level three</li>
+                    </ul>
+                  </li>
+                  <li>level two again</li>
+                </ul>
+              </li>
+            </ul>
+            <ol>
+              <li>ordered one
+                <ol>
+                  <li>ordered nested</li>
+                </ol>
+              </li>
+            </ol>
+            <details>
+              <summary>A toggle with a list</summary>
+              <ul>
+                <li>inside the toggle</li>
+                <li>and another</li>
+              </ul>
+            </details>
+            <p>After the toggle.</p>
         """.trimIndent()
 
         val RICH_MESSAGE_INLINE_HTML = """

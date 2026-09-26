@@ -451,7 +451,15 @@ Sequence, if chat is scheduled:
    heading is larger, its list rows are ~7px looser, and its nested list indents deeper, while the
    paragraph-to-paragraph gap is within ~4px. Which of the two a post body should look like is a
    product call (upstream's constants live inside `emitBlock`), and the pair is the artifact to make
-   it with.
+   it with. **Decision (2026-09-26, owner): keep upstream's article rhythm (B).** The rich body is not
+   re-styled to the block path's tighter rhythm; the pair stays a reference for spotting *defects*
+   (missing gaps, clipped nesting), not a gate to make the two pixel-equal. What that leaves is
+   defect-fixing - the run/block seam below, and anything a device pass shows.
+   `TopicPostCellScreenshotTest.richMessageNestingRichBody` pins the shapes the run owns on its own:
+   a three-level bullet list, an ordered list with a nested one, and a toggle holding a list (quotes
+   stay in the block tree, so their nesting is the block path's). One golden-font caveat: the pin
+   varies the bullet glyph per level (`"•◦▪".charAt((level - 1) % 3)`), and layoutlib's font does not
+   show the variation - a device check is what would settle that, not the snapshot.
    **The vertical rhythm, measured** (this is upstream's model, not ours to invent): paragraphs
    `setContentPadding(previousSiblingParagraph ? 0 : dp(5), dp(4.66f))`, headings `dp(10)/dp(6)`,
    media `padding.top + image + padding.bottom` with the caller's zero rect, captions the same, and
