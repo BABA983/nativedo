@@ -2199,9 +2199,9 @@ public class RichMessageLayout {
             final int end = out.length();
 
             out.setSpan(new TextPaintImageReceiverSpan(null, textLatex.bitmap, textLatex.w, textLatex.h, Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourcesProvider), textLatex.depth), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            // NativeDo: the pin attaches TextSelectionHelper.ReplaceCopyTextSpannable(source) here so a
-            // copied math span yields its LaTeX. That nested class lives in a file this tree pins to 12.6
-            // (reference + forced_exact), so the copy-substitution wire-out stays here until S5.
+            if (textLatex.source != null && !textLatex.source.isEmpty()) {
+                out.setSpan(new TextSelectionHelper.ReplaceCopyTextSpannable(textLatex.source), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
         } else if (text instanceof TL_iv.textCustomEmoji) {
             final TL_iv.textCustomEmoji customEmoji = (TL_iv.textCustomEmoji) text;
             final String alt = TextUtils.isEmpty(customEmoji.alt) ? "😀" : customEmoji.alt;
@@ -3280,12 +3280,6 @@ public class RichMessageLayout {
             return layout;
         }
 
-        // NativeDo: our TextSelectionHelper.TextLayoutBlock (12.6 shape) declares getPrefix; upstream's
-        // interface defaults it to null.
-        @Override
-        public CharSequence getPrefix() {
-            return null;
-        }
         @Override
         public int getX() {
             return blockX + x;
@@ -9506,10 +9500,25 @@ public class RichMessageLayout {
         }
 
         protected static CharSequence withReplacements(CharSequence cs) {
-            // NativeDo: the pin walks TextSelectionHelper.ReplaceCopyTextSpannable spans here (math source
-            // substitution). That class lives in the reference-pinned, forced_exact selection helper, and
-            // the renderer no longer sets such a span, so there is nothing to replace.
-            return cs;
+            if (!(cs instanceof Spanned)) {
+                return cs;
+            }
+            final Spanned spanned = (Spanned) cs;
+            final TextSelectionHelper.ReplaceCopyTextSpannable[] spans = spanned.getSpans(0, spanned.length(), TextSelectionHelper.ReplaceCopyTextSpannable.class);
+            if (spans == null || spans.length == 0) {
+                return cs;
+            }
+            final SpannableStringBuilder ssb = new SpannableStringBuilder(cs);
+            Arrays.sort(spans, (a, b) -> spanned.getSpanStart(b) - spanned.getSpanStart(a));
+            for (TextSelectionHelper.ReplaceCopyTextSpannable span : spans) {
+                final int start = spanned.getSpanStart(span);
+                final int end = spanned.getSpanEnd(span);
+                if (start < 0 || end < 0 || start > end || end > ssb.length()) {
+                    continue;
+                }
+                ssb.replace(start, end, span.replacement == null ? "" : span.replacement);
+            }
+            return ssb;
         }
 
         public final int getAccessibilityElementCount() {
@@ -10251,12 +10260,8 @@ public class RichMessageLayout {
             public int getRow() { return inner.getRow(); }
             @Override
             public CharSequence getPrefix() { return inner.getPrefix(); }
-            public CharSequence getText() {
-                // NativeDo: our 12.6 TextLayoutBlock has no getText(); upstream's interface defaults it to
-                // the layout's own text, which is what this returns.
-                final Layout layout = inner.getLayout();
-                return layout == null ? null : layout.getText();
-            }
+            @Override
+            public CharSequence getText() { return inner.getText(); }
         }
     }
 }
