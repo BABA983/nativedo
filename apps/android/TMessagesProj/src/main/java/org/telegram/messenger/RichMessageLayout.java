@@ -7889,11 +7889,14 @@ public class RichMessageLayout {
         private final TextPaint sizePaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
         private StaticLayout titleLayout;
         private StaticLayout sizeLayout;
-        private final int buttonX = dp(16);
         private final int previewX;
         private final int buttonY = dp(9);
         private final int buttonSize = dp(42);
         private final int buttonTextSpacing = dp(14);
+        // NativeDo: upstream insets the row by dp(16) inside a bubble; this host's block padding is
+        // already the post body's text column, so the glyph starts there instead - the block path's
+        // AttachmentBlock does the same, and the two bodies line the row up with their paragraphs.
+        private final int buttonX = 0;
         private final RectF optionsHit = new RectF();
         private final boolean hasPreview;
         private int buttonState;

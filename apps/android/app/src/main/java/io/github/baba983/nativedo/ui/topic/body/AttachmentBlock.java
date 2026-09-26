@@ -37,7 +37,8 @@ final class AttachmentBlock implements PostBodyBlock {
     private static final float ROW_HEIGHT_DP = 60f;
     private static final float TOP_GAP_DP = 8f;
     private static final float GLYPH_SIZE_DP = 42f;
-    private static final float GLYPH_X_DP = 16f;
+    /** The glyph starts at the body's text column, so the row lines up with the paragraphs. */
+    private static final float GLYPH_X_DP = 18f;
     private static final float GLYPH_Y_DP = 9f;
     private static final float TEXT_SPACING_DP = 14f;
     private static final float TITLE_TOP_DP = 11f;
