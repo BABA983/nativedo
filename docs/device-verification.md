@@ -853,7 +853,7 @@ in both flag states:
    the renderer.
 5. A formula that fails to parse must not leave a hole in the line: the fallback is the source text.
 
-## 20. Display math renders too (`739300a`) — new
+## 20. Display math renders too (`739300a`) — passed (2026-09-26, `emulator-5554`)
 
 What changed: a cooked `div.math` (the site's `$$x^2$$` form, bare TeX between newlines) is no
 longer read as its text. The parser emits `CookedPostBlock.Math`, the rich body maps it to the pin's
@@ -861,6 +861,18 @@ longer read as its text. The parser emits `CookedPostBlock.Math`, the rich body 
 (fontSize+4), same dp(8) padding, centred in the body, tinted with the body's text colour, and the
 TeX as text when the renderer cannot parse it. `RichMathBlock`'s centring moved from the layout's
 minimum width to the viewport so the two bodies agree.
+
+Verdict (2026-09-26, `emulator-5554`, app from `739300a`): `$$x^2 + y^2$$` posted into the private
+test bed from the app's composer became post #11, whose cell description reads `11F，example_user。x^2 + y^2`
+with no `$` left - the `div.math` reading is right for the multi-line block, no plain-text fallback.
+The formula's ink is 57px tall at x 461..616 in **both** states (viewport centre 540, formula centre
+538.5) with ~58px and ~63px of space above and below, and the block is 319px tall in both; for scale,
+post #8's *inline* `$x^2+y^2$` is 44px of ink at x 57..180. A tap on the formula's centre produced
+nothing at all - empty logcat, no browser, and a before/after pixel diff whose only band is the
+app-bar title marquee - so it is inert as intended (a bitmap: no link, no selection, no scroll).
+Checks 1, 2 and 4 pass; the wide-formula scaling (3) and the font-size re-render (5) rest on the code
+path rather than this pass. The macOS goldens agree with the Linux ones to the pixel (the formula at
+x 394..548, centre 471, in both bodies).
 
 To check, on a post with display math (`$$x^2 + y^2$$` on its own line, posted into the private test
 bed) in both flag states:
