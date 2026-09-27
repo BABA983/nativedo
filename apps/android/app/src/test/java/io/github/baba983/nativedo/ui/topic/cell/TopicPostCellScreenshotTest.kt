@@ -334,6 +334,8 @@ internal class TopicPostCellScreenshotTest {
             plus a key <svg class="fa d-icon svg-icon" aria-label="keyboard"><use href="#far-keyboard"></use></svg> in the line.
             A done box <span class="chcklst-box checked fa fa-square-check-o" data-chk-src="0:0"></span> and an open one <span class="chcklst-box fa fa-square-o" data-chk-src="0:1"></span> inline.
             And math: <span class="math">x^2 + y^2</span> in the sentence.</p>
+            <p>A hard break<br>
+             and a source line that starts with a space.</p>
             <p>A <span style="font-size: 150%">bigger run</span> and a
             <a class="hashtag-cooked" href="/tag/dev" data-slug="dev"><svg class="fa d-icon svg-icon" aria-label="dev"><use href="#far-tag"></use></svg><span>dev</span></a> chip.</p>
             <ul>

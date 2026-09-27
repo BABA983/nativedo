@@ -237,6 +237,8 @@ private fun appendText(node: TL_iv.RichText, out: StringBuilder) {
     }
 }
 
+private val WHITESPACE_RUN = Regex("[ \\t\\n\\r]+")
+
 private fun plain(text: String): TL_iv.RichText = TL_iv.textPlain().apply { this.text = text }
 
 private fun concat(nodes: List<TL_iv.RichText>): TL_iv.RichText = when (nodes.size) {
@@ -253,10 +255,21 @@ private class InlineCooker {
     val inlineSizes = mutableListOf<InlineSizeSpec>()
     val inlineMath = mutableListOf<InlineMathSpec>()
 
-    fun nodes(nodes: List<Node>): TL_iv.RichText = concat(nodes.flatMap(::node))
+    fun nodes(nodes: List<Node>): TL_iv.RichText = concat(nodes.flatMapIndexed { index, node ->
+        // A `<br>` already ended the line, so the whitespace that follows it is not rendered at all -
+        // which is why a source line starting with a space does not indent in a browser, and must not
+        // here either (a device pass on a post written with hard breaks showed exactly that indent).
+        val afterBreak = index > 0 && (nodes[index - 1] as? Element)?.normalName() == "br"
+        node(node, dropLeadingWhitespace = afterBreak)
+    })
 
-    private fun node(node: Node): List<TL_iv.RichText> = when (node) {
-        is TextNode -> node.text().takeIf { it.isNotEmpty() }?.let { listOf(plain(it)) }.orEmpty()
+    private fun node(node: Node, dropLeadingWhitespace: Boolean): List<TL_iv.RichText> = when (node) {
+        is TextNode -> {
+            // Cooked HTML is HTML: a run of spaces, tabs and newlines is one space.
+            val text = node.text().replace(WHITESPACE_RUN, " ")
+            val cooked = if (dropLeadingWhitespace) text.trimStart(' ') else text
+            cooked.takeIf { it.isNotEmpty() }?.let { listOf(plain(it)) }.orEmpty()
+        }
         is Element -> element(node)
         else -> emptyList()
     }

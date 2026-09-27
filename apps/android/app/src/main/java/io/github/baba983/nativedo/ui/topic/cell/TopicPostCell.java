@@ -649,7 +649,16 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
         super.dispatchDraw(canvas);
         drawSearchHighlight(canvas);
         if (textSelectionHelper != null) {
-            textSelectionHelper.draw(canvas, this, 0);
+            // The helper draws one *child* per call - it matches the selection against
+            // startViewChildPosition/endViewChildPosition - so every text layout block this cell owns
+            // has to be offered. Calling it with 0 alone drew the highlight only when the selection
+            // happened to land in the first block: a device pass selecting text in a later paragraph
+            // showed the handles but no tint at all.
+            final ArrayList<TextSelectionHelper.TextLayoutBlock> selectionBlocks = new ArrayList<>();
+            fillTextLayoutBlocks(selectionBlocks);
+            for (int i = 0; i < selectionBlocks.size(); i++) {
+                textSelectionHelper.draw(canvas, this, i);
+            }
         }
     }
 
