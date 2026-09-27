@@ -1052,3 +1052,31 @@ screens landed on 节目 5/6); its code block is in both.
 
 **Still not reached:** 很多回复 #1993635 and 1779614 #1 (the 15 KB post), plus the OFF capture of that
 expanded details widget. They are queued as the sweep's tail.
+
+### Third pass, the tail (2026-09-27, same emulator) — the sweep reads as finished
+
+**很多回复 #1993635 — clean.** Read at the topic's end (posts #683-688): the descriptions overlap
+exactly between the states (684F 卋罖 …, 685F http …, 688F Jasonlin …), plain text, no construct at risk.
+
+**1779614 #1 — clean, four screens per state.** The headings (3s内报403…, 基础要点, 什么花都可以改出来…,
+必须要用 Sonnet/Opus 4+…), the quote card, the related-topics list, the Claude Code image, the
+`~/.claude.json` and `~/.claude/settings.json` code blocks with their grey panels and monospace text,
+the ✓ blocks, the `DISABLE_*`/`HTTP_PROXY`/`CLAUDE_*` lists and the `settings.anyrouter.json` block all
+draw in both bodies; nothing clipped, overlapping or missing an image or caption in either. The BBCode
+colour/size ranges are dropped in both bodies, as recorded above.
+
+**The expanded details widget — same widget in both bodies.** The OFF capture has it at y≈1120..1180
+and pairs with the ON one: both draw `⌄ 这是HTML5原生的details折叠标题` with the same chevron and text,
+the OFF title at x≈130 and the ON at x≈190 — indent plus rhythm, i.e. the accepted set.
+
+**The sweep's verdict:** across rounds 22-24, every targeted post of all 13 topics in the 渲染测试帖 list
+read the same in both bodies apart from the four accepted difference classes; no construct is missing,
+clipped, overlapping or mis-coloured, and no image or caption draws in one body and not the other. The
+two observations the pass raised are the width model rather than defects - the rich body scales an
+image to the column (~10% smaller in 2503776, whole frame, nothing cropped) and its code block is
+full-column wide (2336669, the long line clips identically in both) - the same class as the table's
+`resolveWidth`. Making media or code pixel-identical across the two bodies would be a product decision,
+not a flag bug.
+
+What is left for the flag is therefore not a rendering defect but the switch itself: the rich body is
+still off by default, and the sweep was the last open item on the flag's roll-out list.
