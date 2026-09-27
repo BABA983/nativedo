@@ -918,3 +918,56 @@ Still open, and a candidate rather than a defect: the place object's `parentView
 where upstream's article viewer (`ArticleViewer.PageBlocksPhotoViewerProvider`) passes the scrolling
 list view and sets `clipTopAddition` to its header height. That affects only how the flying image is
 clipped during the transition; nothing has been changed for it.
+
+## 22. The rich table's border, the hard break, and the selection tint (`7dca3f3`, `782504d`, `de8cea2`) — two pass, one re-opened and fixed (2026-09-27, `emulator-5554`)
+
+Three claims from one device round, each against the number the round before it recorded.
+
+**The rich table's outer border** (`7dca3f3`) — passed. What changed: `RichTableBlock` draws both
+horizontal-scroll `GradientClip` fades unconditionally, and each fade's opaque end sits on the
+table's own edge (they are `DST_OUT`, so they erase). Telegram's bubble padding keeps most of that
+overlap off the table; this host draws the layout at the column's origin with `padLeft = 0`, so the
+left fade erased the left border outright and the right one erased the right border whenever it fell
+inside the 12dp band. Both call sites now fade a side only while that side is actually clipped.
+
+Verdict (2026-09-27, topic 2140307 post #1, `公益站列表`, y=1500 inside a data row): flag ON at rest
+draws the left stroke at x 48..49 (224,224,224) with the internal dividers at x 384..385 and 953..954
+(226) and **no** right stroke, because that side is clipped and the table overflows the column
+(separators stop at x≈1020); dragged fully right, the right stroke appears at x 1030..1031 (224/233),
+the dividers travel with the scroll (x 101..102, 313..314) and the left stroke is gone — that side is
+clipped now. So each side's stroke exists exactly while that side is not clipped, which is the rule
+the fix implements. Round 19's "no stroke at x=65" is falsified for the left (it is at x 48..49, the
+table's edge) and explained for the right. Flag OFF is unchanged: left stroke 48..49 (224), cell fill
+from x 50 (239..241), dividers 4px at 382..385 and 976..979, separators to the screen edge, right
+border off-screen at rest.
+
+**The hard break** (`782504d`) — passed in both states. Post 2933846/20: line 1 `我是RN` ink x=50 and
+line 2 `有2台…` ink x=50 with the flag ON and OFF (round 19 measured 50 and 60). The cell description
+lost the leading space too (`我是RN\n有2台…`, was `…\n 有2台…`), so the collapse is in the parsed
+text, not only in the draw.
+
+**The selection tint** — failed, then fixed (`de8cea2`). Round 20 measured exactly what round 19 had:
+the handle pair on the pressed word (x 242..299 and 720..777) with the background inside the
+selection at 252.7 against 253.9 outside, in both bodies. The loop over the cell's text layout blocks
+(`782504d`) was only half of it: `ArticleTextSelectionHelper.draw` paints in the *layout's* own
+coordinates — upstream's `ArticleViewer` cells translate the canvas to their text layout first — and
+`TopicPostCell` called it at the cell's origin, so the tint was drawn over the author row, a whole
+cell above the pressed paragraph. The handles looked right because the overlay draws them from the
+block's own x/y. `dispatchDraw` now translates to each block's `getX()/getY()` before offering it,
+the same origin the overlay uses.
+
+The retained artifact is the new golden `TopicPostCellScreenshotTest.selectionHighlight` (both
+themes): it selects offsets 4..21 of the second paragraph of a two-paragraph post, and the tint sits
+on exactly those words. The golden pins the fix rather than restating it — with the translate removed
+the same test fails by 1.15% and the rendered frame shows the blue rect over `Alice Chen`. The device
+re-read of the claim is queued (measure the tint inside the selection against just outside it, in
+both flag states, and check the author row is clean).
+
+To check, on the same posts:
+1. A table post (topic 2140307 post #1) with the flag ON: the outer left border draws at rest, the
+   outer right border draws when the table is dragged to its end, and each one disappears only when
+   its own side is clipped. A missing left border at rest is the defect this section fixed.
+2. A post written with hard breaks (topic 2933846 post #20): every line starts at the same ink x,
+   and the cell's spoken text has no leading space after the break.
+3. Select text in a paragraph that is not the first: the tint covers the selected words, and nothing
+   is tinted over the author row.

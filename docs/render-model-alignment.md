@@ -617,6 +617,18 @@ Sequence, if chat is scheduled:
    table now draws its full rounded box, and the wide one keeps the right-edge fade that marks the
    clipped side while its left border is drawn. The device re-read is `docs/device-verification.md`
    §22.
+   **The selection tint landed a cell above the pressed word (`de8cea2`).** Two device rounds in a
+   row measured the same thing: the handle pair on the pressed word, the background inside the
+   selection at 252.7 against 253.9 outside - no tint. The cell's loop over its text layout blocks
+   (`782504d`) was half of it; the other half is the coordinate space. `ArticleTextSelectionHelper.draw`
+   paints with the *layout's* own coordinates - upstream's `ArticleViewer` cells translate the canvas
+   to their text layout first (`canvas.translate(textX, textY)` right before `drawTextSelection`) -
+   and `TopicPostCell.dispatchDraw` called it at the cell's origin, so the highlight was drawn over
+   the author row. The handles looked right because the selection overlay draws them from the block's
+   own x/y (`OffsetTextLayoutBlock`), which is exactly the origin the cell now translates to. The
+   retained artifact is `TopicPostCellScreenshotTest.selectionHighlight` (both themes): it selects
+   offsets 4..21 of a two-paragraph post's second paragraph, and it fails by 1.15% with the translate
+   removed, showing the rect over `Alice Chen` instead of the words.
    **The segment seam keeps its gap now (`2026-09-26`).** The renderer trims a run's first top and
    last bottom edge (`layout()`), which is right at the post's own ends but wrong where a run meets a
    block of ours: the poll or callout below it sat flush against the paragraph above. `RichMessageBody`
