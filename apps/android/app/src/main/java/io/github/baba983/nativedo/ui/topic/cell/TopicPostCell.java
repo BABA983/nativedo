@@ -652,12 +652,20 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
             // The helper draws one *child* per call - it matches the selection against
             // startViewChildPosition/endViewChildPosition - so every text layout block this cell owns
             // has to be offered. Calling it with 0 alone drew the highlight only when the selection
-            // happened to land in the first block: a device pass selecting text in a later paragraph
-            // showed the handles but no tint at all.
+            // happened to land in the first block.
             final ArrayList<TextSelectionHelper.TextLayoutBlock> selectionBlocks = new ArrayList<>();
             fillTextLayoutBlocks(selectionBlocks);
             for (int i = 0; i < selectionBlocks.size(); i++) {
+                final TextSelectionHelper.TextLayoutBlock block = selectionBlocks.get(i);
+                // ...and it draws in the layout's own coordinates: upstream's ArticleViewer cells
+                // translate to their text layout before calling it (`canvas.translate(textX, textY)`).
+                // Without that the tint landed at the cell's origin - a device pass selecting a later
+                // paragraph showed the handles (the overlay draws them with the block's x/y) and no
+                // tint on the pressed text, which is what the highlight was drawn away from.
+                canvas.save();
+                canvas.translate(block.getX(), block.getY());
                 textSelectionHelper.draw(canvas, this, i);
+                canvas.restore();
             }
         }
     }

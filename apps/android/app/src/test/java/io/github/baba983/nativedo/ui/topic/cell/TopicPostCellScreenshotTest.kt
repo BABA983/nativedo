@@ -2,10 +2,12 @@ package io.github.baba983.nativedo.ui.topic.cell
 
 import android.content.Context
 import android.view.ViewGroup
+import android.widget.FrameLayout
 import io.github.baba983.nativedo.core.html.parseCookedPostBody
 import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.screenshot.NativeDoPaparazziRule
 import io.github.baba983.nativedo.screenshot.SystemAppearance
+import io.github.baba983.nativedo.ui.topic.TopicPostTextSelectionHelper
 import io.github.baba983.nativedo.ui.topic.body.PostBodyBlockState
 import io.github.baba983.nativedo.ui.topic.body.RichMessageBody
 import org.junit.Rule
@@ -190,6 +192,42 @@ internal class TopicPostCellScreenshotTest {
             }
         } finally {
             RichMessageBody.enabled = false
+        }
+    }
+
+    /**
+     * A selection that sits in the *second* paragraph: the tint has to land on the selected words.
+     * The helper draws one child per call (it matches the selection against
+     * startViewChildPosition/endViewChildPosition) and it draws in the layout's own coordinates, so
+     * the cell has to offer every block *and* translate to it - upstream's ArticleViewer cells do
+     * the same before calling it. A device pass showed the handles on the pressed word with no tint
+     * anywhere near it, which is both halves of that.
+     */
+    @Test
+    fun selectionHighlight() {
+        paparazziRule.snapshot { context ->
+            val cell = topicPostCell(context, SELECTION_HTML)
+            val container = FrameLayout(context).apply {
+                layoutParams = ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                )
+                addView(
+                    cell,
+                    FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ),
+                )
+            }
+            val helper = TopicPostTextSelectionHelper()
+            helper.setParentView(container)
+            // The helper posts its handle/action runnables on selection; with no overlay they NPE
+            // inside the snapshot's handler flush, so give it one (it is not rendered here).
+            helper.getOverlayView(context)
+            helper.selectRangeOf(cell, 1, 4, 21)
+            cell.setTextSelectionHelper(helper)
+            container
         }
     }
 
@@ -433,6 +471,12 @@ internal class TopicPostCellScreenshotTest {
 
         const val POST_HTML =
             "<p>NativeDo keeps linux.do topics readable and highlights search results.</p>"
+
+        /** Two paragraphs, so a selection can sit in the second one, for [selectionHighlight]. */
+        const val SELECTION_HTML =
+            "<p>The first paragraph stays unselected.</p>" +
+                "<p>The second paragraph is the one the selection covers.</p>"
+
         const val CJK_POST_HTML =
             "<p>在Linux环境里，NativeDo keeps linux.do topics readable.</p>"
 
