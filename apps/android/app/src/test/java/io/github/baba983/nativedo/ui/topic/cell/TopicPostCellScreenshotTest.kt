@@ -177,6 +177,23 @@ internal class TopicPostCellScreenshotTest {
     }
 
     /**
+     * The table in the rich body, where it is upstream's `TableLayout` and not our own grid: one
+     * table that fits the column and one wider than it. A device pass on a real post found the rich
+     * table drawing no left or right stroke at all, so both cases are pinned here.
+     */
+    @Test
+    fun richMessageTable() {
+        RichMessageBody.enabled = true
+        try {
+            paparazziRule.snapshot { context ->
+                topicPostCell(context, RICH_MESSAGE_TABLE_HTML)
+            }
+        } finally {
+            RichMessageBody.enabled = false
+        }
+    }
+
+    /**
      * The inline constructs upstream's model has a run for: a custom emoji, a twemoji image, a site
      * icon, a hashtag chip, a `[size]` range, a cooked inline checkbox, plus a task list (upstream's
      * checkbox rows). Kept in its own post so the golden stays inside the snapshot's frame.
@@ -295,6 +312,28 @@ internal class TopicPostCellScreenshotTest {
         val RICH_MESSAGE_ATTACHMENT_HTML = """
             <p><a class="attachment" href="/uploads/short-url/o8iobpLcW3WSFvVH7YQmyGlKmGM.pdf">test_file.pdf</a> (12.3 KB)</p>
             <p>An <a class="attachment" href="/uploads/short-url/abcdef123456.zip">archive.zip</a> inside a sentence stays a link.</p>
+        """.trimIndent()
+
+        /**
+         * Two tables for [richMessageTable]: the shape the block path already pins in
+         * [contentBlocks], and a three-column one whose cells are long enough to push it past the
+         * body's width, the shape a real 公益站列表 post has.
+         */
+        val RICH_MESSAGE_TABLE_HTML = """
+            <table>
+              <thead><tr><th>名称</th><th>取值</th><th>说明</th></tr></thead>
+              <tbody>
+                <tr><td>alpha</td><td>1</td><td>first</td></tr>
+                <tr><td>beta</td><td>2</td><td>second</td></tr>
+              </tbody>
+            </table>
+            <table>
+              <thead><tr><th>公益站名</th><th>地址</th><th>目前状态</th></tr></thead>
+              <tbody>
+                <tr><td>公益站一号站点的名字</td><td>https://example-one.example.dev/v1</td><td>可用，速度很快，支持全部模型</td></tr>
+                <tr><td>公益站二号</td><td>https://example-two.example.dev/v1</td><td>维护中，预计下周恢复</td></tr>
+              </tbody>
+            </table>
         """.trimIndent()
 
         /** Deep and mixed nesting for [richMessageNestingRichBody]. */

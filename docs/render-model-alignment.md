@@ -598,6 +598,25 @@ Sequence, if chat is scheduled:
    cell-level probe over a hybrid post (a quote card in front of the run) maps the same routes as the
    block path: a press on the link's line gives `topic:1`, a press on the chip's line gives the tag
    URL, with no shift from the block in front.
+   **The table's outer border is back (`2026-09-27`).** A device pass on a real 公益站列表 post
+   (topic 2140307 post #1) found the rich body's table drawing no left or right stroke at all -
+   internal dividers and row separators were there, the box was not - while the block path drew a
+   complete box. Measured in the new `TopicPostCellScreenshotTest.richMessageTable` golden (two
+   tables: one the column stretches, one wider than it): only the internal dividers survived, at
+   x=321/322 and 567/568, with nothing at the table's own edges. The cause is upstream's scroll
+   affordance: `RichTableBlock` draws both `GradientClip` fades unconditionally, the fades are
+   `DST_OUT` (they erase, not paint), each is 12dp wide and its opaque end sits on the table's edge
+   (`[-root.padLeft, -root.padLeft + dp(12)]` on the left, `right - dp(12) .. right` on the right,
+   where `right` is the column's edge). Telegram's own bubble padding (`padLeft`/`padRight` = the
+   bubble's inner padding) hides most of that overlap; this host draws the layout at the column's
+   origin with `padLeft = 0`, so the left fade erased the border completely. Both call sites
+   (`drawCellsWithTyping`, `onDraw`) now fade a side only while that side is actually clipped
+   (`scrollX > 0`, `scrollX < maxScrollX`; `scrollX` is clamped to `[0, maxScrollX]` in both the drag
+   and the fling paths) - a `// NativeDo:` delta, since the renderer's own copy of the block is what
+   the affordance belongs to. The retained golden is `richMessageTable` (both themes): the narrow
+   table now draws its full rounded box, and the wide one keeps the right-edge fade that marks the
+   clipped side while its left border is drawn. The device re-read is `docs/device-verification.md`
+   §22.
    **The segment seam keeps its gap now (`2026-09-26`).** The renderer trims a run's first top and
    last bottom edge (`layout()`), which is right at the post's own ends but wrong where a run meets a
    block of ours: the poll or callout below it sat flush against the paragraph above. `RichMessageBody`

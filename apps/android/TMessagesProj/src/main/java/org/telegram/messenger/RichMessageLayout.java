@@ -4436,12 +4436,21 @@ public class RichMessageLayout {
             }
             canvas.restore();
 
-            AndroidUtilities.rectTmp.set(-root.padLeft, 0, -root.padLeft + dp(12), contentHeight);
-            root.clip.draw(canvas, AndroidUtilities.rectTmp, GradientClip.LEFT, 1.0f);
+            // NativeDo: upstream draws both scroll-fade gradients unconditionally, and the fade's
+            // opaque end sits on the table's own edge - so a table that is not scrolled lost its
+            // left border, and a table whose right edge is inside the fade lost that one too (a
+            // device pass on a real 公益站列表 post found both outer strokes missing while the block
+            // path drew a complete box). Each side fades only while that side is actually clipped.
+            if (scrollX > 0) {
+                AndroidUtilities.rectTmp.set(-root.padLeft, 0, -root.padLeft + dp(12), contentHeight);
+                root.clip.draw(canvas, AndroidUtilities.rectTmp, GradientClip.LEFT, 1.0f);
+            }
 
-            final int right = root.getMinWidth() + root.padRight - padding.left - padding.right;
-            AndroidUtilities.rectTmp.set(right - dp(12), 0, right, contentHeight);
-            root.clip.draw(canvas, AndroidUtilities.rectTmp, GradientClip.RIGHT, 1.0f);
+            if (scrollX < maxScrollX) {
+                final int right = root.getMinWidth() + root.padRight - padding.left - padding.right;
+                AndroidUtilities.rectTmp.set(right - dp(12), 0, right, contentHeight);
+                root.clip.draw(canvas, AndroidUtilities.rectTmp, GradientClip.RIGHT, 1.0f);
+            }
 
             canvas.restoreToCount(sc);
         }
@@ -4498,12 +4507,17 @@ public class RichMessageLayout {
             }
             canvas.restore();
 
-            AndroidUtilities.rectTmp.set(-root.padLeft, 0, -root.padLeft + dp(12), contentHeight);
-            root.clip.draw(canvas, AndroidUtilities.rectTmp, GradientClip.LEFT, 1.0f);
+            // NativeDo: the same two fades, on the same condition - see drawCellsWithTyping above.
+            if (scrollX > 0) {
+                AndroidUtilities.rectTmp.set(-root.padLeft, 0, -root.padLeft + dp(12), contentHeight);
+                root.clip.draw(canvas, AndroidUtilities.rectTmp, GradientClip.LEFT, 1.0f);
+            }
 
-            final int right = root.getMinWidth() + root.padRight - padding.left - padding.right;
-            AndroidUtilities.rectTmp.set(right - dp(12), 0, right, contentHeight);
-            root.clip.draw(canvas, AndroidUtilities.rectTmp, GradientClip.RIGHT, 1.0f);
+            if (scrollX < maxScrollX) {
+                final int right = root.getMinWidth() + root.padRight - padding.left - padding.right;
+                AndroidUtilities.rectTmp.set(right - dp(12), 0, right, contentHeight);
+                root.clip.draw(canvas, AndroidUtilities.rectTmp, GradientClip.RIGHT, 1.0f);
+            }
 
             canvas.restore();
             canvas.restore();
