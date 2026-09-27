@@ -1,6 +1,7 @@
 package io.github.baba983.nativedo.ui.topic
 
 import android.view.ViewGroup
+import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import io.github.baba983.nativedo.ui.topic.cell.TopicPostCell
 import org.telegram.messenger.ApplicationLoader
@@ -55,6 +56,16 @@ internal class TopicPostTextSelectionHelper : TextSelectionHelper.ArticleTextSel
 
     override fun setParentView(view: ViewGroup?) {
         super.setParentView(view)
+        // Upstream's hosts hand the helper the list's layout manager - ArticleViewer sets
+        // `textSelectionHelper.layoutManager = pages[0].layoutManager` and RichEditorListView does the
+        // same - because pickStartView()/pickEndView() resolve the selected cell through it. Without it
+        // they fall back to `parentView.getChildAt(adapterPosition)`, which indexes *attached children*
+        // with an *adapter* position; for a selection in a cell whose adapter position is larger than the
+        // attached child count the pick returns null, and the action bar then loses its Quote item, gains
+        // a Select all and anchors at the top of the screen (`onGetContentRect` answers y=1 when
+        // `selectedView` is null - that is the cluster a device pass read, and
+        // `TopicPostTextSelectionHelperTest` reproduces the resolution locally).
+        (view as? RecyclerView)?.layoutManager.let { this.layoutManager = it as? LinearLayoutManager }
         val listView = view as? RecyclerListView ?: return
         val adapter = listView.adapter ?: return
         if (observedAdapter === adapter) {
