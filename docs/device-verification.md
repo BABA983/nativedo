@@ -1122,3 +1122,17 @@ One item is still open: whether the bar *follows* a handle drag. One read moved 
 `FloatingActionMode.invalidateContentRect()` on every drag MOVE and re-shows on ACTION_UP, so the
 ambiguous read is likelier a synthetic-gesture artifact than a defect; a clean touch-hold-then-slow-drag
 read is queued to settle it.
+
+That clean read (round 27, flag OFF, post 1779614 #1, a 0.9s hold then slow MOVEs with a capture
+between each) settled three of the four points the code predicts: the bar disappears on handle-down
+with the magnifier over the handle, it comes back on release, and its **x follows the selection's x
+range** (its centre moved +194px against the selection's +191px). The fourth reads negative: dragging
+the *start* handle down one line (heading y≈555..595 -> the `L站都快成Any牌路由器反馈地了` line at
+y≈660..698) left the bar's label row at y 432, identical within 1px — where the code says the rect is
+anchored to the start line, so it should have followed. The read could not separate "the bar is
+block-anchored" from "the y is not recomputed after a drag" (a fresh selection low in the post was
+never captured: one attempt opened the image viewer, another landed where the long-press menu did not
+come up), so the control read is queued: a fresh selection low in the post, then a start-handle drag
+from it, then an end-handle drag from it, with the pairs (bar label-row y, selected line y) recorded.
+If the control shows a fresh low selection also lands at y≈430, the bar is pinned and the cause is in
+this host's wiring rather than upstream's geometry.
