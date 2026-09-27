@@ -1136,3 +1136,34 @@ come up), so the control read is queued: a fresh selection low in the post, then
 from it, then an end-handle drag from it, with the pairs (bar label-row y, selected line y) recorded.
 If the control shows a fresh low selection also lands at y≈430, the bar is pinned and the cause is in
 this host's wiring rather than upstream's geometry.
+
+### The control read (round 28) — two bars, not one
+
+The control came back with something better than a y verdict: the bar that appears for a *paragraph*
+selection is not the same bar as the one for a *heading* selection.
+
+| case | selected line y | bar label row y | gap | items |
+|---|---|---|---|---|
+| fresh selection, heading line | 555..595 | 424 | 131px | Copy / Quote / Translate |
+| fresh selection, paragraph line | 512..600 | ~100 (over the app bar) | ~412px | Copy / Translate / Select all |
+| start-handle drag down one line (from the heading) | 660..698 | 432 | 228px | Copy / Quote / Translate |
+| that paragraph selection after a 200px scroll | moved with the scroll | ~100 (unchanged) | — | Copy / Translate / Select all |
+
+So the y does not track the start line, the scroll, or a constant gap for the paragraph case — and the
+item set differs too. The measurements that separate the two: the paragraph bar's labels are visibly
+larger than the heading bar's (the heading bar's label row is 31px ≈ 12sp), and the paragraph bar sits
+at the screen top over the app bar and stays there when the list scrolls.
+
+What is *ours* in the paragraph case is the selection itself: the tint over `早期版本` is exactly
+(206,228,246) — Telegram's `key_chat_inTextSelectionHighlight` (0x5062A9E3, 31% alpha) over white —
+and its ends are rounded (the helper's `CornerPathEffect`, dp(6)), where a platform highlight would be
+square. Our helper cannot produce Copy / Translate / Select all, though: its constructor sets
+`multiselect = true` and upstream hides Select all in that mode, while `canShowQuote()` is true for a
+`TopicPostCell`. A local probe also rules out the other candidate cause: `fillTextLayoutBlocks` hands
+the helper correct per-block x/y (42 blocks on that post, e.g. block[38] at y=10295 for the line that
+was selected), so the geometry is not what puts the paragraph bar at the top.
+
+The read that settles which bar is which is queued: for the paragraph case and the heading case in the
+same session, the label-row height, whether the droplets are visible, whether the tint's end is rounded,
+and whether the composer's field is focused — plus the same on a paragraph of a different post, and a
+re-selection of the heading after a paragraph selection to separate "position" from "session order".
