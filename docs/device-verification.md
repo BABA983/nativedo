@@ -1080,3 +1080,45 @@ not a flag bug.
 
 What is left for the flag is therefore not a rendering defect but the switch itself: the rich body is
 still off by default, and the sweep was the last open item on the flag's roll-out list.
+
+## 24. The selection action bar (`7081fbf`) — items are upstream's, and the bar comes up from the menu too (2026-09-27, `emulator-5554`)
+
+The owner asked whether the bar that pops up after selecting text matches Telegram. It is upstream's
+own widget rather than a port: `ArticleTextSelectionHelper.showActions()` builds Telegram's
+`FloatingToolbar` + `FloatingActionMode` (`STYLE_THEME`) on API ≥ M, hosted on the upstream
+`TextSelectionOverlay` the fragment mounts over the list, and the items come from upstream's
+`textSelectActionCallback` (Copy, Quote, Translate, Cut, Paste, Select all, with per-item visibility).
+
+What the device reads, and what is by design:
+
+- **Copy / Quote / Translate** is the correct item set. Quote is visible because the helper answers
+  `canShowQuote()` through upstream's hook (the pin's `quoteText()` carries one `// NativeDo:` line so
+  a non-chat view reaches `onQuoteClick`); Translate because the fragment wires `setOnTranslate` to
+  Google Translate with the selected text; Select all is hidden because the article helper sets
+  `multiselect = true` and upstream's rule hides it in that mode (Telegram's instant view has none
+  either); Cut/Paste stay hidden because a post body is not editable. The first read of this bar
+  expected Translate hidden and Select all shown — that expectation was wrong, not the device.
+- **Style**: a white rounded pill above the selection with 12sp theme-coloured labels; no measurable
+  shadow on a white page, which is what Telegram's floating toolbar looks like there.
+
+**The defect it found, and the fix.** The bar was reachable only by long-press-and-drag: the cell
+menu's *Select text* produced the tint and the handles with no bar. The cause is upstream's one-touch
+selection — `startSelectionRunnable` ends with `movingHandle = true`, and `showActions()` refuses to
+show while a handle is moving because a gesture is expected to end it, which a menu-driven selection
+never does. `finishOneTouchSelection()` is upstream's own API for exactly that, and upstream's editor
+calls it right after its double-tap one-touch selection (`RichEditorListView`). `TopicPostCell
+.startTextSelectionAt` now calls it when the selection started.
+
+Verdict after the fix (`7081fbf`, post 1779614 #1): the bar appears immediately from the menu route in
+both flag states (label rows measured: Copy 79px, Quote 90-93px, Translate 138-142px, the same three
+items in the same order, x differing only by where the selected word sits in each body); Copy puts
+exactly the selected text on the clipboard; Quote opens the composer with the reply-to chip and
+`[quote="Haleclipse, post:1, topic:1779614"]你就等[/quote]`, i.e. `discourseQuoteMarkup` of the
+selection; tapping outside dismisses the bar and the selection; the flag-ON read is clean (the first
+attempt ended in the app's black state, the re-run did not).
+
+One item is still open: whether the bar *follows* a handle drag. One read moved the selection
+(`tint 540..632 -> 500..632`) while the bar stayed at the same y — but the code repositions through
+`FloatingActionMode.invalidateContentRect()` on every drag MOVE and re-shows on ACTION_UP, so the
+ambiguous read is likelier a synthetic-gesture artifact than a defect; a clean touch-hold-then-slow-drag
+read is queued to settle it.
