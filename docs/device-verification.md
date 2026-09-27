@@ -1020,3 +1020,35 @@ the tieba/bili images drawn as images in both, with no shortcode rendered as tex
 #1993635, 又来修一下 CC #2336669, topic list #2310531), B (the visual half of the two long posts) and C.
 The second pass is navigation-bound, not discovery-bound: the Settings → 渲染测试帖 rows and the
 capture recipe are recorded in the pass's log.
+
+### Second pass (2026-09-27, same emulator) — five more A topics clean, 2790689 #1 clean
+
+**投票 #2229268 and #2537621 — clean.** Both polls draw in both bodies with the same bars,
+percentages, counts and controls (72% 计算机技术岗 18 / 8% 计算机售前岗 2 / 20% 非计算机相关专业 5, 查看投票,
+then the second poll at 21% 完全不给AI做 4; and 84% Codex 142, 8% Claude Code 14, 1% Opencode 2, 3% Pi 5,
+0% Aider, 0% Cursor 1, 4% 其他 6 with the checkmark on 其他 and 已投票/查看投票/撤销投票), and the cell
+descriptions are identical between the states. The poll stays in our block tree in both bodies, so
+this is the expected result rather than a surprise.
+
+**emoji title #2503776 — clean.** Both states draw the two custom photos, the text with the 😂 as an
+image, the 原文 label and the same link card; descriptions identical. Observation, not a defect by the
+sweep's criteria: the rich body draws those two images ~10% smaller, scaled to the column - the same
+width class as the table and the code block below, nothing cropped.
+
+**又来修一下 CC #2336669 — clean.** The same code block with its `Bash(` language label, the same
+wrapped line and `└ Waiting…` continuation in both; descriptions identical. Observation: the rich code
+block is wider (full column), and the long line clips at the panel edge the same way in both.
+
+**topic list #2310531 — clean.** Descriptions identical (an image post and a text post); the pixel
+difference is a scroll offset, no construct at risk.
+
+**B — 2790689 #1 (four ON screens, five OFF screens, covering 节目 4/5/6) — nothing clipped,
+overlapping or missing.** Code blocks draw in both with the grey panel, monospace text and the
+language label, and the same long line clips at the panel edge in both; the scrollable container and
+its rendered text are present in both; footnotes draw in both (heading, inline marker and the
+`1. 这是脚注的详细说明内容` block); headings and lists are present in both with the accepted rhythm.
+Gap left in the pair: the *expanded* details widget was only captured with the flag ON (the OFF
+screens landed on 节目 5/6); its code block is in both.
+
+**Still not reached:** 很多回复 #1993635 and 1779614 #1 (the 15 KB post), plus the OFF capture of that
+expanded details widget. They are queued as the sweep's tail.
