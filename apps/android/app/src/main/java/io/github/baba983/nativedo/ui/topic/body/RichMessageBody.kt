@@ -368,10 +368,18 @@ private class RichMessagePlaceProvider(
         object_.viewY = window[1] + origin[1] + offset[1]
         object_.viewWidth = receiver.imageWidth.toInt()
         object_.viewHeight = receiver.imageHeight.toInt()
-        object_.parentView = host
+        // The scrolling container, not the cell: PhotoViewer clips the flying image against the
+        // parent's window rect, and upstream's article viewer hands it its list view for exactly
+        // that reason (`ArticleViewer.PageBlocksPhotoViewerProvider`). With the cell as the parent
+        // the clip is measured from the cell's own top, which for a post taller than the screen
+        // means no clipping at all.
+        object_.parentView = scrollableHost(host)
         object_.imageReceiver = receiver
-        object_.thumb = if (needPreview) receiver.bitmapSafe else null
-        object_.radius = if (needPreview) receiver.getRoundRadius(true) else null
+        // Thumb and radius travel on every call, not only for a preview: the article's provider
+        // does the same, and withholding the radius made the corners snap from square to rounded
+        // partway through the transition.
+        object_.thumb = receiver.bitmapSafe
+        object_.radius = receiver.getRoundRadius(true)
         object_.scale = 1.0f
         return object_
     }
@@ -385,6 +393,19 @@ private class RichMessagePlaceProvider(
         val offset = IntArray(2)
         return receiverFor?.invoke(target, offset)?.bitmapSafe
     }
+}
+
+/**
+ * The scrolling container the host sits in, or the host itself when there is none - what
+ * PhotoViewer needs as `parentView` for its clipping (upstream's article viewer passes its list).
+ */
+private fun scrollableHost(host: android.view.View): android.view.View {
+    var current: android.view.ViewParent? = host.parent
+    while (current is android.view.View) {
+        if (current is org.telegram.ui.Components.RecyclerListView) return current
+        current = current.parent
+    }
+    return host
 }
 
 private fun findActivity(context: Context?): Activity? {
