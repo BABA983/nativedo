@@ -1150,9 +1150,12 @@ selection is not the same bar as the one for a *heading* selection.
 | that paragraph selection after a 200px scroll | moved with the scroll | ~100 (unchanged) | — | Copy / Translate / Select all |
 
 So the y does not track the start line, the scroll, or a constant gap for the paragraph case — and the
-item set differs too. The measurements that separate the two: the paragraph bar's labels are visibly
-larger than the heading bar's (the heading bar's label row is 31px ≈ 12sp), and the paragraph bar sits
-at the screen top over the app bar and stays there when the list scrolls.
+item set differs too. The one factor that separates the two cases in every capture is the state of the
+reply composer: every paragraph-case capture had the composer's field focused (keyboard up, a reply chip
+in the draft), every heading-case capture had it collapsed. The first read of the paragraph bar also
+called its labels *larger* than the heading bar's; a same-scale side-by-side of the two "Copy" labels
+(482-label-compare) shows they match in size and weight, so that observation was an artefact of a
+resized crop and is withdrawn — the font is not the tell.
 
 What is *ours* in the paragraph case is the selection itself: the tint over `早期版本` is exactly
 (206,228,246) — Telegram's `key_chat_inTextSelectionHighlight` (0x5062A9E3, 31% alpha) over white —
@@ -1167,3 +1170,10 @@ The read that settles which bar is which is queued: for the paragraph case and t
 same session, the label-row height, whether the droplets are visible, whether the tint's end is rounded,
 and whether the composer's field is focused — plus the same on a paragraph of a different post, and a
 re-selection of the heading after a paragraph selection to separate "position" from "session order".
+Round 29 answered the label-height half (the two are the same size, so no tell there) and could not
+land the decisive case — a paragraph selection with the composer *unfocused* — because every attempt to
+unfocus either navigated away or cleared the selection first. The clean recipe for it (fresh launch,
+never touch the composer, scroll to a paragraph mid-post, long-press there) is queued as the last read
+on this bar. If the paragraph case then gives Copy/Quote/Translate with droplets, both bars are ours and
+the difference is environmental; if it still gives Copy/Translate/Select all, there are two bars and the
+second one is somewhere in this host's wiring.
