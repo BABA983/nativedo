@@ -901,6 +901,13 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
         cancelActiveBodyTouch();
         textSelectionHelper.setMaybeView((int) x, (int) y, this);
         textSelectionHelper.trySelect(this);
+        // A one-touch selection has no gesture to end it - the helper keeps `movingHandle` set, which
+        // is what suppresses the action bar - so the host closes it, exactly as upstream's editor does
+        // after its own one-touch selection (RichEditorListView's double-tap path). Without this the
+        // bar only appeared once the user dragged a handle, which is what a device pass read.
+        if (textSelectionHelper.isInSelectionMode()) {
+            textSelectionHelper.finishOneTouchSelection();
+        }
         return textSelectionHelper.isInSelectionMode();
     }
 
