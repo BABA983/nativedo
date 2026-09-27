@@ -628,7 +628,12 @@ Sequence, if chat is scheduled:
    own x/y (`OffsetTextLayoutBlock`), which is exactly the origin the cell now translates to. The
    retained artifact is `TopicPostCellScreenshotTest.selectionHighlight` (both themes): it selects
    offsets 4..21 of a two-paragraph post's second paragraph, and it fails by 1.15% with the translate
-   removed, showing the rect over `Alice Chen` instead of the words.
+   removed, showing the rect over `Alice Chen` instead of the words. The device pass closed it: the
+   tint is now 40-48 levels darker than its surroundings with a blue cast in both bodies (inside
+   (214.6,232.4,247.0) ON, (204.8,226.8,244.8) OFF, against 252.7 before), the author row is neutral
+   again, and the round-20 screenshots turned out to carry the "before" - a 49px band of the tint
+   colour over the author row, which that pass's pressed-line-only scan had missed
+   (`docs/device-verification.md` §22).
    **The segment seam keeps its gap now (`2026-09-26`).** The renderer trims a run's first top and
    last bottom edge (`layout()`), which is right at the post's own ends but wrong where a run meets a
    block of ours: the poll or callout below it sat flush against the paragraph above. `RichMessageBody`

@@ -959,9 +959,24 @@ the same origin the overlay uses.
 The retained artifact is the new golden `TopicPostCellScreenshotTest.selectionHighlight` (both
 themes): it selects offsets 4..21 of the second paragraph of a two-paragraph post, and the tint sits
 on exactly those words. The golden pins the fix rather than restating it — with the translate removed
-the same test fails by 1.15% and the rendered frame shows the blue rect over `Alice Chen`. The device
-re-read of the claim is queued (measure the tint inside the selection against just outside it, in
-both flag states, and check the author row is clean).
+the same test fails by 1.15% and the rendered frame shows the blue rect over `Alice Chen`.
+
+Verdict (2026-09-27, `emulator-5554`, app from `de8cea2`): passed, and the "before" is visible in the
+previous round's own screenshots — files 346/349 of the round-20 pass carry a solid 49px band of the
+tint colour at x 252..671, y 290..338, i.e. over the author row, while the handles sit at y 681..738
+on the pressed line. (That pass sampled only the pressed line, so it reported the words as untinted
+and missed the rect 390px above them; the verdict was right, the scan was blind.) After the fix, in a
+paragraph that is not the first: flag ON gives a tint rect x 375..743, y 789..845 in the pure colour
+(206,228,246) with the samples left (253.2) / inside (214.6,232.4,247.0) / right (253.3) and the
+handles at x 356..413 and 658..715, y 844..901; flag OFF gives x 248..583, y 541..591 with left
+(252.8,252.6,249.4) / inside (204.8,226.8,244.8) / right (254.9,254.3,252.5). Round 20 measured the
+inside at 252.7/252.6, so the tint is now 40-48 levels darker with a blue cast (B−R +32 and +40), and
+it is the same pure colour the golden carries. The author-row band (y 380..440) averages
+(246.2,246.6,247.7) ON and (246.1,246.4,247.4) OFF — neutral, no stray tint — and a per-pixel scan for
+the exact tint colour in y 300..440 finds 25 antialiasing pixels ON and none in the row band OFF.
+
+The macOS set for the two new tests (`selectionHighlight`, `richMessageTable`, both themes) and the
+moved `richMessageInlineCases` pair were recorded on the same run and agree with the Linux ones.
 
 To check, on the same posts:
 1. A table post (topic 2140307 post #1) with the flag ON: the outer left border draws at rest, the
