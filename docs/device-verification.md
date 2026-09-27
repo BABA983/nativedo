@@ -1177,3 +1177,26 @@ never touch the composer, scroll to a paragraph mid-post, long-press there) is q
 on this bar. If the paragraph case then gives Copy/Quote/Translate with droplets, both bars are ours and
 the difference is environmental; if it still gives Copy/Translate/Select all, there are two bars and the
 second one is somewhere in this host's wiring.
+
+Round 30 ran that recipe and answered it: with the composer untouched and collapsed throughout, a
+*heading* selection still gives Copy/Quote/Translate anchored above the line while a *paragraph/list
+item* selection (post #6) gives Copy/Translate/Select all pinned at the screen top (labels y≈76..170
+against a selected line at y 1107..1219) — and in both cases the tint's caps are rounded and the
+droplets are there, so the selection itself is the helper's either way. So it is one helper behaving
+differently by block, not two widgets, and the composer's focus is not the factor.
+
+**The cause is a missing hop of upstream's host contract, and it is fixed (`dc2b18c`).** The article
+helper resolves the selected cell through `layoutManager`: `ArticleViewer` sets
+`textSelectionHelper.layoutManager = pages[0].layoutManager` and `RichEditorListView` does the same, and
+this host never did. Without it, `pickStartView()`/`pickEndView()` take the `parentView.getChildAt`
+branch, which indexes *attached children* with an *adapter* position; for a selection in a cell whose
+adapter position is past the attached child count the pick returns null. Everything the device read
+follows from that one null: `canShowQuote()` false (no Quote item), the Select-all guard skipped
+because it is gated on `selectedView != null` (so Select all keeps its default and shows), and
+`onGetContentRect` answering y=1 (so the bar anchors at the top of the screen instead of above the
+selected line). A probe over a scrolled list reproduced the resolution exactly — null without the layout
+manager, the target cell with it — and the wiring now happens in
+`TopicPostTextSelectionHelper.setParentView`. The retained gate is
+`TopicPostTextSelectionHelperTest`: `aSelectionResolvesToItsOwnCellWhenTheAdapterPositionIsPastTheChildCount`
+and `withoutTheLayoutManagerTheSameSelectionResolvesToNothing`. The device re-read of the bar's items
+and anchor after the fix is queued for the next device pass.
