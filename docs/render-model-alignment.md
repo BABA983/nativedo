@@ -634,6 +634,22 @@ Sequence, if chat is scheduled:
    again, and the round-20 screenshots turned out to carry the "before" - a 49px band of the tint
    colour over the author row, which that pass's pressed-line-only scan had missed
    (`docs/device-verification.md` §22).
+   **The flag's audit, local half (`2026-09-27`).** The owner asked for a sweep of everything the
+   experimental flag renders wrong, so the audit is two passes. The local one takes the two topics of
+   the 渲染测试帖 list that are readable without a session (2790689 "发掘论坛的渲染极限", 16 posts, and
+   1779614 "Any牌路由器使用清障", 20 posts), renders every post with content through both bodies in a
+   Paparazzi probe, and compares **the text each body actually draws** - every text layout block's
+   text concatenated, so a dropped caption, table cell or nested block shows up as a missing line
+   rather than as a subjective "this looks different". Result: for the two long posts (2790689 #1,
+   11.6 KB cooked, 42 blocks; 1779614 #1, 15 KB, 42 blocks with three callouts and three details) the
+   drawn text is identical, and the hybrid keeps the Discourse-only blocks in place (the 15 KB post
+   becomes seven segments: four rich runs alternating with its three callouts). Across all 36 posts
+   the only text differences are emoji: with no sprite in the probe the rich body falls back to the
+   shortcode (`:thinking:`) where the block path draws the object-replacement glyph - an artifact of
+   the golden environment, since the device resolves both to the image. Heights differ by 7-13% on
+   list-heavy posts (16440 -> 15226 on 2790689 #1, 18283 -> 15927 on 1779614 #1), which is the
+   accepted rhythm difference, not a defect. The device half of the sweep is the round in flight; its
+   verdict lands in `docs/device-verification.md`.
    **The segment seam keeps its gap now (`2026-09-26`).** The renderer trims a run's first top and
    last bottom edge (`layout()`), which is right at the post's own ends but wrong where a run meets a
    block of ours: the poll or callout below it sat flush against the paragraph above. `RichMessageBody`
