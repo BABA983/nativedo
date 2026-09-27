@@ -986,3 +986,37 @@ To check, on the same posts:
    and the cell's spoken text has no leading space after the break.
 3. Select text in a paragraph that is not the first: the tint covers the selected words, and nothing
    is tinted over the author row.
+
+## 23. The rich-flag sweep (`de8cea2`) — first pass: spoiler, nested list and emoji clean, the rest pending (2026-09-27, `emulator-5554`)
+
+The owner asked for a sweep of everything the experimental flag renders wrong, so the pass is: read
+the same post with the flag ON and OFF and report only differences that are **not** by design. A
+difference is a defect when content is missing, clipped, overlapping, mis-coloured, or when a
+construct draws in one body and not the other; it is not a defect when it is one of the four accepted
+ones — upstream's article rhythm (the owner's 2026-09-26 decision), the callout/onebox/poll/quote
+cards staying in our own block tree and being stacked in place, the rich table being stretched to the
+column width (upstream's `resolveWidth`), and the rich table's border fading only on a clipped side
+(§22). The local half of the sweep is in `docs/render-model-alignment.md`: for the two long posts
+(2790689 #1, 1779614 #1) the text each body actually draws is identical.
+
+**A1 — spoiler (2215753, posts #1 and #3) — clean.** The cell descriptions are byte-identical between
+the two states (`1F wya …`, `3F nikiski …`), the spoiler's black bar is y 584..1091 (h=508) in both
+screenshots, post #3's image matches at dy=0 with a pixel difference of 0.0, and the full-frame row
+profile differs only at the app-bar title marquee (y 88..130), the clock (y 36) and the composer
+(y 2196..2287) — the content band y 200..2100 has a mean difference of 0.008/255.
+
+**A2 — list nested pic (2214964, post #1) — clean, rhythm only.** Both links, both headings, every
+paragraph and all five list items draw in both states with the same colours; nothing is missing,
+clipped or overlapping in the visible portion. The differences are the accepted ones: bigger and
+bolder 前言/技术栈 headings, tighter list rows (one more item fits the viewport) and looser
+paragraphs.
+
+**Emoji — images in both bodies.** The risk the local sweep named (a shortcode drawn as text where the
+image should be) does not reproduce on the device: the table topic's opening post carries standard
+and custom emoji, and the same text cropped from the flag-OFF and flag-ON captures shows 😅/🐶/🎉 and
+the tieba/bili images drawn as images in both, with no shortcode rendered as text in either state.
+
+**Not reached in this pass:** the rest of A (投票 #2229268 and #2537621, emoji title #2503776, 很多回复
+#1993635, 又来修一下 CC #2336669, topic list #2310531), B (the visual half of the two long posts) and C.
+The second pass is navigation-bound, not discovery-bound: the Settings → 渲染测试帖 rows and the
+capture recipe are recorded in the pass's log.
