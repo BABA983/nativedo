@@ -1459,3 +1459,22 @@ press" treatment the paragraph/heading blocks already have, and re-read the thre
 Also noted, **pre-existing and not from this change**: in the flag-off body the address column renders
 empty for the rows sampled (the same in §26's older captures), which is a separate lookup to make another
 day.
+
+**Device verdict (`f18e6cc`, 2026-09-28, `emulator-5554`):** the geometry and the routing together make the rich
+table selectable, and nothing else moved.
+
+- **Cells**: a long press on each column of a data row tints that column's own cell against the separators
+  at x 48/384/953 - left `x 112..295`, middle `379..537`, right `948..1060`, all at `y 1465..1517` - with
+  the droplets at the tint's ends. The three header cells select the same way (`y 1369..1420`). The menu
+  that comes up first is the post menu (Reply / Select text / Copy link / Add bookmark), i.e. the cell's own
+  long press, and *Select text* then lands the selection in that cell - which is the same two-step the
+  flag-off body has always had, so the item set was not compared item-by-item against the pre-fix build.
+- **Regressions**: a drag across the table still scrolls it horizontally (the x 953 separator moved to 583,
+  Δ370, both directions); tapping a URL in the address column still opens it (Custom Tab, anyrouter.top
+  /login); the paragraph above the table and the margin to its left still open the menu and still start a
+  selection.
+- **Bonus**: a selection started in the paragraph above can now be dragged into the table (its end handle
+  pulls the tint onto the table's rows), which the previous build could not do at all.
+
+The flag-off address column note from the previous read still stands (empty for the rows sampled, older than
+this work).
