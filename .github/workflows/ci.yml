@@ -194,14 +194,17 @@ jobs:
         # committed goldens. Each host verifies its own set
         # (`src/test/snapshots/<platform>`); this runner is Linux, so it checks
         # the same rendering it can reproduce.
-        # Retried because artifact resolution fails transiently often enough to
-        # matter; the second attempt reads what the first one did manage to cache.
+        # Retried once, not more: artifact resolution fails transiently often
+        # enough to matter, but a retry is a second full job's worth of minutes
+        # on a plan whose quota this repo shares with everything else, so the
+        # second attempt reads what the cached Gradle home already has and gives
+        # up after that.
         run: |
-          for attempt in 1 2 3; do
+          for attempt in 1 2; do
             ./apps/android/gradlew -p apps/android runUnitAndScreenshotTests --quiet && exit 0
             status=$?
             echo "attempt $attempt failed (exit $status)"
-            if [ "$attempt" = 3 ]; then exit $status; fi
+            if [ "$attempt" = 2 ]; then exit $status; fi
             sleep 15
           done
 
