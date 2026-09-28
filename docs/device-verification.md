@@ -1213,6 +1213,26 @@ caps, and the droplets are at both ends. Two items the same read turned up, both
   the pass was using), and round 26 had read the ON case working on `7081fbf`, so the ON failure needs a
   clean re-read on a *recorded* build id before it is chased. The successor runner is queued for exactly
   that read (plus a logcat scan for an exception).
-- **A one-touch selection inside a code block puts the droplets at the block's bottom corners** rather
-  than at the selected word's ends (503a, flag OFF). The code block is a horizontally scrollable
-  container, so its layout blocks carry an offset the overlay's handle placement does not follow.
+- **A one-touch selection inside a code block put the droplets at the block's bottom corners** rather
+  than at the selected word's ends (503a; measured by the successor runner: x 21..78 and 1032..1079,
+  y 1876..1933 — 303px below the tint, 1262px from the word). **Cause found and fixed (`2b435ae`):**
+  `ArticleTextSelectionHelper` reads a layout block's `selectionBounds` in exactly two places, both in
+  the overlay that draws the handles, where the handle goes to `selectionBounds.right/left` and
+  `.bottom` instead of the selection's own line — the tint ignores the field entirely. `CodeBlock` was
+  passing the *block's* rect (`x, y, x + viewportWidth, y + measuredHeight`), and `TableBlock` the same
+  block-wide rect, so a selection in a table cell put its handles at the table's corners too. Both now
+  pass none; upstream's article table passes a *cell's* bounds, and our layout blocks already carry
+  cell-local x/y, so null is the same thing. The device re-read of both is queued with the ON-body
+  selection round.
+
+**The ON-body selection failure, as far as it is pinned:** a long press on post #1's body paragraph in
+the ON body opens the post menu, but *Select text* then paints nothing (two reproductions), while the
+same post and coordinates in the OFF body select normally; and a long press on the same post's *heading*
+in the ON body does not even open the menu. Later single-paragraph posts are fine in the ON body, so the
+case is "ON + this multi-block opening post", not the flag as a whole. A local probe rules out the
+geometry: building that post's cell in both bodies and calling `startTextSelectionAt(x, y)` at the same
+coordinates starts a selection in both (a valid `maybeTextIndex`, a plausible character offset), so the
+failure lives in the long-press → menu → *Select text* path rather than in the hit test. The runner's
+next round carries a three-line diagnostic build (a log at the long press, two around `trySelect`) and
+will report the coordinates, `isSelectable` and the resulting selection state for the ON case, the OFF
+control and the heading case.
