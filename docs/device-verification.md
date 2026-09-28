@@ -1478,3 +1478,32 @@ table selectable, and nothing else moved.
 
 The flag-off address column note from the previous read still stands (empty for the rows sampled, older than
 this work).
+
+## 29. A loading rich image shows its button (`f96e975`) — passed (2026-09-28, `emulator-5554`)
+
+The renderer keeps its own `RadialProgress2` for chat-shaped photos (a `TLRPC.Photo` with file progress) and
+never draws it for a photo that came from a URL, so a rich body that was still fetching an image showed a
+plain grey rectangle - no ring and no way to stop it - while the block path had both (§27). `RichMessageBody`
+now draws the same button over every media block whose receiver has no bitmap yet: the disc with a white
+cross while the file is coming in, the download arrow after a cancel, a tap cancelling
+(`ImageReceiver.cancelLoadImage`) or restarting the renderer's own URL load, and a tap anywhere else still
+reaching the renderer.
+
+**Placement, and the probe that got it right.** `ImageReceiver`'s own coordinates are relative to its block
+(`RichMessageLayout` calls `setImageCoords(0, 0, …)` for a photo, and a collage cell's are relative to the
+collage), so the button goes at `findMediaImageReceiver`'s block origin plus those coordinates. Drawing them
+at the receiver coordinates alone put three buttons on one placeholder, which the golden caught before
+anything was committed.
+
+**Reads.** The golden (Paparazzi has no network, so every image is loading) shows one button centred on the
+captioned image and one in each half of the collage, none floating in text; both `richMessageBody` goldens
+were re-recorded for Linux and the macOS pair was recorded on the runner and verified there
+(`verifyPaparazziDebug` green). On the device (topic 2790689, the third post's image): the button appears
+while loading, a tap turns it into the white download arrow and three seconds later the frame is
+pixel-identical (nothing resumes behind the reader's back), a tap on the arrow brings the cross back and the
+image then loads, and a tap elsewhere still opens the viewer. The post's whole layout - text, code block,
+carousel, reaction pills - is unchanged, and the flag-off body is unaffected.
+
+The little dot at the disc's edge is the indeterminate spinner's own start marker, the same one the block
+path's reading called a dot travelling around the disc (§27); it is Telegram's look for a load without a
+reported percentage, not an artefact.
