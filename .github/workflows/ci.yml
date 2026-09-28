@@ -179,14 +179,14 @@ jobs:
       # marker, compose-ui, appcompat-resources, com.android.tools:annotations
       # within one afternoon), which is what the retry below and the cache are for:
       # a warm Gradle home turns those into local reads.
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('apps/android/**/*.gradle*', 'apps/android/gradle/wrapper/gradle-wrapper.properties') }}
+          key: gradle-v2-${{ runner.os }}-${{ hashFiles('apps/android/**/*.gradle*', 'apps/android/gradle/wrapper/gradle-wrapper.properties') }}
           restore-keys: |
-            gradle-${{ runner.os }}-
+            gradle-v2-${{ runner.os }}-
 
       - name: Unit tests and screenshot verification
         # `runUnitAndScreenshotTests` is `:app:verifyPaparazziDebug`: the whole
@@ -204,3 +204,14 @@ jobs:
             if [ "$attempt" = 3 ]; then exit $status; fi
             sleep 15
           done
+
+      # Saved only on success: a failed run leaves Gradle's cache with the missing-artifact markers
+      # of whatever it could not download, and restoring that made the next attempt fail on the same
+      # coordinate instead of a fresh one (observed on this workflow's first try at caching).
+      - uses: actions/cache/save@v4
+        if: success()
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-v2-${{ runner.os }}-${{ hashFiles('apps/android/**/*.gradle*', 'apps/android/gradle/wrapper/gradle-wrapper.properties') }}
