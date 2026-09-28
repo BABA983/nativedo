@@ -1334,3 +1334,44 @@ where they are beside each other) is what the text case needed and it changes no
 a rich table selectable means giving its cells a usable row *and* a cell-sized x-range, i.e. a deliberate
 change in the vendored renderer under the overlay/forced-exact workflow, not a host wiring tweak. Recorded as
 an open gap for the owner to schedule; the flag-off table selects correctly today.
+
+## 27. The viewer opens the un-resized file, and a loading image can be cancelled (`e53a295`, `23e24a7`) — passed (2026-09-28, `emulator-5554`)
+
+Both changes come from the owner's read of the app's images ("打开后还是很模糊", "看不到 telegram 那样的 loading 按钮").
+
+**The viewer's file (`e53a295`) — passed, with the cache as the proof.** A Discourse `<img>` carries
+the display-sized resize in `src` and the un-resized copy as the second `srcset` candidate
+(`…/original/4X/<hash>.jpeg` beside `…/optimized/…_2_690x326.jpeg`), and the viewer used to be handed
+`src`, so opening an image could never be sharper than the body. `resolvePostImageViewerUrl` now prefers
+the widest `srcset` candidate, then an anchor that stays on the file's own host (an off-site anchor must
+not hijack the body's own upload - a cell-level test pins that), then `src`; the gallery, `ImageBlock`
+and the rich body's `pageBlockPhoto` all use it, and the body itself keeps downloading `src`.
+
+The device pass opened topic 2790689's third post (the 690x326 screenshot with no anchor - the case that
+was worst before) and read the app's own image cache afterwards: **two files, byte-for-byte the ones the
+URLs serve** - `…jpeg` at **96,856 B / 994x471** (what the viewer now fetches) beside
+**49,677 B / 690x326** (what the body still fetches). At 1x the image region's Laplacian variance rises
+641.6 -> 846.7 (+32%). The honest limit of the read: at the PhotoViewer's maximum double-tap zoom the
+before/after frames are identical (that zoom is past both files' native resolution, and the emulator
+cannot be given a two-finger gesture, so no intermediate 2x was read); the un-zoomed and modest-zoom
+cases are where the change lives, and the side-by-side of the two cache files shows it directly.
+Flag-on draws the same image full-column and opens the same viewer, with no jank; the rich body's own
+loading state was not captured (the file was already in memory), which stays a small open gap.
+
+**The loading button (`23e24a7`) — passed, all four steps.** A loading body image used to draw nothing in
+its progress ring (`ICON_EMPTY` with a binary progress). It now carries Telegram's own media-button
+states: the cross in the ring while the file is coming in, the download arrow after the reader
+cancels, a tap on the button cancelling (`ImageReceiver.cancelLoadImage`) or retrying, and a tap
+anywhere else still opening the viewer. Read under `adb emu network speed gsm` so the window was
+catchable (restored to `full` and airplane mode off afterwards):
+
+1. a throttled image shows the grey disc with a **white cross** and a moving dot - indeterminate, as
+   expected for a URL load (Telegram's `ImageLoader` reports no percentage for those);
+2. tapping the cross turns it into the **download arrow** immediately, and three seconds later it is
+   still the arrow with the placeholder unmoved - nothing resumed behind the reader's back;
+3. tapping the arrow brings the cross back and the image then loads normally;
+4. tapping the image away from the button (200, 1600) still opens the viewer, so the cancel logic does
+   not eat the block's own gesture.
+
+The opening sequence has no black frame in either build (mean 212 -> 19: the viewer's black background
+plus a dark screenshot), so nothing regressed there.
