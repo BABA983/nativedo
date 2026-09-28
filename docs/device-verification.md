@@ -1507,3 +1507,28 @@ carousel, reaction pills - is unchanged, and the flag-off body is unaffected.
 The little dot at the disc's edge is the indeterminate spinner's own start marker, the same one the block
 path's reading called a dot travelling around the disc (§27); it is Telegram's look for a load without a
 reported percentage, not an artefact.
+
+## 30. A post body's photos reach the column's edges (`466d0b7`) — passed; a collage's cells do not yet (2026-09-28)
+
+The owner read the rich body's images as rounded and inset where Telegram's read edge to edge. Both come from
+the chat bubble in the renderer - the media's bleed is `root.padLeft/padRight` minus the block's own padding,
+the corners come from `SharedConfig.bubbleRadius` - and neither is ours to change globally (the radius is a
+chat setting; the paddings also feed the layout's centring maths). `RichMessageLayout` therefore gained two
+host hooks, `0`/`false` meaning upstream's shape exactly: `mediaBleed` (how far a media block may draw past
+its padding box) and `squareMedia` (both `updateRoundRadius` variants answer 0 when it is set; a quote keeps
+its own 8dp). `RichMessageBody` sets the inset it already gives its column and `true`.
+
+**Reads.** Golden (Linux and macOS, both re-recorded and verified on their own platform): the single photo's
+placeholder moves from x 23..369 (the text inset) to 0..392 and its corners become the fill; the collage row
+is byte-identical. Device (topic 2790689, flag on): the photo spans **x 0..1079** - the screen - with square
+corners, while the paragraph's text stays at x 50..1010, so it is visibly wider than the body; the loading
+button stays centred on the block (disc centre 539 against the block's 539.5); tapping away from the button
+still opens the viewer; the flag-off body is unchanged (same block height, same full width it always had).
+
+**Open: a collage's cells.** Their rects are the collage's own layout maths, not a bleed, so this change only
+squared their corners - the cells stay inside the text inset (measured: the collage row unchanged at x
+23..374). The device pass could not photograph a collage at all: the host had no route to linux.do during the
+read, so only the two cached fixture topics were available and neither has side-by-side images. It did
+photograph a list-nested image reaching x 48..1079, i.e. bleeding right but keeping the list's own 48px
+indent, which is the same shape of gap. The runner's read of the look: a group of images reads as one media
+unit, so it would bleed collages too; that is the owner's call.
