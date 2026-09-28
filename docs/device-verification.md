@@ -1236,3 +1236,47 @@ failure lives in the long-press → menu → *Select text* path rather than in t
 next round carries a three-line diagnostic build (a log at the long press, two around `trySelect`) and
 will report the coordinates, `isSelectable` and the resulting selection state for the ON case, the OFF
 control and the heading case.
+
+## 25. A press in the rich body resolved to the wrong block (`c502d72`) — root cause found, fix in, device re-read queued (2026-09-28)
+
+The ON-body failure §24 parked ("Select text paints nothing" on post 1779614 #1's paragraph, while the
+same post's heading and every single-paragraph reply were fine) is a hit test, not a drawing bug, and the
+diagnostic instrumented build that settled it is `sel-diagnostic2` (temporary logs only, never committed:
+`fillTextLayoutBlocks`' listing plus the helper's `startViewChildPosition`/offsets, logged at select time
+and at draw time).
+
+What the device and a local `Robolectric` probe both read (topic 1779614 #1, cell-local press at (200, 385),
+which is inside the first paragraph's text block at y=356, len=82):
+
+- **the listing is stable** — 63 blocks at select time and at draw time with the same per-index `y`/`textLen`
+  (`0=197/20`, `1=356/82`, `52=12129/155`); only the wrapper objects' identity changes, which the helper never
+  reads;
+- **the offsets fit their block** (child 52 is 155 chars long and carries 3..11), so nothing was clamped away;
+- **the resolved child is the wrong one**: the helper created the selection on child **52** — a block 11.7k px
+  further down the same cell — so the tint, the droplets and the bar were all drawn off-screen. The flag-off
+  body resolves the same press to child 1 and selects `L站都快成Any牌路由器反馈地了`.
+
+**Cause.** `RichMessageLayout.reposition()` places a top-level block's text with
+`placeTexts(x, y, i)` — **`i` is that block's index** — and every `Text` keeps it in `row`
+(`Text.setRow(row)`). `ArticleTextSelectionHelper.findClosestLayoutIndex` reads any `row != 0` as
+"several text blocks beside each other in one row" and, when the press is within `dp(24)` of the nearest
+block, replaces its answer with the index of the last block in that row whose x-range covers the press x.
+In a single-column body that row is a *group id*: a local reproduction of the same post shows the blocks'
+rows are `0, 2, 3, 5, 6, 7 …` and that child 1 shares row 2 with children 17, 46 and 52 — the helper's own
+resolver returns 52 for the press, reproducibly, with the only containing block being child 1. Flag-off
+bodies are unaffected because our own `TextLayoutBlock.getRow()` answers 0.
+
+**Fix.** The host's wrapper (`RichMessageBody.OffsetTextLayoutBlock`) no longer forwards the renderer's row
+stamp: it keeps a row only where the blocks sharing it really are side by side — i.e. when no two of them
+overlap horizontally, which is a rich table's row of cells and is exactly the case the x-pick exists for —
+and answers 0 otherwise. With it, the same probe resolves the paragraph press to child 1 and selects the
+pressed line's text; flag-off behaviour is untouched.
+
+This also explains the "two bars" cluster §24 parked (rounds 28-30): a paragraph/list selection and a
+heading selection produced different item sets and different anchors because only the heading's block (row
+0) was resolved correctly, so the paragraph cases fed the bar a bogus selection.
+
+**Queued:** the device re-read on the fixed build — press post #1's body paragraph in both flag states and
+read the child, the tint, the droplets and the bar's item set and anchor (the heading read is the control);
+plus the still-open code-block droplet read, which `2b435ae` fixes but no build with it has been on the
+device yet.
