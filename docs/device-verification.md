@@ -1206,9 +1206,13 @@ round 30):** the menu is Copy / Quote / Translate with the bar just above the se
 y 826..950, tint y 958..1006, an 8px gap), the tint is (206,228,246) against white outside with rounded
 caps, and the droplets are at both ends. Two items the same read turned up, both open:
 
-- **Flag ON: Select text paints nothing.** The menu opens, but no tint, droplets or bar appear at 0.6s,
-  1.5s or 3s, and Back then leaves the app in the black/frozen frame first seen in round 25 (its 424).
-  The ON body feeds the same helper, so this is a defect to chase, not a mode difference.
+- **Flag ON: Select text painted nothing in that read** — the menu opened, but no tint, droplets or bar
+  appeared at 0.6s, 1.5s or 3s, and Back then left the app in the black/frozen frame first seen in
+  round 25 (its 424). Caveat before this is treated as a defect: the emulator's installed build changed
+  under the pass (a parallel session installed `0.1.0-debug-20260928-092909` at 09:30:07 over the build
+  the pass was using), and round 26 had read the ON case working on `7081fbf`, so the ON failure needs a
+  clean re-read on a *recorded* build id before it is chased. The successor runner is queued for exactly
+  that read (plus a logcat scan for an exception).
 - **A one-touch selection inside a code block puts the droplets at the block's bottom corners** rather
   than at the selected word's ends (503a, flag OFF). The code block is a horizontally scrollable
   container, so its layout blocks carry an offset the overlay's handle placement does not follow.
