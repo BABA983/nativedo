@@ -18,6 +18,7 @@ import io.github.baba983.nativedo.core.ui.parseInternalLinkDestination
 import io.github.baba983.nativedo.core.ui.PostRichMessageBuilder
 import io.github.baba983.nativedo.core.ui.splitPostBodySegments
 import org.telegram.messenger.AndroidUtilities
+import org.telegram.messenger.ImageLocation
 import org.telegram.messenger.ImageReceiver
 import org.telegram.messenger.MessageObject
 import org.telegram.messenger.MessagesController
@@ -28,6 +29,8 @@ import org.telegram.tgnet.TLRPC
 import org.telegram.tgnet.tl.TL_iv
 import org.telegram.ui.Cells.ChatMessageCell
 import org.telegram.ui.Cells.TextSelectionHelper
+import org.telegram.ui.Components.MediaActionDrawable
+import org.telegram.ui.Components.RadialProgress2
 import org.telegram.ui.PhotoViewer
 import java.io.File
 import java.util.ArrayList
@@ -132,6 +135,18 @@ internal class RichMessageBodyBlock(
     private var originY = 0
 
     private val delegate = RichMessageBodyDelegate()
+    // Same button colours as the block path's ImageBlock (Java ints there, so the literals need the
+    // Kotlin-side narrowing: 0xffffffff does not fit an Int).
+    private val progress = RadialProgress2(context.host).apply {
+        setProgressColor(0xffffffff.toInt())
+        setColors(0x66000000, 0x7f000000, 0xffffffff.toInt(), 0xffd9d9d9.toInt())
+    }
+    private val mediaBlocks = ArrayList<TL_iv.PageBlock>()
+    private val mediaOffset = IntArray(2)
+    private val loadingMedia = ArrayList<LoadingMedia>()
+    /** URLs whose load the reader stopped; the button offers the retry arrow for them. */
+    private val cancelledMediaLoads = HashSet<String>()
+    private var pressedMediaLoad: String? = null
 
     override fun measure(maxWidthPx: Int): Int = (layoutFor(maxWidthPx)?.height ?: 0) + trailingGapPx
 
@@ -147,6 +162,104 @@ internal class RichMessageBodyBlock(
         if (rich.hasOverlay()) {
             rich.drawOverlay(canvas, null)
         }
+        drawMediaLoadingIndicators(canvas, rich)
+    }
+
+    /**
+     * The renderer's own `RadialProgress2` never draws for a photo that came from a URL (its photo
+     * block keeps it for the chat shapes: a `TLRPC.Photo` with file progress), so a rich body that is
+     * still fetching an image looked like a plain grey rectangle - no ring, no way to stop it, while the
+     * block path had both (`ImageBlock`). This draws the same button over every media block whose
+     * receiver has no bitmap yet, on the renderer's own `ImageReceiver`, and the touch below toggles it.
+     */
+    private fun drawMediaLoadingIndicators(canvas: Canvas, rich: RichMessageLayout) {
+        if (!loadingMediaReceivers(rich)) {
+            return
+        }
+        val buttonSize = AndroidUtilities.dp(44f)
+        for (media in loadingMedia) {
+            val receiver = media.receiver
+            if (receiver.imageWidth <= 0 || receiver.imageHeight <= 0) {
+                continue
+            }
+            val cancelled = media.url in cancelledMediaLoads
+            val left = media.buttonLeft
+            val top = media.buttonTop
+            progress.setProgressRect(left, top, left + buttonSize, top + buttonSize)
+            progress.setIcon(
+                if (cancelled) MediaActionDrawable.ICON_DOWNLOAD else MediaActionDrawable.ICON_CANCEL,
+                true,
+                false,
+            )
+            progress.setProgress(if (cancelled) 1f else 0f, false)
+            progress.draw(canvas)
+        }
+    }
+
+    /**
+     * The media blocks whose image is not on screen yet, with the receiver the renderer is loading into.
+     * Recomputed per draw (the list is a handful of photos) because the renderer rebuilds its receivers
+     * when the layout is re-created.
+     */
+    private fun loadingMediaReceivers(rich: RichMessageLayout): Boolean {
+        loadingMedia.clear()
+        mediaBlocks.clear()
+        rich.collectMediaBlocks(mediaBlocks)
+        for (block in mediaBlocks) {
+            val url = block.url?.takeIf { it.isNotBlank() } ?: continue
+            val receiver = rich.findMediaImageReceiver(block, mediaOffset) ?: continue
+            if (receiver.hasBitmapImage() && receiver.currentAlpha == 1f) {
+                continue
+            }
+            loadingMedia.add(LoadingMedia(url, receiver, mediaOffset[0], mediaOffset[1]))
+        }
+        return loadingMedia.isNotEmpty()
+    }
+
+    private fun loadingMediaUnder(x: Float, y: Float, rich: RichMessageLayout): LoadingMedia? {
+        if (!loadingMediaReceivers(rich)) {
+            return null
+        }
+        val buttonSize = AndroidUtilities.dp(44f)
+        return loadingMedia.lastOrNull { media ->
+            val left = media.buttonLeft
+            val top = media.buttonTop
+            x >= left && x <= left + buttonSize && y >= top && y <= top + buttonSize
+        }
+    }
+
+    private fun toggleMediaLoad(media: LoadingMedia) {
+        if (media.url in cancelledMediaLoads) {
+            // The renderer's own call shape for a URL photo (`RichMessageLayout`'s applyImage path).
+            media.receiver.setImage(ImageLocation.getForPath(media.url), null, null, null, messageObject, 1)
+            cancelledMediaLoads.remove(media.url)
+        } else {
+            media.receiver.cancelLoadImage()
+            cancelledMediaLoads.add(media.url)
+        }
+        invalidateSelf()
+    }
+
+    private fun invalidateSelf() {
+        context.host.invalidate()
+    }
+
+    /**
+     * A media block still loading, with where the renderer draws it: `ImageReceiver`'s own coords are
+     * relative to its block (`RichMessageLayout` calls `setImageCoords(0, 0, …)` for a photo, and a
+     * collage cell's are relative to the collage), and `findMediaImageReceiver` hands back that block's
+     * origin - the pair is what the button must be placed at.
+     */
+    private class LoadingMedia(
+        val url: String,
+        val receiver: ImageReceiver,
+        val blockLeft: Int,
+        val blockTop: Int,
+    ) {
+        val buttonLeft: Int
+            get() = (blockLeft + receiver.imageX + receiver.imageWidth / 2f - AndroidUtilities.dp(44f) / 2f).toInt()
+        val buttonTop: Int
+            get() = (blockTop + receiver.imageY + receiver.imageHeight / 2f - AndroidUtilities.dp(44f) / 2f).toInt()
     }
 
     /** Same column as the text blocks; the renderer insets its own content inside it. */
@@ -160,6 +273,31 @@ internal class RichMessageBodyBlock(
      */
     override fun onTouch(event: MotionEvent, localX: Float, localY: Float): Boolean {
         val rich = layout ?: return false
+        // A tap on a loading image's button cancels or restarts that download instead of reaching the
+        // renderer, exactly as the block path's ImageBlock does.
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                val media = loadingMediaUnder(localX, localY, rich)
+                if (media != null) {
+                    pressedMediaLoad = media.url
+                    return true
+                }
+            }
+            MotionEvent.ACTION_UP -> {
+                val pressed = pressedMediaLoad
+                pressedMediaLoad = null
+                if (pressed != null) {
+                    loadingMedia.firstOrNull { it.url == pressed }?.let(::toggleMediaLoad)
+                    return true
+                }
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                if (pressedMediaLoad != null) {
+                    pressedMediaLoad = null
+                    return true
+                }
+            }
+        }
         val localEvent = MotionEvent.obtain(event)
         localEvent.offsetLocation(localX - event.x, localY - event.y)
         val handled = rich.onTouchEvent(localEvent)
