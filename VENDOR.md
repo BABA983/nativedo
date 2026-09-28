@@ -185,6 +185,20 @@ message. `scripts/vendor-status.sh --bump-report` splits the work:
 Bumping the pin is a deliberate, heavy operation: record it in the overlay
 (`pinned_commit`, `pinned_date`, `subject`) in the same commit as the files.
 
+## Stray files in the checkout
+
+The checkout is scratch space as far as this repo is concerned: `git status`
+there is not a signal, and neither `*.patch` files nor golden directories left
+beside it are inputs to anything here. A patch that was written while the
+checkout happened to be someone's working directory (they carry *this* repo's
+paths, so they cannot even apply in the upstream tree) is history, not a step to
+run: check whether its content is already in main instead of applying it —
+`git merge-base --is-ancestor <its-commit> origin/main` for a `format-patch`, and
+`git apply --check --reverse <patch>` in a clean worktree for a hand-made diff.
+The five such patches from 2026-09 resurfaced with exactly that question; all of
+them were already in `main` (the 12-commit batch's commits are all ancestors, and
+`attachment-row`'s single commit is inside it), so nothing was pending from them.
+
 ## History
 
 The previous model (compact manifest + generated lock + per-file `notes`,
