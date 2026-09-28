@@ -1375,3 +1375,35 @@ catchable (restored to `full` and airplane mode off afterwards):
 
 The opening sequence has no black frame in either build (mean 212 -> 19: the viewer's black background
 plus a dark screenshot), so nothing regressed there.
+
+## 28. Detail content passes under the chrome again (`70a1d96`) — passed (2026-09-28, `emulator-5554`)
+
+The owner read the topic action bar as carrying a background layer Telegram does not have. The layer was
+`3d97b24`'s `clipBounds` on the list ("protect detail content from fixed chrome"): rows were cut flat at
+the chrome line and the strip behind the bar painted the page colour instead of the messages. The
+fragment's own comment for this chrome says the opposite - ChatActivity's glass ActionBar occupies the
+status bar and content draws underneath the entire top chrome - and the list already carries
+`clipToPadding = false` plus the fade zone at the chrome line, so the clip was the only thing hiding it.
+`70a1d96` removes the clip (the two call sites, the host layout's clip machinery and its test) and leaves
+the glass bar and the fade untouched.
+
+The device read used identical positioning for both builds (topic 2790689 scrolled so post 2's cell top
+sits at screen y 105; the uiautomator dumps agree in both: `[0,105][1080,620] 2F …`):
+
+1. **The row under the chrome** - before: cut flat at the chrome's bottom edge (the avatar's lower rim and
+   `@scottalight · #2 · 08-21 23:05` sliced, page colour above); after: the row passes under the bar and
+   fades out through the glass, no cut. Side by side in the pass's `2004-compare`.
+2. **The title and back chips stay legible** over the content in every frame; the body is only a faint
+   ghost behind the glass.
+3. **Keyboard pan** - the composer's focus state (`mImeWindowVis=3`, `mInputShown=true`) scrolls the list
+   as before with content still passing under the chrome. This AVD's Gboard never renders (known since the
+   project's round 2), so only the transition's end state could be judged, and it is no worse than with
+   the clip.
+4. **Page-down buttons and the floating date** - the two FABs are whole at mid-scroll, near the top only
+   "go to bottom" shows, both show at the end, no clipping artefacts; the date capsule is drawn below the
+   chrome and was never inside the clip's scope.
+
+**One judgement call handed to the owner:** while scrolling *fast*, a dense text block or a dark image
+sweeping through the chip band reads slightly busy for a frame or two. The pass does not recommend
+bringing the clip back; the fallback if the owner minds it is to clip only while the IME pan runs, which
+keeps the resting state as it is now.
