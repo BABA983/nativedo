@@ -810,7 +810,12 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
                 }
                 if (dispatchBlockTouch(block, event, blockX, localY - top)) {
                     if (action == MotionEvent.ACTION_DOWN) {
-                        cancelCheckLongPress();
+                        // ...but a rich body that consumed the DOWN does not take the cell's long press with
+                        // it: the renderer's own gesture handling must not swallow the menu and the
+                        // selection (see shouldStartLongPressBeforeBlockTouch).
+                        if (!"RichMessageBodyBlock".equals(block.getClass().getSimpleName())) {
+                            cancelCheckLongPress();
+                        }
                         if (embeddedView(block) != null) {
                             activeEmbeddedBodyTouchStream = true;
                         } else {
@@ -952,7 +957,14 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
                 || "CalloutBlock".equals(name)
                 || "OneboxBlock".equals(name)
                 || "PollBlock".equals(name)
-                || "TableBlock".equals(name);
+                || "TableBlock".equals(name)
+                // The rich body forwards touches into the renderer, which owns its own gestures (a table's
+                // scroller, a link press) and reports them handled - but the *cell* still owns the long
+                // press, exactly as it does for a paragraph. Without this the DOWN the renderer consumed
+                // cancelled the cell's long press, so a rich table's cells could not be selected at all
+                // while a press a few pixels to the left of the table opened the menu (§26 follow-up,
+                // docs/device-verification.md).
+                || "RichMessageBodyBlock".equals(name);
     }
 
     private boolean dispatchBlockTouch(PostBodyBlock block, MotionEvent event, float blockX, float blockY) {
