@@ -548,7 +548,6 @@ class TopicDetailFragment @JvmOverloads constructor(
                 AndroidUtilities.statusBarHeight + ActionBar.getCurrentActionBarHeight(),
             )
             setPadding(0, estimatedTop, 0, listBottomBasePadding)
-            root.setFixedContentTopClip(this, estimatedTop)
             adapter = this@TopicDetailFragment.adapter
             setSwipeReplyDelegate(object : TopicSwipeReplyRecyclerView.Delegate {
                 override fun canStartSwipeReply(): Boolean {
@@ -2980,7 +2979,6 @@ class TopicDetailFragment @JvmOverloads constructor(
         }
         val nextTop = topicDetailListContentTopPaddingPx(actionBarHeight)
         topicTopFadeView?.setFadeZoneTop(actionBarHeight + AndroidUtilities.dp(1f))
-        rootFrameLayout?.setFixedContentTopClip(listView, nextTop)
         if (listView.paddingTop != nextTop) {
             // Preserve first-visible offset when chrome top pad is corrected after measure
             // so content does not appear to auto-scroll.

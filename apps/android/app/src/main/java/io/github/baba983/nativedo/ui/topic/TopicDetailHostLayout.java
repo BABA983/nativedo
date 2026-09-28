@@ -8,7 +8,6 @@
 package io.github.baba983.nativedo.ui.topic;
 
 import android.content.Context;
-import android.graphics.Rect;
 import android.view.View;
 import android.view.ViewGroup;
 
@@ -53,11 +52,6 @@ public class TopicDetailHostLayout extends TopicPostScrimHostLayout {
     private PanTransitionDelegate panTransitionDelegate;
     private boolean released;
     private long panAnimationsEnabledAt;
-    private View fixedContentClipView;
-    private int fixedContentClipTop;
-    private final Rect fixedContentClipBounds = new Rect();
-    private final OnLayoutChangeListener fixedContentClipLayoutListener = (view, left, top, right, bottom,
-            oldLeft, oldTop, oldRight, oldBottom) -> updateFixedContentClip();
 
     public TopicDetailHostLayout(@NonNull Context context) {
         super(context);
@@ -145,38 +139,6 @@ public class TopicDetailHostLayout extends TopicPostScrimHostLayout {
         return !released && adjustPanLayoutHelper.animationInProgress();
     }
 
-    /** Clips edge-to-edge list content below fixed top chrome without changing its padding model. */
-    public void setFixedContentTopClip(@Nullable View content, int topInset) {
-        if (fixedContentClipView != content) {
-            if (fixedContentClipView != null) {
-                fixedContentClipView.removeOnLayoutChangeListener(fixedContentClipLayoutListener);
-                fixedContentClipView.setClipBounds(null);
-            }
-            fixedContentClipView = content;
-            if (fixedContentClipView != null) {
-                fixedContentClipView.addOnLayoutChangeListener(fixedContentClipLayoutListener);
-            }
-        }
-        fixedContentClipTop = Math.max(0, topInset);
-        updateFixedContentClip();
-    }
-
-    private void updateFixedContentClip() {
-        if (fixedContentClipView == null || fixedContentClipTop == 0 ||
-                fixedContentClipView.getWidth() == 0 || fixedContentClipView.getHeight() == 0) {
-            if (fixedContentClipView != null) {
-                fixedContentClipView.setClipBounds(null);
-            }
-            return;
-        }
-        fixedContentClipBounds.set(
-                0,
-                Math.min(fixedContentClipTop, fixedContentClipView.getHeight()),
-                fixedContentClipView.getWidth(),
-                fixedContentClipView.getHeight());
-        fixedContentClipView.setClipBounds(fixedContentClipBounds);
-    }
-
     /** Returns the real laid-out extent reserved by a fixed overlay's children. */
     public static int getOverlayContentHeight(@Nullable ViewGroup overlay) {
         if (overlay == null) {
@@ -213,11 +175,6 @@ public class TopicDetailHostLayout extends TopicPostScrimHostLayout {
             fixedTopView.setTranslationY(0f);
         }
         fixedTopView = null;
-        if (fixedContentClipView != null) {
-            fixedContentClipView.removeOnLayoutChangeListener(fixedContentClipLayoutListener);
-            fixedContentClipView.setClipBounds(null);
-        }
-        fixedContentClipView = null;
         panTransitionDelegate = null;
     }
 
