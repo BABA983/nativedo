@@ -173,9 +173,47 @@ internal class RichMessageBodyBlock(
         y: Int,
     ) {
         val rich = layout ?: return
-        for (block in rich.textBlocks) {
-            blocks.add(OffsetTextLayoutBlock(block, x, y))
+        val inner = rich.textBlocks
+        for (block in inner) {
+            blocks.add(OffsetTextLayoutBlock(block, x, y, selectionRowOf(block, inner)))
         }
+    }
+
+    /**
+     * The renderer stamps every text block of one top-level block with that block's *index* as its
+     * `row` (`RichMessageLayout.reposition()` calls `placeTexts(..., i)`), which is a group id, not a
+     * row of columns - a paragraph's lines and its author line carry it, and they are stacked.
+     * `ArticleTextSelectionHelper.findClosestLayoutIndex` reads any `row != 0` as "several text blocks
+     * beside each other in one row" and then picks between them *by x*, so for a stacked block it
+     * answers with a different, far away block of the same top-level block: a device pass pressing a
+     * paragraph of a rich body got the selection hundreds of pixels further down the post (no tint, no
+     * handles, no action bar under the finger). The x-pick is right where the blocks sharing a row
+     * really are beside each other (a rich table's cells), so the row survives only there.
+     */
+    private fun selectionRowOf(
+        block: TextSelectionHelper.TextLayoutBlock,
+        siblings: List<TextSelectionHelper.TextLayoutBlock>,
+    ): Int {
+        val row = block.row
+        if (row == 0) {
+            return 0
+        }
+        var rowBlocks = 0
+        for (i in siblings.indices) {
+            val other = siblings[i]
+            if (other === block || other.row != row) {
+                continue
+            }
+            rowBlocks++
+            val left = block.x
+            val right = left + block.layout.width
+            val otherLeft = other.x
+            val otherRight = otherLeft + other.layout.width
+            if (left < otherRight && otherLeft < right) {
+                return 0
+            }
+        }
+        return if (rowBlocks > 0) row else 0
     }
 
     override fun onAttachedToWindow() {
@@ -281,11 +319,12 @@ private inner class RichMessageBodyDelegate : ChatMessageCell.ChatMessageCellDel
         private val inner: TextSelectionHelper.TextLayoutBlock,
         private val dx: Int,
         private val dy: Int,
+        private val selectionRow: Int,
     ) : TextSelectionHelper.TextLayoutBlock {
         override fun getLayout(): Layout = inner.layout
         override fun getX(): Int = inner.x + dx
         override fun getY(): Int = inner.y + dy
-        override fun getRow(): Int = inner.row
+        override fun getRow(): Int = selectionRow
         override fun getPrefix(): CharSequence? = inner.prefix
         override fun getSelectionBounds(): Rect? = inner.selectionBounds
     }
