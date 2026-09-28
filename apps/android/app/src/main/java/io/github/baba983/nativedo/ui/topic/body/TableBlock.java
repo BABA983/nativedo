@@ -113,23 +113,17 @@ final class TableBlock implements EmbeddedPostBodyBlock, TableLayout.TableLayout
         private final int y;
         private final int row;
         private final CharSequence prefix;
-        private final Rect selectionBounds;
 
         TableSelectionBlock(Layout layout, int x, int y, int row) {
             this(layout, x, y, row, null);
         }
 
         TableSelectionBlock(Layout layout, int x, int y, int row, CharSequence prefix) {
-            this(layout, x, y, row, prefix, null);
-        }
-
-        TableSelectionBlock(Layout layout, int x, int y, int row, CharSequence prefix, Rect selectionBounds) {
             this.layout = layout;
             this.x = x;
             this.y = y;
             this.row = row;
             this.prefix = prefix;
-            this.selectionBounds = selectionBounds;
         }
 
         @Override
@@ -155,11 +149,6 @@ final class TableBlock implements EmbeddedPostBodyBlock, TableLayout.TableLayout
         @Override
         public CharSequence getPrefix() {
             return prefix;
-        }
-
-        @Override
-        public Rect getSelectionBounds() {
-            return selectionBounds;
         }
     }
 
@@ -419,7 +408,10 @@ final class TableBlock implements EmbeddedPostBodyBlock, TableLayout.TableLayout
 
     @Override
     public void fillTextLayoutBlocks(ArrayList<TextSelectionHelper.TextLayoutBlock> blocks, int x, int y) {
-        Rect clipBounds = selectionClipBounds(x, y);
+        // No selectionBounds: the helper reads that field only when it places the drag handles, and a
+        // block-wide rect put them at the table's corners instead of the selected cell's line (same
+        // defect as the code block's, seen on device). Upstream's article table passes a *cell's*
+        // bounds; with the cell-local x/y our layout blocks already carry, null is the same thing.
         if (usesTelegramTableLayout) {
             int contentLeft = tableContentLeft();
             for (int i = 0, count = tableLayout.getChildCount(); i < count; i++) {
@@ -432,8 +424,7 @@ final class TableBlock implements EmbeddedPostBodyBlock, TableLayout.TableLayout
                         x + contentLeft + child.getTextX() - scrollView.getScrollX(),
                         y + listTopPadding + tableLayout.getTop() + child.getTextY(),
                         child.getRow(),
-                        null,
-                        clipBounds
+                        null
                 ));
             }
             return;
@@ -455,8 +446,7 @@ final class TableBlock implements EmbeddedPostBodyBlock, TableLayout.TableLayout
                                 current.getX(),
                                 current.getY(),
                                 cell.row + 10,
-                                current.getPrefix(),
-                                clipBounds
+                                current.getPrefix()
                         ));
                     }
                 }
@@ -466,16 +456,10 @@ final class TableBlock implements EmbeddedPostBodyBlock, TableLayout.TableLayout
                         x + contentLeft + cell.x + cell.textX - scrollView.getScrollX(),
                         y + listTopPadding + tableContainer.getTop() + cell.y + cell.textY,
                         cell.row + 10,
-                        null,
-                        clipBounds
+                        null
                 ));
             }
         }
-    }
-
-    private Rect selectionClipBounds(int x, int y) {
-        int top = y + listTopPadding;
-        return new Rect(x, top, x + viewportWidth, top + scrollView.getMeasuredHeight());
     }
 
     @Override

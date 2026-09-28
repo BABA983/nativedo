@@ -9,7 +9,6 @@ package io.github.baba983.nativedo.ui.topic.body;
 
 import android.graphics.Canvas;
 import android.graphics.Paint;
-import android.graphics.Rect;
 import android.graphics.RectF;
 import android.text.StaticLayout;
 import android.view.MotionEvent;
@@ -249,13 +248,9 @@ final class CodeBlock implements EmbeddedPostBodyBlock {
                     y + textContainerTopForSelection(),
                     0,
                     null,
-                    selectionClipBounds(x, y)
+                    null
             ));
         }
-    }
-
-    private Rect selectionClipBounds(int x, int y) {
-        return new Rect(x, y, x + viewportWidth, y + measuredHeight);
     }
 
     private int textContainerLeftForSelection() {
