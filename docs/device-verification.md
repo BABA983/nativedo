@@ -1298,3 +1298,39 @@ opening post links to — so the read follows that link.
 **Still open, unrelated to this fix:** backing out of an ON-body selection put the app in the black/frozen
 frame once on `c502d72` (the §24 round-25 symptom: the related-topics strip floating on black); a second
 Back recovered and navigation stayed normal. Seen once, not chased.
+
+## 26. A rich table's cells cannot be selected (`c502d72`) — one pass, one open gap (2026-09-28, `emulator-5554`)
+
+The §25 fix left one read queued ("the host keeps the renderer's row stamps for blocks that are genuinely
+beside each other - a rich table's row of cells - and that path has no device read yet"). It is now read in
+both flag states, on the topic the table reads have used all along (2140307, whose opening post does carry
+its table: the round that reported it gone had probed for one cell fill colour and missed the others).
+
+**Flag off (our `TableBlock`) — passed.** A press on the `Any Router` cell of the 公益站名 column
+(x 48..364, ink y 1722..1757) opens the cell menu as on any other body, and *Select text* tints that cell
+only (y 1713..1761, x 107..299 — no smear into the 地址 column) with the droplets at the tint's own ends
+(x 88..145 and 264..321). That is also the device confirmation `2b435ae` was still owed for tables: before
+it, the droplets went to the *table's* corners because the block passed its own rect as
+`selectionBounds`, the one field the handle placement reads.
+
+**Flag on (the rich table) — the cells cannot be selected at all, and the cause is the renderer's cell
+geometry.** Two long presses (1.5s, 2.5s) on the same cell did nothing: no menu, no tint, no droplets, the
+table not scrolling either. A local probe of the same shape (a two-row rich table, first body block) names
+the mechanism:
+
+- the three cells of a row all report **the same y-band** and the renderer stamps the table's cells with the
+  block index, which for a table that is the body's *first* block is `0` — the value
+  `ArticleTextSelectionHelper.findClosestLayoutIndex` reads as "not a row". It scans its listing from the
+  end and breaks on the first block whose y-range contains the press, so a press in `Any Router` resolves to
+  the row's **last** cell (`maybeTextIndex=5`, `可用`, for a press on cell 3): the selection is created on a
+  different cell than the finger's, and with a two-character target it does not even start;
+- and a row stamp would not be enough by itself: every rich table cell's layout block reports the **table's**
+  width (x-ranges 30..636, 64..670, 111..717 all contain the press x), so the helper's by-x pick returns the
+  rightmost cell whatever the row says. That geometry comes from upstream's `RichTableBlock`, in the vendored
+  file, not from this host's wiring.
+
+**Why it is not this round's fix.** §25's rule (drop the renderer's row where the blocks are stacked, keep it
+where they are beside each other) is what the text case needed and it changes nothing for these cells. Making
+a rich table selectable means giving its cells a usable row *and* a cell-sized x-range, i.e. a deliberate
+change in the vendored renderer under the overlay/forced-exact workflow, not a host wiring tweak. Recorded as
+an open gap for the owner to schedule; the flag-off table selects correctly today.
