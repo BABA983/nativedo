@@ -1407,3 +1407,29 @@ sits at screen y 105; the uiautomator dumps agree in both: `[0,105][1080,620] 2F
 sweeping through the chip band reads slightly busy for a frame or two. The pass does not recommend
 bringing the clip back; the fallback if the owner minds it is to clip only while the IME pan runs, which
 keeps the resting state as it is now.
+
+### §26 follow-up: the rows and the boxes (`4b8a4a5`) — fixed, device read queued (2026-09-28)
+
+The gap §26 named ("the cells cannot be selected at all") needed two changes, and the owner's question
+about the two `createTextLayout` calls is what pinned the first one: `TableLayout.java` is **byte-clean
+against the pin** (`vendor-diff`), so both calls are upstream's own two-pass measure. Pass one builds
+every cell at a provisional `maxCellWidth` (`width / 1.5`, or half the table for two columns - the 606 px
+the probe read for a three-column table); pass two re-builds at the exact cell width but only for cells
+that came out multi-line, or single-line and centred/right-aligned. A single-line left-aligned cell keeps
+the wide box - upstream never needed it narrowed because the glyphs render identically - which is exactly
+why the helper's by-x pick could not tell the columns apart.
+
+- **`TableLayout`** now also runs the exact pass when the box is not the cell's own width. The guard
+  flags it as forced-exact `[drawing, measurement]`; the named gate (`:app:verifyPaparazziDebug`) is green
+  and every table golden is unchanged, i.e. the drawing output is byte-identical - the only visible
+  difference is that a long single-line cell now wraps instead of being clipped.
+- **`RichMessageBody`** derives the helper's row stamps from the geometry (same renderer stamp group, same
+  y-band, no horizontal overlap - a table's row of cells) rather than forwarding the renderer's top-level
+  block index. The cells previously answered 0, so the helper's by-x pick never ran at all; the §25 case
+  (stacked blocks sharing a stamp) still answers 0 by construction, and the goldens for it are unchanged.
+
+Local probe, same coordinates as §26's: a press on the first column resolved to the third column
+(`maybeTextIndex=5`, `可用`) before; it now resolves to the pressed cell (`3`) and selects `Any Router`.
+**Queued:** the device read on this build - press a rich table's first column and confirm the tint lands
+there, a long cell wraps rather than clipping, and the table's own look is unchanged next to the flag-off
+body's table.
