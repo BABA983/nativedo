@@ -157,8 +157,19 @@ public class TableLayout extends View {
                 if (textLayout != null) {
                     final Layout layout = textLayout.getLayout();
                     int lineCount = layout != null ? layout.getLineCount() : 0;
-                    if (!first && (lineCount > 1 || lineCount > 0 && (cell.align_center || cell.align_right))) {
-                        setTextLayout(delegate.createTextLayout(cell, measuredWidth - itemPaddingLeft * 2));
+                    // NativeDo: also when the box is not the cell's own width. The provisional pass above
+                    // builds every cell at maxCellWidth (width / 1.5, or half the table for two columns)
+                    // and this exact pass used to skip the cells that stayed single-line and left-aligned:
+                    // their glyphs render the same either way, so upstream never needed the box narrowed.
+                    // A selection does. ArticleTextSelectionHelper.findClosestLayoutIndex picks between the
+                    // cells of one row by their box x-ranges, and three boxes that all span the table make
+                    // it answer with the last cell - a press on "Any Router" selected "可用" (a device
+                    // pass, docs/device-verification.md §26). The narrower box also stops a long single-line
+                    // cell from being clipped instead of wrapped.
+                    final int exactCellWidth = measuredWidth - itemPaddingLeft * 2;
+                    if (!first && (lineCount > 1 || lineCount > 0 && (cell.align_center || cell.align_right)
+                            || layout != null && layout.getWidth() != exactCellWidth)) {
+                        setTextLayout(delegate.createTextLayout(cell, exactCellWidth));
                         fixedHeight = textHeight + itemPaddingTop + itemPaddingBottom;
                     }
 

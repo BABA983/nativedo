@@ -174,46 +174,77 @@ internal class RichMessageBodyBlock(
     ) {
         val rich = layout ?: return
         val inner = rich.textBlocks
-        for (block in inner) {
-            blocks.add(OffsetTextLayoutBlock(block, x, y, selectionRowOf(block, inner)))
+        val rows = selectionRows(inner)
+        for (index in inner.indices) {
+            blocks.add(OffsetTextLayoutBlock(inner[index], x, y, rows[index]))
         }
     }
 
     /**
-     * The renderer stamps every text block of one top-level block with that block's *index* as its
-     * `row` (`RichMessageLayout.reposition()` calls `placeTexts(..., i)`), which is a group id, not a
-     * row of columns - a paragraph's lines and its author line carry it, and they are stacked.
-     * `ArticleTextSelectionHelper.findClosestLayoutIndex` reads any `row != 0` as "several text blocks
-     * beside each other in one row" and then picks between them *by x*, so for a stacked block it
-     * answers with a different, far away block of the same top-level block: a device pass pressing a
-     * paragraph of a rich body got the selection hundreds of pixels further down the post (no tint, no
-     * handles, no action bar under the finger). The x-pick is right where the blocks sharing a row
-     * really are beside each other (a rich table's cells), so the row survives only there.
+     * The row stamps the selection helper works with.
+     *
+     * `ArticleTextSelectionHelper.findClosestLayoutIndex` first walks the listing backwards and stops at
+     * the last block whose y-range contains the press, then - only when that block's `getRow()` is
+     * positive - picks between the blocks sharing that row by x. Two consequences shape this method:
+     *
+     * - the renderer's own `row` cannot be forwarded: `RichMessageLayout.reposition()` calls
+     *   `placeTexts(..., i)` with the *top-level block index*, so a paragraph, its author line and its
+     *   following lines share a "row" that means nothing spatially. Forwarding it made a press on a rich
+     *   body's paragraph select a block 11.7k px further down (docs/device-verification.md §25).
+     * - a row that is not positive is a row the helper will not use at all - which is how a rich table's
+     *   cells were unreachable: they share one y-band, the renderer stamps them all with 0, and the
+     *   backward walk then settles on the *last* cell of the row (a press on "Any Router" selected
+     *   "可用", §26).
+     *
+     * So the rows are derived from the geometry and from the renderer's stamp as a group id (0 included):
+     * blocks that carry the same stamp, sit in the same y-band and do *not* overlap horizontally are
+     * beside each other and get a shared positive row - a table's row of cells, which is what the by-x
+     * pick exists for. Stacked blocks (a paragraph above its author line, the lines of one text block)
+     * keep 0 and let the nearest-one-wins rule do its work.
      */
-    private fun selectionRowOf(
-        block: TextSelectionHelper.TextLayoutBlock,
-        siblings: List<TextSelectionHelper.TextLayoutBlock>,
-    ): Int {
-        val row = block.row
-        if (row == 0) {
-            return 0
-        }
-        var rowBlocks = 0
-        for (i in siblings.indices) {
-            val other = siblings[i]
-            if (other === block || other.row != row) {
+    private fun selectionRows(
+        inner: List<TextSelectionHelper.TextLayoutBlock>,
+    ): IntArray {
+        val rows = IntArray(inner.size)
+        var next = 1
+        for (i in inner.indices) {
+            if (rows[i] != 0) {
                 continue
             }
-            rowBlocks++
-            val left = block.x
-            val right = left + block.layout.width
-            val otherLeft = other.x
-            val otherRight = otherLeft + other.layout.width
-            if (left < otherRight && otherLeft < right) {
-                return 0
+            val a = inner[i]
+            var group = 0
+            for (j in i + 1 until inner.size) {
+                if (rows[j] != 0 || inner[j].row != a.row) {
+                    continue
+                }
+                val b = inner[j]
+                if (!sharesYBand(a, b) || overlapsHorizontally(a, b)) {
+                    continue
+                }
+                if (group == 0) {
+                    group = next++
+                    rows[i] = group
+                }
+                rows[j] = group
             }
         }
-        return if (rowBlocks > 0) row else 0
+        return rows
+    }
+
+    private fun sharesYBand(a: TextSelectionHelper.TextLayoutBlock, b: TextSelectionHelper.TextLayoutBlock): Boolean {
+        val aTop = a.y
+        val aBottom = aTop + a.layout.height
+        val bTop = b.y
+        val bBottom = bTop + b.layout.height
+        return aTop < bBottom && bTop < aBottom
+    }
+
+    private fun overlapsHorizontally(a: TextSelectionHelper.TextLayoutBlock, b: TextSelectionHelper.TextLayoutBlock): Boolean {
+        val aLeft = a.x
+        val aRight = aLeft + a.layout.width
+        val bLeft = b.x
+        val bRight = bLeft + b.layout.width
+        return aLeft < bRight && bLeft < aRight
     }
 
     override fun onAttachedToWindow() {
