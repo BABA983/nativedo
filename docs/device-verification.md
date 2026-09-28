@@ -1433,3 +1433,29 @@ Local probe, same coordinates as §26's: a press on the first column resolved to
 **Queued:** the device read on this build - press a rich table's first column and confirm the tint lands
 there, a long cell wraps rather than clipping, and the table's own look is unchanged next to the flag-off
 body's table.
+
+### §26 follow-up, the device read (`bc1eceb`): the geometry half is in, the touch routing is the other half
+
+The read on `4b8a4a5`+`bc1eceb` says two things, and the second one is the point:
+
+- **Nothing regressed.** The rich table's geometry is identical to the pre-fix build (row separators at
+  1348/1442/1538/1634/1730/1826/1965/2104 and column separators at 48/384/953 in both), no cell is
+  clipped that was not before, and the flag-off body's own table still selects its left column exactly as
+  §26 measured it (tint y 1713..1761, x 107..299; droplets x 88..145 / 264..321).
+- **But the cells still cannot be reached by a long press**: presses inside the rich table - left column,
+  header, another row, and a long-press-and-drag - produce no menu and no tint, while a press just left of
+  the table (x 20) and a press in the paragraph above it both open the menu. So the blocker the geometry
+  fix does not touch is **touch routing**: `TopicPostCell.onTouchEvent` dispatches the DOWN into the body
+  block first, and when the block consumes it (`RichMessageBody.onTouch` -> the rich renderer, which owns
+  the table's own gestures) the cell calls `cancelCheckLongPress()` - the menu never opens and the
+  selection overlay never sees a landable point. The same read shows a selection started in the paragraph
+  above cannot be dragged into the table: its block carries no reachable text position.
+
+The geometry itself is proven locally (a press on the first column resolved to the third column before,
+to the pressed cell after - see the §26 follow-up above); what remains is to let the cell keep its long
+press when the rich body consumes the DOWN, i.e. to give the rich body the same "the cell owns the long
+press" treatment the paragraph/heading blocks already have, and re-read the three columns on the device.
+
+Also noted, **pre-existing and not from this change**: in the flag-off body the address column renders
+empty for the rows sampled (the same in §26's older captures), which is a separate lookup to make another
+day.
