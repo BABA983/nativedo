@@ -2,6 +2,7 @@ package io.github.baba983.nativedo.core.ui
 
 import io.github.baba983.nativedo.core.html.CookedPostBlock
 import io.github.baba983.nativedo.core.html.resolvePostImageUrl
+import io.github.baba983.nativedo.core.html.resolvePostImageViewerUrl
 import org.telegram.tgnet.tl.TL_iv
 import java.util.ArrayList
 
@@ -238,8 +239,10 @@ internal object PostRichMessageBuilder {
         withCaption: Boolean = true,
     ): TL_iv.PageBlock =
         TL_iv.pageBlockPhoto().apply {
-            // A relative src needs a base to resolve against; without one the raw src is all we have.
-            url = if (baseUrl.isEmpty()) image.src else resolvePostImageUrl(baseUrl, image.src)
+            // The renderer has one URL per photo (no separate thumb), so this is both what it draws and
+            // what the viewer opens: the anchor's upload or the srcset's un-resized copy, with the drawn
+            // `src` as the last resort - the same rule the block path's viewer uses.
+            url = resolvePostImageViewerUrl(baseUrl, image)
             w = image.widthPx
             h = image.heightPx
             if (withCaption) {

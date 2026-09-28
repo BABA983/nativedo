@@ -43,6 +43,12 @@ internal sealed interface CookedPostBlock {
         val widthPx: Int = 0,
         val heightPx: Int = 0,
         val captionHtml: String? = null,
+        /**
+         * The `srcset` attribute as the site wrote it. Discourse puts the file it drew in `src` and the
+         * *original* upload next to it here (`…/original/4X/<hash>.jpeg` beside `…/optimized/…_2_690x326.jpeg`),
+         * which is what a viewer should open - see [widestImageCandidate].
+         */
+        val srcset: String? = null,
     ) : CookedPostBlock {
         val aspectRatio: Float? = widthPx
             .takeIf { it > 0 }

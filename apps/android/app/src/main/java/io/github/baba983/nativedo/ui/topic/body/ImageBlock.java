@@ -98,7 +98,9 @@ final class ImageBlock implements EmbeddedPostBodyBlock {
         String href = image.getHref();
         String hrefUrl = href != null ? CookedPostBodyParserKt.resolvePostImageUrl(context.getBaseUrl(), href) : null;
         boolean hrefIsImage = hrefUrl != null && CookedPostBodyParserKt.isLikelyPostImageUrl(hrefUrl);
-        targetUrl = hrefIsImage ? hrefUrl : imageUrl;
+        // What the viewer opens: the anchor's upload, else the srcset's un-resized copy - never `imageUrl`,
+        // which is the resize the site drew in the body (same rule the gallery and the rich body use).
+        targetUrl = CookedPostBodyParserKt.resolvePostImageViewerUrl(context.getBaseUrl(), image);
         externalLinkUrl = hrefUrl != null && !hrefIsImage ? hrefUrl : null;
         linkDrawable = externalLinkUrl != null ? loadInstantLinkDrawable(context) : null;
         receiver = context.getImagePool().obtain("image:" + targetUrl);

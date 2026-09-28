@@ -136,7 +136,9 @@ final class CollageBlock implements EmbeddedPostBodyBlock {
             String imageUrl = CookedPostBodyParserKt.resolvePostImageUrl(context.getBaseUrl(), image.getSrc());
             String href = image.getHref();
             String hrefUrl = href != null ? CookedPostBodyParserKt.resolvePostImageUrl(context.getBaseUrl(), href) : null;
-            String targetUrl = hrefUrl != null && CookedPostBodyParserKt.isLikelyPostImageUrl(hrefUrl) ? hrefUrl : imageUrl;
+            // Same rule as the gallery's and ImageBlock's viewer URL, so the tile's URL and the viewer
+            // item's match even when the file only exists in the srcset (an un-anchored upload).
+            String targetUrl = CookedPostBodyParserKt.resolvePostImageViewerUrl(context.getBaseUrl(), image);
             ImageReceiver receiver = context.getImagePool().obtain("collage:" + targetUrl);
             receiver.setRoundRadius(0);
             RadialProgress2 radialProgress = new RadialProgress2(context.getHost());

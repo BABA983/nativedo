@@ -1320,7 +1320,10 @@ class TopicDetailFragment @JvmOverloads constructor(
                 val height = image.heightPx.takeIf { it > 0 } ?: bounds?.height()?.toInt()?.coerceAtLeast(1) ?: 0
                 PhotoViewer.UrlPhotoItem(image.url, image.thumbUrl, width, height, image.caption, viewerTitle, viewerSubtitle)
             }
-            selectedIndex = items.indexOfFirst { it.url == url }.coerceAtLeast(0)
+            // A block hands over the URL its own tile carries, which is the same file as the gallery
+            // item's - but a onebox thumbnail or an attachment passes the file the *body* drew, so match
+            // the thumb too before falling back to the first item.
+            selectedIndex = items.indexOfFirst { it.url == url || it.thumbUrl == url }.coerceAtLeast(0)
             viewer.openPhotoItems(items, selectedIndex, provider)
         } else {
             val items = urls.map { imageUrl ->

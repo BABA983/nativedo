@@ -117,8 +117,7 @@ internal fun cookedGalleryImages(blocks: List<CookedPostBlock>, baseUrl: String)
     val seen = linkedMapOf<String, GalleryImage>()
     blocks.flatMap(::renderedImageBlocks).forEach { image ->
         val srcResolved = resolvePostImageUrl(baseUrl, image.src)
-        val hrefResolved = image.href?.let { resolvePostImageUrl(baseUrl, it) }
-        val fullUrl = hrefResolved?.takeIf(::isLikelyPostImageUrl) ?: srcResolved
+        val fullUrl = resolvePostImageViewerUrl(baseUrl, image)
         val thumbUrl = if (srcResolved != fullUrl) srcResolved else null
         if (!seen.containsKey(fullUrl)) {
             seen[fullUrl] = GalleryImage(
@@ -898,6 +897,7 @@ private fun imageBlocksFrom(element: Element): List<CookedPostBlock.Image> {
                 href = image.parents().firstOrNull { parent -> parent.normalName() == "a" && parent.hasAttr("href") }?.attr("href"),
                 widthPx = image.attr("width").toIntOrNull() ?: 0,
                 heightPx = image.attr("height").toIntOrNull() ?: 0,
+                srcset = image.attr("srcset").takeIf { it.isNotBlank() },
             )
         }
 }
@@ -951,6 +951,48 @@ private fun String.looksLikeImageCaptionHtml(): Boolean = trimStart().startsWith
 
 internal fun resolvePostImageUrl(baseUrl: String, rawUrl: String): String =
     baseUrl.toHttpUrl().resolve(rawUrl)?.toString() ?: rawUrl
+
+/**
+ * The widest candidate in an `srcset`, which is the file a viewer should open: the site draws the
+ * `src` (a `…_2_690x326.jpeg`-style resize - 49 KB in the sample read) and offers the upload itself in
+ * `srcset` (`…/original/4X/<hash>.jpeg` - 96 KB and the full pixel size). Opening the `src` is what a
+ * device pass saw as "still blurry after opening", because no URL was ever sharper than the drawn one.
+ * Returns null when there is nothing to widen with, so callers can fall back to an anchor's href or the
+ * `src` itself.
+ */
+internal fun widestImageCandidate(srcset: String?): String? {
+    val candidates = srcset
+        ?.split(',')
+        ?.mapNotNull { candidate -> candidate.trim().substringBefore(' ').takeIf { it.isNotEmpty() } }
+        .orEmpty()
+    if (candidates.isEmpty()) {
+        return null
+    }
+    return candidates.firstOrNull { it.contains("/original/") } ?: candidates.last()
+}
+
+/**
+ * The file to open in the viewer for an image the body drew.
+ *
+ * The widest `srcset` candidate first: it is the same upload un-resized (`…/original/4X/<hash>.jpeg`
+ * beside the `…/optimized/…_2_690x326.jpeg` the site drew - 96 KB against 49 KB in the sample read), so
+ * it is the sharp file the owner's "still blurry after opening" was missing. Then an anchor that stays
+ * on the file's own host - Discourse wraps its own uploads in a lightbox link - and never an off-site
+ * one, because a post may link its picture to somewhere else entirely (a cell-level test pins that).
+ * `src` is the last resort: it is the resize the site chose to draw.
+ */
+internal fun resolvePostImageViewerUrl(baseUrl: String, image: CookedPostBlock.Image): String {
+    val srcResolved = resolvePostImageUrl(baseUrl, image.src)
+    val srcsetResolved = widestImageCandidate(image.srcset)?.let { resolvePostImageUrl(baseUrl, it) }
+    if (srcsetResolved != null && isLikelyPostImageUrl(srcsetResolved)) {
+        return srcsetResolved
+    }
+    val hrefResolved = image.href?.let { resolvePostImageUrl(baseUrl, it) }
+    val sameHostAsTheDrawnFile = hrefResolved != null &&
+        baseUrl.toHttpUrl().host == hrefResolved.toHttpUrl().host &&
+        hrefResolved.toHttpUrl().host == srcResolved.toHttpUrl().host
+    return hrefResolved?.takeIf { isLikelyPostImageUrl(it) && sameHostAsTheDrawnFile } ?: srcResolved
+}
 
 internal fun isLikelyPostImageUrl(url: String): Boolean {
     val path = url.substringBefore('#').substringBefore('?').lowercase()
