@@ -1462,6 +1462,16 @@ public class RichMessageLayout {
     public int padLeft;
     public int padRight;
 
+    /**
+     * NativeDo: how far a media block may draw past its own padding box, and whether its corners stay
+     * square. A chat bubble draws the media inside its paddings (`padLeft`/`padRight` feed the bleed
+     * above); a post body draws the same layout inside a column that reaches the screen's edges, so it
+     * asks for the media to reach them too. `0` and `false` keep upstream's shape exactly - the two are
+     * set only by {@code RichMessageBody} (docs/device-verification.md §29).
+     */
+    public int mediaBleed;
+    public boolean squareMedia;
+
     private void drawInternal(Canvas canvas, ChatMessageCell.TransitionParams tp) {
         float clipTop = 0f, clipBottom = 0f;
         final boolean hasClip = cell != null && cell.visibleHeight > 0;
@@ -6830,8 +6840,8 @@ public class RichMessageLayout {
             final int width = root.getMinWidth() - padding.left - padding.right;
             final boolean inQuote = isInQuote();
             final int pad = dp(2);
-            final int bleedL = inQuote ? 0 : root.padLeft - pad;
-            final int bleedR = inQuote ? 0 : root.padRight - pad;
+            final int bleedL = inQuote ? 0 : root.mediaBleed > 0 ? root.mediaBleed : root.padLeft - pad;
+            final int bleedR = inQuote ? 0 : root.mediaBleed > 0 ? root.mediaBleed : root.padRight - pad;
             final boolean fit = availWidth() > imgWidth;
             if (inQuote) {
                 canvas.save();
@@ -6872,7 +6882,7 @@ public class RichMessageLayout {
         }
 
         private void updateRoundRadius(ImageReceiver imageReceiver, boolean none) {
-            if (none) {
+            if (none || root.squareMedia) {
                 imageReceiver.setRoundRadius(0);
                 return;
             }
@@ -8792,6 +8802,10 @@ public class RichMessageLayout {
             if (inQuote) {
                 final int rad = dp(8);
                 imageReceiver.setRoundRadius(top && left ? rad : 0, top && right ? rad : 0, bottom && right ? rad : 0, bottom && left ? rad : 0);
+                return;
+            }
+            if (root.squareMedia) {
+                imageReceiver.setRoundRadius(0);
                 return;
             }
             int rad;

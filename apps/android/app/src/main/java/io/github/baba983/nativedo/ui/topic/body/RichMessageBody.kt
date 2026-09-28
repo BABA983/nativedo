@@ -419,6 +419,11 @@ internal class RichMessageBodyBlock(
 
         val rich = RichMessageLayout(message, maxWidthPx, null)
         rich.invalidateAnimatedEmojiInParent = true
+        // The post body's column reaches the screen's edges, so its media does too: the renderer's two
+        // hooks (RichMessageLayout.mediaBleed/squareMedia) let a photo draw out to the column's edges
+        // with square corners instead of the chat bubble's padding and rounding.
+        rich.mediaBleed = PostBodyBlock.DEFAULT_HORIZONTAL_INSET
+        rich.squareMedia = true
         rich.setChatMessageCellDelegate(null, delegate)
         if (attached) {
             rich.attach(context.host)
