@@ -83,6 +83,8 @@ final class ImageBlock implements EmbeddedPostBodyBlock {
     private float downY;
     private boolean spoilersRevealed;
     private boolean pressedSpoiler;
+    /** Set when the reader cancelled the download: the button then offers the retry arrow. */
+    private boolean loadCancelled;
 
     ImageBlock(CookedPostBlock.Image image, List<GalleryImage> gallery, PostBodyBuildContext context, boolean isFirst, PostBodyBlockState inlineState, String inlineSpoilerStateKey) {
         this.image = image;
@@ -187,7 +189,7 @@ final class ImageBlock implements EmbeddedPostBodyBlock {
     @Override
     public void draw(Canvas canvas, int parentWidth) {
         boolean hidden = targetUrl.equals(context.getHiddenImageUrlProvider().invoke());
-        boolean loading = !receiver.hasBitmapImage() || receiver.getCurrentAlpha() != 1.0f;
+        boolean loading = isLoadingImage();
         if (hidden || loading) {
             canvas.drawRect(imageRect, placeholderPaint);
         }
@@ -248,6 +250,10 @@ final class ImageBlock implements EmbeddedPostBodyBlock {
         if (event.getActionMasked() == MotionEvent.ACTION_UP) {
             photoPressed = false;
             invalidateBlock();
+            if (isLoadingImage() && isInsideProgressButton(localX, localY)) {
+                toggleImageLoad();
+                return true;
+            }
             if (externalLinkUrl != null && isInsideInstantLink(localX, localY)) {
                 context.getDelegate().onLinkClick(externalLinkUrl);
                 return true;
@@ -347,8 +353,45 @@ final class ImageBlock implements EmbeddedPostBodyBlock {
     }
 
     private void updateProgressState(boolean loading) {
-        radialProgress.setIcon(loading ? MediaActionDrawable.ICON_EMPTY : MediaActionDrawable.ICON_NONE, true, false);
-        radialProgress.setProgress(loading ? 0f : 1f, false);
+        if (!loading) {
+            loadCancelled = false;
+        }
+        // Telegram's own media button: the cross inside the ring while the file is on its way (a tap
+        // cancels the request), the download arrow once the reader cancelled (a tap retries). The ring
+        // has no percentage to show - these are URL loads, which Telegram's ImageLoader does not report
+        // progress for - so it stays indeterminate, exactly Telegram's look for a photo that is loading.
+        final int icon;
+        if (!loading) {
+            icon = MediaActionDrawable.ICON_NONE;
+        } else if (loadCancelled) {
+            icon = MediaActionDrawable.ICON_DOWNLOAD;
+        } else {
+            icon = MediaActionDrawable.ICON_CANCEL;
+        }
+        radialProgress.setIcon(icon, true, false);
+        radialProgress.setProgress(loading && !loadCancelled ? 0f : 1f, false);
+    }
+
+    /** True while the block is showing a placeholder instead of the file (the button's state). */
+    private boolean isLoadingImage() {
+        return !receiver.hasBitmapImage() || receiver.getCurrentAlpha() != 1.0f;
+    }
+
+    private boolean isInsideProgressButton(float x, float y) {
+        int size = progressButtonSizePx();
+        return x >= buttonX && x <= buttonX + size && y >= buttonY && y <= buttonY + size;
+    }
+
+    /** Telegram's progress-button tap: cancel the running request, or start it again after a cancel. */
+    private void toggleImageLoad() {
+        if (loadCancelled) {
+            context.getImagePool().setImage(receiver, imageUrl, null);
+            loadCancelled = false;
+        } else {
+            receiver.cancelLoadImage();
+            loadCancelled = true;
+        }
+        invalidateBlock();
     }
 
     private static Drawable loadInstantLinkDrawable(PostBodyBuildContext context) {

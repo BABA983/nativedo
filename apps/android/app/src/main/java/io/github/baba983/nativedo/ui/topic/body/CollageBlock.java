@@ -68,6 +68,10 @@ final class CollageBlock implements EmbeddedPostBodyBlock {
         final ImageReceiver receiver;
         final RadialProgress2 radialProgress;
         final RectF rect = new RectF();
+        /** Where the progress button was last drawn, so a tap can hit it; empty until the first draw. */
+        final RectF progressButton = new RectF();
+        /** Set when the reader cancelled this tile's download: the button then offers the retry arrow. */
+        boolean loadCancelled;
 
         Tile(CookedPostBlock.Image image, String imageUrl, String targetUrl, ImageReceiver receiver, RadialProgress2 radialProgress) {
             this.image = image;
@@ -237,7 +241,7 @@ final class CollageBlock implements EmbeddedPostBodyBlock {
             }
             return false;
         }
-        return handleTileTouch(index, event);
+        return handleTileTouch(index, event, localX, localY);
     }
 
     @Override
@@ -700,7 +704,7 @@ final class CollageBlock implements EmbeddedPostBodyBlock {
 
     private void drawTile(Canvas canvas, Tile tile, RectF drawRect, View invalidateView) {
         boolean hidden = tile.targetUrl.equals(context.getHiddenImageUrlProvider().invoke());
-        boolean loading = !tile.receiver.hasBitmapImage() || tile.receiver.getCurrentAlpha() != 1.0f;
+        boolean loading = isTileLoading(tile);
         if (hidden || loading) {
             canvas.drawRect(drawRect, placeholderPaint);
         }
@@ -715,7 +719,7 @@ final class CollageBlock implements EmbeddedPostBodyBlock {
         }
     }
 
-    private boolean handleTileTouch(int index, MotionEvent event) {
+    private boolean handleTileTouch(int index, MotionEvent event, float localX, float localY) {
         if (index < 0 || index >= tiles.size()) {
             return false;
         }
@@ -730,7 +734,11 @@ final class CollageBlock implements EmbeddedPostBodyBlock {
             pressedTileIndex = -1;
             invalidateTile(index);
             if (wasPressed) {
-                openTile(tile);
+                if (isTileLoading(tile) && tile.progressButton.contains(localX, localY)) {
+                    toggleTileLoad(tile, index);
+                } else {
+                    openTile(tile);
+                }
             }
             return wasPressed;
         }
@@ -921,8 +929,39 @@ final class CollageBlock implements EmbeddedPostBodyBlock {
         int buttonX = Math.round(drawRect.left + (drawRect.width() - buttonSize) / 2f);
         int buttonY = Math.round(drawRect.top + (drawRect.height() - buttonSize) / 2f);
         tile.radialProgress.setProgressRect(buttonX, buttonY, buttonX + buttonSize, buttonY + buttonSize);
-        tile.radialProgress.setIcon(loading ? MediaActionDrawable.ICON_EMPTY : MediaActionDrawable.ICON_NONE, true, false);
-        tile.radialProgress.setProgress(loading ? 0f : 1f, false);
+        tile.progressButton.set(buttonX, buttonY, buttonX + buttonSize, buttonY + buttonSize);
+        if (!loading) {
+            tile.loadCancelled = false;
+        }
+        // Telegram's own media button on a loading tile: a cross in the ring (tap = cancel), the download
+        // arrow once cancelled (tap = retry). These are URL loads without a reported percentage, so the
+        // ring stays indeterminate - the same look Telegram gives a photo that is still coming in.
+        final int icon;
+        if (!loading) {
+            icon = MediaActionDrawable.ICON_NONE;
+        } else if (tile.loadCancelled) {
+            icon = MediaActionDrawable.ICON_DOWNLOAD;
+        } else {
+            icon = MediaActionDrawable.ICON_CANCEL;
+        }
+        tile.radialProgress.setIcon(icon, true, false);
+        tile.radialProgress.setProgress(loading && !tile.loadCancelled ? 0f : 1f, false);
+    }
+
+    private boolean isTileLoading(Tile tile) {
+        return !tile.receiver.hasBitmapImage() || tile.receiver.getCurrentAlpha() != 1.0f;
+    }
+
+    /** Telegram's progress-button tap: cancel the running request, or start it again after a cancel. */
+    private void toggleTileLoad(Tile tile, int index) {
+        if (tile.loadCancelled) {
+            context.getImagePool().setImage(tile.receiver, tile.imageUrl, null);
+            tile.loadCancelled = false;
+        } else {
+            tile.receiver.cancelLoadImage();
+            tile.loadCancelled = true;
+        }
+        invalidateTile(index);
     }
 
     static int maxTilesPerRow() {
@@ -1132,7 +1171,9 @@ final class CollageBlock implements EmbeddedPostBodyBlock {
                 }
                 return false;
             }
-            return handleTileTouch(tileIndex, event);
+            // A TileView draws one tile into its own 0-based frame, so its event coordinates are the
+            // frame the progress button was last placed in.
+            return handleTileTouch(tileIndex, event, event.getX(), event.getY());
         }
     }
 
