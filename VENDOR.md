@@ -146,6 +146,13 @@ Location resolution (first match wins):
 
 Clone the repo and the checkout side by side — the checkout is never committed.
 
+The checkout is only a git store for the pinned commit: the audit reads upstream
+content with `git show <pin>:<path>` (`scripts/vendorlib.py`), never from the
+working tree, so a checkout whose HEAD sits ahead of the pin — later upstream
+releases, or a local commit of your own — changes nothing about what a file is
+compared against. `scripts/vendor-setup.sh --status` reports that gap; leave the
+checkout where it is unless you are deliberately bumping the pin.
+
 ## Adding a copied file
 
 1. Copy it (`scripts/auto-vendor-copy.sh /tmp/javac-out.log` for bulk javac

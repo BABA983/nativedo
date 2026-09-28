@@ -1200,3 +1200,15 @@ manager, the target cell with it — and the wiring now happens in
 `TopicPostTextSelectionHelperTest`: `aSelectionResolvesToItsOwnCellWhenTheAdapterPositionIsPastTheChildCount`
 and `withoutTheLayoutManagerTheSameSelectionResolvesToNothing`. The device re-read of the bar's items
 and anchor after the fix is queued for the next device pass.
+
+**The fix reads as passing on device (`dc2b18c`, post #6 with the flag OFF — the case that failed in
+round 30):** the menu is Copy / Quote / Translate with the bar just above the selected line (bar
+y 826..950, tint y 958..1006, an 8px gap), the tint is (206,228,246) against white outside with rounded
+caps, and the droplets are at both ends. Two items the same read turned up, both open:
+
+- **Flag ON: Select text paints nothing.** The menu opens, but no tint, droplets or bar appear at 0.6s,
+  1.5s or 3s, and Back then leaves the app in the black/frozen frame first seen in round 25 (its 424).
+  The ON body feeds the same helper, so this is a defect to chase, not a mode difference.
+- **A one-touch selection inside a code block puts the droplets at the block's bottom corners** rather
+  than at the selected word's ends (503a, flag OFF). The code block is a horizontally scrollable
+  container, so its layout blocks carry an offset the overlay's handle placement does not follow.
