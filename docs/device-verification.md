@@ -1276,7 +1276,25 @@ This also explains the "two bars" cluster §24 parked (rounds 28-30): a paragrap
 heading selection produced different item sets and different anchors because only the heading's block (row
 0) was resolved correctly, so the paragraph cases fed the bar a bogus selection.
 
-**Queued:** the device re-read on the fixed build — press post #1's body paragraph in both flag states and
-read the child, the tint, the droplets and the bar's item set and anchor (the heading read is the control);
-plus the still-open code-block droplet read, which `2b435ae` fixes but no build with it has been on the
-device yet.
+**Verdict on the device (`c502d72`, 2026-09-28, `emulator-5554`, post 1779614 #1).** The ON body's
+paragraph now reads exactly like the flag-off control: pressing the paragraph's first line tints that line
+(tint y 647..700 against the line's ink 655..698, x 48..644), the droplets sit at the selection's two ends
+(x 0..47 and 645..702 at y 701..758, i.e. beyond the tint's own ends at 48/644) and the bar comes up 3px
+above the line with Copy 80px / Quote 94px / Translate 143px — the same three items, order and widths as
+flag-off (which measured tint y 668..724, droplets 0..47/645..702, the same labels). The heading read is
+unchanged, and a second ON read of the same paragraph reproduced the first. The off-screen selection the
+diagnostic reported (child 52 at y≈12129 for a press on child 1 at y=356) is gone.
+
+**The code-block droplets (`2b435ae`) also pass on the same build:** a press inside the
+`settings.aliyun.json` block now tints its line (y 833..880, x 151..904) with the droplets at x 151..208 and
+847..904 — the tint's own ends — where the pre-fix read had them at the block's corners (x 21..78 and
+1032..1079, y 1082..1139).
+
+**Queued:** a table cell's selection, because the host keeps the renderer's row stamps for blocks that are
+genuinely side by side (a rich table's row of cells) and that path has no device read yet. The topic the
+table read used before (2140307) now opens as prose — its author moved the list to a new topic, which its
+opening post links to — so the read follows that link.
+
+**Still open, unrelated to this fix:** backing out of an ON-body selection put the app in the black/frozen
+frame once on `c502d72` (the §24 round-25 symptom: the related-topics strip floating on black); a second
+Back recovered and navigation stayed normal. Seen once, not chased.
