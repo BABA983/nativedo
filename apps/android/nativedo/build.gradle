@@ -37,6 +37,15 @@ android {
         buildConfig true
     }
 
+    androidResources {
+        // Upstream's app module ships the same resources: "pack" must stay uncompressed (emoji
+        // packs are read in place), and the locale filter drops the translations from the resource
+        // table because Telegram delivers them as assets instead. Without the filter this app
+        // carried ~5 MB of resource-table strings it never reads.
+        noCompress += 'pack'
+        localeFilters += ['zz']
+    }
+
     buildTypes {
         debug {
             // Upstream's own app build sets these; without debugSymbolLevel AGP leaves the 351 MB

@@ -99,6 +99,14 @@ public final class DiscourseRows {
         MessageObject messageObject = new MessageObject(
                 0, message, null, users, new HashMap<>(), null, null,
                 true, false, 0, false, false, false);
+        // A post shows its author's avatar, so the cell lays the bubble out inset by one. The
+        // message object has to agree: it derives the text width from its own avatar flag, and a
+        // synthetic message from a user peer reports none, so the rich layout would be measured for
+        // a full-width bubble and then drawn inset — which pushes the right edge past the viewport
+        // (a wide table is what makes it visible). forceAvatar is upstream's own flag for exactly
+        // this: its preview cells set it on messages that are not from a real chat.
+        messageObject.forceAvatar = true;
+        messageObject.generateLayout(user);
         return messageObject;
     }
 
