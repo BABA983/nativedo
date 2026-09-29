@@ -112,6 +112,10 @@ internal class PollTest {
         assertEquals("and the poll's own total", 17, media.results.total_voters)
         assertEquals("a public poll, as the site declared it", true, media.poll.public_voters)
         assertFalse("nothing has been voted yet", cells[1].messageObject!!.isVoted())
+        assertFalse(
+            "a poll bubble offers no forward arrow",
+            cells.any { it.messageObject!!.needDrawShareButton() },
+        )
 
         // The run of one author's bubbles, the way upstream's own chat groups them: a bubble joined
         // to the one above it is pinned (upstream's own flag) on top, one joined to the one below is

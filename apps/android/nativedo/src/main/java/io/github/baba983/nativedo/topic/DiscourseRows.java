@@ -141,6 +141,9 @@ public final class DiscourseRows {
         message.message = "";
         message.media = media;
         message.out = false;
+        // Nothing a forum post holds is ours to hand on, so no bubble may offer to forward one:
+        // this is the flag upstream's own cells read to decide whether to draw the arrow at all.
+        message.noforwards = true;
         message.from_id = peer(userId);
         message.peer_id = chatPeer(topicId);
         return message;

@@ -20,6 +20,7 @@ import io.github.baba983.nativedo.harness.shadows.ShadowSQLitePreparedStatement
 import io.github.baba983.nativedo.harness.shadows.ShadowUtilities
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -100,6 +101,10 @@ internal class TopicScreensTest {
         val richMessage = cell.messageObject?.messageOwner?.rich_message
         assertTrue("the post reached the cell as a rich body", richMessage != null)
         assertTrue("the body parsed into blocks", richMessage!!.blocks.isNotEmpty())
+        assertFalse(
+            "a post's bubble offers no forward arrow",
+            cell.messageObject!!.needDrawShareButton(),
+        )
         harness.assertNoTelegramSideEffects()
     }
 

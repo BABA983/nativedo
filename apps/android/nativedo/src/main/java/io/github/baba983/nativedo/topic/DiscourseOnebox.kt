@@ -108,7 +108,6 @@ object DiscourseOnebox {
             user.id,
             media,
         )
-        message.message = card.url
         return DiscourseRows.messageObject(message, users)
     }
 

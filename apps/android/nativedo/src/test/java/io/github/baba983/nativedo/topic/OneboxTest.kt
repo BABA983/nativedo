@@ -129,7 +129,14 @@ internal class OneboxTest {
         assertEquals("pointing at the link the card stands for", link, page.url)
         assertEquals("drawn as an article, so the thumbnail is the small card image", "article", page.type)
         assertNotNull("with the thumbnail the site rendered", page.photo)
-        assertTrue("the card's message carries the link as its text", cells[1].messageObject!!.messageText.toString().contains("docs/start"))
+        assertTrue(
+            "the card stands on its own: the bare link is not repeated as the bubble's text",
+            cells[1].messageObject!!.messageText.isNullOrEmpty(),
+        )
+        assertFalse(
+            "and no bubble offers to hand a post on",
+            cells.any { it.messageObject!!.needDrawShareButton() },
+        )
 
         harness.await("the thumbnail to be downloaded") {
             site.recordedRequests.any { it.contains(thumbnail) }
