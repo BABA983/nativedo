@@ -66,6 +66,14 @@ upstream is touched — rendering, gestures, layout and animation are upstream's
   the composer as soon as there is text, because upstream's own button steps aside then and a forum
   reply often wants a second picture. Each upload goes to `/uploads.json` and what the field receives
   is the markdown the site's own composer writes for the answer, pointing at its `upload://` handle.
+* **Profiles** — a tap on a post's author (their avatar, or the name above the bubble) opens
+  `/u/{username}.json` in a screen of our own. Upstream's `ProfileActivity` cannot be that screen:
+  it is a Telegram account's profile, whose `onFragmentCreate` loads the full user through tgnet
+  (`loadFullUser` sends `TL_users_getFullUser`, and the answer is written into Telegram's database)
+  and whose tabs are that account's own photos, stories, contacts and gifts. So the screen is built
+  from the cells upstream draws lists with: a `DialogCell` head carrying the reader's picture and
+  their handle, `HeaderCell` for the sections, `TextDetailCell` for the fields, and a
+  `TextInfoPrivacyCell` for the bio. The activity feed (`/user_actions.json`) is not wired yet.
 * **Theme and settings** — upstream's `ThemeActivity` (the appearance page) is the settings entry;
   the tab strip is upstream's `FilledTabsView`.
 
@@ -115,7 +123,7 @@ stands, and the upstream component each row is meant to use.
 | Bookmarks (`/bookmarks.json`, `DELETE /posts/{id}/bookmark`) | done | missing | upstream's saved-messages menu entry |
 | Read progress (`POST /topics/timings`) and restore | done | missing | upstream's unread divider and scroll-to-unread |
 | Search: topics, posts, users, in-topic | done | missing | search inside `DialogsActivity`, `SearchTabsAndFiltersLayout` |
-| User profile (`/u/{username}.json`, activity feed) | done | missing | `ProfileActivity` |
+| User profile (`/u/{username}.json`, activity feed) | done | profile shown in upstream's cells; activity feed still missing | our own `BaseFragment` over `DialogCell` / `HeaderCell` / `TextDetailCell` / `TextInfoPrivacyCell`; `ProfileActivity` is unusable here (it loads the full user through tgnet and is bound to a Telegram account) |
 | Notifications | not built | missing | upstream's notification screens are Telegram-account bound, so likely our own list |
 | Appearance and theme | done | done | `ThemeActivity` (`THEME_TYPE_BASIC`) |
 | Account and session settings | done | missing | `SettingsActivity` subpages |

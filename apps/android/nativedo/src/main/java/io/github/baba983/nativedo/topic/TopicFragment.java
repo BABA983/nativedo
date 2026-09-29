@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 
 import io.github.baba983.nativedo.app.NativeDo;
+import io.github.baba983.nativedo.app.NativeDoActivity;
 import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.model.Post;
 import io.github.baba983.nativedo.core.model.PostPoll;
@@ -1082,6 +1083,22 @@ public class TopicFragment extends BaseFragment {
                 return;
             }
             Browser.openUrl(getParentActivity(), ((URLSpan) url).getURL());
+        }
+
+        /**
+         * A tap on the author's avatar, or on the name above the bubble: upstream asks its delegate
+         * for both. A linux.do post's author is a site reader, so the tap opens the site's own
+         * profile rather than anything Telegram knows about them.
+         */
+        @Override
+        public void didPressUserAvatar(ChatMessageCell cell, TLRPC.User user, float touchX, float touchY, boolean asForward) {
+            if (user == null || user.username == null || user.username.isEmpty()) {
+                return;
+            }
+            if (getParentActivity() instanceof NativeDoActivity) {
+                ((NativeDoActivity) getParentActivity()).present(
+                        io.github.baba983.nativedo.profile.ProfileFragment.forUser(user.username, user.first_name));
+            }
         }
     }
 }
