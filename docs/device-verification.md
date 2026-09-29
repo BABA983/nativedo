@@ -1555,17 +1555,11 @@ own place is what the device read measures, and the before numbers above are its
 
 **Device re-read (`4729e03`, build `…-103333`, topic 2964229 post 7, flag on).** The declared-width cap is
 in: the portrait draws **382x499** where it used to be 812x1249 - so the *size* half of this section is
-fixed in the rich body too. The *place* half is not: it still sits at **x 0..382** with 697px of slack on
-its right, where the block body's equivalent photo is centred (396..683). Why is now a probe, not a guess:
-the centring happens inside the photo block's `availWidth()` (`root.getMinWidth()` - the *intrinsic* max
-over the blocks' `getMinWidth()` - minus the block's padding), which is not the same quantity as the
-column's width, and the placeholder/backdrop that the read actually sees is drawn from `-bleedL` to
-`width + bleedR`. Three readings are consistent with the numbers so far (the 382px block is the blurred
-backdrop with the photo centred inside it; or `availWidth()` is small so the photo is centred in a narrow
-box; or the `fit` branch is not taken), and each needs a different fix, so the round carries a diagnostic
-build (tag `NARROWPROBE`) that logs `padding`, `root.getMinWidth()`, `padLeft/padRight`, `mediaBleed`,
-`imgWidth/Height`, `availWidth()`, `fit`, `getImageLeft()`, the final receiver rect and whether a bitmap and
-a blur bitmap exist - for the narrow photo and, as a control, for a full-bleed one.
+fixed in the rich body too. The *place* half was not: it still sat at **x 0..382** with 697px of slack on its
+right, where the block body's equivalent photo is centred (396..683). A diagnostic build was prepared to log
+the geometry, and then the cause turned out to be readable: the centring ran inside the photo block's
+`availWidth()`, which in a body is the layout's *intrinsic* width, not the column - see §33, where the fix
+and its golden read are recorded.
 
 **③ (a collage's second image jittering) - not reproduced.** The runner opened the first cell, went back,
 opened the second, and recorded at 44fps VFR: both opens are frame-for-frame the same shape (the photo
@@ -1611,3 +1605,32 @@ collage): the cells span **x 0..1079, the whole frame** (the page's white is 255
 image fill), so the collage reaches the edges exactly like the single photo does. Tapping the two middle
 cells opens the viewer; the two outer cells did not respond in that read, most likely because they had not
 loaded yet - a second look is queued with the rest of the round.
+
+## 33. A body's photo box is the block's width, so a narrow photo centres (`27fa448`) — golden-verified; device re-read queued (2026-09-29)
+
+§31 capped the photo at the size the site declared but the place stayed wrong, and §31's re-read showed it:
+382x499 instead of 812x1249, still at x 0..382 of a 1079 frame with 697px of slack on the right, while the
+block body centred the same photo (396..683). The root cause is the quantity the centring used:
+`availWidth()` is `root.getMinWidth()` - the *intrinsic* max over the blocks' `getMinWidth()` - minus the
+block's padding. In a chat bubble that equals the bubble's content width (a lone photo block's
+`getMinWidth()` is the bubble's whole width, which is why upstream's rule works there); in a post body the
+layout's max width is the column but `root.getMinWidth()` is whatever the widest *intrinsic* line happens to
+be, so the box the photo - and its placeholder and blur backdrop - filled was narrower than the frame and
+started at the column's left edge. That is also why the earlier "centre it in `availWidth()`" fix was
+invisible on the device: it centred the photo inside a box that was itself flush left.
+
+The fix is in a body to use the block's own content width (`RichBlock.maxWidth`) as the box: the photo keeps
+the declared size, sits centred in the column, and the placeholder and the blur cover that same box, so
+nothing wider or further left than the photo is painted. `getImageLeft()` follows it - the tap mapping, the
+accessibility rect and the loading button all ride on that - and everything is behind the `mediaBleed` host
+hook, so a chat bubble and a quote keep upstream's geometry to the pixel.
+
+**Reads.** Linux golden, both themes: the narrow-panel placeholder moves from **x 0..615 to x 329..615** -
+287 wide, equidistant from both edges, i.e. the exact box the block body's own golden has always had (the
+two bodies now agree pixel for pixel on where the photo's panel sits). No other golden moved, and
+`runUnitAndScreenshotTests` is green. The block body's own two goldens re-recorded a 19-pixel difference
+(12x10 at 446,569, ~6 grey levels on a soft edge) which is the same anti-aliasing flake class as
+`PollInstantButton` and `richMessageBody[Dark]`; both were restored. macOS still needs the two
+`narrow…DeclaredSize` goldens re-recorded, and the device re-read (2964229 post 7, flag on: expect the
+photo's block to be ~287 wide with equal margins, i.e. what the block body now reads as 396..683) is queued
+with the runner.
