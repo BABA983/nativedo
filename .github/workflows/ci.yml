@@ -184,13 +184,19 @@ jobs:
       # marker, compose-ui, appcompat-resources, com.android.tools:annotations
       # within one afternoon), which is what the retry below and the cache are for:
       # a warm Gradle home turns those into local reads.
+      #
+      # The key lists the build scripts instead of `apps/android/**/*.gradle*`, which also matches
+      # the `.gradle` project directory: its contents are written during the build, so the key
+      # computed at save time never equalled the one computed at restore time (measured in run
+      # 36511514498: restore asked for ...2665b8c9, the save wrote ...058a062d) - the exact key
+      # could never hit, and every run uploaded a fresh multi-hundred-MB entry.
       - uses: actions/cache/restore@v4
         id: gradle-cache
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-v2-${{ runner.os }}-${{ hashFiles('apps/android/**/*.gradle*', 'apps/android/gradle/wrapper/gradle-wrapper.properties') }}
+          key: gradle-v2-${{ runner.os }}-${{ hashFiles('apps/android/*.gradle.kts', 'apps/android/*/build.gradle.kts', 'apps/android/*/build.gradle', 'apps/android/gradle/**') }}
           restore-keys: |
             gradle-v2-${{ runner.os }}-
 
@@ -222,10 +228,13 @@ jobs:
       # this run added nothing the entry does not already have - and re-uploading the whole cache
       # costs ~30 s of runner time per push. A restore-keys hit (the key changed, but an older entry
       # exists) reports `cache-hit: false` and does get saved, which is what keeps the entry current.
+      #
+      # This only became reachable once the key stopped matching `.gradle` (see the restore step):
+      # with that glob every run reported a miss and uploaded again.
       - uses: actions/cache/save@v4
         if: success() && steps.gradle-cache.outputs.cache-hit != 'true'
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-v2-${{ runner.os }}-${{ hashFiles('apps/android/**/*.gradle*', 'apps/android/gradle/wrapper/gradle-wrapper.properties') }}
+          key: gradle-v2-${{ runner.os }}-${{ hashFiles('apps/android/*.gradle.kts', 'apps/android/*/build.gradle.kts', 'apps/android/*/build.gradle', 'apps/android/gradle/**') }}
