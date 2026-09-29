@@ -6974,7 +6974,7 @@ public class RichMessageLayout {
             } else {
                 DownloadController.getInstance(root.currentAccount).addLoadingFileObserver(fileName, null, this);
                 float setProgress = 0;
-                if (autoDownload || mediaForced || FileLoader.getInstance(root.currentAccount).isLoadingFile(fileName)) {
+                if (autoDownload || mediaForced || io.github.baba983.nativedo.hooks.NativeDoHooks.isFileLoading(fileName) || FileLoader.getInstance(root.currentAccount).isLoadingFile(fileName)) { // NativeDo: a file this client fetches itself is a download in progress
                     buttonState = 1;
                     Float progress = ImageLoader.getInstance().getFileProgress(fileName);
                     setProgress = progress != null ? progress : 0;

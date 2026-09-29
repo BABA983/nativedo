@@ -856,7 +856,7 @@ public class TopicFragment extends BaseFragment {
             onAttachmentsReady.run();
             return kotlin.Unit.INSTANCE;
         });
-        DiscourseLoader.INSTANCE.cacheVideos(container, videos, () -> {
+        DiscourseLoader.INSTANCE.cacheVideoCovers(container, videos, () -> {
             onReady.run();
             return kotlin.Unit.INSTANCE;
         });
@@ -1047,10 +1047,33 @@ public class TopicFragment extends BaseFragment {
             return true;
         }
 
-        /** A tap on an image in a post body; the cell routes rich media through this one. */
+        /**
+         * A tap on an image in a post body; the cell routes rich media through this one.
+         *
+         * <p>A clip is not fetched with the page, so the tap is what fetches it: the fetch runs
+         * here, the block draws its own loading state while it does, and upstream's viewer opens
+         * on the file once it is here. A clip this client will not fetch, or one the site will not
+         * hand over, goes to the device's own player, which streams it from the site's address.</p>
+         */
         @Override
         public boolean openArticlePhoto(ChatMessageCell cell, org.telegram.tgnet.tl.TL_iv.PageBlock block) {
-            return ArticlePhotoViewer.open(TopicFragment.this, cell.getMessageObject(), block);
+            MessageObject message = cell.getMessageObject();
+            PostVideo video = ArticlePhotoViewer.videoOf(block);
+            if (video == null || container == null) {
+                return ArticlePhotoViewer.open(TopicFragment.this, message, block);
+            }
+            DiscourseLoader.INSTANCE.fetchVideo(
+                    container,
+                    video,
+                    () -> {
+                        ArticlePhotoViewer.open(TopicFragment.this, message, block);
+                        return kotlin.Unit.INSTANCE;
+                    },
+                    () -> {
+                        ArticlePhotoViewer.stream(TopicFragment.this, block);
+                        return kotlin.Unit.INSTANCE;
+                    });
+            return true;
         }
 
         @Override

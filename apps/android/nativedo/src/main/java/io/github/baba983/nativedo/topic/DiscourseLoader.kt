@@ -186,10 +186,11 @@ object DiscourseLoader {
     }
 
     /**
-     * Fetches the clips the posts carry, as far as the bridge is willing to pull them with a page.
-     * A video block draws its cover and plays the file only when it has one.
+     * Fetches the covers of the clips the posts carry. A video block draws its cover before anyone
+     * presses play; the clip's own bytes are fetched only when play is pressed ([fetchVideo]), so
+     * opening a topic does not spend a reader's data on a video they did not ask for.
      */
-    fun cacheVideos(
+    fun cacheVideoCovers(
         container: AppContainer,
         videos: List<PostVideo>,
         onReady: () -> Unit,
@@ -200,9 +201,30 @@ object DiscourseLoader {
         }
         scope.launch {
             videos.forEach { video ->
-                DiscourseImageBridge.cacheVideo(container.imageOkHttpClient, video)
+                DiscourseImageBridge.cacheVideoCover(container.imageOkHttpClient, video)
             }
             onReady()
+        }
+    }
+
+    /**
+     * Fetches one clip for a play press, and says which of the two players gets it: upstream's own
+     * viewer for a file this client now holds, the device's player for a clip it will not fetch or
+     * that the site will not hand over.
+     */
+    fun fetchVideo(
+        container: AppContainer,
+        video: PostVideo,
+        onStored: () -> Unit,
+        onStream: () -> Unit,
+    ) {
+        scope.launch {
+            val outcome = DiscourseImageBridge.downloadVideo(container.imageOkHttpClient, video)
+            if (outcome == DiscourseImageBridge.VideoDownload.Stored) {
+                onStored()
+            } else {
+                onStream()
+            }
         }
     }
 

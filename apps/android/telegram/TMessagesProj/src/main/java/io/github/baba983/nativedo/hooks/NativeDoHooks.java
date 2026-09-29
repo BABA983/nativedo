@@ -42,6 +42,32 @@ public final class NativeDoHooks {
         telegramStorageEnabled = value;
     }
 
+    /**
+     * The files this client is fetching itself, by the name upstream's own media block looks its
+     * file up under. A linux.do clip is fetched by our HTTP client - the site serves some uploads
+     * to a signed-in reader only, and it is that client which carries the session - so upstream's
+     * {@code FileLoader} never learns a transfer is running. Without this, a block whose file is
+     * missing can only draw the state of a download it does not have; with it, the block draws its
+     * own loading state while the module fetches, and the module reports the progress itself.
+     */
+    private static final java.util.Set<String> clientFilesLoading =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    public static boolean isFileLoading(String fileName) {
+        return fileName != null && clientFilesLoading.contains(fileName);
+    }
+
+    public static void setFileLoading(String fileName, boolean loading) {
+        if (fileName == null || fileName.isEmpty()) {
+            return;
+        }
+        if (loading) {
+            clientFilesLoading.add(fileName);
+        } else {
+            clientFilesLoading.remove(fileName);
+        }
+    }
+
     private NativeDoHooks() {
     }
 }

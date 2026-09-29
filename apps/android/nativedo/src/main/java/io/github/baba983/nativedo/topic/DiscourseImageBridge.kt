@@ -1,5 +1,6 @@
 package io.github.baba983.nativedo.topic
 
+import io.github.baba983.nativedo.hooks.NativeDoHooks
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -8,6 +9,8 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import org.jsoup.parser.Tag
 import org.telegram.messenger.FileLoader
+import org.telegram.messenger.FileLog
+import org.telegram.messenger.NotificationCenter
 import org.telegram.tgnet.TLRPC
 import java.io.File
 import java.net.URI
@@ -53,11 +56,17 @@ object DiscourseImageBridge {
     private const val ATTACHMENT = "a.attachment"
 
     /**
-     * How large a clip this client fetches with the page. A post is read for its text; a video is
-     * watched on purpose, so what a reader opens the topic for is pulled, and a longer clip is left
-     * to a player that streams it.
+     * How large a clip this client fetches at all. A reader watches a video on purpose, so the
+     * file is fetched when play is pressed - and a clip this long, or one the site refuses to
+     * hand over, is streamed by the device's own player instead of copied into the cache.
      */
     private const val MAX_VIDEO_BYTES = 25L * 1024 * 1024
+
+    /** How far a clip's transfer runs before it tells upstream's block about it: a UI hop per step. */
+    private const val PROGRESS_STEP = 256L * 1024
+
+    /** The account every message this module builds belongs to; upstream's singletons are per account. */
+    private const val ACCOUNT = 0
 
     /** The videos the posts have carried, so a tap on one can find the file behind its id. */
     private val videos = java.util.concurrent.ConcurrentHashMap<Long, PostVideo>()
@@ -221,53 +230,139 @@ object DiscourseImageBridge {
     )
 
     /**
-     * Fetches a clip that is small enough to travel with the page.
+     * Fetches a clip's cover - the picture its block draws before anyone presses play.
      *
-     * <p>The site's own content length decides before a byte is written: a video over the limit is
-     * left alone, and whoever plays it gets the file streamed instead. A source that answers
-     * without a length is streamed into the cache up to the same limit, so a lying header cannot
-     * fill the disk either.</p>
+     * <p>The clip's own bytes do not travel with the page: a page is read for its text, and a
+     * video is watched on purpose, so the file is fetched when play is pressed
+     * ([downloadVideo]) and not before.</p>
      */
-    suspend fun cacheVideo(client: OkHttpClient, video: PostVideo): File? = withContext(Dispatchers.IO) {
-        val file = videoFile(video)
-        cacheCover(client, video)
-        if (file.exists() && file.length() > 0) {
-            return@withContext file
+    suspend fun cacheVideoCover(client: OkHttpClient, video: PostVideo) {
+        withContext(Dispatchers.IO) {
+            cacheCover(client, video)
         }
-        runCatching {
-            client.newCall(Request.Builder().url(video.url).build()).execute().use { response ->
-                check(response.isSuccessful) { "GET ${video.url} answered ${response.code}" }
-                val body = response.body ?: error("GET ${video.url} answered no body")
-                if (body.contentLength() > MAX_VIDEO_BYTES) {
-                    return@withContext null
-                }
-                file.parentFile?.mkdirs()
-                val partial = File(file.parentFile, file.name + ".part")
-                body.byteStream().use { input ->
-                    partial.outputStream().use { output ->
-                        val buffer = ByteArray(64 * 1024)
-                        var copied = 0L
-                        while (true) {
-                            val read = input.read(buffer)
-                            if (read <= 0) {
-                                break
-                            }
-                            copied += read
-                            if (copied > MAX_VIDEO_BYTES) {
-                                partial.delete()
-                                return@withContext null
-                            }
-                            output.write(buffer, 0, read)
+    }
+
+    /**
+     * The name upstream's media block keys its file by.
+     *
+     * <p>It is asked of upstream's own function on the same document the block is handed, so a
+     * progress report can never be filed under a name the block does not look up.</p>
+     */
+    fun videoFileName(video: PostVideo): String = FileLoader.getAttachFileName(videoDocument(video))
+
+    /** What a clip's fetch ended as. Anything but [Stored] leaves the site's player to stream it. */
+    enum class VideoDownload {
+        /** The bytes are on disk, where upstream's viewer reads them. */
+        Stored,
+
+        /** The site says the clip runs longer than a page read may pull; the reader's player streams it. */
+        TooLarge,
+
+        /** The site refused the request, or the transfer broke; the reader's player streams it. */
+        Failed,
+    }
+
+    /**
+     * Fetches one clip, on a play press, telling upstream's own block about it.
+     *
+     * <p>Upstream's block draws a download it knows about through {@code FileLoader}; a fetch this
+     * client makes is not one, so the block is told directly: it is put into its own loading state
+     * before the first byte, given the transfer's progress as it arrives, and told how it ended.
+     * The bytes go through the session's own client, because the site serves some uploads only to
+     * a signed-in reader and that client is the one that carries the session.</p>
+     */
+    suspend fun downloadVideo(client: OkHttpClient, video: PostVideo): VideoDownload =
+        withContext(Dispatchers.IO) {
+            val file = videoFile(video)
+            if (file.exists() && file.length() > 0) {
+                return@withContext VideoDownload.Stored
+            }
+            val name = videoFileName(video)
+            NativeDoHooks.setFileLoading(name, true)
+            val outcome = try {
+                fetchVideo(client, video, file, name)
+            } finally {
+                NativeDoHooks.setFileLoading(name, false)
+            }
+            // The block registered itself as an observer of that name, so upstream's own channel is
+            // how it learns that the file it was waiting for is here (or that it is not).
+            if (outcome == VideoDownload.Stored) {
+                NotificationCenter.getInstance(ACCOUNT).postNotificationNameOnUIThread(
+                    NotificationCenter.fileLoaded, name, file.absolutePath,
+                )
+            } else {
+                NotificationCenter.getInstance(ACCOUNT).postNotificationNameOnUIThread(
+                    NotificationCenter.fileLoadFailed, name, 0,
+                )
+            }
+            outcome
+        }
+
+    /**
+     * One clip, written to [file] through a temporary name so a transfer cut short cannot leave
+     * bytes the block would read as its file.
+     *
+     * <p>The site's own content length decides before a byte is written; a source that answers
+     * without one is read up to the same limit, so a lying header cannot fill the disk either.</p>
+     */
+    private fun fetchVideo(
+        client: OkHttpClient,
+        video: PostVideo,
+        file: File,
+        name: String,
+    ): VideoDownload = runCatching {
+        client.newCall(Request.Builder().url(video.url).build()).execute().use { response ->
+            if (!response.isSuccessful) {
+                return@use VideoDownload.Failed
+            }
+            val body = response.body ?: return@use VideoDownload.Failed
+            val total = body.contentLength()
+            if (total > MAX_VIDEO_BYTES) {
+                return@use VideoDownload.TooLarge
+            }
+            file.parentFile?.mkdirs()
+            val partial = File(file.parentFile, file.name + ".part")
+            body.byteStream().use { input ->
+                partial.outputStream().use { output ->
+                    val buffer = ByteArray(64 * 1024)
+                    var copied = 0L
+                    var reported = 0L
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read <= 0) {
+                            break
+                        }
+                        copied += read
+                        if (copied > MAX_VIDEO_BYTES) {
+                            partial.delete()
+                            return@use VideoDownload.TooLarge
+                        }
+                        output.write(buffer, 0, read)
+                        // A report is a UI-thread hop per reader, so a long clip reports in steps.
+                        if (copied - reported >= PROGRESS_STEP || copied == total) {
+                            reported = copied
+                            reportVideoProgress(name, copied, total)
                         }
                     }
                 }
-                check(partial.renameTo(file)) { "cannot move ${partial.name} into place" }
-                file
             }
-        }.getOrElse { error ->
-            error.printStackTrace()
-            null
+            check(partial.renameTo(file)) { "cannot move ${partial.name} into place" }
+            reportVideoProgress(name, file.length(), file.length())
+            VideoDownload.Stored
         }
+    }.getOrElse { error ->
+        FileLog.e("nativedo: fetching a post's clip failed", error)
+        VideoDownload.Failed
+    }
+
+    /**
+     * Reports a clip's progress on upstream's own channel, under the name its block looks up: the
+     * transfer then draws as the block's own radial progress, cancel icon and all.
+     */
+    private fun reportVideoProgress(name: String, loaded: Long, total: Long) {
+        NotificationCenter.getInstance(ACCOUNT).postNotificationNameOnUIThread(
+            NotificationCenter.fileLoadProgressChanged, name, loaded, total,
+        )
     }
 
     /**

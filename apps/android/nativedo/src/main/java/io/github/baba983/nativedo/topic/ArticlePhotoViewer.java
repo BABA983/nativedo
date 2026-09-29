@@ -30,18 +30,29 @@ import java.util.List;
  */
 public final class ArticlePhotoViewer {
 
+    /**
+     * The clip a block names, or null when it is not a clip this client carries. The caller that
+     * has to fetch it (a tap on it) is the one that needs this.
+     */
+    public static PostVideo videoOf(TL_iv.PageBlock block) {
+        if (!(block instanceof TL_iv.pageBlockVideo)) {
+            return null;
+        }
+        return DiscourseImageBridge.INSTANCE.videoOf(((TL_iv.pageBlockVideo) block).video_id);
+    }
+
     public static boolean open(BaseFragment fragment, MessageObject message, TL_iv.PageBlock block) {
         if (fragment == null || fragment.getParentActivity() == null || message == null
                 || message.messageOwner == null || message.richLayout == null || block == null) {
             return false;
         }
-        // A video block is drawn from its cover, and the clip's own bytes are fetched with the page
-        // only as far as the bridge is willing to pull them: a video this client does not hold is
-        // streamed by whatever the device plays videos with, rather than handed to a player that
-        // would sit on a file that is not there.
+        // A video block is drawn from its cover, and the clip's own bytes are fetched when play is
+        // pressed: a clip this client does not hold - one it would not fetch, one the site would
+        // not hand over - is streamed by whatever the device plays videos with, rather than handed
+        // to a player that would sit on a file that is not there.
         if (block instanceof TL_iv.pageBlockVideo
                 && !DiscourseImageBridge.INSTANCE.videoFileExists(((TL_iv.pageBlockVideo) block).video_id)) {
-            return playElsewhere(fragment, (TL_iv.pageBlockVideo) block);
+            return stream(fragment, block);
         }
         ArrayList<TL_iv.PageBlock> media = new ArrayList<>();
         message.richLayout.collectMediaBlocks(media);
@@ -55,12 +66,15 @@ public final class ArticlePhotoViewer {
     }
 
     /**
-     * Hands a clip this client did not fetch to the player the device has, with the site's own
-     * address for it: the file streams instead of waiting for a download, and nothing is copied
-     * into an app cache that a long video would fill.
+     * Hands a clip to the player the device has, with the site's own address for it: the file
+     * streams instead of waiting for a download, and nothing is copied into an app cache that a
+     * long video would fill.
      */
-    private static boolean playElsewhere(BaseFragment fragment, TL_iv.pageBlockVideo block) {
-        PostVideo video = DiscourseImageBridge.INSTANCE.videoOf(block.video_id);
+    public static boolean stream(BaseFragment fragment, TL_iv.PageBlock block) {
+        if (fragment == null || fragment.getParentActivity() == null) {
+            return false;
+        }
+        PostVideo video = videoOf(block);
         if (video == null) {
             return false;
         }
