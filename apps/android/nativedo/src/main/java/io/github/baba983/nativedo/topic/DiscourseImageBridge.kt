@@ -40,7 +40,8 @@ object DiscourseImageBridge {
     private const val MIN_MEDIA_WIDTH = 120
 
     /** Discourse's presentational wrappers; upstream's importer dispatches on the child tag. */
-    private const val WRAPPERS = "div.md-table, div.lightbox-wrapper, a.lightbox"
+    private const val WRAPPERS = "div.md-table, div.lightbox-wrapper, a.lightbox, " +
+        "div.video-container, div.video-placeholder-container"
 
     /**
      * Discourse's own download hint next to a lightboxed image ("name.jpg 31.1 KB"), which is not
@@ -51,15 +52,44 @@ object DiscourseImageBridge {
     /** A file a post links to, which Discourse wraps in an anchor with this class. */
     private const val ATTACHMENT = "a.attachment"
 
+    /**
+     * How large a clip this client fetches with the page. A post is read for its text; a video is
+     * watched on purpose, so what a reader opens the topic for is pulled, and a longer clip is left
+     * to a player that streams it.
+     */
+    private const val MAX_VIDEO_BYTES = 25L * 1024 * 1024
+
+    /** The videos the posts have carried, so a tap on one can find the file behind its id. */
+    private val videos = java.util.concurrent.ConcurrentHashMap<Long, PostVideo>()
+
+    /** Discourse's ratio on the wrapper around a video that carries no size of its own. */
+    private val RATIO = Regex("--aspect-ratio:\\s*([0-9.]+)\\s*/\\s*([0-9.]+)")
+
+    /** A video tag with no frame of its own is still a video; sixteen by nine is what a player assumes. */
+    private const val DEFAULT_FRAME_WIDTH = 1280
+
     fun prepare(cookedHtml: String, baseUrl: String): PreparedPostBody {
         val document = Jsoup.parseBodyFragment(cookedHtml ?: "")
         val body = document.body()
+        val images = ArrayList<PostImage>()
+        // A video is read before the wrappers around it go: Discourse puts the frame's shape on the
+        // wrapper it wraps the tag in, and unwrapping would take that with it.
+        val videos = ArrayList<PostVideo>()
+        for (element in body.select("video")) {
+            val video = postVideo(element, baseUrl) ?: continue
+            videos += video
+            this.videos[video.id] = video
+            // Upstream reads a media tag's `src` as the id of a file it already holds - for a
+            // video, whose block then draws its cover and plays the file, as it does for a photo.
+            element.attr("src", video.id.toString())
+            element.removeAttr("poster")
+            element.select("source").remove()
+        }
         for (wrapper in body.select(WRAPPERS)) {
             wrapper.unwrap()
         }
         body.select(LIGHTBOX_META).remove()
 
-        val images = ArrayList<PostImage>()
         val photos = ArrayList<TLRPC.Photo>()
         for (image in body.select("img")) {
             val postImage = postImage(image, baseUrl) ?: continue
@@ -91,7 +121,178 @@ object DiscourseImageBridge {
                 anchor.replaceWith(replacement)
             }
         }
-        return PreparedPostBody(body.html(), photos, images, attachments)
+        return PreparedPostBody(body.html(), photos, images, attachments, videos)
+    }
+
+    /**
+     * One video a post carries.
+     *
+     * A site writes a video tag the way a browser reads it: the source on the tag or on a `source`
+     * child, the frame shown before it plays as the tag's `poster`, and its size on the tag or as
+     * a ratio on the wrapper Discourse puts around it. Upstream's importer reads a video tag the
+     * same way it reads a photo tag, so all this has to produce is the id its block will name.
+     */
+    private fun postVideo(element: Element, baseUrl: String): PostVideo? {
+        val source = element.attr("src").ifEmpty {
+            element.selectFirst("source[src]")?.attr("src").orEmpty()
+        }
+        val url = resolve(source, baseUrl) ?: return null
+        val frame = frameSize(element)
+        val poster = resolve(element.attr("poster"), baseUrl)?.let { cover ->
+            PostImage(
+                id = idOf(cover),
+                url = cover,
+                width = frame.first,
+                height = frame.second,
+                extension = extensionOf(cover),
+            )
+        }
+        val name = element.selectFirst("a[href]")?.text()?.trim().orEmpty()
+            .ifEmpty { url.substringBefore('?').substringAfterLast('/') }
+        return PostVideo(
+            id = idOf(url),
+            url = url,
+            name = name.ifEmpty { "video.mp4" },
+            width = frame.first,
+            height = frame.second,
+            cover = poster,
+        )
+    }
+
+    /** A video tag's own frame, or the ratio the site put on the wrapper around it. */
+    private fun frameSize(element: Element): Pair<Int, Int> {
+        val width = element.attr("width").toIntOrNull() ?: 0
+        val height = element.attr("height").toIntOrNull() ?: 0
+        if (width > 0 && height > 0) {
+            return width to height
+        }
+        val ratio = RATIO.find(element.parent()?.attr("style").orEmpty())
+        val parts = ratio?.let { match ->
+            (match.groupValues[1].toDoubleOrNull() ?: 0.0) to (match.groupValues[2].toDoubleOrNull() ?: 0.0)
+        }
+        if (parts != null && parts.first > 0.0 && parts.second > 0.0) {
+            return DEFAULT_FRAME_WIDTH to (DEFAULT_FRAME_WIDTH * parts.second / parts.first).toInt()
+        }
+        return DEFAULT_FRAME_WIDTH to DEFAULT_FRAME_WIDTH * 9 / 16
+    }
+
+    /** The video a block names, so a reader who taps play can be given its file or its address. */
+    fun videoOf(id: Long): PostVideo? = videos[id]
+
+    /** Whether the clip a block names is already on disk, which is what decides who plays it. */
+    fun videoFileExists(id: Long): Boolean {
+        val video = videos[id] ?: return false
+        val file = videoFile(video)
+        return file.exists() && file.length() > 0
+    }
+
+    /**
+     * The file upstream's video block plays.
+     *
+     * <p>The block itself draws the cover: the poster frame travels as the document's own
+     * thumbnail, fetched to the location the loader looks in, and the clip's own bytes are only
+     * needed when someone presses play on it.</p>
+     */
+    fun videoDocument(video: PostVideo): TLRPC.TL_document = TLRPC.TL_document().apply {
+        id = video.id
+        dc_id = 0
+        access_hash = 0
+        file_name = video.name
+        mime_type = mimeOf(extensionOf(video.url))
+        size = videoFile(video).takeIf { it.exists() }?.length() ?: 0L
+        thumbs = if (video.cover != null) {
+            arrayListOf(sizeOf(video.cover))
+        } else {
+            ArrayList()
+        }
+        localPath = videoFile(video).absolutePath
+        attributes = arrayListOf(TLRPC.TL_documentAttributeVideo().apply {
+            w = video.width
+            h = video.height
+            duration = 0.0
+            supports_streaming = true
+        })
+    }
+
+    /** Where a post's video is kept: the cache the attachments live in, named by its id. */
+    fun videoFile(video: PostVideo): File = File(
+        File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE), ATTACHMENT_DIR),
+        "${video.id}_${safeName(video.name)}",
+    )
+
+    /**
+     * Fetches a clip that is small enough to travel with the page.
+     *
+     * <p>The site's own content length decides before a byte is written: a video over the limit is
+     * left alone, and whoever plays it gets the file streamed instead. A source that answers
+     * without a length is streamed into the cache up to the same limit, so a lying header cannot
+     * fill the disk either.</p>
+     */
+    suspend fun cacheVideo(client: OkHttpClient, video: PostVideo): File? = withContext(Dispatchers.IO) {
+        val file = videoFile(video)
+        cacheCover(client, video)
+        if (file.exists() && file.length() > 0) {
+            return@withContext file
+        }
+        runCatching {
+            client.newCall(Request.Builder().url(video.url).build()).execute().use { response ->
+                check(response.isSuccessful) { "GET ${video.url} answered ${response.code}" }
+                val body = response.body ?: error("GET ${video.url} answered no body")
+                if (body.contentLength() > MAX_VIDEO_BYTES) {
+                    return@withContext null
+                }
+                file.parentFile?.mkdirs()
+                val partial = File(file.parentFile, file.name + ".part")
+                body.byteStream().use { input ->
+                    partial.outputStream().use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        var copied = 0L
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read <= 0) {
+                                break
+                            }
+                            copied += read
+                            if (copied > MAX_VIDEO_BYTES) {
+                                partial.delete()
+                                return@withContext null
+                            }
+                            output.write(buffer, 0, read)
+                        }
+                    }
+                }
+                check(partial.renameTo(file)) { "cannot move ${partial.name} into place" }
+                file
+            }
+        }.getOrElse { error ->
+            error.printStackTrace()
+            null
+        }
+    }
+
+    /**
+     * Lays a clip's cover down where upstream's video block looks for it.
+     *
+     * <p>The picture of a <em>document</em> is asked for under the document's own extension, not the
+     * picture's: upstream builds that name from the file the reader would play. So the cover exists
+     * under that name as well as under its own - the same bytes, a name the loader will accept, and
+     * the only thing the block draws before anyone presses play.</p>
+     */
+    private suspend fun cacheCover(client: OkHttpClient, video: PostVideo) {
+        val cover = video.cover ?: return
+        val file = cache(client, cover) ?: return
+        val expected = File(
+            FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE),
+            file.nameWithoutExtension + "." + extensionOf(video.url),
+        )
+        if (expected.exists() && expected.length() == file.length()) {
+            return
+        }
+        runCatching {
+            val partial = File(expected.parentFile, expected.name + ".part")
+            file.copyTo(partial, overwrite = true)
+            check(partial.renameTo(expected)) { "cannot move ${partial.name} into place" }
+        }.onFailure { error -> error.printStackTrace() }
     }
 
     private fun attachment(anchor: Element, baseUrl: String): PostAttachment? {
@@ -198,17 +399,19 @@ object DiscourseImageBridge {
      * two posts may link to files that share a name, and a crafted name must not escape the folder.
      */
     fun attachmentFile(attachment: PostAttachment): File {
-        val safeName = attachment.name
-            .substringAfterLast('/')
-            .substringAfterLast('\\')
-            .replace(Regex("[^\\p{L}\\p{N}._-]"), "_")
-            .take(96)
-            .ifEmpty { "attachment" }
         return File(
             File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE), ATTACHMENT_DIR),
-            "${attachment.id}_$safeName",
+            "${attachment.id}_${safeName(attachment.name)}",
         )
     }
+
+    /** A name that came from the site, reduced to something a file name may safely carry. */
+    private fun safeName(name: String): String = name
+        .substringAfterLast('/')
+        .substringAfterLast('\\')
+        .replace(Regex("[^\\p{L}\\p{N}._-]"), "_")
+        .take(96)
+        .ifEmpty { "file" }
 
     /** The document as it is now: with its file when it is already on disk, without it before. */
     fun documentFor(attachment: PostAttachment): TLRPC.TL_document {
@@ -241,6 +444,8 @@ object DiscourseImageBridge {
         "json" -> "application/json"
         "mp3" -> "audio/mpeg"
         "mp4" -> "video/mp4"
+        "webm" -> "video/webm"
+        "mov" -> "video/quicktime"
         "png" -> "image/png"
         "jpg", "jpeg" -> "image/jpeg"
         "webp" -> "image/webp"
@@ -337,4 +542,15 @@ class PreparedPostBody(
     val photos: List<TLRPC.Photo>,
     val images: List<PostImage>,
     val attachments: List<PostAttachment> = emptyList(),
+    val videos: List<PostVideo> = emptyList(),
+)
+
+/** One video a post carries: the file to fetch, its cover, and the identity upstream names it by. */
+data class PostVideo(
+    val id: Long,
+    val url: String,
+    val name: String,
+    val width: Int,
+    val height: Int,
+    val cover: PostImage?,
 )

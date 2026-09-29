@@ -185,6 +185,27 @@ object DiscourseLoader {
         }
     }
 
+    /**
+     * Fetches the clips the posts carry, as far as the bridge is willing to pull them with a page.
+     * A video block draws its cover and plays the file only when it has one.
+     */
+    fun cacheVideos(
+        container: AppContainer,
+        videos: List<PostVideo>,
+        onReady: () -> Unit,
+    ) {
+        if (videos.isEmpty()) {
+            onReady()
+            return
+        }
+        scope.launch {
+            videos.forEach { video ->
+                DiscourseImageBridge.cacheVideo(container.imageOkHttpClient, video)
+            }
+            onReady()
+        }
+    }
+
     /** Fetches one participant's avatar next to the location upstream will look it up in. */
     fun cacheAvatar(
         container: AppContainer,

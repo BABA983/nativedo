@@ -837,6 +837,7 @@ public class TopicFragment extends BaseFragment {
         }
         List<PostImage> images = body.getImages();
         List<PostAttachment> attachments = body.getAttachments();
+        List<PostVideo> videos = body.getVideos();
         Runnable onReady = () -> {
             if (listView != null && listView.getAdapter() != null) {
                 listView.getAdapter().notifyItemChanged(index);
@@ -853,6 +854,10 @@ public class TopicFragment extends BaseFragment {
         });
         DiscourseLoader.INSTANCE.cacheAttachments(container, attachments, () -> {
             onAttachmentsReady.run();
+            return kotlin.Unit.INSTANCE;
+        });
+        DiscourseLoader.INSTANCE.cacheVideos(container, videos, () -> {
+            onReady.run();
             return kotlin.Unit.INSTANCE;
         });
     }

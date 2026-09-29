@@ -109,6 +109,9 @@ public final class DiscourseRows {
         for (PostAttachment attachment : body.getAttachments()) {
             message.rich_message.documents.add(DiscourseImageBridge.INSTANCE.documentFor(attachment));
         }
+        for (PostVideo video : body.getVideos()) {
+            message.rich_message.documents.add(DiscourseImageBridge.INSTANCE.videoDocument(video));
+        }
         return messageObject(message, users);
     }
 

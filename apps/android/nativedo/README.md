@@ -101,7 +101,8 @@ stands, and the upstream component each row is meant to use.
 | Topic detail, cooked HTML to native blocks | done, 41 ports | done | upstream `RichHtml.parse` into `ChatMessageCell` |
 | Post images and the lightbox | done | done | `PhotoViewer` |
 | Links in a post | done | done | `Browser` |
-| Onebox link previews (`aside.onebox`) | done, cards | done | upstream's link preview (`TL_messageMediaWebPage`): one bubble per onebox, thumbnail through the image bridge |
+| Onebox link previews (`aside.onebox`) | done, cards | done | upstream's link preview (`TL_messageMediaWebPage`): one bubble per onebox, the bare link line gone from the text, and no bubble draws a forward arrow (`noforwards`) |
+| Video in a post (`<video>`) | partial, opened externally | done, to the clip's own size | upstream's video block (`pageBlockVideo` in `RichMessageLayout`'s media cell): the clip is fetched with the post up to 25 MB, its poster frame is the cover, and pressing play opens `PhotoViewer`; a clip larger than that, or one the client could not fetch, is streamed by the device's own player, because upstream's player can only play a file this client already holds |
 | Avatars | done | done | the avatar receivers of `ChatMessageCell` / `DialogCell` |
 | Attachments: download, open with the system | done | done | upstream's document block |
 | Long press a post: copy, copy link, reply | done | done | our delegate on `ChatMessageCell` |
@@ -120,7 +121,6 @@ stands, and the upstream component each row is meant to use.
 | linux.do emoji sprite in the composer | done | missing | upstream's emoji panel plus our sprite downloader |
 | Floating date and jump to the read position | done | missing | upstream's chat date overlay |
 | Text selection inside a post | done | missing | `ChatMessageCell`'s own selection |
-| Video in a post | partial, opened externally | missing | `VideoPlayer` through a rich media block |
 | Share and deep links into a topic | partial | missing | `ShareActivity` plus an intent filter |
 
 ## Switch plan

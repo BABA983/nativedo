@@ -1,7 +1,12 @@
 package io.github.baba983.nativedo.topic;
 
+import android.content.ActivityNotFoundException;
+import android.content.Intent;
+import android.net.Uri;
+
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLoader;
+import org.telegram.messenger.FileLog;
 import org.telegram.messenger.MessageObject;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
@@ -30,6 +35,14 @@ public final class ArticlePhotoViewer {
                 || message.messageOwner == null || message.richLayout == null || block == null) {
             return false;
         }
+        // A video block is drawn from its cover, and the clip's own bytes are fetched with the page
+        // only as far as the bridge is willing to pull them: a video this client does not hold is
+        // streamed by whatever the device plays videos with, rather than handed to a player that
+        // would sit on a file that is not there.
+        if (block instanceof TL_iv.pageBlockVideo
+                && !DiscourseImageBridge.INSTANCE.videoFileExists(((TL_iv.pageBlockVideo) block).video_id)) {
+            return playElsewhere(fragment, (TL_iv.pageBlockVideo) block);
+        }
         ArrayList<TL_iv.PageBlock> media = new ArrayList<>();
         message.richLayout.collectMediaBlocks(media);
         int index = media.indexOf(block);
@@ -41,8 +54,29 @@ public final class ArticlePhotoViewer {
         return viewer.openPhoto(index, new BlocksAdapter(message, media), new PhotoViewer.EmptyPhotoViewerProvider());
     }
 
-    private static class BlocksAdapter implements PhotoViewer.PageBlocksAdapter {
+    /**
+     * Hands a clip this client did not fetch to the player the device has, with the site's own
+     * address for it: the file streams instead of waiting for a download, and nothing is copied
+     * into an app cache that a long video would fill.
+     */
+    private static boolean playElsewhere(BaseFragment fragment, TL_iv.pageBlockVideo block) {
+        PostVideo video = DiscourseImageBridge.INSTANCE.videoOf(block.video_id);
+        if (video == null) {
+            return false;
+        }
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(Uri.parse(video.getUrl()), "video/*");
+            fragment.getParentActivity().startActivity(intent);
+            return true;
+        } catch (ActivityNotFoundException e) {
+            // A device with no player for it is not a crash; the block stays as it was drawn.
+            FileLog.e(e);
+            return false;
+        }
+    }
 
+    private static class BlocksAdapter implements PhotoViewer.PageBlocksAdapter {
         private final MessageObject messageObject;
         private final List<TL_iv.PageBlock> blocks;
 
