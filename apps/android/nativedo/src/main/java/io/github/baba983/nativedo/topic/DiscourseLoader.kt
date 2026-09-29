@@ -211,6 +211,10 @@ object DiscourseLoader {
      * Fetches one clip for a play press, and says which of the two players gets it: upstream's own
      * viewer for a file this client now holds, the device's player for a clip it will not fetch or
      * that the site will not hand over.
+     *
+     * <p>One fetch per clip: a press while the fetch runs - the block draws a cancel button, and a
+     * reader may press it again - must not start a second transfer over the same bytes, which the
+     * two would write to (and rename into) the same file.</p>
      */
     fun fetchVideo(
         container: AppContainer,
@@ -218,15 +222,28 @@ object DiscourseLoader {
         onStored: () -> Unit,
         onStream: () -> Unit,
     ) {
+        val name = DiscourseImageBridge.videoFileName(video)
+        if (!fetching.add(name)) {
+            return
+        }
         scope.launch {
-            val outcome = DiscourseImageBridge.downloadVideo(container.imageOkHttpClient, video)
-            if (outcome == DiscourseImageBridge.VideoDownload.Stored) {
-                onStored()
-            } else {
-                onStream()
+            try {
+                val outcome = DiscourseImageBridge.downloadVideo(container.imageOkHttpClient, video)
+                if (outcome == DiscourseImageBridge.VideoDownload.Stored) {
+                    onStored()
+                } else {
+                    onStream()
+                }
+            } finally {
+                fetching.remove(name)
             }
         }
     }
+
+    /** The clips a fetch is running for right now, by the name the block looks them up by. */
+    private val fetching = java.util.Collections.newSetFromMap(
+        java.util.concurrent.ConcurrentHashMap<String, Boolean>(),
+    )
 
     /** Fetches one participant's avatar next to the location upstream will look it up in. */
     fun cacheAvatar(

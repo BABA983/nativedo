@@ -165,6 +165,8 @@ internal class PostVideoTest {
 
         val reports = observeProgress(name)
         pressPlay(cell, block)
+        // A reader may press again while the transfer runs: that is the same fetch, not another one.
+        pressPlay(cell, block)
         harness.await("the site to be asked for the clip") {
             site.recordedRequests.any { it.contains(clip) }
         }
@@ -197,6 +199,11 @@ internal class PostVideoTest {
             DiscourseImageBridge.videoFileExists(block.video_id)
         }
         assertFalse("the fetch is over", NativeDoHooks.isFileLoading(name))
+        assertEquals(
+            "however many times the block was pressed, the clip was fetched once",
+            1,
+            site.recordedRequests.count { it.contains(clip) },
+        )
         assertTrue(
             "the reader's own viewer took the file",
             PhotoViewer.getInstance().isVisibleOrAnimating(),
