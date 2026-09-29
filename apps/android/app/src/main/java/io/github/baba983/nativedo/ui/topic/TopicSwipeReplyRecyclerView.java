@@ -152,14 +152,6 @@ public class TopicSwipeReplyRecyclerView extends RecyclerListView {
         if (child == null || child != scrimmedChild || child.getParent() != this) {
             return false;
         }
-        if (child instanceof TopicPostCell) {
-            ((TopicPostCell) child).setScrimForegroundDrawing(true);
-            try {
-                return super.drawChild(canvas, child, getDrawingTime());
-            } finally {
-                ((TopicPostCell) child).setScrimForegroundDrawing(false);
-            }
-        }
         return super.drawChild(canvas, child, getDrawingTime());
     }
 

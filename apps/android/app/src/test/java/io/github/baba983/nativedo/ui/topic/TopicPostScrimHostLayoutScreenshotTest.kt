@@ -105,7 +105,7 @@ internal class TopicPostScrimHostLayoutScreenshotTest {
 
             override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
                 val html = if (position == 1) {
-                    "<p>This selected post stays clear above the dim.</p><p>Its cell background must not become a large white block.</p>"
+                    "<p>This selected post stays clear above the dim.</p><p>Its cell background is bounded to the post: no wallpaper through it, nothing spilled.</p>"
                 } else {
                     "<p>This neighboring post remains behind the full-screen dim.</p>"
                 }

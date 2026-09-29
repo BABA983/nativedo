@@ -146,15 +146,6 @@ public class TopicPostScrimHostLayout extends SizeNotifierFrameLayout {
         getLocationInWindow(hostLocation);
         scrimView.getLocationInWindow(viewLocation);
         canvas.translate(viewLocation[0] - hostLocation[0], viewLocation[1] - hostLocation[1]);
-        if (scrimView instanceof TopicPostCell) {
-            ((TopicPostCell) scrimView).setScrimForegroundDrawing(true);
-            try {
-                scrimView.draw(canvas);
-            } finally {
-                ((TopicPostCell) scrimView).setScrimForegroundDrawing(false);
-            }
-            return;
-        }
         scrimView.draw(canvas);
     }
 

@@ -131,6 +131,7 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
     private final TextPaint reactionTextPaint = new TextPaint(TextPaint.ANTI_ALIAS_FLAG);
     private final TextPaint replyTextPaint = new TextPaint(TextPaint.ANTI_ALIAS_FLAG);
     private final Paint highlightPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint backgroundPaint = new Paint();
     private final Paint replyAvatarOverlapPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint replyAvatarPlaceholderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint avatarFlairBadgePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -153,7 +154,6 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
     private final ButtonBounce replyBounce = new ButtonBounce(this, 2.0f, 2.0f);
     private Drawable replyFooterSelector;
     private boolean invalidatesParent;
-    private boolean scrimForegroundDrawing;
 
     private Post post;
     private Post previousPost;
@@ -603,9 +603,15 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
-        if (!scrimForegroundDrawing) {
-            canvas.drawColor(Theme.getColor(Theme.key_chat_inBubble));
-        }
+        // A bounded rect rather than drawColor: the scrim host's direct fallback draws this cell without a
+        // child-bounds clip, so a colour fill would cover the whole viewport there. The post's own
+        // background has to be painted in every pass that draws the cell, including the host's
+        // selected-message pass above the scrim: the list deliberately leaves the selected cell out of its
+        // regular pass, so a pass that skipped the background left the cell's rect showing the host's
+        // wallpaper through the scrim - the 80ms "dip" a device pass measured (docs/device-verification.md
+        // §34).
+        backgroundPaint.setColor(Theme.getColor(Theme.key_chat_inBubble));
+        canvas.drawRect(0, 0, getWidth(), getHeight(), backgroundPaint);
         drawJumpHighlight(canvas);
         avatarImage.draw(canvas);
         drawAvatarFlair(canvas);
@@ -672,11 +678,6 @@ public class TopicPostCell extends BaseCell implements Theme.Colorable, TextSele
 
     public void setInvalidatesParent(boolean value) {
         invalidatesParent = value;
-    }
-
-    /** Used by the selected-message foreground pass above the full-screen scrim. */
-    public void setScrimForegroundDrawing(boolean value) {
-        scrimForegroundDrawing = value;
     }
 
     @Override
