@@ -92,6 +92,34 @@ internal class FakeDiscourseSite {
     }
 
     /**
+     * Serves [bytes] slowly: a test that has to look at a screen while a transfer is still running
+     * (a progress state, a cancel button) needs the transfer to still be running when it looks.
+     */
+    fun serveThrottled(
+        path: String,
+        bytes: ByteArray,
+        contentType: String,
+        bytesPerPeriod: Long,
+        periodMillis: Long,
+    ) {
+        serveResponse(path) {
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", contentType)
+                .setBody(okio.Buffer().write(bytes))
+                .throttleBody(bytesPerPeriod, periodMillis, java.util.concurrent.TimeUnit.MILLISECONDS)
+        }
+    }
+
+    /**
+     * Serves a response the test builds itself, for a file the site does not hand over the usual
+     * way: one it refuses, or one whose own header says it is too long to fetch.
+     */
+    fun serveResponse(path: String, build: () -> MockResponse) {
+        responses[path.trimStart('/')] = build
+    }
+
+    /**
      * The path an avatar template turns into, with `{size}` filled in the way the client fills it.
      */
     fun avatarPath(template: String, size: Int = 96): String =
@@ -136,6 +164,7 @@ internal class FakeDiscourseSite {
                         .setHeader("Content-Type", "image/png")
                         .setBody(okio.Buffer().write(images[path]?.first ?: generatedAvatar(path)))
                 }
+                responses[path]?.let { build -> return build() }
                 images[path]?.let { (bytes, contentType) ->
                     return MockResponse()
                         .setResponseCode(200)
@@ -242,6 +271,7 @@ internal class FakeDiscourseSite {
     private val requestedPaths = mutableListOf<String>()
     private val cookieHeaders = mutableMapOf<String, String>()
     private val images = mutableMapOf<String, Pair<ByteArray, String>>()
+    private val responses = mutableMapOf<String, () -> MockResponse>()
     private var lastCookieHeader: String? = null
 
     private fun fixtureBodyFor(path: String): String? {

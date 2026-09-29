@@ -279,6 +279,9 @@ object DiscourseImageBridge {
             }
             val name = videoFileName(video)
             NativeDoHooks.setFileLoading(name, true)
+            // The block's own state is what turns on this: it is told the fetch exists before the
+            // first byte, so the reader sees a download rather than a play button that seems dead.
+            reportVideoProgress(name, 0L, 0L)
             val outcome = try {
                 fetchVideo(client, video, file, name)
             } finally {

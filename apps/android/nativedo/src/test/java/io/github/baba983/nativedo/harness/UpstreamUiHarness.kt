@@ -23,6 +23,7 @@ import org.telegram.messenger.ILocationServiceProvider
 import org.telegram.messenger.LocaleController
 import org.telegram.ui.ActionBar.BaseFragment
 import org.telegram.ui.ActionBar.Theme
+import org.telegram.ui.PhotoViewer
 import io.github.baba983.nativedo.app.NativeDoActivity
 import io.github.baba983.nativedo.app.NativeDoApplication
 import io.github.baba983.nativedo.harness.shadows.ShadowConnectionsManager
@@ -62,6 +63,7 @@ internal class UpstreamUiHarness {
     fun bootApp(): NativeDoActivity {
         prepareUpstream()
         resetImageLoader()
+        resetPhotoViewer()
         val app = Robolectric.buildActivity(NativeDoActivity::class.java).setup().get()
         activity = app
         idle()
@@ -74,6 +76,7 @@ internal class UpstreamUiHarness {
     fun bootViews() {
         prepareUpstream()
         resetImageLoader()
+        resetPhotoViewer()
         activity = Robolectric.buildActivity(Activity::class.java).setup().get()
         root = FrameLayout(activity).apply { setBackgroundColor(Color.WHITE) }
         content = FrameLayout(activity).apply { setBackgroundColor(Color.WHITE) }
@@ -134,6 +137,20 @@ internal class UpstreamUiHarness {
             field.set(null, null)
         }
         runCatching { ImageLoader.getInstance().clearMemory() }
+    }
+
+    /**
+     * Upstream's full screen viewer is a singleton too, and one test's open viewer is the next
+     * test's refusal: `PhotoViewer.openPhoto` answers false while a viewer is already visible.
+     * Dropping the instance gives every test the viewer it would have on a first open.
+     */
+    private fun resetPhotoViewer() {
+        for (name in listOf("Instance", "PipInstance", "Instance2")) {
+            runCatching {
+                val field = PhotoViewer::class.java.getDeclaredField(name).apply { isAccessible = true }
+                field.set(null, null)
+            }
+        }
     }
 
     fun present(fragment: BaseFragment) {
