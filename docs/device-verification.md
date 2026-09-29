@@ -1508,6 +1508,12 @@ The little dot at the disc's edge is the indeterminate spinner's own start marke
 path's reading called a dot travelling around the disc (§27); it is Telegram's look for a load without a
 reported percentage, not an artefact.
 
+**The one frame §27 left open, captured (2026-09-29).** The rich body's own loading state - the case §27 could
+not photograph because the file was already in memory - was read again on a feed post's image under
+`adb emu network speed umts`: the grey disc with the white cross over the light-grey placeholder block, the
+spinner's start dot on the disc's rim, and the photo drawing in over it a few frames later. Same three-state
+button this section verified on 2790689, so both bodies now have a photographed loading state.
+
 ## 30. A post body's photos reach the column's edges (`466d0b7`) — passed; a collage's cells do not yet (2026-09-28)
 
 The owner read the rich body's images as rounded and inset where Telegram's read edge to edge. Both come from
@@ -1600,11 +1606,17 @@ side-by-side images, so this change is golden-evidence only so far - and the mac
 **Both halves landed (2026-09-29).** macOS: the runner re-recorded and verified; the two `richMessageBody`
 goldens are committed with the four narrow-panel goldens the macOS set had never had (92 files against
 Linux's 96, now 96 each - only the runner's uncommitted recordings were keeping its own verify green).
-Device (build `…-103333`, flag on, topic **847468** post #1 - four adjacent `<p>` images, a four-cell
-collage): the cells span **x 0..1079, the whole frame** (the page's white is 255; x=0 and x=1079 sample the
-image fill), so the collage reaches the edges exactly like the single photo does. Tapping the two middle
-cells opens the viewer; the two outer cells did not respond in that read, most likely because they had not
-loaded yet - a second look is queued with the rest of the round.
+Device (build `…-103333`, flag on, topic **847468** post #1): **what reached x 0..1079 there was the
+placeholder/backdrop, not a collage.**  A later read measured the two screenshots against each other pixel by
+pixel (same post, newer build): the four images render as four **stacked standalone photos** (bands y
+460..809, 1006..1353, 1550..1900, 2097..2399), each photo **689-690 wide at x 195..884** - the width the site
+declared for it, centred - in *both* builds, while the grey backdrop behind them is full-width in the older
+one and gone in the newer one (that narrowing is §33's fix). Tapping each of the four photos opens the
+viewer (`1 of 4` … `4 of 4` in the post's gallery); the two that did not respond in the first read had simply
+not loaded yet. So this read is about photo placeholders: a live collage has still not been found on the
+site, and the collage's own cells (this section's `k` stretch) remain **golden-verified only** - as does the
+question of whether a collage's photos fill their stretched cells or letterbox inside them, which is what the
+golden's backdrop-only pixels cannot answer.
 
 ## 33. A body's photo box is the block's width, so a narrow photo centres (`27fa448`) — golden-verified; device re-read queued (2026-09-29)
 
@@ -1642,6 +1654,13 @@ width 299 - a *different* image with a different declared size, which is the poi
 the two `narrow…DeclaredSize` goldens re-recorded and verified on the recording host, and the panel sits at
 **x 329..615** there too - the same box Linux renders, which is what a cross-platform golden is for.
 `richMessageBody` on macOS showed the usual zero-pixel anti-aliasing jitter and was restored.
+
+**And the backdrop follows it - read off two builds (2026-09-29).** The same post 847468's first post, same
+scroll position, old build (`…-103333`) against the fixed one: the photo pixels are **byte-identical** between
+the two (e.g. (243,247,252) at x 200 and (245,249,253) at x 540 on the same row), while the grey backdrop
+behind them - (222,223,225) at x 5/30/60, (219,222,229) at x 900/1050 - is **full width (x 0..1079) in the old
+build and simply not there** in the new one, where the non-white pixels stop at the photo's own box
+(x 195..884). That is this section's "the placeholder and the blur cover the same box" sentence, measured.
 
 ## 34. ④ reproduces: the pressed post dims for ~80ms when the selection starts (`2963790` post 2) — open (2026-09-29)
 
@@ -1688,8 +1707,11 @@ getWidth(), getHeight())` instead of `drawColor(...)`, because the host's direct
 clip and a colour fill would cover the whole viewport - which is the reason the flag existed at all. It is also
 upstream's model: `ChatActivity` draws the selected message's background above the scrim (`drawBackground`).
 The two scrim-host goldens recorded the intentional difference on Linux (their fixture text now says what the
-golden pins: the background is bounded to the post, nothing spilled); macOS and a device re-read of the same
-gesture are queued.
+golden pins: the background is bounded to the post, nothing spilled).
+
+That also answers the owner's "it seems not every post does this": the hole needs the foreground pass to land
+on a frame where the cell is *clean* (nothing about the post changed), so whether the dip appears at all
+depends on the frames Android happens to hand the host - the same gesture on the same post can show it or not.
 
 **Device verdict (`6e65240`, build `…-20260929-115411`, 44fps VFR, both bodies).**
 
