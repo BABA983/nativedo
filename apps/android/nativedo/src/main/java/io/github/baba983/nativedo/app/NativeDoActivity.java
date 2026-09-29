@@ -11,9 +11,14 @@ import org.telegram.ui.ActionBar.ActionBarLayout;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.DrawerLayoutContainer;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.LineProgressView;
 
 import java.util.ArrayList;
 
+import io.github.baba983.nativedo.auth.LoginWebViewFragment;
+import io.github.baba983.nativedo.auth.SessionStarter;
+import io.github.baba983.nativedo.core.di.AppContainer;
+import io.github.baba983.nativedo.core.session.AppSessionState;
 import io.github.baba983.nativedo.topic.TopicListFragment;
 
 /**
@@ -30,6 +35,7 @@ import io.github.baba983.nativedo.topic.TopicListFragment;
 public class NativeDoActivity extends Activity {
 
     private ActionBarLayout actionBarLayout;
+    private LineProgressView sessionProgress;
     private DrawerLayoutContainer drawerLayoutContainer;
     private FrameLayout contentView;
 
@@ -66,12 +72,48 @@ public class NativeDoActivity extends Activity {
         setContentView(contentView);
 
         if (savedInstanceState == null) {
-            actionBarLayout.presentFragment(new TopicListFragment(), false);
+            // The session lives in cookies, so what to open with cannot be decided synchronously:
+            // show progress, restore the session, then present the answer. Gating here rather than
+            // in a fragment of its own keeps the first screen the app shows the real one.
+            showSessionProgress();
+            AppContainer container = NativeDo.container(this);
+            SessionStarter.INSTANCE.start(container, state -> {
+                onSessionResolved(state instanceof AppSessionState.Authenticated);
+                return kotlin.Unit.INSTANCE;
+            });
         }
     }
 
-    /** Fragments push their next screen through the shell rather than holding a reference to it. */
+    private void showSessionProgress() {
+        LineProgressView progress = new LineProgressView(this);
+        progress.setProgressColor(org.telegram.ui.ActionBar.Theme.getColor(
+                org.telegram.ui.ActionBar.Theme.key_featuredStickers_addButton));
+        progress.setProgress(0f, false);
+        sessionProgress = progress;
+        contentView.addView(progress, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(2)));
+    }
+
+    private void onSessionResolved(boolean authenticated) {
+        if (sessionProgress != null) {
+            contentView.removeView(sessionProgress);
+            sessionProgress = null;
+        }
+        if (authenticated) {
+            actionBarLayout.presentFragment(new TopicListFragment(), false);
+        } else {
+            actionBarLayout.presentFragment(new LoginWebViewFragment(() ->
+                    actionBarLayout.presentFragment(new TopicListFragment(), true)), false);
+        }
+    }
+
+    /** Pushes a screen on top of the current one; back returns to it. */
     public void present(BaseFragment fragment) {
+        actionBarLayout.presentFragment(fragment, false);
+    }
+
+    /** Replaces the current screen, for a step that must not stay in the back stack. */
+    public void replace(BaseFragment fragment) {
         actionBarLayout.presentFragment(fragment, true);
     }
 

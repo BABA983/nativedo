@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NativeDo's own strings. Telegram's strings are not declared here: :TMessagesProj supplies them
+  and this client reads them through upstream's LocaleController, exactly as upstream's app does.
+-->
+<resources>
+    <string name="login_webview_title">登录 linux.do</string>
+    <string name="app_browser_download_started">已开始下载</string>
+    <string name="app_browser_download_failed">下载失败</string>
+</resources>

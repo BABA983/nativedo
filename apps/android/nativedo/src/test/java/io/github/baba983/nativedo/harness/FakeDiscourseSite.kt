@@ -1,5 +1,10 @@
 package io.github.baba983.nativedo.harness
 
+import android.content.Context
+import io.github.baba983.nativedo.core.di.AppContainer
+import io.github.baba983.nativedo.core.session.SessionSnapshot
+import okhttp3.Cookie
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -17,16 +22,30 @@ internal class FakeDiscourseSite {
 
     private val server = MockWebServer()
 
+    /** The fake site's own URL, available once [start] has run. */
+    lateinit var baseUrl: String
+        private set
+
     /** Path (without the leading slash) -> fixture file. */
     private val routes = mutableMapOf(
         "latest.json" to "latest-topics.json",
         "emojis.json" to null,
     )
 
+    /** What the fake site saw on the last request, so a test can assert the session was sent. */
+    val lastRequestCookieHeader: String?
+        get() = lastCookieHeader
+
+    val requestPaths: List<String> get() = requestedPaths.toList()
+
     fun start(): String {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 val path = request.path.orEmpty().trimStart('/').substringBefore('?')
+                synchronized(this@FakeDiscourseSite) {
+                    requestedPaths += path
+                    lastCookieHeader = request.getHeader("Cookie")
+                }
                 val body = bodyFor(path)
                     ?: return MockResponse().setResponseCode(404)
                         .setBody("""{"errors":["no fixture for $path"]}""")
@@ -37,8 +56,40 @@ internal class FakeDiscourseSite {
             }
         }
         server.start()
-        return server.url("/").toString()
+        baseUrl = server.url("/").toString()
+        return baseUrl
     }
+
+    /**
+     * A container pointing at this site with a usable session already in it.
+     *
+     * Every screen sits behind the session gate, so a screen test needs a session for the same
+     * reason the app does; seeding it here keeps that out of each test.
+     */
+    fun authenticatedContainer(context: Context): AppContainer {
+        val container = AppContainer(context, baseUrl, null, null)
+        val url = baseUrl.toHttpUrl()
+        container.cookieStore.save(
+            url,
+            listOf(
+                cookie(url.host, "_t", "session-token"),
+                cookie(url.host, "_forum_session", "forum-session"),
+                cookie(url.host, "cf_clearance", "clearance"),
+            ),
+        )
+        container.sessionStore.save(
+            SessionSnapshot(
+                username = "baba",
+                displayName = "Baba",
+                avatarTemplate = "",
+                lastValidatedAt = System.currentTimeMillis(),
+            ),
+        )
+        return container
+    }
+
+    private fun cookie(host: String, name: String, value: String): Cookie =
+        Cookie.Builder().name(name).value(value).domain(host).path("/").build()
 
     fun stop() = server.shutdown()
 
@@ -60,6 +111,9 @@ internal class FakeDiscourseSite {
     }
 
     private val cookedBodies = mutableMapOf<String, String>()
+
+    private val requestedPaths = mutableListOf<String>()
+    private var lastCookieHeader: String? = null
 
     private fun bodyFor(path: String): String? {
         cookedBodies[path]?.let { return it }

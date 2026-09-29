@@ -63,9 +63,9 @@ internal class TopicScreensTest {
 
     @Before
     fun setUp() {
-        val baseUrl = site.start()
+        site.start()
         site.serve(TOPIC_ID, "topic-detail.json")
-        NativeDo.setContainerFactory { context -> AppContainer(context, baseUrl, null, null) }
+        NativeDo.setContainerFactory { context -> site.authenticatedContainer(context) }
     }
 
     @After

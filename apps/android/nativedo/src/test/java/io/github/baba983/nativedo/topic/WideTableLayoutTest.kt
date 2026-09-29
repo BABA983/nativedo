@@ -64,9 +64,9 @@ internal class WideTableLayoutTest {
 
     @Before
     fun setUp() {
-        val baseUrl = site.start()
+        site.start()
         site.serveCooked(TOPIC_ID, WIDE_TABLE)
-        NativeDo.setContainerFactory { context -> AppContainer(context, baseUrl, null, null) }
+        NativeDo.setContainerFactory { context -> site.authenticatedContainer(context) }
     }
 
     @After
