@@ -6810,6 +6810,12 @@ public class RichMessageLayout {
         }
 
         protected int getImageLeft() {
+            // NativeDo: the photo's own left edge, which is where a body's centring puts it (see onDraw) -
+            // the tap mapping, the accessibility rect and the loading button all ride on this. A chat
+            // bubble keeps upstream's rule, and so does a photo that fills the column.
+            if (root.mediaBleed > 0 && !isInQuote()) {
+                return Math.max(0, this.maxWidth - imgWidth) / 2;
+            }
             final int avail = availWidth();
             return avail > imgWidth ? (avail - imgWidth) / 2 : 0;
         }
@@ -6842,7 +6848,19 @@ public class RichMessageLayout {
             final int pad = dp(2);
             final int bleedL = inQuote ? 0 : root.mediaBleed > 0 ? root.mediaBleed : root.padLeft - pad;
             final int bleedR = inQuote ? 0 : root.mediaBleed > 0 ? root.mediaBleed : root.padRight - pad;
-            final boolean fit = availWidth() > imgWidth;
+            // NativeDo: in a post body a photo's box is the block's own content width, and a photo the site
+            // declared narrower than that keeps the size it declared and sits centred in the column.
+            // Upstream centres inside `availWidth()`, which is `root.getMinWidth()` - the *intrinsic* max
+            // over the blocks' `getMinWidth()` - and in a body that is not the column: a device pass read a
+            // 287-wide portrait at x 0..382 of a 1079 frame with 697px of slack on its right, while the
+            // block body centred the same photo (docs/device-verification.md §31, §33). The placeholder and
+            // the blur backdrop cover the same box, so nothing wider (or further left) than the photo is
+            // painted. Gated on the host hook, so a chat bubble keeps upstream's shapes to the pixel.
+            final boolean bodyPhoto = root.mediaBleed > 0 && !inQuote;
+            final int fitWidth = bodyPhoto ? Math.min(this.maxWidth, imgWidth) : availWidth();
+            final boolean fit = bodyPhoto ? fitWidth < this.maxWidth : availWidth() > imgWidth;
+            final int boxLeft = bodyPhoto && fit ? (this.maxWidth - fitWidth) / 2 : -bleedL;
+            final int boxRight = bodyPhoto && fit ? boxLeft + fitWidth : width + bleedR;
             if (inQuote) {
                 canvas.save();
                 clipPath.rewind();
@@ -6850,25 +6868,24 @@ public class RichMessageLayout {
                 canvas.clipPath(clipPath);
             }
             if (!imageReceiver.hasBitmapImage() || imageReceiver.getCurrentAlpha() != 1.0f) {
-                canvas.drawRect(-bleedL, 0, width + bleedR, imgHeight, mediaBgPaint);
+                canvas.drawRect(boxLeft, 0, boxRight, imgHeight, mediaBgPaint);
             }
             if (fit) {
                 prepareBlurImage();
                 updateRoundRadius(blurImageReceiver, false);
                 updateRoundRadius(imageReceiver, true);
                 if (blurImageReceiver.getBitmap() != null) {
-                    blurImageReceiver.setImageCoords(-bleedL, 0, bleedL + width + bleedR, imgHeight);
+                    blurImageReceiver.setImageCoords(boxLeft, 0, boxRight - boxLeft, imgHeight);
                     blurImageReceiver.setAlpha(imageReceiver.getCurrentAlpha());
                     blurImageReceiver.draw(canvas);
                 }
                 imageReceiver.setAspectFit(true);
-                // NativeDo: a photo narrower than the column keeps the size the site declared and sits
-                // centred in it. Upstream draws it at the left edge of a full-width box, which is right
-                // for a chat bubble (the bubble hugs the photo) and wrong for a post body: a device pass
-                // measured x 0..812 with 267px of slack on the right for a 287x500 photo
-                // (docs/device-verification.md §31). Gated on the host hook so a chat is untouched.
-                final int fitWidth = root.mediaBleed > 0 ? Math.min(availWidth(), imgWidth) : availWidth();
-                imageReceiver.setImageCoords(fitWidth < availWidth() ? (availWidth() - fitWidth) / 2 : 0, 0, fitWidth, imgHeight);
+                imageReceiver.setImageCoords(
+                    bodyPhoto ? boxLeft : 0,
+                    0,
+                    bodyPhoto ? boxRight - boxLeft : availWidth(),
+                    imgHeight
+                );
             } else {
                 updateRoundRadius(imageReceiver, false);
                 imageReceiver.setAspectFit(false);
