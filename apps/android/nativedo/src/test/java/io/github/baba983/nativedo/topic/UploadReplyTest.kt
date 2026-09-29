@@ -30,6 +30,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.ui.Components.ChatActivityEnterView
 
@@ -82,18 +83,11 @@ internal class UploadReplyTest {
 
     @Test
     fun anImageIsUploadedAndTheFieldGetsTheSitesOwnImageMarkdown() {
-        site.serveJson(
-            "uploads.json",
-            uploadAnswer(
-                url = "/uploads/default/original/2X/ab/photo.png",
-                name = "photo.png",
-                size = "180 KB",
-            ),
-        )
+        site.serveJson("uploads.json", harness.fixture("upload-response.json"))
         val composer = openComposerAndAttach()
         // Upstream offers the attach button only while the field is empty, so this is the flow the
         // reader takes: pick a file, then write the sentence around its markup.
-        pickFile("photo.png", transparentPng())
+        pickFile("screenshot.png", transparentPng())
 
         // The request lands on the site before its answer is read, so what is waited for is the
         // field the answer fills.
@@ -119,8 +113,8 @@ internal class UploadReplyTest {
         val field = composer.fieldText.toString()
         println("upload: field = $field")
         assertEquals(
-            "the field holds the site's own markdown for the answer",
-            "![photo.png](${site.url("/uploads/default/original/2X/ab/photo.png")})\n",
+            "the field holds the markdown the site's own composer writes: its short handle and the dimensions",
+            "![screenshot.png|1080x720](upload://9d5a2f6f0a1b2c3d4e5f60718293a4b5c6d7e8f9.png)\n",
             field,
         )
         assertEquals(
@@ -134,12 +128,9 @@ internal class UploadReplyTest {
 
     @Test
     fun anythingThatIsNotAnImageBecomesTheSitesAttachmentMarkdown() {
-        site.serveJson(
-            "uploads.json",
-            uploadAnswer(url = "/uploads/default/original/2X/cd/notes.zip", name = "notes.zip", size = "12.3 KB"),
-        )
+        site.serveJson("uploads.json", harness.fixture("upload-response-attachment.json"))
         val composer = openComposerAndAttach()
-        pickFile("notes.zip", "PK\u0003\u0004zip".toByteArray())
+        pickFile("session-notes.zip", "PK\u0003\u0004zip".toByteArray())
 
         harness.await("the field to hold the uploaded file") {
             !composer.getFieldText().isNullOrEmpty()
@@ -149,7 +140,7 @@ internal class UploadReplyTest {
         println("upload: attachment field = $field")
         assertEquals(
             "a file the site will not render inline keeps its name, its marker and its size",
-            "[notes.zip|attachment](${site.url("/uploads/default/original/2X/cd/notes.zip")}) (12.3 KB)\n",
+            "[session-notes.zip|attachment](upload://1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d.zip) (1.2 MB)\n",
             field,
         )
         harness.renderApp("topic-reply-upload-attachment")
@@ -166,6 +157,97 @@ internal class UploadReplyTest {
         composer.getAttachButton().performClick()
         harness.idle()
         return composer
+    }
+
+    @Test
+    fun aSecondFileAppendsToTheFirstThroughTheStripsOwnButton() {
+        site.serveJson("uploads.json", harness.fixture("upload-response.json"))
+        val composer = openComposerAndAttach()
+        pickFile("screenshot.png", transparentPng())
+        harness.await("the first upload to land in the field") {
+            !composer.getFieldText().isNullOrEmpty()
+        }
+
+        // A laid-out composer has already decided what to offer: with text in the field upstream's
+        // own paperclip is gone, and ours is the only way to a second file.
+        harness.layoutApp()
+        val strip = attachStrip() ?: throw AssertionError("the screen has no attach strip")
+        assertEquals("shown while the field has something in it", View.VISIBLE, strip.visibility)
+        // Upstream's own paperclip is not what the reader sees once the field has text (compare
+        // topic-reply-empty.png with the render below), so a second file goes through the strip.
+        println(
+            "upload: upstream paperclip while the field has text — alpha=" + composer.getAttachButton()?.alpha +
+                " drawnAt=" + composer.getAttachButton()?.left,
+        )
+
+        strip.performClick()
+        harness.idle()
+        pickFile("second.png", transparentPng())
+        harness.await("the second upload to land in the field") {
+            composer.getFieldText()?.count { it == '\n' } == 2
+        }
+
+        val field = composer.fieldText.toString()
+        println("upload: two files = $field")
+        assertEquals(
+            "each upload keeps its own line and its own handle",
+            "![screenshot.png|1080x720](upload://9d5a2f6f0a1b2c3d4e5f60718293a4b5c6d7e8f9.png)\n" +
+                "![screenshot.png|1080x720](upload://9d5a2f6f0a1b2c3d4e5f60718293a4b5c6d7e8f9.png)\n",
+            field,
+        )
+        harness.renderApp("topic-reply-upload-second")
+        println(
+            "upload: strip sits on the composer — margin=" +
+                (strip.layoutParams as android.widget.FrameLayout.LayoutParams).bottomMargin +
+                " composerHeight=" + composer.height,
+        )
+        harness.assertNoTelegramSideEffects()
+    }
+
+    @Test
+    fun anAnswerWithoutAShortHandleIsStillLinkedToTheUpload() {
+        site.serveJson(
+            "uploads.json",
+            harness.fixture("upload-response.json")
+                .replace("\"short_url\": \"upload://9d5a2f6f0a1b2c3d4e5f60718293a4b5c6d7e8f9.png\",", "")
+                // A site-relative answer is what this test is about: it has to be resolved.
+                .replace("\"url\": \"https://linux.do/", "\"url\": \"/"),
+        )
+        val composer = openComposerAndAttach()
+        pickFile("screenshot.png", transparentPng())
+        harness.await("the field to hold the uploaded image") {
+            !composer.getFieldText().isNullOrEmpty()
+        }
+        val field = composer.fieldText.toString()
+        println("upload: no short handle = $field")
+        assertEquals(
+            "without a handle the field points at the answer's own URL, resolved against the site",
+            "![screenshot.png|1080x720](${site.url("/uploads/default/original/2X/9/9d5a2f6f0a1b2c3d4e5f60718293a4b5c6d7e8f9.png")})\n",
+            field,
+        )
+        harness.assertNoTelegramSideEffects()
+    }
+
+    @Test
+    fun anImageTheSiteCouldNotMeasureKeepsItsHandleWithoutDimensions() {
+        site.serveJson(
+            "uploads.json",
+            harness.fixture("upload-response.json")
+                .replace("\"width\": 1080,", "\"width\": null,")
+                .replace("\"height\": 720,", "\"height\": null,"),
+        )
+        val composer = openComposerAndAttach()
+        pickFile("screenshot.png", transparentPng())
+        harness.await("the field to hold the uploaded image") {
+            !composer.getFieldText().isNullOrEmpty()
+        }
+        println("upload: unmeasured image = " + composer.fieldText)
+        assertEquals(
+            "an image whose size the site did not read is embedded without one",
+            "![screenshot.png](upload://9d5a2f6f0a1b2c3d4e5f60718293a4b5c6d7e8f9.png)\n",
+            composer.fieldText.toString(),
+        )
+        harness.assertNoTelegramSideEffects()
     }
 
     /** Answers the picker the attach button opened, the way the system would. */
@@ -185,17 +267,21 @@ internal class UploadReplyTest {
         return uri
     }
 
-    private fun uploadAnswer(url: String, name: String, size: String): String =
-        """
-        {
-          "id": 4211,
-          "url": "$url",
-          "original_filename": "$name",
-          "width": ${if (name.endsWith(".png")) 1080 else "null"},
-          "height": ${if (name.endsWith(".png")) 720 else "null"},
-          "human_filesize": "$size"
+    /** Our own attach strip, by the label it shows while it is idle. */
+    private fun attachStrip(): View? {
+        val content = harness.activity.findViewById<ViewGroup>(android.R.id.content) ?: return null
+        return findAttachStrip(content)
+    }
+
+    private fun findAttachStrip(view: View): View? {
+        if (view is android.widget.TextView && view.text?.startsWith("添加") == true) return view.parent as? View
+        if (view is ViewGroup) {
+            for (index in 0 until view.childCount) {
+                findAttachStrip(view.getChildAt(index))?.let { return it }
+            }
         }
-        """.trimIndent()
+        return null
+    }
 
     /** A 1x1 PNG: what the uploader sends is the file's bytes, and any real image would do. */
     private fun transparentPng(): ByteArray = android.util.Base64.decode(

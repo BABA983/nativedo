@@ -202,6 +202,7 @@ class DiscourseApiClient(
             filename = response.originalFilename,
             width = response.width ?: 0,
             height = response.height ?: 0,
+            shortUrl = response.shortUrl,
             humanSize = response.humanFilesize,
         )
     }

@@ -105,22 +105,6 @@ object DiscourseAvatars {
     fun localFile(user: TLRPC.User?): File? =
         localFiles(user).firstOrNull { it.exists() && it.length() > 0 }
 
-    /**
-     * The avatar as a bitmap. The file's bytes were downloaded for this client, and upstream's own
-     * loader would look for a datacenter behind the photo that this client has none of, so the row
-     * is handed the picture itself. The read happens once per avatar: a later bind finds it in the
-     * cache, and what it reads is the 96 px file the site served for this size.
-     */
-    private val decoded = android.util.LruCache<String, android.graphics.Bitmap>(64)
-
-    fun bitmap(user: TLRPC.User?): android.graphics.Bitmap? {
-        val file = localFile(user) ?: return null
-        decoded.get(file.absolutePath)?.let { return it }
-        val bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath) ?: return null
-        decoded.put(file.absolutePath, bitmap)
-        return bitmap
-    }
-
     suspend fun cache(client: OkHttpClient, avatarUrl: String, user: TLRPC.User): File? =
         withContext(Dispatchers.IO) {
             val targets = localFiles(user)

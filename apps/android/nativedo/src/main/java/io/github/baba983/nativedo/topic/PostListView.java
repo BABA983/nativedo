@@ -6,6 +6,7 @@ import android.view.View;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ImageReceiver;
+import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.Cells.ChatMessageCell;
 import org.telegram.ui.Components.RecyclerListView;
 
@@ -19,17 +20,65 @@ import org.telegram.ui.Components.RecyclerListView;
  */
 public class PostListView extends RecyclerListView {
 
+    /** Where a row's author comes from; the screen owns the participants. */
+    public interface AvatarSource {
+        TLRPC.User user(long senderId);
+    }
+
+    private AvatarSource avatarSource;
+
     public PostListView(Context context) {
         super(context);
     }
 
+    public void setAvatarSource(AvatarSource source) {
+        avatarSource = source;
+    }
+
     @Override
     public boolean drawChild(Canvas canvas, View child, long drawingTime) {
+        if (child instanceof ChatMessageCell) {
+            ensureAvatar((ChatMessageCell) child);
+        }
         boolean result = super.drawChild(canvas, child, drawingTime);
         if (child instanceof ChatMessageCell) {
             drawAvatar(canvas, (ChatMessageCell) child);
         }
         return result;
+    }
+
+    /**
+     * Points the row at the avatar that was downloaded for its author. The cell asks upstream for
+     * the author's photo whenever it is bound or attached again, and that photo is a file location
+     * nothing fetches from (there is no Telegram account behind it). What the image loader can read
+     * is the file our client downloaded, named by its path — the same way a post's own images are
+     * drawn — and it is handed over here, after the cell's own decisions, so nothing takes it back.
+     */
+    private void ensureAvatar(ChatMessageCell cell) {
+        ImageReceiver avatar = cell.getAvatarImage();
+        if (avatar == null || avatarSource == null || cell.getMessageObject() == null
+                || cell.getMessageObject().messageOwner == null) {
+            return;
+        }
+        // A picture is here (this draw finds it) or ours is already being read: nothing to hand over.
+        if (avatar.getBitmap() != null || avatar.getImageDrawable() != null) {
+            return;
+        }
+        // The cell's own ask is a file location with no path — the picture is named by where it was
+        // downloaded to, and only a location that carries that path can be read.
+        org.telegram.messenger.ImageLocation current = avatar.getImageLocation();
+        if (current != null && current.path != null) {
+            return;
+        }
+        TLRPC.User author = avatarSource.user(
+                org.telegram.messenger.MessageObject.getFromChatId(cell.getMessageObject().messageOwner));
+        java.io.File file = author == null ? null : DiscourseAvatars.INSTANCE.localFile(author);
+        if (file == null) {
+            return;
+        }
+        avatar.setImage(
+                org.telegram.messenger.ImageLocation.getForPath(file.getAbsolutePath()),
+                "50_50", null, null, null, 0);
     }
 
     /**

@@ -51,8 +51,11 @@ public class TopicFragment extends BaseFragment {
     /** How close to the end the list has to come before the next page is asked for. */
     private static final int LOAD_MORE_THRESHOLD = 4;
 
-    /** The document picker's request code; the reply composer's attach button starts it. */
+    /** The document picker's request code; both attach entry points start it. */
     private static final int PICK_ATTACHMENT_REQUEST = 0x4e44;
+
+    /** The height of our own attach strip, which sits on top of the composer. */
+    private static final int STRIP_HEIGHT_DP = 36;
 
     /** Upstream fragments take their arguments through the constructor, not a setter. */
     public TopicFragment(android.os.Bundle args) {
@@ -78,6 +81,10 @@ public class TopicFragment extends BaseFragment {
     private ChatActivityEnterView composer;
     /** The floor this reply answers, when the reader picked one in the post menu. */
     private Integer replyToPostNumber;
+    /** Our own attach entry point, for the files upstream's button cannot offer (see its builder). */
+    private View attachStrip;
+    private android.widget.TextView attachStripLabel;
+    private boolean uploadingAttachment;
     /** Post numbers per row: replying is by number, and the payload does not always carry them. */
     private final List<Integer> postNumbers = new ArrayList<>();
     private List<Long> streamPostIds = new ArrayList<>();
@@ -114,38 +121,18 @@ public class TopicFragment extends BaseFragment {
             showReplyError(new java.io.IOException("无法读取所选文件"));
             return;
         }
+        setUploadingAttachment(true);
         DiscourseLoader.INSTANCE.uploadReplyMedia(container, picked, markup -> {
             io.github.baba983.nativedo.core.media.ReplyMarkupKt.insertReplyMarkup(
                     composer == null ? null : composer.getEditField(), markup);
-            updateSendButtonVisibility();
+            setUploadingAttachment(false);
+            updateComposerActions();
             return kotlin.Unit.INSTANCE;
         }, error -> {
+            setUploadingAttachment(false);
             showReplyError(error);
             return kotlin.Unit.INSTANCE;
         });
-    }
-
-    /**
-     * The avatar of the post's author, read from the file that was downloaded for it. The cell only
-     * builds the image from the account's photo, and that photo is a file location nothing fetches
-     * from (there is no Telegram account behind it): upstream's file loader would try a download
-     * that never comes. The bytes were downloaded for this client, so the row is handed the bitmap
-     * they make, which is the same thing the image loader would have drawn.
-     */
-    private void applyAuthorAvatar(ChatMessageCell cell, int position) {
-        if (position < 0 || position >= cookedAuthors.size()) {
-            return;
-        }
-        android.graphics.Bitmap avatar = DiscourseAvatars.INSTANCE.bitmap(
-                users.get(DiscourseRows.userId(cookedAuthors.get(position))));
-        if (avatar == null) {
-            return;
-        }
-        org.telegram.messenger.ImageReceiver receiver = cell.getAvatarImage();
-        if (receiver == null) {
-            return;
-        }
-        receiver.setImageBitmap(avatar);
     }
 
     @Override
@@ -175,6 +162,7 @@ public class TopicFragment extends BaseFragment {
         contentView.setBackgroundColor(org.telegram.ui.ActionBar.Theme.getColor(
                 org.telegram.ui.ActionBar.Theme.key_windowBackgroundWhite));
         listView = new PostListView(context);
+        listView.setAvatarSource(senderId -> users.get(senderId));
         listView.setLayoutManager(new LinearLayoutManager(context));
         listView.setAdapter(new PostAdapter());
         listView.setVerticalScrollBarEnabled(false);
@@ -190,6 +178,12 @@ public class TopicFragment extends BaseFragment {
         contentView.addView(listView, org.telegram.ui.Components.LayoutHelper.createFrame(
                 org.telegram.ui.Components.LayoutHelper.MATCH_PARENT,
                 org.telegram.ui.Components.LayoutHelper.MATCH_PARENT));
+        attachStrip = createAttachStrip(context);
+        contentView.addView(attachStrip, org.telegram.ui.Components.LayoutHelper.createFrame(
+                org.telegram.ui.Components.LayoutHelper.MATCH_PARENT,
+                AndroidUtilities.dp(STRIP_HEIGHT_DP),
+                Gravity.BOTTOM | Gravity.LEFT));
+        attachStrip.setVisibility(View.GONE);
         contentView.addView(createComposer(contentView), org.telegram.ui.Components.LayoutHelper.createFrame(
                 org.telegram.ui.Components.LayoutHelper.MATCH_PARENT,
                 org.telegram.ui.Components.LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM));
@@ -213,10 +207,104 @@ public class TopicFragment extends BaseFragment {
         view.setDelegate(new ReplyDelegate());
         // The composer decides the button again whenever it is laid out (a keyboard, an emoji panel,
         // a first layout), so the decision is repeated there too.
-        view.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
-                updateSendButtonVisibility());
+        view.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) -> {
+            updateComposerActions();
+            placeAttachStrip(v.getHeight());
+        });
         composer = view;
         return view;
+    }
+
+    /**
+     * The composer's own attach button is offered only while the field is empty — that is upstream's
+     * design, and a forum reply often wants a second file after the first one has already put text
+     * in the field. This strip appears exactly then (the reader keeps the paperclip while the field
+     * is empty), and it appends the next upload's markdown to whatever is already written.
+     */
+    private View createAttachStrip(Context context) {
+        android.widget.LinearLayout strip = new android.widget.LinearLayout(context);
+        strip.setOrientation(android.widget.LinearLayout.HORIZONTAL);
+        strip.setGravity(Gravity.CENTER_VERTICAL);
+        strip.setPadding(AndroidUtilities.dp(16), 0, AndroidUtilities.dp(16), 0);
+        strip.setBackgroundColor(org.telegram.ui.ActionBar.Theme.getColor(
+                org.telegram.ui.ActionBar.Theme.key_chat_messagePanelBackground));
+
+        android.widget.ImageView icon = new android.widget.ImageView(context);
+        icon.setImageResource(org.telegram.messenger.R.drawable.msg_input_attach2);
+        icon.setScaleType(android.widget.ImageView.ScaleType.CENTER);
+        icon.setColorFilter(new android.graphics.PorterDuffColorFilter(
+                org.telegram.ui.ActionBar.Theme.getColor(org.telegram.ui.ActionBar.Theme.key_chat_messagePanelIcons),
+                android.graphics.PorterDuff.Mode.MULTIPLY));
+        strip.addView(icon, org.telegram.ui.Components.LayoutHelper.createLinear(
+                AndroidUtilities.dp(24), AndroidUtilities.dp(24)));
+
+        attachStripLabel = new android.widget.TextView(context);
+        attachStripLabel.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 14);
+        attachStripLabel.setTextColor(org.telegram.ui.ActionBar.Theme.getColor(
+                org.telegram.ui.ActionBar.Theme.key_chat_messagePanelHint));
+        attachStripLabel.setText("添加图片或附件");
+        attachStripLabel.setSingleLine(true);
+        strip.addView(attachStripLabel, org.telegram.ui.Components.LayoutHelper.createLinear(
+                org.telegram.ui.Components.LayoutHelper.WRAP_CONTENT,
+                org.telegram.ui.Components.LayoutHelper.WRAP_CONTENT, 0f, 8, 0, 0, 0));
+
+        strip.setContentDescription("添加图片或附件");
+        strip.setOnClickListener(v -> openAttachmentPicker());
+        return strip;
+    }
+
+    /** The system's file picker; what it answers is uploaded by [onActivityResultFragment]. */
+    private void openAttachmentPicker() {
+        if (getParentActivity() == null || uploadingAttachment) {
+            return;
+        }
+        android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT);
+        intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+        intent.setType("*/*");
+        startActivityForResult(intent, PICK_ATTACHMENT_REQUEST);
+    }
+
+    /**
+     * Where the strip sits: directly on top of the composer, whose height is only known once it has
+     * been laid out (it grows with a second line, an emoji panel, the keyboard).
+     */
+    private void placeAttachStrip(int composerHeight) {
+        if (attachStrip == null) {
+            return;
+        }
+        ViewGroup.LayoutParams params = attachStrip.getLayoutParams();
+        if (params instanceof android.widget.FrameLayout.LayoutParams) {
+            android.widget.FrameLayout.LayoutParams frame = (android.widget.FrameLayout.LayoutParams) params;
+            if (frame.bottomMargin != composerHeight) {
+                frame.bottomMargin = composerHeight;
+                attachStrip.setLayoutParams(frame);
+            }
+        }
+    }
+
+    /** Shows the strip only while the field has something in it; see [createAttachStrip]. */
+    private void updateAttachStrip() {
+        if (attachStrip == null || composer == null) {
+            return;
+        }
+        boolean hasText = composer.getEditField() != null && composer.getEditField().length() > 0;
+        int wanted = hasText ? View.VISIBLE : View.GONE;
+        if (attachStrip.getVisibility() != wanted) {
+            attachStrip.setVisibility(wanted);
+            // The strip is an overlay on the list, so the list keeps its last post clear of it too.
+            listView.setPadding(0, 0, 0, AndroidUtilities.dp(hasText ? 52 + STRIP_HEIGHT_DP : 52));
+        }
+    }
+
+    /** A pick that is being uploaded; the strip says so and takes no second tap. */
+    private void setUploadingAttachment(boolean uploading) {
+        uploadingAttachment = uploading;
+        if (attachStrip == null || attachStripLabel == null) {
+            return;
+        }
+        attachStrip.setEnabled(!uploading);
+        attachStrip.setAlpha(uploading ? 0.5f : 1f);
+        attachStripLabel.setText(uploading ? "上传中…" : "添加图片或附件");
     }
 
     private void loadTopic(long topicId) {
@@ -413,10 +501,16 @@ public class TopicFragment extends BaseFragment {
     }
 
     /**
-     * Upstream offers its voice button while the field is empty, and this client has nothing behind
-     * it; the button is hidden until there is something to send. It is told after every change
+     * What the composer's own state decides for the reader: the send button and our attach strip.
+     * Upstream offers its voice button while the field is empty and this client has nothing behind
+     * it, so the button is hidden until there is something to send. It is told after every change
      * upstream makes, because those are the moments it decides the button's state again.
      */
+    private void updateComposerActions() {
+        updateSendButtonVisibility();
+        updateAttachStrip();
+    }
+
     private void updateSendButtonVisibility() {
         if (composer == null) {
             return;
@@ -499,7 +593,7 @@ public class TopicFragment extends BaseFragment {
 
         @Override
         public void onTextChanged(CharSequence text, boolean bigChange, boolean fromDraft) {
-            updateSendButtonVisibility();
+            updateComposerActions();
         }
 
         @Override
@@ -520,7 +614,7 @@ public class TopicFragment extends BaseFragment {
 
         @Override
         public void onWindowSizeChanged(int size) {
-            updateSendButtonVisibility();
+            updateComposerActions();
         }
 
         @Override
@@ -534,13 +628,7 @@ public class TopicFragment extends BaseFragment {
         /** Attachments in a reply go to the site first: what the field gets is the markdown its own composer would write. */
         @Override
         public void didPressAttachButton() {
-            if (getParentActivity() == null) {
-                return;
-            }
-            android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT);
-            intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
-            intent.setType("*/*");
-            startActivityForResult(intent, PICK_ATTACHMENT_REQUEST);
+            openAttachmentPicker();
         }
 
         @Override
@@ -676,7 +764,6 @@ public class TopicFragment extends BaseFragment {
             if (message.richLayout != null) {
                 message.richLayout.attach(cell);
             }
-            applyAuthorAvatar(cell, position);
         }
 
         @Override

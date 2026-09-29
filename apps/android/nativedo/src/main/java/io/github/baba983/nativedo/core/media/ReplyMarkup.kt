@@ -1,21 +1,22 @@
 package io.github.baba983.nativedo.core.media
 
 /**
- * The markdown an uploaded image or video contributes: the site's URL, with a readable alt built
- * from the filename.
+ * The markdown an uploaded image or video contributes, the way the site's own composer writes it:
+ * its `upload://` handle, and the dimensions after the name where it knows them (`|WxH`), which is
+ * what makes the cook reserve the right space before the file is fetched.
  */
-internal fun replyMediaMarkup(alt: String, url: String): String {
+internal fun replyMediaMarkup(alt: String, url: String, width: Int = 0, height: Int = 0): String {
     if (url.isBlank()) return ""
     val name = alt.trim().replace("]", "").replace("\n", " ").ifBlank { "image" }
-    return "![$name](${url.trim()})"
+    val size = if (width > 0 && height > 0) "|${width}x$height" else ""
+    return "![$name$size](${url.trim()})"
 }
 
 /**
  * The site's own markdown for a non-image upload: the `|attachment` marker is what makes the cook
- * emit `<a class="attachment" href="...">name</a>` (the marker is read from the link's label and
- * never from the URL, so the plain `/uploads/...` URL this client uploads to is fine), and the size
- * text after the link is cosmetic - the site never regenerates it. `[`, `]` and `|` are stripped
- * from the label the way the site's composer strips them.
+ * emit `<a class="attachment" href="...">name</a>` (the marker is read from the link's label, never
+ * from the URL), and the size text after the link is cosmetic - the site never regenerates it.
+ * `[`, `]` and `|` are stripped from the label the way the site's composer strips them.
  */
 internal fun replyAttachmentMarkup(name: String, url: String, humanSize: String?): String {
     if (url.isBlank()) return ""
@@ -30,12 +31,26 @@ internal fun replyAttachmentMarkup(name: String, url: String, humanSize: String?
 }
 
 /**
- * Which of the two the site would write for this file: its own composer asks the file's kind
- * (`FileHelper.is_supported_image?`), and a video is embedded the same way an image is.
+ * Which of the two the site would write for this file, and where it points: its own composer asks
+ * the file's kind (`FileHelper.is_supported_image?`), embeds the answer's `upload://` handle, and
+ * falls back to the resolved URL only for a site that answered without one.
  */
-internal fun replyUploadMarkup(name: String, url: String, mimeType: String?, humanSize: String?): String {
+internal fun replyUploadMarkup(
+    name: String,
+    shortUrl: String?,
+    url: String,
+    mimeType: String?,
+    width: Int,
+    height: Int,
+    humanSize: String?,
+): String {
+    val target = shortUrl?.trim().takeIf { !it.isNullOrEmpty() } ?: url
     val isVisual = mimeType?.startsWith("image/") == true || mimeType?.startsWith("video/") == true
-    return if (isVisual) replyMediaMarkup(name, url) else replyAttachmentMarkup(name, url, humanSize)
+    return if (isVisual) {
+        replyMediaMarkup(name, target, width, height)
+    } else {
+        replyAttachmentMarkup(name, target, humanSize)
+    }
 }
 
 /**

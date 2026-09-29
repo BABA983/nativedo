@@ -90,7 +90,7 @@ object DiscourseLoader {
     /**
      * Uploads one file for a reply and reports the site's markdown for it, or the failure the
      * reader has to see. The site decides what an upload looks like in a post, so the markup is
-     * built here from the answer's own name and size.
+     * built here from the answer's own handle, name, size and dimensions.
      */
     fun uploadReplyMedia(
         container: AppContainer,
@@ -105,12 +105,19 @@ object DiscourseLoader {
                     mimeType = picked.mimeType,
                     onProgress = { },
                 )
+                // A site that answers an upload without a resolvable target leaves nothing to point
+                // a post at, and that is the one case the reader has to see as a failure.
                 val url = absoluteUploadUrl(container.baseUrl, uploaded.url)
-                    ?: error("the site answered an upload without a URL")
+                if (uploaded.shortUrl.isNullOrBlank() && url == null) {
+                    error("the site answered an upload without a URL")
+                }
                 replyUploadMarkup(
                     name = uploaded.filename ?: picked.name,
-                    url = url,
+                    shortUrl = uploaded.shortUrl,
+                    url = url.orEmpty(),
                     mimeType = picked.mimeType,
+                    width = uploaded.width,
+                    height = uploaded.height,
                     humanSize = uploaded.humanSize,
                 )
             }

@@ -267,6 +267,35 @@ internal class UpstreamUiHarness {
         return renderView(contentView, name)
     }
 
+    /**
+     * Lays the activity's content out without drawing it. A list that was handed a new adapter only
+     * binds its rows during a layout pass, so waiting for a row to change means laying it out.
+     */
+    fun layoutApp() {
+        val contentView = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
+        val widthSpec = View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY)
+        val heightSpec = View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.AT_MOST)
+        contentView.measure(widthSpec, heightSpec)
+        contentView.layout(0, 0, contentView.measuredWidth, contentView.measuredHeight)
+        idle()
+    }
+
+    /**
+     * Lays the activity's content out and draws it into a throwaway bitmap: a row's own draw pass is
+     * where this client hands its avatar over, so waiting for one means drawing.
+     */
+    fun drawApp() {
+        val contentView = activity.findViewById<ViewGroup>(android.R.id.content) ?: return
+        layoutApp()
+        val bitmap = Bitmap.createBitmap(
+            contentView.measuredWidth.coerceAtLeast(1),
+            contentView.measuredHeight.coerceAtLeast(1),
+            Bitmap.Config.ARGB_8888,
+        )
+        contentView.draw(Canvas(bitmap))
+        idle()
+    }
+
     private fun renderView(view: View, name: String): File {
         val widthSpec = View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY)
         val heightSpec = View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.AT_MOST)

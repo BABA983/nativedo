@@ -82,7 +82,7 @@ internal class AvatarRenderTest {
         site.start()
         site.serveJson("t/$TOPIC_ID.json", topicJsonWithAvatar())
         site.serveJson("latest.json", latestJsonWithAvatar())
-        site.serveImage(site.avatarPath(avatarTemplate), greenPng())
+        site.serveImage(site.avatarPath(avatarTemplate), magentaPng())
         site.serveImage(site.avatarPath(listAvatarTemplate), greenPng())
         NativeDo.setContainerFactory { context -> site.authenticatedContainer(context) }
     }
@@ -128,29 +128,18 @@ internal class AvatarRenderTest {
         harness.await("the avatar to land where upstream looks for it") {
             DiscourseAvatars.isCached(author)
         }
-        // The rows are rebuilt when the avatar arrives, and the row is what draws it, so what is
-        // waited for is the row holding the picture; the render that follows is what the reader
-        // would look at.
-        val held = runCatching {
-            harness.await("the row to hold the downloaded avatar", iterations = 40) {
-                laidOutCells().any { it.avatarImage?.bitmap != null }
-            }
+        // A row is handed its avatar while it is drawn, and the image loader decodes it on its own
+        // thread, which this wait drains the same way it drains every other one.
+        harness.await("the row to hold the downloaded avatar") {
+            harness.drawApp()
+            laidOutCells().any { cell -> cell.avatarImage?.bitmap != null }
         }
-        held.exceptionOrNull()?.let { failure ->
-            val cells = laidOutCells()
-            println(
-                "avatar: stuck — decoded=" + (DiscourseAvatars.bitmap(author) != null) +
-                    " rows=" + rowCount() +
-                    " cells=" + cells.size +
-                    " receivers=" + cells.count { it.avatarImage != null } +
-                    " bitmaps=" + cells.count { it.avatarImage?.bitmap != null } +
-                    " bound=" + cells.count { it.messageObject != null },
-            )
-            throw failure
-        }
-        val green = greenPixels(harness.renderApp("post-avatar"))
-        println("avatar: green pixels in the render = $green")
-        assertTrue("the row drew the avatar it downloaded", green > 2_000)
+        val drawn = magentaPixels(harness.renderApp("post-avatar"))
+        println("avatar: magenta pixels in the render = $drawn")
+        assertTrue(
+            "the row drew the picture it downloaded, not the author's initials",
+            drawn > 2_000,
+        )
         harness.assertNoTelegramSideEffects()
     }
 
@@ -183,6 +172,22 @@ internal class AvatarRenderTest {
         val bytes = ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.PNG, 100, bytes)
         return bytes.toByteArray()
+    }
+
+    /** The colour the served avatar has and the initials placeholder never does. */
+    private fun magentaPng(): ByteArray {
+        val bitmap = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(Color.rgb(255, 0, 255))
+        val bytes = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, bytes)
+        return bytes.toByteArray()
+    }
+
+    private fun magentaPixels(file: File): Int {
+        val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return 0
+        val pixels = IntArray(bitmap.width * bitmap.height)
+        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+        return pixels.count { Color.red(it) > 200 && Color.blue(it) > 200 && Color.green(it) < 80 }
     }
 
     private fun greenPixels(file: File): Int {

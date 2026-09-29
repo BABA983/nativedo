@@ -48,9 +48,12 @@ upstream is touched — rendering, gestures, layout and animation are upstream's
   exact path upstream will look in. `PhotoViewer` then opens it full screen through a page-block
   adapter of our own, because upstream's own one is private to its chat screen.
 * **Avatars** — `DiscourseAvatars` gives a participant a synthetic `UserProfilePhoto` whose file
-  location names a stable id, downloads the picture with the session's cookies, and the rows draw
-  it: the message list draws it after the row (upstream's chat list does the same, because the cell
-  only builds the image), and a dialog row is handed it through its own avatar receiver.
+  location names a stable id, and downloads the picture with the session's cookies. A row draws it
+  the way upstream's chat list does (the cell only builds the image): the message list draws it after
+  the row, and a dialog row is handed it through its own avatar receiver. The picture itself is read
+  by the image loader from the file's path, because the cell's own ask names a Telegram datacenter
+  that this client has none of — and that hand-over happens while the row is drawn, so nothing the
+  cell decides later takes it back.
 * **Attachments** — a post's file link becomes a document block whose `localPath` is where the
   bridge downloads it, so upstream's block shows its name and size and hands it to the system to
   open. The FileProvider paths this module ships cover the app cache those files live in.
@@ -59,6 +62,10 @@ upstream is touched — rendering, gestures, layout and animation are upstream's
 * **The post menu and reply** — a long press asks the reader what to do (copy, copy link, reply),
   and replying uses upstream's own composer (`ChatActivityEnterView`) at the bottom of the screen;
   its send button reports to a delegate, which posts the text to `/posts.json` with the CSRF token.
+  The composer's paperclip offers a file while the field is empty; a strip of our own appears above
+  the composer as soon as there is text, because upstream's own button steps aside then and a forum
+  reply often wants a second picture. Each upload goes to `/uploads.json` and what the field receives
+  is the markdown the site's own composer writes for the answer, pointing at its `upload://` handle.
 * **Theme and settings** — upstream's `ThemeActivity` (the appearance page) is the settings entry;
   the tab strip is upstream's `FilledTabsView`.
 
