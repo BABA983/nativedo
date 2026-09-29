@@ -6862,7 +6862,13 @@ public class RichMessageLayout {
                     blurImageReceiver.draw(canvas);
                 }
                 imageReceiver.setAspectFit(true);
-                imageReceiver.setImageCoords(0, 0, availWidth(), imgHeight);
+                // NativeDo: a photo narrower than the column keeps the size the site declared and sits
+                // centred in it. Upstream draws it at the left edge of a full-width box, which is right
+                // for a chat bubble (the bubble hugs the photo) and wrong for a post body: a device pass
+                // measured x 0..812 with 267px of slack on the right for a 287x500 photo
+                // (docs/device-verification.md §31). Gated on the host hook so a chat is untouched.
+                final int fitWidth = root.mediaBleed > 0 ? Math.min(availWidth(), imgWidth) : availWidth();
+                imageReceiver.setImageCoords(fitWidth < availWidth() ? (availWidth() - fitWidth) / 2 : 0, 0, fitWidth, imgHeight);
             } else {
                 updateRoundRadius(imageReceiver, false);
                 imageReceiver.setAspectFit(false);

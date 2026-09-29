@@ -138,6 +138,14 @@ final class ImageBlock implements EmbeddedPostBodyBlock {
             imageHeight = maxHeight;
             imageWidth = Math.min(Math.round(imageHeight * aspect), width);
         }
+        // NativeDo: never upscale past what the site declared on the <img>. Discourse writes the size it
+        // wants to show; a 287x500 portrait stretched to the column (909x1583) is what a device pass read
+        // as "stretched to the frame", and it is also blurrier than the file it came from. Narrower
+        // images now keep their own size, and imageRect's existing centring gives them equal margins.
+        if (image.getWidthPx() > 0 && imageWidth > image.getWidthPx()) {
+            imageWidth = image.getWidthPx();
+            imageHeight = Math.round(imageWidth / aspect);
+        }
         float imageLeft = (width - imageWidth) / 2f;
         int photoY = photoTopGapPx(isFirst);
         imageRect.set(imageLeft, photoY, imageLeft + imageWidth, photoY + imageHeight);

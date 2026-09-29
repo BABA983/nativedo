@@ -248,6 +248,34 @@ internal class TopicPostCellScreenshotTest {
         }
     }
 
+    /**
+     * A photo narrower than the column - the panel the two bodies draw before its file arrives. Discourse
+     * writes the size it wants to show on the `<img>` (`width`/`height`) and both bodies used to ignore
+     * it: the rich one drew the photo at the left edge of a full-width box, ours stretched it to the
+     * column (a device pass on a 287x500 portrait measured x 0..812 against the frame's 1079, and the
+     * full frame for ours). Both now keep the declared size and centre it. The golden pins what it can
+     * see without a network - the panel and its button - and the centring is read on the device, where
+     * the same post measures the photo itself.
+     */
+    @Test
+    fun narrowImagePanelFollowsTheDeclaredSize() {
+        RichMessageBody.enabled = true
+        try {
+            paparazziRule.snapshot { context ->
+                topicPostCell(context, NARROW_IMAGE_HTML)
+            }
+        } finally {
+            RichMessageBody.enabled = false
+        }
+    }
+
+    @Test
+    fun narrowImagePanelFollowsTheDeclaredSizeWithTheBlockBody() {
+        paparazziRule.snapshot { context ->
+            topicPostCell(context, NARROW_IMAGE_HTML)
+        }
+    }
+
     private fun topicPostCell(
         context: Context,
         html: String = POST_HTML,
@@ -286,6 +314,16 @@ internal class TopicPostCellScreenshotTest {
     }
 
     private companion object {
+        /**
+         * A portrait photo the site sized at 287x500 - the case both bodies used to stretch or flush left.
+         * (The panel the bodies draw for it is what the two goldens pin; the photo's own place needs a
+         * network, so that half is read on the device.)
+         */
+        const val NARROW_IMAGE_HTML =
+            "<p>Text above a portrait image.</p>" +
+                "<p><a class=\"lightbox\" href=\"https://cdn.example.dev/narrow.jpeg\">" +
+                "<img src=\"https://cdn.example.dev/narrow.jpeg\" width=\"287\" height=\"500\" alt=\"narrow\"></a></p>"
+
         val RICH_MESSAGE_POST_HTML = """
             <p>A post body drawn by <b>upstream's renderer</b>: paragraphs, a heading, a list,
             a <a href="https://linux.do/t/1">link</a>, a quote and a code block.</p>
