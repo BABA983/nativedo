@@ -424,6 +424,11 @@ internal class RichMessageBodyBlock(
         // with square corners instead of the chat bubble's padding and rounding.
         rich.mediaBleed = PostBodyBlock.DEFAULT_HORIZONTAL_INSET
         rich.squareMedia = true
+        // The third hook: a body photo's height cap is the block body's own, so both bodies give the same
+        // post the same photo box. The hooks are read while the blocks settle their geometry, so the
+        // layout re-runs its pass once they are in place.
+        rich.mediaMaxHeightPx = ImageBlock.photoMaxHeightPx()
+        rich.reposition()
         rich.setChatMessageCellDelegate(null, delegate)
         if (attached) {
             rich.attach(context.host)

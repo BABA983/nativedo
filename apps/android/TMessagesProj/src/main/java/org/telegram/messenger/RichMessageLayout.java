@@ -1468,9 +1468,14 @@ public class RichMessageLayout {
      * above); a post body draws the same layout inside a column that reaches the screen's edges, so it
      * asks for the media to reach them too. `0` and `false` keep upstream's shape exactly - the two are
      * set only by {@code RichMessageBody} (docs/device-verification.md §29).
+     *
+     * `mediaMaxHeightPx` is the third: the height cap a photo in that body obeys, which the host takes
+     * from the block body's own cap (`ImageBlock.photoMaxHeightPx`) so the same post gives the same box
+     * in both bodies. `0` keeps upstream's `0.55 * max(displaySize)`.
      */
     public int mediaBleed;
     public boolean squareMedia;
+    public int mediaMaxHeightPx;
 
     private void drawInternal(Canvas canvas, ChatMessageCell.TransitionParams tp) {
         float clipTop = 0f, clipBottom = 0f;
@@ -6794,12 +6799,20 @@ public class RichMessageLayout {
         protected boolean mediaForced;
 
         protected void finishLayout() {
-            imageReceiver.setImageCoords(0, 0, imgWidth, imgHeight);
-            buttonX = (imgWidth - buttonSize) / 2;
-            buttonY = (imgHeight - buttonSize) / 2;
+            applyBoxGeometry();
             autoDownload = computeAutoDownload();
             applyImage(autoDownload || fileExists());
         }
+
+        /** NativeDo: where the box, the loading button and the image coords sit, for a given `imgWidth`/`imgHeight`. */
+        protected void applyBoxGeometry() {
+            imageReceiver.setImageCoords(0, 0, imgWidth, imgHeight);
+            buttonX = (imgWidth - buttonSize) / 2;
+            buttonY = (imgHeight - buttonSize) / 2;
+        }
+
+        /** NativeDo: a body photo settles its box on the first height/draw (see {@link RichPhotoBlock}). */
+        protected void settleBodyBox() {}
 
         protected boolean computeAutoDownload() {
             return (DownloadController.getInstance(root.currentAccount).getCurrentDownloadMask() & DownloadController.AUTODOWNLOAD_TYPE_PHOTO) != 0;
@@ -6839,6 +6852,7 @@ public class RichMessageLayout {
         private final Path clipPath = new Path();
         @Override
         protected void onDraw(Canvas canvas) {
+            settleBodyBox();
             if (mediaBgPaint == null) {
                 mediaBgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
                 mediaBgPaint.setColor(0x0f000000);
@@ -7234,6 +7248,8 @@ public class RichMessageLayout {
             final float cssToPx = webImage && block.w > 0 && block.h > 0 ? AndroidUtilities.density : 1f;
             int w = sizeFull != null ? sizeFull.w : (webImage && block.w > 0 ? Math.round(block.w * cssToPx) : 100);
             int h = sizeFull != null ? sizeFull.h : (webImage && block.h > 0 ? Math.round(block.h * cssToPx) : 100);
+            sourceWidth = w;
+            sourceHeight = h;
             int width = webImage && block.w > 0 ? Math.min(this.maxWidth, w) : this.maxWidth;
             float scale = width / (float) Math.max(1, w);
             int height = (int) (scale * h);
@@ -7246,6 +7262,63 @@ public class RichMessageLayout {
             imgWidth = width;
             imgHeight = height;
             finishLayout();
+        }
+
+        /** The aspect source the box is sized from: the declared size, or upstream's photo size. */
+        private final int sourceWidth, sourceHeight;
+
+        /** The `mediaBleed` the box is currently settled for; the hook arrives after this constructor. */
+        private int bodyBoxBleed = -1;
+
+        /**
+         * NativeDo: in a post body the box a photo is drawn in is not always the box it was measured
+         * from. `onDraw` draws a photo the site declared at least as wide as the column across
+         * `maxWidth + 2 * mediaBleed` - the column's edges - and the block body's cap lets a tall one
+         * grow further than upstream's. Measured from `maxWidth` and capped at 0.55 of the screen, the
+         * aspect-fitted draw then cropped it: a device pass read a 666x500 declaration drawn 1080 wide
+         * but only 740 tall (about 9 % off the top and bottom) and a 287x500 portrait 716 wide against
+         * the block body's 754. Both bodies now agree on one box per photo.
+         *
+         * `mediaBleed` is set by the host after this layout is built, and `isInQuote()` only answers once
+         * the block sits in `root.blocks`, so the box settles on the first `getHeight()`/draw - the
+         * `reposition()` pass the layout runs once its hooks are in place. A chat bubble, and a photo
+         * inside a quote, keep upstream's geometry to the pixel.
+         */
+        @Override
+        protected void settleBodyBox() {
+            if (bodyBoxBleed == root.mediaBleed) return;
+            bodyBoxBleed = root.mediaBleed;
+            if (!webImage || root.mediaBleed <= 0 || isInQuote() || block.w <= 0) return;
+            final int declaredWidthPx = Math.round(block.w * AndroidUtilities.density);
+            // The box the draw will use: the photo's own when the site declared it narrower than the
+            // column, otherwise the column's edges.
+            int width = declaredWidthPx < this.maxWidth ? declaredWidthPx : this.maxWidth + root.mediaBleed * 2;
+            float scale = width / (float) Math.max(1, sourceWidth);
+            int height = (int) (scale * sourceHeight);
+            final int maxH = bodyMaxHeightPx();
+            if (height > maxH) {
+                height = maxH;
+                scale = height / (float) Math.max(1, sourceHeight);
+                width = (int) (scale * sourceWidth);
+            }
+            imgWidth = width;
+            imgHeight = height;
+            applyBoxGeometry();
+        }
+
+        /**
+         * NativeDo: the height cap a post body's photo obeys, handed over by the host so both bodies
+         * give the same photo the same box; `0` (a chat bubble) keeps upstream's 0.55 of the screen.
+         */
+        private int bodyMaxHeightPx() {
+            if (root.mediaMaxHeightPx > 0) return root.mediaMaxHeightPx;
+            return (int) (Math.max(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y) * 0.55f);
+        }
+
+        @Override
+        public int getHeight() {
+            settleBodyBox();
+            return super.getHeight();
         }
 
         private final boolean webImage;
