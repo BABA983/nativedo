@@ -101,6 +101,7 @@ stands, and the upstream component each row is meant to use.
 | Topic detail, cooked HTML to native blocks | done, 41 ports | done | upstream `RichHtml.parse` into `ChatMessageCell` |
 | Post images and the lightbox | done | done | `PhotoViewer` |
 | Links in a post | done | done | `Browser` |
+| Onebox link previews (`aside.onebox`) | done, cards | done | upstream's link preview (`TL_messageMediaWebPage`): one bubble per onebox, thumbnail through the image bridge |
 | Avatars | done | done | the avatar receivers of `ChatMessageCell` / `DialogCell` |
 | Attachments: download, open with the system | done | done | upstream's document block |
 | Long press a post: copy, copy link, reply | done | done | our delegate on `ChatMessageCell` |

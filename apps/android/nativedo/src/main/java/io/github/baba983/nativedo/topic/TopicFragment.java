@@ -415,6 +415,14 @@ public class TopicFragment extends BaseFragment {
                 }
                 outBubbles.add(DiscoursePolls.message(post, poll, topicId, users, container.getBaseUrl()));
                 outBodies.add(null);
+            } else if (segment.isOnebox()) {
+                DiscourseOnebox.Card card = DiscourseOnebox.card(segment.html, container.getBaseUrl());
+                if (card == null) {
+                    continue;
+                }
+                outBubbles.add(DiscourseOnebox.message(post, card, topicId, users, container.getBaseUrl()));
+                // The card's thumbnail is a post image: the list downloads it and rebinds the row.
+                outBodies.add(card.body);
             } else {
                 PreparedPostBody body = DiscourseImageBridge.INSTANCE.prepare(
                         segment.html, container.getBaseUrl());

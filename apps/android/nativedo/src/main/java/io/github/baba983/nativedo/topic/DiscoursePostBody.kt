@@ -15,12 +15,14 @@ import org.jsoup.parser.Tag
  */
 object DiscoursePostBody {
 
-    /** One run of a body: markup, or the place a named poll sits in. */
+    /** One run of a body: markup, a named poll's place, or one onebox of the site's own. */
     class Segment internal constructor(
         @JvmField val html: String,
         @JvmField val pollName: String?,
+        @JvmField val onebox: Boolean = false,
     ) {
         val isPoll: Boolean get() = pollName != null
+        val isOnebox: Boolean get() = onebox
     }
 
     /**
@@ -51,6 +53,15 @@ object DiscoursePostBody {
                 }
                 flush()
                 segments += Segment("", pollName)
+            } else if (DiscourseOnebox.isOnebox(child)) {
+                // The card stands for the link, so the bare link line goes the way the site's own
+                // renderer takes it: out of the text, not repeated next to the card.
+                pending.select("a.onebox").remove()
+                pending.select("p").removeIf { paragraph ->
+                    paragraph.children().isEmpty() && paragraph.text().isBlank()
+                }
+                flush()
+                segments += Segment(child.outerHtml(), null, onebox = true)
             } else {
                 pending.appendChild(child)
             }
