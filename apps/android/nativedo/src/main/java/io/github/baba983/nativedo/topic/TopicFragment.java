@@ -409,7 +409,7 @@ public class TopicFragment extends BaseFragment {
             Post post, long topicId, List<MessageObject> outBubbles, List<PreparedPostBody> outBodies) {
         for (DiscoursePostBody.Segment segment : DiscoursePostBody.segments(post.getCookedHtml())) {
             if (segment.isPoll()) {
-                PostPoll poll = pollNamed(post, segment.getPollName());
+                PostPoll poll = pollNamed(post, segment.pollName);
                 if (poll == null) {
                     continue;
                 }
@@ -417,7 +417,7 @@ public class TopicFragment extends BaseFragment {
                 outBodies.add(null);
             } else {
                 PreparedPostBody body = DiscourseImageBridge.INSTANCE.prepare(
-                        segment.getHtml(), container.getBaseUrl());
+                        segment.html, container.getBaseUrl());
                 MessageObject message = DiscourseRows.postMessage(
                         post, topicId, users, body, container.getBaseUrl());
                 if (message.messageOwner.rich_message.blocks.isEmpty()
@@ -1006,6 +1006,17 @@ public class TopicFragment extends BaseFragment {
                 return true;
             }
             vote(message, poll, selection);
+            return true;
+        }
+
+        /**
+         * Upstream gates every touch on this. Its own chat answers true whenever no action mode or
+         * report screen is up, and this screen never has one - a poll answer, a link, a reaction chip
+         * and a long press are all reached through the cell's own touch handling, so a client that
+         * left the default (false) would draw a poll nobody could vote in.
+         */
+        @Override
+        public boolean canPerformActions() {
             return true;
         }
 

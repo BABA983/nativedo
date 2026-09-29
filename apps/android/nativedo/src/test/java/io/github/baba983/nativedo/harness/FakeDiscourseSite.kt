@@ -162,6 +162,26 @@ internal class FakeDiscourseSite {
         return baseUrl
     }
 
+    /** Serves [path] from a fixture file, for a request the screen expects an answer from. */
+    fun serveFixture(path: String, fixture: String) {
+        routes[path.trimStart('/')] = fixture
+    }
+
+    /**
+     * Serves a topic whose whole post stream is the one post in [postFixture] (a fixture of a post
+     * object, the shape `post_stream.posts[]` carries): a floor with its own payload - a poll, a
+     * gallery - as the site sends it, with the stream aligned so the screen asks for no second page.
+     */
+    fun servePostFixture(topicId: Long, postFixture: String) {
+        val base = org.json.JSONObject(repoFile("fixtures/discourse/topic-detail.json").readText())
+        val post = org.json.JSONObject(repoFile("fixtures/discourse/$postFixture").readText())
+        val stream = base.getJSONObject("post_stream")
+        stream.put("posts", org.json.JSONArray().put(post))
+        stream.put("stream", org.json.JSONArray().put(post.getLong("id")))
+        routes["t/$topicId.json"] = null
+        bodies["t/$topicId.json"] = base.toString()
+    }
+
     /**
      * A container pointing at this site with a usable session already in it.
      *
