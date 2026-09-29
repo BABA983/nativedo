@@ -1553,9 +1553,28 @@ Two new goldens (the narrow image in both bodies) pin what a snapshot without a 
 and its button, since the loading placeholder is the renderer's full-width backdrop by design; the photo's
 own place is what the device read measures, and the before numbers above are its other half.
 
-**Also from this round.** ③ (a collage's second image jittering) still has no target: the host had no route
-to linux.do for most of the day and neither cached topic nor the orb's anonymous reads turned up a
-side-by-side pair, so an id is still needed. ④ (a quote's background flickering when a selection starts) was
+**Device re-read (`4729e03`, build `…-103333`, topic 2964229 post 7, flag on).** The declared-width cap is
+in: the portrait draws **382x499** where it used to be 812x1249 - so the *size* half of this section is
+fixed in the rich body too. The *place* half is not: it still sits at **x 0..382** with 697px of slack on
+its right, where the block body's equivalent photo is centred (396..683). Why is now a probe, not a guess:
+the centring happens inside the photo block's `availWidth()` (`root.getMinWidth()` - the *intrinsic* max
+over the blocks' `getMinWidth()` - minus the block's padding), which is not the same quantity as the
+column's width, and the placeholder/backdrop that the read actually sees is drawn from `-bleedL` to
+`width + bleedR`. Three readings are consistent with the numbers so far (the 382px block is the blurred
+backdrop with the photo centred inside it; or `availWidth()` is small so the photo is centred in a narrow
+box; or the `fit` branch is not taken), and each needs a different fix, so the round carries a diagnostic
+build (tag `NARROWPROBE`) that logs `padding`, `root.getMinWidth()`, `padLeft/padRight`, `mediaBleed`,
+`imgWidth/Height`, `availWidth()`, `fit`, `getImageLeft()`, the final receiver rect and whether a bitmap and
+a blur bitmap exist - for the narrow photo and, as a control, for a full-bleed one.
+
+**③ (a collage's second image jittering) - not reproduced.** The runner opened the first cell, went back,
+opened the second, and recorded at 44fps VFR: both opens are frame-for-frame the same shape (the photo
+reaches about 95% of the frame within the first frame and 0..1079 within ~4 frames), with no frame that
+lands somewhere else first. The one observation worth keeping: the first frame is already nearly full
+screen, so an open reads as a near-full-screen fade-in rather than as growth out of the tapped cell - but
+that is the same for the first and the second image, so it is not the reported jitter.
+
+**Also from this round.** ④ (a quote's background flickering when a selection starts) was
 recorded at 44fps VFR over a long press into *Select text* on 2790689's tenth post and **did not reproduce**:
 270 frames with the card's fill constant apart from the long-press highlight and the menu, so that case is
 closed as not-reproduced rather than fixed. The network itself was diagnosed by the pass: the host's direct
@@ -1583,3 +1602,12 @@ change there would be unverifiable.
 **Still owed.** A device pass - the runner's host lost its route to linux.do in §31, and no cached topic has
 side-by-side images, so this change is golden-evidence only so far - and the macOS half of these two goldens
 (`richMessageBody[Light|Dark]`), which the runner re-records once its host is back on the network.
+
+**Both halves landed (2026-09-29).** macOS: the runner re-recorded and verified; the two `richMessageBody`
+goldens are committed with the four narrow-panel goldens the macOS set had never had (92 files against
+Linux's 96, now 96 each - only the runner's uncommitted recordings were keeping its own verify green).
+Device (build `…-103333`, flag on, topic **847468** post #1 - four adjacent `<p>` images, a four-cell
+collage): the cells span **x 0..1079, the whole frame** (the page's white is 255; x=0 and x=1079 sample the
+image fill), so the collage reaches the edges exactly like the single photo does. Tapping the two middle
+cells opens the viewer; the two outer cells did not respond in that read, most likely because they had not
+loaded yet - a second look is queued with the rest of the round.
