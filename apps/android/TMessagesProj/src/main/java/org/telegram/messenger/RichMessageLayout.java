@@ -7221,15 +7221,20 @@ public class RichMessageLayout {
             // NativeDo: a Discourse image has no Telegram photo. The block carries the absolute URL and
             // the declared pixel size, and applyImage below loads it through ImageLocation.getForPath.
             webImage = photo == null && block != null && block.url != null && !block.url.isEmpty();
-            int w = sizeFull != null ? sizeFull.w : (webImage && block.w > 0 ? block.w : 100);
-            int h = sizeFull != null ? sizeFull.h : (webImage && block.h > 0 ? block.h : 100);
             // NativeDo: a Discourse image carries the size the site wants shown, and that is a cap, not
             // just an aspect source. Upstream scales every photo up to the bubble's width and only shrinks
             // it back when the height cap bites, so a 287x500 portrait became 812x1249 - drawn bigger than
             // the file, left-aligned in a full-width box (a device pass measured x 0..812 against the
             // frame's 1079, unchanged by the earlier fit-centring because the box was already narrower).
-            // With the site's width as the cap the photo keeps 287x500 and the fit branch centres it.
-            int width = webImage && block.w > 0 ? Math.min(this.maxWidth, block.w) : this.maxWidth;
+            // The declared size is the site's own CSS px - Discourse generates it for a mobile viewport
+            // and its CSS then caps the image at the container - so it is read at the screen's density
+            // before it becomes a device-px box. Read 1:1, a 666x500 declaration covered 62 % of a 1080-px
+            // column with white margins and a 287x500 one 27 %, while the site shows 666 at the column and
+            // 287 at ~70 % of it. Telegram photo sizes (sizeFull) are already device px.
+            final float cssToPx = webImage && block.w > 0 && block.h > 0 ? AndroidUtilities.density : 1f;
+            int w = sizeFull != null ? sizeFull.w : (webImage && block.w > 0 ? Math.round(block.w * cssToPx) : 100);
+            int h = sizeFull != null ? sizeFull.h : (webImage && block.h > 0 ? Math.round(block.h * cssToPx) : 100);
+            int width = webImage && block.w > 0 ? Math.min(this.maxWidth, w) : this.maxWidth;
             float scale = width / (float) Math.max(1, w);
             int height = (int) (scale * h);
             final int maxH = (int) (Math.max(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y) * 0.55f);
