@@ -68,6 +68,56 @@ public final class NativeDoHooks {
         }
     }
 
+    /**
+     * Whether a media block has to draw its loading state for {@code fileName}.
+     *
+     * <p>Upstream's own condition is {@code autoDownload || mediaForced || FileLoader.isLoadingFile},
+     * and a file this client fetches itself is none of those. The two upstream values are handed in
+     * so that the whole decision is made here and the call site stays one call.</p>
+     */
+    public static boolean mediaBlockLoading(String fileName, boolean autoDownload, boolean mediaForced) {
+        return autoDownload || mediaForced || isFileLoading(fileName);
+    }
+
+    /**
+     * The transfer this client runs for a file, so the reader's own cancel button can stop it.
+     *
+     * <p>Upstream's cancel only stops a {@code FileLoader} download; the module's fetch is its own,
+     * so the module registers how to stop one here and the button reaches it through the hook.</p>
+     */
+    public interface FetchCanceller {
+        void cancel();
+    }
+
+    private static final java.util.Map<String, FetchCanceller> fetchCancellers =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    public static void setFetchCanceller(String fileName, FetchCanceller canceller) {
+        if (fileName == null || fileName.isEmpty()) {
+            return;
+        }
+        if (canceller == null) {
+            fetchCancellers.remove(fileName);
+        } else {
+            fetchCancellers.put(fileName, canceller);
+        }
+    }
+
+    /**
+     * A press on a media block's cancel button: whatever fetch this client runs for that file stops.
+     * The name is the one the block itself keys the file by, so the caller needs no lookup of its
+     * own.
+     */
+    public static void onMediaBlockCancel(String fileName) {
+        if (fileName == null) {
+            return;
+        }
+        FetchCanceller canceller = fetchCancellers.get(fileName);
+        if (canceller != null) {
+            canceller.cancel();
+        }
+    }
+
     private NativeDoHooks() {
     }
 }

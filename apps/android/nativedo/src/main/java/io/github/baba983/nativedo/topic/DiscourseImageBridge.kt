@@ -3,6 +3,7 @@ package io.github.baba983.nativedo.topic
 import io.github.baba983.nativedo.hooks.NativeDoHooks
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.Jsoup
@@ -15,6 +16,7 @@ import org.telegram.tgnet.TLRPC
 import java.io.File
 import java.net.URI
 import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Post images.
@@ -260,6 +262,9 @@ object DiscourseImageBridge {
 
         /** The site refused the request, or the transfer broke; the reader's player streams it. */
         Failed,
+
+        /** The reader stopped it: nothing plays, and the block goes back to its play button. */
+        Cancelled,
     }
 
     /**
@@ -270,6 +275,9 @@ object DiscourseImageBridge {
      * before the first byte, given the transfer's progress as it arrives, and told how it ended.
      * The bytes go through the session's own client, because the site serves some uploads only to
      * a signed-in reader and that client is the one that carries the session.</p>
+     *
+     * <p>The block's cancel button is the same button for this fetch: the module registers how to
+     * stop the transfer it runs, and a press stops the request rather than only the drawing.</p>
      */
     suspend fun downloadVideo(client: OkHttpClient, video: PostVideo): VideoDownload =
         withContext(Dispatchers.IO) {
@@ -278,23 +286,32 @@ object DiscourseImageBridge {
                 return@withContext VideoDownload.Stored
             }
             val name = videoFileName(video)
+            val call = client.newCall(Request.Builder().url(video.url).build())
+            val cancelled = AtomicBoolean(false)
+            NativeDoHooks.setFetchCanceller(name) {
+                cancelled.set(true)
+                call.cancel()
+            }
             NativeDoHooks.setFileLoading(name, true)
             // The block's own state is what turns on this: it is told the fetch exists before the
             // first byte, so the reader sees a download rather than a play button that seems dead.
             reportVideoProgress(name, 0L, 0L)
             val outcome = try {
-                fetchVideo(client, video, file, name)
+                fetchVideo(call, video, file, name, cancelled)
             } finally {
+                NativeDoHooks.setFetchCanceller(name, null)
                 NativeDoHooks.setFileLoading(name, false)
             }
             // The block registered itself as an observer of that name, so upstream's own channel is
-            // how it learns that the file it was waiting for is here (or that it is not).
-            if (outcome == VideoDownload.Stored) {
-                NotificationCenter.getInstance(ACCOUNT).postNotificationNameOnUIThread(
+            // how it learns how the file it was waiting for ended.
+            when (outcome) {
+                VideoDownload.Stored -> NotificationCenter.getInstance(ACCOUNT).postNotificationNameOnUIThread(
                     NotificationCenter.fileLoaded, name, file.absolutePath,
                 )
-            } else {
-                NotificationCenter.getInstance(ACCOUNT).postNotificationNameOnUIThread(
+                VideoDownload.Cancelled -> NotificationCenter.getInstance(ACCOUNT).postNotificationNameOnUIThread(
+                    NotificationCenter.fileLoadFailed, name, 1,
+                )
+                else -> NotificationCenter.getInstance(ACCOUNT).postNotificationNameOnUIThread(
                     NotificationCenter.fileLoadFailed, name, 0,
                 )
             }
@@ -309,12 +326,13 @@ object DiscourseImageBridge {
      * without one is read up to the same limit, so a lying header cannot fill the disk either.</p>
      */
     private fun fetchVideo(
-        client: OkHttpClient,
+        call: Call,
         video: PostVideo,
         file: File,
         name: String,
+        cancelled: AtomicBoolean,
     ): VideoDownload = runCatching {
-        client.newCall(Request.Builder().url(video.url).build()).execute().use { response ->
+        call.execute().use { response ->
             if (!response.isSuccessful) {
                 return@use VideoDownload.Failed
             }
@@ -354,8 +372,16 @@ object DiscourseImageBridge {
             VideoDownload.Stored
         }
     }.getOrElse { error ->
-        FileLog.e("nativedo: fetching a post's clip failed", error)
-        VideoDownload.Failed
+        if (cancelled.get()) {
+            // The reader stopped this fetch: half a transfer is not this file, so the bytes that
+            // did arrive go, and upstream is told the transfer was cancelled rather than broken -
+            // which is what puts its play button back.
+            File(file.parentFile, file.name + ".part").delete()
+            VideoDownload.Cancelled
+        } else {
+            FileLog.e("nativedo: fetching a post's clip failed", error)
+            VideoDownload.Failed
+        }
     }
 
     /**

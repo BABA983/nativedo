@@ -86,7 +86,8 @@ miss:
   never opened.
 * upstream's image singleton holds the file directories of the app that created it, and Robolectric
   shares one sandbox between test classes; the harness drops the instance at boot so each test reads
-  and writes its own app's directories.
+  and writes its own app's directories. Upstream's `PhotoViewer` is a singleton of the same kind:
+  it is dropped too, because a viewer a test left open makes the next test's `openPhoto` refuse.
 
 ## Feature inventory
 
@@ -102,7 +103,7 @@ stands, and the upstream component each row is meant to use.
 | Post images and the lightbox | done | done | `PhotoViewer` |
 | Links in a post | done | done | `Browser` |
 | Onebox link previews (`aside.onebox`) | done, cards | done | upstream's link preview (`TL_messageMediaWebPage`): one bubble per onebox, the bare link line gone from the text, and no bubble draws a forward arrow (`noforwards`) |
-| Video in a post (`<video>`) | partial, opened externally | done, to the clip's own size | upstream's video block (`pageBlockVideo` in `RichMessageLayout`'s media cell): the clip is fetched with the post up to 25 MB, its poster frame is the cover, and pressing play opens `PhotoViewer`; a clip larger than that, or one the client could not fetch, is streamed by the device's own player, because upstream's player can only play a file this client already holds |
+| Video in a post (`<video>`) | partial, opened externally | done, to the clip's own size | upstream's video block (`pageBlockVideo` in `RichMessageLayout`'s media cell). Opening the topic fetches the cover only; the press on the block's own play button fetches the clip (up to 25 MB) while the block draws upstream's own loading state and progress, and the file opens in `PhotoViewer`. A clip over that, one the site refuses, and one the reader cancels - the block's own cancel button stops the transfer and drops the half-written file - is not played by upstream's viewer, which can only play a file this client holds: the first two are streamed by the device's own player, a cancel plays nothing and leaves the cover and the play button behind |
 | Avatars | done | done | the avatar receivers of `ChatMessageCell` / `DialogCell` |
 | Attachments: download, open with the system | done | done | upstream's document block |
 | Long press a post: copy, copy link, reply | done | done | our delegate on `ChatMessageCell` |

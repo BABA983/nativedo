@@ -6919,6 +6919,7 @@ public class RichMessageLayout {
                 }
                 if (view != null) view.invalidate();
             } else if (buttonState == 1) {
+                io.github.baba983.nativedo.hooks.NativeDoHooks.onMediaBlockCancel(getFileName()); // NativeDo: a fetch this client runs is stopped by the same button
                 mediaForced = false;
                 imageReceiver.cancelLoadImage();
                 buttonState = 0;
@@ -6974,7 +6975,7 @@ public class RichMessageLayout {
             } else {
                 DownloadController.getInstance(root.currentAccount).addLoadingFileObserver(fileName, null, this);
                 float setProgress = 0;
-                if (autoDownload || mediaForced || io.github.baba983.nativedo.hooks.NativeDoHooks.isFileLoading(fileName) || FileLoader.getInstance(root.currentAccount).isLoadingFile(fileName)) { // NativeDo: a file this client fetches itself is a download in progress
+                if (io.github.baba983.nativedo.hooks.NativeDoHooks.mediaBlockLoading(fileName, autoDownload, mediaForced) || FileLoader.getInstance(root.currentAccount).isLoadingFile(fileName)) { // NativeDo: a file this client fetches itself counts as loading
                     buttonState = 1;
                     Float progress = ImageLoader.getInstance().getFileProgress(fileName);
                     setProgress = progress != null ? progress : 0;

@@ -1,5 +1,6 @@
 package io.github.baba983.nativedo.topic
 
+import android.view.MotionEvent
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
 import io.github.baba983.nativedo.app.NativeDo
@@ -33,6 +34,7 @@ import org.telegram.messenger.ApplicationLoader
 import org.telegram.messenger.FileLoader
 import org.telegram.messenger.MessageObject
 import org.telegram.messenger.NotificationCenter
+import org.telegram.messenger.RichMessageLayout
 import org.telegram.tgnet.tl.TL_iv
 import org.telegram.ui.Cells.ChatMessageCell
 import org.telegram.ui.PhotoViewer
@@ -126,10 +128,9 @@ internal class PostVideoTest {
             2048L to 2048L,
             reports.last(),
         )
-        assertTrue(
-            "the reader's own viewer took a file this client now holds",
-            PhotoViewer.getInstance().isVisibleOrAnimating(),
-        )
+        harness.await("the reader's own viewer to take the file") {
+            PhotoViewer.getInstance().isVisibleOrAnimating()
+        }
         assertNull(
             "the device's player was not asked to stream anything",
             shadowOf(harness.activity).nextStartedActivity,
@@ -165,7 +166,8 @@ internal class PostVideoTest {
 
         val reports = observeProgress(name)
         pressPlay(cell, block)
-        // A reader may press again while the transfer runs: that is the same fetch, not another one.
+        // A reader may press the media again while the transfer runs: that is the same fetch, not
+        // another one.
         pressPlay(cell, block)
         harness.await("the site to be asked for the clip") {
             site.recordedRequests.any { it.contains(clip) }
@@ -204,10 +206,9 @@ internal class PostVideoTest {
             1,
             site.recordedRequests.count { it.contains(clip) },
         )
-        assertTrue(
-            "the reader's own viewer took the file",
-            PhotoViewer.getInstance().isVisibleOrAnimating(),
-        )
+        harness.await("the reader's own viewer to take the file") {
+            PhotoViewer.getInstance().isVisibleOrAnimating()
+        }
         harness.assertNoTelegramSideEffects()
     }
 
@@ -316,6 +317,84 @@ internal class PostVideoTest {
         }
     }
 
+    /**
+     * The reader's own cancel button, on a transfer that is still running: the request stops, the
+     * half-written file goes, the block goes back to its cover with a play button - and a second
+     * press fetches the clip again.
+     */
+    @Test
+    fun theCancelButtonStopsTheFetchAndLeavesTheCoverBehind() {
+        val clip = "uploads/cancelled-clip.mp4"
+        val poster = "uploads/cancelled-clip-poster.png"
+        site.serveImage(poster, onePixelPng())
+        site.serveThrottled(clip, ByteArray(1024 * 1024) { 3 }, "video/mp4", bytesPerPeriod = 64 * 1024, periodMillis = 500)
+
+        val cell = openTopic(videoPost(clip, poster))
+        val message = cell.messageObject!!
+        val block = videoBlockOf(message)
+        val name = FileLoader.getAttachFileName(documentOf(message, block))
+        harness.await("the cover to be fetched with the page") {
+            site.recordedRequests.any { it.contains(poster) }
+        }
+
+        val reports = observeProgress(name)
+        pressPlay(cell, block)
+        harness.await("the block to be told how far the transfer has come") {
+            reports.any { (loaded, total) -> loaded in 1 until total }
+        }
+        val file = DiscourseImageBridge.videoFile(DiscourseImageBridge.videoOf(block.video_id)!!)
+
+        pressCancel(cell, block)
+        harness.await("the transfer to stop") { !NativeDoHooks.isFileLoading(name) }
+        val reportedAtCancel = reports.size
+        assertFalse(
+            "the clip is not on disk",
+            DiscourseImageBridge.videoFileExists(block.video_id),
+        )
+        assertFalse(
+            "and the half-written transfer was deleted",
+            java.io.File(file.absolutePath + ".part").exists(),
+        )
+        assertFalse("the fetch is over", NativeDoHooks.isFileLoading(name))
+
+        // A second of real time with nothing fetched: a report still coming out of the stopped
+        // transfer would land here and put the block's own state back into loading.
+        repeat(1_000) { java.util.concurrent.locks.LockSupport.parkNanos(1_000_000L) }
+        harness.idle()
+        assertEquals(
+            "no progress was reported after the reader cancelled",
+            reportedAtCancel,
+            reports.size,
+        )
+        harness.drawApp()
+        settleIconAnimation()
+        harness.renderApp("post-video-cancelled")
+        assertNull(
+            "no player was handed the clip: the reader cancelled it",
+            shadowOf(harness.activity).nextStartedActivity,
+        )
+        assertFalse(
+            "and the viewer did not open on it",
+            PhotoViewer.getInstance().isVisibleOrAnimating(),
+        )
+
+        // The reader changed their mind: the same press fetches it again, and this time lands.
+        pressPlay(cell, block)
+        harness.await("the second press to fetch the clip", iterations = 12_000) {
+            DiscourseImageBridge.videoFileExists(block.video_id)
+        }
+        assertEquals(
+            "the clip was fetched once per press",
+            2,
+            site.recordedRequests.count { it.contains(clip) },
+        )
+        assertTrue(
+            "and the file the viewer holds is the whole clip",
+            file.length() == 1024L * 1024,
+        )
+        harness.assertNoTelegramSideEffects()
+    }
+
     /** The topic, loaded and laid out, with the first floor's cell ready to be pressed. */
     private fun openTopic(cookedHtml: String): ChatMessageCell {
         harness.bootApp()
@@ -327,12 +406,37 @@ internal class PostVideoTest {
     }
 
     /**
-     * A press on the block, handed over the way upstream's own media cell hands one over: the
-     * cell's delegate, which is what the cell calls from its touch handling.
+     * A press on the block's play button, handed over the way upstream's own media cell hands one
+     * over: the cell's delegate, which is what the cell calls from its touch handling.
      */
     private fun pressPlay(cell: ChatMessageCell, block: TL_iv.PageBlock) {
         val delegate = cell.delegate ?: throw AssertionError("the cell has no delegate")
         delegate.openArticlePhoto(cell, block)
+        harness.idle()
+    }
+
+    /**
+     * A press on the block's cancel button while the transfer runs - the same button, and the same
+     * press, that upstream hands to the block's own cancel branch: the button is the centre of the
+     * media, and the layout dispatches the event to the block that holds it.
+     */
+    private fun pressCancel(cell: ChatMessageCell, block: TL_iv.PageBlock) {
+        val layout = cell.messageObject!!.richLayout
+        // The block's own rect is only known once the list has laid its rows out.
+        harness.layoutApp()
+        val media = layout.blocks
+            .filterIsInstance<RichMessageLayout.RichVideoBlock>()
+            .firstOrNull { it.block === block }
+            ?: throw AssertionError("the layout holds no block for " + block.javaClass.simpleName)
+        val x = layout.getMinWidth() / 2f
+        val y = media.currY + media.getHeight() / 2f
+        val now = android.os.SystemClock.uptimeMillis()
+        val down = MotionEvent.obtain(now, now, MotionEvent.ACTION_DOWN, x, y, 0)
+        val up = MotionEvent.obtain(now, now + 20, MotionEvent.ACTION_UP, x, y, 0)
+        assertTrue("the block took the press", layout.onTouchEvent(down))
+        assertTrue("and the release", layout.onTouchEvent(up))
+        down.recycle()
+        up.recycle()
         harness.idle()
     }
 

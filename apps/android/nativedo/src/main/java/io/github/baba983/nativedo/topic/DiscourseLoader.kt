@@ -228,11 +228,12 @@ object DiscourseLoader {
         }
         scope.launch {
             try {
-                val outcome = DiscourseImageBridge.downloadVideo(container.imageOkHttpClient, video)
-                if (outcome == DiscourseImageBridge.VideoDownload.Stored) {
-                    onStored()
-                } else {
-                    onStream()
+                when (DiscourseImageBridge.downloadVideo(container.imageOkHttpClient, video)) {
+                    DiscourseImageBridge.VideoDownload.Stored -> onStored()
+                    // A cancellation is not a clip the site would not hand over: nothing plays, and
+                    // the block's own play button is where the reader left it.
+                    DiscourseImageBridge.VideoDownload.Cancelled -> Unit
+                    else -> onStream()
                 }
             } finally {
                 fetching.remove(name)
