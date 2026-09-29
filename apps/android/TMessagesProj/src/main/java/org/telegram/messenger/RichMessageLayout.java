@@ -8842,8 +8842,12 @@ public class RichMessageLayout {
             }
             final boolean inQuote = isInQuote();
             final int pad = dp(2);
-            final int padL = inQuote ? 0 : root.padLeft - pad;
-            final int padR = inQuote ? 0 : root.padRight - pad;
+            // NativeDo: a collage reaches the column's edges exactly like the single photo above does - the
+            // host hook (0 keeps upstream's `padLeft - 2dp`); in a quote the inset and 8dp radius stay.
+            // `k` scales every cell's x/width by the same factor, so the 2dp gutters grow with the span,
+            // which is what upstream's own stretch already does to them.
+            final int padL = inQuote ? 0 : root.mediaBleed > 0 ? root.mediaBleed : root.padLeft - pad;
+            final int padR = inQuote ? 0 : root.mediaBleed > 0 ? root.mediaBleed : root.padRight - pad;
             final float k = (this.maxWidth > 0 && (padL > 0 || padR > 0))
                 ? (this.maxWidth + padL + padR) / (float) this.maxWidth
                 : 1f;
