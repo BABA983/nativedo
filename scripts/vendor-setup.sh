@@ -107,11 +107,18 @@ prefetch_blobs() {
   # reference commit; a blob-filtered clone would fetch those bytes lazily,
   # one network round trip per object, every time a tool runs. Warm them here
   # instead — in parallel, because that per-object round trip is the whole
-  # cost (measured: ~5 min serial vs ~30 s with 12 workers for ~660 blobs).
+  # cost (measured: 3m26s with 2 workers, 42s with 12, for the same ~660
+  # blobs).
+  #
+  # The worker count is therefore not the core count: each `cat-file --batch`
+  # mostly waits on the promisor remote, so following nproc down put a 2-core
+  # CI runner on the 3.5-minute path (133s of the vendor job's 145s). Floor it
+  # at 12 and keep the cap at 16 to stay a polite guest on the network.
   echo "Prefetching blob contents for the tracked files ..."
   local tmp chunks specs per_file
   tmp="$(mktemp -d)"
-  chunks="$( (nproc 2>/dev/null || echo 4) )"
+  chunks="$( (nproc 2>/dev/null || echo 12) )"
+  (( chunks < 12 )) && chunks=12
   (( chunks > 16 )) && chunks=16
   specs="$tmp/specs.txt"
   vendor_python "from vendorlib import prefetch_specs; print(chr(10).join(prefetch_specs('${ROOT}')))" >"$specs"

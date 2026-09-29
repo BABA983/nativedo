@@ -1,11 +1,16 @@
 name: ci
 
-# Runs only when something that can actually break CI changed: a docs-only or
-# fixtures-only commit skips the workflow entirely, and a vendor-tooling commit
-# skips the Android job, while a plugin-only commit runs just the plugin job
-# (all three are gated by the `changes` job below). The pre-commit hook already
-# runs `vendor-guard.sh --quick` on every commit, so CI is the backstop, not the
-# first line of defence.
+# Runs only when something that can actually break CI changed: a docs-only
+# commit skips the workflow entirely, a vendor-tooling commit skips the Android
+# job, and a plugin-only commit runs just the plugin job (both gates come from
+# the `changes` job below). Every job costs minutes on a free plan, so a commit
+# pays only for the gates its own paths can break.
+#
+# Docs are deliberately not a trigger. The one gate a prose change can trip is
+# the guard's retired-term scan over `*.md` and `docs/**/*.md`, and that runs in
+# the pre-commit hook (`vendor-guard.sh --quick` scans the same files) on every
+# commit — more reliably than a post-push job, which would cost ~11 minutes of
+# Actions quota for the same text scan.
 #
 # Note: with `paths` filtering plus gated jobs, a skipped job reports "skipped"
 # rather than "success". If branch protection ever requires these check names
@@ -16,26 +21,30 @@ on:
     branches: [main]
     paths: &ci_paths
       - "apps/android/**"
+      - "fixtures/**"
       - "scripts/**"
-      - "docs/**"
       - "contracts/**"
       - "vendor-overlay.json"
       - "VENDOR.md"
       - ".amp/plugins/**"
-      - ".github/workflows/ci.yml"
+      - ".github/workflows/**"
   pull_request:
     types: [opened, ready_for_review, synchronize]
     paths: *ci_paths
   workflow_dispatch:
 
-# A newer commit on the same ref makes the older run pointless - with one exception the `changes`
-# gate below has to cover: a docs-only commit landing right after a code commit used to cancel the
-# only run that would have exercised `apps/android/**`, and the docs run then skipped that job (it
-# happened four times in one day). The fix is not to disable cancellation - an expression like
-# `${{ github.event_name != 'push' }}` does not do what it looks like, because the interpolated
-# `false` is a non-empty string and the runner reads it as true - but to make every push run the
-# gates, so the run that survives cancellation is the one that tests the code. Pull requests keep
-# the cheap path: their newest push tests the same diff anyway.
+# A newer commit on the same ref makes the older run pointless, so a push cancels the run it
+# supersedes. What cancellation must not do is drop a gate: each push is classified over its own
+# commit range (`github.event.before..HEAD`), so the surviving run covers everything that range
+# touches. The case that used to break this was a docs-only commit landing right after a code
+# commit: it cancelled the only run that would have exercised `apps/android/**` and then skipped
+# that job (it happened four times in one day). Docs commits now trigger nothing at all - their one
+# gate runs in the pre-commit hook - so they cannot cancel a run either. The residual case is a
+# push of one area (say `scripts/**`) landing inside the few minutes an app push's run lasts: that
+# push's run does not cover `apps/android/**`, and the app commit gets its Android gate from the
+# next app push plus the local gate before it. An expression like `${{ github.event_name != 'push' }}`
+# for `cancel-in-progress` would not help here: the interpolated `false` is a non-empty string and
+# the runner reads it as true.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -65,25 +74,21 @@ jobs:
             echo "plugin=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # A push to main always runs every gate: the paths filter above already limits which
-          # pushes reach this workflow, and a docs-only commit must not be able to hide a code
-          # commit from CI (it cancels that commit's run by landing after it). Pull requests keep
-          # the fine-grained gate - their newest push tests the same diff.
-          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
-            echo "android=true" >> "$GITHUB_OUTPUT"
-            echo "vendor=true" >> "$GITHUB_OUTPUT"
-            echo "plugin=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          # Both events classify the same way: over the files this push (or this pull request)
+          # actually changed. A push's range is its own commits, so the run that survives
+          # cancellation still covers everything the surviving push touches.
           android=false
           vendor=false
           plugin=false
           while IFS= read -r path; do
             case "$path" in
               apps/android/*) android=true; vendor=true ;;
-              scripts/*|docs/*|contracts/*|vendor-overlay.json|VENDOR.md) vendor=true ;;
+              # `DiscourseApiClientTest` / `DiscourseMediaUploaderTest` read fixtures/discourse/*,
+              # so a fixture edit can fail the unit suite even though it ships no code.
+              fixtures/*) android=true ;;
+              scripts/*|contracts/*|vendor-overlay.json|VENDOR.md) vendor=true ;;
               .amp/plugins/*) plugin=true ;;
-              .github/workflows/ci.yml) android=true; vendor=true; plugin=true ;;
+              .github/workflows/*) android=true; vendor=true; plugin=true ;;
             esac
           done < <(git diff --name-only "$base" HEAD)
           echo "android=$android" >> "$GITHUB_OUTPUT"
@@ -180,6 +185,7 @@ jobs:
       # within one afternoon), which is what the retry below and the cache are for:
       # a warm Gradle home turns those into local reads.
       - uses: actions/cache/restore@v4
+        id: gradle-cache
         with:
           path: |
             ~/.gradle/caches
@@ -211,8 +217,13 @@ jobs:
       # Saved only on success: a failed run leaves Gradle's cache with the missing-artifact markers
       # of whatever it could not download, and restoring that made the next attempt fail on the same
       # coordinate instead of a fresh one (observed on this workflow's first try at caching).
+      #
+      # Only when the exact key missed. The key is the Gradle build files' hash, so a key hit means
+      # this run added nothing the entry does not already have - and re-uploading the whole cache
+      # costs ~30 s of runner time per push. A restore-keys hit (the key changed, but an older entry
+      # exists) reports `cache-hit: false` and does get saved, which is what keeps the entry current.
       - uses: actions/cache/save@v4
-        if: success()
+        if: success() && steps.gradle-cache.outputs.cache-hit != 'true'
         with:
           path: |
             ~/.gradle/caches
