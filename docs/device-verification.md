@@ -1729,7 +1729,7 @@ download). The other five that moved in that run (narrow…DeclaredSize[Light], 
 PollInstantButton[Light|Dark]) were the usual 1-25px anti-aliasing jitter and were restored rather than
 committed.
 
-## 35. The copied post link carries the topic's own slug (`FIXME_SHA`) — fix in; device check queued (2026-09-29)
+## 35. The copied post link carries the topic's own slug (`c1cb3f1`) — fix in; device check queued (2026-09-29)
 
 The owner pasted a link the app had copied: `https://linux.do/t/-/2964174/1`. The `-` was ours, not the
 site's: `postLink` hardcoded it, so *every* copied post link carried the placeholder where Discourse puts the
