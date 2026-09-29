@@ -1532,3 +1532,33 @@ read, so only the two cached fixture topics were available and neither has side-
 photograph a list-nested image reaching x 48..1079, i.e. bleeding right but keeping the list's own 48px
 indent, which is the same shape of gap. The runner's read of the look: a group of images reads as one media
 unit, so it would bleed collages too; that is the owner's call.
+
+## 31. A photo narrower than the column keeps its declared size (`5d83086`) — fixed; device re-read queued (2026-09-28)
+
+The owner read a 287x500 portrait in topic 2964229's seventh post as flush left. The device pass measured
+both bodies and both were wrong, each for its own reason:
+
+- **rich body (flag on): x 0..812 of the frame's 1079** - left margin 0, right 267. The renderer's `fit`
+  branch (an image narrower than the column) drew it in a box spanning the full available width and, with
+  aspect-fit, sat the bitmap against that box's left edge. The box is now the width the site declared
+  (capped by the available width) and centred; the change is gated on the `mediaBleed` host hook (§30) so a
+  chat bubble keeps upstream's shape. The centring helper upstream already used for the media button
+  (`getImageLeft()`) is the same rule.
+- **block body (flag off): the full frame**, and about 1.1-1.2x larger than the rich one. `ImageBlock.measure`
+  scaled every photo to the column and capped only the height, so the portrait became 909x1583 - wider than
+  the file it came from and blurrier than it needs to be. It now stops at the declared width, and
+  `imageRect`'s existing centring gives it equal margins.
+
+Two new goldens (the narrow image in both bodies) pin what a snapshot without a network can see - the panel
+and its button, since the loading placeholder is the renderer's full-width backdrop by design; the photo's
+own place is what the device read measures, and the before numbers above are its other half.
+
+**Also from this round.** ③ (a collage's second image jittering) still has no target: the host had no route
+to linux.do for most of the day and neither cached topic nor the orb's anonymous reads turned up a
+side-by-side pair, so an id is still needed. ④ (a quote's background flickering when a selection starts) was
+recorded at 44fps VFR over a long press into *Select text* on 2790689's tenth post and **did not reproduce**:
+270 frames with the card's fill constant apart from the long-press highlight and the menu, so that case is
+closed as not-reproduced rather than fixed. The network itself was diagnosed by the pass: the host's direct
+DNS answers linux.do with a Dropbox address and every A record fails, while the proxy returns Cloudflare's
+challenge; the emulator was pointed at the host's Clash (`http_proxy 10.0.2.2:7890`, revertible) so the app
+could reach the site again, which is how the measurements above were taken.
