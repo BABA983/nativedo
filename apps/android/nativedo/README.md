@@ -22,15 +22,16 @@ apps/android/nativedo/            ← our module: the only place our code lives
 
 Our code never sits inside `apps/android/telegram/`. The one exception is
 `io/github/baba983/nativedo/hooks/NativeDoHooks.java` inside `TMessagesProj`: it is a *new*
-file, so a subtree pull cannot conflict with it, and it is where the three one-line hooks
+file, so a subtree pull cannot conflict with it, and it is where the one-line hooks
 live that keep tgnet and Telegram's database switched off.
 
-## The three upstream lines
+## The upstream lines
 
-`git diff --stat <subtree-merge> -- apps/android/telegram/TMessagesProj/src/main/java/org/telegram`
-reports 2 files, 3 insertions: `ConnectionsManager.init` and `ConnectionsManager.isTestBackend`
-return early while the hooks are off, and `MessagesStorage.openDatabase` does the same. Nothing
-else upstream is touched — rendering, gestures, layout and animation are upstream's own code.
+`git diff --stat <subtree-merge> -- apps/android/telegram/TMessagesProj/src/main/java/org/telegram
+apps/android/telegram/settings.gradle` reports 3 files, 4 insertions: `ConnectionsManager.init` and
+`ConnectionsManager.isTestBackend` return early while the hooks are off, `MessagesStorage.openDatabase`
+does the same, and `settings.gradle` includes this module from outside the subtree. Nothing else
+upstream is touched — rendering, gestures, layout and animation are upstream's own code.
 
 ## How upstream's cells get our data
 
@@ -79,6 +80,64 @@ miss:
 * upstream's image singleton holds the file directories of the app that created it, and Robolectric
   shares one sandbox between test classes; the harness drops the instance at boot so each test reads
   and writes its own app's directories.
+
+## Feature inventory
+
+One row per user-facing capability: what the old app (`apps/android/app`) had, where this module
+stands, and the upstream component each row is meant to use.
+
+| Feature | Old app | Now | Upstream component |
+| --- | --- | --- | --- |
+| Sign-in and session restore (WebView `/login`, `_t` / `_forum_session` / `cf_clearance`, `/session/csrf`) | done | done | our own (moved from the old app's `ui/auth`) |
+| Latest topic feed with paging | done | done | `DialogCell.CustomDialog` + `RecyclerListView` |
+| New / top feeds, category and tag filters (`/site.json`) | done | missing | the same rows, driven by `CategoryStore` |
+| Topic detail, cooked HTML to native blocks | done, 41 ports | done | upstream `RichHtml.parse` into `ChatMessageCell` |
+| Post images and the lightbox | done | done | `PhotoViewer` |
+| Links in a post | done | done | `Browser` |
+| Avatars | done | done | the avatar receivers of `ChatMessageCell` / `DialogCell` |
+| Attachments: download, open with the system | done | done | upstream's document block |
+| Long press a post: copy, copy link, reply | done | done | our delegate on `ChatMessageCell` |
+| Reply (`POST /posts.json` with CSRF) | done, rich editor sheet | done, text only | `ChatActivityEnterView` |
+| Reply with media (`POST /uploads.json`) | done | missing | `ChatAttachAlert` plus our uploader |
+| Mentions and autocomplete (`/u/search/users`) | done | missing | the composer's mention panel |
+| Reactions: toggle and who reacted | done | half, toggling only | upstream's reaction chips, `CustomEmojiReactionsWindow` |
+| Polls: vote, retract, voter list | done | missing | `TL_messageMediaPoll`, `PollVotesAlert` |
+| Bookmarks (`/bookmarks.json`, `DELETE /posts/{id}/bookmark`) | done | missing | upstream's saved-messages menu entry |
+| Read progress (`POST /topics/timings`) and restore | done | missing | upstream's unread divider and scroll-to-unread |
+| Search: topics, posts, users, in-topic | done | missing | search inside `DialogsActivity`, `SearchTabsAndFiltersLayout` |
+| User profile (`/u/{username}.json`, activity feed) | done | missing | `ProfileActivity` |
+| Notifications | not built | missing | upstream's notification screens are Telegram-account bound, so likely our own list |
+| Appearance and theme | done | done | `ThemeActivity` (`THEME_TYPE_BASIC`) |
+| Account and session settings | done | missing | `SettingsActivity` subpages |
+| linux.do emoji sprite in the composer | done | missing | upstream's emoji panel plus our sprite downloader |
+| Floating date and jump to the read position | done | missing | upstream's chat date overlay |
+| Text selection inside a post | done | missing | `ChatMessageCell`'s own selection |
+| Video in a post | partial, opened externally | missing | `VideoPlayer` through a rich media block |
+| Share and deep links into a topic | partial | missing | `ShareActivity` plus an intent filter |
+
+## Switch plan
+
+Moving the entry point to `:nativedo` and deleting the old stack. Not started; it needs the human's
+agreement.
+
+* **CI** has to gain NDK `27.2.12479018`, CMake `3.22.1`, platform 36 and build-tools 36.0.0, and
+  enough disk for `:TMessagesProj`'s CMake build (a cold arm64-v8a `assembleDebug` already produces
+  a 40 MB `libtmessages.49.so`; a release builds every ABI).
+* **The 15 submodule trees** that a subtree squash drops are fetched today by
+  `.amp/in/artifacts/spike/fetch_submodules.sh` (pinned SHAs). That script has to move into
+  `scripts/` and into the CI job and `.agents/setup`, or a fresh clone cannot build the library.
+* **Delete:** `apps/android/app` (the old app), `apps/android/TMessagesProj` (the shrunk skeleton
+  and its stubs), `apps/android/telegram/NativeDoSpike` (the superseded spike; its harness already
+  lives in `src/test`), and the vendor tooling that only served the skeleton: `scripts/vendor-*.sh`,
+  `scripts/vendor_guard.py`, `scripts/vendor-setup.sh`, `scripts/auto-vendor-copy.sh`,
+  `vendor-overlay.json`, `VENDOR.md`, plus the root Gradle files and the pre-commit hook that point
+  at the skeleton.
+* **`AGENTS.md`** shrinks to three rules: `apps/android/telegram/**` is upstream at the pinned
+  commit and is only ever pulled with `git subtree`; our code lives in `apps/android/nativedo/**`;
+  the testing rules stay as they are. `VENDOR.md` disappears into that paragraph, because
+  provenance is upstream's own tree plus one mainline commit.
+* Nothing is deleted while the old app is still the entry point; this plan runs when the shells
+  above are far enough along to replace it.
 
 ## Building
 
