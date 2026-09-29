@@ -1634,3 +1634,38 @@ two bodies now agree pixel for pixel on where the photo's panel sits). No other 
 `narrow…DeclaredSize` goldens re-recorded, and the device re-read (2964229 post 7, flag on: expect the
 photo's block to be ~287 wide with equal margins, i.e. what the block body now reads as 396..683) is queued
 with the runner.
+
+**Both landed (2026-09-29).** Device (build at `27fa448`): the portrait's block now reads **x 396..682, width
+286, margins 396/397** - the same screen carries the block body's equivalent at 396..683, so the two bodies
+agree on the photo's place, not just on its panel. (The screen happened to hold a second portrait at 390..689,
+width 299 - a *different* image with a different declared size, which is the point: each keeps its own.) macOS:
+the two `narrow…DeclaredSize` goldens re-recorded and verified on the recording host, and the panel sits at
+**x 329..615** there too - the same box Linux renders, which is what a cross-platform golden is for.
+`richMessageBody` on macOS showed the usual zero-pixel anti-aliasing jitter and was restored.
+
+## 34. ④ reproduces: the pressed post dims for ~80ms when the selection starts (`2963790` post 2) — open (2026-09-29)
+
+The owner reproduced ④ on a specific post (topic 2963790 post 2: "long-press turns the whole thing grey for a
+moment, then Select text turns it grey again and then it is normal"), so the earlier *not reproduced* in §31 is
+superseded - that read used 2790689's tenth post, and the owner notes it does not happen on every post.
+
+**Reads (build `…-103333`, 44fps VFR, band means).**
+
+- *Menu steady state (flag on).* The pressed post's band reads 255/252 while a list row reads 202-204
+  (= 0.8 x 255, the scrim's 0.2 black). So the scrim dims the list and the foreground pass keeps the pressed
+  post bright once the menu is up: the steady state is right.
+- *Long press (47 frames).* The post's band never dips (250 -> 252) while the list goes 253 -> 202. The encoder
+  emitted no frames between t=0.436 and t=1.352 (a static screen), so a dip shorter than that window cannot be
+  excluded - but nothing was seen.
+- *Select text (363 frames, flag on).* Frames 20-22 (t=1.388/1.409/1.470) drop the post's band **252 ->
+  221.4/221.4/187.3** (~80ms) *while the scrim is still up* (the list stays 202); frame 23 (t=1.504) is when the
+  scrim lifts (253) and the selection's own pixels appear (18,356 then 18,701). So the post darkens for three
+  frames before the scrim goes away - that is the flash the owner sees.
+- *Flag off (345 frames).* The same gesture dips the band too (250.8 -> 234/224/229/231/231/231 over ~220ms,
+  list 208 -> 230, then 246 plus the tint), so **the flash is not rich-body specific**.
+
+**Where that leaves it.** The steady state, the scrim and the foreground pass are all doing what they should, so
+the dip is in the transition: something draws the pressed post darker (187 is darker than both the bright post
+and the dimmed list) for a few frames while the scrim is still up. The band means cannot say whether the band's
+*pixels* changed colour or whether the cell's content moved under a fixed band, so the next read is the frames
+themselves (and a per-frame selection-pixel count) rather than another band average.
