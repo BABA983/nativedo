@@ -70,7 +70,7 @@ internal class NotificationsTest {
         site.start()
         site.serveFixture("notifications.json", "notifications.json")
         site.serveFixture("u/baba.json", "user-profile.json")
-        // The reply notification of the fixture is floor 7 of its topic.
+        // The mention notification of the fixture is floor 3 of its topic.
         site.serveJson("t/$TOPIC_ID/$FLOOR.json", topicAround(FLOOR))
         NativeDo.setContainerFactory { context -> site.authenticatedContainer(context) }
     }
@@ -103,13 +103,14 @@ internal class NotificationsTest {
             rows.map { it.hasUnread() },
         )
 
-        // The reply the fixture's newest notification is about opens its topic at floor 7; the badge
-        // the fixture ends with has no post to open and is not a link at all.
+        // A notification opens its own post: the mention the fixture carries is on floor 3 of its
+        // topic, not on that topic's first floor. The badge the fixture ends with has no post to
+        // open and is not a link at all.
         val list = listView()!!
         assertFalse("a topic-less notification is not a link", isEnabled(rows.last()))
 
-        val reply = rows.first()
-        list.clickItem(reply, positionOf(reply))
+        val mention = rows[1]
+        list.clickItem(mention, positionOf(mention))
         harness.await("the topic at the notification's floor") {
             site.requestPaths.contains("t/$TOPIC_ID/$FLOOR.json")
         }
@@ -213,8 +214,9 @@ internal class NotificationsTest {
     }
 
     private companion object {
-        const val TOPIC_ID = 4002L
-        const val FLOOR = 7
+        /** The topic and floor of the fixture's mention notification. */
+        const val TOPIC_ID = 4004L
+        const val FLOOR = 3
         const val FIXTURE_ROWS = 4
         const val POST_ID_BASE = 1000L
         const val TOTAL_FLOORS = 12

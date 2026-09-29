@@ -139,8 +139,8 @@ stands, and the upstream component each row is meant to use.
 | Avatars | done | done | the avatar receivers of `ChatMessageCell` / `DialogCell` |
 | Attachments: download, open with the system | done | done | upstream's document block |
 | Long press a post: copy, copy link, reply | done | done | our delegate on `ChatMessageCell` |
-| Reply (`POST /posts.json` with CSRF) | done, rich editor sheet | done, text only | `ChatActivityEnterView` |
-| Reply with media (`POST /uploads.json`) | done | missing | `ChatAttachAlert` plus our uploader |
+| Reply (`POST /posts.json` with CSRF) | done, rich editor sheet | done, text and uploaded files | `ChatActivityEnterView` |
+| Reply with media (`POST /uploads.json`) | done | done, the composer's own paperclip and our attach strip upload the file and insert the site's markdown for it | the composer's own attach button plus our uploader (`ChatAttachAlert`'s modal is Telegram's own) |
 | Mentions and autocomplete (`/u/search/users`) | done | missing | the composer's mention panel |
 | Reactions: toggle and who reacted | done | half, toggling only | upstream's reaction chips, `CustomEmojiReactionsWindow` |
 | Polls: vote, retract, voter list | done | vote and retract; voter list missing | `TL_messageMediaPoll` with one bubble per poll, the floor split at its `div.poll`; a tap votes through our own `PUT /polls/vote`. Known gaps: `View Votes (N)` (upstream draws it, its voters list lives in `ChatActivity`, which this screen does not have) and `ranked_choice` (a tap cannot express a rank, so those polls open the floor menu instead of voting); poll option images and "add option" are not offered |
