@@ -1,5 +1,5 @@
 include ':TMessagesProj'
-include ':NativeDoSpike'
+include ':nativedo'; project(':nativedo').projectDir = file('../nativedo') // NativeDo
 include ':TMessagesProj_App'
 include ':TMessagesProj_AppHuawei'
 include ':TMessagesProj_AppHockeyApp'

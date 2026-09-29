@@ -1,0 +1,298 @@
+package io.github.baba983.nativedo.harness
+
+import android.app.Activity
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.location.Location
+import android.os.Looper
+import android.view.View
+import android.view.ViewGroup
+import android.widget.FrameLayout
+import org.robolectric.Robolectric
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
+import org.telegram.messenger.AndroidUtilities
+import org.telegram.messenger.ApplicationLoader
+import org.telegram.messenger.ILocationServiceProvider
+import org.telegram.messenger.LocaleController
+import org.telegram.ui.ActionBar.BaseFragment
+import org.telegram.ui.ActionBar.Theme
+import io.github.baba983.nativedo.app.NativeDoActivity
+import io.github.baba983.nativedo.harness.shadows.ShadowConnectionsManager
+import io.github.baba983.nativedo.harness.shadows.ShadowSQLiteDatabase
+import java.io.File
+import java.io.FileOutputStream
+
+/**
+ * Runs the stock upstream UI on the JVM: Robolectric supplies the Android runtime (real
+ * resources, real Canvas/Skia through `@GraphicsMode(NATIVE)`), the generated shadows in
+ * `shadows/` supply the natives that live in `libtmessages.49.so`.
+ *
+ * Two entry points, because there are two levels worth rendering:
+ *  * [bootApp] builds the real [NativeDoActivity], so a screenshot shows the screen the app
+ *    ships (ActionBar, drawer host, the fragment the shell presents);
+ *  * [bootViews] skips the shell and hands a bare view tree to [attach]/[render], for the
+ *    cell-level tests that do not need a fragment.
+ *
+ * Nothing here touches an upstream file: the environment is built from public statics, the way
+ * `ThemePreviewActivity` builds a local message for its preview list.
+ */
+internal class UpstreamUiHarness {
+
+    lateinit var activity: Activity
+    /** The activity's content view: gives the cells a window and a real width. */
+    lateinit var root: FrameLayout
+    /** The wrap-content wrapper that is measured and drawn. */
+    lateinit var content: FrameLayout
+
+    /** Pixel 6 sized, at the density Robolectric reports for that device. */
+    val width: Int get() = context.resources.displayMetrics.widthPixels
+    val height: Int get() = context.resources.displayMetrics.heightPixels
+
+    val context: Context get() = RuntimeEnvironment.getApplication()
+
+    /** The shell the app ships, driven through Robolectric's activity lifecycle. */
+    fun bootApp(): NativeDoActivity {
+        prepareUpstream()
+        val app = Robolectric.buildActivity(NativeDoActivity::class.java).setup().get()
+        activity = app
+        idle()
+        reportBootRequests()
+        resetSideEffectCounters()
+        return app
+    }
+
+    /** A bare activity with an empty wrapper, for tests that build the view themselves. */
+    fun bootViews() {
+        prepareUpstream()
+        activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        root = FrameLayout(activity).apply { setBackgroundColor(Color.WHITE) }
+        content = FrameLayout(activity).apply { setBackgroundColor(Color.WHITE) }
+        root.addView(content)
+        activity.setContentView(root)
+        idle()
+        reportBootRequests()
+        resetSideEffectCounters()
+
+        LocaleController.getInstance()
+        Theme.createCommonResources(context)
+        Theme.createDialogsResources(context)
+        Theme.createChatResources(context, false)
+        Theme.createCommonMessageResources()
+        idle()
+    }
+
+    private fun prepareUpstream() {
+        // Robolectric instantiates upstream's ApplicationLoader (the manifest's application),
+        // so applicationContext / applicationLoaderInstance are already the real ones. Only the
+        // GMS-backed location provider is replaced: there is no Play Services on a bare JVM.
+        ApplicationLoader.applicationLoaderInstance = object : ApplicationLoader() {
+            override fun onCreateLocationServiceProvider(): ILocationServiceProvider = NoopLocationProvider
+        }
+        val metrics = context.resources.displayMetrics
+        AndroidUtilities.density = metrics.density
+        AndroidUtilities.displayMetrics = metrics
+        AndroidUtilities.displaySize.set(metrics.widthPixels, metrics.heightPixels)
+    }
+
+    /**
+     * What upstream's singletons ask for while the environment boots (no account exists yet).
+     * Recorded before the counters are reset, so it is reported without failing the test: a
+     * request here cannot leave the app, because tgnet is never initialised.
+     */
+    private fun reportBootRequests() {
+        println(
+            "harness: requests during boot = ${ShadowConnectionsManager.REQUEST_ATTEMPTS} " +
+                "last=${ShadowConnectionsManager.LAST_REQUEST_CLASS}",
+        )
+    }
+
+    private fun resetSideEffectCounters() {
+        ShadowConnectionsManager.resetCounters()
+        ShadowSQLiteDatabase.resetCounters()
+    }
+
+    fun present(fragment: BaseFragment) {
+        (activity as NativeDoActivity).present(fragment)
+        idle()
+    }
+
+    fun idle() = shadowOf(Looper.getMainLooper()).idle()
+
+    /**
+     * Waits for work that finishes off the main thread (the API client runs on OkHttp's pool)
+     * while draining the main looper, which is where the callbacks land.
+     *
+     * <p>Bounded by iterations rather than by a clock: Robolectric simulates the clock, so a
+     * deadline would never be reached when there is no work left to idle.</p>
+     */
+    fun await(what: String, iterations: Int = 4_000, condition: () -> Boolean) {
+        repeat(iterations) {
+            idle()
+            if (condition()) {
+                idle()
+                return
+            }
+            // Real time, not simulated: the fetch finishes on OkHttp's own thread, and the
+            // sandbox shadows Thread.sleep onto Robolectric's paused clock, which would never
+            // elapse here. LockSupport lives in java.base and is not instrumented.
+            java.util.concurrent.locks.LockSupport.parkNanos(1_000_000L)
+        }
+        throw AssertionError("timed out waiting for $what")
+    }
+
+    fun attach(view: View, params: ViewGroup.LayoutParams) {
+        content.addView(view, params)
+        idle()
+        // Lay out once so the parent has a real width: upstream cells size their text against
+        // getParentWidth(), and binding a cell before that wraps the text at width 0.
+        layoutRoot()
+    }
+
+    /** Lays the wrapper out at its full width; called again before drawing. */
+    fun layoutRoot() {
+        val widthSpec = View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY)
+        val heightSpec = View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.AT_MOST)
+        content.measure(widthSpec, heightSpec)
+        content.layout(0, 0, content.measuredWidth, content.measuredHeight)
+        idle()
+    }
+
+    /** Lays the harness root out at [width] and writes what it drew to a PNG. */
+    fun render(name: String): File = renderView(content, name)
+
+    /** Lays the activity's content out and writes what it drew to a PNG. */
+    fun renderApp(name: String): File {
+        val contentView = activity.findViewById<ViewGroup>(android.R.id.content)
+        return renderView(contentView, name)
+    }
+
+    private fun renderView(view: View, name: String): File {
+        val widthSpec = View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY)
+        val heightSpec = View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.AT_MOST)
+        // Two passes: binding a cell attaches its rich layout, which asks for another measure, and
+        // a single pass would draw a bubble measured before the layout existed (clipped bottom).
+        repeat(2) {
+            view.measure(widthSpec, heightSpec)
+            view.layout(0, 0, view.measuredWidth, view.measuredHeight)
+            idle()
+        }
+
+        val bitmap = Bitmap.createBitmap(
+            view.measuredWidth.coerceAtLeast(1),
+            view.measuredHeight.coerceAtLeast(1),
+            Bitmap.Config.ARGB_8888,
+        )
+        view.draw(Canvas(bitmap))
+
+        val out = File(artifactsDir(), "$name.png")
+        out.parentFile?.mkdirs()
+        cropToContent(bitmap).let { cropped ->
+            FileOutputStream(out).use { cropped.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        println("harness: wrote $out (${out.length()} bytes)")
+        return out
+    }
+
+    /**
+     * The stock cell measures to the whole chat viewport (that is what `setFullyDraw` does), so
+     * the drawn content sits at the top of a mostly empty bitmap. Trim the empty rows.
+     */
+    private fun cropToContent(bitmap: Bitmap): Bitmap {
+        val pixels = IntArray(bitmap.width * bitmap.height)
+        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+        var lastContentRow = -1
+        for (row in bitmap.height - 1 downTo 0) {
+            val start = row * bitmap.width
+            for (column in 0 until bitmap.width) {
+                if (pixels[start + column] != Color.WHITE) {
+                    lastContentRow = row
+                    break
+                }
+            }
+            if (lastContentRow >= 0) break
+        }
+        if (lastContentRow <= 0) return bitmap
+        val croppedHeight = (lastContentRow + 8).coerceAtMost(bitmap.height)
+        return Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, croppedHeight)
+    }
+
+    fun fixture(name: String): String = repoFile("fixtures/discourse/$name").readText()
+
+    /**
+     * What the stock code touched outside the cells. tgnet must never initialise, no Telegram
+     * database may be opened, and nothing may reach the tgnet native layer: this client speaks to
+     * linux.do over HTTPS, and every one of those three would be a Telegram-only path.
+     *
+     * <p>These are read without waiting on purpose. Robolectric simulates both clocks, so a wait
+     * for the storage queue would either spin or block forever; what makes the database check
+     * meaningful is [NativeDoHooksTest], which calls the same open with the hook off and shows it
+     * reaching SQLite.</p>
+     */
+    fun assertNoTelegramSideEffects() {
+        println(
+            "harness: request_attempts=${ShadowConnectionsManager.REQUEST_ATTEMPTS} " +
+                "native_sendRequest=${ShadowConnectionsManager.SEND_REQUEST_CALLS} " +
+                "native_init=${ShadowConnectionsManager.NATIVE_INIT_CALLS} " +
+                "sqlite_opendb=${ShadowSQLiteDatabase.OPEN_DB_CALLS}",
+        )
+        ShadowConnectionsManager.LAST_REQUEST_CLASS?.let {
+            println("harness: last request = $it")
+        }
+        expectZero("tgnet initialisations", ShadowConnectionsManager.NATIVE_INIT_CALLS)
+        expectZero("Telegram database opens", ShadowSQLiteDatabase.OPEN_DB_CALLS)
+        expectZero("calls reaching the tgnet native layer", ShadowConnectionsManager.SEND_REQUEST_CALLS)
+    }
+
+    private fun expectZero(what: String, value: Int) {
+        if (value != 0) throw AssertionError("$what: expected 0 but was $value")
+    }
+
+    private fun artifactsDir(): File = repoFile(".amp/in/artifacts/nativedo")
+
+    private fun repoFile(relative: String): File {
+        var dir: File? = File(System.getProperty("user.dir")).absoluteFile
+        while (dir != null) {
+            if (File(dir, "fixtures/discourse").isDirectory) {
+                return File(dir, relative)
+            }
+            dir = dir.parentFile
+        }
+        error("cannot locate the repo root from ${System.getProperty("user.dir")}")
+    }
+}
+
+/** No Google Play Services on a bare JVM: upstream asks for a provider, we hand it a no-op. */
+internal object NoopLocationProvider : ILocationServiceProvider {
+    override fun init(context: Context) = Unit
+    override fun onCreateLocationRequest(): ILocationServiceProvider.ILocationRequest =
+        object : ILocationServiceProvider.ILocationRequest {
+            override fun setPriority(priority: Int) = Unit
+            override fun setInterval(interval: Long) = Unit
+            override fun setFastestInterval(interval: Long) = Unit
+        }
+
+    override fun onCreateLocationServicesAPI(
+        context: Context,
+        connectionCallbacks: ILocationServiceProvider.IAPIConnectionCallbacks,
+        failedListener: ILocationServiceProvider.IAPIOnConnectionFailedListener,
+    ): ILocationServiceProvider.IMapApiClient = object : ILocationServiceProvider.IMapApiClient {
+        override fun connect() = Unit
+        override fun disconnect() = Unit
+    }
+
+    override fun checkServices(): Boolean = false
+    override fun getLastLocation(callback: androidx.core.util.Consumer<Location>) = Unit
+    override fun requestLocationUpdates(
+        request: ILocationServiceProvider.ILocationRequest,
+        locationListener: ILocationServiceProvider.ILocationListener,
+    ) = Unit
+
+    override fun removeLocationUpdates(locationListener: ILocationServiceProvider.ILocationListener) = Unit
+    override fun checkLocationSettings(
+        request: ILocationServiceProvider.ILocationRequest,
+        callback: androidx.core.util.Consumer<Int>,
+    ) = Unit
+}

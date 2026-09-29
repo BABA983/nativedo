@@ -1,0 +1,38 @@
+package io.github.baba983.nativedo.core.session
+
+sealed interface AppSessionState {
+    data object Unknown : AppSessionState
+
+    data class Restoring(
+        val snapshot: SessionSnapshot?,
+    ) : AppSessionState
+
+    data class Authenticated(
+        val snapshot: SessionSnapshot,
+        val freshness: SessionFreshness,
+    ) : AppSessionState {
+        val username: String
+            get() = snapshot.username
+    }
+
+    data object Anonymous : AppSessionState
+
+    data class Expired(
+        val reason: SessionExpiredReason,
+        val snapshot: SessionSnapshot? = null,
+    ) : AppSessionState
+}
+
+enum class SessionFreshness {
+    Cached,
+    Verified,
+    /** Identity was read from the same-origin login WebView and awaits native verification. */
+    WebView,
+}
+
+enum class SessionExpiredReason {
+    ServerLoggedOut,
+    CookieMissing,
+    ChallengeRequired,
+    RecoveryFailed,
+}

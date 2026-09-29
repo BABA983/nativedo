@@ -293,6 +293,7 @@ public class MessagesStorage extends BaseController {
     }
 
     public void openDatabase(int openTries) {
+        if (!io.github.baba983.nativedo.hooks.NativeDoHooks.telegramStorageEnabled()) return; // NativeDo: never open Telegram's database
         if (!NativeLoader.loaded()) {
             int tryCount = 0;
             while (!NativeLoader.loaded()) {

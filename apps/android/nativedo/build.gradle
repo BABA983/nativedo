@@ -1,0 +1,129 @@
+// NativeDo: our app module. It sits outside the upstream subtree (apps/android/telegram) and is
+// the only place our own code lives, so an upstream subtree pull can never conflict with it.
+//
+// The upstream build has no Kotlin or serialization plugin on its classpath, so this module brings
+// its own; that keeps the upstream build files free of our additions.
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'org.jetbrains.kotlin:kotlin-serialization:2.1.0'
+    }
+}
+
+apply plugin: 'com.android.application'
+apply plugin: 'org.jetbrains.kotlin.android'
+apply plugin: 'org.jetbrains.kotlin.plugin.serialization'
+
+android {
+    namespace 'io.github.baba983.nativedo'
+    compileSdkVersion 36
+    buildToolsVersion '36.0.0'
+    // Stripping the native library needs an NDK; without this AGP has no strip binary and ships
+    // the 351 MB unstripped libtmessages.49.so.
+    ndkVersion '27.2.12479018'
+
+    defaultConfig {
+        applicationId 'io.github.baba983.nativedo'
+        minSdkVersion 24
+        targetSdkVersion 36
+        versionCode 1
+        versionName '0.1.0'
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    buildTypes {
+        debug {
+            // Upstream's own app build sets these; without debugSymbolLevel AGP leaves the 351 MB
+            // unstripped libtmessages.49.so in the APK instead of moving the symbols out.
+            jniDebuggable true
+            ndk.debugSymbolLevel = 'FULL'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+        coreLibraryDesugaringEnabled true
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+            all {
+                maxHeapSize = '6g'
+                testLogging {
+                    showStandardStreams = true
+                    events 'passed', 'failed', 'skipped'
+                    exceptionFormat 'full'
+                }
+            }
+        }
+    }
+}
+
+// Upstream's *app* plugin generates two assets per variant (string_resource_ids.bin,
+// lottie_meta.bin) that its UI reads at runtime; a JVM host needs them too. Upstream's own
+// generator tasks (buildSrc) are reused, fed with this module's debug symbol list, so the
+// resource ids in the assets are the ids this app's R actually assigns.
+def debugSymbolList = layout.buildDirectory.file(
+    'intermediates/runtime_symbol_list/debug/processDebugResources/R.txt')
+
+def stringIdsAsset = tasks.register('nativeDoStringResourceIdsAsset', org.telegram.tasks.GenerateStringResourceIdsAssetTask) {
+    dependsOn 'processDebugResources'
+    runtimeSymbolList.set(debugSymbolList)
+    outputDir.set(layout.buildDirectory.dir('generated/nativeDoAssets/stringResourceIds'))
+}
+
+def lottieMetaAsset = tasks.register('nativeDoLottieMetaAsset', org.telegram.tasks.GenerateLottieMetadataAssetFileTask) {
+    dependsOn 'processDebugResources'
+    runtimeSymbolList.set(debugSymbolList)
+    rawResourceDirs.from(
+        project(':TMessagesProj').fileTree('src/main/res') { include 'raw*/*.json' },
+        fileTree('src/main/res') { include 'raw*/*.json' },
+    )
+    outputDir.set(layout.buildDirectory.dir('generated/nativeDoAssets/lottieMeta'))
+}
+
+android.sourceSets.main.assets.srcDir(stringIdsAsset.flatMap { it.outputDir })
+android.sourceSets.main.assets.srcDir(lottieMetaAsset.flatMap { it.outputDir })
+
+tasks.matching { it.name.contains('Assets') && it.name.startsWith('merge') }.configureEach {
+    dependsOn stringIdsAsset, lottieMetaAsset
+}
+
+dependencies {
+    implementation project(':TMessagesProj')
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
+
+    // :TMessagesProj declares these as `implementation`, so its own classpath does not leak into
+    // ours even though upstream's public API (RecyclerListView, MessageObject) exposes their types.
+    implementation 'androidx.core:core:1.16.0'
+    implementation 'androidx.collection:collection:1.4.5'
+
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1'
+    implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3'
+    implementation 'com.squareup.retrofit2:retrofit:2.11.0'
+    implementation 'com.jakewharton.retrofit:retrofit2-kotlinx-serialization-converter:1.0.0'
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    implementation 'org.jsoup:jsoup:1.18.1'
+
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.15.1'
+    testImplementation 'androidx.test:core:1.6.1'
+    testImplementation 'androidx.core:core:1.16.0'
+    testImplementation 'androidx.collection:collection:1.4.5'
+    // The screen tests serve fixtures/discourse/* over a local server, so the whole chain
+    // (retrofit client -> models -> stock cells) runs for real instead of being stubbed.
+    testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1'
+}

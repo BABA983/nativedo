@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NativeDo's manifest. The application class and every upstream screen (PhotoViewer, Browser's
+  activity, the theme styles) come from :TMessagesProj through manifest merging, so they are not
+  re-declared here. Only two things are ours:
+
+  * the launcher entry, which is our own activity;
+  * removing upstream's launcher alias, which points at Telegram's LaunchActivity — the Telegram
+    onboarding flow, not a shell this client can use.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          xmlns:tools="http://schemas.android.com/tools">
+
+    <application>
+        <activity
+            android:name="io.github.baba983.nativedo.app.NativeDoActivity"
+            android:exported="true"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|uiMode|smallestScreenSize|screenLayout"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.TMessages.Start">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          Upstream declares one activity-alias per launcher icon and switches between them at
+          runtime. This client has its own icon and its own launcher, so they are removed rather
+          than left disabled: LauncherIconController would otherwise be free to enable one and
+          replace the app's icon with Telegram's.
+        -->
+        <activity-alias android:name="org.telegram.messenger.DefaultIcon" tools:node="remove" />
+        <activity-alias android:name="org.telegram.messenger.VintageIcon" tools:node="remove" />
+        <activity-alias android:name="org.telegram.messenger.AquaIcon" tools:node="remove" />
+        <activity-alias android:name="org.telegram.messenger.PremiumIcon" tools:node="remove" />
+        <activity-alias android:name="org.telegram.messenger.TurboIcon" tools:node="remove" />
+        <activity-alias android:name="org.telegram.messenger.NoxIcon" tools:node="remove" />
+    </application>
+</manifest>

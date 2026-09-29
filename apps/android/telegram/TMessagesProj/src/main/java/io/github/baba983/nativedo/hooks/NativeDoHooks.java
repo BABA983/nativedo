@@ -26,6 +26,22 @@ public final class NativeDoHooks {
         mtprotoEnabled = value;
     }
 
+    /**
+     * Telegram's message database is not this client's storage: linux.do's data lives in
+     * {@code io.github.baba983.nativedo.core.storage}, and an empty Telegram database would only
+     * shadow it. When this is false, {@code MessagesStorage} still builds its queue (upstream code
+     * posts work to it) but never opens the file.
+     */
+    private static volatile boolean telegramStorageEnabled;
+
+    public static boolean telegramStorageEnabled() {
+        return telegramStorageEnabled;
+    }
+
+    public static void setTelegramStorageEnabled(boolean value) {
+        telegramStorageEnabled = value;
+    }
+
     private NativeDoHooks() {
     }
 }
