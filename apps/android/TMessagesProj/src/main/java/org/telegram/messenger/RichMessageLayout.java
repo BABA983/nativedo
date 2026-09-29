@@ -7206,7 +7206,13 @@ public class RichMessageLayout {
             webImage = photo == null && block != null && block.url != null && !block.url.isEmpty();
             int w = sizeFull != null ? sizeFull.w : (webImage && block.w > 0 ? block.w : 100);
             int h = sizeFull != null ? sizeFull.h : (webImage && block.h > 0 ? block.h : 100);
-            int width = this.maxWidth;
+            // NativeDo: a Discourse image carries the size the site wants shown, and that is a cap, not
+            // just an aspect source. Upstream scales every photo up to the bubble's width and only shrinks
+            // it back when the height cap bites, so a 287x500 portrait became 812x1249 - drawn bigger than
+            // the file, left-aligned in a full-width box (a device pass measured x 0..812 against the
+            // frame's 1079, unchanged by the earlier fit-centring because the box was already narrower).
+            // With the site's width as the cap the photo keeps 287x500 and the fit branch centres it.
+            int width = webImage && block.w > 0 ? Math.min(this.maxWidth, block.w) : this.maxWidth;
             float scale = width / (float) Math.max(1, w);
             int height = (int) (scale * h);
             final int maxH = (int) (Math.max(AndroidUtilities.displaySize.x, AndroidUtilities.displaySize.y) * 0.55f);
