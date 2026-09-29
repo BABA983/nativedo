@@ -1741,3 +1741,38 @@ whose title produces no slug (an emoji-only title, for instance), so the placeho
 `runUnitAndScreenshotTests` is green (511 tests, no golden moved). The device read - copy a post's link,
 paste it, and compare with what the site itself copies - is with the runner, together with the owner's other
 report from the same message (an image-layout oddity in topic 2964174's first post).
+
+## 36. Copied link matches the site; first real collage read (2026-09-29)
+
+**§35's copy link — verified on device** (build `0.1.0-debug-20260929-145523` = `25a38e9`, flag ON). Copying
+post 1 of topic 2964174 puts `https://linux.do/t/topic/2964174/1` on the clipboard (pasted into the app's own
+Open-topic field to dump it), and the app's toast shows the same string. The slug is literally `topic` —
+Discourse's fallback for a Chinese title — so our output now has the site's shape. (The site's own page could
+not be read back as a cross-check: its anonymous view is "Oops! That page doesn't exist or is private." and an
+authenticated `curl` of `/t/2964174.json` eats a Cloudflare challenge, since `cf_clearance` is bound to the
+app's TLS fingerprint.)
+
+**Topic 2964174 post 1 — 29 images, and the first real collage rows.** The post stacks single images (one per
+paragraph) and contains two grouped rows: a 3-cell row (cells x 0..385 / 393..682 / 689..1079, i.e. 386/290/391
+wide, gaps 7/6 px, row height 678) and a 2-cell row (x 0..381 / 389..1079 = 382/691, gap 7 px, height 670).
+The cells **fill** — the photos are centre-cropped (~20-25 % of the width each side, circles still round, so not
+stretched) rather than letterboxed — and each cell opens the viewer at its own index (17/18/19 and 23/24 of 29).
+That closes the item §32 left open ("do real collage cells still bleed after `27fa448`?"): yes, they reach the
+edges, gaps are ~6 px (= `dp(2)` at this density), and the crop-to-fill matches Telegram's grouped media.
+
+**Single images still follow the declared size 1:1, and that is the remaining oddity.** Measured: 4:3 → 666x500
+at x 207..872 (62 % of the 1080 px column, white margins both sides), 3:4 → 374x500, 9:16 → 281x500, near-square
+→ 394x390, and one wide upload → 1080x744 (full bleed). The site sends these numbers as **CSS px** — Discourse
+generates them for a mobile viewport (~411 CSS px wide) and its CSS caps images at `max-width: 100 %` — so on a
+phone all of these except the smallest fill the column, while we read 666 as 666 *device* px. The wide upload
+next to a 62 %-wide one is what makes the inconsistency visible.
+
+Open question for the owner (A vs B), no change made yet:
+
+- **(A) keep 1:1** — a declared 666 stays 666 device px (62 %), 287 stays 287 (27 %).
+- **(B) read the declaration as CSS px**: `min(declared x density, column)` — 666 → full column (like the site),
+  287 → ~753 px (~70 %), 394 → full. Same rule in both bodies (the OFF `ImageBlock` must match), new goldens,
+  and a device re-read.
+
+Also open: whether the collage should keep cropping to fill (Telegram's grouped-media behaviour, what it does
+today) or letterbox the cells.
