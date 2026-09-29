@@ -145,13 +145,16 @@ internal class ProfileScreenTest {
         harness.assertNoTelegramSideEffects()
     }
 
-    /** What the screen shows for [label], read out of upstream's own detail cell. */
+    /**
+     * What the screen shows for [label], read out of upstream's own detail cell: the site's answer
+     * is the line upstream draws large, the field's name is the line under it.
+     */
     private fun detailValue(label: String): String? {
         val list = listView() ?: return null
         for (index in 0 until list.childCount) {
             val cell = list.getChildAt(index)
-            if (cell is TextDetailCell && cell.textView.text.toString() == label) {
-                return cell.valueTextView.text.toString()
+            if (cell is TextDetailCell && cell.valueTextView.text.toString() == label) {
+                return cell.textView.text.toString()
             }
         }
         return null

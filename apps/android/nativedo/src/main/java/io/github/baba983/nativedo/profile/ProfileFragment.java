@@ -16,8 +16,8 @@ import org.telegram.messenger.R;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.BaseFragment;
-import org.telegram.ui.Cells.DialogCell;
 import org.telegram.ui.Cells.HeaderCell;
+import org.telegram.ui.Cells.ProfileSearchCell;
 import org.telegram.ui.Cells.TextDetailCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
 import org.telegram.ui.Components.RecyclerListView;
@@ -33,7 +33,6 @@ import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.model.UserProfile;
 import io.github.baba983.nativedo.topic.DiscourseAvatars;
 import io.github.baba983.nativedo.topic.DiscourseLoader;
-import io.github.baba983.nativedo.topic.DiscourseRows;
 
 /**
  * A linux.do reader's profile: {@code /u/{username}.json} drawn with upstream's own list cells.
@@ -42,11 +41,11 @@ import io.github.baba983.nativedo.topic.DiscourseRows;
  * {@code onFragmentCreate} loads the full user through tgnet ({@code loadFullUser} sends
  * {@code TL_users_getFullUser} and the answer is written into Telegram's database), and what it
  * shows beyond the user is the account's own photos, stories, gifts and contacts. A linux.do reader
- * has none of those, and this client never speaks to Telegram - so the head of the screen is a
- * {@link DialogCell} row (the avatar, the reader's name, their handle), the sections are
- * {@link HeaderCell}, the fields are {@link TextDetailCell} and the bio is a
- * {@link TextInfoPrivacyCell}. Every one of those cells is upstream's, drawn the way upstream draws
- * a list row.</p>
+ * has none of those, and this client never speaks to Telegram - so the head of the screen is the
+ * cell upstream draws a person with in its own lists, a {@link ProfileSearchCell} (the reader's
+ * picture, their name, and one line under it), the sections are {@link HeaderCell}, the fields are
+ * {@link TextDetailCell} and the bio is a {@link TextInfoPrivacyCell}. Every one of those cells is
+ * upstream's, drawn the way upstream draws a list row.</p>
  */
 public class ProfileFragment extends BaseFragment {
 
@@ -212,18 +211,6 @@ public class ProfileFragment extends BaseFragment {
         }
     }
 
-    /** The site writes ISO timestamps; a chat row draws the epoch its own formatter reads. */
-    private static int epochSeconds(String timestamp) {
-        if (timestamp == null || timestamp.isEmpty()) {
-            return 0;
-        }
-        try {
-            return (int) Instant.parse(timestamp).getEpochSecond();
-        } catch (Exception e) {
-            return 0;
-        }
-    }
-
     /** The site counts seconds read; a reader reads them as hours once there are any. */
     private static String readTime(int seconds) {
         if (seconds < 60) {
@@ -243,9 +230,9 @@ public class ProfileFragment extends BaseFragment {
             Context context = parent.getContext();
             switch (viewType) {
                 case TYPE_HEADER: {
-                    DialogCell cell = new DialogCell(null, context, false, false, currentAccount, resourceProvider);
+                    ProfileSearchCell cell = new ProfileSearchCell(context, resourceProvider);
                     cell.setLayoutParams(new RecyclerView.LayoutParams(
-                            ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(72)));
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
                     return new RecyclerListView.Holder(cell);
                 }
                 case TYPE_SECTION: {
@@ -262,6 +249,9 @@ public class ProfileFragment extends BaseFragment {
                 }
                 default: {
                     TextDetailCell cell = new TextDetailCell(context, resourceProvider, true, true);
+                    // The same one line `ProfileActivity` sets on every cell of its info block: a
+                    // reader who hears the row hears the answer first.
+                    cell.setContentDescriptionValueFirst(true);
                     cell.setLayoutParams(new RecyclerView.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
                     return new RecyclerListView.Holder(cell);
@@ -272,21 +262,26 @@ public class ProfileFragment extends BaseFragment {
         @Override
         public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
             Row row = rows.get(position);
-            if (holder.itemView instanceof DialogCell) {
-                DialogCell cell = (DialogCell) holder.itemView;
-                cell.setDialog(headerRow(row));
-                // `setDialog` clears the row's avatar receiver, so the picture goes in after it - the
-                // initials stay as the placeholder until the file is on disk.
-                ImageLocation avatar = avatarUser == null ? null : DiscourseAvatars.INSTANCE.imageLocation(avatarUser);
+            if (holder.itemView instanceof ProfileSearchCell) {
+                ProfileSearchCell cell = (ProfileSearchCell) holder.itemView;
+                TLRPC.User person = avatarUser != null ? avatarUser : headUser();
+                // `setData` asks for the account's own photo of that user, which this client has
+                // none of; the site's picture goes in after it, the way the topic list's rows do.
+                cell.setData(person, null, displayName(), headSubtitle(), false, false);
+                ImageLocation avatar = DiscourseAvatars.INSTANCE.imageLocation(person);
                 if (avatar != null) {
-                    cell.avatarImage.setImage(avatar, "50_50", cell.avatarImage.getDrawable(), null, avatarUser, 0);
+                    cell.avatarImage.setImage(avatar, "50_50", cell.avatarImage.getDrawable(), null, person, 0);
                 }
             } else if (holder.itemView instanceof HeaderCell) {
                 ((HeaderCell) holder.itemView).setText(row.label);
             } else if (holder.itemView instanceof TextInfoPrivacyCell) {
                 ((TextInfoPrivacyCell) holder.itemView).setText(row.value);
             } else if (holder.itemView instanceof TextDetailCell) {
-                ((TextDetailCell) holder.itemView).setTextAndValue(row.label, row.value, row.divider);
+                // Upstream's own convention, as `ProfileActivity`'s info block uses it: the cell's
+                // first argument is the answer and lands in its 16 dp line, the second is the field's
+                // name and lands in its 13 dp line (the phone number above the word "Mobile").
+                TextDetailCell cell = (TextDetailCell) holder.itemView;
+                cell.setTextAndValue(row.value, row.label, row.divider);
             }
         }
 
@@ -306,17 +301,18 @@ public class ProfileFragment extends BaseFragment {
         }
     }
 
-    /** The head of the screen: the reader's picture, their name, and the handle under it. */
-    private DialogCell.CustomDialog headerRow(Row row) {
-        DialogCell.CustomDialog dialog = new DialogCell.CustomDialog();
-        dialog.id = (int) (DiscourseRows.userId(username()) & 0x7fffffff);
-        dialog.name = displayName();
+    /**
+     * The head's person: the reader the screen was opened for, as a peer upstream can draw. The
+     * picture comes with the profile; until it lands this is the same person without one.
+     */
+    private TLRPC.User headUser() {
+        return DiscourseAvatars.INSTANCE.user(username(), displayName(), "", container.getBaseUrl());
+    }
+
+    /** The line under the head's name: how the site names them, and the bio when there is one. */
+    private String headSubtitle() {
         String handle = "@" + username();
-        dialog.message = bioText == null || bioText.isEmpty() ? handle : handle + " · " + bioText;
-        // A chat row dates itself with the last thing that happened in it; for a reader that is the
-        // last time they posted. Left at nothing when the site does not say.
-        dialog.date = epochSeconds(profile == null ? null : profile.getLastPostedAt());
-        return dialog;
+        return bioText == null || bioText.isEmpty() ? handle : handle + " · " + bioText;
     }
 
     /** One row of the screen. */
