@@ -17,6 +17,10 @@ apps/android/nativedo/            ← our module: the only place our code lives
     auth/      WebView login, cookie/session handling (moved over unchanged)
     core/      Discourse models, network, session, storage (moved over unchanged)
     topic/     topic list, topic detail, and the mapping onto upstream's cells
+    profile/   one reader's site profile and their activity stream
+    search/    the site's search behind upstream's action bar search field
+    notifications/  the reader's in-app notifications over upstream's list row
+    feature/   the copied data layer (profile, topics, notifications)
   src/test/java/io/github/baba983/nativedo/harness/   the render + side-effect harness
 ```
 
@@ -79,8 +83,23 @@ upstream is touched — rendering, gestures, layout and animation are upstream's
   `TextInfoPrivacyCell` for the bio. Under all of it the reader's activity: `user_actions.json`
   for the topics they started and for their replies, merged into one stream newest first, one
   `DialogCell` row per action, and a tap opens that action's topic at the floor it happened on.
+* **Search** — the topic list's action bar carries upstream's search item
+  (`ActionBarMenuItem.setIsSearchField`), and the screen behind it is upstream's own expanding field
+  over `/search.json`: the site's three kinds of hit, each drawn by the cell upstream draws that row
+  with - a topic hit is the topic list's `DialogCell`, a post hit is the topic it sits in with the
+  post's own blurb, and a person is a `ProfileSearchCell`. A hit opens what it is: a topic or a post
+  its topic at the floor it was found on, a person their site profile. The field waits 300 ms after
+  the last keystroke, and an answer is only shown for the query still in the field when it arrives.
+* **Notifications** — `/notifications.json` in a screen of our own, because upstream's notification
+  screens are an account's own (its chats, its deliveries) and there is no account here. The row is
+  upstream's `DialogCell` - a title, a line under it, a date and its unread badge; the site's actor
+  goes in the line (its `data.display_username`, never `user_id`, which is the reader the
+  notification was addressed to), the topic in the title, and a tap opens that topic at the
+  notification's own floor. The site's topic-less notifications (a badge, likes it consolidated)
+  have no destination and their rows are not tappable.
 * **Theme and settings** — upstream's `ThemeActivity` (the appearance page) is the settings entry;
-  the tab strip is upstream's `FilledTabsView`.
+  the tab strip is upstream's `FilledTabsView`, with the feeds, the notifications and the settings
+  page as its three entries.
 
 ## Rendering without a device
 
@@ -127,9 +146,9 @@ stands, and the upstream component each row is meant to use.
 | Polls: vote, retract, voter list | done | vote and retract; voter list missing | `TL_messageMediaPoll` with one bubble per poll, the floor split at its `div.poll`; a tap votes through our own `PUT /polls/vote`. Known gaps: `View Votes (N)` (upstream draws it, its voters list lives in `ChatActivity`, which this screen does not have) and `ranked_choice` (a tap cannot express a rank, so those polls open the floor menu instead of voting); poll option images and "add option" are not offered |
 | Bookmarks (`/bookmarks.json`, `DELETE /posts/{id}/bookmark`) | done | missing | upstream's saved-messages menu entry |
 | Read progress (`POST /topics/timings`) and restore | done | missing | upstream's unread divider and scroll-to-unread |
-| Search: topics, posts, users, in-topic | done | missing | search inside `DialogsActivity`, `SearchTabsAndFiltersLayout` |
+| Search: topics, posts, users, in-topic | done | done, the site's topics, posts and people from the action bar's own search field; a hit opens its topic at its floor, a person opens their profile; in-topic search missing | `ActionBarMenuItem.setIsSearchField` over `/search.json`, hits drawn by `DialogCell` / `ProfileSearchCell` |
 | User profile (`/u/{username}.json`, activity feed) | done | done, `/user_actions.json` for the topics created and the replies merged into one stream, one upstream `DialogCell` row per action, a tap opens the topic at that floor | our own `BaseFragment` over `ProfileSearchCell` / `HeaderCell` / `TextDetailCell` / `TextInfoPrivacyCell` / `DialogCell`; `ProfileActivity` is unusable here (it loads the full user through tgnet and is bound to a Telegram account) |
-| Notifications | not built | missing | upstream's notification screens are Telegram-account bound, so likely our own list |
+| Notifications | not built | done, the reader's own list from `/notifications.json`; nothing pushes, and there is no unread count on the tab | upstream's notification screens are Telegram-account bound, so our own screen over upstream's `DialogCell`; unread is the row's own badge |
 | Appearance and theme | done | done | `ThemeActivity` (`THEME_TYPE_BASIC`) |
 | Account and session settings | done | missing | `SettingsActivity` subpages |
 | linux.do emoji sprite in the composer | done | missing | upstream's emoji panel plus our sprite downloader |

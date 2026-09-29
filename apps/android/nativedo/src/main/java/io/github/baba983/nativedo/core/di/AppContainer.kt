@@ -25,6 +25,7 @@ import io.github.baba983.nativedo.feature.topic.data.SharedPreferencesTopicReply
 import io.github.baba983.nativedo.feature.topic.data.SharedPreferencesTopicReadPositionPersistence
 import io.github.baba983.nativedo.feature.topic.data.TopicReplyDraftStore
 import io.github.baba983.nativedo.feature.topic.data.TopicReadPositionStore
+import io.github.baba983.nativedo.feature.notifications.data.NotificationRepository
 import io.github.baba983.nativedo.feature.profile.data.ProfileFeedRepository
 import io.github.baba983.nativedo.feature.profile.data.ProfileRepository
 import kotlinx.coroutines.CoroutineScope
@@ -122,6 +123,9 @@ class AppContainer(
         json = json,
     )
     val profileFeedRepository: ProfileFeedRepository = ProfileFeedRepository(
+        client = discourseApiClient,
+    )
+    val notificationRepository: NotificationRepository = NotificationRepository(
         client = discourseApiClient,
     )
     val categoryStore: CategoryStore = CategoryStore(

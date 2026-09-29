@@ -14,6 +14,8 @@ import io.github.baba983.nativedo.core.model.SearchResult
 import io.github.baba983.nativedo.core.model.SearchUserSummary
 import io.github.baba983.nativedo.core.model.MentionCandidate
 import io.github.baba983.nativedo.core.model.MentionSearchResult
+import io.github.baba983.nativedo.core.model.NotificationItem
+import io.github.baba983.nativedo.core.model.NotificationPage
 import io.github.baba983.nativedo.core.model.TopicDetail
 import io.github.baba983.nativedo.core.model.TopicListPage
 import io.github.baba983.nativedo.core.model.TopicSummary
@@ -74,6 +76,12 @@ interface DiscourseApiService {
         @Query("page") page: Int,
         @Query("type_filter") typeFilter: String? = null,
     ): SearchResponseDto
+
+    @GET("notifications.json")
+    suspend fun notifications(
+        @Query("offset") offset: Int,
+        @Query("limit") limit: Int,
+    ): NotificationsResponseDto
 
     @GET("u/search/users")
     suspend fun searchMentionUsers(
@@ -1152,6 +1160,60 @@ data class UserActionsResponseDto(
 )
 
 @Serializable
+data class NotificationDataDto(
+    @SerialName("topic_title")
+    val topicTitle: String? = null,
+    @SerialName("display_username")
+    val displayUsername: String? = null,
+    @SerialName("display_name")
+    val displayName: String? = null,
+    @SerialName("original_username")
+    val originalUsername: String? = null,
+    val username: String? = null,
+    val username2: String? = null,
+    val count: Int? = null,
+    @SerialName("consolidated_count")
+    val consolidatedCount: Int? = null,
+    @SerialName("badge_name")
+    val badgeName: String? = null,
+    val message: String? = null,
+)
+
+@Serializable
+data class NotificationDto(
+    val id: Long,
+    @SerialName("notification_type")
+    val notificationType: Int = 0,
+    val read: Boolean = false,
+    @SerialName("created_at")
+    val createdAt: String = "",
+    @SerialName("post_number")
+    val postNumber: Int? = null,
+    @SerialName("topic_id")
+    val topicId: Long? = null,
+    // A notification about no topic at all - a badge, consolidated likes - carries no slug either.
+    val slug: String? = null,
+    @SerialName("fancy_title")
+    val fancyTitle: String? = null,
+    val data: NotificationDataDto = NotificationDataDto(),
+    @SerialName("acting_user_name")
+    val actingUserName: String? = null,
+    @SerialName("acting_user_avatar_template")
+    val actingUserAvatarTemplate: String? = null,
+)
+
+@Serializable
+data class NotificationsResponseDto(
+    val notifications: List<NotificationDto> = emptyList(),
+    @SerialName("total_rows_notifications")
+    val totalRowsNotifications: Int = 0,
+    @SerialName("seen_notification_id")
+    val seenNotificationId: Long = 0,
+    @SerialName("load_more_notifications")
+    val loadMoreNotifications: String? = null,
+)
+
+@Serializable
 data class UserActionDto(
     val id: Long? = null,
     @SerialName("post_id")
@@ -1202,6 +1264,46 @@ private fun UserActionDto.activityRowIdentity(): String = when {
     id != null && id > 0 -> "action:$id"
     else -> "fallback:$topicId:${postNumber ?: 0}:$createdAt:$username:$excerpt"
 }
+
+internal fun NotificationsResponseDto.toModel(): NotificationPage = NotificationPage(
+    items = notifications.map(NotificationDto::toModel),
+    totalRows = totalRowsNotifications,
+)
+
+/**
+ * The actor is `data.display_username` and its fallbacks, never `user_id`: the site addresses a
+ * notification to the reader and keeps the actor in the data. A consolidated notification (several
+ * replies the site folded into one row) has no single actor - its `display_username` is a phrase in
+ * the site's own language - so the count travels instead and the row names the count.
+ */
+internal fun NotificationDto.toModel(): NotificationItem {
+    val consolidated = data.consolidatedCount ?: 0
+    val actor = if (consolidated > 1) {
+        ""
+    } else {
+        data.displayUsername.orAlternate(data.originalUsername, data.username)
+    }
+    return NotificationItem(
+        id = id,
+        type = notificationType,
+        isRead = read,
+        createdAt = createdAt,
+        topicId = topicId ?: 0,
+        postNumber = postNumber?.takeIf { it > 0 },
+        title = fancyTitle.orAlternate(data.topicTitle).orEmpty(),
+        actorUsername = actor,
+        actorName = if (consolidated > 1) "" else actingUserName.orEmpty(),
+        actorAvatarTemplate = if (consolidated > 1) "" else actingUserAvatarTemplate.orEmpty(),
+        secondUsername = if (consolidated > 1) "" else data.username2.orEmpty(),
+        count = data.count ?: 0,
+        badgeName = data.badgeName.orEmpty(),
+        consolidatedCount = consolidated,
+    )
+}
+
+private fun String?.orAlternate(vararg alternatives: String?): String =
+    alternatives.fold(this) { chosen, candidate -> chosen?.takeIf(String::isNotBlank) ?: candidate }
+        .orEmpty()
 
 private fun SiteCategoryDto.flattenedModels(): List<CategorySummary> {
     return buildList {

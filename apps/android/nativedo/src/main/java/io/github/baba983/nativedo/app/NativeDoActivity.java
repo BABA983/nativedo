@@ -91,12 +91,13 @@ public class NativeDoActivity extends Activity {
     }
 
     /**
-     * Two entries, upstream's own tab strip. The tabs replace the root screen instead of stacking on
-     * top of it: switching from a topic to settings must not leave the topic behind the back button.
+     * Three entries, upstream's own tab strip: the feeds, the reader's notifications, and settings.
+     * The tabs replace the root screen instead of stacking on top of it: switching from a topic to
+     * settings must not leave the topic behind the back button.
      */
     private void addTabs() {
         tabs = new FilledTabsView(this);
-        tabs.setTabs("话题", "设置");
+        tabs.setTabs("话题", "通知", "设置");
         tabs.setColors(
                 Theme.getColor(Theme.key_windowBackgroundWhite),
                 Theme.getColor(Theme.key_windowBackgroundGray),
@@ -170,6 +171,9 @@ public class NativeDoActivity extends Activity {
 
     private BaseFragment rootFor(int index) {
         if (index == 1) {
+            return new io.github.baba983.nativedo.notifications.NotificationsFragment();
+        }
+        if (index == 2) {
             // Upstream's appearance settings: day/night, the theme list, accents and text size.
             return new ThemeActivity(ThemeActivity.THEME_TYPE_BASIC);
         }

@@ -6,6 +6,8 @@ import io.github.baba983.nativedo.core.model.PostReactionUsersGroup
 import io.github.baba983.nativedo.core.model.CategorySummary
 import io.github.baba983.nativedo.core.model.SearchResult
 import io.github.baba983.nativedo.core.model.MentionSearchResult
+import io.github.baba983.nativedo.core.model.NotificationItem
+import io.github.baba983.nativedo.core.model.NotificationPage
 import io.github.baba983.nativedo.core.model.TopicDetail
 import io.github.baba983.nativedo.core.model.TopicListPage
 import io.github.baba983.nativedo.core.model.TopicSummary
@@ -302,6 +304,11 @@ class DiscourseApiClient(
                 offset = offset,
                 limit = limit,
             ).toModel()
+        }
+
+    suspend fun fetchNotifications(offset: Int, limit: Int): NotificationPage =
+        runWithSessionBoundary {
+            service.notifications(offset = offset, limit = limit).toModel()
         }
 
     private suspend fun <T> runWithSessionBoundary(

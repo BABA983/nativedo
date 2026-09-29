@@ -30,7 +30,7 @@ import org.telegram.ui.Components.FilledTabsView
 import org.telegram.ui.ThemeActivity
 
 /**
- * The home structure: two entries, upstream's tab strip, and the topic list as the first screen.
+ * The home structure: three entries, upstream's tab strip, and the topic list as the first screen.
  *
  * <p>The failure this pins: switching tabs must replace the root rather than push on top of it, or
  * a reader who opens a topic and then taps settings ends up with a topic behind the back button and
@@ -81,7 +81,7 @@ internal class HomeTabsTest {
 
         val tabs = findTabs(harness.activity.findViewById(android.R.id.content))
         assertTrue("the shell shows upstream's tab strip", tabs != null)
-        assertEquals("with both entries", 2, tabCount(tabs!!))
+        assertEquals("with all three entries", 3, tabCount(tabs!!))
 
         // Open a topic the way the list does, then switch tabs: the topic must not survive behind
         // the settings screen, which is what a pushed-on-top tab would leave.
@@ -93,7 +93,7 @@ internal class HomeTabsTest {
             "the tab strip is hidden while a topic is open",
             tabs.alpha == 0f && tabs.translationY > 0f,
         )
-        tapTab(tabs, 1)
+        tapTab(tabs, 2)
         harness.await("the theme page to open") { currentFragmentName() == "ThemeActivity" }
         harness.renderApp("settings-theme")
 
