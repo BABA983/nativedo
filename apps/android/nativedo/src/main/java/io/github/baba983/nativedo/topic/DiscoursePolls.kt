@@ -68,9 +68,10 @@ object DiscoursePolls {
     }
 
     /**
-     * A post's poll as the media of its own message. The question stays empty on purpose: Discourse
-     * writes the poll's question into the post body, so the body's own segment is where the reader
-     * reads it, and repeating it inside the poll bubble would say it twice.
+     * A post's poll as the media of its own message. The question is the site's own poll title: the
+     * body already carries the post's prose, and a poll the site gave a title to is the one place
+     * that title belongs - upstream draws it above the options, where an empty question would only
+     * leave a blank line. A poll the site left untitled keeps an empty question.
      */
     @JvmStatic
     fun media(poll: PostPoll): TLRPC.TL_messageMediaPoll {
@@ -99,6 +100,7 @@ object DiscoursePolls {
         val tlPoll = TLRPC.TL_poll()
         tlPoll.id = poll.id
         tlPoll.question = TLRPC.TL_textWithEntities()
+        tlPoll.question.text = poll.title.trim()
         tlPoll.answers = answers
         tlPoll.closed = poll.isClosed
         tlPoll.public_voters = poll.isPublic

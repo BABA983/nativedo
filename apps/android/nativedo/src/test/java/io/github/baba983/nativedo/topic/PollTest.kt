@@ -98,6 +98,11 @@ internal class PollTest {
         )
 
         val media = MessageObject.getMedia(cells[1].messageObject!!.messageOwner) as TLRPC.TL_messageMediaPoll
+        assertEquals(
+            "the site's own poll title is the bubble's question",
+            "1. Frontend work",
+            media.poll.question.text,
+        )
         assertEquals("the site's options", 2, media.poll.answers.size)
         assertEquals("Tool A", media.poll.answers[0].text.text)
         assertEquals("Tool B", media.poll.answers[1].text.text)
@@ -172,6 +177,33 @@ internal class PollTest {
         harness.drawApp()
         harness.renderApp("poll-after-vote")
         harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The site's own title travels in two places: `polls[].title` (which the bubble draws above the
+     * options) and a `div.poll-title` in the body's markup. Discourse's own cook puts that markup
+     * inside the poll, and a payload that carries it next to the poll instead must not end up
+     * saying the title twice - while a poll the site left untitled must keep whatever the body has.
+     */
+    @Test
+    fun aTitledPollIsDrawnWithItsTitleAndTheBodyDoesNotSayItAgain() {
+        val body = """<p>Before.</p>
+            <div class="poll-title">Which tool?</div>
+            <div class="poll" data-poll-name="tools"><div class="poll-container"><ul>
+            <li data-poll-option-id="d">A</li></ul></div></div>
+            <p>After.</p>"""
+
+        val titled = DiscoursePostBody.segments(body, mapOf("tools" to "Which tool?"))
+        assertEquals("text, poll, text", 3, titled.size)
+        assertFalse("the body does not say the title again", titled[0].html.contains("Which tool?"))
+        assertTrue("and keeps the rest of its text", titled[0].html.contains("Before."))
+        assertTrue("and the text after the poll", titled[2].html.contains("After."))
+
+        val untitled = DiscoursePostBody.segments(body)
+        assertTrue(
+            "a poll with no site title keeps whatever the body carries",
+            untitled[0].html.contains("Which tool?"),
+        )
     }
 
     /** One tap on the first answer of a poll cell, the way a finger reaches the cell's own button. */

@@ -407,7 +407,7 @@ public class TopicFragment extends BaseFragment {
      */
     private void buildBubbles(
             Post post, long topicId, List<MessageObject> outBubbles, List<PreparedPostBody> outBodies) {
-        for (DiscoursePostBody.Segment segment : DiscoursePostBody.segments(post.getCookedHtml())) {
+        for (DiscoursePostBody.Segment segment : DiscoursePostBody.segments(post.getCookedHtml(), pollTitles(post))) {
             if (segment.isPoll()) {
                 PostPoll poll = pollNamed(post, segment.pollName);
                 if (poll == null) {
@@ -441,6 +441,20 @@ public class TopicFragment extends BaseFragment {
             }
         }
         return null;
+    }
+
+    /**
+     * The post's polls that the site gave a title to, by name. Their titles are drawn as the poll
+     * bubble's question, so the copy the body carries next to the poll is dropped from the text.
+     */
+    private static HashMap<String, String> pollTitles(Post post) {
+        HashMap<String, String> titles = new HashMap<>();
+        for (PostPoll poll : post.getPolls()) {
+            if (poll.getTitle() != null && !poll.getTitle().trim().isEmpty()) {
+                titles.put(poll.getName(), poll.getTitle().trim());
+            }
+        }
+        return titles;
     }
 
     /** Fetches the next slice of the topic's stream once the list nears its end. */

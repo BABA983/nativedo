@@ -108,7 +108,7 @@ stands, and the upstream component each row is meant to use.
 | Reply with media (`POST /uploads.json`) | done | missing | `ChatAttachAlert` plus our uploader |
 | Mentions and autocomplete (`/u/search/users`) | done | missing | the composer's mention panel |
 | Reactions: toggle and who reacted | done | half, toggling only | upstream's reaction chips, `CustomEmojiReactionsWindow` |
-| Polls: vote, retract, voter list | done | missing | `TL_messageMediaPoll`, `PollVotesAlert` |
+| Polls: vote, retract, voter list | done | vote and retract; voter list missing | `TL_messageMediaPoll` with one bubble per poll, the floor split at its `div.poll`; a tap votes through our own `PUT /polls/vote`. Known gaps: `View Votes (N)` (upstream draws it, its voters list lives in `ChatActivity`, which this screen does not have) and `ranked_choice` (a tap cannot express a rank, so those polls open the floor menu instead of voting); poll option images and "add option" are not offered |
 | Bookmarks (`/bookmarks.json`, `DELETE /posts/{id}/bookmark`) | done | missing | upstream's saved-messages menu entry |
 | Read progress (`POST /topics/timings`) and restore | done | missing | upstream's unread divider and scroll-to-unread |
 | Search: topics, posts, users, in-topic | done | missing | search inside `DialogsActivity`, `SearchTabsAndFiltersLayout` |

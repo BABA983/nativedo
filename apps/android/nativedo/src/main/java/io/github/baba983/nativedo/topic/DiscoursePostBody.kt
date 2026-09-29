@@ -26,9 +26,14 @@ object DiscoursePostBody {
     /**
      * The body's segments, in order. Markup around a poll is kept as it was, and a run with no
      * markup between two polls produces no text segment.
+     *
+     * [pollTitles] names the polls the site gave a title to. Discourse's own cook puts that title
+     * in a `div.poll-title` next to (or inside) the poll markup, and the same title is what the poll
+     * bubble draws as its question - so the body's copy is taken out here rather than said twice.
      */
     @JvmStatic
-    fun segments(cookedHtml: String?): List<Segment> {
+    @JvmOverloads
+    fun segments(cookedHtml: String?, pollTitles: Map<String, String> = emptyMap()): List<Segment> {
         val body = Jsoup.parseBodyFragment(cookedHtml ?: "").body()
         val segments = ArrayList<Segment>()
         val pending = Element(Tag.valueOf("div"), "")
@@ -41,6 +46,9 @@ object DiscoursePostBody {
         for (child in body.children()) {
             val pollName = if (child.hasClass("poll")) child.attr("data-poll-name") else ""
             if (pollName.isNotEmpty()) {
+                if (!pollTitles[pollName].isNullOrBlank()) {
+                    pending.select("div.poll-title").remove()
+                }
                 flush()
                 segments += Segment("", pollName)
             } else {
