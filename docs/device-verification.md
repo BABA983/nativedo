@@ -1690,3 +1690,19 @@ upstream's model: `ChatActivity` draws the selected message's background above t
 The two scrim-host goldens recorded the intentional difference on Linux (their fixture text now says what the
 golden pins: the background is bounded to the post, nothing spilled); macOS and a device re-read of the same
 gesture are queued.
+
+**Device verdict (`6e65240`, build `…-20260929-115411`, 44fps VFR, both bodies).**
+
+- *Flag on (204 frames).* The pressed post's two blank bands - both inside the post's own y 746..1105 and to the
+  right of the popup - read **253.0 in every frame, minimum 253.0**: the 188/190/221 dips are gone. The list
+  dims 253 -> 201.8 when the scrim comes up and returns to 252.7 after the tap, and the selection's own pixels
+  land exactly as before (996 at the tap, 19,578 by the settle frame) - only the dip changed.
+- *Flag off (356 frames).* The same two bands read 253.0 in all 356 frames: the flag-off body's seven-frame dip
+  had the same cause (it is the same cell code) and is gone with it.
+- Menu steady states were photographed for both bodies: the pressed post bright with its own background, the
+  other posts behind the dim.
+
+macOS: the two scrim-host goldens re-recorded and verified on the recording host (hashes re-checked after
+download). The other five that moved in that run (narrow…DeclaredSize[Light], richMessageBody[Light|Dark],
+PollInstantButton[Light|Dark]) were the usual 1-25px anti-aliasing jitter and were restored rather than
+committed.
