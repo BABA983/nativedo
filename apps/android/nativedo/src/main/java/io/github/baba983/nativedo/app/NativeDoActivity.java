@@ -142,6 +142,19 @@ public class NativeDoActivity extends Activity {
         actionBarLayout.getView().setPadding(0, 0, 0, visible ? height : 0);
     }
 
+    /**
+     * Upstream's fragments ask the system for a result through the layout, so the layout's host has
+     * to hand the answer back: the top screen is the one that asked.
+     */
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        java.util.List<BaseFragment> stack = actionBarLayout.getFragmentStack();
+        if (!stack.isEmpty()) {
+            stack.get(stack.size() - 1).onActivityResultFragment(requestCode, resultCode, data);
+        }
+    }
+
     /** Shows one of the two roots; the tab strip can only ever hold one of them. */
     private void showTab(int index) {
         if (index == selectedTab || actionBarLayout == null) {

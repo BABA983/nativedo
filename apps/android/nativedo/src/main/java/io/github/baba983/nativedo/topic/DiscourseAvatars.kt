@@ -86,8 +86,8 @@ object DiscourseAvatars {
      * paths use — names the cache directory. On a device those are two directories, so the bytes go
      * to both; under the test host they are the same one.
      */
-    fun localFiles(user: TLRPC.User): List<File> {
-        val photoSmall = user.photo?.photo_small ?: return emptyList()
+    fun localFiles(user: TLRPC.User?): List<File> {
+        val photoSmall = user?.photo?.photo_small ?: return emptyList()
         val attach = FileLoader.getInstance(0).getPathToAttach(photoSmall, false)
         val cache = FileLoader.getInstance(0).getPathToAttach(photoSmall, true)
         return listOf(attach, cache).distinct()
@@ -98,7 +98,28 @@ object DiscourseAvatars {
         org.telegram.messenger.ImageLocation.getForUser(0, user, org.telegram.messenger.ImageLocation.TYPE_SMALL)
 
     /** Whether an avatar is already on disk, checked the way the two readers would. */
-    fun isCached(user: TLRPC.User): Boolean = localFiles(user).any { it.exists() && it.length() > 0 }
+    fun isCached(user: TLRPC.User?): Boolean =
+        localFiles(user).any { it.exists() && it.length() > 0 }
+
+    /** The file an avatar was downloaded to, or null while it is not on disk yet. */
+    fun localFile(user: TLRPC.User?): File? =
+        localFiles(user).firstOrNull { it.exists() && it.length() > 0 }
+
+    /**
+     * The avatar as a bitmap. The file's bytes were downloaded for this client, and upstream's own
+     * loader would look for a datacenter behind the photo that this client has none of, so the row
+     * is handed the picture itself. The read happens once per avatar: a later bind finds it in the
+     * cache, and what it reads is the 96 px file the site served for this size.
+     */
+    private val decoded = android.util.LruCache<String, android.graphics.Bitmap>(64)
+
+    fun bitmap(user: TLRPC.User?): android.graphics.Bitmap? {
+        val file = localFile(user) ?: return null
+        decoded.get(file.absolutePath)?.let { return it }
+        val bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath) ?: return null
+        decoded.put(file.absolutePath, bitmap)
+        return bitmap
+    }
 
     suspend fun cache(client: OkHttpClient, avatarUrl: String, user: TLRPC.User): File? =
         withContext(Dispatchers.IO) {

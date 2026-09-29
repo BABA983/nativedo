@@ -128,25 +128,29 @@ internal class AvatarRenderTest {
         harness.await("the avatar to land where upstream looks for it") {
             DiscourseAvatars.isCached(author)
         }
-        // The rows are rebuilt when an avatar arrives and the decode runs on a worker of its own,
-        // so what is waited for is the drawn result — the only thing the reader can see.
-        var green = 0
-        var attempts = 0
-        harness.await("the row to draw the downloaded avatar", iterations = 600) {
-            green = greenPixels(harness.renderApp("post-avatar"))
-            if (green == 0 && attempts++ == 200) {
-                val cell = laidOutCells().firstOrNull()
-                println(
-                    "avatar: stuck — cached=" + DiscourseAvatars.isCached(author) +
-                        " cell=" + (cell != null) +
-                        " avatarReceiver=" + (cell?.avatarImage != null) +
-                        " bitmap=" + (cell?.avatarImage?.bitmap != null) +
-                        " drawable=" + cell?.avatarImage?.imageDrawable?.javaClass?.simpleName,
-                )
+        // The rows are rebuilt when the avatar arrives, and the row is what draws it, so what is
+        // waited for is the row holding the picture; the render that follows is what the reader
+        // would look at.
+        val held = runCatching {
+            harness.await("the row to hold the downloaded avatar", iterations = 40) {
+                laidOutCells().any { it.avatarImage?.bitmap != null }
             }
-            green > 2_000
         }
-        println("avatar: green pixels in the render = $green in $attempts attempts")
+        held.exceptionOrNull()?.let { failure ->
+            val cells = laidOutCells()
+            println(
+                "avatar: stuck — decoded=" + (DiscourseAvatars.bitmap(author) != null) +
+                    " rows=" + rowCount() +
+                    " cells=" + cells.size +
+                    " receivers=" + cells.count { it.avatarImage != null } +
+                    " bitmaps=" + cells.count { it.avatarImage?.bitmap != null } +
+                    " bound=" + cells.count { it.messageObject != null },
+            )
+            throw failure
+        }
+        val green = greenPixels(harness.renderApp("post-avatar"))
+        println("avatar: green pixels in the render = $green")
+        assertTrue("the row drew the avatar it downloaded", green > 2_000)
         harness.assertNoTelegramSideEffects()
     }
 

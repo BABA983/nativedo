@@ -1,6 +1,9 @@
 package io.github.baba983.nativedo.topic
 
 import io.github.baba983.nativedo.core.di.AppContainer
+import io.github.baba983.nativedo.core.media.PickedMedia
+import io.github.baba983.nativedo.core.media.absoluteUploadUrl
+import io.github.baba983.nativedo.core.media.replyUploadMarkup
 import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.TopicDetail
 import io.github.baba983.nativedo.core.model.TopicSummary
@@ -80,6 +83,38 @@ object DiscourseLoader {
         scope.launch {
             runCatching { container.discourseApiClient.createPost(topicId, raw, replyToPostNumber) }
                 .onSuccess { onSent() }
+                .onFailure(onFailed)
+        }
+    }
+
+    /**
+     * Uploads one file for a reply and reports the site's markdown for it, or the failure the
+     * reader has to see. The site decides what an upload looks like in a post, so the markup is
+     * built here from the answer's own name and size.
+     */
+    fun uploadReplyMedia(
+        container: AppContainer,
+        picked: PickedMedia,
+        onUploaded: (String) -> Unit,
+        onFailed: (Throwable) -> Unit,
+    ) {
+        scope.launch {
+            runCatching {
+                val uploaded = container.discourseApiClient.uploadFile(
+                    file = picked.file,
+                    mimeType = picked.mimeType,
+                    onProgress = { },
+                )
+                val url = absoluteUploadUrl(container.baseUrl, uploaded.url)
+                    ?: error("the site answered an upload without a URL")
+                replyUploadMarkup(
+                    name = uploaded.filename ?: picked.name,
+                    url = url,
+                    mimeType = picked.mimeType,
+                    humanSize = uploaded.humanSize,
+                )
+            }
+                .onSuccess(onUploaded)
                 .onFailure(onFailed)
         }
     }

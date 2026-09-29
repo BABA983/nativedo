@@ -51,6 +51,9 @@ public class TopicFragment extends BaseFragment {
     /** How close to the end the list has to come before the next page is asked for. */
     private static final int LOAD_MORE_THRESHOLD = 4;
 
+    /** The document picker's request code; the reply composer's attach button starts it. */
+    private static final int PICK_ATTACHMENT_REQUEST = 0x4e44;
+
     /** Upstream fragments take their arguments through the constructor, not a setter. */
     public TopicFragment(android.os.Bundle args) {
         super(args);
@@ -86,6 +89,63 @@ public class TopicFragment extends BaseFragment {
         args.putLong(ARG_TOPIC_ID, topicId);
         args.putString(ARG_TOPIC_TITLE, title);
         return new TopicFragment(args);
+    }
+
+    /**
+     * The picker's answer: the file is uploaded to the site, and what the field receives is the
+     * markdown the site's own composer would have written for it.
+     */
+    @Override
+    public void onActivityResultFragment(int requestCode, int resultCode, android.content.Intent data) {
+        if (requestCode != PICK_ATTACHMENT_REQUEST
+                || resultCode != android.app.Activity.RESULT_OK
+                || data == null
+                || getParentActivity() == null
+                || container == null) {
+            return;
+        }
+        android.net.Uri uri = data.getData();
+        if (uri == null) {
+            return;
+        }
+        io.github.baba983.nativedo.core.media.PickedMedia picked =
+                io.github.baba983.nativedo.core.media.PickedMediaResolver.INSTANCE.resolve(getParentActivity(), uri);
+        if (picked == null) {
+            showReplyError(new java.io.IOException("无法读取所选文件"));
+            return;
+        }
+        DiscourseLoader.INSTANCE.uploadReplyMedia(container, picked, markup -> {
+            io.github.baba983.nativedo.core.media.ReplyMarkupKt.insertReplyMarkup(
+                    composer == null ? null : composer.getEditField(), markup);
+            updateSendButtonVisibility();
+            return kotlin.Unit.INSTANCE;
+        }, error -> {
+            showReplyError(error);
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
+    /**
+     * The avatar of the post's author, read from the file that was downloaded for it. The cell only
+     * builds the image from the account's photo, and that photo is a file location nothing fetches
+     * from (there is no Telegram account behind it): upstream's file loader would try a download
+     * that never comes. The bytes were downloaded for this client, so the row is handed the bitmap
+     * they make, which is the same thing the image loader would have drawn.
+     */
+    private void applyAuthorAvatar(ChatMessageCell cell, int position) {
+        if (position < 0 || position >= cookedAuthors.size()) {
+            return;
+        }
+        android.graphics.Bitmap avatar = DiscourseAvatars.INSTANCE.bitmap(
+                users.get(DiscourseRows.userId(cookedAuthors.get(position))));
+        if (avatar == null) {
+            return;
+        }
+        org.telegram.messenger.ImageReceiver receiver = cell.getAvatarImage();
+        if (receiver == null) {
+            return;
+        }
+        receiver.setImageBitmap(avatar);
     }
 
     @Override
@@ -148,7 +208,7 @@ public class TopicFragment extends BaseFragment {
      */
     private android.view.View createComposer(SizeNotifierFrameLayout contentView) {
         ChatActivityEnterView view = new ChatActivityEnterView(
-                getParentActivity(), contentView, null, false, resourceProvider);
+                getParentActivity(), contentView, null, true, resourceProvider);
         view.setAllowStickersAndGifs(false, false, false);
         view.setDelegate(new ReplyDelegate());
         // The composer decides the button again whenever it is laid out (a keyboard, an emoji panel,
@@ -471,17 +531,16 @@ public class TopicFragment extends BaseFragment {
         public void onMessageEditEnd(boolean loading) {
         }
 
-        /** Attachments in a reply are not wired yet; saying so beats a button that does nothing. */
+        /** Attachments in a reply go to the site first: what the field gets is the markdown its own composer would write. */
         @Override
         public void didPressAttachButton() {
             if (getParentActivity() == null) {
                 return;
             }
-            org.telegram.ui.ActionBar.AlertDialog.Builder builder =
-                    new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity());
-            builder.setMessage("回复里的附件还没有接入。");
-            builder.setPositiveButton("好", null);
-            showDialog(builder.create());
+            android.content.Intent intent = new android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT);
+            intent.addCategory(android.content.Intent.CATEGORY_OPENABLE);
+            intent.setType("*/*");
+            startActivityForResult(intent, PICK_ATTACHMENT_REQUEST);
         }
 
         @Override
@@ -617,6 +676,7 @@ public class TopicFragment extends BaseFragment {
             if (message.richLayout != null) {
                 message.richLayout.attach(cell);
             }
+            applyAuthorAvatar(cell, position);
         }
 
         @Override
