@@ -631,6 +631,7 @@ public class ConnectionsManager extends BaseController {
     }
 
     public void init(int version, int layer, int apiId, String deviceModel, String systemVersion, String appVersion, String langCode, String systemLangCode, String configPath, String logPath, String regId, String cFingerprint, int timezoneOffset, long userId, boolean userPremium, boolean enablePushConnection) {
+        if (!io.github.baba983.nativedo.hooks.NativeDoHooks.mtprotoEnabled()) return; // NativeDo: never start tgnet
         final SharedPreferences preferences = ApplicationLoader.applicationContext.getSharedPreferences("mainconfig", Activity.MODE_PRIVATE);
         final ProxySettings proxySettings = ProxySettings.fromSharedPreferences(preferences);
         if (preferences.getBoolean("proxy_enabled", false) && proxySettings.isValid()) {
@@ -715,6 +716,7 @@ public class ConnectionsManager extends BaseController {
     }
 
     public boolean isTestBackend() {
+        if (!io.github.baba983.nativedo.hooks.NativeDoHooks.mtprotoEnabled()) return false; // NativeDo: no tgnet, so no test backend
         return native_isTestBackend(currentAccount) != 0;
     }
 

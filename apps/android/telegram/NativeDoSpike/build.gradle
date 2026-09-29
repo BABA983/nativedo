@@ -1,0 +1,79 @@
+// Spike-only module: renders a linux.do post through the *stock* upstream
+// ChatMessageCell and DialogCell on the JVM (Robolectric, native graphics).
+// It is not part of the shipped app and is deleted when the spike ends.
+apply plugin: 'com.android.library'
+apply plugin: 'org.jetbrains.kotlin.android'
+
+android {
+    namespace 'io.github.baba983.nativedo.spike'
+    compileSdkVersion 36
+    buildToolsVersion '36.0.0'
+
+    defaultConfig {
+        minSdkVersion 21
+        targetSdkVersion 35
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+            all {
+                maxHeapSize = '6g'
+                testLogging {
+                    showStandardStreams = true
+                    events 'passed', 'failed', 'skipped'
+                    exceptionFormat 'full'
+                }
+            }
+        }
+    }
+}
+
+// Upstream's *app* plugin generates two assets per variant (string_resource_ids.bin,
+// lottie_meta.bin) that its UI reads at runtime; a JVM host needs them in the test APK too.
+// Upstream's own generator tasks (buildSrc) are reused, fed with this module's unit-test
+// runtime symbol list, so the resource ids match the ones the test APK actually assigns.
+def unitTestSymbolList = layout.buildDirectory.file(
+    'intermediates/runtime_symbol_list/debugUnitTest/processDebugUnitTestResources/R.txt')
+
+def stringIdsAsset = tasks.register('spikeStringResourceIdsAsset', org.telegram.tasks.GenerateStringResourceIdsAssetTask) {
+    dependsOn 'processDebugUnitTestResources'
+    runtimeSymbolList.set(unitTestSymbolList)
+    outputDir.set(layout.buildDirectory.dir('generated/spikeAssets/stringResourceIds'))
+}
+
+def lottieMetaAsset = tasks.register('spikeLottieMetaAsset', org.telegram.tasks.GenerateLottieMetadataAssetFileTask) {
+    dependsOn 'processDebugUnitTestResources'
+    runtimeSymbolList.set(unitTestSymbolList)
+    rawResourceDirs.from(
+        project(':TMessagesProj').fileTree('src/main/res') { include 'raw*/*.json' },
+        fileTree('src/main/res') { include 'raw*/*.json' },
+    )
+    outputDir.set(layout.buildDirectory.dir('generated/spikeAssets/lottieMeta'))
+}
+
+android.sourceSets.main.assets.srcDir(stringIdsAsset.flatMap { it.outputDir })
+android.sourceSets.main.assets.srcDir(lottieMetaAsset.flatMap { it.outputDir })
+
+tasks.matching { it.name.contains('Assets') && it.name.startsWith('merge') }.configureEach {
+    dependsOn stringIdsAsset, lottieMetaAsset
+}
+
+dependencies {
+    implementation project(':TMessagesProj')
+
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.15.1'
+    testImplementation 'androidx.test:core:1.6.1'
+    testImplementation 'androidx.core:core:1.16.0'
+    testImplementation 'androidx.collection:collection:1.4.5'
+}
