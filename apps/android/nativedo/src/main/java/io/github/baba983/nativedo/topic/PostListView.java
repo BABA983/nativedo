@@ -27,6 +27,16 @@ public class PostListView extends RecyclerListView {
 
     private AvatarSource avatarSource;
 
+    /**
+     * The initials a row shows while its author's picture is on its way. The cell builds one of its
+     * own but does not hand it out, and the picture is given to the image loader without it: the
+     * first ask would leave the bubble's avatar without anything to draw. The colour and the letters
+     * come from the same {@link AvatarDrawable} the cell uses, so what is drawn before the picture
+     * arrives is what would have been drawn anyway.
+     */
+    private final java.util.HashMap<Long, org.telegram.ui.Components.AvatarDrawable> placeholders =
+            new java.util.HashMap<>();
+
     public PostListView(Context context) {
         super(context);
     }
@@ -78,7 +88,24 @@ public class PostListView extends RecyclerListView {
         }
         avatar.setImage(
                 org.telegram.messenger.ImageLocation.getForPath(file.getAbsolutePath()),
-                "50_50", null, null, null, 0);
+                "50_50", placeholder(avatar, author), null, null, 0);
+    }
+
+    /**
+     * What the spot shows until the picture is read: the initials the cell itself put there, or one
+     * of our own when it has none — the hand-over would otherwise leave the spot empty.
+     */
+    private org.telegram.ui.Components.AvatarDrawable placeholder(ImageReceiver avatar, TLRPC.User author) {
+        if (avatar.getDrawable() instanceof org.telegram.ui.Components.AvatarDrawable) {
+            return (org.telegram.ui.Components.AvatarDrawable) avatar.getDrawable();
+        }
+        org.telegram.ui.Components.AvatarDrawable drawable = placeholders.get(author.id);
+        if (drawable == null) {
+            drawable = new org.telegram.ui.Components.AvatarDrawable();
+            drawable.setInfo(0, author);
+            placeholders.put(author.id, drawable);
+        }
+        return drawable;
     }
 
     /**

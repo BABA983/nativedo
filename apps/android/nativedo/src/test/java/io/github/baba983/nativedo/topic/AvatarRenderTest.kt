@@ -20,6 +20,7 @@ import io.github.baba983.nativedo.harness.shadows.ShadowSQLiteDatabase
 import io.github.baba983.nativedo.harness.shadows.ShadowSQLitePreparedStatement
 import io.github.baba983.nativedo.harness.shadows.ShadowUtilities
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -87,27 +88,6 @@ internal class AvatarRenderTest {
         NativeDo.setContainerFactory { context -> site.authenticatedContainer(context) }
     }
 
-    private fun topicJsonWithAvatar(): String {
-        val base = org.json.JSONObject(harness.fixture("topic-detail.json"))
-        val posts = base.getJSONObject("post_stream").getJSONArray("posts")
-        for (index in 0 until posts.length()) {
-            posts.getJSONObject(index).put("avatar_template", avatarTemplate)
-        }
-        return base.toString()
-    }
-
-    private fun latestJsonWithAvatar(): String {
-        val base = org.json.JSONObject(harness.fixture("latest-topics.json"))
-        val topics = base.getJSONObject("topic_list").getJSONArray("topics")
-        for (index in 0 until topics.length()) {
-            val posters = topics.getJSONObject(index).optJSONArray("posters") ?: continue
-            for (poster in 0 until posters.length()) {
-                posters.getJSONObject(poster).optJSONObject("user")?.put("avatar_template", listAvatarTemplate)
-            }
-        }
-        return base.toString()
-    }
-
     @After
     fun tearDown() {
         NativeDo.setContainerFactory { context -> site.authenticatedContainer(context) }
@@ -144,6 +124,35 @@ internal class AvatarRenderTest {
     }
 
     @Test
+    fun theAvatarSpotIsNeverEmptyWhileThePictureIsNotDrawn() {
+        // The site answers with something that is not a picture, which is what a broken download
+        // looks like to a row: the spot has to keep saying who wrote the post.
+        val brokenTemplate = "/user_avatar/linux.do/baba/{size}/broken$runToken.png"
+        site.serveJson("t/$TOPIC_ID.json", topicJsonWithAvatar(brokenTemplate))
+        site.serveImage(site.avatarPath(brokenTemplate), "not a picture".toByteArray())
+        harness.bootApp()
+        harness.await("the topic list to load") { rowCount() == 2 }
+        harness.present(TopicFragment.forTopic(TOPIC_ID, "Broken avatar"))
+        harness.await("the topic to load") { rowCount() == 1 }
+        val author = DiscourseAvatars.user("baba", "Baba", brokenTemplate, site.baseUrl)
+        harness.await("the site's answer to land on disk") { DiscourseAvatars.isCached(author) }
+        // The row hands it over while it is drawn; the decode then fails, and what is left has to
+        // be the author's initials rather than the hole the hand-over would otherwise leave.
+        harness.await("the row to have been given the file") {
+            harness.drawApp()
+            laidOutCells().any { it.avatarImage?.imageLocation?.path != null }
+        }
+        harness.idleClock(400)
+
+        val render = harness.renderApp("post-avatar-broken")
+        val initials = colouredPixelsInAvatarSpot(render)
+        println("avatar: placeholder pixels with an unreadable picture = $initials")
+        assertTrue("the avatar spot still holds the author's initials", initials > 500)
+        assertEquals("and no picture was drawn there", 0, magentaPixels(render))
+        harness.assertNoTelegramSideEffects()
+    }
+
+    @Test
     fun theTopicListRowsDrawTheAuthorAvatar() {
         harness.bootApp()
         harness.await("the topic list to load") { rowCount() == 2 }
@@ -166,18 +175,33 @@ internal class AvatarRenderTest {
         harness.assertNoTelegramSideEffects()
     }
 
-    private fun greenPng(): ByteArray {
-        val bitmap = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888)
-        bitmap.eraseColor(Color.rgb(0, 255, 0))
-        val bytes = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.PNG, 100, bytes)
-        return bytes.toByteArray()
+    private fun topicJsonWithAvatar(template: String = avatarTemplate): String {
+        val base = org.json.JSONObject(harness.fixture("topic-detail.json"))
+        val posts = base.getJSONObject("post_stream").getJSONArray("posts")
+        for (index in 0 until posts.length()) {
+            posts.getJSONObject(index).put("avatar_template", template)
+        }
+        return base.toString()
+    }
+
+    private fun latestJsonWithAvatar(): String {
+        val base = org.json.JSONObject(harness.fixture("latest-topics.json"))
+        val topics = base.getJSONObject("topic_list").getJSONArray("topics")
+        for (index in 0 until topics.length()) {
+            val posters = topics.getJSONObject(index).optJSONArray("posters") ?: continue
+            for (poster in 0 until posters.length()) {
+                posters.getJSONObject(poster).optJSONObject("user")?.put("avatar_template", listAvatarTemplate)
+            }
+        }
+        return base.toString()
     }
 
     /** The colour the served avatar has and the initials placeholder never does. */
+    private val magenta = Color.rgb(255, 0, 255)
+
     private fun magentaPng(): ByteArray {
         val bitmap = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888)
-        bitmap.eraseColor(Color.rgb(255, 0, 255))
+        bitmap.eraseColor(magenta)
         val bytes = ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.PNG, 100, bytes)
         return bytes.toByteArray()
@@ -188,6 +212,39 @@ internal class AvatarRenderTest {
         val pixels = IntArray(bitmap.width * bitmap.height)
         bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
         return pixels.count { Color.red(it) > 200 && Color.blue(it) > 200 && Color.green(it) < 80 }
+    }
+
+    /** The topic list's author picture, which is a different colour so the two never confuse. */
+    private fun greenPng(): ByteArray {
+        val bitmap = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(Color.rgb(0, 255, 0))
+        val bytes = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, bytes)
+        return bytes.toByteArray()
+    }
+
+    /**
+     * What the avatar spot holds: the initials circle upstream draws for an author is coloured,
+     * while a spot with nothing in it is the window's background. Only the left column of the
+     * first row is looked at, which is where a chat row's avatar sits.
+     */
+    private fun colouredPixelsInAvatarSpot(file: File, ignored: Int = 0): Int {
+        val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return 0
+        val pixels = IntArray(bitmap.width * bitmap.height)
+        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+        val width = bitmap.width
+        var count = 0
+        for (y in 0 until bitmap.height) {
+            for (x in 0 until minOf(width, 200)) {
+                val pixel = pixels[y * width + x]
+                if (pixel == ignored) continue
+                val red = Color.red(pixel)
+                val green = Color.green(pixel)
+                val blue = Color.blue(pixel)
+                if (maxOf(red, green, blue) - minOf(red, green, blue) > 40) count++
+            }
+        }
+        return count
     }
 
     private fun greenPixels(file: File): Int {
