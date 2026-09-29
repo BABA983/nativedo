@@ -1670,7 +1670,7 @@ and the dimmed list) for a few frames while the scrim is still up. The band mean
 *pixels* changed colour or whether the cell's content moved under a fixed band, so the next read is the frames
 themselves (and a per-frame selection-pixel count) rather than another band average.
 
-**Root cause and fix (`256bd6f`, 2026-09-29).** The frames settled the first half (no shift at all: the best
+**Root cause and fix (`6e65240`, 2026-09-29).** The frames settled the first half (no shift at all: the best
 cross-correlation between every neighbouring pair is 0px; b20 and b21 are byte-identical; in the dip the pressed
 post's own rect - full width, y 750..1105 - reads 188,190,190 while the list reads 202,202,202 and the popup
 stays 253; the blue selection tint arrives only in the *next* frame). A probe build (tag `SCRIMMPROBE`) then
