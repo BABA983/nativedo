@@ -88,6 +88,10 @@ public final class DiscourseRows {
      * {@code rich_message}, which is how upstream itself carries a rich body for a locally built
      * message (see its theme preview), so no Telegram media or file model is involved. The prepared
      * body carries the post's images; the message only refers to them by id.
+     *
+     * <p>A floor can be drawn as more than one bubble (its text segments and its polls), and a run
+     * of bubbles by one author is a group to upstream: only its last bubble carries the floor's
+     * reactions, the way a chat puts the chips under the last message of a run.</p>
      */
     public static MessageObject postMessage(
             Post post, long topicId, HashMap<Long, TLRPC.User> users, PreparedPostBody body,
@@ -95,35 +99,59 @@ public final class DiscourseRows {
         TLRPC.User user = author(post, baseUrl);
         users.put(user.id, user);
 
-        TLRPC.TL_message message = new TLRPC.TL_message();
-        message.id = (int) post.getId();
-        message.date = epochSeconds(post.getCreatedAt());
-        message.dialog_id = topicId;
-        // Local-message flag set used by upstream's own preview messages.
-        message.flags = 257 + 8;
-        message.message = "";
-        message.media = new TLRPC.TL_messageMediaEmpty();
-        message.out = false;
-        message.from_id = peer(user.id);
-        message.peer_id = peer(user.id);
-        message.reactions = reactions(post);
+        TLRPC.TL_message message = localMessage(
+                (int) post.getId(),
+                epochSeconds(post.getCreatedAt()),
+                topicId,
+                user.id,
+                new TLRPC.TL_messageMediaEmpty());
         message.rich_message = DiscourseCookedHtml.richMessage(body);
         for (PostAttachment attachment : body.getAttachments()) {
             message.rich_message.documents.add(DiscourseImageBridge.INSTANCE.documentFor(attachment));
         }
+        return messageObject(message, users);
+    }
 
-        MessageObject messageObject = new MessageObject(
+    /**
+     * A floor's reactions as the chips upstream draws at the bottom of a bubble. Upstream reads the
+     * order it is given, so the order here is the order the site sent. They belong to the bubble at
+     * the bottom of a floor's run, which is where a chat draws the chips under a run of messages.
+     */
+    public static void attachReactions(MessageObject messageObject, Post post) {
+        if (messageObject != null && messageObject.messageOwner != null) {
+            messageObject.messageOwner.reactions = reactions(post);
+        }
+    }
+
+    /**
+     * The message shape every bubble of a floor shares: one author, one floor, and no Telegram
+     * state. The peer is the topic rather than the author's own user peer, which is what upstream's
+     * group chats look like and what makes its cells measure a bubble with room for the author's
+     * avatar - a message from a user peer is measured full width, which pushes an inset bubble past
+     * the viewport (a wide table is what makes it visible).
+     */
+    public static TLRPC.TL_message localMessage(
+            int messageId, int date, long topicId, long userId, TLRPC.MessageMedia media) {
+        TLRPC.TL_message message = new TLRPC.TL_message();
+        message.id = messageId;
+        message.date = date;
+        message.dialog_id = topicId;
+        // Local-message flag set used by upstream's own preview messages.
+        message.flags = 257 + 8;
+        message.message = "";
+        message.media = media;
+        message.out = false;
+        message.from_id = peer(userId);
+        message.peer_id = chatPeer(topicId);
+        return message;
+    }
+
+    /** Wraps a locally built message the way the stock cells expect to receive it. */
+    public static MessageObject messageObject(
+            TLRPC.Message message, HashMap<Long, TLRPC.User> users) {
+        return new MessageObject(
                 0, message, null, users, new HashMap<>(), null, null,
                 true, false, 0, false, false, false);
-        // A post shows its author's avatar, so the cell lays the bubble out inset by one. The
-        // message object has to agree: it derives the text width from its own avatar flag, and a
-        // synthetic message from a user peer reports none, so the rich layout would be measured for
-        // a full-width bubble and then drawn inset — which pushes the right edge past the viewport
-        // (a wide table is what makes it visible). forceAvatar is upstream's own flag for exactly
-        // this: its preview cells set it on messages that are not from a real chat.
-        messageObject.forceAvatar = true;
-        messageObject.generateLayout(user);
-        return messageObject;
     }
 
     /**
@@ -152,6 +180,17 @@ public final class DiscourseRows {
     private static TLRPC.TL_peerUser peer(long userId) {
         TLRPC.TL_peerUser peer = new TLRPC.TL_peerUser();
         peer.user_id = userId;
+        return peer;
+    }
+
+    /**
+     * The topic as a chat peer. Nothing is fetched or looked up for it - upstream only asks whether
+     * the peer is a chat when it decides how wide a bubble may be - so a topic needs no Telegram chat
+     * behind it, just the shape.
+     */
+    private static TLRPC.TL_peerChat chatPeer(long topicId) {
+        TLRPC.TL_peerChat peer = new TLRPC.TL_peerChat();
+        peer.chat_id = (int) topicId;
         return peer;
     }
 

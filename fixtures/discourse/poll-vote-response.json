@@ -1,0 +1,29 @@
+{
+  "poll": {
+    "id": 1549,
+    "name": "frontend",
+    "type": "regular",
+    "status": "open",
+    "results": "always",
+    "public": true,
+    "chart_type": "bar",
+    "title": null,
+    "options": [
+      {
+        "id": "e539a9df8700d0d05c69356a07b768cf",
+        "html": "Tool A",
+        "votes": 13,
+        "chosen": true
+      },
+      {
+        "id": "3295522c5ed85034f29f63059eacce87",
+        "html": "<strong>Tool B</strong>",
+        "votes": 5
+      }
+    ],
+    "voters": 18
+  },
+  "vote": [
+    "e539a9df8700d0d05c69356a07b768cf"
+  ]
+}

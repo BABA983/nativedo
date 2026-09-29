@@ -1,6 +1,7 @@
 package io.github.baba983.nativedo.core.network
 
 import io.github.baba983.nativedo.core.model.Post
+import io.github.baba983.nativedo.core.model.PostPoll
 import io.github.baba983.nativedo.core.model.PostReactionUsersGroup
 import io.github.baba983.nativedo.core.model.CategorySummary
 import io.github.baba983.nativedo.core.model.SearchResult
@@ -260,7 +261,8 @@ class DiscourseApiClient(
             }
         }
 
-    suspend fun votePoll(postId: Long, pollName: String, optionIds: List<String>) =
+    /** Sends the reader's selection; the answer carries the poll's new state. */
+    suspend fun votePoll(postId: Long, pollName: String, optionIds: List<String>): PostPoll? =
         runWithSessionBoundary(requiresAuthentication = true) {
             val csrfToken = service.csrf().csrf
             service.votePoll(
@@ -268,17 +270,18 @@ class DiscourseApiClient(
                 pollName = pollName,
                 optionIds = optionIds,
                 csrfToken = csrfToken,
-            ).close()
+            ).poll?.toModel()
         }
 
-    suspend fun removePollVote(postId: Long, pollName: String) =
+    /** Retracts the reader's vote; the answer carries the poll's new state. */
+    suspend fun removePollVote(postId: Long, pollName: String): PostPoll? =
         runWithSessionBoundary(requiresAuthentication = true) {
             val csrfToken = service.csrf().csrf
             service.removePollVote(
                 postId = postId,
                 pollName = pollName,
                 csrfToken = csrfToken,
-            ).close()
+            ).poll?.toModel()
         }
 
     suspend fun fetchProfile(username: String): UserProfile =

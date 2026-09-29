@@ -5,6 +5,7 @@ import io.github.baba983.nativedo.core.media.PickedMedia
 import io.github.baba983.nativedo.core.media.absoluteUploadUrl
 import io.github.baba983.nativedo.core.media.replyUploadMarkup
 import io.github.baba983.nativedo.core.model.Post
+import io.github.baba983.nativedo.core.model.PostPoll
 import io.github.baba983.nativedo.core.model.TopicDetail
 import io.github.baba983.nativedo.core.model.TopicSummary
 import org.telegram.tgnet.TLRPC
@@ -137,6 +138,32 @@ object DiscourseLoader {
             runCatching { container.discourseApiClient.toggleReaction(postId, reactionId) }
                 .onFailure { error -> org.telegram.messenger.FileLog.e("reaction toggle failed", error) }
             onDone()
+        }
+    }
+
+    /**
+     * Sends one poll vote, or its retraction, and reports the poll the site answered with. The
+     * answer is the poll's whole new state (counts, and the reader's own selection), and a site that
+     * answers without one leaves the caller with what it already had.
+     */
+    fun votePoll(
+        container: AppContainer,
+        postId: Long,
+        pollName: String,
+        selection: PollVoteSelection,
+        onUpdated: (PostPoll?) -> Unit,
+        onFailed: (Throwable) -> Unit,
+    ) {
+        scope.launch {
+            runCatching {
+                if (selection.retract) {
+                    container.discourseApiClient.removePollVote(postId, pollName)
+                } else {
+                    container.discourseApiClient.votePoll(postId, pollName, selection.digests)
+                }
+            }
+                .onSuccess(onUpdated)
+                .onFailure(onFailed)
         }
     }
 

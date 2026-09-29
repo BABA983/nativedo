@@ -1,6 +1,9 @@
 package io.github.baba983.nativedo.core.network
 
 import io.github.baba983.nativedo.core.model.Post
+import io.github.baba983.nativedo.core.model.PostPoll
+import io.github.baba983.nativedo.core.model.PostPollOption
+import io.github.baba983.nativedo.core.model.PostPollVote
 import io.github.baba983.nativedo.core.model.PostReaction
 import io.github.baba983.nativedo.core.model.PostReactionUser
 import io.github.baba983.nativedo.core.model.PostReactionUsersGroup
@@ -30,6 +33,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
@@ -175,7 +179,7 @@ interface DiscourseApiService {
         @Field("poll_name") pollName: String,
         @Field("options[]") optionIds: List<String>,
         @Header("X-CSRF-Token") csrfToken: String,
-    ): ResponseBody
+    ): PollVoteResponseDto
 
     @FormUrlEncoded
     @HTTP(method = "DELETE", path = "polls/vote", hasBody = true)
@@ -183,7 +187,7 @@ interface DiscourseApiService {
         @Field("post_id") postId: Long,
         @Field("poll_name") pollName: String,
         @Header("X-CSRF-Token") csrfToken: String,
-    ): ResponseBody
+    ): PollVoteResponseDto
 
     @GET("polls/voters.json")
     suspend fun pollVoters(
@@ -528,11 +532,12 @@ data class PostDto(
     val cookedHtml: String,
     val polls: List<DiscoursePollDto> = emptyList(),
     @SerialName("polls_votes")
-    val pollsVotes: Map<String, List<String>> = emptyMap(),
+    val pollsVotes: Map<String, List<PollVoteDto>> = emptyMap(),
 )
 
 @Serializable
 data class DiscoursePollDto(
+    val id: Long = 0,
     val name: String,
     val type: String? = null,
     val status: String? = null,
@@ -543,6 +548,13 @@ data class DiscoursePollDto(
     @SerialName("chart_type")
     val chartType: String? = null,
     val title: String? = null,
+    val min: Int? = null,
+    val max: Int? = null,
+    val step: Int? = null,
+    @SerialName("closed_at")
+    val closedAt: String? = null,
+    @SerialName("closed_by")
+    val closedBy: String? = null,
     val options: List<DiscoursePollOptionDto> = emptyList(),
 )
 
@@ -550,7 +562,25 @@ data class DiscoursePollDto(
 data class DiscoursePollOptionDto(
     val id: String,
     val html: String = "",
+    /** Missing, not null, while the reader may not see results; see `contracts/discourse/models.md`. */
     val votes: Int? = null,
+    /** Only a vote response carries the reader's own selection. */
+    val chosen: Boolean = false,
+    val rank: Int? = null,
+)
+
+/** One option of a `polls_votes` entry: a plain digest, or a ranked `{digest, rank}` object. */
+@Serializable(with = PollVoteDtoSerializer::class)
+data class PollVoteDto(
+    val digest: String,
+    val rank: Int? = null,
+)
+
+/** The answer to `PUT`/`DELETE /polls/vote`: the poll's new state, and the reader's selection. */
+@Serializable
+data class PollVoteResponseDto(
+    val poll: DiscoursePollDto? = null,
+    val vote: List<PollVoteDto> = emptyList(),
 )
 
 @Serializable
@@ -947,7 +977,6 @@ internal fun UserProfileResponseDto.toModel(): UserProfile = UserProfile(
 internal fun PostDto.toModel(
     emojiCatalog: Map<String, String> = emptyMap(),
 ): Post {
-    val enrichedCookedHtml = cookedHtml.withSerializedPollData(polls, pollsVotes)
     return Post(
         id = id,
         postNumber = postNumber,
@@ -976,108 +1005,47 @@ internal fun PostDto.toModel(
             )
         },
         isBookmarked = bookmarked == true,
-        cookedHtml = enrichedCookedHtml,
+        cookedHtml = cookedHtml,
         imageUrls = Regex("<img[^>]+src=\\\"([^\\\"]+)\\\"")
-            .findAll(enrichedCookedHtml)
+            .findAll(cookedHtml)
             .map { match -> match.groupValues[1] }
             .toList(),
+        // The rendered body no longer needs the poll's state written into it: the poll is drawn
+        // from this model, and the cooked HTML only says where the poll sits.
+        polls = polls.map { poll -> poll.toModel(votes = pollsVotes[poll.name].orEmpty()) },
     )
 }
 
-internal fun String.withSerializedPollData(
-    polls: List<DiscoursePollDto>,
-    pollsVotes: Map<String, List<String>> = emptyMap(),
-): String {
-    if (polls.isEmpty() && pollsVotes.isEmpty()) {
-        return this
-    }
-    val body = Jsoup.parseBodyFragment(this).body()
-    var changed = false
-    if (polls.isEmpty()) {
-        for ((pollName, optionIds) in pollsVotes) {
-            val pollElement = body.select("div.poll")
-                .firstOrNull { element -> element.attr("data-poll-name") == pollName }
-                ?: continue
-            val list = pollElement.selectFirst(".poll-container ul") ?: continue
-            val selectedOptionIds = optionIds.toSet()
-            for (optionElement in list.select("li[data-poll-option-id]")) {
-                val optionId = optionElement.attr("data-poll-option-id")
-                if (optionId in selectedOptionIds) {
-                    optionElement.addClass("chosen")
-                } else {
-                    optionElement.removeClass("chosen")
-                    optionElement.removeClass("selected")
-                }
-                changed = true
-            }
-        }
-        return if (changed) body.html() else this
-    }
-    for (poll in polls) {
-        val pollElement = body.select("div.poll")
-            .firstOrNull { element -> element.attr("data-poll-name") == poll.name }
-            ?: continue
-        poll.type?.takeIf { it.isNotBlank() }?.let { pollElement.attr("data-poll-type", it) }
-        poll.status?.takeIf { it.isNotBlank() }?.let { pollElement.attr("data-poll-status", it) }
-        poll.results?.takeIf { it.isNotBlank() }?.let { pollElement.attr("data-poll-results", it) }
-        poll.isPublic?.let { pollElement.attr("data-poll-public", it.toString()) }
-        poll.chartType?.takeIf { it.isNotBlank() }?.let { pollElement.attr("data-poll-charttype", it) }
-        poll.title?.takeIf { it.isNotBlank() }?.let { pollElement.attr("data-poll-title", it) }
-        val selectedOptionIds = pollsVotes[poll.name].orEmpty().toSet()
-        val container = pollElement.selectFirst(".poll-container") ?: pollElement.appendElement("div").addClass("poll-container")
-        val list = container.selectFirst("ul") ?: container.appendElement("ul")
-        val existingById = list.select("li[data-poll-option-id]")
-            .associateBy { option -> option.attr("data-poll-option-id") }
-        for (optionElement in list.select("li[data-poll-option-id]")) {
-            val optionId = optionElement.attr("data-poll-option-id")
-            if (optionId in selectedOptionIds) {
-                optionElement.addClass("chosen")
-            } else {
-                optionElement.removeClass("chosen")
-                optionElement.removeClass("selected")
-            }
-        }
-        for (option in poll.options) {
-            if (option.id.isBlank()) {
-                continue
-            }
-            val item = existingById[option.id]
-                ?: list.appendElement("li").attr("data-poll-option-id", option.id)
-            item.attr("data-poll-option-id", option.id)
-            if (option.id in selectedOptionIds) {
-                item.addClass("chosen")
-            } else {
-                item.removeClass("chosen")
-                item.removeClass("selected")
-            }
-            val labelElement = item.selectFirst(".poll-option-label")
-                ?: item.prependElement("span").addClass("poll-option-label")
-            if (labelElement.html().isBlank() && option.html.isNotBlank()) {
-                labelElement.html(option.html)
-            }
-            if (option.votes != null) {
-                val votesElement = item.selectFirst(".poll-option-votes, .votes")
-                    ?: item.appendElement("span").addClass("poll-option-votes")
-                votesElement.text(option.votes.toString())
-            }
-        }
-        val totalVoters = poll.voters?.takeIf { it > 0 }
-            ?: poll.options.mapNotNull { it.votes }.sum().takeIf { it > 0 }
-        if (totalVoters != null) {
-            val pollInfo = pollElement.selectFirst(".poll-info")
-                ?: pollElement.appendElement("div").addClass("poll-info")
-            val counts = pollInfo.selectFirst(".poll-info_counts")
-                ?: pollInfo.appendElement("div").addClass("poll-info_counts")
-            val countElement = counts.selectFirst(".poll-info_counts-count")
-                ?: counts.appendElement("div").addClass("poll-info_counts-count")
-            val numberElement = countElement.selectFirst(".info-number")
-                ?: countElement.appendElement("span").addClass("info-number")
-            numberElement.text(totalVoters.toString())
-        }
-        changed = true
-    }
-    return if (changed) body.html() else this
-}
+internal fun DiscoursePollDto.toModel(
+    votes: List<PollVoteDto> = emptyList(),
+): PostPoll = PostPoll(
+    id = id,
+    name = name,
+    type = type.orEmpty().ifBlank { "regular" },
+    status = status.orEmpty().ifBlank { "open" },
+    results = results.orEmpty().ifBlank { "always" },
+    title = title.orEmpty(),
+    options = options.map { option ->
+        PostPollOption(
+            id = option.id,
+            // An option's html is markup ("<strong>Tool B</strong>"); the poll button draws text.
+            label = Jsoup.parse(option.html).text().ifBlank { option.id },
+            votes = option.votes,
+            chosen = option.chosen,
+            rank = option.rank,
+        )
+    },
+    voters = voters ?: 0,
+    chartType = chartType.orEmpty(),
+    isPublic = isPublic == true,
+    min = min,
+    max = max,
+    step = step,
+    closedAt = closedAt.orEmpty(),
+    closedBy = closedBy.orEmpty(),
+    votes = votes.map { vote -> PostPollVote(digest = vote.digest, rank = vote.rank) },
+)
+
 
 private fun TopicDto.toTopicSummary(
     usersById: Map<Long, TopicListUserDto>,
@@ -1280,6 +1248,31 @@ private fun posterUser(
     avatarTemplate = avatarTemplate,
     animatedAvatarUrl = animatedAvatarUrl,
 )
+
+/** A `polls_votes` entry is a plain digest, and a `ranked_choice` one is a `{digest, rank}` object. */
+private object PollVoteDtoSerializer : kotlinx.serialization.KSerializer<PollVoteDto> {
+    override val descriptor: SerialDescriptor = String.serializer().descriptor
+
+    override fun deserialize(decoder: Decoder): PollVoteDto {
+        val jsonDecoder = decoder as? JsonDecoder
+            ?: return PollVoteDto(decoder.decodeString())
+        return when (val element = jsonDecoder.decodeJsonElement()) {
+            is JsonPrimitive -> PollVoteDto(element.content)
+            is JsonObject -> PollVoteDto(
+                digest = element["digest"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                rank = element["rank"]?.jsonPrimitive?.intOrNull,
+            )
+            else -> PollVoteDto("")
+        }
+    }
+
+    override fun serialize(
+        encoder: Encoder,
+        value: PollVoteDto,
+    ) {
+        encoder.encodeString(value.digest)
+    }
+}
 
 private object TopicTagListSerializer : kotlinx.serialization.KSerializer<List<String>> {
     private val delegate = ListSerializer(String.serializer())

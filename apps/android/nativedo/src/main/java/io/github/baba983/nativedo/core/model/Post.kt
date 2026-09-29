@@ -23,6 +23,71 @@ data class Post(
     val isBookmarked: Boolean = false,
     val cookedHtml: String,
     val imageUrls: List<String> = emptyList(),
+    /** The post's polls, in the order the site sent them; the vote state travels in [PostPoll.votes]. */
+    val polls: List<PostPoll> = emptyList(),
+) {
+    /**
+     * The same post with the poll that shares [updated]'s name replaced. A vote response carries the
+     * poll's new state and nothing else of the post, so the screen keeps the post it already drew.
+     */
+    fun withUpdatedPoll(updated: PostPoll): Post {
+        if (polls.none { poll -> poll.name == updated.name }) {
+            return this
+        }
+        return copy(polls = polls.map { poll -> if (poll.name == updated.name) updated else poll })
+    }
+}
+
+/**
+ * One poll on a post, from the post's own `polls[]` payload.
+ *
+ * The site is the only source of options and counts: the cooked HTML names where a poll sits, but
+ * which options it has, what they are called and how many votes each carries come from here.
+ */
+data class PostPoll(
+    val id: Long = 0,
+    val name: String,
+    val type: String = "regular",
+    val status: String = "open",
+    val results: String = "always",
+    val title: String = "",
+    val options: List<PostPollOption> = emptyList(),
+    val voters: Int = 0,
+    val chartType: String = "",
+    val isPublic: Boolean = false,
+    val min: Int? = null,
+    val max: Int? = null,
+    val step: Int? = null,
+    val closedAt: String = "",
+    val closedBy: String = "",
+    /** What the reader chose; empty when they have not voted. */
+    val votes: List<PostPollVote> = emptyList(),
+) {
+    val isClosed: Boolean get() = status == "closed"
+
+    /** More than one option may be chosen, so the whole selection travels in one request. */
+    val isMultiple: Boolean get() = type == "multiple"
+
+    /** The reader's own selection, as the digests a vote request carries. */
+    val chosenDigests: Set<String> get() = votes.map { vote -> vote.digest }.toSet()
+
+    /** The reader may change a vote while the poll is open. */
+    val canRevote: Boolean get() = !isClosed
+}
+
+data class PostPollOption(
+    val id: String,
+    val label: String,
+    /** The site's count, or `null` when the reader may not see results yet. */
+    val votes: Int? = null,
+    val chosen: Boolean = false,
+    val rank: Int? = null,
+)
+
+/** One option the reader chose, with the rank a `ranked_choice` poll assigned it. */
+data class PostPollVote(
+    val digest: String,
+    val rank: Int? = null,
 )
 
 data class PostReaction(

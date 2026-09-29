@@ -30,6 +30,7 @@ import java.util.Map;
 import io.github.baba983.nativedo.app.NativeDo;
 import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.model.Post;
+import io.github.baba983.nativedo.core.model.PostPoll;
 import io.github.baba983.nativedo.core.model.TopicDetail;
 
 /**
@@ -63,15 +64,14 @@ public class TopicFragment extends BaseFragment {
     }
 
     private PostListView listView;
-    private final List<MessageObject> posts = new ArrayList<>();
-    private final List<List<PostImage>> postImages = new ArrayList<>();
-    private final List<List<PostAttachment>> postAttachments = new ArrayList<>();
-    /** The site's own id per row; a post's id is a long, while a Telegram message id is an int. */
-    private final List<Long> postIds = new ArrayList<>();
-    /** The post's own HTML, kept for copy: the rich body is a model, not text to put on a clipboard. */
-    private final List<String> cookedBodies = new ArrayList<>();
-    /** The username to address when answering a post. */
-    private final List<String> cookedAuthors = new ArrayList<>();
+    /** The topic's floors, in order: one post each, drawn as one or more bubbles. */
+    private final List<Post> floors = new ArrayList<>();
+    /** Every bubble of every floor, in order; this is what the list binds. */
+    private final List<MessageObject> bubbles = new ArrayList<>();
+    /** Per bubble, the floor it draws. */
+    private final List<Integer> bubbleFloors = new ArrayList<>();
+    /** Per bubble, the prepared body a text bubble draws from; a poll bubble has none. */
+    private final List<PreparedPostBody> bubbleBodies = new ArrayList<>();
     private final HashMap<Long, TLRPC.User> users = new HashMap<>();
     /** Per author, the avatar template that produced their profile photo; the file is fetched from it. */
     private final HashMap<Long, String> avatarTemplates = new HashMap<>();
@@ -321,13 +321,10 @@ public class TopicFragment extends BaseFragment {
     }
 
     private void bind(TopicDetail detail) {
-        posts.clear();
-        postImages.clear();
-        postAttachments.clear();
-        postIds.clear();
-        postNumbers.clear();
-        cookedBodies.clear();
-        cookedAuthors.clear();
+        floors.clear();
+        bubbles.clear();
+        bubbleFloors.clear();
+        bubbleBodies.clear();
         users.clear();
         avatarTemplates.clear();
         List<Post> loaded = firstPage(detail);
@@ -342,7 +339,7 @@ public class TopicFragment extends BaseFragment {
             controller.putUser(user, true);
         }
         notifyPostsChanged();
-        for (int index = 0; index < posts.size(); index++) {
+        for (int index = 0; index < bubbles.size(); index++) {
             fetchPostMedia(index);
         }
         fetchAvatars();
@@ -385,22 +382,65 @@ public class TopicFragment extends BaseFragment {
         return all;
     }
 
+    /** One floor, drawn as the bubbles its body splits into: its text segments and its polls. */
     private void add(Post post, long topicId) {
-        PreparedPostBody body = DiscourseImageBridge.INSTANCE.prepare(
-                post.getCookedHtml(), container.getBaseUrl());
+        int floor = floors.size();
+        floors.add(post);
+        List<MessageObject> floorBubbles = new ArrayList<>();
+        List<PreparedPostBody> floorBodies = new ArrayList<>();
+        buildBubbles(post, topicId, floorBubbles, floorBodies);
+        for (int index = 0; index < floorBubbles.size(); index++) {
+            bubbles.add(floorBubbles.get(index));
+            bubbleBodies.add(floorBodies.get(index));
+            bubbleFloors.add(floor);
+        }
         String avatarTemplate = post.getAuthorAvatarTemplate();
         if (avatarTemplate != null && !avatarTemplate.isEmpty()) {
             avatarTemplates.put(DiscourseRows.userId(post.getAuthorUsername()), avatarTemplate);
         }
-        MessageObject messageObject = DiscourseRows.postMessage(
-                post, topicId, users, body, container.getBaseUrl());
-        posts.add(messageObject);
-        postIds.add(post.getId());
-        postNumbers.add(post.getPostNumber());
-        cookedBodies.add(post.getCookedHtml());
-        cookedAuthors.add(post.getAuthorUsername());
-        postImages.add(body.getImages());
-        postAttachments.add(body.getAttachments());
+    }
+
+    /**
+     * Builds one floor's bubbles, in body order: a run of markup per text segment, and one bubble
+     * per poll. A segment with nothing to draw (whitespace between two polls, a body that is only a
+     * poll) leaves no bubble behind. The floor's reactions go on the last bubble of the run.
+     */
+    private void buildBubbles(
+            Post post, long topicId, List<MessageObject> outBubbles, List<PreparedPostBody> outBodies) {
+        for (DiscoursePostBody.Segment segment : DiscoursePostBody.segments(post.getCookedHtml())) {
+            if (segment.isPoll()) {
+                PostPoll poll = pollNamed(post, segment.getPollName());
+                if (poll == null) {
+                    continue;
+                }
+                outBubbles.add(DiscoursePolls.message(post, poll, topicId, users, container.getBaseUrl()));
+                outBodies.add(null);
+            } else {
+                PreparedPostBody body = DiscourseImageBridge.INSTANCE.prepare(
+                        segment.getHtml(), container.getBaseUrl());
+                MessageObject message = DiscourseRows.postMessage(
+                        post, topicId, users, body, container.getBaseUrl());
+                if (message.messageOwner.rich_message.blocks.isEmpty()
+                        && message.messageOwner.rich_message.documents.isEmpty()) {
+                    continue;
+                }
+                outBubbles.add(message);
+                outBodies.add(body);
+            }
+        }
+        if (!outBubbles.isEmpty()) {
+            DiscourseRows.attachReactions(outBubbles.get(outBubbles.size() - 1), post);
+        }
+    }
+
+    /** The poll a segment names, from the post's own payload; null when the site sent no data. */
+    private static PostPoll pollNamed(Post post, String name) {
+        for (PostPoll poll : post.getPolls()) {
+            if (poll.getName().equals(name)) {
+                return poll;
+            }
+        }
+        return null;
     }
 
     /** Fetches the next slice of the topic's stream once the list nears its end. */
@@ -409,7 +449,7 @@ public class TopicFragment extends BaseFragment {
             return;
         }
         LinearLayoutManager manager = (LinearLayoutManager) listView.getLayoutManager();
-        if (manager == null || manager.findLastVisibleItemPosition() < posts.size() - 1 - LOAD_MORE_THRESHOLD) {
+        if (manager == null || manager.findLastVisibleItemPosition() < bubbles.size() - 1 - LOAD_MORE_THRESHOLD) {
             return;
         }
         if (nextPageStart >= streamPostIds.size()) {
@@ -422,7 +462,7 @@ public class TopicFragment extends BaseFragment {
         DiscourseLoader.INSTANCE.topicPosts(container, topicId, page, loaded -> {
             loadingPage = false;
             nextPageStart = end;
-            int firstNew = posts.size();
+            int firstNew = bubbles.size();
             for (Post post : loaded) {
                 add(post, topicId);
             }
@@ -431,9 +471,9 @@ public class TopicFragment extends BaseFragment {
                 controller.putUser(user, true);
             }
             if (listView != null && listView.getAdapter() != null) {
-                listView.getAdapter().notifyItemRangeInserted(firstNew, posts.size() - firstNew);
+                listView.getAdapter().notifyItemRangeInserted(firstNew, bubbles.size() - firstNew);
             }
-            for (int index = firstNew; index < posts.size(); index++) {
+            for (int index = firstNew; index < bubbles.size(); index++) {
                 fetchPostMedia(index);
             }
             return kotlin.Unit.INSTANCE;
@@ -455,49 +495,121 @@ public class TopicFragment extends BaseFragment {
         });
     }
 
+    /** The poll a poll bubble draws, from its floor's own payload; null for any other bubble. */
+    private PostPoll pollOf(MessageObject message) {
+        int floor = floorOf(message);
+        if (floor < 0 || message == null || message.messageOwner == null) {
+            return null;
+        }
+        return DiscoursePolls.pollOf(floors.get(floor), MessageObject.getMedia(message.messageOwner));
+    }
+
     /**
-     * What the reader can do with a post: copy its text, copy a link to it, or reply to it. The
-     * dialog is upstream's own, so it looks like every other confirmation in the app.
+     * Sends one vote (or its retraction) and puts the site's answer back into the floor. The answer
+     * is the only place the new counts and the reader's own selection are known - the payload the
+     * screen loaded is already stale by then - so the floor's bubbles are built again from it and
+     * only that floor's rows are rebound; the rest of the topic is not re-read.
      */
-    private void showMessageMenu(int index) {
-        if (getParentActivity() == null) {
+    private void vote(MessageObject message, PostPoll poll, PollVoteSelection selection) {
+        int floor = floorOf(message);
+        if (floor < 0 || container == null || poll == null || selection == null) {
             return;
         }
-        MessageObject message = posts.get(index);
+        Post post = floors.get(floor);
+        DiscourseLoader.INSTANCE.votePoll(container, post.getId(), poll.getName(), selection, updated -> {
+            if (updated != null) {
+                floors.set(floor, post.withUpdatedPoll(updated));
+                rebuildFloor(floor);
+            }
+            return kotlin.Unit.INSTANCE;
+        }, error -> {
+            showError("投票失败", error);
+            // Upstream's vote animation has already started; binding the row again is what ends it.
+            rebuildFloor(floor);
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
+    /**
+     * Builds one floor's bubbles again and rebinds exactly its rows. The count can change (the
+     * site's answer decides how many options a poll has), so the rows are replaced, not refreshed.
+     */
+    private void rebuildFloor(int floor) {
+        int first = -1;
+        int count = 0;
+        for (int index = 0; index < bubbleFloors.size(); index++) {
+            if (bubbleFloors.get(index) == floor) {
+                if (first < 0) {
+                    first = index;
+                }
+                count++;
+            }
+        }
+        if (first < 0) {
+            return;
+        }
+        List<MessageObject> rebuilt = new ArrayList<>();
+        List<PreparedPostBody> rebuiltBodies = new ArrayList<>();
+        buildBubbles(floors.get(floor), topicId, rebuilt, rebuiltBodies);
+        for (int index = 0; index < count; index++) {
+            bubbles.remove(first);
+            bubbleBodies.remove(first);
+            bubbleFloors.remove(first);
+        }
+        for (int index = 0; index < rebuilt.size(); index++) {
+            bubbles.add(first + index, rebuilt.get(index));
+            bubbleBodies.add(first + index, rebuiltBodies.get(index));
+            bubbleFloors.add(first + index, floor);
+        }
+        if (listView != null && listView.getAdapter() != null) {
+            listView.getAdapter().notifyItemRangeRemoved(first, count);
+            listView.getAdapter().notifyItemRangeInserted(first, rebuilt.size());
+        }
+    }
+
+    /**
+     * What the reader can do with a post: copy its text, copy a link to it, or reply to it. The
+     * dialog is upstream's own, so it looks like every other confirmation in the app. Every bubble
+     * of a floor opens it, and it always speaks for the whole floor, not for one segment of it.
+     */
+    private void showMessageMenu(int floor) {
+        if (getParentActivity() == null || floor < 0 || floor >= floors.size()) {
+            return;
+        }
         String[] items = new String[]{"复制", "复制链接", "回复"};
         org.telegram.ui.ActionBar.AlertDialog.Builder builder =
                 new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity());
         builder.setItems(items, (dialog, which) -> {
             if (which == 0) {
-                AndroidUtilities.addToClipboard(plainText(message));
+                AndroidUtilities.addToClipboard(plainText(floor));
             } else if (which == 1) {
                 android.content.ClipboardManager clipboard = (android.content.ClipboardManager)
                         getParentActivity().getSystemService(Context.CLIPBOARD_SERVICE);
-                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("link", postUrl(index)));
+                clipboard.setPrimaryClip(android.content.ClipData.newPlainText("link", postUrl(floor)));
             } else {
-                replyTo(index);
+                replyTo(floor);
             }
         });
         showDialog(builder.create());
     }
 
-    /** What a copy takes: the text the rich body was built from, without its markup. */
-    private String plainText(MessageObject message) {
-        org.jsoup.nodes.Document document = org.jsoup.Jsoup.parse(
-                message.messageOwner.rich_message == null ? "" : rawBodyOf(message));
-        return document.text();
+    /** What a copy takes: the floor's own text, without its markup. */
+    private String plainText(int floor) {
+        String cooked = floors.get(floor).getCookedHtml();
+        return org.jsoup.Jsoup.parse(cooked == null ? "" : cooked).text();
     }
 
-    private String rawBodyOf(MessageObject message) {
-        int index = posts.indexOf(message);
-        return index >= 0 && index < cookedBodies.size() ? cookedBodies.get(index) : "";
-    }
-
-    private String postUrl(int index) {
-        if (index >= postIds.size() || container == null) {
+    private String postUrl(int floor) {
+        if (container == null || floor < 0 || floor >= floors.size()) {
             return container == null ? "" : container.getBaseUrl();
         }
-        return container.getBaseUrl() + "t/" + topicId + "/" + postIds.get(index);
+        return container.getBaseUrl() + "t/" + topicId + "/" + floors.get(floor).getId();
+    }
+
+    /** The floor a bubble draws; -1 when the message is not one of the list's bubbles. */
+    private int floorOf(MessageObject message) {
+        int index = bubbles.indexOf(message);
+        return index >= 0 && index < bubbleFloors.size() ? bubbleFloors.get(index) : -1;
     }
 
     /**
@@ -531,14 +643,16 @@ public class TopicFragment extends BaseFragment {
      * Replying to one post is a post number, not a post id: the site numbers posts within a topic
      * and the composer does not need to know which floor it answers.
      */
-    private void replyTo(int index) {
-        MessageObject message = posts.get(index);
-        replyToPostNumber = message.messageOwner == null ? null : null;
-        Integer number = postNumbers.get(index);
+    private void replyTo(int floor) {
+        if (floor < 0 || floor >= floors.size()) {
+            return;
+        }
+        Post post = floors.get(floor);
+        Integer number = post.getPostNumber();
         replyToPostNumber = number;
         // Discourse addresses a reply with @username, and the author of the post is what the
         // reader answers to.
-        String author = index < cookedAuthors.size() ? cookedAuthors.get(index) : null;
+        String author = post.getAuthorUsername();
         if (composer != null && author != null && !author.isEmpty() && number != null) {
             composer.setFieldText("@" + author + " ");
             composer.setFieldFocused();
@@ -564,13 +678,17 @@ public class TopicFragment extends BaseFragment {
     }
 
     private void showReplyError(Throwable error) {
+        showError("回复失败", error);
+    }
+
+    private void showError(String title, Throwable error) {
         if (getParentActivity() == null) {
             return;
         }
-        org.telegram.messenger.FileLog.e("reply failed", error);
+        org.telegram.messenger.FileLog.e(title, error);
         org.telegram.ui.ActionBar.AlertDialog.Builder builder =
                 new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity());
-        builder.setTitle("回复失败");
+        builder.setTitle(title);
         builder.setMessage(error.getMessage() == null ? error.toString() : error.getMessage());
         builder.setPositiveButton("好", null);
         showDialog(builder.create());
@@ -687,21 +805,24 @@ public class TopicFragment extends BaseFragment {
      * does the same with its button state, which only turns into "open" once the file is there.
      */
     private void fetchPostMedia(int index) {
-        if (container == null) {
+        if (container == null || index < 0 || index >= bubbles.size()) {
             return;
         }
-        List<PostImage> images = postImages.get(index);
-        List<PostAttachment> attachments = postAttachments.get(index);
+        // A poll bubble has no images of its own; its options are text.
+        PreparedPostBody body = bubbleBodies.get(index);
+        if (body == null) {
+            return;
+        }
+        List<PostImage> images = body.getImages();
+        List<PostAttachment> attachments = body.getAttachments();
         Runnable onReady = () -> {
             if (listView != null && listView.getAdapter() != null) {
                 listView.getAdapter().notifyItemChanged(index);
             }
         };
-        MessageObject message = index < posts.size() ? posts.get(index) : null;
+        MessageObject message = bubbles.get(index);
         Runnable onAttachmentsReady = () -> {
-            if (message != null) {
-                DiscourseImageBridge.INSTANCE.applyAttachmentFiles(message.messageOwner, attachments);
-            }
+            DiscourseImageBridge.INSTANCE.applyAttachmentFiles(message.messageOwner, attachments);
             onReady.run();
         };
         DiscourseLoader.INSTANCE.cacheImages(container, images, () -> {
@@ -753,8 +874,14 @@ public class TopicFragment extends BaseFragment {
         @Override
         public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
             ChatMessageCell cell = (ChatMessageCell) holder.itemView;
-            MessageObject message = posts.get(position);
-            cell.setMessageObject(message, null, false, false, false);
+            MessageObject message = bubbles.get(position);
+            // A floor's bubbles are a run of messages by one author, the shape upstream's own chat
+            // groups: the first bubble keeps its rounded top and draws the name, the last keeps its
+            // rounded bottom (and draws the avatar, which this list adds), and the bubbles between
+            // them are pinned to their neighbours.
+            boolean pinnedTop = position > firstBubbleOfFloor(position);
+            boolean pinnedBottom = position < lastBubbleOfFloor(position);
+            cell.setMessageObject(message, null, pinnedBottom, pinnedTop, false);
             // Upstream binds a rich body by creating its layout and attaching it in the same breath,
             // but only while the cell is already on screen. A cell that is bound before it is
             // attached (and every re-bind after a download) would leave the body's blocks without a
@@ -768,13 +895,35 @@ public class TopicFragment extends BaseFragment {
 
         @Override
         public int getItemCount() {
-            return posts.size();
+            return bubbles.size();
         }
 
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
             return false;
         }
+    }
+
+    /** The first bubble of the floor [position] draws; a floor with one bubble is its own first. */
+    private int firstBubbleOfFloor(int position) {
+        int floor = bubbleFloors.get(position);
+        for (int index = 0; index < bubbleFloors.size(); index++) {
+            if (bubbleFloors.get(index) == floor) {
+                return index;
+            }
+        }
+        return position;
+    }
+
+    /** The last bubble of the floor [position] draws. */
+    private int lastBubbleOfFloor(int position) {
+        int floor = bubbleFloors.get(position);
+        for (int index = bubbleFloors.size() - 1; index >= 0; index--) {
+            if (bubbleFloors.get(index) == floor) {
+                return index;
+            }
+        }
+        return position;
     }
 
     /** Upstream's own callbacks; a tap on a photo or a link leaves for upstream's viewers. */
@@ -789,23 +938,75 @@ public class TopicFragment extends BaseFragment {
             if (longpress || reaction == null || !(reaction.reaction instanceof TLRPC.TL_reactionEmoji)) {
                 return;
             }
-            int index = posts.indexOf(cell.getMessageObject());
-            if (index < 0 || index >= postIds.size()) {
+            int floor = floorOf(cell.getMessageObject());
+            if (floor < 0) {
                 return;
             }
             String reactionId = DiscourseReactions.INSTANCE.idOf(
                     ((TLRPC.TL_reactionEmoji) reaction.reaction).emoticon);
-            toggleReaction(postIds.get(index), reactionId);
+            toggleReaction(floors.get(floor).getId(), reactionId);
         }
 
-        /** Long press: the three things a reader does with someone else's post. */
+        /** Long press on any bubble of a floor: the three things a reader does with a post. */
         @Override
         public void didLongPress(ChatMessageCell cell, float x, float y) {
-            int index = posts.indexOf(cell.getMessageObject());
-            if (index < 0) {
+            int floor = floorOf(cell.getMessageObject());
+            if (floor < 0) {
                 return;
             }
-            showMessageMenu(index);
+            showMessageMenu(floor);
+        }
+
+        /**
+         * A tap on a poll's answers. Upstream hands over the answers that are being voted for - the
+         * one that was tapped in a single-choice poll, the whole checked set in a multiple-choice
+         * one - and this client sends exactly those to the site.
+         */
+        @Override
+        public void didPressVoteButtons(ChatMessageCell cell, ArrayList<TLRPC.PollAnswer> buttons, int showCount, int x, int y) {
+            if (buttons == null || buttons.isEmpty()) {
+                // Upstream's own hint path (a vote the server restricted); this client has nothing
+                // to hint about, and nothing was chosen.
+                return;
+            }
+            MessageObject message = cell.getMessageObject();
+            PostPoll poll = pollOf(message);
+            if (poll == null) {
+                return;
+            }
+            ArrayList<String> digests = new ArrayList<>();
+            for (TLRPC.PollAnswer answer : buttons) {
+                if (answer != null && answer.option != null) {
+                    digests.add(new String(answer.option, java.nio.charset.StandardCharsets.UTF_8));
+                }
+            }
+            if (digests.isEmpty()) {
+                return;
+            }
+            vote(message, poll, new PollVoteSelection(digests, false));
+        }
+
+        /**
+         * A tap on an answer of a poll the reader has already voted in - upstream routes those here,
+         * not to [didPressVoteButtons]. The tap changes the vote, and a tap on the answer that is
+         * already chosen takes the vote back; a poll that takes no tap (closed, or a ranked one
+         * whose order a tap cannot express) opens the floor's menu instead.
+         */
+        @Override
+        public boolean didLongPressPollOption(ChatMessageCell cell, TLRPC.PollAnswer answer) {
+            MessageObject message = cell.getMessageObject();
+            PostPoll poll = pollOf(message);
+            if (poll == null || answer == null || answer.option == null) {
+                return false;
+            }
+            String digest = new String(answer.option, java.nio.charset.StandardCharsets.UTF_8);
+            PollVoteSelection selection = DiscoursePolls.selectionFor(poll, digest);
+            if (selection == null) {
+                showMessageMenu(floorOf(message));
+                return true;
+            }
+            vote(message, poll, selection);
+            return true;
         }
 
         /** A tap on an image in a post body; the cell routes rich media through this one. */

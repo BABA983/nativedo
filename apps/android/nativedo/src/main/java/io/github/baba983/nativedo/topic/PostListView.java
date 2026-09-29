@@ -47,11 +47,15 @@ public class PostListView extends RecyclerListView {
 
     @Override
     public boolean drawChild(Canvas canvas, View child, long drawingTime) {
-        if (child instanceof ChatMessageCell) {
+        // Only the bubble at the bottom of a floor's run carries the author's avatar: a chat draws it
+        // under a run of messages by one author, and a bubble the run pins to the one below it is
+        // not that last bubble.
+        boolean lastOfRun = child instanceof ChatMessageCell && !((ChatMessageCell) child).isPinnedBottom();
+        if (lastOfRun) {
             ensureAvatar((ChatMessageCell) child);
         }
         boolean result = super.drawChild(canvas, child, drawingTime);
-        if (child instanceof ChatMessageCell) {
+        if (lastOfRun) {
             drawAvatar(canvas, (ChatMessageCell) child);
         }
         return result;
