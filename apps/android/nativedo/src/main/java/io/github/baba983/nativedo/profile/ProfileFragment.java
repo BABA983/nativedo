@@ -16,6 +16,7 @@ import org.telegram.messenger.R;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.Cells.DialogCell;
 import org.telegram.ui.Cells.HeaderCell;
 import org.telegram.ui.Cells.ProfileSearchCell;
 import org.telegram.ui.Cells.TextDetailCell;
@@ -30,9 +31,12 @@ import java.util.List;
 
 import io.github.baba983.nativedo.app.NativeDo;
 import io.github.baba983.nativedo.core.di.AppContainer;
+import io.github.baba983.nativedo.core.model.TopicSummary;
 import io.github.baba983.nativedo.core.model.UserProfile;
 import io.github.baba983.nativedo.topic.DiscourseAvatars;
 import io.github.baba983.nativedo.topic.DiscourseLoader;
+import io.github.baba983.nativedo.topic.DiscourseRows;
+import io.github.baba983.nativedo.topic.TopicFragment;
 
 /**
  * A linux.do reader's profile: {@code /u/{username}.json} drawn with upstream's own list cells.
@@ -56,9 +60,20 @@ public class ProfileFragment extends BaseFragment {
     private static final int TYPE_SECTION = 1;
     private static final int TYPE_DETAIL = 2;
     private static final int TYPE_BIO = 3;
+    private static final int TYPE_ACTION = 4;
+
+    /** The activity stream's own heading, above the rows of the reader's actions. */
+    private static final String ACTION_SECTION = "动态";
+
+    /** How close to the end the list comes before the feed asks the site for more. */
+    private static final int LOAD_MORE_THRESHOLD = 3;
 
     private RecyclerListView listView;
     private final List<Row> rows = new ArrayList<>();
+    /** The reader's actions, as the site sent them; the list's rows after the profile's own. */
+    private final List<TopicSummary> actions = new ArrayList<>();
+    private ProfileActivityFeed feed;
+    private boolean loadingActions;
     private UserProfile profile;
     /** The site's bio with its cooked tags taken off, which both the head and the bio row draw. */
     private String bioText = "";
@@ -95,10 +110,32 @@ public class ProfileFragment extends BaseFragment {
         listView.setAdapter(new ProfileAdapter());
         listView.setVerticalScrollBarEnabled(false);
         listView.setPadding(0, AndroidUtilities.dp(4), 0, AndroidUtilities.dp(4));
+        listView.setOnItemClickListener((view, position) -> {
+            TopicSummary action = actionAt(position);
+            if (action != null) {
+                presentAction(action);
+            }
+        });
+        listView.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
+                loadNextActionsIfNeeded();
+            }
+        });
 
         fragmentView = listView;
         loadProfile();
         return fragmentView;
+    }
+
+    /**
+     * An action opens the topic it happened in, at the floor it happened on: the site answers a
+     * request for a floor with the window of posts around it, so the reader lands on the post the
+     * row is about rather than at the top of a topic that may be hundreds of floors long.
+     */
+    private void presentAction(TopicSummary action) {
+        presentFragment(TopicFragment.forFloor(
+                action.getId(), action.getTitle(), action.getTargetPostNumber()));
     }
 
     private String username() {
@@ -115,6 +152,8 @@ public class ProfileFragment extends BaseFragment {
 
     private void loadProfile() {
         container = NativeDo.container(getParentActivity());
+        feed = new ProfileActivityFeed(container.getProfileFeedRepository(), username());
+        loadActions();
         ProfileLoader.INSTANCE.load(container, username(), loaded -> {
             profile = loaded;
             avatarUser = DiscourseAvatars.INSTANCE.user(
@@ -144,9 +183,8 @@ public class ProfileFragment extends BaseFragment {
             return;
         }
         DiscourseLoader.INSTANCE.cacheAvatar(container, url, avatarUser, () -> {
-            if (listView != null && listView.getAdapter() != null) {
-                listView.getAdapter().notifyItemChanged(0);
-            }
+            // The head and every action row draw the same picture, so all of them are re-bound.
+            notifyRowsChanged();
             return kotlin.Unit.INSTANCE;
         });
     }
@@ -194,6 +232,53 @@ public class ProfileFragment extends BaseFragment {
     private void addIfPresent(String label, String value) {
         if (value != null && !value.isEmpty()) {
             rows.add(Row.detail(label, value));
+        }
+    }
+
+    /**
+     * The reader's activity: the topics they started and the replies they wrote, as one stream
+     * newest first ({@link ProfileActivityFeed} merges the site's two filters). Its rows go after
+     * everything the profile itself says, and the next page arrives as the reader reaches the end of
+     * the list - a profile has no "load more" button on the site either.
+     */
+    private void loadActions() {
+        if (feed == null || loadingActions) {
+            return;
+        }
+        loadingActions = true;
+            feed.loadMore(() -> {
+            loadingActions = false;
+            List<TopicSummary> merged = feed.actions();
+            actions.clear();
+            actions.addAll(merged);
+            notifyRowsChanged();
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
+    /** Asks for the next page once the reader is within a few rows of the end of what is there. */
+    private void loadNextActionsIfNeeded() {
+        if (listView == null || listView.getAdapter() == null || actions.isEmpty()) {
+            return;
+        }
+        LinearLayoutManager manager = (LinearLayoutManager) listView.getLayoutManager();
+        if (manager == null
+                || manager.findLastVisibleItemPosition()
+                < listView.getAdapter().getItemCount() - 1 - LOAD_MORE_THRESHOLD) {
+            return;
+        }
+        loadActions();
+    }
+
+    /** The action the row at [position] draws, or null when it is a row of the profile itself. */
+    private TopicSummary actionAt(int position) {
+        int index = position - rows.size();
+        return index >= 1 && index <= actions.size() ? actions.get(index - 1) : null;
+    }
+
+    private void notifyRowsChanged() {
+        if (listView != null && listView.getAdapter() != null) {
+            listView.getAdapter().notifyDataSetChanged();
         }
     }
 
@@ -247,6 +332,13 @@ public class ProfileFragment extends BaseFragment {
                             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
                     return new RecyclerListView.Holder(cell);
                 }
+                case TYPE_ACTION: {
+                    // An action is a topic, so its row is the row the topic list draws.
+                    DialogCell cell = new DialogCell(null, context, false, false, currentAccount, resourceProvider);
+                    cell.setLayoutParams(new RecyclerView.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(72)));
+                    return new RecyclerListView.Holder(cell);
+                }
                 default: {
                     TextDetailCell cell = new TextDetailCell(context, resourceProvider, true, true);
                     // The same one line `ProfileActivity` sets on every cell of its info block: a
@@ -261,7 +353,7 @@ public class ProfileFragment extends BaseFragment {
 
         @Override
         public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
-            Row row = rows.get(position);
+            Row row = rowAt(position);
             if (holder.itemView instanceof ProfileSearchCell) {
                 ProfileSearchCell cell = (ProfileSearchCell) holder.itemView;
                 TLRPC.User person = avatarUser != null ? avatarUser : headUser();
@@ -276,6 +368,19 @@ public class ProfileFragment extends BaseFragment {
                 ((HeaderCell) holder.itemView).setText(row.label);
             } else if (holder.itemView instanceof TextInfoPrivacyCell) {
                 ((TextInfoPrivacyCell) holder.itemView).setText(row.value);
+            } else if (holder.itemView instanceof DialogCell) {
+                // An action is drawn as the topic it happened in: its title, the excerpt the site
+                // computed, and when it happened. The picture is the reader's own, the one row and
+                // head share.
+                DialogCell cell = (DialogCell) holder.itemView;
+                cell.setDialog(DiscourseRows.topicRow(row.action));
+                ImageLocation avatar = avatarUser == null
+                        ? null
+                        : DiscourseAvatars.INSTANCE.imageLocation(avatarUser);
+                if (avatar != null) {
+                    cell.avatarImage.setImage(
+                            avatar, "50_50", cell.avatarImage.getDrawable(), null, avatarUser, 0);
+                }
             } else if (holder.itemView instanceof TextDetailCell) {
                 // Upstream's own convention, as `ProfileActivity`'s info block uses it: the cell's
                 // first argument is the answer and lands in its 16 dp line, the second is the field's
@@ -285,19 +390,29 @@ public class ProfileFragment extends BaseFragment {
             }
         }
 
+        /** The screen's rows: what the profile says, then the reader's own actions. */
+        private Row rowAt(int position) {
+            if (position < rows.size()) {
+                return rows.get(position);
+            }
+            int index = position - rows.size();
+            return index == 0 ? Row.section(ACTION_SECTION) : Row.action(actions.get(index - 1));
+        }
+
         @Override
         public int getItemViewType(int position) {
-            return rows.get(position).type;
+            return rowAt(position).type;
         }
 
         @Override
         public int getItemCount() {
-            return rows.size();
+            return rows.size() + (actions.isEmpty() ? 0 : actions.size() + 1);
         }
 
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
-            return false;
+            // Only an action is a link to somewhere; the profile's own rows are text to read.
+            return holder.itemView instanceof DialogCell;
         }
     }
 
@@ -320,28 +435,35 @@ public class ProfileFragment extends BaseFragment {
         final int type;
         final String label;
         final String value;
+        /** The action an action row draws; null for every other row. */
+        final TopicSummary action;
         boolean divider;
 
-        private Row(int type, String label, String value) {
+        private Row(int type, String label, String value, TopicSummary action) {
             this.type = type;
             this.label = label;
             this.value = value;
+            this.action = action;
         }
 
         static Row header() {
-            return new Row(TYPE_HEADER, null, null);
+            return new Row(TYPE_HEADER, null, null, null);
         }
 
         static Row section(String label) {
-            return new Row(TYPE_SECTION, label, null);
+            return new Row(TYPE_SECTION, label, null, null);
         }
 
         static Row detail(String label, String value) {
-            return new Row(TYPE_DETAIL, label, value);
+            return new Row(TYPE_DETAIL, label, value, null);
         }
 
         static Row bio(String text) {
-            return new Row(TYPE_BIO, null, text);
+            return new Row(TYPE_BIO, null, text, null);
+        }
+
+        static Row action(TopicSummary action) {
+            return new Row(TYPE_ACTION, null, null, action);
         }
     }
 }

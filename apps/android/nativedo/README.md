@@ -71,9 +71,14 @@ upstream is touched — rendering, gestures, layout and animation are upstream's
   it is a Telegram account's profile, whose `onFragmentCreate` loads the full user through tgnet
   (`loadFullUser` sends `TL_users_getFullUser`, and the answer is written into Telegram's database)
   and whose tabs are that account's own photos, stories, contacts and gifts. So the screen is built
-  from the cells upstream draws lists with: a `DialogCell` head carrying the reader's picture and
-  their handle, `HeaderCell` for the sections, `TextDetailCell` for the fields, and a
-  `TextInfoPrivacyCell` for the bio. The activity feed (`/user_actions.json`) is not wired yet.
+  from the cells upstream draws lists with: a `ProfileSearchCell` head carrying the reader's picture
+  and their handle (the cell its own search and contact lists draw a person with — a picture, a
+  name, one line under it, and no date), `HeaderCell` for the sections, `TextDetailCell` for the
+  fields — the site's answer in the cell's own large line and the field's name under it, which is
+  the way `ProfileActivity`'s info block writes a phone number above the word "Mobile" — and a
+  `TextInfoPrivacyCell` for the bio. Under all of it the reader's activity: `user_actions.json`
+  for the topics they started and for their replies, merged into one stream newest first, one
+  `DialogCell` row per action, and a tap opens that action's topic at the floor it happened on.
 * **Theme and settings** — upstream's `ThemeActivity` (the appearance page) is the settings entry;
   the tab strip is upstream's `FilledTabsView`.
 
@@ -123,7 +128,7 @@ stands, and the upstream component each row is meant to use.
 | Bookmarks (`/bookmarks.json`, `DELETE /posts/{id}/bookmark`) | done | missing | upstream's saved-messages menu entry |
 | Read progress (`POST /topics/timings`) and restore | done | missing | upstream's unread divider and scroll-to-unread |
 | Search: topics, posts, users, in-topic | done | missing | search inside `DialogsActivity`, `SearchTabsAndFiltersLayout` |
-| User profile (`/u/{username}.json`, activity feed) | done | profile shown in upstream's cells; activity feed still missing | our own `BaseFragment` over `DialogCell` / `HeaderCell` / `TextDetailCell` / `TextInfoPrivacyCell`; `ProfileActivity` is unusable here (it loads the full user through tgnet and is bound to a Telegram account) |
+| User profile (`/u/{username}.json`, activity feed) | done | done, `/user_actions.json` for the topics created and the replies merged into one stream, one upstream `DialogCell` row per action, a tap opens the topic at that floor | our own `BaseFragment` over `ProfileSearchCell` / `HeaderCell` / `TextDetailCell` / `TextInfoPrivacyCell` / `DialogCell`; `ProfileActivity` is unusable here (it loads the full user through tgnet and is bound to a Telegram account) |
 | Notifications | not built | missing | upstream's notification screens are Telegram-account bound, so likely our own list |
 | Appearance and theme | done | done | `ThemeActivity` (`THEME_TYPE_BASIC`) |
 | Account and session settings | done | missing | `SettingsActivity` subpages |

@@ -43,6 +43,7 @@ public class TopicFragment extends BaseFragment {
 
     private static final String ARG_TOPIC_ID = "topic_id";
     private static final String ARG_TOPIC_TITLE = "topic_title";
+    private static final String ARG_FLOOR = "floor";
 
     /**
      * How many posts one page of a long topic asks for. Discourse servers the ids of the whole
@@ -97,6 +98,19 @@ public class TopicFragment extends BaseFragment {
         args.putLong(ARG_TOPIC_ID, topicId);
         args.putString(ARG_TOPIC_TITLE, title);
         return new TopicFragment(args);
+    }
+
+    /**
+     * The same screen, opened on one floor of the topic: a feed row and a search result both point
+     * at the post they are about, not at the top of a thread that may be hundreds of floors long.
+     * A floor the site does not give is the topic's first one.
+     */
+    public static TopicFragment forFloor(long topicId, String title, Integer floor) {
+        TopicFragment fragment = forTopic(topicId, title);
+        if (floor != null && floor > 0) {
+            fragment.getArguments().putInt(ARG_FLOOR, floor);
+        }
+        return fragment;
     }
 
     /**
@@ -311,14 +325,34 @@ public class TopicFragment extends BaseFragment {
     private void loadTopic(long topicId) {
         this.topicId = topicId;
         container = NativeDo.container(getParentActivity());
-        DiscourseLoader.INSTANCE.topic(container, topicId, detail -> {
+        Integer floor = getArguments() == null ? null : getArguments().getInt(ARG_FLOOR, 0);
+        DiscourseLoader.INSTANCE.topic(container, topicId, floor == 0 ? null : floor, detail -> {
             streamPostIds = detail.getStreamPostIds();
             bind(detail);
+            scrollToFloor(floor);
             return kotlin.Unit.INSTANCE;
         }, error -> {
             org.telegram.messenger.FileLog.e("topic failed", error);
             return kotlin.Unit.INSTANCE;
         });
+    }
+
+    /**
+     * Puts the floor the screen was opened for at the top of it. The site answered the request with
+     * the window of posts around that floor, so the row is among the first ones bound and the list
+     * only has to be told where to start.
+     */
+    private void scrollToFloor(int floor) {
+        if (floor <= 0 || listView == null) {
+            return;
+        }
+        for (int index = 0; index < bubbleFloors.size(); index++) {
+            Integer number = floors.get(bubbleFloors.get(index)).getPostNumber();
+            if (number != null && number == floor) {
+                listView.scrollToPosition(index);
+                return;
+            }
+        }
     }
 
     private void bind(TopicDetail detail) {
@@ -379,8 +413,24 @@ public class TopicFragment extends BaseFragment {
      */
     private List<Post> firstPage(TopicDetail detail) {
         List<Post> all = detail.getPosts();
-        nextPageStart = Math.min(all.size(), streamPostIds.size());
+        nextPageStart = streamPositionAfter(all);
         return all;
+    }
+
+    /**
+     * Where the stream continues from the posts the payload already carries. A topic opened at a
+     * floor arrives as a window from the middle of the thread, so the next page is the stream id
+     * after the last post here - which is the same thing as the size of the window only when the
+     * window starts at the first floor.
+     */
+    private int streamPositionAfter(List<Post> loaded) {
+        if (!loaded.isEmpty()) {
+            int index = streamPostIds.indexOf(loaded.get(loaded.size() - 1).getId());
+            if (index >= 0) {
+                return index + 1;
+            }
+        }
+        return Math.min(loaded.size(), streamPostIds.size());
     }
 
     /** One floor, drawn as the bubbles its body splits into: its text segments and its polls. */

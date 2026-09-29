@@ -25,6 +25,7 @@ import io.github.baba983.nativedo.feature.topic.data.SharedPreferencesTopicReply
 import io.github.baba983.nativedo.feature.topic.data.SharedPreferencesTopicReadPositionPersistence
 import io.github.baba983.nativedo.feature.topic.data.TopicReplyDraftStore
 import io.github.baba983.nativedo.feature.topic.data.TopicReadPositionStore
+import io.github.baba983.nativedo.feature.profile.data.ProfileFeedRepository
 import io.github.baba983.nativedo.feature.profile.data.ProfileRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.serialization.json.Json
@@ -119,6 +120,9 @@ class AppContainer(
         client = discourseApiClient,
         preferences = profileCachePreferences,
         json = json,
+    )
+    val profileFeedRepository: ProfileFeedRepository = ProfileFeedRepository(
+        client = discourseApiClient,
     )
     val categoryStore: CategoryStore = CategoryStore(
         client = discourseApiClient,

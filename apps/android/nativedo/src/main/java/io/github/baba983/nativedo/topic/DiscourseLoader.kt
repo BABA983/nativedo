@@ -41,8 +41,23 @@ object DiscourseLoader {
         onLoaded: (TopicDetail) -> Unit,
         onFailed: (Throwable) -> Unit,
     ) {
+        topic(container, topicId, null, onLoaded, onFailed)
+    }
+
+    /**
+     * One topic, read from [postNumber] when it is given: the site answers such a request with the
+     * window of posts around that floor instead of the head of the thread, which is what a jump to a
+     * floor from a feed row or a search result needs.
+     */
+    fun topic(
+        container: AppContainer,
+        topicId: Long,
+        postNumber: Int?,
+        onLoaded: (TopicDetail) -> Unit,
+        onFailed: (Throwable) -> Unit,
+    ) {
         scope.launch {
-            runCatching { container.discourseApiClient.fetchTopic(topicId) }
+            runCatching { container.discourseApiClient.fetchTopic(topicId, postNumber) }
                 .onSuccess(onLoaded)
                 .onFailure(onFailed)
         }
