@@ -12,6 +12,11 @@ name: ci
 # commit — more reliably than a post-push job, which would cost ~11 minutes of
 # Actions quota for the same text scan.
 #
+# The macOS snapshot set is not a trigger either: this runner is Linux and only
+# ever compares `src/test/snapshots/linux`, so a push that touches nothing but
+# `snapshots/macos` has no gate here — the machine that recorded it verifies it.
+# A push that carries macOS goldens *and* code still runs the code's gates.
+#
 # Note: with `paths` filtering plus gated jobs, a skipped job reports "skipped"
 # rather than "success". If branch protection ever requires these check names
 # on pull requests, either keep the workflow unfiltered or mirror the gates as
@@ -21,6 +26,7 @@ on:
     branches: [main]
     paths: &ci_paths
       - "apps/android/**"
+      - "!apps/android/app/src/test/snapshots/macos/**"
       - "fixtures/**"
       - "scripts/**"
       - "contracts/**"
