@@ -35,6 +35,20 @@ object DiscourseLoader {
         }
     }
 
+    /** The site's answer to a search: its topics, the posts, and the people it matched. */
+    fun search(
+        container: AppContainer,
+        query: String,
+        onLoaded: (io.github.baba983.nativedo.core.model.SearchResult) -> Unit,
+        onFailed: (Throwable) -> Unit,
+    ) {
+        scope.launch {
+            runCatching { container.discourseApiClient.search(query) }
+                .onSuccess(onLoaded)
+                .onFailure(onFailed)
+        }
+    }
+
     fun topic(
         container: AppContainer,
         topicId: Long,

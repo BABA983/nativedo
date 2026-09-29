@@ -31,6 +31,9 @@ import org.telegram.tgnet.TLRPC;
  */
 public class TopicListFragment extends BaseFragment {
 
+    /** The search item in the action bar, which opens the search screen. */
+    private static final int SEARCH_ITEM = 1;
+
     private RecyclerListView listView;
     private final List<TopicSummary> topics = new ArrayList<>();
     /** One author per row, kept so the avatar download can refresh the row it belongs to. */
@@ -40,6 +43,17 @@ public class TopicListFragment extends BaseFragment {
     @Override
     protected View createView(Context context) {
         actionBar.setTitle("linux.do");
+        actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
+            @Override
+            public void onItemClick(int id) {
+                if (id == SEARCH_ITEM) {
+                    presentFragment(new io.github.baba983.nativedo.search.SearchFragment());
+                }
+            }
+        });
+        // Upstream's own search item: the icon that opens the field, which the search screen then
+        // uses for the query.
+        actionBar.createMenu().addItem(SEARCH_ITEM, org.telegram.messenger.R.drawable.outline_header_search);
 
         listView = new RecyclerListView(context);
         listView.setLayoutManager(new LinearLayoutManager(context));
