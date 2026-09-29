@@ -1728,3 +1728,16 @@ macOS: the two scrim-host goldens re-recorded and verified on the recording host
 download). The other five that moved in that run (narrow…DeclaredSize[Light], richMessageBody[Light|Dark],
 PollInstantButton[Light|Dark]) were the usual 1-25px anti-aliasing jitter and were restored rather than
 committed.
+
+## 35. The copied post link carries the topic's own slug (`FIXME_SHA`) — fix in; device check queued (2026-09-29)
+
+The owner pasted a link the app had copied: `https://linux.do/t/-/2964174/1`. The `-` was ours, not the
+site's: `postLink` hardcoded it, so *every* copied post link carried the placeholder where Discourse puts the
+title slug, while the site's own share button gives `/t/<slug>/<id>/<n>`. Discourse does use `-` for a topic
+whose title produces no slug (an emoji-only title, for instance), so the placeholder stays as the fallback.
+
+`TopicResponseDto`, `TopicDetail` and `TopicUiState` now carry the `slug` the topic JSON already sends, and
+`postLink` builds `$baseUrl/t/$slug/$topicId/$postNumber`, falling back to `-` only when the slug is blank.
+`runUnitAndScreenshotTests` is green (511 tests, no golden moved). The device read - copy a post's link,
+paste it, and compare with what the site itself copies - is with the runner, together with the owner's other
+report from the same message (an image-layout oddity in topic 2964174's first post).

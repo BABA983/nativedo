@@ -4040,11 +4040,14 @@ class TopicDetailFragment @JvmOverloads constructor(
 
     private fun postLink(post: Post): String {
         val root = baseUrl.trimEnd('/')
+        // Discourse's canonical shape is `/t/<slug>/<id>[/<post number>]`; `-` is its own placeholder for a
+        // topic whose title produced no slug (emoji-only titles, for instance), so blank falls back to it.
+        val slug = latestTopicState.slug.ifBlank { "-" }
         val postNumber = post.postNumber
         return if (postNumber != null) {
-            "$root/t/-/$topicId/$postNumber"
+            "$root/t/$slug/$topicId/$postNumber"
         } else {
-            "$root/t/-/$topicId"
+            "$root/t/$slug/$topicId"
         }
     }
 

@@ -3,6 +3,9 @@ package io.github.baba983.nativedo.core.model
 data class TopicDetail(
     val id: Long,
     val title: String,
+    /** The topic's title slug, as the site's own URLs carry it (`/t/<slug>/<id>`); blank is legal. */
+    val slug: String = "",
+
     val posts: List<Post>,
     val participants: List<MentionCandidate> = emptyList(),
     val createdAt: String = "",

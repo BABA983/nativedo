@@ -11,6 +11,8 @@ internal const val TOPIC_REACTION_ALL_FILTER_ID = "__nativedo_all_reactions__"
 
 data class TopicUiState(
     val title: String = "",
+    /** The topic's title slug, for building the site's own canonical links. */
+    val slug: String = "",
     val createdAt: String = "",
     val lastPostedAt: String = "",
     val viewCount: Int = 0,

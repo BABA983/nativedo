@@ -427,6 +427,8 @@ data class TopicListUserDto(
 data class TopicResponseDto(
     val id: Long,
     val title: String,
+    /** Discourse's title slug; the canonical topic URL carries it (`/t/<slug>/<id>`). */
+    val slug: String = "",
     @SerialName("posts_count")
     val postsCount: Int = 0,
     @SerialName("highest_post_number")
@@ -881,6 +883,7 @@ internal fun TopicResponseDto.toModel(
     return TopicDetail(
         id = id,
         title = title,
+        slug = slug,
         highestPostNumber = highestPostNumber,
         lastReadPostNumber = lastReadPostNumber ?: 0,
         lastReadPostId = lastReadPostId,

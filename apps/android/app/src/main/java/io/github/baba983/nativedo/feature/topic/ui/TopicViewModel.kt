@@ -153,6 +153,7 @@ class TopicViewModel(
                     )
                     _uiState.value = TopicUiState(
                         title = detail.title,
+                        slug = detail.slug,
                         createdAt = detail.createdAt,
                         lastPostedAt = detail.lastPostedAt,
                         viewCount = detail.viewCount,
