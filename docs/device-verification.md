@@ -1531,7 +1531,7 @@ squared their corners - the cells stay inside the text inset (measured: the coll
 read, so only the two cached fixture topics were available and neither has side-by-side images. It did
 photograph a list-nested image reaching x 48..1079, i.e. bleeding right but keeping the list's own 48px
 indent, which is the same shape of gap. The runner's read of the look: a group of images reads as one media
-unit, so it would bleed collages too; that is the owner's call.
+unit, so it would bleed collages too; the owner took that call - see §32.
 
 ## 31. A photo narrower than the column keeps its declared size (`5d83086`) — fixed; device re-read queued (2026-09-28)
 
@@ -1562,3 +1562,24 @@ closed as not-reproduced rather than fixed. The network itself was diagnosed by 
 DNS answers linux.do with a Dropbox address and every A record fails, while the proxy returns Cloudflare's
 challenge; the emulator was pointed at the host's Clash (`http_proxy 10.0.2.2:7890`, revertible) so the app
 could reach the site again, which is how the measurements above were taken.
+
+## 32. A collage reaches the column's edges too (`4550ff2`) — golden-verified; a device read is queued (2026-09-29)
+
+§30 left a collage's cells inside the text inset and called the look the owner's call. He made it - a group of
+images reads as one media unit - so the collage now takes the same `mediaBleed` host hook the single photo
+does: `RichCollageBlock.onDraw` computes `padL`/`padR` as `mediaBleed` when the host set it, and as upstream's
+`padLeft - 2dp` otherwise. Upstream's stretch was already in that method (`k = (maxWidth + padL + padR) /
+maxWidth`, applied to every cell's x and width), so this only changes which value feeds it. A chat bubble
+(`mediaBleed == 0`) and a quote (`inQuote`, which keeps its inset *and* its 8dp radius) are untouched.
+
+**Reads.** Linux golden, both themes re-recorded and verified (`runUnitAndScreenshotTests`, exit 0): in the
+393px fixture frame the two-cell collage row moves from **x 22..375 to x 0..392**, i.e. to exactly the span the
+single photo takes in the same frame; the text above (its caption lines) and the row's own height do not move
+(the difference is bounded to y 668..945); the gutter between the cells goes 2px -> 3px because `k` scales
+every cell rect - the same thing upstream's stretch already does to a gutter. `pageBlockSlideshow` has the
+same `padLeft - 2dp` stretch and is deliberately left alone: nothing in the linux.do parser produces one, so a
+change there would be unverifiable.
+
+**Still owed.** A device pass - the runner's host lost its route to linux.do in §31, and no cached topic has
+side-by-side images, so this change is golden-evidence only so far - and the macOS half of these two goldens
+(`richMessageBody[Light|Dark]`), which the runner re-records once its host is back on the network.
