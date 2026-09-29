@@ -89,7 +89,8 @@ internal class DiscourseCookedHtmlTest {
     fun unwrappingTheWrapperKeepsTheGrid() {
         val cooked = harness.fixture("cooked-table-lightbox-blockquote.html")
 
-        val blocks = RichHtml.parse(DiscourseCookedHtml.unwrapDiscourseWrappers(cooked)).map { it.block }
+        val prepared = DiscourseImageBridge.prepare(cooked, "https://linux.do/")
+        val blocks = RichHtml.parse(prepared.html).map { it.block }
         println("importer blocks after unwrapping: " + blocks.map { it.javaClass.simpleName })
 
         val tables = blocks.filterIsInstance<TL_iv.pageBlockTable>()

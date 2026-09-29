@@ -143,12 +143,15 @@ internal class PostCellRenderTest {
     }
 
     private fun richPostCell(html: String): Pair<ChatMessageCell, MessageObject> {
-        val rows = RichHtml.parse(html)
+        val body = DiscourseImageBridge.prepare(html, "https://linux.do/")
+        val rows = RichHtml.parse(body.html)
         println("spike: RichHtml.parse -> ${rows.size} rows")
         rows.forEach { println("spike:   level=${it.level} num=${it.num} ${it.block.javaClass.simpleName}") }
 
         val richMessage = TL_iv.RichMessage().apply {
             blocks = ArrayList(rows.map { it.block })
+            photos = ArrayList(body.photos)
+            documents = ArrayList()
         }
         val message = TLRPC.TL_message().apply {
             id = 1

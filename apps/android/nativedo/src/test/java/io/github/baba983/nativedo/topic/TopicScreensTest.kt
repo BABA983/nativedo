@@ -123,11 +123,9 @@ internal class TopicScreensTest {
             "the table survived the whole chain as a table block",
             blocks.any { it is TL_iv.pageBlockTable },
         )
+        // Recorded as evidence: the bubble has to stay inside the viewport even when a table inside
+        // it is wider than the bubble, in which case the table scrolls within its own block.
         val list = listView()!!
-        // Evidence for a known upstream limitation: a rich article is sized to
-        // RichMessageLayout.getMinWidth(), and RichTableBlock measures its content with an
-        // UNSPECIFIED spec, so a table's natural width becomes the bubble's width. When that
-        // exceeds the space left of the avatar, the bubble is clipped by the list.
         val richLayout = cell.messageObject!!.richLayout
         println(
             "screen: viewport=" + harness.width + " list=" + list.width + " cell=" + cell.width +

@@ -14,6 +14,10 @@ buildscript {
 }
 
 apply plugin: 'com.android.application'
+// Upstream's app-side build plugin. It takes the strings of :TMessagesProj and this module and
+// produces what upstream's UI reads at runtime: the localization assets (without them every label
+// is "LOC_ERR:<key>"), the string resource id table, and the lottie metadata.
+apply plugin: 'org.telegram.build-app-plugin'
 apply plugin: 'org.jetbrains.kotlin.android'
 apply plugin: 'org.jetbrains.kotlin.plugin.serialization'
 
@@ -78,36 +82,6 @@ android {
             }
         }
     }
-}
-
-// Upstream's *app* plugin generates two assets per variant (string_resource_ids.bin,
-// lottie_meta.bin) that its UI reads at runtime; a JVM host needs them too. Upstream's own
-// generator tasks (buildSrc) are reused, fed with this module's debug symbol list, so the
-// resource ids in the assets are the ids this app's R actually assigns.
-def debugSymbolList = layout.buildDirectory.file(
-    'intermediates/runtime_symbol_list/debug/processDebugResources/R.txt')
-
-def stringIdsAsset = tasks.register('nativeDoStringResourceIdsAsset', org.telegram.tasks.GenerateStringResourceIdsAssetTask) {
-    dependsOn 'processDebugResources'
-    runtimeSymbolList.set(debugSymbolList)
-    outputDir.set(layout.buildDirectory.dir('generated/nativeDoAssets/stringResourceIds'))
-}
-
-def lottieMetaAsset = tasks.register('nativeDoLottieMetaAsset', org.telegram.tasks.GenerateLottieMetadataAssetFileTask) {
-    dependsOn 'processDebugResources'
-    runtimeSymbolList.set(debugSymbolList)
-    rawResourceDirs.from(
-        project(':TMessagesProj').fileTree('src/main/res') { include 'raw*/*.json' },
-        fileTree('src/main/res') { include 'raw*/*.json' },
-    )
-    outputDir.set(layout.buildDirectory.dir('generated/nativeDoAssets/lottieMeta'))
-}
-
-android.sourceSets.main.assets.srcDir(stringIdsAsset.flatMap { it.outputDir })
-android.sourceSets.main.assets.srcDir(lottieMetaAsset.flatMap { it.outputDir })
-
-tasks.matching { it.name.contains('Assets') && it.name.startsWith('merge') }.configureEach {
-    dependsOn stringIdsAsset, lottieMetaAsset
 }
 
 dependencies {

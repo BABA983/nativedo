@@ -38,6 +38,36 @@ internal class FakeDiscourseSite {
 
     val requestPaths: List<String> get() = requestedPaths.toList()
 
+    /** Serves [json] at [path]: a topic page, a page of posts, anything the client asks for. */
+    fun serveJson(path: String, json: String) {
+        routes[path.trimStart('/')] = null
+        bodies[path.trimStart('/')] = json
+    }
+
+    /**
+     * Serves [path] from the request itself: a query-dependent endpoint (a page of posts, a search
+     * whose page matters) can only answer honestly if it can see what was asked.
+     */
+    fun serveJsonFor(path: String, build: (String) -> String) {
+        routes[path.trimStart('/')] = null
+        builders[path.trimStart('/')] = build
+    }
+
+    /** The query strings the site was asked for on [path], in order. */
+    fun queriesFor(path: String): List<String> =
+        queries[path.trimStart('/')].orEmpty()
+
+    /** What the site saw on [path], by the path it was asked for. */
+    fun cookieHeaderFor(path: String): String? = cookieHeaders[path.trimStart('/')]
+
+    /** An absolute URL on this site, for a cooked body that has to point at it. */
+    fun url(path: String): String = baseUrl.trimEnd('/') + "/" + path.trimStart('/')
+
+    /** Serves [bytes] at [path], so an image the post refers to really can be downloaded. */
+    fun serveImage(path: String, bytes: ByteArray, contentType: String = "image/png") {
+        images[path.trimStart('/')] = bytes to contentType
+    }
+
     fun start(): String {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
@@ -45,6 +75,20 @@ internal class FakeDiscourseSite {
                 synchronized(this@FakeDiscourseSite) {
                     requestedPaths += path
                     lastCookieHeader = request.getHeader("Cookie")
+                    request.getHeader("Cookie")?.let { cookieHeaders[path] = it }
+                    queries.getOrPut(path) { mutableListOf() } += request.path.orEmpty().substringAfter('?')
+                }
+                images[path]?.let { (bytes, contentType) ->
+                    return MockResponse()
+                        .setResponseCode(200)
+                        .setHeader("Content-Type", contentType)
+                        .setBody(okio.Buffer().write(bytes))
+                }
+                builders[path]?.let { build ->
+                    return MockResponse()
+                        .setResponseCode(200)
+                        .setHeader("Content-Type", "application/json")
+                        .setBody(build(request.path.orEmpty()))
                 }
                 val body = bodyFor(path)
                     ?: return MockResponse().setResponseCode(404)
@@ -107,16 +151,20 @@ internal class FakeDiscourseSite {
         val posts = base.getJSONObject("post_stream").getJSONArray("posts")
         posts.getJSONObject(0).put("cooked", cookedHtml)
         routes["t/$topicId.json"] = null
-        cookedBodies["t/$topicId.json"] = base.toString()
+        bodies["t/$topicId.json"] = base.toString()
     }
 
-    private val cookedBodies = mutableMapOf<String, String>()
+    private val bodies = mutableMapOf<String, String>()
+    private val builders = mutableMapOf<String, (String) -> String>()
+    private val queries = mutableMapOf<String, MutableList<String>>()
 
     private val requestedPaths = mutableListOf<String>()
+    private val cookieHeaders = mutableMapOf<String, String>()
+    private val images = mutableMapOf<String, Pair<ByteArray, String>>()
     private var lastCookieHeader: String? = null
 
     private fun bodyFor(path: String): String? {
-        cookedBodies[path]?.let { return it }
+        bodies[path]?.let { return it }
         if (!routes.containsKey(path)) return null
         val fixture = routes[path] ?: return "{}"
         val file = repoFile("fixtures/discourse/$fixture")

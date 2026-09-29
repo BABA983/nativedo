@@ -1,83 +1,78 @@
-# NativeDo (`:nativedo`)
+# The full-upstream spike: `apps/android/nativedo`
 
-The linux.do client. This module is our app; everything under `apps/android/telegram` is upstream
-Telegram, brought in as a git subtree and never edited except for single-line hooks.
+This is the spike that asks whether a linux.do client can be built on a *complete*
+upstream Telegram (12.10.5, `dc780e81ed1261c369c27870e8e0999a1eb0b600`) rather than on the
+shrunk skeleton in `apps/android/TMessagesProj`.
 
 ## Layout
 
 ```
-apps/android/
-├── nativedo/                            ← our app (this module)
-│   └── src/main/java/io/github/baba983/nativedo/
-│       ├── app/                         ← shell: NativeDoActivity, NativeDo (the session holder)
-│       ├── core/                        ← Discourse network, session, cookies, storage, models, HTML
-│       ├── feature/<screen>/data/       ← repositories and local stores per screen
-│       └── topic/                       ← the topic list and topic screens
-└── telegram/                            ← upstream Telegram 12.10.5 (git subtree), plus
-    └── TMessagesProj/src/main/java/io/github/baba983/nativedo/hooks/   ← NativeDoHooks
+apps/android/telegram/            ← the upstream subtree, exactly as upstream ships it
+  TMessagesProj/                  ← upstream's library module (2,147 java files)
+  TMessagesProj_App/              ← upstream's app module (not ours)
+  settings.gradle                 ← includes ':nativedo' from outside the subtree
+apps/android/nativedo/            ← our module: the only place our code lives
+  src/main/java/io/github/baba983/nativedo/
+    app/       shell (ActivityBarLayout + tab strip + session gate)
+    auth/      WebView login, cookie/session handling (moved over unchanged)
+    core/      Discourse models, network, session, storage (moved over unchanged)
+    topic/     topic list, topic detail, and the mapping onto upstream's cells
+  src/test/java/io/github/baba983/nativedo/harness/   the render + side-effect harness
 ```
 
-Two rules keep the subtree mergeable:
+Our code never sits inside `apps/android/telegram/`. The one exception is
+`io/github/baba983/nativedo/hooks/NativeDoHooks.java` inside `TMessagesProj`: it is a *new*
+file, so a subtree pull cannot conflict with it, and it is where the three one-line hooks
+live that keep tgnet and Telegram's database switched off.
 
-- **Our code never lives under `apps/android/telegram`.** The one exception is
-  `NativeDoHooks`, a new file: a subtree pull cannot conflict with a file upstream does not have.
-- **Upstream files get one line at most.** Today there are three: `ConnectionsManager.init`,
-  `ConnectionsManager.isTestBackend` and `MessagesStorage.openDatabase`, each an early return
-  guarded by a `NativeDoHooks` flag. `git diff` against the subtree merge shows them.
+## The three upstream lines
 
-## Why a shell instead of upstream's LaunchActivity
+`git diff --stat <subtree-merge> -- apps/android/telegram/TMessagesProj/src/main/java/org/telegram`
+reports 2 files, 3 insertions: `ConnectionsManager.init` and `ConnectionsManager.isTestBackend`
+return early while the hooks are off, and `MessagesStorage.openDatabase` does the same. Nothing
+else upstream is touched — rendering, gestures, layout and animation are upstream's own code.
 
-Upstream's `LaunchActivity` is Telegram's onboarding flow, not a shell. It calls
-`ApplicationLoader.postInitApplication()` (which builds a `MessagesController` and a
-`MediaController` per account and opens Telegram's database), keys its whole branch on
-`UserConfig.getInstance(...).isClientActivated()`, and hands back `new LoginActivity()` when no
-Telegram account exists. The hooks that would turn that off are Telegram's entire account model.
+## How upstream's cells get our data
 
-So `NativeDoActivity` hosts upstream's `DrawerLayoutContainer` and `ActionBarLayout` directly and
-pushes our fragments into them, which is the same thing upstream does one level up. Its
-`ActionBarLayout` is built with `main = false`: the "main" layout is Telegram's tabbed shell and
-dereferences `LaunchActivity` while creating its bottom-sheet tab bar.
+* **Topic list** — `/latest.json` → `DialogCell.CustomDialog`, upstream's own row type for
+  non-Telegram rows, inside a `RecyclerListView`. Tapping opens the topic.
+* **Posts** — each post becomes `TLRPC.TL_message.rich_message` (the shape upstream itself uses
+  for a locally built rich message) with the author as a `TLRPC.TL_user`; `ChatMessageCell`
+  draws it. Upstream's `RichHtml` imports Discourse's cooked HTML directly, so the body is not
+  re-mapped block by block. Discourse's presentational wrappers are unwrapped first, because
+  `RichHtml` dispatches on the tag of each direct child.
+* **Images** — upstream's rich media draws a photo that already exists in its own file cache and
+  has no notion of a URL, so `DiscourseImageBridge` gives every image a stable id, rewrites the
+  `<img>` into a media reference, and downloads the bytes (with the session's cookies) into the
+  exact path upstream will look in. `PhotoViewer` then opens it full screen through a page-block
+  adapter of our own, because upstream's own one is private to its chat screen.
+* **Theme and settings** — upstream's `ThemeActivity` (the night-theme page) is the settings
+  entry; the tab strip is upstream's `FilledTabsView`.
 
-## What is ours and what is upstream's
+## Rendering without a device
 
-| Surface | Owner |
-|---|---|
-| Network, login (WebView + cookies), session, CSRF, storage | ours (`core/`) |
-| Topic list rows | upstream `DialogCell` + `DialogCell.CustomDialog` |
-| Post rendering | upstream `ChatMessageCell` from `TL_message.rich_message` |
-| Photo viewer, link opening, theme | upstream `PhotoViewer`, `Browser`, `Theme` |
-| Shell (drawer + navigation) | upstream `DrawerLayoutContainer` + `ActionBarLayout` |
+`src/test/java/.../harness` boots the real app under Robolectric with `@GraphicsMode(NATIVE)`
+and renders the real screens to `.amp/in/artifacts/nativedo/`. Requirements that are easy to
+miss:
 
-`topic/DiscourseRows` is the translation between the two: Discourse models in, `TLRPC`/`MessageObject`
-out. `topic/DiscourseCookedHtml` prepares a cooked post body for upstream's `RichHtml` importer.
+* `@Config(instrumentedPackages = ["org.telegram"])` — without it upstream's `native` methods
+  stay native and every cell dies on `UnsatisfiedLinkError`.
+* the generated shadows in `harness/shadows/` must be listed in `@Config(shadows = [...])`;
+  they replace the natives that live in `libtmessages.49.so`.
+* loopers are drained with a task budget, and upstream's worker queues with
+  `idleUpstreamQueues()`: a `Choreographer` frame callback keeps re-posting itself, so an
+  unbounded drain never returns, and a cached image only reaches a cell once the queues turn.
+* the harness asserts, per test, that tgnet never initialises and that Telegram's database is
+  never opened.
 
-## The Discourse cooked-HTML wrapper
+## Building
 
-Upstream's `RichHtml` understands `<table>`, but only as a direct child of the node it walks. Any
-other `<div>` is treated as a paragraph, and Discourse wraps every table in `<div class="md-table">`,
-so the table arrives one level down and is flattened into one run of text per row. Unwrapping that
-wrapper is the whole fix; `DiscourseCookedHtmlTest` pins both halves.
-
-## Tests
-
-```bash
-cd apps/android/telegram
-./gradlew :nativedo:testDebugUnitTest        # 14 tests, ~20 s
-./gradlew :nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a
+```sh
+./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:testDebugUnitTest
+./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:assembleDebug -Pandroid.injected.build.abi=arm64-v8a
 ```
 
-The screens are rendered on the JVM: Robolectric with `@GraphicsMode(NATIVE)` plus generated shadows
-for the natives in `libtmessages.49.so` (`src/test/java/.../harness/shadows`, regenerate with
-`.amp/in/artifacts/spike/gen_shadows.py`). Two `@Config` settings are load-bearing:
-`instrumentedPackages = ["org.telegram"]` (Robolectric does not instrument those packages by
-default, so the natives stay real) and `shadows = [...]` (shadows are not discovered from the
-classpath). `harness/FakeDiscourseSite` serves `fixtures/discourse` over a local HTTP server, so the
-screens are driven through the real client rather than stubbed models.
-
-Screenshots land in `.amp/in/artifacts/nativedo/`. Every screen test also asserts that the stock
-code initialised no tgnet, opened no Telegram database and reached no tgnet native;
-`NativeDoHooksTest` proves those assertions are not vacuous by calling the same paths with the hooks
-off.
-
-The upstream native build needs the 15 submodule trees that `git subtree` drops; fetch them with
-`.amp/in/artifacts/spike/fetch_submodules.sh`.
+`:nativedo` applies upstream's own app-side build plugin, which is what generates the
+localization assets, the string-resource-id table and the lottie metadata that upstream's UI
+reads at runtime; without it every upstream label renders as `LOC_ERR:<key>`. Native code needs
+NDK 27.2.12479018 and the CMake toolchain; only arm64-v8a is built here.

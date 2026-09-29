@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.location.Location
+import android.os.Handler
 import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
@@ -13,8 +14,11 @@ import android.widget.FrameLayout
 import org.robolectric.Robolectric
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
+import org.robolectric.shadows.ShadowPausedLooper
 import org.telegram.messenger.AndroidUtilities
 import org.telegram.messenger.ApplicationLoader
+import org.telegram.messenger.FileLoader
+import org.telegram.messenger.ImageLoader
 import org.telegram.messenger.ILocationServiceProvider
 import org.telegram.messenger.LocaleController
 import org.telegram.ui.ActionBar.BaseFragment
@@ -119,7 +123,67 @@ internal class UpstreamUiHarness {
         idle()
     }
 
-    fun idle() = shadowOf(Looper.getMainLooper()).idle()
+    /**
+     * Drains the main looper, but never for longer than [maxTasks] tasks.
+     *
+     * <p>Upstream animates rich media off `Choreographer.postFrameCallback`, and Robolectric's
+     * paused clock makes the next frame due immediately, so an unbounded drain never returns: the
+     * frame callback that keeps the spinner moving also keeps the queue non-empty forever. A
+     * budget ends the drain with the drawing done.</p>
+     */
+    fun idle(maxTasks: Int = 1_000) {
+        val shadow = shadowOf(Looper.getMainLooper()) as ShadowPausedLooper
+        var ran = 0
+        while (ran < maxTasks && !shadow.isIdle()) {
+            shadow.runOneTask()
+            ran++
+        }
+        if (ran >= maxTasks && !budgetReported) {
+            budgetReported = true
+            println("harness: idle stopped at the $maxTasks task budget")
+        }
+    }
+
+    /**
+     * Drains the workers upstream owns (`ImageLoader`, `FileLoader`). They run on private loopers,
+     * which Robolectric pauses like any other, so a cached photo only reaches the cell once they
+     * are given a turn.
+     */
+    fun idleUpstreamQueues(tasks: Int = 400) {
+        for (queue in upstreamQueues()) {
+            // Not every worker is looper-backed: a DispatchQueuePriority runs on a plain thread
+            // pool, which Robolectric does not pause and which therefore needs no draining.
+            val handler = runCatching {
+                queue.javaClass.getMethod("getHandler").invoke(queue) as? Handler
+            }.getOrNull() ?: continue
+            val looper = handler.looper ?: continue
+            val shadow = shadowOf(looper) as ShadowPausedLooper
+            shadow.idleFor(50, java.util.concurrent.TimeUnit.MILLISECONDS)
+            var ran = 0
+            while (ran < tasks && !shadow.isIdle()) {
+                shadow.runOneTask()
+                ran++
+            }
+        }
+    }
+
+    /**
+     * Upstream's workers, by the name of the field that holds them. They are private, so the
+     * harness reaches them the way it reaches the shell's own internals: by reflection, in test
+     * code only.
+     */
+    private fun upstreamQueues(): List<Any> {
+        val queues = mutableListOf<Any>()
+        val imageLoader = ImageLoader.getInstance()
+        for (name in listOf("cacheOutQueue", "cacheThumbOutQueue", "thumbGeneratingQueue", "imageLoadQueue")) {
+            val field = imageLoader.javaClass.getDeclaredField(name).apply { isAccessible = true }
+            queues += field.get(imageLoader)!!
+        }
+        queues += FileLoader.getInstance(0).fileLoaderQueue
+        return queues
+    }
+
+    private var budgetReported = false
 
     /**
      * Waits for work that finishes off the main thread (the API client runs on OkHttp's pool)
@@ -131,6 +195,7 @@ internal class UpstreamUiHarness {
     fun await(what: String, iterations: Int = 4_000, condition: () -> Boolean) {
         repeat(iterations) {
             idle()
+            idleUpstreamQueues()
             if (condition()) {
                 idle()
                 return
@@ -253,7 +318,7 @@ internal class UpstreamUiHarness {
     private fun artifactsDir(): File = repoFile(".amp/in/artifacts/nativedo")
 
     private fun repoFile(relative: String): File {
-        var dir: File? = File(System.getProperty("user.dir")).absoluteFile
+        var dir: File? = File(System.getProperty("user.dir").orEmpty()).absoluteFile
         while (dir != null) {
             if (File(dir, "fixtures/discourse").isDirectory) {
                 return File(dir, relative)

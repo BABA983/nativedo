@@ -77,9 +77,11 @@ public final class DiscourseRows {
     /**
      * One post as a message the stock {@code ChatMessageCell} can draw. The body travels in
      * {@code rich_message}, which is how upstream itself carries a rich body for a locally built
-     * message (see its theme preview), so no Telegram media or file model is involved.
+     * message (see its theme preview), so no Telegram media or file model is involved. The prepared
+     * body carries the post's images; the message only refers to them by id.
      */
-    public static MessageObject postMessage(Post post, long topicId, HashMap<Long, TLRPC.User> users) {
+    public static MessageObject postMessage(
+            Post post, long topicId, HashMap<Long, TLRPC.User> users, PreparedPostBody body) {
         TLRPC.User user = author(post);
         users.put(user.id, user);
 
@@ -94,7 +96,7 @@ public final class DiscourseRows {
         message.out = false;
         message.from_id = peer(user.id);
         message.peer_id = peer(user.id);
-        message.rich_message = DiscourseCookedHtml.richMessage(post.getCookedHtml());
+        message.rich_message = DiscourseCookedHtml.richMessage(body);
 
         MessageObject messageObject = new MessageObject(
                 0, message, null, users, new HashMap<>(), null, null,

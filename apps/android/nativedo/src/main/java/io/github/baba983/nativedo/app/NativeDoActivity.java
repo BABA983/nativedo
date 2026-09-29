@@ -2,15 +2,19 @@ package io.github.baba983.nativedo.app;
 
 import android.app.Activity;
 import android.os.Bundle;
+import android.view.Gravity;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.ui.ActionBar.ActionBarLayout;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.DrawerLayoutContainer;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.ThemeActivity;
+import org.telegram.ui.Components.FilledTabsView;
 import org.telegram.ui.Components.LineProgressView;
 
 import java.util.ArrayList;
@@ -38,6 +42,8 @@ public class NativeDoActivity extends Activity {
     private LineProgressView sessionProgress;
     private DrawerLayoutContainer drawerLayoutContainer;
     private FrameLayout contentView;
+    private FilledTabsView tabs;
+    private int selectedTab = -1;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -84,6 +90,48 @@ public class NativeDoActivity extends Activity {
         }
     }
 
+    /**
+     * Two entries, upstream's own tab strip. The tabs replace the root screen instead of stacking on
+     * top of it: switching from a topic to settings must not leave the topic behind the back button.
+     */
+    private void addTabs() {
+        tabs = new FilledTabsView(this);
+        tabs.setTabs("话题", "设置");
+        tabs.setColors(
+                Theme.getColor(Theme.key_windowBackgroundWhite),
+                Theme.getColor(Theme.key_windowBackgroundGray),
+                Theme.getColor(Theme.key_windowBackgroundWhiteGrayText2),
+                Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+        tabs.onTabSelected(this::showTab);
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(48), Gravity.BOTTOM);
+        params.bottomMargin = AndroidUtilities.navigationBarHeight;
+        contentView.addView(tabs, params);
+        actionBarLayout.getView().setPadding(0, 0, 0, AndroidUtilities.dp(48) + AndroidUtilities.navigationBarHeight);
+    }
+
+    /** Shows one of the two roots; the tab strip can only ever hold one of them. */
+    private void showTab(int index) {
+        if (index == selectedTab || actionBarLayout == null) {
+            return;
+        }
+        selectedTab = index;
+        if (tabs != null) {
+            tabs.setSelected(index);
+        }
+        actionBarLayout.removeAllFragments();
+        actionBarLayout.presentFragment(rootFor(index), false);
+    }
+
+    private BaseFragment rootFor(int index) {
+        if (index == 1) {
+            // Upstream's night-theme page: it is where Telegram switches between the day and the
+            // night theme, which is the whole of what this client's settings need today.
+            return new ThemeActivity(ThemeActivity.THEME_TYPE_NIGHT);
+        }
+        return new TopicListFragment();
+    }
+
     private void showSessionProgress() {
         LineProgressView progress = new LineProgressView(this);
         progress.setProgressColor(org.telegram.ui.ActionBar.Theme.getColor(
@@ -100,10 +148,13 @@ public class NativeDoActivity extends Activity {
             sessionProgress = null;
         }
         if (authenticated) {
-            actionBarLayout.presentFragment(new TopicListFragment(), false);
+            addTabs();
+            showTab(0);
         } else {
-            actionBarLayout.presentFragment(new LoginWebViewFragment(() ->
-                    actionBarLayout.presentFragment(new TopicListFragment(), true)), false);
+            actionBarLayout.presentFragment(new LoginWebViewFragment(() -> {
+                addTabs();
+                showTab(0);
+            }), false);
         }
     }
 

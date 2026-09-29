@@ -1,8 +1,5 @@
 package io.github.baba983.nativedo.topic;
 
-import org.jsoup.Jsoup;
-import org.jsoup.nodes.Document;
-import org.jsoup.nodes.Element;
 import org.telegram.tgnet.tl.TL_iv;
 import org.telegram.ui.iv.BlockRow;
 import org.telegram.ui.iv.RichHtml;
@@ -10,38 +7,24 @@ import org.telegram.ui.iv.RichHtml;
 import java.util.ArrayList;
 
 /**
- * Turns a Discourse post's cooked HTML into the rich-message model that upstream's
- * {@link RichHtml} understands.
+ * Turns a prepared Discourse post body into the rich-message model upstream's cells draw.
  *
- * <p>Discourse wraps a few block elements in presentational {@code <div>}s. Upstream's importer
- * dispatches on the tag of each direct child and treats an unknown {@code <div>} as a paragraph, so
- * a wrapped element is flattened into one run of text: a {@code <table>} becomes its cells in a
- * column instead of a grid. Unwrapping the wrapper is what lets the importer see the real block, so
- * the fix belongs here rather than in the upstream file.</p>
+ * <p>The preparation itself (unwrapping Discourse's presentational {@code <div>}s, replacing post
+ * images with media references) happens in {@link DiscourseImageBridge}, because it also has to
+ * fetch those images; this class is only the last step into {@link RichHtml}, upstream's own
+ * importer.</p>
  */
 public final class DiscourseCookedHtml {
 
-    /** Discourse's presentational wrapper around a table. */
-    private static final String TABLE_WRAPPER = "div.md-table";
-
-    public static TL_iv.RichMessage richMessage(String cookedHtml) {
+    public static TL_iv.RichMessage richMessage(PreparedPostBody body) {
         TL_iv.RichMessage richMessage = new TL_iv.RichMessage();
         richMessage.blocks = new ArrayList<>();
-        for (BlockRow row : RichHtml.parse(unwrapDiscourseWrappers(cookedHtml))) {
+        for (BlockRow row : RichHtml.parse(body.getHtml())) {
             richMessage.blocks.add(row.block);
         }
+        richMessage.photos = new ArrayList<>(body.getPhotos());
+        richMessage.documents = new ArrayList<>();
         return richMessage;
-    }
-
-    static String unwrapDiscourseWrappers(String cookedHtml) {
-        if (cookedHtml == null || cookedHtml.isEmpty()) {
-            return "";
-        }
-        Document document = Jsoup.parseBodyFragment(cookedHtml);
-        for (Element wrapper : document.select(TABLE_WRAPPER)) {
-            wrapper.unwrap();
-        }
-        return document.body().html();
     }
 
     private DiscourseCookedHtml() {
