@@ -93,8 +93,8 @@ internal class HomeTabsTest {
 
         val themeField = ThemeActivity::class.java.getDeclaredField("currentType").apply { isAccessible = true }
         assertEquals(
-            "the settings tab is upstream's night-theme page",
-            ThemeActivity.THEME_TYPE_NIGHT,
+            "the settings tab is upstream's appearance page",
+            ThemeActivity.THEME_TYPE_BASIC,
             themeField.get(currentFragment(shell)) as Int,
         )
         assertEquals(

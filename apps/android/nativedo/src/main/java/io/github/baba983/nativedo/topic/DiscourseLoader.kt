@@ -4,6 +4,7 @@ import io.github.baba983.nativedo.core.di.AppContainer
 import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.TopicDetail
 import io.github.baba983.nativedo.core.model.TopicSummary
+import org.telegram.tgnet.TLRPC
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -63,6 +64,71 @@ object DiscourseLoader {
             images.forEach { image ->
                 DiscourseImageBridge.cache(container.imageOkHttpClient, image)
             }
+            onReady()
+        }
+    }
+
+    /** Posts a reply and reports the site's answer, or the failure the reader has to see. */
+    fun reply(
+        container: AppContainer,
+        topicId: Long,
+        raw: String,
+        replyToPostNumber: Int?,
+        onSent: () -> Unit,
+        onFailed: (Throwable) -> Unit,
+    ) {
+        scope.launch {
+            runCatching { container.discourseApiClient.createPost(topicId, raw, replyToPostNumber) }
+                .onSuccess { onSent() }
+                .onFailure(onFailed)
+        }
+    }
+
+    /** Toggles one of a post's reactions; the caller re-reads the topic afterwards. */
+    fun toggleReaction(
+        container: AppContainer,
+        postId: Long,
+        reactionId: String,
+        onDone: () -> Unit,
+    ) {
+        scope.launch {
+            runCatching { container.discourseApiClient.toggleReaction(postId, reactionId) }
+                .onFailure { error -> org.telegram.messenger.FileLog.e("reaction toggle failed", error) }
+            onDone()
+        }
+    }
+
+    /** Fetches the files the posts link to, then reports once they are on disk. */
+    fun cacheAttachments(
+        container: AppContainer,
+        attachments: List<PostAttachment>,
+        onReady: () -> Unit,
+    ) {
+        if (attachments.isEmpty()) {
+            onReady()
+            return
+        }
+        scope.launch {
+            attachments.forEach { attachment ->
+                DiscourseImageBridge.cacheAttachment(container.imageOkHttpClient, attachment)
+            }
+            onReady()
+        }
+    }
+
+    /** Fetches one participant's avatar next to the location upstream will look it up in. */
+    fun cacheAvatar(
+        container: AppContainer,
+        url: String,
+        user: TLRPC.User,
+        onReady: () -> Unit,
+    ) {
+        if (DiscourseAvatars.isCached(user)) {
+            onReady()
+            return
+        }
+        scope.launch {
+            DiscourseAvatars.cache(container.imageOkHttpClient, url, user)
             onReady()
         }
     }

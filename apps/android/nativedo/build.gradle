@@ -50,6 +50,13 @@ android {
         localeFilters += ['zz']
     }
 
+    packaging {
+        // Upstream's own app module stores its native libraries deflated, and this client is
+        // distributed as an APK rather than through a store that re-compresses it: a ~25 MB
+        // smaller download is worth the unpacking Android does once at install.
+        jniLibs { useLegacyPackaging = true }
+    }
+
     buildTypes {
         debug {
             // Upstream's own app build sets these; without debugSymbolLevel AGP leaves the 351 MB

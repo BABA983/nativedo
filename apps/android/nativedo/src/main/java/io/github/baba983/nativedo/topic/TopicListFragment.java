@@ -21,6 +21,8 @@ import java.util.List;
 import io.github.baba983.nativedo.app.NativeDo;
 import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.model.TopicSummary;
+import org.telegram.messenger.ImageLocation;
+import org.telegram.tgnet.TLRPC;
 
 /**
  * linux.do's topic list: {@code /latest.json} rendered with upstream's {@link DialogCell} through
@@ -31,6 +33,9 @@ public class TopicListFragment extends BaseFragment {
 
     private RecyclerListView listView;
     private final List<TopicSummary> topics = new ArrayList<>();
+    /** One author per row, kept so the avatar download can refresh the row it belongs to. */
+    private final List<TLRPC.User> authors = new ArrayList<>();
+    private AppContainer container;
 
     @Override
     protected View createView(Context context) {
@@ -59,18 +64,43 @@ public class TopicListFragment extends BaseFragment {
     }
 
     private void loadLatest() {
-        AppContainer container = NativeDo.container(getParentActivity());
+        container = NativeDo.container(getParentActivity());
         DiscourseLoader.INSTANCE.latestTopics(container, loaded -> {
             topics.clear();
+            authors.clear();
             topics.addAll(loaded);
+            for (TopicSummary topic : loaded) {
+                authors.add(DiscourseRows.topicAuthor(topic, container.getBaseUrl()));
+            }
             if (listView != null && listView.getAdapter() != null) {
                 listView.getAdapter().notifyDataSetChanged();
             }
+            fetchAvatars();
             return kotlin.Unit.INSTANCE;
         }, error -> {
             org.telegram.messenger.FileLog.e("topic list failed", error);
             return kotlin.Unit.INSTANCE;
         });
+    }
+
+    /** The rows draw the author's initials until the avatar lands, then ask to be re-bound. */
+    private void fetchAvatars() {
+        for (int index = 0; index < authors.size(); index++) {
+            TLRPC.User author = authors.get(index);
+            final int row = index;
+            String template = index < topics.size() ? topics.get(index).getAuthorAvatarTemplate() : null;
+            String url = template == null ? null : DiscourseAvatars.INSTANCE.url(
+                    template, container.getBaseUrl(), DiscourseAvatars.DEFAULT_SIZE);
+            if (url == null || DiscourseAvatars.INSTANCE.isCached(author)) {
+                continue;
+            }
+            DiscourseLoader.INSTANCE.cacheAvatar(container, url, author, () -> {
+                if (listView != null && listView.getAdapter() != null) {
+                    listView.getAdapter().notifyItemChanged(row);
+                }
+                return kotlin.Unit.INSTANCE;
+            });
+        }
     }
 
     private class TopicListAdapter extends RecyclerListView.SelectionAdapter {
@@ -88,6 +118,18 @@ public class TopicListFragment extends BaseFragment {
         public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
             DialogCell cell = (DialogCell) holder.itemView;
             cell.setDialog(DiscourseRows.topicRow(topics.get(position)));
+            // `setDialog` clears the row's avatar receiver, so the author's photo goes in after it.
+            // The initials stay as the placeholder until the photo is on disk.
+            ImageLocation avatar = position < authors.size()
+                    ? DiscourseAvatars.INSTANCE.imageLocation(authors.get(position))
+                    : null;
+            if (avatar != null) {
+                // The row's own drawable (the initials) stays as the placeholder: `setDialog` put it
+                // there, and passing it back is what upstream does when it sets a real avatar.
+                cell.avatarImage.setImage(
+                        avatar, "50_50", cell.avatarImage.getDrawable(), null,
+                        authors.get(position), 0);
+            }
         }
 
         @Override

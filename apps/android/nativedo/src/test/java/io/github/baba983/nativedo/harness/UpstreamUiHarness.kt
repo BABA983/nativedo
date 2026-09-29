@@ -24,6 +24,7 @@ import org.telegram.messenger.LocaleController
 import org.telegram.ui.ActionBar.BaseFragment
 import org.telegram.ui.ActionBar.Theme
 import io.github.baba983.nativedo.app.NativeDoActivity
+import io.github.baba983.nativedo.app.NativeDoApplication
 import io.github.baba983.nativedo.harness.shadows.ShadowConnectionsManager
 import io.github.baba983.nativedo.harness.shadows.ShadowSQLiteDatabase
 import java.io.File
@@ -60,6 +61,7 @@ internal class UpstreamUiHarness {
     /** The shell the app ships, driven through Robolectric's activity lifecycle. */
     fun bootApp(): NativeDoActivity {
         prepareUpstream()
+        resetImageLoader()
         val app = Robolectric.buildActivity(NativeDoActivity::class.java).setup().get()
         activity = app
         idle()
@@ -71,6 +73,7 @@ internal class UpstreamUiHarness {
     /** A bare activity with an empty wrapper, for tests that build the view themselves. */
     fun bootViews() {
         prepareUpstream()
+        resetImageLoader()
         activity = Robolectric.buildActivity(Activity::class.java).setup().get()
         root = FrameLayout(activity).apply { setBackgroundColor(Color.WHITE) }
         content = FrameLayout(activity).apply { setBackgroundColor(Color.WHITE) }
@@ -92,7 +95,7 @@ internal class UpstreamUiHarness {
         // Robolectric instantiates upstream's ApplicationLoader (the manifest's application),
         // so applicationContext / applicationLoaderInstance are already the real ones. Only the
         // GMS-backed location provider is replaced: there is no Play Services on a bare JVM.
-        ApplicationLoader.applicationLoaderInstance = object : ApplicationLoader() {
+        ApplicationLoader.applicationLoaderInstance = object : NativeDoApplication() {
             override fun onCreateLocationServiceProvider(): ILocationServiceProvider = NoopLocationProvider
         }
         val metrics = context.resources.displayMetrics
@@ -116,6 +119,21 @@ internal class UpstreamUiHarness {
     private fun resetSideEffectCounters() {
         ShadowConnectionsManager.resetCounters()
         ShadowSQLiteDatabase.resetCounters()
+    }
+
+    /**
+     * Upstream's image singletons live in the sandbox, which Robolectric shares between test classes
+     * that use the same configuration. The singleton holds both the decoded images and the
+     * directories it reads files from — and those directories belong to the app data dir of the test
+     * that created it, so a later test would look for its files in an earlier test's directory.
+     * Dropping the instance at boot rebuilds both from the app this test runs in.
+     */
+    private fun resetImageLoader() {
+        runCatching {
+            val field = ImageLoader::class.java.getDeclaredField("Instance").apply { isAccessible = true }
+            field.set(null, null)
+        }
+        runCatching { ImageLoader.getInstance().clearMemory() }
     }
 
     fun present(fragment: BaseFragment) {

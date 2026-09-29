@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Overrides upstream's provider paths with the same set plus this app's cache and files roots.
+
+  Upstream shares its media directories, which is everything it ever hands to a viewer. This client
+  keeps the images and attachments of a post in its own cache (upstream's image cache is keyed by
+  Telegram file ids), and Android's FileProvider refuses a file outside the paths it is given — so
+  without these two entries a tapped attachment throws instead of opening.
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <external-path name="media" path="." />
+    <files-path name="logs" path="/logs/" />
+    <files-path name="cache" path="/cache/" />
+    <root-path name="external_files" path="/storage/" />
+    <cache-path name="nativedo_cache" path="." />
+    <files-path name="nativedo_files" path="." />
+</paths>

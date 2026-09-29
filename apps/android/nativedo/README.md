@@ -46,8 +46,20 @@ else upstream is touched — rendering, gestures, layout and animation are upstr
   `<img>` into a media reference, and downloads the bytes (with the session's cookies) into the
   exact path upstream will look in. `PhotoViewer` then opens it full screen through a page-block
   adapter of our own, because upstream's own one is private to its chat screen.
-* **Theme and settings** — upstream's `ThemeActivity` (the night-theme page) is the settings
-  entry; the tab strip is upstream's `FilledTabsView`.
+* **Avatars** — `DiscourseAvatars` gives a participant a synthetic `UserProfilePhoto` whose file
+  location names a stable id, downloads the picture with the session's cookies, and the rows draw
+  it: the message list draws it after the row (upstream's chat list does the same, because the cell
+  only builds the image), and a dialog row is handed it through its own avatar receiver.
+* **Attachments** — a post's file link becomes a document block whose `localPath` is where the
+  bridge downloads it, so upstream's block shows its name and size and hands it to the system to
+  open. The FileProvider paths this module ships cover the app cache those files live in.
+* **Reactions** — a post's reactions become the chips upstream draws at the bottom of a bubble, and
+  a tap toggles the reaction the chip stands for (`PUT .../custom-reactions/{id}/toggle.json`).
+* **The post menu and reply** — a long press asks the reader what to do (copy, copy link, reply),
+  and replying uses upstream's own composer (`ChatActivityEnterView`) at the bottom of the screen;
+  its send button reports to a delegate, which posts the text to `/posts.json` with the CSRF token.
+* **Theme and settings** — upstream's `ThemeActivity` (the appearance page) is the settings entry;
+  the tab strip is upstream's `FilledTabsView`.
 
 ## Rendering without a device
 
@@ -64,6 +76,9 @@ miss:
   unbounded drain never returns, and a cached image only reaches a cell once the queues turn.
 * the harness asserts, per test, that tgnet never initialises and that Telegram's database is
   never opened.
+* upstream's image singleton holds the file directories of the app that created it, and Robolectric
+  shares one sandbox between test classes; the harness drops the instance at boot so each test reads
+  and writes its own app's directories.
 
 ## Building
 

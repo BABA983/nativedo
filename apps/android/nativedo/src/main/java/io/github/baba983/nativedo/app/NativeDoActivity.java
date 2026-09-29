@@ -125,9 +125,8 @@ public class NativeDoActivity extends Activity {
 
     private BaseFragment rootFor(int index) {
         if (index == 1) {
-            // Upstream's night-theme page: it is where Telegram switches between the day and the
-            // night theme, which is the whole of what this client's settings need today.
-            return new ThemeActivity(ThemeActivity.THEME_TYPE_NIGHT);
+            // Upstream's appearance settings: day/night, the theme list, accents and text size.
+            return new ThemeActivity(ThemeActivity.THEME_TYPE_BASIC);
         }
         return new TopicListFragment();
     }

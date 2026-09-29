@@ -5,6 +5,7 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.Cells.DialogCell;
 
 import java.text.ParsePosition;
+import java.util.ArrayList;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.HashMap;
@@ -42,6 +43,16 @@ public final class DiscourseRows {
         return row;
     }
 
+    /** The topic's author, so the list row can draw their avatar instead of initials. */
+    public static TLRPC.User topicAuthor(TopicSummary topic, String baseUrl) {
+        return DiscourseAvatars.INSTANCE.user(
+                topic.getAuthorUsername(),
+                "",
+                topic.getAuthorAvatarTemplate() == null ? "" : topic.getAuthorAvatarTemplate(),
+                baseUrl
+        );
+    }
+
     /** The excerpt Discourse already computed, falling back to the reply count. */
     private static String summaryLine(TopicSummary topic) {
         String excerpt = topic.getExcerpt();
@@ -56,15 +67,13 @@ public final class DiscourseRows {
         return String.valueOf(replies);
     }
 
-    public static TLRPC.User author(Post post) {
-        TLRPC.TL_user user = new TLRPC.TL_user();
-        user.id = userId(post.getAuthorUsername());
-        user.username = post.getAuthorUsername();
-        String displayName = post.getAuthorDisplayName();
-        user.first_name = displayName != null && !displayName.isEmpty()
-                ? displayName
-                : post.getAuthorUsername();
-        return user;
+    public static TLRPC.User author(Post post, String baseUrl) {
+        return DiscourseAvatars.INSTANCE.user(
+                post.getAuthorUsername(),
+                post.getAuthorDisplayName() == null ? "" : post.getAuthorDisplayName(),
+                post.getAuthorAvatarTemplate() == null ? "" : post.getAuthorAvatarTemplate(),
+                baseUrl
+        );
     }
 
     public static long userId(String username) {
@@ -81,8 +90,9 @@ public final class DiscourseRows {
      * body carries the post's images; the message only refers to them by id.
      */
     public static MessageObject postMessage(
-            Post post, long topicId, HashMap<Long, TLRPC.User> users, PreparedPostBody body) {
-        TLRPC.User user = author(post);
+            Post post, long topicId, HashMap<Long, TLRPC.User> users, PreparedPostBody body,
+            String baseUrl) {
+        TLRPC.User user = author(post, baseUrl);
         users.put(user.id, user);
 
         TLRPC.TL_message message = new TLRPC.TL_message();
@@ -96,7 +106,11 @@ public final class DiscourseRows {
         message.out = false;
         message.from_id = peer(user.id);
         message.peer_id = peer(user.id);
+        message.reactions = reactions(post);
         message.rich_message = DiscourseCookedHtml.richMessage(body);
+        for (PostAttachment attachment : body.getAttachments()) {
+            message.rich_message.documents.add(DiscourseImageBridge.INSTANCE.documentFor(attachment));
+        }
 
         MessageObject messageObject = new MessageObject(
                 0, message, null, users, new HashMap<>(), null, null,
@@ -110,6 +124,29 @@ public final class DiscourseRows {
         messageObject.forceAvatar = true;
         messageObject.generateLayout(user);
         return messageObject;
+    }
+
+    /**
+     * A post's reactions as the chips upstream draws at the bottom of a bubble. Upstream reads the
+     * order it is given, so the order here is the order the site sent.
+     */
+    private static TLRPC.TL_messageReactions reactions(Post post) {
+        if (post.getReactions().isEmpty()) {
+            return null;
+        }
+        TLRPC.TL_messageReactions reactions = new TLRPC.TL_messageReactions();
+        reactions.results = new ArrayList<>();
+        reactions.recent_reactions = new ArrayList<>();
+        for (io.github.baba983.nativedo.core.model.PostReaction reaction : post.getReactions()) {
+            TLRPC.TL_reactionEmoji emoji = new TLRPC.TL_reactionEmoji();
+            emoji.emoticon = DiscourseReactions.INSTANCE.emoticonOf(reaction.getId());
+            TLRPC.TL_reactionCount count = new TLRPC.TL_reactionCount();
+            count.reaction = emoji;
+            count.count = Math.max(1, reaction.getCount());
+            count.chosen_order = reaction.getReacted() ? 1 : 0;
+            reactions.results.add(count);
+        }
+        return reactions;
     }
 
     private static TLRPC.TL_peerUser peer(long userId) {

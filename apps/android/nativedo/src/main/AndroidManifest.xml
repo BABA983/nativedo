@@ -7,11 +7,16 @@
   * the launcher entry, which is our own activity;
   * removing upstream's launcher alias, which points at Telegram's LaunchActivity — the Telegram
     onboarding flow, not a shell this client can use.
+
+  The application class is ours too: upstream's answers the app id with null, which every
+  FileProvider authority is built from.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
           xmlns:tools="http://schemas.android.com/tools">
 
-    <application>
+    <application
+        android:name="io.github.baba983.nativedo.app.NativeDoApplication"
+        tools:replace="android:name">
         <activity
             android:name="io.github.baba983.nativedo.app.NativeDoActivity"
             android:exported="true"

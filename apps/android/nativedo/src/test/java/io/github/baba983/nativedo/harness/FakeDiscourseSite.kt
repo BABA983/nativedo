@@ -30,6 +30,9 @@ internal class FakeDiscourseSite {
     private val routes = mutableMapOf(
         "latest.json" to "latest-topics.json",
         "emojis.json" to null,
+        // Every write asks for a CSRF token first, so a site that cannot hand one out cannot be
+        // written to at all.
+        "session/csrf" to "csrf.json",
     )
 
     /** What the fake site saw on the last request, so a test can assert the session was sent. */
@@ -53,6 +56,26 @@ internal class FakeDiscourseSite {
         builders[path.trimStart('/')] = build
     }
 
+    /** Every request the site saw, as `METHOD path`, in order. */
+    val recordedRequests: List<String> get() = requests.toList()
+
+    /** The body of the last write the site received on [path], form-encoded as it was sent. */
+    fun requestBodyFor(path: String): String? = requestBodies[path.trimStart('/')]
+
+    /** The CSRF token a write carried on [path]. */
+    fun csrfHeaderFor(path: String): String? = csrfHeaders[path.trimStart('/')]
+
+    /** Serves a topic whose first post the caller can shape: body, reactions, anything. */
+    fun serveTopic(topicId: Long, mutate: (org.json.JSONObject) -> Unit) {
+        val base = org.json.JSONObject(repoFile("fixtures/discourse/topic-detail.json").readText())
+        val posts = base.getJSONObject("post_stream").getJSONArray("posts")
+        for (index in 0 until posts.length()) {
+            mutate(posts.getJSONObject(index))
+        }
+        routes["t/$topicId.json"] = null
+        bodies["t/$topicId.json"] = base.toString()
+    }
+
     /** The query strings the site was asked for on [path], in order. */
     fun queriesFor(path: String): List<String> =
         queries[path.trimStart('/')].orEmpty()
@@ -68,15 +91,50 @@ internal class FakeDiscourseSite {
         images[path.trimStart('/')] = bytes to contentType
     }
 
+    /**
+     * The path an avatar template turns into, with `{size}` filled in the way the client fills it.
+     */
+    fun avatarPath(template: String, size: Int = 96): String =
+        template.replace("{size}", size.toString()).trimStart('/')
+
+    /**
+     * Avatars of a discussion that has no real pictures: a colour of its own per path, so a row's
+     * avatar is recognisable in a render and two participants never look alike.
+     */
+    private fun generatedAvatar(path: String): ByteArray {
+        val digest = java.security.MessageDigest.getInstance("MD5").digest(path.toByteArray())
+        val color = android.graphics.Color.rgb(
+            (digest[0].toInt() and 0xff) / 2 + 64,
+            (digest[1].toInt() and 0xff) / 2 + 64,
+            (digest[2].toInt() and 0xff) / 2 + 64,
+        )
+        val bitmap = android.graphics.Bitmap.createBitmap(96, 96, android.graphics.Bitmap.Config.ARGB_8888)
+        bitmap.eraseColor(color)
+        val bytes = java.io.ByteArrayOutputStream()
+        bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, bytes)
+        return bytes.toByteArray()
+    }
+
     fun start(): String {
         server.dispatcher = object : Dispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 val path = request.path.orEmpty().trimStart('/').substringBefore('?')
                 synchronized(this@FakeDiscourseSite) {
                     requestedPaths += path
+                    requests += request.method.orEmpty() + " " + request.path.orEmpty()
+                    if (request.method != "GET" && request.method != "HEAD") {
+                        requestBodies[path] = request.body.readUtf8()
+                        request.getHeader("X-CSRF-Token")?.let { csrfHeaders[path] = it }
+                    }
                     lastCookieHeader = request.getHeader("Cookie")
                     request.getHeader("Cookie")?.let { cookieHeaders[path] = it }
                     queries.getOrPut(path) { mutableListOf() } += request.path.orEmpty().substringAfter('?')
+                }
+                if (path.startsWith("user_avatar/")) {
+                    return MockResponse()
+                        .setResponseCode(200)
+                        .setHeader("Content-Type", "image/png")
+                        .setBody(okio.Buffer().write(images[path]?.first ?: generatedAvatar(path)))
                 }
                 images[path]?.let { (bytes, contentType) ->
                     return MockResponse()
@@ -90,7 +148,7 @@ internal class FakeDiscourseSite {
                         .setHeader("Content-Type", "application/json")
                         .setBody(build(request.path.orEmpty()))
                 }
-                val body = bodyFor(path)
+                val body = fixtureBodyFor(path)
                     ?: return MockResponse().setResponseCode(404)
                         .setBody("""{"errors":["no fixture for $path"]}""")
                 return MockResponse()
@@ -158,12 +216,15 @@ internal class FakeDiscourseSite {
     private val builders = mutableMapOf<String, (String) -> String>()
     private val queries = mutableMapOf<String, MutableList<String>>()
 
+    private val requests = mutableListOf<String>()
+    private val requestBodies = mutableMapOf<String, String>()
+    private val csrfHeaders = mutableMapOf<String, String>()
     private val requestedPaths = mutableListOf<String>()
     private val cookieHeaders = mutableMapOf<String, String>()
     private val images = mutableMapOf<String, Pair<ByteArray, String>>()
     private var lastCookieHeader: String? = null
 
-    private fun bodyFor(path: String): String? {
+    private fun fixtureBodyFor(path: String): String? {
         bodies[path]?.let { return it }
         if (!routes.containsKey(path)) return null
         val fixture = routes[path] ?: return "{}"
