@@ -163,6 +163,21 @@ internal class UpstreamUiHarness {
     }
 
     /**
+     * Runs the main looper with the clock moving, in slices, so a delayed callback (upstream moves
+     * its composer to the send state 200 ms after a send) is reached without an unbounded drain: a
+     * frame callback that re-posts itself would run forever inside a single long drain.
+     */
+    fun idleClock(millis: Long, slice: Long = 20, maxTasks: Int = 200) {
+        var elapsed = 0L
+        while (elapsed < millis) {
+            idle(maxTasks)
+            org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(slice))
+            elapsed += slice
+        }
+        idle(maxTasks)
+    }
+
+    /**
      * Drains the workers upstream owns (`ImageLoader`, `FileLoader`). They run on private loopers,
      * which Robolectric pauses like any other, so a cached photo only reaches the cell once they
      * are given a turn.

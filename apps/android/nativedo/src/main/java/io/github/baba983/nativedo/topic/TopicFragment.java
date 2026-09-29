@@ -151,6 +151,11 @@ public class TopicFragment extends BaseFragment {
                 getParentActivity(), contentView, null, false, resourceProvider);
         view.setAllowStickersAndGifs(false, false, false);
         view.setDelegate(new ReplyDelegate());
+        // The composer decides the button again whenever it is laid out (a keyboard, an emoji panel,
+        // a first layout), so the decision is repeated there too.
+        view.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
+                updateSendButtonVisibility());
+        composer = view;
         return view;
     }
 
@@ -348,6 +353,27 @@ public class TopicFragment extends BaseFragment {
     }
 
     /**
+     * Upstream offers its voice button while the field is empty, and this client has nothing behind
+     * it; the button is hidden until there is something to send. It is told after every change
+     * upstream makes, because those are the moments it decides the button's state again.
+     */
+    private void updateSendButtonVisibility() {
+        if (composer == null) {
+            return;
+        }
+        boolean hasText = composer.getEditField() != null
+                && composer.getEditField().length() > 0;
+        android.view.View button = composer.getSendButton();
+        if (button == null) {
+            return;
+        }
+        int wanted = hasText ? android.view.View.VISIBLE : android.view.View.GONE;
+        if (button.getVisibility() != wanted) {
+            button.setVisibility(wanted);
+        }
+    }
+
+    /**
      * Replying to one post is a post number, not a post id: the site numbers posts within a topic
      * and the composer does not need to know which floor it answers.
      */
@@ -413,6 +439,7 @@ public class TopicFragment extends BaseFragment {
 
         @Override
         public void onTextChanged(CharSequence text, boolean bigChange, boolean fromDraft) {
+            updateSendButtonVisibility();
         }
 
         @Override
@@ -433,6 +460,7 @@ public class TopicFragment extends BaseFragment {
 
         @Override
         public void onWindowSizeChanged(int size) {
+            updateSendButtonVisibility();
         }
 
         @Override

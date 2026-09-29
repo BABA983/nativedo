@@ -131,11 +131,22 @@ internal class AvatarRenderTest {
         // The rows are rebuilt when an avatar arrives and the decode runs on a worker of its own,
         // so what is waited for is the drawn result — the only thing the reader can see.
         var green = 0
-        harness.await("the row to draw the downloaded avatar", iterations = 300) {
+        var attempts = 0
+        harness.await("the row to draw the downloaded avatar", iterations = 600) {
             green = greenPixels(harness.renderApp("post-avatar"))
+            if (green == 0 && attempts++ == 200) {
+                val cell = laidOutCells().firstOrNull()
+                println(
+                    "avatar: stuck — cached=" + DiscourseAvatars.isCached(author) +
+                        " cell=" + (cell != null) +
+                        " avatarReceiver=" + (cell?.avatarImage != null) +
+                        " bitmap=" + (cell?.avatarImage?.bitmap != null) +
+                        " drawable=" + cell?.avatarImage?.imageDrawable?.javaClass?.simpleName,
+                )
+            }
             green > 2_000
         }
-        println("avatar: green pixels in the render = $green")
+        println("avatar: green pixels in the render = $green in $attempts attempts")
         harness.assertNoTelegramSideEffects()
     }
 

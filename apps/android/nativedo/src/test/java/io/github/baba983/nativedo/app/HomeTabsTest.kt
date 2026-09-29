@@ -87,6 +87,12 @@ internal class HomeTabsTest {
         // the settings screen, which is what a pushed-on-top tab would leave.
         shell.present(io.github.baba983.nativedo.topic.TopicFragment.forTopic(1L, "A topic"))
         harness.await("the topic to open") { fragmentStackSize(shell) == 2 }
+        // The topic screen owns the whole window: the strip slides away with it.
+        println("tabs: alpha=" + tabs.alpha + " translationY=" + tabs.translationY)
+        assertTrue(
+            "the tab strip is hidden while a topic is open",
+            tabs.alpha == 0f && tabs.translationY > 0f,
+        )
         tapTab(tabs, 1)
         harness.await("the theme page to open") { currentFragmentName() == "ThemeActivity" }
         harness.renderApp("settings-theme")
@@ -102,6 +108,7 @@ internal class HomeTabsTest {
             1,
             fragmentStackSize(shell),
         )
+        assertTrue("and the strip is back", tabs.alpha == 1f && tabs.translationY == 0f)
         harness.assertNoTelegramSideEffects()
     }
 

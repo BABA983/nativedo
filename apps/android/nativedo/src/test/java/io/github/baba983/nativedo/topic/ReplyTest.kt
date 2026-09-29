@@ -88,6 +88,13 @@ internal class ReplyTest {
 
         val composer = composer() ?: throw AssertionError("the screen has no composer")
         println("reply: composer = " + composer.javaClass.name)
+        // An empty field would offer Telegram's voice button, and this client has no voice behind it.
+        harness.renderApp("topic-reply-empty")
+        assertEquals(
+            "no button while there is nothing to send",
+            android.view.View.GONE,
+            composer.getSendButton()?.visibility,
+        )
 
         // Answering the first post, the way the post menu does.
         val cell = laidOutCells().firstOrNull() ?: throw AssertionError("the topic drew no cell")
@@ -98,12 +105,18 @@ internal class ReplyTest {
         val replyRow = menuRows(dialog!!).lastOrNull() ?: throw AssertionError("the menu has no rows")
         replyRow.performClick()
         harness.idle()
+        println("reply: after the menu picked a reply, the field is \"" + composer.fieldText + "\"")
         composer.setFieldText("thanks, that helped")
         harness.idle()
+        assertEquals(
+            "and a send button as soon as there is",
+            android.view.View.VISIBLE,
+            composer.getSendButton()?.visibility,
+        )
         harness.renderApp("topic-reply")
 
         composer.sendMessage()
-        org.robolectric.shadows.ShadowLooper.idleMainLooper(400, java.util.concurrent.TimeUnit.MILLISECONDS)
+        harness.idleClock(400)
         harness.await("the reply to reach the site") {
             site.recordedRequests.any { it == "POST /posts.json" }
         }

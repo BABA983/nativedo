@@ -107,7 +107,39 @@ public class NativeDoActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, AndroidUtilities.dp(48), Gravity.BOTTOM);
         params.bottomMargin = AndroidUtilities.navigationBarHeight;
         contentView.addView(tabs, params);
-        actionBarLayout.getView().setPadding(0, 0, 0, AndroidUtilities.dp(48) + AndroidUtilities.navigationBarHeight);
+        actionBarLayout.setFragmentStackChangedListener(this::updateTabsVisibility);
+        showTabs(true, false);
+    }
+
+    /**
+     * The tab strip belongs to the roots. A screen opened from one of them (a topic, a settings
+     * page) takes the whole window, the way a chat does in Telegram: the strip slides away and the
+     * content keeps the height it frees.
+     */
+    private void updateTabsVisibility() {
+        showTabs(actionBarLayout.getFragmentStack().size() <= 1, true);
+    }
+
+    private void showTabs(boolean visible, boolean animated) {
+        if (tabs == null) {
+            return;
+        }
+        int height = AndroidUtilities.dp(48) + AndroidUtilities.navigationBarHeight;
+        tabs.animate().cancel();
+        if (animated) {
+            tabs.animate()
+                    .alpha(visible ? 1f : 0f)
+                    .translationY(visible ? 0f : (float) height)
+                    .setDuration(200)
+                    .setInterpolator(org.telegram.ui.Components.CubicBezierInterpolator.EASE_BOTH)
+                    .start();
+        } else {
+            tabs.setAlpha(visible ? 1f : 0f);
+            tabs.setTranslationY(visible ? 0f : (float) height);
+        }
+        // The strip is an overlay, so the screens inside the layout are inset by it while it is
+        // there and use the whole window while it is away.
+        actionBarLayout.getView().setPadding(0, 0, 0, visible ? height : 0);
     }
 
     /** Shows one of the two roots; the tab strip can only ever hold one of them. */
