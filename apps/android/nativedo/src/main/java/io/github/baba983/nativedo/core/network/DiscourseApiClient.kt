@@ -184,25 +184,45 @@ class DiscourseApiClient(
     suspend fun createPost(topicId: Long, raw: String, replyToPostNumber: Int?): Post =
         runWithSessionBoundary(requiresAuthentication = true) {
             val csrfToken = service.csrf().csrf
-            service.createPost(
-                topicId = topicId,
-                raw = raw,
-                replyToPostNumber = replyToPostNumber,
-                csrfToken = csrfToken,
-            ).toModel()
+            readableRefusal {
+                service.createPost(
+                    topicId = topicId,
+                    raw = raw,
+                    replyToPostNumber = replyToPostNumber,
+                    csrfToken = csrfToken,
+                ).toModel()
+            }
         }
 
     /** A new topic: the site creates it, and answers with the topic's first floor. */
     suspend fun createTopic(title: String, categoryId: Int, raw: String): Post =
         runWithSessionBoundary(requiresAuthentication = true) {
             val csrfToken = service.csrf().csrf
-            service.createTopic(
-                title = title,
-                categoryId = categoryId,
-                raw = raw,
-                csrfToken = csrfToken,
-            ).toModel()
+            readableRefusal {
+                service.createTopic(
+                    title = title,
+                    categoryId = categoryId,
+                    raw = raw,
+                    csrfToken = csrfToken,
+                ).toModel()
+            }
         }
+
+    /**
+     * A write the site refused. Discourse answers one with `{"errors":["..."]}` and a status, and the
+     * message in it is what a reader can act on ("Title is too short") where the transport's own
+     * status line ("HTTP 422 Unprocessable Entity") is not; anything else is passed on unchanged.
+     */
+    private inline fun <T> readableRefusal(write: () -> T): T = try {
+        write()
+    } catch (refused: retrofit2.HttpException) {
+        val body = runCatching { refused.response()?.errorBody()?.string() }.getOrNull()
+        val message = body
+            ?.let { text -> runCatching { NetworkJson.instance.decodeFromString<DiscourseErrorsDto>(text) }.getOrNull() }
+            ?.errors
+            ?.firstOrNull()
+        throw if (message.isNullOrBlank()) refused else java.io.IOException(message, refused)
+    }
 
     /**
      * Uploads a file to the site as the web composer does (`POST /uploads.json`,

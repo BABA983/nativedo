@@ -461,6 +461,14 @@ data class CategoriesResponseDto(
  * The bookmarks list. A page with rows arrives under `user_bookmark_list`; a page the site has
  * nothing for is a bare `bookmarks: []` with no wrapper at all (the site's own client reads both).
  */
+/** What the site answers a write it refused: one or more messages, and the site's own type for it. */
+@Serializable
+data class DiscourseErrorsDto(
+    val errors: List<String> = emptyList(),
+    @SerialName("error_type")
+    val errorType: String? = null,
+)
+
 @Serializable
 data class UserBookmarksResponseDto(
     @SerialName("user_bookmark_list")

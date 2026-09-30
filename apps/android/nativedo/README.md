@@ -20,7 +20,8 @@ apps/android/nativedo/            ← our module: the only place our code lives
     profile/   one reader's site profile and their activity stream
     search/    the site's search behind upstream's action bar search field
     notifications/  the reader's in-app notifications over upstream's list row
-    feature/   the copied data layer (profile, topics, notifications)
+    bookmarks/  the reader's own bookmarks over upstream's list row
+    feature/   the copied data layer (profile, topics, notifications, bookmarks)
   src/test/java/io/github/baba983/nativedo/harness/   the render + side-effect harness
 ```
 
@@ -31,11 +32,13 @@ live that keep tgnet and Telegram's database switched off.
 
 ## The upstream lines
 
-`git diff --stat <subtree-merge> -- apps/android/telegram/TMessagesProj/src/main/java/org/telegram
-apps/android/telegram/settings.gradle` reports 3 files, 4 insertions: `ConnectionsManager.init` and
-`ConnectionsManager.isTestBackend` return early while the hooks are off, `MessagesStorage.openDatabase`
-does the same, and `settings.gradle` includes this module from outside the subtree. Nothing else
-upstream is touched — rendering, gestures, layout and animation are upstream's own code.
+`git diff --stat <subtree-merge> -- apps/android/telegram/TMessagesProj apps/android/telegram/settings.gradle`
+reports 4 upstream files, 6 inserted lines: `ConnectionsManager.init` and `ConnectionsManager.isTestBackend`
+return early while the hooks are off, `MessagesStorage.openDatabase` does the same, `RichMessageLayout` asks
+whether a file this client fetches itself is still on its way (the media block's loading condition) and
+hands the block's own cancel button to it, and `settings.gradle` includes this module from outside the
+subtree. Every one of them is a one-line call into `NativeDoHooks`; nothing else upstream is touched —
+rendering, gestures, layout and animation are upstream's own code.
 
 ## How upstream's cells get our data
 
@@ -63,7 +66,8 @@ upstream is touched — rendering, gestures, layout and animation are upstream's
   open. The FileProvider paths this module ships cover the app cache those files live in.
 * **Reactions** — a post's reactions become the chips upstream draws at the bottom of a bubble, and
   a tap toggles the reaction the chip stands for (`PUT .../custom-reactions/{id}/toggle.json`).
-* **The post menu and reply** — a long press asks the reader what to do (copy, copy link, reply),
+* **The post menu, bookmarks and reply** — a long press asks the reader what to do (copy, copy link,
+  bookmark, reply);
   and replying uses upstream's own composer (`ChatActivityEnterView`) at the bottom of the screen;
   its send button reports to a delegate, which posts the text to `/posts.json` with the CSRF token.
   The composer's paperclip offers a file while the field is empty; a strip of our own appears above
@@ -130,7 +134,9 @@ stands, and the upstream component each row is meant to use.
 | --- | --- | --- | --- |
 | Sign-in and session restore (WebView `/login`, `_t` / `_forum_session` / `cf_clearance`, `/session/csrf`) | done | done | our own (moved from the old app's `ui/auth`) |
 | Latest topic feed with paging | done | done | `DialogCell.CustomDialog` + `RecyclerListView` |
-| New / top feeds, category and tag filters (`/site.json`) | done | missing | the same rows, driven by `CategoryStore` |
+| New / top feeds | done | missing | the same rows, driven by our own feed calls |
+| A category filter over the topic list (`/categories.json`, `/c/{slug}/{id}/l/latest.json`) | done | done: upstream's `FilterTabsView` strip above the list, one tab per top-level category in the site's own order, the site's color as the dot in front of the name, and a tab loads that category's own feed. Tags are not built (the site's `/tags.json` would be a second strip), and the strip appears when the categories arrive so a site that answers none leaves the list the whole screen | `FilterTabsView`, upstream's own list-filter control (the one its chat list filters chat folders with) |
+| Start a topic (a title, a category, a body → `POST /posts.json`) | not built | done: the list's own floating button - upstream's, the one its chat list starts a new chat with - opens upstream's titled field, upstream's composer for the body, and the site's categories behind a dialog; the send button appears only when the form is complete | `FragmentFloatingButton`, `EditTextBoldCursor`, `ChatActivityEnterView`, `AlertDialog` of the site's items |
 | Topic detail, cooked HTML to native blocks | done, 41 ports | done | upstream `RichHtml.parse` into `ChatMessageCell` |
 | Post images and the lightbox | done | done | `PhotoViewer` |
 | Links in a post | done | done | `Browser` |
@@ -138,14 +144,14 @@ stands, and the upstream component each row is meant to use.
 | Video in a post (`<video>`) | partial, opened externally | done, to the clip's own size | upstream's video block (`pageBlockVideo` in `RichMessageLayout`'s media cell). Opening the topic fetches the cover only; the press on the block's own play button fetches the clip (up to 25 MB) while the block draws upstream's own loading state and progress, and the file opens in `PhotoViewer`. A clip over that, one the site refuses, and one the reader cancels - the block's own cancel button stops the transfer and drops the half-written file - is not played by upstream's viewer, which can only play a file this client holds: the first two are streamed by the device's own player, a cancel plays nothing and leaves the cover and the play button behind |
 | Avatars | done | done | the avatar receivers of `ChatMessageCell` / `DialogCell` |
 | Attachments: download, open with the system | done | done | upstream's document block |
-| Long press a post: copy, copy link, reply | done | done | our delegate on `ChatMessageCell` |
+| Long press a post: copy, copy link, bookmark, reply | done | done | our delegate on `ChatMessageCell` |
 | Reply (`POST /posts.json` with CSRF) | done, rich editor sheet | done, text and uploaded files | `ChatActivityEnterView` |
 | Reply with media (`POST /uploads.json`) | done | done, the composer's own paperclip and our attach strip upload the file and insert the site's markdown for it | the composer's own attach button plus our uploader (`ChatAttachAlert`'s modal is Telegram's own) |
 | Mentions and autocomplete (`/u/search/users`) | done | missing | the composer's mention panel |
 | Reactions: toggle and who reacted | done | half, toggling only | upstream's reaction chips, `CustomEmojiReactionsWindow` |
 | Polls: vote, retract, voter list | done | vote and retract; voter list missing | `TL_messageMediaPoll` with one bubble per poll, the floor split at its `div.poll`; a tap votes through our own `PUT /polls/vote`. Known gaps: `View Votes (N)` (upstream draws it, its voters list lives in `ChatActivity`, which this screen does not have) and `ranked_choice` (a tap cannot express a rank, so those polls open the floor menu instead of voting); poll option images and "add option" are not offered |
-| Bookmarks (`/bookmarks.json`, `DELETE /posts/{id}/bookmark`) | done | missing | upstream's saved-messages menu entry |
-| Read progress (`POST /topics/timings`) and restore | done | missing | upstream's unread divider and scroll-to-unread |
+| Bookmarks (`/bookmarks.json`, `DELETE /posts/{id}/bookmark`) | done | done: the post menu adds and takes back a bookmark, and the reader's own list (`/u/{username}/bookmarks.json`, a 书签 row under 我的 on their own profile) draws the site's entries, a tap opening the topic at the bookmarked floor. The site's own envelope has a trap: a page with rows arrives under `user_bookmark_list`, an empty one is a bare `{"bookmarks":[]}` | upstream's `DialogCell` rows and the settings-shaped row on the profile |
+| Read progress (`POST /topics/timings`) and restore | done | done, without upstream's unread divider: the floors the viewport reaches are reported as the reader moves (debounced) and at once when they leave, a topic opens at the site's own `last_read_post_number` (or this device's further one), and the list's unread counts follow the site's answer - a topic read in full draws no badge even before the site has taken the report in | our own reporter over the site's endpoint; the list's rows are upstream's `DialogCell` |
 | Search: topics, posts, users, in-topic | done | done, the site's topics, posts and people from the action bar's own search field; a hit opens its topic at its floor, a person opens their profile; in-topic search missing | `ActionBarMenuItem.setIsSearchField` over `/search.json`, hits drawn by `DialogCell` / `ProfileSearchCell` |
 | User profile (`/u/{username}.json`, activity feed) | done | done, `/user_actions.json` for the topics created and the replies merged into one stream, one upstream `DialogCell` row per action, a tap opens the topic at that floor | our own `BaseFragment` over `ProfileSearchCell` / `HeaderCell` / `TextDetailCell` / `TextInfoPrivacyCell` / `DialogCell`; `ProfileActivity` is unusable here (it loads the full user through tgnet and is bound to a Telegram account) |
 | Notifications | not built | done, the reader's own list from `/notifications.json`; nothing pushes, and there is no unread count on the tab | upstream's notification screens are Telegram-account bound, so our own screen over upstream's `DialogCell`; unread is the row's own badge |

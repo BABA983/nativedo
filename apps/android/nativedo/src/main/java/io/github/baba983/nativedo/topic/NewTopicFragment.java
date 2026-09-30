@@ -129,6 +129,16 @@ public class NewTopicFragment extends BaseFragment {
         field.setInputType(InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         field.setImeOptions(EditorInfo.IME_ACTION_NEXT);
         field.setHint("标题");
+        // The keyboard's own "next", as upstream's name screens wire it: the next thing a topic has
+        // to say is its body, so the press puts the caret there.
+        field.setOnEditorActionListener((view, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_NEXT && composer != null) {
+                composer.setFieldFocused();
+                AndroidUtilities.showKeyboard(composer.getEditField());
+                return true;
+            }
+            return false;
+        });
         field.setCursorColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourceProvider));
         field.setCursorSize(AndroidUtilities.dp(20));
         field.setCursorWidth(1.5f);

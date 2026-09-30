@@ -161,6 +161,70 @@ internal class NewTopicTest {
         harness.assertNoTelegramSideEffects()
     }
 
+    /**
+     * A topic the site refuses. A reader who typed a title the site will not take has to be told
+     * what the site said - its own message is the only thing that says what to change - and nothing
+     * may be left behind thinking a topic exists.
+     */
+    @Test
+    fun aTitleTheSiteRefusesIsWhatTheReaderIsTold() {
+        site.serveResponse("posts.json") {
+            okhttp3.mockwebserver.MockResponse()
+                .setResponseCode(422)
+                .setHeader("Content-Type", "application/json")
+                .setBody(harness.fixture("error-422-post.json"))
+        }
+
+        harness.bootApp()
+        harness.await("the topic list to load") { rowCount() == 2 }
+        harness.await("the site's categories to arrive") { site.requestPaths.contains("categories.json") }
+
+        startTopic()
+        harness.await("the composer of a new topic") { composer() != null }
+        val composer = composer() ?: throw AssertionError("the screen has no composer")
+        titleField()?.setText("太短")
+        composer.setFieldText(BODY)
+        harness.idle()
+        categoryRow()?.performClick()
+        harness.idle()
+        val picker = ShadowDialog.getLatestDialog() as? AlertDialog
+            ?: throw AssertionError("the category row offers no categories")
+        pickerRows(picker).first { (_, label) -> label.contains(CATEGORY) }.first.performClick()
+        harness.idle()
+
+        composer.sendMessage()
+        harness.idleClock(400)
+        harness.await("the site to refuse the topic") {
+            site.recordedRequests.contains("POST /posts.json")
+        }
+        harness.await("the reader to be told what the site said") {
+            shownText().any { text -> text.contains("标题过短") }
+        }
+        println("new topic: the reader is told " + shownText().filter { it.contains("标题过短") })
+
+        // The screen is still the composer: there is no topic, so there is nothing to go back to.
+        assertNotNull("the composer stays for the reader to fix the title", composer())
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /** Every piece of text the screen shows, dialogs included. */
+    private fun shownText(): List<String> {
+        val content = harness.activity.findViewById<ViewGroup>(android.R.id.content) ?: return emptyList()
+        val out = mutableListOf<String>()
+        collectText(content, out)
+        (ShadowDialog.getLatestDialog() as? android.app.Dialog)?.window?.decorView?.let { dialog ->
+            collectText(dialog, out)
+        }
+        return out
+    }
+
+    private fun collectText(view: View?, out: MutableList<String>) {
+        when (view) {
+            is android.widget.TextView -> out += view.text.toString()
+            is ViewGroup -> for (index in 0 until view.childCount) collectText(view.getChildAt(index), out)
+        }
+    }
+
     /** The list's own floating button, which is upstream's. */
     private fun startTopic() {
         val content = harness.activity.findViewById<ViewGroup>(android.R.id.content)
