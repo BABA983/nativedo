@@ -296,12 +296,18 @@ object DiscourseImageBridge {
             // The block's own state is what turns on this: it is told the fetch exists before the
             // first byte, so the reader sees a download rather than a play button that seems dead.
             reportVideoProgress(name, 0L, 0L)
-            val outcome = try {
+            // The transfer's own state ends before the bytes it wrote become the file the block
+            // plays, and both are this one step apart, on this thread: a reader who finds the clip
+            // on disk has found it after the fetch ended, never during. The other order publishes
+            // the file while the block is still told a transfer runs - a loading state, and a live
+            // cancel button, over a clip that is already whole.
+            val transferred = try {
                 fetchVideo(call, video, file, name, cancelled)
             } finally {
                 NativeDoHooks.setFetchCanceller(name, null)
                 NativeDoHooks.setFileLoading(name, false)
             }
+            val outcome = if (transferred == VideoDownload.Stored) storeVideo(file, name) else transferred
             // The block registered itself as an observer of that name, so upstream's own channel is
             // how it learns how the file it was waiting for ended.
             when (outcome) {
@@ -319,8 +325,10 @@ object DiscourseImageBridge {
         }
 
     /**
-     * One clip, written to [file] through a temporary name so a transfer cut short cannot leave
-     * bytes the block would read as its file.
+     * One clip, written beside [file] under a temporary name so a transfer cut short cannot leave
+     * bytes the block would read as its file. A transfer that carried the whole clip stops here,
+     * with those bytes still under the temporary name; making them the file is [storeVideo]'s step,
+     * which runs once the transfer's own state has ended.
      *
      * <p>The site's own content length decides before a byte is written; a source that answers
      * without one is read up to the same limit, so a lying header cannot fill the disk either.</p>
@@ -367,8 +375,6 @@ object DiscourseImageBridge {
                     }
                 }
             }
-            check(partial.renameTo(file)) { "cannot move ${partial.name} into place" }
-            reportVideoProgress(name, file.length(), file.length())
             VideoDownload.Stored
         }
     }.getOrElse { error ->
@@ -382,6 +388,21 @@ object DiscourseImageBridge {
             FileLog.e("nativedo: fetching a post's clip failed", error)
             VideoDownload.Failed
         }
+    }
+
+    /**
+     * The finished transfer becomes the file the block plays, and the block is told the whole clip
+     * is there. The bytes a transfer cannot move into place are not a file anyone may open, so that
+     * ends as a broken fetch and the reader's own player streams the clip instead.
+     */
+    private fun storeVideo(file: File, name: String): VideoDownload {
+        val partial = File(file.parentFile, file.name + ".part")
+        if (!partial.renameTo(file)) {
+            FileLog.e("nativedo: the clip could not be moved into place: " + partial.name)
+            return VideoDownload.Failed
+        }
+        reportVideoProgress(name, file.length(), file.length())
+        return VideoDownload.Stored
     }
 
     /**
