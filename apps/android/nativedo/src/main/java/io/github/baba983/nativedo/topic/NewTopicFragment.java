@@ -235,25 +235,30 @@ public class NewTopicFragment extends BaseFragment {
     }
 
     /**
-     * The send button belongs to upstream, and upstream offers it only while there is something to
-     * send: a topic needs its title, its category and its body, so the button appears when the
-     * reader has all three - and never posts a topic the site would refuse.
+     * The composer's own state, decided the way the reply box decides it: the send button is there
+     * while the body has something in it, and upstream draws the send arrow into it - a topic needs
+     * more than a body, so what is missing is said when the press happens rather than by a button
+     * that never appears.
      */
     private void updateComposerActions() {
         if (composer == null) {
             return;
         }
-        boolean ready = category != null
-                && titleField != null && titleField.length() > 0
-                && composer.getEditField() != null && composer.getEditField().length() > 0;
+        boolean hasText = composer.getEditField() != null
+                && composer.getEditField().length() > 0;
         View button = composer.getSendButton();
         if (button == null) {
             return;
         }
-        int wanted = ready ? View.VISIBLE : View.GONE;
+        int wanted = hasText ? View.VISIBLE : View.GONE;
         if (button.getVisibility() != wanted) {
             button.setVisibility(wanted);
         }
+        // The field's own decision runs last, and it is upstream's: it is the same call it makes on
+        // every change, and it is what puts the send arrow (not the empty circle of the record state)
+        // in the button. Written the other way round, a change that arrives in one piece - a pasted
+        // body, a restored draft - leaves the button drawn from the state before it.
+        composer.checkSendButton(false);
     }
 
     /**
@@ -270,7 +275,14 @@ public class NewTopicFragment extends BaseFragment {
         }
         String title = titleField == null ? "" : titleField.getText().toString().trim();
         String raw = message == null ? "" : message.toString().trim();
-        if (title.isEmpty() || raw.isEmpty() || category == null) {
+        if (raw.isEmpty()) {
+            return;
+        }
+        // A topic needs three things and the composer only knows the body, so a press that is missing
+        // one of the other two says which, rather than doing nothing.
+        String missing = title.isEmpty() ? "标题" : category == null ? "分类" : null;
+        if (missing != null) {
+            showError("还不能发帖", new java.io.IOException("请先填写" + missing));
             return;
         }
         sending = true;

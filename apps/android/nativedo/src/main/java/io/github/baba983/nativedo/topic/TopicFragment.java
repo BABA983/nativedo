@@ -847,6 +847,11 @@ public class TopicFragment extends BaseFragment {
         if (button.getVisibility() != wanted) {
             button.setVisibility(wanted);
         }
+        // The composer's own decision runs last: it is what draws the send arrow into the button, and
+        // our visibility write above is only for the shape of the button's absence. See the same
+        // comment on the new-topic screen: a change that arrives in one piece (a paste, a draft)
+        // would otherwise be drawn from the state before it.
+        composer.checkSendButton(false);
     }
 
     /**

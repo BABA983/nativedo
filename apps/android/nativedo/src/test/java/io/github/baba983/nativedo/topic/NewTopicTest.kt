@@ -105,8 +105,8 @@ internal class NewTopicTest {
         composer.setFieldText(BODY)
         harness.idle()
         assertEquals(
-            "and a topic without a category is nothing to send either",
-            View.GONE,
+            "a body is what the composer's own send button stands for, the same as on a reply",
+            View.VISIBLE,
             composer.getSendButton()?.visibility,
         )
 
@@ -223,6 +223,37 @@ internal class NewTopicTest {
             is android.widget.TextView -> out += view.text.toString()
             is ViewGroup -> for (index in 0 until view.childCount) collectText(view.getChildAt(index), out)
         }
+    }
+
+    /**
+     * A press with a body but no title. The composer knows the body and nothing else, so the button
+     * is there - and what a topic needs beyond it is said when the reader presses, not by a button
+     * that never appears.
+     */
+    @Test
+    fun aPressWithoutATitleSaysWhatIsStillMissing() {
+        harness.bootApp()
+        harness.await("the topic list to load") { rowCount() == 2 }
+        harness.await("the site's categories to arrive") { site.requestPaths.contains("categories.json") }
+
+        startTopic()
+        harness.await("the composer of a new topic") { composer() != null }
+        val composer = composer() ?: throw AssertionError("the screen has no composer")
+        composer.setFieldText(BODY)
+        harness.idle()
+
+        composer.sendMessage()
+        harness.idleClock(400)
+        harness.await("the reader to be told what is missing") {
+            shownText().any { text -> text.contains("请先填写标题") }
+        }
+        println("new topic: the reader is told " + shownText().filter { it.contains("请先填写") })
+        assertEquals(
+            "and nothing was posted",
+            0,
+            site.recordedRequests.count { it == "POST /posts.json" },
+        )
+        harness.assertNoTelegramSideEffects()
     }
 
     /** The list's own floating button, which is upstream's. */
