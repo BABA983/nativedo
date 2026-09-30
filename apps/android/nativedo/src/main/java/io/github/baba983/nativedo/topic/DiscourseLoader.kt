@@ -35,6 +35,35 @@ object DiscourseLoader {
         }
     }
 
+    /** The categories the topic list filters by, in the site's own order. */
+    fun categories(
+        container: AppContainer,
+        onLoaded: (List<io.github.baba983.nativedo.core.model.CategorySummary>) -> Unit,
+        onFailed: (Throwable) -> Unit,
+    ) {
+        scope.launch {
+            runCatching { container.discourseApiClient.fetchCategories() }
+                .onSuccess(onLoaded)
+                .onFailure(onFailed)
+        }
+    }
+
+    /** One category's own feed: what the topic list shows while its tab is the selected one. */
+    fun categoryTopics(
+        container: AppContainer,
+        category: io.github.baba983.nativedo.core.model.CategorySummary,
+        onLoaded: (List<TopicSummary>) -> Unit,
+        onFailed: (Throwable) -> Unit,
+    ) {
+        scope.launch {
+            runCatching {
+                container.discourseApiClient.fetchCategoryPage(category.slug, category.id).topics
+            }
+                .onSuccess(onLoaded)
+                .onFailure(onFailed)
+        }
+    }
+
     /** The site's answer to a search: its topics, the posts, and the people it matched. */
     fun search(
         container: AppContainer,

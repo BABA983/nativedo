@@ -5,6 +5,7 @@ import androidx.recyclerview.widget.RecyclerView
 import io.github.baba983.nativedo.app.NativeDo
 import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
+import io.github.baba983.nativedo.harness.contentListOf
 import io.github.baba983.nativedo.harness.shadows.ShadowAnimatedFileNative
 import io.github.baba983.nativedo.harness.shadows.ShadowConnectionsManager
 import io.github.baba983.nativedo.harness.shadows.ShadowIntro
@@ -30,6 +31,7 @@ import org.robolectric.annotation.Config
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.tgnet.TLRPC
 import org.telegram.ui.Cells.ChatMessageCell
+import org.telegram.ui.Components.RecyclerListView
 
 /**
  * Reactions on a post, end to end: Discourse's reaction list becomes the chips upstream draws, and a
@@ -131,20 +133,8 @@ internal class PostReactionsTest {
             .filterIsInstance<ChatMessageCell>()
     }
 
-    private fun listView(): RecyclerView? {
-        val content = harness.activity.findViewById<ViewGroup>(android.R.id.content) ?: return null
-        return findRecycler(content)
-    }
-
-    private fun findRecycler(view: android.view.View): RecyclerView? {
-        if (view is RecyclerView) return view
-        if (view is ViewGroup) {
-            for (index in 0 until view.childCount) {
-                findRecycler(view.getChildAt(index))?.let { return it }
-            }
-        }
-        return null
-    }
+    private fun listView(): RecyclerListView? =
+        contentListOf(harness.activity)
 
     private companion object {
         const val TOPIC_ID = 606L

@@ -5,6 +5,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import io.github.baba983.nativedo.app.NativeDo
 import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
+import io.github.baba983.nativedo.harness.contentListOf
 import io.github.baba983.nativedo.harness.shadows.ShadowAnimatedFileNative
 import io.github.baba983.nativedo.harness.shadows.ShadowConnectionsManager
 import io.github.baba983.nativedo.harness.shadows.ShadowIntro
@@ -198,20 +199,8 @@ internal class NotificationsTest {
 
     private fun rowCount(): Int = listView()?.adapter?.itemCount ?: 0
 
-    private fun listView(): RecyclerListView? {
-        val content = harness.activity.findViewById<ViewGroup>(android.R.id.content) ?: return null
-        return findRecycler(content)
-    }
-
-    private fun findRecycler(view: android.view.View): RecyclerListView? {
-        if (view is RecyclerListView) return view
-        if (view is ViewGroup) {
-            for (index in 0 until view.childCount) {
-                findRecycler(view.getChildAt(index))?.let { return it }
-            }
-        }
-        return null
-    }
+    private fun listView(): RecyclerListView? =
+        contentListOf(harness.activity)
 
     private companion object {
         /** The topic and floor of the fixture's mention notification. */

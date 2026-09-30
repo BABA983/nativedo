@@ -1,0 +1,102 @@
+{
+  "category_list": {
+    "can_create_category": false,
+    "can_create_topic": true,
+    "categories": [
+      {
+        "id": 2,
+        "name": "运营反馈",
+        "color": "808281",
+        "text_color": "000000",
+        "slug": "feedback",
+        "topic_count": 1204,
+        "post_count": 9871,
+        "position": 0,
+        "description_text": "对 linux.do 的运营建议与问题反馈",
+        "topic_url": "/c/feedback/2",
+        "notification_level": 1,
+        "permission": null,
+        "can_edit": false,
+        "has_children": false,
+        "subcategory_ids": [],
+        "subcategory_list": []
+      },
+      {
+        "id": 4,
+        "name": "开发调优",
+        "color": "32C3C3",
+        "text_color": "000000",
+        "slug": "develop",
+        "topic_count": 5120,
+        "post_count": 48902,
+        "position": 1,
+        "description_text": "程序开发、部署运维与性能调优",
+        "topic_url": "/c/develop/4",
+        "notification_level": 1,
+        "permission": null,
+        "can_edit": false,
+        "has_children": false,
+        "subcategory_ids": [],
+        "subcategory_list": []
+      },
+      {
+        "id": 11,
+        "name": "搞七捻三",
+        "color": "3AB54A",
+        "text_color": "000000",
+        "slug": "gossip",
+        "topic_count": 3312,
+        "post_count": 61234,
+        "position": 2,
+        "description_text": "闲聊灌水，什么都聊",
+        "topic_url": "/c/gossip/11",
+        "notification_level": 1,
+        "permission": null,
+        "can_edit": false,
+        "has_children": false,
+        "subcategory_ids": [],
+        "subcategory_list": []
+      },
+      {
+        "id": 98,
+        "name": "国内吹水",
+        "color": "D12C25",
+        "text_color": "FFFFFF",
+        "slug": "domestic",
+        "topic_count": 880,
+        "post_count": 12044,
+        "position": 3,
+        "description_text": "国内的生活与见闻",
+        "topic_url": "/c/domestic/98",
+        "notification_level": 1,
+        "permission": null,
+        "can_edit": false,
+        "has_children": true,
+        "subcategory_ids": [
+          99
+        ],
+        "subcategory_list": [
+          {
+            "id": 99,
+            "name": "一号水区",
+            "color": "0088CC",
+            "text_color": "FFFFFF",
+            "slug": "domestic-lv1",
+            "topic_count": 401,
+            "post_count": 5011,
+            "position": 0,
+            "description_text": "吹水的第一层",
+            "topic_url": "/c/domestic/domestic-lv1/99",
+            "parent_category_id": 98,
+            "notification_level": 1,
+            "permission": null,
+            "can_edit": false,
+            "has_children": false,
+            "subcategory_ids": [],
+            "subcategory_list": []
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -5,6 +5,7 @@ import io.github.baba983.nativedo.app.NativeDo
 import io.github.baba983.nativedo.core.di.AppContainer
 import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
+import io.github.baba983.nativedo.harness.contentListOf
 import io.github.baba983.nativedo.harness.shadows.ShadowAnimatedFileNative
 import io.github.baba983.nativedo.harness.shadows.ShadowConnectionsManager
 import io.github.baba983.nativedo.harness.shadows.ShadowIntro
@@ -29,6 +30,7 @@ import org.robolectric.annotation.Config
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.ui.Cells.ChatMessageCell
 import org.telegram.ui.Cells.DialogCell
+import org.telegram.ui.Components.RecyclerListView
 
 /**
  * The session gate and what the session does to the network: with no cookies the app opens the
@@ -136,20 +138,8 @@ internal class SessionGateTest {
 
     private fun currentFragmentName(): String? = currentFragment()?.javaClass?.simpleName
 
-    private fun rowCount(): Int {
-        val content = harness.activity.findViewById<ViewGroup>(android.R.id.content) ?: return 0
-        return findRecycler(content)?.adapter?.itemCount ?: 0
-    }
-
-    private fun findRecycler(view: android.view.View): androidx.recyclerview.widget.RecyclerView? {
-        if (view is androidx.recyclerview.widget.RecyclerView) return view
-        if (view is ViewGroup) {
-            for (index in 0 until view.childCount) {
-                findRecycler(view.getChildAt(index))?.let { return it }
-            }
-        }
-        return null
-    }
+    private fun rowCount(): Int =
+        contentListOf(harness.activity)?.adapter?.itemCount ?: 0
 
     private companion object {
         const val TOPIC_ID = 101L

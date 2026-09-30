@@ -94,6 +94,21 @@ interface DiscourseApiService {
     @GET("site.json")
     suspend fun site(): SiteResponseDto
 
+    /**
+     * `GET /categories.json`: the category list a topic list is filtered by. The same entries
+     * `site.json` embeds, with the site's own ordering and the colors the badges draw with.
+     */
+    @GET("categories.json")
+    suspend fun categories(): CategoriesResponseDto
+
+    /** One category's own latest feed; the same envelope `latest.json` answers with. */
+    @GET("c/{slug}/{id}/l/latest.json")
+    suspend fun categoryLatest(
+        @Path("slug") slug: String,
+        @Path("id") id: Int,
+        @Query("page") page: Int,
+    ): TopicListResponseDto
+
     @GET("t/{id}.json")
     suspend fun topic(@Path("id") id: Long): TopicResponseDto
 
@@ -402,6 +417,16 @@ data class PosterUserDto(
 @Serializable
 data class SiteResponseDto(
     val categories: List<SiteCategoryDto> = emptyList(),
+    @SerialName("category_list")
+    val categoryList: SiteCategoryListDto? = null,
+)
+
+/**
+ * `GET /categories.json`: the list itself. Its envelope is the one `site.json` carries under
+ * `category_list`, so the entries are the same type and are read the same way.
+ */
+@Serializable
+data class CategoriesResponseDto(
     @SerialName("category_list")
     val categoryList: SiteCategoryListDto? = null,
 )
@@ -912,6 +937,9 @@ internal fun SiteResponseDto.toModel(): List<CategorySummary> = (
     ).flatMap { category ->
     category.flattenedModels()
 }
+
+internal fun CategoriesResponseDto.toModel(): List<CategorySummary> =
+    categoryList?.categories.orEmpty().flatMap { category -> category.flattenedModels() }
 
 internal fun TopicResponseDto.toModel(
     emojiCatalog: Map<String, String> = emptyMap(),

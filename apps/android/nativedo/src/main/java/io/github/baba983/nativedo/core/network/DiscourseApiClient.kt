@@ -128,8 +128,13 @@ class DiscourseApiClient(
             service.searchMentionUsers(term = term, topicId = topicId).toModel()
         }
 
+    /** The categories a topic list filters by, as `/categories.json` answers them. */
     suspend fun fetchCategories(): List<CategorySummary> =
-        runWithSessionBoundary { service.site().toModel() }
+        runWithSessionBoundary { service.categories().toModel() }
+
+    /** One category's own latest feed; `/latest.json`'s envelope, restricted to that category. */
+    suspend fun fetchCategoryPage(slug: String, categoryId: Int, page: Int = 0): TopicListPage =
+        runWithSessionBoundary { service.categoryLatest(slug = slug, id = categoryId, page = page).toModel() }
 
     suspend fun fetchTopic(topicId: Long, postNumber: Int? = null): TopicDetail =
         runWithSessionBoundary {

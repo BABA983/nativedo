@@ -7,6 +7,7 @@ import io.github.baba983.nativedo.app.NativeDo
 import io.github.baba983.nativedo.core.di.AppContainer
 import io.github.baba983.nativedo.harness.FakeDiscourseSite
 import io.github.baba983.nativedo.harness.UpstreamUiHarness
+import io.github.baba983.nativedo.harness.contentListOf
 import io.github.baba983.nativedo.harness.shadows.ShadowAnimatedFileNative
 import io.github.baba983.nativedo.harness.shadows.ShadowConnectionsManager
 import io.github.baba983.nativedo.harness.shadows.ShadowIntro
@@ -28,6 +29,7 @@ import org.robolectric.annotation.Config
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.tgnet.tl.TL_iv
 import org.telegram.ui.Cells.ChatMessageCell
+import org.telegram.ui.Components.RecyclerListView
 
 /**
  * A wide Discourse table must stay inside the bubble and scroll horizontally inside it.
@@ -127,20 +129,8 @@ internal class WideTableLayoutTest {
 
     // ------------------------------------------------------------------ view traversal helpers
 
-    private fun listView(): RecyclerView? {
-        val content = harness.activity.findViewById<ViewGroup>(android.R.id.content) ?: return null
-        return findRecycler(content)
-    }
-
-    private fun findRecycler(view: View): RecyclerView? {
-        if (view is RecyclerView) return view
-        if (view is ViewGroup) {
-            for (index in 0 until view.childCount) {
-                findRecycler(view.getChildAt(index))?.let { return it }
-            }
-        }
-        return null
-    }
+    private fun listView(): RecyclerListView? =
+        contentListOf(harness.activity)
 
     private fun rowCount(): Int = listView()?.adapter?.itemCount ?: 0
 

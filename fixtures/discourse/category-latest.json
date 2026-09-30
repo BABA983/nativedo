@@ -1,0 +1,94 @@
+{
+  "users": [
+    {
+      "id": 7,
+      "username": "baba",
+      "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png"
+    },
+    {
+      "id": 12,
+      "username": "yang",
+      "avatar_template": "/user_avatar/linux.do/yang/{size}/2.png"
+    }
+  ],
+  "topic_list": {
+    "can_create_topic": true,
+    "per_page": 30,
+    "filter": "latest",
+    "more_topics_url": "/c/develop/4/l/latest.json?page=1",
+    "topics": [
+      {
+        "id": 3301,
+        "title": "把 Gradle 的配置缓存打开之后",
+        "fancy_title": "把 Gradle 的配置缓存打开之后",
+        "slug": "gradle-configuration-cache",
+        "posts_count": 12,
+        "reply_count": 9,
+        "highest_post_number": 12,
+        "last_posted_at": "2026-09-28T10:12:00.000Z",
+        "last_poster_username": "yang",
+        "category_id": 4,
+        "pinned": false,
+        "tags": [],
+        "excerpt": "配置缓存对构建时间的影响比想象的大",
+        "unread_posts": 4,
+        "unseen": false,
+        "posters": [
+          {
+            "user_id": 7,
+            "description": "Original Poster",
+            "extras": "latest"
+          }
+        ]
+      },
+      {
+        "id": 3302,
+        "title": "自建 DNS 的解析链路怎么排",
+        "fancy_title": "自建 DNS 的解析链路怎么排",
+        "slug": "self-hosted-dns",
+        "posts_count": 5,
+        "reply_count": 3,
+        "highest_post_number": 5,
+        "last_posted_at": "2026-09-27T22:40:00.000Z",
+        "last_poster_username": "baba",
+        "category_id": 4,
+        "pinned": false,
+        "tags": [],
+        "excerpt": "递归、缓存、转发，链路一长就难查",
+        "unread_posts": 0,
+        "unseen": false,
+        "posters": [
+          {
+            "user_id": 12,
+            "description": "Original Poster",
+            "extras": "latest"
+          }
+        ]
+      },
+      {
+        "id": 3303,
+        "title": "一个 Terminal 的颜色方案调了三年",
+        "fancy_title": "一个 Terminal 的颜色方案调了三年",
+        "slug": "terminal-colors",
+        "posts_count": 31,
+        "reply_count": 24,
+        "highest_post_number": 31,
+        "last_posted_at": "2026-09-26T09:05:00.000Z",
+        "last_poster_username": "yang",
+        "category_id": 4,
+        "pinned": false,
+        "tags": [],
+        "excerpt": "对比度、色相、亮度，最后都会绕回第一版",
+        "unread_posts": 0,
+        "unseen": false,
+        "posters": [
+          {
+            "user_id": 7,
+            "description": "Original Poster",
+            "extras": "latest"
+          }
+        ]
+      }
+    ]
+  }
+}
