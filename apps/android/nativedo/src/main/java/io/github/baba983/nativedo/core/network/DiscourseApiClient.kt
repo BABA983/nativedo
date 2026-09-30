@@ -3,6 +3,7 @@ package io.github.baba983.nativedo.core.network
 import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.PostPoll
 import io.github.baba983.nativedo.core.model.PostReactionUsersGroup
+import io.github.baba983.nativedo.core.model.Bookmark
 import io.github.baba983.nativedo.core.model.CategorySummary
 import io.github.baba983.nativedo.core.model.SearchResult
 import io.github.baba983.nativedo.core.model.MentionSearchResult
@@ -126,6 +127,15 @@ class DiscourseApiClient(
     suspend fun searchMentionUsers(term: String, topicId: Long): MentionSearchResult =
         runWithSessionBoundary {
             service.searchMentionUsers(term = term, topicId = topicId).toModel()
+        }
+
+    /**
+     * The reader's own bookmarks, one page at a time. The list is the reader's own by the site's
+     * rule, so the username is the session's - a bookmark list is not something to look up.
+     */
+    suspend fun fetchBookmarks(username: String, page: Int = 0, limit: Int = 20): List<Bookmark> =
+        runWithSessionBoundary(requiresAuthentication = true) {
+            service.bookmarks(username = username, page = page, limit = limit).toModel()
         }
 
     /** The categories a topic list filters by, as `/categories.json` answers them. */

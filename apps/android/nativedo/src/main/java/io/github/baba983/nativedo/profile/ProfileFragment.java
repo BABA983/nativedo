@@ -62,6 +62,8 @@ public class ProfileFragment extends BaseFragment {
     private static final int TYPE_DETAIL = 2;
     private static final int TYPE_BIO = 3;
     private static final int TYPE_ACTION = 4;
+    /** A row of the reader's own things, which opens a screen of its own. */
+    private static final int TYPE_LINK = 5;
 
     /** The activity stream's own heading, above the rows of the reader's actions. */
     private static final String ACTION_SECTION = "动态";
@@ -71,6 +73,8 @@ public class ProfileFragment extends BaseFragment {
 
     private RecyclerListView listView;
     private final List<Row> rows = new ArrayList<>();
+    /** The row of the reader's own bookmarks, or -1 when this is not their own profile. */
+    private int bookmarksRow = -1;
     /** The reader's actions, as the site sent them; the list's rows after the profile's own. */
     private final List<TopicSummary> actions = new ArrayList<>();
     private ProfileActivityFeed feed;
@@ -112,6 +116,10 @@ public class ProfileFragment extends BaseFragment {
         listView.setVerticalScrollBarEnabled(false);
         listView.setPadding(0, AndroidUtilities.dp(4), 0, AndroidUtilities.dp(4));
         listView.setOnItemClickListener((view, position) -> {
+            if (position == bookmarksRow) {
+                presentFragment(new io.github.baba983.nativedo.bookmarks.BookmarksFragment());
+                return;
+            }
             TopicSummary action = actionAt(position);
             if (action != null) {
                 presentAction(action);
@@ -218,6 +226,7 @@ public class ProfileFragment extends BaseFragment {
             rows.add(Row.section("关于我"));
             rows.add(Row.bio(bioText));
         }
+        addOwnRows();
         // Upstream separates the rows of a section with a divider, and the last row of each section
         // ends the list's section rather than continuing it.
         for (int index = 0; index < rows.size(); index++) {
@@ -228,6 +237,30 @@ public class ProfileFragment extends BaseFragment {
             Row next = index + 1 < rows.size() ? rows.get(index + 1) : null;
             row.divider = next != null && next.type == TYPE_DETAIL;
         }
+    }
+
+    /**
+     * The reader's own things, which only their own profile lists: the site answers a bookmark list
+     * for the reader themselves and nobody else, so a row that opened it from another reader would
+     * open the reader's own list under someone else's name.
+     */
+    private void addOwnRows() {
+        bookmarksRow = -1;
+        if (!isOwnProfile()) {
+            return;
+        }
+        rows.add(Row.section("我的"));
+        bookmarksRow = rows.size();
+        rows.add(Row.link("书签"));
+    }
+
+    private boolean isOwnProfile() {
+        if (container == null || container.getSessionStore().snapshot() == null || profile == null) {
+            return false;
+        }
+        String reader = container.getSessionStore().snapshot().getUsername();
+        String shown = profile.getUsername();
+        return reader != null && shown != null && reader.equalsIgnoreCase(shown);
     }
 
     private void addIfPresent(String label, String value) {
@@ -333,6 +366,12 @@ public class ProfileFragment extends BaseFragment {
                             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
                     return new RecyclerListView.Holder(cell);
                 }
+                case TYPE_LINK: {
+                    org.telegram.ui.Cells.TextSettingsCell cell = new org.telegram.ui.Cells.TextSettingsCell(context, resourceProvider);
+                    cell.setLayoutParams(new RecyclerView.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+                    return new RecyclerListView.Holder(cell);
+                }
                 case TYPE_ACTION: {
                     // An action is a topic, so its row is the row the topic list draws.
                     DialogCell cell = new DialogCell(null, context, false, false, currentAccount, resourceProvider);
@@ -383,6 +422,9 @@ public class ProfileFragment extends BaseFragment {
                     cell.avatarImage.setImage(
                             avatar, "50_50", cell.avatarImage.getDrawable(), null, avatarUser, 0);
                 }
+            } else if (holder.itemView instanceof org.telegram.ui.Cells.TextSettingsCell) {
+                ((org.telegram.ui.Cells.TextSettingsCell) holder.itemView)
+                        .setTextAndValue(row.label, null, true);
             } else if (holder.itemView instanceof TextDetailCell) {
                 // Upstream's own convention, as `ProfileActivity`'s info block uses it: the cell's
                 // first argument is the answer and lands in its 16 dp line, the second is the field's
@@ -462,6 +504,10 @@ public class ProfileFragment extends BaseFragment {
 
         static Row bio(String text) {
             return new Row(TYPE_BIO, null, text, null);
+        }
+
+        static Row link(String label) {
+            return new Row(TYPE_LINK, label, null, null);
         }
 
         static Row action(TopicSummary action) {

@@ -27,6 +27,7 @@ import io.github.baba983.nativedo.feature.topic.data.TopicReplyDraftStore
 import io.github.baba983.nativedo.feature.topic.data.TopicReadPositionStore
 import io.github.baba983.nativedo.feature.notifications.data.NotificationRepository
 import io.github.baba983.nativedo.feature.profile.data.ProfileFeedRepository
+import io.github.baba983.nativedo.feature.bookmarks.data.BookmarkRepository
 import io.github.baba983.nativedo.feature.profile.data.ProfileRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.serialization.json.Json
@@ -126,6 +127,9 @@ class AppContainer(
         client = discourseApiClient,
     )
     val notificationRepository: NotificationRepository = NotificationRepository(
+        client = discourseApiClient,
+    )
+    val bookmarkRepository: BookmarkRepository = BookmarkRepository(
         client = discourseApiClient,
     )
     val categoryStore: CategoryStore = CategoryStore(

@@ -27,6 +27,12 @@ data class Post(
     val polls: List<PostPoll> = emptyList(),
 ) {
     /**
+     * The same post with the reader's bookmark on it (or off it). What the site answered is what the
+     * screen keeps, so the menu that offered to add a bookmark offers to take it back next time.
+     */
+    fun withBookmark(bookmarked: Boolean): Post = copy(isBookmarked = bookmarked)
+
+    /**
      * The same post with the poll that shares [updated]'s name replaced. A vote response carries the
      * poll's new state and nothing else of the post, so the screen keeps the post it already drew.
      */

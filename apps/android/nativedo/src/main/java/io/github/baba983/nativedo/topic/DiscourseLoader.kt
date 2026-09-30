@@ -53,6 +53,24 @@ object DiscourseLoader {
             scope = scope,
         )
 
+    /**
+     * The reader's bookmark on one post, from where it is now to where it is not (and back). The
+     * site is told first: the caller only draws the new state once the site has taken it.
+     */
+    fun setBookmark(
+        container: AppContainer,
+        postId: Long,
+        bookmarked: Boolean,
+        onDone: () -> Unit,
+        onFailed: (Throwable) -> Unit,
+    ) {
+        scope.launch {
+            runCatching { container.discourseApiClient.setPostBookmark(postId, bookmarked) }
+                .onSuccess { onDone() }
+                .onFailure(onFailed)
+        }
+    }
+
     /** The categories the topic list filters by, in the site's own order. */
     fun categories(
         container: AppContainer,

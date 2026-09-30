@@ -7,6 +7,7 @@ import io.github.baba983.nativedo.core.model.PostPollVote
 import io.github.baba983.nativedo.core.model.PostReaction
 import io.github.baba983.nativedo.core.model.PostReactionUser
 import io.github.baba983.nativedo.core.model.PostReactionUsersGroup
+import io.github.baba983.nativedo.core.model.Bookmark
 import io.github.baba983.nativedo.core.model.CategorySummary
 import io.github.baba983.nativedo.core.model.DiscourseEmoji
 import io.github.baba983.nativedo.core.model.DiscourseEmojiCategory
@@ -90,6 +91,17 @@ interface DiscourseApiService {
         @Query("include_groups") includeGroups: Boolean = true,
         @Query("limit") limit: Int = 6,
     ): MentionSearchResponseDto
+
+    /**
+     * `GET /u/{username}/bookmarks.json`: the reader's own bookmarks, a page of twenty at a time.
+     * The site only answers this for the reader themselves (an admin may read another's).
+     */
+    @GET("u/{username}/bookmarks.json")
+    suspend fun bookmarks(
+        @Path("username") username: String,
+        @Query("page") page: Int,
+        @Query("limit") limit: Int,
+    ): UserBookmarksResponseDto
 
     @GET("site.json")
     suspend fun site(): SiteResponseDto
@@ -445,6 +457,49 @@ data class CategoriesResponseDto(
     val categoryList: SiteCategoryListDto? = null,
 )
 
+/**
+ * The bookmarks list. A page with rows arrives under `user_bookmark_list`; a page the site has
+ * nothing for is a bare `bookmarks: []` with no wrapper at all (the site's own client reads both).
+ */
+@Serializable
+data class UserBookmarksResponseDto(
+    @SerialName("user_bookmark_list")
+    val list: UserBookmarkListDto? = null,
+    val bookmarks: List<UserBookmarkDto> = emptyList(),
+)
+
+@Serializable
+data class UserBookmarkListDto(
+    val bookmarks: List<UserBookmarkDto> = emptyList(),
+    @SerialName("more_bookmarks_url")
+    val moreBookmarksUrl: String? = null,
+)
+
+/**
+ * One bookmark, as the site's own serializer writes it. The post is `bookmarkable_id` with
+ * `bookmarkable_type == "Post"`, and the floor it is on is `linked_post_number` - the field the
+ * serializer resolves from the post, not a copy of it.
+ */
+@Serializable
+data class UserBookmarkDto(
+    val id: Long,
+    @SerialName("bookmarkable_id")
+    val bookmarkableId: Long? = null,
+    @SerialName("bookmarkable_type")
+    val bookmarkableType: String = "",
+    @SerialName("topic_id")
+    val topicId: Long = 0,
+    @SerialName("linked_post_number")
+    val linkedPostNumber: Int? = null,
+    val title: String = "",
+    @SerialName("fancy_title")
+    val fancyTitle: String = "",
+    val excerpt: String = "",
+    @SerialName("created_at")
+    val createdAt: String = "",
+    val user: TopicListUserDto? = null,
+)
+
 @Serializable
 data class SiteCategoryListDto(
     val categories: List<SiteCategoryDto> = emptyList(),
@@ -468,6 +523,8 @@ data class SiteCategoryDto(
 data class TopicListUserDto(
     val id: Long,
     val username: String = "",
+    /** Only the payloads that embed a full user carry this; a topic list's users do not. */
+    val name: String? = null,
     @SerialName("avatar_template")
     val avatarTemplate: String = "",
     @SerialName("animated_avatar")
@@ -951,6 +1008,22 @@ internal fun SiteResponseDto.toModel(): List<CategorySummary> = (
     ).flatMap { category ->
     category.flattenedModels()
 }
+
+internal fun UserBookmarksResponseDto.toModel(): List<Bookmark> =
+    (list?.bookmarks ?: bookmarks).map { bookmark -> bookmark.toModel() }
+
+private fun UserBookmarkDto.toModel(): Bookmark = Bookmark(
+    id = id,
+    topicId = topicId,
+    postId = bookmarkableId ?: 0L,
+    postNumber = linkedPostNumber ?: 0,
+    title = fancyTitle.takeIf { it.isNotBlank() } ?: title,
+    excerpt = excerpt,
+    createdAt = createdAt,
+    authorUsername = user?.username.orEmpty(),
+    authorDisplayName = user?.name.orEmpty(),
+    authorAvatarTemplate = user?.avatarTemplate.orEmpty(),
+)
 
 internal fun CategoriesResponseDto.toModel(): List<CategorySummary> =
     categoryList?.categories.orEmpty().flatMap { category -> category.flattenedModels() }

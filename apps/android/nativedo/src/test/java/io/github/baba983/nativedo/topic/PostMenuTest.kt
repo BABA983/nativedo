@@ -94,9 +94,10 @@ internal class PostMenuTest {
 
         val items = menuItems(dialog)
         println("menu: items = $items")
-        assertEquals("the menu offers the three things a reader does", 3, items.size)
+        assertEquals("the menu offers the four things a reader does", 4, items.size)
         assertTrue("with copy", items.any { it.contains("复制") })
         assertTrue("a link", items.any { it.contains("链接") })
+        assertTrue("a bookmark", items.any { it.contains("书签") })
         assertTrue("and reply", items.any { it.contains("回复") })
 
         // The first entry copies the post's text, not its markup.

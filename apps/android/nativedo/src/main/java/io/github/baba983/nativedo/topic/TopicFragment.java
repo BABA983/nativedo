@@ -758,7 +758,13 @@ public class TopicFragment extends BaseFragment {
         if (getParentActivity() == null || floor < 0 || floor >= floors.size()) {
             return;
         }
-        String[] items = new String[]{"复制", "复制链接", "回复"};
+        boolean bookmarked = floors.get(floor).isBookmarked();
+        String[] items = new String[]{
+                "复制",
+                "复制链接",
+                bookmarked ? "取消书签" : "添加书签",
+                "回复",
+        };
         org.telegram.ui.ActionBar.AlertDialog.Builder builder =
                 new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity());
         builder.setItems(items, (dialog, which) -> {
@@ -768,11 +774,33 @@ public class TopicFragment extends BaseFragment {
                 android.content.ClipboardManager clipboard = (android.content.ClipboardManager)
                         getParentActivity().getSystemService(Context.CLIPBOARD_SERVICE);
                 clipboard.setPrimaryClip(android.content.ClipData.newPlainText("link", postUrl(floor)));
+            } else if (which == 2) {
+                toggleBookmark(floor);
             } else {
                 replyTo(floor);
             }
         });
         showDialog(builder.create());
+    }
+
+    /**
+     * The reader's bookmark on one floor, from where it is to where it is not (and back). What the
+     * site answered is what the floor keeps, so the menu that offered to add a bookmark offers to
+     * take it back the next time it is opened.
+     */
+    private void toggleBookmark(int floor) {
+        if (container == null || floor < 0 || floor >= floors.size()) {
+            return;
+        }
+        Post post = floors.get(floor);
+        boolean bookmarked = !post.isBookmarked();
+        DiscourseLoader.INSTANCE.setBookmark(container, post.getId(), bookmarked, () -> {
+            floors.set(floor, post.withBookmark(bookmarked));
+            return kotlin.Unit.INSTANCE;
+        }, error -> {
+            showError("书签失败", error);
+            return kotlin.Unit.INSTANCE;
+        });
     }
 
     /** What a copy takes: the floor's own text, without its markup. */

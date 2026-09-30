@@ -1,0 +1,76 @@
+{
+  "user_bookmark_list": {
+    "bookmarks": [
+      {
+        "id": 42,
+        "created_at": "2026-09-27T19:04:00.000Z",
+        "updated_at": "2026-09-27T19:04:00.000Z",
+        "name": "Baba",
+        "reminder_at": null,
+        "pinned": true,
+        "title": "Welcome to NativeDo Android",
+        "fancy_title": "Welcome to NativeDo Android",
+        "excerpt": "从【520专场】你如何理解我们的社区文化",
+        "bookmarkable_id": 9004,
+        "bookmarkable_type": "Post",
+        "bookmarkable_url": "/t/welcome-to-nativedo-android/101/2",
+        "topic_id": 101,
+        "linked_post_number": 2,
+        "deleted": false,
+        "hidden": false,
+        "category_id": 6,
+        "closed": false,
+        "archived": false,
+        "archetype": "regular",
+        "highest_post_number": 5,
+        "bumped_at": "2026-09-28T10:12:00.000Z",
+        "slug": "welcome-to-nativedo-android",
+        "truncated": true,
+        "tags": [],
+        "tags_descriptions": {},
+        "user": {
+          "id": 7,
+          "username": "baba",
+          "name": "Baba",
+          "avatar_template": "/user_avatar/linux.do/baba/{size}/1.png"
+        }
+      },
+      {
+        "id": 41,
+        "created_at": "2026-09-29T08:21:00.000Z",
+        "updated_at": "2026-09-29T08:21:00.000Z",
+        "name": "Baba",
+        "reminder_at": null,
+        "pinned": false,
+        "title": "How to configure the 5.5 model",
+        "fancy_title": "How to configure the 5.5 model",
+        "excerpt": "The model configuration lives in the site's own settings.",
+        "bookmarkable_id": 9003,
+        "bookmarkable_type": "Post",
+        "bookmarkable_url": "/t/how-to-configure-the-5-5-model/202/3",
+        "topic_id": 202,
+        "linked_post_number": 3,
+        "deleted": false,
+        "hidden": false,
+        "category_id": 2,
+        "closed": false,
+        "archived": false,
+        "archetype": "regular",
+        "highest_post_number": 5,
+        "bumped_at": "2026-09-28T10:12:00.000Z",
+        "slug": "how-to-configure-the-5-5-model",
+        "truncated": false,
+        "tags": [],
+        "tags_descriptions": {},
+        "user": {
+          "id": 12,
+          "username": "yang",
+          "name": "Yang",
+          "avatar_template": "/user_avatar/linux.do/yang/{size}/2.png"
+        }
+      }
+    ],
+    "more_bookmarks_url": "/u/baba/bookmarks.json?page=1",
+    "categories": []
+  }
+}

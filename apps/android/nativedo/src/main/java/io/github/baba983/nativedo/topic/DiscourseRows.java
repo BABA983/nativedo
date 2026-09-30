@@ -48,6 +48,20 @@ public final class DiscourseRows {
         return row;
     }
 
+    /**
+     * One row of the bookmarks list. A bookmark is a post in a topic, and the site lists it with what
+     * the row needs: the topic's title, the post's excerpt and when the reader bookmarked it. Nothing
+     * on it is unread - a bookmark is a thing the reader chose to keep.
+     */
+    public static DialogCell.CustomDialog bookmarkRow(io.github.baba983.nativedo.core.model.Bookmark bookmark) {
+        DialogCell.CustomDialog row = new DialogCell.CustomDialog();
+        row.id = (int) (bookmark.getTopicId() & 0x7fffffff);
+        row.name = bookmark.getTitle();
+        row.message = bookmark.getExcerpt();
+        row.date = epochSeconds(bookmark.getCreatedAt());
+        return row;
+    }
+
     /** The topic's author, so the list row can draw their avatar instead of initials. */
     public static TLRPC.User topicAuthor(TopicSummary topic, String baseUrl) {
         return DiscourseAvatars.INSTANCE.user(
