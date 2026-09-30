@@ -44,6 +44,8 @@ public class NativeDoActivity extends Activity {
     private FrameLayout contentView;
     private FilledTabsView tabs;
     private int selectedTab = -1;
+    /** Whether the reader is on the login page, which the roots and their strip stay away from. */
+    private boolean signedOut;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -118,7 +120,7 @@ public class NativeDoActivity extends Activity {
      * content keeps the height it frees.
      */
     private void updateTabsVisibility() {
-        showTabs(actionBarLayout.getFragmentStack().size() <= 1, true);
+        showTabs(!signedOut && actionBarLayout.getFragmentStack().size() <= 1, true);
     }
 
     private void showTabs(boolean visible, boolean animated) {
@@ -236,8 +238,13 @@ public class NativeDoActivity extends Activity {
         if (actionBarLayout == null) {
             return;
         }
+        // Nothing behind the login page is usable without a session, so the tab strip goes with it
+        // and comes back when the reader is back.
+        signedOut = true;
         actionBarLayout.removeAllFragments();
+        showTabs(false, false);
         actionBarLayout.presentFragment(new LoginWebViewFragment(() -> {
+            signedOut = false;
             if (tabs == null) {
                 addTabs();
             }
