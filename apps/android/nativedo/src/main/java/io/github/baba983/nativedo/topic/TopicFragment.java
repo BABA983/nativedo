@@ -768,7 +768,7 @@ public class TopicFragment extends BaseFragment {
     }
 
     /** What the composer tells us: the text, and that the send button was pressed. */
-    private class ReplyDelegate implements ChatActivityEnterView.ChatActivityEnterViewDelegate {
+    private class ReplyDelegate extends DiscourseComposerDelegate {
 
         @Override
         public void onMessageSend(CharSequence message, boolean notify, int scheduleDate, int scheduleRepeatPeriod, long payStars) {
@@ -779,28 +779,8 @@ public class TopicFragment extends BaseFragment {
         }
 
         @Override
-        public void needSendTyping() {
-        }
-
-        @Override
         public void onTextChanged(CharSequence text, boolean bigChange, boolean fromDraft) {
             updateComposerActions();
-        }
-
-        @Override
-        public void onTextSelectionChanged(int start, int end) {
-        }
-
-        @Override
-        public void onTextSpansChanged(CharSequence text) {
-        }
-
-        @Override
-        public void onAttachButtonHidden() {
-        }
-
-        @Override
-        public void onAttachButtonShow() {
         }
 
         @Override
@@ -808,67 +788,10 @@ public class TopicFragment extends BaseFragment {
             updateComposerActions();
         }
 
-        @Override
-        public void onStickersTab(boolean opened) {
-        }
-
-        @Override
-        public void onMessageEditEnd(boolean loading) {
-        }
-
         /** Attachments in a reply go to the site first: what the field gets is the markdown its own composer would write. */
         @Override
         public void didPressAttachButton() {
             openAttachmentPicker();
-        }
-
-        @Override
-        public void needStartRecordVideo(int state, boolean notify, int scheduleDate, int scheduleRepeatPeriod, int ttl, long effectId, long stars) {
-        }
-
-        @Override
-        public void toggleVideoRecordingPause() {
-        }
-
-        @Override
-        public boolean isVideoRecordingPaused() {
-            return false;
-        }
-
-        @Override
-        public void needChangeVideoPreviewState(int state, float seekProgress) {
-        }
-
-        @Override
-        public void onSwitchRecordMode(boolean video) {
-        }
-
-        @Override
-        public void onPreAudioVideoRecord() {
-        }
-
-        @Override
-        public void needStartRecordAudio(int state) {
-        }
-
-        @Override
-        public void needShowMediaBanHint() {
-        }
-
-        @Override
-        public void onStickersExpandedChange() {
-        }
-
-        @Override
-        public void onUpdateSlowModeButton(android.view.View button, boolean show, CharSequence time) {
-        }
-
-        @Override
-        public void onSendLongClick() {
-        }
-
-        @Override
-        public void onAudioVideoInterfaceUpdated() {
         }
     }
 

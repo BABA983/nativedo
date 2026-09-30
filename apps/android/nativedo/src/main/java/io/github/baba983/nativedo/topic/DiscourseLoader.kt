@@ -108,6 +108,22 @@ object DiscourseLoader {
 
     fun posts(detail: TopicDetail): List<Post> = detail.posts
 
+    /** Starts a topic: the title, the category it goes to, and the body of its first floor. */
+    fun newTopic(
+        container: AppContainer,
+        title: String,
+        categoryId: Int,
+        raw: String,
+        onCreated: (Post) -> Unit,
+        onFailed: (Throwable) -> Unit,
+    ) {
+        scope.launch {
+            runCatching { container.discourseApiClient.createTopic(title, categoryId, raw) }
+                .onSuccess(onCreated)
+                .onFailure(onFailed)
+        }
+    }
+
     /**
      * Fetches the images of the posts that have just been bound, then reports once they are on
      * disk. The cells draw a media block that already exists in the cache and leave a placeholder

@@ -146,6 +146,20 @@ interface DiscourseApiService {
     ): PostDto
 
     /**
+     * `POST /posts.json` as the web composer sends a *new topic*: the same route a reply takes, with
+     * the topic's own fields instead of `topic_id` - the site creates the topic and its first floor
+     * from `title`, `category` and `raw`. Requires `X-CSRF-Token`.
+     */
+    @FormUrlEncoded
+    @POST("posts.json")
+    suspend fun createTopic(
+        @Field("title") title: String,
+        @Field("category") categoryId: Int,
+        @Field("raw") raw: String,
+        @Header("X-CSRF-Token") csrfToken: String,
+    ): PostDto
+
+    /**
      * `POST /uploads.json` as the web composer sends it: the file as a multipart part, the
      * composer upload type, and `synchronous=true` so the answer carries the id and URL instead
      * of the asynchronous upload's empty acknowledgement. Requires `X-CSRF-Token`.

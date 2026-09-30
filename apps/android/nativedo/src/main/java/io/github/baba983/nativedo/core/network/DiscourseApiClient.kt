@@ -182,6 +182,18 @@ class DiscourseApiClient(
             ).toModel()
         }
 
+    /** A new topic: the site creates it, and answers with the topic's first floor. */
+    suspend fun createTopic(title: String, categoryId: Int, raw: String): Post =
+        runWithSessionBoundary(requiresAuthentication = true) {
+            val csrfToken = service.csrf().csrf
+            service.createTopic(
+                title = title,
+                categoryId = categoryId,
+                raw = raw,
+                csrfToken = csrfToken,
+            ).toModel()
+        }
+
     /**
      * Uploads a file to the site as the web composer does (`POST /uploads.json`,
      * `upload_type=composer`, synchronous) and reports the file's own progress as its bytes leave

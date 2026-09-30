@@ -1,10 +1,6 @@
 package io.github.baba983.nativedo.topic;
 
 import android.content.Context;
-import android.graphics.Color;
-import android.text.SpannableString;
-import android.text.Spanned;
-import android.text.style.ForegroundColorSpan;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.LinearLayout;
@@ -19,6 +15,7 @@ import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.Cells.DialogCell;
 import org.telegram.ui.Components.FilterTabsView;
+import org.telegram.ui.Components.FragmentFloatingButton;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RecyclerListView;
 
@@ -58,6 +55,7 @@ public class TopicListFragment extends BaseFragment {
 
     private LinearLayout contentView;
     private FilterTabsView tabsView;
+    private FragmentFloatingButton startTopicButton;
     private RecyclerListView listView;
     private final List<TopicSummary> topics = new ArrayList<>();
     /** One author per row, kept so the avatar download can refresh the row it belongs to. */
@@ -67,6 +65,8 @@ public class TopicListFragment extends BaseFragment {
     private AppContainer container;
     /** The tab whose feed the list currently shows, so a re-selection is not a reload. */
     private int selectedTabId = ALL_TAB_ID;
+    /** Set once a feed has arrived, so coming back to the screen reloads rather than double-loads. */
+    private boolean feedLoaded;
 
     @Override
     protected View createView(Context context) {
@@ -103,10 +103,37 @@ public class TopicListFragment extends BaseFragment {
         contentView.addView(listView, LayoutHelper.createLinear(
                 LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT, 1f));
 
-        fragmentView = contentView;
+        // Upstream's own floating button, the one its chat list starts a new chat with: this list's
+        // one action is to start a topic, so it is the same button in the same place.
+        android.widget.FrameLayout frame = new android.widget.FrameLayout(context);
+        frame.addView(contentView, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        startTopicButton = new FragmentFloatingButton(context, resourceProvider);
+        startTopicButton.setImageResource(org.telegram.messenger.R.drawable.filled_fab_compose_32);
+        startTopicButton.setContentDescription("发新帖");
+        startTopicButton.setOnClickListener(v -> {
+            if (getParentActivity() instanceof io.github.baba983.nativedo.app.NativeDoActivity) {
+                ((io.github.baba983.nativedo.app.NativeDoActivity) getParentActivity())
+                        .present(NewTopicFragment.create());
+            }
+        });
+        frame.addView(startTopicButton, FragmentFloatingButton.createDefaultLayoutParams());
+        fragmentView = frame;
         loadFeed();
         loadCategories();
         return fragmentView;
+    }
+
+    /**
+     * A feed that has already been read is read again when the reader comes back to it: the site is
+     * what knows how much of a topic is still unread, and a topic just read is exactly what changed.
+     */
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (feedLoaded) {
+            loadFeed();
+        }
     }
 
     /**
@@ -140,36 +167,9 @@ public class TopicListFragment extends BaseFragment {
         tabsView.addTab(ALL_TAB_ID, 0, "全部", false, false, false);
         for (CategorySummary category : categories) {
             tabsView.addTab(
-                    category.getId(), category.getId(), tabTitle(category), false, false, false);
+                    category.getId(), category.getId(), CategoryLabels.of(category), false, false, false);
         }
         tabsView.finishAddingTabs(false);
-    }
-
-    /**
-     * A tab's own title: the site's name for the category, and the site's color for it as the dot in
-     * front - a Discourse category is read by its color before its name is read, and both belong on
-     * the tab that selects it.
-     */
-    private static CharSequence tabTitle(CategorySummary category) {
-        SpannableString title = new SpannableString("● " + category.getName());
-        Integer color = categoryColor(category);
-        if (color != null) {
-            title.setSpan(new ForegroundColorSpan(color), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        }
-        return title;
-    }
-
-    /** The category's color as the site sends it: hex, with or without the leading '#'. */
-    private static Integer categoryColor(CategorySummary category) {
-        String hex = category.getColorHex();
-        if (hex == null || hex.isEmpty()) {
-            return null;
-        }
-        try {
-            return Color.parseColor(hex.startsWith("#") ? hex : "#" + hex);
-        } catch (IllegalArgumentException invalid) {
-            return null;
-        }
     }
 
     private void presentTopic(TopicSummary topic) {
@@ -216,6 +216,7 @@ public class TopicListFragment extends BaseFragment {
             listView.getAdapter().notifyDataSetChanged();
         }
         fetchAvatars();
+        feedLoaded = true;
         return kotlin.Unit.INSTANCE;
     }
 
