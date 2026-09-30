@@ -105,15 +105,12 @@ public class BookmarksFragment extends BaseFragment {
         BookmarksLoader.INSTANCE.page(container, username, asked, loaded -> {
             loading = false;
             page = asked + 1;
+            // A page with nothing on it is the end of the list: it stays empty rather than growing a
+            // row that says so - the reader got here from a row of their own profile.
             reachedTheEnd = loaded.isEmpty();
             for (Bookmark bookmark : loaded) {
                 bookmarks.add(bookmark);
                 authors.add(author(bookmark));
-            }
-            if (loaded.isEmpty()) {
-                // Nothing more to draw: a list with nothing on it stays empty rather than growing a
-                // row that says so - the reader got here from a row of their own profile.
-                page = Integer.MAX_VALUE;
             }
             notifyRowsChanged();
             fetchAvatars();
