@@ -27,7 +27,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.telegram.messenger.ApplicationLoader
 import org.telegram.ui.Components.FilledTabsView
-import org.telegram.ui.ThemeActivity
 
 /**
  * The home structure: three entries, upstream's tab strip, and the topic list as the first screen.
@@ -74,7 +73,7 @@ internal class HomeTabsTest {
     }
 
     @Test
-    fun theSettingsTabOpensUpstreamsThemePage() {
+    fun theSettingsTabOpensOurOwnSettingsScreen() {
         val shell = harness.bootApp()
         harness.await("the topic list to load") { currentFragmentName() == "TopicListFragment" }
         harness.renderApp("home-tabs")
@@ -94,15 +93,9 @@ internal class HomeTabsTest {
             tabs.alpha == 0f && tabs.translationY > 0f,
         )
         tapTab(tabs, 2)
-        harness.await("the theme page to open") { currentFragmentName() == "ThemeActivity" }
-        harness.renderApp("settings-theme")
+        harness.await("the settings screen to open") { currentFragmentName() == "SettingsFragment" }
+        harness.renderApp("settings")
 
-        val themeField = ThemeActivity::class.java.getDeclaredField("currentType").apply { isAccessible = true }
-        assertEquals(
-            "the settings tab is upstream's appearance page",
-            ThemeActivity.THEME_TYPE_BASIC,
-            themeField.get(currentFragment(shell)) as Int,
-        )
         assertEquals(
             "the tab replaced the root instead of stacking on it",
             1,

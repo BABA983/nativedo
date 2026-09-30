@@ -21,6 +21,7 @@ apps/android/nativedo/            ← our module: the only place our code lives
     search/    the site's search behind upstream's action bar search field
     notifications/  the reader's in-app notifications over upstream's list row
     bookmarks/  the reader's own bookmarks over upstream's list row
+    settings/   our own settings screen over upstream's cells (appearance, bookmarks, account)
     feature/   the copied data layer (profile, topics, notifications, bookmarks)
   src/test/java/io/github/baba983/nativedo/harness/   the render + side-effect harness
 ```
@@ -135,7 +136,8 @@ stands, and the upstream component each row is meant to use.
 | Sign-in and session restore (WebView `/login`, `_t` / `_forum_session` / `cf_clearance`, `/session/csrf`) | done | done | our own (moved from the old app's `ui/auth`) |
 | Latest topic feed with paging | done | done | `DialogCell.CustomDialog` + `RecyclerListView` |
 | New / top feeds | done | missing | the same rows, driven by our own feed calls |
-| A category filter over the topic list (`/categories.json`, `/c/{slug}/{id}/l/latest.json`) | done | done: upstream's `FilterTabsView` strip above the list, one tab per top-level category in the site's own order, the site's color as the dot in front of the name, and a tab loads that category's own feed. Tags are not built (the site's `/tags.json` would be a second strip), and the strip appears when the categories arrive so a site that answers none leaves the list the whole screen | `FilterTabsView`, upstream's own list-filter control (the one its chat list filters chat folders with) |
+| A category filter over the topic list (`/categories.json`, `/c/{slug}/{id}/l/latest.json`) | done | done: upstream's `FilterTabsView` strip above the list, one tab per top-level category in the site's own order, the site's color as the dot in front of the name, and a tab loads that category's own feed; the strip appears when the categories arrive so a site that answers none leaves the list the whole screen | `FilterTabsView`, upstream's own list-filter control (the one its chat list filters chat folders with) |
+| A tag filter over the topic list (`/tags.json`, `/tag/{slug}/l/latest.json`, `/tags/c/.../{tag}/{id}`) | not built | done: one item in the action bar (not a second strip, which would take the list's height) opens the site's tags in a dialog, the chosen tag shows in the title and clears in one tap, and it combines with the category tab over the site's own combined route | the action bar's own icon-and-dialog pattern, `ActionBarMenuItem` |
 | Start a topic (a title, a category, a body → `POST /posts.json`) | not built | done: the list's own floating button - upstream's, the one its chat list starts a new chat with - opens upstream's titled field, upstream's composer for the body, and the site's categories behind a dialog; the send button appears only when the form is complete | `FragmentFloatingButton`, `EditTextBoldCursor`, `ChatActivityEnterView`, `AlertDialog` of the site's items |
 | Topic detail, cooked HTML to native blocks | done, 41 ports | done | upstream `RichHtml.parse` into `ChatMessageCell` |
 | Post images and the lightbox | done | done | `PhotoViewer` |
@@ -151,16 +153,30 @@ stands, and the upstream component each row is meant to use.
 | Reactions: toggle and who reacted | done | half, toggling only | upstream's reaction chips, `CustomEmojiReactionsWindow` |
 | Polls: vote, retract, voter list | done | vote and retract; voter list missing | `TL_messageMediaPoll` with one bubble per poll, the floor split at its `div.poll`; a tap votes through our own `PUT /polls/vote`. Known gaps: `View Votes (N)` (upstream draws it, its voters list lives in `ChatActivity`, which this screen does not have) and `ranked_choice` (a tap cannot express a rank, so those polls open the floor menu instead of voting); poll option images and "add option" are not offered |
 | Bookmarks (`/bookmarks.json`, `DELETE /posts/{id}/bookmark`) | done | done: the post menu adds and takes back a bookmark, and the reader's own list (`/u/{username}/bookmarks.json`, a 书签 row under 我的 on their own profile) draws the site's entries, a tap opening the topic at the bookmarked floor. The site's own envelope has a trap: a page with rows arrives under `user_bookmark_list`, an empty one is a bare `{"bookmarks":[]}` | upstream's `DialogCell` rows and the settings-shaped row on the profile |
-| Read progress (`POST /topics/timings`) and restore | done | done, without upstream's unread divider: the floors the viewport reaches are reported as the reader moves (debounced) and at once when they leave, a topic opens at the site's own `last_read_post_number` (or this device's further one), and the list's unread counts follow the site's answer - a topic read in full draws no badge even before the site has taken the report in | our own reporter over the site's endpoint; the list's rows are upstream's `DialogCell` |
+| Read progress (`POST /topics/timings`) and restore | done | done, without upstream's unread divider: the floors the viewport reaches are reported as the reader moves (debounced) and at once when they leave, the dwell reported is the reader's real time - counted the way Discourse's own screen-track counts it, only while the screen is in front, a floor is on screen and the reader has scrolled within three minutes - a topic opens at the site's own `last_read_post_number` (or this device's further one), and the list's unread counts follow the site's answer - a topic read in full draws no badge even before the site has taken the report in | our own reporter over the site's endpoint; the list's rows are upstream's `DialogCell` |
 | Search: topics, posts, users, in-topic | done | done, the site's topics, posts and people from the action bar's own search field; a hit opens its topic at its floor, a person opens their profile; in-topic search missing | `ActionBarMenuItem.setIsSearchField` over `/search.json`, hits drawn by `DialogCell` / `ProfileSearchCell` |
 | User profile (`/u/{username}.json`, activity feed) | done | done, `/user_actions.json` for the topics created and the replies merged into one stream, one upstream `DialogCell` row per action, a tap opens the topic at that floor | our own `BaseFragment` over `ProfileSearchCell` / `HeaderCell` / `TextDetailCell` / `TextInfoPrivacyCell` / `DialogCell`; `ProfileActivity` is unusable here (it loads the full user through tgnet and is bound to a Telegram account) |
 | Notifications | not built | done, the reader's own list from `/notifications.json`; nothing pushes, and there is no unread count on the tab | upstream's notification screens are Telegram-account bound, so our own screen over upstream's `DialogCell`; unread is the row's own badge |
-| Appearance and theme | done | done | `ThemeActivity` (`THEME_TYPE_BASIC`) |
-| Account and session settings | done | missing | `SettingsActivity` subpages |
+| Appearance and theme | done | done: the settings tab's 外观 row opens it | `ThemeActivity` (`THEME_TYPE_BASIC`) |
+| Account and session settings | done | done: the settings tab is our own screen over upstream's cells (`HeaderCell` / `TextSettingsCell`), with the appearance page, the bookmark list and the account - the current reader and a sign-out that clears the cookies and returns to the login page | upstream's settings cells, the way `SettingsActivity` draws its own list |
 | linux.do emoji sprite in the composer | done | missing | upstream's emoji panel plus our sprite downloader |
 | Floating date and jump to the read position | done | missing | upstream's chat date overlay |
 | Text selection inside a post | done | missing | `ChatMessageCell`'s own selection |
 | Share and deep links into a topic | partial | missing | `ShareActivity` plus an intent filter |
+
+## 真机验证清单
+
+每一项都是手感或真站点的疑问，orb 只能定正确性（golden 与 E2E），定不了这些。
+
+- 分类条的手感：分类名字是否可读、颜色是否分得开、选中胶囊是否清楚、分类放不下时横向滑动是否被发现；分类到达前列表先出现再下移的跳变是否能接受。
+- 标签菜单：栏上的标签图标是否能被看懂、标签多时弹窗里是否好找、选中的标签在标题里是否一眼可见、清除是否一步到位；分类加标签的组合请求是否返回符合预期的话题。
+- 发新帖：手机键盘压在标题行和输入框上时是否可用，标题的 IME「下一项」是否落到正文，发送箭头的出现是否清楚，以及真站点对过短标题的原文拒绝是否显示出来。
+- 阅读进度与真实站点：读完话题返回后 `/latest.json` 的 `unread_posts` 是否按实际读到的楼层下降，重开话题是否停在离开的楼层；真实停留时间的上报是前台、楼层在视口内、三分钟内有滚动才计时，读完一篇长帖后站点的阅读时长是否与体感一致。
+- 书签：长按菜单的收藏与取消收藏、资料页与设置页的书签列表，在一个已有书签的账号上验证置顶顺序、被删楼层的行、已关闭话题的行。
+- 设置页：外观 / 我的 / 账号三组的行高与间距是否符合上游观感；退出登录的确认框、清 cookie 后回到登录页、再登录回来后话题与通知是否正常。
+- 通知 tab：没有推送和未读计数时，列表的排序和徽章是否仍然清楚。
+
+已知且预期内的差异：分类和标签之外没有更多筛选；新话题要回列表重新读才出现；收藏没有 bulletin 提示；不支持站内私信。
 
 ## Switch plan
 

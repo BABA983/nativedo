@@ -195,8 +195,9 @@ public class NativeDoActivity extends Activity {
             return new io.github.baba983.nativedo.notifications.NotificationsFragment();
         }
         if (index == 2) {
-            // Upstream's appearance settings: day/night, the theme list, accents and text size.
-            return new ThemeActivity(ThemeActivity.THEME_TYPE_BASIC);
+            // Our own settings, built from upstream's cells; the appearance page itself is still
+            // upstream's, one row in.
+            return new io.github.baba983.nativedo.settings.SettingsFragment();
         }
         return new TopicListFragment();
     }
@@ -225,6 +226,23 @@ public class NativeDoActivity extends Activity {
                 showTab(0);
             }), false);
         }
+    }
+
+    /**
+     * The reader signed out. The session is gone, so every screen built on it is gone too: the
+     * login page replaces the stack, and the tabs come back once there is a reader again.
+     */
+    public void signedOut() {
+        if (actionBarLayout == null) {
+            return;
+        }
+        actionBarLayout.removeAllFragments();
+        actionBarLayout.presentFragment(new LoginWebViewFragment(() -> {
+            if (tabs == null) {
+                addTabs();
+            }
+            showTab(0);
+        }), false);
     }
 
     /** Pushes a screen on top of the current one; back returns to it. */
