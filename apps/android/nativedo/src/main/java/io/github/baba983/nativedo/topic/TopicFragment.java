@@ -189,13 +189,18 @@ public class TopicFragment extends BaseFragment {
             @Override
             public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
                 maybeLoadNextPage();
-                reportReachedFloor();
+                reportViewport();
+                if (reporter != null) {
+                    // Scrolling is what tells the dwell clock the reader is still reading; without
+                    // it a topic left open on a desk would count as read time.
+                    reporter.noteActivity();
+                }
             }
         });
         // The first layout is what fills the viewport, and a viewport that never scrolls never
         // reports a scroll: the floors the reader has seen are reported from the layout too.
         listView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
-                reportReachedFloor());
+                reportViewport());
 
         // The composer floats at the bottom over the list, so the list keeps its last post clear.
         listView.setPadding(0, 0, 0, AndroidUtilities.dp(52));
@@ -381,7 +386,7 @@ public class TopicFragment extends BaseFragment {
         // The rows were bound inside a layout pass, so a message queued now runs once that pass has
         // placed them: the viewport is only known after it, and a topic whose floors all fit has no
         // scroll to report them from.
-        listView.post(this::reportReachedFloor);
+        listView.post(this::reportViewport);
         return kotlin.Unit.INSTANCE;
     }
 
@@ -396,8 +401,12 @@ public class TopicFragment extends BaseFragment {
         return false;
     }
 
-    /** How far the reader has come: the last floor the viewport holds. */
-    private void reportReachedFloor() {
+    /**
+     * What the viewport holds: how far the reader has come, and which floors are being read. The
+     * dwell clock is only credited to the floors on screen, so the window is reported with the
+     * position rather than the position alone.
+     */
+    private void reportViewport() {
         if (reporter == null || listView == null) {
             return;
         }
@@ -406,14 +415,23 @@ public class TopicFragment extends BaseFragment {
         if (manager == null) {
             return;
         }
+        int first = manager.findFirstVisibleItemPosition();
         int last = manager.findLastVisibleItemPosition();
-        if (last >= 0 && last < bubbleFloors.size()) {
+        if (last < 0) {
+            return;
+        }
+        java.util.List<Integer> visible = new ArrayList<>();
+        for (int position = Math.max(0, first); position <= last && position < bubbleFloors.size(); position++) {
             // The row holds the floor's index; what a report is made of is the site's own number for
             // the floor, which is the one an open of the topic is answered with.
-            Integer number = floors.get(bubbleFloors.get(last)).getPostNumber();
+            Integer number = floors.get(bubbleFloors.get(position)).getPostNumber();
             if (number != null) {
-                reporter.advanceTo(number);
+                visible.add(number);
             }
+        }
+        reporter.visibleFloors(visible);
+        if (!visible.isEmpty()) {
+            reporter.advanceTo(visible.get(visible.size() - 1));
         }
     }
 
@@ -424,6 +442,14 @@ public class TopicFragment extends BaseFragment {
      * in (see TopicReadMarks).
      */
     @Override
+    public void onResume() {
+        super.onResume();
+        if (reporter != null) {
+            reporter.setForeground(true);
+        }
+    }
+
+    @Override
     public void onPause() {
         super.onPause();
         leaveTopic();
@@ -431,6 +457,11 @@ public class TopicFragment extends BaseFragment {
 
     @Override
     public void onFragmentDestroy() {
+        if (reporter != null) {
+            // The screen is gone: the ticker must be too, or it keeps crediting floors of a topic
+            // nobody is looking at.
+            reporter.stop();
+        }
         leaveTopic();
         super.onFragmentDestroy();
     }
@@ -439,10 +470,11 @@ public class TopicFragment extends BaseFragment {
         if (reporter == null) {
             return;
         }
-        reportReachedFloor();
+        reportViewport();
         if (reporter.readToTheEnd()) {
             TopicReadMarks.INSTANCE.markReadInFull(topicId);
         }
+        reporter.setForeground(false);
         reporter.flush();
     }
 

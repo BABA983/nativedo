@@ -101,6 +101,10 @@ internal class ReadProgressTest {
         harness.await("the topic to load") { drawnFloors().isNotEmpty() }
         println("read: drawn floors on opening = " + drawnFloors())
 
+        // The reader sits with the first floor on screen for a while: the dwell that reaches the
+        // site has to be that time, not a nominal second per floor.
+        harness.idleClock(3_000)
+
         // The reader reads on: the viewport is moved to the end of the topic.
         scrollTopicToTheEnd()
         println("read: drawn floors after reading = " + drawnFloors())
@@ -116,22 +120,22 @@ internal class ReadProgressTest {
             reports.all { fields -> fields["topic_id"] == TOPIC_ID.toString() },
         )
         assertEquals(
-            "every floor the reader reached is reported, once",
+            "every floor the reader reached is reported",
             (1..TOPIC_FLOORS).toList(),
             reports.flatMap { fields -> fields.keys }
                 .filter { key -> key.startsWith("timings[") }
                 .map { key -> key.removePrefix("timings[").removeSuffix("]").toInt() }
+                .distinct()
                 .sorted(),
         )
         assertTrue(
-            "each of them with the dwell one read floor is reported as",
+            "a report names a positive dwell for each floor, and never more than the site takes",
             reports.flatMap { fields -> fields.filterKeys { key -> key.startsWith("timings[") }.values }
-                .all { dwell -> dwell == "1000" },
+                .all { dwell -> dwell.toInt() in 1..60_000 },
         )
-        assertEquals(
-            "and the dwell of the whole topic is what its reports add up to",
-            6000,
-            reports.sumOf { fields -> fields["topic_time"]!!.toInt() },
+        assertTrue(
+            "and the topic's own dwell is the reader's real time, not a second per floor",
+            reports.sumOf { fields -> fields["topic_time"]!!.toInt() } >= 3_000,
         )
         assertEquals(
             "with the token the site asks its writes for",
@@ -182,6 +186,116 @@ internal class ReadProgressTest {
         harness.layoutApp()
         harness.renderApp("read-progress-jump")
         harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * The dwell has to be the reader's own time. A client that reports a fixed amount makes the
+     * site's own reading statistics - and the trust levels built on them - disagree with what its
+     * readers did, and one that keeps counting while the app is in the background does the same in
+     * the other direction. The clock here is the simulated one, so the test can watch five seconds
+     * pass without waiting five seconds.
+     */
+    @Test
+    fun theDwellIsTheReadersOwnForegroundTime() {
+        site.serveJsonFor("latest.json") { latestFeedWithUnread(TOPIC_FLOORS, TOPIC_FLOORS) }
+        site.serveJsonFor("t/$TOPIC_ID.json") { topicJson(floor = 1, total = TOPIC_FLOORS, lastRead = 0) }
+        site.serveJson("topics/timings", "{}")
+
+        harness.bootApp()
+        harness.await("the topic list to load") { rowCount() == 1 }
+        openFirstTopic()
+        harness.await("the topic to load") { drawnFloors().isNotEmpty() }
+        // The floors are only on screen once the list has been through a layout, and only the
+        // floors on screen are being read.
+        harness.layoutApp()
+        harness.idle()
+        val floorsOnScreen = drawnFloors()
+        println("dwell: floors on opening = $floorsOnScreen")
+
+        // Opening the topic reports the floors it opened at (the smallest dwell the site takes, so
+        // they are not stuck unread), and the time the screen spent loading before that is real time
+        // too. The reader's own five seconds are what this test is about, so the window is bracketed
+        // by a pause that sends whatever came before and re-arms the clock on the way back.
+        val beforeWindow = site.requestBodiesFor("topics/timings").size
+        pauseApp()
+        awaitReport(beforeWindow + 1)
+        settle()
+        resumeApp()
+
+        harness.idleClock(10_000)
+        pauseApp()
+        val first = awaitReport(beforeWindow + 2).let(::fieldsOf)
+        settle()
+        println("dwell: after 10s in front, the site was told $first")
+        val firstTopicTime = first["topic_time"]!!.toInt()
+        assertTrue(
+            "ten seconds in front are reported as about ten seconds, not a nominal slice",
+            firstTopicTime in 9_000..12_000,
+        )
+        assertTrue(
+            "and the floor on screen carries the same time",
+            floorsOnScreen.all { floor ->
+                (first["timings[$floor]"]?.toInt() ?: 0) in 9_000..12_000
+            },
+        )
+
+        // Ten seconds in the background must not count; ten more seconds in front must.
+        val beforeHidden = site.requestBodiesFor("topics/timings").size
+        harness.idleClock(10_000)
+        assertEquals(
+            "a screen in the background reports nothing while it is away",
+            beforeHidden,
+            site.requestBodiesFor("topics/timings").size,
+        )
+        resumeApp()
+        harness.idleClock(10_000)
+        pauseApp()
+        val second = awaitReport(beforeHidden + 1).let(::fieldsOf)
+        println("dwell: after 10s hidden and 10s back, the site was told $second")
+        val secondTopicTime = second["topic_time"]!!.toInt()
+        assertTrue(
+            "only the ten seconds back in front are reported",
+            secondTopicTime in 9_000..12_000,
+        )
+        assertTrue(
+            "the time in the background is not among them",
+            secondTopicTime < 15_000,
+        )
+        harness.assertNoTelegramSideEffects()
+    }
+
+    /**
+     * Gives the client the moment to take the site's answer in. The body arriving at the site and
+     * the response arriving back are two different moments, and only the first is what the site can
+     * be asked about: a test that measures the window after a report has to wait for both, or the
+     * report's own time lands in the window it is measuring.
+     */
+    private fun settle() {
+        repeat(20) {
+            harness.idle()
+            java.util.concurrent.locks.LockSupport.parkNanos(5_000_000L)
+        }
+    }
+
+    /** Waits for the [count]-th timing report to have reached the site, and returns its body. */
+    private fun awaitReport(count: Int): String {
+        awaitWithClock("timing report $count") { site.requestBodiesFor("topics/timings").size >= count }
+        return site.requestBodiesFor("topics/timings")[count - 1]
+    }
+
+    /** The app going to the background, the way the platform tells the activity. */
+    private fun pauseApp() {
+        lifecycle("onPause")
+    }
+
+    private fun resumeApp() {
+        lifecycle("onResume")
+    }
+
+    private fun lifecycle(name: String) {
+        val method = harness.activity.javaClass.getDeclaredMethod(name)
+        method.isAccessible = true
+        method.invoke(harness.activity)
     }
 
     /**

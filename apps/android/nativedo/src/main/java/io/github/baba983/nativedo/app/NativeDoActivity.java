@@ -144,6 +144,27 @@ public class NativeDoActivity extends Activity {
     }
 
     /**
+     * The app going to the background is an app-wide fact, and a screen that counts reading time has
+     * to know it: upstream's fragments are not AndroidX fragments and are only told what the layout
+     * is told, so the activity forwards its own lifecycle the way Telegram's shell does.
+     */
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (actionBarLayout != null) {
+            actionBarLayout.onResume();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (actionBarLayout != null) {
+            actionBarLayout.onPause();
+        }
+    }
+
+    /**
      * Upstream's fragments ask the system for a result through the layout, so the layout's host has
      * to hand the answer back: the top screen is the one that asked.
      */
