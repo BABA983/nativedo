@@ -32,6 +32,7 @@ import java.util.List;
 import io.github.baba983.nativedo.app.NativeDo;
 import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.model.TopicSummary;
+import io.github.baba983.nativedo.feature.topic.data.TopicReadMarks;
 import io.github.baba983.nativedo.core.model.UserProfile;
 import io.github.baba983.nativedo.topic.DiscourseAvatars;
 import io.github.baba983.nativedo.topic.DiscourseLoader;
@@ -373,7 +374,8 @@ public class ProfileFragment extends BaseFragment {
                 // computed, and when it happened. The picture is the reader's own, the one row and
                 // head share.
                 DialogCell cell = (DialogCell) holder.itemView;
-                cell.setDialog(DiscourseRows.topicRow(row.action));
+                cell.setDialog(DiscourseRows.topicRow(
+                        row.action, TopicReadMarks.INSTANCE.isReadInFull(row.action.getId())));
                 ImageLocation avatar = avatarUser == null
                         ? null
                         : DiscourseAvatars.INSTANCE.imageLocation(avatarUser);

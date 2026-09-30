@@ -26,6 +26,7 @@ import io.github.baba983.nativedo.app.NativeDo;
 import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.model.CategorySummary;
 import io.github.baba983.nativedo.core.model.TopicSummary;
+import io.github.baba983.nativedo.feature.topic.data.TopicReadMarks;
 import org.telegram.messenger.ImageLocation;
 import org.telegram.tgnet.TLRPC;
 
@@ -95,6 +96,10 @@ public class TopicListFragment extends BaseFragment {
 
         tabsView = new FilterTabsView(context, resourceProvider);
         tabsView.setDelegate(new CategoryTabsDelegate());
+        // A strip with no tabs in it is a band of nothing over the list: it is shown by the tabs
+        // arriving, not before them, so a site whose categories could not be read leaves the list
+        // the whole screen rather than an empty row above it.
+        tabsView.setVisibility(View.GONE);
 
         contentView = new LinearLayout(context);
         contentView.setOrientation(LinearLayout.VERTICAL);
@@ -170,6 +175,7 @@ public class TopicListFragment extends BaseFragment {
                     category.getId(), category.getId(), CategoryLabels.of(category), false, false, false);
         }
         tabsView.finishAddingTabs(false);
+        tabsView.setVisibility(categories.isEmpty() ? View.GONE : View.VISIBLE);
     }
 
     private void presentTopic(TopicSummary topic) {
@@ -209,6 +215,11 @@ public class TopicListFragment extends BaseFragment {
         topics.clear();
         authors.clear();
         topics.addAll(loaded);
+        for (TopicSummary topic : loaded) {
+            // The site has caught up with a topic this device had only reported: the feed is the
+            // only thing the row is drawn from again.
+            TopicReadMarks.INSTANCE.siteAgrees(topic.getId(), topic.getUnreadCount());
+        }
         for (TopicSummary topic : loaded) {
             authors.add(DiscourseRows.topicAuthor(topic, container.getBaseUrl()));
         }
@@ -282,6 +293,11 @@ public class TopicListFragment extends BaseFragment {
         }
     }
 
+    /** The rows the list is showing; the render harness reads what a row would draw from them. */
+    java.util.List<TopicSummary> rows() {
+        return topics;
+    }
+
     /** The rows draw the author's initials until the avatar lands, then ask to be re-bound. */
     private void fetchAvatars() {
         for (int index = 0; index < authors.size(); index++) {
@@ -316,7 +332,9 @@ public class TopicListFragment extends BaseFragment {
         @Override
         public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
             DialogCell cell = (DialogCell) holder.itemView;
-            cell.setDialog(DiscourseRows.topicRow(topics.get(position)));
+            TopicSummary topic = topics.get(position);
+            cell.setDialog(DiscourseRows.topicRow(
+                    topic, TopicReadMarks.INSTANCE.isReadInFull(topic.getId())));
             // `setDialog` clears the row's avatar receiver, so the author's photo goes in after it.
             // The initials stay as the placeholder until the photo is on disk.
             ImageLocation avatar = position < authors.size()

@@ -33,6 +33,8 @@ import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.model.Post;
 import io.github.baba983.nativedo.core.model.PostPoll;
 import io.github.baba983.nativedo.core.model.TopicDetail;
+import io.github.baba983.nativedo.feature.topic.data.TopicReadMarks;
+import io.github.baba983.nativedo.feature.topic.data.TopicReadReporter;
 
 /**
  * One linux.do topic: every post is drawn by upstream's stock {@link ChatMessageCell} from a
@@ -92,6 +94,8 @@ public class TopicFragment extends BaseFragment {
     private List<Long> streamPostIds = new ArrayList<>();
     private int nextPageStart;
     private boolean loadingPage;
+    /** The reader's place in this topic, and the report of it the site asks for. */
+    private TopicReadReporter reporter;
 
     public static TopicFragment forTopic(long topicId, String title) {
         android.os.Bundle args = new android.os.Bundle();
@@ -185,8 +189,13 @@ public class TopicFragment extends BaseFragment {
             @Override
             public void onScrolled(@NonNull RecyclerView recyclerView, int dx, int dy) {
                 maybeLoadNextPage();
+                reportReachedFloor();
             }
         });
+        // The first layout is what fills the viewport, and a viewport that never scrolls never
+        // reports a scroll: the floors the reader has seen are reported from the layout too.
+        listView.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
+                reportReachedFloor());
 
         // The composer floats at the bottom over the list, so the list keeps its last post clear.
         listView.setPadding(0, 0, 0, AndroidUtilities.dp(52));
@@ -325,16 +334,116 @@ public class TopicFragment extends BaseFragment {
     private void loadTopic(long topicId) {
         this.topicId = topicId;
         container = NativeDo.container(getParentActivity());
-        Integer floor = getArguments() == null ? null : getArguments().getInt(ARG_FLOOR, 0);
-        DiscourseLoader.INSTANCE.topic(container, topicId, floor == 0 ? null : floor, detail -> {
-            streamPostIds = detail.getStreamPostIds();
-            bind(detail);
-            scrollToFloor(floor);
+        reporter = DiscourseLoader.INSTANCE.readReporter(container, topicId);
+        int floor = getArguments() == null ? 0 : getArguments().getInt(ARG_FLOOR, 0);
+        if (floor > 0) {
+            // An explicit floor - a feed row, a search hit - is where the reader was sent.
+            loadWindow(floor, floor);
+            return;
+        }
+        // Otherwise where the reader was is in the site's own answer to a plain read of the topic,
+        // so the head is read once to learn it and the window they were at is loaded from there.
+        // Opening a topic at its first floor would show a reader half-way through a thread the part
+        // they have already read.
+        DiscourseLoader.INSTANCE.topic(container, topicId, null, detail -> {
+            int position = reporter.start(detail);
+            if (position > 1 && !carriesFloor(detail, position)) {
+                loadWindow(position, position);
+                return kotlin.Unit.INSTANCE;
+            }
+            show(detail, position > 1 ? position : 0);
             return kotlin.Unit.INSTANCE;
         }, error -> {
             org.telegram.messenger.FileLog.e("topic failed", error);
             return kotlin.Unit.INSTANCE;
         });
+    }
+
+    /** The window of posts around [postNumber], with the list left on [scrollTo] when it is given. */
+    private void loadWindow(int postNumber, int scrollTo) {
+        DiscourseLoader.INSTANCE.topic(container, topicId, postNumber, detail -> {
+            show(detail, scrollTo);
+            return kotlin.Unit.INSTANCE;
+        }, error -> {
+            org.telegram.messenger.FileLog.e("topic failed", error);
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
+    /** What has arrived: the topic's stream, its floors, and where in it the reader is standing. */
+    private kotlin.Unit show(TopicDetail detail, int scrollTo) {
+        streamPostIds = detail.getStreamPostIds();
+        reporter.start(detail);
+        bind(detail);
+        if (scrollTo > 0) {
+            scrollToFloor(scrollTo);
+        }
+        // The rows were bound inside a layout pass, so a message queued now runs once that pass has
+        // placed them: the viewport is only known after it, and a topic whose floors all fit has no
+        // scroll to report them from.
+        listView.post(this::reportReachedFloor);
+        return kotlin.Unit.INSTANCE;
+    }
+
+    /** Whether the answer the site gave already carries that floor, which needs no second read. */
+    private static boolean carriesFloor(TopicDetail detail, int postNumber) {
+        for (Post post : detail.getPosts()) {
+            Integer number = post.getPostNumber();
+            if (number != null && number == postNumber) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** How far the reader has come: the last floor the viewport holds. */
+    private void reportReachedFloor() {
+        if (reporter == null || listView == null) {
+            return;
+        }
+        androidx.recyclerview.widget.LinearLayoutManager manager =
+                (androidx.recyclerview.widget.LinearLayoutManager) listView.getLayoutManager();
+        if (manager == null) {
+            return;
+        }
+        int last = manager.findLastVisibleItemPosition();
+        if (last >= 0 && last < bubbleFloors.size()) {
+            // The row holds the floor's index; what a report is made of is the site's own number for
+            // the floor, which is the one an open of the topic is answered with.
+            Integer number = floors.get(bubbleFloors.get(last)).getPostNumber();
+            if (number != null) {
+                reporter.advanceTo(number);
+            }
+        }
+    }
+
+    /**
+     * The reader is leaving the topic. What they reached is reported now rather than after the
+     * debounce, and a topic they read to its end stops drawing a badge in the list they are going
+     * back to - the list's own read of the feed may be answered before the site has taken the report
+     * in (see TopicReadMarks).
+     */
+    @Override
+    public void onPause() {
+        super.onPause();
+        leaveTopic();
+    }
+
+    @Override
+    public void onFragmentDestroy() {
+        leaveTopic();
+        super.onFragmentDestroy();
+    }
+
+    private void leaveTopic() {
+        if (reporter == null) {
+            return;
+        }
+        reportReachedFloor();
+        if (reporter.readToTheEnd()) {
+            TopicReadMarks.INSTANCE.markReadInFull(topicId);
+        }
+        reporter.flush();
     }
 
     /**

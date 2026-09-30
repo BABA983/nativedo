@@ -64,6 +64,7 @@ internal class UpstreamUiHarness {
         prepareUpstream()
         resetImageLoader()
         resetPhotoViewer()
+        resetReadMarks()
         val app = Robolectric.buildActivity(NativeDoActivity::class.java).setup().get()
         activity = app
         idle()
@@ -77,6 +78,7 @@ internal class UpstreamUiHarness {
         prepareUpstream()
         resetImageLoader()
         resetPhotoViewer()
+        resetReadMarks()
         activity = Robolectric.buildActivity(Activity::class.java).setup().get()
         root = FrameLayout(activity).apply { setBackgroundColor(Color.WHITE) }
         content = FrameLayout(activity).apply { setBackgroundColor(Color.WHITE) }
@@ -92,6 +94,14 @@ internal class UpstreamUiHarness {
         Theme.createChatResources(context, false)
         Theme.createCommonMessageResources()
         idle()
+    }
+
+    /**
+     * This module's own per-process state, dropped the way upstream's is: a mark is a topic a
+     * previous test read, and it would clear the badge of a topic this test has not opened.
+     */
+    private fun resetReadMarks() {
+        io.github.baba983.nativedo.feature.topic.data.TopicReadMarks.clear()
     }
 
     private fun prepareUpstream() {

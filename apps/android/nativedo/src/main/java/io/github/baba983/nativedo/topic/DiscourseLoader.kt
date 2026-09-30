@@ -1,6 +1,9 @@
 package io.github.baba983.nativedo.topic
 
 import io.github.baba983.nativedo.core.di.AppContainer
+import io.github.baba983.nativedo.feature.topic.data.TopicReadPositionKey
+import io.github.baba983.nativedo.feature.topic.data.TopicReadReporter
+import io.github.baba983.nativedo.feature.topic.data.TopicRepository
 import io.github.baba983.nativedo.core.media.PickedMedia
 import io.github.baba983.nativedo.core.media.absoluteUploadUrl
 import io.github.baba983.nativedo.core.media.replyUploadMarkup
@@ -34,6 +37,21 @@ object DiscourseLoader {
                 .onFailure(onFailed)
         }
     }
+
+    /**
+     * The reader's place in one topic: the floors the viewport reaches, and the report of them the
+     * site asks for. One per topic screen, so its position is that screen's own.
+     */
+    fun readReporter(container: AppContainer, topicId: Long): TopicReadReporter =
+        TopicReadReporter(
+            topicId = topicId,
+            repository = TopicRepository(container.discourseApiClient),
+            store = container.topicReadPositionStore,
+            key = container.sessionStore.snapshot()
+                ?.takeIf { snapshot -> snapshot.username.isNotBlank() && snapshot.username != "anonymous" }
+                ?.let { snapshot -> TopicReadPositionKey(container.baseUrl, snapshot.username, topicId) },
+            scope = scope,
+        )
 
     /** The categories the topic list filters by, in the site's own order. */
     fun categories(

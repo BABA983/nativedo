@@ -2,7 +2,7 @@
 
 Android v1 uses standard Discourse JSON endpoints and homepage bootstrap HTML.
 
-- `GET /latest.json?page={page}` - latest topic feed with optional `topic_list.more_topics_url`
+- `GET /latest.json?page={page}` - latest topic feed with optional `topic_list.more_topics_url`. Each topic carries the caller's own read state for it: `unread_posts` (and `unseen` for a topic that was never opened) is what the reader has left to read, and it follows `last_read_post_number` - a topic whose position `/topics/timings` has advanced comes back with a smaller count, and a topic that is fully read with `unread_posts: 0`. The count is only carried for a topic the reader is notified about (`notification_level` 2 or higher); a topic without it has none to draw.
 - `GET /new.json?page={page}` - new topic feed with optional `topic_list.more_topics_url`
 - `GET /top.json?page={page}` - top topic feed with optional `topic_list.more_topics_url`
 - `GET /site.json` - site metadata including category definitions for category badge rendering

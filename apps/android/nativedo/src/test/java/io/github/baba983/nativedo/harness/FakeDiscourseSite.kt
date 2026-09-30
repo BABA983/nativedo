@@ -62,6 +62,13 @@ internal class FakeDiscourseSite {
     /** The body of the last write the site received on [path], form-encoded as it was sent. */
     fun requestBodyFor(path: String): String? = requestBodies[path.trimStart('/')]
 
+    /**
+     * Every body the path was written with, in the order they arrived. A screen that reports its
+     * state as it changes writes more than once, and the last write is not the whole story.
+     */
+    fun requestBodiesFor(path: String): List<String> =
+        requestBodyLog.filter { it.first == path.trimStart('/') }.map { it.second }
+
     /** The CSRF token a write carried on [path]. */
     fun csrfHeaderFor(path: String): String? = csrfHeaders[path.trimStart('/')]
 
@@ -151,7 +158,10 @@ internal class FakeDiscourseSite {
                     requestedPaths += path
                     requests += request.method.orEmpty() + " " + request.path.orEmpty()
                     if (request.method != "GET" && request.method != "HEAD") {
-                        requestBodies[path] = request.body.readUtf8()
+                        request.body.readUtf8().let { body ->
+                            requestBodies[path] = body
+                            requestBodyLog += path to body
+                        }
                         request.getHeader("X-CSRF-Token")?.let { csrfHeaders[path] = it }
                     }
                     lastCookieHeader = request.getHeader("Cookie")
@@ -267,6 +277,7 @@ internal class FakeDiscourseSite {
 
     private val requests = mutableListOf<String>()
     private val requestBodies = mutableMapOf<String, String>()
+    private val requestBodyLog = mutableListOf<Pair<String, String>>()
     private val csrfHeaders = mutableMapOf<String, String>()
     private val requestedPaths = mutableListOf<String>()
     private val cookieHeaders = mutableMapOf<String, String>()

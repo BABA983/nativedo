@@ -31,13 +31,18 @@ public final class DiscourseRows {
      */
     private static final long USER_ID_BASE = 1_000_000_000L;
 
-    public static DialogCell.CustomDialog topicRow(TopicSummary topic) {
+    /**
+     * One row of the topic list. [readInFull] is the reader's own state for the topic rather than
+     * the feed's: a topic they have read to its end draws no badge even when the feed the reader is
+     * holding was answered before the site had taken that in.
+     */
+    public static DialogCell.CustomDialog topicRow(TopicSummary topic, boolean readInFull) {
         DialogCell.CustomDialog row = new DialogCell.CustomDialog();
         row.id = (int) (topic.getId() & 0x7fffffff);
         row.name = topic.getTitle();
         row.message = summaryLine(topic);
         row.date = epochSeconds(topic.getLastPostedAt());
-        row.unread_count = topic.getUnreadCount();
+        row.unread_count = readInFull ? 0 : topic.getUnreadCount();
         row.pinned = topic.isPinned();
         row.muted = topic.isMuted();
         return row;

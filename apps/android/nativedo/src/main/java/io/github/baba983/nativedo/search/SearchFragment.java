@@ -31,6 +31,7 @@ import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.model.SearchResult;
 import io.github.baba983.nativedo.core.model.SearchUserSummary;
 import io.github.baba983.nativedo.core.model.TopicSummary;
+import io.github.baba983.nativedo.feature.topic.data.TopicReadMarks;
 import io.github.baba983.nativedo.profile.ProfileFragment;
 import io.github.baba983.nativedo.topic.DiscourseAvatars;
 import io.github.baba983.nativedo.topic.DiscourseLoader;
@@ -261,7 +262,8 @@ public class SearchFragment extends BaseFragment {
             Hit hit = hits.get(position);
             if (holder.itemView instanceof DialogCell) {
                 DialogCell cell = (DialogCell) holder.itemView;
-                cell.setDialog(DiscourseRows.topicRow(hit.topic));
+                cell.setDialog(DiscourseRows.topicRow(
+                        hit.topic, TopicReadMarks.INSTANCE.isReadInFull(hit.topic.getId())));
                 ImageLocation avatar = DiscourseAvatars.INSTANCE.imageLocation(hit.peer);
                 if (avatar != null) {
                     cell.avatarImage.setImage(
