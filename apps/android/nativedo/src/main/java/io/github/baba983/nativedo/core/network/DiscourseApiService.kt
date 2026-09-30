@@ -8,6 +8,7 @@ import io.github.baba983.nativedo.core.model.PostReaction
 import io.github.baba983.nativedo.core.model.PostReactionUser
 import io.github.baba983.nativedo.core.model.PostReactionUsersGroup
 import io.github.baba983.nativedo.core.model.Bookmark
+import io.github.baba983.nativedo.core.model.Tag
 import io.github.baba983.nativedo.core.model.CategorySummary
 import io.github.baba983.nativedo.core.model.DiscourseEmoji
 import io.github.baba983.nativedo.core.model.DiscourseEmojiCategory
@@ -102,6 +103,30 @@ interface DiscourseApiService {
         @Query("page") page: Int,
         @Query("limit") limit: Int,
     ): UserBookmarksResponseDto
+
+    /** `GET /tags.json`: the site's tags, for a topic list's tag filter. */
+    @GET("tags.json")
+    suspend fun tags(): TagsResponseDto
+
+    /** One tag's own latest feed. */
+    @GET("tag/{slug}/l/latest.json")
+    suspend fun tagTopics(
+        @Path("slug") slug: String,
+        @Query("page") page: Int,
+    ): TopicListResponseDto
+
+    /**
+     * One category *and* one tag: the canonical combined route, which carries both the category's
+     * and the tag's id in its path.
+     */
+    @GET("tags/c/{categorySlug}/{categoryId}/{tagSlug}/{tagId}/l/latest.json")
+    suspend fun categoryTagTopics(
+        @Path("categorySlug") categorySlug: String,
+        @Path("categoryId") categoryId: Int,
+        @Path("tagSlug") tagSlug: String,
+        @Path("tagId") tagId: Long,
+        @Query("page") page: Int,
+    ): TopicListResponseDto
 
     @GET("site.json")
     suspend fun site(): SiteResponseDto
@@ -461,6 +486,40 @@ data class CategoriesResponseDto(
  * The bookmarks list. A page with rows arrives under `user_bookmark_list`; a page the site has
  * nothing for is a bare `bookmarks: []` with no wrapper at all (the site's own client reads both).
  */
+/**
+ * The site's tag list. A site that lists its tags by group answers `extras.tag_groups` beside the
+ * plain list; the plain list is always there, so it is the one this client reads.
+ */
+@Serializable
+data class TagsResponseDto(
+    val tags: List<TagDto> = emptyList(),
+    val extras: TagExtrasDto? = null,
+)
+
+@Serializable
+data class TagExtrasDto(
+    @SerialName("tag_groups")
+    val tagGroups: List<TagGroupDto> = emptyList(),
+)
+
+@Serializable
+data class TagGroupDto(
+    val id: Long = 0,
+    val name: String = "",
+    val tags: List<TagDto> = emptyList(),
+)
+
+/** One tag: what a reader reads it as, what a URL calls it, and how many topics carry it. */
+@Serializable
+data class TagDto(
+    val id: Long,
+    val text: String = "",
+    val name: String = "",
+    val slug: String = "",
+    val description: String? = null,
+    val count: Int = 0,
+)
+
 /** What the site answers a write it refused: one or more messages, and the site's own type for it. */
 @Serializable
 data class DiscourseErrorsDto(
@@ -1016,6 +1075,17 @@ internal fun SiteResponseDto.toModel(): List<CategorySummary> = (
     ).flatMap { category ->
     category.flattenedModels()
 }
+
+internal fun TagsResponseDto.toModel(): List<Tag> = tags.map { tag -> tag.toModel() }
+
+private fun TagDto.toModel(): Tag = Tag(
+    id = id,
+    name = text.takeIf { it.isNotBlank() } ?: name,
+    // A tag without a slug of its own is addressed as `<id>-tag`, which is what the site substitutes
+    // into the answer and into the route.
+    slug = slug.takeIf { it.isNotBlank() } ?: "$id-tag",
+    count = count,
+)
 
 internal fun UserBookmarksResponseDto.toModel(): List<Bookmark> =
     (list?.bookmarks ?: bookmarks).map { bookmark -> bookmark.toModel() }

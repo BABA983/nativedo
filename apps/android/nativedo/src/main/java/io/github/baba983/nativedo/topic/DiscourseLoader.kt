@@ -26,18 +26,6 @@ object DiscourseLoader {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
-    fun latestTopics(
-        container: AppContainer,
-        onLoaded: (List<TopicSummary>) -> Unit,
-        onFailed: (Throwable) -> Unit,
-    ) {
-        scope.launch {
-            runCatching { container.discourseApiClient.fetchLatestPage(0).topics }
-                .onSuccess(onLoaded)
-                .onFailure(onFailed)
-        }
-    }
-
     /**
      * The reader's place in one topic: the floors the viewport reaches, and the report of them the
      * site asks for. One per topic screen, so its position is that screen's own.
@@ -84,17 +72,32 @@ object DiscourseLoader {
         }
     }
 
-    /** One category's own feed: what the topic list shows while its tab is the selected one. */
-    fun categoryTopics(
+    /** The site's tags, for the topic list's tag filter. */
+    fun tags(
         container: AppContainer,
-        category: io.github.baba983.nativedo.core.model.CategorySummary,
+        onLoaded: (List<io.github.baba983.nativedo.core.model.Tag>) -> Unit,
+        onFailed: (Throwable) -> Unit,
+    ) {
+        scope.launch {
+            runCatching { container.discourseApiClient.fetchTags() }
+                .onSuccess(onLoaded)
+                .onFailure(onFailed)
+        }
+    }
+
+    /**
+     * The topic list's feed for what the reader has chosen: nothing, a category, a tag, or both -
+     * one call, because which route that is is the site's business and not the screen's.
+     */
+    fun feed(
+        container: AppContainer,
+        category: io.github.baba983.nativedo.core.model.CategorySummary?,
+        tag: io.github.baba983.nativedo.core.model.Tag?,
         onLoaded: (List<TopicSummary>) -> Unit,
         onFailed: (Throwable) -> Unit,
     ) {
         scope.launch {
-            runCatching {
-                container.discourseApiClient.fetchCategoryPage(category.slug, category.id).topics
-            }
+            runCatching { container.discourseApiClient.fetchFeed(category, tag).topics }
                 .onSuccess(onLoaded)
                 .onFailure(onFailed)
         }

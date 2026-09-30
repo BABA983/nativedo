@@ -5,6 +5,7 @@ import io.github.baba983.nativedo.core.model.PostPoll
 import io.github.baba983.nativedo.core.model.PostReactionUsersGroup
 import io.github.baba983.nativedo.core.model.Bookmark
 import io.github.baba983.nativedo.core.model.CategorySummary
+import io.github.baba983.nativedo.core.model.Tag
 import io.github.baba983.nativedo.core.model.SearchResult
 import io.github.baba983.nativedo.core.model.MentionSearchResult
 import io.github.baba983.nativedo.core.model.NotificationItem
@@ -142,9 +143,34 @@ class DiscourseApiClient(
     suspend fun fetchCategories(): List<CategorySummary> =
         runWithSessionBoundary { service.categories().toModel() }
 
-    /** One category's own latest feed; `/latest.json`'s envelope, restricted to that category. */
-    suspend fun fetchCategoryPage(slug: String, categoryId: Int, page: Int = 0): TopicListPage =
-        runWithSessionBoundary { service.categoryLatest(slug = slug, id = categoryId, page = page).toModel() }
+    /**
+     * A feed restricted by what the reader has chosen, as the site's own routes name it: the plain
+     * list, one category, one tag, or both. The two filters are separate routes on the site - a
+     * category has its own (`/c/...`) and a tag its own (`/tag/...`), and together they are the
+     * combined one under `tags/c/`.
+     */
+    suspend fun fetchFeed(
+        category: CategorySummary?,
+        tag: Tag?,
+        page: Int = 0,
+    ): TopicListPage = runWithSessionBoundary {
+        val response = when {
+            category != null && tag != null -> service.categoryTagTopics(
+                categorySlug = category.slug,
+                categoryId = category.id,
+                tagSlug = tag.slug,
+                tagId = tag.id,
+                page = page,
+            )
+            category != null -> service.categoryLatest(slug = category.slug, id = category.id, page = page)
+            tag != null -> service.tagTopics(slug = tag.slug, page = page)
+            else -> service.latest(page)
+        }
+        response.toModel()
+    }
+
+    /** The site's tags, for the topic list's tag filter. */
+    suspend fun fetchTags(): List<Tag> = runWithSessionBoundary { service.tags().toModel() }
 
     suspend fun fetchTopic(topicId: Long, postNumber: Int? = null): TopicDetail =
         runWithSessionBoundary {

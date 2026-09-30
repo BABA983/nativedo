@@ -25,6 +25,7 @@ import java.util.List;
 import io.github.baba983.nativedo.app.NativeDo;
 import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.model.CategorySummary;
+import io.github.baba983.nativedo.core.model.Tag;
 import io.github.baba983.nativedo.core.model.TopicSummary;
 import io.github.baba983.nativedo.feature.topic.data.TopicReadMarks;
 import org.telegram.messenger.ImageLocation;
@@ -45,6 +46,15 @@ public class TopicListFragment extends BaseFragment {
     /** The search item in the action bar, which opens the search screen. */
     private static final int SEARCH_ITEM = 1;
 
+    /** The tag item: it opens the site's tags, and its icon is upstream's own tag filter. */
+    static final int TAG_ITEM = 2;
+
+    /**
+     * The item that drops the tag filter. It is in the action bar rather than behind the tag dialog
+     * because dropping a filter is one tap, not a dialog and a row.
+     */
+    static final int CLEAR_TAG_ITEM = 3;
+
     /**
      * The all-topics tab. Upstream's tabs are identified by an int, and the all-topics feed is not
      * a category, so it takes the id no category can have.
@@ -57,12 +67,17 @@ public class TopicListFragment extends BaseFragment {
     private LinearLayout contentView;
     private FilterTabsView tabsView;
     private FragmentFloatingButton startTopicButton;
+    private org.telegram.ui.ActionBar.ActionBarMenuItem clearTagItem;
     private RecyclerListView listView;
     private final List<TopicSummary> topics = new ArrayList<>();
     /** One author per row, kept so the avatar download can refresh the row it belongs to. */
     private final List<TLRPC.User> authors = new ArrayList<>();
     /** The site's top-level categories, in its own order; a subcategory is not a tab of its own. */
     private final List<CategorySummary> categories = new ArrayList<>();
+    /** The site's tags, in its own order, read once for the tag dialog. */
+    private final List<Tag> tags = new ArrayList<>();
+    /** The tag the list is filtered by, or null while it is not filtered by one. */
+    private Tag selectedTag;
     private AppContainer container;
     /** The tab whose feed the list currently shows, so a re-selection is not a reload. */
     private int selectedTabId = ALL_TAB_ID;
@@ -77,12 +92,20 @@ public class TopicListFragment extends BaseFragment {
             public void onItemClick(int id) {
                 if (id == SEARCH_ITEM) {
                     presentFragment(new io.github.baba983.nativedo.search.SearchFragment());
+                } else if (id == TAG_ITEM) {
+                    pickTag();
+                } else if (id == CLEAR_TAG_ITEM) {
+                    selectTag(null);
                 }
             }
         });
         // Upstream's own search item: the icon that opens the field, which the search screen then
         // uses for the query.
         actionBar.createMenu().addItem(SEARCH_ITEM, org.telegram.messenger.R.drawable.outline_header_search);
+        // The tag filter is a filter, not a second strip: the list's own space belongs to the topics
+        // (the topic list's strip is categories), so this is one item whose dialog holds the tags.
+        actionBar.createMenu().addItem(TAG_ITEM, org.telegram.messenger.R.drawable.menu_tag_filter);
+        clearTagItem = actionBar.createMenu().addItem(CLEAR_TAG_ITEM, org.telegram.messenger.R.drawable.msg_close);
 
         listView = new RecyclerListView(context);
         listView.setLayoutManager(new LinearLayoutManager(context));
@@ -124,8 +147,10 @@ public class TopicListFragment extends BaseFragment {
         });
         frame.addView(startTopicButton, FragmentFloatingButton.createDefaultLayoutParams());
         fragmentView = frame;
+        updateTagActions();
         loadFeed();
         loadCategories();
+        loadTags();
         return fragmentView;
     }
 
@@ -185,21 +210,96 @@ public class TopicListFragment extends BaseFragment {
         }
     }
 
-    /** The feed of the selected tab: the site's latest list, or one category's own. */
+    /**
+     * The feed for what the reader has chosen: the site's latest list, one category, one tag, or the
+     * two of them together. The title says which, because a filtered list is a different list.
+     */
     private void loadFeed() {
-        CategorySummary category = categoryOf(selectedTabId);
-        if (category == null) {
-            container = NativeDo.container(getParentActivity());
-            DiscourseLoader.INSTANCE.latestTopics(container, this::showTopics, error -> {
-                FileLog.e("topic list failed", error);
-                return kotlin.Unit.INSTANCE;
-            });
-            return;
-        }
-        DiscourseLoader.INSTANCE.categoryTopics(container, category, this::showTopics, error -> {
+        container = NativeDo.container(getParentActivity());
+        updateTitle();
+        DiscourseLoader.INSTANCE.feed(container, categoryOf(selectedTabId), selectedTag, this::showTopics, error -> {
             FileLog.e("topic list failed", error);
             return kotlin.Unit.INSTANCE;
         });
+    }
+
+    private void updateTitle() {
+        CategorySummary category = categoryOf(selectedTabId);
+        StringBuilder title = new StringBuilder("linux.do");
+        if (category != null) {
+            title.append(" · ").append(category.getName());
+        }
+        if (selectedTag != null) {
+            title.append(" · #").append(selectedTag.getName());
+        }
+        actionBar.setTitle(title.toString());
+    }
+
+    /**
+     * The site's tags, for the tag dialog. A failure leaves the item opening nothing, which is what a
+     * site that could not be read can offer - the list itself is unaffected.
+     */
+    private void loadTags() {
+        DiscourseLoader.INSTANCE.tags(container,
+                loaded -> {
+                    tags.clear();
+                    tags.addAll(loaded);
+                    return kotlin.Unit.INSTANCE;
+                },
+                error -> {
+                    FileLog.e("topic list tags failed", error);
+                    return kotlin.Unit.INSTANCE;
+                });
+    }
+
+    /** The site's tags as a dialog, the way upstream offers a choice of its own. */
+    private void pickTag() {
+        if (getParentActivity() == null || tags.isEmpty()) {
+            return;
+        }
+        // The clear entry first, so the tag rows keep one offset whether or not a tag is in hand.
+        final boolean hasClear = selectedTag != null;
+        final int offset = hasClear ? 1 : 0;
+        CharSequence[] items = new CharSequence[tags.size() + offset];
+        if (hasClear) {
+            items[0] = "清除标签";
+        }
+        for (int index = 0; index < tags.size(); index++) {
+            Tag tag = tags.get(index);
+            items[offset + index] = tag.getCount() > 0
+                    ? "#" + tag.getName() + " · " + tag.getCount()
+                    : "#" + tag.getName();
+        }
+        org.telegram.ui.ActionBar.AlertDialog.Builder builder =
+                new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity());
+        builder.setTitle("按标签筛选");
+        builder.setItems(items, (dialog, which) -> {
+            if (hasClear && which == 0) {
+                selectTag(null);
+                return;
+            }
+            int index = which - offset;
+            if (index >= 0 && index < tags.size()) {
+                selectTag(tags.get(index));
+            }
+        });
+        builder.setNegativeButton("取消", null);
+        showDialog(builder.create());
+    }
+
+    /** Picks a tag (or drops the one in hand) and reads the list again for it. */
+    private void selectTag(Tag tag) {
+        selectedTag = tag;
+        updateTagActions();
+        loadFeed();
+    }
+
+    /** What the tag filter looks like: the tag in the title, and the way out of it in the bar. */
+    private void updateTagActions() {
+        if (clearTagItem != null) {
+            clearTagItem.setVisibility(selectedTag == null ? View.GONE : View.VISIBLE);
+        }
+        updateTitle();
     }
 
     private CategorySummary categoryOf(int tabId) {
