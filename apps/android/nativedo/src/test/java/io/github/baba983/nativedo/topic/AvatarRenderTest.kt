@@ -163,9 +163,15 @@ internal class AvatarRenderTest {
         harness.await("a row avatar to be fetched") {
             site.requestPaths.any { it.startsWith("user_avatar/") && site.cookieHeaderFor(it) != null }
         }
-        repeat(40) {
-            harness.idle()
-            harness.idleUpstreamQueues()
+        // A row is handed its avatar while it is drawn, and the loader decodes it on a thread of its
+        // own: waiting a fixed number of drains is a bet on that thread's timing, which a run with
+        // other tests ahead of it loses. What the pixels are of is the row *holding* the picture, so
+        // that is what is waited for.
+        harness.await("the rows to hold the avatar they downloaded") {
+            harness.drawApp()
+            laidOutChildren()
+                .filterIsInstance<DialogCell>()
+                .any { cell -> cell.avatarImage?.bitmap != null }
         }
 
         val green = greenPixels(harness.renderApp("topic-list-avatars"))
