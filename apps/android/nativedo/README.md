@@ -176,15 +176,13 @@ stands, and the upstream component each row is meant to use.
 - 设置页：外观 / 我的 / 账号三组的行高与间距是否符合上游观感；退出登录的确认框、清 cookie 后回到登录页、再登录回来后话题与通知是否正常。
 - 通知 tab：没有推送和未读计数时，列表的排序和徽章是否仍然清楚。
 
-### 设备验证结果（2026-10-01，AVD `nativedo-test`／android-35 google_apis_tablet arm64-v8a，`emulator-5556`）
+### 设备验证结果（2026-10-01/02，AVD `nativedo-test`／android-35 google_apis_tablet arm64-v8a，`emulator-5556`）
 
 环境：Apple Silicon Mac mini，模拟器内全局代理 `10.0.2.2:7890`（这台机器上跑着的 ClashX Meta）。
-本机 DNS 对 `linux.do` 被污染（解析到 `157.240.10.32`），不加代理连不上真实站点。会话来自用户
-之前装过的 `io.github.baba983.nativedo`（`emulator-5554`）的 `nativedo.cookie_store.xml`；这台 5556
-上的登录没有用 GitHub 走完。一行一项：
+本机 DNS 对 `linux.do` 被污染（解析到 `157.240.10.32`），不加代理连不上真实站点。一行一项：
 
 - **WebView 登录与 Cloudflare**：通过。WebView 加载出真实登录页且没有弹挑战；退出登录后站点把 token
-  判为登出，登录页的 Cloudflare Turnstile 挑战能正常起来。
+  判为登出（`expired_ServerLoggedOut`），登录页的 Cloudflare Turnstile 挑战能正常起来，读者也能重新登录。
 - **tgnet 与 Telegram 数据库**：通过。`netstat` 只有通向代理的连接；app 目录没有 `cache4.db`
   （只有 WebView 自己的 `Databases.db`）；全程没有 `FATAL EXCEPTION`、没有 ANR。
 - **通知 tab**：通过。真实 `/notifications.json` 的排序、徽章、日期都清楚，tab 上没有未读计数（预期）。
@@ -193,28 +191,36 @@ stands, and the upstream component each row is meant to use.
 - **分类条**：通过。分类名可读、颜色分得开、选中胶囊清楚、放不下时横向滑动能被发现。
 - **标签菜单**：通过，两处观察。栏上的图标更像漏斗而不是标签；选了分类之后标签在标题里会被截断
   （`linux.do · 国产替代 · #D…`）。分类加标签的组合请求返回的话题符合预期，× 一步清除。
-- **帖子渲染、头像**：通过。上游 `ChatMessageCell` 的泡泡、作者色、时间、链接都对，头像都画出来了。
+- **帖子渲染、头像、onebox**：通过。上游 `ChatMessageCell` 的泡泡、作者色、时间、链接都对，头像都
+  画出来了，`aside.onebox` 画成上游的链接预览卡片（`pan.quark.cn` / `pan.baidu.com` 那两段）。
+- **帖子里的图片**：通过（`7949bec0` 之后）。修复前每一张都只是灰色空块，见下面第 4 条。
+- **PhotoViewer**：通过。点图片全屏打开，页数「1 of 2」「1 of 12」，带上游的返回与更多菜单。
+- **投票**：通过（渲染）。`TL_messageMediaPoll` 的两个泡泡、选项圆点、"Poll" 标签与 "18 votes／17 votes"
+  都对；**投票动作没有执行**——它会在这个真实站点留痕，而用户没有指定测试话题。
+- **发新帖**：部分通过。标题行、分类行与分类弹窗（站点的分类加颜色点）、composer 都在，发送箭头在表单
+  完整前不出现（和文档一致）；没有实际发送，所以站点对过短标题的拒绝没看到。
+- **书签**：列表通过；行摘要显示站点返回的 cooked HTML（`<a name="p-…" class="anchor">`）——`7ff28d8d`
+  已把它按文本读，但**设备复验没做**（复验需要重开那个列表，而最后一轮网络已经拉不到数据）。长按菜单的
+  收藏／取消收藏仍然没验到：长按在话题页与投票页都没有触发菜单。
 - **回应标签的 emoji**：失败（未修）。chips 只有数字，没有 ❤／👏 之类字形——上游的非自定义回应要从
   `MediaDataController.getReactionsMap()` 里取图，那张表只由 tgnet 的 `messages.getAvailableReactions`
   填，这里永远是空的，所以 `ReactionButton` 什么都不画。`PostReactionsTest` 断的是消息对象的
-  emoticon，不是画出来的东西，所以单测看不出来。
-- **帖子里的图片**：失败。有一层楼的图片只画出一个灰色空块；同一次会话里 logcat 有
-  `IllegalStateException: cannot move <id>.jpg.part into place`。
-- **书签**：失败（已修，待复验）。列表本身正常，但行里的摘要直接显示站点返回的 cooked HTML
-  （`<a name="p-…" class="anchor">`）。`7ff28d8d` 把摘要按文本读；长按菜单的收藏／取消收藏没验到
-  （长按没有触发菜单）。
-- **PhotoViewer／视频／附件／投票／阅读进度／发新帖**：未验证。退出登录让站点把 token 登出了，
-  这台机器上的会话没能恢复，其余需要会话的项没跑。
+  emoticon，不是画出来的东西，所以单测看不出来。站长自定义的 `tieba_087`、`bili_057` 反而按文字画出来了。
+- **视频与附件**：未验证（没找到带 `<video>` 或附件的测试话题，最后一轮网络也拉不到数据）。
+- **阅读进度**：未验证。最后一轮访问被 Cloudflare 挑战、随后的请求直接超时，话题列表拉不出来。
+  顺带观察到：这种情况下列表只是空着，没有错误提示也没有重试入口。
 - **滚动流畅度**：只拿到模拟器的数（10 次滑动：253 帧、37% janky、50 分位 31 ms），模拟器的 GPU
   本来就不是真机的数，参考价值有限。
 
-设备上发现的问题（都已记录，两个已修）：
+设备上发现的问题（都已记录，三个已修）：
 
 1. `ChatMessageCell` 因为 `noforwards` 给窗口加 `FLAG_SECURE`，整块话题页截图全黑、最近任务里是空缩略图
    ——`35376c48` 把它挪到 `NativeDoHooks.messageMaySecureWindow()`。
 2. 书签摘要显示原始 HTML——`7ff28d8d`。
-3. 回应 chips 不画 emoji（见上）。
-4. 同一张图被两个写入者同时抓时共用 `<name>.part`，后一次 `renameTo` 找不到源而抛
+3. 帖子里的图片只写到 images 目录，而画它的 `ImageLoader` 按 CACHE_TYPE_CACHE 去 cache 目录找，所以
+   永远是灰色空块——`7949bec0` 让两个目录都写一份（头像那条路早就这么做）。
+4. 回应 chips 不画 emoji（见上）。
+5. 同一张图被两个写入者同时抓时共用 `<name>.part`，后一次 `renameTo` 找不到源而抛
    `cannot move … into place`，前一次的重命名还可能搬走半写的文件。要按目标文件串行化，或让每个写入者
    用自己的一次性 `.part` 名再原子改名；四个调用点（`DiscourseAvatars.cache`、
    `DiscourseImageBridge` 的封面／附件／图片）同一个形状。
