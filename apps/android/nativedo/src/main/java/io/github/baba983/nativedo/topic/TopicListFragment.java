@@ -22,6 +22,7 @@ import org.telegram.ui.Components.RecyclerListView;
 import java.util.ArrayList;
 import java.util.List;
 
+import io.github.baba983.nativedo.R;
 import io.github.baba983.nativedo.app.NativeDo;
 import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.model.CategorySummary;
@@ -69,6 +70,8 @@ public class TopicListFragment extends BaseFragment {
     private FragmentFloatingButton startTopicButton;
     private org.telegram.ui.ActionBar.ActionBarMenuItem clearTagItem;
     private RecyclerListView listView;
+    /** What is shown instead of the list when the feed could not be read. */
+    private org.telegram.ui.Components.EmptyTextProgressView emptyView;
     private final List<TopicSummary> topics = new ArrayList<>();
     /** One author per row, kept so the avatar download can refresh the row it belongs to. */
     private final List<TLRPC.User> authors = new ArrayList<>();
@@ -135,6 +138,17 @@ public class TopicListFragment extends BaseFragment {
         // one action is to start a topic, so it is the same button in the same place.
         android.widget.FrameLayout frame = new android.widget.FrameLayout(context);
         frame.addView(contentView, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        // A fetch that failed leaves the list empty, which reads the same as a site with nothing to
+        // show. This says which it was, and a tap on it asks the site again.
+        emptyView = new org.telegram.ui.Components.EmptyTextProgressView(context);
+        emptyView.setText(context.getString(R.string.topic_list_failed));
+        emptyView.showTextView();
+        emptyView.setVisibility(View.GONE);
+        // The view consumes touches in its own constructor; the tap that retries has to get through.
+        emptyView.setOnTouchListener(null);
+        emptyView.setOnClickListener(view -> loadFeed());
+        frame.addView(emptyView, LayoutHelper.createFrame(
                 LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
         startTopicButton = new FragmentFloatingButton(context, resourceProvider);
         startTopicButton.setImageResource(org.telegram.messenger.R.drawable.filled_fab_compose_32);
@@ -219,8 +233,20 @@ public class TopicListFragment extends BaseFragment {
         updateTitle();
         DiscourseLoader.INSTANCE.feed(container, categoryOf(selectedTabId), selectedTag, this::showTopics, error -> {
             FileLog.e("topic list failed", error);
+            showFailure();
             return kotlin.Unit.INSTANCE;
         });
+    }
+
+    /** The feed could not be read: the list stays as it is, and the failure is said out loud. */
+    private void showFailure() {
+        if (emptyView == null) {
+            return;
+        }
+        emptyView.setText(org.telegram.messenger.ApplicationLoader.applicationContext.getString(
+                R.string.topic_list_failed));
+        emptyView.showTextView();
+        emptyView.setVisibility(View.VISIBLE);
     }
 
     private void updateTitle() {
@@ -312,6 +338,9 @@ public class TopicListFragment extends BaseFragment {
     }
 
     private kotlin.Unit showTopics(List<TopicSummary> loaded) {
+        if (emptyView != null) {
+            emptyView.setVisibility(View.GONE);
+        }
         topics.clear();
         authors.clear();
         topics.addAll(loaded);

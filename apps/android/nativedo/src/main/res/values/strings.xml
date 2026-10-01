@@ -7,6 +7,7 @@
     <string name="login_webview_title">登录 linux.do</string>
     <string name="app_browser_download_started">已开始下载</string>
     <string name="app_browser_download_failed">下载失败</string>
+    <string name="topic_list_failed">没能读到话题列表\n点一下重试</string>
     <!--
       Upstream's appearance page is Telegram's "Chat Settings": its title and its rows talk about a
       chat list, chat backgrounds and messages. This client has topics and posts, so the words are
