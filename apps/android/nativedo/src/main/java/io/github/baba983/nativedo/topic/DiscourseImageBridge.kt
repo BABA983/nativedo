@@ -632,31 +632,42 @@ object DiscourseImageBridge {
         sizes = arrayListOf(sizeOf(image))
     }
 
-    /** The file upstream draws from; `fileExists()` and the loader agree on this path. */
-    fun localFile(image: PostImage): File =
-        FileLoader.getInstance(0).getPathToAttach(sizeOf(image), false)
+    /**
+     * Where upstream looks for the image. An `ImageReceiver` asks for cache type 0, which is the
+     * images directory, while the loader that misses it there asks for cache type 1, which is the
+     * cache directory - on a device those are two directories, and a copy in only one of them is a
+     * copy the cell cannot draw (it reads as a gray block while `FileLoader` reports a download
+     * failure against a file it has no datacenter for). Under the test host they are the same one.
+     */
+    fun localFiles(image: PostImage): List<File> {
+        val size = sizeOf(image)
+        val loader = FileLoader.getInstance(0)
+        return listOf(loader.getPathToAttach(size, false), loader.getPathToAttach(size, true)).distinct()
+    }
 
     /**
-     * Downloads the image when it is not cached yet. The writes go through a temporary name so a
-     * transfer cut short cannot leave a file that the cell would happily "find".
+     * Downloads the image when it is not cached yet, to both places upstream looks. The writes go
+     * through a temporary name so a transfer cut short cannot leave a file that the cell would
+     * happily "find".
      */
     suspend fun cache(client: OkHttpClient, image: PostImage): File? = withContext(Dispatchers.IO) {
-        val file = localFile(image)
-        if (file.exists() && file.length() > 0) {
-            return@withContext file
+        val targets = localFiles(image)
+        if (targets.all { it.exists() && it.length() > 0 }) {
+            return@withContext targets.first()
         }
         runCatching {
             client.newCall(Request.Builder().url(image.url).build()).execute().use { response ->
                 check(response.isSuccessful) { "GET ${image.url} answered ${response.code}" }
                 val body = response.body ?: error("GET ${image.url} answered no body")
-                file.parentFile?.mkdirs()
-                val partial = File(file.parentFile, file.name + ".part")
-                body.byteStream().use { input ->
-                    partial.outputStream().use { output -> input.copyTo(output) }
+                val bytes = body.bytes()
+                targets.forEach { target ->
+                    target.parentFile?.mkdirs()
+                    val partial = File(target.parentFile, target.name + ".part")
+                    partial.writeBytes(bytes)
+                    check(partial.renameTo(target)) { "cannot move ${partial.name} into place" }
                 }
-                check(partial.renameTo(file)) { "cannot move ${partial.name} into place" }
             }
-            file
+            targets.first()
         }.getOrElse { error ->
             error.printStackTrace()
             null
