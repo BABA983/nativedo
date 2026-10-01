@@ -9,6 +9,7 @@ import io.github.baba983.nativedo.core.media.absoluteUploadUrl
 import io.github.baba983.nativedo.core.media.replyUploadMarkup
 import io.github.baba983.nativedo.core.model.Post
 import io.github.baba983.nativedo.core.model.PostPoll
+import io.github.baba983.nativedo.core.model.PostReaction
 import io.github.baba983.nativedo.core.model.TopicDetail
 import io.github.baba983.nativedo.core.model.TopicSummary
 import org.telegram.tgnet.TLRPC
@@ -372,6 +373,36 @@ object DiscourseLoader {
         }
         scope.launch {
             DiscourseAvatars.cache(container.imageOkHttpClient, url, user)
+            onReady()
+        }
+    }
+
+    /**
+     * Fetches the picture behind each reaction a floor carries and hands upstream's chip an entry it
+     * can draw, so a reaction reads as its emoji instead of a bare count. The chip looks the
+     * emoticon up in a table nothing here fills; see [DiscourseReactionEmoji].
+     */
+    fun cacheReactionEmoji(
+        container: AppContainer,
+        reactions: List<PostReaction>,
+        onReady: () -> Unit,
+    ) {
+        val wanted = reactions.filter { reaction -> !reaction.iconUrl.isNullOrBlank() }
+        if (wanted.isEmpty()) {
+            onReady()
+            return
+        }
+        scope.launch {
+            for (reaction in wanted) {
+                val url = reaction.iconUrl ?: continue
+                // The catalog's picture is a path on the site ("/images/emoji/twitter/heart.png");
+                // the session's client needs the address it belongs to.
+                val absolute = runCatching {
+                    java.net.URI(container.baseUrl).resolve(url).toString()
+                }.getOrNull() ?: continue
+                val file = DiscourseReactionEmoji.cache(container.imageOkHttpClient, absolute) ?: continue
+                DiscourseReactionEmoji.register(DiscourseReactions.emoticonOf(reaction.id), file)
+            }
             onReady()
         }
     }

@@ -32,6 +32,7 @@ import io.github.baba983.nativedo.app.NativeDoActivity;
 import io.github.baba983.nativedo.core.di.AppContainer;
 import io.github.baba983.nativedo.core.model.Post;
 import io.github.baba983.nativedo.core.model.PostPoll;
+import io.github.baba983.nativedo.core.model.PostReaction;
 import io.github.baba983.nativedo.core.model.TopicDetail;
 import io.github.baba983.nativedo.feature.topic.data.TopicReadMarks;
 import io.github.baba983.nativedo.feature.topic.data.TopicReadReporter;
@@ -970,6 +971,30 @@ public class TopicFragment extends BaseFragment {
     }
 
     /**
+     * The pictures behind a floor's reactions. Upstream's chip looks each emoticon up in a table
+     * that nothing in this client fills - its entries come from `messages.getAvailableReactions` -
+     * so the entry is handed to it from here; see {@link DiscourseReactionEmoji}. Nothing is drawn
+     * until the row is bound again, which is what {@code onReady} does.
+     */
+    private void fetchReactionEmoji(int index, Runnable onReady) {
+        if (index >= bubbleFloors.size()) {
+            return;
+        }
+        Integer floorIndex = bubbleFloors.get(index);
+        if (floorIndex == null || floorIndex < 0 || floorIndex >= floors.size()) {
+            return;
+        }
+        List<PostReaction> reactions = floors.get(floorIndex).getReactions();
+        if (reactions.isEmpty()) {
+            return;
+        }
+        DiscourseLoader.INSTANCE.cacheReactionEmoji(container, reactions, () -> {
+            onReady.run();
+            return kotlin.Unit.INSTANCE;
+        });
+    }
+
+    /**
      * The media blocks size themselves from the photo, so a cell can be bound before its image
      * exists; re-binding the row is what makes the cell ask again and find the file. A document
      * does the same with its button state, which only turns into "open" once the file is there.
@@ -978,6 +1003,12 @@ public class TopicFragment extends BaseFragment {
         if (container == null || index < 0 || index >= bubbles.size()) {
             return;
         }
+        Runnable onReady = () -> {
+            if (listView != null && listView.getAdapter() != null) {
+                listView.getAdapter().notifyItemChanged(index);
+            }
+        };
+        fetchReactionEmoji(index, onReady);
         // A poll bubble has no images of its own; its options are text.
         PreparedPostBody body = bubbleBodies.get(index);
         if (body == null) {
@@ -986,11 +1017,6 @@ public class TopicFragment extends BaseFragment {
         List<PostImage> images = body.getImages();
         List<PostAttachment> attachments = body.getAttachments();
         List<PostVideo> videos = body.getVideos();
-        Runnable onReady = () -> {
-            if (listView != null && listView.getAdapter() != null) {
-                listView.getAdapter().notifyItemChanged(index);
-            }
-        };
         MessageObject message = bubbles.get(index);
         Runnable onAttachmentsReady = () -> {
             DiscourseImageBridge.INSTANCE.applyAttachmentFiles(message.messageOwner, attachments);
