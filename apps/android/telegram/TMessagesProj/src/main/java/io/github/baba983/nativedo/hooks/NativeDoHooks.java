@@ -118,6 +118,20 @@ public final class NativeDoHooks {
         }
     }
 
+    /**
+     * Whether a message may put {@code FLAG_SECURE} on the activity's window.
+     *
+     * <p>Upstream reads this off {@code noforwards}: content it may not forward is content it keeps
+     * out of a screen recording. That is not what the flag means here. {@code DiscourseRows} sets
+     * {@code noforwards} so that no forum post offers to forward one, and a forum post is public
+     * text; left alone, upstream would secure the window for every post, which on a device means
+     * no screenshot of any topic and a blank thumbnail in the recents list. Nothing this client
+     * draws is Telegram's secret media, so the answer is always no.</p>
+     */
+    public static boolean messageMaySecureWindow() {
+        return false;
+    }
+
     private NativeDoHooks() {
     }
 }
