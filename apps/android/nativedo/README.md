@@ -201,8 +201,14 @@ stands, and the upstream component each row is meant to use.
   完整前不出现（和文档一致）；没有实际发送，所以站点对过短标题的拒绝没看到。
 - **书签**：列表通过；行摘要显示站点返回的 cooked HTML（`<a name="p-…" class="anchor">`）——`7ff28d8d`
   已把它按文本读，设备复验也通过了（见上）。
-- **回应标签的 emoji**：通过（`8e2cf03f` 之后）。chips 现在画出站点自己的图标（❤ 6、🤗 1、😄 1）；
-  站点 emoji 目录里没有命名的 id（`tieba_087`、`bili_057`）仍然按文字画。原因见下面第 4 条。
+- **回应标签的 emoji**：部分通过（`8e2cf03f` 之后）。机制成立：站点给的图标被下载下来、按上游图片加载器要的
+  键写进它读的那张表，之前什么都不画的 chips 现在画出图（`83-reactions4` / `84-reactions5` 两张）。
+  **没有验证的是映射本身**：留下的、带 reactions 列表的 dump 只有公告帖那几张（`❤ 16, 👍 2`，在修复之前），
+  84 那张话题没有 dump，7 个缓存文件名是 URL 的 md5，离线认不出对应哪个 reaction id——所以「画出来的图标
+  分别对应哪个 id / iconUrl」我给不出证据。
+  另外更正一句早先写错的话：id 不在站点 emoji 目录里时**不会**画文字，那条路上游只画数字
+  （`PostReactionRendering.fallbackLabel`/`countText` 没有任何调用点）。所以 84 里 13/5/3/2 那几个裸数字，
+  既可能是目录里没有的 id，也可能是图标没下下来的 id，两者画出来一模一样。
 - **长按菜单**：通过（`1e25d718` 之后）。长按一层楼弹出上游自己的对话框：复制／复制链接／添加书签／回复。
 - **书签摘要**：通过（`7ff28d8d` 的设备复验）。行里不再出现 `<a name="p-…">` 这类原始 HTML。
 - **加载失败与重试**：通过（`46dfbcde` 之后）。把代理指到一个死端口时列表显示「没能读到话题列表／点一下重试」，
@@ -225,6 +231,12 @@ stands, and the upstream component each row is meant to use.
   话题列表只是空着，没有错误提示也没有重试入口。
 - **滚动流畅度**：只拿到模拟器的数（10 次滑动：253 帧、37% janky、50 分位 31 ms），模拟器的 GPU
   本来就不是真机的数，参考价值有限。
+- **单测**：在已推送的 `81f48666` 上跑
+  `./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:testDebugUnitTest`，
+  清空 `build/test-results/testDebugUnitTest` 后连跑两次，两次都是 **61 个用例、1 个失败、0 个 error**，
+  失败的都是 `ReadProgressTest > theDwellIsTheReadersOwnForegroundTime`（断言「前台 10 秒报成约 10 秒」，
+  实际报 1005ms）。这条不是本次改动带来的：同一段代码在更早的两次运行里一次以同样的 1005 失败、一次以 11010 通过，
+  取值跟着 harness 里回调的先后走，所以**这套单测目前不是绿的**，别把哪一轮绿当作 gate。
 
 设备上发现的问题（都已记录，六个已修）：
 
