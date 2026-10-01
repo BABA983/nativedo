@@ -206,9 +206,14 @@ stands, and the upstream component each row is meant to use.
   `MediaDataController.getReactionsMap()` 里取图，那张表只由 tgnet 的 `messages.getAvailableReactions`
   填，这里永远是空的，所以 `ReactionButton` 什么都不画。`PostReactionsTest` 断的是消息对象的
   emoticon，不是画出来的东西，所以单测看不出来。站长自定义的 `tieba_087`、`bili_057` 反而按文字画出来了。
-- **视频与附件**：未验证（没找到带 `<video>` 或附件的测试话题，最后一轮网络也拉不到数据）。
-- **阅读进度**：未验证。最后一轮访问被 Cloudflare 挑战、随后的请求直接超时，话题列表拉不出来。
-  顺带观察到：这种情况下列表只是空着，没有错误提示也没有重试入口。
+- **视频与附件**：部分通过。视频块按上游的形状画出来了（灰底 + 播放按钮）；按播放后没有取回片子，
+  因为这一轮代理出口被 Cloudflare 挑战（每次请求都是 `403 evidence=Challenge`），封面也因此是空的。
+  附件没有找到带附件的测试话题。
+- **阅读进度**：部分通过。读完一段后返回、再打开同一话题，停在离开的楼层（离开时是 10:30 的那层，
+  重开的第一屏是 10:31 的那层），设备自己的 `nativedo.topic_read_positions.xml` 也在写；
+  站点侧 `unread_posts` 的下降没法量（那篇的未读是四位数，列表上的蓝色徽章看不出几十层的差别），
+  阅读时长是否与体感一致更没量到。另外最后一轮代理出口被 Cloudflare 挑战、请求直接超时过一次，
+  话题列表只是空着，没有错误提示也没有重试入口。
 - **滚动流畅度**：只拿到模拟器的数（10 次滑动：253 帧、37% janky、50 分位 31 ms），模拟器的 GPU
   本来就不是真机的数，参考价值有限。
 
