@@ -200,12 +200,21 @@ stands, and the upstream component each row is meant to use.
 - **发新帖**：部分通过。标题行、分类行与分类弹窗（站点的分类加颜色点）、composer 都在，发送箭头在表单
   完整前不出现（和文档一致）；没有实际发送，所以站点对过短标题的拒绝没看到。
 - **书签**：列表通过；行摘要显示站点返回的 cooked HTML（`<a name="p-…" class="anchor">`）——`7ff28d8d`
-  已把它按文本读，但**设备复验没做**（复验需要重开那个列表，而最后一轮网络已经拉不到数据）。长按菜单的
-  收藏／取消收藏仍然没验到：长按在话题页与投票页都没有触发菜单。
-- **回应标签的 emoji**：失败（未修）。chips 只有数字，没有 ❤／👏 之类字形——上游的非自定义回应要从
-  `MediaDataController.getReactionsMap()` 里取图，那张表只由 tgnet 的 `messages.getAvailableReactions`
-  填，这里永远是空的，所以 `ReactionButton` 什么都不画。`PostReactionsTest` 断的是消息对象的
-  emoticon，不是画出来的东西，所以单测看不出来。站长自定义的 `tieba_087`、`bili_057` 反而按文字画出来了。
+  已把它按文本读，设备复验也通过了（见上）。
+- **回应标签的 emoji**：通过（`8e2cf03f` 之后）。chips 现在画出站点自己的图标（❤ 6、🤗 1、😄 1）；
+  站点 emoji 目录里没有命名的 id（`tieba_087`、`bili_057`）仍然按文字画。原因见下面第 4 条。
+- **长按菜单**：通过（`1e25d718` 之后）。长按一层楼弹出上游自己的对话框：复制／复制链接／添加书签／回复。
+- **书签摘要**：通过（`7ff28d8d` 的设备复验）。行里不再出现 `<a name="p-…">` 这类原始 HTML。
+- **加载失败与重试**：通过（`46dfbcde` 之后）。把代理指到一个死端口时列表显示「没能读到话题列表／点一下重试」，
+  把代理指回去再点一下，话题就回来了。
+- **外观页文案**：部分通过（`f9d1c14e` 之后）。标题「外观」、行「正文字号」「更换背景」「话题列表」已经是
+  这个客户端的说法；同页仍然留着 Telegram 的词：「Change Your Color」「Color theme」「Switch to Night Mode」
+  「Browse Themes」「Message corners」，以及预览里那几条示例消息。
+- **私信话题**（`/t/topic/2975944`）：未验证。这一轮站点对这个代理出口一律回 Cloudflare 挑战
+  （`403 evidence=Challenge`），话题页对它的请求也失败（logcat：`present fragment TopicFragment
+  args={topic_id=2975944}` 之后 `topic failed`），所以分不清是「读不到私信」还是「网络被挡」。
+  能确定的只有两条：话题页走的就是 `/t/{id}.json` 加 `POST /posts.json`，也就是 Discourse 给私信用的那条路；
+  而这个客户端没有收件箱、也没有深链入口，界面上没有任何办法走到一个私信话题。
 - **视频与附件**：部分通过。视频块按上游的形状画出来了（灰底 + 播放按钮）；按播放后没有取回片子，
   因为这一轮代理出口被 Cloudflare 挑战（每次请求都是 `403 evidence=Challenge`），封面也因此是空的。
   附件没有找到带附件的测试话题。
@@ -217,20 +226,30 @@ stands, and the upstream component each row is meant to use.
 - **滚动流畅度**：只拿到模拟器的数（10 次滑动：253 帧、37% janky、50 分位 31 ms），模拟器的 GPU
   本来就不是真机的数，参考价值有限。
 
-设备上发现的问题（都已记录，三个已修）：
+设备上发现的问题（都已记录，六个已修）：
 
 1. `ChatMessageCell` 因为 `noforwards` 给窗口加 `FLAG_SECURE`，整块话题页截图全黑、最近任务里是空缩略图
    ——`35376c48` 把它挪到 `NativeDoHooks.messageMaySecureWindow()`。
 2. 书签摘要显示原始 HTML——`7ff28d8d`。
 3. 帖子里的图片只写到 images 目录，而画它的 `ImageLoader` 按 CACHE_TYPE_CACHE 去 cache 目录找，所以
    永远是灰色空块——`7949bec0` 让两个目录都写一份（头像那条路早就这么做）。
-4. 回应 chips 不画 emoji（见上）。
-5. 同一张图被两个写入者同时抓时共用 `<name>.part`，后一次 `renameTo` 找不到源而抛
+4. 回应 chips 不画 emoji：上游的非自定义回应要从 `MediaDataController.getReactionsMap()` 里取图，那张表只由
+   tgnet 的 `messages.getAvailableReactions` 填。`8e2cf03f` 改成把站点自己的图标（emoji 目录里
+   `PostReaction.iconUrl` 那个地址）抓下来，按上游图片加载器要的键写进它读的那张 live 表：文档要非零
+   `dc_id`（否则连 key 都算不出来），而芯片传的 cacheType 是 1，所以文件放在 `MediaDirCache/<dc_id>_<id>.png`。
+   注意 `localPath` 在这条路上没用，那是附件块走的路。
+5. 帖子里的图片只写到 images 目录，而画它的 `ImageLoader` 按 CACHE_TYPE_CACHE 去 cache 目录找，所以
+   永远是灰色空块——`7949bec0` 让两个目录都写一份（头像那条路早就这么做）。
+6. 长按打不开帖子菜单：上游的 cell 只在触摸落在它认为「可按下」的东西上时才武装长按，富文本的正文不算，
+   所以 `onLongPress` 从不运行——`1e25d718` 让列表自己的 item long click 去开同一个对话框。
+7. 抓取失败时列表只是空着，和「站点没有内容」长得一样——`46dfbcde` 让列表显示上游的
+   `EmptyTextProgressView` 并允许点一下重试（它构造时自带的 touch listener 要清掉，否则点击被吞）。
+8. 同一张图被两个写入者同时抓时共用 `<name>.part`，后一次 `renameTo` 找不到源而抛
    `cannot move … into place`，前一次的重命名还可能搬走半写的文件。要按目标文件串行化，或让每个写入者
-   用自己的一次性 `.part` 名再原子改名；四个调用点（`DiscourseAvatars.cache`、
-   `DiscourseImageBridge` 的封面／附件／图片）同一个形状。
+   用自己的一次性 `.part` 名再原子改名；`DiscourseAvatars.cache` 与 `DiscourseImageBridge` 的
+   封面／附件／图片四个调用点还是同一个形状（`DiscourseReactionEmoji` 里新写的那个已经按线程分了名字）。
 
-已知且预期内的差异：分类和标签之外没有更多筛选；新话题要回列表重新读才出现；收藏没有 bulletin 提示；不支持站内私信。
+已知且预期内的差异：分类和标签之外没有更多筛选；新话题要回列表重新读才出现；收藏没有 bulletin 提示；不支持站内私信（没有收件箱，也没有深链，界面上走不到一个私信话题）。
 
 ## Switch plan
 
