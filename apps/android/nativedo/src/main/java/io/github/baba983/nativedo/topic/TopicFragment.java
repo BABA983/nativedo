@@ -185,6 +185,16 @@ public class TopicFragment extends BaseFragment {
         listView.setAvatarSource(senderId -> users.get(senderId));
         listView.setLayoutManager(new LinearLayoutManager(context));
         listView.setAdapter(new PostAdapter());
+        // Upstream's cell only arms its own long press when the touch landed on something it calls
+        // pressable, which a rich message's text is not, so the row asks for the menu itself. Same
+        // floor, same dialog as a long press would open.
+        listView.setOnItemLongClickListener((view, position) -> {
+            if (position < 0 || position >= bubbleFloors.size()) {
+                return false;
+            }
+            showMessageMenu(bubbleFloors.get(position));
+            return true;
+        });
         listView.setVerticalScrollBarEnabled(false);
         listView.addOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override
