@@ -945,7 +945,7 @@ private fun Element.isCookedNonContentArtifact(): Boolean {
 private fun String?.takeIfHtmlNotBlank(): String? = this
     ?.takeIf { Jsoup.parseBodyFragment(it).body().text().isNotBlank() || Jsoup.parseBodyFragment(it).select("img[src]").isNotEmpty() }
 
-private fun String.plainTextFromHtml(): String = Jsoup.parseBodyFragment(this).body().text().trim()
+internal fun String.plainTextFromHtml(): String = Jsoup.parseBodyFragment(this).body().text().trim()
 
 private fun String.looksLikeImageCaptionHtml(): Boolean = trimStart().startsWith("<br", ignoreCase = true)
 

@@ -7,6 +7,7 @@ import io.github.baba983.nativedo.core.model.PostPollVote
 import io.github.baba983.nativedo.core.model.PostReaction
 import io.github.baba983.nativedo.core.model.PostReactionUser
 import io.github.baba983.nativedo.core.model.PostReactionUsersGroup
+import io.github.baba983.nativedo.core.html.plainTextFromHtml
 import io.github.baba983.nativedo.core.model.Bookmark
 import io.github.baba983.nativedo.core.model.Tag
 import io.github.baba983.nativedo.core.model.CategorySummary
@@ -1096,7 +1097,10 @@ private fun UserBookmarkDto.toModel(): Bookmark = Bookmark(
     postId = bookmarkableId ?: 0L,
     postNumber = linkedPostNumber ?: 0,
     title = fancyTitle.takeIf { it.isNotBlank() } ?: title,
-    excerpt = excerpt,
+    // The site computes a bookmark's excerpt from the post's cooked HTML, so it arrives as markup
+    // ("<a name=\"p-123\" class=\"anchor\">..."). A row draws one line of text, so the excerpt is
+    // read as text before it reaches the cell.
+    excerpt = excerpt.plainTextFromHtml(),
     createdAt = createdAt,
     authorUsername = user?.username.orEmpty(),
     authorDisplayName = user?.name.orEmpty(),
