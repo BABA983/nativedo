@@ -194,6 +194,9 @@ stands, and the upstream component each row is meant to use.
 - **帖子渲染、头像、onebox**：通过。上游 `ChatMessageCell` 的泡泡、作者色、时间、链接都对，头像都
   画出来了，`aside.onebox` 画成上游的链接预览卡片（`pan.quark.cn` / `pan.baidu.com` 那两段）。
 - **帖子里的图片**：通过（`7949bec0` 之后）。修复前每一张都只是灰色空块，见下面第 4 条。
+  本轮又统一了客户端身份（`31052dcb`）：图片请求以前写死一个常量 UA，现在和 API／WebView 用同一个
+  （`AppContainer` 解析出来的真实 WebView UA）；改完头像与图片仍正常画出（`b1-01-feed.png`、
+  `b1-04-pm-coldstart.png` 里的头像，`b1-05` 的站内页面）。这是修不一致，不宣称它是挑战的原因。
 - **PhotoViewer**：通过。点图片全屏打开，页数「1 of 2」「1 of 12」，带上游的返回与更多菜单。
 - **投票**：通过（渲染）。`TL_messageMediaPoll` 的两个泡泡、选项圆点、"Poll" 标签与 "18 votes／17 votes"
   都对；**投票动作没有执行**——它会在这个真实站点留痕，而用户没有指定测试话题。
@@ -216,19 +219,32 @@ stands, and the upstream component each row is meant to use.
 - **外观页文案**：部分通过（`f9d1c14e` 之后）。标题「外观」、行「正文字号」「更换背景」「话题列表」已经是
   这个客户端的说法；同页仍然留着 Telegram 的词：「Change Your Color」「Color theme」「Switch to Night Mode」
   「Browse Themes」「Message corners」，以及预览里那几条示例消息。
-- **私信话题**（`/t/topic/2975944`）：未验证。这一轮站点对这个代理出口一律回 Cloudflare 挑战
-  （`403 evidence=Challenge`），话题页对它的请求也失败（logcat：`present fragment TopicFragment
-  args={topic_id=2975944}` 之后 `topic failed`），所以分不清是「读不到私信」还是「网络被挡」。
-  能确定的只有两条：话题页走的就是 `/t/{id}.json` 加 `POST /posts.json`，也就是 Discourse 给私信用的那条路；
-  而这个客户端没有收件箱、也没有深链入口，界面上没有任何办法走到一个私信话题。
-- **视频与附件**：部分通过。视频块按上游的形状画出来了（灰底 + 播放按钮）；按播放后没有取回片子，
-  因为这一轮代理出口被 Cloudflare 挑战（每次请求都是 `403 evidence=Challenge`），封面也因此是空的。
-  附件没有找到带附件的测试话题。
+- **私信话题**（`/t/topic/2975944`）：通过（读取）。更正上一轮的结论：那次的 `403 evidence=Challenge`
+  是 curl 的 TLS 指纹被挡，**不是 app**——同一个出口上 app 自己的请求全是 `status=200 accepted=true`
+  （`NativeDoSession` 日志，`hasToken/hasForumSession/hasClearance` 都为 true），话题列表也一直正常。
+  本轮给指定 URL 加了生产入口（站点的 `/t/<slug>/<id>[/<floor>]` 规则 + `VIEW` intent filter，
+  `6c7675db`/`beabd574`），冷启动带这个链接能直接进到这条私信，正文和发帖人都画出来了
+  （`b1-04-pm-coldstart.png`）。**仍然拿不到的是它的类型字段**：`archetype` / `allowed_users`
+  只有 JSON 才有，而 curl 在这个出口上始终是 `403 cf-mitigated: challenge`，所以「它是用户发给自己的私信」
+  这句话我没有独立证据，只能说它是一条只有该用户为收件人的话题、app 以登录会话读得到。
+  **写操作没有做**（回复／上传／回应都留着，等用户明确指定这条话题再动）。
+- **实体键盘**：配置通过，输入待用户确认。`hw.keyboard` 从 `no` 改成 `yes` 后冷启动，
+  客户机出现了 `qwerty2` 键盘设备（`dumpsys input`：`13: qwerty2 (aka device 0 - built-in keyboard)`）；
+  Mac 实体键盘的字母输入没有用 `adb input text` 冒充，等用户在窗口里实测。
+- **加载失败与重试**（话题页）：通过（本轮 `2d85aaf6`/`0ffdb628`）。以前 `fetchTopic` 先请求
+  `emojis.json`，目录失败会把正文一起带走，屏幕上只剩白底 + 一行日志；现在正文先发、目录是装饰性的、
+  有缓存且失败不阻断，失败时屏幕给出来源分类的提示与重试入口
+  （404 那条实测显示「没能读到这个话题／点一下重试／HTTP 404」，点一下正好再发一次请求，见
+  `b1-06-topic-404-failure.png`/`b1-07-retry-after-404.png`）。挑战／登录失效那一支会打开登录 WebView、
+  成功后回到原来那层重试——**这一支只有代码路径，设备上没有挑战可复现**。
+- **视频与附件**：未验证（本轮）。视频块按上游的形状画出来了（灰底 + 播放按钮）；按播放后没有取回片子。
+  上一轮把这条归给 Cloudflare 挑战是错的：同一出口上 app 的请求都是 `status=200`，那条结论作废，
+  原因待查（本轮没有重测视频）。附件没有找到带附件的测试话题。
 - **阅读进度**：部分通过。读完一段后返回、再打开同一话题，停在离开的楼层（离开时是 10:30 的那层，
   重开的第一屏是 10:31 的那层），设备自己的 `nativedo.topic_read_positions.xml` 也在写；
   站点侧 `unread_posts` 的下降没法量（那篇的未读是四位数，列表上的蓝色徽章看不出几十层的差别），
-  阅读时长是否与体感一致更没量到。另外最后一轮代理出口被 Cloudflare 挑战、请求直接超时过一次，
-  话题列表只是空着，没有错误提示也没有重试入口。
+  阅读时长是否与体感一致更没量到。另外那一次请求超时后话题列表只是空着；现在列表和话题页都会说明
+  失败并给出重试入口（`46dfbcde` 与本轮 `0ffdb628`）。
 - **滚动流畅度**：只拿到模拟器的数（10 次滑动：253 帧、37% janky、50 分位 31 ms），模拟器的 GPU
   本来就不是真机的数，参考价值有限。
 - **单测**：在已推送的 `81f48666` 上跑
