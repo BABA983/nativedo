@@ -112,7 +112,7 @@ class AppContainer(
 
     val imageOkHttpClient: OkHttpClient = OkHttpClient.Builder()
         .addNetworkInterceptor(SessionCookieInterceptor(cookieStore))
-        .addInterceptor(ImageRequestHeadersInterceptor(baseUrl = baseUrl))
+        .addInterceptor(ImageRequestHeadersInterceptor(baseUrl = baseUrl, userAgent = this.userAgent))
         .build()
 
     private val retrofit: Retrofit = Retrofit.Builder()

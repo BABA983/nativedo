@@ -7,11 +7,13 @@ import okhttp3.Response
 
 class ImageRequestHeadersInterceptor(
     private val baseUrl: String = "https://linux.do/",
+    /** The same client identity the API and the WebView present; see [resolveNativeDoUserAgent]. */
+    private val userAgent: String = FALLBACK_USER_AGENT,
 ) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request().newBuilder()
             .apply {
-                addImageRequestHeaders(baseUrl = baseUrl)
+                addImageRequestHeaders(baseUrl = baseUrl, userAgent = userAgent)
             }
             .build()
         return chain.proceed(request)
@@ -20,6 +22,7 @@ class ImageRequestHeadersInterceptor(
 
 internal fun Request.Builder.addImageRequestHeaders(
     baseUrl: String,
+    userAgent: String = FALLBACK_USER_AGENT,
 ): Request.Builder {
     val referer = buildImageRequestReferer(baseUrl)
     val originalRequest = build()
@@ -33,7 +36,7 @@ internal fun Request.Builder.addImageRequestHeaders(
         header("Referer", referer)
     }
     if (originalRequest.header("User-Agent") == null) {
-        header("User-Agent", FALLBACK_USER_AGENT)
+        header("User-Agent", userAgent)
     }
     return this
 }
