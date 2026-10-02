@@ -121,10 +121,9 @@ object DiscourseAvatars {
                     // An avatar is small, and both readers need their own copy of the bytes.
                     val bytes = response.body?.bytes() ?: error("GET $avatarUrl answered no body")
                     targets.forEach { target ->
-                        target.parentFile?.mkdirs()
-                        val partial = File(target.parentFile, target.name + ".part")
-                        partial.writeBytes(bytes)
-                        check(partial.renameTo(target)) { "cannot move ${partial.name} into place" }
+                        check(AtomicFileWrite.bytes(target, bytes)) {
+                            "cannot move ${target.name} into place"
+                        }
                     }
                 }
                 file

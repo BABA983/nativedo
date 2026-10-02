@@ -56,10 +56,7 @@ object DiscourseReactionEmoji {
             client.newCall(Request.Builder().url(url).build()).execute().use { response ->
                 check(response.isSuccessful) { "GET $url answered ${response.code}" }
                 val bytes = response.body?.bytes() ?: error("GET $url answered no body")
-                file.parentFile?.mkdirs()
-                val partial = File(file.parentFile, file.name + "." + Thread.currentThread().id + ".part")
-                partial.writeBytes(bytes)
-                check(partial.renameTo(file)) { "cannot move ${partial.name} into place" }
+                check(AtomicFileWrite.bytes(file, bytes)) { "cannot move ${file.name} into place" }
             }
             file
         }.getOrElse { error ->

@@ -296,18 +296,22 @@ object DiscourseImageBridge {
             // The block's own state is what turns on this: it is told the fetch exists before the
             // first byte, so the reader sees a download rather than a play button that seems dead.
             reportVideoProgress(name, 0L, 0L)
+            // The transfer writes a private temporary file, not the clip's own name: the bytes it
+            // has written must not be a file the block could read as the clip, and the name must be
+            // this fetch's own so a cancel removes only its own half-written bytes.
+            val partial = AtomicFileWrite.tempFor(file)
             // The transfer's own state ends before the bytes it wrote become the file the block
             // plays, and both are this one step apart, on this thread: a reader who finds the clip
             // on disk has found it after the fetch ended, never during. The other order publishes
             // the file while the block is still told a transfer runs - a loading state, and a live
             // cancel button, over a clip that is already whole.
             val transferred = try {
-                fetchVideo(call, video, file, name, cancelled)
+                fetchVideo(call, video, partial, name, cancelled)
             } finally {
                 NativeDoHooks.setFetchCanceller(name, null)
                 NativeDoHooks.setFileLoading(name, false)
             }
-            val outcome = if (transferred == VideoDownload.Stored) storeVideo(file, name) else transferred
+            val outcome = if (transferred == VideoDownload.Stored) storeVideo(file, partial, name) else transferred
             // The block registered itself as an observer of that name, so upstream's own channel is
             // how it learns how the file it was waiting for ended.
             when (outcome) {
@@ -336,21 +340,19 @@ object DiscourseImageBridge {
     private fun fetchVideo(
         call: Call,
         video: PostVideo,
-        file: File,
+        partial: File,
         name: String,
         cancelled: AtomicBoolean,
     ): VideoDownload = runCatching {
-        call.execute().use { response ->
+        call.execute().use responseUse@{ response ->
             if (!response.isSuccessful) {
-                return@use VideoDownload.Failed
+                return@responseUse VideoDownload.Failed
             }
-            val body = response.body ?: return@use VideoDownload.Failed
+            val body = response.body ?: return@responseUse VideoDownload.Failed
             val total = body.contentLength()
             if (total > MAX_VIDEO_BYTES) {
-                return@use VideoDownload.TooLarge
+                return@responseUse VideoDownload.TooLarge
             }
-            file.parentFile?.mkdirs()
-            val partial = File(file.parentFile, file.name + ".part")
             body.byteStream().use { input ->
                 partial.outputStream().use { output ->
                     val buffer = ByteArray(64 * 1024)
@@ -363,8 +365,7 @@ object DiscourseImageBridge {
                         }
                         copied += read
                         if (copied > MAX_VIDEO_BYTES) {
-                            partial.delete()
-                            return@use VideoDownload.TooLarge
+                            return@responseUse VideoDownload.TooLarge
                         }
                         output.write(buffer, 0, read)
                         // A report is a UI-thread hop per reader, so a long clip reports in steps.
@@ -379,14 +380,18 @@ object DiscourseImageBridge {
         }
     }.getOrElse { error ->
         if (cancelled.get()) {
-            // The reader stopped this fetch: half a transfer is not this file, so the bytes that
-            // did arrive go, and upstream is told the transfer was cancelled rather than broken -
-            // which is what puts its play button back.
-            File(file.parentFile, file.name + ".part").delete()
             VideoDownload.Cancelled
         } else {
             FileLog.e("nativedo: fetching a post's clip failed", error)
             VideoDownload.Failed
+        }
+    }.also { outcome ->
+        // Half a transfer is not this file: whatever arrived under the temporary name goes, whether
+        // the reader stopped it or the transfer broke. Only a whole transfer is kept, for
+        // [storeVideo] to move into place - and it is this fetch's own temporary file, so a
+        // neighbouring fetch's bytes are never touched.
+        if (outcome != VideoDownload.Stored) {
+            partial.delete()
         }
     }
 
@@ -395,9 +400,8 @@ object DiscourseImageBridge {
      * is there. The bytes a transfer cannot move into place are not a file anyone may open, so that
      * ends as a broken fetch and the reader's own player streams the clip instead.
      */
-    private fun storeVideo(file: File, name: String): VideoDownload {
-        val partial = File(file.parentFile, file.name + ".part")
-        if (!partial.renameTo(file)) {
+    private fun storeVideo(file: File, partial: File, name: String): VideoDownload {
+        if (!AtomicFileWrite.commit(partial, file)) {
             FileLog.e("nativedo: the clip could not be moved into place: " + partial.name)
             return VideoDownload.Failed
         }
@@ -434,9 +438,9 @@ object DiscourseImageBridge {
             return
         }
         runCatching {
-            val partial = File(expected.parentFile, expected.name + ".part")
-            file.copyTo(partial, overwrite = true)
-            check(partial.renameTo(expected)) { "cannot move ${partial.name} into place" }
+            check(AtomicFileWrite.write(expected) { output -> file.inputStream().use { it.copyTo(output) } }) {
+                "cannot move ${expected.name} into place"
+            }
         }.onFailure { error -> error.printStackTrace() }
     }
 
@@ -610,12 +614,10 @@ object DiscourseImageBridge {
                 client.newCall(Request.Builder().url(attachment.url).build()).execute().use { response ->
                     check(response.isSuccessful) { "GET ${attachment.url} answered ${response.code}" }
                     val body = response.body ?: error("GET ${attachment.url} answered no body")
-                    file.parentFile?.mkdirs()
-                    val partial = File(file.parentFile, file.name + ".part")
-                    body.byteStream().use { input ->
-                        partial.outputStream().use { output -> input.copyTo(output) }
+                    val written = AtomicFileWrite.write(file) { output ->
+                        body.byteStream().use { input -> input.copyTo(output) }
                     }
-                    check(partial.renameTo(file)) { "cannot move ${partial.name} into place" }
+                    check(written) { "cannot move ${file.name} into place" }
                 }
                 file
             }.getOrElse { error ->
@@ -661,10 +663,9 @@ object DiscourseImageBridge {
                 val body = response.body ?: error("GET ${image.url} answered no body")
                 val bytes = body.bytes()
                 targets.forEach { target ->
-                    target.parentFile?.mkdirs()
-                    val partial = File(target.parentFile, target.name + ".part")
-                    partial.writeBytes(bytes)
-                    check(partial.renameTo(target)) { "cannot move ${partial.name} into place" }
+                    check(AtomicFileWrite.bytes(target, bytes)) {
+                        "cannot move ${target.name} into place"
+                    }
                 }
             }
             targets.first()

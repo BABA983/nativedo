@@ -355,7 +355,7 @@ internal class PostVideoTest {
         )
         assertFalse(
             "and the half-written transfer was deleted",
-            java.io.File(file.absolutePath + ".part").exists(),
+            tempFilesBeside(file).isNotEmpty(),
         )
         assertFalse("the fetch is over", NativeDoHooks.isFileLoading(name))
 
@@ -396,6 +396,12 @@ internal class PostVideoTest {
         )
         harness.assertNoTelegramSideEffects()
     }
+
+    /** The temporary files a transfer to [file] would leave beside it, if any survived. */
+    private fun tempFilesBeside(file: java.io.File): List<java.io.File> =
+        file.parentFile?.listFiles { candidate ->
+            candidate.name.startsWith(file.name + ".") && candidate.name.endsWith(".part")
+        }?.toList().orEmpty()
 
     /** The topic, loaded and laid out, with the first floor's cell ready to be pressed. */
     private fun openTopic(cookedHtml: String): ChatMessageCell {
