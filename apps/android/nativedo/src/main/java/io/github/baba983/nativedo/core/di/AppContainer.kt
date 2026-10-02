@@ -15,8 +15,10 @@ import io.github.baba983.nativedo.core.session.CredentialStore
 import io.github.baba983.nativedo.core.session.CompleteLoginUseCase
 import io.github.baba983.nativedo.core.storage.CategoryStore
 import io.github.baba983.nativedo.core.storage.CookieStore
+import io.github.baba983.nativedo.core.storage.EmojiCatalogStore
 import io.github.baba983.nativedo.core.storage.SessionStore
 import io.github.baba983.nativedo.core.storage.SharedPreferencesCookieStorePersistence
+import io.github.baba983.nativedo.core.storage.SharedPreferencesEmojiCatalogStorePersistence
 import io.github.baba983.nativedo.core.storage.SharedPreferencesSessionStorePersistence
 import io.github.baba983.nativedo.core.storage.SharedPreferencesSvgSpriteStorePersistence
 import io.github.baba983.nativedo.core.storage.SvgSpriteStore
@@ -48,6 +50,7 @@ class AppContainer(
     private val sessionPreferences = appContext?.getSharedPreferences(SESSION_STORE_PREFS, Context.MODE_PRIVATE)
     private val profileCachePreferences = appContext?.getSharedPreferences(PROFILE_CACHE_PREFS, Context.MODE_PRIVATE)
     private val svgSpritePreferences = appContext?.getSharedPreferences(SVG_SPRITE_STORE_PREFS, Context.MODE_PRIVATE)
+    private val emojiCatalogPreferences = appContext?.getSharedPreferences(EMOJI_CATALOG_STORE_PREFS, Context.MODE_PRIVATE)
     private val topicReplyDraftPreferences = appContext?.getSharedPreferences(TOPIC_REPLY_DRAFT_STORE_PREFS, Context.MODE_PRIVATE)
     private val topicReadPositionPreferences = appContext?.getSharedPreferences(TOPIC_READ_POSITION_STORE_PREFS, Context.MODE_PRIVATE)
     val applicationScope: CoroutineScope? = applicationScope
@@ -66,6 +69,11 @@ class AppContainer(
             SvgSpriteStore(persistence = SharedPreferencesSvgSpriteStorePersistence(preferences))
         }
         ?: SvgSpriteStore()
+    val emojiCatalogStore: EmojiCatalogStore = emojiCatalogPreferences
+        ?.let { preferences ->
+            EmojiCatalogStore(persistence = SharedPreferencesEmojiCatalogStorePersistence(preferences))
+        }
+        ?: EmojiCatalogStore()
     val topicReplyDraftStore: TopicReplyDraftStore = topicReplyDraftPreferences
         ?.let { preferences ->
             TopicReplyDraftStore(SharedPreferencesTopicReplyDraftPersistence(preferences))
@@ -117,6 +125,7 @@ class AppContainer(
 
     val discourseApiClient: DiscourseApiClient = DiscourseApiClient(
         service = apiService,
+        emojiCatalogStore = emojiCatalogStore,
     )
     val profileRepository: ProfileRepository = ProfileRepository(
         client = discourseApiClient,
@@ -162,6 +171,7 @@ class AppContainer(
         const val SESSION_STORE_PREFS: String = "nativedo.session_store"
         const val PROFILE_CACHE_PREFS: String = "nativedo.profile_cache"
         const val SVG_SPRITE_STORE_PREFS: String = "nativedo.svg_sprite_store"
+        const val EMOJI_CATALOG_STORE_PREFS: String = "nativedo.emoji_catalog"
         const val TOPIC_REPLY_DRAFT_STORE_PREFS: String = "nativedo.topic_reply_drafts"
         const val TOPIC_READ_POSITION_STORE_PREFS: String = "nativedo.topic_read_positions"
     }

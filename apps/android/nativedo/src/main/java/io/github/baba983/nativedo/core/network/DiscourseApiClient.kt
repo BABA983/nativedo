@@ -41,6 +41,8 @@ import retrofit2.HttpException
 
 class DiscourseApiClient(
     private val service: DiscourseApiService,
+    /** The site's emoji table, when one is kept; see [emojiGroupsForDecoration]. */
+    private val emojiCatalogStore: io.github.baba983.nativedo.core.storage.EmojiCatalogStore? = null,
 ) : SessionBootstrapClient {
     private var sessionContextProvider: () -> SessionRequestContext = {
         SessionRequestContext(
@@ -174,33 +176,56 @@ class DiscourseApiClient(
 
     suspend fun fetchTopic(topicId: Long, postNumber: Int? = null): TopicDetail =
         runWithSessionBoundary {
-            val emojiGroups = service.emojis()
-            val emojiCatalog = emojiGroups.toEmojiCatalog()
+            // The body goes first. The emoji table is decoration, and asking the site for it up
+            // front is what used to turn a decorative failure into a topic that never loaded.
             val response = if (postNumber == null) {
                 service.topic(topicId)
             } else {
                 service.topicAtPost(topicId, postNumber)
             }
+            val emojiGroups = emojiGroupsForDecoration()
             response.toModel(
-                emojiCatalog = emojiCatalog,
+                emojiCatalog = emojiGroups.toEmojiCatalog(),
                 emojiCategories = emojiGroups.toEmojiCategories(),
             )
         }
 
     suspend fun fetchTopicPosts(topicId: Long, postIds: List<Long>): List<Post> =
         runWithSessionBoundary {
-            val emojiCatalog = service.emojis().toEmojiCatalog()
-            service.topicPosts(id = topicId, postIds = postIds).toModel(emojiCatalog = emojiCatalog)
+            val response = service.topicPosts(id = topicId, postIds = postIds)
+            response.toModel(emojiCatalog = emojiGroupsForDecoration().toEmojiCatalog())
         }
 
     suspend fun fetchPostByNumber(topicId: Long, postNumber: Int): Post =
         runWithSessionBoundary {
-            val emojiCatalog = service.emojis().toEmojiCatalog()
-            service.postByNumber(
+            val response = service.postByNumber(
                 topicId = topicId,
                 postNumber = postNumber,
-            ).toModel(emojiCatalog = emojiCatalog)
+            )
+            response.toModel(emojiCatalog = emojiGroupsForDecoration().toEmojiCatalog())
         }
+
+    /**
+     * The site's emoji table for a screen that only needs it to draw with.
+     *
+     * A warm cache answers without a request at all; a cold one asks once and keeps the answer, so
+     * repeated topic reads do not become a request storm. This call is deliberately not routed
+     * through [runWithSessionBoundary]: a table that failed to arrive is not evidence about the
+     * session, and letting it be read as one is the defect this exists to remove. The request the
+     * reader actually asked for - the topic - carries its own session boundary and error
+     * classification, and it is the one that reports a challenge, a logout or an outage.
+     */
+    private suspend fun emojiGroupsForDecoration(): EmojiGroupsDto {
+        val store = emojiCatalogStore ?: return emptyMap()
+        store.groups.value.takeIf { groups -> groups.isNotEmpty() }?.let { cached -> return cached }
+        return try {
+            service.emojis().also(store::save)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            emptyMap()
+        }
+    }
 
     suspend fun fetchPostReplies(postId: Long, afterPostNumber: Int = 1): List<Post> =
         runWithSessionBoundary {
@@ -406,9 +431,9 @@ class DiscourseApiClient(
             when (evidence) {
                 SessionResponseEvidence.Challenge -> throw SessionRecoveryRequiredException(cause = error)
                 SessionResponseEvidence.LoggedOut -> handleLoggedOutResponse(requestContext, requiresAuthentication, error)
-                SessionResponseEvidence.Csrf -> throw java.io.IOException("请求验证已过期，请重试；无需重新登录", error)
-                SessionResponseEvidence.Forbidden -> throw java.io.IOException("请求被拒绝（403），尚不能确认是权限限制还是站点验证", error)
-                SessionResponseEvidence.RateLimited -> throw java.io.IOException("请求过于频繁，请稍后重试", error)
+                SessionResponseEvidence.Csrf -> throw DiscourseRefusalException(403, "请求验证已过期，请重试；无需重新登录", error)
+                SessionResponseEvidence.Forbidden -> throw DiscourseRefusalException(403, "请求被拒绝（403），尚不能确认是权限限制还是站点验证", error)
+                SessionResponseEvidence.RateLimited -> throw DiscourseRefusalException(429, "请求过于频繁，请稍后重试", error)
                 SessionResponseEvidence.Other -> throw error
             }
         }
