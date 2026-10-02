@@ -46,6 +46,11 @@ public class NativeDoActivity extends Activity {
     private int selectedTab = -1;
     /** Whether the reader is on the login page, which the roots and their strip stay away from. */
     private boolean signedOut;
+    /** Whether the session question has been answered, so a link can be opened right away. */
+    private boolean sessionResolved;
+    /** The topic a VIEW link asked for, and the floor it named; 0 while there is none. */
+    private long pendingTopicId;
+    private int pendingFloor;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -85,11 +90,50 @@ public class NativeDoActivity extends Activity {
             // in a fragment of its own keeps the first screen the app shows the real one.
             showSessionProgress();
             AppContainer container = NativeDo.container(this);
+            // A linux.do link is the reader saying what to open; it is read before the session is
+            // answered so the answer can act on it.
+            readTopicLink(getIntent());
             SessionStarter.INSTANCE.start(container, state -> {
                 onSessionResolved(state instanceof AppSessionState.Authenticated);
                 return kotlin.Unit.INSTANCE;
             });
         }
+    }
+
+    /**
+     * A linux.do topic link opened while the app is already up. The reader asked for a topic, so it
+     * is pushed on top of whatever they were reading, the same as a row tap from a feed.
+     */
+    @Override
+    protected void onNewIntent(android.content.Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        if (!readTopicLink(intent) || !sessionResolved) {
+            return;
+        }
+        openPendingTopic();
+    }
+
+    /**
+     * Reads the topic a VIEW intent names, if it names one. The parsing is the app's own Discourse
+     * URL rule ({@code /t/<slug>/<id>[/<floor>]}), not a pattern invented here, and a link that is
+     * not a same-origin topic is left alone rather than guessed at.
+     */
+    private boolean readTopicLink(android.content.Intent intent) {
+        if (intent == null || !android.content.Intent.ACTION_VIEW.equals(intent.getAction())) {
+            return false;
+        }
+        android.net.Uri data = intent.getData();
+        io.github.baba983.nativedo.core.web.DiscourseTopicLink link =
+                io.github.baba983.nativedo.core.web.DiscourseLinks.topicLink(
+                        data == null ? null : data.toString(),
+                        NativeDo.container(this).getBaseUrl());
+        if (link == null || link.getTopicId() <= 0) {
+            return false;
+        }
+        pendingTopicId = link.getTopicId();
+        pendingFloor = link.getFloor();
+        return true;
     }
 
     /**
@@ -219,15 +263,38 @@ public class NativeDoActivity extends Activity {
             contentView.removeView(sessionProgress);
             sessionProgress = null;
         }
+        sessionResolved = true;
         if (authenticated) {
             addTabs();
-            showTab(0);
+            showRootOrPendingTopic();
         } else {
             actionBarLayout.presentFragment(new LoginWebViewFragment(() -> {
                 addTabs();
-                showTab(0);
+                showRootOrPendingTopic();
             }), false);
         }
+    }
+
+    /**
+     * The roots first, then the topic a link asked for on top of them, so back returns to the feed
+     * rather than leaving the app. A plain launch has no pending link and just shows the feed.
+     */
+    private void showRootOrPendingTopic() {
+        showTab(0);
+        if (pendingTopicId != 0) {
+            openPendingTopic();
+        }
+    }
+
+    private void openPendingTopic() {
+        long topicId = pendingTopicId;
+        if (topicId == 0) {
+            return;
+        }
+        pendingTopicId = 0;
+        Integer floor = pendingFloor > 0 ? pendingFloor : null;
+        pendingFloor = 0;
+        present(io.github.baba983.nativedo.topic.TopicFragment.forFloor(topicId, null, floor));
     }
 
     /**

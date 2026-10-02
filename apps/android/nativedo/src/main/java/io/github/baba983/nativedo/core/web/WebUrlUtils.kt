@@ -36,3 +36,39 @@ internal fun parseSameOriginTopicId(value: String, baseUrl: String): Long? {
     if (segments.firstOrNull() != "t") return null
     return segments.drop(1).firstNotNullOfOrNull(String::toLongOrNull)
 }
+
+/** A linux.do topic a link points at: the topic's id, and the floor when the link names one. */
+data class DiscourseTopicLink(
+    val topicId: Long,
+    val floor: Int,
+)
+
+/**
+ * The app's entry point for a linux.do link, the same way the site's own URLs address a topic
+ * (`/t/<slug>/<id>` and `/t/<slug>/<id>/<floor>`). A link that is not a same-origin topic is not a
+ * link this client can open, so it answers null rather than guessing.
+ */
+object DiscourseLinks {
+
+    @JvmStatic
+    fun topicLink(url: String?, baseUrl: String): DiscourseTopicLink? {
+        val value = url?.trim().orEmpty()
+        if (value.isEmpty()) return null
+        val topicId = parseSameOriginTopicId(value, baseUrl) ?: return null
+        return DiscourseTopicLink(topicId = topicId, floor = parseSameOriginFloor(value, baseUrl))
+    }
+}
+
+/**
+ * The floor of a same-origin `/t/<slug>/<id>/<floor>` link, or 0 when the link names none. The id
+ * itself is the first number after `t`; a floor is the next one.
+ */
+internal fun parseSameOriginFloor(value: String, baseUrl: String): Int {
+    val base = baseUrl.toHttpUrlOrNull() ?: return 0
+    val resolved = base.resolve(value.trim()) ?: return 0
+    if (!resolved.host.equals(base.host, ignoreCase = true)) return 0
+    val segments = resolved.pathSegments.filter(String::isNotBlank)
+    if (segments.firstOrNull() != "t") return 0
+    val numbers = segments.drop(1).mapNotNull(String::toIntOrNull)
+    return if (numbers.size >= 2) numbers.last() else 0
+}

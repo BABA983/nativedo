@@ -27,6 +27,21 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!--
+              linux.do topic links, in the site's own URL shape: a link tapped anywhere opens the
+              topic in this client. The host is the site this app serves; the parser re-checks the
+              origin against the configured base URL, so a link that only looks like one is refused.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="linux.do"
+                    android:pathPrefix="/t/" />
+            </intent-filter>
         </activity>
 
         <!--

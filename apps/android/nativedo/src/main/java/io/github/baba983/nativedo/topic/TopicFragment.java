@@ -413,6 +413,11 @@ public class TopicFragment extends BaseFragment {
         if (failureView != null) {
             failureView.setVisibility(View.GONE);
         }
+        // The site's own title is the authoritative one; a link that named no title gets it here.
+        String loadedTitle = detail.getTitle();
+        if (loadedTitle != null && !loadedTitle.trim().isEmpty()) {
+            actionBar.setTitle(loadedTitle.trim());
+        }
         streamPostIds = detail.getStreamPostIds();
         reporter.start(detail);
         bind(detail);
