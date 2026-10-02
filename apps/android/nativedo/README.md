@@ -247,12 +247,16 @@ stands, and the upstream component each row is meant to use.
   失败并给出重试入口（`46dfbcde` 与本轮 `0ffdb628`）。
 - **滚动流畅度**：只拿到模拟器的数（10 次滑动：253 帧、37% janky、50 分位 31 ms），模拟器的 GPU
   本来就不是真机的数，参考价值有限。
-- **单测**：在已推送的 `81f48666` 上跑
-  `./apps/android/telegram/gradlew -p apps/android/telegram :nativedo:testDebugUnitTest`，
-  清空 `build/test-results/testDebugUnitTest` 后连跑两次，两次都是 **61 个用例、1 个失败、0 个 error**，
-  失败的都是 `ReadProgressTest > theDwellIsTheReadersOwnForegroundTime`（断言「前台 10 秒报成约 10 秒」，
-  实际报 1005ms）。这条不是本次改动带来的：同一段代码在更早的两次运行里一次以同样的 1005 失败、一次以 11010 通过，
-  取值跟着 harness 里回调的先后走，所以**这套单测目前不是绿的**，别把哪一轮绿当作 gate。
+- **单测**：通过（本轮 `37f56de2` 之后）。`./apps/android/telegram/gradlew -p apps/android/telegram
+  :nativedo:testDebugUnitTest`，清空 `build/test-results/testDebugUnitTest` 后**连续 5 次全量**都是
+  **61 个用例、0 个失败、0 个 error、0 个 skipped，exit=0**。
+  之前那条 `ReadProgressTest > theDwellIsTheReadersOwnForegroundTime` 有两层原因，都修了：
+  (a) 生产侧 reporter 只在 `tick()` 里按「距上次 tick 的差」累计，tick 没跑到的那段就丢了；现在改成在
+  tick／flush／report／离开前台四个点都从时钟取一次时间，晚到或漏掉的 tick 都丢不了，在途上报期间新增的时间
+  由下一次上报带走（不再在 report 循环里反复取，否则每次请求都产生新时间、循环永不结束）。
+  (b) 测试侧读到的是**窗口之前**那次上报：打开话题会排一次「它打开的楼层」的上报，这次上报和测试取的基线赛跑，
+  所以断言有时读到窗口前的 body。现在先等这次上报落地再取基线。**断言没有放宽**（前台 10 秒仍是 9–12 秒，
+  后台 10 秒仍不计），窗口那次上报实测约 11.4 秒。
 
 设备上发现的问题（都已记录，六个已修）：
 
