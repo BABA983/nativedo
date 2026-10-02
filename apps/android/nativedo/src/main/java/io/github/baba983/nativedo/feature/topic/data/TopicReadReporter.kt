@@ -133,11 +133,10 @@ class TopicReadReporter(
             lastTickAt = now
             lastActivityAt = now
             lastFlushAt = now
-            // The reader is back in front of the screen: a report that ended because the site wanted
-            // verification is worth one more attempt - the reader may have done it while away - but
-            // it only goes now, with the reader here, never on a timer.
-            blocked = false
-            nextAttemptAt = now
+            // Coming back to the screen re-arms the clock, not the reports: a challenge or a broken
+            // transfer is not cleared by leaving the screen and returning, and doing so would both
+            // release a blocked reporter and skip a wait. [onSessionRecovered] is the only thing
+            // that clears them, and it runs on a confirmed recovery, not on a resume.
             startTicker()
         } else {
             // The span just ended is the reader's, so it is taken while the screen is still in
@@ -188,6 +187,20 @@ class TopicReadReporter(
     fun stop() {
         stopTicker()
         flush()
+    }
+
+    /**
+     * The session was recovered - the reader solved the challenge or signed back in, and the app
+     * confirmed it. Only that clears the reports a challenge or a lost session stopped, and only
+     * that releases a report that was waiting a broken transfer out early. A resume, a scroll or a
+     * closed WebView are none of those things and must not.
+     */
+    fun onSessionRecovered() {
+        blocked = false
+        nextAttemptAt = 0L
+        if (foreground && hasSomethingToReport()) {
+            schedule(0L)
+        }
     }
 
     /** Whether the site has not been told about some floor, some dwell, or both. */

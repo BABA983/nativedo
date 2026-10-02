@@ -1019,6 +1019,9 @@ public class TopicFragment extends BaseFragment {
                 new io.github.baba983.nativedo.auth.LoginWebViewFragment[1];
         holder[0] = new io.github.baba983.nativedo.auth.LoginWebViewFragment(() -> {
             holder[0].finishFragment();
+            if (reporter != null) {
+                reporter.onSessionRecovered();
+            }
         });
         presentFragment(holder[0]);
     }
@@ -1073,6 +1076,9 @@ public class TopicFragment extends BaseFragment {
                 new io.github.baba983.nativedo.auth.LoginWebViewFragment[1];
         holder[0] = new io.github.baba983.nativedo.auth.LoginWebViewFragment(() -> {
             holder[0].finishFragment();
+            if (reporter != null) {
+                reporter.onSessionRecovered();
+            }
             runRetry();
         });
         presentFragment(holder[0]);

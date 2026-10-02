@@ -354,6 +354,14 @@ internal class ReadProgressTest {
         harness.idle()
     }
 
+    /** The topic screen's own reporter, so a test can drive the recovery event it answers to. */
+    private fun topicReporter(): io.github.baba983.nativedo.feature.topic.data.TopicReadReporter {
+        val fragment = fragments().filterIsInstance<TopicFragment>().lastOrNull()
+            ?: throw AssertionError("no topic screen is open")
+        val field = TopicFragment::class.java.getDeclaredField("reporter").apply { isAccessible = true }
+        return field.get(fragment) as io.github.baba983.nativedo.feature.topic.data.TopicReadReporter
+    }
+
     /** The floors the topic screen has drawn, as the post numbers behind its bubbles. */
     private fun drawnFloors(): List<Int> {
         val content = harness.activity.findViewById<ViewGroup>(android.R.id.content) ?: return emptyList()
@@ -477,7 +485,11 @@ internal class ReadProgressTest {
             site.recordedRequests.any { it.startsWith("POST /topics/timings") }
         }
         val attempts = site.recordedRequests.count { it.startsWith("POST /topics/timings") }
-        // Several more ticks' worth of clock: a challenge must end the reports, not be retried.
+        // A scroll, a flush and leaving/returning to the screen must none of them re-arm it.
+        topicReporter().flush()
+        scrollTopicToTheEnd()
+        lifecycle("onPause")
+        lifecycle("onResume")
         harness.idleClock(5_000)
         harness.idle()
         java.util.concurrent.locks.LockSupport.parkNanos(300_000_000L)
@@ -511,7 +523,12 @@ internal class ReadProgressTest {
         awaitWithClock("the broken report to be attempted") {
             site.recordedRequests.any { it.startsWith("POST /topics/timings") }
         }
-        harness.idleClock(5_000)
+        // Leaving and returning to the screen must not skip the wait: the backoff is the reporter's,
+        // not the screen's.
+        lifecycle("onPause")
+        lifecycle("onResume")
+        // The wait is a minute: drive the clock past it so a second attempt is possible at all.
+        harness.idleClock(70_000)
         harness.idle()
         java.util.concurrent.locks.LockSupport.parkNanos(300_000_000L)
         harness.idleClock(5_000)
