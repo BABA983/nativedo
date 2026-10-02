@@ -97,6 +97,12 @@ public class TopicFragment extends BaseFragment {
     private boolean loadingPage;
     /** The reader's place in this topic, and the report of it the site asks for. */
     private TopicReadReporter reporter;
+    /** What is shown instead of the list when the topic could not be read at all. */
+    private org.telegram.ui.Components.EmptyTextProgressView failureView;
+    /** Why the last read failed, in the terms the retry tap acts on. */
+    private TopicLoadFailure lastFailure;
+    /** What a retry tap runs: the read that just failed, with the floor it asked for. */
+    private Runnable retryAction;
 
     public static TopicFragment forTopic(long topicId, String title) {
         android.os.Bundle args = new android.os.Bundle();
@@ -227,6 +233,20 @@ public class TopicFragment extends BaseFragment {
         contentView.addView(createComposer(contentView), org.telegram.ui.Components.LayoutHelper.createFrame(
                 org.telegram.ui.Components.LayoutHelper.MATCH_PARENT,
                 org.telegram.ui.Components.LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM));
+
+        // A read that failed left the list empty, which reads the same as a topic with no posts.
+        // This says which it was, and a tap on it either retries the read or opens the login WebView
+        // when the session is what is wrong.
+        failureView = new org.telegram.ui.Components.EmptyTextProgressView(context);
+        failureView.setText(context.getString(io.github.baba983.nativedo.R.string.topic_failed));
+        failureView.showTextView();
+        failureView.setVisibility(View.GONE);
+        // The view consumes touches in its own constructor; the tap that acts has to get through.
+        failureView.setOnTouchListener(null);
+        failureView.setOnClickListener(view -> onFailureTap());
+        contentView.addView(failureView, org.telegram.ui.Components.LayoutHelper.createFrame(
+                org.telegram.ui.Components.LayoutHelper.MATCH_PARENT,
+                org.telegram.ui.Components.LayoutHelper.MATCH_PARENT));
 
         fragmentView = contentView;
         loadTopic(topicId);
@@ -361,6 +381,7 @@ public class TopicFragment extends BaseFragment {
         // so the head is read once to learn it and the window they were at is loaded from there.
         // Opening a topic at its first floor would show a reader half-way through a thread the part
         // they have already read.
+        retryAction = () -> loadTopic(topicId);
         DiscourseLoader.INSTANCE.topic(container, topicId, null, detail -> {
             int position = reporter.start(detail);
             if (position > 1 && !carriesFloor(detail, position)) {
@@ -370,24 +391,28 @@ public class TopicFragment extends BaseFragment {
             show(detail, position > 1 ? position : 0);
             return kotlin.Unit.INSTANCE;
         }, error -> {
-            org.telegram.messenger.FileLog.e("topic failed", error);
+            showTopicFailure(error);
             return kotlin.Unit.INSTANCE;
         });
     }
 
     /** The window of posts around [postNumber], with the list left on [scrollTo] when it is given. */
     private void loadWindow(int postNumber, int scrollTo) {
+        retryAction = () -> loadWindow(postNumber, scrollTo);
         DiscourseLoader.INSTANCE.topic(container, topicId, postNumber, detail -> {
             show(detail, scrollTo);
             return kotlin.Unit.INSTANCE;
         }, error -> {
-            org.telegram.messenger.FileLog.e("topic failed", error);
+            showTopicFailure(error);
             return kotlin.Unit.INSTANCE;
         });
     }
 
     /** What has arrived: the topic's stream, its floors, and where in it the reader is standing. */
     private kotlin.Unit show(TopicDetail detail, int scrollTo) {
+        if (failureView != null) {
+            failureView.setVisibility(View.GONE);
+        }
         streamPostIds = detail.getStreamPostIds();
         reporter.start(detail);
         bind(detail);
@@ -704,7 +729,9 @@ public class TopicFragment extends BaseFragment {
             return kotlin.Unit.INSTANCE;
         }, error -> {
             loadingPage = false;
-            org.telegram.messenger.FileLog.e("topic page failed", error);
+            // The topic is on screen, so the rows stay; the failure is said and the next scroll
+            // asks for the page again.
+            showTopicFailure(error);
             return kotlin.Unit.INSTANCE;
         });
     }
@@ -950,6 +977,92 @@ public class TopicFragment extends BaseFragment {
         builder.setMessage(error.getMessage() == null ? error.toString() : error.getMessage());
         builder.setPositiveButton("好", null);
         showDialog(builder.create());
+    }
+
+    /**
+     * A read that did not arrive. While the topic is empty the whole screen says so and a tap acts
+     * on it; a page that failed with the topic already on screen is said as a dialog, because the
+     * rows the reader has are still good.
+     */
+    private void showTopicFailure(Throwable error) {
+        lastFailure = TopicLoadFailure.of(error);
+        org.telegram.messenger.FileLog.e("topic failed", error);
+        if (!bubbles.isEmpty()) {
+            showError(org.telegram.messenger.ApplicationLoader.applicationContext.getString(
+                    io.github.baba983.nativedo.R.string.topic_failed_title), error);
+            return;
+        }
+        if (failureView == null) {
+            return;
+        }
+        failureView.setText(failureText(lastFailure, error));
+        failureView.showTextView();
+        failureView.setVisibility(View.VISIBLE);
+    }
+
+    /** The tap on the failure view: recover the session where that is what is wrong, else re-read. */
+    private void onFailureTap() {
+        if (lastFailure == TopicLoadFailure.Challenge || lastFailure == TopicLoadFailure.LoginRequired) {
+            recoverSessionThenRetry();
+            return;
+        }
+        runRetry();
+    }
+
+    /**
+     * A challenge or a lost session is dealt with in the same WebView the app logs in with: solving
+     * the challenge there is what makes the site answer the app again. The WebView is a detour, not
+     * the destination - once the session is usable it goes away and the read is tried again, with
+     * the floor it asked for.
+     */
+    private void recoverSessionThenRetry() {
+        if (getParentActivity() == null) {
+            return;
+        }
+        io.github.baba983.nativedo.auth.LoginWebViewFragment[] holder =
+                new io.github.baba983.nativedo.auth.LoginWebViewFragment[1];
+        holder[0] = new io.github.baba983.nativedo.auth.LoginWebViewFragment(() -> {
+            holder[0].finishFragment();
+            runRetry();
+        });
+        presentFragment(holder[0]);
+    }
+
+    private void runRetry() {
+        if (failureView != null) {
+            failureView.setVisibility(View.GONE);
+        }
+        Runnable action = retryAction;
+        if (action != null) {
+            action.run();
+        }
+    }
+
+    private String failureText(TopicLoadFailure reason, Throwable error) {
+        int id;
+        switch (reason) {
+            case Challenge:
+                id = io.github.baba983.nativedo.R.string.topic_failed_challenge;
+                break;
+            case LoginRequired:
+                id = io.github.baba983.nativedo.R.string.topic_failed_login;
+                break;
+            case Forbidden:
+                id = io.github.baba983.nativedo.R.string.topic_failed_forbidden;
+                break;
+            case RateLimited:
+                id = io.github.baba983.nativedo.R.string.topic_failed_rate_limited;
+                break;
+            case Network:
+                id = io.github.baba983.nativedo.R.string.topic_failed_network;
+                break;
+            default:
+                id = io.github.baba983.nativedo.R.string.topic_failed;
+                break;
+        }
+        String line = org.telegram.messenger.ApplicationLoader.applicationContext.getString(id);
+        String message = error == null ? null : error.getMessage();
+        return message == null || message.trim().isEmpty() ? line : line + "\n" + message.trim();
     }
 
     /** What the composer tells us: the text, and that the send button was pressed. */

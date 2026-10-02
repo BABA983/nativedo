@@ -9,6 +9,18 @@
     <string name="app_browser_download_failed">下载失败</string>
     <string name="topic_list_failed">没能读到话题列表\n点一下重试</string>
     <!--
+      A topic that did not arrive. The line says which kind of failure it was, because the tap
+      does a different thing for each: a challenge or a lost session opens the login WebView, a
+      refusal or an outage just asks again.
+    -->
+    <string name="topic_failed_title">没能读到话题</string>
+    <string name="topic_failed">没能读到这个话题\n点一下重试</string>
+    <string name="topic_failed_challenge">站点要求完成验证\n点一下打开验证页</string>
+    <string name="topic_failed_login">登录已失效\n点一下重新登录</string>
+    <string name="topic_failed_forbidden">站点拒绝了这次请求\n点一下重试</string>
+    <string name="topic_failed_rate_limited">请求过于频繁\n点一下重试</string>
+    <string name="topic_failed_network">网络不通\n点一下重试</string>
+    <!--
       Upstream's appearance page is Telegram's "Chat Settings": its title and its rows talk about a
       chat list, chat backgrounds and messages. This client has topics and posts, so the words are
       replaced here - the page, its cells and its preview are still upstream's own.
