@@ -212,6 +212,16 @@ internal class ReadProgressTest {
         val floorsOnScreen = drawnFloors()
         println("dwell: floors on opening = $floorsOnScreen")
 
+        // Opening the topic owes the site the floors it opened at, and that report is scheduled
+        // rather than immediate. It is waited for before the window's baseline is taken, so the
+        // report the window produces is unambiguously the next one - which is what the index below
+        // counts on. Without this the scheduled opening report races the baseline, and the assertion
+        // reads a report from before the window instead of the one the window produced.
+        harness.await("the floors it opened at to be reported") {
+            site.requestBodiesFor("topics/timings").isNotEmpty()
+        }
+        settle()
+
         // Opening the topic reports the floors it opened at (the smallest dwell the site takes, so
         // they are not stuck unread), and the time the screen spent loading before that is real time
         // too. The reader's own five seconds are what this test is about, so the window is bracketed

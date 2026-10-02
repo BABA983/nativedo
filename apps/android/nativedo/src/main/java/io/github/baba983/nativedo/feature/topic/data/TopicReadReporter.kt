@@ -115,14 +115,18 @@ class TopicReadReporter(
         if (this.foreground == foreground) {
             return
         }
-        this.foreground = foreground
         if (foreground) {
+            this.foreground = true
             val now = clock()
             lastTickAt = now
             lastActivityAt = now
             lastFlushAt = now
             startTicker()
         } else {
+            // The span just ended is the reader's, so it is taken while the screen is still in
+            // front; clearing the flag first would throw the last span away.
+            account(clock())
+            this.foreground = false
             stopTicker()
             flush()
         }
@@ -157,6 +161,7 @@ class TopicReadReporter(
 
     /** The reader is leaving: what they reached and read is owed to the site now, without the wait. */
     fun flush() {
+        account(clock())
         if (hasSomethingToReport()) {
             schedule(0L)
         }
@@ -173,15 +178,23 @@ class TopicReadReporter(
         reachedFloor > reportedFloor || topicMillis > 0 || floorMillis.values.any { it > 0 }
 
     /**
-     * One tick of the clock: the time since the last one is credited to the topic and to every floor
-     * the viewport holds - but only when the screen is in front and the reader has scrolled recently
-     * enough, which is the three gates Discourse's own screen-track has.
+     * Credits the time since the last accounting to the topic and to every floor the viewport holds,
+     * but only when the screen is in front and the reader has scrolled recently enough, which is the
+     * three gates Discourse's own screen-track has.
+     *
+     * <p>The dwell is the reader's clock, not a count of ticks: this is called from the ticker, from
+     * a flush and from a report, and every call takes everything that has passed since the previous
+     * one. A tick that arrived late - or did not arrive - therefore cannot lose time, which a
+     * tick-counting clock does the moment the ticker and the clock drift apart.</p>
      */
-    private fun tick() {
-        val now = clock()
-        val diff = now - lastTickAt
+    private fun account(now: Long) {
+        val previous = lastTickAt
         lastTickAt = now
-        if (!foreground || diff <= 0) {
+        if (!foreground) {
+            return
+        }
+        val diff = now - previous
+        if (diff <= 0) {
             return
         }
         if (now - lastActivityAt > INTERACTION_WINDOW_MILLIS) {
@@ -196,6 +209,15 @@ class TopicReadReporter(
             floorMillis[floor] = (floorMillis[floor] ?: 0) + diff
             floorVisitMillis[floor] = (visit + diff).coerceAtMost(MAX_FLOOR_MILLIS)
         }
+    }
+
+    /**
+     * One tick of the clock, and the moment a long visit sends what it has: the dwell so far goes on
+     * without waiting for the reader to leave.
+     */
+    private fun tick() {
+        val now = clock()
+        account(now)
         if (!running && now - lastFlushAt >= FLUSH_INTERVAL_MILLIS) {
             schedule(0L)
         }
@@ -254,6 +276,11 @@ class TopicReadReporter(
      * everything where it is, and the next attempt carries it.
      */
     private suspend fun report(): Boolean {
+        // Time that passed while the previous request was in flight - or since the last tick - is
+        // the reader's too, so it is taken here, before the payload is read. It is taken once, not
+        // inside the loop: time passes during every request, and re-taking it there would leave the
+        // loop with something to send forever.
+        account(clock())
         while (true) {
             val target = reachedFloor
             val reached = ((reportedFloor + 1)..target).toList()
