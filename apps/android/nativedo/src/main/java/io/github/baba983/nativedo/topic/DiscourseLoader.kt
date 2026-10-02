@@ -379,29 +379,39 @@ object DiscourseLoader {
 
     /**
      * Fetches the picture behind each reaction a floor carries and hands upstream's chip an entry it
-     * can draw, so a reaction reads as its emoji instead of a bare count. The chip looks the
-     * emoticon up in a table nothing here fills; see [DiscourseReactionEmoji].
+     * can draw, so a reaction reads as its emoji instead of a bare count. A reaction the site named
+     * no icon for, or whose icon does not arrive, is handed a fallback drawn from its own label; see
+     * [DiscourseReactionEmoji]. The chip looks the emoticon up in a table nothing here fills.
      */
     fun cacheReactionEmoji(
         container: AppContainer,
         reactions: List<PostReaction>,
         onReady: () -> Unit,
     ) {
-        val wanted = reactions.filter { reaction -> !reaction.iconUrl.isNullOrBlank() }
-        if (wanted.isEmpty()) {
+        if (reactions.isEmpty()) {
             onReady()
             return
         }
         scope.launch {
-            for (reaction in wanted) {
-                val url = reaction.iconUrl ?: continue
+            for (reaction in reactions) {
+                val emoticon = DiscourseReactions.emoticonOf(reaction.id)
                 // The catalog's picture is a path on the site ("/images/emoji/twitter/heart.png");
-                // the session's client needs the address it belongs to.
-                val absolute = runCatching {
-                    java.net.URI(container.baseUrl).resolve(url).toString()
-                }.getOrNull() ?: continue
-                val file = DiscourseReactionEmoji.cache(container.imageOkHttpClient, absolute) ?: continue
-                DiscourseReactionEmoji.register(DiscourseReactions.emoticonOf(reaction.id), file)
+                // the session's client needs the address it belongs to. A reaction with no icon at
+                // all, or one whose fetch fails, keeps its place as a fallback below.
+                val file = reaction.iconUrl
+                    ?.takeUnless { it.isBlank() }
+                    ?.let { url ->
+                        runCatching { java.net.URI(container.baseUrl).resolve(url).toString() }.getOrNull()
+                    }
+                    ?.let { absolute -> DiscourseReactionEmoji.cache(container.imageOkHttpClient, absolute) }
+                if (file != null) {
+                    DiscourseReactionEmoji.register(emoticon, file)
+                } else {
+                    DiscourseReactionEmoji.registerFallback(
+                        emoticon,
+                        io.github.baba983.nativedo.core.model.PostReactionRendering.fallbackLabel(reaction.id),
+                    )
+                }
             }
             onReady()
         }
